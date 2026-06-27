@@ -1,0 +1,4 @@
+interface:
+  display_name: "Word Hunt Game"
+  short_description: "Build and validate the Word Hunt game"
+  default_prompt: "Use $word-hunt-game to implement or validate changes for the Word Hunt React game."

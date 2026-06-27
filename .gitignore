@@ -1,0 +1,28 @@
+# ── Node / Vite ──────────────────────────────────────────────
+node_modules
+dist
+dist-ssr
+*.local
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# ── Python / uv ──────────────────────────────────────────────
+.venv
+__pycache__
+*.pyc
+
+# ── Editor / tooling local state ─────────────────────────────
+.claude/settings.local.json
+
+# ── Embeddings (all excluded — too large for GitHub) ─────────
+# Raw sources are multi-GB; even the *_reduced files are 400-500 MB each,
+# over GitHub's 100 MB hard limit. Regenerate locally with
+# `pnpm reduce:<lang>`, which also rebuilds the .kv caches.
+*.vec
+*.bin
+packages/generation/embedding/**/*.txt
+*.kv
+*.kv.vectors.npy
+*.npy

@@ -1,0 +1,16 @@
+{
+  "name": "word-hunt",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "packageManager": "pnpm@11.9.0",
+  "scripts": {
+    "dev": "pnpm --filter @word-hunt/web dev",
+    "build": "pnpm --filter @word-hunt/web build",
+    "preview": "pnpm --filter @word-hunt/web preview",
+    "typecheck": "pnpm --filter @word-hunt/web typecheck",
+    "reduce:en": "pnpm --filter @word-hunt/generation reduce:en",
+    "reduce:fr": "pnpm --filter @word-hunt/generation reduce:fr",
+    "gen:phrase": "pnpm --filter @word-hunt/generation gen:phrase"
+  }
+}

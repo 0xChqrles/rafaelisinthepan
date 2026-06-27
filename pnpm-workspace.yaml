@@ -1,0 +1,7 @@
+packages:
+  - 'packages/*'
+
+# esbuild (a Vite dependency) ships a postinstall that links its native binary.
+# Build scripts are blocked by default; approve this one explicitly.
+allowBuilds:
+  esbuild: true

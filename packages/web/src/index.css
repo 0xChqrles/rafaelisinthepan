@@ -1,0 +1,482 @@
+/* ============================================================
+   WORD HUNT — understated pixel art, flat UI
+   Font: Press Start 2P
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+:root {
+  --bg: #0a0b12;
+  --surface: #1d2138;
+  --surface-hover: #2c3358;
+  --fg: #f4f4f2;
+  --accent: #2f7bff;
+  --accent-dim: #6fa0ff;
+  --danger: #ff1f54;
+  --hole: #ffc400; /* vivid gold for holes */
+  --muted: #c4c9d8;
+
+  --pixel-font: 'Press Start 2P', monospace;
+  --press: var(--pixel-font);
+  --vt: var(--pixel-font);
+
+  --cap-shift: 0;
+  --text-shift: 0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--vt);
+  overflow: hidden;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45);
+}
+
+button,
+button * {
+  text-shadow: none;
+}
+
+.app {
+  position: relative;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.status {
+  font-family: var(--press);
+  font-size: 12px;
+  color: var(--accent);
+  letter-spacing: 1px;
+  padding-top: var(--cap-shift);
+}
+.status.error {
+  color: var(--danger);
+}
+
+/* [ESC]: positioning only; appearance comes from the secondary button. */
+.esc-label {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  z-index: 120;
+}
+
+/* ===================== language screen ===================== */
+.lang-screen {
+  text-align: center;
+}
+
+.title {
+  font-family: var(--press);
+  font-size: 32px;
+  color: var(--accent);
+  letter-spacing: 2px;
+  margin: 0 0 40px;
+  padding-top: var(--cap-shift);
+}
+
+.flag-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 36px;
+}
+
+.flag-btn {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.flag-btn:focus-visible {
+  outline: none;
+}
+
+.flag-img {
+  display: block;
+  width: 230px;
+  height: auto;
+  object-fit: cover;
+  opacity: 0.7;
+  image-rendering: pixelated;
+  outline: 5px solid transparent;
+  outline-offset: 0;
+}
+.flag-btn:hover .flag-img,
+.flag-btn:focus-visible .flag-img {
+  opacity: 1;
+  outline: 5px solid var(--accent);
+}
+
+/* ===================== game screen ===================== */
+.game {
+  position: relative;
+  /* Isolated stacking context: the progress watermark (z-index:-1) stays behind
+     the game content but above the page background. */
+  isolation: isolate;
+  width: 100%;
+  max-width: 900px;
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: clamp(32px, 6vh, 64px);
+}
+
+.empty-lang {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+}
+
+/* --- HUD: progress bar pinned to the top of the screen --- */
+.hud {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  /* Centered at the top, with margins that clear the [ESC] button in the corner. */
+  width: min(900px, calc(100vw - 200px));
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  font-family: var(--press);
+}
+
+.progress-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.progress {
+  position: relative;
+  flex: 1;
+  height: clamp(28px, 4.2vh, 38px);
+  background: var(--surface);
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  transition: width 0.5s ease-out, background-color 0.25s linear;
+}
+.progress-label {
+  flex: none;
+  width: 4ch;
+  font-size: clamp(20px, 2.8vh, 26px);
+  letter-spacing: 1px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  padding-top: var(--cap-shift);
+}
+
+/* --- giant progress watermark behind the whole page --- */
+.progress-background {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Huge: bounded by width to stay legible on screen. */
+  font-size: min(62vh, 34vw);
+  line-height: 1;
+  /* Color driven by JS from the heatmap (see heat.js). */
+  opacity: 0.07;
+  pointer-events: none;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- sentence --- */
+.phrase {
+  margin: 0;
+  font-family: var(--vt);
+  font-size: clamp(18px, 3.2vw, 30px);
+  line-height: 1.5;
+  text-align: left;
+  max-width: 1020px;
+  text-shadow: 2px 2px 0 black;
+  padding-top: var(--text-shift);
+}
+.word {
+  color: var(--fg);
+}
+
+.hole {
+  position: relative;
+  display: inline-block;
+  white-space: nowrap;
+  color: var(--hole);
+}
+.hole-word {
+  color: var(--hole);
+}
+.hole-rank {
+  display: inline-block;
+  min-width: var(--rank-width);
+  font-size: 0.55em;
+  margin-left: 1px;
+  color: var(--rank-color);
+  vertical-align: super;
+}
+/* Improvement: the exponent rolls toward its new value (see useAnimatedNumber)
+   and does a small hop to emphasize the change. */
+.hole-rank.rank-pop {
+  animation: rank-pop 0.4s ease-out;
+}
+@keyframes rank-pop {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  30% {
+    transform: translateY(-3px) scale(1.6);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+.hole.resolved .hole-word {
+  color: var(--accent);
+}
+/* Shake the hole word when a "hit" lands on it: reinforces impact. */
+.hole-word.hit-shake {
+  display: inline-block;
+  animation: word-shake 0.4s ease-in-out;
+}
+@keyframes word-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  15% {
+    transform: translateX(-5px) rotate(-2deg);
+  }
+  30% {
+    transform: translateX(5px) rotate(2deg);
+  }
+  45% {
+    transform: translateX(-4px) rotate(-1.5deg);
+  }
+  60% {
+    transform: translateX(4px) rotate(1.5deg);
+  }
+  75% {
+    transform: translateX(-2px);
+  }
+  90% {
+    transform: translateX(2px);
+  }
+}
+
+/* --- floating number ("hit"): isolated component, placeholder animation --- */
+.floating-hit {
+  position: absolute;
+  left: 50%;
+  top: -0.3em;
+  transform: translateX(-50%);
+  font-family: var(--press);
+  font-size: 28px;
+  color: #fff;
+  pointer-events: none;
+  /* TODO(anim): placeholder. Replace with the final animation (rise + fade). */
+  animation: hit-pop 0.9s ease-out forwards;
+}
+@keyframes hit-pop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 0) scale(0.6);
+  }
+  20% {
+    opacity: 1;
+    transform: translate(-50%, -10px) scale(1.4);
+  }
+  35% {
+    transform: translate(-50%, -14px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -38px) scale(1);
+  }
+}
+
+/* --- input area --- */
+.input-area {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: 20px;
+  min-height: 90px;
+}
+
+.word-input {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+  min-width: 280px;
+  padding: calc(4px + var(--text-shift)) 8px calc(4px - var(--text-shift));
+  font-family: var(--vt);
+  font-size: clamp(18px, 3.2vw, 30px);
+  color: var(--fg);
+}
+.wi-native-input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  font: inherit;
+  font-size: 16px;
+  opacity: 0;
+  outline: none;
+  appearance: none;
+}
+.wi-prompt {
+  color: var(--accent);
+  margin-right: 0.45em;
+}
+.wi-text {
+  white-space: pre;
+}
+.wi-cursor {
+  color: var(--accent);
+  /* Blinking underscore. */
+  animation: blink 1s steps(1) infinite;
+}
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Rejected word: the typed text stays in place but turns red and shakes. */
+.word-input.invalid {
+  color: var(--danger);
+  animation: input-shake 0.4s ease-in-out;
+}
+@keyframes input-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-6px);
+  }
+  40% {
+    transform: translateX(6px);
+  }
+  60% {
+    transform: translateX(-4px);
+  }
+  80% {
+    transform: translateX(4px);
+  }
+}
+
+.hint {
+  margin: 0;
+  min-height: 24px;
+  font-family: var(--vt);
+  font-size: 20px;
+  color: var(--danger);
+  letter-spacing: 0.5px;
+  padding-top: var(--text-shift);
+}
+
+/* --- end of round: replaces input (time elapsed or sentence solved) --- */
+.round-end {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+.round-end-label {
+  margin: 0;
+  font-family: var(--press);
+  font-size: clamp(24px, 3.4vw, 34px);
+  color: var(--danger);
+  letter-spacing: 2px;
+  padding-top: var(--cap-shift);
+}
+.round-end-label.solved {
+  color: var(--hole); /* sentence found -> yellow "victory" */
+}
+.round-end-score {
+  margin: 0;
+  font-family: var(--press);
+  font-size: clamp(14px, 1.8vw, 18px);
+  color: var(--muted);
+  letter-spacing: 2px;
+  padding-top: var(--text-shift);
+}
+.go-note {
+  margin: 0;
+  font-family: var(--press);
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 1px;
+  padding-top: var(--text-shift);
+}
+/* --- buttons --- */
+.btn {
+  font-family: var(--press);
+  border: 0;
+  cursor: pointer;
+}
+/* Primary: "ghost" button with no fill, thick accent border, accent text.
+   hover/focus play with brightness (border + text brighten). */
+.btn-primary {
+  /* Asymmetric vertical padding: recenters capitals (see --cap-shift), unchanged height. */
+  padding: calc(20px + var(--cap-shift)) 40px calc(20px - var(--cap-shift));
+  font-size: clamp(18px, 2.6vh, 26px);
+  letter-spacing: 1px;
+  background: transparent;
+  border: 5px solid var(--accent);
+  color: var(--accent);
+  transition: filter 0.12s ease;
+}
+.btn-primary:hover {
+  filter: brightness(1.18);
+  outline: none;
+}
+.btn-primary:focus-visible {
+  filter: brightness(1.32);
+  outline: none;
+}
+/* Secondary: simple text, no fill. */
+.btn-secondary {
+  padding: calc(4px + var(--cap-shift)) 8px calc(4px - var(--cap-shift));
+  font-size: 14px;
+  letter-spacing: 1px;
+  background: transparent;
+  color: var(--muted);
+}
+.btn-secondary:hover,
+.btn-secondary:focus-visible {
+  color: var(--fg);
+  outline: none;
+}

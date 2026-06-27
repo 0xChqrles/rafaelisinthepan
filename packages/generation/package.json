@@ -1,0 +1,10 @@
+{
+  "name": "@word-hunt/generation",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "reduce:en": "uv run scripts/reduce_embedding.py embedding/en/glove.6B.300d.txt --lang en",
+    "reduce:fr": "uv run scripts/reduce_embedding.py embedding/fr/cc.fr.300.vec --lang fr",
+    "gen:phrase": "uv run scripts/gen_phrase.py"
+  }
+}
