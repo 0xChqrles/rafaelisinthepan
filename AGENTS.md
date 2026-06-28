@@ -63,6 +63,10 @@ packages/
       publish.ts              place a generated puzzle into local store (default) or S3 (#17/#4)
       index.ts                Lambda entrypoint (s3Store + env config)
     .local-store/<date>.<lang>.json  local puzzle store (gitignored) read by serve/fsStore
+  infra/                      AWS CDK stack provisioning the backend (pkg @rafaelisinthepan/infra, #3)
+    bin/app.ts                CDK app entry (cdk.json runs it via `npx tsx`)
+    lib/backend-stack.ts      BackendStack: private S3 bucket + Lambda(Fn URL) + CloudFront
+    cdk.json                  CDK config (app command, context)
   shared/                     cross-cutting TS consumed by web (pkg @rafaelisinthepan/shared)
     src/slug.ts               fold() — the slug/fold contract (byte-identical to slug())
     src/types.ts              per-puzzle schema types (Puzzle, Hole, RankMap, …)
@@ -342,6 +346,18 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   override via `PUZZLE_STORE`. Point `VITE_API_BASE_URL=http://localhost:8787` and
   `pnpm dev` plays end-to-end (including 404 → NO PUZZLE). Runs TS via `tsx`
   (backend devDep).
+- **CDK stack (#3):** `packages/infra` (`@rafaelisinthepan/infra`) provisions the backend
+  with AWS CDK v2 — one `BackendStack` (`lib/backend-stack.ts`) defining: a **private** S3
+  puzzle bucket (all public access blocked, TLS enforced, `RETAIN`), a **`NodejsFunction`**
+  that bundles `backend/src/index.ts` with esbuild (ESM, `@aws-sdk/*` left external) and
+  carries `PUZZLE_BUCKET`/`ALLOWED_ORIGIN`, and a **CloudFront** distribution in front of an
+  **IAM-auth Function URL via OAC** (only CloudFront may invoke it). The Lambda gets
+  **read-only** S3 (`bucket.grantRead`). Cache policy keys on path + the `lang` query and
+  honours the origin `Cache-Control` (the 22:00-ET-aligned `s-maxage`); maxTtl = 1 day.
+  Outputs: `ApiUrl` (CloudFront, → `VITE_API_BASE_URL`), `PuzzleBucketName` (#4 upload
+  target), `FunctionUrl`. Commands: `pnpm infra:synth` / `infra:diff` / `infra:deploy`
+  (root) or `pnpm --filter @rafaelisinthepan/infra <synth|deploy|diff|destroy>`; deploy
+  needs AWS creds + a bootstrapped account and takes `-c allowedOrigin=<web-origin>`.
 - **Package manager:** pnpm, pinned via the root `packageManager` field
   (`pnpm@11.9.0`). `pnpm-workspace.yaml` lists the workspaces and uses `allowBuilds`
   to approve `esbuild`'s postinstall (its native binary), which pnpm blocks by default.
