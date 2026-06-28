@@ -52,6 +52,17 @@ packages/
       gen_phrase.py           one sentence -> one self-contained puzzle JSON
     embedding/<lang>/...      raw + *_reduced vectors + derived .kv caches
     pyproject.toml, uv.lock   Python project (uv)
+  backend/                    daily-puzzle backend (pkg @rafaelisinthepan/backend, #2)
+    src/
+      handler.ts              createHandler() — the ONE day/404/CORS/Puzzle logic (Lambda + local)
+      day.ts                  authoritative time: 22:00-ET DST-correct active day + reset info
+      store.ts                PuzzleStore interface (date+lang -> Puzzle | null)
+      s3Store.ts, fsStore.ts  store impls: S3 (prod) and local FS (#17), both read the same key
+      layout.ts               storeKey() — the <date>.<lang>.json key shared by readers + publish (#17/#4)
+      serve.ts                local HTTP server: Function-URL⇄HTTP adapter over createHandler (#17)
+      publish.ts              place a generated puzzle into local store (default) or S3 (#17/#4)
+      index.ts                Lambda entrypoint (s3Store + env config)
+    .local-store/<date>.<lang>.json  local puzzle store (gitignored) read by serve/fsStore
   shared/                     cross-cutting TS consumed by web (pkg @rafaelisinthepan/shared)
     src/slug.ts               fold() — the slug/fold contract (byte-identical to slug())
     src/types.ts              per-puzzle schema types (Puzzle, Hole, RankMap, …)
@@ -59,8 +70,8 @@ packages/
   web/                        React + Vite + TS front (pkg @rafaelisinthepan/web)
     src/
       hooks/useVocab.ts       fetch+cache the per-language existence Set (once per session)
-      hooks/usePuzzle.ts      resolve+fetch the day's puzzle file
-      puzzleSchedule.ts       { "YYYY-MM-DD": { fr, en } } -> puzzle path
+      hooks/usePuzzle.ts      ask the backend for today's puzzle (+ ?puzzle= file override)
+      api.ts                  backend client: puzzleUrl/todayUrl, ?puzzle= override, 404->NO PUZZLE
       screens/Game.tsx        the guess loop, hole state (imports fold from @rafaelisinthepan/shared)
       game/scoring.ts         s(rank), holeProgress, computeProgress
       game/heat.ts            rank/progress -> heatmap color
@@ -221,6 +232,22 @@ as `SCORE <tries>` at game end.
   case table is **one shared fixture** (`packages/shared/fixtures/slug-cases.json`)
   consumed by BOTH languages — add a case there, never on one side only.
 
+### Working an issue
+
+When asked to work/implement/do/resolve issue #N:
+
+- **Read it first** with `gh issue view N`, then **implement the actual code** it
+  describes. "Resolve/work/do an issue" ALWAYS means write the implementation — never
+  just change its GitHub status.
+- **Respect every invariant in this file.** If the change touches a contract area,
+  write tests per the *Testing* policy and run `pnpm test` before finishing.
+- **Branch + PR flow:** create a branch (e.g. `issue-N-short-slug`), commit there,
+  push, and open a PR with `gh pr create` that references the issue (put `Closes #N`
+  in the body so merging auto-closes it). Do **NOT** merge the PR and do **NOT**
+  manually close the issue — the human reviews and merges.
+- **Keep the PR description short:** what changed, how to verify, any AGENTS.md edits
+  made.
+
 ---
 
 ## Do NOT
@@ -257,11 +284,15 @@ pnpm reduce:en        # embedding/en/glove.6B.300d.txt  -> glove.6B.300d_reduced
 #    Output is written into packages/web/public/{word,vocab}.
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--`)
 
+# Local backend harness (@rafaelisinthepan/backend, #17) — no AWS creds needed.
+pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3 --bucket NAME]  # default: local + active day
+pnpm backend:dev                # local server (GET /?lang=, /today) on :8787 over the local store
+
 # Front end (@rafaelisinthepan/web)
-pnpm dev                        # dev server
+pnpm dev                        # dev server (set VITE_API_BASE_URL=http://localhost:8787 for the local backend)
 pnpm build                      # production build -> packages/web/dist
 pnpm typecheck                  # tsc --noEmit
-pnpm test                       # invariant tests: Vitest (web + shared) + pytest (generation)
+pnpm test                       # invariant tests: Vitest (web + shared + backend) + pytest (generation)
 ```
 
 `gen_phrase.py` requires **exactly 3** `--words`; they must appear in the sentence
@@ -288,8 +319,28 @@ pnpm test                       # invariant tests: Vitest (web + shared) + pytes
   `web/public/vocab/{en,fr}.json` exist.
 - **Puzzles:** `web/public/word/fr/vaincre_triomphe_gloire.json`,
   `web/public/word/en/slutty_dancing_kitchen.json`.
-- **Schedule:** `web/src/puzzleSchedule.ts` has 2026-06-25/26/27, all reusing those
-  two files as placeholders. Add a dated `{ fr, en }` entry to publish a day.
+- **Routing (#6):** normal play asks the **backend** for today's puzzle —
+  `usePuzzle` fetches `GET <VITE_API_BASE_URL>/?lang=<lang>` (puzzle) and `GET
+  …/today` (`{ date, dayNumber, … }`). The **server owns the date** (22:00 ET flip);
+  the client no longer computes it. A backend **404 → `noPuzzle`** (NO PUZZLE TODAY),
+  any other failure → `error`. The old `web/src/puzzleSchedule.ts` / `todayKey()` /
+  `PUZZLE_SCHEDULE` are **removed**. Test overrides: `?puzzle=<path|url>` loads a
+  static file directly (kept); `?date=` is **dropped** (server owns time).
+  `VITE_API_BASE_URL` (see `web/.env.example`) configures the backend base; unset in
+  local dev with no backend (use `?puzzle=`). `usePuzzle` exposes `dayNumber` for
+  persist (#7) / already-solved (#9).
+- **Local backend harness (#17):** `pnpm backend:dev` runs the **same `createHandler`**
+  as the deployed Lambda over a local filesystem store (`fsStore`), so the day/404/CORS/
+  `Puzzle` behaviour is identical to prod with no AWS creds. `pnpm puzzle:publish
+  <file>` places a generated puzzle into the store — **local by default**, `--s3
+  --bucket` to push real S3, `--day YYYY-MM-DD` to target a game day (defaults to the
+  active 22:00-ET day). Store key (shared by readers + writer in `backend/src/layout.ts`,
+  identical for local FS and S3): flat `<root>/<date>.<lang>.json` — fully determined by
+  (date, lang), so the stores GetObject/readFile it directly (no list+filter) and it
+  stays listable by a date prefix; root defaults to `backend/.local-store` (gitignored),
+  override via `PUZZLE_STORE`. Point `VITE_API_BASE_URL=http://localhost:8787` and
+  `pnpm dev` plays end-to-end (including 404 → NO PUZZLE); `?puzzle=` still works with
+  no backend. Runs TS via `tsx` (backend devDep).
 - **Package manager:** pnpm, pinned via the root `packageManager` field
   (`pnpm@11.9.0`). `pnpm-workspace.yaml` lists the workspaces and uses `allowBuilds`
   to approve `esbuild`'s postinstall (its native binary), which pnpm blocks by default.

@@ -12,6 +12,8 @@
     "reduce:en": "pnpm --filter @rafaelisinthepan/generation reduce:en",
     "reduce:fr": "pnpm --filter @rafaelisinthepan/generation reduce:fr",
     "gen:phrase": "pnpm --filter @rafaelisinthepan/generation gen:phrase",
+    "backend:dev": "pnpm --filter @rafaelisinthepan/backend serve:local",
+    "puzzle:publish": "pnpm --filter @rafaelisinthepan/backend puzzle:publish",
     "test": "pnpm -r --workspace-concurrency=1 --if-present run test"
   },
   "devDependencies": {
