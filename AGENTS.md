@@ -325,10 +325,11 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   the client no longer computes it. A backend **404 → `noPuzzle`** (NO PUZZLE TODAY),
   any other failure → `error`. The old `web/src/puzzleSchedule.ts` / `todayKey()` /
   `PUZZLE_SCHEDULE` are **removed**. Test overrides: `?puzzle=<path|url>` loads a
-  static file directly (kept); `?date=` is **dropped** (server owns time).
-  `VITE_API_BASE_URL` (see `web/.env.example`) configures the backend base; unset in
-  local dev with no backend (use `?puzzle=`). `usePuzzle` exposes `dayNumber` for
-  persist (#7) / already-solved (#9).
+  static file directly (kept, but the app still requires a configured backend base);
+  `?date=` is **dropped** (server owns time). `VITE_API_BASE_URL` (see
+  `web/.env.example`) configures the backend base and is required for `pnpm dev` /
+  `pnpm build`; the frontend must not silently use its own origin as the backend.
+  `usePuzzle` exposes `dayNumber` for persist (#7) / already-solved (#9).
 - **Local backend harness (#17):** `pnpm backend:dev` runs the **same `createHandler`**
   as the deployed Lambda over a local filesystem store (`fsStore`), so the day/404/CORS/
   `Puzzle` behaviour is identical to prod with no AWS creds. `pnpm puzzle:publish
@@ -339,8 +340,8 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   (date, lang), so the stores GetObject/readFile it directly (no list+filter) and it
   stays listable by a date prefix; root defaults to `backend/.local-store` (gitignored),
   override via `PUZZLE_STORE`. Point `VITE_API_BASE_URL=http://localhost:8787` and
-  `pnpm dev` plays end-to-end (including 404 → NO PUZZLE); `?puzzle=` still works with
-  no backend. Runs TS via `tsx` (backend devDep).
+  `pnpm dev` plays end-to-end (including 404 → NO PUZZLE). Runs TS via `tsx`
+  (backend devDep).
 - **Package manager:** pnpm, pinned via the root `packageManager` field
   (`pnpm@11.9.0`). `pnpm-workspace.yaml` lists the workspaces and uses `allowBuilds`
   to approve `esbuild`'s postinstall (its native binary), which pnpm blocks by default.
