@@ -59,8 +59,8 @@ packages/
   web/                        React + Vite + TS front (pkg @rafaelisinthepan/web)
     src/
       hooks/useVocab.ts       fetch+cache the per-language existence Set (once per session)
-      hooks/usePuzzle.ts      resolve+fetch the day's puzzle file
-      puzzleSchedule.ts       { "YYYY-MM-DD": { fr, en } } -> puzzle path
+      hooks/usePuzzle.ts      ask the backend for today's puzzle (+ ?puzzle= file override)
+      api.ts                  backend client: puzzleUrl/todayUrl, ?puzzle= override, 404->NO PUZZLE
       screens/Game.tsx        the guess loop, hole state (imports fold from @rafaelisinthepan/shared)
       game/scoring.ts         s(rank), holeProgress, computeProgress
       game/heat.ts            rank/progress -> heatmap color
@@ -221,6 +221,22 @@ as `SCORE <tries>` at game end.
   case table is **one shared fixture** (`packages/shared/fixtures/slug-cases.json`)
   consumed by BOTH languages — add a case there, never on one side only.
 
+### Working an issue
+
+When asked to work/implement/do/resolve issue #N:
+
+- **Read it first** with `gh issue view N`, then **implement the actual code** it
+  describes. "Resolve/work/do an issue" ALWAYS means write the implementation — never
+  just change its GitHub status.
+- **Respect every invariant in this file.** If the change touches a contract area,
+  write tests per the *Testing* policy and run `pnpm test` before finishing.
+- **Branch + PR flow:** create a branch (e.g. `issue-N-short-slug`), commit there,
+  push, and open a PR with `gh pr create` that references the issue (put `Closes #N`
+  in the body so merging auto-closes it). Do **NOT** merge the PR and do **NOT**
+  manually close the issue — the human reviews and merges.
+- **Keep the PR description short:** what changed, how to verify, any AGENTS.md edits
+  made.
+
 ---
 
 ## Do NOT
@@ -288,8 +304,16 @@ pnpm test                       # invariant tests: Vitest (web + shared) + pytes
   `web/public/vocab/{en,fr}.json` exist.
 - **Puzzles:** `web/public/word/fr/vaincre_triomphe_gloire.json`,
   `web/public/word/en/slutty_dancing_kitchen.json`.
-- **Schedule:** `web/src/puzzleSchedule.ts` has 2026-06-25/26/27, all reusing those
-  two files as placeholders. Add a dated `{ fr, en }` entry to publish a day.
+- **Routing (#6):** normal play asks the **backend** for today's puzzle —
+  `usePuzzle` fetches `GET <VITE_API_BASE_URL>/?lang=<lang>` (puzzle) and `GET
+  …/today` (`{ date, dayNumber, … }`). The **server owns the date** (22:00 ET flip);
+  the client no longer computes it. A backend **404 → `noPuzzle`** (NO PUZZLE TODAY),
+  any other failure → `error`. The old `web/src/puzzleSchedule.ts` / `todayKey()` /
+  `PUZZLE_SCHEDULE` are **removed**. Test overrides: `?puzzle=<path|url>` loads a
+  static file directly (kept); `?date=` is **dropped** (server owns time).
+  `VITE_API_BASE_URL` (see `web/.env.example`) configures the backend base; unset in
+  local dev with no backend (use `?puzzle=`). `usePuzzle` exposes `dayNumber` for
+  persist (#7) / already-solved (#9).
 - **Package manager:** pnpm, pinned via the root `packageManager` field
   (`pnpm@11.9.0`). `pnpm-workspace.yaml` lists the workspaces and uses `allowBuilds`
   to approve `esbuild`'s postinstall (its native binary), which pnpm blocks by default.
