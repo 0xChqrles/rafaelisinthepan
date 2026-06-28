@@ -65,9 +65,10 @@ packages/
       publish.ts              place a generated puzzle into local store (default) or S3 (#17/#4)
       index.ts                Lambda entrypoint (s3Store + env config)
     .local-store/<date>.<lang>.json  local puzzle store (gitignored) read by serve/fsStore
-  infra/                      AWS CDK stack provisioning the backend (pkg @rafaelisinthepan/infra, #3)
-    bin/app.ts                CDK app entry (cdk.json runs it via `npx tsx`)
+  infra/                      AWS CDK app: backend (#3) + web hosting (#21) sibling stacks (pkg @rafaelisinthepan/infra)
+    bin/app.ts                CDK app entry — RafaelBackendStack + RafaelWebStack (cdk.json runs it via `npx tsx`)
     lib/backend-stack.ts      BackendStack: private S3 bucket + Lambda(Fn URL) + CloudFront
+    lib/web-stack.ts          WebStack (#21): private S3 (SPA) + CloudFront(OAC) + ACM + Route53; us-east-1
     cdk.json                  CDK config (app command, context)
   shared/                     cross-cutting TS consumed by web (pkg @rafaelisinthepan/shared)
     src/slug.ts               fold() — the slug/fold contract (byte-identical to slug())
@@ -368,7 +369,23 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   Outputs: `ApiUrl` (CloudFront, → `VITE_API_BASE_URL`), `PuzzleBucketName` (#4 upload
   target), `FunctionUrl`. Commands: `pnpm infra:synth` / `infra:diff` / `infra:deploy`
   (root) or `pnpm --filter @rafaelisinthepan/infra <synth|deploy|diff|destroy>`; deploy
-  needs AWS creds + a bootstrapped account and takes `-c allowedOrigin=<web-origin>`.
+  needs AWS creds + a bootstrapped account and takes `-c allowedOrigin=<web-origin>`. The
+  CDK app now also defines a sibling `WebStack` (below) — pass a stack name to target one.
+- **Web hosting stack (#21):** `lib/web-stack.ts` `WebStack` (`RafaelWebStack`) — a sibling
+  of `BackendStack`, independently deployable (`cdk deploy RafaelWebStack`), **pinned to
+  `us-east-1`** (CloudFront's ACM cert must live there). Hosts the built SPA
+  (`packages/web/dist`) on a **private** S3 bucket (`DESTROY` + auto-delete; build is
+  reproducible) served only via **CloudFront + OAC** over HTTPS, with **SPA fallback**
+  (403/404 → `/index.html`, 200). Two `BucketDeployment`s split cache lifetimes (hashed
+  `assets/*` immutable-1yr, everything else `no-cache`) and **invalidate `/*`** on deploy —
+  so `pnpm build` must run **before** deploy (missing `dist` → warn + skip upload). Custom
+  domain is **gated on `-c domainName=<apex>`**: when set it looks up the existing Route53
+  zone (`fromLookup`), issues a DNS-validated **ACM** cert, sets the distribution alias to
+  `<siteSubdomain>.<domain>` (`siteSubdomain` default `play`; empty = apex), and adds
+  **A/AAAA** aliases; without it the stack serves on `*.cloudfront.net` (no ACM/Route53) for
+  a credential-free smoke synth. **Backend is unchanged** — `VITE_API_BASE_URL` stays the
+  backend `ApiUrl`; set the backend `-c allowedOrigin` to `WebStack`'s `SiteUrl`. Outputs:
+  `SiteUrl`, `SiteBucketName`, `DistributionId`, `DistributionDomainName`.
 - **Package manager:** pnpm, pinned via the root `packageManager` field
   (`pnpm@11.9.0`). `pnpm-workspace.yaml` lists the workspaces and uses `allowBuilds`
   to approve `esbuild`'s postinstall (its native binary), which pnpm blocks by default.
