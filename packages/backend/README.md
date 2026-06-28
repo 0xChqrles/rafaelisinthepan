@@ -39,9 +39,52 @@ naming with the generator's `word/<lang>/<s1>_<s2>_<s3>.json` output).
 | `PUZZLE_BUCKET` | yes      | S3 bucket holding the daily puzzles              |
 | `ALLOWED_ORIGIN`| no       | CORS origin (the web origin in prod; `*` if unset) |
 
+## Local harness (no AWS) — issue #17
+
+Run the **same `createHandler`** locally, swapping the S3 store for a filesystem store
+(`src/fsStore.ts`). The day boundary, 404-no-puzzle, CORS, and `Puzzle` shape are
+therefore identical to production — `src/serve.ts` is just a Function-URL ⇄ HTTP adapter.
+
+```bash
+# 1. Generate a puzzle (writes packages/web/public/word/<lang>/<s1>_<s2>_<s3>.json)
+pnpm gen:phrase "<sentence>" --lang fr --words a b c
+
+# 2. Publish it into the local store for a chosen day (defaults to local + the active day)
+pnpm puzzle:publish packages/web/public/word/fr/a_b_c.json            # local, today
+pnpm puzzle:publish packages/web/public/word/fr/a_b_c.json --day 2026-07-01
+pnpm puzzle:publish packages/web/public/word/fr/a_b_c.json --s3 --bucket my-bucket  # real S3
+
+# 3. Serve it (GET /?lang=<xx>, GET /today) with no AWS creds
+pnpm backend:dev          # http://localhost:8787
+
+# 4. Point the front at it and play end-to-end (no ?puzzle= needed)
+#    packages/web/.env(.local):  VITE_API_BASE_URL=http://localhost:8787
+pnpm dev
+```
+
+### Local store layout
+
+Mirrors S3 one-to-one (the prefix is a dir instead of a bucket); encoded once in
+`src/layout.ts` and shared by the reader (`fsStore`) and writer (`publish`):
+
+```
+<store-root>/<YYYY-MM-DD>/<slug1>-<slug2>-<slug3>.<lang>.json
+```
+
+`<YYYY-MM-DD>` is the **game day** (the 22:00-ET day, not the generation day);
+`<slugN>` are the secret slugs in **sentence order** (the generator's `_`-joined
+filename with `-`); `<lang>` is the suffix the store selects on. The store root
+defaults to `packages/backend/.local-store` (gitignored); override with `PUZZLE_STORE`.
+
+| var            | default                 | meaning                                   |
+| -------------- | ----------------------- | ----------------------------------------- |
+| `PORT`         | `8787`                  | local server port (`serve:local`)         |
+| `PUZZLE_STORE` | `.local-store`          | local store root read by `fsStore`        |
+| `ALLOWED_ORIGIN`| `*`                    | CORS origin                               |
+
 ## Dev
 
 ```bash
-pnpm --filter @rafaelisinthepan/backend test       # vitest (day boundary + handler)
+pnpm --filter @rafaelisinthepan/backend test       # vitest (day boundary + handler + store/layout)
 pnpm --filter @rafaelisinthepan/backend typecheck  # tsc --noEmit
 ```
