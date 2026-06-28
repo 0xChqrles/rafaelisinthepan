@@ -1,14 +1,15 @@
 // CONTRACT (issue #17): the local filesystem store is the LOCAL MIRROR of `s3Store`.
-// Same selection policy (list the day's dir, keep ".<lang>.json", lexicographically
-// first, null when absent) so the SAME handler serves identical results locally and on
-// S3. Asserts the spec; a missing day/lang must be a clean null (-> 404), never a throw.
+// Same key (`layout.storeKey`, "<date>.<lang>.json") read directly, so the SAME handler
+// serves identical results locally and on S3. A missing day/lang must be a clean null
+// (-> 404), never a throw.
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Puzzle } from '@rafaelisinthepan/shared';
 import { fsStore } from './fsStore';
+import { storeKey } from './layout';
 
 const DATE = '2026-06-29';
 
@@ -25,35 +26,26 @@ let root: string;
 
 beforeAll(async () => {
   root = await mkdtemp(path.join(tmpdir(), 'rafael-fsstore-'));
-  const dayDir = path.join(root, DATE);
-  await mkdir(dayDir, { recursive: true });
-  // Two languages for the same day; two French files to prove the lexicographic tiebreak.
-  await writeFile(path.join(dayDir, 'bbb.fr.json'), JSON.stringify(puzzle('fr', 'bbb')));
-  await writeFile(path.join(dayDir, 'aaa.fr.json'), JSON.stringify(puzzle('fr', 'aaa')));
-  await writeFile(path.join(dayDir, 'kitchen.en.json'), JSON.stringify(puzzle('en', 'kitchen')));
+  // One puzzle per (date, lang), keyed flat — two languages share the same day.
+  await writeFile(path.join(root, storeKey(DATE, 'fr')), JSON.stringify(puzzle('fr', 'vent')));
+  await writeFile(path.join(root, storeKey(DATE, 'en')), JSON.stringify(puzzle('en', 'kitchen')));
 });
 
 afterAll(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-describe('fsStore — mirrors s3Store selection', () => {
+describe('fsStore — mirrors s3Store, reads the flat key directly', () => {
   it('returns the day\'s puzzle for the requested lang', async () => {
-    const p = await fsStore(root).getPuzzle(DATE, 'en');
-    expect(p?.lang).toBe('en');
-    expect(p?.words).toEqual(['kitchen']);
-  });
-
-  it('picks the lexicographically-first match when several exist (determinism)', async () => {
-    const p = await fsStore(root).getPuzzle(DATE, 'fr');
-    expect(p?.words).toEqual(['aaa']); // aaa.fr.json before bbb.fr.json
+    expect((await fsStore(root).getPuzzle(DATE, 'en'))?.words).toEqual(['kitchen']);
+    expect((await fsStore(root).getPuzzle(DATE, 'fr'))?.words).toEqual(['vent']);
   });
 
   it('returns null (not a throw) when the lang has no puzzle that day', async () => {
     expect(await fsStore(root).getPuzzle(DATE, 'de')).toBeNull();
   });
 
-  it('returns null (not a throw) when the day directory does not exist', async () => {
+  it('returns null (not a throw) when no file exists for the day', async () => {
     expect(await fsStore(root).getPuzzle('1999-01-01', 'fr')).toBeNull();
   });
 });

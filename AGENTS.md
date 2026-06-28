@@ -57,12 +57,12 @@ packages/
       handler.ts              createHandler() — the ONE day/404/CORS/Puzzle logic (Lambda + local)
       day.ts                  authoritative time: 22:00-ET DST-correct active day + reset info
       store.ts                PuzzleStore interface (date+lang -> Puzzle | null)
-      s3Store.ts, fsStore.ts  store impls: S3 (prod) and local filesystem (#17), same selection
-      layout.ts               store name/key encoding shared by readers + publish (#17/#4)
+      s3Store.ts, fsStore.ts  store impls: S3 (prod) and local FS (#17), both read the same key
+      layout.ts               storeKey() — the <date>.<lang>.json key shared by readers + publish (#17/#4)
       serve.ts                local HTTP server: Function-URL⇄HTTP adapter over createHandler (#17)
       publish.ts              place a generated puzzle into local store (default) or S3 (#17/#4)
       index.ts                Lambda entrypoint (s3Store + env config)
-    .local-store/<date>/...   local puzzle store (gitignored) read by serve/fsStore
+    .local-store/<date>.<lang>.json  local puzzle store (gitignored) read by serve/fsStore
   shared/                     cross-cutting TS consumed by web (pkg @rafaelisinthepan/shared)
     src/slug.ts               fold() — the slug/fold contract (byte-identical to slug())
     src/types.ts              per-puzzle schema types (Puzzle, Hole, RankMap, …)
@@ -334,9 +334,10 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   `Puzzle` behaviour is identical to prod with no AWS creds. `pnpm puzzle:publish
   <file>` places a generated puzzle into the store — **local by default**, `--s3
   --bucket` to push real S3, `--day YYYY-MM-DD` to target a game day (defaults to the
-  active 22:00-ET day). Store layout (shared by reader + writer in `backend/src/layout.ts`,
-  identical for local FS and S3): `<root>/<date>/<slug1>-<slug2>-<slug3>.<lang>.json`,
-  secret slugs in sentence order; root defaults to `backend/.local-store` (gitignored),
+  active 22:00-ET day). Store key (shared by readers + writer in `backend/src/layout.ts`,
+  identical for local FS and S3): flat `<root>/<date>.<lang>.json` — fully determined by
+  (date, lang), so the stores GetObject/readFile it directly (no list+filter) and it
+  stays listable by a date prefix; root defaults to `backend/.local-store` (gitignored),
   override via `PUZZLE_STORE`. Point `VITE_API_BASE_URL=http://localhost:8787` and
   `pnpm dev` plays end-to-end (including 404 → NO PUZZLE); `?puzzle=` still works with
   no backend. Runs TS via `tsx` (backend devDep).

@@ -1,21 +1,18 @@
-// The single source of truth for how a puzzle is NAMED and LOCATED in the store —
-// shared by the local filesystem store (read by `serve` / `fsStore`), the `publish`
-// writer, and (eventually, #4) the S3 uploader. Encoding it once keeps the
-// local store, real S3, and the day/lang contract of #2/#6 from drifting apart.
+// The single source of truth for how a puzzle is KEYED in the store — shared by both
+// readers (`fsStore` / `s3Store`) and the `publish` writer, so the local FS, real S3,
+// and the day/lang contract of #2/#6 cannot drift apart.
 //
-// Layout (identical for local FS and S3, the prefix is just a dir vs. a bucket):
+// Layout (identical for local FS and S3 — the prefix is just a dir vs. a bucket):
 //
-//     <date>/<slug1>-<slug2>-<slug3>.<lang>.json
+//     <date>.<lang>.json
 //
-// - <date>  = the GAME DAY this puzzle is served as ("YYYY-MM-DD", the 22:00-ET day
-//             of #2/#6), NOT the day it was generated.
-// - <slugN> = the secret slugs in SENTENCE order (by `pos`), joined by "-". ASCII
-//             slugs only (filenames are slugs; see AGENTS.md), so this is the
-//             `_`-joined generator filename with "-" instead.
-// - <lang>  = the language suffix the readers (`fsStore` / `s3Store`) select on.
+// Flat and fully determined by (game day, language):
+// - directly addressable, so readers GetObject/readFile by key — no list+filter;
+// - listable by a date PREFIX (ListObjects "2026-" for a year, "2026-06" for a month);
+// - <date> is the GAME DAY this puzzle is served as ("YYYY-MM-DD", the 22:00-ET day of
+//   #2/#6), NOT the day it was generated. The puzzle's words live in the file, not the key.
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import type { Puzzle } from '@rafaelisinthepan/shared';
 
 // A strict "YYYY-MM-DD" that is also a real calendar date (rejects 2026-13-40 etc).
 export function isValidDate(date: string): boolean {
@@ -30,19 +27,11 @@ export function isValidDate(date: string): boolean {
   );
 }
 
-// The object basename for a puzzle: "<slug>-<slug>-<slug>.<lang>.json", secret slugs
-// in sentence order. The readers only match on the ".<lang>.json" suffix, but a stable,
-// human-readable, collision-resistant name keeps the store browseable and deterministic.
-export function puzzleObjectName(puzzle: Puzzle): string {
-  const slugs = [...puzzle.holes]
-    .sort((a, b) => a.pos - b.pos)
-    .map((h) => h.secret.slug);
-  return `${slugs.join('-')}.${puzzle.lang}.json`;
-}
-
-// The full store key relative to the root (local dir or S3 bucket): "<date>/<name>".
-export function puzzleKey(date: string, puzzle: Puzzle): string {
-  return `${date}/${puzzleObjectName(puzzle)}`;
+// The store key (also the basename, the layout is flat) for a (game day, language):
+// "<date>.<lang>.json". Used by the readers to GetObject/readFile directly and by
+// `publish` to write — one key per (date, lang), so there is never ambiguity.
+export function storeKey(date: string, lang: string): string {
+  return `${date}.${lang}.json`;
 }
 
 // Default local store root: packages/backend/.local-store (gitignored). Override with

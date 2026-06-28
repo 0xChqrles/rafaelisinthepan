@@ -25,12 +25,15 @@ CloudFront serves it cache-hot all day and revalidates at the boundary.
 ## S3 layout
 
 ```
-s3://<bucket>/<YYYY-MM-DD>/<word1>-<word2>-<word3>.<lang>.json
+s3://<bucket>/<YYYY-MM-DD>.<lang>.json
 ```
 
-The Lambda knows the date + lang but not the words, so it lists the day's prefix and
-picks the object ending `.<lang>.json` (issue #4 — the upload step — reconciles this
-naming with the generator's `word/<lang>/<s1>_<s2>_<s3>.json` output).
+The key is fully determined by (game day, lang), so the Lambda `GetObject`s the one
+object directly — no `ListObjects` scan — and a flat key stays listable by a date
+prefix (`2026-06` for a month, `2026` for a year). The puzzle's words live in the file,
+not the key. The publish step (issue #4) maps the generator's
+`word/<lang>/<s1>_<s2>_<s3>.json` output onto this key. The encoding is shared with the
+local store in `src/layout.ts` (`storeKey`), so local FS and S3 cannot drift apart.
 
 ## Environment
 
@@ -65,16 +68,16 @@ pnpm dev
 ### Local store layout
 
 Mirrors S3 one-to-one (the prefix is a dir instead of a bucket); encoded once in
-`src/layout.ts` and shared by the reader (`fsStore`) and writer (`publish`):
+`src/layout.ts` (`storeKey`) and shared by the reader (`fsStore`) and writer (`publish`):
 
 ```
-<store-root>/<YYYY-MM-DD>/<slug1>-<slug2>-<slug3>.<lang>.json
+<store-root>/<YYYY-MM-DD>.<lang>.json
 ```
 
-`<YYYY-MM-DD>` is the **game day** (the 22:00-ET day, not the generation day);
-`<slugN>` are the secret slugs in **sentence order** (the generator's `_`-joined
-filename with `-`); `<lang>` is the suffix the store selects on. The store root
-defaults to `packages/backend/.local-store` (gitignored); override with `PUZZLE_STORE`.
+`<YYYY-MM-DD>` is the **game day** (the 22:00-ET day, not the generation day); `<lang>`
+is the language. The key is flat and fully determined by (date, lang) — read directly,
+no listing — and listable by a date prefix. The store root defaults to
+`packages/backend/.local-store` (gitignored); override with `PUZZLE_STORE`.
 
 | var            | default                 | meaning                                   |
 | -------------- | ----------------------- | ----------------------------------------- |

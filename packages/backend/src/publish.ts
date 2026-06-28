@@ -11,12 +11,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Puzzle } from '@rafaelisinthepan/shared';
 import { activeDate } from './day';
-import {
-  defaultLocalStoreRoot,
-  isValidDate,
-  puzzleKey,
-  puzzleObjectName,
-} from './layout';
+import { defaultLocalStoreRoot, isValidDate, storeKey } from './layout';
 
 interface Args {
   file?: string;
@@ -93,7 +88,7 @@ async function main() {
   const file = resolveInput(args.file);
   const text = await readFile(file, 'utf8').catch(() => die(`cannot read ${file}`));
   const puzzle = asPuzzle(JSON.parse(text), file);
-  const key = puzzleKey(day, puzzle);
+  const key = storeKey(day, puzzle.lang);
 
   if (args.s3) {
     const bucket = args.bucket ?? process.env.PUZZLE_BUCKET;
@@ -115,7 +110,7 @@ async function main() {
 
   const rootArg = args.store ?? process.env.PUZZLE_STORE;
   const root = rootArg ? resolveInput(rootArg) : defaultLocalStoreRoot();
-  const dest = path.join(root, day, puzzleObjectName(puzzle));
+  const dest = path.join(root, key);
   await mkdir(path.dirname(dest), { recursive: true });
   await writeFile(dest, text);
   console.log(`[publish] ${dest}  (${puzzle.lang}, day ${day})`);
