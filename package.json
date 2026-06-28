@@ -16,7 +16,7 @@
     "puzzle:publish": "pnpm --filter @rafaelisinthepan/backend puzzle:publish",
     "infra:synth": "pnpm --filter @rafaelisinthepan/infra synth",
     "infra:diff": "pnpm --filter @rafaelisinthepan/infra diff",
-    "infra:deploy": "pnpm --filter @rafaelisinthepan/infra deploy",
+    "infra:deploy": "pnpm --filter @rafaelisinthepan/infra run deploy",
     "test": "pnpm -r --workspace-concurrency=1 --if-present run test"
   },
   "devDependencies": {
