@@ -37,6 +37,11 @@ describe('backend routing URLs', () => {
   it('todayUrl points at the server day-metadata endpoint', () => {
     expect(todayUrl(base)).toBe('https://api.example/today');
   });
+
+  it('fails loudly when the backend base is unset instead of using the web origin', () => {
+    expect(() => puzzleUrl('fr', '')).toThrow(/VITE_API_BASE_URL/);
+    expect(() => todayUrl('')).toThrow(/VITE_API_BASE_URL/);
+  });
 });
 
 describe('resolveOverride (?puzzle= kept, ?date= dropped)', () => {

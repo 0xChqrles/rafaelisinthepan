@@ -11,17 +11,24 @@ export function apiBase(env: ImportMetaEnv = import.meta.env): string {
   return (env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
 }
 
+function requireApiBase(base: string): string {
+  if (!base) {
+    throw new Error('VITE_API_BASE_URL is not set. Set it, or use ?puzzle=<path> for a file override.');
+  }
+  return base;
+}
+
 // The active day's puzzle for a language: GET <base>/?lang=<lang>. The server
 // resolves which day it is; the client passes only the language.
 export function puzzleUrl(lang: string, base: string = apiBase()): string {
-  return `${base}/?lang=${encodeURIComponent(lang)}`;
+  return `${requireApiBase(base)}/?lang=${encodeURIComponent(lang)}`;
 }
 
 // The server's day metadata: GET <base>/today -> { date, dayNumber, ... }. The
 // front keys on `dayNumber` (stable, language-independent) for persistence (#7)
 // and the already-solved-today screen (#9).
 export function todayUrl(base: string = apiBase()): string {
-  return `${base}/today`;
+  return `${requireApiBase(base)}/today`;
 }
 
 // Shape of GET /today the front keys on (the backend returns more fields, ignored).
