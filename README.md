@@ -49,6 +49,9 @@ pnpm reduce:en         # embedding/en/glove.6B.300d.txt  -> glove.6B.300d_reduce
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--`)
 ```
 
-Generated puzzle/vocab JSON lands in `packages/web/public/{word,vocab}`, which the
-web dev server and production build serve. See AGENTS.md for the data pipeline
-invariants and the per-puzzle schema.
+Generation splits its two outputs by purpose: **puzzles** land in
+`packages/generation/output/word/<lang>/` (a generation artifact you then
+`pnpm puzzle:publish` into the daily store — local or S3), while the **vocab**
+existence set lands in `packages/web/public/vocab/<lang>.json`, a web runtime asset the
+SPA fetches from its own origin. See AGENTS.md for the data pipeline invariants and the
+per-puzzle schema.

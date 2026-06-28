@@ -25,6 +25,12 @@ packages/infra/cdk.out
 .local-store
 packages/backend/.local-store
 
+# ── Generation output (puzzles staged for publish) ───────────
+# `pnpm gen:phrase` writes puzzles here; publish them to the store/S3 with
+# `pnpm puzzle:publish`. Regenerable artifacts — not tracked. (vocab/<lang>.json
+# is a web asset and stays under packages/web/public/vocab.)
+packages/generation/output
+
 # ── Embeddings (all excluded — too large for GitHub) ─────────
 # Raw sources are multi-GB; even the *_reduced files are 400-500 MB each,
 # over GitHub's 100 MB hard limit. Regenerate locally with
