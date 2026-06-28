@@ -32,8 +32,8 @@ The key is fully determined by (game day, lang), so the Lambda `GetObject`s the 
 object directly — no `ListObjects` scan — and a flat key stays listable by a date
 prefix (`2026-06` for a month, `2026` for a year). The puzzle's words live in the file,
 not the key. The publish step (issue #4) maps the generator's
-`word/<lang>/<s1>_<s2>_<s3>.json` output onto this key. The encoding is shared with the
-local store in `src/layout.ts` (`storeKey`), so local FS and S3 cannot drift apart.
+`output/word/<lang>/<s1>_<s2>_<s3>.json` artifact onto this key. The encoding is shared
+with the local store in `src/layout.ts` (`storeKey`), so local FS and S3 cannot drift apart.
 
 ## Environment
 
@@ -49,13 +49,13 @@ Run the **same `createHandler`** locally, swapping the S3 store for a filesystem
 therefore identical to production — `src/serve.ts` is just a Function-URL ⇄ HTTP adapter.
 
 ```bash
-# 1. Generate a puzzle (writes packages/web/public/word/<lang>/<s1>_<s2>_<s3>.json)
+# 1. Generate a puzzle (writes packages/generation/output/word/<lang>/<s1>_<s2>_<s3>.json)
 pnpm gen:phrase "<sentence>" --lang fr --words a b c
 
 # 2. Publish it into the local store for a chosen day (defaults to local + the active day)
-pnpm puzzle:publish packages/web/public/word/fr/a_b_c.json            # local, today
-pnpm puzzle:publish packages/web/public/word/fr/a_b_c.json --day 2026-07-01
-pnpm puzzle:publish packages/web/public/word/fr/a_b_c.json --s3 --bucket my-bucket  # real S3
+pnpm puzzle:publish packages/generation/output/word/fr/a_b_c.json            # local, today
+pnpm puzzle:publish packages/generation/output/word/fr/a_b_c.json --day 2026-07-01
+pnpm puzzle:publish packages/generation/output/word/fr/a_b_c.json --s3 --bucket my-bucket  # real S3
 
 # 3. Serve it (GET /?lang=<xx>, GET /today) with no AWS creds
 pnpm backend:dev          # http://localhost:8787

@@ -15,7 +15,8 @@ A **pnpm-workspaces monorepo** (`pnpm-workspace.yaml`; pnpm pinned via the root
 `packageManager` field): `packages/web` (the front + served `public/`),
 `packages/generation` (the Python scripts + `embedding/` data), and
 `packages/shared` (cross-cutting TS: the slug/fold contract + schema types).
-Generation writes its JSON output into `packages/web/public/` (the dir web serves).
+Generation writes **puzzles** into its own `packages/generation/output/` (then published
+to the store), and the **vocab** existence set into `packages/web/public/` (a web asset).
 
 ## Maintaining this file
 
@@ -42,7 +43,7 @@ Instructions to future agents working in this repo:
 
 ```
 packages/
-  generation/                Python generation (run via uv); writes JSON into web/public
+  generation/                Python generation (run via uv); puzzles -> output/, vocab -> web/public
     scripts/
       reduce_embedding.py     raw .vec/.txt -> *_reduced file (the ONLY filter+cap stage)
       embedding_neighbors.py  shared load/vocab/matrix/cosine-rank logic
@@ -51,6 +52,7 @@ packages/
       start_word.py           start/hint-word selection (rank band 50-150)
       gen_phrase.py           one sentence -> one self-contained puzzle JSON
     embedding/<lang>/...      raw + *_reduced vectors + derived .kv caches
+    output/word/<lang>/<s1>_<s2>_<s3>.json   generated puzzles (gitignored; publish to store/S3)
     pyproject.toml, uv.lock   Python project (uv)
   backend/                    daily-puzzle backend (pkg @rafaelisinthepan/backend, #2)
     src/
@@ -81,8 +83,7 @@ packages/
       game/heat.ts            rank/progress -> heatmap color
       components/Phrase.tsx,Hole.tsx,WordInput.tsx,FloatingHit.tsx  rendering
     public/                   served at site root (web assets + generated data)
-      vocab/<lang>.json       full slugged reduced vocab (existence set)
-      word/<lang>/<s1>_<s2>_<s3>.json   one puzzle each
+      vocab/<lang>.json       full slugged reduced vocab (existence set) — fetched by the SPA
 ```
 
 ---
@@ -161,10 +162,18 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
 
 ### Generation outputs
 
-- One self-contained file per puzzle: `packages/web/public/word/<lang>/<s1>_<s2>_<s3>.json`,
-  slugs in **sentence order** (by `pos`), *not* `--words` order. Same words overwrite.
-- `packages/web/public/vocab/<lang>.json` = the **full** slugged reduced vocab
-  (existence set), deduped + sorted, deterministic, **NOT** capped to `TOP_K`.
+- **Two outputs, two homes (by purpose):**
+  - **Puzzles** — one self-contained file per puzzle at
+    `packages/generation/output/word/<lang>/<s1>_<s2>_<s3>.json`, slugs in **sentence
+    order** (by `pos`), *not* `--words` order. Same words overwrite. A puzzle is a
+    generation **artifact** (gitignored), not a web asset: it is **published** to the
+    daily store (local FS or S3) via `pnpm puzzle:publish`; the front gets the day's
+    puzzle from the **backend** (#6), never from web `public/`. Override the dir with
+    `--out-dir`.
+  - **Vocab** — `packages/web/public/vocab/<lang>.json` = the **full** slugged reduced
+    vocab (existence set), deduped + sorted, deterministic, **NOT** capped to `TOP_K`.
+    This one **stays a web asset**: the SPA fetches `/vocab/<lang>.json` from its own
+    origin (`useVocab`), so it is written straight into web `public/`.
 - **`TOP_K = 10000` is a generation-only cap:** each secret's rank map = the secret at
   rank 0 plus its `K` nearest. The front is **K-agnostic** — it tests membership in
   the map, never hardcodes 2000.
@@ -285,7 +294,8 @@ pnpm reduce:fr        # embedding/fr/cc.fr.300.vec      -> cc.fr.300_reduced.vec
 pnpm reduce:en        # embedding/en/glove.6B.300d.txt  -> glove.6B.300d_reduced.txt
 
 # 2. Generate a puzzle per game (fast; first run for a language builds the .kv cache).
-#    Output is written into packages/web/public/{word,vocab}.
+#    Puzzle -> packages/generation/output/word/<lang>/ (then `pnpm puzzle:publish` it);
+#    vocab -> packages/web/public/vocab/<lang>.json (a web asset).
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--`)
 
 # Local backend harness (@rafaelisinthepan/backend, #17) — no AWS creds needed.
@@ -321,8 +331,9 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
 - **Data present:** `generation/embedding/fr/cc.fr.300_reduced.vec` (+ `.kv` cache
   built), `generation/embedding/en/glove.6B.300d_reduced.txt` (+ `.kv` cache built).
   `web/public/vocab/{en,fr}.json` exist.
-- **Puzzles:** `web/public/word/fr/vaincre_triomphe_gloire.json`,
-  `web/public/word/en/slutty_dancing_kitchen.json`.
+- **Puzzles:** generated into `generation/output/word/<lang>/` (gitignored), then
+  published to the store (`pnpm puzzle:publish`). They are no longer kept under
+  `web/public/word` — the front serves the day's puzzle from the backend (#6).
 - **Routing (#6):** normal play asks the **backend** for today's puzzle —
   `usePuzzle` fetches `GET <VITE_API_BASE_URL>/?lang=<lang>` (puzzle) and `GET
   …/today` (`{ date, dayNumber, … }`). The **server owns the date** (22:00 ET flip);

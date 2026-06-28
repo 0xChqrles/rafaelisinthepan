@@ -18,8 +18,10 @@ Two per-language concerns drive the rest:
     COMPARISON/LOOKUP (see slug()). We never fold a displayed form and never
     display a slug. Output filenames are ASCII slugs; JSON content keeps accents.
 
-The phrase is written to packages/web/public/word/<lang>/<slug1>_<slug2>_<slug3>.json
-(slugs in sentence order); rerunning with the same three words overwrites it.
+The phrase is written to packages/generation/output/word/<lang>/<slug1>_<slug2>_<slug3>.json
+(slugs in sentence order); rerunning with the same three words overwrites it. A puzzle is
+a generation artifact, NOT a web asset: publish it to the backend store (local FS or S3)
+with `pnpm puzzle:publish` — the front gets the day's puzzle from the backend (#6).
 
 Usage :
     uv run scripts/gen_phrase.py "<phrase>" --lang fr --words a b c
@@ -42,9 +44,14 @@ for path in (ROOT, SCRIPT_DIR):
     if path not in sys.path:
         sys.path.insert(0, path)
 
-# Generated puzzle/vocab data is SERVED by the web package, so it is written into
-# packages/web/public/. This generation package is a sibling of web in the monorepo
-# (ROOT == packages/generation), so web's public dir is ../web/public.
+# Two kinds of output, two homes:
+#  - PUZZLES are generation artifacts: written under this package's own output/ dir, then
+#    PUBLISHED to the daily store (local FS or S3) via `pnpm puzzle:publish`. The front
+#    never serves them directly (the backend does, #6), so they don't belong in web/public.
+#  - The VOCAB existence set IS a web runtime asset: the SPA fetches /vocab/<lang>.json
+#    from its own origin (useVocab), so it is written straight into web/public/vocab.
+# ROOT == packages/generation, a sibling of web in the monorepo.
+GEN_OUTPUT = os.path.join(ROOT, "output")
 WEB_PUBLIC = os.path.normpath(os.path.join(ROOT, "..", "web", "public"))
 
 import french_neighbors as frn
@@ -237,8 +244,8 @@ def parse_args():
     p.add_argument("--lang", choices=("en", "fr"), default="en", help="langue (défaut : en)")
     p.add_argument("--words", nargs=3, required=True, metavar=("W1", "W2", "W3"),
                    help="exactement 3 mots de la phrase à transformer en trous")
-    p.add_argument("--out-dir", default=os.path.join(WEB_PUBLIC, "word"), dest="out_dir",
-                   help="dossier de sortie (défaut : packages/web/public/word)")
+    p.add_argument("--out-dir", default=os.path.join(GEN_OUTPUT, "word"), dest="out_dir",
+                   help="dossier de sortie des puzzles (défaut : packages/generation/output/word)")
     return p.parse_args()
 
 
@@ -337,6 +344,10 @@ def main():
     print(f"\nPhrase ({args.lang}) écrite dans {out_path} :")
     for h in holes:
         print(f"  {h['start']['word']}^-{h['start_rank']} -> {h['secret']['word']}")
+
+    # A puzzle is not served from here: publish it into the daily store (local or S3).
+    print(f"\nPublier : pnpm puzzle:publish {out_path}"
+          f"\n          pnpm puzzle:publish {out_path} --s3 --bucket <NAME>")
 
 
 if __name__ == "__main__":
