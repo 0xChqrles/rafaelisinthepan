@@ -16,6 +16,10 @@ __pycache__
 # ── Editor / tooling local state ─────────────────────────────
 .claude/settings.local.json
 
+# ── CDK (issue #3) synth output ──────────────────────────────
+cdk.out
+packages/infra/cdk.out
+
 # ── Local backend puzzle store (issue #17) ───────────────────
 # Puzzles published locally for `pnpm backend:dev`; regenerate/republish at will.
 .local-store
