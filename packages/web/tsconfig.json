@@ -2,7 +2,7 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "paths": {
-      "@word-hunt/shared": ["../shared/src/index.ts"]
+      "@rafaelisinthepan/shared": ["../shared/src/index.ts"]
     }
   },
   "include": ["src", "vite.config.ts"]

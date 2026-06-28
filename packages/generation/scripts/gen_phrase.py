@@ -49,7 +49,7 @@ WEB_PUBLIC = os.path.normpath(os.path.join(ROOT, "..", "web", "public"))
 
 import french_neighbors as frn
 import glove_neighbors as gn
-from start_word import pick_start
+from start_word import pick_start, start_band
 
 # --- Vocabulary ----------------------------------------------------------------
 # V is the WHOLE reduced vocabulary: scripts/reduce_embedding.py already capped and
@@ -180,6 +180,55 @@ def write_vocab(V, lang):
     return out_path
 
 
+def choose_start(secret, ranking, rank_map, rank_by_display):
+    """Pick the start (hint) word for ONE hole, interactively when on a terminal.
+
+    The random default is exactly what pick_start would choose, so nothing about
+    the rank-band selection itself changes. When stdin is a TTY, the rank-band
+    candidates are printed as a numbered list (each with its rank) and one line is
+    read:
+      - empty (Enter)  -> the random default — keeps batch / non-interactive runs
+        working without any input;
+      - a list number  -> that candidate;
+      - any other word -> accepted only if it is in this hole's rank map (i.e. it
+        survived into V / the secret's ranking), matched by slug; else reprompt.
+
+    Returns a DISPLAY word that is a key of rank_by_display, so start_rank and the
+    {word, slug} object built downstream stay exactly as before.
+    """
+    default = pick_start(secret, ranking)
+
+    # No terminal attached (piped stdin / batch generation): keep the random
+    # default silently, so automated runs never block on input().
+    if not sys.stdin.isatty():
+        return default
+
+    band = start_band(secret, ranking)
+    print(f"\nMot de départ pour « {secret} » "
+          f"(Entrée = {default}^-{rank_by_display[default]}) :")
+    for i, (w, _r) in enumerate(band, 1):
+        print(f"  {i}) {w}  ^-{rank_by_display[w]}")
+
+    while True:
+        try:
+            raw = input("> ").strip()
+        except EOFError:  # stdin closed mid-prompt: fall back to the default.
+            return default
+        if not raw:
+            return default
+        if raw.isdigit():
+            idx = int(raw)
+            if 1 <= idx <= len(band):
+                return band[idx - 1][0]
+            print(f"  Numéro hors liste (1–{len(band)}).")
+            continue
+        # Arbitrary typed word: accept only if it is in this hole's rank map.
+        entry = rank_map.get(slug(raw))
+        if entry is not None:
+            return entry["word"]
+        print(f"  « {raw} » n'est ni un numéro ni un mot du vocabulaire de ce trou.")
+
+
 def parse_args():
     p = argparse.ArgumentParser(
         description="Génère un fichier de jeu autonome pour une phrase."
@@ -255,9 +304,10 @@ def main():
             rank_by_display[w] = r + 1
 
         # Slug-keyed rank map (with collision handling) for the front-end lookup.
-        ranks[slug(secret)] = build_rank_map(secret, ranking)
+        rank_map = build_rank_map(secret, ranking)
+        ranks[slug(secret)] = rank_map
 
-        start = pick_start(secret, ranking)
+        start = choose_start(secret, ranking, rank_map, rank_by_display)
         holes.append({
             "pos": pos,
             "secret": ws(secret),

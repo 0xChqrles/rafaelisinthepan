@@ -10,16 +10,16 @@ export type PuzzleSchedule = Record<string, Record<string, string>>;
 export const PUZZLE_SCHEDULE: PuzzleSchedule = {
   // NOTE: until more puzzles are generated, these days reuse the same two files
   // as placeholders — swap in dedicated files per day as they are produced.
-  '2026-06-25': {
-    fr: 'word/fr/vaincre_triomphe_gloire.json',
+  '2026-06-28': {
+    fr: 'word/fr/laid_hideusement_ame.json',
     en: 'word/en/slutty_dancing_kitchen.json',
   },
-  '2026-06-26': {
-    fr: 'word/fr/pleure_coeur_ville.json',
+  '2026-06-29': {
+    fr: 'word/fr/laid_hideusement_ame.json',
     en: 'word/en/slutty_dancing_kitchen.json',
   },
-  '2026-06-27': {
-    fr: 'word/fr/parfums_couleurs_sons.json',
+  '2026-06-30': {
+    fr: 'word/fr/laid_hideusement_ame.json',
     en: 'word/en/slutty_dancing_kitchen.json',
   },
 };

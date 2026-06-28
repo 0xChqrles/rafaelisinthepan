@@ -1,5 +1,5 @@
 {
-  "name": "@word-hunt/shared",
+  "name": "@rafaelisinthepan/shared",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -9,7 +9,8 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "devDependencies": {
     "typescript": "^6.0.3"

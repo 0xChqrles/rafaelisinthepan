@@ -1,5 +1,5 @@
 /* ============================================================
-   WORD HUNT — understated pixel art, flat UI
+   Rafael is in the pan — understated pixel art, flat UI
    Font: Press Start 2P
    ============================================================ */
 
@@ -129,7 +129,7 @@ button * {
      the game content but above the page background. */
   isolation: isolate;
   width: 100%;
-  max-width: 900px;
+  max-width: 1200px;
   display: flex;
   flex-direction: column;
   align-items: start;
@@ -211,7 +211,7 @@ button * {
   font-size: clamp(18px, 3.2vw, 30px);
   line-height: 1.5;
   text-align: left;
-  max-width: 1020px;
+  max-width: 1200px;
   text-shadow: 2px 2px 0 black;
   padding-top: var(--text-shift);
 }
@@ -224,6 +224,12 @@ button * {
   display: inline-block;
   white-space: nowrap;
   color: var(--hole);
+}
+/* Sized to the word only (exponent is a sibling outside it): the floating hit
+   centers on this box, so it lands over the word, not the word+exponent. */
+.hole-word-wrap {
+  position: relative;
+  display: inline-block;
 }
 .hole-word {
   color: var(--hole);
@@ -258,7 +264,7 @@ button * {
 /* Shake the hole word when a "hit" lands on it: reinforces impact. */
 .hole-word.hit-shake {
   display: inline-block;
-  animation: word-shake 0.4s ease-in-out;
+  animation: word-shake 0.4s ease-in-out var(--hit-delay, 0ms);
 }
 @keyframes word-shake {
   0%,
@@ -285,34 +291,64 @@ button * {
   }
 }
 
-/* --- floating number ("hit"): isolated component, placeholder animation --- */
+/* Word replacement: after the exponent has dropped, the OLD word blinks 3× then
+   is swapped for the improved word (the swap fires on animation end, in Hole).
+   Hard on/off blink (steps) to match the retro cursor. `forwards` + a HIDDEN final
+   keyframe park the word at opacity 0 once the blinks end, so it stays invisible
+   through the frame between `animationend` and React committing the swap. Without
+   that hold the word snaps back to full opacity for one frame, flashing the OLD
+   word just before the new one appears. */
+.hole-word.word-replace-blink {
+  animation: word-replace-blink 0.2s steps(1) 3 forwards;
+}
+@keyframes word-replace-blink {
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* --- floating number ("hit"): the distance (or "MISS") that pops over a hole on a
+   guess. Anchored on the word's center (left/top 50% + translate -50%,-50%);
+   springs in with a slight tilt, then rises and dissipates. Two sequenced
+   animations (pop-in then fade-out) timed so the pop always finishes before the
+   synchronized batch fade-out begins. --- */
 .floating-hit {
   position: absolute;
   left: 50%;
-  top: -0.3em;
-  transform: translateX(-50%);
+  top: 50%;
+  transform: translate(-50%, -50%);
   font-family: var(--press);
   font-size: 28px;
   color: #fff;
   pointer-events: none;
-  /* TODO(anim): placeholder. Replace with the final animation (rise + fade). */
-  animation: hit-pop 0.9s ease-out forwards;
+  opacity: 0;
+  animation:
+    hit-pop-in 0.32s cubic-bezier(0.22, 1.4, 0.4, 1) var(--hit-delay, 0ms) forwards,
+    hit-fade-out 0.52s ease-in var(--hit-fade-delay, 320ms) forwards;
 }
-@keyframes hit-pop {
+@keyframes hit-pop-in {
   0% {
     opacity: 0;
-    transform: translate(-50%, 0) scale(0.6);
+    transform: translate(-50%, calc(-50% + 4px)) scale(0.5) rotate(-6deg);
   }
-  20% {
+  55% {
     opacity: 1;
-    transform: translate(-50%, -10px) scale(1.4);
+    transform: translate(-50%, calc(-50% - 10px)) scale(1.35) rotate(2deg);
   }
-  35% {
-    transform: translate(-50%, -14px) scale(1);
+  100% {
+    opacity: 1;
+    transform: translate(-50%, calc(-50% - 14px)) scale(1) rotate(0deg);
+  }
+}
+@keyframes hit-fade-out {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, calc(-50% - 14px)) scale(1);
   }
   100% {
     opacity: 0;
-    transform: translate(-50%, -38px) scale(1);
+    transform: translate(-50%, calc(-50% - 42px)) scale(0.86);
   }
 }
 

@@ -4,18 +4,18 @@ import useVocab from '../hooks/useVocab';
 import Phrase from '../components/Phrase';
 import ProgressBar from '../components/ProgressBar';
 import WordInput from '../components/WordInput';
-import { fold } from '@word-hunt/shared';
-import type { HitState, Hole, Puzzle, RankEntry, RankMap, RuntimeHole } from '@word-hunt/shared';
+import { fold } from '@rafaelisinthepan/shared';
+import type { HitState, Hole, Puzzle, RankEntry, RankMap, RuntimeHole } from '@rafaelisinthepan/shared';
 
 // Feedback shown under the input. Only INVALID words use it now (red shake +
 // "does not exist"); a valid-but-too-far guess gives per-hole "MISS" feedback
 // on the holes instead, so it needs no under-input message.
 type Feedback = { text: string };
 
-// When a guess impacts several holes, their UI effects (floating number + any
-// word replacement) fire one after another, this many ms apart, instead of all
-// at once.
+// When a guess impacts several holes, effect starts are staggered this many ms apart.
+// Floating distance/MISS feedback uses the same start stagger, then fades as one batch.
 const STAGGER_MS = 200;
+const FLOATING_HIT_INTRO_MS = 320;
 
 // Wrapper: drives the single puzzle. Loads the language's fixed vocabulary
 // (existence set) before playing — existence is decided by it, not by ranks.
@@ -61,10 +61,11 @@ function Round({
   );
 
   const [input, setInput] = useState<string>('');
-  // One transient floating indicator per hole the guess does NOT improve: a
-  // distance number when warm, or "MISS" when too far (an improved hole shows its
-  // exponent dropping instead). Each carries a unique id so it animates and clears
-  // independently.
+  // One transient floating indicator per impacted hole: a distance number when
+  // warm, or "MISS" when too far. An improving hole shows the distance too; its
+  // exponent drops as the number fades, then the old word blinks out and the
+  // closer word takes its place (the staging lives in Hole). Each carries a unique
+  // id so it animates and clears independently.
   const [hits, setHits] = useState<HitState[]>([]);
   const [invalidAt, setInvalidAt] = useState<number>(0); // timestamp signal -> input shake
   const [feedback, setFeedback] = useState<Feedback | null>(null); // message under the input
@@ -74,7 +75,7 @@ function Round({
   const [guessCount, setGuessCount] = useState<number>(0);
   const triedGuesses = useRef<Set<string>>(new Set());
   const hitId = useRef<number>(0); // monotonic id source for floating hits
-  const pendingTimers = useRef<number[]>([]); // staggered effects still to fire
+  const pendingTimers = useRef<number[]>([]); // deferred word/rank swaps (fire as the hit fades)
 
   // Clear any pending staggered effects when the round unmounts.
   useEffect(() => () => pendingTimers.current.forEach(clearTimeout), []);
@@ -124,52 +125,46 @@ function Round({
 
       // EVERY unsolved hole reacts to a valid guess (solved holes are locked out).
       // A hole is WARM when `typed` is in its top-K rank map (`entry` set) and TOO
-      // FAR otherwise (`entry` undefined). Built in sentence order so the staggered
-      // effects below fire left-to-right.
+      // FAR otherwise (`entry` undefined). Built in sentence order so the floating
+      // feedback below staggers left-to-right.
       const impacted = holes.flatMap((h, index) => {
         if (h.rank === 0) return [];
         const entry: RankEntry | undefined = ranks[h.secret][typed];
         return [{ index, entry }];
       });
 
-      // Resolve each impacted hole's UI effect consecutively, STAGGER_MS apart,
-      // in sentence order. Per hole it is EXACTLY ONE of: the word/rank replacement
-      // (warm + improves -> the exponent drops), a floating distance number (warm,
-      // no improvement), or a floating "MISS" (too far). One guess can advance or
-      // solve several holes; they resolve one after another, not all at once. The
-      // improvement test reads the hole state at submit time, which is safe because
-      // each entry targets a distinct hole, so effect ordering can't change a decision.
+      // Every impacted hole shows a floating indicator: the distance number when
+      // warm, or "MISS" when too far. They start in sentence-order sequence
+      // (STAGGER_MS apart) and fade out together as one batch. A hole the guess
+      // IMPROVES shows the distance too; the entry's closer word + lower rank are
+      // handed over as its number begins to fade, and Hole stages the rest (drop
+      // the exponent during the fade, then blink out the old word and reveal the
+      // new one).
+      const fadeDelayMs = Math.max(0, impacted.length - 1) * STAGGER_MS + FLOATING_HIT_INTRO_MS;
       impacted.forEach(({ index, entry }, step) => {
-        const apply = () => {
-          const oldRank = holes[index].rank; // submit-time rank (start_rank on first improve)
-          if (entry != null && entry.rank < oldRank) {
-            // IMPROVEMENT: the exponent decreases. Swap in the entry's DISPLAY
-            // form (accents kept) and lower rank — Hole plays the exponent-drop
-            // animation on its own. No floating number here: the dropping
-            // exponent IS the feedback.
-            setHoles((prev) =>
-              prev.map((h, i) => (i === index ? { ...h, word: entry.word, rank: entry.rank } : h)),
-            );
-          } else if (entry != null) {
-            // WARM, NO IMPROVEMENT: nothing on the hole changes, so a transient
-            // rank number floats on it as the only feedback.
-            const id = (hitId.current += 1);
-            setHits((prev) => [...prev, { holeIndex: index, value: entry.rank, id }]);
-          } else {
-            // TOO FAR: same floating animation as a hit, but it reads "MISS"
-            // instead of a distance (no rank to show beyond top-K).
-            const id = (hitId.current += 1);
-            setHits((prev) => [...prev, { holeIndex: index, value: 0, id, miss: true }]);
-          }
-        };
-        if (step === 0) {
-          apply(); // first effect is immediate; the rest trail by STAGGER_MS each
-          return;
-        }
+        const oldRank = holes[index].rank; // submit-time rank (start_rank on first improve)
+        const improves = entry != null && entry.rank < oldRank;
+        const startDelayMs = step * STAGGER_MS;
+
+        const id = (hitId.current += 1);
+        setHits((prev) => [
+          ...prev,
+          entry != null
+            ? { holeIndex: index, value: entry.rank, id, startDelayMs, fadeDelayMs }
+            : { holeIndex: index, value: 0, id, startDelayMs, fadeDelayMs, miss: true },
+        ]);
+
+        if (!improves || entry == null) return;
+
+        // IMPROVEMENT: hand the entry's DISPLAY form (accents kept) and lower rank
+        // to the hole as its floating hit starts fading out — Hole drops the
+        // exponent during the fade, then blinks the old word out and reveals this
+        // new one.
+        const { word, rank } = entry;
         const timer = window.setTimeout(() => {
           pendingTimers.current = pendingTimers.current.filter((t) => t !== timer);
-          apply();
-        }, step * STAGGER_MS);
+          setHoles((prev) => prev.map((h, i) => (i === index ? { ...h, word, rank } : h)));
+        }, fadeDelayMs);
         pendingTimers.current.push(timer);
       });
     },

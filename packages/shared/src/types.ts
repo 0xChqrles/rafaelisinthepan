@@ -44,5 +44,7 @@ export interface HitState {
   holeIndex: number;
   value: number;
   id: number;
+  startDelayMs: number;
+  fadeDelayMs: number;
   miss?: boolean; // true => the guess was too far for this hole; render "MISS", not a number
 }

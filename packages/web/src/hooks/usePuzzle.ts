@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Puzzle } from '@word-hunt/shared';
+import type { Puzzle } from '@rafaelisinthepan/shared';
 import { puzzlePathFor, todayKey } from '../puzzleSchedule';
 
 // Resolve which puzzle file to load for the selected language.

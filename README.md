@@ -1,4 +1,4 @@
-# Word Hunt — monorepo
+# Rafael is in the pan — monorepo
 
 Daily sentence-reconstruction game. A **pnpm workspaces** monorepo.
 

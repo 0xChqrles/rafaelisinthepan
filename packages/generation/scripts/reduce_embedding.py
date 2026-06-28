@@ -43,7 +43,7 @@ import tempfile
 
 # Keep words (after the rules) until TOP_N have PASSED, then stop reading. TOP_N caps
 # the number of KEPT words, not the number of source lines scanned. Easy to change.
-TOP_N = 200000
+TOP_N = 400000
 
 CHAR_CLASS = {
     "en": "a-z",

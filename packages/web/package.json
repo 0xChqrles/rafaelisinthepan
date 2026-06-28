@@ -1,5 +1,5 @@
 {
-  "name": "@word-hunt/web",
+  "name": "@rafaelisinthepan/web",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -7,10 +7,11 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
-    "@word-hunt/shared": "workspace:*",
+    "@rafaelisinthepan/shared": "workspace:*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

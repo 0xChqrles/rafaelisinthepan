@@ -1,4 +1,4 @@
-# AGENTS.md — Word Hunt (daily sentence-reconstruction game)
+# AGENTS.md — Rafael is in the pan (daily sentence-reconstruction game)
 
 > This file is the single source of agent guidance. `CLAUDE.md` is a symlink to it,
 > so Claude Code and Codex read the same content. Edit **this** file.
@@ -52,16 +52,16 @@ packages/
       gen_phrase.py           one sentence -> one self-contained puzzle JSON
     embedding/<lang>/...      raw + *_reduced vectors + derived .kv caches
     pyproject.toml, uv.lock   Python project (uv)
-  shared/                     cross-cutting TS consumed by web (pkg @word-hunt/shared)
+  shared/                     cross-cutting TS consumed by web (pkg @rafaelisinthepan/shared)
     src/slug.ts               fold() — the slug/fold contract (byte-identical to slug())
     src/types.ts              per-puzzle schema types (Puzzle, Hole, RankMap, …)
     src/index.ts              re-exports
-  web/                        React + Vite + TS front (pkg @word-hunt/web)
+  web/                        React + Vite + TS front (pkg @rafaelisinthepan/web)
     src/
       hooks/useVocab.ts       fetch+cache the per-language existence Set (once per session)
       hooks/usePuzzle.ts      resolve+fetch the day's puzzle file
       puzzleSchedule.ts       { "YYYY-MM-DD": { fr, en } } -> puzzle path
-      screens/Game.tsx        the guess loop, hole state (imports fold from @word-hunt/shared)
+      screens/Game.tsx        the guess loop, hole state (imports fold from @rafaelisinthepan/shared)
       game/scoring.ts         s(rank), holeProgress, computeProgress
       game/heat.ts            rank/progress -> heatmap color
       components/Phrase.tsx,Hole.tsx,WordInput.tsx,FloatingHit.tsx  rendering
@@ -83,7 +83,7 @@ These are decided and verified against the code. Treat them as load-bearing.
   applies, in order: drop if any **uppercase**, drop **single-letter** (counted by
   character so `à`/`é` count as one), drop **non-alphabet** (`^[<class>]+(-[<class>]+)*$`
   = letters + internal hyphens only), drop **stopword**. The cap counts **survivors**:
-  it keeps passing words until `TOP_N = 200000` have PASSED, then stops reading.
+  it keeps passing words until `TOP_N = 400000` have PASSED, then stops reading.
   Order is **filter-THEN-cap** → output has exactly `TOP_N` words (or fewer + a
   warning if the source is exhausted), *not* "200k minus rejects".
 - Output is `<input>_reduced.<ext>` (extension preserved). If the source had a
@@ -165,18 +165,23 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
      the input. No hole reacts.
   2. **In vocab** → **every UNSOLVED** hole (`rank !== 0`) reacts; look up
      `ranks[hole.secret][typed]`. A hole is **WARM** when the entry exists and **TOO
-     FAR** otherwise. Each impacted hole gets **exactly one** effect:
-     - **Warm + improves** → the hole updates to the entry's **accented `word`** and
-       lower `rank` (the exponent-drop animation is the feedback, **no** floating
-       number).
-     - **Warm, no improvement** → a transient rank **number** floats on the hole.
-     - **Too far** → the **same** floating + word-shake animation as a hit, but it
-       reads **"MISS"** instead of a distance (no rank exists beyond top-K), in the
-       coldest heat color.
-  3. A single guess can advance/solve **several** holes and can mix the three effects
-     across holes. If `typed` is too far for **every** unsolved hole, **"MISS" plays
-     on every hole**. The per-hole effects resolve **consecutively in sentence order,
-     `STAGGER_MS = 200ms` apart** — not all at once.
+     FAR** otherwise. **Every impacted hole shows a floating indicator** (no
+     exceptions — improving holes included):
+     - **Warm** (entry exists) → a transient rank **distance number** floats on the
+       hole, in the heat color of that distance.
+     - **Too far** → the **same** floating + word-shake animation, but it reads
+       **"MISS"** instead of a distance (no rank exists beyond top-K), in the coldest
+       heat color.
+     - **Warm + improves** (entry's rank beats the hole's current rank) → the hole
+       **additionally** swaps to the entry's **accented `word`** and lower `rank`,
+       but **only when its floating number begins to fade out** (`fadeDelayMs`), so
+       the exponent-drop animation reads as the resolution of the number that landed.
+  3. A single guess can advance/solve **several** holes. If `typed` is too far for
+     **every** unsolved hole, **"MISS" plays on every hole**. Floating distance
+     numbers and `"MISS"` feedback **start** consecutively in sentence order,
+     `STAGGER_MS = 200ms` apart, but their fade-out phase is synchronized across the
+     batch (they disappear together). The rank-improving word/rank replacements all
+     fire **together** at that shared fade-out moment.
 - **Solved holes (`rank === 0`) are locked:** excluded from the loop and rendered
   solved (accented secret, no exponent).
 - **Feedback grammar:** under-the-input message = info about *what you typed* (only
@@ -201,6 +206,21 @@ variants that compare equal count once. Invalid non-words are rejected before
 counting. The score is displayed as the large background number during the round and
 as `SCORE <tries>` at game end.
 
+### Testing
+
+- **WRITE tests when a change touches a CONTRACT:** the slug/fold contract, the
+  per-puzzle JSON schema, scoring / score-accumulation logic, rank/collision logic,
+  `reduce_embedding` filtering, or date/`dayNumber` routing. Assert against the SPEC in
+  this file, **not** the implementation — a test that just mirrors the code proves nothing.
+- **DON'T add tests for cosmetic/visual work** (layout, animation feel, styling, copy),
+  trivial wiring, or config. Coverage for its own sake is discouraged.
+- **A failing invariant test is a real regression — fix the CODE, never weaken the test**
+  to make it pass.
+- **Run `pnpm test` before a contract-touching task is done.** It runs Vitest (TS:
+  `packages/shared`, `packages/web`) and pytest (`packages/generation`). The slug/fold
+  case table is **one shared fixture** (`packages/shared/fixtures/slug-cases.json`)
+  consumed by BOTH languages — add a case there, never on one side only.
+
 ---
 
 ## Do NOT
@@ -221,7 +241,7 @@ as `SCORE <tries>` at game end.
 Uses **pnpm** (workspaces in `pnpm-workspace.yaml`, version pinned via the root
 `packageManager` field). Each root script runs from the repo **root** (it delegates
 to the right workspace via `pnpm --filter`) or from inside the package directly. The
-generation scripts are scoped to `@word-hunt/generation`; reduce/gen paths below are
+generation scripts are scoped to `@rafaelisinthepan/generation`; reduce/gen paths below are
 relative to `packages/generation/`. Unlike `npm`, **pnpm forwards args straight to
 the script — do NOT add a `--` separator** (a literal `--` is passed through and
 breaks `gen_phrase.py`'s arg parsing).
@@ -237,10 +257,11 @@ pnpm reduce:en        # embedding/en/glove.6B.300d.txt  -> glove.6B.300d_reduced
 #    Output is written into packages/web/public/{word,vocab}.
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--`)
 
-# Front end (@word-hunt/web)
+# Front end (@rafaelisinthepan/web)
 pnpm dev                        # dev server
 pnpm build                      # production build -> packages/web/dist
 pnpm typecheck                  # tsc --noEmit
+pnpm test                       # invariant tests: Vitest (web + shared) + pytest (generation)
 ```
 
 `gen_phrase.py` requires **exactly 3** `--words`; they must appear in the sentence
@@ -253,8 +274,15 @@ pnpm typecheck                  # tsc --noEmit
 
 *(Safe to update without touching the invariants above.)*
 
-- All paths below are under `packages/`. **Tunables:** `TOP_N = 200000` (reduce),
+- All paths below are under `packages/`. **Tunables:** `TOP_N = 400000` (reduce),
   `TOP_K = 2000` (gen), start-rank band `50–150` (`start_word.py`).
+- **Start-word selection is interactive per hole** (`gen_phrase.choose_start`): on a
+  TTY it lists the rank-band candidates (numbered, each with its rank) and reads a
+  choice — Enter keeps the random default, a number picks a candidate, any other word
+  is accepted only if it is in that hole's rank map (matched by slug) else reprompts.
+  The band logic, schema, and downstream `start`/`start_rank` are unchanged; non-TTY
+  (piped/batch) runs silently keep the random default, so generation output is
+  identical to before when not interacting.
 - **Data present:** `generation/embedding/fr/cc.fr.300_reduced.vec` (+ `.kv` cache
   built), `generation/embedding/en/glove.6B.300d_reduced.txt` (+ `.kv` cache built).
   `web/public/vocab/{en,fr}.json` exist.
@@ -265,7 +293,7 @@ pnpm typecheck                  # tsc --noEmit
 - **Package manager:** pnpm, pinned via the root `packageManager` field
   (`pnpm@11.9.0`). `pnpm-workspace.yaml` lists the workspaces and uses `allowBuilds`
   to approve `esbuild`'s postinstall (its native binary), which pnpm blocks by default.
-- The `.codex/skills/word-hunt-game/` skill + `validate_game_data.mjs` describe a
+- The `.codex/skills/rafaelisinthepan-game/` skill + `validate_game_data.mjs` describe a
   **superseded** schema (see Discrepancies).
 
 ---
@@ -277,7 +305,13 @@ intended invariant.
 
 *(Resolved 2026-06-22: a guess fills **all** improving holes — the old "at most one
 hole" intent was superseded by an explicit decision to treat each impacted secret
-consecutively. Effects now stagger by `STAGGER_MS`.)*
+consecutively.)*
+
+*(Resolved 2026-06-27: **every** impacted hole now shows a floating distance/MISS —
+improving holes included — starting staggered by `STAGGER_MS` and fading out as one
+batch. An improving hole's word/rank swap is deferred to the shared fade-out moment
+(`fadeDelayMs`) instead of firing immediately/staggered, so the exponent drop resolves
+the number that just landed.)*
 
 1. **Timer.** `README.md` and the `.codex` docs describe a 2:00 countdown that
    freezes the score. The current code has **no timer** — a round ends only when all
@@ -288,7 +322,7 @@ consecutively. Effects now stagger by `STAGGER_MS`.)*
    `--words forêt ancienne` would fail: `gen_phrase.py` requires exactly 3
    (`nargs=3`), and filenames are `<s1>_<s2>_<s3>.json`. Fix the README example.
 
-3. **`.codex/skills/word-hunt-game/` is entirely stale.** Its `SKILL.md`,
+3. **`.codex/skills/rafaelisinthepan-game/` is entirely stale.** Its `SKILL.md`,
    `references/game-contract.md`, and `scripts/validate_game_data.mjs` target a
    superseded design: a single `public/game_data.json` with per-language
    multi-phrase arrays, a non-existent `scripts/build_game_data.py`, plain integer

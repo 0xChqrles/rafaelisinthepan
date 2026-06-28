@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rafael is in the pan"
+  short_description: "Build and validate the Rafael is in the pan game"
+  default_prompt: "Use $rafaelisinthepan-game to implement or validate changes for the Rafael is in the pan React game."
