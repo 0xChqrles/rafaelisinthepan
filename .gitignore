@@ -7,6 +7,8 @@ dist-ssr
 .env
 .env.*
 !.env.example
+# Committed: holds only PUBLIC VITE_* build config (no secrets) so prod builds are reproducible.
+!.env.production
 
 # ── Python / uv ──────────────────────────────────────────────
 .venv

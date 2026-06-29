@@ -75,8 +75,9 @@ origin** (override with `-c allowedOrigin=`).
 ```bash
 # 1. Backend → api.<domain> (CORS defaults to https://<domain>).
 pnpm --filter @rafaelisinthepan/infra deploy RafaelBackendStack -c domainName=whippin.ai
-# 2. Build the web against the stable API domain.
-VITE_API_BASE_URL=https://api.whippin.ai pnpm build
+# 2. Build the web. `VITE_API_BASE_URL` comes from the committed
+#    packages/web/.env.production (https://api.whippin.ai) — no inline env needed.
+pnpm build
 # 3. Deploy the site at the apex (uploads dist, invalidates CloudFront).
 pnpm --filter @rafaelisinthepan/infra deploy RafaelWebStack -c domainName=whippin.ai
 ```
