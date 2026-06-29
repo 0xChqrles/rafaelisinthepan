@@ -9,6 +9,7 @@
 // (and S3) select.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { Puzzle } from '@rafaelisinthepan/shared';
 import { activeDate } from './day';
 import { defaultLocalStoreRoot, isValidDate, storeKey } from './layout';
@@ -55,6 +56,36 @@ function die(msg: string): never {
   process.exit(1);
 }
 
+export interface PublishPlan {
+  day: string; // the GAME DAY this puzzle is served as (22:00-ET day of #2/#6)
+  key: string; // storeKey(day, lang) — the SAME key the readers GetObject/readFile
+  target: { kind: 'local' } | { kind: 's3'; bucket: string };
+}
+
+// Pure (day, key, destination) routing — the issue #4 contract, with no fs/AWS/argv/
+// process so it is unit-testable. The store key is fully determined by (game day, lang)
+// via `storeKey`, identical to what `fsStore`/`s3Store` select. The day defaults to the
+// active 22:00-ET day (`activeDate`) unless `--day` overrides it. The destination is
+// LOCAL unless `--s3` opts in, in which case a bucket is REQUIRED (flag or PUZZLE_BUCKET)
+// — never a silent local fallback. Throws on an invalid day or `--s3` without a bucket;
+// the CLI turns that into a clean `die`.
+export function planPublish(
+  args: Pick<Args, 's3' | 'day' | 'bucket'>,
+  lang: string,
+  now: Date,
+  bucketFromEnv?: string,
+): PublishPlan {
+  const day = args.day ?? activeDate(now);
+  if (!isValidDate(day)) throw new Error(`invalid --day "${day}" (expected YYYY-MM-DD).`);
+  const key = storeKey(day, lang);
+  if (args.s3) {
+    const bucket = args.bucket ?? bucketFromEnv;
+    if (!bucket) throw new Error('--s3 requires --bucket NAME (or PUZZLE_BUCKET).');
+    return { day, key, target: { kind: 's3', bucket } };
+  }
+  return { day, key, target: { kind: 'local' } };
+}
+
 // Resolve a user-supplied path against the directory the command was INVOKED from,
 // not the package dir pnpm `cd`s into. pnpm/npm set INIT_CWD to the original cwd, so
 // `pnpm puzzle:publish path/from/repo-root.json` works as typed.
@@ -82,38 +113,45 @@ async function main() {
     );
   }
 
-  const day = args.day ?? activeDate(new Date());
-  if (!isValidDate(day)) die(`invalid --day "${day}" (expected YYYY-MM-DD).`);
-
   const file = resolveInput(args.file);
   const text = await readFile(file, 'utf8').catch(() => die(`cannot read ${file}`));
   const puzzle = asPuzzle(JSON.parse(text), file);
-  const key = storeKey(day, puzzle.lang);
 
-  if (args.s3) {
-    const bucket = args.bucket ?? process.env.PUZZLE_BUCKET;
-    if (!bucket) die('--s3 requires --bucket NAME (or PUZZLE_BUCKET).');
+  let plan: PublishPlan;
+  try {
+    plan = planPublish(args, puzzle.lang, new Date(), process.env.PUZZLE_BUCKET);
+  } catch (err) {
+    die(err instanceof Error ? err.message : String(err));
+  }
+
+  if (plan.target.kind === 's3') {
+    const { bucket } = plan.target;
     // Import the SDK only on the S3 path so the local path stays AWS-free.
     const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
     const client = new S3Client({});
     await client.send(
       new PutObjectCommand({
         Bucket: bucket,
-        Key: key,
+        Key: plan.key,
         Body: text,
         ContentType: 'application/json; charset=utf-8',
       }),
     );
-    console.log(`[publish] s3://${bucket}/${key}  (${puzzle.lang}, day ${day})`);
+    console.log(`[publish] s3://${bucket}/${plan.key}  (${puzzle.lang}, day ${plan.day})`);
     return;
   }
 
   const rootArg = args.store ?? process.env.PUZZLE_STORE;
   const root = rootArg ? resolveInput(rootArg) : defaultLocalStoreRoot();
-  const dest = path.join(root, key);
+  const dest = path.join(root, plan.key);
   await mkdir(path.dirname(dest), { recursive: true });
   await writeFile(dest, text);
-  console.log(`[publish] ${dest}  (${puzzle.lang}, day ${day})`);
+  console.log(`[publish] ${dest}  (${puzzle.lang}, day ${plan.day})`);
 }
 
-main().catch((err) => die(err instanceof Error ? err.message : String(err)));
+// Run as a CLI only when executed directly (`tsx src/publish.ts ...`), NOT when this
+// module is imported (e.g. by publish.test.ts importing `planPublish`) — importing must
+// not read argv or exit the process.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((err) => die(err instanceof Error ? err.message : String(err)));
+}
