@@ -65,9 +65,10 @@ packages/
       publish.ts              place a generated puzzle into local store (default) or S3 (#17/#4)
       index.ts                Lambda entrypoint (s3Store + env config)
     .local-store/<date>.<lang>.json  local puzzle store (gitignored) read by serve/fsStore
-  infra/                      AWS CDK stack provisioning the backend (pkg @rafaelisinthepan/infra, #3)
-    bin/app.ts                CDK app entry (cdk.json runs it via `npx tsx`)
-    lib/backend-stack.ts      BackendStack: private S3 bucket + Lambda(Fn URL) + CloudFront
+  infra/                      AWS CDK app: backend (#3) + web hosting (#21) sibling stacks (pkg @rafaelisinthepan/infra)
+    bin/app.ts                CDK app entry — RafaelBackendStack + RafaelWebStack (cdk.json runs it via `npx tsx`)
+    lib/backend-stack.ts      BackendStack: private S3 + Lambda(Fn URL) + CloudFront; opt api.<domain> (ACM+Route53); us-east-1
+    lib/web-stack.ts          WebStack (#21): private S3 (SPA) + CloudFront(OAC) + ACM + Route53; apex; us-east-1
     cdk.json                  CDK config (app command, context)
   shared/                     cross-cutting TS consumed by web (pkg @rafaelisinthepan/shared)
     src/slug.ts               fold() — the slug/fold contract (byte-identical to slug())
@@ -365,10 +366,33 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   **IAM-auth Function URL via OAC** (only CloudFront may invoke it). The Lambda gets
   **read-only** S3 (`bucket.grantRead`). Cache policy keys on path + the `lang` query and
   honours the origin `Cache-Control` (the 22:00-ET-aligned `s-maxage`); maxTtl = 1 day.
-  Outputs: `ApiUrl` (CloudFront, → `VITE_API_BASE_URL`), `PuzzleBucketName` (#4 upload
-  target), `FunctionUrl`. Commands: `pnpm infra:synth` / `infra:diff` / `infra:deploy`
-  (root) or `pnpm --filter @rafaelisinthepan/infra <synth|deploy|diff|destroy>`; deploy
-  needs AWS creds + a bootstrapped account and takes `-c allowedOrigin=<web-origin>`.
+  Outputs: `ApiUrl` (→ `VITE_API_BASE_URL`), `PuzzleBucketName` (#4 upload target),
+  `FunctionUrl`, `DistributionDomainName`. Commands: `pnpm infra:synth` / `infra:diff` /
+  `infra:deploy` (root) or `pnpm --filter @rafaelisinthepan/infra <synth|deploy|diff|destroy>`;
+  deploy needs AWS creds + a bootstrapped account. **`-c domainName=<apex>`** (gated; also
+  drives `WebStack`) gives the API a stable custom domain `api.<domain>` (override label via
+  `-c apiSubdomain=`): looks up the Route53 zone (`fromLookup`), a DNS-validated **ACM** cert
+  in-stack, distribution alias + **A/AAAA**; `ApiUrl` then = `https://api.<domain>`. Without
+  it the API stays on `*.cloudfront.net`. CORS `allowedOrigin` **defaults to the site origin**
+  `https://<domain>` (override `-c allowedOrigin=`). The CDK app also defines a sibling
+  `WebStack` (below) — pass a stack name to target one. **Both stacks pinned to `us-east-1`**
+  (the backend was migrated from `eu-west-1`; tear the old stack down — see infra README).
+- **Web hosting stack (#21):** `lib/web-stack.ts` `WebStack` (`RafaelWebStack`) — a sibling
+  of `BackendStack`, independently deployable (`cdk deploy RafaelWebStack`), **pinned to
+  `us-east-1`** (CloudFront's ACM cert must live there). Hosts the built SPA
+  (`packages/web/dist`) on a **private** S3 bucket (`DESTROY` + auto-delete; build is
+  reproducible) served only via **CloudFront + OAC** over HTTPS, with **SPA fallback**
+  (403/404 → `/index.html`, 200). Two `BucketDeployment`s split cache lifetimes (hashed
+  `assets/*` immutable-1yr, everything else `no-cache`) and **invalidate `/*`** on deploy —
+  so `pnpm build` must run **before** deploy (missing `dist` → warn + skip upload). Custom
+  domain is **gated on `-c domainName=<apex>`**: when set it looks up the existing Route53
+  zone (`fromLookup`), issues a DNS-validated **ACM** cert, sets the distribution alias to
+  `<siteSubdomain>.<domain>` (`siteSubdomain` default **`""` = apex**; set e.g. `play`), and
+  adds **A/AAAA** aliases; without it the stack serves on `*.cloudfront.net` (no ACM/Route53)
+  for a credential-free smoke synth. Wiring: build the web with
+  `VITE_API_BASE_URL=https://api.<domain>` (the backend `ApiUrl`); the backend's CORS origin
+  defaults to this site's `SiteUrl` (`https://<domain>`). Outputs: `SiteUrl`,
+  `SiteBucketName`, `DistributionId`, `DistributionDomainName`.
 - **Package manager:** pnpm, pinned via the root `packageManager` field
   (`pnpm@11.9.0`). `pnpm-workspace.yaml` lists the workspaces and uses `allowBuilds`
   to approve `esbuild`'s postinstall (its native binary), which pnpm blocks by default.
