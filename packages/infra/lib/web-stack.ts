@@ -107,6 +107,9 @@ export class WebStack extends Stack {
     // for in-flight clients (and so the two passes never delete each other's files).
     if (fs.existsSync(WEB_DIST)) {
       const source = s3deploy.Source.asset(WEB_DIST);
+      // The deployment Lambda unzips the bundle and runs `aws s3 sync` in-process; the
+      // default 128 MB OOMs on this payload (multi-MB vocab JSON), so give it headroom.
+      const memoryLimit = 512;
       // Hashed, content-addressed assets — safe to cache forever.
       new s3deploy.BucketDeployment(this, 'DeployAssets', {
         sources: [source],
@@ -115,6 +118,7 @@ export class WebStack extends Stack {
         exclude: ['*'],
         include: ['assets/*'],
         cacheControl: [s3deploy.CacheControl.fromString('public, max-age=31536000, immutable')],
+        memoryLimit,
       });
       // index.html and other unhashed files (vocab JSON, fonts, images) — always revalidate
       // so a redeploy is picked up. This pass carries the CloudFront invalidation.
@@ -126,6 +130,7 @@ export class WebStack extends Stack {
         cacheControl: [s3deploy.CacheControl.fromString('no-cache')],
         distribution,
         distributionPaths: ['/*'],
+        memoryLimit,
       });
     } else {
       Annotations.of(this).addWarning(
