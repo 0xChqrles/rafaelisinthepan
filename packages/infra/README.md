@@ -133,16 +133,29 @@ caching the result into `cdk.context.json`.
 ## Migrating the backend to `us-east-1`
 
 The backend was originally deployed to `eu-west-1`; both stacks are now pinned to
-`us-east-1` (so `api.<domain>`'s ACM cert lives in-stack). To move an existing backend:
+`us-east-1` (so `api.<domain>`'s ACM cert lives in-stack). **Tear the old stack down
+FIRST** — CloudFront **cache policies and OACs are account-global**, so an old `eu-west-1`
+stack and a new `us-east-1` stack collide on the same global names (`409 AlreadyExists`)
+if both exist at once.
+
+The old stack can't be removed with `cdk destroy` (the CDK code now pins this stack to
+`us-east-1`, so `cdk destroy RafaelBackendStack` targets us-east-1 regardless of
+`AWS_REGION`). Delete it via CloudFormation directly:
 
 ```bash
-# 1. Deploy the backend in us-east-1 (new bucket + Fn URL + CloudFront under api.<domain>).
-pnpm --filter @rafaelisinthepan/infra deploy RafaelBackendStack -c domainName=whippin.ai
-# 2. Tear down the old eu-west-1 stack once the new one is serving.
-AWS_REGION=eu-west-1 pnpm --filter @rafaelisinthepan/infra destroy RafaelBackendStack
+# 1. Delete the old eu-west-1 stack and WAIT for it to finish (CloudFront distribution
+#    deletion is slow, ~15–20 min). Its RETAINed puzzle bucket is left behind.
+aws cloudformation delete-stack       --stack-name RafaelBackendStack --region eu-west-1
+aws cloudformation wait stack-delete-complete --stack-name RafaelBackendStack --region eu-west-1
+# 2. If a previous us-east-1 attempt left RafaelBackendStack in ROLLBACK_COMPLETE, drop it
+#    (a ROLLBACK_COMPLETE stack can't be updated):
+aws cloudformation delete-stack       --stack-name RafaelBackendStack --region us-east-1
+aws cloudformation wait stack-delete-complete --stack-name RafaelBackendStack --region us-east-1
+# 3. Now deploy fresh in us-east-1 (global names are free).
+pnpm --filter @rafaelisinthepan/infra deploy --all -c domainName=whippin.ai
 ```
 
-The old `eu-west-1` puzzle bucket is `RETAIN`ed, so step 2 leaves it behind — delete it
+The old `eu-west-1` puzzle bucket is `RETAIN`ed, so step 1 leaves it behind — delete it
 manually (`aws s3 rb s3://<old-bucket> --force --region eu-west-1`) once you have confirmed
 nothing of value remains. Re-publish puzzles to the new bucket with `pnpm puzzle:publish --s3`.
 
