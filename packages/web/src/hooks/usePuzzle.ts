@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Puzzle } from '@rafaelisinthepan/shared';
+import type { Puzzle } from '@whippin/shared';
 import { puzzleUrl, todayUrl, resolveOverride, puzzleOutcome, type Today } from '../api';
 
 // Loads the day's puzzle for the selected language. For normal play the BACKEND is

@@ -2,7 +2,7 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "paths": {
-      "@rafaelisinthepan/shared": ["../shared/src/index.ts"]
+      "@whippin/shared": ["../shared/src/index.ts"]
     }
   },
   "include": ["src", "vite.config.ts"]

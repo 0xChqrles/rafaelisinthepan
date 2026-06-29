@@ -3,7 +3,7 @@
 // with a clean JSON 404 (never a 500), sends CORS headers, and exposes day metadata.
 
 import { describe, it, expect } from 'vitest';
-import type { Puzzle } from '@rafaelisinthepan/shared';
+import type { Puzzle } from '@whippin/shared';
 import { createHandler, type HandlerDeps } from './handler';
 import type { FnUrlEvent } from './respond';
 import type { PuzzleStore } from './store';
@@ -31,7 +31,7 @@ const PUZZLE: Puzzle = {
 // 2026-06-29 10:00 EDT (14:00 UTC) -> active date "2026-06-29".
 const FIXED_NOW = new Date('2026-06-29T14:00:00Z');
 const ACTIVE_DATE = '2026-06-29';
-const ORIGIN = 'https://rafael.example';
+const ORIGIN = 'https://whippin.example';
 
 function fakeStore(): PuzzleStore {
   return {

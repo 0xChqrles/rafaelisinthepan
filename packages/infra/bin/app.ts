@@ -3,7 +3,7 @@
 // backend (#3 — S3 bucket + Lambda(Fn URL) + CloudFront) and the web front hosting
 // (#21 — private S3 + CloudFront + ACM + Route53). Run via `cdk synth` / `cdk deploy`
 // (cdk.json points the app command at `npx tsx bin/app.ts`); target one with
-// `cdk deploy RafaelBackendStack` / `cdk deploy RafaelWebStack`.
+// `cdk deploy WhippinBackendStack` / `cdk deploy WhippinWebStack`.
 //
 // Both stacks are pinned to us-east-1 — CloudFront's ACM certs must live there, so the
 // certs stay in-stack with no cross-region reference. The single REQUIRED input is
@@ -35,7 +35,7 @@ const siteHost = siteSubdomain ? `${siteSubdomain}.${domainName}` : domainName;
 // us-east-1 for both: CloudFront ACM certs must live there (see file header).
 const env = { account: process.env.CDK_DEFAULT_ACCOUNT, region: 'us-east-1' };
 
-new BackendStack(app, 'RafaelBackendStack', {
+new BackendStack(app, 'WhippinBackendStack', {
   // The exact web origin allowed to read the API (CORS `Access-Control-Allow-Origin`).
   // Defaults to the site origin derived from `domainName`; override with
   // `-c allowedOrigin=https://...`.
@@ -46,7 +46,7 @@ new BackendStack(app, 'RafaelBackendStack', {
   env,
 });
 
-new WebStack(app, 'RafaelWebStack', {
+new WebStack(app, 'WhippinWebStack', {
   // Site host = `<siteSubdomain>.<domainName>`, siteSubdomain defaulting to "" (apex).
   domainName,
   siteSubdomain,

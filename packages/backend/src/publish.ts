@@ -9,20 +9,20 @@
 // (and S3) select.
 //
 // `--s3` always publishes to the ONE bucket the infra package deploys: publish reads its
-// name from the `PuzzleBucketName` output of `RafaelBackendStack` — the infra code is the
+// name from the `PuzzleBucketName` output of `WhippinBackendStack` — the infra code is the
 // single source of truth, so there is no bucket flag/env. Looking it up needs AWS creds
 // (already required to upload) + `cloudformation:DescribeStacks`.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { Puzzle } from '@rafaelisinthepan/shared';
+import type { Puzzle } from '@whippin/shared';
 import { activeDate } from './day';
 import { defaultLocalStoreRoot, isValidDate, storeKey } from './layout';
 
 // The infra identifiers publish reads the bucket name from — mirror packages/infra:
 // the stack id in `bin/app.ts` and the CfnOutput id in `lib/backend-stack.ts`. The stack
 // is pinned to us-east-1 (see bin/app.ts), so its outputs and its bucket live there.
-const STACK_NAME = 'RafaelBackendStack';
+const STACK_NAME = 'WhippinBackendStack';
 const BUCKET_OUTPUT_KEY = 'PuzzleBucketName';
 const STACK_REGION = 'us-east-1';
 

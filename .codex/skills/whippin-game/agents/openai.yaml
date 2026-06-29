@@ -1,0 +1,4 @@
+interface:
+  display_name: "Whippin AI"
+  short_description: "Build and validate the Whippin AI game"
+  default_prompt: "Use $whippin-game to implement or validate changes for the Whippin AI React game."

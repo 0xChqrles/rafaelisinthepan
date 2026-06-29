@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { Puzzle } from '@rafaelisinthepan/shared';
+import type { Puzzle } from '@whippin/shared';
 import type { PuzzleStore } from './store';
 import { storeKey } from './layout';
 

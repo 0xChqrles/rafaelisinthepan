@@ -1,5 +1,5 @@
 import { type S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
-import type { Puzzle } from '@rafaelisinthepan/shared';
+import type { Puzzle } from '@whippin/shared';
 import type { PuzzleStore } from './store';
 import { storeKey } from './layout';
 

@@ -1,4 +1,4 @@
-import type { Puzzle } from '@rafaelisinthepan/shared';
+import type { Puzzle } from '@whippin/shared';
 
 // Abstraction over wherever the day's puzzles live (S3 in prod, a fake in tests).
 // `getPuzzle` returns null when no puzzle exists for that date+lang — that is a clean

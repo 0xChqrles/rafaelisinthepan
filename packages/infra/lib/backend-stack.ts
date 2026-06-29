@@ -13,7 +13,7 @@ import * as targets from 'aws-cdk-lib/aws-route53-targets';
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // packages/infra/lib
 // The Lambda IS the backend package's existing entrypoint (createHandler over the S3
-// store); nothing is duplicated here. esbuild bundles it (and @rafaelisinthepan/shared)
+// store); nothing is duplicated here. esbuild bundles it (and @whippin/shared)
 // at synth time; @aws-sdk/* is left external (provided by the Node runtime).
 const LAMBDA_ENTRY = path.resolve(here, '..', '..', 'backend', 'src', 'index.ts');
 const REPO_LOCKFILE = path.resolve(here, '..', '..', '..', 'pnpm-lock.yaml');
@@ -111,7 +111,7 @@ export class BackendStack extends Stack {
     // late-published puzzle's short 404 TTL revalidate, maxTtl caps any single entry at
     // one full day (the longest a puzzle stays fresh between flips).
     const cachePolicy = new cloudfront.CachePolicy(this, 'PuzzleCachePolicy', {
-      cachePolicyName: 'RafaelDailyPuzzle',
+      cachePolicyName: 'WhippinDailyPuzzle',
       comment: 'Daily puzzle: cache key = path + ?lang; TTL from origin Cache-Control.',
       queryStringBehavior: cloudfront.CacheQueryStringBehavior.allowList('lang'),
       headerBehavior: cloudfront.CacheHeaderBehavior.none(),
@@ -124,7 +124,7 @@ export class BackendStack extends Stack {
     });
 
     const distribution = new cloudfront.Distribution(this, 'PuzzleCdn', {
-      comment: 'Rafael daily-puzzle API',
+      comment: 'Whippin daily-puzzle API',
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100, // NA + EU (en/fr audience)
       domainNames: apiDomain ? [apiDomain] : undefined,
       certificate: apiCertificate,

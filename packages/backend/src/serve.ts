@@ -4,7 +4,7 @@
 // shape are therefore identical to production — this is a thin Function-URL ⇄ HTTP
 // adapter, not a second backend.
 //
-// Run it with `pnpm backend:dev` (or `pnpm --filter @rafaelisinthepan/backend serve:local`)
+// Run it with `pnpm backend:dev` (or `pnpm --filter @whippin/backend serve:local`)
 // and point the front at it via VITE_API_BASE_URL (e.g. http://localhost:8787).
 import { createServer, type IncomingMessage } from 'node:http';
 import { createHandler } from './handler';

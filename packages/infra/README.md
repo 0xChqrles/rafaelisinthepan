@@ -1,10 +1,10 @@
-# @rafaelisinthepan/infra
+# @whippin/infra
 
 AWS **CDK** app with two independent sibling stacks, each deployable on its own
-(`cdk deploy RafaelBackendStack` / `cdk deploy RafaelWebStack`):
+(`cdk deploy WhippinBackendStack` / `cdk deploy WhippinWebStack`):
 
-- **`RafaelBackendStack`** (issue #3) — the daily-puzzle backend (#2).
-- **`RafaelWebStack`** (issue #21) — hosting for the web front (`packages/web`).
+- **`WhippinBackendStack`** (issue #3) — the daily-puzzle backend (#2).
+- **`WhippinWebStack`** (issue #21) — hosting for the web front (`packages/web`).
 
 Both stacks are **pinned to `us-east-1`** (CloudFront's ACM certs must live there, so the
 certs stay in-stack with no cross-region reference). A single `-c domainName=<apex>` wires
@@ -12,7 +12,7 @@ the custom domains: the **site** serves at the apex (`https://<domain>`) and the
 `https://api.<domain>` (a stable `VITE_API_BASE_URL`), with the backend's CORS origin
 defaulting to the site origin. The hosted zone (`<domain>`) must already exist in Route53.
 
-## `RafaelBackendStack` (#3) — daily-puzzle backend
+## `WhippinBackendStack` (#3) — daily-puzzle backend
 
 Provisions the backend (#2) so it is reproducible and deployable from one command:
 
@@ -40,7 +40,7 @@ Provisions the backend (#2) so it is reproducible and deployable from one comman
               └──────────────┘                  └───────────────────┘                └────────────┘
 ```
 
-## `RafaelWebStack` (#21) — web front hosting
+## `WhippinWebStack` (#21) — web front hosting
 
 Hosts the built SPA (`packages/web/dist`) on a **private S3 bucket** served only through
 **CloudFront** (Origin Access Control) over HTTPS, with **SPA fallback** (403/404 →
@@ -61,7 +61,7 @@ requires for its ACM cert — so the cert lives in-stack with no cross-region re
   synthesizes/deploys on the default `*.cloudfront.net` domain (no ACM/Route53) — handy for
   a credential-free smoke synth.
 
-> **Build before deploy.** `cdk deploy RafaelWebStack` zips `packages/web/dist` at synth
+> **Build before deploy.** `cdk deploy WhippinWebStack` zips `packages/web/dist` at synth
 > time, so run `pnpm build` first (with `VITE_API_BASE_URL` set, see *Wiring* below). If
 > `dist` is absent the stack still deploys but **skips the upload** with a warning.
 
@@ -74,12 +74,12 @@ origin** (override with `-c allowedOrigin=`).
 
 ```bash
 # 1. Backend → api.<domain> (CORS defaults to https://<domain>).
-pnpm --filter @rafaelisinthepan/infra deploy RafaelBackendStack -c domainName=whippin.ai
+pnpm --filter @whippin/infra deploy WhippinBackendStack -c domainName=whippin.ai
 # 2. Build the web. `VITE_API_BASE_URL` comes from the committed
 #    packages/web/.env.production (https://api.whippin.ai) — no inline env needed.
 pnpm build
 # 3. Deploy the site at the apex (uploads dist, invalidates CloudFront).
-pnpm --filter @rafaelisinthepan/infra deploy RafaelWebStack -c domainName=whippin.ai
+pnpm --filter @whippin/infra deploy WhippinWebStack -c domainName=whippin.ai
 ```
 
 The ACM certs are DNS-validated against the `whippin.ai` hosted zone, so the first deploy of
@@ -92,15 +92,15 @@ Run from this package (or the repo root via `pnpm infra:*`). The app command in
 **stack name** to target one (omit it to act on both):
 
 ```bash
-pnpm --filter @rafaelisinthepan/infra synth      # synthesize CloudFormation (also `pnpm infra:synth` from root)
-pnpm --filter @rafaelisinthepan/infra diff       # diff against the deployed stack(s) (`pnpm infra:diff`)
-pnpm --filter @rafaelisinthepan/infra deploy      # deploy                            (`pnpm infra:deploy`)
-pnpm --filter @rafaelisinthepan/infra destroy     # tear down (the puzzle bucket is RETAINed)
-pnpm --filter @rafaelisinthepan/infra typecheck   # tsc --noEmit
+pnpm --filter @whippin/infra synth      # synthesize CloudFormation (also `pnpm infra:synth` from root)
+pnpm --filter @whippin/infra diff       # diff against the deployed stack(s) (`pnpm infra:diff`)
+pnpm --filter @whippin/infra deploy      # deploy                            (`pnpm infra:deploy`)
+pnpm --filter @whippin/infra destroy     # tear down (the puzzle bucket is RETAINed)
+pnpm --filter @whippin/infra typecheck   # tsc --noEmit
 
 # Target a single stack (args pass straight through to cdk):
-pnpm --filter @rafaelisinthepan/infra deploy RafaelBackendStack -c domainName=whippin.ai
-pnpm --filter @rafaelisinthepan/infra deploy RafaelWebStack     -c domainName=whippin.ai
+pnpm --filter @whippin/infra deploy WhippinBackendStack -c domainName=whippin.ai
+pnpm --filter @whippin/infra deploy WhippinWebStack     -c domainName=whippin.ai
 ```
 
 Deploying needs AWS credentials in the environment and a **bootstrapped** account/region
@@ -112,7 +112,7 @@ caching the result into `cdk.context.json`.
 
 `cdk deploy` prints, per stack:
 
-**`RafaelBackendStack`**
+**`WhippinBackendStack`**
 
 | output                   | use                                                                       |
 | ------------------------ | ------------------------------------------------------------------------- |
@@ -121,7 +121,7 @@ caching the result into `cdk.context.json`.
 | `FunctionUrl`            | the Lambda Function URL (CloudFront origin; not called directly).         |
 | `DistributionDomainName` | the CloudFront default domain (Route53 alias target for `api.<domain>`).   |
 
-**`RafaelWebStack`**
+**`WhippinWebStack`**
 
 | output                   | use                                                          |
 | ------------------------ | ------------------------------------------------------------ |
@@ -139,20 +139,20 @@ stack and a new `us-east-1` stack collide on the same global names (`409 Already
 if both exist at once.
 
 The old stack can't be removed with `cdk destroy` (the CDK code now pins this stack to
-`us-east-1`, so `cdk destroy RafaelBackendStack` targets us-east-1 regardless of
+`us-east-1`, so `cdk destroy WhippinBackendStack` targets us-east-1 regardless of
 `AWS_REGION`). Delete it via CloudFormation directly:
 
 ```bash
 # 1. Delete the old eu-west-1 stack and WAIT for it to finish (CloudFront distribution
 #    deletion is slow, ~15–20 min). Its RETAINed puzzle bucket is left behind.
-aws cloudformation delete-stack       --stack-name RafaelBackendStack --region eu-west-1
-aws cloudformation wait stack-delete-complete --stack-name RafaelBackendStack --region eu-west-1
-# 2. If a previous us-east-1 attempt left RafaelBackendStack in ROLLBACK_COMPLETE, drop it
+aws cloudformation delete-stack       --stack-name WhippinBackendStack --region eu-west-1
+aws cloudformation wait stack-delete-complete --stack-name WhippinBackendStack --region eu-west-1
+# 2. If a previous us-east-1 attempt left WhippinBackendStack in ROLLBACK_COMPLETE, drop it
 #    (a ROLLBACK_COMPLETE stack can't be updated):
-aws cloudformation delete-stack       --stack-name RafaelBackendStack --region us-east-1
-aws cloudformation wait stack-delete-complete --stack-name RafaelBackendStack --region us-east-1
+aws cloudformation delete-stack       --stack-name WhippinBackendStack --region us-east-1
+aws cloudformation wait stack-delete-complete --stack-name WhippinBackendStack --region us-east-1
 # 3. Now deploy fresh in us-east-1 (global names are free).
-pnpm --filter @rafaelisinthepan/infra deploy --all -c domainName=whippin.ai
+pnpm --filter @whippin/infra deploy --all -c domainName=whippin.ai
 ```
 
 The old `eu-west-1` puzzle bucket is `RETAIN`ed, so step 1 leaves it behind — delete it

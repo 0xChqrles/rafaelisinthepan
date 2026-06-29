@@ -1,4 +1,4 @@
-# Rafael is in the pan — monorepo
+# Whippin AI — monorepo
 
 Daily sentence-reconstruction game. A **pnpm workspaces** monorepo.
 

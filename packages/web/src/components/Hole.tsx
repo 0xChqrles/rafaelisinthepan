@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react';
 import FloatingHit, { HIT_FADE_MS } from './FloatingHit';
 import { heatColor } from '../game/heat';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
-import type { HitState, RuntimeHole } from '@rafaelisinthepan/shared';
+import type { HitState, RuntimeHole } from '@whippin/shared';
 
 // The floating number ("hit") does not improve any hole: cap its heat at 150 so
 // the gradient stays meaningful. Above that, everything stays at the coldest color (blue).

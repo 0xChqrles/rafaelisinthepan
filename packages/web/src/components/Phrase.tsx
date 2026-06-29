@@ -1,6 +1,6 @@
 import { Fragment } from 'react';
 import Hole from './Hole';
-import type { HitState, RuntimeHole } from '@rafaelisinthepan/shared';
+import type { HitState, RuntimeHole } from '@whippin/shared';
 
 // Render the sentence: normal words as plain text, holes via <Hole>.
 export default function Phrase({
