@@ -4,35 +4,47 @@
 // (#21 — private S3 + CloudFront + ACM + Route53). Run via `cdk synth` / `cdk deploy`
 // (cdk.json points the app command at `npx tsx bin/app.ts`); target one with
 // `cdk deploy RafaelBackendStack` / `cdk deploy RafaelWebStack`.
+//
+// Both stacks are pinned to us-east-1 — CloudFront's ACM certs must live there, so the
+// certs stay in-stack with no cross-region reference. With a single `-c domainName=<apex>`
+// the site serves at the apex (e.g. https://whippin.ai) and the API at api.<domain>
+// (a stable VITE_API_BASE_URL); the backend CORS origin defaults to the site origin.
 import { App } from 'aws-cdk-lib';
 import { BackendStack } from '../lib/backend-stack';
 import { WebStack } from '../lib/web-stack';
 
 const app = new App();
 
+// Shared deploy-time inputs. `domainName` is the registered apex whose Route53 hosted zone
+// already lives in this account (e.g. `-c domainName=whippin.ai`); omit it for a
+// credential-free smoke synth on the default *.cloudfront.net domains (no ACM/Route53).
+const domainName: string | undefined = app.node.tryGetContext('domainName');
+const siteSubdomain: string = app.node.tryGetContext('siteSubdomain') ?? ''; // "" = apex
+const apiSubdomain: string = app.node.tryGetContext('apiSubdomain') ?? 'api';
+// The site's final origin — used as the backend's default CORS allowedOrigin.
+const siteHost = domainName
+  ? siteSubdomain
+    ? `${siteSubdomain}.${domainName}`
+    : domainName
+  : undefined;
+
+// us-east-1 for both: CloudFront ACM certs must live there (see file header).
+const env = { account: process.env.CDK_DEFAULT_ACCOUNT, region: 'us-east-1' };
+
 new BackendStack(app, 'RafaelBackendStack', {
   // The exact web origin allowed to read the API (CORS `Access-Control-Allow-Origin`).
-  // Pass at deploy time: `cdk deploy -c allowedOrigin=https://play.chqrles.me`.
-  // Defaults to "*" (handy before the real domain exists).
-  allowedOrigin: app.node.tryGetContext('allowedOrigin'),
-  // Deploy into the account/region from the ambient AWS profile (CDK_DEFAULT_*).
-  env: {
-    account: process.env.CDK_DEFAULT_ACCOUNT,
-    region: process.env.CDK_DEFAULT_REGION,
-  },
+  // Defaults to the site origin derived from `domainName`; override with
+  // `-c allowedOrigin=https://...`. Falls back to "*" in the stack before any domain.
+  allowedOrigin: app.node.tryGetContext('allowedOrigin') ?? (siteHost ? `https://${siteHost}` : undefined),
+  // When set, the API gets a stable custom domain `<apiSubdomain>.<domainName>`.
+  domainName,
+  apiSubdomain,
+  env,
 });
 
 new WebStack(app, 'RafaelWebStack', {
-  // The registered apex domain whose Route53 hosted zone lives in this account, e.g.
-  // `cdk deploy RafaelWebStack -c domainName=chqrles.me`. Omit for a credential-free
-  // smoke synth on the default *.cloudfront.net domain (no ACM/Route53).
-  domainName: app.node.tryGetContext('domainName'),
-  // Subdomain under domainName; defaults to "play" (-> play.<domain>). Empty = apex.
-  siteSubdomain: app.node.tryGetContext('siteSubdomain'),
-  // Pinned to us-east-1: CloudFront's ACM cert must live there, so keeping the whole
-  // stack in-region avoids a cross-region certificate reference.
-  env: {
-    account: process.env.CDK_DEFAULT_ACCOUNT,
-    region: 'us-east-1',
-  },
+  // Site host = `<siteSubdomain>.<domainName>`, siteSubdomain defaulting to "" (apex).
+  domainName,
+  siteSubdomain,
+  env,
 });

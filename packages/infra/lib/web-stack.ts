@@ -22,8 +22,8 @@ export interface WebStackProps extends StackProps {
   // SPA on the default *.cloudfront.net domain with no ACM/Route53 (handy for a smoke
   // synth without AWS credentials). Provide it for the real, custom-domain deploy.
   domainName?: string;
-  // Subdomain label for the site under `domainName` (default "play" -> play.<domain>).
-  // Pass an empty string to serve at the apex. Ignored when `domainName` is unset.
+  // Subdomain label for the site under `domainName`. Defaults to "" (the apex,
+  // e.g. whippin.ai); set e.g. "play" for play.<domain>. Ignored when `domainName` is unset.
   siteSubdomain?: string;
 }
 
@@ -38,8 +38,9 @@ export class WebStack extends Stack {
     super(scope, id, props);
 
     const domainName = props.domainName;
-    const subdomain = props.siteSubdomain ?? 'play';
-    // The site's final origin host, e.g. "play.chqrles.me" (or the apex when subdomain "").
+    const subdomain = props.siteSubdomain ?? '';
+    // The site's final origin host: the apex (e.g. "whippin.ai") by default, or
+    // "<subdomain>.<domain>" when a subdomain is given.
     const siteDomain = domainName ? (subdomain ? `${subdomain}.${domainName}` : domainName) : undefined;
 
     // ── S3: the private SPA bucket ────────────────────────────────────────────
