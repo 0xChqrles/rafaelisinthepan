@@ -378,9 +378,10 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   Outputs: `ApiUrl` (→ `VITE_API_BASE_URL`), `PuzzleBucketName` (#4 upload target),
   `FunctionUrl`, `DistributionDomainName`. Commands: `pnpm infra:synth` / `infra:diff` /
   `infra:deploy` (root) or `pnpm --filter @whippin/infra <synth|deploy|diff|destroy>`;
-  deploy needs AWS creds + a bootstrapped account. **`-c domainName=<apex>` is REQUIRED** —
-  the app fails fast without it (`bin/app.ts`); it drives the API/site domains, `WebStack`,
-  and the puzzle bucket name. The API gets the stable custom domain `api.<domain>` (override
+  deploy needs AWS creds + a bootstrapped account. **`-c domainName=<apex>` defaults to
+  `whippin.ai`** (`bin/app.ts`), so every cdk command works with no flag; it drives the
+  API/site domains, `WebStack`, and the puzzle bucket name (override `-c domainName=<other>`
+  for a different deployment). The API gets the stable custom domain `api.<domain>` (override
   label via `-c apiSubdomain=`): Route53 zone `fromLookup`, a DNS-validated **ACM** cert
   in-stack, distribution alias + **A/AAAA**; `ApiUrl` = `https://api.<domain>`. CORS
   `allowedOrigin` **defaults to the site origin**
@@ -395,7 +396,7 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   (403/404 → `/index.html`, 200). Two `BucketDeployment`s split cache lifetimes (hashed
   `assets/*` immutable-1yr, everything else `no-cache`) and **invalidate `/*`** on deploy —
   so `pnpm build` must run **before** deploy (missing `dist` → warn + skip upload). Custom
-  domain comes from the **required `-c domainName=<apex>`** (enforced in `bin/app.ts`): it
+  domain comes from `-c domainName=<apex>` (**defaults to `whippin.ai`** in `bin/app.ts`): it
   looks up the existing Route53 zone (`fromLookup`), issues a DNS-validated **ACM** cert, sets
   the distribution alias to `<siteSubdomain>.<domain>` (`siteSubdomain` default **`""` = apex**;
   set e.g. `play`), and adds **A/AAAA** aliases. (The stack keeps a defensive no-domain

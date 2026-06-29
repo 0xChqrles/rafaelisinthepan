@@ -6,8 +6,8 @@
 // `cdk deploy WhippinBackendStack` / `cdk deploy WhippinWebStack`.
 //
 // Both stacks are pinned to us-east-1 — CloudFront's ACM certs must live there, so the
-// certs stay in-stack with no cross-region reference. The single REQUIRED input is
-// `-c domainName=<apex>`: the site serves at the apex (e.g. https://whippin.ai), the API at
+// certs stay in-stack with no cross-region reference. The apex comes from `-c domainName=<apex>`
+// (defaults to whippin.ai): the site serves at the apex (e.g. https://whippin.ai), the API at
 // api.<domain> (a stable VITE_API_BASE_URL), the puzzle bucket is `puzzles.<domain>`, and
 // the backend CORS origin defaults to the site origin.
 import { App } from 'aws-cdk-lib';
@@ -17,16 +17,10 @@ import { WebStack } from '../lib/web-stack';
 const app = new App();
 
 // Shared deploy-time inputs. `domainName` is the registered apex whose Route53 hosted zone
-// already lives in this account (e.g. `-c domainName=whippin.ai`). It is REQUIRED: the whole
-// deployment (site/API domains, the puzzle bucket name) is anchored to it, so we fail fast
-// rather than silently land on a throwaway *.cloudfront.net URL with an auto-named bucket.
-const domainName: string | undefined = app.node.tryGetContext('domainName');
-if (!domainName) {
-  throw new Error(
-    'missing required context: pass -c domainName=<apex> (e.g. -c domainName=whippin.ai). ' +
-      'It anchors the site/API domains and the puzzle bucket name.',
-  );
-}
+// already lives in this account. It DEFAULTS to the project apex, so every cdk command
+// (bootstrap/synth/deploy) works with no flag and the puzzle bucket is always the correct
+// `puzzles.<domain>`; override with `-c domainName=<other-apex>` for a different deployment.
+const domainName: string = app.node.tryGetContext('domainName') ?? 'whippin.ai';
 const siteSubdomain: string = app.node.tryGetContext('siteSubdomain') ?? ''; // "" = apex
 const apiSubdomain: string = app.node.tryGetContext('apiSubdomain') ?? 'api';
 // The site's final origin — used as the backend's default CORS allowedOrigin.
