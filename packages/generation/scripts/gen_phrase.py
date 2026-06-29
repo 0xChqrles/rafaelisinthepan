@@ -346,8 +346,9 @@ def main():
         print(f"  {h['start']['word']}^-{h['start_rank']} -> {h['secret']['word']}")
 
     # A puzzle is not served from here: publish it into the daily store (local or S3).
+    # --s3 discovers the bucket from the deployed stack output; no --bucket needed.
     print(f"\nPublier : pnpm puzzle:publish {out_path}"
-          f"\n          pnpm puzzle:publish {out_path} --s3 --bucket <NAME>")
+          f"\n          pnpm puzzle:publish {out_path} --s3")
 
 
 if __name__ == "__main__":

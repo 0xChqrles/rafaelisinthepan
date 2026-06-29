@@ -300,7 +300,7 @@ pnpm reduce:en        # embedding/en/glove.6B.300d.txt  -> glove.6B.300d_reduced
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--`)
 
 # Local backend harness (@rafaelisinthepan/backend, #17) — no AWS creds needed.
-pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3 --bucket NAME]  # default: local + active day
+pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output)
 pnpm backend:dev                # local server (GET /?lang=, /today) on :8787 over the local store
 
 # Front end (@rafaelisinthepan/web)
@@ -349,9 +349,14 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
 - **Local backend harness (#17):** `pnpm backend:dev` runs the **same `createHandler`**
   as the deployed Lambda over a local filesystem store (`fsStore`), so the day/404/CORS/
   `Puzzle` behaviour is identical to prod with no AWS creds. `pnpm puzzle:publish
-  <file>` places a generated puzzle into the store — **local by default**, `--s3
-  --bucket` to push real S3, `--day YYYY-MM-DD` to target a game day (defaults to the
-  active 22:00-ET day). Store key (shared by readers + writer in `backend/src/layout.ts`,
+  <file>` places a generated puzzle into the store — **local by default**, `--s3`
+  to push real S3, `--day YYYY-MM-DD` to target a game day (defaults to the
+  active 22:00-ET day). `--s3` always targets the ONE bucket the infra package deploys —
+  `publish` reads its name from the `PuzzleBucketName` output of `RafaelBackendStack`
+  (us-east-1) via CloudFormation `DescribeStacks` (#4), so the infra code is the single
+  source of truth and there is **no bucket flag/env** (needs `cloudformation:DescribeStacks`
+  + the SDK `@aws-sdk/client-cloudformation`; the bucket is addressed in us-east-1 where the
+  stack is pinned). Store key (shared by readers + writer in `backend/src/layout.ts`,
   identical for local FS and S3): flat `<root>/<date>.<lang>.json` — fully determined by
   (date, lang), so the stores GetObject/readFile it directly (no list+filter) and it
   stays listable by a date prefix; root defaults to `backend/.local-store` (gitignored),
@@ -360,7 +365,11 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   (backend devDep).
 - **CDK stack (#3):** `packages/infra` (`@rafaelisinthepan/infra`) provisions the backend
   with AWS CDK v2 — one `BackendStack` (`lib/backend-stack.ts`) defining: a **private** S3
-  puzzle bucket (all public access blocked, TLS enforced, `RETAIN`), a **`NodejsFunction`**
+  puzzle bucket (all public access blocked, TLS enforced, `RETAIN`; its **name** is DERIVED
+  from the domain as `puzzles.<domainName>` (auto-generated when no `-c domainName`) and
+  exposed via the `PuzzleBucketName` output that `puzzle:publish` reads to discover it — the
+  stack is the single source of truth for the name. ⚠ Changing it on an already-deployed
+  stack REPLACES the bucket; the old one is RETAINed/orphaned), a **`NodejsFunction`**
   that bundles `backend/src/index.ts` with esbuild (ESM, `@aws-sdk/*` left external) and
   carries `PUZZLE_BUCKET`/`ALLOWED_ORIGIN`, and a **CloudFront** distribution in front of an
   **IAM-auth Function URL via OAC** (only CloudFront may invoke it). The Lambda gets
@@ -369,11 +378,12 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   Outputs: `ApiUrl` (→ `VITE_API_BASE_URL`), `PuzzleBucketName` (#4 upload target),
   `FunctionUrl`, `DistributionDomainName`. Commands: `pnpm infra:synth` / `infra:diff` /
   `infra:deploy` (root) or `pnpm --filter @rafaelisinthepan/infra <synth|deploy|diff|destroy>`;
-  deploy needs AWS creds + a bootstrapped account. **`-c domainName=<apex>`** (gated; also
-  drives `WebStack`) gives the API a stable custom domain `api.<domain>` (override label via
-  `-c apiSubdomain=`): looks up the Route53 zone (`fromLookup`), a DNS-validated **ACM** cert
-  in-stack, distribution alias + **A/AAAA**; `ApiUrl` then = `https://api.<domain>`. Without
-  it the API stays on `*.cloudfront.net`. CORS `allowedOrigin` **defaults to the site origin**
+  deploy needs AWS creds + a bootstrapped account. **`-c domainName=<apex>` is REQUIRED** —
+  the app fails fast without it (`bin/app.ts`); it drives the API/site domains, `WebStack`,
+  and the puzzle bucket name. The API gets the stable custom domain `api.<domain>` (override
+  label via `-c apiSubdomain=`): Route53 zone `fromLookup`, a DNS-validated **ACM** cert
+  in-stack, distribution alias + **A/AAAA**; `ApiUrl` = `https://api.<domain>`. CORS
+  `allowedOrigin` **defaults to the site origin**
   `https://<domain>` (override `-c allowedOrigin=`). The CDK app also defines a sibling
   `WebStack` (below) — pass a stack name to target one. **Both stacks pinned to `us-east-1`**
   (the backend was migrated from `eu-west-1`; tear the old stack down — see infra README).
@@ -385,11 +395,11 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   (403/404 → `/index.html`, 200). Two `BucketDeployment`s split cache lifetimes (hashed
   `assets/*` immutable-1yr, everything else `no-cache`) and **invalidate `/*`** on deploy —
   so `pnpm build` must run **before** deploy (missing `dist` → warn + skip upload). Custom
-  domain is **gated on `-c domainName=<apex>`**: when set it looks up the existing Route53
-  zone (`fromLookup`), issues a DNS-validated **ACM** cert, sets the distribution alias to
-  `<siteSubdomain>.<domain>` (`siteSubdomain` default **`""` = apex**; set e.g. `play`), and
-  adds **A/AAAA** aliases; without it the stack serves on `*.cloudfront.net` (no ACM/Route53)
-  for a credential-free smoke synth. Wiring: build the web with
+  domain comes from the **required `-c domainName=<apex>`** (enforced in `bin/app.ts`): it
+  looks up the existing Route53 zone (`fromLookup`), issues a DNS-validated **ACM** cert, sets
+  the distribution alias to `<siteSubdomain>.<domain>` (`siteSubdomain` default **`""` = apex**;
+  set e.g. `play`), and adds **A/AAAA** aliases. (The stack keeps a defensive no-domain
+  branch — `*.cloudfront.net`, no ACM/Route53 — only for direct construction.) Wiring: build the web with
   `VITE_API_BASE_URL=https://api.<domain>` (the backend `ApiUrl`); the backend's CORS origin
   defaults to this site's `SiteUrl` (`https://<domain>`). Outputs: `SiteUrl`,
   `SiteBucketName`, `DistributionId`, `DistributionDomainName`.

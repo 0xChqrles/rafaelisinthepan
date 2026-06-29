@@ -40,9 +40,15 @@ export class BackendStack extends Stack {
     // ── S3: the private puzzle bucket ─────────────────────────────────────────
     // Holds the `<YYYY-MM-DD>.<lang>.json` objects keyed by backend/src/layout.ts
     // (`storeKey`) — the upload target for #4. Fully private: blocks all public
-    // access, enforces TLS, encrypts at rest. RETAIN so tearing down the stack never
-    // drops accumulated puzzle history.
+    // access, enforces TLS, encrypts at rest. RETAIN so tearing down the stack never drops
+    // accumulated puzzle history. The name is DERIVED from the domain (`puzzles.<domainName>`)
+    // — the single source of truth; `puzzle:publish` reads the PuzzleBucketName output (below)
+    // to discover it, never hardcoding it. The app requires `-c domainName` (see bin/app.ts);
+    // the `?:` only guards a direct construction without one (then CFN auto-generates a name).
+    // ⚠ Changing the name on an already-deployed stack REPLACES the bucket (old one RETAINed/
+    // orphaned), so re-publish into the new bucket and delete the old one.
     const bucket = new s3.Bucket(this, 'PuzzleBucket', {
+      bucketName: props.domainName ? `puzzles.${props.domainName}` : undefined,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.S3_MANAGED,
       enforceSSL: true,
