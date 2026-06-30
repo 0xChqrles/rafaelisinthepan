@@ -259,6 +259,9 @@ When asked to work/implement/do/resolve issue #N:
   push, and open a PR with `gh pr create` that references the issue (put `Closes #N`
   in the body so merging auto-closes it). Do **NOT** merge the PR and do **NOT**
   manually close the issue — the human reviews and merges.
+- **Do not brand branches or PR titles with the agent/tool name.** Use descriptive
+  names like `issue-N-short-slug` and `Add favicon metadata`, not `codex/...` or
+  `[codex] ...`.
 - **Keep the PR description short:** what changed, how to verify, any AGENTS.md edits
   made.
 
