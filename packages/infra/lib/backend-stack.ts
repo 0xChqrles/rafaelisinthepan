@@ -13,7 +13,7 @@ import * as targets from 'aws-cdk-lib/aws-route53-targets';
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // packages/infra/lib
 // The Lambda IS the backend package's existing entrypoint (createHandler over the S3
-// store); nothing is duplicated here. esbuild bundles it (and @rafaelisinthepan/shared)
+// store); nothing is duplicated here. esbuild bundles it (and @whippin/shared)
 // at synth time; @aws-sdk/* is left external (provided by the Node runtime).
 const LAMBDA_ENTRY = path.resolve(here, '..', '..', 'backend', 'src', 'index.ts');
 const REPO_LOCKFILE = path.resolve(here, '..', '..', '..', 'pnpm-lock.yaml');
@@ -40,8 +40,16 @@ export class BackendStack extends Stack {
     // ── S3: the private puzzle bucket ─────────────────────────────────────────
     // Holds the `<YYYY-MM-DD>.<lang>.json` objects keyed by backend/src/layout.ts
     // (`storeKey`) — the upload target for #4. Fully private: blocks all public
-    // access, enforces TLS, encrypts at rest. RETAIN so tearing down the stack never
-    // drops accumulated puzzle history.
+    // access, enforces TLS, encrypts at rest. RETAIN so tearing down the stack never drops
+    // accumulated puzzle history.
+    //
+    // The name is intentionally NOT hardcoded — CloudFormation auto-generates a unique one.
+    // A fixed physical name is an anti-pattern here: S3 names are globally unique (cross-account
+    // collisions, slow release on replacement) and, combined with RETAIN, a teardown ORPHANS the
+    // bucket so the next deploy collides on the same name (the original deploy failure). Nothing
+    // needs the literal name: the Lambda reads `bucket.bucketName` and `puzzle:publish` discovers
+    // it from the `PuzzleBucketName` output (below) — the stack stays the single source of truth,
+    // just via the output rather than a literal.
     const bucket = new s3.Bucket(this, 'PuzzleBucket', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.S3_MANAGED,
@@ -105,7 +113,7 @@ export class BackendStack extends Stack {
     // late-published puzzle's short 404 TTL revalidate, maxTtl caps any single entry at
     // one full day (the longest a puzzle stays fresh between flips).
     const cachePolicy = new cloudfront.CachePolicy(this, 'PuzzleCachePolicy', {
-      cachePolicyName: 'RafaelDailyPuzzle',
+      cachePolicyName: 'WhippinDailyPuzzle',
       comment: 'Daily puzzle: cache key = path + ?lang; TTL from origin Cache-Control.',
       queryStringBehavior: cloudfront.CacheQueryStringBehavior.allowList('lang'),
       headerBehavior: cloudfront.CacheHeaderBehavior.none(),
@@ -118,7 +126,7 @@ export class BackendStack extends Stack {
     });
 
     const distribution = new cloudfront.Distribution(this, 'PuzzleCdn', {
-      comment: 'Rafael daily-puzzle API',
+      comment: 'Whippin daily-puzzle API',
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100, // NA + EU (en/fr audience)
       domainNames: apiDomain ? [apiDomain] : undefined,
       certificate: apiCertificate,
@@ -136,6 +144,11 @@ export class BackendStack extends Stack {
     });
 
     // ── Route53: alias the API domain at the distribution ─────────────────────
+    // Plain A/AAAA aliases owned by this stack. Once created, redeploys update them in place
+    // (CloudFormation UPSERTs records it manages), so they never collide on their own lifecycle.
+    // A *foreign* pre-existing `api.<domain>` record (e.g. from an old deployment) would block
+    // the first create — clear it once as a migration step rather than relying on the deprecated,
+    // delete-then-create `deleteExisting`.
     if (zone && apiDomain) {
       const target = route53.RecordTarget.fromAlias(new targets.CloudFrontTarget(distribution));
       new route53.ARecord(this, 'ApiAliasA', { zone, recordName: apiDomain, target });

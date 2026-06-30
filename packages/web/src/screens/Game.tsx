@@ -4,8 +4,8 @@ import useVocab from '../hooks/useVocab';
 import Phrase from '../components/Phrase';
 import ProgressBar from '../components/ProgressBar';
 import WordInput from '../components/WordInput';
-import { fold } from '@rafaelisinthepan/shared';
-import type { HitState, Hole, Puzzle, RankEntry, RankMap, RuntimeHole } from '@rafaelisinthepan/shared';
+import { fold } from '@whippin/shared';
+import type { HitState, Hole, Puzzle, RankEntry, RankMap, RuntimeHole } from '@whippin/shared';
 
 // Feedback shown under the input. Only INVALID words use it now (red shake +
 // "does not exist"); a valid-but-too-far guess gives per-hole "MISS" feedback

@@ -14,10 +14,13 @@ importers:
 
   packages/backend:
     dependencies:
+      '@aws-sdk/client-cloudformation':
+        specifier: ^3.700.0
+        version: 3.1075.0
       '@aws-sdk/client-s3':
         specifier: ^3.700.0
         version: 3.1075.0
-      '@rafaelisinthepan/shared':
+      '@whippin/shared':
         specifier: workspace:*
         version: link:../shared
     devDependencies:
@@ -35,7 +38,7 @@ importers:
 
   packages/infra:
     dependencies:
-      '@rafaelisinthepan/backend':
+      '@whippin/backend':
         specifier: workspace:*
         version: link:../backend
       aws-cdk-lib:
@@ -69,7 +72,7 @@ importers:
 
   packages/web:
     dependencies:
-      '@rafaelisinthepan/shared':
+      '@whippin/shared':
         specifier: workspace:*
         version: link:../shared
       react:
@@ -135,6 +138,10 @@ packages:
 
   '@aws-sdk/checksums@3.1000.8':
     resolution: {integrity: sha512-v0U9S7gBIme3OTgt1LdbAF4RpvavCc+4GK1+1xqAcqtbrHsEhjQo6R45LKcjhs/+WrRJij1Y0Gztw7QPAIeUfA==}
+    engines: {node: '>=20.0.0'}
+
+  '@aws-sdk/client-cloudformation@3.1075.0':
+    resolution: {integrity: sha512-B4hgU3+DxRqoTeSqcplnXWC+bIlj8WQxH/EgshyyOk9+itYrTgWqnJxI4NPy4w3EuLhzcUVhmxSzbsgCmS0SMw==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/client-s3@3.1075.0':
@@ -1220,6 +1227,19 @@ snapshots:
       '@aws-sdk/core': 3.974.23
       '@aws-sdk/types': 3.973.13
       '@smithy/core': 3.26.0
+      '@smithy/types': 4.15.0
+      tslib: 2.8.1
+
+  '@aws-sdk/client-cloudformation@3.1075.0':
+    dependencies:
+      '@aws-crypto/sha256-browser': 5.2.0
+      '@aws-crypto/sha256-js': 5.2.0
+      '@aws-sdk/core': 3.974.23
+      '@aws-sdk/credential-provider-node': 3.972.58
+      '@aws-sdk/types': 3.973.13
+      '@smithy/core': 3.26.0
+      '@smithy/fetch-http-handler': 5.5.2
+      '@smithy/node-http-handler': 4.8.2
       '@smithy/types': 4.15.0
       tslib: 2.8.1
 

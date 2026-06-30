@@ -7,7 +7,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import type { Puzzle } from '@rafaelisinthepan/shared';
+import type { Puzzle } from '@whippin/shared';
 import { fsStore } from './fsStore';
 import { storeKey } from './layout';
 
@@ -25,7 +25,7 @@ function puzzle(lang: string, tag: string): Puzzle {
 let root: string;
 
 beforeAll(async () => {
-  root = await mkdtemp(path.join(tmpdir(), 'rafael-fsstore-'));
+  root = await mkdtemp(path.join(tmpdir(), 'whippin-fsstore-'));
   // One puzzle per (date, lang), keyed flat — two languages share the same day.
   await writeFile(path.join(root, storeKey(DATE, 'fr')), JSON.stringify(puzzle('fr', 'vent')));
   await writeFile(path.join(root, storeKey(DATE, 'en')), JSON.stringify(puzzle('en', 'kitchen')));

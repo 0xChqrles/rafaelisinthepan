@@ -1,5 +1,5 @@
 {
-  "name": "@rafaelisinthepan/infra",
+  "name": "@whippin/infra",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@rafaelisinthepan/backend": "workspace:*",
+    "@whippin/backend": "workspace:*",
     "aws-cdk-lib": "^2.214.0",
     "constructs": "^10.4.2"
   },

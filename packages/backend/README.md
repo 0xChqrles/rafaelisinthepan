@@ -1,4 +1,4 @@
-# @rafaelisinthepan/backend
+# @whippin/backend
 
 AWS Lambda (Function URL) that serves the **daily puzzle** and is the **authoritative
 time source**. Fronted by CloudFront in prod; reads puzzles from S3. (The CDK stack
@@ -88,6 +88,6 @@ no listing — and listable by a date prefix. The store root defaults to
 ## Dev
 
 ```bash
-pnpm --filter @rafaelisinthepan/backend test       # vitest (day boundary + handler + store/layout)
-pnpm --filter @rafaelisinthepan/backend typecheck  # tsc --noEmit
+pnpm --filter @whippin/backend test       # vitest (day boundary + handler + store/layout)
+pnpm --filter @whippin/backend typecheck  # tsc --noEmit
 ```

@@ -1,4 +1,4 @@
-# AGENTS.md — Rafael is in the pan (daily sentence-reconstruction game)
+# AGENTS.md — Whippin AI (daily sentence-reconstruction game)
 
 > This file is the single source of agent guidance. `CLAUDE.md` is a symlink to it,
 > so Claude Code and Codex read the same content. Edit **this** file.
@@ -54,7 +54,7 @@ packages/
     embedding/<lang>/...      raw + *_reduced vectors + derived .kv caches
     output/word/<lang>/<s1>_<s2>_<s3>.json   generated puzzles (gitignored; publish to store/S3)
     pyproject.toml, uv.lock   Python project (uv)
-  backend/                    daily-puzzle backend (pkg @rafaelisinthepan/backend, #2)
+  backend/                    daily-puzzle backend (pkg @whippin/backend, #2)
     src/
       handler.ts              createHandler() — the ONE day/404/CORS/Puzzle logic (Lambda + local)
       day.ts                  authoritative time: 22:00-ET DST-correct active day + reset info
@@ -65,21 +65,21 @@ packages/
       publish.ts              place a generated puzzle into local store (default) or S3 (#17/#4)
       index.ts                Lambda entrypoint (s3Store + env config)
     .local-store/<date>.<lang>.json  local puzzle store (gitignored) read by serve/fsStore
-  infra/                      AWS CDK app: backend (#3) + web hosting (#21) sibling stacks (pkg @rafaelisinthepan/infra)
-    bin/app.ts                CDK app entry — RafaelBackendStack + RafaelWebStack (cdk.json runs it via `npx tsx`)
+  infra/                      AWS CDK app: backend (#3) + web hosting (#21) sibling stacks (pkg @whippin/infra)
+    bin/app.ts                CDK app entry — WhippinBackendStack + WhippinWebStack (cdk.json runs it via `npx tsx`)
     lib/backend-stack.ts      BackendStack: private S3 + Lambda(Fn URL) + CloudFront; opt api.<domain> (ACM+Route53); us-east-1
     lib/web-stack.ts          WebStack (#21): private S3 (SPA) + CloudFront(OAC) + ACM + Route53; apex; us-east-1
     cdk.json                  CDK config (app command, context)
-  shared/                     cross-cutting TS consumed by web (pkg @rafaelisinthepan/shared)
+  shared/                     cross-cutting TS consumed by web (pkg @whippin/shared)
     src/slug.ts               fold() — the slug/fold contract (byte-identical to slug())
     src/types.ts              per-puzzle schema types (Puzzle, Hole, RankMap, …)
     src/index.ts              re-exports
-  web/                        React + Vite + TS front (pkg @rafaelisinthepan/web)
+  web/                        React + Vite + TS front (pkg @whippin/web)
     src/
       hooks/useVocab.ts       fetch+cache the per-language existence Set (once per session)
       hooks/usePuzzle.ts      ask the backend for today's puzzle (+ ?puzzle= file override)
       api.ts                  backend client: puzzleUrl/todayUrl, ?puzzle= override, 404->NO PUZZLE
-      screens/Game.tsx        the guess loop, hole state (imports fold from @rafaelisinthepan/shared)
+      screens/Game.tsx        the guess loop, hole state (imports fold from @whippin/shared)
       game/scoring.ts         s(rank), holeProgress, computeProgress
       game/heat.ts            rank/progress -> heatmap color
       components/Phrase.tsx,Hole.tsx,WordInput.tsx,FloatingHit.tsx  rendering
@@ -282,7 +282,7 @@ When asked to work/implement/do/resolve issue #N:
 Uses **pnpm** (workspaces in `pnpm-workspace.yaml`, version pinned via the root
 `packageManager` field). Each root script runs from the repo **root** (it delegates
 to the right workspace via `pnpm --filter`) or from inside the package directly. The
-generation scripts are scoped to `@rafaelisinthepan/generation`; reduce/gen paths below are
+generation scripts are scoped to `@whippin/generation`; reduce/gen paths below are
 relative to `packages/generation/`. Unlike `npm`, **pnpm forwards args straight to
 the script — do NOT add a `--` separator** (a literal `--` is passed through and
 breaks `gen_phrase.py`'s arg parsing).
@@ -299,11 +299,11 @@ pnpm reduce:en        # embedding/en/glove.6B.300d.txt  -> glove.6B.300d_reduced
 #    vocab -> packages/web/public/vocab/<lang>.json (a web asset).
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--`)
 
-# Local backend harness (@rafaelisinthepan/backend, #17) — no AWS creds needed.
-pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3 --bucket NAME]  # default: local + active day
+# Local backend harness (@whippin/backend, #17) — no AWS creds needed.
+pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output)
 pnpm backend:dev                # local server (GET /?lang=, /today) on :8787 over the local store
 
-# Front end (@rafaelisinthepan/web)
+# Front end (@whippin/web)
 pnpm dev                        # dev server (set VITE_API_BASE_URL=http://localhost:8787 for the local backend)
 pnpm build                      # production build -> packages/web/dist
 pnpm typecheck                  # tsc --noEmit
@@ -349,18 +349,29 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
 - **Local backend harness (#17):** `pnpm backend:dev` runs the **same `createHandler`**
   as the deployed Lambda over a local filesystem store (`fsStore`), so the day/404/CORS/
   `Puzzle` behaviour is identical to prod with no AWS creds. `pnpm puzzle:publish
-  <file>` places a generated puzzle into the store — **local by default**, `--s3
-  --bucket` to push real S3, `--day YYYY-MM-DD` to target a game day (defaults to the
-  active 22:00-ET day). Store key (shared by readers + writer in `backend/src/layout.ts`,
+  <file>` places a generated puzzle into the store — **local by default**, `--s3`
+  to push real S3, `--day YYYY-MM-DD` to target a game day (defaults to the
+  active 22:00-ET day). `--s3` always targets the ONE bucket the infra package deploys —
+  `publish` reads its name from the `PuzzleBucketName` output of `WhippinBackendStack`
+  (us-east-1) via CloudFormation `DescribeStacks` (#4), so the infra code is the single
+  source of truth and there is **no bucket flag/env** (needs `cloudformation:DescribeStacks`
+  + the SDK `@aws-sdk/client-cloudformation`; the bucket is addressed in us-east-1 where the
+  stack is pinned). Store key (shared by readers + writer in `backend/src/layout.ts`,
   identical for local FS and S3): flat `<root>/<date>.<lang>.json` — fully determined by
   (date, lang), so the stores GetObject/readFile it directly (no list+filter) and it
   stays listable by a date prefix; root defaults to `backend/.local-store` (gitignored),
   override via `PUZZLE_STORE`. Point `VITE_API_BASE_URL=http://localhost:8787` and
   `pnpm dev` plays end-to-end (including 404 → NO PUZZLE). Runs TS via `tsx`
   (backend devDep).
-- **CDK stack (#3):** `packages/infra` (`@rafaelisinthepan/infra`) provisions the backend
+- **CDK stack (#3):** `packages/infra` (`@whippin/infra`) provisions the backend
   with AWS CDK v2 — one `BackendStack` (`lib/backend-stack.ts`) defining: a **private** S3
-  puzzle bucket (all public access blocked, TLS enforced, `RETAIN`), a **`NodejsFunction`**
+  puzzle bucket (all public access blocked, TLS enforced, `RETAIN`; its **name** is
+  **CloudFormation-generated, NOT hardcoded** — a fixed physical S3 name is an anti-pattern
+  (global-uniqueness collisions, and with `RETAIN` a teardown orphans it so the next deploy
+  collides). Nothing consumes the literal name: the Lambda reads `bucket.bucketName` and
+  `puzzle:publish` discovers it via the `PuzzleBucketName` output — the stack stays the single
+  source of truth for the name, just through the output rather than a `puzzles.<domain>` literal),
+  a **`NodejsFunction`**
   that bundles `backend/src/index.ts` with esbuild (ESM, `@aws-sdk/*` left external) and
   carries `PUZZLE_BUCKET`/`ALLOWED_ORIGIN`, and a **CloudFront** distribution in front of an
   **IAM-auth Function URL via OAC** (only CloudFront may invoke it). The Lambda gets
@@ -368,35 +379,37 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   honours the origin `Cache-Control` (the 22:00-ET-aligned `s-maxage`); maxTtl = 1 day.
   Outputs: `ApiUrl` (→ `VITE_API_BASE_URL`), `PuzzleBucketName` (#4 upload target),
   `FunctionUrl`, `DistributionDomainName`. Commands: `pnpm infra:synth` / `infra:diff` /
-  `infra:deploy` (root) or `pnpm --filter @rafaelisinthepan/infra <synth|deploy|diff|destroy>`;
-  deploy needs AWS creds + a bootstrapped account. **`-c domainName=<apex>`** (gated; also
-  drives `WebStack`) gives the API a stable custom domain `api.<domain>` (override label via
-  `-c apiSubdomain=`): looks up the Route53 zone (`fromLookup`), a DNS-validated **ACM** cert
-  in-stack, distribution alias + **A/AAAA**; `ApiUrl` then = `https://api.<domain>`. Without
-  it the API stays on `*.cloudfront.net`. CORS `allowedOrigin` **defaults to the site origin**
+  `infra:deploy` (root) or `pnpm --filter @whippin/infra <synth|deploy|diff|destroy>`;
+  deploy needs AWS creds + a bootstrapped account. **`-c domainName=<apex>` defaults to
+  `whippin.ai`** (`bin/app.ts`), so every cdk command works with no flag; it drives the
+  API/site domains and `WebStack` (override `-c domainName=<other>`
+  for a different deployment). The API gets the stable custom domain `api.<domain>` (override
+  label via `-c apiSubdomain=`): Route53 zone `fromLookup`, a DNS-validated **ACM** cert
+  in-stack, distribution alias + **A/AAAA**; `ApiUrl` = `https://api.<domain>`. CORS
+  `allowedOrigin` **defaults to the site origin**
   `https://<domain>` (override `-c allowedOrigin=`). The CDK app also defines a sibling
   `WebStack` (below) — pass a stack name to target one. **Both stacks pinned to `us-east-1`**
   (the backend was migrated from `eu-west-1`; tear the old stack down — see infra README).
-- **Web hosting stack (#21):** `lib/web-stack.ts` `WebStack` (`RafaelWebStack`) — a sibling
-  of `BackendStack`, independently deployable (`cdk deploy RafaelWebStack`), **pinned to
+- **Web hosting stack (#21):** `lib/web-stack.ts` `WebStack` (`WhippinWebStack`) — a sibling
+  of `BackendStack`, independently deployable (`cdk deploy WhippinWebStack`), **pinned to
   `us-east-1`** (CloudFront's ACM cert must live there). Hosts the built SPA
   (`packages/web/dist`) on a **private** S3 bucket (`DESTROY` + auto-delete; build is
   reproducible) served only via **CloudFront + OAC** over HTTPS, with **SPA fallback**
   (403/404 → `/index.html`, 200). Two `BucketDeployment`s split cache lifetimes (hashed
   `assets/*` immutable-1yr, everything else `no-cache`) and **invalidate `/*`** on deploy —
   so `pnpm build` must run **before** deploy (missing `dist` → warn + skip upload). Custom
-  domain is **gated on `-c domainName=<apex>`**: when set it looks up the existing Route53
-  zone (`fromLookup`), issues a DNS-validated **ACM** cert, sets the distribution alias to
-  `<siteSubdomain>.<domain>` (`siteSubdomain` default **`""` = apex**; set e.g. `play`), and
-  adds **A/AAAA** aliases; without it the stack serves on `*.cloudfront.net` (no ACM/Route53)
-  for a credential-free smoke synth. Wiring: build the web with
+  domain comes from `-c domainName=<apex>` (**defaults to `whippin.ai`** in `bin/app.ts`): it
+  looks up the existing Route53 zone (`fromLookup`), issues a DNS-validated **ACM** cert, sets
+  the distribution alias to `<siteSubdomain>.<domain>` (`siteSubdomain` default **`""` = apex**;
+  set e.g. `play`), and adds **A/AAAA** aliases. (The stack keeps a defensive no-domain
+  branch — `*.cloudfront.net`, no ACM/Route53 — only for direct construction.) Wiring: build the web with
   `VITE_API_BASE_URL=https://api.<domain>` (the backend `ApiUrl`); the backend's CORS origin
   defaults to this site's `SiteUrl` (`https://<domain>`). Outputs: `SiteUrl`,
   `SiteBucketName`, `DistributionId`, `DistributionDomainName`.
 - **Package manager:** pnpm, pinned via the root `packageManager` field
   (`pnpm@11.9.0`). `pnpm-workspace.yaml` lists the workspaces and uses `allowBuilds`
   to approve `esbuild`'s postinstall (its native binary), which pnpm blocks by default.
-- The `.codex/skills/rafaelisinthepan-game/` skill + `validate_game_data.mjs` describe a
+- The `.codex/skills/whippin-game/` skill + `validate_game_data.mjs` describe a
   **superseded** schema (see Discrepancies).
 
 ---
@@ -425,7 +438,7 @@ the number that just landed.)*
    `--words forêt ancienne` would fail: `gen_phrase.py` requires exactly 3
    (`nargs=3`), and filenames are `<s1>_<s2>_<s3>.json`. Fix the README example.
 
-3. **`.codex/skills/rafaelisinthepan-game/` is entirely stale.** Its `SKILL.md`,
+3. **`.codex/skills/whippin-game/` is entirely stale.** Its `SKILL.md`,
    `references/game-contract.md`, and `scripts/validate_game_data.mjs` target a
    superseded design: a single `public/game_data.json` with per-language
    multi-phrase arrays, a non-existent `scripts/build_game_data.py`, plain integer

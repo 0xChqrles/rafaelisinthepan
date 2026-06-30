@@ -87,21 +87,6 @@ wheels = [
 ]
 
 [[package]]
-name = "rafaelisinthepan"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "gensim" },
-    { name = "numpy" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "gensim", specifier = ">=4.4.0" },
-    { name = "numpy", specifier = ">=2.4.6" },
-]
-
-[[package]]
 name = "scipy"
 version = "1.17.1"
 source = { registry = "https://pypi.org/simple" }
@@ -172,6 +157,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/c5/65/3ada667d32675399001bf022ad3d9f3989b57101351ebc71d6fbe2384634/smart_open-7.6.1.tar.gz", hash = "sha256:4347996e7ba21db7cd1e059632e0b30395407e4f6c660d2ddffc8f2a9ae5f990", size = 54754, upload-time = "2026-05-09T06:23:37.06Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/14/78/0f68b93564b8c6b6987a0696c582ba2591a381ab2f733a501909e949f241/smart_open-7.6.1-py3-none-any.whl", hash = "sha256:b4de6aebef023aca91cc9fb372052e1343ba3f152de215bd22391a663e3ddd21", size = 64845, upload-time = "2026-05-09T06:23:35.386Z" },
+]
+
+[[package]]
+name = "whippin"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "gensim" },
+    { name = "numpy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "gensim", specifier = ">=4.4.0" },
+    { name = "numpy", specifier = ">=2.4.6" },
 ]
 
 [[package]]

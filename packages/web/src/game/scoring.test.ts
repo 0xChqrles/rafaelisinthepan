@@ -15,7 +15,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { s, holeProgress, computeProgress } from './scoring';
-import type { RankMap, RuntimeHole } from '@rafaelisinthepan/shared';
+import type { RankMap, RuntimeHole } from '@whippin/shared';
 
 // A rank map for one secret with exactly N entries -> N = number of keys.
 function mk(N: number): RankMap[string] {

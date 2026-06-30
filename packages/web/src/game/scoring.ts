@@ -6,7 +6,7 @@
 //
 // N = number of keys in ranks[secret].
 
-import type { RankMap, RuntimeHole } from '@rafaelisinthepan/shared';
+import type { RankMap, RuntimeHole } from '@whippin/shared';
 
 export function s(rank: number, N: number) {
   return 1 - Math.log(rank + 1) / Math.log(N + 1);

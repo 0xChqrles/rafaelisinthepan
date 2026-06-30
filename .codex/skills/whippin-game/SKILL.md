@@ -1,9 +1,9 @@
 ---
-name: rafaelisinthepan-game
-description: Build, modify, and validate the Rafael is in the pan React/Vite game in this repository. Use when Codex works on the game UI, `public/game_data.json`, dataset generation, ranking semantics, scoring, language selection, timer/input loop, flat pixel styling, or regression checks for the word-hole gameplay.
+name: whippin-game
+description: Build, modify, and validate the Whippin AI React/Vite game in this repository. Use when Codex works on the game UI, `public/game_data.json`, dataset generation, ranking semantics, scoring, language selection, timer/input loop, flat pixel styling, or regression checks for the word-hole gameplay.
 ---
 
-# Rafael is in the pan
+# Whippin AI
 
 ## Overview
 
@@ -20,7 +20,7 @@ Use this skill to preserve the gameplay contract while changing the React app or
 4. Validate data after changing `public/game_data.json` or `scripts/build_game_data.py`:
 
 ```bash
-node .codex/skills/rafaelisinthepan-game/scripts/validate_game_data.mjs public/game_data.json
+node .codex/skills/whippin-game/scripts/validate_game_data.mjs public/game_data.json
 ```
 
 5. Run the app checks that match the change:

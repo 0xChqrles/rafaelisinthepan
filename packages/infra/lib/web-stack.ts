@@ -31,7 +31,7 @@ export interface WebStackProps extends StackProps {
 // CloudFront (Origin Access Control) over HTTPS, with SPA fallback. When a custom domain
 // is supplied it adds a DNS-validated ACM cert (this stack is pinned to us-east-1, the
 // region CloudFront requires) and Route53 A/AAAA aliases. Sibling of BackendStack —
-// independently deployable (`cdk deploy RafaelWebStack`). VITE_API_BASE_URL stays the
+// independently deployable (`cdk deploy WhippinWebStack`). VITE_API_BASE_URL stays the
 // backend's `ApiUrl` output; the backend's `allowedOrigin` should be this site's origin.
 export class WebStack extends Stack {
   constructor(scope: Construct, id: string, props: WebStackProps = {}) {
@@ -70,7 +70,7 @@ export class WebStack extends Stack {
 
     // ── CloudFront: CDN in front of the private bucket ────────────────────────
     const distribution = new cloudfront.Distribution(this, 'SiteCdn', {
-      comment: 'Rafael web front',
+      comment: 'Whippin web front',
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100, // NA + EU (en/fr audience)
       defaultRootObject: 'index.html',
       domainNames: siteDomain ? [siteDomain] : undefined,
@@ -96,6 +96,11 @@ export class WebStack extends Stack {
     });
 
     // ── Route53: alias the site domain at the distribution ────────────────────
+    // Plain A/AAAA aliases owned by this stack. Once created, redeploys update them in place
+    // (CloudFormation UPSERTs records it manages), so they never collide on their own lifecycle.
+    // A *foreign* pre-existing apex/`<siteSubdomain>.<domain>` record (e.g. from an old
+    // deployment) would block the first create — clear it once as a migration step rather than
+    // relying on the deprecated, delete-then-create `deleteExisting`.
     if (zone && siteDomain) {
       const target = route53.RecordTarget.fromAlias(new targets.CloudFrontTarget(distribution));
       new route53.ARecord(this, 'SiteAliasA', { zone, recordName: siteDomain, target });

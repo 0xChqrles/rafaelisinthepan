@@ -1,5 +1,5 @@
 {
-  "name": "@rafaelisinthepan/web",
+  "name": "@whippin/web",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -11,7 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@rafaelisinthepan/shared": "workspace:*",
+    "@whippin/shared": "workspace:*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
