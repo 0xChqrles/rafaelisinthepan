@@ -54,6 +54,9 @@ importers:
       aws-cdk:
         specifier: ^2.1014.0
         version: 2.1128.1
+      cdk-nag:
+        specifier: ^2.38.2
+        version: 2.38.2(aws-cdk-lib@2.260.0(constructs@10.6.0))(constructs@10.6.0)
       esbuild:
         specifier: ^0.28.1
         version: 0.28.1
@@ -898,6 +901,13 @@ packages:
 
   caniuse-lite@1.0.30001799:
     resolution: {integrity: sha512-hG1bReV+OUU+MOqK4t/ZWI0tZOyz3rqS9XuhOUz1cIcbwBKjOyJEJuw9ER5JuNyqxNk8u/JUVbGibBOL1yrjFw==}
+
+  cdk-nag@2.38.2:
+    resolution: {integrity: sha512-Ddim1r8IwAPQn95KB2owbHoU4YHveHg4PfM+k7TdcANqfVmoHem6cTFMpcIuoDM16BkQQ+xshxYxZgcAoeVKGw==}
+    engines: {node: '>= 18.12.0'}
+    peerDependencies:
+      aws-cdk-lib: ^2.176.0
+      constructs: ^10.5.1
 
   chai@5.3.3:
     resolution: {integrity: sha512-4zNhdJD/iOjSH0A05ea+Ke6MU5mmpQcbQsSOkgdaUMJ9zTlDTD/GYlwohmIE2u0gaxHYiVHEn1Fw9mZ/ktJWgw==}
@@ -1930,6 +1940,11 @@ snapshots:
   cac@6.7.14: {}
 
   caniuse-lite@1.0.30001799: {}
+
+  cdk-nag@2.38.2(aws-cdk-lib@2.260.0(constructs@10.6.0))(constructs@10.6.0):
+    dependencies:
+      aws-cdk-lib: 2.260.0(constructs@10.6.0)
+      constructs: 10.6.0
 
   chai@5.3.3:
     dependencies:

@@ -11,11 +11,19 @@
 // api.<domain> (a stable VITE_API_BASE_URL), and the backend CORS origin defaults to the site
 // origin. (The puzzle bucket name is CloudFormation-generated — discovered via the
 // PuzzleBucketName output, not derived from the domain.)
-import { App } from 'aws-cdk-lib';
+import { App, Aspects, Tags } from 'aws-cdk-lib';
+import { AwsSolutionsChecks } from 'cdk-nag';
 import { BackendStack } from '../lib/backend-stack';
 import { WebStack } from '../lib/web-stack';
 
 const app = new App();
+
+// Automated best-practice/security linting on synth (AWS Solutions ruleset). Findings fail
+// synth unless suppressed with a written justification (see NagSuppressions in each stack).
+Aspects.of(app).add(new AwsSolutionsChecks({ verbose: true }));
+// Cost-allocation / ownership tags applied to every taggable resource in both stacks.
+Tags.of(app).add('Project', 'whippin');
+Tags.of(app).add('ManagedBy', 'cdk');
 
 // Shared deploy-time inputs. `domainName` is the registered apex whose Route53 hosted zone
 // already lives in this account. It DEFAULTS to the project apex, so every cdk command
@@ -45,5 +53,8 @@ new WebStack(app, 'WhippinWebStack', {
   // Site host = `<siteSubdomain>.<domainName>`, siteSubdomain defaulting to "" (apex).
   domainName,
   siteSubdomain,
+  // The backend origin the SPA calls — drives the CSP `connect-src`. Mirrors the
+  // BackendStack API domain (`api.<domain>`); undefined in the no-domain smoke synth.
+  apiOrigin: domainName ? `https://${apiSubdomain}.${domainName}` : undefined,
   env,
 });
