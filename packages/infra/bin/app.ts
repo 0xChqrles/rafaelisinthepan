@@ -8,8 +8,9 @@
 // Both stacks are pinned to us-east-1 — CloudFront's ACM certs must live there, so the
 // certs stay in-stack with no cross-region reference. The apex comes from `-c domainName=<apex>`
 // (defaults to whippin.ai): the site serves at the apex (e.g. https://whippin.ai), the API at
-// api.<domain> (a stable VITE_API_BASE_URL), the puzzle bucket is `puzzles.<domain>`, and
-// the backend CORS origin defaults to the site origin.
+// api.<domain> (a stable VITE_API_BASE_URL), and the backend CORS origin defaults to the site
+// origin. (The puzzle bucket name is CloudFormation-generated — discovered via the
+// PuzzleBucketName output, not derived from the domain.)
 import { App } from 'aws-cdk-lib';
 import { BackendStack } from '../lib/backend-stack';
 import { WebStack } from '../lib/web-stack';
@@ -18,8 +19,8 @@ const app = new App();
 
 // Shared deploy-time inputs. `domainName` is the registered apex whose Route53 hosted zone
 // already lives in this account. It DEFAULTS to the project apex, so every cdk command
-// (bootstrap/synth/deploy) works with no flag and the puzzle bucket is always the correct
-// `puzzles.<domain>`; override with `-c domainName=<other-apex>` for a different deployment.
+// (bootstrap/synth/deploy) works with no flag; override with `-c domainName=<other-apex>`
+// for a different deployment.
 const domainName: string = app.node.tryGetContext('domainName') ?? 'whippin.ai';
 const siteSubdomain: string = app.node.tryGetContext('siteSubdomain') ?? ''; // "" = apex
 const apiSubdomain: string = app.node.tryGetContext('apiSubdomain') ?? 'api';

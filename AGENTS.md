@@ -365,11 +365,13 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   (backend devDep).
 - **CDK stack (#3):** `packages/infra` (`@whippin/infra`) provisions the backend
   with AWS CDK v2 — one `BackendStack` (`lib/backend-stack.ts`) defining: a **private** S3
-  puzzle bucket (all public access blocked, TLS enforced, `RETAIN`; its **name** is DERIVED
-  from the domain as `puzzles.<domainName>` (auto-generated when no `-c domainName`) and
-  exposed via the `PuzzleBucketName` output that `puzzle:publish` reads to discover it — the
-  stack is the single source of truth for the name. ⚠ Changing it on an already-deployed
-  stack REPLACES the bucket; the old one is RETAINed/orphaned), a **`NodejsFunction`**
+  puzzle bucket (all public access blocked, TLS enforced, `RETAIN`; its **name** is
+  **CloudFormation-generated, NOT hardcoded** — a fixed physical S3 name is an anti-pattern
+  (global-uniqueness collisions, and with `RETAIN` a teardown orphans it so the next deploy
+  collides). Nothing consumes the literal name: the Lambda reads `bucket.bucketName` and
+  `puzzle:publish` discovers it via the `PuzzleBucketName` output — the stack stays the single
+  source of truth for the name, just through the output rather than a `puzzles.<domain>` literal),
+  a **`NodejsFunction`**
   that bundles `backend/src/index.ts` with esbuild (ESM, `@aws-sdk/*` left external) and
   carries `PUZZLE_BUCKET`/`ALLOWED_ORIGIN`, and a **CloudFront** distribution in front of an
   **IAM-auth Function URL via OAC** (only CloudFront may invoke it). The Lambda gets
@@ -380,7 +382,7 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   `infra:deploy` (root) or `pnpm --filter @whippin/infra <synth|deploy|diff|destroy>`;
   deploy needs AWS creds + a bootstrapped account. **`-c domainName=<apex>` defaults to
   `whippin.ai`** (`bin/app.ts`), so every cdk command works with no flag; it drives the
-  API/site domains, `WebStack`, and the puzzle bucket name (override `-c domainName=<other>`
+  API/site domains and `WebStack` (override `-c domainName=<other>`
   for a different deployment). The API gets the stable custom domain `api.<domain>` (override
   label via `-c apiSubdomain=`): Route53 zone `fromLookup`, a DNS-validated **ACM** cert
   in-stack, distribution alias + **A/AAAA**; `ApiUrl` = `https://api.<domain>`. CORS

@@ -41,14 +41,16 @@ export class BackendStack extends Stack {
     // Holds the `<YYYY-MM-DD>.<lang>.json` objects keyed by backend/src/layout.ts
     // (`storeKey`) — the upload target for #4. Fully private: blocks all public
     // access, enforces TLS, encrypts at rest. RETAIN so tearing down the stack never drops
-    // accumulated puzzle history. The name is DERIVED from the domain (`puzzles.<domainName>`)
-    // — the single source of truth; `puzzle:publish` reads the PuzzleBucketName output (below)
-    // to discover it, never hardcoding it. The app requires `-c domainName` (see bin/app.ts);
-    // the `?:` only guards a direct construction without one (then CFN auto-generates a name).
-    // ⚠ Changing the name on an already-deployed stack REPLACES the bucket (old one RETAINed/
-    // orphaned), so re-publish into the new bucket and delete the old one.
+    // accumulated puzzle history.
+    //
+    // The name is intentionally NOT hardcoded — CloudFormation auto-generates a unique one.
+    // A fixed physical name is an anti-pattern here: S3 names are globally unique (cross-account
+    // collisions, slow release on replacement) and, combined with RETAIN, a teardown ORPHANS the
+    // bucket so the next deploy collides on the same name (the original deploy failure). Nothing
+    // needs the literal name: the Lambda reads `bucket.bucketName` and `puzzle:publish` discovers
+    // it from the `PuzzleBucketName` output (below) — the stack stays the single source of truth,
+    // just via the output rather than a literal.
     const bucket = new s3.Bucket(this, 'PuzzleBucket', {
-      bucketName: props.domainName ? `puzzles.${props.domainName}` : undefined,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.S3_MANAGED,
       enforceSSL: true,
@@ -142,6 +144,11 @@ export class BackendStack extends Stack {
     });
 
     // ── Route53: alias the API domain at the distribution ─────────────────────
+    // Plain A/AAAA aliases owned by this stack. Once created, redeploys update them in place
+    // (CloudFormation UPSERTs records it manages), so they never collide on their own lifecycle.
+    // A *foreign* pre-existing `api.<domain>` record (e.g. from an old deployment) would block
+    // the first create — clear it once as a migration step rather than relying on the deprecated,
+    // delete-then-create `deleteExisting`.
     if (zone && apiDomain) {
       const target = route53.RecordTarget.fromAlias(new targets.CloudFrontTarget(distribution));
       new route53.ARecord(this, 'ApiAliasA', { zone, recordName: apiDomain, target });

@@ -96,6 +96,11 @@ export class WebStack extends Stack {
     });
 
     // ── Route53: alias the site domain at the distribution ────────────────────
+    // Plain A/AAAA aliases owned by this stack. Once created, redeploys update them in place
+    // (CloudFormation UPSERTs records it manages), so they never collide on their own lifecycle.
+    // A *foreign* pre-existing apex/`<siteSubdomain>.<domain>` record (e.g. from an old
+    // deployment) would block the first create — clear it once as a migration step rather than
+    // relying on the deprecated, delete-then-create `deleteExisting`.
     if (zone && siteDomain) {
       const target = route53.RecordTarget.fromAlias(new targets.CloudFrontTarget(distribution));
       new route53.ARecord(this, 'SiteAliasA', { zone, recordName: siteDomain, target });
