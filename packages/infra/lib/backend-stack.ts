@@ -1,8 +1,9 @@
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Stack, type StackProps, Duration, CfnOutput, RemovalPolicy } from 'aws-cdk-lib';
+import { Stack, type StackProps, Duration, CfnOutput, RemovalPolicy, Aws } from 'aws-cdk-lib';
 import type { Construct } from 'constructs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { NodejsFunction, OutputFormat } from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
@@ -141,6 +142,22 @@ export class BackendStack extends Stack {
         cachePolicy,
         compress: true,
       },
+    });
+
+    // ── Oct-2025 Function URL invoke requirement ──────────────────────────────
+    // `withOriginAccessControl` grants CloudFront only `lambda:InvokeFunctionUrl`.
+    // Since Oct 2025 AWS requires the service principal to ALSO hold `lambda:InvokeFunction`
+    // to invoke a Function URL via OAC — without it CloudFront's signed request is rejected
+    // with 403 AccessDeniedException ("Function URL authorization") even though the OAC,
+    // auth type, and InvokeFunctionUrl grant are all correct. Function URLs created BEFORE the
+    // change are grandfathered, so older deployments keep working; any created after it (this
+    // one) need the second grant explicitly. Scope it to this distribution, mirroring the
+    // SourceArn condition the construct's own InvokeFunctionUrl grant uses.
+    // See aws-samples/remote-swe-agents#361.
+    fn.addPermission('CloudFrontInvokeFunction', {
+      principal: new iam.ServicePrincipal('cloudfront.amazonaws.com'),
+      action: 'lambda:InvokeFunction',
+      sourceArn: `arn:${Aws.PARTITION}:cloudfront::${Aws.ACCOUNT_ID}:distribution/${distribution.distributionId}`,
     });
 
     // ── Route53: alias the API domain at the distribution ─────────────────────
