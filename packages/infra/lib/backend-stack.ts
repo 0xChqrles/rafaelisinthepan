@@ -6,11 +6,13 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { NodejsFunction, OutputFormat } from 'aws-cdk-lib/aws-lambda-nodejs';
+import * as logs from 'aws-cdk-lib/aws-logs';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as targets from 'aws-cdk-lib/aws-route53-targets';
+import { NagSuppressions } from 'cdk-nag';
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // packages/infra/lib
 // The Lambda IS the backend package's existing entrypoint (createHandler over the S3
@@ -56,6 +58,19 @@ export class BackendStack extends Stack {
       encryption: s3.BucketEncryption.S3_MANAGED,
       enforceSSL: true,
       removalPolicy: RemovalPolicy.RETAIN,
+      // Versioning protects the RETAINed puzzle history: `puzzle:publish` overwrites the
+      // same `<date>.<lang>.json` key, so a bad republish would otherwise clobber the live
+      // puzzle irrecoverably. Noncurrent versions are pruned after 90 days to bound cost.
+      versioned: true,
+      lifecycleRules: [{ noncurrentVersionExpiration: Duration.days(90) }],
+    });
+
+    // Explicit log group so CloudWatch logs don't accumulate forever (the implicit
+    // `/aws/lambda/*` group never expires). DESTROY so teardown is clean; the name is
+    // CFN-generated and the function is pointed at it via `logGroup` below.
+    const logGroup = new logs.LogGroup(this, 'PuzzleFnLogs', {
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: RemovalPolicy.DESTROY,
     });
 
     // ── Lambda: the daily-puzzle handler (backend/src/index.ts) ───────────────
@@ -63,8 +78,14 @@ export class BackendStack extends Stack {
       entry: LAMBDA_ENTRY,
       handler: 'handler',
       runtime: lambda.Runtime.NODEJS_22_X,
+      // Graviton: cheaper per-ms and typically faster than x86 for this pure-JS handler
+      // (no native deps; the AWS SDK ships in the runtime, so the bundle is arch-agnostic).
+      architecture: lambda.Architecture.ARM_64,
       memorySize: 256,
       timeout: Duration.seconds(10),
+      logGroup,
+      // X-Ray active tracing for request-level latency/error visibility.
+      tracing: lambda.Tracing.ACTIVE,
       // Read by backend/src/config.ts at runtime.
       environment: {
         PUZZLE_BUCKET: bucket.bucketName,
@@ -126,9 +147,31 @@ export class BackendStack extends Stack {
       enableAcceptEncodingBrotli: true,
     });
 
+    // Security response headers for the API. CORS stays owned by the Lambda (it echoes the
+    // configured origin + Vary), so this policy adds ONLY transport/sniffing hardening and
+    // deliberately sets no CORS/CSP (CSP is a document concern, not a JSON API's).
+    const apiHeaders = new cloudfront.ResponseHeadersPolicy(this, 'ApiSecurityHeaders', {
+      responseHeadersPolicyName: 'WhippinApiSecurityHeaders',
+      comment: 'API: HSTS + nosniff + referrer-policy (CORS owned by the Lambda).',
+      securityHeadersBehavior: {
+        strictTransportSecurity: {
+          accessControlMaxAge: Duration.days(365),
+          includeSubdomains: true,
+          override: true,
+        },
+        contentTypeOptions: { override: true },
+        referrerPolicy: {
+          referrerPolicy: cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN,
+          override: true,
+        },
+      },
+    });
+
     const distribution = new cloudfront.Distribution(this, 'PuzzleCdn', {
       comment: 'Whippin daily-puzzle API',
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100, // NA + EU (en/fr audience)
+      httpVersion: cloudfront.HttpVersion.HTTP2_AND_3, // QUIC: faster connection setup
+      minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
       domainNames: apiDomain ? [apiDomain] : undefined,
       certificate: apiCertificate,
       defaultBehavior: {
@@ -140,6 +183,7 @@ export class BackendStack extends Stack {
         allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
         cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
         cachePolicy,
+        responseHeadersPolicy: apiHeaders,
         compress: true,
       },
     });
@@ -171,6 +215,52 @@ export class BackendStack extends Stack {
       new route53.ARecord(this, 'ApiAliasA', { zone, recordName: apiDomain, target });
       new route53.AaaaRecord(this, 'ApiAliasAAAA', { zone, recordName: apiDomain, target });
     }
+
+    // ── cdk-nag: accepted exceptions (each justified) ─────────────────────────
+    NagSuppressions.addResourceSuppressions(
+      fn,
+      [
+        {
+          id: 'AwsSolutions-IAM4',
+          reason:
+            'AWS-managed basic-execution + X-Ray-write policies — the standard least-broad managed policies for CloudWatch Logs and active tracing.',
+        },
+        {
+          id: 'AwsSolutions-IAM5',
+          reason:
+            'bucket.grantRead grants s3:GetObject*/GetBucket* on <bucket>/* — the minimal read surface to fetch daily-puzzle objects by key (wildcard is on object keys, not extra actions).',
+        },
+        {
+          id: 'AwsSolutions-L1',
+          reason:
+            'Runtime is pinned to NODEJS_22_X — the current maintained Node LTS on Lambda — for reproducible builds; we deliberately pin a specific LTS rather than a floating "latest". cdk-nag\'s bundled runtime list lags new LTS releases.',
+        },
+      ],
+      true, // also apply to the function's generated role/policy (children)
+    );
+    NagSuppressions.addResourceSuppressions(distribution, [
+      {
+        id: 'AwsSolutions-CFR1',
+        reason: 'Daily word game served globally on purpose — no geo restriction.',
+      },
+      {
+        id: 'AwsSolutions-CFR2',
+        reason:
+          'No WAF: the sole origin is an IAM-auth Function URL reachable only via OAC, serving cacheable read-only JSON; WAF cost is unjustified for this surface.',
+      },
+      {
+        id: 'AwsSolutions-CFR3',
+        reason:
+          'CloudFront access logging intentionally off (chosen observability tier: Lambda log retention + X-Ray).',
+      },
+    ]);
+    NagSuppressions.addResourceSuppressions(bucket, [
+      {
+        id: 'AwsSolutions-S1',
+        reason:
+          'S3 server access logging intentionally off (chosen observability tier); bucket is private (BLOCK_ALL), TLS-enforced, read-only from the Lambda.',
+      },
+    ]);
 
     // ── Outputs ───────────────────────────────────────────────────────────────
     new CfnOutput(this, 'ApiUrl', {
