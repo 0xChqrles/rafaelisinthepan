@@ -1,0 +1,152 @@
+name: Deploy
+
+# CD: deploy on push to main and on manual dispatch. Only the stack(s) whose code
+# actually changed are redeployed (path-filtered); a manual run can force a selection.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      stacks:
+        description: Which stack(s) to deploy
+        type: choice
+        default: changed
+        options: [changed, web, backend, all]
+
+# Never overlap deploys to main — queue rather than cancel an in-flight deploy.
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+permissions:
+  id-token: write # OIDC token for AWS role assumption (no long-lived keys)
+  contents: read
+
+jobs:
+  # Decide which stacks to deploy: the changed-path mapping for pushes / a manual
+  # "changed" run, or the forced selection from workflow_dispatch (web|backend|all).
+  plan:
+    name: Plan stacks
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.decide.outputs.backend }}
+      web: ${{ steps.decide.outputs.web }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # shared -> both (bundled into the Lambda AND built into the SPA); infra ->
+      # both (holds both stack defs); root deps / this workflow -> both (safe default).
+      - name: Detect changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          base: ${{ github.event_name == 'workflow_dispatch' && 'HEAD~1' || github.event.before }}
+          filters: |
+            backend:
+              - 'packages/backend/**'
+              - 'packages/shared/**'
+              - 'packages/infra/**'
+              - 'pnpm-lock.yaml'
+              - 'package.json'
+              - 'pnpm-workspace.yaml'
+              - '.github/workflows/deploy.yml'
+            web:
+              - 'packages/web/**'
+              - 'packages/shared/**'
+              - 'packages/infra/**'
+              - 'pnpm-lock.yaml'
+              - 'package.json'
+              - 'pnpm-workspace.yaml'
+              - '.github/workflows/deploy.yml'
+
+      - name: Decide targets
+        id: decide
+        env:
+          MODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.stacks || 'changed' }}
+          CHANGED_BACKEND: ${{ steps.filter.outputs.backend }}
+          CHANGED_WEB: ${{ steps.filter.outputs.web }}
+        run: |
+          backend=false
+          web=false
+          case "$MODE" in
+            all)     backend=true;  web=true ;;
+            backend) backend=true ;;
+            web)     web=true ;;
+            changed) backend="${CHANGED_BACKEND:-false}"; web="${CHANGED_WEB:-false}" ;;
+          esac
+          echo "backend=$backend" >> "$GITHUB_OUTPUT"
+          echo "web=$web" >> "$GITHUB_OUTPUT"
+          echo "Deploy plan (mode=$MODE): backend=$backend web=$web"
+
+  deploy-backend:
+    name: Deploy WhippinBackendStack
+    needs: plan
+    if: needs.plan.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install JS deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      # cdk.json's app runs from packages/infra; --filter exec runs there.
+      - name: Deploy backend stack
+        run: pnpm --filter @whippin/infra exec cdk deploy WhippinBackendStack --require-approval never
+
+  deploy-web:
+    name: Deploy WhippinWebStack
+    needs: plan
+    if: needs.plan.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    # Required for the SPA build; no fallback — fail fast if the repo variable is unset.
+    env:
+      VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install JS deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Require VITE_API_BASE_URL
+        run: |
+          if [ -z "${VITE_API_BASE_URL}" ]; then
+            echo "::error::VITE_API_BASE_URL repo variable is not set. Set it under repo Settings -> Secrets and variables -> Actions -> Variables (e.g. https://api.whippin.ai)."
+            exit 1
+          fi
+
+      # Must build (with VITE_API_BASE_URL) BEFORE cdk deploy — WebStack uploads dist/.
+      - name: Build SPA
+        run: pnpm build
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Deploy web stack
+        run: pnpm --filter @whippin/infra exec cdk deploy WhippinWebStack --require-approval never
