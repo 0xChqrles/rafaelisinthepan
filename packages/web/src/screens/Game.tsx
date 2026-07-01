@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { computeProgress } from '../game/scoring';
 import useVocab from '../hooks/useVocab';
+import { useGameStore } from '../state/gameStore';
 import Phrase from '../components/Phrase';
 import ProgressBar from '../components/ProgressBar';
 import WordInput from '../components/WordInput';
@@ -17,21 +18,26 @@ type Feedback = { text: string };
 const STAGGER_MS = 200;
 const FLOATING_HIT_INTRO_MS = 320;
 
+// Per page-load token isolating a ?puzzle= override round (no server day to key on),
+// so testing a static file always starts fresh and never rehydrates another file.
+const OVERRIDE_NONCE = Math.random().toString(36).slice(2);
+
 // Wrapper: drives the single puzzle. Loads the language's fixed vocabulary
 // (existence set) before playing — existence is decided by it, not by ranks.
-export default function Game({ puzzle }: { puzzle: Puzzle }) {
+export default function Game({ puzzle, dayNumber }: { puzzle: Puzzle; dayNumber: number | null }) {
   const { vocabSet, error } = useVocab(puzzle.lang);
 
   if (error !== null) return <p className="status error">FAILED TO LOAD VOCABULARY</p>;
   if (!vocabSet) return <p className="status">LOADING&hellip;</p>;
 
-  // key remounts the round -> clean reset of holes and input.
   return (
     <Round
       words={puzzle.words}
       puzzleHoles={puzzle.holes}
       ranks={puzzle.ranks}
       vocabSet={vocabSet}
+      lang={puzzle.lang}
+      dayNumber={dayNumber}
     />
   );
 }
@@ -43,37 +49,69 @@ function Round({
   puzzleHoles,
   ranks,
   vocabSet,
+  lang,
+  dayNumber,
 }: {
   words: string[];
   puzzleHoles: Hole[];
   ranks: RankMap;
   vocabSet: Set<string>;
+  lang: string;
+  dayNumber: number | null;
 }) {
-  // State per hole: { pos, secret slug, displayed word, current rank, start rank }.
-  const [holes, setHoles] = useState<RuntimeHole[]>(() =>
-    puzzleHoles.map((h) => ({
-      pos: h.pos,
-      secret: h.secret.slug,
-      word: h.start.word,
-      rank: h.start_rank,
-      startRank: h.start_rank,
-    })),
+  // Fresh per-hole state derived from the puzzle. Used until the persisted store
+  // reconciles to this round, and as the reset state on a new day/language.
+  const freshHoles = useMemo<RuntimeHole[]>(
+    () =>
+      puzzleHoles.map((h) => ({
+        pos: h.pos,
+        secret: h.secret.slug,
+        word: h.start.word,
+        rank: h.start_rank,
+        startRank: h.start_rank,
+      })),
+    [puzzleHoles],
   );
+
+  // Identity of this round: the server day + language. A ?puzzle= override has no
+  // server day, so a per-load nonce keeps it ephemeral (fresh every load).
+  const roundKey = useMemo(
+    () => (dayNumber != null ? `d:${dayNumber}:${lang}` : `o:${OVERRIDE_NONCE}:${lang}`),
+    [dayNumber, lang],
+  );
+
+  const ensureRound = useGameStore((s) => s.ensureRound);
+  const recordGuess = useGameStore((s) => s.recordGuess);
+  const improveHole = useGameStore((s) => s.improveHole);
+
+  // Reconcile before paint: a matching key rehydrates the stored progress, a new key
+  // (new day OR new language) resets to freshHoles. useLayoutEffect commits the reset
+  // before the browser paints, so a stale day's holes never flash.
+  useLayoutEffect(() => {
+    ensureRound(roundKey, freshHoles);
+  }, [ensureRound, roundKey, freshHoles]);
+
+  // Persisted round state: read from the store only once it matches THIS round; until
+  // it does (the pre-reconcile frame) fall back to freshHoles / a zero score.
+  const storeKey = useGameStore((s) => s.roundKey);
+  const storeHoles = useGameStore((s) => s.holes);
+  const storeGuessCount = useGameStore((s) => s.guessCount);
+  const active = storeKey === roundKey;
+  const holes = active ? storeHoles : freshHoles;
+  // Score = number of unique tries. A try is a submitted word that exists in the
+  // vocabulary, including misses; repeated folded guesses and non-existent words are
+  // not counted (deduping happens in the store's recordGuess).
+  const guessCount = active ? storeGuessCount : 0;
 
   const [input, setInput] = useState<string>('');
   // One transient floating indicator per impacted hole: a distance number when
   // warm, or "MISS" when too far. An improving hole shows the distance too; its
   // exponent drops as the number fades, then the old word blinks out and the
   // closer word takes its place (the staging lives in Hole). Each carries a unique
-  // id so it animates and clears independently.
+  // id so it animates and clears independently. These are ephemeral UI, not persisted.
   const [hits, setHits] = useState<HitState[]>([]);
   const [invalidAt, setInvalidAt] = useState<number>(0); // timestamp signal -> input shake
   const [feedback, setFeedback] = useState<Feedback | null>(null); // message under the input
-  // Score = number of unique tries. A try is a submitted word that exists in the
-  // vocabulary, including misses; repeated folded guesses and non-existent words
-  // are not counted.
-  const [guessCount, setGuessCount] = useState<number>(0);
-  const triedGuesses = useRef<Set<string>>(new Set());
   const hitId = useRef<number>(0); // monotonic id source for floating hits
   const pendingTimers = useRef<number[]>([]); // deferred word/rank swaps (fire as the hit fades)
 
@@ -116,12 +154,10 @@ function Round({
 
       setInput('');
       setFeedback(null);
-      // Counted guess: a unique valid word (misses included). Repeated folded
-      // guesses and non-existent words returned above do not increase the score.
-      if (!triedGuesses.current.has(typed)) {
-        triedGuesses.current.add(typed);
-        setGuessCount((c) => c + 1);
-      }
+      // Counted guess: a unique valid word (misses included). The store dedupes by
+      // folded slug, so repeats and the non-existent words returned above never
+      // increase the score.
+      recordGuess(typed);
 
       // EVERY unsolved hole reacts to a valid guess (solved holes are locked out).
       // A hole is WARM when `typed` is in its top-K rank map (`entry` set) and TOO
@@ -163,12 +199,12 @@ function Round({
         const { word, rank } = entry;
         const timer = window.setTimeout(() => {
           pendingTimers.current = pendingTimers.current.filter((t) => t !== timer);
-          setHoles((prev) => prev.map((h, i) => (i === index ? { ...h, word, rank } : h)));
+          improveHole(index, word, rank);
         }, fadeDelayMs);
         pendingTimers.current.push(timer);
       });
     },
-    [holes, ranks, solved, vocabSet],
+    [holes, ranks, solved, vocabSet, recordGuess, improveHole],
   );
 
   return (
