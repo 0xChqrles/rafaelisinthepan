@@ -1,0 +1,49 @@
+name: CI
+
+# Test gate: runs on every PR into main and on pushes to main. Make the
+# "Typecheck + test" job a required status check in branch protection so a PR
+# with failing tests cannot be merged (see .github/workflows/README.md).
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# One in-flight run per ref; cancel superseded runs on the same PR/branch.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Typecheck + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Version comes from the root packageManager field (pnpm@11.9.0).
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install JS deps
+        run: pnpm install --frozen-lockfile
+
+      # uv + Python 3.12 for @whippin/generation's pytest (dependency-free: its
+      # conftest stubs gensim/numpy, so an ephemeral pytest env is enough).
+      - name: Set up uv (+ Python)
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.12'
+
+      - name: Typecheck
+        run: pnpm -r --if-present run typecheck
+
+      # Fans out to Vitest (shared/web/backend) + pytest (generation).
+      - name: Test
+        run: pnpm test

@@ -413,6 +413,17 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
 - **Package manager:** pnpm, pinned via the root `packageManager` field
   (`pnpm@11.9.0`). `pnpm-workspace.yaml` lists the workspaces and uses `allowBuilds`
   to approve `esbuild`'s postinstall (its native binary), which pnpm blocks by default.
+- **CI/CD (#33):** two GitHub Actions workflows under `.github/workflows/`
+  (docs in `.github/workflows/README.md`). `ci.yml` — on PR→`main` and push to `main`,
+  sets up pnpm/Node 22/uv+Python 3.12 and runs `pnpm -r --if-present run typecheck` +
+  `pnpm test` (intended as a **required status check**; branch protection on `main` is a
+  manual repo-admin step). `deploy.yml` — on push to `main` and `workflow_dispatch`,
+  authenticates to AWS via **GitHub OIDC** (repo secret `AWS_DEPLOY_ROLE_ARN`, no
+  long-lived keys) and deploys **only the changed stack(s)** via `dorny/paths-filter`
+  (`shared`/`infra`/root-deps fan out to both; `generation` deploys nothing). Web deploy
+  runs `pnpm build` with `VITE_API_BASE_URL` (repo **variable**, no fallback) before
+  `cdk deploy WhippinWebStack`. `workflow_dispatch` `stacks` input forces
+  `changed`|`web`|`backend`|`all` (default `changed`).
 - The `.codex/skills/whippin-game/` skill + `validate_game_data.mjs` describe a
   **superseded** schema (see Discrepancies).
 
