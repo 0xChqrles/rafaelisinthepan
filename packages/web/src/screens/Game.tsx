@@ -4,6 +4,7 @@ import useVocab from '../hooks/useVocab';
 import { useGameStore } from '../state/gameStore';
 import Phrase from '../components/Phrase';
 import ProgressBar from '../components/ProgressBar';
+import HomeButton from '../components/HomeButton';
 import WordInput from '../components/WordInput';
 import { fold } from '@whippin/shared';
 import type { HitState, Hole, Puzzle, RankEntry, RankMap, RuntimeHole } from '@whippin/shared';
@@ -83,6 +84,7 @@ function Round({
   const ensureRound = useGameStore((s) => s.ensureRound);
   const recordGuess = useGameStore((s) => s.recordGuess);
   const improveHole = useGameStore((s) => s.improveHole);
+  const setLang = useGameStore((s) => s.setLang);
 
   // Reconcile before paint: a matching key rehydrates the stored progress, a new key
   // (new day OR new language) resets to freshHoles. useLayoutEffect commits the reset
@@ -216,9 +218,10 @@ function Round({
         {guessCount}
       </div>
 
-      {/* Reconstruction progress bar pinned to the top. WIDTH = the reconstruction
-          value; COLOR follows reconstruction heat. */}
+      {/* Header row pinned to the top: the logo (home) beside the reconstruction
+          progress bar. Bar WIDTH = the reconstruction value; COLOR follows heat. */}
       <div className="hud">
+        <HomeButton onClick={() => setLang(null)} />
         <ProgressBar value={progress} />
       </div>
 

@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import usePuzzle from './hooks/usePuzzle';
 import LanguageSelect from './screens/LanguageSelect';
 import Game from './screens/Game';
-import Button from './components/Button';
+import HomeButton from './components/HomeButton';
 import { useGameStore } from './state/gameStore';
 import { langFromPath, pathForLang } from './langs';
 
@@ -48,25 +48,19 @@ export default function App() {
     <div className="app">
       {!lang && <LanguageSelect onSelect={setLang} />}
 
-      {lang && (
-        <Button variant="secondary" className="esc-label" onClick={() => setLang(null)}>
-          [ESC]
-        </Button>
+      {/* Non-game language states (loading / error / no puzzle) still need a way home,
+          so they get a bare HUD with just the logo. Once a puzzle loads, Game renders
+          the full HUD (logo + progress bar), so exactly one HUD shows at a time. */}
+      {lang && !puzzle && (
+        <div className="hud">
+          <HomeButton onClick={() => setLang(null)} />
+        </div>
       )}
 
       {lang && loading && <p className="status">LOADING&hellip;</p>}
       {lang && error !== null && <p className="status error">FAILED TO LOAD PUZZLE</p>}
       {lang && puzzle && <Game puzzle={puzzle} dayNumber={dayNumber} />}
-      {lang && noPuzzle && (
-        <div className="empty-lang">
-          <p className="status">NO PUZZLE TODAY</p>
-          <FlagBackButton onClick={() => setLang(null)} />
-        </div>
-      )}
+      {lang && noPuzzle && <p className="status">NO PUZZLE TODAY</p>}
     </div>
   );
-}
-
-function FlagBackButton({ onClick }: { onClick: () => void }) {
-  return <Button onClick={onClick}>BACK</Button>;
 }
