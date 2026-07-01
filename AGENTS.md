@@ -424,6 +424,14 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   runs `pnpm build` with `VITE_API_BASE_URL` (repo **variable**, no fallback) before
   `cdk deploy WhippinWebStack`. `workflow_dispatch` `stacks` input forces
   `changed`|`web`|`backend`|`all` (default `changed`).
+  - **Keep the pipeline in sync with the architecture.** `ci.yml` is self-maintaining
+    (`pnpm -r --if-present` fans out to every workspace's `test`/`typecheck`), but
+    `deploy.yml` is **hardcoded** and does NOT auto-cover changes. When you **add/rename
+    a package** or **add/change a CDK stack** (`packages/infra/bin/app.ts`), update
+    `deploy.yml` to match: the `dorny/paths-filter` mapping (which package paths trigger
+    which stack — remember `shared`-like libs consumed by a stack must fan out to it),
+    the per-stack deploy jobs, and the `workflow_dispatch` `stacks` options. A new
+    deployable stack with no job/filter entry will silently never deploy.
 - The `.codex/skills/whippin-game/` skill + `validate_game_data.mjs` describe a
   **superseded** schema (see Discrepancies).
 
