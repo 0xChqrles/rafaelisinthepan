@@ -68,14 +68,6 @@ button * {
   color: var(--danger);
 }
 
-/* [ESC]: positioning only; appearance comes from the secondary button. */
-.esc-label {
-  position: fixed;
-  top: 20px;
-  left: 20px;
-  z-index: 120;
-}
-
 /* ===================== language screen ===================== */
 .lang-screen {
   text-align: center;
@@ -124,9 +116,11 @@ button * {
 
 /* ===================== game screen ===================== */
 .game {
+  /* Anchor + isolate the score watermark: `relative` is the containing block the
+     absolutely-positioned .progress-background is sized against (so the score is
+     always behind THIS div's content), and `isolation` gives it a stacking context
+     so the watermark's z-index:-1 stays behind the game content but above the page. */
   position: relative;
-  /* Isolated stacking context: the progress watermark (z-index:-1) stays behind
-     the game content but above the page background. */
   isolation: isolate;
   width: 100%;
   max-width: 1200px;
@@ -136,27 +130,47 @@ button * {
   gap: clamp(32px, 6vh, 64px);
 }
 
-.empty-lang {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 18px;
-}
-
-/* --- HUD: progress bar pinned to the top of the screen --- */
+/* --- HUD: header row pinned to the top — logo (home) + progress bar --- */
 .hud {
   position: fixed;
   top: 18px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 50;
-  /* Centered at the top, with margins that clear the [ESC] button in the corner. */
-  width: min(900px, calc(100vw - 200px));
+  width: min(900px, calc(100vw - 48px));
   display: flex;
   align-items: center;
   gap: 24px;
   font-family: var(--press);
+}
+
+/* Logo doubles as the home button, sitting at the left of the HUD beside the bar.
+   Fixed square keeps a comfortable tap target; the logo is centered inside it. */
+.home-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  opacity: 0.85;
+  transition: opacity 0.12s ease, filter 0.12s ease;
+}
+.home-btn:hover,
+.home-btn:focus-visible {
+  opacity: 1;
+  filter: brightness(1.2);
+  outline: none;
+}
+.home-logo {
+  display: block;
+  width: 36px;
+  height: auto;
+  image-rendering: pixelated;
 }
 
 .progress-wrap {
@@ -176,19 +190,37 @@ button * {
   height: 100%;
   transition: width 0.5s ease-out, background-color 0.25s linear;
 }
+/* The percentage sits centered ON the bar as two aligned copies of the same number:
+   the base is painted in the fill color and shows over the empty track; the overlay is
+   painted in the track (background) color and clipped to the filled region, so the number
+   reads as the fill color on the empty part and the background color on the filled part,
+   flipping exactly at the fill edge. clip-path (not a blend mode) keeps both colors exact
+   and has broad, stable browser support. */
 .progress-label {
-  flex: none;
-  width: 4ch;
-  font-size: clamp(20px, 2.8vh, 26px);
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(15px, 2.6vh, 20px);
   letter-spacing: 1px;
   font-variant-numeric: tabular-nums;
-  text-align: right;
-  padding-top: var(--cap-shift);
+  text-shadow: none;
+  pointer-events: none;
+}
+.progress-label-on-fill {
+  color: var(--surface);
+  /* Follow the fill edge in sync with .progress-fill's width transition. */
+  transition: clip-path 0.5s ease-out;
 }
 
-/* --- giant progress watermark behind the whole page --- */
+/* --- giant score watermark, always behind the .game content --- */
 .progress-background {
-  position: fixed;
+  /* absolute (not fixed) so it is anchored to .game (position: relative), not the
+     viewport: the score stays centered BEHIND the game content on every layout —
+     including when .game is top-aligned on mobile — instead of drifting into the
+     empty space below a viewport-centered watermark. */
+  position: absolute;
   inset: 0;
   z-index: -1;
   display: flex;
@@ -515,4 +547,105 @@ button * {
 .btn-secondary:focus-visible {
   color: var(--fg);
   outline: none;
+}
+
+/* ===================== mobile / small screens ===================== */
+/* Below this width the desktop layout is too wide: the sentence, HUD, background
+   score and language grid are re-tuned, and the play area is allowed to SCROLL so
+   the soft keyboard (real <input>, #11) never hides the sentence/holes. The fixed
+   HUD + watermark stay pinned to the viewport while the content scrolls under them. */
+@media (max-width: 640px) {
+  /* Let the play area grow past the viewport and scroll instead of clipping, so
+     nothing (sentence, holes, input) can end up hidden behind the keyboard. */
+  body {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  #root {
+    min-height: 100dvh;
+    height: auto;
+  }
+  .app {
+    height: auto;
+    /* dvh + `interactive-widget=resizes-content` (index.html): the viewport height
+       tracks the on-screen keyboard, so short/centered screens still fill it and
+       the focused input is scrolled into view above the keyboard. */
+    min-height: 100dvh;
+    align-items: flex-start;
+    padding: 16px 14px 28px;
+  }
+
+  /* Screens with no HUD stay vertically centered (auto margins beat align-items).
+     max-width caps them to the viewport so a long title / the flag grid wrap
+     within it instead of sizing to content and overflowing (h-scroll / clipping). */
+  .lang-screen,
+  .app > .status {
+    margin: auto 0;
+    max-width: 100%;
+  }
+
+  /* The game top-aligns and clears the fixed HUD (logo + progress bar) above it.
+     `stretch` makes the sentence + input fill the game width so their lines wrap
+     inside the viewport rather than growing to the longest line and overflowing. */
+  .game {
+    padding-top: 64px;
+    gap: 28px;
+    align-items: stretch;
+  }
+
+  /* Single-row header: the logo (home) beside a full-width progress bar. */
+  .hud {
+    top: 14px;
+    width: calc(100vw - 24px);
+    gap: 12px;
+  }
+  .progress {
+    height: 24px;
+  }
+  .progress-label {
+    font-size: 13px;
+  }
+
+  /* Sentence + mirrored input: a touch smaller so a hole + its exponent near the
+     right edge still fits (and otherwise the hole wraps as one unit to the next line). */
+  .phrase,
+  .word-input {
+    font-size: clamp(15px, 4.8vw, 22px);
+  }
+  /* The input must be able to shrink below its desktop min-width on a narrow screen. */
+  .word-input {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  /* Floating hit / MISS scaled down to sit over the smaller hole words. */
+  .floating-hit {
+    font-size: 20px;
+  }
+
+  .input-area {
+    gap: 14px;
+    min-height: 72px;
+  }
+  .hint {
+    font-size: 16px;
+  }
+
+  /* Language picker: the two flags must fit side by side on a phone. */
+  .title {
+    font-size: clamp(20px, 7vw, 28px);
+    margin-bottom: 28px;
+  }
+  .flag-grid {
+    gap: 20px;
+  }
+  .flag-img {
+    width: min(38vw, 200px);
+  }
+
+  /* Buttons narrow enough for small screens (BACK / round-end). */
+  .btn-primary {
+    padding: calc(16px + var(--cap-shift)) 28px calc(16px - var(--cap-shift));
+    font-size: 18px;
+  }
 }
