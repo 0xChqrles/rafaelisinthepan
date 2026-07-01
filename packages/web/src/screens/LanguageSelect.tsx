@@ -1,9 +1,5 @@
 import Flag from '../components/Flag';
-
-const LANGS: { code: string; label: string }[] = [
-  { code: 'en', label: 'English' },
-  { code: 'fr', label: 'French' },
-];
+import { LANGS } from '../langs';
 
 export default function LanguageSelect({ onSelect }: { onSelect: (code: string) => void }) {
   return (

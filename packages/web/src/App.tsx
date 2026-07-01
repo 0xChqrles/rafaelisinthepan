@@ -4,6 +4,7 @@ import LanguageSelect from './screens/LanguageSelect';
 import Game from './screens/Game';
 import Button from './components/Button';
 import { useGameStore } from './state/gameStore';
+import { langFromPath, pathForLang } from './langs';
 
 export default function App() {
   // Selected language lives in the store; usePuzzle turns it into today's puzzle
@@ -11,6 +12,24 @@ export default function App() {
   const lang = useGameStore((s) => s.lang);
   const setLang = useGameStore((s) => s.setLang);
   const { puzzle, dayNumber, error, loading, noPuzzle } = usePuzzle(lang);
+
+  // Keep the address bar in sync with the language: /fr, /en, or / for the picker.
+  // This makes a language deep-linkable — sharing /fr or refreshing stays in that
+  // game (the store seeds `lang` from the path on load) instead of returning to the
+  // picker. Guard the push so the seed load doesn't add a duplicate history entry.
+  useEffect(() => {
+    const path = pathForLang(lang);
+    if (window.location.pathname !== path) {
+      window.history.pushState(null, '', path + window.location.search);
+    }
+  }, [lang]);
+
+  // Browser back/forward: follow the URL back to the matching language (or the picker).
+  useEffect(() => {
+    const onPop = () => setLang(langFromPath(window.location.pathname));
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [setLang]);
 
   useEffect(() => {
     if (!lang) return undefined;

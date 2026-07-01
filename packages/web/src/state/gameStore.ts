@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { RuntimeHole } from '@whippin/shared';
+import { langFromPath } from '../langs';
 
 // A round is identified by its `roundKey` = (server day, language). When that key
 // changes (a new day flips, or a different language is picked) the persisted round
@@ -16,9 +17,9 @@ export interface RoundProgress {
 }
 
 interface GameState extends RoundProgress {
-  // Selected language (App/Game read it). NOT persisted: each load starts on the
-  // language picker exactly as before; the round rehydrates once its language is
-  // re-selected.
+  // Selected language (App/Game read it). NOT persisted: the URL is its source of
+  // truth on load — the store seeds it from the /<lang> path (see below), and App
+  // keeps the address bar in sync. The round rehydrates once its language is active.
   lang: string | null;
   setLang: (lang: string | null) => void;
 
@@ -47,7 +48,9 @@ const storage = createJSONStorage<RoundProgress>(() => {
 export const useGameStore = create<GameState>()(
   persist(
     (set, get) => ({
-      lang: null,
+      // Seed from the address bar so /fr and /en deep-link straight into the game
+      // (a refresh or shared link skips the picker).
+      lang: typeof window !== 'undefined' ? langFromPath(window.location.pathname) : null,
       roundKey: null,
       holes: [],
       guessCount: 0,
