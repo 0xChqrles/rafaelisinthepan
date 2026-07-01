@@ -124,9 +124,11 @@ button * {
 
 /* ===================== game screen ===================== */
 .game {
+  /* Anchor + isolate the score watermark: `relative` is the containing block the
+     absolutely-positioned .progress-background is sized against (so the score is
+     always behind THIS div's content), and `isolation` gives it a stacking context
+     so the watermark's z-index:-1 stays behind the game content but above the page. */
   position: relative;
-  /* Isolated stacking context: the progress watermark (z-index:-1) stays behind
-     the game content but above the page background. */
   isolation: isolate;
   width: 100%;
   max-width: 1200px;
@@ -186,9 +188,13 @@ button * {
   padding-top: var(--cap-shift);
 }
 
-/* --- giant progress watermark behind the whole page --- */
+/* --- giant score watermark, always behind the .game content --- */
 .progress-background {
-  position: fixed;
+  /* absolute (not fixed) so it is anchored to .game (position: relative), not the
+     viewport: the score stays centered BEHIND the game content on every layout —
+     including when .game is top-aligned on mobile — instead of drifting into the
+     empty space below a viewport-centered watermark. */
+  position: absolute;
   inset: 0;
   z-index: -1;
   display: flex;
