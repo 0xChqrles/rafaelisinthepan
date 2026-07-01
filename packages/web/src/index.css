@@ -170,6 +170,9 @@ button * {
 .progress {
   position: relative;
   flex: 1;
+  /* Isolate so the label's blend mode mixes only with the bar (fill + track),
+     not with whatever is painted behind the HUD. */
+  isolation: isolate;
   height: clamp(28px, 4.2vh, 38px);
   background: var(--surface);
   overflow: hidden;
@@ -178,14 +181,22 @@ button * {
   height: 100%;
   transition: width 0.5s ease-out, background-color 0.25s linear;
 }
+/* The percentage sits centered ON the bar. White text in `difference` blend inverts
+   against whatever is behind it, so it stays readable over both the colored fill and
+   the empty track — including where the fill edge cuts through the number. */
 .progress-label {
-  flex: none;
-  width: 4ch;
-  font-size: clamp(20px, 2.8vh, 26px);
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(15px, 2.6vh, 20px);
   letter-spacing: 1px;
   font-variant-numeric: tabular-nums;
-  text-align: right;
-  padding-top: var(--cap-shift);
+  color: #fff;
+  mix-blend-mode: difference;
+  text-shadow: none;
+  pointer-events: none;
 }
 
 /* --- giant score watermark, always behind the .game content --- */
@@ -582,7 +593,7 @@ button * {
     height: 24px;
   }
   .progress-label {
-    font-size: 18px;
+    font-size: 13px;
   }
 
   /* Sentence + mirrored input: a touch smaller so a hole + its exponent near the

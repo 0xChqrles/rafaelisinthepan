@@ -18,10 +18,10 @@ export default function ProgressBar({ value }: { value: number }) {
           className="progress-fill"
           style={{ width: `${pct}%`, background: progressColor(pct) }}
         />
+        {/* Centered over the bar; a difference blend keeps it legible over both the
+            fill and the empty track (see .progress-label in index.css). */}
+        <span className="progress-label">{Math.round(display)}%</span>
       </div>
-      <span className="progress-label" style={{ color: progressColor(display) }}>
-        {Math.round(display)}%
-      </span>
     </div>
   );
 }
