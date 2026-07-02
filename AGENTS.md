@@ -403,17 +403,19 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   now just the visual prompt + a **window `keydown`/`paste` listener** for the physical
   keyboard (desktop); the `components/Keyboard.tsx` on-screen keyboard feeds the **same**
   input actions. Both drive one **folded-slug** `input` state in `Game` via three shared
-  actions — `appendChar` (validated), `deleteChar`, `replaceInput` (history recall) —
-  plus `submit`. Keys are `[a-z]` + dash + backspace + Enter + a layout switch (no accent
-  keys; physical accents/ligatures are `fold()`-ed to slug chars, dash special-cased since
-  `fold('-')==''`). **Live validation:** `useVocab` now also builds a **prefix `Set`**
-  (`game/keyboard.ts` `buildPrefixSet` — every prefix of every vocab word; a flat Set, not
-  a trie, per the issue) cached beside `vocabSet`; a letter/dash is greyed when
+  actions — `appendChar` (validated), `deleteChar`, `replaceInput` (Up/Down history
+  recall, sourced from the round's **persisted** `tried` list so recall survives reload) —
+  plus `submit`. Keys are `[a-z]` + dash + backspace + Enter (no accent keys; physical
+  accents/ligatures are `fold()`-ed to slug chars, dash special-cased since `fold('-')==''`).
+  **Live validation:** `useVocab` now also builds a **prefix `Set`** (`game/keyboard.ts`
+  `buildPrefixSet` — every prefix of every vocab word; a flat Set, not a trie, per the
+  issue) cached beside `vocabSet`; a letter/dash is greyed when
   `canExtend(prefixSet, input, char)` is false, Enter is greyed unless `vocabSet.has(input)`,
-  and a greyed-key tap shakes (no input change). Backspace + layout switch are always
-  active. **Layout** is AZERTY/QWERTY: `defaultLayoutForLang(lang)` (fr→AZERTY, else QWERTY)
-  is used only until the player flips it, after which the **global** `layout` in `gameStore`
-  (persisted, language-independent) wins.
+  and a greyed-key tap shakes (no input change). Backspace is always active. **Layout** is
+  currently a fixed **QWERTY** (`Game` hardcodes it; `LAYOUTS` still defines AZERTY and
+  `gameStore` retains a persisted `layout` field, but there is **no in-UI layout switch**
+  yet). Keys are a uniform fixed size (not flex-grown), each row centered; the last row is
+  `OK` + letters + dash + `DEL` sized like letters so it fits the keyboard width exactly.
 - **Local backend harness (#17):** `pnpm backend:dev` runs the **same `createHandler`**
   as the deployed Lambda over a local filesystem store (`fsStore`), so the day/404/CORS/
   `Puzzle` behaviour is identical to prod with no AWS creds. `pnpm puzzle:publish

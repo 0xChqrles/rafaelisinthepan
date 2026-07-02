@@ -14,6 +14,8 @@ function slugChars(key: string): string {
 interface WordInputProps {
   // Current input (a folded slug prefix); also the visible prompt text.
   value: string;
+  // Prompt history for Up/Down recall: the round's persisted guesses, oldest → newest.
+  history: string[];
   onType: (char: string) => void; // append a single validated slug char
   onBackspace: () => void; // delete the last char
   onSubmit: (value: string) => void; // submit the current guess
@@ -27,11 +29,14 @@ interface WordInputProps {
 // mutate the same folded-slug state: the on-screen <Keyboard> (taps) and the physical
 // keyboard (this window keydown listener). With no focusable text field, the native
 // mobile keyboard never opens. The spans below stay the visible terminal-style prompt.
-export default function WordInput({ value, onType, onBackspace, onSubmit, onReplace, invalidSignal }: WordInputProps) {
+export default function WordInput({ value, history, onType, onBackspace, onSubmit, onReplace, invalidSignal }: WordInputProps) {
   const [shaking, setShaking] = useState<boolean>(false);
 
-  // Submitted guesses, navigable with Up/Down on a physical keyboard (desktop nicety).
-  const historyRef = useRef<string[]>([]);
+  // Prompt history for Up/Down recall (desktop nicety). The array is the round's
+  // PERSISTED guesses (passed in), mirrored into a ref so the window listener always
+  // reads the latest without reattaching; the cursor (index) + draft stay ephemeral.
+  const historyRef = useRef<string[]>(history);
+  historyRef.current = history;
   const historyIndexRef = useRef<number | null>(null);
   const draftRef = useRef<string>('');
 
@@ -61,11 +66,11 @@ export default function WordInput({ value, onType, onBackspace, onSubmit, onRepl
 
       if (e.key === 'Enter') {
         e.preventDefault();
-        const submitted = valueRef.current;
-        if (submitted) historyRef.current.push(submitted);
+        // History is the persisted `tried` list, updated by the submit handler (a valid
+        // guess -> recordGuess). Just reset the recall cursor and submit.
         historyIndexRef.current = null;
         draftRef.current = '';
-        onSubmitRef.current(submitted);
+        onSubmitRef.current(valueRef.current);
         return;
       }
 
@@ -77,16 +82,16 @@ export default function WordInput({ value, onType, onBackspace, onSubmit, onRepl
       }
 
       if (e.key === 'ArrowUp') {
-        const history = historyRef.current;
-        if (history.length === 0) return;
+        const hist = historyRef.current;
+        if (hist.length === 0) return;
         e.preventDefault();
         if (historyIndexRef.current === null) {
           draftRef.current = valueRef.current;
-          historyIndexRef.current = history.length - 1;
+          historyIndexRef.current = hist.length - 1;
         } else {
           historyIndexRef.current = Math.max(0, historyIndexRef.current - 1);
         }
-        onReplaceRef.current(history[historyIndexRef.current]);
+        onReplaceRef.current(hist[historyIndexRef.current]);
         return;
       }
 

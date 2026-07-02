@@ -13,7 +13,7 @@ export type Layout = 'azerty' | 'qwerty';
 
 // Letter rows per layout. Only the ORDER differs between layouts — both expose the
 // full a–z, so the greyed-out logic is identical; the control keys (dash, backspace,
-// enter, layout-switch) are rendered around these rows by the Keyboard component.
+// enter) are rendered around these rows by the Keyboard component.
 export const LAYOUTS: Record<Layout, readonly (readonly string[])[]> = {
   qwerty: [
     ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
@@ -33,7 +33,7 @@ export function defaultLayoutForLang(lang: string): Layout {
   return lang === 'fr' ? 'azerty' : 'qwerty';
 }
 
-// The other layout — what the layout-switch key flips to.
+// The other layout. Kept as a pure helper for existing layout-preference tests/state.
 export function otherLayout(layout: Layout): Layout {
   return layout === 'azerty' ? 'qwerty' : 'azerty';
 }

@@ -56,7 +56,8 @@ interface GameState extends PersistedState {
   // Remember the last-played language (drives the `/` redirect). Ignores non-languages.
   setLastLang: (lang: string) => void;
 
-  // Set the global on-screen keyboard layout preference (the layout-switch key).
+  // Set the global on-screen keyboard layout preference. Retained for older persisted
+  // state even though the current keyboard no longer exposes a layout-switch key.
   setLayout: (layout: Layout) => void;
 
   // Reconcile the persisted rounds to `key`. A matching key rehydrates its stored

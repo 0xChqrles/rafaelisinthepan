@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { computeProgress } from '../game/scoring';
-import { canExtend, defaultLayoutForLang, otherLayout } from '../game/keyboard';
+import { canExtend, type Layout } from '../game/keyboard';
 import useVocab from '../hooks/useVocab';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
 import Phrase from '../components/Phrase';
@@ -92,12 +92,8 @@ function Round({
   const improveHole = useGameStore((s) => s.improveHole);
   const syncProgress = useGameStore((s) => s.syncProgress);
 
-  // Global on-screen keyboard layout: the persisted preference wins once set; until
-  // then it falls back to the puzzle language's default (fr -> AZERTY, en -> QWERTY).
-  const savedLayout = useGameStore((s) => s.layout);
-  const setLayout = useGameStore((s) => s.setLayout);
-  const layout = savedLayout ?? defaultLayoutForLang(lang);
-  const switchLayout = useCallback(() => setLayout(otherLayout(layout)), [setLayout, layout]);
+  // On-screen keyboard layout: QWERTY by default (there is no in-UI layout switch yet).
+  const layout: Layout = 'qwerty';
 
   // Reconcile before paint: a matching key rehydrates the stored progress, a new key
   // (new day OR new language) resets to freshHoles. useLayoutEffect commits the reset
@@ -114,6 +110,9 @@ function Round({
   // vocabulary, including misses; repeated folded guesses and non-existent words are
   // not counted (deduping happens in the store's recordGuess).
   const guessCount = round ? round.guessCount : 0;
+  // Prompt history for Up/Down recall = this round's unique valid guesses in order.
+  // Sourced from the persisted `tried` list, so recall survives a reload (per day+lang).
+  const history = round ? round.tried : [];
 
   const [input, setInput] = useState<string>('');
   // One transient floating indicator per impacted hole: a distance number when
@@ -183,10 +182,11 @@ function Round({
 
       // Existence is decided by the fixed vocabulary, NOT by the puzzle's ranks.
       if (!vocabSet.has(typed)) {
-        // INVALID -> "does not exist": red shake + message under the input.
+        // INVALID -> "does not exist": red shake + message under the input. Keep the
+        // typed word (do NOT clear) so the player can correct it; the next edit clears
+        // the message.
         setInvalidAt(Date.now());
         setFeedback({ text: 'this word does not exist' });
-        setInput('');
         return;
       }
 
@@ -247,13 +247,6 @@ function Round({
 
   return (
     <div className="game">
-      {/* Score: big faint try count behind the play area.
-          Rendered inside .game's isolated stacking context so its z-index:-1 sits
-          behind the content but above the page background. */}
-      <div className="progress-background" aria-hidden="true">
-        {guessCount}
-      </div>
-
       {/* Header row pinned to the top: the current puzzle's language flag (opens the
           selector) beside the reconstruction progress bar. Bar WIDTH = the
           reconstruction value; COLOR follows heat. */}
@@ -262,28 +255,41 @@ function Round({
         <ProgressBar value={progress} />
       </div>
 
-      <Phrase words={words} holes={holes} hits={hits} onHitDone={removeHit} />
+      {/* The play area fills the space between the fixed HUD (top) and the keyboard
+          (bottom) and centers its content, so the sentence + prompt sit in the middle.
+          It also anchors the score watermark, so the big try count stays centered
+          behind THIS content rather than the full-height .game. */}
+      <div className="play">
+        {/* Score: big faint try count behind the play area. z-index:-1 within .play's
+            isolated stacking context sits behind the content but above the page. */}
+        <div className="progress-background" aria-hidden="true">
+          {guessCount}
+        </div>
 
-      <div className="input-area">
-        {solved ? (
-          // End of round: replace input with the verdict.
-          <div className="round-end">
-            <p className="round-end-label solved">SOLVED!</p>
-            <p className="round-end-score">SCORE {guessCount}</p>
-          </div>
-        ) : (
-          <>
-            <WordInput
-              value={input}
-              onType={appendChar}
-              onBackspace={deleteChar}
-              onSubmit={submit}
-              onReplace={replaceInput}
-              invalidSignal={invalidAt}
-            />
-            <p className="hint">{feedback?.text || ' '}</p>
-          </>
-        )}
+        <Phrase words={words} holes={holes} hits={hits} onHitDone={removeHit} />
+
+        <div className="input-area">
+          {solved ? (
+            // End of round: replace input with the verdict.
+            <div className="round-end">
+              <p className="round-end-label solved">SOLVED!</p>
+              <p className="round-end-score">SCORE {guessCount}</p>
+            </div>
+          ) : (
+            <>
+              <WordInput
+                value={input}
+                history={history}
+                onType={appendChar}
+                onBackspace={deleteChar}
+                onSubmit={submit}
+                onReplace={replaceInput}
+                invalidSignal={invalidAt}
+              />
+              <p className="hint">{feedback?.text || ' '}</p>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Custom on-screen keyboard: replaces the native mobile keyboard and mirrors the
@@ -297,7 +303,6 @@ function Round({
           onType={appendChar}
           onBackspace={deleteChar}
           onSubmit={submit}
-          onSwitchLayout={switchLayout}
         />
       )}
     </div>
