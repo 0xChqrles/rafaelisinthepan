@@ -47,6 +47,7 @@ packages/
     scripts/
       reduce_embedding.py     raw .vec/.txt -> *_reduced file (the ONLY filter+cap stage)
       build_wordlist.py       offline builder: sources -> wordlist/<lang>.txt.gz (hors-dico ref, #38)
+      build_vocab.py          reduced vectors -> web/public/vocab/<lang>.json (no puzzle needed)
       embedding_neighbors.py  shared load/vocab/matrix/cosine-rank logic
       glove_neighbors.py      en paths + derived .kv cache (thin wrapper over the above)
       french_neighbors.py     fr paths + derived .kv cache (thin wrapper)
@@ -328,9 +329,13 @@ pnpm wordlist:en      # SCOWL   ∪ Hunspell en  -> wordlist/en.txt.gz
 pnpm reduce:fr        # embedding/fr/cc.fr.300.vec      -> cc.fr.300_reduced.vec
 pnpm reduce:en        # embedding/en/glove.6B.300d.txt  -> glove.6B.300d_reduced.txt
 
-# 2. Generate a puzzle per game (fast; first run for a language builds the .kv cache).
-#    Puzzle -> packages/generation/output/word/<lang>/ (then `pnpm puzzle:publish` it);
-#    vocab -> packages/web/public/vocab/<lang>.json (a web asset).
+# 2. Refresh the front's existence set from the reduced vectors (after a re-reduce). The
+#    vocab derives from the *_reduced file, so new filters only show up once you re-reduce.
+pnpm vocab:fr        # -> packages/web/public/vocab/fr.json  (commit it; it's a web asset)
+
+# 3. Generate a puzzle per game (fast; first run for a language builds the .kv cache).
+#    Puzzle -> packages/generation/output/word/<lang>/ (then `pnpm puzzle:publish` it).
+#    NOTE: gen:phrase ALSO rewrites web/public/vocab/<lang>.json as a side effect.
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--`)
 
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
