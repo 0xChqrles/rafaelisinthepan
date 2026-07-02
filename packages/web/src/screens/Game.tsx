@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { computeProgress } from '../game/scoring';
 import useVocab from '../hooks/useVocab';
-import { useGameStore } from '../state/gameStore';
+import { useGameStore, roundKeyForDay } from '../state/gameStore';
 import Phrase from '../components/Phrase';
 import ProgressBar from '../components/ProgressBar';
+import FlagButton from '../components/FlagButton';
 import WordInput from '../components/WordInput';
 import { fold } from '@whippin/shared';
 import type { HitState, Hole, Puzzle, RankEntry, RankMap, RuntimeHole } from '@whippin/shared';
@@ -76,13 +77,14 @@ function Round({
   // Identity of this round: the server day + language. A ?puzzle= override has no
   // server day, so a per-load nonce keeps it ephemeral (fresh every load).
   const roundKey = useMemo(
-    () => (dayNumber != null ? `d:${dayNumber}:${lang}` : `o:${OVERRIDE_NONCE}:${lang}`),
+    () => (dayNumber != null ? roundKeyForDay(dayNumber, lang) : `o:${OVERRIDE_NONCE}:${lang}`),
     [dayNumber, lang],
   );
 
   const ensureRound = useGameStore((s) => s.ensureRound);
   const recordGuess = useGameStore((s) => s.recordGuess);
   const improveHole = useGameStore((s) => s.improveHole);
+  const syncProgress = useGameStore((s) => s.syncProgress);
 
   // Reconcile before paint: a matching key rehydrates the stored progress, a new key
   // (new day OR new language) resets to freshHoles. useLayoutEffect commits the reset
@@ -91,17 +93,14 @@ function Round({
     ensureRound(roundKey, freshHoles);
   }, [ensureRound, roundKey, freshHoles]);
 
-  // Persisted round state: read from the store only once it matches THIS round; until
-  // it does (the pre-reconcile frame) fall back to freshHoles / a zero score.
-  const storeKey = useGameStore((s) => s.roundKey);
-  const storeHoles = useGameStore((s) => s.holes);
-  const storeGuessCount = useGameStore((s) => s.guessCount);
-  const active = storeKey === roundKey;
-  const holes = active ? storeHoles : freshHoles;
+  // Persisted round state for THIS round, read straight out of the keyed map; until the
+  // reconcile above creates it (the pre-reconcile frame) fall back to freshHoles / zero.
+  const round = useGameStore((s) => s.rounds[roundKey]);
+  const holes = round ? round.holes : freshHoles;
   // Score = number of unique tries. A try is a submitted word that exists in the
   // vocabulary, including misses; repeated folded guesses and non-existent words are
   // not counted (deduping happens in the store's recordGuess).
-  const guessCount = active ? storeGuessCount : 0;
+  const guessCount = round ? round.guessCount : 0;
 
   const [input, setInput] = useState<string>('');
   // One transient floating indicator per impacted hole: a distance number when
@@ -123,6 +122,12 @@ function Round({
   // Reconstruction progress (0–100): how much of the sentence is rebuilt. Drives the
   // WIDTH of the top progress bar. Distinct from the guess-count performance number.
   const progress = useMemo<number>(() => computeProgress(holes, ranks), [holes, ranks]);
+
+  // Cache the progress on the persisted round so the language selector can badge an
+  // in-progress language without re-loading its rank map. No-op when unchanged.
+  useEffect(() => {
+    syncProgress(progress);
+  }, [progress, syncProgress]);
 
   const removeHit = useCallback((id: number) => {
     setHits((prev) => prev.filter((h) => h.id !== id));
@@ -216,9 +221,11 @@ function Round({
         {guessCount}
       </div>
 
-      {/* Reconstruction progress bar pinned to the top. WIDTH = the reconstruction
-          value; COLOR follows reconstruction heat. */}
+      {/* Header row pinned to the top: the current puzzle's language flag (opens the
+          selector) beside the reconstruction progress bar. Bar WIDTH = the
+          reconstruction value; COLOR follows heat. */}
       <div className="hud">
+        <FlagButton lang={lang} />
         <ProgressBar value={progress} />
       </div>
 

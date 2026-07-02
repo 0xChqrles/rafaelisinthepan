@@ -2,71 +2,63 @@ import { useEffect } from 'react';
 import usePuzzle from './hooks/usePuzzle';
 import LanguageSelect from './screens/LanguageSelect';
 import Game from './screens/Game';
-import Button from './components/Button';
+import FlagButton from './components/FlagButton';
 import { useGameStore } from './state/gameStore';
-import { langFromPath, pathForLang } from './langs';
+import { useLocation, navigate } from './routing';
+import { parseRoute, resolveHomeLang, pathForLang, type LangCode } from './langs';
 
 export default function App() {
-  // Selected language lives in the store; usePuzzle turns it into today's puzzle
-  // and the server's dayNumber (the key the round's persisted progress is stored on).
-  const lang = useGameStore((s) => s.lang);
-  const setLang = useGameStore((s) => s.setLang);
-  const { puzzle, dayNumber, error, loading, noPuzzle } = usePuzzle(lang);
+  const pathname = useLocation();
+  const route = parseRoute(pathname);
+  const lastLang = useGameStore((s) => s.lastLang);
 
-  // Keep the address bar in sync with the language: /fr, /en, or / for the picker.
-  // This makes a language deep-linkable — sharing /fr or refreshing stays in that
-  // game (the store seeds `lang` from the path on load) instead of returning to the
-  // picker. Guard the push so the seed load doesn't add a duplicate history entry.
+  // The game IS the home: `/` (and any unknown path) redirects to a language — the
+  // persisted last-played one, else the browser language (fr* -> /fr), else English.
+  // replaceState so `/` never lingers in history: back from the game exits instead of
+  // bouncing through the redirect, and a deep link to /fr or /en never redirects.
   useEffect(() => {
-    const path = pathForLang(lang);
-    if (window.location.pathname !== path) {
-      window.history.pushState(null, '', path + window.location.search);
-    }
-  }, [lang]);
-
-  // Browser back/forward: follow the URL back to the matching language (or the picker).
-  useEffect(() => {
-    const onPop = () => setLang(langFromPath(window.location.pathname));
-    window.addEventListener('popstate', onPop);
-    return () => window.removeEventListener('popstate', onPop);
-  }, [setLang]);
-
-  useEffect(() => {
-    if (!lang) return undefined;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setLang(null);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [lang, setLang]);
+    if (route.view !== 'home') return;
+    navigate(pathForLang(resolveHomeLang(lastLang, navigator.language)), { replace: true });
+  }, [route.view, lastLang]);
 
   return (
     <div className="app">
-      {!lang && <LanguageSelect onSelect={setLang} />}
-
-      {lang && (
-        <Button variant="secondary" className="esc-label" onClick={() => setLang(null)}>
-          [ESC]
-        </Button>
-      )}
-
-      {lang && loading && <p className="status">LOADING&hellip;</p>}
-      {lang && error !== null && <p className="status error">FAILED TO LOAD PUZZLE</p>}
-      {lang && puzzle && <Game puzzle={puzzle} dayNumber={dayNumber} />}
-      {lang && noPuzzle && (
-        <div className="empty-lang">
-          <p className="status">NO PUZZLE TODAY</p>
-          <FlagBackButton onClick={() => setLang(null)} />
-        </div>
-      )}
+      {route.view === 'select' && <LanguageSelect />}
+      {route.view === 'game' && <GameRoute lang={route.lang} />}
+      {/* home: redirecting on the next tick — render nothing. */}
     </div>
   );
 }
 
-function FlagBackButton({ onClick }: { onClick: () => void }) {
-  return <Button onClick={onClick}>BACK</Button>;
+// One puzzle route (/fr, /en). Loads the day's puzzle for the language and records it
+// as the last-played one. The HUD flag shows the LOADED puzzle's language (falling back
+// to the route language until it resolves), so it is always the flag of what's on screen.
+function GameRoute({ lang }: { lang: LangCode }) {
+  const { puzzle, dayNumber, error, loading, noPuzzle } = usePuzzle(lang);
+  const setLastLang = useGameStore((s) => s.setLastLang);
+
+  // Visiting a puzzle route makes this the last-played language (seeds the `/` redirect).
+  useEffect(() => {
+    setLastLang(lang);
+  }, [lang, setLastLang]);
+
+  const flagLang = puzzle?.lang ?? lang;
+
+  return (
+    <>
+      {/* Non-game states (loading / error / no puzzle) get a bare HUD with just the
+          flag; once a puzzle loads, Game renders the full HUD (flag + progress bar), so
+          exactly one HUD shows at a time. */}
+      {!puzzle && (
+        <div className="hud">
+          <FlagButton lang={flagLang} />
+        </div>
+      )}
+
+      {loading && <p className="status">LOADING&hellip;</p>}
+      {error !== null && <p className="status error">FAILED TO LOAD PUZZLE</p>}
+      {noPuzzle && <p className="status">NO PUZZLE TODAY</p>}
+      {puzzle && <Game puzzle={puzzle} dayNumber={dayNumber} />}
+    </>
+  );
 }

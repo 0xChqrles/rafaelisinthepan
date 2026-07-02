@@ -1,88 +1,163 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { RuntimeHole } from '@whippin/shared';
-import { langFromPath } from '../langs';
+import { isLang } from '../langs';
 
-// A round is identified by its `roundKey` = (server day, language). When that key
-// changes (a new day flips, or a different language is picked) the persisted round
-// is stale and gets discarded; the SAME key rehydrates the stored progress verbatim.
+// A round is identified by its `roundKey` = (server day, language). The store keeps a
+// MAP of rounds keyed by this string so progress in one language survives switching to
+// another and back (the selector reads each language's status out of this map). The
+// SAME key rehydrates its stored progress untouched; a NEW day prunes the previous
+// day's rounds so a new day never bleeds yesterday's state in.
 export interface RoundProgress {
-  roundKey: string | null;
   holes: RuntimeHole[];
   // Score = number of unique valid tries.
   guessCount: number;
   // The deduped folded slugs already counted, kept as an array so the Set survives
   // JSON persistence.
   tried: string[];
+  // Reconstruction progress (0–100), cached so the selector can badge an in-progress
+  // language WITHOUT re-loading its puzzle's rank map. Game recomputes and syncs it;
+  // it is derived UI state, never the source of truth for scoring.
+  progress: number;
 }
 
-interface GameState extends RoundProgress {
-  // Selected language (App/Game read it). NOT persisted: the URL is its source of
-  // truth on load — the store seeds it from the /<lang> path (see below), and App
-  // keeps the address bar in sync. The round rehydrates once its language is active.
-  lang: string | null;
-  setLang: (lang: string | null) => void;
+// The canonical round key: (server day, language). Kept here so Game (which builds it)
+// and the selector (which looks it up per language) agree byte-for-byte.
+export function roundKeyForDay(dayNumber: number, lang: string): string {
+  return `d:${dayNumber}:${lang}`;
+}
 
-  // Reconcile the persisted round to `key`. A new key discards the stale round and
-  // starts fresh from `initialHoles`; the same key is a no-op, so a reload keeps the
-  // stored progress untouched (mid-round rehydration).
+// The day-part prefix of a round key ("d:5:"), or null for a non-day key (the ?puzzle=
+// override's "o:<nonce>:<lang>"). Drives pruning of rounds from other game days.
+function dayPrefixOf(key: string): string | null {
+  const m = /^(d:\d+:)/.exec(key);
+  return m ? m[1] : null;
+}
+
+interface PersistedState {
+  // All rounds keyed by roundKey. Bounded to the current day's languages by ensureRound.
+  rounds: Record<string, RoundProgress>;
+  // Last-played language: seeds the `/` redirect so a return visit lands where you
+  // last played (falls back to the browser language, then English).
+  lastLang: string | null;
+}
+
+interface GameState extends PersistedState {
+  // The round currently being played (its key). NOT persisted: ensureRound sets it each
+  // load from the active puzzle's (day, lang). The mutating actions target rounds[activeKey].
+  activeKey: string | null;
+
+  // Remember the last-played language (drives the `/` redirect). Ignores non-languages.
+  setLastLang: (lang: string) => void;
+
+  // Reconcile the persisted rounds to `key`. A matching key rehydrates its stored
+  // progress; a brand-new key starts fresh from `initialHoles`. Always prunes rounds
+  // from other game days (a new day never keeps yesterday's), keeping the map bounded.
   ensureRound: (key: string, initialHoles: RuntimeHole[]) => void;
 
-  // Count a valid guess. Deduped by folded slug: a repeat neither re-counts nor
-  // re-appends. `typed` is already folded by the caller.
+  // Count a valid guess on the active round. Deduped by folded slug: a repeat neither
+  // re-counts nor re-appends. `typed` is already folded by the caller.
   recordGuess: (typed: string) => void;
 
-  // A warm hit improved a hole: swap in its closer (accented) word + lower rank.
+  // A warm hit improved a hole on the active round: swap in its closer (accented)
+  // word + lower rank.
   improveHole: (index: number, word: string, rank: number) => void;
+
+  // Cache the active round's reconstruction progress (for the selector badge). No-op
+  // when unchanged so it never churns the store.
+  syncProgress: (value: number) => void;
 }
 
 // Persistence is browser-only; in tests / SSR there is no localStorage, so fall back
 // to a no-op store (no warnings, no persistence) instead of throwing.
-const storage = createJSONStorage<RoundProgress>(() => {
+const storage = createJSONStorage<PersistedState>(() => {
   if (typeof window === 'undefined') {
     return { getItem: () => null, setItem: () => {}, removeItem: () => {} };
   }
   return window.localStorage;
 });
 
+function freshRound(initialHoles: RuntimeHole[]): RoundProgress {
+  return { holes: initialHoles, guessCount: 0, tried: [], progress: 0 };
+}
+
 export const useGameStore = create<GameState>()(
   persist(
     (set, get) => ({
-      // Seed from the address bar so /fr and /en deep-link straight into the game
-      // (a refresh or shared link skips the picker).
-      lang: typeof window !== 'undefined' ? langFromPath(window.location.pathname) : null,
-      roundKey: null,
-      holes: [],
-      guessCount: 0,
-      tried: [],
+      rounds: {},
+      lastLang: null,
+      activeKey: null,
 
-      setLang: (lang) => set({ lang }),
-
-      ensureRound: (key, initialHoles) => {
-        if (get().roundKey === key) return; // same round -> keep persisted progress
-        set({ roundKey: key, holes: initialHoles, guessCount: 0, tried: [] });
+      setLastLang: (lang) => {
+        if (!isLang(lang) || get().lastLang === lang) return;
+        set({ lastLang: lang });
       },
 
-      recordGuess: (typed) => {
-        if (get().tried.includes(typed)) return; // dedupe: unique tries only
-        set((s) => ({ tried: [...s.tried, typed], guessCount: s.guessCount + 1 }));
-      },
+      ensureRound: (key, initialHoles) =>
+        set((s) => {
+          // Prune rounds from other game days (and stale override rounds): a day key
+          // keeps every same-day language (so switching language preserves the others),
+          // an override/non-day key keeps only itself.
+          const dayPrefix = dayPrefixOf(key);
+          const kept: Record<string, RoundProgress> = {};
+          for (const [k, v] of Object.entries(s.rounds)) {
+            if (dayPrefix && k.startsWith(dayPrefix)) kept[k] = v;
+          }
+          // Same key -> rehydrate untouched; brand-new key -> fresh from initialHoles.
+          kept[key] = s.rounds[key] ?? freshRound(initialHoles);
+          return { activeKey: key, rounds: kept };
+        }),
+
+      recordGuess: (typed) =>
+        set((s) => {
+          const key = s.activeKey;
+          if (!key) return {};
+          const round = s.rounds[key];
+          if (!round || round.tried.includes(typed)) return {}; // dedupe: unique tries only
+          return {
+            rounds: {
+              ...s.rounds,
+              [key]: { ...round, tried: [...round.tried, typed], guessCount: round.guessCount + 1 },
+            },
+          };
+        }),
 
       improveHole: (index, word, rank) =>
-        set((s) => ({
-          holes: s.holes.map((h, i) => (i === index ? { ...h, word, rank } : h)),
-        })),
+        set((s) => {
+          const key = s.activeKey;
+          if (!key) return {};
+          const round = s.rounds[key];
+          if (!round) return {};
+          return {
+            rounds: {
+              ...s.rounds,
+              [key]: {
+                ...round,
+                holes: round.holes.map((h, i) => (i === index ? { ...h, word, rank } : h)),
+              },
+            },
+          };
+        }),
+
+      syncProgress: (value) =>
+        set((s) => {
+          const key = s.activeKey;
+          if (!key) return {};
+          const round = s.rounds[key];
+          if (!round || round.progress === value) return {};
+          return { rounds: { ...s.rounds, [key]: { ...round, progress: value } } };
+        }),
     }),
     {
       name: 'whippin-round',
       storage,
-      // Persist only the round; the selected language and the actions are not stored.
-      partialize: (s): RoundProgress => ({
-        roundKey: s.roundKey,
-        holes: s.holes,
-        guessCount: s.guessCount,
-        tried: s.tried,
-      }),
+      version: 1,
+      // v0 was a single top-level round ({ roundKey, holes, ... }); the shape is now a
+      // keyed map, so discard the old state rather than mis-merge it (one-time reset).
+      migrate: (persisted, version): PersistedState =>
+        version < 1 ? { rounds: {}, lastLang: null } : (persisted as PersistedState),
+      // Persist only the rounds + last language; activeKey and the actions are transient.
+      partialize: (s): PersistedState => ({ rounds: s.rounds, lastLang: s.lastLang }),
     },
   ),
 );
