@@ -34,7 +34,6 @@ import os
 import random
 import re
 import sys
-import unicodedata
 
 # scripts/ -> generation package root, to import sibling modules and resolve
 # vector/cache paths regardless of the cwd.
@@ -48,14 +47,14 @@ for path in (ROOT, SCRIPT_DIR):
 #  - PUZZLES are generation artifacts: written under this package's own output/ dir, then
 #    PUBLISHED to the daily store (local FS or S3) via `pnpm puzzle:publish`. The front
 #    never serves them directly (the backend does, #6), so they don't belong in web/public.
-#  - The VOCAB existence set IS a web runtime asset: the SPA fetches /vocab/<lang>.json
-#    from its own origin (useVocab), so it is written straight into web/public/vocab.
+#  - The VOCAB existence set IS a web runtime asset (written to web/public/vocab by the
+#    shared write_vocab, imported above).
 # ROOT == packages/generation, a sibling of web in the monorepo.
 GEN_OUTPUT = os.path.join(ROOT, "output")
-WEB_PUBLIC = os.path.normpath(os.path.join(ROOT, "..", "web", "public"))
 
 import french_neighbors as frn
 import glove_neighbors as gn
+from slug import slug, write_vocab  # shared stdlib slug/fold contract + vocab writer
 from start_word import pick_start, start_band
 
 # --- Vocabulary ----------------------------------------------------------------
@@ -111,31 +110,6 @@ def normalize(tok, cfg):
     return w.strip("-")
 
 
-# Ligatures that do NOT decompose under NFKD, so we expand them by hand.
-_LIGATURES = {"œ": "oe", "æ": "ae"}
-
-# slug keeps only ASCII letters and dashes; everything else is dropped.
-_SLUG_STRIP = re.compile(r"[^a-z-]")
-_SLUG_DASHES = re.compile(r"-+")
-
-
-def slug(word):
-    """Accent-folded key used for COMPARISON/LOOKUP (never displayed).
-
-    Keeps internal dashes: lowercase -> expand ligatures -> NFKD -> drop combining
-    marks -> keep only [a-z] and '-' -> collapse repeated dashes -> trim edges.
-    été->ete, forêt->foret, œuf->oeuf, peut-être->peut-etre, arc-en-ciel->arc-en-ciel.
-    Stays byte-identical to the front-end fold() in src/screens/Game.tsx."""
-    w = word.lower()
-    for lig, repl in _LIGATURES.items():
-        w = w.replace(lig, repl)
-    w = unicodedata.normalize("NFKD", w)
-    w = "".join(c for c in w if not unicodedata.combining(c))
-    w = _SLUG_STRIP.sub("", w)
-    w = _SLUG_DASHES.sub("-", w)
-    return w.strip("-")
-
-
 def ws(display):
     """A {word, slug} object: the displayed (accented) form plus its slug.
 
@@ -168,23 +142,6 @@ def build_rank_map(secret_display, ranking):
 def build_lang_vocab(kv, cfg):
     """Return the full reduced vocabulary via the configured neighbor module."""
     return cfg["module"].build_vocab(kv)
-
-
-def write_vocab(V, lang):
-    """Write public/vocab/<lang>.json: the UNLIMITED existence set.
-
-    Every distinct slug in V (deduplicated, sorted) — NOT capped to TOP_K. The
-    front fetches this once and decides word existence from it. Since V is the
-    same pool ranks are drawn from, every word in any top-K is guaranteed here.
-    Deterministic given V; overwritten on each run."""
-    slugs = sorted({s for s in (slug(w) for w in V) if s})
-    out_dir = os.path.join(WEB_PUBLIC, "vocab")
-    os.makedirs(out_dir, exist_ok=True)
-    out_path = os.path.join(out_dir, f"{lang}.json")
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(slugs, f, ensure_ascii=False)
-    print(f"Vocabulaire ({lang}) : {len(slugs)} slugs -> {out_path}")
-    return out_path
 
 
 def choose_start(secret, ranking, rank_map, rank_by_display):

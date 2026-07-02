@@ -43,3 +43,8 @@ packages/generation/embedding/**/*.txt
 *.kv
 *.kv.vectors.npy
 *.npy
+
+# ── Wordlist build cache (issue #38) ─────────────────────────
+# Raw source downloads for `pnpm wordlist:<lang>` (Lexique/SCOWL/Hunspell). Re-fetched
+# on demand; the committed wordlist/<lang>.txt.gz is the versioned build output.
+packages/generation/wordlist/.cache

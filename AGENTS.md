@@ -45,13 +45,17 @@ Instructions to future agents working in this repo:
 packages/
   generation/                Python generation (run via uv); puzzles -> output/, vocab -> web/public
     scripts/
-      reduce_embedding.py     raw .vec/.txt -> *_reduced file (the ONLY filter+cap stage)
+      reduce_embedding.py     raw .vec/.txt -> *_reduced file (the ONLY filter+cap stage) + vocab
+      build_wordlist.py       offline builder: sources -> wordlist/<lang>.txt.gz (hors-dico ref, #38)
+      build_vocab.py          reduced vectors -> web/public/vocab/<lang>.json (escape hatch; no re-reduce)
+      slug.py                 stdlib-only: slug() contract + write_vocab (shared by reduce + gen_phrase)
       embedding_neighbors.py  shared load/vocab/matrix/cosine-rank logic
       glove_neighbors.py      en paths + derived .kv cache (thin wrapper over the above)
       french_neighbors.py     fr paths + derived .kv cache (thin wrapper)
       start_word.py           start/hint-word selection (rank band 50-150)
       gen_phrase.py           one sentence -> one self-contained puzzle JSON
     embedding/<lang>/...      raw + *_reduced vectors + derived .kv caches
+    wordlist/<lang>.txt.gz    versioned hors-dico reference wordlist (#38); .cache/ gitignored
     output/word/<lang>/<s1>_<s2>_<s3>.json   generated puzzles (gitignored; publish to store/S3)
     pyproject.toml, uv.lock   Python project (uv)
   backend/                    daily-puzzle backend (pkg @whippin/backend, #2)
@@ -97,12 +101,24 @@ These are decided and verified against the code. Treat them as load-bearing.
 
 - **`reduce_embedding.py` is the ONLY place that filters or caps.** It streams the
   frequency-sorted source line by line (never loads a vector), and for each word
-  applies, in order: drop if any **uppercase**, drop **single-letter** (counted by
-  character so `à`/`é` count as one), drop **non-alphabet** (`^[<class>]+(-[<class>]+)*$`
-  = letters + internal hyphens only), drop **stopword**. The cap counts **survivors**:
-  it keeps passing words until `TOP_N = 400000` have PASSED, then stops reading.
-  Order is **filter-THEN-cap** → output has exactly `TOP_N` words (or fewer + a
+  applies, in order: drop **single-letter** (counted by character so `à`/`é` count as
+  one), drop **stopword**, then drop **hors-dico** (see below). The cap counts
+  **survivors**: it keeps passing words until `TOP_N = 400000` have PASSED, then stops
+  reading. Order is **filter-THEN-cap** → output has exactly `TOP_N` words (or fewer + a
   warning if the source is exhausted), *not* "200k minus rejects".
+- **`hors-dico` is rule 3, applied LAST to EVERY survivor** (#38): drop a word that is not
+  in the language's versioned reference wordlist `wordlist/<lang>.txt.gz`. It compares the
+  **pre-slug** token (lowercase, accents kept). Because that list is lowercase and
+  letters+hyphens only (built by `build_wordlist.py` via `token_pattern`), hors-dico
+  **subsumes the old `uppercase` and `non-alphabet` rules** — an uppercase / digit / markup
+  token simply isn't in the list — so those two rules were removed. There is **NO frequency
+  exemption**: even the single most frequent token is dropped if it isn't a dictionary word.
+  The wordlist is built offline (Lexique/SCOWL ∪ Hunspell); the pipeline only **reads** the
+  committed file, and a **missing** wordlist is a hard error (skip only with `--no-dico`).
+- **The two morphological rules that remain (`single-letter`, `stopword`) exist precisely
+  because hors-dico *can't* cover them:** their targets ARE valid dictionary entries the
+  wordlist would otherwise keep — Hunspell/SCOWL ship every single letter `a`–`z`, and
+  stopwords are real words. They run before hors-dico so attribution stays clean.
 - Output is `<input>_reduced.<ext>` (extension preserved). If the source had a
   `"<count> <dim>"` header, the output header is **recalculated** to the kept count;
   if it had none (GloVe `.txt`), the output has none. The source is never modified.
@@ -122,7 +138,8 @@ These are decided and verified against the code. Treat them as load-bearing.
 
 ### slug() ⇔ fold() must stay byte-identical (cross-language)
 
-Python `slug()` (`packages/generation/scripts/gen_phrase.py`) and JS `fold()`
+Python `slug()` (`packages/generation/scripts/slug.py`, the stdlib-only shared module
+imported by BOTH `gen_phrase.py` and `reduce_embedding.py`) and JS `fold()`
 (`packages/shared/src/slug.ts`, imported by `web/src/screens/Game.tsx`) MUST produce
 the same key. Pipeline: **lowercase → expand ligatures (`œ→oe`, `æ→ae`) → NFKD → drop
 combining marks → keep only `[a-z]` and `-` → collapse repeated dashes → trim edge
@@ -174,7 +191,12 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   - **Vocab** — `packages/web/public/vocab/<lang>.json` = the **full** slugged reduced
     vocab (existence set), deduped + sorted, deterministic, **NOT** capped to `TOP_K`.
     This one **stays a web asset**: the SPA fetches `/vocab/<lang>.json` from its own
-    origin (`useVocab`), so it is written straight into web `public/`.
+    origin (`useVocab`), so it is written straight into web `public/`. **`reduce`
+    emits it in the same pass** (from the words it keeps — the vocab is a pure function
+    of those, so no vector reload; `--no-vocab` to skip). `gen_phrase` still rewrites it
+    as a side effect, and `pnpm vocab:<lang>` (`build_vocab.py`) rebuilds it from an
+    existing reduced file without re-reducing. All three go through the one shared
+    `slug.write_vocab`, so the output is identical.
 - **`TOP_K = 10000` is a generation-only cap:** each secret's rank map = the secret at
   rank 0 plus its `K` nearest. The front is **K-agnostic** — it tests membership in
   the map, never hardcodes 2000.
@@ -276,6 +298,14 @@ When asked to work/implement/do/resolve issue #N:
 - **Don't let `slug()` and `fold()` diverge.**
 - **Don't reintroduce `VECTOR_LIMIT` / `VOCAB_SIZE` / `VOCAB_SCAN`** knobs.
 - **Don't switch `reduce_embedding.py` to cap-then-filter** (must stay filter-then-cap).
+- **Don't re-add `uppercase` / `non-alphabet` rules** — hors-dico subsumes them (the
+  wordlist is lowercase + letters/hyphens only), and **don't drop `single-letter` /
+  `stopword`**, which it can't (their targets are valid dictionary entries).
+- **Don't re-introduce a frequency exemption** — hors-dico applies to every survivor.
+- **Don't move `hors-dico` before the morphological rules** — it runs LAST so report
+  attribution stays clean.
+- **Don't silently skip a missing hors-dico wordlist** — error out (use `--no-dico` to
+  opt out explicitly); and don't re-filter against the wordlist anywhere downstream.
 - **Don't skip the cache mtime check** in `load_vectors`.
 - **Don't inject a missing target word** into the vocab in `gen_phrase` — error out.
 
@@ -294,13 +324,27 @@ breaks `gen_phrase.py`'s arg parsing).
 ```bash
 pnpm install                    # installs all workspaces (web + shared)
 
-# 1. Reduce ONCE per language (slow, offline). Build the *_reduced source of truth.
-pnpm reduce:fr        # embedding/fr/cc.fr.300.vec      -> cc.fr.300_reduced.vec
-pnpm reduce:en        # embedding/en/glove.6B.300d.txt  -> glove.6B.300d_reduced.txt
+# 0. (Re)build the hors-dico reference wordlist ONCE per language (offline, #38). The
+#    committed wordlist/<lang>.txt.gz is already versioned — only rerun to refresh sources.
+#    Needs `unmunch` (hunspell-tools; `brew install hunspell`) for the Hunspell union, or
+#    pass --skip-hunspell for the Lexique/SCOWL-only union.
+pnpm wordlist:fr      # Lexique ∪ Hunspell fr  -> wordlist/fr.txt.gz
+pnpm wordlist:en      # SCOWL   ∪ Hunspell en  -> wordlist/en.txt.gz
 
-# 2. Generate a puzzle per game (fast; first run for a language builds the .kv cache).
-#    Puzzle -> packages/generation/output/word/<lang>/ (then `pnpm puzzle:publish` it);
-#    vocab -> packages/web/public/vocab/<lang>.json (a web asset).
+# 1. Reduce ONCE per language (slow, offline). Build the *_reduced source of truth AND,
+#    in the same pass, web/public/vocab/<lang>.json (the front's existence set — commit it).
+#    Reads wordlist/<lang>.txt.gz for the hors-dico rule (--no-dico to skip; --no-vocab
+#    to skip the vocab write). This is the one command for a language's derived data.
+pnpm reduce:fr        # embedding/fr/cc.fr.300.vec -> cc.fr.300_reduced.vec + vocab/fr.json
+pnpm reduce:en        # embedding/en/glove.6B.300d.txt -> glove.6B.300d_reduced.txt + vocab/en.json
+
+# 2. (Escape hatch) Rebuild ONLY the vocab from an existing reduced file, without a slow
+#    re-reduce — e.g. if the committed vocab/<lang>.json got lost.
+pnpm vocab:fr         # -> packages/web/public/vocab/fr.json
+
+# 3. Generate a puzzle per game (fast; first run for a language builds the .kv cache).
+#    Puzzle -> packages/generation/output/word/<lang>/ (then `pnpm puzzle:publish` it).
+#    NOTE: gen:phrase ALSO rewrites web/public/vocab/<lang>.json as a side effect.
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--`)
 
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
@@ -336,6 +380,10 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
 - **Data present:** `generation/embedding/fr/cc.fr.300_reduced.vec` (+ `.kv` cache
   built), `generation/embedding/en/glove.6B.300d_reduced.txt` (+ `.kv` cache built).
   `web/public/vocab/{en,fr}.json` exist.
+- **Hors-dico wordlists (#38):** `generation/wordlist/{fr,en}.txt.gz` are committed —
+  `fr` = Lexique ∪ Hunspell fr (~169k forms), `en` = SCOWL(≤60,US) ∪ Hunspell en_US
+  (~91k). Built by `build_wordlist.py`; source downloads cache in `wordlist/.cache/`
+  (gitignored). Tests use the small fixture `tests/fixtures/dico.fr.txt`.
 - **Puzzles:** generated into `generation/output/word/<lang>/` (gitignored), then
   published to the store (`pnpm puzzle:publish`). They are no longer kept under
   `web/public/word` — the front serves the day's puzzle from the backend (#6).
