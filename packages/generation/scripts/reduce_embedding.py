@@ -8,37 +8,28 @@ so we stream it from the top, apply the rules to each word, and KEEP the survivo
 until TOP_N of them have passed — then we stop reading. We never stream the remaining
 millions, and never load any vector into memory.
 
-The rules below drop the words we don't want (uppercase, single letters, non-alphabet
-tokens, stopwords) BEFORE the cap is counted, so TOP_N bounds the number of KEPT words,
-not the number of source lines scanned. The survivors are written verbatim to a single
-<input>_reduced.<ext> file — the single source of truth the rest of the pipeline
-consumes WITHOUT re-filtering. The output has EXACTLY TOP_N words, unless the source is
-exhausted first (then fewer, with a warning).
+The rules below drop the words we don't want BEFORE the cap is counted, so TOP_N bounds
+the number of KEPT words, not the number of source lines scanned. The survivors are
+written verbatim to a single <input>_reduced.<ext> file — the single source of truth the
+rest of the pipeline consumes WITHOUT re-filtering. The output has EXACTLY TOP_N words,
+unless the source is exhausted first (then fewer, with a warning).
 
 Monitoring is the per-rule report on stderr (counts + samples), plus how many source
 lines were SCANNED to reach TOP_N kept (the scanned/kept ratio shows how noisy the head
 of the embedding is).
 
 Rules (first one that matches = reason a word is dropped):
-  1. majuscule      : the word contains at least one uppercase letter (proper nouns, acronyms…)
-  2. single-letter  : the word is a single letter (counted by character, so "à"/"é" count as one)
-  3. hors-alphabet  : something other than letters + internal hyphens (digits, </s>, co²…)
-  4. stopword       : function word
-  5. hors-dico      : the word is not in the language's reference wordlist — catches lexical
-                      noise the morphological rules can't (typos of real words, letter-only
-                      gibberish like "gksudo", dash fragments like "a-ligne"). Runs LAST so
-                      report attribution stays clean, and it is SKIPPED for the top
-                      FREQ_EXEMPT most frequent morphological survivors (the frequency safety
-                      net — see below). Applied in the streaming loop, not as a stateless
-                      predicate in make_rules(), because the exemption is positional.
+  1. single-letter  : the word is a single letter (counted by character, so "à"/"é" count as one)
+  2. stopword       : function word
+  3. hors-dico      : the word is not in the language's reference wordlist
 
-Frequency safety net: the top FREQ_EXEMPT words that pass the morphological rules (1–4) SKIP
-the hors-dico check. Position in the frequency-sorted source = frequency rank, so this exempts
-the most common tokens: very frequent words absent from dictionaries are almost always
-legitimate usage (slang, recent words) rather than typos, and dictionaries lag usage. Beyond
-that rank the hors-dico rule applies. The report logs a sample of the words this exemption
-SAVED (frequent but absent from the dico) — how FREQ_EXEMPT is tuned and dictionary gaps are
-spotted.
+The hors-dico rule (rule 3) does the heavy lifting: it drops anything that is not an
+entry in wordlist/<lang>.txt.gz — which, since that list is lowercase and letters+hyphens
+only (see build_wordlist.py), subsumes what dedicated "uppercase" and "non-alphabet"
+rules used to do (an uppercase or digit/markup token simply isn't in the list). The two
+morphological rules that REMAIN are the ones hors-dico can't cover, because their targets
+ARE valid dictionary entries: single letters ("a".."z" ship in Hunspell/SCOWL) and
+stopwords. There is NO frequency exemption — hors-dico applies to every word.
 
 Format: if the source has a "<count> <dim>" header, the output has one too, recalculated
 to the number of surviving words. If the source has none (e.g. GloVe .txt), the output
@@ -60,10 +51,6 @@ import tempfile
 # Keep words (after the rules) until TOP_N have PASSED, then stop reading. TOP_N caps
 # the number of KEPT words, not the number of source lines scanned. Easy to change.
 TOP_N = 400000
-
-# Frequency safety net: the top FREQ_EXEMPT words that pass the MORPHOLOGICAL rules
-# (majuscule/single-letter/hors-alphabet/stopword) skip the hors-dico check. Easy to change.
-FREQ_EXEMPT = 40000
 
 # Versioned reference wordlists consumed by the hors-dico rule, one per language. Built
 # offline by scripts/build_wordlist.py; the pipeline only READS these committed files.
@@ -98,26 +85,24 @@ SAMPLE_CAP = 30  # number of examples kept per rule for the report
 
 def token_pattern(lang):
     """Compiled regex for a valid token: the language's letters + internal hyphens only
-    (`arc-en-ciel` ok, `-x`/`x-`/`co²` not). Shared by the hors-alphabet rule here and
-    scripts/build_wordlist.py, so the wordlist is normalized to exactly what can pass."""
+    (`arc-en-ciel` ok, `-x`/`x-`/`co²` not). Used by scripts/build_wordlist.py to normalize
+    the reference wordlist, so the wordlist contains exactly the token shapes reduce keeps
+    — which is why hors-dico subsumes the old uppercase/non-alphabet rules."""
     cc = CHAR_CLASS[lang]
     return re.compile(rf"^[{cc}]+(-[{cc}]+)*$")
 
 
 def make_rules(lang):
-    """ORDERED list of rules (name, rejection-predicate). The first one that returns
-    True decides the rejection. To add a filter, add a line here (and rerun)."""
-    token_re = token_pattern(lang)
+    """ORDERED list of MORPHOLOGICAL rules (name, rejection-predicate). The first one that
+    returns True decides the rejection. These run BEFORE the hors-dico membership check and
+    cover only what hors-dico can't: single letters and stopwords are valid dictionary
+    entries, so the wordlist would otherwise KEEP them. Uppercase / non-alphabet tokens need
+    no rule here — they simply aren't in the (lowercase, letters+hyphens) wordlist."""
     stop = STOPWORDS[lang]
     return [
-        ("majuscule",     lambda w: w != w.lower()),
         # len() on a Python str counts characters, not bytes: "à"/"é" are one letter.
         ("single-letter", lambda w: len(w) == 1),
-        ("hors-alphabet", lambda w: not token_re.match(w)),
         ("stopword",      lambda w: w in stop),
-        # hors-dico (rule 5) is NOT here: it needs the DICO set AND the per-word frequency
-        # position (for the FREQ_EXEMPT safety net), which a stateless predicate can't see.
-        # It is applied last, in main()'s streaming loop, and reported under "hors-dico".
     ]
 
 
@@ -175,7 +160,7 @@ def main():
 
     out_path = args.out or derive_path(args.input)
 
-    # hors-dico rule 5: load the reference wordlist unless disabled. Fail loud on a
+    # hors-dico rule 3: load the reference wordlist unless disabled. Fail loud on a
     # missing file — silently skipping the filter would ship lexical noise into vocab.
     dico = None
     if not args.no_dico:
@@ -188,15 +173,12 @@ def main():
         dico = load_dico(d_path)
 
     rules = make_rules(args.lang)
-    # Report reasons = morphological rules, plus hors-dico (rule 5) when the dico is active.
+    # Report reasons = morphological rules, plus hors-dico (rule 3) when the dico is active.
     reasons = [name for name, _ in rules] + (["hors-dico"] if dico is not None else [])
     out_dir = os.path.dirname(os.path.abspath(out_path))
 
-    scanned = 0       # SOURCE data lines read while filling the cap
-    kept_count = 0    # words KEPT (passed morphology AND (in dico OR freq-exempt))
-    passed_morph = 0  # words that passed the MORPHOLOGICAL rules (the FREQ_EXEMPT rank axis)
-    exempt_saved = 0  # kept ONLY thanks to the freq exemption (absent from the dico)
-    exempt_samples = []  # sample of those, to tune FREQ_EXEMPT / spot dictionary gaps
+    scanned = 0     # SOURCE data lines read while filling the cap
+    kept_count = 0  # words KEPT (passed the morphological rules AND, if a dico, are in it)
     by_rule = {name: 0 for name in reasons}
     samples = {name: [] for name in reasons}
 
@@ -222,26 +204,18 @@ def main():
             scanned += 1
             rule = classify(word, rules)
             if rule is not None:
-                # Rejected by a morphological rule: record it and move to the next line.
+                # Rejected by a morphological rule (single-letter / stopword): record + skip.
                 by_rule[rule] += 1
                 if len(samples[rule]) < SAMPLE_CAP:
                     samples[rule].append(word)
                 continue
-            # Passed morphology. This is the FREQ_EXEMPT rank axis (frequency-sorted source).
-            passed_morph += 1
-            # hors-dico (rule 5), applied LAST: reject words absent from the reference
-            # wordlist — UNLESS this is one of the top FREQ_EXEMPT morphological survivors,
-            # which are too frequent to be typos and so skip the dico check entirely.
+            # hors-dico (rule 3), applied LAST to EVERY survivor: reject words absent from
+            # the reference wordlist (no frequency exemption).
             if dico is not None and word not in dico:
-                if passed_morph <= FREQ_EXEMPT:
-                    exempt_saved += 1  # frequent but absent from the dico: kept, and flagged
-                    if len(exempt_samples) < SAMPLE_CAP:
-                        exempt_samples.append(word)
-                else:
-                    by_rule["hors-dico"] += 1
-                    if len(samples["hors-dico"]) < SAMPLE_CAP:
-                        samples["hors-dico"].append(word)
-                    continue
+                by_rule["hors-dico"] += 1
+                if len(samples["hors-dico"]) < SAMPLE_CAP:
+                    samples["hors-dico"].append(word)
+                continue
             # Kept: write it and count it toward the cap.
             out_tmp.write(line)
             kept_count += 1
@@ -269,12 +243,6 @@ def main():
     for name in reasons:
         ex = ", ".join(samples[name][:12])
         print(f"  - {name:14s}: {by_rule[name]:>8d}   ex : {ex}", file=sys.stderr)
-    if dico is not None:
-        # Words the frequency safety net SAVED (top FREQ_EXEMPT, absent from the dico).
-        # Watch this sample to tune FREQ_EXEMPT and spot dictionary gaps.
-        ex = ", ".join(exempt_samples[:12])
-        print(f"  · exempté-freq (top {FREQ_EXEMPT:,}, hors-dico gardés) : "
-              f"{exempt_saved:>8d}   ex : {ex}", file=sys.stderr)
     if kept_count < TOP_N:
         print(f"⚠ Source épuisée : seulement {kept_count:,} mots gardés, cap TOP_N "
               f"= {TOP_N:,} NON atteint.", file=sys.stderr)

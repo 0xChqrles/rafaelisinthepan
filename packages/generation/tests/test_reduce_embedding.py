@@ -1,10 +1,11 @@
 """CONTRACT: reduce_embedding.py is the ONLY filter+cap stage (AGENTS.md "Pipeline").
 
-  - rejection rules, in order: uppercase -> single-letter -> non-alphabet -> stopword
-    -> hors-dico (rule 5, runs LAST);
-  - hors-dico rejects tokens absent from the language's reference wordlist, EXCEPT the
-    top FREQ_EXEMPT morphological survivors (the frequency safety net), which are kept
-    and flagged as exemption-saved in the report;
+  - rejection rules, in order: single-letter -> stopword -> hors-dico (rule 3, runs LAST
+    on EVERY survivor — no frequency exemption);
+  - the two morphological rules cover only what hors-dico can't (single letters and
+    stopwords are valid dictionary entries); uppercase / non-alphabet tokens need no
+    dedicated rule — they simply aren't in the lowercase, letters+hyphens wordlist, so
+    hors-dico rejects them;
   - filter-THEN-cap: the cap counts SURVIVORS, so the output has EXACTLY TOP_N kept
     words (interspersed rejects do not reduce the count), or fewer + a warning if the
     source is exhausted first;
@@ -26,30 +27,34 @@ DICO_FR = os.path.join(FIXTURES, "dico.fr.txt")  # small committed reference wor
 
 # --- rejection rules + their order -------------------------------------------------
 
-def test_rejection_rules_and_kept_tokens():
+def test_morphological_rules_cover_only_what_the_dico_cannot():
+    # make_rules() now holds ONLY the two rules hors-dico can't subsume, because their
+    # targets are valid dictionary entries the wordlist would otherwise keep.
     en = red.make_rules("en")
     fr = red.make_rules("fr")
 
-    # uppercase (proper nouns / acronyms)
-    assert red.classify("Cat", en) == "majuscule"
-    # single letter, counted by CHARACTER (accented letter is one)
+    # single letter, counted by CHARACTER (accented letter is one) — the alphabet ships
+    # in Hunspell/SCOWL, so without this rule the dico would keep every letter.
     assert red.classify("a", en) == "single-letter"
     assert red.classify("é", fr) == "single-letter"
-    # non-alphabet: digits, markup, etc.
-    assert red.classify("h2o", en) == "hors-alphabet"
-    assert red.classify("</s>", en) == "hors-alphabet"
-    # stopword
+    # stopword — a real word, so the dico keeps it; this rule is what excludes it.
     assert red.classify("the", en) == "stopword"
     assert red.classify("le", fr) == "stopword"
+
+    # NOT rejected morphologically anymore — uppercase / non-alphabet pass make_rules and
+    # are left for hors-dico (they aren't in the lowercase, letters-only wordlist).
+    assert red.classify("Cat", en) is None
+    assert red.classify("h2o", en) is None
+    assert red.classify("</s>", en) is None
     # KEPT (None): plain word, internal-dash word, accented FR word
     assert red.classify("apple", en) is None
     assert red.classify("arc-en-ciel", fr) is None
     assert red.classify("forêt", fr) is None
 
 
-def test_rule_order_uppercase_before_stopword():
-    # "The" is BOTH uppercase and a stopword; the first matching rule wins.
-    assert red.classify("The", red.make_rules("en")) == "majuscule"
+def test_rule_order_single_letter_before_stopword():
+    # "a" is BOTH a single letter and an en stopword; the first matching rule wins.
+    assert red.classify("a", red.make_rules("en")) == "single-letter"
 
 
 # --- header detection / output path ------------------------------------------------
@@ -82,14 +87,16 @@ def _run_reduce(monkeypatch, tmp_path, lines, *, lang="en", top_n, header):
 
 
 def test_filter_then_cap_yields_exactly_top_n_with_recounted_header(monkeypatch, tmp_path):
+    # --no-dico here, so the interspersed rejects use the two surviving rules
+    # (single-letter / stopword) rather than the removed uppercase/non-alphabet ones.
     lines = [
-        "the 0 0 0 0\n",     # stopword     -> drop
-        "Cat 0 0 0 0\n",     # uppercase    -> drop
+        "the 0 0 0 0\n",     # stopword      -> drop
+        "i 0 0 0 0\n",       # single-letter -> drop
         "apple 0 0 0 0\n",   # keep 1
-        "h2o 0 0 0 0\n",     # non-alphabet -> drop
+        "of 0 0 0 0\n",      # stopword      -> drop
         "banana 0 0 0 0\n",  # keep 2
-        "a 0 0 0 0\n",       # single       -> drop
-        "cherry 0 0 0 0\n",  # keep 3       -> hits the cap, reading stops here
+        "a 0 0 0 0\n",       # single-letter -> drop
+        "cherry 0 0 0 0\n",  # keep 3        -> hits the cap, reading stops here
         "date 0 0 0 0\n",    # must NOT be reached
     ]
     out = _run_reduce(monkeypatch, tmp_path, lines, top_n=3, header="999 4")
@@ -99,7 +106,7 @@ def test_filter_then_cap_yields_exactly_top_n_with_recounted_header(monkeypatch,
     kept = [ln.split(" ", 1)[0] for ln in out[1:]]
     # EXACTLY TOP_N survivors despite the interspersed rejects (filter-then-cap)
     assert kept == ["apple", "banana", "cherry"]
-    for absent in ("the", "Cat", "h2o", "a", "date"):
+    for absent in ("the", "i", "of", "a", "date"):
         assert absent not in kept
 
 
@@ -121,18 +128,15 @@ def test_no_header_source_produces_no_header(monkeypatch, tmp_path):
     assert red.detect_header(out[0]) == (False, None)
 
 
-# --- hors-dico rule (5) + frequency safety net -------------------------------------
+# --- hors-dico rule (3), applied to every survivor ---------------------------------
 
-def _run_dico(monkeypatch, tmp_path, lines, *, lang="fr", top_n=1000,
-              freq_exempt=0, dico=DICO_FR):
+def _run_dico(monkeypatch, tmp_path, lines, *, lang="fr", top_n=1000, dico=DICO_FR):
     """Run reduce with the hors-dico rule active against a fixture wordlist. Returns the
-    KEPT words (header stripped). freq_exempt defaults to 0 so the dico check is not
-    masked by the exemption unless a test opts in."""
+    KEPT words (header stripped)."""
     src = tmp_path / "src.vec"
     src.write_text("999 2\n" + "".join(lines), encoding="utf-8")
     out = tmp_path / "out.vec"
     monkeypatch.setattr(red, "TOP_N", top_n)
-    monkeypatch.setattr(red, "FREQ_EXEMPT", freq_exempt)
     monkeypatch.setattr(
         sys, "argv",
         ["reduce", str(src), "--lang", lang, "--dico", str(dico), "--out", str(out)],
@@ -168,40 +172,36 @@ def test_hors_dico_rejects_noise_keeps_inflected_forms(monkeypatch, tmp_path):
         assert absent not in kept
 
 
-def test_frequency_exemption_saves_frequent_out_of_dico_words(monkeypatch, tmp_path, capsys):
-    # FREQ_EXEMPT=3: the top 3 morphological survivors skip the dico check.
-    #   forêt(#1,in)  gksudo(#2,absent→SAVED)  chevaux(#3,in)  a-ligne(#4,absent→rejected)
+def test_hors_dico_applies_to_every_survivor_no_exemption(monkeypatch, tmp_path):
+    # Even the very FIRST (most frequent) out-of-dico token is rejected: there is no
+    # frequency exemption. gksudo leads the file yet is still dropped.
     lines = [
-        "forêt 0 0\n",    # morph #1, in dico
-        "gksudo 0 0\n",   # morph #2, absent — within top 3 -> SAVED (kept)
-        "chevaux 0 0\n",  # morph #3, in dico
-        "a-ligne 0 0\n",  # morph #4, absent — beyond top 3 -> hors-dico reject
-        "forêts 0 0\n",   # morph #5, in dico
+        "gksudo 0 0\n",     # most frequent, absent -> STILL hors-dico rejected
+        "forêt 0 0\n",      # in dico -> keep
+        "typooo 0 0\n",     # absent -> hors-dico
+        "chevaux 0 0\n",    # in dico -> keep
     ]
-    kept = _run_dico(monkeypatch, tmp_path, lines, freq_exempt=3)
-    assert kept == ["forêt", "gksudo", "chevaux", "forêts"]   # a-ligne dropped, gksudo saved
-
-    err = capsys.readouterr().err
-    assert _report_line(err, "hors-dico").split(":")[1].strip().startswith("1")  # a-ligne
-    exempt = _report_line(err, "exempté-freq")                # the safety-net sample line
-    assert "gksudo" in exempt                                 # reported for tuning FREQ_EXEMPT
+    kept = _run_dico(monkeypatch, tmp_path, lines)
+    assert kept == ["forêt", "chevaux"]
+    assert "gksudo" not in kept
 
 
-def test_hors_dico_runs_last_after_morphological_rules(monkeypatch, tmp_path, capsys):
-    # A token that is BOTH a stopword AND absent from the dico is attributed to the
-    # earlier rule (stopword) — hors-dico runs LAST and is never consulted for it.
+def test_stopword_wins_over_hors_dico_which_runs_last(monkeypatch, tmp_path, capsys):
+    # "le" is BOTH a stopword AND absent from the dico -> attributed to the EARLIER rule
+    # (stopword); hors-dico runs LAST. Uppercase "Zebra" now folds INTO hors-dico (no
+    # dedicated majuscule rule) because it isn't in the lowercase wordlist.
     lines = [
-        "le 0 0\n",     # stopword AND absent from dico -> attributed to stopword
-        "Zebra 0 0\n",  # uppercase -> majuscule, never reaches the dico
+        "le 0 0\n",     # stopword AND absent from dico -> counted as stopword
+        "Zebra 0 0\n",  # uppercase, absent from dico   -> counted as hors-dico
         "forêt 0 0\n",  # in dico -> keep
     ]
     kept = _run_dico(monkeypatch, tmp_path, lines)
     assert kept == ["forêt"]
 
     err = capsys.readouterr().err
-    assert "le" in _report_line(err, "stopword")              # counted as stopword...
-    assert "le" not in _report_line(err, "hors-dico")         # ...not as hors-dico
-    assert _report_line(err, "hors-dico").split(":")[1].strip().startswith("0")
+    assert "le" in _report_line(err, "stopword")              # earlier rule wins...
+    assert "le" not in _report_line(err, "hors-dico")         # ...not attributed to hors-dico
+    assert "Zebra" in _report_line(err, "hors-dico")          # uppercase folds into hors-dico
 
 
 def test_no_dico_flag_disables_the_rule(monkeypatch, tmp_path):

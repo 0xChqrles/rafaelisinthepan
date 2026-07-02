@@ -99,26 +99,24 @@ These are decided and verified against the code. Treat them as load-bearing.
 
 - **`reduce_embedding.py` is the ONLY place that filters or caps.** It streams the
   frequency-sorted source line by line (never loads a vector), and for each word
-  applies, in order: drop if any **uppercase**, drop **single-letter** (counted by
-  character so `à`/`é` count as one), drop **non-alphabet** (`^[<class>]+(-[<class>]+)*$`
-  = letters + internal hyphens only), drop **stopword**, then drop **hors-dico** (see
-  below). The cap counts **survivors**: it keeps passing words until `TOP_N = 400000`
-  have PASSED, then stops reading. Order is **filter-THEN-cap** → output has exactly
-  `TOP_N` words (or fewer + a warning if the source is exhausted), *not* "200k minus rejects".
-- **`hors-dico` is rule 5, and it runs LAST** (#38): drop a word that is not in the
-  language's versioned reference wordlist `wordlist/<lang>.txt.gz` — this catches lexical
-  noise the morphological rules can't (typos, letter-only gibberish like `gksudo`, dash
-  fragments like `a-ligne`). It compares the **pre-slug** token (lowercase, accents kept).
-  The wordlist is built offline by `build_wordlist.py` (Lexique/SCOWL ∪ Hunspell); the
-  pipeline only **reads** the committed file, and a **missing** wordlist is a hard error
-  (skip only with `--no-dico`). Unlike rules 1–4, hors-dico is applied in the streaming
-  loop (not as a `make_rules()` predicate) because of the frequency safety net:
-- **Frequency safety net (`FREQ_EXEMPT = 40000`):** the top `FREQ_EXEMPT` words that pass
-  the **morphological** rules (1–4) SKIP the hors-dico check — position in the
-  frequency-sorted source is the rank, so the most common tokens are exempt (very frequent
-  words absent from dictionaries are legit usage, not typos; dictionaries lag). The report
-  logs a sample of words the exemption **saved** (frequent but out-of-dico) to tune
-  `FREQ_EXEMPT`. This exemption is by **morphological-pass** rank, not by kept rank.
+  applies, in order: drop **single-letter** (counted by character so `à`/`é` count as
+  one), drop **stopword**, then drop **hors-dico** (see below). The cap counts
+  **survivors**: it keeps passing words until `TOP_N = 400000` have PASSED, then stops
+  reading. Order is **filter-THEN-cap** → output has exactly `TOP_N` words (or fewer + a
+  warning if the source is exhausted), *not* "200k minus rejects".
+- **`hors-dico` is rule 3, applied LAST to EVERY survivor** (#38): drop a word that is not
+  in the language's versioned reference wordlist `wordlist/<lang>.txt.gz`. It compares the
+  **pre-slug** token (lowercase, accents kept). Because that list is lowercase and
+  letters+hyphens only (built by `build_wordlist.py` via `token_pattern`), hors-dico
+  **subsumes the old `uppercase` and `non-alphabet` rules** — an uppercase / digit / markup
+  token simply isn't in the list — so those two rules were removed. There is **NO frequency
+  exemption**: even the single most frequent token is dropped if it isn't a dictionary word.
+  The wordlist is built offline (Lexique/SCOWL ∪ Hunspell); the pipeline only **reads** the
+  committed file, and a **missing** wordlist is a hard error (skip only with `--no-dico`).
+- **The two morphological rules that remain (`single-letter`, `stopword`) exist precisely
+  because hors-dico *can't* cover them:** their targets ARE valid dictionary entries the
+  wordlist would otherwise keep — Hunspell/SCOWL ship every single letter `a`–`z`, and
+  stopwords are real words. They run before hors-dico so attribution stays clean.
 - Output is `<input>_reduced.<ext>` (extension preserved). If the source had a
   `"<count> <dim>"` header, the output header is **recalculated** to the kept count;
   if it had none (GloVe `.txt`), the output has none. The source is never modified.
@@ -292,8 +290,12 @@ When asked to work/implement/do/resolve issue #N:
 - **Don't let `slug()` and `fold()` diverge.**
 - **Don't reintroduce `VECTOR_LIMIT` / `VOCAB_SIZE` / `VOCAB_SCAN`** knobs.
 - **Don't switch `reduce_embedding.py` to cap-then-filter** (must stay filter-then-cap).
+- **Don't re-add `uppercase` / `non-alphabet` rules** — hors-dico subsumes them (the
+  wordlist is lowercase + letters/hyphens only), and **don't drop `single-letter` /
+  `stopword`**, which it can't (their targets are valid dictionary entries).
+- **Don't re-introduce a frequency exemption** — hors-dico applies to every survivor.
 - **Don't move `hors-dico` before the morphological rules** — it runs LAST so report
-  attribution stays clean, and its exemption is by **morphological-pass** rank.
+  attribution stays clean.
 - **Don't silently skip a missing hors-dico wordlist** — error out (use `--no-dico` to
   opt out explicitly); and don't re-filter against the wordlist anywhere downstream.
 - **Don't skip the cache mtime check** in `load_vectors`.
@@ -352,9 +354,8 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
 
 *(Safe to update without touching the invariants above.)*
 
-- All paths below are under `packages/`. **Tunables:** `TOP_N = 400000` and
-  `FREQ_EXEMPT = 40000` (reduce), `TOP_K = 2000` (gen), start-rank band `50–150`
-  (`start_word.py`).
+- All paths below are under `packages/`. **Tunables:** `TOP_N = 400000` (reduce),
+  `TOP_K = 2000` (gen), start-rank band `50–150` (`start_word.py`).
 - **Start-word selection is interactive per hole** (`gen_phrase.choose_start`): on a
   TTY it lists the rank-band candidates (numbered, each with its rank) and reads a
   choice — Enter keeps the random default, a number picks a candidate, any other word
