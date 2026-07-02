@@ -45,9 +45,10 @@ Instructions to future agents working in this repo:
 packages/
   generation/                Python generation (run via uv); puzzles -> output/, vocab -> web/public
     scripts/
-      reduce_embedding.py     raw .vec/.txt -> *_reduced file (the ONLY filter+cap stage)
+      reduce_embedding.py     raw .vec/.txt -> *_reduced file (the ONLY filter+cap stage) + vocab
       build_wordlist.py       offline builder: sources -> wordlist/<lang>.txt.gz (hors-dico ref, #38)
-      build_vocab.py          reduced vectors -> web/public/vocab/<lang>.json (no puzzle needed)
+      build_vocab.py          reduced vectors -> web/public/vocab/<lang>.json (escape hatch; no re-reduce)
+      slug.py                 stdlib-only: slug() contract + write_vocab (shared by reduce + gen_phrase)
       embedding_neighbors.py  shared load/vocab/matrix/cosine-rank logic
       glove_neighbors.py      en paths + derived .kv cache (thin wrapper over the above)
       french_neighbors.py     fr paths + derived .kv cache (thin wrapper)
@@ -137,7 +138,8 @@ These are decided and verified against the code. Treat them as load-bearing.
 
 ### slug() ⇔ fold() must stay byte-identical (cross-language)
 
-Python `slug()` (`packages/generation/scripts/gen_phrase.py`) and JS `fold()`
+Python `slug()` (`packages/generation/scripts/slug.py`, the stdlib-only shared module
+imported by BOTH `gen_phrase.py` and `reduce_embedding.py`) and JS `fold()`
 (`packages/shared/src/slug.ts`, imported by `web/src/screens/Game.tsx`) MUST produce
 the same key. Pipeline: **lowercase → expand ligatures (`œ→oe`, `æ→ae`) → NFKD → drop
 combining marks → keep only `[a-z]` and `-` → collapse repeated dashes → trim edge
@@ -189,7 +191,12 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   - **Vocab** — `packages/web/public/vocab/<lang>.json` = the **full** slugged reduced
     vocab (existence set), deduped + sorted, deterministic, **NOT** capped to `TOP_K`.
     This one **stays a web asset**: the SPA fetches `/vocab/<lang>.json` from its own
-    origin (`useVocab`), so it is written straight into web `public/`.
+    origin (`useVocab`), so it is written straight into web `public/`. **`reduce`
+    emits it in the same pass** (from the words it keeps — the vocab is a pure function
+    of those, so no vector reload; `--no-vocab` to skip). `gen_phrase` still rewrites it
+    as a side effect, and `pnpm vocab:<lang>` (`build_vocab.py`) rebuilds it from an
+    existing reduced file without re-reducing. All three go through the one shared
+    `slug.write_vocab`, so the output is identical.
 - **`TOP_K = 10000` is a generation-only cap:** each secret's rank map = the secret at
   rank 0 plus its `K` nearest. The front is **K-agnostic** — it tests membership in
   the map, never hardcodes 2000.
@@ -324,14 +331,16 @@ pnpm install                    # installs all workspaces (web + shared)
 pnpm wordlist:fr      # Lexique ∪ Hunspell fr  -> wordlist/fr.txt.gz
 pnpm wordlist:en      # SCOWL   ∪ Hunspell en  -> wordlist/en.txt.gz
 
-# 1. Reduce ONCE per language (slow, offline). Build the *_reduced source of truth.
-#    Reads wordlist/<lang>.txt.gz for the hors-dico rule (or pass --no-dico to skip it).
-pnpm reduce:fr        # embedding/fr/cc.fr.300.vec      -> cc.fr.300_reduced.vec
-pnpm reduce:en        # embedding/en/glove.6B.300d.txt  -> glove.6B.300d_reduced.txt
+# 1. Reduce ONCE per language (slow, offline). Build the *_reduced source of truth AND,
+#    in the same pass, web/public/vocab/<lang>.json (the front's existence set — commit it).
+#    Reads wordlist/<lang>.txt.gz for the hors-dico rule (--no-dico to skip; --no-vocab
+#    to skip the vocab write). This is the one command for a language's derived data.
+pnpm reduce:fr        # embedding/fr/cc.fr.300.vec -> cc.fr.300_reduced.vec + vocab/fr.json
+pnpm reduce:en        # embedding/en/glove.6B.300d.txt -> glove.6B.300d_reduced.txt + vocab/en.json
 
-# 2. Refresh the front's existence set from the reduced vectors (after a re-reduce). The
-#    vocab derives from the *_reduced file, so new filters only show up once you re-reduce.
-pnpm vocab:fr        # -> packages/web/public/vocab/fr.json  (commit it; it's a web asset)
+# 2. (Escape hatch) Rebuild ONLY the vocab from an existing reduced file, without a slow
+#    re-reduce — e.g. if the committed vocab/<lang>.json got lost.
+pnpm vocab:fr         # -> packages/web/public/vocab/fr.json
 
 # 3. Generate a puzzle per game (fast; first run for a language builds the .kv cache).
 #    Puzzle -> packages/generation/output/word/<lang>/ (then `pnpm puzzle:publish` it).

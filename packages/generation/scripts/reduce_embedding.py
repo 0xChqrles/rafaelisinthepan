@@ -14,6 +14,10 @@ written verbatim to a single <input>_reduced.<ext> file — the single source of
 rest of the pipeline consumes WITHOUT re-filtering. The output has EXACTLY TOP_N words,
 unless the source is exhausted first (then fewer, with a warning).
 
+Second output: because the front's existence set is a pure function of the KEPT words,
+we emit it in the SAME pass — web/public/vocab/<lang>.json, the slugged/deduped/sorted
+vocab (shared slug.write_vocab). No separate vector reload. Disable with --no-vocab.
+
 Monitoring is the per-rule report on stderr (counts + samples), plus how many source
 lines were SCANNED to reach TOP_N kept (the scanned/kept ratio shows how noisy the head
 of the embedding is).
@@ -47,6 +51,8 @@ import re
 import shutil
 import sys
 import tempfile
+
+from slug import write_vocab  # shared, stdlib-only: emit the vocab from the kept words
 
 # Keep words (after the rules) until TOP_N have PASSED, then stop reading. TOP_N caps
 # the number of KEPT words, not the number of source lines scanned. Easy to change.
@@ -152,6 +158,10 @@ def main():
                                   "(défaut : wordlist/<lang>.txt[.gz])")
     p.add_argument("--no-dico", action="store_true",
                    help="désactive la règle hors-dico (morphologie seule)")
+    p.add_argument("--no-vocab", action="store_true",
+                   help="n'écrit pas web/public/vocab/<lang>.json")
+    p.add_argument("--vocab-dir", dest="vocab_dir",
+                   help="dossier de sortie du vocab (défaut : web/public/vocab)")
     args = p.parse_args()
 
     if not os.path.exists(args.input):
@@ -177,8 +187,9 @@ def main():
     reasons = [name for name, _ in rules] + (["hors-dico"] if dico is not None else [])
     out_dir = os.path.dirname(os.path.abspath(out_path))
 
-    scanned = 0     # SOURCE data lines read while filling the cap
-    kept_count = 0  # words KEPT (passed the morphological rules AND, if a dico, are in it)
+    scanned = 0      # SOURCE data lines read while filling the cap
+    kept_count = 0   # words KEPT (passed the morphological rules AND, if a dico, are in it)
+    kept_words = []  # the KEPT words themselves — the front's vocab is a function of these
     by_rule = {name: 0 for name in reasons}
     samples = {name: [] for name in reasons}
 
@@ -216,9 +227,10 @@ def main():
                 if len(samples["hors-dico"]) < SAMPLE_CAP:
                     samples["hors-dico"].append(word)
                 continue
-            # Kept: write it and count it toward the cap.
+            # Kept: write it, count it toward the cap, and remember it for the vocab.
             out_tmp.write(line)
             kept_count += 1
+            kept_words.append(word)
             # Cap on KEPT words: once TOP_N have passed we stop reading (the source is
             # sorted, so we don't stream the remaining millions of lines).
             if kept_count >= TOP_N:
@@ -233,6 +245,12 @@ def main():
         with open(out_tmp.name, encoding="utf-8") as body_f:
             shutil.copyfileobj(body_f, out)
     os.remove(out_tmp.name)
+
+    # Vocab: the front's existence set is a pure function of the KEPT words, which we
+    # already have in hand — write it in the SAME pass (no separate vector reload). It
+    # slugs + dedupes + sorts them into web/public/vocab/<lang>.json (shared write_vocab).
+    if not args.no_vocab:
+        write_vocab(kept_words, args.lang, args.vocab_dir)
 
     # --- Report (stderr) ---
     dropped = scanned - kept_count

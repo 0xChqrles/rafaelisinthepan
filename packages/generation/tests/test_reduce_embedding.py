@@ -10,10 +10,13 @@
     words (interspersed rejects do not reduce the count), or fewer + a warning if the
     source is exhausted first;
   - header is RECOUNTED to the kept count when the source had one, and ABSENT when it
-    did not.
+    did not;
+  - reduce also emits the front's existence set (web/public/vocab/<lang>.json) in the
+    same pass: the slugged/deduped/sorted set of the KEPT words (disable with --no-vocab).
 """
 
 import gzip
+import json
 import os
 import sys
 
@@ -74,13 +77,15 @@ def test_derive_path_preserves_extension():
 
 def _run_reduce(monkeypatch, tmp_path, lines, *, lang="en", top_n, header):
     # --no-dico: these cases exercise filter-then-cap + header, not the hors-dico rule.
+    # --no-vocab: keep these cases from writing to the real web/public/vocab.
     src = tmp_path / "src.vec"
     body = (header + "\n" if header is not None else "") + "".join(lines)
     src.write_text(body, encoding="utf-8")
     out = tmp_path / "out.vec"
     monkeypatch.setattr(red, "TOP_N", top_n)
     monkeypatch.setattr(
-        sys, "argv", ["reduce", str(src), "--lang", lang, "--no-dico", "--out", str(out)]
+        sys, "argv",
+        ["reduce", str(src), "--lang", lang, "--no-dico", "--no-vocab", "--out", str(out)],
     )
     red.main()
     return out.read_text(encoding="utf-8").splitlines()
@@ -132,14 +137,15 @@ def test_no_header_source_produces_no_header(monkeypatch, tmp_path):
 
 def _run_dico(monkeypatch, tmp_path, lines, *, lang="fr", top_n=1000, dico=DICO_FR):
     """Run reduce with the hors-dico rule active against a fixture wordlist. Returns the
-    KEPT words (header stripped)."""
+    KEPT words (header stripped). --no-vocab so it doesn't touch the real web/public."""
     src = tmp_path / "src.vec"
     src.write_text("999 2\n" + "".join(lines), encoding="utf-8")
     out = tmp_path / "out.vec"
     monkeypatch.setattr(red, "TOP_N", top_n)
     monkeypatch.setattr(
         sys, "argv",
-        ["reduce", str(src), "--lang", lang, "--dico", str(dico), "--out", str(out)],
+        ["reduce", str(src), "--lang", lang, "--dico", str(dico),
+         "--no-vocab", "--out", str(out)],
     )
     red.main()
     return [ln.split(" ", 1)[0] for ln in out.read_text(encoding="utf-8").splitlines()[1:]]
@@ -211,11 +217,33 @@ def test_no_dico_flag_disables_the_rule(monkeypatch, tmp_path):
     out = tmp_path / "out.vec"
     monkeypatch.setattr(red, "TOP_N", 1000)
     monkeypatch.setattr(
-        sys, "argv", ["reduce", str(src), "--lang", "fr", "--no-dico", "--out", str(out)]
+        sys, "argv",
+        ["reduce", str(src), "--lang", "fr", "--no-dico", "--no-vocab", "--out", str(out)],
     )
     red.main()
     kept = [ln.split(" ", 1)[0] for ln in out.read_text(encoding="utf-8").splitlines()[1:]]
     assert kept == ["gksudo", "forêt"]   # gksudo survives when the rule is off
+
+
+def test_reduce_emits_slugged_vocab_of_kept_words(monkeypatch, tmp_path):
+    # reduce writes the front's existence set in the SAME pass: the slugged, deduped,
+    # sorted set of exactly the KEPT words (post-filter) — accents folded to the slug.
+    src = tmp_path / "src.vec"
+    src.write_text("999 2\n" + "".join(
+        f"{w} 0 0\n" for w in ["forêt", "gksudo", "chevaux", "le", "arc-en-ciel"]
+    ), encoding="utf-8")
+    vocab_dir = tmp_path / "vocab"
+    monkeypatch.setattr(red, "TOP_N", 1000)
+    monkeypatch.setattr(
+        sys, "argv",
+        ["reduce", str(src), "--lang", "fr", "--dico", str(DICO_FR),
+         "--out", str(tmp_path / "out.vec"), "--vocab-dir", str(vocab_dir)],
+    )
+    red.main()
+
+    data = json.loads((vocab_dir / "fr.json").read_text(encoding="utf-8"))
+    # gksudo (hors-dico) + le (stopword) excluded; forêt -> slug "foret"; sorted + unique.
+    assert data == ["arc-en-ciel", "chevaux", "foret"]
 
 
 def test_missing_wordlist_fails_loud(monkeypatch, tmp_path):
