@@ -46,12 +46,14 @@ packages/
   generation/                Python generation (run via uv); puzzles -> output/, vocab -> web/public
     scripts/
       reduce_embedding.py     raw .vec/.txt -> *_reduced file (the ONLY filter+cap stage)
+      build_wordlist.py       offline builder: sources -> wordlist/<lang>.txt.gz (hors-dico ref, #38)
       embedding_neighbors.py  shared load/vocab/matrix/cosine-rank logic
       glove_neighbors.py      en paths + derived .kv cache (thin wrapper over the above)
       french_neighbors.py     fr paths + derived .kv cache (thin wrapper)
       start_word.py           start/hint-word selection (rank band 50-150)
       gen_phrase.py           one sentence -> one self-contained puzzle JSON
     embedding/<lang>/...      raw + *_reduced vectors + derived .kv caches
+    wordlist/<lang>.txt.gz    versioned hors-dico reference wordlist (#38); .cache/ gitignored
     output/word/<lang>/<s1>_<s2>_<s3>.json   generated puzzles (gitignored; publish to store/S3)
     pyproject.toml, uv.lock   Python project (uv)
   backend/                    daily-puzzle backend (pkg @whippin/backend, #2)
@@ -99,10 +101,24 @@ These are decided and verified against the code. Treat them as load-bearing.
   frequency-sorted source line by line (never loads a vector), and for each word
   applies, in order: drop if any **uppercase**, drop **single-letter** (counted by
   character so `à`/`é` count as one), drop **non-alphabet** (`^[<class>]+(-[<class>]+)*$`
-  = letters + internal hyphens only), drop **stopword**. The cap counts **survivors**:
-  it keeps passing words until `TOP_N = 400000` have PASSED, then stops reading.
-  Order is **filter-THEN-cap** → output has exactly `TOP_N` words (or fewer + a
-  warning if the source is exhausted), *not* "200k minus rejects".
+  = letters + internal hyphens only), drop **stopword**, then drop **hors-dico** (see
+  below). The cap counts **survivors**: it keeps passing words until `TOP_N = 400000`
+  have PASSED, then stops reading. Order is **filter-THEN-cap** → output has exactly
+  `TOP_N` words (or fewer + a warning if the source is exhausted), *not* "200k minus rejects".
+- **`hors-dico` is rule 5, and it runs LAST** (#38): drop a word that is not in the
+  language's versioned reference wordlist `wordlist/<lang>.txt.gz` — this catches lexical
+  noise the morphological rules can't (typos, letter-only gibberish like `gksudo`, dash
+  fragments like `a-ligne`). It compares the **pre-slug** token (lowercase, accents kept).
+  The wordlist is built offline by `build_wordlist.py` (Lexique/SCOWL ∪ Hunspell); the
+  pipeline only **reads** the committed file, and a **missing** wordlist is a hard error
+  (skip only with `--no-dico`). Unlike rules 1–4, hors-dico is applied in the streaming
+  loop (not as a `make_rules()` predicate) because of the frequency safety net:
+- **Frequency safety net (`FREQ_EXEMPT = 40000`):** the top `FREQ_EXEMPT` words that pass
+  the **morphological** rules (1–4) SKIP the hors-dico check — position in the
+  frequency-sorted source is the rank, so the most common tokens are exempt (very frequent
+  words absent from dictionaries are legit usage, not typos; dictionaries lag). The report
+  logs a sample of words the exemption **saved** (frequent but out-of-dico) to tune
+  `FREQ_EXEMPT`. This exemption is by **morphological-pass** rank, not by kept rank.
 - Output is `<input>_reduced.<ext>` (extension preserved). If the source had a
   `"<count> <dim>"` header, the output header is **recalculated** to the kept count;
   if it had none (GloVe `.txt`), the output has none. The source is never modified.
@@ -276,6 +292,10 @@ When asked to work/implement/do/resolve issue #N:
 - **Don't let `slug()` and `fold()` diverge.**
 - **Don't reintroduce `VECTOR_LIMIT` / `VOCAB_SIZE` / `VOCAB_SCAN`** knobs.
 - **Don't switch `reduce_embedding.py` to cap-then-filter** (must stay filter-then-cap).
+- **Don't move `hors-dico` before the morphological rules** — it runs LAST so report
+  attribution stays clean, and its exemption is by **morphological-pass** rank.
+- **Don't silently skip a missing hors-dico wordlist** — error out (use `--no-dico` to
+  opt out explicitly); and don't re-filter against the wordlist anywhere downstream.
 - **Don't skip the cache mtime check** in `load_vectors`.
 - **Don't inject a missing target word** into the vocab in `gen_phrase` — error out.
 
@@ -294,7 +314,15 @@ breaks `gen_phrase.py`'s arg parsing).
 ```bash
 pnpm install                    # installs all workspaces (web + shared)
 
+# 0. (Re)build the hors-dico reference wordlist ONCE per language (offline, #38). The
+#    committed wordlist/<lang>.txt.gz is already versioned — only rerun to refresh sources.
+#    Needs `unmunch` (hunspell-tools; `brew install hunspell`) for the Hunspell union, or
+#    pass --skip-hunspell for the Lexique/SCOWL-only union.
+pnpm wordlist:fr      # Lexique ∪ Hunspell fr  -> wordlist/fr.txt.gz
+pnpm wordlist:en      # SCOWL   ∪ Hunspell en  -> wordlist/en.txt.gz
+
 # 1. Reduce ONCE per language (slow, offline). Build the *_reduced source of truth.
+#    Reads wordlist/<lang>.txt.gz for the hors-dico rule (or pass --no-dico to skip it).
 pnpm reduce:fr        # embedding/fr/cc.fr.300.vec      -> cc.fr.300_reduced.vec
 pnpm reduce:en        # embedding/en/glove.6B.300d.txt  -> glove.6B.300d_reduced.txt
 
@@ -324,8 +352,9 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
 
 *(Safe to update without touching the invariants above.)*
 
-- All paths below are under `packages/`. **Tunables:** `TOP_N = 400000` (reduce),
-  `TOP_K = 2000` (gen), start-rank band `50–150` (`start_word.py`).
+- All paths below are under `packages/`. **Tunables:** `TOP_N = 400000` and
+  `FREQ_EXEMPT = 40000` (reduce), `TOP_K = 2000` (gen), start-rank band `50–150`
+  (`start_word.py`).
 - **Start-word selection is interactive per hole** (`gen_phrase.choose_start`): on a
   TTY it lists the rank-band candidates (numbered, each with its rank) and reads a
   choice — Enter keeps the random default, a number picks a candidate, any other word
@@ -336,6 +365,10 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
 - **Data present:** `generation/embedding/fr/cc.fr.300_reduced.vec` (+ `.kv` cache
   built), `generation/embedding/en/glove.6B.300d_reduced.txt` (+ `.kv` cache built).
   `web/public/vocab/{en,fr}.json` exist.
+- **Hors-dico wordlists (#38):** `generation/wordlist/{fr,en}.txt.gz` are committed —
+  `fr` = Lexique ∪ Hunspell fr (~169k forms), `en` = SCOWL(≤60,US) ∪ Hunspell en_US
+  (~91k). Built by `build_wordlist.py`; source downloads cache in `wordlist/.cache/`
+  (gitignored). Tests use the small fixture `tests/fixtures/dico.fr.txt`.
 - **Puzzles:** generated into `generation/output/word/<lang>/` (gitignored), then
   published to the store (`pnpm puzzle:publish`). They are no longer kept under
   `web/public/word` — the front serves the day's puzzle from the backend (#6).
