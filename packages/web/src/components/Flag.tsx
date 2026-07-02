@@ -14,16 +14,11 @@ const FLAGS: Partial<Record<string, FlagInfo>> = {
   fr: { src: flagFr, alt: 'French flag' },
 };
 
-export default function Flag({ code }: { code: string }) {
+// `className` lets a caller pick the size context: the default `flag-img` is the big
+// picker flag; the HUD passes `hud-flag` for the small in-header flag.
+export default function Flag({ code, className = 'flag-img' }: { code: string; className?: string }) {
   const flag = FLAGS[code];
   if (!flag) return null;
 
-  return (
-    <img
-      className="flag-img"
-      src={flag.src}
-      alt={flag.alt}
-      draggable="false"
-    />
-  );
+  return <img className={className} src={flag.src} alt={flag.alt} draggable="false" />;
 }

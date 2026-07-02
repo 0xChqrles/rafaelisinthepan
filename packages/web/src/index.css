@@ -89,6 +89,10 @@ button * {
 }
 
 .flag-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
   background: transparent;
   border: 0;
   padding: 0;
@@ -96,6 +100,24 @@ button * {
 }
 .flag-btn:focus-visible {
   outline: none;
+}
+
+/* Per-language status badge under each picker flag (today's puzzle): NEW / % / ✓. */
+.lang-status {
+  font-family: var(--press);
+  font-size: 13px;
+  letter-spacing: 1px;
+  font-variant-numeric: tabular-nums;
+}
+.lang-status--none {
+  color: var(--muted);
+  opacity: 0.6;
+}
+/* .lang-status--progress is tinted inline by progressColor(pct) — its color tracks the
+   percentage's value, matching the in-game progress bar. (Namespaced so it never
+   inherits the .progress bar's surface background/height.) */
+.lang-status--solved {
+  color: var(--hole);
 }
 
 .flag-img {
@@ -166,9 +188,11 @@ button * {
   filter: brightness(1.2);
   outline: none;
 }
-.home-logo {
+/* The current puzzle's language flag, sized small for the HUD (the picker uses the
+   larger .flag-img). */
+.hud-flag {
   display: block;
-  width: 36px;
+  width: 34px;
   height: auto;
   image-rendering: pixelated;
 }
