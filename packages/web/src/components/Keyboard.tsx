@@ -1,0 +1,136 @@
+import { useCallback, useState, type PointerEvent } from 'react';
+import { LAYOUTS, canExtend, otherLayout, type Layout } from '../game/keyboard';
+
+interface KeyboardProps {
+  // Current input (a folded slug prefix: [a-z] + internal dashes).
+  input: string;
+  // Every prefix of every vocab word — decides which letters/dash stay active.
+  prefixSet: Set<string>;
+  // Exact existence set — decides whether Enter is active (input is a complete word).
+  vocabSet: Set<string>;
+  // Which physical arrangement to render (AZERTY / QWERTY).
+  layout: Layout;
+  onType: (char: string) => void; // append a letter or dash
+  onBackspace: () => void;
+  onSubmit: (value: string) => void;
+  onSwitchLayout: () => void;
+}
+
+// A key that briefly shakes when a disabled key is tapped: (id, nonce). The nonce
+// retriggers the CSS animation even on repeated taps of the same key.
+type Shake = { id: string; nonce: number } | null;
+
+// The custom on-screen keyboard (issue #36). Replaces the native mobile keyboard
+// entirely: keys are <button>s, so no text field is ever focused and the soft keyboard
+// never opens. Letters/dash that cannot extend the current input into any real word are
+// greyed out; tapping a greyed key shakes it (communicates "disabled", no input change).
+// Backspace and the layout switch are always active; Enter is active only when the input
+// is a complete vocab word. Desktop physical typing drives the same input state, so the
+// greyed state stays in sync regardless of input source.
+export default function Keyboard({
+  input,
+  prefixSet,
+  vocabSet,
+  layout,
+  onType,
+  onBackspace,
+  onSubmit,
+  onSwitchLayout,
+}: KeyboardProps) {
+  const [shake, setShake] = useState<Shake>(null);
+
+  const triggerShake = useCallback((id: string) => {
+    setShake((prev) => ({ id, nonce: (prev?.nonce ?? 0) + 1 }));
+  }, []);
+
+  // pointerdown (not click): instant response and, with preventDefault, no focus/scroll
+  // side effects — nothing to blur, nothing to zoom.
+  const press = useCallback(
+    (e: PointerEvent<HTMLButtonElement>, run: () => void) => {
+      e.preventDefault();
+      run();
+    },
+    [],
+  );
+
+  const enterActive = vocabSet.has(input);
+
+  const renderLetter = (char: string) => {
+    const active = canExtend(prefixSet, input, char);
+    const shaking = shake?.id === char;
+    return (
+      <button
+        key={char}
+        type="button"
+        aria-label={char}
+        aria-disabled={!active}
+        className={`kb-key${active ? '' : ' kb-greyed'}${shaking ? ' kb-shake' : ''}`}
+        onPointerDown={(e) => press(e, () => (active ? onType(char) : triggerShake(char)))}
+        onAnimationEnd={() => setShake((prev) => (prev?.id === char ? null : prev))}
+      >
+        {char}
+      </button>
+    );
+  };
+
+  const dashActive = canExtend(prefixSet, input, '-');
+  const dashShaking = shake?.id === '-';
+
+  return (
+    <div className="keyboard" role="group" aria-label="on-screen keyboard">
+      {LAYOUTS[layout].map((row, rowIndex) => (
+        // Rows are fixed per layout; index is a stable key here.
+        // eslint-disable-next-line react/no-array-index-key
+        <div className="kb-row" key={rowIndex}>
+          {/* Backspace sits at the end of the last letter row. */}
+          {row.map(renderLetter)}
+          {rowIndex === LAYOUTS[layout].length - 1 && (
+            <button
+              type="button"
+              aria-label="backspace"
+              className="kb-key kb-control kb-back"
+              onPointerDown={(e) => press(e, onBackspace)}
+            >
+              DEL
+            </button>
+          )}
+        </div>
+      ))}
+
+      {/* Bottom row: layout switch next to dash, then a wide Enter. */}
+      <div className="kb-row">
+        <button
+          type="button"
+          aria-label={`switch keyboard layout (${layout})`}
+          className="kb-key kb-control kb-switch"
+          onPointerDown={(e) => press(e, onSwitchLayout)}
+        >
+          {layout === 'azerty' ? 'AZ' : 'QW'}
+          <span className="kb-switch-hint" aria-hidden="true">
+            &rsaquo;{otherLayout(layout) === 'azerty' ? 'AZ' : 'QW'}
+          </span>
+        </button>
+        <button
+          type="button"
+          aria-label="dash"
+          aria-disabled={!dashActive}
+          className={`kb-key kb-dash${dashActive ? '' : ' kb-greyed'}${dashShaking ? ' kb-shake' : ''}`}
+          onPointerDown={(e) => press(e, () => (dashActive ? onType('-') : triggerShake('-')))}
+          onAnimationEnd={() => setShake((prev) => (prev?.id === '-' ? null : prev))}
+        >
+          -
+        </button>
+        <button
+          type="button"
+          aria-label="enter"
+          aria-disabled={!enterActive}
+          className={`kb-key kb-control kb-enter kb-wide${enterActive ? '' : ' kb-greyed'}${shake?.id === 'enter' ? ' kb-shake' : ''}`}
+          onPointerDown={(e) => press(e, () => (enterActive ? onSubmit(input) : triggerShake('enter')))}
+          onAnimationEnd={() => setShake((prev) => (prev?.id === 'enter' ? null : prev))}
+        >
+          OK
+        </button>
+      </div>
+    </div>
+  );
+}

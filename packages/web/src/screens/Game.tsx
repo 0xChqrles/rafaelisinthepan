@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { computeProgress } from '../game/scoring';
+import { canExtend, defaultLayoutForLang, otherLayout } from '../game/keyboard';
 import useVocab from '../hooks/useVocab';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
 import Phrase from '../components/Phrase';
 import ProgressBar from '../components/ProgressBar';
 import FlagButton from '../components/FlagButton';
 import WordInput from '../components/WordInput';
+import Keyboard from '../components/Keyboard';
 import { fold } from '@whippin/shared';
 import type { HitState, Hole, Puzzle, RankEntry, RankMap, RuntimeHole } from '@whippin/shared';
 
@@ -24,19 +26,21 @@ const FLOATING_HIT_INTRO_MS = 320;
 const OVERRIDE_NONCE = Math.random().toString(36).slice(2);
 
 // Wrapper: drives the single puzzle. Loads the language's fixed vocabulary
-// (existence set) before playing — existence is decided by it, not by ranks.
+// (existence set + keyboard prefix set) before playing — existence is decided by it,
+// not by ranks.
 export default function Game({ puzzle, dayNumber }: { puzzle: Puzzle; dayNumber: number | null }) {
-  const { vocabSet, error } = useVocab(puzzle.lang);
+  const { vocab, error } = useVocab(puzzle.lang);
 
   if (error !== null) return <p className="status error">FAILED TO LOAD VOCABULARY</p>;
-  if (!vocabSet) return <p className="status">LOADING&hellip;</p>;
+  if (!vocab) return <p className="status">LOADING&hellip;</p>;
 
   return (
     <Round
       words={puzzle.words}
       puzzleHoles={puzzle.holes}
       ranks={puzzle.ranks}
-      vocabSet={vocabSet}
+      vocabSet={vocab.vocabSet}
+      prefixSet={vocab.prefixSet}
       lang={puzzle.lang}
       dayNumber={dayNumber}
     />
@@ -50,6 +54,7 @@ function Round({
   puzzleHoles,
   ranks,
   vocabSet,
+  prefixSet,
   lang,
   dayNumber,
 }: {
@@ -57,6 +62,7 @@ function Round({
   puzzleHoles: Hole[];
   ranks: RankMap;
   vocabSet: Set<string>;
+  prefixSet: Set<string>;
   lang: string;
   dayNumber: number | null;
 }) {
@@ -85,6 +91,13 @@ function Round({
   const recordGuess = useGameStore((s) => s.recordGuess);
   const improveHole = useGameStore((s) => s.improveHole);
   const syncProgress = useGameStore((s) => s.syncProgress);
+
+  // Global on-screen keyboard layout: the persisted preference wins once set; until
+  // then it falls back to the puzzle language's default (fr -> AZERTY, en -> QWERTY).
+  const savedLayout = useGameStore((s) => s.layout);
+  const setLayout = useGameStore((s) => s.setLayout);
+  const layout = savedLayout ?? defaultLayoutForLang(lang);
+  const switchLayout = useCallback(() => setLayout(otherLayout(layout)), [setLayout, layout]);
 
   // Reconcile before paint: a matching key rehydrates the stored progress, a new key
   // (new day OR new language) resets to freshHoles. useLayoutEffect commits the reset
@@ -133,10 +146,30 @@ function Round({
     setHits((prev) => prev.filter((h) => h.id !== id));
   }, []);
 
-  // Clear error feedback as soon as the player types again.
-  const handleChange = useCallback((v: string) => {
-    setInput(v);
+  // Input mutations shared by the on-screen keyboard (taps) and the physical keyboard.
+  // Every path clears the "does not exist" feedback as soon as the player edits again.
+
+  // Append one slug char, but ONLY if it keeps the input a prefix of some real word
+  // (the same rule that greys the on-screen key). A dead-end char is dropped, so the
+  // input is always a valid partial slug and physical typing matches the greyed keys.
+  const appendChar = useCallback(
+    (char: string) => {
+      setFeedback(null);
+      setInput((cur) => (canExtend(prefixSet, cur, char) ? cur + char : cur));
+    },
+    [prefixSet],
+  );
+
+  const deleteChar = useCallback(() => {
     setFeedback(null);
+    setInput((cur) => cur.slice(0, -1));
+  }, []);
+
+  // Replace the whole input (physical-keyboard history recall). Recalled values are
+  // past valid words, hence valid prefixes, so no re-validation is needed.
+  const replaceInput = useCallback((v: string) => {
+    setFeedback(null);
+    setInput(v);
   }, []);
 
   const submit = useCallback(
@@ -242,14 +275,31 @@ function Round({
           <>
             <WordInput
               value={input}
-              onChange={handleChange}
+              onType={appendChar}
+              onBackspace={deleteChar}
               onSubmit={submit}
+              onReplace={replaceInput}
               invalidSignal={invalidAt}
             />
             <p className="hint">{feedback?.text || ' '}</p>
           </>
         )}
       </div>
+
+      {/* Custom on-screen keyboard: replaces the native mobile keyboard and mirrors the
+          physical keyboard on desktop (greyed keys reflect the shared input state). */}
+      {!solved && (
+        <Keyboard
+          input={input}
+          prefixSet={prefixSet}
+          vocabSet={vocabSet}
+          layout={layout}
+          onType={appendChar}
+          onBackspace={deleteChar}
+          onSubmit={submit}
+          onSwitchLayout={switchLayout}
+        />
+      )}
     </div>
   );
 }
