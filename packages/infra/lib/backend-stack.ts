@@ -129,15 +129,18 @@ export class BackendStack extends Stack {
     }
 
     // ── CloudFront: CDN in front of the Function URL ──────────────────────────
-    // Cache key = request path (`/` vs `/today`) + the `lang` query string — the ONLY
-    // query the handler reads. The origin's Cache-Control (s-maxage aligned to the
-    // 22:00-ET flip, see backend/src/handler.ts) drives the actual TTL; minTtl 0 lets a
-    // late-published puzzle's short 404 TTL revalidate, maxTtl caps any single entry at
-    // one full day (the longest a puzzle stays fresh between flips).
+    // Cache key = request path (`/` vs `/today`) + the `lang` and `v` query strings. `lang`
+    // is the only query the handler reads; `v` is the content-version cache-busting token
+    // (issue #42) — a corrected puzzle gets a new `v`, so it lands on a fresh cache key
+    // instead of a stale entry (no CloudFront invalidation needed). The origin drives the
+    // TTL via Cache-Control: the versioned puzzle is `immutable` (safe to cache hard since
+    // the URL is content-addressed), while `/today` is `no-store` (the always-fresh version
+    // pointer). minTtl 0 lets `no-store`/the short 404 TTL through; maxTtl caps any single
+    // entry at one full day.
     const cachePolicy = new cloudfront.CachePolicy(this, 'PuzzleCachePolicy', {
       cachePolicyName: 'WhippinDailyPuzzle',
-      comment: 'Daily puzzle: cache key = path + ?lang; TTL from origin Cache-Control.',
-      queryStringBehavior: cloudfront.CacheQueryStringBehavior.allowList('lang'),
+      comment: 'Daily puzzle: cache key = path + ?lang + ?v; TTL from origin Cache-Control.',
+      queryStringBehavior: cloudfront.CacheQueryStringBehavior.allowList('lang', 'v'),
       headerBehavior: cloudfront.CacheHeaderBehavior.none(),
       cookieBehavior: cloudfront.CacheCookieBehavior.none(),
       minTtl: Duration.seconds(0),

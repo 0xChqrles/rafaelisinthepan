@@ -44,15 +44,21 @@ export default function usePuzzle(lang: string | null) {
           return;
         }
 
-        // Normal play: ask the backend for the day's puzzle + the server's day id.
-        const [todayRes, puzzleRes] = await Promise.all([
-          fetch(todayUrl()),
-          fetch(puzzleUrl(lang)),
-        ]);
+        // Normal play (issue #42): /today is the FRESH version pointer, so fetch it FIRST
+        // to learn the day id + the puzzle's content `version`, then request the
+        // content-addressed puzzle URL (/?lang=&v=<version>). A republish changes the
+        // version -> a new URL -> a guaranteed cache miss, so the corrected puzzle shows on
+        // a normal reload. If /today fails (network), `version` stays null and we fall back
+        // to the canonical URL — degraded (may be CDN-stale) but not broken.
+        const todayRes = await fetch(todayUrl(lang));
+        let version: string | null = null;
         if (todayRes.ok) {
           const today = (await todayRes.json()) as Today;
           if (!cancelled) setDayNumber(today.dayNumber);
+          version = today.version ?? null;
         }
+        if (cancelled) return;
+        const puzzleRes = await fetch(puzzleUrl(lang, version));
         switch (puzzleOutcome(puzzleRes.status)) {
           case 'missing': // 404 -> graceful "NO PUZZLE TODAY", not an error screen.
             if (!cancelled) setNoPuzzle(true);

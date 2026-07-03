@@ -387,17 +387,25 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
 - **Puzzles:** generated into `generation/output/word/<lang>/` (gitignored), then
   published to the store (`pnpm puzzle:publish`). They are no longer kept under
   `web/public/word` — the front serves the day's puzzle from the backend (#6).
-- **Routing (#6):** normal play asks the **backend** for today's puzzle —
-  `usePuzzle` fetches `GET <VITE_API_BASE_URL>/?lang=<lang>` (puzzle) and `GET
-  …/today` (`{ date, dayNumber, … }`). The **server owns the date** (22:00 ET flip);
-  the client no longer computes it. A backend **404 → `noPuzzle`** (NO PUZZLE TODAY),
-  any other failure → `error`. The old `web/src/puzzleSchedule.ts` / `todayKey()` /
-  `PUZZLE_SCHEDULE` are **removed**. Test overrides: `?puzzle=<path|url>` loads a
-  static file directly (kept, but the app still requires a configured backend base);
-  `?date=` is **dropped** (server owns time). `VITE_API_BASE_URL` (see
-  `web/.env.example`) configures the backend base and is required for `pnpm dev` /
-  `pnpm build`; the frontend must not silently use its own origin as the backend.
-  `usePuzzle` exposes `dayNumber` for persist (#7) / already-solved (#9).
+- **Routing (#6) + version-in-URL cache-busting (#42):** normal play asks the
+  **backend** for today's puzzle. `usePuzzle` fetches `GET
+  <VITE_API_BASE_URL>/today?lang=<lang>` **first** — the `no-store` version pointer
+  (`{ date, dayNumber, version, … }`, `version` = the puzzle's S3 ETag) — then `GET
+  …/?lang=<lang>&v=<version>` for the **content-addressed** puzzle (served `immutable`).
+  A republish yields a new `version` → a new URL → a guaranteed CDN + browser miss, so a
+  corrected puzzle shows on a **normal reload with no CloudFront invalidation**; the
+  handler keys only on `lang` (`v` is a pure cache-busting token, added to the CloudFront
+  cache key). If `/today` fails, `version` is null and the fetch falls back to the
+  canonical `/?lang=` (degraded, possibly CDN-stale, but not broken). The **server owns
+  the date** (22:00 ET flip); the client no longer computes it. A backend **404 →
+  `noPuzzle`** (NO PUZZLE TODAY), any other failure → `error`. The old
+  `web/src/puzzleSchedule.ts` / `todayKey()` / `PUZZLE_SCHEDULE` are **removed**. Test
+  overrides: `?puzzle=<path|url>` loads a static file directly (kept, but the app still
+  requires a configured backend base); `?date=` is **dropped** (server owns time).
+  `VITE_API_BASE_URL` (see `web/.env.example`) configures the backend base and is
+  required for `pnpm dev` / `pnpm build`; the frontend must not silently use its own
+  origin as the backend. `usePuzzle` exposes `dayNumber` for persist (#7) /
+  already-solved (#9).
 - **SVG icons (pattern to follow):** monochrome UI icons live as `.svg` files under
   `web/src/assets/icons/` and are imported as **inline React components** via
   `vite-plugin-svgr` — `import Icon from '../assets/icons/name.svg?react'` (the `?react`
@@ -471,8 +479,10 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   that bundles `backend/src/index.ts` with esbuild (ESM, `@aws-sdk/*` left external) and
   carries `PUZZLE_BUCKET`/`ALLOWED_ORIGIN`, and a **CloudFront** distribution in front of an
   **IAM-auth Function URL via OAC** (only CloudFront may invoke it). The Lambda gets
-  **read-only** S3 (`bucket.grantRead`). Cache policy keys on path + the `lang` query and
-  honours the origin `Cache-Control` (the 22:00-ET-aligned `s-maxage`); maxTtl = 1 day.
+  **read-only** S3 (`bucket.grantRead`, which also covers the `HeadObject` the version
+  pointer uses). Cache policy keys on path + the `lang` **and `v`** query strings (#42) and
+  honours the origin `Cache-Control` — the puzzle is served `immutable` (content-addressed
+  by `v`), `/today` is `no-store` (the always-fresh version pointer); maxTtl = 1 day.
   Outputs: `ApiUrl` (→ `VITE_API_BASE_URL`), `PuzzleBucketName` (#4 upload target),
   `FunctionUrl`, `DistributionDomainName`. Commands: `pnpm infra:synth` / `infra:diff` /
   `infra:deploy` (root) or `pnpm --filter @whippin/infra <synth|deploy|diff|destroy>`;

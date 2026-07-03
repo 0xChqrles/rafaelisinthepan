@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { Puzzle } from '@whippin/shared';
 import type { PuzzleStore } from './store';
@@ -16,6 +17,18 @@ export function fsStore(root: string): PuzzleStore {
       try {
         const text = await readFile(path.join(root, storeKey(date, lang)), 'utf8');
         return JSON.parse(text) as Puzzle;
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+        throw err;
+      }
+    },
+    // Local dev has no S3 ETag, so mirror it: the MD5 of the file bytes. This is
+    // byte-identical to what S3 returns as the ETag for the same single-part object
+    // (issue #42), so `pnpm backend:dev` version-busts exactly like production.
+    async version(date, lang) {
+      try {
+        const buf = await readFile(path.join(root, storeKey(date, lang)));
+        return createHash('md5').update(buf).digest('hex');
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
         throw err;

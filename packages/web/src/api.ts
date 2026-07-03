@@ -20,23 +20,36 @@ function requireApiBase(base: string): string {
   return base;
 }
 
-// The active day's puzzle for a language: GET <base>/?lang=<lang>. The server
-// resolves which day it is; the client passes only the language.
-export function puzzleUrl(lang: string, base: string = apiBase()): string {
-  return `${requireApiBase(base)}/?lang=${encodeURIComponent(lang)}`;
+// The active day's puzzle for a language: GET <base>/?lang=<lang>[&v=<version>]. The
+// server resolves which day it is; the client passes only the language. `version` (the
+// content version from /today) is a cache-busting token (issue #42): a corrected puzzle
+// gets a new version -> a new URL -> a guaranteed CDN + browser miss, so the fresh puzzle
+// shows on a normal reload with no CloudFront invalidation. Omitted -> the canonical URL.
+export function puzzleUrl(
+  lang: string,
+  version?: string | null,
+  base: string = apiBase(),
+): string {
+  const v = version ? `&v=${encodeURIComponent(version)}` : '';
+  return `${requireApiBase(base)}/?lang=${encodeURIComponent(lang)}${v}`;
 }
 
-// The server's day metadata: GET <base>/today -> { date, dayNumber, ... }. The
-// front keys on `dayNumber` (stable, language-independent) for persistence (#7)
-// and the already-solved-today screen (#9).
-export function todayUrl(base: string = apiBase()): string {
-  return `${requireApiBase(base)}/today`;
+// The server's day metadata + version pointer: GET <base>/today[?lang=<lang>] ->
+// { date, dayNumber, version, ... }. The front keys on `dayNumber` (stable,
+// language-independent) for persistence (#7) and the already-solved-today screen (#9);
+// `version` (present only when a `lang` is passed) builds the cache-busting puzzle URL
+// (#42). This response is `no-store`, so it always reflects the current version. `lang`
+// is optional: callers that only need `dayNumber` (e.g. useToday) can omit it.
+export function todayUrl(lang?: string, base: string = apiBase()): string {
+  const q = lang ? `?lang=${encodeURIComponent(lang)}` : '';
+  return `${requireApiBase(base)}/today${q}`;
 }
 
 // Shape of GET /today the front keys on (the backend returns more fields, ignored).
 export interface Today {
   date: string; // "YYYY-MM-DD"
   dayNumber: number; // whole days since the Unix epoch
+  version?: string | null; // content version of today's puzzle (null when none) — #42
 }
 
 // A ?puzzle= test override resolves a puzzle FILE directly, bypassing the backend
