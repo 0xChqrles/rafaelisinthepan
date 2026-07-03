@@ -64,9 +64,10 @@ export default function Hole({
     return () => cancelAnimationFrame(id);
   }, [hole.rank]);
 
-  const rankStyle: CSSProperties & Record<'--rank-color' | '--rank-width', string> = {
+  // The exponent sizes to its own content (no reserved width), so a following suffix
+  // sits right after the number instead of after a gap left for the widest rank.
+  const rankStyle: CSSProperties & Record<'--rank-color', string> = {
     '--rank-color': rankHeatColor(shownRank, hole.startRank),
-    '--rank-width': `${String(hole.startRank).length + 1}ch`,
   };
   const hitStyle: (CSSProperties & Record<'--hit-delay', string>) | undefined = hit
     ? { '--hit-delay': `${hit.startDelayMs}ms` }

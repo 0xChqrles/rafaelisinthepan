@@ -31,18 +31,16 @@ export default function Phrase({
           const rHole = holes[idx];
           const activeHit = hits.find((h) => h.holeIndex === idx) ?? null;
           const { prefix, suffix } = puzzleHoleByPos.get(i) ?? {};
-          // The suffix (trailing punctuation) only reads correctly attached to a
-          // finished word, so it appears once the hole is SOLVED; the prefix (leading
-          // clitic) stays visible as sentence context. The affixes + blank live in a
-          // nowrap group so they can never break onto a different line from the blank.
-          const solved = rHole.rank === 0;
+          // Prefix (leading clitic) and suffix (trailing punctuation) are sentence
+          // context and always show. They live with the blank in a nowrap group so
+          // they can never break onto a different line from it.
           return (
             <Fragment key={i}>
               {space}
               <span className="hole-group">
                 {prefix ? <span className="word">{prefix}</span> : null}
                 <Hole hole={rHole} hit={activeHit} onHitDone={onHitDone} />
-                {suffix && solved ? <span className="word">{suffix}</span> : null}
+                {suffix ? <span className="word">{suffix}</span> : null}
               </span>
               {/* line break AFTER each hole: the hole ends its line, words flow until the next hole */}
               <br />
