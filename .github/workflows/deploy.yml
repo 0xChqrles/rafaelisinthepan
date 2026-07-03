@@ -2,6 +2,12 @@ name: Deploy
 
 # CD: deploy on push to main and on manual dispatch. Only the stack(s) whose code
 # actually changed are redeployed (path-filtered); a manual run can force a selection.
+#
+# Scope: this workflow deploys the two APP stacks only — WhippinBackendStack and
+# WhippinWebStack. The third CDK stack, WhippinDeployStack (the GitHub OIDC provider +
+# this workflow's own deploy role), is intentionally NOT deployed here: the deploy role
+# can't edit IAM, so CI cannot provision its own privileges. Deploy that stack by hand
+# with account credentials (see packages/infra/README.md). Do not add a job for it.
 on:
   push:
     branches: [main]
