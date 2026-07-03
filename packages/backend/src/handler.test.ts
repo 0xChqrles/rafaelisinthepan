@@ -92,6 +92,14 @@ describe('puzzle endpoint', () => {
     expect(JSON.parse(noV.body)).toEqual(PUZZLE);
   });
 
+  it('a canonical (no-`v`) hit is `no-store`, NOT immutable — it is not content-addressed', async () => {
+    // Only a version-addressed URL may be cached hard; the plain /?lang= URL maps to
+    // different bytes across republishes, so caching it immutable would pin a stale puzzle.
+    const res = await makeHandler()(event({ query: { lang: 'fr' } }));
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['Cache-Control']).toBe('no-store');
+  });
+
   it('missing puzzle -> clean JSON 404, never 500', async () => {
     const res = await makeHandler()(event({ query: { lang: 'en' } }));
     expect(res.statusCode).toBe(404);

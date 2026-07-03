@@ -117,14 +117,20 @@ export function createHandler(deps: HandlerDeps) {
       }
 
       // Pass the puzzle through unchanged — its shape is the front's `Puzzle` schema.
-      // Served `immutable`: the client only reaches here via a version-addressed
-      // /?lang=&v=<version> URL (issue #42), so a republish changes the URL rather than the
-      // bytes behind this one — the browser and CDN can hold it hard with no staleness. `v`
-      // itself is a pure cache-busting token: the handler keys only on `lang`; CloudFront
-      // keys the cache on `lang`+`v`.
+      // Cache-Control depends on whether the request is VERSION-ADDRESSED (issue #42). `v`
+      // is a pure cache-busting token — the handler keys only on `lang` — so it only governs
+      // cacheability, not the body:
+      //  - WITH ?v=<version>: the URL is content-addressed (its bytes never change), so the
+      //    browser + CDN may hold it `immutable`. A republish yields a new version -> a new
+      //    URL, never a stale hit here.
+      //  - WITHOUT ?v= (the front's fallback when /today didn't resolve, or any direct/old
+      //    caller): the URL is NOT content-addressed — the same /?lang= maps to different
+      //    bytes across republishes/days — so it must NOT be cached hard, or a republish stays
+      //    invisible until the entry expires. `no-store` keeps this rare path always fresh.
+      const versioned = Boolean(event.queryStringParameters?.v);
       return json(200, puzzle, {
         ...cors,
-        'Cache-Control': `public, max-age=${PUZZLE_MAX_AGE}, immutable`,
+        'Cache-Control': versioned ? `public, max-age=${PUZZLE_MAX_AGE}, immutable` : 'no-store',
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unexpected error.';
