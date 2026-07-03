@@ -1,24 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Source } from '@whippin/shared';
 import { buildShareText } from '../game/share';
+import { heatColor } from '../game/heat';
 
-// The solved panel (issue #8): shown once every hole is solved, in place of the input.
-// Renders the literary metadata (when present), the score, and a share button. The
-// reconstructed sentence itself stays on screen via <Phrase> above this panel, so this
-// component is composed WITH it (Game and the already-solved screen #9 both render the
-// solved <Phrase> then this panel).
+// The solved results (issue #8): it takes over the on-screen keyboard's footprint once
+// the sentence is solved, so the layout never reflows and no empty gap is left where the
+// keyboard was. Understated + flat to match the app: a heat-grid of one pixel square per
+// counted guess (colored by the game's own heat ramp — cold/far to hot/solved), the
+// score, and a share control styled like a keyboard key. Reused by the already-solved
+// screen (#9). The reconstructed sentence + attribution live above, in <SolvedCaption>.
 export default function SolvedScreen({
   guessCount,
   trajectory,
-  source,
   dayNumber,
 }: {
   guessCount: number;
   trajectory: number[]; // reconstruction % after each counted guess (one per try)
-  source?: Source;
   dayNumber: number | null;
 }) {
-  // "COPIED!" confirmation after a clipboard fallback (the native share sheet needs none).
+  // "COPIED" confirmation after a clipboard fallback (the native share sheet needs none).
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(copiedTimer.current), []);
@@ -48,27 +47,28 @@ export default function SolvedScreen({
     }
   }, [dayNumber, guessCount, trajectory]);
 
-  // Attribution line from whatever source fields exist (all optional, #5): "Author, Work".
-  const attribution = [source?.author, source?.work].filter(Boolean).join(', ');
-  const hasSource = source && (source.kind || attribution || source.context);
-
   return (
-    <div className="solved-panel">
-      <p className="solved-label">SOLVED!</p>
+    <div className="solved-results">
+      {/* One flat square per guess, colored by the reconstruction % reached at that guess
+          (heatColor: 0 = cold/far crimson .. 1 = hot/solved cyan). Decorative — the score
+          and share text carry the real numbers. */}
+      <div className="heat-grid" aria-hidden="true">
+        {trajectory.map((pct, i) => (
+          // eslint-disable-next-line react/no-array-index-key
+          <span key={i} className="heat-cell" style={{ background: heatColor(pct / 100) }} />
+        ))}
+      </div>
 
-      {hasSource && (
-        <div className="solved-source">
-          {source?.kind && <p className="solved-kind">{source.kind}</p>}
-          {attribution && <p className="solved-attribution">— {attribution}</p>}
-          {source?.context && <blockquote className="solved-context">{source.context}</blockquote>}
-        </div>
-      )}
-
-      <p className="solved-score">SCORE {guessCount}</p>
-
-      <button type="button" className="btn btn-primary share-btn" onClick={onShare}>
-        {copied ? 'COPIED!' : 'SHARE'}
-      </button>
+      <div className="solved-actions">
+        <span className="solved-score">SCORE {guessCount}</span>
+        <button
+          type="button"
+          className={`share-key${copied ? ' copied' : ''}`}
+          onClick={onShare}
+        >
+          {copied ? 'COPIED' : 'SHARE'}
+        </button>
+      </div>
     </div>
   );
 }

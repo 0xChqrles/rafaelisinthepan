@@ -148,8 +148,8 @@ button * {
 /* ===================== game screen ===================== */
 .game {
   /* Three vertical zones: fixed HUD (top), the .play area (grows to fill the middle),
-     and the keyboard (bottom). .play's flex:1 pushes the keyboard to the bottom edge
-     and leaves the sentence + prompt centered in the space between the two. */
+     and the bottom .tray (keyboard while playing, results once solved). .play's flex:1
+     pushes the tray to the bottom edge and centers the sentence + prompt between them. */
   width: 100%;
   max-width: 1200px;
   display: flex;
@@ -158,8 +158,12 @@ button * {
   gap: clamp(16px, 3vh, 32px);
   min-height: calc(100dvh - 48px);
   /* Reserve the fixed HUD's band at the top so the play area centers between the HUD
-     and the keyboard, not between the viewport top and the keyboard. */
+     and the tray, not between the viewport top and the tray. */
   padding-top: 48px;
+  /* The on-screen keyboard's exact height (3 key rows + 2 gaps). The solved results
+     reserve this SAME height (.tray min-height), so swapping the keyboard for the results
+     never reflows the layout nor leaves an empty hole. Mirrors .kb-key / .keyboard. */
+  --kb-h: calc(3 * clamp(42px, 6.4vh, 54px) + 2 * 6px);
 }
 
 /* The centered play region between the fixed HUD and the keyboard. It grows to fill
@@ -178,6 +182,18 @@ button * {
   justify-content: center;
   align-items: start;
   gap: clamp(24px, 5vh, 48px);
+}
+
+/* Bottom zone: the keyboard while playing, the solved results once solved. min-height is
+   pinned to the keyboard's height so the bottom edge (and everything above) stays put when
+   the keyboard is replaced by the results — no reflow, no empty gap. */
+.tray {
+  width: 100%;
+  min-height: var(--kb-h);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 
 /* --- HUD: header row pinned to the top — logo (home) + progress bar --- */
@@ -523,34 +539,26 @@ button * {
   padding-top: var(--text-shift);
 }
 
-/* --- solved screen (issue #8): replaces the input once the sentence is solved --- */
-.solved-panel {
+/* --- solved screen (issue #8) --------------------------------------------------------
+   Two parts, understated + flat to match the app: the attribution CAPTION sits under the
+   sentence in the input row's place (.solved-caption, same reserved height so nothing
+   shifts), and the RESULTS take over the keyboard's footprint (.solved-results in .tray).
+*/
+
+/* Caption: a quote-style citation under the reconstructed sentence, left-aligned to it.
+   Holds the input row's height (input-area min-height) so the sentence never jumps. */
+.solved-caption {
+  width: 100%;
+  min-height: 90px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 18px;
-  max-width: 640px;
-  text-align: center;
-}
-.solved-label {
-  margin: 0;
-  font-family: var(--press);
-  font-size: clamp(24px, 3.4vw, 34px);
-  color: var(--hole); /* sentence found -> gold "victory" */
-  letter-spacing: 2px;
-  padding-top: var(--cap-shift);
-}
-/* Literary metadata (#5): the piece's kind, its attribution, and the fuller passage. */
-.solved-source {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  align-items: start;
+  justify-content: center;
   gap: 10px;
 }
 .solved-kind {
-  margin: 0;
   font-family: var(--press);
-  font-size: 11px;
+  font-size: 10px;
   color: var(--accent);
   letter-spacing: 2px;
   text-transform: uppercase;
@@ -560,30 +568,80 @@ button * {
   margin: 0;
   font-family: var(--press);
   font-size: clamp(12px, 1.6vw, 15px);
-  color: var(--fg);
+  color: var(--hole); /* gold, tying it to the solved (gold) sentence above */
   letter-spacing: 1px;
   padding-top: var(--text-shift);
 }
 .solved-context {
   margin: 0;
+  max-width: 720px;
   font-family: var(--press);
-  font-size: clamp(11px, 1.4vw, 13px);
+  font-size: clamp(10px, 1.3vw, 12px);
   line-height: 1.9;
   color: var(--muted);
   letter-spacing: 0.5px;
 }
+
+/* Results: the heat-grid + score + share, centered in the keyboard's footprint. */
+.solved-results {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(16px, 3vh, 26px);
+  width: 100%;
+  max-width: 680px; /* match the keyboard's max-width */
+}
+/* One flat pixel square per counted guess, colored inline by the heat ramp — the solve's
+   cold-to-hot trail. Wraps within the keyboard's width for longer games. */
+.heat-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 5px;
+  max-width: 100%;
+}
+.heat-cell {
+  width: clamp(14px, 2.4vh, 20px);
+  height: clamp(14px, 2.4vh, 20px);
+  image-rendering: pixelated;
+}
+.solved-actions {
+  display: flex;
+  align-items: center;
+  gap: clamp(16px, 4vw, 28px);
+}
 .solved-score {
-  margin: 0;
   font-family: var(--press);
-  font-size: clamp(14px, 1.8vw, 18px);
+  font-size: clamp(14px, 1.9vh, 18px);
   color: var(--muted);
   letter-spacing: 2px;
-  padding-top: var(--text-shift);
+  font-variant-numeric: tabular-nums;
 }
-/* Reuse the primary ghost button, just a touch smaller on the solved screen. */
-.share-btn {
-  padding: calc(14px + var(--cap-shift)) 32px calc(14px - var(--cap-shift));
-  font-size: clamp(16px, 2vh, 20px);
+/* Share control styled as a wide keyboard key (flat filled surface, uppercase pixel),
+   cohesive with the keyboard it stands in for. Turns accent on a successful copy. */
+.share-key {
+  font-family: var(--press);
+  font-size: clamp(12px, 1.7vh, 15px);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--fg);
+  background: var(--surface-hover);
+  border: 0;
+  padding: 16px 30px;
+  cursor: pointer;
+  text-shadow: none;
+  transition: filter 0.08s linear, color 0.08s linear;
+}
+.share-key:hover,
+.share-key:focus-visible {
+  filter: brightness(1.35);
+  outline: none;
+}
+.share-key:active {
+  filter: brightness(1.5);
+}
+.share-key.copied {
+  color: var(--accent);
 }
 .go-note {
   margin: 0;
@@ -771,10 +829,17 @@ button * {
     gap: 16px;
     align-items: stretch;
     min-height: calc(100dvh - 44px);
+    /* Mobile keyboard is shorter (see .kb-key below): 3 rows of clamp(38,6.2vh,48) + gaps. */
+    --kb-h: calc(3 * clamp(38px, 6.2vh, 48px) + 2 * 5px);
   }
   .play {
     align-items: stretch;
     gap: clamp(16px, 4vh, 28px);
+  }
+  /* Match the mobile input row's reserved height so the sentence never shifts on solve. */
+  .solved-caption {
+    min-height: 72px;
+    align-items: stretch;
   }
   .progress-background {
     font-size: min(72vh, 54vw);

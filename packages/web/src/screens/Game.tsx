@@ -10,6 +10,7 @@ import FlagButton from '../components/FlagButton';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import SolvedScreen from '../components/SolvedScreen';
+import SolvedCaption from '../components/SolvedCaption';
 import LoadError from '../components/LoadError';
 import { fold } from '@whippin/shared';
 import type { HitState, Hole, Puzzle, RankEntry, RankMap, RuntimeHole, Source } from '@whippin/shared';
@@ -289,14 +290,10 @@ function Round({
             secret) — it is the "full reconstructed sentence" of the solved screen. */}
         <Phrase words={words} holes={holes} puzzleHoles={puzzleHoles} hits={hits} onHitDone={removeHit} />
 
+        {/* Below the sentence: the input while playing, its attribution once solved. Both
+            reserve the same height, so ending the round never shifts the sentence up. */}
         {solved ? (
-          // End of round: the solved panel (metadata + score + share) replaces the input.
-          <SolvedScreen
-            guessCount={guessCount}
-            trajectory={trajectory}
-            source={source}
-            dayNumber={dayNumber}
-          />
+          <SolvedCaption source={source} />
         ) : (
           <div className="input-area">
             <WordInput
@@ -313,19 +310,24 @@ function Round({
         )}
       </div>
 
-      {/* Custom on-screen keyboard: replaces the native mobile keyboard and mirrors the
-          physical keyboard on desktop (greyed keys reflect the shared input state). */}
-      {!solved && (
-        <Keyboard
-          input={input}
-          prefixSet={prefixSet}
-          vocabSet={vocabSet}
-          layout={layout}
-          onType={appendChar}
-          onBackspace={deleteChar}
-          onSubmit={submit}
-        />
-      )}
+      {/* Bottom zone (fixed keyboard-height footprint): the on-screen keyboard while
+          playing, the solved results in the SAME space once solved — so the keyboard
+          leaving neither reflows the layout nor leaves an empty hole. */}
+      <div className="tray">
+        {solved ? (
+          <SolvedScreen guessCount={guessCount} trajectory={trajectory} dayNumber={dayNumber} />
+        ) : (
+          <Keyboard
+            input={input}
+            prefixSet={prefixSet}
+            vocabSet={vocabSet}
+            layout={layout}
+            onType={appendChar}
+            onBackspace={deleteChar}
+            onSubmit={submit}
+          />
+        )}
+      </div>
     </div>
   );
 }
