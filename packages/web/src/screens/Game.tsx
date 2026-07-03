@@ -271,7 +271,7 @@ function Round({
           {guessCount}
         </div>
 
-        <Phrase words={words} holes={holes} hits={hits} onHitDone={removeHit} />
+        <Phrase words={words} holes={holes} puzzleHoles={puzzleHoles} hits={hits} onHitDone={removeHit} />
 
         <div className="input-area">
           {solved ? (

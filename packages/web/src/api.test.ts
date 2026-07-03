@@ -115,6 +115,34 @@ describe('parsePuzzle (shape validation)', () => {
     expect(parsePuzzle(p)).toEqual(p);
   });
 
+  // Optional source metadata (#5): not load-bearing, so a puzzle is valid WITH or
+  // WITHOUT it, and when present it must survive to the front (consumed by the solved
+  // screen, #8) rather than being stripped.
+  it('is valid without a source (optional end-to-end)', () => {
+    const p = valid();
+    expect('source' in p).toBe(false);
+    expect(parsePuzzle(p)).toEqual(p);
+  });
+
+  it('passes an optional source (kind/author/work/context) through unchanged', () => {
+    const p = {
+      ...valid(),
+      source: { kind: 'book', author: 'Victor Hugo', work: 'Les Misérables', context: '…' },
+    };
+    expect(parsePuzzle(p).source).toEqual(p.source);
+  });
+
+  // Optional hole affixes: display-only text around the blank (leading clitic /
+  // punctuation). Not load-bearing, so a hole is valid with or without them, and when
+  // present they must survive to the front (Phrase renders them around the blank).
+  it('passes optional hole prefix/suffix through unchanged', () => {
+    const p = valid();
+    Object.assign(p.holes[0], { prefix: "t'", suffix: ',' });
+    const parsed = parsePuzzle(p);
+    expect(parsed.holes[0].prefix).toBe("t'");
+    expect(parsed.holes[0].suffix).toBe(',');
+  });
+
   it('rejects non-objects (null, array, primitive)', () => {
     expect(() => parsePuzzle(null)).toThrow(/malformed puzzle/);
     expect(() => parsePuzzle([])).toThrow(/malformed puzzle/);

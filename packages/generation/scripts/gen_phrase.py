@@ -23,9 +23,18 @@ The phrase is written to packages/generation/output/word/<lang>/<slug1>_<slug2>_
 a generation artifact, NOT a web asset: publish it to the backend store (local FS or S3)
 with `pnpm puzzle:publish` — the front gets the day's puzzle from the backend (#6).
 
+On a terminal the script is fully interactive (#5): the phrase, language, the three
+hole words, the per-hole start word, and the optional source metadata (kind / author /
+work / context) are all asked when not supplied as flags. Any flag given is not
+re-prompted, and non-interactive (piped / batch) runs keep working with flags only —
+no prompt ever blocks them.
+
 Usage :
+    uv run scripts/gen_phrase.py                       # fully interactive
     uv run scripts/gen_phrase.py "<phrase>" --lang fr --words a b c
-    npm run gen:phrase -- "<phrase>" --lang fr --words a b c
+    uv run scripts/gen_phrase.py "<phrase>" --lang fr --words a b c \
+        --kind book --author "Victor Hugo" --work "Les Misérables"
+    pnpm gen:phrase "<phrase>" --lang fr --words a b c
 """
 
 import argparse
@@ -68,6 +77,12 @@ from start_word import pick_start, start_band
 # change here; the front never sees K and stays K-agnostic.
 TOP_K = 10_000
 
+# Known "kind of piece" values offered by the interactive prompt (#5). Stored as
+# canonical English tokens (the front localises for display); the list is a
+# SUGGESTION, not a closed set — the prompt still accepts a free-form kind, matching
+# the OPEN `SourceKind` union in packages/shared/src/types.ts.
+KNOWN_KINDS = ("book", "movie", "music", "quote", "poem")
+
 # --- Per-language config -------------------------------------------------------
 # char_class: allowed alphabet. It is used BOTH to validate a vocab token
 # (token_regex) and to clean a word (normalize), to stay consistent.
@@ -87,6 +102,12 @@ def _build_config():
         cfg["token_regex"] = re.compile(rf"^[{cc}]+(-[{cc}]+)*$")
         # strip_re keeps the alphabet AND dashes (normalize collapses/trims them).
         cfg["strip_re"] = re.compile(rf"[^{cc}-]")
+        # core_re finds each WORD-CORE inside a raw display token: a maximal run of
+        # the alphabet with internal single dashes (arc-en-ciel stays one core), with
+        # apostrophes / punctuation acting as separators (t'attends -> "t", "attends").
+        # Used to locate a secret inside a token while keeping the token intact for
+        # display (issue: apostrophes/punctuation were being stripped from words[]).
+        cfg["core_re"] = re.compile(rf"[{cc}]+(?:-[{cc}]+)*")
     return {"en": en, "fr": fr}
 
 
@@ -100,14 +121,38 @@ def die(msg):
 
 
 def normalize(tok, cfg):
-    """Lowercase and keep the language alphabet plus internal dashes.
+    """Clean a TARGET word (a `--words` argument) down to the language alphabet.
 
-    This is the DISPLAY form: French accents are kept (they are in char_class),
-    and an internal dash survives ("arc-en-ciel" stays "arc-en-ciel"). Repeated
-    dashes collapse to one and edge dashes are trimmed, matching slug()."""
+    Lowercases, keeps accents (they are in char_class) and internal dashes
+    ("arc-en-ciel" stays "arc-en-ciel"), collapses repeated dashes and trims edge
+    ones — matching slug(). This is NOT used for the sentence's DISPLAY tokens, which
+    keep their punctuation/apostrophes (see display_token); it only sanitises the word
+    the author asked to hole, so it can be matched by slug against the sentence."""
     w = cfg["strip_re"].sub("", tok.lower())
     w = re.sub(r"-+", "-", w)
     return w.strip("-")
+
+
+def display_token(tok):
+    """The DISPLAY form of one whitespace token: lowercased, but keeping accents AND
+    punctuation/apostrophes. Only case is normalised; nothing is stripped, so the
+    stored `words[]` reproduces the sentence faithfully ("t'attends", "rien,", "«mot»")."""
+    return tok.lower()
+
+
+def locate_core(token, target_slug, cfg):
+    """Find the word-core inside a display token whose slug == target_slug.
+
+    Returns (secret_display, prefix, suffix) — the matched core (accents kept, no
+    punctuation) plus the display text before/after it (a leading clitic like "t'" /
+    opening punctuation, and trailing punctuation). Returns None when no core in the
+    token matches, so a secret can be located inside "t'attends" / "rien," while the
+    token stays intact for display. The core is a pure word, so slug/fold are unchanged
+    and the player still types only letters."""
+    for m in cfg["core_re"].finditer(token):
+        if slug(m.group()) == target_slug:
+            return m.group(), token[:m.start()], token[m.end():]
+    return None
 
 
 def ws(display):
@@ -121,8 +166,9 @@ def build_rank_map(secret_display, ranking):
     """Slug-keyed rank map for one secret: { input_slug: {word, rank} }.
 
     Iterates closest-first (secret itself is rank 0), so on a slug collision
-    (côté/coté -> cote) the first seen is the smallest rank: we keep it and warn.
-    The kept entry's `word` is the form the front will display."""
+    (côté/coté -> cote) the first seen is the smallest rank: we keep it (collisions
+    are resolved SILENTLY — no output). The kept entry's `word` is the form the front
+    will display."""
     # Combined list in ascending-rank order: secret at 0, then neighbors at r+1.
     entries = [(secret_display, 0)]
     entries.extend((w, r + 1) for w, r, _ in ranking)
@@ -130,10 +176,7 @@ def build_rank_map(secret_display, ranking):
     rmap = {}
     for display, rank in entries:
         s = slug(display)
-        if s in rmap:
-            kept = rmap[s]
-            print(f"[collision] slug '{s}' : gardé '{kept['word']}' (rang "
-                  f"{kept['rank']}), écarté '{display}' (rang {rank})", file=sys.stderr)
+        if s in rmap:  # first-seen wins (smallest rank); drop the later duplicate.
             continue
         rmap[s] = {"word": display, "rank": rank}
     return rmap
@@ -193,14 +236,110 @@ def choose_start(secret, ranking, rank_map, rank_by_display):
         print(f"  « {raw} » n'est ni un numéro ni un mot du vocabulaire de ce trou.")
 
 
+# --- Interactive prompts -------------------------------------------------------
+# The script is fully interactive on a TTY (#5): anything not given as a CLI flag is
+# asked here. These helpers only run when stdin is a terminal (main() guards them),
+# so piped / batch runs are never blocked — exactly like choose_start.
+
+def _prompt(label, default=None):
+    """Read one line from a terminal prompt. Blank or EOF returns `default`.
+
+    `default` (when set) is shown in brackets and used for an empty answer, so
+    optional fields can be skipped with Enter."""
+    hint = f" [{default}]" if default not in (None, "") else ""
+    try:
+        raw = input(f"{label}{hint} : ").strip()
+    except EOFError:  # stdin closed mid-prompt: fall back to the default.
+        return default
+    return raw or default
+
+
+def prompt_lang(default="en"):
+    """Ask for the language, reprompting until it is one of the supported codes."""
+    while True:
+        raw = _prompt("Langue (en/fr)", default)
+        if raw in ("en", "fr"):
+            return raw
+        print("  Réponds 'en' ou 'fr'.")
+
+
+def prompt_sentence():
+    """Ask for the sentence, reprompting until it is non-empty."""
+    while True:
+        raw = _prompt("Phrase")
+        if raw:
+            return raw
+        print("  La phrase ne peut pas être vide.")
+
+
+def prompt_words():
+    """Ask for the three hole words (space-separated), reprompting until exactly 3.
+
+    Only the count is validated here; membership in the sentence / the reduced
+    vocabulary is still checked (and errors) in the per-word loop, as before."""
+    while True:
+        raw = _prompt("Trois mots à cacher (séparés par des espaces)")
+        parts = raw.split() if raw else []
+        if len(parts) == 3:
+            return parts
+        print("  Il faut exactement 3 mots.")
+
+
+def prompt_kind():
+    """Ask for the optional 'kind of piece'. Blank -> None (field omitted).
+
+    Offers KNOWN_KINDS as a numbered shortcut but also accepts free-form text, so a
+    kind outside the suggested set is allowed (the SourceKind union is open)."""
+    listing = ", ".join(f"{i}={k}" for i, k in enumerate(KNOWN_KINDS, 1))
+    while True:
+        raw = _prompt(f"Type d'œuvre ({listing} ; ou texte libre ; Entrée = aucun)")
+        if not raw:
+            return None
+        if raw.isdigit():
+            idx = int(raw)
+            if 1 <= idx <= len(KNOWN_KINDS):
+                return KNOWN_KINDS[idx - 1]
+            print(f"  Numéro hors liste (1–{len(KNOWN_KINDS)}).")
+            continue
+        return raw
+
+
+def build_source(kind=None, author=None, work=None, context=None):
+    """Assemble the optional `source` metadata dict, dropping blank fields.
+
+    Returns None when nothing is provided so the puzzle JSON stays byte-compatible
+    with metadata-less puzzles (no empty `source` key). Values are DISPLAY forms
+    (accents kept, never slugged), matching the rest of the schema."""
+    src = {}
+    for key, val in (("kind", kind), ("author", author),
+                     ("work", work), ("context", context)):
+        if val is None:
+            continue
+        val = val.strip()
+        if val:
+            src[key] = val
+    return src or None
+
+
 def parse_args():
     p = argparse.ArgumentParser(
-        description="Génère un fichier de jeu autonome pour une phrase."
+        description="Génère un fichier de jeu autonome pour une phrase "
+                    "(interactif sur un terminal ; sinon fournir les arguments)."
     )
-    p.add_argument("sentence", help="la phrase complète")
-    p.add_argument("--lang", choices=("en", "fr"), default="en", help="langue (défaut : en)")
-    p.add_argument("--words", nargs=3, required=True, metavar=("W1", "W2", "W3"),
-                   help="exactement 3 mots de la phrase à transformer en trous")
+    # sentence / --words are optional: on a TTY they are asked interactively when
+    # omitted; in a non-interactive run their absence is a clear error (see main()).
+    p.add_argument("sentence", nargs="?", help="la phrase complète (sinon demandée)")
+    # default=None (not "en") so main() can tell "flag omitted" from an explicit
+    # choice, and prompt for it on a TTY while keeping the old "en" default off-TTY.
+    p.add_argument("--lang", choices=("en", "fr"), default=None,
+                   help="langue en/fr (défaut : en en mode non interactif)")
+    p.add_argument("--words", nargs=3, metavar=("W1", "W2", "W3"),
+                   help="exactement 3 mots de la phrase à transformer en trous (sinon demandés)")
+    # Optional source metadata (#5); any flag given here is NOT re-prompted on a TTY.
+    p.add_argument("--kind", help="type d'œuvre (book, movie, music, quote, poem, …)")
+    p.add_argument("--author", help="auteur / autrice")
+    p.add_argument("--work", help="titre de l'œuvre")
+    p.add_argument("--context", help="passage / contexte source")
     p.add_argument("--out-dir", default=os.path.join(GEN_OUTPUT, "word"), dest="out_dir",
                    help="dossier de sortie des puzzles (défaut : packages/generation/output/word)")
     return p.parse_args()
@@ -208,15 +347,40 @@ def parse_args():
 
 def main():
     args = parse_args()
-    cfg = CONFIG[args.lang]
+    interactive = sys.stdin.isatty()
+
+    # Resolve every required input: a CLI flag wins; else prompt on a TTY; else keep
+    # the old non-interactive contract (default lang / clear error for what's missing),
+    # so piped and batch runs behave exactly as before.
+    lang = args.lang
+    if lang is None:
+        lang = prompt_lang() if interactive else "en"
+
+    sentence = args.sentence
+    if sentence is None:
+        if interactive:
+            sentence = prompt_sentence()
+        else:
+            die("aucune phrase fournie (argument positionnel requis hors mode interactif).")
+
+    words_arg = args.words
+    if words_arg is None:
+        if interactive:
+            words_arg = prompt_words()
+        else:
+            die("--words est requis hors mode interactif (exactement 3 mots).")
+
+    cfg = CONFIG[lang]
     random.seed(0)  # reproducible start words
 
     kv = cfg["module"].load_vectors()
     V = build_lang_vocab(kv, cfg)
 
-    # DISPLAY forms of the sentence (accents kept), plus their slugs for matching.
-    words = [normalize(t, cfg) for t in args.sentence.split()]
-    word_slugs = [slug(w) for w in words]
+    # DISPLAY tokens of the sentence: lowercased, but accents AND punctuation /
+    # apostrophes KEPT (see display_token), so words[] reproduces the sentence. Each
+    # secret is located INSIDE its token by slug (locate_core), so a blanked word keeps
+    # its surrounding clitic/punctuation as the hole's prefix/suffix.
+    words = [display_token(t) for t in sentence.split()]
 
     # V == kv == the whole reduced vocabulary, so there is no target to inject: a
     # target either survived reduction (it is in V) or it cannot be used. The
@@ -225,35 +389,44 @@ def main():
     Vset = set(V)
 
     # Existence set for the front: the whole (slugged) reduced vocabulary V.
-    write_vocab(V, args.lang)
+    write_vocab(V, lang)
 
     holes = []
     ranks = {}
     used_pos = set()
 
-    for raw in args.words:
+    for raw in words_arg:
         tgt = normalize(raw, cfg)
         tslug = slug(tgt)
         if not tslug:
-            die(f"'{raw}' ne contient aucune lettre valide pour la langue '{args.lang}'.")
+            die(f"'{raw}' ne contient aucune lettre valide pour la langue '{lang}'.")
 
-        # 1) the word must appear in the sentence (matched by SLUG, free position).
-        pos = next((i for i, s in enumerate(word_slugs)
-                    if s == tslug and i not in used_pos), None)
+        # 1) the word must appear in the sentence, matched by SLUG against a word-CORE
+        # of some free token (so "attends" is found inside "t'attends"). The token is
+        # decomposed into the secret core + display prefix/suffix (clitic + punctuation).
+        pos = decomposed = None
+        for i, w in enumerate(words):
+            if i in used_pos:
+                continue
+            d = locate_core(w, tslug, cfg)
+            if d is not None:
+                pos, decomposed = i, d
+                break
         if pos is None:
-            if tslug in word_slugs:
+            if any(locate_core(w, tslug, cfg) for w in words):
                 die(f"'{raw}' apparaît mais toutes ses positions sont déjà prises "
                     f"(mot en double dans --words ?).")
             die(f"'{raw}' n'apparaît pas dans la phrase : {' '.join(words)}")
 
-        # The secret's DISPLAY form is the sentence's own (accented) form.
-        secret = words[pos]
+        # secret = the pure word core (accents kept, no punctuation); prefix/suffix =
+        # the display text around it. The secret is what the player types / we rank.
+        secret, prefix, suffix = decomposed
 
         # 2) the word must be in the reduced vocabulary V (= in the vectors). If it
         # is not, it did not survive reduction and cannot be used here.
         if secret not in Vset:
             die(f"'{raw}' (→ '{secret}') n'a pas survécu à la réduction : absent du "
-                f"vocabulaire réduit '{args.lang}'. Choisis un autre mot cible, ou "
+                f"vocabulaire réduit '{lang}'. Choisis un autre mot cible, ou "
                 f"ajuste puis relance la réduction (scripts/reduce_embedding.py).")
 
         used_pos.add(pos)
@@ -272,25 +445,52 @@ def main():
         ranks[slug(secret)] = rank_map
 
         start = choose_start(secret, ranking, rank_map, rank_by_display)
-        holes.append({
+        hole = {
             "pos": pos,
             "secret": ws(secret),
             "start": ws(start),
             "start_rank": rank_by_display[start],
-        })
+        }
+        # Display-only affixes around the blank; omitted when empty so tokens without
+        # punctuation stay byte-compatible with the previous output.
+        if prefix:
+            hole["prefix"] = prefix
+        if suffix:
+            hole["suffix"] = suffix
+        holes.append(hole)
 
     # Holes (and therefore the filename slugs) follow sentence order, not --words.
     holes.sort(key=lambda h: h["pos"])
 
+    # --- Optional source metadata (#5) ----------------------------------------
+    # Flags win; otherwise ask on a TTY (any flag already given is not re-prompted);
+    # otherwise leave omitted. Asked here, after the holes are built, so a bad word
+    # errors out before any metadata is entered.
+    kind, author, work, context = args.kind, args.author, args.work, args.context
+    if interactive:
+        if kind is None:
+            kind = prompt_kind()
+        if author is None:
+            author = _prompt("Auteur / autrice")
+        if work is None:
+            work = _prompt("Titre de l'œuvre")
+        if context is None:
+            context = _prompt("Passage / contexte")
+    source = build_source(kind, author, work, context)
+
     phrase = {
-        "lang": args.lang,
+        "lang": lang,
         "words": words,
         "holes": holes,
         "ranks": ranks,
     }
+    # Only write `source` when there is metadata, keeping puzzles without it
+    # byte-compatible with metadata-less output.
+    if source:
+        phrase["source"] = source
 
     # --- Write one self-contained file ----------------------------------------
-    out_dir = os.path.join(args.out_dir, args.lang)
+    out_dir = os.path.join(args.out_dir, lang)
     os.makedirs(out_dir, exist_ok=True)
     fname = "_".join(h["secret"]["slug"] for h in holes) + ".json"
     out_path = os.path.join(out_dir, fname)
@@ -298,9 +498,11 @@ def main():
         json.dump(phrase, f, ensure_ascii=False)
 
     # --- Preview ---------------------------------------------------------------
-    print(f"\nPhrase ({args.lang}) écrite dans {out_path} :")
+    print(f"\nPhrase ({lang}) écrite dans {out_path} :")
     for h in holes:
         print(f"  {h['start']['word']}^-{h['start_rank']} -> {h['secret']['word']}")
+    if source:
+        print("  source : " + ", ".join(f"{k}={v}" for k, v in source.items()))
 
     # A puzzle is not served from here: publish it into the daily store (local or S3).
     # --s3 discovers the bucket from the deployed stack output; no --bucket needed.

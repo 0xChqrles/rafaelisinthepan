@@ -308,6 +308,12 @@ button * {
   color: var(--fg);
 }
 
+/* A hole plus its display affixes (prefix/suffix) must stay together: never let a
+   newline separate the leading clitic / trailing punctuation from the blank. */
+.hole-group {
+  white-space: nowrap;
+}
+
 .hole {
   position: relative;
   display: inline-block;
@@ -324,8 +330,9 @@ button * {
   color: var(--hole);
 }
 .hole-rank {
+  /* inline-block (not inline) so the rank-pop transform applies; width fits the
+     exponent's own content so a trailing suffix hugs the number, no reserved gap. */
   display: inline-block;
-  min-width: var(--rank-width);
   font-size: 0.55em;
   margin-left: 1px;
   color: var(--rank-color);
