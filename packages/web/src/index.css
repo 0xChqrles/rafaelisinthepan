@@ -780,9 +780,13 @@ button * {
     font-size: 16px;
   }
 
-  /* Full-bleed keyboard with tighter gaps + shorter keys so all four rows fit a phone. */
+  /* Full-bleed keyboard with tighter gaps + shorter keys so all four rows fit a phone.
+     Negative horizontal margins cancel most of the .app side padding (14px) so the
+     keyboard reaches closer to the screen edges than the rest of the play area. */
   .keyboard {
-    max-width: 100%;
+    width: calc(100% + 20px);
+    max-width: calc(100% + 20px);
+    margin-inline: -10px;
     gap: 5px;
   }
   .kb-row {
