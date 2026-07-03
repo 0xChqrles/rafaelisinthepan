@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { computeProgress } from '../game/scoring';
+import { progressTrajectory } from '../game/share';
 import { canExtend, type Layout } from '../game/keyboard';
 import useVocab from '../hooks/useVocab';
 import { useGameStore, roundKeyForDay, holesMatchPuzzle } from '../state/gameStore';
@@ -8,9 +9,10 @@ import ProgressBar from '../components/ProgressBar';
 import FlagButton from '../components/FlagButton';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
+import SolvedScreen from '../components/SolvedScreen';
 import LoadError from '../components/LoadError';
 import { fold } from '@whippin/shared';
-import type { HitState, Hole, Puzzle, RankEntry, RankMap, RuntimeHole } from '@whippin/shared';
+import type { HitState, Hole, Puzzle, RankEntry, RankMap, RuntimeHole, Source } from '@whippin/shared';
 
 // Feedback shown under the input. Only INVALID words use it now (red shake +
 // "does not exist"); a valid-but-too-far guess gives per-hole "MISS" feedback
@@ -40,6 +42,7 @@ export default function Game({ puzzle, dayNumber }: { puzzle: Puzzle; dayNumber:
       words={puzzle.words}
       puzzleHoles={puzzle.holes}
       ranks={puzzle.ranks}
+      source={puzzle.source}
       vocabSet={vocab.vocabSet}
       prefixSet={vocab.prefixSet}
       lang={puzzle.lang}
@@ -54,6 +57,7 @@ function Round({
   words,
   puzzleHoles,
   ranks,
+  source,
   vocabSet,
   prefixSet,
   lang,
@@ -62,6 +66,7 @@ function Round({
   words: string[];
   puzzleHoles: Hole[];
   ranks: RankMap;
+  source?: Source;
   vocabSet: Set<string>;
   prefixSet: Set<string>;
   lang: string;
@@ -139,6 +144,14 @@ function Round({
   // Reconstruction progress (0–100): how much of the sentence is rebuilt. Drives the
   // WIDTH of the top progress bar. Distinct from the guess-count performance number.
   const progress = useMemo<number>(() => computeProgress(holes, ranks), [holes, ranks]);
+
+  // Per-guess reconstruction-% trajectory for the solved screen's share grid: replay
+  // this round's ordered valid guesses, one value per counted try. Derived from the
+  // persisted `tried` list, so it survives a reload just like the score.
+  const trajectory = useMemo<number[]>(
+    () => progressTrajectory(freshHoles, ranks, history),
+    [freshHoles, ranks, history],
+  );
 
   // Cache the progress on the persisted round so the language selector can badge an
   // in-progress language without re-loading its rank map. No-op when unchanged.
@@ -271,30 +284,33 @@ function Round({
           {guessCount}
         </div>
 
+        {/* The reconstructed sentence stays visible in BOTH states: while playing (with
+            the live holes/hits) and once solved (every hole resolved to its accented
+            secret) — it is the "full reconstructed sentence" of the solved screen. */}
         <Phrase words={words} holes={holes} puzzleHoles={puzzleHoles} hits={hits} onHitDone={removeHit} />
 
-        <div className="input-area">
-          {solved ? (
-            // End of round: replace input with the verdict.
-            <div className="round-end">
-              <p className="round-end-label solved">SOLVED!</p>
-              <p className="round-end-score">SCORE {guessCount}</p>
-            </div>
-          ) : (
-            <>
-              <WordInput
-                value={input}
-                history={history}
-                onType={appendChar}
-                onBackspace={deleteChar}
-                onSubmit={submit}
-                onReplace={replaceInput}
-                invalidSignal={invalidAt}
-              />
-              <p className="hint">{feedback?.text || ' '}</p>
-            </>
-          )}
-        </div>
+        {solved ? (
+          // End of round: the solved panel (metadata + score + share) replaces the input.
+          <SolvedScreen
+            guessCount={guessCount}
+            trajectory={trajectory}
+            source={source}
+            dayNumber={dayNumber}
+          />
+        ) : (
+          <div className="input-area">
+            <WordInput
+              value={input}
+              history={history}
+              onType={appendChar}
+              onBackspace={deleteChar}
+              onSubmit={submit}
+              onReplace={replaceInput}
+              invalidSignal={invalidAt}
+            />
+            <p className="hint">{feedback?.text || ' '}</p>
+          </div>
+        )}
       </div>
 
       {/* Custom on-screen keyboard: replaces the native mobile keyboard and mirrors the

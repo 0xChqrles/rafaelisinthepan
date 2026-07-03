@@ -523,31 +523,67 @@ button * {
   padding-top: var(--text-shift);
 }
 
-/* --- end of round: replaces input (time elapsed or sentence solved) --- */
-.round-end {
+/* --- solved screen (issue #8): replaces the input once the sentence is solved --- */
+.solved-panel {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
+  gap: 18px;
+  max-width: 640px;
+  text-align: center;
 }
-.round-end-label {
+.solved-label {
   margin: 0;
   font-family: var(--press);
   font-size: clamp(24px, 3.4vw, 34px);
-  color: var(--danger);
+  color: var(--hole); /* sentence found -> gold "victory" */
   letter-spacing: 2px;
   padding-top: var(--cap-shift);
 }
-.round-end-label.solved {
-  color: var(--hole); /* sentence found -> yellow "victory" */
+/* Literary metadata (#5): the piece's kind, its attribution, and the fuller passage. */
+.solved-source {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
 }
-.round-end-score {
+.solved-kind {
+  margin: 0;
+  font-family: var(--press);
+  font-size: 11px;
+  color: var(--accent);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  padding-top: var(--text-shift);
+}
+.solved-attribution {
+  margin: 0;
+  font-family: var(--press);
+  font-size: clamp(12px, 1.6vw, 15px);
+  color: var(--fg);
+  letter-spacing: 1px;
+  padding-top: var(--text-shift);
+}
+.solved-context {
+  margin: 0;
+  font-family: var(--press);
+  font-size: clamp(11px, 1.4vw, 13px);
+  line-height: 1.9;
+  color: var(--muted);
+  letter-spacing: 0.5px;
+}
+.solved-score {
   margin: 0;
   font-family: var(--press);
   font-size: clamp(14px, 1.8vw, 18px);
   color: var(--muted);
   letter-spacing: 2px;
   padding-top: var(--text-shift);
+}
+/* Reuse the primary ghost button, just a touch smaller on the solved screen. */
+.share-btn {
+  padding: calc(14px + var(--cap-shift)) 32px calc(14px - var(--cap-shift));
+  font-size: clamp(16px, 2vh, 20px);
 }
 .go-note {
   margin: 0;
@@ -809,7 +845,7 @@ button * {
     width: min(38vw, 200px);
   }
 
-  /* Buttons narrow enough for small screens (BACK / round-end). */
+  /* Buttons narrow enough for small screens (BACK / SHARE). */
   .btn-primary {
     padding: calc(16px + var(--cap-shift)) 28px calc(16px - var(--cap-shift));
     font-size: 18px;
