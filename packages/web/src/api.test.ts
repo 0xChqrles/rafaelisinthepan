@@ -132,6 +132,17 @@ describe('parsePuzzle (shape validation)', () => {
     expect(parsePuzzle(p).source).toEqual(p.source);
   });
 
+  // Optional hole affixes: display-only text around the blank (leading clitic /
+  // punctuation). Not load-bearing, so a hole is valid with or without them, and when
+  // present they must survive to the front (Phrase renders them around the blank).
+  it('passes optional hole prefix/suffix through unchanged', () => {
+    const p = valid();
+    Object.assign(p.holes[0], { prefix: "t'", suffix: ',' });
+    const parsed = parsePuzzle(p);
+    expect(parsed.holes[0].prefix).toBe("t'");
+    expect(parsed.holes[0].suffix).toBe(',');
+  });
+
   it('rejects non-objects (null, array, primitive)', () => {
     expect(() => parsePuzzle(null)).toThrow(/malformed puzzle/);
     expect(() => parsePuzzle([])).toThrow(/malformed puzzle/);

@@ -102,6 +102,12 @@ def _build_config():
         cfg["token_regex"] = re.compile(rf"^[{cc}]+(-[{cc}]+)*$")
         # strip_re keeps the alphabet AND dashes (normalize collapses/trims them).
         cfg["strip_re"] = re.compile(rf"[^{cc}-]")
+        # core_re finds each WORD-CORE inside a raw display token: a maximal run of
+        # the alphabet with internal single dashes (arc-en-ciel stays one core), with
+        # apostrophes / punctuation acting as separators (t'attends -> "t", "attends").
+        # Used to locate a secret inside a token while keeping the token intact for
+        # display (issue: apostrophes/punctuation were being stripped from words[]).
+        cfg["core_re"] = re.compile(rf"[{cc}]+(?:-[{cc}]+)*")
     return {"en": en, "fr": fr}
 
 
@@ -115,14 +121,38 @@ def die(msg):
 
 
 def normalize(tok, cfg):
-    """Lowercase and keep the language alphabet plus internal dashes.
+    """Clean a TARGET word (a `--words` argument) down to the language alphabet.
 
-    This is the DISPLAY form: French accents are kept (they are in char_class),
-    and an internal dash survives ("arc-en-ciel" stays "arc-en-ciel"). Repeated
-    dashes collapse to one and edge dashes are trimmed, matching slug()."""
+    Lowercases, keeps accents (they are in char_class) and internal dashes
+    ("arc-en-ciel" stays "arc-en-ciel"), collapses repeated dashes and trims edge
+    ones — matching slug(). This is NOT used for the sentence's DISPLAY tokens, which
+    keep their punctuation/apostrophes (see display_token); it only sanitises the word
+    the author asked to hole, so it can be matched by slug against the sentence."""
     w = cfg["strip_re"].sub("", tok.lower())
     w = re.sub(r"-+", "-", w)
     return w.strip("-")
+
+
+def display_token(tok):
+    """The DISPLAY form of one whitespace token: lowercased, but keeping accents AND
+    punctuation/apostrophes. Only case is normalised; nothing is stripped, so the
+    stored `words[]` reproduces the sentence faithfully ("t'attends", "rien,", "«mot»")."""
+    return tok.lower()
+
+
+def locate_core(token, target_slug, cfg):
+    """Find the word-core inside a display token whose slug == target_slug.
+
+    Returns (secret_display, prefix, suffix) — the matched core (accents kept, no
+    punctuation) plus the display text before/after it (a leading clitic like "t'" /
+    opening punctuation, and trailing punctuation). Returns None when no core in the
+    token matches, so a secret can be located inside "t'attends" / "rien," while the
+    token stays intact for display. The core is a pure word, so slug/fold are unchanged
+    and the player still types only letters."""
+    for m in cfg["core_re"].finditer(token):
+        if slug(m.group()) == target_slug:
+            return m.group(), token[:m.start()], token[m.end():]
+    return None
 
 
 def ws(display):
@@ -348,9 +378,11 @@ def main():
     kv = cfg["module"].load_vectors()
     V = build_lang_vocab(kv, cfg)
 
-    # DISPLAY forms of the sentence (accents kept), plus their slugs for matching.
-    words = [normalize(t, cfg) for t in sentence.split()]
-    word_slugs = [slug(w) for w in words]
+    # DISPLAY tokens of the sentence: lowercased, but accents AND punctuation /
+    # apostrophes KEPT (see display_token), so words[] reproduces the sentence. Each
+    # secret is located INSIDE its token by slug (locate_core), so a blanked word keeps
+    # its surrounding clitic/punctuation as the hole's prefix/suffix.
+    words = [display_token(t) for t in sentence.split()]
 
     # V == kv == the whole reduced vocabulary, so there is no target to inject: a
     # target either survived reduction (it is in V) or it cannot be used. The
@@ -371,17 +403,26 @@ def main():
         if not tslug:
             die(f"'{raw}' ne contient aucune lettre valide pour la langue '{lang}'.")
 
-        # 1) the word must appear in the sentence (matched by SLUG, free position).
-        pos = next((i for i, s in enumerate(word_slugs)
-                    if s == tslug and i not in used_pos), None)
+        # 1) the word must appear in the sentence, matched by SLUG against a word-CORE
+        # of some free token (so "attends" is found inside "t'attends"). The token is
+        # decomposed into the secret core + display prefix/suffix (clitic + punctuation).
+        pos = decomposed = None
+        for i, w in enumerate(words):
+            if i in used_pos:
+                continue
+            d = locate_core(w, tslug, cfg)
+            if d is not None:
+                pos, decomposed = i, d
+                break
         if pos is None:
-            if tslug in word_slugs:
+            if any(locate_core(w, tslug, cfg) for w in words):
                 die(f"'{raw}' apparaît mais toutes ses positions sont déjà prises "
                     f"(mot en double dans --words ?).")
             die(f"'{raw}' n'apparaît pas dans la phrase : {' '.join(words)}")
 
-        # The secret's DISPLAY form is the sentence's own (accented) form.
-        secret = words[pos]
+        # secret = the pure word core (accents kept, no punctuation); prefix/suffix =
+        # the display text around it. The secret is what the player types / we rank.
+        secret, prefix, suffix = decomposed
 
         # 2) the word must be in the reduced vocabulary V (= in the vectors). If it
         # is not, it did not survive reduction and cannot be used here.
@@ -406,12 +447,19 @@ def main():
         ranks[slug(secret)] = rank_map
 
         start = choose_start(secret, ranking, rank_map, rank_by_display)
-        holes.append({
+        hole = {
             "pos": pos,
             "secret": ws(secret),
             "start": ws(start),
             "start_rank": rank_by_display[start],
-        })
+        }
+        # Display-only affixes around the blank; omitted when empty so tokens without
+        # punctuation stay byte-compatible with the previous output.
+        if prefix:
+            hole["prefix"] = prefix
+        if suffix:
+            hole["suffix"] = suffix
+        holes.append(hole)
 
     # Holes (and therefore the filename slugs) follow sentence order, not --words.
     holes.sort(key=lambda h: h["pos"])

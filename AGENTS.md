@@ -155,12 +155,14 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
 ```jsonc
 {
   "lang": "fr",
-  "words": ["la", "forêt", "ancienne"],        // full sentence, ACCENTS KEPT
+  "words": ["tu", "t'attends", "rien,"],       // full sentence tokens, ACCENTS + PUNCTUATION KEPT
   "holes": [                                    // sorted by pos ascending
     { "pos": 1,
-      "secret": { "word": "forêt", "slug": "foret" },
+      "secret": { "word": "attends", "slug": "attends" },  // the pure word only
       "start":  { "word": "...",   "slug": "..." },
-      "start_rank": 87 }
+      "start_rank": 87,
+      "prefix": "t'",                           // OPTIONAL display text before the blank
+      "suffix": "" }                            // OPTIONAL display text after the blank
   ],
   "ranks": {                                    // keyed by SECRET slug
     "foret": { "<input-slug>": { "word": "<accented>", "rank": 12 }, ... }
@@ -174,6 +176,17 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
 }
 ```
 
+- **`words[]` holds full display tokens with PUNCTUATION and APOSTROPHES kept** (only
+  lowercased): `["tu", "t'attends", "rien,"]`, so the stored array reproduces the
+  sentence. Generation locates each secret **inside** its token by slug on the token's
+  word-cores (apostrophes/punctuation are separators; `arc-en-ciel` is one core), and
+  splits it into the pure `secret` word plus the display text around it.
+- **`prefix` / `suffix` are OPTIONAL, display-only hole affixes** (a leading clitic like
+  `t'` / `l'` or opening punctuation, and trailing punctuation). They keep the blanked
+  word's surroundings on screen **without** touching the secret: the player still types
+  only the word and **slug/fold are unchanged**. Omitted when empty, so a hole with no
+  affixes stays byte-compatible. The front renders them around the blank; they come from
+  the **static** puzzle (not the persisted round state).
 - Every `{word, slug}` carries **both**, even when `slug == word` (no conditional
   shortcuts).
 - **`source` is fully OPTIONAL (#5):** the whole object may be absent AND every

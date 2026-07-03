@@ -13,6 +13,10 @@ export interface Hole {
   secret: Word;
   start: Word;
   start_rank: number;
+  // Display-only text around the blank, kept out of the secret so the player still
+  // types only the word (slug/fold unchanged). Optional; absent when empty.
+  prefix?: string; // before the blank: a leading clitic ("t'", "l'") or opening punctuation
+  suffix?: string; // after the blank: trailing punctuation (",", ".", "»"…)
 }
 
 // One ranked candidate for a secret: its display form + integer distance rank
