@@ -25,15 +25,9 @@ describe('apiBase', () => {
 describe('backend routing URLs', () => {
   const base = 'https://api.example';
 
-  it('puzzleUrl asks the backend for the day, passing only lang', () => {
-    expect(puzzleUrl('fr', undefined, base)).toBe('https://api.example/?lang=fr');
-    expect(puzzleUrl('en', undefined, base)).toBe('https://api.example/?lang=en');
-  });
-
-  it('puzzleUrl appends the cache-busting version token when given one (#42)', () => {
+  it('puzzleUrl is version-addressed: it always carries the required `v` token (#42)', () => {
     expect(puzzleUrl('fr', 'abc123', base)).toBe('https://api.example/?lang=fr&v=abc123');
-    // No version -> the canonical URL (fallback when /today did not resolve).
-    expect(puzzleUrl('fr', null, base)).toBe('https://api.example/?lang=fr');
+    expect(puzzleUrl('en', 'def456', base)).toBe('https://api.example/?lang=en&v=def456');
   });
 
   it('puzzleUrl encodes the lang and version query values', () => {
@@ -47,7 +41,7 @@ describe('backend routing URLs', () => {
   });
 
   it('fails loudly when the backend base is unset instead of using the web origin', () => {
-    expect(() => puzzleUrl('fr', undefined, '')).toThrow(/VITE_API_BASE_URL/);
+    expect(() => puzzleUrl('fr', 'v1', '')).toThrow(/VITE_API_BASE_URL/);
     expect(() => todayUrl('fr', '')).toThrow(/VITE_API_BASE_URL/);
   });
 });

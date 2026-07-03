@@ -104,6 +104,22 @@ export function createHandler(deps: HandlerDeps) {
         );
       }
 
+      // The puzzle endpoint is version-addressed (issue #42): the client must carry the
+      // `v` token it read from /today. Requiring it makes the contract explicit — a request
+      // without `v` is a protocol violation, so 400 rather than silently serving a puzzle at
+      // a non-content-addressed URL (which could then be cached wrong). `v` is not validated
+      // against the current version: it's an opaque cache key, so any non-empty value is a
+      // 200 with the current puzzle. The front reaches here only for a version /today
+      // reported as present, so a stale/garbage `v` never happens in normal play.
+      if (!event.queryStringParameters?.v) {
+        return errorResponse(
+          400,
+          'bad_request',
+          'Query parameter "v" is required — read it from /today?lang= (issue #42).',
+          cors,
+        );
+      }
+
       const puzzle = await deps.store.getPuzzle(date, lang);
       if (puzzle == null) {
         // Missing puzzle is a clean 404, never a 500.
@@ -116,21 +132,13 @@ export function createHandler(deps: HandlerDeps) {
         );
       }
 
-      // Pass the puzzle through unchanged — its shape is the front's `Puzzle` schema.
-      // Cache-Control depends on whether the request is VERSION-ADDRESSED (issue #42). `v`
-      // is a pure cache-busting token — the handler keys only on `lang` — so it only governs
-      // cacheability, not the body:
-      //  - WITH ?v=<version>: the URL is content-addressed (its bytes never change), so the
-      //    browser + CDN may hold it `immutable`. A republish yields a new version -> a new
-      //    URL, never a stale hit here.
-      //  - WITHOUT ?v= (the front's fallback when /today didn't resolve, or any direct/old
-      //    caller): the URL is NOT content-addressed — the same /?lang= maps to different
-      //    bytes across republishes/days — so it must NOT be cached hard, or a republish stays
-      //    invisible until the entry expires. `no-store` keeps this rare path always fresh.
-      const versioned = Boolean(event.queryStringParameters?.v);
+      // Pass the puzzle through unchanged — its shape is the front's `Puzzle` schema. Every
+      // hit here is version-addressed (the `v` guard above), so the URL is content-addressed
+      // and safe to hold `immutable` on the browser + CDN: a republish yields a new version
+      // -> a new URL, never a stale hit at this one (issue #42).
       return json(200, puzzle, {
         ...cors,
-        'Cache-Control': versioned ? `public, max-age=${PUZZLE_MAX_AGE}, immutable` : 'no-store',
+        'Cache-Control': `public, max-age=${PUZZLE_MAX_AGE}, immutable`,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unexpected error.';

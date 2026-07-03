@@ -44,23 +44,26 @@ export default function usePuzzle(lang: string | null) {
           return;
         }
 
-        // Normal play (issue #42): /today is the FRESH version pointer, so fetch it FIRST
-        // to learn the day id + the puzzle's content `version`, then request the
-        // content-addressed puzzle URL (/?lang=&v=<version>). A republish changes the
-        // version -> a new URL -> a guaranteed cache miss, so the corrected puzzle shows on
-        // a normal reload. If /today fails (network), `version` stays null and we fall back
-        // to the canonical URL — degraded (may be CDN-stale) but not broken.
+        // Normal play (issue #42): /today is the FRESH version pointer AND the front door.
+        // Fetch it first for the day id + the puzzle's content `version`. `version === null`
+        // means there is no puzzle for this lang today -> NO PUZZLE, with no second fetch.
+        // Otherwise request the content-addressed puzzle URL (/?lang=&v=<version>): a
+        // republish changes the version -> a new URL -> a guaranteed cache miss, so the
+        // corrected puzzle shows on a normal reload. The puzzle endpoint REQUIRES `v`, so
+        // there is no canonical fallback — a failed /today is a real error (retryable, #14).
         const todayRes = await fetch(todayUrl(lang));
-        let version: string | null = null;
-        if (todayRes.ok) {
-          const today = (await todayRes.json()) as Today;
-          if (!cancelled) setDayNumber(today.dayNumber);
-          version = today.version ?? null;
+        if (!todayRes.ok) throw new Error(`HTTP ${todayRes.status}`);
+        const today = (await todayRes.json()) as Today;
+        if (!cancelled) setDayNumber(today.dayNumber);
+        const version = today.version ?? null;
+        if (version == null) {
+          if (!cancelled) setNoPuzzle(true);
+          return;
         }
         if (cancelled) return;
         const puzzleRes = await fetch(puzzleUrl(lang, version));
         switch (puzzleOutcome(puzzleRes.status)) {
-          case 'missing': // 404 -> graceful "NO PUZZLE TODAY", not an error screen.
+          case 'missing': // 404 (raced deletion) -> graceful "NO PUZZLE TODAY", not error.
             if (!cancelled) setNoPuzzle(true);
             return;
           case 'error':

@@ -388,18 +388,19 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   published to the store (`pnpm puzzle:publish`). They are no longer kept under
   `web/public/word` — the front serves the day's puzzle from the backend (#6).
 - **Routing (#6) + version-in-URL cache-busting (#42):** normal play asks the
-  **backend** for today's puzzle. `usePuzzle` fetches `GET
-  <VITE_API_BASE_URL>/today?lang=<lang>` **first** — the `no-store` version pointer
-  (`{ date, dayNumber, version, … }`, `version` = the puzzle's S3 ETag) — then `GET
-  …/?lang=<lang>&v=<version>` for the **content-addressed** puzzle (served `immutable`).
-  A republish yields a new `version` → a new URL → a guaranteed CDN + browser miss, so a
-  corrected puzzle shows on a **normal reload with no CloudFront invalidation**; the
-  handler keys only on `lang` (`v` is a pure cache-busting token, added to the CloudFront
-  cache key). If `/today` fails, `version` is null and the fetch falls back to the
-  canonical `/?lang=` — which the backend serves `no-store` (uncached but always fresh),
-  not `immutable`, so the fallback is never stale. The **server owns
-  the date** (22:00 ET flip); the client no longer computes it. A backend **404 →
-  `noPuzzle`** (NO PUZZLE TODAY), any other failure → `error`. The old
+  **backend** for today's puzzle. `/today` is BOTH the day source and the front door:
+  `usePuzzle` fetches `GET <VITE_API_BASE_URL>/today?lang=<lang>` **first** — the
+  `no-store` version pointer (`{ date, dayNumber, version, … }`, `version` = the puzzle's
+  S3 ETag). `version === null` ⇒ **NO PUZZLE** (no second fetch); otherwise it fetches
+  `GET …/?lang=<lang>&v=<version>` for the **content-addressed** puzzle (served
+  `immutable`). A republish yields a new `version` → a new URL → a guaranteed CDN + browser
+  miss, so a corrected puzzle shows on a **normal reload with no CloudFront invalidation**.
+  The handler keys only on `lang` (`v` is an opaque cache-busting token, added to the
+  CloudFront cache key), but **`v` is REQUIRED** — the puzzle endpoint 400s a request
+  without it, so there is **no canonical fallback**: a failed `/today` is a real (retryable,
+  #14) error, not a silent degrade. The **server owns the date** (22:00 ET flip); the client
+  no longer computes it. A backend **404 → `noPuzzle`** (NO PUZZLE TODAY), any other failure
+  → `error`. The old
   `web/src/puzzleSchedule.ts` / `todayKey()` / `PUZZLE_SCHEDULE` are **removed**. Test
   overrides: `?puzzle=<path|url>` loads a static file directly (kept, but the app still
   requires a configured backend base); `?date=` is **dropped** (server owns time).
@@ -482,10 +483,9 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   **IAM-auth Function URL via OAC** (only CloudFront may invoke it). The Lambda gets
   **read-only** S3 (`bucket.grantRead`, which also covers the `HeadObject` the version
   pointer uses). Cache policy keys on path + the `lang` **and `v`** query strings (#42) and
-  honours the origin `Cache-Control` — a **version-addressed** puzzle (`/?lang=&v=`) is
-  served `immutable`, while a **canonical** (`no-v`) puzzle hit and `/today` are `no-store`
-  (only a content-addressed URL may be cached hard; the canonical URL isn't, so it must
-  stay fresh — it's the front's fallback); maxTtl = 1 day.
+  honours the origin `Cache-Control` — the puzzle endpoint **requires `v`** (400 otherwise),
+  so every 200 is version-addressed and served `immutable`; `/today` is `no-store` (the
+  always-fresh version pointer); maxTtl = 1 day.
   Outputs: `ApiUrl` (→ `VITE_API_BASE_URL`), `PuzzleBucketName` (#4 upload target),
   `FunctionUrl`, `DistributionDomainName`. Commands: `pnpm infra:synth` / `infra:diff` /
   `infra:deploy` (root) or `pnpm --filter @whippin/infra <synth|deploy|diff|destroy>`;

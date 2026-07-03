@@ -20,18 +20,14 @@ function requireApiBase(base: string): string {
   return base;
 }
 
-// The active day's puzzle for a language: GET <base>/?lang=<lang>[&v=<version>]. The
-// server resolves which day it is; the client passes only the language. `version` (the
-// content version from /today) is a cache-busting token (issue #42): a corrected puzzle
-// gets a new version -> a new URL -> a guaranteed CDN + browser miss, so the fresh puzzle
-// shows on a normal reload with no CloudFront invalidation. Omitted -> the canonical URL.
-export function puzzleUrl(
-  lang: string,
-  version?: string | null,
-  base: string = apiBase(),
-): string {
-  const v = version ? `&v=${encodeURIComponent(version)}` : '';
-  return `${requireApiBase(base)}/?lang=${encodeURIComponent(lang)}${v}`;
+// The active day's puzzle for a language: GET <base>/?lang=<lang>&v=<version>. The server
+// resolves which day it is; the client passes the language + the content `version` it read
+// from /today. `version` is REQUIRED (issue #42): the endpoint is version-addressed, so a
+// corrected puzzle gets a new version -> a new URL -> a guaranteed CDN + browser miss, and
+// the fresh puzzle shows on a normal reload with no CloudFront invalidation. A request
+// without `v` is a protocol violation the backend rejects with 400.
+export function puzzleUrl(lang: string, version: string, base: string = apiBase()): string {
+  return `${requireApiBase(base)}/?lang=${encodeURIComponent(lang)}&v=${encodeURIComponent(version)}`;
 }
 
 // The server's day metadata + version pointer: GET <base>/today[?lang=<lang>] ->

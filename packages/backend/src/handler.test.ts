@@ -68,7 +68,7 @@ function event(opts: {
 
 describe('puzzle endpoint', () => {
   it('returns the day\'s puzzle for the requested lang, unchanged', async () => {
-    const res = await makeHandler()(event({ query: { lang: 'fr' } }));
+    const res = await makeHandler()(event({ query: { lang: 'fr', v: VERSION } }));
     expect(res.statusCode).toBe(200);
     expect(res.headers['Content-Type']).toMatch(/application\/json/);
     expect(JSON.parse(res.body)).toEqual(PUZZLE);
@@ -82,26 +82,24 @@ describe('puzzle endpoint', () => {
     expect(res.headers['Cache-Control']).toMatch(/max-age=\d+/);
   });
 
-  it('serves the SAME puzzle for a given lang regardless of the `v` token (v is CDN-only)', async () => {
-    // The handler keys only on `lang`; `v` exists purely for the CDN cache key. So a stale
-    // or absent `v` never changes the body the origin returns.
-    const withV = await makeHandler()(event({ query: { lang: 'fr', v: 'stale' } }));
-    const noV = await makeHandler()(event({ query: { lang: 'fr' } }));
-    expect(withV.statusCode).toBe(200);
-    expect(JSON.parse(withV.body)).toEqual(PUZZLE);
-    expect(JSON.parse(noV.body)).toEqual(PUZZLE);
+  it('requires `v` — a puzzle request without the version token is a 400 (#42)', async () => {
+    // The endpoint is version-addressed; a missing `v` is a protocol violation, not a
+    // silently-served puzzle at a non-content-addressed URL.
+    const res = await makeHandler()(event({ query: { lang: 'fr' } }));
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).error).toBe('bad_request');
   });
 
-  it('a canonical (no-`v`) hit is `no-store`, NOT immutable — it is not content-addressed', async () => {
-    // Only a version-addressed URL may be cached hard; the plain /?lang= URL maps to
-    // different bytes across republishes, so caching it immutable would pin a stale puzzle.
-    const res = await makeHandler()(event({ query: { lang: 'fr' } }));
+  it('`v` is an opaque cache token — any non-empty value serves the current puzzle unchanged', async () => {
+    // The handler keys only on `lang`; `v` never changes the body (it exists for the CDN
+    // cache key), so a stale/garbage-but-present `v` still returns the current puzzle.
+    const res = await makeHandler()(event({ query: { lang: 'fr', v: 'anything' } }));
     expect(res.statusCode).toBe(200);
-    expect(res.headers['Cache-Control']).toBe('no-store');
+    expect(JSON.parse(res.body)).toEqual(PUZZLE);
   });
 
   it('missing puzzle -> clean JSON 404, never 500', async () => {
-    const res = await makeHandler()(event({ query: { lang: 'en' } }));
+    const res = await makeHandler()(event({ query: { lang: 'en', v: 'x' } }));
     expect(res.statusCode).toBe(404);
     const body = JSON.parse(res.body);
     expect(body.error).toBe('not_found');
@@ -134,7 +132,7 @@ describe('puzzle endpoint', () => {
       now: () => FIXED_NOW,
       allowedOrigin: ORIGIN,
     });
-    const res = await handler(event({ query: { lang: 'fr' } }));
+    const res = await handler(event({ query: { lang: 'fr', v: 'x' } }));
     expect(res.statusCode).toBe(500);
     expect(JSON.parse(res.body).error).toBe('internal_error');
   });
