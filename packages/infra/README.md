@@ -74,9 +74,11 @@ clicking** for the `AWS_DEPLOY_ROLE_ARN` the [Deploy workflow](../../.github/wor
 uses:
 
 - **GitHub OIDC provider** — `token.actions.githubusercontent.com`, audience
-  `sts.amazonaws.com`. Only **one provider per URL** is allowed per account; if the account
-  already has it, import it instead with `-c githubOidcProviderArn=<arn>` (find it via
-  `aws iam list-open-id-connect-providers`).
+  `sts.amazonaws.com`. It is **account-global** (one per URL), so by default the stack
+  **imports** the account's existing provider (deriving its ARN from the account id, no
+  hardcoding). On a brand-new account that has none yet, pass `-c createOidcProvider=true`
+  on the first deploy to create it. (`-c githubOidcProviderArn=<arn>` imports a specific
+  one if you ever need to.)
 - **Prod deploy role** (`whippin-github-deploy`) — trusted **only** by this repo's Actions
   and **only** for pushes on `main` (subject
   `repo:<owner>/<repo>:ref:refs/heads/main`). Its permissions are minimal: `sts:AssumeRole`
@@ -91,10 +93,10 @@ uses:
 pnpm --filter @whippin/infra deploy WhippinDeployStack
 # Copy the printed DeployRoleArn into the GitHub repo secret AWS_DEPLOY_ROLE_ARN.
 
-# Point it at a different repo / branch, or reuse an existing OIDC provider:
+# Point it at a different repo / branch (the account's OIDC provider is imported by
+# default; add -c createOidcProvider=true only on an account that doesn't have one yet):
 pnpm --filter @whippin/infra deploy WhippinDeployStack \
-  -c githubOwner=me -c githubRepo=myrepo -c deployBranch=main \
-  -c githubOidcProviderArn=arn:aws:iam::<acct>:oidc-provider/token.actions.githubusercontent.com
+  -c githubOwner=me -c githubRepo=myrepo -c deployBranch=main
 ```
 
 > **Why a human deploys this, not CI.** The deploy role deliberately **cannot create or

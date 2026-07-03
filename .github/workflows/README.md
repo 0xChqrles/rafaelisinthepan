@@ -54,8 +54,8 @@ for the full picture (branch/preview knobs, importing an existing OIDC provider,
 this stack is human-deployed rather than run by CI). In short, the stack creates:
 
 - A GitHub OIDC provider (`token.actions.githubusercontent.com`, audience
-  `sts.amazonaws.com`) — or reuse an existing one with
-  `-c githubOidcProviderArn=<arn>` (only one per URL is allowed per account).
+  `sts.amazonaws.com`) — account-global, so the stack **imports** the account's existing
+  one by default; pass `-c createOidcProvider=true` only on an account that has none yet.
 - A role trusted only by this repo, scoped to `main` pushes
   (`repo:0xChqrles/rafaelisinthepan:ref:refs/heads/main`), whose permissions are just
   `sts:AssumeRole` on the `cdk-hnb659fds-*` bootstrap roles + `cloudformation:DescribeStacks`

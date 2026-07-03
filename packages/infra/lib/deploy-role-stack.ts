@@ -23,10 +23,14 @@ export interface DeployRoleStackProps extends StackProps {
   // a real preview boundary also needs a lower-privilege target, so this switch alone is
   // step one, not the whole story.
   enablePreviewRole?: boolean;
-  // Import an EXISTING account-level GitHub OIDC provider by ARN instead of creating one.
-  // Only ONE provider per URL is allowed per account, so if the account already has the
-  // GitHub provider (e.g. from an earlier console attempt) pass its ARN here; otherwise
-  // leave unset and this stack creates it.
+  // The GitHub OIDC provider is ACCOUNT-GLOBAL — at most ONE per URL per account. By
+  // default this stack IMPORTS the account's existing provider (its ARN is derived from
+  // the account id below, so nothing is hardcoded): GitHub's provider is very often
+  // already present, and creating a duplicate fails with `EntityAlreadyExists`. Set
+  // `createOidcProvider` only on a fresh account that has none yet.
+  createOidcProvider?: boolean;
+  // Import a SPECIFIC provider ARN (overrides both defaults above). Rarely needed — the
+  // derived account ARN already targets the standard GitHub provider.
   githubOidcProviderArn?: string;
 }
 
@@ -44,17 +48,22 @@ export class DeployRoleStack extends Stack {
     const deployBranch = props.deployBranch ?? 'main';
     const repo = `${githubOwner}/${githubRepo}`;
 
-    // ── GitHub OIDC provider (account-level; import or create) ─────────────────
-    const provider: iam.IOpenIdConnectProvider = props.githubOidcProviderArn
-      ? iam.OpenIdConnectProvider.fromOpenIdConnectProviderArn(
-          this,
-          'GitHubOidc',
-          props.githubOidcProviderArn,
-        )
-      : new iam.OpenIdConnectProvider(this, 'GitHubOidc', {
+    // ── GitHub OIDC provider (account-global; import by default, create if asked) ──
+    // The provider is one-per-account, so the common case is that it already exists:
+    // IMPORT the account's provider via its derived ARN (built from AWS::AccountId, no
+    // hardcoded account). Only `createOidcProvider` makes a new one (a fresh account),
+    // and `githubOidcProviderArn` imports a specific ARN if ever needed.
+    const derivedProviderArn = `arn:${Aws.PARTITION}:iam::${Aws.ACCOUNT_ID}:oidc-provider/${GITHUB_OIDC_DOMAIN}`;
+    const provider: iam.IOpenIdConnectProvider = props.createOidcProvider
+      ? new iam.OpenIdConnectProvider(this, 'GitHubOidc', {
           url: GITHUB_OIDC_URL,
           clientIds: [AUDIENCE],
-        });
+        })
+      : iam.OpenIdConnectProvider.fromOpenIdConnectProviderArn(
+          this,
+          'GitHubOidc',
+          props.githubOidcProviderArn ?? derivedProviderArn,
+        );
 
     // ── What a role may DO ─────────────────────────────────────────────────────
     // Modern CDK deploys ENTIRELY through the account's `cdk bootstrap` roles: the CLI

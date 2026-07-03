@@ -70,8 +70,10 @@ new DeployRoleStack(app, 'WhippinDeployStack', {
   githubRepo: app.node.tryGetContext('githubRepo') ?? 'rafaelisinthepan',
   deployBranch: app.node.tryGetContext('deployBranch') ?? 'main',
   enablePreviewRole: `${app.node.tryGetContext('enablePreviewRole') ?? ''}` === 'true',
-  // Set `-c githubOidcProviderArn=arn:aws:iam::<acct>:oidc-provider/token.actions.githubusercontent.com`
-  // to reuse a provider the account already has (only one per URL is allowed).
+  // The account GitHub OIDC provider is imported by default (it's one-per-account and
+  // usually already exists). On a fresh account with none, `-c createOidcProvider=true`
+  // creates it; `-c githubOidcProviderArn=<arn>` imports a specific one.
+  createOidcProvider: `${app.node.tryGetContext('createOidcProvider') ?? ''}` === 'true',
   githubOidcProviderArn: app.node.tryGetContext('githubOidcProviderArn') ?? undefined,
   env,
 });
