@@ -1,5 +1,11 @@
 import { useCallback, useState, type PointerEvent } from 'react';
 import { LAYOUTS, canExtend, type Layout } from '../game/keyboard';
+// Inline SVG components (vite-plugin-svgr `?react`): they render into the DOM and paint
+// with `fill="currentColor"`, so each control key's icon inherits its `color` — muted for
+// backspace, accent for enter, dimmed when greyed. Icons are decorative; the button's
+// aria-label names it, so the SVG is aria-hidden.
+import EnterIcon from '../assets/icons/enter.svg?react';
+import BackIcon from '../assets/icons/back.svg?react';
 
 interface KeyboardProps {
   // Current input (a folded slug prefix: [a-z] + internal dashes).
@@ -92,7 +98,7 @@ export default function Keyboard({
               onPointerDown={(e) => press(e, () => (enterActive ? onSubmit(input) : triggerShake('enter')))}
               onAnimationEnd={() => setShake((prev) => (prev?.id === 'enter' ? null : prev))}
             >
-              OK
+              <EnterIcon className="kb-icon" aria-hidden />
             </button>
           )}
           {row.map(renderLetter)}
@@ -114,7 +120,7 @@ export default function Keyboard({
                 className="kb-key kb-control kb-back kb-edge"
                 onPointerDown={(e) => press(e, onBackspace)}
               >
-                DEL
+                <BackIcon className="kb-icon" aria-hidden />
               </button>
             </>
           )}

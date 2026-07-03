@@ -398,6 +398,29 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   `web/.env.example`) configures the backend base and is required for `pnpm dev` /
   `pnpm build`; the frontend must not silently use its own origin as the backend.
   `usePuzzle` exposes `dayNumber` for persist (#7) / already-solved (#9).
+- **SVG icons (pattern to follow):** monochrome UI icons live as `.svg` files under
+  `web/src/assets/icons/` and are imported as **inline React components** via
+  `vite-plugin-svgr` — `import Icon from '../assets/icons/name.svg?react'` (the `?react`
+  query is what returns a component; a plain import would return a URL string). Rendering the
+  SVG **into the DOM** (not via `<img src>`) is what lets it inherit color, so:
+  - **Icons paint with `fill="currentColor"`** and carry **no hardcoded color** — the SVG
+    root sets `fill="currentColor"` once and every child inherits it. Color/greyed/theme
+    states then come **only** from the consuming element's CSS `color` (e.g. the control
+    keys' `.kb-control` / `.kb-enter` / `.kb-greyed`). Never bake a hex/`fill` into an icon
+    meant to tint with its surroundings.
+  - **Strip the editor cruft.** Keep only `xmlns`, `viewBox`, `fill="currentColor"`, and the
+    shape elements. **Remove** the `<?xml …?>` prolog, `id`/`data-name` (Illustrator layer
+    junk), and intrinsic `width`/`height` (size in CSS instead; `viewBox` preserves aspect
+    ratio — a fixed `width`/`height` would fight the CSS size). This is what "remove the
+    useless attributes" means for any new icon.
+  - **Size in CSS, keep the aspect ratio.** Give the icon a class and set **one** dimension
+    (here `.kb-icon { height: 30%; width: auto }`) so `viewBox` scales the other; prefer a
+    key-relative unit so it tracks responsive sizing without per-breakpoint rules. For
+    pixel-art glyphs add `shape-rendering: crispEdges` to match the pixel font.
+  - **Accessibility:** the SVG is **decorative** — pass `aria-hidden` on the component and
+    let the surrounding `<button>`'s `aria-label` name the control.
+  The type for `?react` imports comes from the `vite-plugin-svgr/client` reference in
+  `web/src/vite-env.d.ts`; the plugin is registered **before** `react()` in `vite.config.ts`.
 - **On-screen keyboard (#36):** the guess input has **no native `<input>`** — the old
   focus/refocus dance is gone, so the mobile soft keyboard never opens. `WordInput` is
   now just the visual prompt + a **window `keydown`/`paste` listener** for the physical
@@ -415,7 +438,10 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   currently a fixed **QWERTY** (`Game` hardcodes it; `LAYOUTS` still defines AZERTY and
   `gameStore` retains a persisted `layout` field, but there is **no in-UI layout switch**
   yet). Keys are a uniform fixed size (not flex-grown), each row centered; the last row is
-  `OK` + letters + dash + `DEL` sized like letters so it fits the keyboard width exactly.
+  the **enter icon** + letters + dash + the **backspace icon** sized like letters so it fits
+  the keyboard width exactly. The two control keys render `assets/icons/{enter,back}.svg` as
+  inline SVG components (see **SVG icons** below), not text; the button `aria-label`
+  (`enter` / `backspace`) is what names them.
 - **Local backend harness (#17):** `pnpm backend:dev` runs the **same `createHandler`**
   as the deployed Lambda over a local filesystem store (`fsStore`), so the day/404/CORS/
   `Puzzle` behaviour is identical to prod with no AWS creds. `pnpm puzzle:publish

@@ -589,16 +589,24 @@ button * {
 .kb-key:not(.kb-greyed):active {
   filter: brightness(1.35);
 }
-/* Control keys (backspace "DEL", enter "OK") are the SAME fixed size as letters, so the
-   last row is a uniform row of keys that fits the keyboard width exactly (QWERTY's last
-   row is 10 keys — OK + 7 letters + dash + DEL — aligning with the top row). Smaller
-   label font so the 2–3 char text fits a letter-width key on narrow phones. */
+/* Control keys (backspace, enter) are the SAME fixed size as letters, so the last row is a
+   uniform row of keys that fits the keyboard width exactly (QWERTY's last row is 10 keys —
+   enter + 7 letters + dash + backspace — aligning with the top row). They hold an SVG icon
+   (.kb-icon) instead of text; `color` only tints it via currentColor. */
 .kb-control {
-  font-size: clamp(8px, 1.7vw, 12px);
   color: var(--muted);
 }
 .kb-enter {
   color: var(--accent);
+}
+/* Control-key glyph: an inline currentColor SVG. Sized by % of the key so it tracks the
+   responsive key height (desktop + mobile) with no per-breakpoint rule; the viewBox keeps
+   its aspect ratio. crispEdges keeps the pixel-art icon hard-edged to match the pixel font. */
+.kb-icon {
+  display: block;
+  width: auto;
+  height: 30%;
+  shape-rendering: crispEdges;
 }
 /* Greyed key: cannot extend the current input into any real word (letters/dash), or the
    input is not yet a complete word (Enter). Dimmed, no active feedback — a tap only shakes. */
