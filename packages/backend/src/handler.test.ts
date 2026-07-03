@@ -32,11 +32,15 @@ const PUZZLE: Puzzle = {
 const FIXED_NOW = new Date('2026-06-29T14:00:00Z');
 const ACTIVE_DATE = '2026-06-29';
 const ORIGIN = 'https://whippin.example';
+const VERSION = 'abc123def456'; // the content version the fake store reports for fr today
 
 function fakeStore(): PuzzleStore {
   return {
     async getPuzzle(date, lang) {
       return date === ACTIVE_DATE && lang === 'fr' ? PUZZLE : null;
+    },
+    async version(date, lang) {
+      return date === ACTIVE_DATE && lang === 'fr' ? VERSION : null;
     },
   };
 }
@@ -64,20 +68,38 @@ function event(opts: {
 
 describe('puzzle endpoint', () => {
   it('returns the day\'s puzzle for the requested lang, unchanged', async () => {
-    const res = await makeHandler()(event({ query: { lang: 'fr' } }));
+    const res = await makeHandler()(event({ query: { lang: 'fr', v: VERSION } }));
     expect(res.statusCode).toBe(200);
     expect(res.headers['Content-Type']).toMatch(/application\/json/);
     expect(JSON.parse(res.body)).toEqual(PUZZLE);
   });
 
-  it('sets CORS + daily Cache-Control on a hit', async () => {
-    const res = await makeHandler()(event({ query: { lang: 'fr' } }));
+  it('sets CORS + an immutable Cache-Control on a hit (version-addressed URL, #42)', async () => {
+    const res = await makeHandler()(event({ query: { lang: 'fr', v: VERSION } }));
     expect(res.headers['Access-Control-Allow-Origin']).toBe(ORIGIN);
+    // The puzzle URL is content-addressed by `v`, so its bytes never change -> immutable.
+    expect(res.headers['Cache-Control']).toMatch(/immutable/);
     expect(res.headers['Cache-Control']).toMatch(/max-age=\d+/);
   });
 
+  it('requires `v` — a puzzle request without the version token is a 400 (#42)', async () => {
+    // The endpoint is version-addressed; a missing `v` is a protocol violation, not a
+    // silently-served puzzle at a non-content-addressed URL.
+    const res = await makeHandler()(event({ query: { lang: 'fr' } }));
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).error).toBe('bad_request');
+  });
+
+  it('`v` is an opaque cache token — any non-empty value serves the current puzzle unchanged', async () => {
+    // The handler keys only on `lang`; `v` never changes the body (it exists for the CDN
+    // cache key), so a stale/garbage-but-present `v` still returns the current puzzle.
+    const res = await makeHandler()(event({ query: { lang: 'fr', v: 'anything' } }));
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual(PUZZLE);
+  });
+
   it('missing puzzle -> clean JSON 404, never 500', async () => {
-    const res = await makeHandler()(event({ query: { lang: 'en' } }));
+    const res = await makeHandler()(event({ query: { lang: 'en', v: 'x' } }));
     expect(res.statusCode).toBe(404);
     const body = JSON.parse(res.body);
     expect(body.error).toBe('not_found');
@@ -103,11 +125,14 @@ describe('puzzle endpoint', () => {
         async getPuzzle() {
           throw new Error('s3 boom');
         },
+        async version() {
+          throw new Error('s3 boom');
+        },
       },
       now: () => FIXED_NOW,
       allowedOrigin: ORIGIN,
     });
-    const res = await handler(event({ query: { lang: 'fr' } }));
+    const res = await handler(event({ query: { lang: 'fr', v: 'x' } }));
     expect(res.statusCode).toBe(500);
     expect(JSON.parse(res.body).error).toBe('internal_error');
   });
@@ -123,7 +148,7 @@ describe('CORS preflight', () => {
   });
 });
 
-describe('today metadata endpoint', () => {
+describe('today metadata + version pointer endpoint (#42)', () => {
   it('exposes the server day and reset info', async () => {
     const res = await makeHandler()(event({ path: '/today' }));
     expect(res.statusCode).toBe(200);
@@ -133,5 +158,26 @@ describe('today metadata endpoint', () => {
     expect(body.timeZone).toBe('America/New_York');
     expect(typeof body.secondsUntilNextReset).toBe('number');
     expect(body.nextResetAt).toBe('2026-06-30T02:00:00.000Z');
+  });
+
+  it('carries the current puzzle version for the requested lang', async () => {
+    const res = await makeHandler()(event({ path: '/today', query: { lang: 'fr' } }));
+    expect(JSON.parse(res.body).version).toBe(VERSION);
+  });
+
+  it('is never cached (no-store) so it always reflects the current version', async () => {
+    const res = await makeHandler()(event({ path: '/today', query: { lang: 'fr' } }));
+    expect(res.headers['Cache-Control']).toBe('no-store');
+  });
+
+  it('version is null when the lang has no puzzle, or when lang is absent/invalid', async () => {
+    const noPuzzle = await makeHandler()(event({ path: '/today', query: { lang: 'en' } }));
+    expect(JSON.parse(noPuzzle.body).version).toBeNull();
+
+    const noLang = await makeHandler()(event({ path: '/today' }));
+    expect(JSON.parse(noLang.body).version).toBeNull();
+
+    const badLang = await makeHandler()(event({ path: '/today', query: { lang: 'EN' } }));
+    expect(JSON.parse(badLang.body).version).toBeNull();
   });
 });

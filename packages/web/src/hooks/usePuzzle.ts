@@ -44,17 +44,26 @@ export default function usePuzzle(lang: string | null) {
           return;
         }
 
-        // Normal play: ask the backend for the day's puzzle + the server's day id.
-        const [todayRes, puzzleRes] = await Promise.all([
-          fetch(todayUrl()),
-          fetch(puzzleUrl(lang)),
-        ]);
-        if (todayRes.ok) {
-          const today = (await todayRes.json()) as Today;
-          if (!cancelled) setDayNumber(today.dayNumber);
+        // Normal play (issue #42): /today is the FRESH version pointer AND the front door.
+        // Fetch it first for the day id + the puzzle's content `version`. `version === null`
+        // means there is no puzzle for this lang today -> NO PUZZLE, with no second fetch.
+        // Otherwise request the content-addressed puzzle URL (/?lang=&v=<version>): a
+        // republish changes the version -> a new URL -> a guaranteed cache miss, so the
+        // corrected puzzle shows on a normal reload. The puzzle endpoint REQUIRES `v`, so
+        // there is no canonical fallback — a failed /today is a real error (retryable, #14).
+        const todayRes = await fetch(todayUrl(lang));
+        if (!todayRes.ok) throw new Error(`HTTP ${todayRes.status}`);
+        const today = (await todayRes.json()) as Today;
+        if (!cancelled) setDayNumber(today.dayNumber);
+        const version = today.version ?? null;
+        if (version == null) {
+          if (!cancelled) setNoPuzzle(true);
+          return;
         }
+        if (cancelled) return;
+        const puzzleRes = await fetch(puzzleUrl(lang, version));
         switch (puzzleOutcome(puzzleRes.status)) {
-          case 'missing': // 404 -> graceful "NO PUZZLE TODAY", not an error screen.
+          case 'missing': // 404 (raced deletion) -> graceful "NO PUZZLE TODAY", not error.
             if (!cancelled) setNoPuzzle(true);
             return;
           case 'error':

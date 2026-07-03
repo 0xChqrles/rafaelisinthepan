@@ -25,22 +25,24 @@ describe('apiBase', () => {
 describe('backend routing URLs', () => {
   const base = 'https://api.example';
 
-  it('puzzleUrl asks the backend for the day, passing only lang', () => {
-    expect(puzzleUrl('fr', base)).toBe('https://api.example/?lang=fr');
-    expect(puzzleUrl('en', base)).toBe('https://api.example/?lang=en');
+  it('puzzleUrl is version-addressed: it always carries the required `v` token (#42)', () => {
+    expect(puzzleUrl('fr', 'abc123', base)).toBe('https://api.example/?lang=fr&v=abc123');
+    expect(puzzleUrl('en', 'def456', base)).toBe('https://api.example/?lang=en&v=def456');
   });
 
-  it('puzzleUrl encodes the lang query value', () => {
-    expect(puzzleUrl('a b', base)).toBe('https://api.example/?lang=a%20b');
+  it('puzzleUrl encodes the lang and version query values', () => {
+    expect(puzzleUrl('a b', 'v/1"', base)).toBe('https://api.example/?lang=a%20b&v=v%2F1%22');
   });
 
-  it('todayUrl points at the server day-metadata endpoint', () => {
-    expect(todayUrl(base)).toBe('https://api.example/today');
+  it('todayUrl points at the server day-metadata + version pointer, passing lang (#42)', () => {
+    expect(todayUrl('fr', base)).toBe('https://api.example/today?lang=fr');
+    // lang is optional: callers that only need dayNumber (useToday) omit it.
+    expect(todayUrl(undefined, base)).toBe('https://api.example/today');
   });
 
   it('fails loudly when the backend base is unset instead of using the web origin', () => {
-    expect(() => puzzleUrl('fr', '')).toThrow(/VITE_API_BASE_URL/);
-    expect(() => todayUrl('')).toThrow(/VITE_API_BASE_URL/);
+    expect(() => puzzleUrl('fr', 'v1', '')).toThrow(/VITE_API_BASE_URL/);
+    expect(() => todayUrl('fr', '')).toThrow(/VITE_API_BASE_URL/);
   });
 });
 

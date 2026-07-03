@@ -28,6 +28,12 @@ export interface HandlerDeps {
 // instead of being negatively cached until the next daily flip.
 const NOT_FOUND_MAX_AGE = 60;
 
+// The versioned puzzle URL (/?lang=&v=<version>) is content-addressed: a given `v` maps to
+// bytes that never change, so it can be cached hard on both the CDN and the browser. A
+// republish yields a NEW version -> a NEW URL, so nothing here ever serves stale (issue
+// #42). One day comfortably covers a puzzle's live window (and matches the CDN maxTtl).
+const PUZZLE_MAX_AGE = 86_400;
+
 const LANG_RE = /^[a-z]{2}$/;
 
 function route(rawPath: string | undefined): 'today' | 'puzzle' {
@@ -35,8 +41,8 @@ function route(rawPath: string | undefined): 'today' | 'puzzle' {
   return path.endsWith('/today') ? 'today' : 'puzzle';
 }
 
-// Cache-Control aligned to the daily flip: a puzzle stays fresh exactly until the next
-// 22:00 ET reset, so the CDN serves it cache-hot all day and revalidates at the boundary.
+// Cache-Control aligned to the daily flip: used for the negative (404) TTL so a late upload
+// becomes playable soon instead of being negatively cached until the next 22:00 ET reset.
 function dailyCacheControl(ttl: number): string {
   return `public, max-age=${ttl}, s-maxage=${ttl}`;
 }
@@ -63,6 +69,16 @@ export function createHandler(deps: HandlerDeps) {
       const date = activeDate(instant, dayOpts);
 
       if (route(event.rawPath) === 'today') {
+        // /today is the FRESH version pointer (issue #42): it carries the current puzzle
+        // `version` so the client can request the content-addressed /?lang=&v=<version>
+        // URL. It must never be cached — else it could hand out a stale version and defeat
+        // the whole scheme — so it is `no-store`. `version` is per-lang; when `lang` is
+        // absent/invalid it is null (date/dayNumber are still useful without it).
+        const todayLang = event.queryStringParameters?.lang;
+        const version =
+          todayLang && LANG_RE.test(todayLang)
+            ? await deps.store.version(date, todayLang)
+            : null;
         return json(
           200,
           {
@@ -72,8 +88,9 @@ export function createHandler(deps: HandlerDeps) {
             resetHour: dayOpts.resetHour,
             nextResetAt: nextResetAt(instant, dayOpts).toISOString(),
             secondsUntilNextReset: secondsUntilNextReset(instant, dayOpts),
+            version,
           },
-          { ...cors, 'Cache-Control': dailyCacheControl(secondsUntilNextReset(instant, dayOpts)) },
+          { ...cors, 'Cache-Control': 'no-store' },
         );
       }
 
@@ -83,6 +100,22 @@ export function createHandler(deps: HandlerDeps) {
           400,
           'bad_request',
           'Query parameter "lang" is required (two lowercase letters, e.g. "fr").',
+          cors,
+        );
+      }
+
+      // The puzzle endpoint is version-addressed (issue #42): the client must carry the
+      // `v` token it read from /today. Requiring it makes the contract explicit — a request
+      // without `v` is a protocol violation, so 400 rather than silently serving a puzzle at
+      // a non-content-addressed URL (which could then be cached wrong). `v` is not validated
+      // against the current version: it's an opaque cache key, so any non-empty value is a
+      // 200 with the current puzzle. The front reaches here only for a version /today
+      // reported as present, so a stale/garbage `v` never happens in normal play.
+      if (!event.queryStringParameters?.v) {
+        return errorResponse(
+          400,
+          'bad_request',
+          'Query parameter "v" is required — read it from /today?lang= (issue #42).',
           cors,
         );
       }
@@ -99,10 +132,13 @@ export function createHandler(deps: HandlerDeps) {
         );
       }
 
-      // Pass the puzzle through unchanged — its shape is the front's `Puzzle` schema.
+      // Pass the puzzle through unchanged — its shape is the front's `Puzzle` schema. Every
+      // hit here is version-addressed (the `v` guard above), so the URL is content-addressed
+      // and safe to hold `immutable` on the browser + CDN: a republish yields a new version
+      // -> a new URL, never a stale hit at this one (issue #42).
       return json(200, puzzle, {
         ...cors,
-        'Cache-Control': dailyCacheControl(secondsUntilNextReset(instant, dayOpts)),
+        'Cache-Control': `public, max-age=${PUZZLE_MAX_AGE}, immutable`,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unexpected error.';
