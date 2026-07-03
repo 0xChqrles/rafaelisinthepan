@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { buildPrefixSet } from '../game/keyboard';
 
 // The fixed vocabulary (existence set) for a language is immutable across puzzles
@@ -30,6 +30,11 @@ export default function useVocab(lang: string | null) {
     () => (lang ? cache.get(lang) ?? null : null),
   );
   const [error, setError] = useState<unknown | null>(null);
+  // Bumped by retry() to re-run the fetch after a transient/unexpected failure — kept
+  // consistent with usePuzzle so vocab errors offer the same retry (issue #14). A
+  // failed load caches nothing, so retry simply re-fetches.
+  const [reloadTick, setReloadTick] = useState(0);
+  const retry = useCallback(() => setReloadTick((t) => t + 1), []);
 
   useEffect(() => {
     setError(null);
@@ -50,11 +55,16 @@ export default function useVocab(lang: string | null) {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })
-      .then((arr: string[]) => {
+      .then((data: unknown) => {
+        // Guard the shape: a truncated/wrong body is valid JSON but not a string[] —
+        // catch it here so it surfaces as the error state, not a later crash.
+        if (!Array.isArray(data) || !data.every((w) => typeof w === 'string')) {
+          throw new Error('malformed vocab: expected an array of strings');
+        }
         // Build both Sets in one pass at load. buildPrefixSet is a single linear
         // scan; measured on the ~400k-word vocabs it stays well under the load screen.
-        const vocabSet = new Set(arr);
-        const prefixSet = buildPrefixSet(arr);
+        const vocabSet = new Set(data);
+        const prefixSet = buildPrefixSet(data);
         const value: Vocab = { vocabSet, prefixSet };
         cache.set(lang, value);
         if (!cancelled) setVocab(value);
@@ -65,7 +75,7 @@ export default function useVocab(lang: string | null) {
     return () => {
       cancelled = true;
     };
-  }, [lang]);
+  }, [lang, reloadTick]);
 
-  return { vocab, error };
+  return { vocab, error, retry };
 }

@@ -5,7 +5,7 @@
 // backend is the graceful "no puzzle today" state, not an error.
 
 import { describe, it, expect } from 'vitest';
-import { apiBase, puzzleUrl, todayUrl, resolveOverride, puzzleOutcome } from './api';
+import { apiBase, puzzleUrl, todayUrl, resolveOverride, puzzleOutcome, parsePuzzle } from './api';
 
 describe('apiBase', () => {
   it('reads VITE_API_BASE_URL and trims trailing slashes', () => {
@@ -82,5 +82,80 @@ describe('puzzleOutcome (graceful 404)', () => {
   it('any other status -> a real error', () => {
     expect(puzzleOutcome(500)).toBe('error');
     expect(puzzleOutcome(403)).toBe('error');
+  });
+});
+
+// CONTRACT: the per-puzzle JSON schema (issue #14). A fetched puzzle of the wrong
+// shape (truncated body, wrong file behind ?puzzle=, store/CDN mishap) must surface as
+// an ERROR — parsePuzzle throws — rather than crash Game mid-render. Assert against the
+// schema in AGENTS.md, not the implementation: lang, words[], each hole's {secret,start}
+// {word,slug} + start_rank, and a ranks map with an entry for every secret slug.
+describe('parsePuzzle (shape validation)', () => {
+  // A minimal well-formed puzzle per the schema (accents kept in words/display forms).
+  const valid = () => ({
+    lang: 'fr',
+    words: ['la', 'forêt', 'ancienne'],
+    holes: [
+      {
+        pos: 1,
+        secret: { word: 'forêt', slug: 'foret' },
+        start: { word: 'bois', slug: 'bois' },
+        start_rank: 87,
+      },
+    ],
+    ranks: {
+      foret: { bois: { word: 'bois', rank: 87 } },
+    },
+  });
+
+  it('accepts and returns a well-formed puzzle unchanged', () => {
+    const p = valid();
+    expect(parsePuzzle(p)).toEqual(p);
+  });
+
+  it('rejects non-objects (null, array, primitive)', () => {
+    expect(() => parsePuzzle(null)).toThrow(/malformed puzzle/);
+    expect(() => parsePuzzle([])).toThrow(/malformed puzzle/);
+    expect(() => parsePuzzle('nope')).toThrow(/malformed puzzle/);
+  });
+
+  it('rejects a missing or non-string lang', () => {
+    const p = valid() as Record<string, unknown>;
+    delete p.lang;
+    expect(() => parsePuzzle(p)).toThrow(/lang/);
+  });
+
+  it('rejects words that are not an array of strings', () => {
+    const p = valid();
+    (p as { words: unknown }).words = ['ok', 3];
+    expect(() => parsePuzzle(p)).toThrow(/words/);
+  });
+
+  it('rejects holes that are not an array', () => {
+    const p = valid();
+    (p as { holes: unknown }).holes = {};
+    expect(() => parsePuzzle(p)).toThrow(/holes/);
+  });
+
+  it('rejects a hole missing a {word,slug} secret/start or a numeric start_rank', () => {
+    const noSlug = valid();
+    (noSlug.holes[0].secret as { slug?: string }).slug = undefined;
+    expect(() => parsePuzzle(noSlug)).toThrow(/holes/);
+
+    const badRank = valid();
+    (badRank.holes[0] as { start_rank: unknown }).start_rank = '87';
+    expect(() => parsePuzzle(badRank)).toThrow(/holes/);
+  });
+
+  it('rejects a ranks map missing an entry for a secret slug', () => {
+    const p = valid();
+    (p as { ranks: Record<string, unknown> }).ranks = {}; // no "foret" key
+    expect(() => parsePuzzle(p)).toThrow(/ranks/);
+  });
+
+  it('rejects a non-object ranks', () => {
+    const p = valid();
+    (p as { ranks: unknown }).ranks = [];
+    expect(() => parsePuzzle(p)).toThrow(/ranks/);
   });
 });

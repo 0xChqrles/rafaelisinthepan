@@ -68,6 +68,15 @@ button * {
   color: var(--danger);
 }
 
+/* A failed load: the error message stacked above a RETRY (issue #14). Centered like
+   the bare .status states it replaces. */
+.load-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
 /* ===================== language screen ===================== */
 .lang-screen {
   text-align: center;
@@ -704,7 +713,8 @@ button * {
      max-width caps them to the viewport so a long title / the flag grid wrap
      within it instead of sizing to content and overflowing (h-scroll / clipping). */
   .lang-screen,
-  .app > .status {
+  .app > .status,
+  .app > .load-error {
     margin: auto 0;
     max-width: 100%;
   }

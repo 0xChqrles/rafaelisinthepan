@@ -2,7 +2,8 @@ import { useEffect } from 'react';
 import usePuzzle from './hooks/usePuzzle';
 import LanguageSelect from './screens/LanguageSelect';
 import Game from './screens/Game';
-import FlagButton from './components/FlagButton';
+import LoadError from './components/LoadError';
+import NoPuzzle from './components/NoPuzzle';
 import { useGameStore } from './state/gameStore';
 import { useLocation, navigate } from './routing';
 import { parseRoute, resolveHomeLang, pathForLang, type LangCode } from './langs';
@@ -31,10 +32,10 @@ export default function App() {
 }
 
 // One puzzle route (/fr, /en). Loads the day's puzzle for the language and records it
-// as the last-played one. The HUD flag shows the LOADED puzzle's language (falling back
-// to the route language until it resolves), so it is always the flag of what's on screen.
+// as the last-played one. There is no header until the puzzle loads — Game owns the HUD
+// (flag + progress bar), so it always shows the loaded puzzle's language.
 function GameRoute({ lang }: { lang: LangCode }) {
-  const { puzzle, dayNumber, error, loading, noPuzzle } = usePuzzle(lang);
+  const { puzzle, dayNumber, error, loading, noPuzzle, retry } = usePuzzle(lang);
   const setLastLang = useGameStore((s) => s.setLastLang);
 
   // Visiting a puzzle route makes this the last-played language (seeds the `/` redirect).
@@ -42,22 +43,14 @@ function GameRoute({ lang }: { lang: LangCode }) {
     setLastLang(lang);
   }, [lang, setLastLang]);
 
-  const flagLang = puzzle?.lang ?? lang;
-
   return (
     <>
-      {/* Non-game states (loading / error / no puzzle) get a bare HUD with just the
-          flag; once a puzzle loads, Game renders the full HUD (flag + progress bar), so
-          exactly one HUD shows at a time. */}
-      {!puzzle && (
-        <div className="hud">
-          <FlagButton lang={flagLang} />
-        </div>
-      )}
-
+      {/* The header (HUD) only exists once a puzzle is loaded — Game renders it itself
+          (flag + progress bar). The transient states below are header-less: loading /
+          error show a bare status, and `noPuzzle` shows its own CHANGE LANGUAGE screen. */}
       {loading && <p className="status">LOADING&hellip;</p>}
-      {error !== null && <p className="status error">FAILED TO LOAD PUZZLE</p>}
-      {noPuzzle && <p className="status">NO PUZZLE TODAY</p>}
+      {error !== null && <LoadError message="FAILED TO LOAD PUZZLE" onRetry={retry} />}
+      {noPuzzle && <NoPuzzle lang={lang} />}
       {puzzle && <Game puzzle={puzzle} dayNumber={dayNumber} />}
     </>
   );

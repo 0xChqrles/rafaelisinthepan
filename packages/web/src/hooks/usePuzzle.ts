@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Puzzle } from '@whippin/shared';
-import { puzzleUrl, todayUrl, resolveOverride, puzzleOutcome, type Today } from '../api';
+import { puzzleUrl, todayUrl, resolveOverride, puzzleOutcome, parsePuzzle, type Today } from '../api';
 
 // Loads the day's puzzle for the selected language. For normal play the BACKEND is
 // the time source: the client asks it for "today's puzzle" (it never computes the
@@ -13,6 +13,10 @@ export default function usePuzzle(lang: string | null) {
   const [dayNumber, setDayNumber] = useState<number | null>(null);
   const [error, setError] = useState<unknown | null>(null);
   const [noPuzzle, setNoPuzzle] = useState(false);
+  // Bumped by retry() to re-run the fetch after a transient/unexpected failure, so an
+  // error never dead-ends in a blank/LOADING… screen (issue #14).
+  const [reloadTick, setReloadTick] = useState(0);
+  const retry = useCallback(() => setReloadTick((t) => t + 1), []);
 
   // The ?puzzle= override is fixed for the page load.
   const override = useMemo(
@@ -34,7 +38,8 @@ export default function usePuzzle(lang: string | null) {
         if (override) {
           const r = await fetch(override);
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          const json = (await r.json()) as Puzzle;
+          // parsePuzzle also throws on malformed JSON shape (not just bad JSON syntax).
+          const json = parsePuzzle(await r.json());
           if (!cancelled) setPuzzle(json);
           return;
         }
@@ -55,7 +60,9 @@ export default function usePuzzle(lang: string | null) {
           case 'error':
             throw new Error(`HTTP ${puzzleRes.status}`);
           case 'puzzle': {
-            const json = (await puzzleRes.json()) as Puzzle;
+            // parsePuzzle catches malformed JSON / unexpected shape and turns it into
+            // the error state instead of letting Game crash on a bad puzzle.
+            const json = parsePuzzle(await puzzleRes.json());
             if (!cancelled) setPuzzle(json);
           }
         }
@@ -67,10 +74,10 @@ export default function usePuzzle(lang: string | null) {
     return () => {
       cancelled = true;
     };
-  }, [lang, override]);
+  }, [lang, override, reloadTick]);
 
   // Language chosen but the puzzle hasn't resolved to a puzzle / error / no-puzzle yet.
   const loading = lang != null && puzzle == null && error == null && !noPuzzle;
 
-  return { puzzle, dayNumber, error, loading, noPuzzle };
+  return { puzzle, dayNumber, error, loading, noPuzzle, retry };
 }
