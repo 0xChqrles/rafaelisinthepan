@@ -5,7 +5,7 @@ JSON schema").
   - ranks keyed by SECRET slug, inner keys by INPUT slug -> {word, rank};
   - rank semantics: secret 0, nearest neighbor 1, farther = larger;
   - slug collision keeps the SMALLEST-rank entry (built closest-first), keeps its
-    accented display `word`, and warns.
+    accented display `word`, and resolves SILENTLY (no collision output).
 """
 
 import gen_phrase  # noqa: E402
@@ -25,7 +25,7 @@ def test_secret_at_rank_zero_keys_are_input_slugs_values_keep_accents():
     assert "félin" not in rmap  # never key by the displayed form
 
 
-def test_slug_collision_keeps_smallest_rank_and_warns(capsys):
+def test_slug_collision_keeps_smallest_rank_silently(capsys):
     # closest-first: secret "chat" (0), then "côté" (rank 1), then "coté" (rank 2);
     # the latter two both slug to "cote".
     ranking = [("côté", 0, 0.9), ("coté", 1, 0.8)]
@@ -35,5 +35,7 @@ def test_slug_collision_keeps_smallest_rank_and_warns(capsys):
     assert rmap["cote"] == {"word": "côté", "rank": 1}
     # exactly one entry survives for the colliding slug
     assert list(rmap).count("cote") == 1
-    # the discard is surfaced (warning on stderr)
-    assert "collision" in capsys.readouterr().err.lower()
+    # the discard is SILENT: nothing is printed to stdout or stderr
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""

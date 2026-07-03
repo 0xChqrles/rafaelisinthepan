@@ -166,8 +166,9 @@ def build_rank_map(secret_display, ranking):
     """Slug-keyed rank map for one secret: { input_slug: {word, rank} }.
 
     Iterates closest-first (secret itself is rank 0), so on a slug collision
-    (côté/coté -> cote) the first seen is the smallest rank: we keep it and warn.
-    The kept entry's `word` is the form the front will display."""
+    (côté/coté -> cote) the first seen is the smallest rank: we keep it (collisions
+    are resolved SILENTLY — no output). The kept entry's `word` is the form the front
+    will display."""
     # Combined list in ascending-rank order: secret at 0, then neighbors at r+1.
     entries = [(secret_display, 0)]
     entries.extend((w, r + 1) for w, r, _ in ranking)
@@ -175,10 +176,7 @@ def build_rank_map(secret_display, ranking):
     rmap = {}
     for display, rank in entries:
         s = slug(display)
-        if s in rmap:
-            kept = rmap[s]
-            print(f"[collision] slug '{s}' : gardé '{kept['word']}' (rang "
-                  f"{kept['rank']}), écarté '{display}' (rang {rank})", file=sys.stderr)
+        if s in rmap:  # first-seen wins (smallest rank); drop the later duplicate.
             continue
         rmap[s] = {"word": display, "rank": rank}
     return rmap

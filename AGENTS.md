@@ -200,7 +200,8 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
 - **Rank semantics:** secret = `rank 0` (perfect); nearest neighbor = `1`; larger =
   farther.
 - **Slug collisions** (`côté`/`coté` → `cote`): keep the **smallest-rank** entry
-  (built closest-first), display its `word`, and **warn** at generation.
+  (built closest-first) and display its `word`. Resolved **silently** — generation
+  prints no collision output.
 
 ### Generation outputs
 
