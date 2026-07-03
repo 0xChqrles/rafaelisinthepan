@@ -308,6 +308,12 @@ button * {
   color: var(--fg);
 }
 
+/* A hole plus its display affixes (prefix/suffix) must stay together: never let a
+   newline separate the leading clitic / trailing punctuation from the blank. */
+.hole-group {
+  white-space: nowrap;
+}
+
 .hole {
   position: relative;
   display: inline-block;
