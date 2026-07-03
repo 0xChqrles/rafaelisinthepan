@@ -138,22 +138,42 @@ button * {
 
 /* ===================== game screen ===================== */
 .game {
-  /* Anchor + isolate the score watermark: `relative` is the containing block the
-     absolutely-positioned .progress-background is sized against (so the score is
-     always behind THIS div's content), and `isolation` gives it a stacking context
-     so the watermark's z-index:-1 stays behind the game content but above the page. */
-  position: relative;
-  isolation: isolate;
+  /* Three vertical zones: fixed HUD (top), the .play area (grows to fill the middle),
+     and the keyboard (bottom). .play's flex:1 pushes the keyboard to the bottom edge
+     and leaves the sentence + prompt centered in the space between the two. */
   width: 100%;
   max-width: 1200px;
   display: flex;
   flex-direction: column;
   align-items: start;
-  gap: clamp(32px, 6vh, 64px);
+  gap: clamp(16px, 3vh, 32px);
+  min-height: calc(100dvh - 48px);
+  /* Reserve the fixed HUD's band at the top so the play area centers between the HUD
+     and the keyboard, not between the viewport top and the keyboard. */
+  padding-top: 48px;
+}
+
+/* The centered play region between the fixed HUD and the keyboard. It grows to fill
+   that space (flex:1) and centers its content (sentence + prompt). It also anchors the
+   score watermark: `relative` sizes the absolutely-positioned .progress-background to
+   THIS region, and `isolation` gives it a stacking context so the watermark's z-index:-1
+   stays behind the play content but above the page — so the big try count centers on the
+   sentence, not the full-height .game. */
+.play {
+  position: relative;
+  isolation: isolate;
+  flex: 1 1 auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: start;
+  gap: clamp(24px, 5vh, 48px);
 }
 
 /* --- HUD: header row pinned to the top — logo (home) + progress bar --- */
 .hud {
+  --hud-height: clamp(38px, 5vh, 46px);
   position: fixed;
   top: 18px;
   left: 50%;
@@ -173,12 +193,13 @@ button * {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: var(--hud-height);
+  height: var(--hud-height);
   padding: 0;
   background: transparent;
   border: 0;
   cursor: pointer;
+  overflow: hidden;
   opacity: 0.85;
   transition: opacity 0.12s ease, filter 0.12s ease;
 }
@@ -192,13 +213,15 @@ button * {
    larger .flag-img). */
 .hud-flag {
   display: block;
-  width: 34px;
-  height: auto;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
   image-rendering: pixelated;
 }
 
 .progress-wrap {
   flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 14px;
@@ -206,7 +229,8 @@ button * {
 .progress {
   position: relative;
   flex: 1;
-  height: clamp(28px, 4.2vh, 38px);
+  min-width: 0;
+  height: var(--hud-height);
   background: var(--surface);
   overflow: hidden;
 }
@@ -233,17 +257,17 @@ button * {
   pointer-events: none;
 }
 .progress-label-on-fill {
-  color: var(--surface);
+  color: var(--bg);
   /* Follow the fill edge in sync with .progress-fill's width transition. */
   transition: clip-path 0.5s ease-out;
 }
 
-/* --- giant score watermark, always behind the .game content --- */
+/* --- giant score watermark, always behind the play content --- */
 .progress-background {
-  /* absolute (not fixed) so it is anchored to .game (position: relative), not the
-     viewport: the score stays centered BEHIND the game content on every layout —
-     including when .game is top-aligned on mobile — instead of drifting into the
-     empty space below a viewport-centered watermark. */
+  /* absolute (not fixed) so it is anchored to .play (position: relative), not the
+     viewport: the score stays centered BEHIND the sentence + prompt on every layout
+     — matching the vertically-centered play area between the HUD and keyboard —
+     instead of drifting into the empty space of a viewport-centered watermark. */
   position: absolute;
   inset: 0;
   z-index: -1;
@@ -427,25 +451,9 @@ button * {
   font-family: var(--vt);
   font-size: clamp(18px, 3.2vw, 30px);
   color: var(--fg);
-}
-.wi-native-input {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: transparent;
-  caret-color: transparent;
-  font: inherit;
-  font-size: 16px;
-  opacity: 0;
-  outline: none;
-  appearance: none;
+  /* No native <input> to focus (issue #36): input comes from the on-screen keyboard
+     and the physical keyboard, so the prompt never needs to hold a caret. */
+  user-select: none;
 }
 .wi-prompt {
   color: var(--accent);
@@ -533,6 +541,100 @@ button * {
   letter-spacing: 1px;
   padding-top: var(--text-shift);
 }
+
+/* --- on-screen keyboard (issue #36): replaces the native mobile keyboard --- */
+.keyboard {
+  /* Uniform letter-key size: keys are a fixed size (NOT flex-grown), so every letter
+     is identical across rows; each row then centers as a group (justify-content). The
+     size is capped at --kb-key-max but shrinks to fit 10 keys + gaps on narrow screens,
+     derived from the row width so it never overflows. */
+  --kb-gap: 6px;
+  --kb-key-max: 46px;
+  --kb-key: min(var(--kb-key-max), calc((100% - 9 * var(--kb-gap)) / 10));
+  align-self: center;
+  width: 100%;
+  max-width: 680px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--kb-gap);
+  /* Keys are buttons, never a text field: tapping opens no native keyboard and
+     selects no text. */
+  user-select: none;
+  touch-action: manipulation;
+}
+.kb-row {
+  display: flex;
+  justify-content: center;
+  gap: var(--kb-gap);
+}
+.kb-key {
+  flex: none;
+  width: var(--kb-key);
+  height: clamp(42px, 6.4vh, 54px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-family: var(--press);
+  font-size: clamp(11px, 2.2vw, 15px);
+  text-transform: uppercase;
+  color: var(--fg);
+  background: var(--surface-hover); /* secondary surface; flat, no border */
+  border: 0;
+  cursor: pointer;
+  text-shadow: none;
+  touch-action: manipulation;
+  transition: filter 0.08s linear, color 0.08s linear;
+}
+.kb-key:not(.kb-greyed):active {
+  filter: brightness(1.35);
+}
+/* Control keys (backspace, enter) are the SAME fixed size as letters, so the last row is a
+   uniform row of keys that fits the keyboard width exactly (QWERTY's last row is 10 keys —
+   enter + 7 letters + dash + backspace — aligning with the top row). They hold an SVG icon
+   (.kb-icon) instead of text; `color` only tints it via currentColor. */
+.kb-control {
+  color: var(--muted);
+}
+.kb-enter {
+  color: var(--accent);
+}
+/* Control-key glyph: an inline currentColor SVG. Sized by % of the key so it tracks the
+   responsive key height (desktop + mobile) with no per-breakpoint rule; the viewBox keeps
+   its aspect ratio. crispEdges keeps the pixel-art icon hard-edged to match the pixel font. */
+.kb-icon {
+  display: block;
+  width: auto;
+  height: 30%;
+  shape-rendering: crispEdges;
+}
+/* Greyed key: cannot extend the current input into any real word (letters/dash), or the
+   input is not yet a complete word (Enter). Dimmed, no active feedback — a tap only shakes. */
+.kb-key.kb-greyed {
+  color: var(--muted);
+  opacity: 0.26;
+  cursor: default;
+}
+/* Shake fired when a greyed key is tapped: signals "disabled", not a bug. */
+.kb-key.kb-shake {
+  animation: kb-shake 0.28s ease-in-out;
+}
+@keyframes kb-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-4px);
+  }
+  50% {
+    transform: translateX(4px);
+  }
+  75% {
+    transform: translateX(-2px);
+  }
+}
+
 /* --- buttons --- */
 .btn {
   font-family: var(--press);
@@ -575,12 +677,12 @@ button * {
 
 /* ===================== mobile / small screens ===================== */
 /* Below this width the desktop layout is too wide: the sentence, HUD, background
-   score and language grid are re-tuned, and the play area is allowed to SCROLL so
-   the soft keyboard (real <input>, #11) never hides the sentence/holes. The fixed
-   HUD + watermark stay pinned to the viewport while the content scrolls under them. */
+   score and language grid are re-tuned, and the play area is allowed to SCROLL so a
+   tall play area (sentence + holes + on-screen keyboard, #36) is never clipped. The
+   fixed HUD + watermark stay pinned to the viewport while the content scrolls under. */
 @media (max-width: 640px) {
   /* Let the play area grow past the viewport and scroll instead of clipping, so
-     nothing (sentence, holes, input) can end up hidden behind the keyboard. */
+     nothing (sentence, holes, input, keyboard) can end up hidden. */
   body {
     overflow-x: hidden;
     overflow-y: auto;
@@ -591,9 +693,8 @@ button * {
   }
   .app {
     height: auto;
-    /* dvh + `interactive-widget=resizes-content` (index.html): the viewport height
-       tracks the on-screen keyboard, so short/centered screens still fill it and
-       the focused input is scrolled into view above the keyboard. */
+    /* The custom keyboard (#36) is always visible in the layout — no native soft
+       keyboard opens — so the viewport no longer resizes under a focused input. */
     min-height: 100dvh;
     align-items: flex-start;
     padding: 16px 14px 28px;
@@ -608,13 +709,23 @@ button * {
     max-width: 100%;
   }
 
-  /* The game top-aligns and clears the fixed HUD (logo + progress bar) above it.
-     `stretch` makes the sentence + input fill the game width so their lines wrap
-     inside the viewport rather than growing to the longest line and overflowing. */
+  /* The play area still centers between the fixed HUD and the keyboard; a larger
+     padding-top clears the (slightly higher) mobile HUD. `stretch` makes the sentence +
+     input fill the width so their lines wrap inside the viewport rather than growing to
+     the longest line and overflowing. */
   .game {
-    padding-top: 64px;
-    gap: 28px;
+    padding-top: 60px;
+    gap: 16px;
     align-items: stretch;
+    min-height: calc(100dvh - 44px);
+  }
+  .play {
+    align-items: stretch;
+    gap: clamp(16px, 4vh, 28px);
+  }
+  .progress-background {
+    font-size: min(72vh, 54vw);
+    opacity: 0.15;
   }
 
   /* Single-row header: the logo (home) beside a full-width progress bar. */
@@ -623,11 +734,8 @@ button * {
     width: calc(100vw - 24px);
     gap: 12px;
   }
-  .progress {
-    height: 24px;
-  }
   .progress-label {
-    font-size: 13px;
+    font-size: clamp(16px, 4.2vw, 20px);
   }
 
   /* Sentence + mirrored input: a touch smaller so a hole + its exponent near the
@@ -653,6 +761,19 @@ button * {
   }
   .hint {
     font-size: 16px;
+  }
+
+  /* Full-bleed keyboard with tighter gaps + shorter keys so all four rows fit a phone. */
+  .keyboard {
+    max-width: 100%;
+    gap: 5px;
+  }
+  .kb-row {
+    gap: 5px;
+  }
+  .kb-key {
+    height: clamp(38px, 6.2vh, 48px);
+    border-width: 2px;
   }
 
   /* Language picker: the two flags must fit side by side on a phone. */

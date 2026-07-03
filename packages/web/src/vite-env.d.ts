@@ -1,4 +1,6 @@
 /// <reference types="vite/client" />
+// Types the `?react` SVG import (vite-plugin-svgr): `import Icon from './x.svg?react'`.
+/// <reference types="vite-plugin-svgr/client" />
 
 // Augment Vite's env typing with our build-time config.
 interface ImportMetaEnv {

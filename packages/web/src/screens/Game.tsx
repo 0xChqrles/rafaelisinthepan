@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { computeProgress } from '../game/scoring';
+import { canExtend, type Layout } from '../game/keyboard';
 import useVocab from '../hooks/useVocab';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
 import Phrase from '../components/Phrase';
 import ProgressBar from '../components/ProgressBar';
 import FlagButton from '../components/FlagButton';
 import WordInput from '../components/WordInput';
+import Keyboard from '../components/Keyboard';
 import { fold } from '@whippin/shared';
 import type { HitState, Hole, Puzzle, RankEntry, RankMap, RuntimeHole } from '@whippin/shared';
 
@@ -24,19 +26,21 @@ const FLOATING_HIT_INTRO_MS = 320;
 const OVERRIDE_NONCE = Math.random().toString(36).slice(2);
 
 // Wrapper: drives the single puzzle. Loads the language's fixed vocabulary
-// (existence set) before playing — existence is decided by it, not by ranks.
+// (existence set + keyboard prefix set) before playing — existence is decided by it,
+// not by ranks.
 export default function Game({ puzzle, dayNumber }: { puzzle: Puzzle; dayNumber: number | null }) {
-  const { vocabSet, error } = useVocab(puzzle.lang);
+  const { vocab, error } = useVocab(puzzle.lang);
 
   if (error !== null) return <p className="status error">FAILED TO LOAD VOCABULARY</p>;
-  if (!vocabSet) return <p className="status">LOADING&hellip;</p>;
+  if (!vocab) return <p className="status">LOADING&hellip;</p>;
 
   return (
     <Round
       words={puzzle.words}
       puzzleHoles={puzzle.holes}
       ranks={puzzle.ranks}
-      vocabSet={vocabSet}
+      vocabSet={vocab.vocabSet}
+      prefixSet={vocab.prefixSet}
       lang={puzzle.lang}
       dayNumber={dayNumber}
     />
@@ -50,6 +54,7 @@ function Round({
   puzzleHoles,
   ranks,
   vocabSet,
+  prefixSet,
   lang,
   dayNumber,
 }: {
@@ -57,6 +62,7 @@ function Round({
   puzzleHoles: Hole[];
   ranks: RankMap;
   vocabSet: Set<string>;
+  prefixSet: Set<string>;
   lang: string;
   dayNumber: number | null;
 }) {
@@ -86,6 +92,9 @@ function Round({
   const improveHole = useGameStore((s) => s.improveHole);
   const syncProgress = useGameStore((s) => s.syncProgress);
 
+  // On-screen keyboard layout: QWERTY by default (there is no in-UI layout switch yet).
+  const layout: Layout = 'qwerty';
+
   // Reconcile before paint: a matching key rehydrates the stored progress, a new key
   // (new day OR new language) resets to freshHoles. useLayoutEffect commits the reset
   // before the browser paints, so a stale day's holes never flash.
@@ -101,6 +110,9 @@ function Round({
   // vocabulary, including misses; repeated folded guesses and non-existent words are
   // not counted (deduping happens in the store's recordGuess).
   const guessCount = round ? round.guessCount : 0;
+  // Prompt history for Up/Down recall = this round's unique valid guesses in order.
+  // Sourced from the persisted `tried` list, so recall survives a reload (per day+lang).
+  const history = round ? round.tried : [];
 
   const [input, setInput] = useState<string>('');
   // One transient floating indicator per impacted hole: a distance number when
@@ -133,10 +145,30 @@ function Round({
     setHits((prev) => prev.filter((h) => h.id !== id));
   }, []);
 
-  // Clear error feedback as soon as the player types again.
-  const handleChange = useCallback((v: string) => {
-    setInput(v);
+  // Input mutations shared by the on-screen keyboard (taps) and the physical keyboard.
+  // Every path clears the "does not exist" feedback as soon as the player edits again.
+
+  // Append one slug char, but ONLY if it keeps the input a prefix of some real word
+  // (the same rule that greys the on-screen key). A dead-end char is dropped, so the
+  // input is always a valid partial slug and physical typing matches the greyed keys.
+  const appendChar = useCallback(
+    (char: string) => {
+      setFeedback(null);
+      setInput((cur) => (canExtend(prefixSet, cur, char) ? cur + char : cur));
+    },
+    [prefixSet],
+  );
+
+  const deleteChar = useCallback(() => {
     setFeedback(null);
+    setInput((cur) => cur.slice(0, -1));
+  }, []);
+
+  // Replace the whole input (physical-keyboard history recall). Recalled values are
+  // past valid words, hence valid prefixes, so no re-validation is needed.
+  const replaceInput = useCallback((v: string) => {
+    setFeedback(null);
+    setInput(v);
   }, []);
 
   const submit = useCallback(
@@ -150,10 +182,11 @@ function Round({
 
       // Existence is decided by the fixed vocabulary, NOT by the puzzle's ranks.
       if (!vocabSet.has(typed)) {
-        // INVALID -> "does not exist": red shake + message under the input.
+        // INVALID -> "does not exist": red shake + message under the input. Keep the
+        // typed word (do NOT clear) so the player can correct it; the next edit clears
+        // the message.
         setInvalidAt(Date.now());
         setFeedback({ text: 'this word does not exist' });
-        setInput('');
         return;
       }
 
@@ -214,13 +247,6 @@ function Round({
 
   return (
     <div className="game">
-      {/* Score: big faint try count behind the play area.
-          Rendered inside .game's isolated stacking context so its z-index:-1 sits
-          behind the content but above the page background. */}
-      <div className="progress-background" aria-hidden="true">
-        {guessCount}
-      </div>
-
       {/* Header row pinned to the top: the current puzzle's language flag (opens the
           selector) beside the reconstruction progress bar. Bar WIDTH = the
           reconstruction value; COLOR follows heat. */}
@@ -229,27 +255,56 @@ function Round({
         <ProgressBar value={progress} />
       </div>
 
-      <Phrase words={words} holes={holes} hits={hits} onHitDone={removeHit} />
+      {/* The play area fills the space between the fixed HUD (top) and the keyboard
+          (bottom) and centers its content, so the sentence + prompt sit in the middle.
+          It also anchors the score watermark, so the big try count stays centered
+          behind THIS content rather than the full-height .game. */}
+      <div className="play">
+        {/* Score: big faint try count behind the play area. z-index:-1 within .play's
+            isolated stacking context sits behind the content but above the page. */}
+        <div className="progress-background" aria-hidden="true">
+          {guessCount}
+        </div>
 
-      <div className="input-area">
-        {solved ? (
-          // End of round: replace input with the verdict.
-          <div className="round-end">
-            <p className="round-end-label solved">SOLVED!</p>
-            <p className="round-end-score">SCORE {guessCount}</p>
-          </div>
-        ) : (
-          <>
-            <WordInput
-              value={input}
-              onChange={handleChange}
-              onSubmit={submit}
-              invalidSignal={invalidAt}
-            />
-            <p className="hint">{feedback?.text || ' '}</p>
-          </>
-        )}
+        <Phrase words={words} holes={holes} hits={hits} onHitDone={removeHit} />
+
+        <div className="input-area">
+          {solved ? (
+            // End of round: replace input with the verdict.
+            <div className="round-end">
+              <p className="round-end-label solved">SOLVED!</p>
+              <p className="round-end-score">SCORE {guessCount}</p>
+            </div>
+          ) : (
+            <>
+              <WordInput
+                value={input}
+                history={history}
+                onType={appendChar}
+                onBackspace={deleteChar}
+                onSubmit={submit}
+                onReplace={replaceInput}
+                invalidSignal={invalidAt}
+              />
+              <p className="hint">{feedback?.text || ' '}</p>
+            </>
+          )}
+        </div>
       </div>
+
+      {/* Custom on-screen keyboard: replaces the native mobile keyboard and mirrors the
+          physical keyboard on desktop (greyed keys reflect the shared input state). */}
+      {!solved && (
+        <Keyboard
+          input={input}
+          prefixSet={prefixSet}
+          vocabSet={vocabSet}
+          layout={layout}
+          onType={appendChar}
+          onBackspace={deleteChar}
+          onSubmit={submit}
+        />
+      )}
     </div>
   );
 }
