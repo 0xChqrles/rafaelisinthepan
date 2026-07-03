@@ -164,12 +164,23 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   ],
   "ranks": {                                    // keyed by SECRET slug
     "foret": { "<input-slug>": { "word": "<accented>", "rank": 12 }, ... }
+  },
+  "source": {                                   // OPTIONAL origin metadata (#5); ACCENTS KEPT
+    "kind": "book",                             //   book | movie | music | quote | poem | … (open set)
+    "author": "Victor Hugo",
+    "work": "Les Misérables",
+    "context": "…full passage…"
   }
 }
 ```
 
 - Every `{word, slug}` carries **both**, even when `slug == word` (no conditional
   shortcuts).
+- **`source` is fully OPTIONAL (#5):** the whole object may be absent AND every
+  sub-field (`kind`/`author`/`work`/`context`) is independently optional, so partial
+  metadata is valid and a puzzle without `source` stays byte-compatible. Values are
+  **display forms** (accents kept, never slugged); `kind` is an **open** union (known
+  values documented, but a new kind is allowed). Consumed by the solved screen (#8).
 - `ranks` is keyed by **secret slug**; the inner map is keyed by **input slug** →
   `{word, rank}`. The value carries the **accented** word so the front can show the
   accented form of what was typed.
@@ -370,6 +381,16 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
 
 - All paths below are under `packages/`. **Tunables:** `TOP_N = 400000` (reduce),
   `TOP_K = 2000` (gen), start-rank band `50–150` (`start_word.py`).
+- **`gen_phrase` is fully interactive on a TTY (#5).** Anything not passed as a flag is
+  prompted: the **sentence** (positional, now optional), **`--lang`**, the three
+  **`--words`**, and the optional **source metadata** — `--kind` (offers `KNOWN_KINDS`
+  numbered, but free text is accepted), `--author`, `--work`, `--context`. A flag that
+  IS given is not re-prompted, and **non-TTY (piped/batch) runs keep working with flags
+  only** — no prompt ever blocks them, and their output is identical to before (missing
+  sentence/`--words` off-TTY is a clear error, and `--lang` still defaults to `en`).
+  Source metadata is asked **after** the hole loop, so a bad word errors before any
+  metadata is entered; blank answers are dropped (`build_source`) so no empty `source`
+  key is written.
 - **Start-word selection is interactive per hole** (`gen_phrase.choose_start`): on a
   TTY it lists the rank-band candidates (numbered, each with its rank) and reads a
   choice — Enter keeps the random default, a number picks a candidate, any other word

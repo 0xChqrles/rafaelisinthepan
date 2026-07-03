@@ -115,6 +115,23 @@ describe('parsePuzzle (shape validation)', () => {
     expect(parsePuzzle(p)).toEqual(p);
   });
 
+  // Optional source metadata (#5): not load-bearing, so a puzzle is valid WITH or
+  // WITHOUT it, and when present it must survive to the front (consumed by the solved
+  // screen, #8) rather than being stripped.
+  it('is valid without a source (optional end-to-end)', () => {
+    const p = valid();
+    expect('source' in p).toBe(false);
+    expect(parsePuzzle(p)).toEqual(p);
+  });
+
+  it('passes an optional source (kind/author/work/context) through unchanged', () => {
+    const p = {
+      ...valid(),
+      source: { kind: 'book', author: 'Victor Hugo', work: 'Les Misérables', context: '…' },
+    };
+    expect(parsePuzzle(p).source).toEqual(p.source);
+  });
+
   it('rejects non-objects (null, array, primitive)', () => {
     expect(() => parsePuzzle(null)).toThrow(/malformed puzzle/);
     expect(() => parsePuzzle([])).toThrow(/malformed puzzle/);

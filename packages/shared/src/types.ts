@@ -25,11 +25,28 @@ export interface RankEntry {
 // ranks[secretSlug][inputSlug] -> { word, rank }
 export type RankMap = Record<string, Record<string, RankEntry>>;
 
+// What kind of piece the daily sentence comes from (#5). The known values are
+// documented for authoring/autocomplete, but the union stays OPEN (`string & {}`)
+// so a puzzle authored with a new kind stays valid without a schema bump.
+export type SourceKind = 'book' | 'movie' | 'music' | 'quote' | 'poem' | (string & {});
+
+// Optional literary metadata about the sentence's origin, revealed on the solved
+// screen (#8). EVERY field is optional so partial metadata is valid, and the whole
+// object may be absent so existing puzzles stay byte-compatible. Like the rest of
+// the schema, values are DISPLAY forms: accents kept, never folded/slugged.
+export interface Source {
+  kind?: SourceKind;
+  author?: string;
+  work?: string; // the piece's title
+  context?: string; // the fuller passage / surrounding context
+}
+
 export interface Puzzle {
   lang: string;
   words: string[]; // full sentence, accents kept
   holes: Hole[]; // sorted by pos ascending
   ranks: RankMap; // keyed by secret slug, then input slug
+  source?: Source; // optional origin metadata (#5), shown on the solved screen (#8)
 }
 
 export interface RuntimeHole {
