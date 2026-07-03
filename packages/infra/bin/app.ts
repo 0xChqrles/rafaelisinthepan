@@ -15,6 +15,7 @@ import { App, Aspects, Tags } from 'aws-cdk-lib';
 import { AwsSolutionsChecks } from 'cdk-nag';
 import { BackendStack } from '../lib/backend-stack';
 import { WebStack } from '../lib/web-stack';
+import { DeployRoleStack } from '../lib/deploy-role-stack';
 
 const app = new App();
 
@@ -56,5 +57,21 @@ new WebStack(app, 'WhippinWebStack', {
   // The backend origin the SPA calls — drives the CSP `connect-src`. Mirrors the
   // BackendStack API domain (`api.<domain>`); undefined in the no-domain smoke synth.
   apiOrigin: domainName ? `https://${apiSubdomain}.${domainName}` : undefined,
+  env,
+});
+
+// CI auth bootstrap (issue #33): the GitHub OIDC provider + the IAM role the Deploy
+// workflow assumes (its ARN → the repo secret AWS_DEPLOY_ROLE_ARN). Independent of the
+// two app stacks and domain-agnostic; deployed ONCE by a human — the CI role itself
+// cannot deploy this stack (it can't edit IAM). `-c` knobs default to this repo. Context
+// values arrive as strings, so `enablePreviewRole` compares against the literal "true".
+new DeployRoleStack(app, 'WhippinDeployStack', {
+  githubOwner: app.node.tryGetContext('githubOwner') ?? '0xChqrles',
+  githubRepo: app.node.tryGetContext('githubRepo') ?? 'rafaelisinthepan',
+  deployBranch: app.node.tryGetContext('deployBranch') ?? 'main',
+  enablePreviewRole: `${app.node.tryGetContext('enablePreviewRole') ?? ''}` === 'true',
+  // Set `-c githubOidcProviderArn=arn:aws:iam::<acct>:oidc-provider/token.actions.githubusercontent.com`
+  // to reuse a provider the account already has (only one per URL is allowed).
+  githubOidcProviderArn: app.node.tryGetContext('githubOidcProviderArn') ?? undefined,
   env,
 });

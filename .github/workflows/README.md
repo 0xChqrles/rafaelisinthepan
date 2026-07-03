@@ -36,34 +36,34 @@ The workflows reference the following — set these once, in the GitHub repo set
 
 ### 1. AWS OIDC deploy role — secret `AWS_DEPLOY_ROLE_ARN`
 
-`deploy.yml` assumes an IAM role via OIDC (`aws-actions/configure-aws-credentials`).
-Create the role once and store its ARN as the repo **secret** `AWS_DEPLOY_ROLE_ARN`
-(Settings → Secrets and variables → Actions → Secrets).
+`deploy.yml` assumes an IAM role via OIDC (`aws-actions/configure-aws-credentials`) —
+no long-lived keys. **The role is defined as code**, not clicked together in the console:
+`WhippinDeployStack` (`packages/infra/lib/deploy-role-stack.ts`) provisions the GitHub
+OIDC provider and the role. Deploy it **once** with your own AWS credentials, then copy the
+`DeployRoleArn` output into the repo **secret** `AWS_DEPLOY_ROLE_ARN` (Settings → Secrets
+and variables → Actions → Secrets):
 
-Prerequisites (one-time, outside this repo):
+```bash
+# one-time; needs the account cdk-bootstrapped in us-east-1 (npx cdk bootstrap)
+pnpm --filter @whippin/infra deploy WhippinDeployStack
+# → prints DeployRoleArn=arn:aws:iam::<ACCOUNT_ID>:role/whippin-github-deploy
+```
 
-- The account is `cdk bootstrap`-ed (modern `cdk-hnb659fds-*` roles exist) in
-  **us-east-1**.
-- A GitHub OIDC identity provider exists in the account
-  (`token.actions.githubusercontent.com`, audience `sts.amazonaws.com`).
-- An IAM role whose **trust policy** is scoped to this repo, e.g.:
+See [`packages/infra/README.md`](../../packages/infra/README.md#whippindeploystack--ci-auth-bootstrap)
+for the full picture (branch/preview knobs, importing an existing OIDC provider, and why
+this stack is human-deployed rather than run by CI). In short, the stack creates:
 
-  ```jsonc
-  {
-    "Effect": "Allow",
-    "Principal": { "Federated": "arn:aws:iam::<ACCOUNT_ID>:oidc-provider/token.actions.githubusercontent.com" },
-    "Action": "sts:AssumeRoleWithWebIdentity",
-    "Condition": {
-      "StringEquals": { "token.actions.githubusercontent.com:aud": "sts.amazonaws.com" },
-      "StringLike":   { "token.actions.githubusercontent.com:sub": "repo:0xChqrles/rafaelisinthepan:ref:refs/heads/main" }
-    }
-  }
-  ```
+- A GitHub OIDC provider (`token.actions.githubusercontent.com`, audience
+  `sts.amazonaws.com`) — or reuse an existing one with
+  `-c githubOidcProviderArn=<arn>` (only one per URL is allowed per account).
+- A role trusted only by this repo, scoped to `main` pushes
+  (`repo:0xChqrles/rafaelisinthepan:ref:refs/heads/main`), whose permissions are just
+  `sts:AssumeRole` on the `cdk-hnb659fds-*` bootstrap roles + `cloudformation:DescribeStacks`
+  (CDK does the real work through the assumed bootstrap roles).
 
-- The role's **permissions** must let CDK deploy — at minimum assume the CDK bootstrap
-  roles (`sts:AssumeRole` on `arn:aws:iam::<ACCOUNT_ID>:role/cdk-hnb659fds-*`) plus
-  `cloudformation:DescribeStacks`. (CDK then uses the bootstrap deploy/file-publishing
-  roles for the actual changes.)
+> **Chicken-and-egg:** `WhippinDeployStack` is deployed by a human, never by `deploy.yml` —
+> the CI role deliberately can't create or edit IAM, so it can't provision its own
+> privileges. That's also why `deploy.yml` only targets the backend/web stacks.
 
 ### 2. Web build base URL — variable `VITE_API_BASE_URL`
 

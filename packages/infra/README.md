@@ -1,10 +1,12 @@
 # @whippin/infra
 
-AWS **CDK** app with two independent sibling stacks, each deployable on its own
-(`cdk deploy WhippinBackendStack` / `cdk deploy WhippinWebStack`):
+AWS **CDK** app with three independent sibling stacks, each deployable on its own
+(`cdk deploy <StackName>`):
 
 - **`WhippinBackendStack`** (issue #3) — the daily-puzzle backend (#2).
 - **`WhippinWebStack`** (issue #21) — hosting for the web front (`packages/web`).
+- **`WhippinDeployStack`** (issue #33) — CI auth: the GitHub OIDC provider + the IAM role
+  the Deploy workflow assumes. Deployed once by a human, not by CI (see below).
 
 Both stacks are **pinned to `us-east-1`** (CloudFront's ACM certs must live there, so the
 certs stay in-stack with no cross-region reference). A single `-c domainName=<apex>` wires
@@ -65,7 +67,50 @@ requires for its ACM cert — so the cert lives in-stack with no cross-region re
 > time, so run `pnpm build` first (with `VITE_API_BASE_URL` set, see *Wiring* below). If
 > `dist` is absent the stack still deploys but **skips the upload** with a warning.
 
-### Wiring the two stacks
+## `WhippinDeployStack` (#33) — CI auth bootstrap
+
+Provisions GitHub Actions' authentication to AWS as code, so there is **no console
+clicking** for the `AWS_DEPLOY_ROLE_ARN` the [Deploy workflow](../../.github/workflows/deploy.yml)
+uses:
+
+- **GitHub OIDC provider** — `token.actions.githubusercontent.com`, audience
+  `sts.amazonaws.com`. Only **one provider per URL** is allowed per account; if the account
+  already has it, import it instead with `-c githubOidcProviderArn=<arn>` (find it via
+  `aws iam list-open-id-connect-providers`).
+- **Prod deploy role** (`whippin-github-deploy`) — trusted **only** by this repo's Actions
+  and **only** for pushes on `main` (subject
+  `repo:<owner>/<repo>:ref:refs/heads/main`). Its permissions are minimal: `sts:AssumeRole`
+  on the `cdk-hnb659fds-*` bootstrap roles + `cloudformation:DescribeStacks` — modern CDK
+  performs every real change through the assumed bootstrap roles, so this role can't touch
+  infrastructure on its own. Its ARN is the `DeployRoleArn` output → the repo secret.
+- **Preview role (optional)** — `-c enablePreviewRole=true` adds `whippin-github-preview`,
+  trusted for `pull_request` runs, for a future PR-preview pipeline.
+
+```bash
+# One-time, with YOUR AWS credentials (account must be `cdk bootstrap`-ed in us-east-1):
+pnpm --filter @whippin/infra deploy WhippinDeployStack
+# Copy the printed DeployRoleArn into the GitHub repo secret AWS_DEPLOY_ROLE_ARN.
+
+# Point it at a different repo / branch, or reuse an existing OIDC provider:
+pnpm --filter @whippin/infra deploy WhippinDeployStack \
+  -c githubOwner=me -c githubRepo=myrepo -c deployBranch=main \
+  -c githubOidcProviderArn=arn:aws:iam::<acct>:oidc-provider/token.actions.githubusercontent.com
+```
+
+> **Why a human deploys this, not CI.** The deploy role deliberately **cannot create or
+> edit IAM** — so a compromised pipeline can't widen its own privileges. That means CI
+> can't deploy `WhippinDeployStack` itself; deploy it (and any change to it) with account
+> credentials. `deploy.yml` only ever targets the backend/web stacks.
+>
+> **On PR previews & security.** Fork PRs never receive an OIDC token, and same-repo PR
+> runs carry the `:pull_request` subject — which the **prod** role does not trust — so PR
+> code can never assume the prod role or deploy to `main`. Enabling the preview role is
+> step one of safe previews, not the whole story: because it can still assume the same
+> `cdk-hnb659fds-*` bootstrap roles, a real isolation boundary also needs a lower-privilege
+> target (a separate stack, and ideally a scoped bootstrap qualifier / permissions
+> boundary). Add that when the preview pipeline actually lands.
+
+### Wiring the two app stacks
 
 The stable custom domains break the chicken-and-egg: both URLs are known up front from
 `domainName`, so there is no back-and-forth. The site is `https://<domain>`, the API is
