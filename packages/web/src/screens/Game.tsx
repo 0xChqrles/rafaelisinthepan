@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { computeProgress } from '../game/scoring';
 import { canExtend, type Layout } from '../game/keyboard';
 import useVocab from '../hooks/useVocab';
-import { useGameStore, roundKeyForDay } from '../state/gameStore';
+import { useGameStore, roundKeyForDay, holesMatchPuzzle } from '../state/gameStore';
 import Phrase from '../components/Phrase';
 import ProgressBar from '../components/ProgressBar';
 import FlagButton from '../components/FlagButton';
@@ -103,17 +103,21 @@ function Round({
     ensureRound(roundKey, freshHoles);
   }, [ensureRound, roundKey, freshHoles]);
 
-  // Persisted round state for THIS round, read straight out of the keyed map; until the
-  // reconcile above creates it (the pre-reconcile frame) fall back to freshHoles / zero.
+  // Persisted round state for THIS round, read straight out of the keyed map. Use it
+  // only when its holes still match THIS puzzle: a re-published sentence keeps the
+  // (day, lang) key but changes the holes, and those stale holes carry secrets absent
+  // from `ranks` (scoring would crash). On that frame — as on the pre-reconcile frame
+  // before ensureRound resets the store — fall back to freshHoles / zero.
   const round = useGameStore((s) => s.rounds[roundKey]);
-  const holes = round ? round.holes : freshHoles;
+  const live = round && holesMatchPuzzle(round.holes, freshHoles) ? round : undefined;
+  const holes = live ? live.holes : freshHoles;
   // Score = number of unique tries. A try is a submitted word that exists in the
   // vocabulary, including misses; repeated folded guesses and non-existent words are
   // not counted (deduping happens in the store's recordGuess).
-  const guessCount = round ? round.guessCount : 0;
+  const guessCount = live ? live.guessCount : 0;
   // Prompt history for Up/Down recall = this round's unique valid guesses in order.
   // Sourced from the persisted `tried` list, so recall survives a reload (per day+lang).
-  const history = round ? round.tried : [];
+  const history = live ? live.tried : [];
 
   const [input, setInput] = useState<string>('');
   // One transient floating indicator per impacted hole: a distance number when

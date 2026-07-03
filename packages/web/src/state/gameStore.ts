@@ -35,6 +35,18 @@ function dayPrefixOf(key: string): string | null {
   return m ? m[1] : null;
 }
 
+// Do the stored round's holes still describe THIS puzzle? A round key is only
+// (day, lang), so re-publishing a DIFFERENT sentence for the same day+lang keeps the key
+// but changes the holes. Rehydrating the old holes then feeds secrets that are absent
+// from the new `ranks` into scoring (Object.keys(ranks[secret]) -> throws -> black
+// screen). Match by position + secret so a changed sentence is reset, not rehydrated.
+export function holesMatchPuzzle(stored: RuntimeHole[], puzzle: RuntimeHole[]): boolean {
+  return (
+    stored.length === puzzle.length &&
+    puzzle.every((h, i) => stored[i].pos === h.pos && stored[i].secret === h.secret)
+  );
+}
+
 interface PersistedState {
   // All rounds keyed by roundKey. Bounded to the current day's languages by ensureRound.
   rounds: Record<string, RoundProgress>;
@@ -60,9 +72,11 @@ interface GameState extends PersistedState {
   // state even though the current keyboard no longer exposes a layout-switch key.
   setLayout: (layout: Layout) => void;
 
-  // Reconcile the persisted rounds to `key`. A matching key rehydrates its stored
-  // progress; a brand-new key starts fresh from `initialHoles`. Always prunes rounds
-  // from other game days (a new day never keeps yesterday's), keeping the map bounded.
+  // Reconcile the persisted rounds to `key`. A matching key with matching holes
+  // rehydrates its stored progress; a brand-new key — or the same key whose puzzle was
+  // re-published with a different sentence — starts fresh from `initialHoles`. Always
+  // prunes rounds from other game days (a new day never keeps yesterday's), keeping the
+  // map bounded.
   ensureRound: (key: string, initialHoles: RuntimeHole[]) => void;
 
   // Count a valid guess on the active round. Deduped by folded slug: a repeat neither
@@ -119,8 +133,14 @@ export const useGameStore = create<GameState>()(
           for (const [k, v] of Object.entries(s.rounds)) {
             if (dayPrefix && k.startsWith(dayPrefix)) kept[k] = v;
           }
-          // Same key -> rehydrate untouched; brand-new key -> fresh from initialHoles.
-          kept[key] = s.rounds[key] ?? freshRound(initialHoles);
+          // Same key + matching holes -> rehydrate untouched; a brand-new key OR a
+          // re-published sentence under the same (day, lang) key (holes no longer match)
+          // -> fresh from initialHoles, so stale holes never reach scoring.
+          const existing = s.rounds[key];
+          kept[key] =
+            existing && holesMatchPuzzle(existing.holes, initialHoles)
+              ? existing
+              : freshRound(initialHoles);
           return { activeKey: key, rounds: kept };
         }),
 

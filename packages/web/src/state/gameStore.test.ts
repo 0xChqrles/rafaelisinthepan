@@ -3,7 +3,9 @@
 //   - a NEW day prunes the previous day's rounds (a new day never bleeds yesterday's in);
 //   - switching LANGUAGE keeps BOTH rounds — coming back restores the in-progress one
 //     (drives the language selector's per-language status + no-confirmation switching);
-//   - the SAME key rehydrates the stored progress untouched (mid-round reload);
+//   - the SAME key rehydrates the stored progress untouched (mid-round reload) — UNLESS
+//     the puzzle was re-published with a different sentence (holes no longer match), in
+//     which case the round resets so stale holes never reach scoring;
 //   - score = number of UNIQUE valid tries, deduped by folded slug;
 //   - an improved hole swaps in the closer word + lower rank; solved holes stay locked;
 //   - progress is cached per round for the selector badge;
@@ -104,6 +106,22 @@ describe('ensureRound — day/language keying', () => {
     expect(after?.guessCount).toBe(1);
     expect(after?.tried).toEqual(['bois']);
     expect(after?.progress).toBe(42);
+  });
+
+  it('resets when the same (day, lang) key is re-published with a DIFFERENT sentence', () => {
+    const { ensureRound, recordGuess, improveHole } = useGameStore.getState();
+    ensureRound('d:5:fr', freshHoles());
+    recordGuess('bois');
+    improveHole(0, 'forêt', 12);
+
+    // Same key, but the day's puzzle changed: new holes carry secrets absent from the
+    // old round. Rehydrating them would crash scoring, so the round must reset instead.
+    const newHoles: RuntimeHole[] = [
+      { pos: 2, secret: 'chat', word: 'animal', rank: 60, startRank: 60 },
+      { pos: 4, secret: 'noir', word: 'sombre', rank: 30, startRank: 30 },
+    ];
+    ensureRound('d:5:fr', newHoles);
+    expect(activeRound()).toEqual({ holes: newHoles, guessCount: 0, tried: [], progress: 0 });
   });
 });
 
