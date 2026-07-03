@@ -3,6 +3,8 @@
 // DST-correct flip) and serves the matching puzzle. The client never computes the
 // date for normal play — it just asks the backend.
 
+import type { Puzzle, Word } from '@whippin/shared';
+
 // Base URL of the backend, configured at build time via VITE_API_BASE_URL.
 // Trailing slashes are trimmed so callers can append paths cleanly. Empty when
 // unset (e.g. local dev with no backend) — normal play then can't resolve a
@@ -59,4 +61,47 @@ export function puzzleOutcome(status: number): PuzzleOutcome {
   if (status === 404) return 'missing';
   if (status >= 200 && status < 300) return 'puzzle';
   return 'error';
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+function isWord(v: unknown): v is Word {
+  return isRecord(v) && typeof v.word === 'string' && typeof v.slug === 'string';
+}
+
+// Runtime shape check for a fetched puzzle (issue #14). The backend/store normally
+// returns a well-formed Puzzle, but a truncated body, the wrong file behind ?puzzle=,
+// or a store/CDN mishap can yield valid JSON of the WRONG shape — which would then
+// crash Game mid-render (a blank screen), not surface as an error. So validate the
+// load-bearing fields the game actually reads here: on success return a typed Puzzle;
+// on a bad shape throw a descriptive Error the fetch hook turns into the error state.
+// Not exhaustive — it asserts only the structure Game depends on (lang, words, each
+// hole's secret/start {word,slug} + start_rank, and a ranks map that has an entry for
+// every secret, since Game does ranks[secret][typed] on the first guess).
+export function parsePuzzle(data: unknown): Puzzle {
+  if (!isRecord(data)) throw new Error('malformed puzzle: not an object');
+  const { lang, words, holes, ranks } = data;
+  if (typeof lang !== 'string') throw new Error('malformed puzzle: missing "lang"');
+  if (!Array.isArray(words) || !words.every((w) => typeof w === 'string')) {
+    throw new Error('malformed puzzle: "words" must be an array of strings');
+  }
+  if (!isRecord(ranks)) throw new Error('malformed puzzle: "ranks" must be an object');
+  if (!Array.isArray(holes)) throw new Error('malformed puzzle: "holes" must be an array');
+  for (const h of holes) {
+    if (
+      !isRecord(h) ||
+      typeof h.pos !== 'number' ||
+      typeof h.start_rank !== 'number' ||
+      !isWord(h.secret) ||
+      !isWord(h.start)
+    ) {
+      throw new Error('malformed puzzle: bad "holes" entry');
+    }
+    if (!isRecord(ranks[h.secret.slug])) {
+      throw new Error(`malformed puzzle: "ranks" missing entry for secret "${h.secret.slug}"`);
+    }
+  }
+  return data as unknown as Puzzle;
 }

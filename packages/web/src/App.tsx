@@ -3,6 +3,7 @@ import usePuzzle from './hooks/usePuzzle';
 import LanguageSelect from './screens/LanguageSelect';
 import Game from './screens/Game';
 import FlagButton from './components/FlagButton';
+import LoadError from './components/LoadError';
 import { useGameStore } from './state/gameStore';
 import { useLocation, navigate } from './routing';
 import { parseRoute, resolveHomeLang, pathForLang, type LangCode } from './langs';
@@ -34,7 +35,7 @@ export default function App() {
 // as the last-played one. The HUD flag shows the LOADED puzzle's language (falling back
 // to the route language until it resolves), so it is always the flag of what's on screen.
 function GameRoute({ lang }: { lang: LangCode }) {
-  const { puzzle, dayNumber, error, loading, noPuzzle } = usePuzzle(lang);
+  const { puzzle, dayNumber, error, loading, noPuzzle, retry } = usePuzzle(lang);
   const setLastLang = useGameStore((s) => s.setLastLang);
 
   // Visiting a puzzle route makes this the last-played language (seeds the `/` redirect).
@@ -56,7 +57,7 @@ function GameRoute({ lang }: { lang: LangCode }) {
       )}
 
       {loading && <p className="status">LOADING&hellip;</p>}
-      {error !== null && <p className="status error">FAILED TO LOAD PUZZLE</p>}
+      {error !== null && <LoadError message="FAILED TO LOAD PUZZLE" onRetry={retry} />}
       {noPuzzle && <p className="status">NO PUZZLE TODAY</p>}
       {puzzle && <Game puzzle={puzzle} dayNumber={dayNumber} />}
     </>

@@ -8,6 +8,7 @@ import ProgressBar from '../components/ProgressBar';
 import FlagButton from '../components/FlagButton';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
+import LoadError from '../components/LoadError';
 import { fold } from '@whippin/shared';
 import type { HitState, Hole, Puzzle, RankEntry, RankMap, RuntimeHole } from '@whippin/shared';
 
@@ -29,9 +30,9 @@ const OVERRIDE_NONCE = Math.random().toString(36).slice(2);
 // (existence set + keyboard prefix set) before playing — existence is decided by it,
 // not by ranks.
 export default function Game({ puzzle, dayNumber }: { puzzle: Puzzle; dayNumber: number | null }) {
-  const { vocab, error } = useVocab(puzzle.lang);
+  const { vocab, error, retry } = useVocab(puzzle.lang);
 
-  if (error !== null) return <p className="status error">FAILED TO LOAD VOCABULARY</p>;
+  if (error !== null) return <LoadError message="FAILED TO LOAD VOCABULARY" onRetry={retry} />;
   if (!vocab) return <p className="status">LOADING&hellip;</p>;
 
   return (
