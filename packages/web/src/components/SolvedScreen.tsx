@@ -58,6 +58,25 @@ export default function SolvedScreen({
   }, [showActions, guessCount]);
   const shownScore = useAnimatedNumber(countTarget, SCORE_COUNT_MS);
 
+  // (3) After the score is shown: neutral tiles roll in one by one (gridShown + per-cell
+  //     --show-delay), and once they are all in (+ a brief hold) each colorizes one by one
+  //     (gridColorized + per-cell --color-delay). Two class flips on .heat-grid drive the
+  //     CSS transitions. gridSpanMs = how long the staggered wave takes end to end.
+  const gridSpanMs = Math.max(0, n - 1) * stagger;
+  const [gridShown, setGridShown] = useState(false);
+  const [gridColorized, setGridColorized] = useState(false);
+  useEffect(() => {
+    const show = window.setTimeout(() => setGridShown(true), SQUARES_START_MS);
+    const color = window.setTimeout(
+      () => setGridColorized(true),
+      SQUARES_START_MS + gridSpanMs + NEUTRAL_HOLD_MS,
+    );
+    return () => {
+      window.clearTimeout(show);
+      window.clearTimeout(color);
+    };
+  }, [gridSpanMs]);
+
   // "COPIED" confirmation after a clipboard fallback (the native share sheet needs none).
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<number | undefined>(undefined);
@@ -90,12 +109,15 @@ export default function SolvedScreen({
 
   return (
     <div className="solved-results">
-      {/* One flat square per bucket (3..18). AFTER the score is shown, all squares appear as
-          neutral surface tiles (--show-delay), then each colorizes to its bucket's MEAN
-          reconstruction % one by one (--color-delay, staggered). heatColor: 0 = cold/far
-          crimson .. 1 = hot/solved cyan. Decorative — the score/share carry the real numbers.
-          The grid keeps its height throughout, so nothing shifts when they land. */}
-      <div className="heat-grid" aria-hidden="true">
+      {/* One flat square per bucket (3..18). AFTER the score is shown, neutral surface tiles
+          roll in one by one (.shown + staggered --show-delay), then each colorizes to its
+          bucket's MEAN reconstruction % one by one (.colorized + staggered --color-delay).
+          heatColor: 0 = cold/far crimson .. 1 = hot/solved cyan. Decorative — the score/share
+          carry the real numbers. The grid keeps its height throughout, so nothing shifts. */}
+      <div
+        className={`heat-grid${gridShown ? ' shown' : ''}${gridColorized ? ' colorized' : ''}`}
+        aria-hidden="true"
+      >
         {squares.map((pct, i) => (
           <span
             // eslint-disable-next-line react/no-array-index-key
@@ -104,8 +126,8 @@ export default function SolvedScreen({
             style={
               {
                 '--cell-color': heatColor(pct / 100),
-                '--show-delay': `${SQUARES_START_MS}ms`,
-                '--color-delay': `${SQUARES_START_MS + NEUTRAL_HOLD_MS + Math.round(i * stagger)}ms`,
+                '--show-delay': `${Math.round(i * stagger)}ms`,
+                '--color-delay': `${Math.round(i * stagger)}ms`,
               } as CSSProperties & Record<'--cell-color' | '--show-delay' | '--color-delay', string>
             }
           />

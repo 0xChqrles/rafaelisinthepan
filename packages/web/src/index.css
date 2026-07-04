@@ -600,30 +600,26 @@ button * {
   gap: 5px;
   max-width: 100%;
 }
-/* Squares first appear as neutral surface tiles (all together), then colorize ONE BY ONE.
-   Two stepped, instant animations keep the pixel-art feel: `heat-cell-show` flips opacity in
-   at --show-delay; `heat-cell-color` snaps the background from the surface tile to the cell's
-   heat color at its staggered --color-delay. `both` holds each at its start value until its
-   delay (backwards fill) and its end value after (forwards fill). */
+/* Squares roll in ONE BY ONE as neutral surface tiles, then colorize ONE BY ONE. Driven by
+   two class flips on .heat-grid (JS): `.shown` reveals each tile on its staggered --show-delay;
+   `.colorized` (added once every tile is in) snaps each cell's background from the surface tile
+   to its heat color on its staggered --color-delay. Near-zero durations keep the pixel-art snap
+   (no smooth fade); the per-cell delays produce the two left-to-right waves. */
 .heat-cell {
   width: clamp(14px, 2.4vh, 20px);
   height: clamp(14px, 2.4vh, 20px);
   image-rendering: pixelated;
   opacity: 0;
   background-color: var(--surface-hover); /* shown uncolored first, until it colorizes */
-  animation:
-    heat-cell-show 1ms steps(1) var(--show-delay, 0ms) both,
-    heat-cell-color 1ms steps(1) var(--color-delay, 0ms) both;
+  transition: opacity 1ms linear var(--show-delay, 0ms), background-color 1ms linear var(--color-delay, 0ms);
 }
-@keyframes heat-cell-show {
-  to {
-    opacity: 1;
-  }
+/* Wave 1: neutral tiles appear one by one. */
+.heat-grid.shown .heat-cell {
+  opacity: 1;
 }
-@keyframes heat-cell-color {
-  to {
-    background-color: var(--cell-color);
-  }
+/* Wave 2: each tile snaps to its own heat color, one by one. */
+.heat-grid.colorized .heat-cell {
+  background-color: var(--cell-color);
 }
 /* Score + share fade/rise in AFTER the grid has landed (JS toggles `.in`), as the score
    tallies up from 0. */
