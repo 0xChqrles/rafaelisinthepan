@@ -14,7 +14,7 @@ const ACTIONS_IN_MS = 350; // score+share fade/rise into place (matches .solved-
 const SCORE_COUNT_MS = 800; // score tally 0 -> guessCount
 // The uncolored squares appear only AFTER the score is shown (row settled + tally finished)...
 const SQUARES_START_MS = ACTIONS_IN_MS + SCORE_COUNT_MS;
-const NEUTRAL_HOLD_MS = 250; // ...are held neutral this long, THEN colorize one by one.
+const NEUTRAL_HOLD_MS = SQUARE_STAGGER_MS; // ...are held neutral this long, THEN colorize one by one.
 
 // The solved results (issue #8): it takes over the on-screen keyboard's footprint once
 // the sentence is solved, so the layout never reflows and no empty gap is left where the
