@@ -26,14 +26,14 @@ const token = encodeResult({
 });
 
 describe('GET /og/<token>.png', () => {
-  it('returns a base64 PNG (real image bytes), cached', async () => {
+  it('returns a base64 PNG (real image bytes), cached immutable', async () => {
     const res = await handler(get(`/og/${token}.png`));
     expect(res.statusCode).toBe(200);
     expect(res.headers['Content-Type']).toBe('image/png');
     expect(res.isBase64Encoded).toBe(true);
     const bytes = Buffer.from(res.body, 'base64');
     expect(bytes.subarray(0, 8)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])); // PNG magic
-    expect(res.headers['Cache-Control']).toMatch(/max-age=\d+/);
+    expect(res.headers['Cache-Control']).toContain('immutable');
   });
 
   it('404s an invalid token instead of rendering', async () => {

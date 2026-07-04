@@ -43,11 +43,12 @@ const PUZZLE_MAX_AGE = 86_400;
 
 const LANG_RE = /^[a-z]{2}$/;
 
-// The share card (issue #8) is keyed by its token, but its RENDER can change across deploys
-// (e.g. the card design, or the canonical origin in the /s HTML). So cache it for a moderate
-// window (enough to absorb a crawl burst) rather than `immutable` — otherwise a render change
-// is stuck until a manual CloudFront invalidation. One hour, honoured by both CDNs.
-const SHARE_MAX_AGE = 3_600;
+// The share card (issue #8) is content-addressed by its token: a given URL's bytes are fixed
+// (the render only changes on a deploy), and messaging apps cache the preview on THEIR side
+// once unfurled — so a short origin TTL couldn't refresh an already-shared preview anyway.
+// Cache it hard; the rare render-changing deploy (a card redesign) needs a one-off CloudFront
+// invalidation — see the DistributionId stack outputs.
+const SHARE_MAX_AGE = 31_536_000;
 const OG_PNG_RE = /^\/og\/([A-Za-z0-9_-]+)\.png$/;
 const SHARE_RE = /^\/s\/([A-Za-z0-9_-]+)$/;
 
@@ -101,7 +102,7 @@ export function createHandler(deps: HandlerDeps) {
           score: result.score,
           squares: result.squares,
         });
-        return png(200, buffer, { 'Cache-Control': `public, max-age=${SHARE_MAX_AGE}` });
+        return png(200, buffer, { 'Cache-Control': `public, max-age=${SHARE_MAX_AGE}, immutable` });
       }
       const shareMatch = SHARE_RE.exec(rawPath);
       if (shareMatch) {
@@ -111,7 +112,7 @@ export function createHandler(deps: HandlerDeps) {
         // depend on the CloudFront-to-CloudFront Host); the request origin is the local-dev
         // fallback.
         const body = renderShareHtml(shareMatch[1], result, deps.siteOrigin ?? requestOrigin(event));
-        return html(200, body, { 'Cache-Control': `public, max-age=${SHARE_MAX_AGE}` });
+        return html(200, body, { 'Cache-Control': `public, max-age=${SHARE_MAX_AGE}, immutable` });
       }
 
       const instant = now();
