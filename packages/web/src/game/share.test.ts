@@ -97,6 +97,16 @@ describe('bucketMeans — collapse the trajectory into squareCount buckets', () 
   it('handles no guesses without throwing', () => {
     expect(bucketMeans([])).toEqual([]);
   });
+
+  it('below 3 tries still emits squareCount(n) squares — the decoder derives the count from the score', () => {
+    // Two holes sharing a secret can be solved by one word, so a game can end in 2 tries.
+    // The decoder always reads squareCount(score) squares; a shorter row here would make
+    // the card pad phantom cold squares onto a solved game.
+    const squares = bucketMeans([60, 100]);
+    expect(squares).toHaveLength(squareCount(2)); // 3
+    expect(squares[squares.length - 1]).toBe(100); // ends at the final progress, not 0
+    for (let i = 1; i < squares.length; i++) expect(squares[i]).toBeGreaterThanOrEqual(squares[i - 1]);
+  });
 });
 
 describe('progressTrajectory — replay the ordered guesses', () => {

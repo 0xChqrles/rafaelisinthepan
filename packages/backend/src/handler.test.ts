@@ -98,6 +98,15 @@ describe('puzzle endpoint', () => {
     expect(JSON.parse(res.body)).toEqual(PUZZLE);
   });
 
+  it('stamps the served day (X-Puzzle-Date, CORS-exposed) so the client can detect a flip mid-pair', async () => {
+    // The client fetches /today then the puzzle; when the 22:00 flip lands between the
+    // two, the puzzle belongs to a different day than the pointer. The stamp is what
+    // lets it detect that and re-run the pair.
+    const res = await makeHandler()(event({ query: { lang: 'fr', v: VERSION } }));
+    expect(res.headers['X-Puzzle-Date']).toBe(ACTIVE_DATE);
+    expect(res.headers['Access-Control-Expose-Headers']).toMatch(/X-Puzzle-Date/);
+  });
+
   it('missing puzzle -> clean JSON 404, never 500', async () => {
     const res = await makeHandler()(event({ query: { lang: 'en', v: 'x' } }));
     expect(res.statusCode).toBe(404);

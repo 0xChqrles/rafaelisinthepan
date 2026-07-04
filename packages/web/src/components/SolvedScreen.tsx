@@ -85,13 +85,16 @@ export default function SolvedScreen({
   useEffect(() => () => window.clearTimeout(copiedTimer.current), []);
 
   const onShare = useCallback(async () => {
+    // No server day (a ?puzzle= override) -> no share: the token has no real dayNumber
+    // to carry (the codec would clamp it to a bogus id). The button isn't rendered then;
+    // this guard just makes the invariant local.
+    if (dayNumber == null) return;
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    const id = dayNumber ?? 0; // null only for a ?puzzle= override
     // The result is packed into the link; the backend renders /s/<token> as the OG card, so
     // sharing the URL unfurls into the image.
-    const url = shareUrl(origin, { lang, dayNumber: id, score: guessCount, squares });
+    const url = shareUrl(origin, { lang, dayNumber, score: guessCount, squares });
     // What we share/copy: a headline line then the (unfurling) link, blank line between.
-    const text = `Whippin #${id} ${guessCount}\n\n${url}`;
+    const text = `Whippin #${dayNumber} ${guessCount}\n\n${url}`;
 
     // Use the Web Share API only on touch/mobile devices (native share sheet). On DESKTOP
     // the share button should just copy the link — desktop Chrome/Edge/Safari expose
@@ -160,9 +163,11 @@ export default function SolvedScreen({
             <span className="solved-score-live">{Math.round(shownScore)}</span>
           </span>
         </span>
-        <button type="button" className={`share-key${copied ? ' copied' : ''}`} onClick={onShare}>
-          {copied ? 'COPIED' : 'SHARE'}
-        </button>
+        {dayNumber != null && (
+          <button type="button" className={`share-key${copied ? ' copied' : ''}`} onClick={onShare}>
+            {copied ? 'COPIED' : 'SHARE'}
+          </button>
+        )}
       </div>
     </div>
   );

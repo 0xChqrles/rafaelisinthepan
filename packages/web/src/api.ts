@@ -46,6 +46,7 @@ export interface Today {
   date: string; // "YYYY-MM-DD"
   dayNumber: number; // whole days since the Unix epoch
   version?: string | null; // content version of today's puzzle (null when none) — #42
+  secondsUntilNextReset?: number; // whole seconds until the 22:00-ET flip (caches expire then)
 }
 
 // A ?puzzle= test override resolves a puzzle FILE directly, bypassing the backend

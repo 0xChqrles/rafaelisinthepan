@@ -186,8 +186,16 @@ export function createHandler(deps: HandlerDeps) {
       // hit here is version-addressed (the `v` guard above), so the URL is content-addressed
       // and safe to hold `immutable` on the browser + CDN: a republish yields a new version
       // -> a new URL, never a stale hit at this one (issue #42).
+      //
+      // X-Puzzle-Date stamps the day this puzzle was resolved for. The client fetches
+      // /today then the puzzle; when the 22:00 flip lands BETWEEN the two, this endpoint
+      // serves the NEXT day's puzzle under the previous day's `v` — the stamp lets the
+      // client detect the mismatch and re-run the pair (the header must be CORS-exposed
+      // for the cross-origin fetch to read it).
       return json(200, puzzle, {
         ...cors,
+        'X-Puzzle-Date': date,
+        'Access-Control-Expose-Headers': 'X-Puzzle-Date',
         'Cache-Control': `public, max-age=${PUZZLE_MAX_AGE}, immutable`,
       });
     } catch (err) {
