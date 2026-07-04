@@ -111,10 +111,7 @@ export default function SolvedScreen({
       <div className="heat-grid" aria-hidden="true">
         <div
           className="heat-track"
-          style={{
-            transform: `translateX(calc((var(--cell) + var(--gap)) * ${n - shown}))`,
-            transitionDuration: `${Math.round(step)}ms`,
-          }}
+          style={{ transform: `translateX(calc((var(--cell) + var(--gap)) * ${n - shown}))` }}
         >
           {squares.map((pct, i) => (
             <span

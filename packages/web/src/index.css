@@ -605,22 +605,20 @@ button * {
   max-width: 100%;
   overflow: hidden;
 }
-/* The row of squares. It is translated right by `n - shown` slots (inline) and slides one
-   slot left per reveal; transition-duration is set inline to the per-step time so the shifts
-   read as one continuous march. */
+/* The row of squares. It is translated right by `n - shown` slots (inline); each reveal
+   snaps it one whole slot left (NO transition — a discrete, pixel-art step, not a glide).
+   The JS timer's per-step spacing gives the march its rhythm. */
 .heat-track {
   display: flex;
   gap: var(--gap);
-  transition-property: transform;
-  transition-timing-function: linear;
 }
-/* Flat pixel square; opacity is toggled inline (0 until its turn, 1 once revealed). */
+/* Flat pixel square; opacity is toggled inline (0 until its turn, 1 once revealed) — instant,
+   to match the stepped movement. */
 .heat-cell {
   flex: none;
   width: var(--cell);
   height: var(--cell);
   image-rendering: pixelated;
-  transition: opacity 0.14s ease-out;
 }
 /* Score + share fade/rise in AFTER the grid has landed (JS toggles `.in`), as the score
    tallies up from 0. */
