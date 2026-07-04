@@ -41,13 +41,19 @@ export async function renderCardPng(data: CardData): Promise<Buffer> {
 const escapeAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
 // The share page: OG/Twitter meta pointing at /og/<token>.png so the link unfurls into the
-// card, plus a redirect so a human who clicks it lands on the game. `base` is the request's
-// own origin (same host serves /og and the SPA), so the URLs are absolute as crawlers need.
+// card, plus a redirect so a human who clicks it lands on the game. `base` is the canonical
+// site origin (the apex), so the URLs are absolute as crawlers need.
+//
+// The redirect is JavaScript, NOT `<meta http-equiv="refresh">`: preview crawlers don't run
+// JS, so they stop here and read THIS page's card OG tags. A meta-refresh, by contrast, is
+// followed by some crawlers (e.g. Telegram) to the game page, whose default OG tags then
+// win — showing the wrong preview. Humans (who run JS) still get bounced to the game; the
+// visible link is the no-JS fallback.
 export function renderShareHtml(token: string, result: ShareResult, base: string): string {
   const lang = /^[a-z]{2}$/.test(result.lang) ? result.lang : 'en'; // sanitize (token-sourced)
   const title = escapeAttr(`Whippin AI #${result.dayNumber} — SCORE ${result.score}`);
   const image = escapeAttr(`${base}/og/${token}.png`);
-  const game = escapeAttr(`${base}/${lang}`);
+  const gameUrl = `${base}/${lang}`; // safe: base is server-set, lang is /^[a-z]{2}$/
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -62,10 +68,10 @@ export function renderShareHtml(token: string, result: ShareResult, base: string
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${title}">
 <meta name="twitter:image" content="${image}">
-<meta http-equiv="refresh" content="0; url=${game}">
 </head>
 <body>
-<p>Redirecting to <a href="${game}">Whippin AI</a>…</p>
+<p>Redirecting to <a href="${escapeAttr(gameUrl)}">Whippin AI</a>…</p>
+<script>location.replace(${JSON.stringify(gameUrl)})</script>
 </body>
 </html>`;
 }

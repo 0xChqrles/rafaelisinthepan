@@ -119,6 +119,32 @@ export class WebStack extends Stack {
     // clicks it land on the SPA; the backend builds all card URLs from that same apex origin.
     // The token lives in the PATH, so caching keys on path (CACHING_OPTIMIZED) and honours the
     // backend's `immutable` Cache-Control.
+    //
+    // The card pages get their OWN headers policy, not the SPA's: the /s page redirects humans
+    // with a tiny inline <script>, which the SPA's `script-src 'self'` CSP would block. This
+    // trivial, server-rendered redirect stub (all values escaped/sanitized) has no injection
+    // surface, so `script-src 'unsafe-inline'` is fine here; HSTS/nosniff/frame stay on.
+    const cardHeaders = new cloudfront.ResponseHeadersPolicy(this, 'CardHeaders', {
+      responseHeadersPolicyName: 'WhippinCardHeaders',
+      comment: 'Share card (#8): HSTS + nosniff/frame; CSP permits the /s inline redirect.',
+      securityHeadersBehavior: {
+        strictTransportSecurity: {
+          accessControlMaxAge: Duration.days(365),
+          includeSubdomains: true,
+          override: true,
+        },
+        contentTypeOptions: { override: true },
+        referrerPolicy: {
+          referrerPolicy: cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN,
+          override: true,
+        },
+        frameOptions: { frameOption: cloudfront.HeadersFrameOption.DENY, override: true },
+        contentSecurityPolicy: {
+          contentSecurityPolicy: "default-src 'none'; script-src 'unsafe-inline'",
+          override: true,
+        },
+      },
+    });
     const cardBehavior: cloudfront.BehaviorOptions | undefined = apiOrigin
       ? {
           origin: new origins.HttpOrigin(new URL(apiOrigin).host, {
@@ -129,7 +155,7 @@ export class WebStack extends Stack {
           allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
           cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
           cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-          responseHeadersPolicy: siteHeaders,
+          responseHeadersPolicy: cardHeaders,
           compress: true,
         }
       : undefined;
