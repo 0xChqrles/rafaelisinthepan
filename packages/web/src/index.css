@@ -593,32 +593,37 @@ button * {
 }
 /* One flat pixel square per counted guess, colored inline by the heat ramp — the solve's
    cold-to-hot trail. Wraps within the keyboard's width for longer games. */
-/* The grid centers the conveyor track and reserves its full box (--cell / --gap drive both
-   the cell size and the JS slot-shift transform, so they always agree). `overflow: hidden`
-   clips the track while it is shifted off to the right (empty slots), so the entering
-   squares appear to slide in from the right edge. */
 .heat-grid {
-  --cell: clamp(13px, 2.4vh, 20px);
-  --gap: 5px;
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
+  gap: 5px;
   max-width: 100%;
-  overflow: hidden;
 }
-/* The row of squares. It is translated right by `n - shown` slots (inline); each reveal
-   snaps it one whole slot left (NO transition — a discrete, pixel-art step, not a glide).
-   The JS timer's per-step spacing gives the march its rhythm. */
-.heat-track {
-  display: flex;
-  gap: var(--gap);
-}
-/* Flat pixel square; opacity is toggled inline (0 until its turn, 1 once revealed) — instant,
-   to match the stepped movement. */
+/* Squares first appear as neutral surface tiles (all together), then colorize ONE BY ONE.
+   Two stepped, instant animations keep the pixel-art feel: `heat-cell-show` flips opacity in
+   at --show-delay; `heat-cell-color` snaps the background from the surface tile to the cell's
+   heat color at its staggered --color-delay. `both` holds each at its start value until its
+   delay (backwards fill) and its end value after (forwards fill). */
 .heat-cell {
-  flex: none;
-  width: var(--cell);
-  height: var(--cell);
+  width: clamp(14px, 2.4vh, 20px);
+  height: clamp(14px, 2.4vh, 20px);
   image-rendering: pixelated;
+  opacity: 0;
+  background-color: var(--surface-hover); /* shown uncolored first, until it colorizes */
+  animation:
+    heat-cell-show 1ms steps(1) var(--show-delay, 0ms) both,
+    heat-cell-color 1ms steps(1) var(--color-delay, 0ms) both;
+}
+@keyframes heat-cell-show {
+  to {
+    opacity: 1;
+  }
+}
+@keyframes heat-cell-color {
+  to {
+    background-color: var(--cell-color);
+  }
 }
 /* Score + share fade/rise in AFTER the grid has landed (JS toggles `.in`), as the score
    tallies up from 0. */
@@ -880,11 +885,6 @@ button * {
   .solved-caption {
     min-height: 72px;
     align-items: stretch;
-  }
-  /* Smaller cells/gap so even a full 18-square row (a 300+ guess game) fits a phone width. */
-  .heat-grid {
-    --cell: clamp(12px, 2vh, 18px);
-    --gap: 4px;
   }
   .progress-background {
     font-size: min(72vh, 54vw);

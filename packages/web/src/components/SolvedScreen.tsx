@@ -1,18 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { bucketMeans, buildShareText } from '../game/share';
 import { heatColor } from '../game/heat';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 
-// Reveal choreography: the score+share row fades in and tallies up first, THEN the heat
-// squares feed in as a conveyor — each new square enters at the rightmost slot while the
-// whole row shifts one slot left, until the row is full. This component MOUNTS at the reveal
-// moment (Game gates it on the last hole's solve animation finishing).
-const BASE_STEP_MS = 170; // time between squares entering...
-const CONVEYOR_MAX_SPAN_MS = 1400; // ...compressed so even a long game's conveyor stays snappy
+// Reveal choreography (this component MOUNTS at the reveal moment — Game gates it on the last
+// hole's solve animation finishing, so the animations below ARE the reveal): the score/share
+// row fades in and the score tallies up from 0, THEN the heat squares appear as neutral
+// surface tiles and colorize one by one. Score first (the headline), heat trail after.
+const SQUARE_STAGGER_MS = 55; // gap between consecutive squares colorizing...
+const GRID_MAX_SPAN_MS = 1400; // ...compressed so even a long game's grid stays snappy
 const ACTIONS_IN_MS = 350; // score+share fade/rise into place (matches .solved-actions transition)
 const SCORE_COUNT_MS = 800; // score tally 0 -> guessCount
-// The conveyor runs only AFTER the score is shown (row settled + tally finished).
-const CONVEYOR_START_MS = ACTIONS_IN_MS + SCORE_COUNT_MS;
+// The uncolored squares appear only AFTER the score is shown (row settled + tally finished)...
+const SQUARES_START_MS = ACTIONS_IN_MS + SCORE_COUNT_MS;
+const NEUTRAL_HOLD_MS = 250; // ...are held neutral this long, THEN colorize one by one.
 
 // The solved results (issue #8): it takes over the on-screen keyboard's footprint once
 // the sentence is solved, so the layout never reflows and no empty gap is left where the
@@ -33,18 +35,15 @@ export default function SolvedScreen({
   // by its bucket's mean progress. Same array drives the on-screen grid and the share row.
   const squares = useMemo(() => bucketMeans(trajectory), [trajectory]);
   const n = squares.length;
-  // Time between squares entering the conveyor, compressed so a long row still lands fast.
-  const step = n > 1 ? Math.min(BASE_STEP_MS, CONVEYOR_MAX_SPAN_MS / (n - 1)) : 0;
+  // Per-square stagger, compressed for long games so the whole grid lands within a bound.
+  const stagger = n > 1 ? Math.min(SQUARE_STAGGER_MS, GRID_MAX_SPAN_MS / (n - 1)) : 0;
 
   // Reveal in three beats: (1) the score+share row fades/rises into place, (2) the score
-  // tallies up from 0 in its final position, and only THEN (3) the squares feed in as a
-  // conveyor. Score first, squares after — the score is the headline, the heat trail follows.
+  // tallies up from 0 in its final position, and only THEN (3) the squares pop in one by one
+  // (their staggered CSS delays are offset by SQUARES_START_MS, below). Score first, squares
+  // after — the score is the headline, the heat trail the follow-up.
   const [countTarget, setCountTarget] = useState(0);
   const [showActions, setShowActions] = useState(false);
-  // How many squares have entered so far. Each is added at the rightmost slot while the row
-  // shifts one slot left (see the transform below), so the row fills right-to-left.
-  const [shown, setShown] = useState(0);
-
   // (1) On mount (the reveal moment), bring the row in on the next frame so its fade/rise
   //     transition actually plays.
   useEffect(() => {
@@ -58,16 +57,6 @@ export default function SolvedScreen({
     return () => window.clearTimeout(t);
   }, [showActions, guessCount]);
   const shownScore = useAnimatedNumber(countTarget, SCORE_COUNT_MS);
-
-  // (3) After the score, feed the conveyor: reveal one more square every `step` ms.
-  useEffect(() => {
-    setShown(0);
-    const timers: number[] = [];
-    for (let k = 1; k <= n; k += 1) {
-      timers.push(window.setTimeout(() => setShown(k), CONVEYOR_START_MS + (k - 1) * step));
-    }
-    return () => timers.forEach((t) => window.clearTimeout(t));
-  }, [n, step]);
 
   // "COPIED" confirmation after a clipboard fallback (the native share sheet needs none).
   const [copied, setCopied] = useState(false);
@@ -101,27 +90,26 @@ export default function SolvedScreen({
 
   return (
     <div className="solved-results">
-      {/* One flat square per bucket (3..18), colored by the bucket's MEAN reconstruction %
-          (heatColor: 0 = cold/far crimson .. 1 = hot/solved cyan). Conveyor reveal: the track
-          is shifted right by `n - shown` slots, so the `shown` visible squares sit in the
-          rightmost slots; each step reveals one more and shifts the track one slot left, so
-          the row fills right-to-left and settles centered when full. The grid reserves the
-          full width/height throughout, so nothing else shifts. Decorative — the score/share
-          carry the real numbers. */}
+      {/* One flat square per bucket (3..18). AFTER the score is shown, all squares appear as
+          neutral surface tiles (--show-delay), then each colorizes to its bucket's MEAN
+          reconstruction % one by one (--color-delay, staggered). heatColor: 0 = cold/far
+          crimson .. 1 = hot/solved cyan. Decorative — the score/share carry the real numbers.
+          The grid keeps its height throughout, so nothing shifts when they land. */}
       <div className="heat-grid" aria-hidden="true">
-        <div
-          className="heat-track"
-          style={{ transform: `translateX(calc((var(--cell) + var(--gap)) * ${n - shown}))` }}
-        >
-          {squares.map((pct, i) => (
-            <span
-              // eslint-disable-next-line react/no-array-index-key
-              key={i}
-              className="heat-cell"
-              style={{ background: heatColor(pct / 100), opacity: i < shown ? 1 : 0 }}
-            />
-          ))}
-        </div>
+        {squares.map((pct, i) => (
+          <span
+            // eslint-disable-next-line react/no-array-index-key
+            key={i}
+            className="heat-cell"
+            style={
+              {
+                '--cell-color': heatColor(pct / 100),
+                '--show-delay': `${SQUARES_START_MS}ms`,
+                '--color-delay': `${SQUARES_START_MS + NEUTRAL_HOLD_MS + Math.round(i * stagger)}ms`,
+              } as CSSProperties & Record<'--cell-color' | '--show-delay' | '--color-delay', string>
+            }
+          />
+        ))}
       </div>
 
       <div className={`solved-actions${showActions ? ' in' : ''}`}>
