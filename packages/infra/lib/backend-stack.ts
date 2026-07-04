@@ -303,5 +303,9 @@ export class BackendStack extends Stack {
       description: 'CloudFront default domain (Route53 alias target for the API domain).',
       value: distribution.distributionDomainName,
     });
+    new CfnOutput(this, 'DistributionId', {
+      description: 'API CloudFront distribution id (for `aws cloudfront create-invalidation`).',
+      value: distribution.distributionId,
+    });
   }
 }

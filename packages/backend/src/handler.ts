@@ -43,8 +43,11 @@ const PUZZLE_MAX_AGE = 86_400;
 
 const LANG_RE = /^[a-z]{2}$/;
 
-// The share card (issue #8) is content-addressed by its token, so it can be cached forever.
-const SHARE_MAX_AGE = 31_536_000;
+// The share card (issue #8) is keyed by its token, but its RENDER can change across deploys
+// (e.g. the card design, or the canonical origin in the /s HTML). So cache it for a moderate
+// window (enough to absorb a crawl burst) rather than `immutable` — otherwise a render change
+// is stuck until a manual CloudFront invalidation. One hour, honoured by both CDNs.
+const SHARE_MAX_AGE = 3_600;
 const OG_PNG_RE = /^\/og\/([A-Za-z0-9_-]+)\.png$/;
 const SHARE_RE = /^\/s\/([A-Za-z0-9_-]+)$/;
 
@@ -98,7 +101,7 @@ export function createHandler(deps: HandlerDeps) {
           score: result.score,
           squares: result.squares,
         });
-        return png(200, buffer, { 'Cache-Control': `public, max-age=${SHARE_MAX_AGE}, immutable` });
+        return png(200, buffer, { 'Cache-Control': `public, max-age=${SHARE_MAX_AGE}` });
       }
       const shareMatch = SHARE_RE.exec(rawPath);
       if (shareMatch) {
@@ -108,7 +111,7 @@ export function createHandler(deps: HandlerDeps) {
         // depend on the CloudFront-to-CloudFront Host); the request origin is the local-dev
         // fallback.
         const body = renderShareHtml(shareMatch[1], result, deps.siteOrigin ?? requestOrigin(event));
-        return html(200, body, { 'Cache-Control': `public, max-age=${SHARE_MAX_AGE}, immutable` });
+        return html(200, body, { 'Cache-Control': `public, max-age=${SHARE_MAX_AGE}` });
       }
 
       const instant = now();
