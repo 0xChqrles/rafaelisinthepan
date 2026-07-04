@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { RuntimeHole } from '@whippin/shared';
 import { isLang } from '../langs';
-import type { Layout } from '../game/keyboard';
 
 // A round is identified by its `roundKey` = (server day, language). The store keeps a
 // MAP of rounds keyed by this string so progress in one language survives switching to
@@ -53,11 +52,6 @@ interface PersistedState {
   // Last-played language: seeds the `/` redirect so a return visit lands where you
   // last played (falls back to the browser language, then English).
   lastLang: string | null;
-  // On-screen keyboard layout preference (issue #36). GLOBAL — independent of the
-  // puzzle language and round: a French player on the EN puzzle keeps AZERTY. null =
-  // never chosen, so the keyboard falls back to the language default (fr -> AZERTY);
-  // once the player flips the layout this wins for every language/day.
-  layout: Layout | null;
 }
 
 interface GameState extends PersistedState {
@@ -67,10 +61,6 @@ interface GameState extends PersistedState {
 
   // Remember the last-played language (drives the `/` redirect). Ignores non-languages.
   setLastLang: (lang: string) => void;
-
-  // Set the global on-screen keyboard layout preference. Retained for older persisted
-  // state even though the current keyboard no longer exposes a layout-switch key.
-  setLayout: (layout: Layout) => void;
 
   // Reconcile the persisted rounds to `key`. A matching key with matching holes
   // rehydrates its stored progress; a brand-new key — or the same key whose puzzle was
@@ -110,17 +100,11 @@ export const useGameStore = create<GameState>()(
     (set, get) => ({
       rounds: {},
       lastLang: null,
-      layout: null,
       activeKey: null,
 
       setLastLang: (lang) => {
         if (!isLang(lang) || get().lastLang === lang) return;
         set({ lastLang: lang });
-      },
-
-      setLayout: (layout) => {
-        if (get().layout === layout) return;
-        set({ layout });
       },
 
       ensureRound: (key, initialHoles) =>
@@ -198,12 +182,15 @@ export const useGameStore = create<GameState>()(
       version: 1,
       // v0 was a single top-level round ({ roundKey, holes, ... }); the shape is now a
       // keyed map, so discard the old state rather than mis-merge it (one-time reset).
-      // A pre-#36 v1 blob simply lacks `layout`; the default-state merge leaves it null.
-      migrate: (persisted, version): PersistedState =>
-        version < 1 ? { rounds: {}, lastLang: null, layout: null } : (persisted as PersistedState),
-      // Persist the rounds, last language, and the global keyboard layout; activeKey and
-      // the actions are transient.
-      partialize: (s): PersistedState => ({ rounds: s.rounds, lastLang: s.lastLang, layout: s.layout }),
+      // A v1 blob may still carry the RETIRED keyboard `layout` preference (removed with
+      // the AZERTY layout) — pick only the current fields so it is silently dropped.
+      migrate: (persisted, version): PersistedState => {
+        if (version < 1) return { rounds: {}, lastLang: null };
+        const p = persisted as PersistedState;
+        return { rounds: p.rounds, lastLang: p.lastLang };
+      },
+      // Persist the rounds and last language; activeKey and the actions are transient.
+      partialize: (s): PersistedState => ({ rounds: s.rounds, lastLang: s.lastLang }),
     },
   ),
 );

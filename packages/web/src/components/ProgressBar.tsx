@@ -1,5 +1,5 @@
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
-import { progressColor } from '../game/progressColor';
+import { progressColor } from '@whippin/shared';
 
 export default function ProgressBar({ value }: { value: number }) {
   const pct = Math.max(0, Math.min(100, value));

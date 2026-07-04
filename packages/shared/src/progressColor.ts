@@ -1,3 +1,8 @@
+// The ONE color ramp of the game (the old separate "heat" ramp was dropped — one
+// quantity, one color language). Everything that colors a progress-like value uses it:
+// the progress bar, the hole rank exponents + floating hits (web), the solved heat grid,
+// and the backend-rendered share card — cross-cutting so the card matches the screen.
+// `progress` in [0,100]: low = far/cold (blue), high = near/solved (indigo).
 const PROGRESS_STOPS = [
   { v: 15, color: [35, 132, 242] }, // blue
   { v: 30, color: [42, 210, 235] }, // cyan
@@ -14,6 +19,7 @@ function mix(a: number, b: number, t: number) {
   return Math.round(a + (b - a) * t);
 }
 
+// rgb() color interpolated on the ramp for a progress value (%, clamped to the stops).
 export function progressColor(progress: number) {
   const value = Math.max(PROGRESS_STOPS[0].v, Math.min(PROGRESS_STOPS[PROGRESS_STOPS.length - 1].v, progress));
 

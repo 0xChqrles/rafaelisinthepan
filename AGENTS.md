@@ -77,6 +77,7 @@ packages/
   shared/                     cross-cutting TS consumed by web (pkg @whippin/shared)
     src/slug.ts               fold() — the slug/fold contract (byte-identical to slug())
     src/types.ts              per-puzzle schema types (Puzzle, Hole, RankMap, …)
+    src/progressColor.ts      progressColor() — the ONE color ramp (bar, rank exponents, heat grid, share card)
     src/index.ts              re-exports
   web/                        React + Vite + TS front (pkg @whippin/web)
     src/
@@ -85,7 +86,6 @@ packages/
       api.ts                  backend client: puzzleUrl/todayUrl, ?puzzle= override, 404->NO PUZZLE
       screens/Game.tsx        the guess loop, hole state (imports fold from @whippin/shared)
       game/scoring.ts         s(rank), holeProgress, computeProgress
-      game/heat.ts            rank/progress -> heatmap color
       components/Phrase.tsx,Hole.tsx,WordInput.tsx,FloatingHit.tsx  rendering
     public/                   served at site root (web assets + generated data)
       vocab/<lang>.json       full slugged reduced vocab (existence set) — fetched by the SPA
@@ -394,7 +394,7 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
 *(Safe to update without touching the invariants above.)*
 
 - All paths below are under `packages/`. **Tunables:** `TOP_N = 400000` (reduce),
-  `TOP_K = 2000` (gen), start-rank band `50–150` (`start_word.py`).
+  `TOP_K = 10000` (gen), start-rank band `50–150` (`start_word.py`).
 - **`gen_phrase` is fully interactive on a TTY (#5).** Anything not passed as a flag is
   prompted: the **sentence** (positional, now optional), **`--lang`**, the three
   **`--words`**, and the optional **source metadata** — `--kind` (offers `KNOWN_KINDS`
@@ -480,9 +480,10 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   issue) cached beside `vocabSet`; a letter/dash is greyed when
   `canExtend(prefixSet, input, char)` is false, Enter is greyed unless `vocabSet.has(input)`,
   and a greyed-key tap shakes (no input change). Backspace is always active. **Layout** is
-  currently a fixed **QWERTY** (`Game` hardcodes it; `LAYOUTS` still defines AZERTY and
-  `gameStore` retains a persisted `layout` field, but there is **no in-UI layout switch**
-  yet). Keys are a uniform fixed size (not flex-grown), each row centered; the last row is
+  the ONE fixed **QWERTY** (`game/keyboard.ts` `KEYBOARD_ROWS`): the AZERTY alternative and
+  the persisted `layout` preference were **removed** (explicit decision, 2026-07-05); the
+  store's `migrate` silently drops the retired `layout` key from older persisted blobs.
+  Keys are a uniform fixed size (not flex-grown), each row centered; the last row is
   the **enter icon** + letters + dash + the **backspace icon** sized like letters so it fits
   the keyboard width exactly. The two control keys render `assets/icons/{enter,back}.svg` as
   inline SVG components (see **SVG icons** below), not text; the button `aria-label`

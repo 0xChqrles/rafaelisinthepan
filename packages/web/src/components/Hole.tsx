@@ -1,21 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import FloatingHit, { HIT_FADE_MS } from './FloatingHit';
-import { heatColor } from '@whippin/shared';
+import { progressColor } from '@whippin/shared';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import type { HitState, RuntimeHole } from '@whippin/shared';
 
-// The floating number ("hit") does not improve any hole: cap its heat at 150 so
-// the gradient stays meaningful. Above that, everything stays at the coldest color (blue).
-const HIT_HEAT_CAP = 150;
+// The floating number ("hit") does not improve any hole: cap its scale at 150 so
+// the gradient stays meaningful. Above that, everything stays at the coldest color.
+const HIT_RANK_CAP = 150;
 
-// Hole heat: current rank -> [0 cold .. 1 hot] (rank 0 = solved = hot).
+// Hole color: current rank -> the shared progress ramp (rank 0 = solved = 100%).
 // Logarithmic scale: color changes quickly near the goal (low ranks) and slowly
 // far away (the 100->150 gap weighs much less than 1->10).
-function rankHeatColor(rank: number, startRank: number) {
+function rankColor(rank: number, startRank: number) {
   const maxRank = Math.max(1, startRank || rank || 1);
-  const heat = 1 - Math.log(rank + 1) / Math.log(maxRank + 1);
-  return heatColor(heat);
+  const closeness = 1 - Math.log(rank + 1) / Math.log(maxRank + 1);
+  return progressColor(closeness * 100);
 }
 
 // A hole: "displayed_word^-current_rank" (ex: sailor^-87). Rank 0 = solved.
@@ -67,7 +67,7 @@ export default function Hole({
   // The exponent sizes to its own content (no reserved width), so a following suffix
   // sits right after the number instead of after a gap left for the widest rank.
   const rankStyle: CSSProperties & Record<'--rank-color', string> = {
-    '--rank-color': rankHeatColor(shownRank, hole.startRank),
+    '--rank-color': rankColor(shownRank, hole.startRank),
   };
   const hitStyle: (CSSProperties & Record<'--hit-delay', string>) | undefined = hit
     ? { '--hit-delay': `${hit.startDelayMs}ms` }
@@ -93,8 +93,8 @@ export default function Hole({
         >
           {displayWord}
         </span>
-        {/* Floating "damage"-style indicator: a distance number colored by the
-            heatmap (capped heat), or "MISS" at the coldest color when too far. */}
+        {/* Floating "damage"-style indicator: a distance number colored on the shared
+            progress ramp (capped scale), or "MISS" at the coldest color when too far. */}
         {hit && (
           <FloatingHit
             key={hit.id}
@@ -103,7 +103,7 @@ export default function Hole({
             miss={hit.miss}
             startDelayMs={hit.startDelayMs}
             fadeDelayMs={hit.fadeDelayMs}
-            color={hit.miss ? heatColor(0) : rankHeatColor(hit.value, HIT_HEAT_CAP)}
+            color={hit.miss ? progressColor(0) : rankColor(hit.value, HIT_RANK_CAP)}
             onDone={onHitDone}
           />
         )}

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { bucketMeans, shareUrl } from '../game/share';
-import { heatColor } from '@whippin/shared';
+import { progressColor } from '@whippin/shared';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 
 // Reveal choreography (this component MOUNTS at the reveal moment — Game gates it on the last
@@ -128,8 +128,9 @@ export default function SolvedScreen({
       {/* One flat square per bucket (3..18). AFTER the score is shown, neutral surface tiles
           roll in one by one (.shown + staggered --show-delay), then each colorizes to its
           bucket's MEAN reconstruction % one by one (.colorized + staggered --color-delay).
-          heatColor: 0 = cold/far crimson .. 1 = hot/solved cyan. Decorative — the score/share
-          carry the real numbers. The grid keeps its height throughout, so nothing shifts. */}
+          progressColor: low = cold/far .. 100 = hot/solved — the same ramp as the progress
+          bar and the rank exponents. Decorative — the score/share carry the real numbers.
+          The grid keeps its height throughout, so nothing shifts. */}
       <div
         className={`heat-grid${gridShown ? ' shown' : ''}${gridColorized ? ' colorized' : ''}`}
         aria-hidden="true"
@@ -141,7 +142,7 @@ export default function SolvedScreen({
             className="heat-cell"
             style={
               {
-                '--cell-color': heatColor(pct / 100),
+                '--cell-color': progressColor(pct),
                 '--show-delay': `${Math.round(i * stagger)}ms`,
                 '--color-delay': `${Math.round(i * stagger)}ms`,
               } as CSSProperties & Record<'--cell-color' | '--show-delay' | '--color-delay', string>
