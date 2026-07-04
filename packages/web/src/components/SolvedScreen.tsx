@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { bucketMeans, buildShareText } from '../game/share';
-import { heatColor } from '../game/heat';
+import { heatColor } from '@whippin/shared';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 
 // Reveal choreography (this component MOUNTS at the reveal moment — Game gates it on the last

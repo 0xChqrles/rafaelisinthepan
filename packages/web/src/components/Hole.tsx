@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import FloatingHit, { HIT_FADE_MS } from './FloatingHit';
-import { heatColor } from '../game/heat';
+import { heatColor } from '@whippin/shared';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import type { HitState, RuntimeHole } from '@whippin/shared';
 

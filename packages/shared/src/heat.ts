@@ -1,4 +1,5 @@
-// Shared "heatmap" gradient: cold (red) -> hot (blue).
+// Shared "heatmap" gradient: cold (red) -> hot (blue). Cross-cutting so the on-screen heat
+// grid (web) and the share card (backend-rendered) use the SAME ramp — the colors must match.
 // heat in [0,1]: 0 = cold, 1 = hot (near the goal / solved).
 const HEAT_STOPS = [
   { t: 0, color: [255, 28, 84] }, // cold: electric crimson
