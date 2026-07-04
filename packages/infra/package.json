@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "synth": "cdk synth",
-    "deploy": "cdk deploy",
+    "deploy": "cdk deploy WhippinBackendStack WhippinWebStack",
+    "deploy:auth": "cdk deploy WhippinDeployStack",
     "diff": "cdk diff",
     "destroy": "cdk destroy",
     "typecheck": "tsc --noEmit"
