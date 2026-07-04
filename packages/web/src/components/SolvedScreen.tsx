@@ -7,11 +7,12 @@ import useAnimatedNumber from '../hooks/useAnimatedNumber';
 // the score/share row fades in and the score tallies up from 0. This component MOUNTS at
 // the reveal moment (Game gates it on the last hole's solve animation finishing), so the
 // mount-time CSS/JS animations below ARE the reveal.
-const SQUARE_POP_MS = 300; // one square's pop-in (matches .heat-cell animation)
-const SQUARE_STAGGER_MS = 55; // gap between consecutive squares...
+const SQUARE_STAGGER_MS = 55; // gap between consecutive squares popping in...
 const GRID_MAX_SPAN_MS = 1400; // ...compressed so even a long game's grid stays snappy
 const ACTIONS_IN_MS = 350; // score+share fade/rise into place (matches .solved-actions transition)
 const SCORE_COUNT_MS = 800; // score tally 0 -> guessCount
+// Squares pop in only AFTER the score is shown (row settled + tally finished).
+const SQUARES_START_MS = ACTIONS_IN_MS + SCORE_COUNT_MS;
 
 // The solved results (issue #8): it takes over the on-screen keyboard's footprint once
 // the sentence is solved, so the layout never reflows and no empty gap is left where the
@@ -35,18 +36,19 @@ export default function SolvedScreen({
   // Per-square stagger, compressed for long games so the whole grid lands within a bound.
   const stagger = n > 1 ? Math.min(SQUARE_STAGGER_MS, GRID_MAX_SPAN_MS / (n - 1)) : 0;
 
-  // Reveal in three beats: (1) the grid squares land, (2) the score+share row fades/rises
-  // into place, and only THEN (3) the score tallies up from 0. Keeping the count until the
-  // row has settled means the number animates in its final position, not while still moving.
+  // Reveal in three beats: (1) the score+share row fades/rises into place, (2) the score
+  // tallies up from 0 in its final position, and only THEN (3) the squares pop in one by one
+  // (their staggered CSS delays are offset by SQUARES_START_MS, below). Score first, squares
+  // after — the score is the headline, the heat trail the follow-up.
   const [countTarget, setCountTarget] = useState(0);
   const [showActions, setShowActions] = useState(false);
-  // (1 -> 2) After the grid finishes landing, bring the score+share row in.
+  // (1) On mount (the reveal moment), bring the row in on the next frame so its fade/rise
+  //     transition actually plays.
   useEffect(() => {
-    const gridDoneMs = Math.max(0, n - 1) * stagger + SQUARE_POP_MS;
-    const t = window.setTimeout(() => setShowActions(true), gridDoneMs);
-    return () => window.clearTimeout(t);
-  }, [n, stagger]);
-  // (2 -> 3) Once that row has settled into position, start the score tally from 0.
+    const raf = requestAnimationFrame(() => setShowActions(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  // (2) Once the row has settled into position, start the score tally from 0.
   useEffect(() => {
     if (!showActions) return undefined;
     const t = window.setTimeout(() => setCountTarget(guessCount), ACTIONS_IN_MS);
@@ -87,15 +89,20 @@ export default function SolvedScreen({
   return (
     <div className="solved-results">
       {/* One flat square per bucket (3..18), colored by the bucket's MEAN reconstruction %
-          (heatColor: 0 = cold/far crimson .. 1 = hot/solved cyan). Each pops in on its own
-          staggered delay. Decorative — the score and share text carry the real numbers. */}
+          (heatColor: 0 = cold/far crimson .. 1 = hot/solved cyan). They pop in one by one
+          AFTER the score is shown — each delayed by SQUARES_START_MS + its staggered offset
+          (`both` fill keeps them hidden until then). Decorative — the score/share carry the
+          real numbers. The grid keeps its height throughout, so nothing shifts when they land. */}
       <div className="heat-grid" aria-hidden="true">
         {squares.map((pct, i) => (
           <span
             // eslint-disable-next-line react/no-array-index-key
             key={i}
             className="heat-cell"
-            style={{ background: heatColor(pct / 100), animationDelay: `${Math.round(i * stagger)}ms` }}
+            style={{
+              background: heatColor(pct / 100),
+              animationDelay: `${SQUARES_START_MS + Math.round(i * stagger)}ms`,
+            }}
           />
         ))}
       </div>
