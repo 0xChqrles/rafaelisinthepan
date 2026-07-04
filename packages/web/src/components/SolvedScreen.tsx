@@ -86,15 +86,24 @@ export default function SolvedScreen({
 
   const onShare = useCallback(async () => {
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const id = dayNumber ?? 0; // null only for a ?puzzle= override
     // The result is packed into the link; the backend renders /s/<token> as the OG card, so
-    // sharing the URL unfurls into the image. dayNumber is null only for a ?puzzle= override.
-    const url = shareUrl(origin, { lang, dayNumber: dayNumber ?? 0, score: guessCount, squares });
+    // sharing the URL unfurls into the image.
+    const url = shareUrl(origin, { lang, dayNumber: id, score: guessCount, squares });
+    // What we share/copy: a headline line then the (unfurling) link, blank line between.
+    const text = `Whippin #${id} ${guessCount}\n\n${url}`;
 
-    // Prefer the Web Share API (mobile: native share sheet). Fall back to the clipboard
-    // on desktop / when it is unavailable, matching the "copy to clipboard" default.
-    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+    // Use the Web Share API only on touch/mobile devices (native share sheet). On DESKTOP
+    // the share button should just copy the link — desktop Chrome/Edge/Safari expose
+    // navigator.share too, so gate on the device (coarse pointer), not the API's presence.
+    // Fall back to the clipboard everywhere else, matching the "copy to clipboard" default.
+    const isTouch =
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(pointer: coarse)').matches;
+    if (isTouch && typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
       try {
-        await navigator.share({ title: 'Whippin AI', url });
+        await navigator.share({ title: 'Whippin AI', text });
         return;
       } catch (err) {
         if ((err as DOMException)?.name === 'AbortError') return; // user dismissed the sheet
@@ -102,7 +111,7 @@ export default function SolvedScreen({
       }
     }
     try {
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       window.clearTimeout(copiedTimer.current);
       copiedTimer.current = window.setTimeout(() => setCopied(false), 2000);
