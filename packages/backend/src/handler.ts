@@ -24,6 +24,9 @@ export interface HandlerDeps {
   // Injectable clock + config so the handler is pure and testable.
   now?: () => Date;
   allowedOrigin?: string;
+  // Canonical site origin (apex) for the share card's absolute URLs (#8). When unset, the
+  // share HTML falls back to the request origin (local dev).
+  siteOrigin?: string;
   timeZone?: string;
   resetHour?: number;
 }
@@ -101,7 +104,10 @@ export function createHandler(deps: HandlerDeps) {
       if (shareMatch) {
         const result = decodeResult(shareMatch[1]);
         if (!result) return errorResponse(404, 'not_found', 'Invalid share token.', cors);
-        const body = renderShareHtml(shareMatch[1], result, requestOrigin(event));
+        // Canonical apex origin for both the og:image and the game redirect (so they never
+        // depend on the CloudFront-to-CloudFront Host); the request origin is the local-dev
+        // fallback.
+        const body = renderShareHtml(shareMatch[1], result, deps.siteOrigin ?? requestOrigin(event));
         return html(200, body, { 'Cache-Control': `public, max-age=${SHARE_MAX_AGE}, immutable` });
       }
 

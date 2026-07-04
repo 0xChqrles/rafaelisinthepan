@@ -47,6 +47,8 @@ new BackendStack(app, 'WhippinBackendStack', {
   // The API's stable custom domain `<apiSubdomain>.<domainName>`.
   domainName,
   apiSubdomain,
+  // Canonical site origin for the share card's absolute URLs (#8); the apex site host.
+  siteOrigin: `https://${siteHost}`,
   env,
 });
 

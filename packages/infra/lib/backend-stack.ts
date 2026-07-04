@@ -36,6 +36,9 @@ export interface BackendStackProps extends StackProps {
   domainName?: string;
   // Subdomain label for the API under `domainName` (default "api" -> api.<domain>).
   apiSubdomain?: string;
+  // Canonical site origin (apex, e.g. https://whippin.ai) for the share card's absolute URLs
+  // (og:image + game redirect, #8). The apex CloudFront routes /s/* and /og/* here.
+  siteOrigin?: string;
 }
 
 export class BackendStack extends Stack {
@@ -95,6 +98,9 @@ export class BackendStack extends Stack {
       environment: {
         PUZZLE_BUCKET: bucket.bucketName,
         ALLOWED_ORIGIN: allowedOrigin,
+        // Canonical apex for the share card's absolute URLs (#8); omitted (request-origin
+        // fallback) when there is no custom domain.
+        ...(props.siteOrigin ? { SITE_ORIGIN: props.siteOrigin } : {}),
       },
       depsLockFilePath: REPO_LOCKFILE,
       bundling: {
