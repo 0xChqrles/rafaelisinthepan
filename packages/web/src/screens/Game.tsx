@@ -12,6 +12,7 @@ import Keyboard from '../components/Keyboard';
 import SolvedScreen from '../components/SolvedScreen';
 import SolvedCaption from '../components/SolvedCaption';
 import LoadError from '../components/LoadError';
+import { HIT_FADE_MS } from '../components/FloatingHit';
 import { fold } from '@whippin/shared';
 import type { HitState, Hole, Puzzle, RankEntry, RankMap, RuntimeHole, Source } from '@whippin/shared';
 
@@ -24,6 +25,13 @@ type Feedback = { text: string };
 // Floating distance/MISS feedback uses the same start stagger, then fades as one batch.
 const STAGGER_MS = 200;
 const FLOATING_HIT_INTRO_MS = 320;
+
+// Once the last hole is solved it still animates: the exponent rolls to 0 (HIT_FADE_MS),
+// then the secret word blinks into place (.word-replace-blink = 0.2s x 3). Hold the
+// playing UI until that finishes, then transition to the solved presentation — so the
+// results never pop in over a still-resolving word. Kept in sync with those two effects.
+const WORD_BLINK_MS = 600; // .word-replace-blink in index.css (0.2s steps(1) 3)
+const LAST_HOLE_SETTLE_MS = HIT_FADE_MS + WORD_BLINK_MS;
 
 // Per page-load token isolating a ?puzzle= override round (no server day to key on),
 // so testing a static file always starts fresh and never rehydrates another file.
@@ -153,6 +161,27 @@ function Round({
     () => progressTrajectory(freshHoles, ranks, history),
     [freshHoles, ranks, history],
   );
+
+  // Gate the solved presentation on the last hole's solve animation finishing (see
+  // LAST_HOLE_SETTLE_MS): the playing UI (input + keyboard) stays up until then, so the
+  // sentence resolves in place and the results reveal cleanly afterwards — no reflow, no
+  // pop-over. An already-solved round on load has no animation to wait for.
+  const [showResults, setShowResults] = useState<boolean>(solved);
+  const prevSolved = useRef<boolean>(solved);
+  useEffect(() => {
+    const justSolved = solved && !prevSolved.current;
+    prevSolved.current = solved;
+    if (!solved) {
+      setShowResults(false);
+      return undefined;
+    }
+    if (!justSolved) {
+      setShowResults(true); // already solved on load (rehydrated) -> reveal without waiting
+      return undefined;
+    }
+    const t = window.setTimeout(() => setShowResults(true), LAST_HOLE_SETTLE_MS);
+    return () => window.clearTimeout(t);
+  }, [solved]);
 
   // Cache the progress on the persisted round so the language selector can badge an
   // in-progress language without re-loading its rank map. No-op when unchanged.
@@ -290,9 +319,11 @@ function Round({
             secret) — it is the "full reconstructed sentence" of the solved screen. */}
         <Phrase words={words} holes={holes} puzzleHoles={puzzleHoles} hits={hits} onHitDone={removeHit} />
 
-        {/* Below the sentence: the input while playing, its attribution once solved. Both
-            reserve the same height, so ending the round never shifts the sentence up. */}
-        {solved ? (
+        {/* Below the sentence: the input while playing, its attribution once the results
+            reveal. Both reserve the same height, so the transition never shifts the
+            sentence up. The swap waits for the last hole to finish animating (showResults),
+            so the input stays put while the final word resolves. */}
+        {showResults ? (
           <SolvedCaption source={source} />
         ) : (
           <div className="input-area">
@@ -311,10 +342,12 @@ function Round({
       </div>
 
       {/* Bottom zone (fixed keyboard-height footprint): the on-screen keyboard while
-          playing, the solved results in the SAME space once solved — so the keyboard
-          leaving neither reflows the layout nor leaves an empty hole. */}
+          playing, the solved results in the SAME space once they reveal — so the keyboard
+          leaving neither reflows the layout nor leaves an empty hole. The keyboard lingers
+          (inert; submit is guarded) through the last hole's animation, then the results
+          take its place and animate in. */}
       <div className="tray">
-        {solved ? (
+        {showResults ? (
           <SolvedScreen guessCount={guessCount} trajectory={trajectory} dayNumber={dayNumber} />
         ) : (
           <Keyboard

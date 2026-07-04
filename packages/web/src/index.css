@@ -600,15 +600,41 @@ button * {
   gap: 5px;
   max-width: 100%;
 }
+/* Squares pop in one by one: each carries an inline animation-delay (staggered by index),
+   and `both` keeps it invisible until its turn, so the grid fills left-to-right. */
 .heat-cell {
   width: clamp(14px, 2.4vh, 20px);
   height: clamp(14px, 2.4vh, 20px);
   image-rendering: pixelated;
+  animation: heat-cell-in 0.3s ease-out both;
 }
+@keyframes heat-cell-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  65% {
+    opacity: 1;
+    transform: scale(1.18);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+/* Score + share fade/rise in AFTER the grid has landed (JS toggles `.in`), as the score
+   tallies up from 0. */
 .solved-actions {
   display: flex;
   align-items: center;
   gap: clamp(16px, 4vw, 28px);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.35s ease-out, transform 0.35s ease-out;
+}
+.solved-actions.in {
+  opacity: 1;
+  transform: translateY(0);
 }
 .solved-score {
   font-family: var(--press);
