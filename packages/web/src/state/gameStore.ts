@@ -127,11 +127,12 @@ export const useGameStore = create<GameState>()(
         set((s) => {
           // Prune rounds from other game days (and stale override rounds): a day key
           // keeps every same-day language (so switching language preserves the others),
-          // an override/non-day key keeps only itself.
+          // an override/non-day key keeps every DAY round — a ?puzzle= test load must
+          // never wipe the real day's progress — and prunes only other override rounds.
           const dayPrefix = dayPrefixOf(key);
           const kept: Record<string, RoundProgress> = {};
           for (const [k, v] of Object.entries(s.rounds)) {
-            if (dayPrefix && k.startsWith(dayPrefix)) kept[k] = v;
+            if (dayPrefix ? k.startsWith(dayPrefix) : dayPrefixOf(k) !== null) kept[k] = v;
           }
           // Same key + matching holes -> rehydrate untouched; a brand-new key OR a
           // re-published sentence under the same (day, lang) key (holes no longer match)
@@ -164,6 +165,13 @@ export const useGameStore = create<GameState>()(
           if (!key) return {};
           const round = s.rounds[key];
           if (!round) return {};
+          // Monotonic: Game defers each swap to its floating hit's fade-out, so a second
+          // guess submitted inside that window decided "improves" against a rank that a
+          // pending timer was about to lower. Applying it blindly would REGRESS the hole
+          // (or un-solve a just-solved one) when its timer fires after a better one's.
+          // A swap only ever moves a hole strictly closer.
+          const hole = round.holes[index];
+          if (!hole || rank >= hole.rank) return {};
           return {
             rounds: {
               ...s.rounds,

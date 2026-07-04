@@ -51,29 +51,47 @@ export default function usePuzzle(lang: string | null) {
         // republish changes the version -> a new URL -> a guaranteed cache miss, so the
         // corrected puzzle shows on a normal reload. The puzzle endpoint REQUIRES `v`, so
         // there is no canonical fallback — a failed /today is a real error (retryable, #14).
-        const todayRes = await fetch(todayUrl(lang));
-        if (!todayRes.ok) throw new Error(`HTTP ${todayRes.status}`);
-        const today = (await todayRes.json()) as Today;
-        if (!cancelled) setDayNumber(today.dayNumber);
-        const version = today.version ?? null;
-        if (version == null) {
-          if (!cancelled) setNoPuzzle(true);
-          return;
-        }
-        if (cancelled) return;
-        const puzzleRes = await fetch(puzzleUrl(lang, version));
-        switch (puzzleOutcome(puzzleRes.status)) {
-          case 'missing': // 404 (raced deletion) -> graceful "NO PUZZLE TODAY", not error.
-            if (!cancelled) setNoPuzzle(true);
+        //
+        // The pair is not atomic: the 22:00 flip can land BETWEEN the two fetches, so the
+        // puzzle the server resolves is the NEXT day's while `today` still describes the
+        // previous one — persisting it under that dayNumber would key the round wrong. The
+        // backend stamps the served day (X-Puzzle-Date); on a mismatch, re-run the whole
+        // pair once with a fresh pointer. dayNumber/puzzle are only committed together,
+        // from a matching pair.
+        for (let attempt = 0; ; attempt += 1) {
+          const todayRes = await fetch(todayUrl(lang));
+          if (!todayRes.ok) throw new Error(`HTTP ${todayRes.status}`);
+          const today = (await todayRes.json()) as Today;
+          const version = today.version ?? null;
+          if (version == null) {
+            if (!cancelled) {
+              setDayNumber(today.dayNumber);
+              setNoPuzzle(true);
+            }
             return;
-          case 'error':
-            throw new Error(`HTTP ${puzzleRes.status}`);
-          case 'puzzle': {
-            // parsePuzzle catches malformed JSON / unexpected shape and turns it into
-            // the error state instead of letting Game crash on a bad puzzle.
-            const json = parsePuzzle(await puzzleRes.json());
-            if (!cancelled) setPuzzle(json);
           }
+          if (cancelled) return;
+          const puzzleRes = await fetch(puzzleUrl(lang, version));
+          const outcome = puzzleOutcome(puzzleRes.status);
+          if (outcome === 'missing') {
+            // 404 (raced deletion) -> graceful "NO PUZZLE TODAY", not error.
+            if (!cancelled) {
+              setDayNumber(today.dayNumber);
+              setNoPuzzle(true);
+            }
+            return;
+          }
+          if (outcome === 'error') throw new Error(`HTTP ${puzzleRes.status}`);
+          const servedDate = puzzleRes.headers.get('x-puzzle-date');
+          if (servedDate && servedDate !== today.date && attempt === 0) continue;
+          // parsePuzzle catches malformed JSON / unexpected shape and turns it into
+          // the error state instead of letting Game crash on a bad puzzle.
+          const json = parsePuzzle(await puzzleRes.json());
+          if (!cancelled) {
+            setDayNumber(today.dayNumber);
+            setPuzzle(json);
+          }
+          return;
         }
       } catch (e) {
         if (!cancelled) setError(e);

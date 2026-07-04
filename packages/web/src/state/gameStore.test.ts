@@ -108,6 +108,24 @@ describe('ensureRound — day/language keying', () => {
     expect(after?.progress).toBe(42);
   });
 
+  it('an override (non-day) round never wipes the day rounds', () => {
+    const { ensureRound, recordGuess } = useGameStore.getState();
+    ensureRound('d:5:fr', freshHoles());
+    recordGuess('bois');
+
+    // Loading a ?puzzle= test file must not destroy the real day's progress.
+    ensureRound('o:nonce:fr', freshHoles());
+    let s = useGameStore.getState();
+    expect(s.activeKey).toBe('o:nonce:fr');
+    expect(s.rounds['d:5:fr']?.guessCount).toBe(1); // day progress intact
+
+    // Coming back to a day key prunes the stale override round, keeps the day's.
+    ensureRound('d:5:en', freshHoles());
+    s = useGameStore.getState();
+    expect(s.rounds['o:nonce:fr']).toBeUndefined();
+    expect(s.rounds['d:5:fr']?.guessCount).toBe(1);
+  });
+
   it('resets when the same (day, lang) key is re-published with a DIFFERENT sentence', () => {
     const { ensureRound, recordGuess, improveHole } = useGameStore.getState();
     ensureRound('d:5:fr', freshHoles());
@@ -158,6 +176,23 @@ describe('improveHole — closer word + lower rank, others untouched', () => {
   it('rank 0 marks a hole solved (locked)', () => {
     useGameStore.getState().improveHole(0, 'forêt', 0);
     expect(activeRound()!.holes[0].rank).toBe(0);
+  });
+
+  it('is monotonic — a worse or equal rank is ignored (a stale deferred swap never regresses a hole)', () => {
+    const { improveHole } = useGameStore.getState();
+    improveHole(1, 'antique', 3);
+    // Game defers swaps to the hit fade-out: a guess submitted inside that window was
+    // judged against the pre-swap rank, so its late timer must not undo the better one.
+    improveHole(1, 'vieillotte', 10); // worse
+    improveHole(1, 'antique', 3); // equal
+    expect(activeRound()!.holes[1]).toMatchObject({ word: 'antique', rank: 3 });
+  });
+
+  it('never un-solves a solved hole', () => {
+    const { improveHole } = useGameStore.getState();
+    improveHole(0, 'forêt', 0); // solved
+    improveHole(0, 'bosquet', 20); // stale timer firing after the solve
+    expect(activeRound()!.holes[0]).toMatchObject({ word: 'forêt', rank: 0 });
   });
 });
 

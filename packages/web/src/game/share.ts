@@ -42,18 +42,22 @@ export function progressTrajectory(freshHoles: RuntimeHole[], ranks: RankMap, tr
   return out;
 }
 
-// Collapse the per-guess trajectory into squareCount(n) contiguous, as-equal-as-possible
-// buckets; each square's value is the MEAN progress % of its bucket. Because progress is
-// monotonic non-decreasing and the buckets are contiguous, the means are too — so the row
-// always reads cold -> hot. squareCount(n) <= n (equal only at n=3), so no bucket is empty.
+// Collapse the per-guess trajectory into EXACTLY squareCount(n) contiguous,
+// as-equal-as-possible buckets; each square's value is the MEAN progress % of its bucket.
+// Because progress is monotonic non-decreasing and the buckets are contiguous, the means
+// are too — so the row always reads cold -> hot. The count must be squareCount(n) and
+// nothing else: the decoder derives it from the score alone, so a shorter row here would
+// make the card pad phantom cold squares. n >= squareCount(n) for any normal game (>= 3
+// tries); below that (two holes sharing a secret solved by one word) buckets re-sample a
+// guess so the row still matches the decoder.
 export function bucketMeans(trajectory: number[]): number[] {
   const n = trajectory.length;
   if (n === 0) return [];
-  const m = Math.min(squareCount(n), n);
+  const m = squareCount(n);
   const out: number[] = [];
   for (let i = 0; i < m; i += 1) {
     const start = Math.floor((i * n) / m);
-    const end = Math.floor(((i + 1) * n) / m);
+    const end = Math.max(start + 1, Math.floor(((i + 1) * n) / m));
     let sum = 0;
     for (let j = start; j < end; j += 1) sum += trajectory[j];
     out.push(sum / (end - start));
