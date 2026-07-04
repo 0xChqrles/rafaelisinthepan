@@ -7,7 +7,20 @@
 // into the rendered image (row of squares + SCORE + #day) instead of an emoji string.
 
 import { computeProgress } from './scoring';
-import { encodeResult, type RankMap, type RuntimeHole, type ShareResult } from '@whippin/shared';
+import {
+  encodeResult,
+  squareCount,
+  MIN_SQUARES,
+  MAX_SQUARES,
+  SQUARE_BREAKPOINTS,
+  type RankMap,
+  type RuntimeHole,
+  type ShareResult,
+} from '@whippin/shared';
+
+// The square-count contract lives in shared now (the decoder derives it from the score);
+// re-export it so the web's consumers/tests keep importing it from here.
+export { squareCount, MIN_SQUARES, MAX_SQUARES, SQUARE_BREAKPOINTS };
 
 // Reconstruction-% trajectory: replay the ordered valid guesses against the puzzle to
 // get the reconstruction % AFTER each guess. A guess improves a hole exactly when the
@@ -27,23 +40,6 @@ export function progressTrajectory(freshHoles: RuntimeHole[], ranks: RankMap, tr
     out.push(computeProgress(holes, ranks));
   }
   return out;
-}
-
-// How many squares to show for a game of `tries` guesses. Minimum 3 (there are always 3
-// holes needing 3 distinct words, so a perfect score is 3), up to MAX_SQUARES. Each
-// breakpoint is the tries count at which one more square is earned; the ranges are
-// hardcoded (not a formula) so they are exactly the chosen ones. Half-open: `tries >= t`.
-export const SQUARE_BREAKPOINTS = [4, 6, 10, 15, 22, 33, 48, 70, 100, 120, 150, 180, 215, 255, 300];
-export const MIN_SQUARES = 3;
-export const MAX_SQUARES = MIN_SQUARES + SQUARE_BREAKPOINTS.length; // 18
-
-export function squareCount(tries: number): number {
-  let m = MIN_SQUARES;
-  for (const t of SQUARE_BREAKPOINTS) {
-    if (tries >= t) m += 1;
-    else break; // breakpoints ascend, so the first miss ends it
-  }
-  return m;
 }
 
 // Collapse the per-guess trajectory into squareCount(n) contiguous, as-equal-as-possible

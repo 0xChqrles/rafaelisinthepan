@@ -1,38 +1,60 @@
-// CONTRACT: the share-card codec (packages/shared/src/shareCard.ts). The token must
-// round-trip a result, stay short + URL-safe, and REJECT any malformed input (so a
-// hand-crafted token can never drive the renderer beyond its fixed template).
+// CONTRACT: the share-card codec (packages/shared/src/shareCard.ts). The bit-packed token
+// must round-trip a result (squares within one quantization step), stay short + URL-safe,
+// derive the square count from the score, and REJECT any malformed input.
 
 import { describe, it, expect } from 'vitest';
-import { encodeResult, decodeResult, MAX_CARD_SQUARES, type ShareResult } from './shareCard';
+import { encodeResult, decodeResult, squareCount, MAX_SQUARES, type ShareResult } from './shareCard';
 
-const sample: ShareResult = { lang: 'fr', dayNumber: 123, score: 42, squares: [8, 20, 35, 51, 67, 80, 93, 100] };
+// A mid-length game: squareCount(42) === 9, so the squares array has 9 entries.
+const sample: ShareResult = { lang: 'fr', dayNumber: 20638, score: 42, squares: [8, 20, 35, 51, 67, 80, 93, 100, 100] };
 
-describe('encodeResult / decodeResult', () => {
-  it('round-trips a result (squares rounded to integer %)', () => {
-    const decoded = decodeResult(encodeResult(sample));
-    expect(decoded).toEqual(sample);
+// One quantization step (100/31 ≈ 3.23%); squares survive encode within half a step.
+const QUANT_STEP = 100 / 31;
+
+describe('encodeResult / decodeResult — round-trip', () => {
+  it('preserves lang, dayNumber and score exactly', () => {
+    const d = decodeResult(encodeResult(sample));
+    expect(d?.lang).toBe('fr');
+    expect(d?.dayNumber).toBe(20638);
+    expect(d?.score).toBe(42);
   });
 
-  it('rounds fractional square percents on the way in', () => {
-    const decoded = decodeResult(encodeResult({ ...sample, squares: [8.4, 20.6, 99.5] }));
-    expect(decoded?.squares).toEqual([8, 21, 100]);
+  it('derives the square count from the score (not stored)', () => {
+    const d = decodeResult(encodeResult(sample));
+    expect(d?.squares).toHaveLength(squareCount(42));
+    expect(sample.squares).toHaveLength(squareCount(42)); // the input already matches
   });
 
-  it('produces a short, URL-safe token (base64url alphabet only)', () => {
-    const token = encodeResult({ ...sample, squares: Array(MAX_CARD_SQUARES).fill(50) });
-    expect(token).toMatch(/^[A-Za-z0-9_-]+$/);
-    expect(token.length).toBeLessThan(40); // ~35 at the 18-square max
+  it('round-trips each square within one quantization step (colors are indistinguishable)', () => {
+    const d = decodeResult(encodeResult(sample));
+    d?.squares.forEach((v, i) => expect(Math.abs(v - sample.squares[i])).toBeLessThanOrEqual(QUANT_STEP));
   });
 
-  it('preserves the day number and score exactly', () => {
-    const decoded = decodeResult(encodeResult({ ...sample, dayNumber: 4095, score: 300 }));
-    expect(decoded?.dayNumber).toBe(4095);
-    expect(decoded?.score).toBe(300);
+  it('keeps the squares monotonic (still reads cold -> hot)', () => {
+    const d = decodeResult(encodeResult(sample));
+    for (let i = 1; i < (d?.squares.length ?? 0); i += 1) {
+      expect(d!.squares[i]).toBeGreaterThanOrEqual(d!.squares[i - 1]);
+    }
   });
 
-  it('caps the squares at MAX_CARD_SQUARES', () => {
-    const decoded = decodeResult(encodeResult({ ...sample, score: 999, squares: Array(50).fill(70) }));
-    expect(decoded?.squares).toHaveLength(MAX_CARD_SQUARES);
+  it('handles the largest game (18 squares, big score)', () => {
+    const big: ShareResult = { lang: 'en', dayNumber: 30000, score: 300, squares: Array(18).fill(60) };
+    const d = decodeResult(encodeResult(big));
+    expect(d?.score).toBe(300);
+    expect(d?.squares).toHaveLength(MAX_SQUARES);
+  });
+});
+
+describe('token shape — short + URL-safe', () => {
+  it('is base64url only', () => {
+    expect(encodeResult(sample)).toMatch(/^[A-Za-z0-9_-]+$/);
+  });
+
+  it('a perfect game packs to <= 8 chars; the 18-square max to <= 24', () => {
+    const perfect = encodeResult({ lang: 'fr', dayNumber: 20638, score: 3, squares: [40, 70, 100] });
+    expect(perfect.length).toBeLessThanOrEqual(8);
+    const max = encodeResult({ lang: 'en', dayNumber: 30000, score: 300, squares: Array(18).fill(50) });
+    expect(max.length).toBeLessThanOrEqual(24);
   });
 });
 
@@ -42,22 +64,16 @@ describe('decodeResult — rejects malformed tokens (returns null)', () => {
     expect(decodeResult('')).toBeNull();
   });
 
-  it('rejects a truncated token', () => {
-    const token = encodeResult(sample);
-    expect(decodeResult(token.slice(0, 4))).toBeNull();
+  it('rejects a truncated token (bit overrun)', () => {
+    expect(decodeResult(encodeResult(sample).slice(0, 3))).toBeNull();
   });
 
-  it('rejects a length that disagrees with the declared square count', () => {
-    // Tamper: append an extra base64url char so the byte length no longer matches n.
-    const token = encodeResult(sample);
-    expect(decodeResult(`${token}A`)).toBeNull();
+  it('rejects a whole extra byte of trailing data', () => {
+    expect(decodeResult(`${encodeResult(sample)}AAAA`)).toBeNull();
   });
 
-  it('rejects an unknown version byte', () => {
-    // Re-encode with a bogus leading version by hand is awkward; instead assert a token
-    // whose first byte is not the current version fails. Flip the first char to change byte 0.
-    const token = encodeResult(sample);
-    const tampered = (token[0] === 'B' ? 'C' : 'B') + token.slice(1);
-    expect(decodeResult(tampered)).toBeNull();
+  it('rejects an unknown version (leading nibble != 1)', () => {
+    // A v1 token's first 4 bits are 0001, so its first char is in E..H; force version 0.
+    expect(decodeResult(`A${encodeResult(sample).slice(1)}`)).toBeNull();
   });
 });

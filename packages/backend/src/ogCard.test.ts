@@ -17,7 +17,13 @@ const get = (rawPath: string, headers: Record<string, string> = {}): FnUrlEvent 
   headers,
 });
 
-const token = encodeResult({ lang: 'fr', dayNumber: 123, score: 42, squares: [8, 40, 72, 100] });
+// A real dayNumber (days since 1970) and a score whose squareCount matches the 9 squares.
+const token = encodeResult({
+  lang: 'fr',
+  dayNumber: 20638,
+  score: 42,
+  squares: [8, 20, 35, 50, 65, 78, 90, 100, 100],
+});
 
 describe('GET /og/<token>.png', () => {
   it('returns a base64 PNG (real image bytes), cached immutable', async () => {
@@ -43,7 +49,7 @@ describe('GET /s/<token>', () => {
     expect(res.headers['Content-Type']).toContain('text/html');
     expect(res.body).toContain(`content="https://whippin.ai/og/${token}.png"`);
     expect(res.body).toContain('SCORE 42');
-    expect(res.body).toContain('#123');
+    expect(res.body).toContain('#20638');
     expect(res.body).toContain('https://whippin.ai/fr'); // redirect into the game (lang from token)
   });
 

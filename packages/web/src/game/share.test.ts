@@ -135,13 +135,17 @@ describe('progressTrajectory — replay the ordered guesses', () => {
 });
 
 describe('shareUrl — result packed into a /s/<token> link', () => {
-  const result = { lang: 'fr', dayNumber: 7, score: 3, squares: [12, 45, 100] };
+  // A real dayNumber (days since 1970 ≈ 20638 today) and a 3-try perfect game (3 squares).
+  const result = { lang: 'fr', dayNumber: 20638, score: 3, squares: [40, 70, 100] };
 
   it('builds <origin>/s/<token> and the token round-trips the result', () => {
     const url = shareUrl('https://whippin.ai', result);
     expect(url.startsWith('https://whippin.ai/s/')).toBe(true);
-    const token = url.slice('https://whippin.ai/s/'.length);
-    expect(decodeResult(token)).toEqual(result); // squares are already integers here
+    const decoded = decodeResult(url.slice('https://whippin.ai/s/'.length));
+    expect(decoded?.lang).toBe('fr');
+    expect(decoded?.dayNumber).toBe(20638);
+    expect(decoded?.score).toBe(3);
+    expect(decoded?.squares).toHaveLength(3);
   });
 
   it('carries no spoilers — the sentence/words never appear in the link', () => {
