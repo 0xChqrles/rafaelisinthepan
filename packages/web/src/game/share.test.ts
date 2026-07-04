@@ -3,22 +3,21 @@
 //   - the per-guess progress trajectory is replayed from the ordered guesses;
 //   - it is collapsed into a BOUNDED number of squares (3..18) on a hardcoded breakpoint
 //     curve (more tries -> more squares), each square = the MEAN progress of its bucket;
-//   - each square's emoji uses the 33/67/100 bucket mapping; the share text is ONE row of
-//     those emoji (spoiler-free: emoji only, never the words).
+//   - the result is shared as a link `<origin>/s/<token>` that the backend unfurls into the
+//     card image (the codec itself is contract-tested in @whippin/shared).
 
 import { describe, it, expect } from 'vitest';
 import {
   progressTrajectory,
   squareCount,
   bucketMeans,
-  shareEmoji,
-  buildShareText,
+  shareUrl,
   SQUARE_BREAKPOINTS,
   MIN_SQUARES,
   MAX_SQUARES,
 } from './share';
 import { computeProgress } from './scoring';
-import type { RankMap, RuntimeHole } from '@whippin/shared';
+import { decodeResult, type RankMap, type RuntimeHole } from '@whippin/shared';
 
 // A rank map for one secret with N entries -> N keys, `wI` at rank I (so `w0` == solved).
 function mk(N: number): RankMap[string] {
@@ -29,18 +28,6 @@ function mk(N: number): RankMap[string] {
 function hole(secret: string, startRank: number): RuntimeHole {
   return { pos: 0, secret, word: secret, rank: startRank, startRank };
 }
-
-describe('shareEmoji — 33 / 67 / 100 heat buckets (pct <= max)', () => {
-  it('cold (🟥) at and below 33', () => {
-    for (const p of [0, 1, 20, 33]) expect(shareEmoji(p)).toBe('🟥');
-  });
-  it('warm (🟪) above 33 up to 67', () => {
-    for (const p of [33.5, 34, 50, 67]) expect(shareEmoji(p)).toBe('🟪');
-  });
-  it('hot (🟦) above 67 up to 100', () => {
-    for (const p of [67.5, 68, 90, 100]) expect(shareEmoji(p)).toBe('🟦');
-  });
-});
 
 describe('squareCount — hardcoded breakpoint curve, 3..18', () => {
   it('is the minimum 3 for a perfect game (3 holes -> 3 distinct words)', () => {
@@ -147,26 +134,19 @@ describe('progressTrajectory — replay the ordered guesses', () => {
   });
 });
 
-describe('buildShareText — spoiler-free single emoji row', () => {
-  const squares = [12, 45, 100]; // per-square mean progress %
+describe('shareUrl — result packed into a /s/<token> link', () => {
+  const result = { lang: 'fr', dayNumber: 7, score: 3, squares: [12, 45, 100] };
 
-  it('header carries the day number and score; the grid is ONE row, one emoji per square', () => {
-    const text = buildShareText({ dayNumber: 7, guessCount: 3, squares });
-    const lines = text.split('\n').filter(Boolean);
-    expect(lines[0]).toBe('Whippin AI #7 — SCORE 3');
-    expect(lines[1]).toBe('🟥🟪🟦'); // single line, one emoji per square, no % and no newlines
-    expect(lines).toHaveLength(2);
+  it('builds <origin>/s/<token> and the token round-trips the result', () => {
+    const url = shareUrl('https://whippin.ai', result);
+    expect(url.startsWith('https://whippin.ai/s/')).toBe(true);
+    const token = url.slice('https://whippin.ai/s/'.length);
+    expect(decodeResult(token)).toEqual(result); // squares are already integers here
   });
 
-  it('omits the day number for an override (no day)', () => {
-    const text = buildShareText({ dayNumber: null, guessCount: 3, squares });
-    expect(text.split('\n')[0]).toBe('Whippin AI — SCORE 3');
-  });
-
-  it('appends the url when given, and never leaks a word (no letters in the grid)', () => {
-    const text = buildShareText({ dayNumber: 7, guessCount: 3, squares, url: 'https://whippin.ai' });
-    expect(text.endsWith('https://whippin.ai')).toBe(true);
-    const grid = text.split('\n\n')[1];
-    expect(grid).not.toMatch(/[a-z0-9]/i); // emoji only, no spoilers, no digits
+  it('carries no spoilers — the sentence/words never appear in the link', () => {
+    const url = shareUrl('https://whippin.ai', result);
+    // Only the origin, the /s/ path, and a base64url token.
+    expect(url).toMatch(/^https:\/\/whippin\.ai\/s\/[A-Za-z0-9_-]+$/);
   });
 });

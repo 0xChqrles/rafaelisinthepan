@@ -348,7 +348,7 @@ function Round({
           take its place and animate in. */}
       <div className="tray">
         {showResults ? (
-          <SolvedScreen guessCount={guessCount} trajectory={trajectory} dayNumber={dayNumber} />
+          <SolvedScreen guessCount={guessCount} trajectory={trajectory} dayNumber={dayNumber} lang={lang} />
         ) : (
           <Keyboard
             input={input}

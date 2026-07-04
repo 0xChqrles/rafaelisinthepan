@@ -1,13 +1,13 @@
-// Solved-screen share (issue #8): a Wordle-style, spoiler-free emoji row.
+// Solved-screen share (issue #8).
 //
-// One square per guess doesn't scale — a long game becomes an unshareable wall and a
-// meaningless strip on screen. Instead the per-guess progress trajectory is collapsed into
-// a BOUNDED number of squares (3..18, more squares = more tries, on a hardcoded curve), and
-// each square's color is the MEAN progress of its bucket. The share text is then a single
-// row of those squares' emoji. No words ever appear, so a shared result gives nothing away.
+// The per-guess progress trajectory is collapsed into a BOUNDED number of squares (3..18,
+// more squares = more tries, on a hardcoded curve), each colored by the MEAN progress of its
+// bucket. Those squares drive both the on-screen grid AND the shareable card: the result is
+// packed into a URL token and shared as `<origin>/s/<token>`, so pasting the link unfurls
+// into the rendered image (row of squares + SCORE + #day) instead of an emoji string.
 
 import { computeProgress } from './scoring';
-import type { RankMap, RuntimeHole } from '@whippin/shared';
+import { encodeResult, type RankMap, type RuntimeHole, type ShareResult } from '@whippin/shared';
 
 // Reconstruction-% trajectory: replay the ordered valid guesses against the puzzle to
 // get the reconstruction % AFTER each guess. A guess improves a hole exactly when the
@@ -65,34 +65,9 @@ export function bucketMeans(trajectory: number[]): number[] {
   return out;
 }
 
-// Three heat buckets (upper bounds 33 / 67 / 100) colored to match the heat ramp
-// (game/heat.ts): cold crimson -> hot cyan. A low % is far from the goal (🟥); a solved
-// sentence is hot (🟦). Boundary rule: pct <= max, so 33 -> 🟥, 67 -> 🟪, 100 -> 🟦.
-const SHARE_BUCKETS: { max: number; emoji: string }[] = [
-  { max: 33, emoji: '🟥' }, // cold: far
-  { max: 67, emoji: '🟪' }, // warm: halfway
-  { max: 100, emoji: '🟦' }, // hot: solved
-];
-
-export function shareEmoji(pct: number): string {
-  const bucket = SHARE_BUCKETS.find((b) => pct <= b.max);
-  return (bucket ?? SHARE_BUCKETS[SHARE_BUCKETS.length - 1]).emoji;
-}
-
-export interface ShareParams {
-  dayNumber: number | null; // omitted from the header for a ?puzzle= override (no day)
-  guessCount: number; // the score (unique tries), shown in the header
-  squares: number[]; // per-square mean progress % (from bucketMeans) -> the emoji row
-  url?: string; // optional link appended last (the site origin)
-}
-
-// The full shareable text: a header (title + day + score), a blank line, a SINGLE row of
-// heat emoji (one per square), and — when given — the site URL. No words, so no spoilers.
-export function buildShareText({ dayNumber, guessCount, squares, url }: ShareParams): string {
-  const title = dayNumber != null ? `Whippin AI #${dayNumber}` : 'Whippin AI';
-  const header = `${title} — SCORE ${guessCount}`;
-  const grid = squares.map(shareEmoji).join('');
-  const parts = [header, grid];
-  if (url) parts.push(url);
-  return parts.join('\n\n');
+// The shareable link: the result packed into a URL-safe token at `<origin>/s/<token>` (the
+// codec lives in @whippin/shared, so the backend decodes the same token to render the card).
+// Pasting the link unfurls into the OG image instead of a string of emoji.
+export function shareUrl(origin: string, result: ShareResult): string {
+  return `${origin}/s/${encodeResult(result)}`;
 }

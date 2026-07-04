@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { bucketMeans, buildShareText } from '../game/share';
+import { bucketMeans, shareUrl } from '../game/share';
 import { heatColor } from '@whippin/shared';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 
@@ -26,10 +26,12 @@ export default function SolvedScreen({
   guessCount,
   trajectory,
   dayNumber,
+  lang,
 }: {
   guessCount: number;
   trajectory: number[]; // reconstruction % after each counted guess (one per try)
   dayNumber: number | null;
+  lang: string; // packed into the share token (drives the link's click-through target)
 }) {
   // Collapse the per-guess trajectory into a bounded set of squares (3..18), each colored
   // by its bucket's mean progress. Same array drives the on-screen grid and the share row.
@@ -83,14 +85,16 @@ export default function SolvedScreen({
   useEffect(() => () => window.clearTimeout(copiedTimer.current), []);
 
   const onShare = useCallback(async () => {
-    const url = typeof window !== 'undefined' ? window.location.origin : undefined;
-    const text = buildShareText({ dayNumber, guessCount, squares, url });
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    // The result is packed into the link; the backend renders /s/<token> as the OG card, so
+    // sharing the URL unfurls into the image. dayNumber is null only for a ?puzzle= override.
+    const url = shareUrl(origin, { lang, dayNumber: dayNumber ?? 0, score: guessCount, squares });
 
     // Prefer the Web Share API (mobile: native share sheet). Fall back to the clipboard
     // on desktop / when it is unavailable, matching the "copy to clipboard" default.
     if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
       try {
-        await navigator.share({ text });
+        await navigator.share({ title: 'Whippin AI', url });
         return;
       } catch (err) {
         if ((err as DOMException)?.name === 'AbortError') return; // user dismissed the sheet
@@ -98,14 +102,14 @@ export default function SolvedScreen({
       }
     }
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(url);
       setCopied(true);
       window.clearTimeout(copiedTimer.current);
       copiedTimer.current = window.setTimeout(() => setCopied(false), 2000);
     } catch {
       // Clipboard blocked (insecure context / denied): nothing more we can do here.
     }
-  }, [dayNumber, guessCount, squares]);
+  }, [lang, dayNumber, guessCount, squares]);
 
   return (
     <div className="solved-results">
