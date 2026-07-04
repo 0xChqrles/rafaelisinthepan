@@ -11,4 +11,5 @@ const client = new S3Client({});
 export const handler = createHandler({
   store: s3Store(client, config.bucket),
   allowedOrigin: config.allowedOrigin,
+  siteOrigin: config.siteOrigin,
 });

@@ -20,6 +20,10 @@ const here = path.dirname(fileURLToPath(import.meta.url)); // packages/infra/lib
 // at synth time; @aws-sdk/* is left external (provided by the Node runtime).
 const LAMBDA_ENTRY = path.resolve(here, '..', '..', 'backend', 'src', 'index.ts');
 const REPO_LOCKFILE = path.resolve(here, '..', '..', '..', 'pnpm-lock.yaml');
+// The share-card rasterizer assets (resvg .wasm + pixel font, #8) that ogCard.ts reads from
+// `./assets` at runtime. esbuild bundles resvg-wasm's JS but not these data files, so copy
+// them next to the bundled index.mjs so the same `./assets/*` paths resolve in the Lambda.
+const LAMBDA_ASSETS = path.resolve(here, '..', '..', 'backend', 'src', 'assets');
 
 export interface BackendStackProps extends StackProps {
   // The exact web origin permitted to read the API via CORS. Defaults to "*".
@@ -32,6 +36,9 @@ export interface BackendStackProps extends StackProps {
   domainName?: string;
   // Subdomain label for the API under `domainName` (default "api" -> api.<domain>).
   apiSubdomain?: string;
+  // Canonical site origin (apex, e.g. https://whippin.ai) for the share card's absolute URLs
+  // (og:image + game redirect, #8). The apex CloudFront routes /s/* and /og/* here.
+  siteOrigin?: string;
 }
 
 export class BackendStack extends Stack {
@@ -81,7 +88,8 @@ export class BackendStack extends Stack {
       // Graviton: cheaper per-ms and typically faster than x86 for this pure-JS handler
       // (no native deps; the AWS SDK ships in the runtime, so the bundle is arch-agnostic).
       architecture: lambda.Architecture.ARM_64,
-      memorySize: 256,
+      // Headroom for the resvg WebAssembly module (compile + a 1200×630 render, #8).
+      memorySize: 512,
       timeout: Duration.seconds(10),
       logGroup,
       // X-Ray active tracing for request-level latency/error visibility.
@@ -90,6 +98,9 @@ export class BackendStack extends Stack {
       environment: {
         PUZZLE_BUCKET: bucket.bucketName,
         ALLOWED_ORIGIN: allowedOrigin,
+        // Canonical apex for the share card's absolute URLs (#8); omitted (request-origin
+        // fallback) when there is no custom domain.
+        ...(props.siteOrigin ? { SITE_ORIGIN: props.siteOrigin } : {}),
       },
       depsLockFilePath: REPO_LOCKFILE,
       bundling: {
@@ -100,6 +111,16 @@ export class BackendStack extends Stack {
         sourceMap: true,
         // The AWS SDK v3 ships in the Node runtime; bundling it only bloats the artifact.
         externalModules: ['@aws-sdk/*'],
+        // Copy the share-card assets (resvg .wasm + font) next to the bundle so ogCard.ts's
+        // `./assets/*` fs reads resolve at runtime (esbuild bundles resvg-wasm's JS, not the
+        // data files it loads). Cross-platform `cp -R`; the bundle dir is fresh each synth.
+        commandHooks: {
+          beforeBundling: () => [],
+          beforeInstall: () => [],
+          afterBundling: (_inputDir: string, outputDir: string) => [
+            `cp -R "${LAMBDA_ASSETS}" "${path.join(outputDir, 'assets')}"`,
+          ],
+        },
       },
     });
 
@@ -281,6 +302,10 @@ export class BackendStack extends Stack {
     new CfnOutput(this, 'DistributionDomainName', {
       description: 'CloudFront default domain (Route53 alias target for the API domain).',
       value: distribution.distributionDomainName,
+    });
+    new CfnOutput(this, 'DistributionId', {
+      description: 'API CloudFront distribution id (for `aws cloudfront create-invalidation`).',
+      value: distribution.distributionId,
     });
   }
 }

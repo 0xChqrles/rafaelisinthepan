@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { computeProgress } from '../game/scoring';
+import { progressTrajectory } from '../game/share';
 import { canExtend, type Layout } from '../game/keyboard';
 import useVocab from '../hooks/useVocab';
 import { useGameStore, roundKeyForDay, holesMatchPuzzle } from '../state/gameStore';
@@ -8,9 +9,12 @@ import ProgressBar from '../components/ProgressBar';
 import FlagButton from '../components/FlagButton';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
+import SolvedScreen from '../components/SolvedScreen';
+import SolvedCaption from '../components/SolvedCaption';
 import LoadError from '../components/LoadError';
+import { HIT_FADE_MS } from '../components/FloatingHit';
 import { fold } from '@whippin/shared';
-import type { HitState, Hole, Puzzle, RankEntry, RankMap, RuntimeHole } from '@whippin/shared';
+import type { HitState, Hole, Puzzle, RankEntry, RankMap, RuntimeHole, Source } from '@whippin/shared';
 
 // Feedback shown under the input. Only INVALID words use it now (red shake +
 // "does not exist"); a valid-but-too-far guess gives per-hole "MISS" feedback
@@ -21,6 +25,13 @@ type Feedback = { text: string };
 // Floating distance/MISS feedback uses the same start stagger, then fades as one batch.
 const STAGGER_MS = 200;
 const FLOATING_HIT_INTRO_MS = 320;
+
+// Once the last hole is solved it still animates: the exponent rolls to 0 (HIT_FADE_MS),
+// then the secret word blinks into place (.word-replace-blink = 0.2s x 3). Hold the
+// playing UI until that finishes, then transition to the solved presentation — so the
+// results never pop in over a still-resolving word. Kept in sync with those two effects.
+const WORD_BLINK_MS = 600; // .word-replace-blink in index.css (0.2s steps(1) 3)
+const LAST_HOLE_SETTLE_MS = HIT_FADE_MS + WORD_BLINK_MS;
 
 // Per page-load token isolating a ?puzzle= override round (no server day to key on),
 // so testing a static file always starts fresh and never rehydrates another file.
@@ -40,6 +51,7 @@ export default function Game({ puzzle, dayNumber }: { puzzle: Puzzle; dayNumber:
       words={puzzle.words}
       puzzleHoles={puzzle.holes}
       ranks={puzzle.ranks}
+      source={puzzle.source}
       vocabSet={vocab.vocabSet}
       prefixSet={vocab.prefixSet}
       lang={puzzle.lang}
@@ -54,6 +66,7 @@ function Round({
   words,
   puzzleHoles,
   ranks,
+  source,
   vocabSet,
   prefixSet,
   lang,
@@ -62,6 +75,7 @@ function Round({
   words: string[];
   puzzleHoles: Hole[];
   ranks: RankMap;
+  source?: Source;
   vocabSet: Set<string>;
   prefixSet: Set<string>;
   lang: string;
@@ -139,6 +153,35 @@ function Round({
   // Reconstruction progress (0–100): how much of the sentence is rebuilt. Drives the
   // WIDTH of the top progress bar. Distinct from the guess-count performance number.
   const progress = useMemo<number>(() => computeProgress(holes, ranks), [holes, ranks]);
+
+  // Per-guess reconstruction-% trajectory for the solved screen's share grid: replay
+  // this round's ordered valid guesses, one value per counted try. Derived from the
+  // persisted `tried` list, so it survives a reload just like the score.
+  const trajectory = useMemo<number[]>(
+    () => progressTrajectory(freshHoles, ranks, history),
+    [freshHoles, ranks, history],
+  );
+
+  // Gate the solved presentation on the last hole's solve animation finishing (see
+  // LAST_HOLE_SETTLE_MS): the playing UI (input + keyboard) stays up until then, so the
+  // sentence resolves in place and the results reveal cleanly afterwards — no reflow, no
+  // pop-over. An already-solved round on load has no animation to wait for.
+  const [showResults, setShowResults] = useState<boolean>(solved);
+  const prevSolved = useRef<boolean>(solved);
+  useEffect(() => {
+    const justSolved = solved && !prevSolved.current;
+    prevSolved.current = solved;
+    if (!solved) {
+      setShowResults(false);
+      return undefined;
+    }
+    if (!justSolved) {
+      setShowResults(true); // already solved on load (rehydrated) -> reveal without waiting
+      return undefined;
+    }
+    const t = window.setTimeout(() => setShowResults(true), LAST_HOLE_SETTLE_MS);
+    return () => window.clearTimeout(t);
+  }, [solved]);
 
   // Cache the progress on the persisted round so the language selector can badge an
   // in-progress language without re-loading its rank map. No-op when unchanged.
@@ -271,45 +314,53 @@ function Round({
           {guessCount}
         </div>
 
+        {/* The reconstructed sentence stays visible in BOTH states: while playing (with
+            the live holes/hits) and once solved (every hole resolved to its accented
+            secret) — it is the "full reconstructed sentence" of the solved screen. */}
         <Phrase words={words} holes={holes} puzzleHoles={puzzleHoles} hits={hits} onHitDone={removeHit} />
 
-        <div className="input-area">
-          {solved ? (
-            // End of round: replace input with the verdict.
-            <div className="round-end">
-              <p className="round-end-label solved">SOLVED!</p>
-              <p className="round-end-score">SCORE {guessCount}</p>
-            </div>
-          ) : (
-            <>
-              <WordInput
-                value={input}
-                history={history}
-                onType={appendChar}
-                onBackspace={deleteChar}
-                onSubmit={submit}
-                onReplace={replaceInput}
-                invalidSignal={invalidAt}
-              />
-              <p className="hint">{feedback?.text || ' '}</p>
-            </>
-          )}
-        </div>
+        {/* Below the sentence: the input while playing, its attribution once the results
+            reveal. Both reserve the same height, so the transition never shifts the
+            sentence up. The swap waits for the last hole to finish animating (showResults),
+            so the input stays put while the final word resolves. */}
+        {showResults ? (
+          <SolvedCaption source={source} />
+        ) : (
+          <div className="input-area">
+            <WordInput
+              value={input}
+              history={history}
+              onType={appendChar}
+              onBackspace={deleteChar}
+              onSubmit={submit}
+              onReplace={replaceInput}
+              invalidSignal={invalidAt}
+            />
+            <p className="hint">{feedback?.text || ' '}</p>
+          </div>
+        )}
       </div>
 
-      {/* Custom on-screen keyboard: replaces the native mobile keyboard and mirrors the
-          physical keyboard on desktop (greyed keys reflect the shared input state). */}
-      {!solved && (
-        <Keyboard
-          input={input}
-          prefixSet={prefixSet}
-          vocabSet={vocabSet}
-          layout={layout}
-          onType={appendChar}
-          onBackspace={deleteChar}
-          onSubmit={submit}
-        />
-      )}
+      {/* Bottom zone (fixed keyboard-height footprint): the on-screen keyboard while
+          playing, the solved results in the SAME space once they reveal — so the keyboard
+          leaving neither reflows the layout nor leaves an empty hole. The keyboard lingers
+          (inert; submit is guarded) through the last hole's animation, then the results
+          take its place and animate in. */}
+      <div className="tray">
+        {showResults ? (
+          <SolvedScreen guessCount={guessCount} trajectory={trajectory} dayNumber={dayNumber} lang={lang} />
+        ) : (
+          <Keyboard
+            input={input}
+            prefixSet={prefixSet}
+            vocabSet={vocabSet}
+            layout={layout}
+            onType={appendChar}
+            onBackspace={deleteChar}
+            onSubmit={submit}
+          />
+        )}
+      </div>
     </div>
   );
 }

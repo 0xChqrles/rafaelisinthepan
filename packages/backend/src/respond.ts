@@ -12,6 +12,9 @@ export interface FnUrlResult {
   statusCode: number;
   headers: Record<string, string>;
   body: string;
+  // Binary payloads (the OG PNG) are base64-encoded; Function URLs decode when this is set,
+  // and the local serve.ts adapter does the same.
+  isBase64Encoded?: boolean;
 }
 
 export interface ErrorBody {
@@ -52,4 +55,19 @@ export function errorResponse(
   extra: Record<string, unknown> = {},
 ): FnUrlResult {
   return json(statusCode, { error, message, ...extra }, headers);
+}
+
+// An HTML page (the share-card OG page).
+export function html(statusCode: number, body: string, headers: Record<string, string> = {}): FnUrlResult {
+  return { statusCode, headers: { 'Content-Type': 'text/html; charset=utf-8', ...headers }, body };
+}
+
+// A binary PNG (the share-card OG image), base64-encoded for the Function URL / adapter.
+export function png(statusCode: number, buffer: Buffer, headers: Record<string, string> = {}): FnUrlResult {
+  return {
+    statusCode,
+    headers: { 'Content-Type': 'image/png', ...headers },
+    body: buffer.toString('base64'),
+    isBase64Encoded: true,
+  };
 }

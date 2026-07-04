@@ -11,8 +11,12 @@ import {
   type FnUrlResult,
   corsHeaders,
   errorResponse,
+  html,
   json,
+  png,
 } from './respond';
+import { renderCardPng, renderShareHtml } from './ogCard';
+import { decodeResult } from '@whippin/shared';
 import type { PuzzleStore } from './store';
 
 export interface HandlerDeps {
@@ -20,6 +24,9 @@ export interface HandlerDeps {
   // Injectable clock + config so the handler is pure and testable.
   now?: () => Date;
   allowedOrigin?: string;
+  // Canonical site origin (apex) for the share card's absolute URLs (#8). When unset, the
+  // share HTML falls back to the request origin (local dev).
+  siteOrigin?: string;
   timeZone?: string;
   resetHour?: number;
 }
@@ -36,9 +43,27 @@ const PUZZLE_MAX_AGE = 86_400;
 
 const LANG_RE = /^[a-z]{2}$/;
 
+// The share card (issue #8) is content-addressed by its token: a given URL's bytes are fixed
+// (the render only changes on a deploy), and messaging apps cache the preview on THEIR side
+// once unfurled — so a short origin TTL couldn't refresh an already-shared preview anyway.
+// Cache it hard; the rare render-changing deploy (a card redesign) needs a one-off CloudFront
+// invalidation — see the DistributionId stack outputs.
+const SHARE_MAX_AGE = 31_536_000;
+const OG_PNG_RE = /^\/og\/([A-Za-z0-9_-]+)\.png$/;
+const SHARE_RE = /^\/s\/([A-Za-z0-9_-]+)$/;
+
 function route(rawPath: string | undefined): 'today' | 'puzzle' {
   const path = (rawPath ?? '/').replace(/\/+$/, '');
   return path.endsWith('/today') ? 'today' : 'puzzle';
+}
+
+// Absolute origin of THIS request — the same host serves /s, /og and the SPA, so it is the
+// base for the OG image URL and the game redirect. Honors the CloudFront forwarded headers.
+function requestOrigin(event: FnUrlEvent): string {
+  const host = event.headers?.['x-forwarded-host'] ?? event.headers?.host ?? 'localhost';
+  const proto =
+    event.headers?.['x-forwarded-proto'] ?? (/^(localhost|127\.|\[?::1)/.test(host) ? 'http' : 'https');
+  return `${proto}://${host}`;
 }
 
 // Cache-Control aligned to the daily flip: used for the negative (404) TTL so a late upload
@@ -65,6 +90,31 @@ export function createHandler(deps: HandlerDeps) {
     }
 
     try {
+      // Share-card routes (issue #8) are keyed only on the token — no lang/day/store — so
+      // they resolve BEFORE the puzzle logic (which would otherwise 400 on the missing lang).
+      const rawPath = event.rawPath ?? '/';
+      const ogMatch = OG_PNG_RE.exec(rawPath);
+      if (ogMatch) {
+        const result = decodeResult(ogMatch[1]);
+        if (!result) return errorResponse(404, 'not_found', 'Invalid share token.', cors);
+        const buffer = await renderCardPng({
+          dayNumber: result.dayNumber,
+          score: result.score,
+          squares: result.squares,
+        });
+        return png(200, buffer, { 'Cache-Control': `public, max-age=${SHARE_MAX_AGE}, immutable` });
+      }
+      const shareMatch = SHARE_RE.exec(rawPath);
+      if (shareMatch) {
+        const result = decodeResult(shareMatch[1]);
+        if (!result) return errorResponse(404, 'not_found', 'Invalid share token.', cors);
+        // Canonical apex origin for both the og:image and the game redirect (so they never
+        // depend on the CloudFront-to-CloudFront Host); the request origin is the local-dev
+        // fallback.
+        const body = renderShareHtml(shareMatch[1], result, deps.siteOrigin ?? requestOrigin(event));
+        return html(200, body, { 'Cache-Control': `public, max-age=${SHARE_MAX_AGE}, immutable` });
+      }
+
       const instant = now();
       const date = activeDate(instant, dayOpts);
 

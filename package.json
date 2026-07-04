@@ -21,6 +21,7 @@
     "infra:synth": "pnpm --filter @whippin/infra synth",
     "infra:diff": "pnpm --filter @whippin/infra diff",
     "infra:deploy": "pnpm --filter @whippin/infra run deploy",
+    "infra:deploy:app": "pnpm --filter @whippin/infra run deploy:app",
     "test": "pnpm -r --workspace-concurrency=1 --if-present run test"
   },
   "devDependencies": {

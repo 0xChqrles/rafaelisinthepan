@@ -112,6 +112,54 @@ export class WebStack extends Stack {
       },
     });
 
+    // ── Share-card routes (issue #8): proxy /s/* and /og/* to the backend ──────
+    // The card page (/s) must be rendered per token (crawlers don't run JS), and the image
+    // (/og) is rendered too, so both are served by the backend Lambda. Routing them under the
+    // APEX (this distribution) keeps the shared link on the pretty domain and lets a human who
+    // clicks it land on the SPA; the backend builds all card URLs from that same apex origin.
+    // The token lives in the PATH, so caching keys on path (CACHING_OPTIMIZED) and honours the
+    // backend's `immutable` Cache-Control.
+    //
+    // The card pages get their OWN headers policy, not the SPA's: the /s page redirects humans
+    // with a tiny inline <script>, which the SPA's `script-src 'self'` CSP would block. This
+    // trivial, server-rendered redirect stub (all values escaped/sanitized) has no injection
+    // surface, so `script-src 'unsafe-inline'` is fine here; HSTS/nosniff/frame stay on.
+    const cardHeaders = new cloudfront.ResponseHeadersPolicy(this, 'CardHeaders', {
+      responseHeadersPolicyName: 'WhippinCardHeaders',
+      comment: 'Share card (#8): HSTS + nosniff/frame; CSP permits the /s inline redirect.',
+      securityHeadersBehavior: {
+        strictTransportSecurity: {
+          accessControlMaxAge: Duration.days(365),
+          includeSubdomains: true,
+          override: true,
+        },
+        contentTypeOptions: { override: true },
+        referrerPolicy: {
+          referrerPolicy: cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN,
+          override: true,
+        },
+        frameOptions: { frameOption: cloudfront.HeadersFrameOption.DENY, override: true },
+        contentSecurityPolicy: {
+          contentSecurityPolicy: "default-src 'none'; script-src 'unsafe-inline'",
+          override: true,
+        },
+      },
+    });
+    const cardBehavior: cloudfront.BehaviorOptions | undefined = apiOrigin
+      ? {
+          origin: new origins.HttpOrigin(new URL(apiOrigin).host, {
+            protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
+            originSslProtocols: [cloudfront.OriginSslPolicy.TLS_V1_2],
+          }),
+          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+          cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
+          cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+          responseHeadersPolicy: cardHeaders,
+          compress: true,
+        }
+      : undefined;
+
     // ── CloudFront: CDN in front of the private bucket ────────────────────────
     const distribution = new cloudfront.Distribution(this, 'SiteCdn', {
       comment: 'Whippin web front',
@@ -135,6 +183,9 @@ export class WebStack extends Stack {
         responseHeadersPolicy: siteHeaders,
         compress: true,
       },
+      // /s/* (card page) and /og/* (card image) proxy to the backend; everything else is the
+      // SPA. Without these, the SPA fallback below would serve index.html for a share link.
+      additionalBehaviors: cardBehavior ? { '/s/*': cardBehavior, '/og/*': cardBehavior } : undefined,
       // SPA fallback: client-routed paths have no S3 object, so map the bucket's 403/404
       // to index.html with a 200 and let the app router resolve the route.
       errorResponses: [
