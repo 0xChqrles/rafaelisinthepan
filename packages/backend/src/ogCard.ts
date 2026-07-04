@@ -46,9 +46,10 @@ const escapeAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;
 //
 // The redirect is JavaScript, NOT `<meta http-equiv="refresh">`: preview crawlers don't run
 // JS, so they stop here and read THIS page's card OG tags. A meta-refresh, by contrast, is
-// followed by some crawlers (e.g. Telegram) to the game page, whose default OG tags then
-// win — showing the wrong preview. Humans (who run JS) still get bounced to the game; the
-// visible link is the no-JS fallback.
+// followed by some crawlers (e.g. Telegram) to the game page, whose default OG tags then win
+// — showing the wrong preview. The redirect sits in <head> so it fires DURING head parsing,
+// before the body paints, so a human never sees a "redirecting…" flash; the body link is the
+// no-JS fallback. Crawlers still read the OG meta below (a <script> doesn't end the head).
 export function renderShareHtml(token: string, result: ShareResult, base: string): string {
   const lang = /^[a-z]{2}$/.test(result.lang) ? result.lang : 'en'; // sanitize (token-sourced)
   const title = escapeAttr(`Whippin AI #${result.dayNumber} — SCORE ${result.score}`);
@@ -58,6 +59,7 @@ export function renderShareHtml(token: string, result: ShareResult, base: string
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<script>location.replace(${JSON.stringify(gameUrl)})</script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${title}</title>
 <meta property="og:type" content="website">
@@ -69,9 +71,6 @@ export function renderShareHtml(token: string, result: ShareResult, base: string
 <meta name="twitter:title" content="${title}">
 <meta name="twitter:image" content="${image}">
 </head>
-<body>
-<p>Redirecting to <a href="${escapeAttr(gameUrl)}">Whippin AI</a>…</p>
-<script>location.replace(${JSON.stringify(gameUrl)})</script>
-</body>
+<body><a href="${escapeAttr(gameUrl)}">Play Whippin AI</a></body>
 </html>`;
 }
