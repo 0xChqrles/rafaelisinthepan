@@ -10,6 +10,7 @@ import useAnimatedNumber from '../hooks/useAnimatedNumber';
 const SQUARE_POP_MS = 300; // one square's pop-in (matches .heat-cell animation)
 const SQUARE_STAGGER_MS = 55; // gap between consecutive squares...
 const GRID_MAX_SPAN_MS = 1400; // ...compressed so even a long game's grid stays snappy
+const ACTIONS_IN_MS = 350; // score+share fade/rise into place (matches .solved-actions transition)
 const SCORE_COUNT_MS = 800; // score tally 0 -> guessCount
 
 // The solved results (issue #8): it takes over the on-screen keyboard's footprint once
@@ -34,18 +35,23 @@ export default function SolvedScreen({
   // Per-square stagger, compressed for long games so the whole grid lands within a bound.
   const stagger = n > 1 ? Math.min(SQUARE_STAGGER_MS, GRID_MAX_SPAN_MS / (n - 1)) : 0;
 
-  // Score counts up only AFTER the grid has finished landing. It starts at 0 and animates
-  // to guessCount when `countTarget` flips (useAnimatedNumber tweens on target change).
+  // Reveal in three beats: (1) the grid squares land, (2) the score+share row fades/rises
+  // into place, and only THEN (3) the score tallies up from 0. Keeping the count until the
+  // row has settled means the number animates in its final position, not while still moving.
   const [countTarget, setCountTarget] = useState(0);
   const [showActions, setShowActions] = useState(false);
+  // (1 -> 2) After the grid finishes landing, bring the score+share row in.
   useEffect(() => {
     const gridDoneMs = Math.max(0, n - 1) * stagger + SQUARE_POP_MS;
-    const t = window.setTimeout(() => {
-      setShowActions(true);
-      setCountTarget(guessCount);
-    }, gridDoneMs);
+    const t = window.setTimeout(() => setShowActions(true), gridDoneMs);
     return () => window.clearTimeout(t);
-  }, [n, stagger, guessCount]);
+  }, [n, stagger]);
+  // (2 -> 3) Once that row has settled into position, start the score tally from 0.
+  useEffect(() => {
+    if (!showActions) return undefined;
+    const t = window.setTimeout(() => setCountTarget(guessCount), ACTIONS_IN_MS);
+    return () => window.clearTimeout(t);
+  }, [showActions, guessCount]);
   const shownScore = useAnimatedNumber(countTarget, SCORE_COUNT_MS);
 
   // "COPIED" confirmation after a clipboard fallback (the native share sheet needs none).
