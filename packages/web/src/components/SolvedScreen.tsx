@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { buildShareText } from '../game/share';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { bucketMeans, buildShareText } from '../game/share';
 import { heatColor } from '../game/heat';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 
@@ -27,7 +27,10 @@ export default function SolvedScreen({
   trajectory: number[]; // reconstruction % after each counted guess (one per try)
   dayNumber: number | null;
 }) {
-  const n = trajectory.length;
+  // Collapse the per-guess trajectory into a bounded set of squares (3..18), each colored
+  // by its bucket's mean progress. Same array drives the on-screen grid and the share row.
+  const squares = useMemo(() => bucketMeans(trajectory), [trajectory]);
+  const n = squares.length;
   // Per-square stagger, compressed for long games so the whole grid lands within a bound.
   const stagger = n > 1 ? Math.min(SQUARE_STAGGER_MS, GRID_MAX_SPAN_MS / (n - 1)) : 0;
 
@@ -52,7 +55,7 @@ export default function SolvedScreen({
 
   const onShare = useCallback(async () => {
     const url = typeof window !== 'undefined' ? window.location.origin : undefined;
-    const text = buildShareText({ dayNumber, guessCount, trajectory, url });
+    const text = buildShareText({ dayNumber, guessCount, squares, url });
 
     // Prefer the Web Share API (mobile: native share sheet). Fall back to the clipboard
     // on desktop / when it is unavailable, matching the "copy to clipboard" default.
@@ -73,15 +76,15 @@ export default function SolvedScreen({
     } catch {
       // Clipboard blocked (insecure context / denied): nothing more we can do here.
     }
-  }, [dayNumber, guessCount, trajectory]);
+  }, [dayNumber, guessCount, squares]);
 
   return (
     <div className="solved-results">
-      {/* One flat square per guess, colored by the reconstruction % reached at that guess
+      {/* One flat square per bucket (3..18), colored by the bucket's MEAN reconstruction %
           (heatColor: 0 = cold/far crimson .. 1 = hot/solved cyan). Each pops in on its own
           staggered delay. Decorative — the score and share text carry the real numbers. */}
       <div className="heat-grid" aria-hidden="true">
-        {trajectory.map((pct, i) => (
+        {squares.map((pct, i) => (
           <span
             // eslint-disable-next-line react/no-array-index-key
             key={i}
