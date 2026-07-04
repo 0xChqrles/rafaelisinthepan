@@ -42,7 +42,8 @@ const server = createServer(async (req, res) => {
   try {
     const result = await handler(toEvent(req));
     res.writeHead(result.statusCode, result.headers);
-    res.end(result.body);
+    // Binary responses (the OG PNG) come back base64-encoded, just like a Function URL.
+    res.end(result.isBase64Encoded ? Buffer.from(result.body, 'base64') : result.body);
   } catch (err) {
     // The handler already maps its own errors to JSON 500s; this only guards the adapter.
     res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -54,6 +55,6 @@ server.listen(PORT, () => {
   console.log(`[backend] local puzzle server on http://localhost:${PORT}`);
   console.log(`[backend]   store:  ${STORE_ROOT}`);
   console.log(`[backend]   origin: ${ALLOWED_ORIGIN}`);
-  console.log(`[backend]   GET /?lang=<xx>  GET /today`);
+  console.log(`[backend]   GET /?lang=<xx>  GET /today  GET /s/<token>  GET /og/<token>.png`);
   console.log(`[backend] point the front at it: VITE_API_BASE_URL=http://localhost:${PORT}`);
 });
