@@ -639,11 +639,21 @@ button * {
   letter-spacing: 2px;
   font-variant-numeric: tabular-nums;
 }
-/* Right-aligned, fixed-width (set inline to the final count) so the tally never reflows. */
+/* A hidden ghost of the final count reserves the exact width (incl. letter-spacing, which
+   `ch` units miss); the live tally is overlaid right-aligned, so counting never reflows. */
 .solved-score-num {
+  position: relative;
   display: inline-block;
-  text-align: right;
+  vertical-align: baseline;
   font-variant-numeric: tabular-nums;
+}
+.solved-score-ghost {
+  visibility: hidden;
+}
+.solved-score-live {
+  position: absolute;
+  inset: 0;
+  text-align: right;
 }
 /* Share control styled as a wide keyboard key (flat filled surface, uppercase pixel),
    cohesive with the keyboard it stands in for. Turns accent on a successful copy. */
