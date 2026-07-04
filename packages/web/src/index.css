@@ -600,26 +600,22 @@ button * {
   gap: 5px;
   max-width: 100%;
 }
-/* Squares pop in one by one: each carries an inline animation-delay (staggered by index),
-   and `both` keeps it invisible until its turn, so the grid fills left-to-right. */
+/* Squares appear one by one — each carries an inline animation-delay (staggered by index).
+   No smooth scale/fade: a stepped, instant on/off keeps the pixel-art feel. `both` holds it
+   hidden until its turn (backwards fill) and shown after (forwards fill). */
 .heat-cell {
   width: clamp(14px, 2.4vh, 20px);
   height: clamp(14px, 2.4vh, 20px);
   image-rendering: pixelated;
-  animation: heat-cell-in 0.3s ease-out both;
+  opacity: 0;
+  animation: heat-cell-in 1ms steps(1) both;
 }
 @keyframes heat-cell-in {
-  0% {
+  from {
     opacity: 0;
-    transform: scale(0.2);
   }
-  65% {
+  to {
     opacity: 1;
-    transform: scale(1.18);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1);
   }
 }
 /* Score + share fade/rise in AFTER the grid has landed (JS toggles `.in`), as the score
@@ -641,6 +637,12 @@ button * {
   font-size: clamp(14px, 1.9vh, 18px);
   color: var(--muted);
   letter-spacing: 2px;
+  font-variant-numeric: tabular-nums;
+}
+/* Right-aligned, fixed-width (set inline to the final count) so the tally never reflows. */
+.solved-score-num {
+  display: inline-block;
+  text-align: right;
   font-variant-numeric: tabular-nums;
 }
 /* Share control styled as a wide keyboard key (flat filled surface, uppercase pixel),

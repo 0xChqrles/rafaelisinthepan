@@ -92,7 +92,14 @@ export default function SolvedScreen({
       </div>
 
       <div className={`solved-actions${showActions ? ' in' : ''}`}>
-        <span className="solved-score">SCORE {Math.round(shownScore)}</span>
+        <span className="solved-score">
+          SCORE{' '}
+          {/* Reserve the width of the FINAL count (digit count of guessCount) so the number
+              tallying up never changes width — 9 -> 10 must not nudge the layout. */}
+          <span className="solved-score-num" style={{ minWidth: `${String(guessCount).length}ch` }}>
+            {Math.round(shownScore)}
+          </span>
+        </span>
         <button type="button" className={`share-key${copied ? ' copied' : ''}`} onClick={onShare}>
           {copied ? 'COPIED' : 'SHARE'}
         </button>
