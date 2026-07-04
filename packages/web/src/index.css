@@ -593,30 +593,34 @@ button * {
 }
 /* One flat pixel square per counted guess, colored inline by the heat ramp — the solve's
    cold-to-hot trail. Wraps within the keyboard's width for longer games. */
+/* The grid centers the conveyor track and reserves its full box (--cell / --gap drive both
+   the cell size and the JS slot-shift transform, so they always agree). `overflow: hidden`
+   clips the track while it is shifted off to the right (empty slots), so the entering
+   squares appear to slide in from the right edge. */
 .heat-grid {
+  --cell: clamp(13px, 2.4vh, 20px);
+  --gap: 5px;
   display: flex;
-  flex-wrap: wrap;
   justify-content: center;
-  gap: 5px;
   max-width: 100%;
+  overflow: hidden;
 }
-/* Squares appear one by one — each carries an inline animation-delay (staggered by index).
-   No smooth scale/fade: a stepped, instant on/off keeps the pixel-art feel. `both` holds it
-   hidden until its turn (backwards fill) and shown after (forwards fill). */
+/* The row of squares. It is translated right by `n - shown` slots (inline) and slides one
+   slot left per reveal; transition-duration is set inline to the per-step time so the shifts
+   read as one continuous march. */
+.heat-track {
+  display: flex;
+  gap: var(--gap);
+  transition-property: transform;
+  transition-timing-function: linear;
+}
+/* Flat pixel square; opacity is toggled inline (0 until its turn, 1 once revealed). */
 .heat-cell {
-  width: clamp(14px, 2.4vh, 20px);
-  height: clamp(14px, 2.4vh, 20px);
+  flex: none;
+  width: var(--cell);
+  height: var(--cell);
   image-rendering: pixelated;
-  opacity: 0;
-  animation: heat-cell-in 1ms steps(1) both;
-}
-@keyframes heat-cell-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  transition: opacity 0.14s ease-out;
 }
 /* Score + share fade/rise in AFTER the grid has landed (JS toggles `.in`), as the score
    tallies up from 0. */
@@ -878,6 +882,11 @@ button * {
   .solved-caption {
     min-height: 72px;
     align-items: stretch;
+  }
+  /* Smaller cells/gap so even a full 18-square row (a 300+ guess game) fits a phone width. */
+  .heat-grid {
+    --cell: clamp(12px, 2vh, 18px);
+    --gap: 4px;
   }
   .progress-background {
     font-size: min(72vh, 54vw);
