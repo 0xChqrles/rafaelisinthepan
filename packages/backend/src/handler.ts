@@ -90,7 +90,7 @@ export function createHandler(deps: HandlerDeps) {
       if (ogMatch) {
         const result = decodeResult(ogMatch[1]);
         if (!result) return errorResponse(404, 'not_found', 'Invalid share token.', cors);
-        const buffer = renderCardPng({
+        const buffer = await renderCardPng({
           dayNumber: result.dayNumber,
           score: result.score,
           squares: result.squares,

@@ -2,17 +2,38 @@
 // and build the tiny HTML page that carries the OG meta + redirects a human into the game.
 // The SVG/layout + heat colors come from @whippin/shared (renderCardSvg), so the card matches
 // the on-screen grid exactly; here we only add the pixel font + rasterization.
-import { fileURLToPath } from 'node:url';
-import { Resvg } from '@resvg/resvg-js';
+//
+// resvg runs as WebAssembly (@resvg/resvg-wasm) — no native .node addon, so it bundles with
+// esbuild and deploys to Lambda without Docker or an arch-specific binary. The .wasm module
+// and the pixel font live in ./assets NEXT TO this module and are copied into the Lambda
+// bundle at synth (backend-stack commandHooks), so the SAME `./assets/*` paths resolve both
+// locally (tsx/vitest) and in the deployed bundle (index.mjs at the bundle root).
+import { readFile } from 'node:fs/promises';
+import { Resvg, initWasm } from '@resvg/resvg-wasm';
 import { renderCardSvg, type CardData, type ShareResult, CARD_WIDTH, CARD_HEIGHT } from '@whippin/shared';
 
-// Bundled Press Start 2P (OFL), so the card's text matches the app's pixel font.
-const FONT_PATH = fileURLToPath(new URL('../assets/PressStart2P-Regular.ttf', import.meta.url));
+const WASM_URL = new URL('./assets/resvg.wasm', import.meta.url);
+const FONT_URL = new URL('./assets/PressStart2P-Regular.ttf', import.meta.url);
 const CARD_FONT = 'Press Start 2P';
 
-export function renderCardPng(data: CardData): Buffer {
+// initWasm may be called only ONCE per process, so init on first render and cache the promise
+// (which also yields the reusable font buffer). NB: if @resvg/resvg-wasm is bumped, refresh
+// the committed src/assets/resvg.wasm to match the JS glue.
+let ready: Promise<Uint8Array> | null = null;
+function ensureReady(): Promise<Uint8Array> {
+  if (!ready) {
+    ready = (async () => {
+      await initWasm(new Uint8Array(await readFile(WASM_URL)));
+      return new Uint8Array(await readFile(FONT_URL));
+    })();
+  }
+  return ready;
+}
+
+export async function renderCardPng(data: CardData): Promise<Buffer> {
+  const font = await ensureReady();
   const resvg = new Resvg(renderCardSvg(data), {
-    font: { fontFiles: [FONT_PATH], loadSystemFonts: false, defaultFontFamily: CARD_FONT },
+    font: { fontBuffers: [font], loadSystemFonts: false, defaultFontFamily: CARD_FONT },
   });
   return Buffer.from(resvg.render().asPng());
 }
