@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { bucketMeans, shareUrl } from '../game/share';
-import { heatColor } from '@whippin/shared';
+import { heatColor, secondsUntilNextReset } from '@whippin/shared';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
+import { t } from '../i18n';
 
 // Reveal choreography (this component MOUNTS at the reveal moment — Game gates it on the last
 // hole's solve animation finishing, so the animations below ARE the reveal): the score/share
@@ -15,6 +16,15 @@ const SCORE_COUNT_MS = 800; // score tally 0 -> guessCount
 // The uncolored squares appear only AFTER the score is shown (row settled + tally finished)...
 const SQUARES_START_MS = ACTIONS_IN_MS + SCORE_COUNT_MS;
 const NEUTRAL_HOLD_MS = SQUARE_STAGGER_MS; // ...are held neutral this long, THEN colorize one by one.
+
+// "NEXT PUZZLE IN HH:MM:SS" — always three 2-digit groups (a game day is 24h).
+function formatHMS(totalSeconds: number): string {
+  const clamped = Math.max(0, totalSeconds);
+  const h = Math.floor(clamped / 3600);
+  const m = Math.floor((clamped % 3600) / 60);
+  const s = clamped % 60;
+  return [h, m, s].map((v) => String(v).padStart(2, '0')).join(':');
+}
 
 // The solved results (issue #8): it takes over the on-screen keyboard's footprint once
 // the sentence is solved, so the layout never reflows and no empty gap is left where the
@@ -79,6 +89,16 @@ export default function SolvedScreen({
     };
   }, [gridSpanMs]);
 
+  // Countdown to the next puzzle (the 22:00-ET day flip, from the ONE shared day
+  // definition) — the solved screen's "come back" hook. Recomputed from the clock every
+  // second, so it self-corrects after a background tab throttles the interval and rolls
+  // over to the next day on its own if the tab stays open past the flip.
+  const [nextIn, setNextIn] = useState<number>(() => secondsUntilNextReset(new Date()));
+  useEffect(() => {
+    const id = window.setInterval(() => setNextIn(secondsUntilNextReset(new Date())), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
   // "COPIED" confirmation after a clipboard fallback (the native share sheet needs none).
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<number | undefined>(undefined);
@@ -95,7 +115,9 @@ export default function SolvedScreen({
     const url = shareUrl(origin, { lang, dayNumber, score: guessCount, squares });
     // What we share/copy: a headline line then the (unfurling) link, blank line between.
     // "N tries" (not a bare number): lower-is-better must survive without the card.
-    const text = `Whippin #${dayNumber} — ${guessCount} ${guessCount === 1 ? 'try' : 'tries'}\n\n${url}`;
+    // Localized like the rest of the chrome — a French result reads "essais".
+    const unit = t(lang, guessCount === 1 ? 'try' : 'tries').toLowerCase();
+    const text = `Whippin #${dayNumber} — ${guessCount} ${unit}\n\n${url}`;
 
     // Use the Web Share API only on touch/mobile devices (native share sheet). On DESKTOP
     // the share button should just copy the link — desktop Chrome/Edge/Safari expose
@@ -166,14 +188,23 @@ export default function SolvedScreen({
             </span>
             <span className="solved-score-live">{Math.round(shownScore)}</span>
           </span>{' '}
-          {guessCount === 1 ? 'TRY' : 'TRIES'}
+          {t(lang, guessCount === 1 ? 'try' : 'tries')}
         </span>
         {dayNumber != null && (
           <button type="button" className={`share-key${copied ? ' copied' : ''}`} onClick={onShare}>
-            {copied ? 'COPIED' : 'SHARE'}
+            {copied ? t(lang, 'copied') : t(lang, 'share')}
           </button>
         )}
       </div>
+
+      {/* The "come back" hook: a live countdown to the day flip, under the score/share
+          row. Rides the same fade/rise as the row (shared `.in` timing). Hidden on a
+          ?puzzle= override round (no real daily context to count toward). */}
+      {dayNumber != null && (
+        <p className={`next-puzzle${showActions ? ' in' : ''}`}>
+          {t(lang, 'nextPuzzleIn')} {formatHMS(nextIn)}
+        </p>
+      )}
     </div>
   );
 }

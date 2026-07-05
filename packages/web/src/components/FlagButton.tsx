@@ -1,6 +1,7 @@
 import Flag from './Flag';
 import { navigate } from '../routing';
 import { SELECT_PATH } from '../langs';
+import { t } from '../i18n';
 
 // The current puzzle's language flag sits at the left of the HUD (where the logo used
 // to) and opens the language selector — a route, not a modal. WHICH flag it shows is
@@ -12,7 +13,7 @@ export default function FlagButton({ lang }: { lang: string }) {
       type="button"
       className="home-btn"
       onClick={() => navigate(SELECT_PATH)}
-      aria-label="Change language"
+      aria-label={t(lang, 'ariaChangeLanguage')}
     >
       <Flag code={lang} className="hud-flag" />
     </button>

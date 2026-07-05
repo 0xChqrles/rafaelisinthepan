@@ -6,6 +6,7 @@ import { KEYBOARD_ROWS, canExtend } from '../game/keyboard';
 // aria-label names it, so the SVG is aria-hidden.
 import EnterIcon from '../assets/icons/enter.svg?react';
 import BackIcon from '../assets/icons/back.svg?react';
+import { t } from '../i18n';
 
 interface KeyboardProps {
   // Current input (a folded slug prefix: [a-z] + internal dashes).
@@ -14,6 +15,8 @@ interface KeyboardProps {
   prefixSet: Set<string>;
   // Exact existence set — decides whether Enter is active (input is a complete word).
   vocabSet: Set<string>;
+  // Puzzle language — localizes the control keys' aria labels (letters name themselves).
+  lang: string;
   onType: (char: string) => void; // append a letter or dash
   onBackspace: () => void;
   onSubmit: (value: string) => void;
@@ -34,6 +37,7 @@ export default function Keyboard({
   input,
   prefixSet,
   vocabSet,
+  lang,
   onType,
   onBackspace,
   onSubmit,
@@ -79,7 +83,7 @@ export default function Keyboard({
   const lastRowIndex = KEYBOARD_ROWS.length - 1;
 
   return (
-    <div className="keyboard" role="group" aria-label="on-screen keyboard">
+    <div className="keyboard" role="group" aria-label={t(lang, 'ariaKeyboard')}>
       {KEYBOARD_ROWS.map((row, rowIndex) => (
         // Rows are fixed; index is a stable key here.
         // eslint-disable-next-line react/no-array-index-key
@@ -87,7 +91,7 @@ export default function Keyboard({
           {rowIndex === lastRowIndex && (
             <button
               type="button"
-              aria-label="enter"
+              aria-label={t(lang, 'ariaEnter')}
               aria-disabled={!enterActive}
               className={`kb-key kb-control kb-enter kb-edge${enterActive ? '' : ' kb-greyed'}${
                 shake?.id === 'enter' ? ' kb-shake' : ''
@@ -103,7 +107,7 @@ export default function Keyboard({
             <>
               <button
                 type="button"
-                aria-label="dash"
+                aria-label={t(lang, 'ariaDash')}
                 aria-disabled={!dashActive}
                 className={`kb-key kb-dash${dashActive ? '' : ' kb-greyed'}${dashShaking ? ' kb-shake' : ''}`}
                 onPointerDown={(e) => press(e, () => (dashActive ? onType('-') : triggerShake('-')))}
@@ -113,7 +117,7 @@ export default function Keyboard({
               </button>
               <button
                 type="button"
-                aria-label="backspace"
+                aria-label={t(lang, 'ariaBackspace')}
                 className="kb-key kb-control kb-back kb-edge"
                 onPointerDown={(e) => press(e, onBackspace)}
               >

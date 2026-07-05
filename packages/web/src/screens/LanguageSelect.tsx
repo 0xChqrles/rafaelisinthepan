@@ -1,9 +1,10 @@
 import Flag from '../components/Flag';
-import { LANGS, pathForLang } from '../langs';
+import { LANGS, pathForLang, resolveHomeLang } from '../langs';
 import { navigate } from '../routing';
 import useToday from '../hooks/useToday';
 import { progressColor } from '@whippin/shared';
 import { useGameStore, roundKeyForDay, type RoundProgress } from '../state/gameStore';
+import { t } from '../i18n';
 
 // Per-language status for today, read from the persisted round map (no puzzle load):
 //   - none     -> not started (no round yet, or visited without a guess);
@@ -17,7 +18,7 @@ function statusOf(round: RoundProgress | undefined): Status {
   return { kind: 'progress', pct: Math.round(round.progress) };
 }
 
-function StatusBadge({ status }: { status: Status }) {
+function StatusBadge({ status, uiLang }: { status: Status; uiLang: string }) {
   if (status.kind === 'solved') return <span className="lang-status lang-status--solved">✓</span>;
   // The % is tinted by its value on the same gradient the in-game progress bar uses,
   // so a language's badge reads at a glance like its reconstruction progress. Modifier
@@ -29,7 +30,7 @@ function StatusBadge({ status }: { status: Status }) {
       </span>
     );
   }
-  return <span className="lang-status lang-status--none">NEW</span>;
+  return <span className="lang-status lang-status--none">{t(uiLang, 'newBadge')}</span>;
 }
 
 // The language selector is a ROUTE (/select), not a modal: the HUD flag links here.
@@ -38,10 +39,14 @@ function StatusBadge({ status }: { status: Status }) {
 export default function LanguageSelect() {
   const dayNumber = useToday();
   const rounds = useGameStore((s) => s.rounds);
+  const lastLang = useGameStore((s) => s.lastLang);
+  // This screen has no puzzle to take a language from; its chrome follows the same
+  // resolution as the `/` redirect (last played, else browser, else English).
+  const uiLang = resolveHomeLang(lastLang, navigator.language);
 
   return (
     <div className="lang-screen">
-      <h1 className="title">SELECT LANGUAGE</h1>
+      <h1 className="title">{t(uiLang, 'selectLanguage')}</h1>
       <div className="flag-grid">
         {LANGS.map(({ code, label }) => {
           const round = rounds[roundKeyForDay(dayNumber, code)];
@@ -55,7 +60,7 @@ export default function LanguageSelect() {
               onClick={() => navigate(pathForLang(code))}
             >
               <Flag code={code} />
-              <StatusBadge status={statusOf(round)} />
+              <StatusBadge status={statusOf(round)} uiLang={uiLang} />
             </button>
           );
         })}
