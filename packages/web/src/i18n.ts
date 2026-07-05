@@ -41,6 +41,60 @@ const STRINGS = {
   ariaEnter: { en: 'enter', fr: 'entrée' },
   ariaBackspace: { en: 'backspace', fr: 'effacer' },
   ariaDash: { en: 'dash', fr: 'tiret' },
+  ariaHelp: { en: 'How to play', fr: 'Comment jouer' },
+  // ---- onboarding tutorial (#51). In guess-step copy, {WORD} is replaced by the
+  // script's expected word (uppercased) so the copy can never drift from the script.
+  tutIntro: {
+    en: 'Each day, one sentence is hiding a few words. Your job: find them.',
+    fr: 'Chaque jour, une phrase cache quelques mots. À toi de les retrouver.',
+  },
+  tutHoles: {
+    en: 'The gold words are hints, not answers. The small number is a distance: an AI ranks every word by meaning, and the hint sits that many places from the secret word. 0 = found.',
+    fr: "Les mots dorés sont des indices, pas les réponses. Le petit nombre est une distance : une IA classe chaque mot selon son sens, et l'indice est à autant de places du mot secret. 0 = trouvé.",
+  },
+  tutGuessFar: {
+    en: 'Try a word that has nothing to do with the sentence — type {WORD}, then press enter.',
+    fr: "Essaie un mot sans aucun rapport avec la phrase — tape {WORD}, puis valide avec entrée.",
+  },
+  tutAfterFar: {
+    en: 'BOTH holes reacted — every guess is tested on every hole at once. MISS means too far to even get a rank.',
+    fr: 'Les DEUX trous ont réagi — chaque essai est testé sur tous les trous à la fois. MISS : trop loin pour être classé.',
+  },
+  tutGuessWarm: {
+    en: 'Now type {WORD}.',
+    fr: 'Maintenant, tape {WORD}.',
+  },
+  tutAfterWarm: {
+    en: "One word just improved BOTH holes — it isn't a synonym of either secret, it just lives in the same world. Hunt for context, not synonyms.",
+    fr: "Un seul mot vient d'améliorer les DEUX trous — ce n'est le synonyme d'aucun des deux secrets, il vit juste dans le même univers. Cherche le contexte, pas des synonymes.",
+  },
+  tutGuessSolveOne: {
+    en: 'The first word is close now… type {WORD}.',
+    fr: 'Le premier mot est tout proche… tape {WORD}.',
+  },
+  tutAfterSolveOne: {
+    en: 'Found! A solved word locks in. The other hole showed its distance but kept its word — a hole always keeps your CLOSEST guess.',
+    fr: "Trouvé ! Un mot résolu se verrouille. L'autre trou a affiché sa distance mais a gardé son mot — un trou garde toujours ton essai le PLUS PROCHE.",
+  },
+  tutGuessSolveAll: {
+    en: 'Finish it — type {WORD}.',
+    fr: 'Termine — tape {WORD}, sans accent.',
+  },
+  tutAfterSolveAll: {
+    en: 'Sentence solved!',
+    fr: 'Phrase résolue !',
+  },
+  tutWrapTries: {
+    en: 'The big number counts your tries — fewer is better, and misses count too. Guess thoughtfully.',
+    fr: "Le grand nombre compte tes essais — moins il y en a, mieux c'est, et les MISS comptent aussi. Réfléchis bien.",
+  },
+  tutWrapProgress: {
+    en: 'This bar tracks the whole sentence. The real puzzle hides 3 words. Good luck!',
+    fr: 'Cette barre suit la phrase entière. Le vrai puzzle cache 3 mots. Bonne chance !',
+  },
+  tutNext: { en: 'NEXT', fr: 'SUIVANT' },
+  tutSkip: { en: 'SKIP', fr: 'PASSER' },
+  tutPlay: { en: "PLAY TODAY'S PUZZLE", fr: 'JOUER AU PUZZLE DU JOUR' },
 } satisfies Record<string, Record<UiLang, string>>;
 
 export type UiKey = keyof typeof STRINGS;

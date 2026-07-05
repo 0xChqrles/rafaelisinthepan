@@ -24,14 +24,16 @@ type Feedback = { text: string };
 
 // When a guess impacts several holes, effect starts are staggered this many ms apart.
 // Floating distance/MISS feedback uses the same start stagger, then fades as one batch.
-const STAGGER_MS = 200;
-const FLOATING_HIT_INTRO_MS = 320;
+// Exported: the onboarding Tutorial (#51) replays the same choreography with the same
+// numbers, so the scripted round feels exactly like the real one.
+export const STAGGER_MS = 200;
+export const FLOATING_HIT_INTRO_MS = 320;
 
 // Once the last hole is solved it still animates: the exponent rolls to 0 (HIT_FADE_MS),
 // then the secret word blinks into place (.word-replace-blink = 0.2s x 3). Hold the
 // playing UI until that finishes, then transition to the solved presentation — so the
 // results never pop in over a still-resolving word. Kept in sync with those two effects.
-const WORD_BLINK_MS = 600; // .word-replace-blink in index.css (0.2s steps(1) 3)
+export const WORD_BLINK_MS = 600; // .word-replace-blink in index.css (0.2s steps(1) 3)
 const LAST_HOLE_SETTLE_MS = HIT_FADE_MS + WORD_BLINK_MS;
 
 // Per page-load token isolating a ?puzzle= override round (no server day to key on),
@@ -40,8 +42,16 @@ const OVERRIDE_NONCE = Math.random().toString(36).slice(2);
 
 // Wrapper: drives the single puzzle. Loads the language's fixed vocabulary
 // (existence set + keyboard prefix set) before playing — existence is decided by it,
-// not by ranks.
-export default function Game({ puzzle, dayNumber }: { puzzle: Puzzle; dayNumber: number | null }) {
+// not by ranks. `onHelp` (optional) replays the onboarding tutorial from the HUD.
+export default function Game({
+  puzzle,
+  dayNumber,
+  onHelp,
+}: {
+  puzzle: Puzzle;
+  dayNumber: number | null;
+  onHelp?: () => void;
+}) {
   const { vocab, error, retry } = useVocab(puzzle.lang);
 
   if (error !== null) {
@@ -59,6 +69,7 @@ export default function Game({ puzzle, dayNumber }: { puzzle: Puzzle; dayNumber:
       prefixSet={vocab.prefixSet}
       lang={puzzle.lang}
       dayNumber={dayNumber}
+      onHelp={onHelp}
     />
   );
 }
@@ -74,6 +85,7 @@ function Round({
   prefixSet,
   lang,
   dayNumber,
+  onHelp,
 }: {
   words: string[];
   puzzleHoles: Hole[];
@@ -83,6 +95,7 @@ function Round({
   prefixSet: Set<string>;
   lang: string;
   dayNumber: number | null;
+  onHelp?: () => void;
 }) {
   // Fresh per-hole state derived from the puzzle. Used until the persisted store
   // reconciles to this round, and as the reset state on a new day/language.
@@ -333,6 +346,13 @@ function Round({
       <div className="hud">
         <FlagButton lang={lang} />
         <ProgressBar value={progress} />
+        {/* Replays the onboarding tutorial (#51) on demand — help is never more than
+            one tap away, but it stays out of the way (a small "?" beside the bar). */}
+        {onHelp && (
+          <button type="button" className="home-btn help-btn" aria-label={t(lang, 'ariaHelp')} onClick={onHelp}>
+            ?
+          </button>
+        )}
       </div>
 
       {/* The play area fills the space between the fixed HUD (top) and the keyboard

@@ -86,6 +86,7 @@ packages/
       hooks/usePuzzle.ts      fetch the client-computed day's puzzle (+ ?puzzle= file override)
       api.ts                  backend client: puzzleUrl/todayUrl, ?puzzle= override, 404->NO PUZZLE
       i18n.ts                 UI chrome strings (en+fr), t(lang, key); parity type-enforced
+      tutorial/               onboarding (#51): Tutorial.tsx + data scripts/<lang>.ts
       screens/Game.tsx        the guess loop, hole state (imports fold from @whippin/shared)
       game/scoring.ts         s(rank), holeProgress, computeProgress
       components/Phrase.tsx,Hole.tsx,WordInput.tsx,FloatingHit.tsx  rendering
@@ -477,6 +478,18 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   backend base and is required for `pnpm dev` / `pnpm build`; the frontend must not
   silently use its own origin as the backend. `usePuzzle` exposes `dayNumber` for
   persist (#7) / already-solved (#9).
+- **Onboarding tutorial (#51, decided 2026-07-06):** first visit (persisted `onboarded`
+  unset) plays a scripted dummy round in the REAL game components instead of the day's
+  puzzle; finish/skip set the flag. The tutorial is **data-driven**: the dummy sentence,
+  fabricated ranks, scripted guesses and coach steps live in
+  `web/src/tutorial/scripts/{en,fr}.ts` (copy keys in `i18n.ts`) — editing the script
+  never touches components, and `tutorial/scripts.test.ts` replays each script to guard
+  the intended lesson arc (miss/miss → improves both → solves one + warm-no-improve →
+  solves all). Input is gated per step by synthetic vocab/prefix sets (the keyboard's
+  existing contract). The tutorial writes NOTHING to `rounds`; the store `migrate`
+  (v2) grandfathers any blob with prior play state so veterans never see it uninvited.
+  Replay via the HUD `?`; `?tutorial=1` forces it; a `?puzzle=` override suppresses the
+  first-visit trigger.
 - **UI chrome is localized + a11y'd (decided 2026-07-06):** `web/src/i18n.ts` holds every
   UI string in **en + fr** (`t(lang, key)`; the `satisfies` clause makes a missing
   translation a type error, so parity needs no test). Game screens resolve strings with
