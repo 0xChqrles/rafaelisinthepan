@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { computeProgress } from '../game/scoring';
 import { progressTrajectory } from '../game/share';
-import { canExtend, type Layout } from '../game/keyboard';
+import { canExtend } from '../game/keyboard';
 import useVocab from '../hooks/useVocab';
 import { useGameStore, roundKeyForDay, holesMatchPuzzle } from '../state/gameStore';
 import Phrase from '../components/Phrase';
@@ -106,9 +106,6 @@ function Round({
   const recordGuess = useGameStore((s) => s.recordGuess);
   const improveHole = useGameStore((s) => s.improveHole);
   const syncProgress = useGameStore((s) => s.syncProgress);
-
-  // On-screen keyboard layout: QWERTY by default (there is no in-UI layout switch yet).
-  const layout: Layout = 'qwerty';
 
   // Reconcile before paint: a matching key rehydrates the stored progress, a new key
   // (new day OR new language) resets to freshHoles. useLayoutEffect commits the reset
@@ -354,7 +351,6 @@ function Round({
             input={input}
             prefixSet={prefixSet}
             vocabSet={vocabSet}
-            layout={layout}
             onType={appendChar}
             onBackspace={deleteChar}
             onSubmit={submit}

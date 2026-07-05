@@ -1,5 +1,5 @@
 import { useCallback, useState, type PointerEvent } from 'react';
-import { LAYOUTS, canExtend, type Layout } from '../game/keyboard';
+import { KEYBOARD_ROWS, canExtend } from '../game/keyboard';
 // Inline SVG components (vite-plugin-svgr `?react`): they render into the DOM and paint
 // with `fill="currentColor"`, so each control key's icon inherits its `color` — muted for
 // backspace, accent for enter, dimmed when greyed. Icons are decorative; the button's
@@ -14,8 +14,6 @@ interface KeyboardProps {
   prefixSet: Set<string>;
   // Exact existence set — decides whether Enter is active (input is a complete word).
   vocabSet: Set<string>;
-  // Which physical arrangement to render (AZERTY / QWERTY).
-  layout: Layout;
   onType: (char: string) => void; // append a letter or dash
   onBackspace: () => void;
   onSubmit: (value: string) => void;
@@ -36,7 +34,6 @@ export default function Keyboard({
   input,
   prefixSet,
   vocabSet,
-  layout,
   onType,
   onBackspace,
   onSubmit,
@@ -79,12 +76,12 @@ export default function Keyboard({
 
   const dashActive = canExtend(prefixSet, input, '-');
   const dashShaking = shake?.id === '-';
-  const lastRowIndex = LAYOUTS[layout].length - 1;
+  const lastRowIndex = KEYBOARD_ROWS.length - 1;
 
   return (
     <div className="keyboard" role="group" aria-label="on-screen keyboard">
-      {LAYOUTS[layout].map((row, rowIndex) => (
-        // Rows are fixed per layout; index is a stable key here.
+      {KEYBOARD_ROWS.map((row, rowIndex) => (
+        // Rows are fixed; index is a stable key here.
         // eslint-disable-next-line react/no-array-index-key
         <div className={`kb-row${rowIndex === lastRowIndex ? ' kb-row-last' : ''}`} key={rowIndex}>
           {rowIndex === lastRowIndex && (

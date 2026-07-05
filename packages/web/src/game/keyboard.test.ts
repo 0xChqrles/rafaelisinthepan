@@ -5,16 +5,10 @@
 //   - canExtend(prefixSet, input, char) = "can this char keep the input a real prefix?"
 //     for the active / greyed / empty-input / dash cases;
 //   - Enter validity is separate (exact vocabSet membership), NOT the prefix set;
-//   - layout defaults follow the puzzle language and flip cleanly.
+//   - the fixed QWERTY rows expose the full a–z (every letter reachable).
 
 import { describe, it, expect } from 'vitest';
-import {
-  buildPrefixSet,
-  canExtend,
-  defaultLayoutForLang,
-  otherLayout,
-  LAYOUTS,
-} from './keyboard';
+import { buildPrefixSet, canExtend, KEYBOARD_ROWS } from './keyboard';
 
 // A small fixture vocab (folded slugs): a shared stem (chat/chien), a hyphenated word,
 // and a ligature-derived word. Real vocab.json holds hundreds of thousands of these.
@@ -78,23 +72,9 @@ describe('canExtend — greyed vs active letters', () => {
   });
 });
 
-describe('layout selection', () => {
-  it('defaults from the puzzle language (fr -> azerty, otherwise qwerty)', () => {
-    expect(defaultLayoutForLang('fr')).toBe('azerty');
-    expect(defaultLayoutForLang('en')).toBe('qwerty');
-    expect(defaultLayoutForLang('de')).toBe('qwerty');
-  });
-
-  it('otherLayout flips', () => {
-    expect(otherLayout('azerty')).toBe('qwerty');
-    expect(otherLayout('qwerty')).toBe('azerty');
-  });
-
-  it('both layouts expose the full a–z (only order differs)', () => {
+describe('KEYBOARD_ROWS — the one fixed layout', () => {
+  it('exposes the full a–z exactly once (every letter reachable, none doubled)', () => {
     const alphabet = 'abcdefghijklmnopqrstuvwxyz'.split('').sort();
-    for (const layout of ['azerty', 'qwerty'] as const) {
-      const letters = LAYOUTS[layout].flat().slice().sort();
-      expect(letters).toEqual(alphabet);
-    }
+    expect(KEYBOARD_ROWS.flat().slice().sort()).toEqual(alphabet);
   });
 });

@@ -128,8 +128,9 @@ export default function SolvedScreen({
       {/* One flat square per bucket (3..18). AFTER the score is shown, neutral surface tiles
           roll in one by one (.shown + staggered --show-delay), then each colorizes to its
           bucket's MEAN reconstruction % one by one (.colorized + staggered --color-delay).
-          heatColor: 0 = cold/far crimson .. 1 = hot/solved cyan. Decorative — the score/share
-          carry the real numbers. The grid keeps its height throughout, so nothing shifts. */}
+          heatColor: 0 = cold/far crimson .. 1 = hot/solved cyan — the same ramp as the
+          rank exponents and the share card. Decorative — the score/share carry the real
+          numbers. The grid keeps its height throughout, so nothing shifts. */}
       <div
         className={`heat-grid${gridShown ? ' shown' : ''}${gridColorized ? ' colorized' : ''}`}
         aria-hidden="true"

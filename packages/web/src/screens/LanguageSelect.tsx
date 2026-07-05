@@ -2,7 +2,7 @@ import Flag from '../components/Flag';
 import { LANGS, pathForLang } from '../langs';
 import { navigate } from '../routing';
 import useToday from '../hooks/useToday';
-import { progressColor } from '../game/progressColor';
+import { progressColor } from '@whippin/shared';
 import { useGameStore, roundKeyForDay, type RoundProgress } from '../state/gameStore';
 
 // Per-language status for today, read from the persisted round map (no puzzle load):

@@ -4,4 +4,5 @@ export * from './types';
 export * from './slug';
 export * from './shareCard';
 export * from './heat';
+export * from './progressColor';
 export * from './cardSvg';
