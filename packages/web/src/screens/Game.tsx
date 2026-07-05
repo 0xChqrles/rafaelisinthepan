@@ -194,14 +194,18 @@ function Round({
   // Every path clears the "does not exist" feedback as soon as the player edits again.
 
   // Append one slug char, but ONLY if it keeps the input a prefix of some real word
-  // (the same rule that greys the on-screen key). A dead-end char is dropped, so the
-  // input is always a valid partial slug and physical typing matches the greyed keys.
+  // (the same rule that greys the on-screen key). A dead-end char shakes the prompt
+  // instead of being silently dropped: the on-screen keys grey out and shake in place,
+  // but physical typing has no key to look at — without feedback a swallowed letter
+  // reads as broken input. Shake only, no "does not exist" message (that one is about
+  // a submitted word).
   const appendChar = useCallback(
     (char: string) => {
       setFeedback(null);
-      setInput((cur) => (canExtend(prefixSet, cur, char) ? cur + char : cur));
+      if (canExtend(prefixSet, input, char)) setInput(input + char);
+      else setInvalidAt(Date.now());
     },
-    [prefixSet],
+    [prefixSet, input],
   );
 
   const deleteChar = useCallback(() => {

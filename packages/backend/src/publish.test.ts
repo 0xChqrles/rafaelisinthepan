@@ -11,7 +11,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { planPublish } from './publish';
-import { activeDate } from './day';
+import { activeDate } from '@whippin/shared';
 import { storeKey } from './layout';
 
 // Noon UTC = mid-morning in New York, well before the 22:00-ET active-day reset.

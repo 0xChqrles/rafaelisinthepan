@@ -44,7 +44,7 @@ export default function LanguageSelect() {
       <h1 className="title">SELECT LANGUAGE</h1>
       <div className="flag-grid">
         {LANGS.map(({ code, label }) => {
-          const round = dayNumber != null ? rounds[roundKeyForDay(dayNumber, code)] : undefined;
+          const round = rounds[roundKeyForDay(dayNumber, code)];
           return (
             <button
               key={code}

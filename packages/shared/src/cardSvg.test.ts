@@ -21,10 +21,14 @@ describe('renderCardSvg', () => {
     for (const pct of data.squares) expect(svg).toContain(`fill="${heatColor(pct / 100)}"`);
   });
 
-  it('shows the score and the puzzle id (#dayNumber, never a date)', () => {
+  it('shows the try count (unit named — lower is better) and the puzzle id (#dayNumber, never a date)', () => {
     const svg = renderCardSvg(data);
-    expect(svg).toContain('SCORE 42');
+    expect(svg).toContain('42 TRIES');
     expect(svg).toContain('#123');
+  });
+
+  it('uses the singular for one try', () => {
+    expect(renderCardSvg({ ...data, score: 1 })).toContain('1 TRY');
   });
 
   it('is a well-formed standalone svg at OG dimensions', () => {

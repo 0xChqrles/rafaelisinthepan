@@ -1,7 +1,10 @@
-// The server is the authoritative time source. The "active day" — which puzzle is
-// live — flips at 22:00 America/New_York (NYT-style: a date's puzzle is released the
-// evening BEFORE that date). All conversions are DST-correct: the New-York wall clock
-// is read via Intl with `timeZone`, never with a fixed UTC offset.
+// The ONE definition of the game day, shared by the backend AND the web client. The
+// "active day" — which puzzle is live — flips at 22:00 America/New_York (NYT-style: a
+// date's puzzle is released the evening BEFORE that date). The client computes it to
+// request the date-addressed puzzle URL; the server computes it to validate that the
+// requested date is (within clock skew of) the live one. All conversions are
+// DST-correct: the New-York wall clock is read via Intl with `timeZone`, never with a
+// fixed UTC offset.
 
 export const TIME_ZONE = 'America/New_York';
 // Hour (local, 0-23) at which the active day rolls over to the NEXT calendar date.

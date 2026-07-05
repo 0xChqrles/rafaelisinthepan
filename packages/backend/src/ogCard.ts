@@ -52,7 +52,11 @@ const escapeAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;
 // no-JS fallback. Crawlers still read the OG meta below (a <script> doesn't end the head).
 export function renderShareHtml(token: string, result: ShareResult, base: string): string {
   const lang = /^[a-z]{2}$/.test(result.lang) ? result.lang : 'en'; // sanitize (token-sourced)
-  const title = escapeAttr(`Whippin AI #${result.dayNumber} — SCORE ${result.score}`);
+  // "N tries" (unit named), matching the card image — "SCORE" alone reads as
+  // points to maximize when lower is better.
+  const title = escapeAttr(
+    `Whippin AI #${result.dayNumber} — ${result.score} ${result.score === 1 ? 'try' : 'tries'}`,
+  );
   const image = escapeAttr(`${base}/og/${token}.png`);
   const gameUrl = `${base}/${lang}`; // safe: base is server-set, lang is /^[a-z]{2}$/
   return `<!doctype html>

@@ -31,16 +31,13 @@ const PUZZLE: Puzzle = {
 // 2026-06-29 10:00 EDT (14:00 UTC) -> active date "2026-06-29".
 const FIXED_NOW = new Date('2026-06-29T14:00:00Z');
 const ACTIVE_DATE = '2026-06-29';
+const YESTERDAY = '2026-06-28'; // within the ±1 clock-skew window
 const ORIGIN = 'https://whippin.example';
-const VERSION = 'abc123def456'; // the content version the fake store reports for fr today
 
 function fakeStore(): PuzzleStore {
   return {
     async getPuzzle(date, lang) {
       return date === ACTIVE_DATE && lang === 'fr' ? PUZZLE : null;
-    },
-    async version(date, lang) {
-      return date === ACTIVE_DATE && lang === 'fr' ? VERSION : null;
     },
   };
 }
@@ -66,49 +63,52 @@ function event(opts: {
   };
 }
 
-describe('puzzle endpoint', () => {
-  it('returns the day\'s puzzle for the requested lang, unchanged', async () => {
-    const res = await makeHandler()(event({ query: { lang: 'fr', v: VERSION } }));
+describe('puzzle endpoint — date-addressed (GET /?lang=&date=)', () => {
+  it('returns the requested day\'s puzzle for the requested lang, unchanged', async () => {
+    const res = await makeHandler()(event({ query: { lang: 'fr', date: ACTIVE_DATE } }));
     expect(res.statusCode).toBe(200);
     expect(res.headers['Content-Type']).toMatch(/application\/json/);
     expect(JSON.parse(res.body)).toEqual(PUZZLE);
   });
 
-  it('sets CORS + an immutable Cache-Control on a hit (version-addressed URL, #42)', async () => {
-    const res = await makeHandler()(event({ query: { lang: 'fr', v: VERSION } }));
+  it('sets CORS + a long CDN / short browser Cache-Control on a hit', async () => {
+    const res = await makeHandler()(event({ query: { lang: 'fr', date: ACTIVE_DATE } }));
     expect(res.headers['Access-Control-Allow-Origin']).toBe(ORIGIN);
-    // The puzzle URL is content-addressed by `v`, so its bytes never change -> immutable.
-    expect(res.headers['Cache-Control']).toMatch(/immutable/);
-    expect(res.headers['Cache-Control']).toMatch(/max-age=\d+/);
+    // CDN holds the (date, lang) entry until a republish invalidates it; browsers
+    // revalidate after minutes so a corrected puzzle shows on a normal reload.
+    expect(res.headers['Cache-Control']).toMatch(/s-maxage=\d{6,}/);
+    expect(res.headers['Cache-Control']).toMatch(/max-age=300/);
   });
 
-  it('requires `v` — a puzzle request without the version token is a 400 (#42)', async () => {
-    // The endpoint is version-addressed; a missing `v` is a protocol violation, not a
-    // silently-served puzzle at a non-content-addressed URL.
-    const res = await makeHandler()(event({ query: { lang: 'fr' } }));
-    expect(res.statusCode).toBe(400);
-    expect(JSON.parse(res.body).error).toBe('bad_request');
+  it('requires `date` — missing or malformed is a 400 protocol violation', async () => {
+    const missing = await makeHandler()(event({ query: { lang: 'fr' } }));
+    expect(missing.statusCode).toBe(400);
+    expect(JSON.parse(missing.body).error).toBe('bad_request');
+
+    for (const bad of ['tomorrow', '2026-13-40', '20260629']) {
+      const res = await makeHandler()(event({ query: { lang: 'fr', date: bad } }));
+      expect(res.statusCode).toBe(400);
+    }
   });
 
-  it('`v` is an opaque cache token — any non-empty value serves the current puzzle unchanged', async () => {
-    // The handler keys only on `lang`; `v` never changes the body (it exists for the CDN
-    // cache key), so a stale/garbage-but-present `v` still returns the current puzzle.
-    const res = await makeHandler()(event({ query: { lang: 'fr', v: 'anything' } }));
-    expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body)).toEqual(PUZZLE);
-  });
+  it('serves only the live window: a date beyond ±1 day of the active day is a 404', async () => {
+    // Yesterday is within the clock-skew window -> resolved against the store (which has
+    // no puzzle for it -> 404 not_found for THAT date, not a window rejection).
+    const skew = await makeHandler()(event({ query: { lang: 'fr', date: YESTERDAY } }));
+    expect(skew.statusCode).toBe(404);
+    expect(JSON.parse(skew.body).date).toBe(YESTERDAY);
 
-  it('stamps the served day (X-Puzzle-Date, CORS-exposed) so the client can detect a flip mid-pair', async () => {
-    // The client fetches /today then the puzzle; when the 22:00 flip lands between the
-    // two, the puzzle belongs to a different day than the pointer. The stamp is what
-    // lets it detect that and re-run the pair.
-    const res = await makeHandler()(event({ query: { lang: 'fr', v: VERSION } }));
-    expect(res.headers['X-Puzzle-Date']).toBe(ACTIVE_DATE);
-    expect(res.headers['Access-Control-Expose-Headers']).toMatch(/X-Puzzle-Date/);
+    // Beyond the window: never served, even if the store had it (no archive, no
+    // pre-published future day).
+    for (const far of ['2026-06-27', '2026-07-01', '1999-01-01']) {
+      const res = await makeHandler()(event({ query: { lang: 'fr', date: far } }));
+      expect(res.statusCode).toBe(404);
+      expect(JSON.parse(res.body).error).toBe('not_found');
+    }
   });
 
   it('missing puzzle -> clean JSON 404, never 500', async () => {
-    const res = await makeHandler()(event({ query: { lang: 'en', v: 'x' } }));
+    const res = await makeHandler()(event({ query: { lang: 'en', date: ACTIVE_DATE } }));
     expect(res.statusCode).toBe(404);
     const body = JSON.parse(res.body);
     expect(body.error).toBe('not_found');
@@ -134,14 +134,11 @@ describe('puzzle endpoint', () => {
         async getPuzzle() {
           throw new Error('s3 boom');
         },
-        async version() {
-          throw new Error('s3 boom');
-        },
       },
       now: () => FIXED_NOW,
       allowedOrigin: ORIGIN,
     });
-    const res = await handler(event({ query: { lang: 'fr', v: 'x' } }));
+    const res = await handler(event({ query: { lang: 'fr', date: ACTIVE_DATE } }));
     expect(res.statusCode).toBe(500);
     expect(JSON.parse(res.body).error).toBe('internal_error');
   });
@@ -157,7 +154,7 @@ describe('CORS preflight', () => {
   });
 });
 
-describe('today metadata + version pointer endpoint (#42)', () => {
+describe('today diagnostic endpoint — the server\'s view of the active day', () => {
   it('exposes the server day and reset info', async () => {
     const res = await makeHandler()(event({ path: '/today' }));
     expect(res.statusCode).toBe(200);
@@ -169,24 +166,8 @@ describe('today metadata + version pointer endpoint (#42)', () => {
     expect(body.nextResetAt).toBe('2026-06-30T02:00:00.000Z');
   });
 
-  it('carries the current puzzle version for the requested lang', async () => {
-    const res = await makeHandler()(event({ path: '/today', query: { lang: 'fr' } }));
-    expect(JSON.parse(res.body).version).toBe(VERSION);
-  });
-
-  it('is never cached (no-store) so it always reflects the current version', async () => {
-    const res = await makeHandler()(event({ path: '/today', query: { lang: 'fr' } }));
+  it('is never cached (no-store) so it always reflects the live server clock', async () => {
+    const res = await makeHandler()(event({ path: '/today' }));
     expect(res.headers['Cache-Control']).toBe('no-store');
-  });
-
-  it('version is null when the lang has no puzzle, or when lang is absent/invalid', async () => {
-    const noPuzzle = await makeHandler()(event({ path: '/today', query: { lang: 'en' } }));
-    expect(JSON.parse(noPuzzle.body).version).toBeNull();
-
-    const noLang = await makeHandler()(event({ path: '/today' }));
-    expect(JSON.parse(noLang.body).version).toBeNull();
-
-    const badLang = await makeHandler()(event({ path: '/today', query: { lang: 'EN' } }));
-    expect(JSON.parse(badLang.body).version).toBeNull();
   });
 });

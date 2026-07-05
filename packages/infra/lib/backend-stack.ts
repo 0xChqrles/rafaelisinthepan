@@ -91,6 +91,11 @@ export class BackendStack extends Stack {
       // Headroom for the resvg WebAssembly module (compile + a 1200×630 render, #8).
       memorySize: 512,
       timeout: Duration.seconds(10),
+      // Cost/abuse ceiling: /og/<token>.png is unauthenticated compute and every distinct
+      // token misses the CDN, so cap the blast radius until the game warrants WAF rate
+      // limiting. 10 concurrent executions vastly exceeds legitimate load (requests are
+      // milliseconds and the CDN absorbs the repeats).
+      reservedConcurrentExecutions: 10,
       logGroup,
       // X-Ray active tracing for request-level latency/error visibility.
       tracing: lambda.Tracing.ACTIVE,
@@ -150,23 +155,22 @@ export class BackendStack extends Stack {
     }
 
     // ── CloudFront: CDN in front of the Function URL ──────────────────────────
-    // Cache key = request path (`/` vs `/today`) + the `lang` and `v` query strings. `lang`
-    // is the only query the handler reads; `v` is the content-version cache-busting token
-    // (issue #42) — a corrected puzzle gets a new `v`, so it lands on a fresh cache key
-    // instead of a stale entry (no CloudFront invalidation needed). The origin drives the
-    // TTL via Cache-Control: the versioned puzzle is `immutable` (safe to cache hard since
-    // the URL is content-addressed), while `/today` is `no-store` (the always-fresh version
-    // pointer). minTtl 0 lets `no-store`/the short 404 TTL through; maxTtl caps any single
-    // entry at one full day.
+    // Cache key = request path (`/` vs `/today`) + the `lang` and `date` query strings —
+    // the puzzle URL is DATE-addressed (the client computes the active 22:00-ET day via
+    // the shared day.ts and names it). The origin drives the TTL via Cache-Control: the
+    // puzzle is held long on the CDN (s-maxage; `pnpm puzzle:publish --s3` invalidates on
+    // republish) with a short browser max-age, while `/today` (diagnostic) is `no-store`.
+    // minTtl 0 lets `no-store`/the short 404 TTL through; maxTtl allows the year-long
+    // s-maxage of a date-addressed entry.
     const cachePolicy = new cloudfront.CachePolicy(this, 'PuzzleCachePolicy', {
       cachePolicyName: 'WhippinDailyPuzzle',
-      comment: 'Daily puzzle: cache key = path + ?lang + ?v; TTL from origin Cache-Control.',
-      queryStringBehavior: cloudfront.CacheQueryStringBehavior.allowList('lang', 'v'),
+      comment: 'Daily puzzle: cache key = path + ?lang + ?date; TTL from origin Cache-Control.',
+      queryStringBehavior: cloudfront.CacheQueryStringBehavior.allowList('lang', 'date'),
       headerBehavior: cloudfront.CacheHeaderBehavior.none(),
       cookieBehavior: cloudfront.CacheCookieBehavior.none(),
       minTtl: Duration.seconds(0),
       defaultTtl: Duration.seconds(60),
-      maxTtl: Duration.days(1),
+      maxTtl: Duration.days(365),
       enableAcceptEncodingGzip: true,
       enableAcceptEncodingBrotli: true,
     });

@@ -51,7 +51,9 @@ export function renderCardSvg({ dayNumber, score, squares }: CardData): string {
     `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_WIDTH}" height="${CARD_HEIGHT}" viewBox="0 0 ${CARD_WIDTH} ${CARD_HEIGHT}">`,
     `<rect width="${CARD_WIDTH}" height="${CARD_HEIGHT}" fill="${BG}"/>`,
     `<g shape-rendering="crispEdges">${rects}</g>`,
-    `<text x="${cx}" y="430" text-anchor="middle" font-family="${CARD_FONT}" font-size="76" fill="${FG}">SCORE ${score}</text>`,
+    // "N TRIES", not "SCORE N": naming the unit is what tells a stranger seeing the
+    // card that lower is better.
+    `<text x="${cx}" y="430" text-anchor="middle" font-family="${CARD_FONT}" font-size="76" fill="${FG}">${score} ${score === 1 ? 'TRY' : 'TRIES'}</text>`,
     `<text x="${cx}" y="500" text-anchor="middle" font-family="${CARD_FONT}" font-size="30" fill="${MUTED}">#${dayNumber}</text>`,
     `</svg>`,
   ].join('');
