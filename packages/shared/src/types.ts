@@ -42,7 +42,6 @@ export interface Source {
   kind?: SourceKind;
   author?: string;
   work?: string; // the piece's title
-  context?: string; // the fuller passage / surrounding context
 }
 
 export interface Puzzle {

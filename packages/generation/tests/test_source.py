@@ -17,11 +17,11 @@ import gen_phrase  # noqa: E402
 def test_nothing_provided_returns_none():
     # No `source` key at all -> byte-compatible with metadata-less puzzles.
     assert gen_phrase.build_source() is None
-    assert gen_phrase.build_source(None, None, None, None) is None
+    assert gen_phrase.build_source(None, None, None) is None
 
 
 def test_all_blank_or_whitespace_returns_none():
-    assert gen_phrase.build_source("", "  ", "\t", "\n") is None
+    assert gen_phrase.build_source("", "  ", "\t") is None
 
 
 def test_partial_keeps_only_provided_fields():
@@ -29,25 +29,23 @@ def test_partial_keeps_only_provided_fields():
     assert gen_phrase.build_source(kind="quote") == {"kind": "quote"}
 
 
-def test_full_source_keeps_all_four_fields():
+def test_full_source_keeps_all_fields():
     src = gen_phrase.build_source(
         kind="book",
         author="Victor Hugo",
         work="Les Misérables",
-        context="…full passage…",
     )
     assert src == {
         "kind": "book",
         "author": "Victor Hugo",
         "work": "Les Misérables",
-        "context": "…full passage…",
     }
 
 
 def test_blank_fields_are_dropped_around_present_ones():
-    assert gen_phrase.build_source(kind="movie", author="   ", work="", context="ctx") == {
+    assert gen_phrase.build_source(kind="movie", author="   ", work="Germinal") == {
         "kind": "movie",
-        "context": "ctx",
+        "work": "Germinal",
     }
 
 

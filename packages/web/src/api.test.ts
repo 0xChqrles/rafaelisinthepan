@@ -117,10 +117,10 @@ describe('parsePuzzle (shape validation)', () => {
     expect(parsePuzzle(p)).toEqual(p);
   });
 
-  it('passes an optional source (kind/author/work/context) through unchanged', () => {
+  it('passes an optional source (kind/author/work) through unchanged', () => {
     const p = {
       ...valid(),
-      source: { kind: 'book', author: 'Victor Hugo', work: 'Les Misérables', context: '…' },
+      source: { kind: 'book', author: 'Victor Hugo', work: 'Les Misérables' },
     };
     expect(parsePuzzle(p).source).toEqual(p.source);
   });

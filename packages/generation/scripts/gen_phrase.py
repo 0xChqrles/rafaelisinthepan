@@ -23,11 +23,16 @@ The phrase is written to packages/generation/output/word/<lang>/<slug1>_<slug2>_
 a generation artifact, NOT a web asset: publish it to the backend store (local FS or S3)
 with `pnpm puzzle:publish` — the front gets the day's puzzle from the backend (#6).
 
-On a terminal the script is fully interactive (#5): the phrase, language, the three
-hole words, the per-hole start word, and the optional source metadata (kind / author /
-work / context) are all asked when not supplied as flags. Any flag given is not
-re-prompted, and non-interactive (piped / batch) runs keep working with flags only —
-no prompt ever blocks them.
+On a terminal the script is fully interactive (#5): the phrase, language, and the
+optional source metadata (kind / author / work) are asked when not supplied as flags.
+The source metadata flags are not re-prompted when given; the phrase is always shown in
+an editable prompt (pre-loaded with the flag value, if any) so it can be tweaked with
+the arrow keys before Enter. WITHOUT --words, the three holes are then chosen with a
+small full-screen selector (select_holes_interactive): arrow-navigate the sentence's
+content words, and for each hovered word its start-word candidates are previewed; Enter
+picks the word, a number picks its start (Esc cancels). WITH --words (or off a TTY) that
+selector is skipped and the words resolve as before. Non-interactive (piped / batch) runs
+keep working with flags only — no prompt ever blocks them.
 
 Usage :
     uv run scripts/gen_phrase.py                       # fully interactive
@@ -42,7 +47,17 @@ import json
 import os
 import random
 import re
+import select
 import sys
+
+# Importing readline (when present) turns every input() on a TTY into a line editor:
+# arrow keys move the cursor within the line, so an answer — the phrase especially — can
+# be edited in place instead of only backspaced from the end. Harmless off-TTY and when
+# the module is absent (e.g. Windows), where input() just reads a plain line.
+try:
+    import readline  # noqa: F401
+except ImportError:  # pragma: no cover - platform without readline (e.g. Windows)
+    readline = None
 
 # scripts/ -> generation package root, to import sibling modules and resolve
 # vector/cache paths regardless of the cwd.
@@ -182,6 +197,26 @@ def build_rank_map(secret_display, ranking):
     return rmap
 
 
+def _make_hole(secret, prefix, suffix, pos, start_display, start_rank):
+    """Assemble one hole dict from a chosen secret + start word.
+
+    prefix/suffix are the display-only affixes around the blank (a leading clitic /
+    punctuation); omitted when empty so a hole with no affixes stays byte-compatible.
+    Shared by the --words path and the interactive selector, so the hole schema is
+    written in exactly one place."""
+    hole = {
+        "pos": pos,
+        "secret": ws(secret),
+        "start": ws(start_display),
+        "start_rank": start_rank,
+    }
+    if prefix:
+        hole["prefix"] = prefix
+    if suffix:
+        hole["suffix"] = suffix
+    return hole
+
+
 def build_lang_vocab(kv, cfg):
     """Return the full reduced vocabulary via the configured neighbor module."""
     return cfg["module"].build_vocab(kv)
@@ -236,6 +271,262 @@ def choose_start(secret, ranking, rank_map, rank_by_display):
         print(f"  « {raw} » n'est ni un numéro ni un mot du vocabulaire de ce trou.")
 
 
+# --- Interactive hole selector (raw-mode TUI) ----------------------------------
+# When the phrase is entered on a TTY WITHOUT --words, the three holes are chosen with a
+# small full-screen selector instead of typing words: the arrow keys move between the
+# sentence's content words and each one's start-word candidates are previewed live; Enter
+# picks the hovered word, then a number picks its start word (Esc cancels). It runs ONLY
+# on a terminal — --words stays the non-interactive / batch path (holes_from_words), so
+# piped / CI runs are unchanged. termios/tty are imported lazily inside the selector
+# because they are Unix-only and this path is never reached off a TTY.
+
+_ESC = "\x1b"
+
+
+def _sgr(codes, text):
+    """Wrap text in an ANSI SGR sequence, reset-terminated (plain text on a dumb term)."""
+    return f"{_ESC}[{codes}m{text}{_ESC}[0m"
+
+
+def extract_candidates(words, cfg, Vset):
+    """The selectable holes in a sentence: for each token, its first word-core whose
+    DISPLAY form is in Vset (i.e. survived reduction). Returns [{pos, secret, prefix,
+    suffix}] — one entry per holeable token position.
+
+    Apostrophes / punctuation are core separators (core_re), so "l'animal" yields cores
+    "l" then "animal" and only "animal" is selectable: "l" is a single letter the
+    reduction dropped, so it is absent from Vset. Because the reduction already strips
+    stopwords, single letters and non-dictionary tokens from V, "core in Vset" IS the
+    content-word filter — no separate stopword list is needed. Keeping only the first
+    in-vocab core per token means each pick consumes exactly one position."""
+    cands = []
+    for pos, token in enumerate(words):
+        for m in cfg["core_re"].finditer(token):
+            secret = m.group()
+            if slug(secret) and secret in Vset:
+                cands.append({"pos": pos, "secret": secret,
+                              "prefix": token[:m.start()], "suffix": token[m.end():]})
+                break
+    return cands
+
+
+def _read_key(fd):
+    """Decode one keypress from a raw-mode fd into a symbolic token.
+
+    Returns 'LEFT'/'RIGHT'/'UP'/'DOWN', 'ENTER', 'ESC', 'BACK', or the raw character
+    (a digit / letter). A lone Esc is told apart from an arrow's CSI/SS3 escape sequence
+    by a short read timeout — nothing follows a lone Esc."""
+    b = os.read(fd, 1)
+    if b == b"\x1b":
+        ready, _, _ = select.select([fd], [], [], 0.05)
+        if not ready:
+            return "ESC"
+        seq = os.read(fd, 2)  # e.g. b"[A" (CSI) or b"OA" (SS3)
+        return {b"A": "UP", b"B": "DOWN", b"C": "RIGHT", b"D": "LEFT"}.get(seq[-1:], "ESC")
+    if b in (b"\r", b"\n"):
+        return "ENTER"
+    if b in (b"\x7f", b"\x08"):
+        return "BACK"
+    if b == b"\x03":
+        raise KeyboardInterrupt
+    return b.decode("utf-8", "ignore") or "OTHER"
+
+
+def select_holes_interactive(words, cfg, lang, kv, V, M, Vset):
+    """Pick the three holes interactively on a TTY; returns (holes sorted by pos, ranks).
+
+    Full-screen loop: ←/→ move between the sentence's selectable content words (see
+    extract_candidates) and the hovered word's start-word band is previewed live (its
+    neighbor ranking is computed once per word and cached). Enter commits the hovered
+    word; its start word is then chosen by number (Enter validates, Esc cancels and
+    returns to navigation). Three commits end the loop; Ctrl-C aborts cleanly. The holes /
+    ranks produced are identical in shape to the --words path (build_rank_map + _make_hole
+    are shared), so nothing downstream needs to know which path chose the holes."""
+    import shutil
+    import termios
+    import tty
+
+    cands = extract_candidates(words, cfg, Vset)
+    if len(cands) < 3:
+        die(f"la phrase n'a que {len(cands)} mot(s) sélectionnable(s) ; il en faut 3 "
+            f"(mots présents dans le vocabulaire réduit '{lang}', hors mots-outils).")
+
+    # Per-word neighbor data, computed lazily on first hover and cached: the full ranking
+    # (for the eventual rank map), the start-word band, and display->rank (0 = secret).
+    cache = {}
+
+    def prep(secret):
+        if secret not in cache:
+            ranking = cfg["module"].closest(secret, kv, V, M, n=TOP_K)
+            rbd = {secret: 0}
+            for w, r, _ in ranking:
+                rbd[w] = r + 1
+            cache[secret] = (ranking, start_band(secret, ranking), rbd)
+        return cache[secret]
+
+    holes = []
+    ranks = {}
+    used_pos = set()
+
+    def available():
+        return [i for i, c in enumerate(cands) if c["pos"] not in used_pos]
+
+    def frame(cursor, band, rbd, secret, mode, numbuf, error):
+        cols = shutil.get_terminal_size((80, 24)).columns
+        cand_pos = {c["pos"]: c for c in cands}
+        out = [_sgr("1", f"  Trou {len(holes) + 1}/3"),
+               _sgr("2", "  ← →  mot   ·   Entrée  choisir   ·   Échap  annuler   ·   Ctrl-C  quitter"),
+               ""]
+        # the sentence: hovered core = reverse, taken = struck, other content words = underline.
+        rendered = []
+        for pos, token in enumerate(words):
+            c = cand_pos.get(pos)
+            if c is None:
+                rendered.append(_sgr("2", token))
+                continue
+            pre, core, suf = c["prefix"], c["secret"], c["suffix"]
+            if pos in used_pos:
+                rendered.append(pre + _sgr("2;9", core) + suf)
+            elif pos == cands[cursor]["pos"]:
+                rendered.append(pre + _sgr("7;1", core) + suf)
+            else:
+                rendered.append(pre + _sgr("4", core) + suf)
+        out += ["  " + " ".join(rendered), ""]
+        # the hovered word's start-word band (numbered), the pick target in start mode.
+        title = f"  Mots de départ pour « {secret} »"
+        if mode == "start":
+            title += "   numéro : " + _sgr("1;7", f" {numbuf or ' '} ") + "  (Entrée valider · Échap annuler)"
+        out.append(_sgr("1", title))
+        cells = [f"{i:>3}) {w} ^-{rbd[w]}" for i, (w, _r) in enumerate(band, 1)]
+        if cells:
+            cw = max(len(x) for x in cells) + 2
+            ncols = max(1, (cols - 2) // cw)
+            for i in range(0, len(cells), ncols):
+                out.append("  " + "".join(x.ljust(cw) for x in cells[i:i + ncols]))
+        else:
+            out.append(_sgr("2", "  (aucun candidat de départ)"))
+        if error:
+            out += ["", _sgr("1;31", "  " + error)]
+        return f"{_ESC}[H{_ESC}[2J" + "\n".join(out) + "\n"
+
+    fd = sys.stdin.fileno()
+    saved = termios.tcgetattr(fd)
+    cursor = available()[0]
+    mode, numbuf, error = "nav", "", ""
+    aborted = False
+    try:
+        tty.setcbreak(fd)
+        while len(holes) < 3:
+            c = cands[cursor]
+            ranking, band, rbd = prep(c["secret"])
+            sys.stdout.write(frame(cursor, band, rbd, c["secret"], mode, numbuf, error))
+            sys.stdout.flush()
+            error = ""
+            key = _read_key(fd)
+            if mode == "nav":
+                avail = available()
+                ai = avail.index(cursor)
+                if key in ("LEFT", "UP"):
+                    cursor = avail[(ai - 1) % len(avail)]
+                elif key in ("RIGHT", "DOWN"):
+                    cursor = avail[(ai + 1) % len(avail)]
+                elif key == "ENTER":
+                    mode, numbuf = "start", ""
+            else:  # start-word selection for the committed word
+                if key == "ESC":
+                    mode, numbuf = "nav", ""
+                elif key == "BACK":
+                    numbuf = numbuf[:-1]
+                elif key == "ENTER":
+                    if numbuf.isdigit() and 1 <= int(numbuf) <= len(band):
+                        start = band[int(numbuf) - 1][0]
+                        ranks[slug(c["secret"])] = build_rank_map(c["secret"], ranking)
+                        holes.append(_make_hole(c["secret"], c["prefix"], c["suffix"],
+                                                c["pos"], start, rbd[start]))
+                        used_pos.add(c["pos"])
+                        mode, numbuf = "nav", ""
+                        if len(holes) < 3:
+                            cursor = available()[0]
+                    else:
+                        error = f"Numéro invalide (1–{len(band)})."
+                elif key.isdigit():
+                    numbuf += key
+    except KeyboardInterrupt:
+        aborted = True
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, saved)
+        sys.stdout.write(f"{_ESC}[0m\n")
+        sys.stdout.flush()
+
+    if aborted:
+        die("sélection interrompue.")
+
+    holes.sort(key=lambda h: h["pos"])
+    return holes, ranks
+
+
+def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset):
+    """Resolve the three --words into (holes sorted by pos, ranks): the non-interactive /
+    batch path, kept behaviour-identical to before.
+
+    Each word is matched by slug to a free token's core, must have survived reduction, and
+    gets a start word via choose_start (interactive on a TTY, random otherwise)."""
+    holes = []
+    ranks = {}
+    used_pos = set()
+    for raw in words_arg:
+        tgt = normalize(raw, cfg)
+        tslug = slug(tgt)
+        if not tslug:
+            die(f"'{raw}' ne contient aucune lettre valide pour la langue '{lang}'.")
+
+        # 1) the word must appear in the sentence, matched by SLUG against a word-CORE of
+        # some free token (so "attends" is found inside "t'attends"). The token is split
+        # into the secret core + display prefix/suffix (clitic + punctuation).
+        pos = decomposed = None
+        for i, w in enumerate(words):
+            if i in used_pos:
+                continue
+            d = locate_core(w, tslug, cfg)
+            if d is not None:
+                pos, decomposed = i, d
+                break
+        if pos is None:
+            if any(locate_core(w, tslug, cfg) for w in words):
+                die(f"'{raw}' apparaît mais toutes ses positions sont déjà prises "
+                    f"(mot en double dans --words ?).")
+            die(f"'{raw}' n'apparaît pas dans la phrase : {' '.join(words)}")
+
+        # secret = the pure word core (accents kept, no punctuation); prefix/suffix = the
+        # display text around it. The secret is what the player types / we rank.
+        secret, prefix, suffix = decomposed
+
+        # 2) the word must be in the reduced vocabulary V (= in the vectors). If not, it
+        # did not survive reduction and cannot be used here.
+        if secret not in Vset:
+            die(f"'{raw}' (→ '{secret}') n'a pas survécu à la réduction : absent du "
+                f"vocabulaire réduit '{lang}'. Choisis un autre mot cible, ou "
+                f"ajuste puis relance la réduction (scripts/reduce_embedding.py).")
+
+        used_pos.add(pos)
+
+        # Top-K ranking of V against the secret; closest neighbor = rank 1.
+        ranking = cfg["module"].closest(secret, kv, V, M, n=TOP_K)
+        rank_by_display = {secret: 0}
+        for w, r, _ in ranking:
+            rank_by_display[w] = r + 1
+
+        rank_map = build_rank_map(secret, ranking)
+        ranks[slug(secret)] = rank_map
+
+        start = choose_start(secret, ranking, rank_map, rank_by_display)
+        holes.append(_make_hole(secret, prefix, suffix, pos, start, rank_by_display[start]))
+
+    # Holes (and therefore the filename slugs) follow sentence order, not --words.
+    holes.sort(key=lambda h: h["pos"])
+    return holes, ranks
+
+
 # --- Interactive prompts -------------------------------------------------------
 # The script is fully interactive on a TTY (#5): anything not given as a CLI flag is
 # asked here. These helpers only run when stdin is a terminal (main() guards them),
@@ -254,6 +545,27 @@ def _prompt(label, default=None):
     return raw or default
 
 
+def _prefill_tty(text):
+    """Best-effort: pre-load the terminal's input line with `text` so the NEXT input()
+    starts populated AND editable — the arrow keys move within it, like a shell prompt.
+
+    Pushes the bytes into our own tty input queue (TIOCSTI); libedit then reads them as
+    if typed, echoes them after the prompt, and lets the user edit any portion before
+    Enter. This route exists because libedit's set_startup_hook/set_pre_input_hook +
+    insert_text prefill is a no-op on macOS. Silently does nothing when there's no text,
+    stdin isn't a TTY, or the ioctl is unavailable/blocked (e.g. TIOCSTI disabled) — the
+    prompt then simply starts empty and the user types the phrase fresh."""
+    if not text or not sys.stdin.isatty():
+        return
+    try:
+        import fcntl
+        import termios
+        for byte in text.encode("utf-8"):  # one byte at a time (accents are multi-byte)
+            fcntl.ioctl(sys.stdin.fileno(), termios.TIOCSTI, bytes([byte]))
+    except Exception:  # pragma: no cover - platform/tty without TIOCSTI: no prefill
+        pass
+
+
 def prompt_lang(default="en"):
     """Ask for the language, reprompting until it is one of the supported codes."""
     while True:
@@ -263,26 +575,21 @@ def prompt_lang(default="en"):
         print("  Réponds 'en' ou 'fr'.")
 
 
-def prompt_sentence():
-    """Ask for the sentence, reprompting until it is non-empty."""
+def prompt_sentence(prefill=""):
+    """Ask for the sentence, reprompting until it is non-empty.
+
+    On a TTY the prompt is pre-loaded with `prefill` (the flag-provided phrase, if any)
+    so a portion can be edited with the arrow keys instead of retyping the whole line;
+    Enter accepts it unchanged. If the answer comes back empty (the user cleared it) we
+    reprompt from scratch — the original prefill is not re-injected."""
+    first = True
     while True:
+        _prefill_tty(prefill if first else "")
+        first = False
         raw = _prompt("Phrase")
         if raw:
             return raw
         print("  La phrase ne peut pas être vide.")
-
-
-def prompt_words():
-    """Ask for the three hole words (space-separated), reprompting until exactly 3.
-
-    Only the count is validated here; membership in the sentence / the reduced
-    vocabulary is still checked (and errors) in the per-word loop, as before."""
-    while True:
-        raw = _prompt("Trois mots à cacher (séparés par des espaces)")
-        parts = raw.split() if raw else []
-        if len(parts) == 3:
-            return parts
-        print("  Il faut exactement 3 mots.")
 
 
 def prompt_kind():
@@ -304,15 +611,14 @@ def prompt_kind():
         return raw
 
 
-def build_source(kind=None, author=None, work=None, context=None):
+def build_source(kind=None, author=None, work=None):
     """Assemble the optional `source` metadata dict, dropping blank fields.
 
     Returns None when nothing is provided so the puzzle JSON stays byte-compatible
     with metadata-less puzzles (no empty `source` key). Values are DISPLAY forms
     (accents kept, never slugged), matching the rest of the schema."""
     src = {}
-    for key, val in (("kind", kind), ("author", author),
-                     ("work", work), ("context", context)):
+    for key, val in (("kind", kind), ("author", author), ("work", work)):
         if val is None:
             continue
         val = val.strip()
@@ -326,20 +632,21 @@ def parse_args():
         description="Génère un fichier de jeu autonome pour une phrase "
                     "(interactif sur un terminal ; sinon fournir les arguments)."
     )
-    # sentence / --words are optional: on a TTY they are asked interactively when
-    # omitted; in a non-interactive run their absence is a clear error (see main()).
+    # sentence / --words are optional: on a TTY the sentence is prompted and the holes are
+    # chosen with the interactive selector when omitted; in a non-interactive run their
+    # absence is a clear error (see main()).
     p.add_argument("sentence", nargs="?", help="la phrase complète (sinon demandée)")
     # default=None (not "en") so main() can tell "flag omitted" from an explicit
     # choice, and prompt for it on a TTY while keeping the old "en" default off-TTY.
     p.add_argument("--lang", choices=("en", "fr"), default=None,
                    help="langue en/fr (défaut : en en mode non interactif)")
     p.add_argument("--words", nargs=3, metavar=("W1", "W2", "W3"),
-                   help="exactement 3 mots de la phrase à transformer en trous (sinon demandés)")
+                   help="exactement 3 mots de la phrase à transformer en trous "
+                        "(sinon choisis via le sélecteur interactif sur un terminal)")
     # Optional source metadata (#5); any flag given here is NOT re-prompted on a TTY.
     p.add_argument("--kind", help="type d'œuvre (book, movie, music, quote, poem, …)")
     p.add_argument("--author", help="auteur / autrice")
     p.add_argument("--work", help="titre de l'œuvre")
-    p.add_argument("--context", help="passage / contexte source")
     p.add_argument("--out-dir", default=os.path.join(GEN_OUTPUT, "word"), dest="out_dir",
                    help="dossier de sortie des puzzles (défaut : packages/generation/output/word)")
     return p.parse_args()
@@ -357,18 +664,18 @@ def main():
         lang = prompt_lang() if interactive else "en"
 
     sentence = args.sentence
-    if sentence is None:
-        if interactive:
-            sentence = prompt_sentence()
-        else:
-            die("aucune phrase fournie (argument positionnel requis hors mode interactif).")
+    if interactive:
+        # Always show the phrase in an editable prompt, pre-loaded with the flag value
+        # (if any) so a portion can be tweaked with the arrow keys; Enter accepts it.
+        sentence = prompt_sentence(prefill=sentence or "")
+    elif sentence is None:
+        die("aucune phrase fournie (argument positionnel requis hors mode interactif).")
 
+    # Without --words we need a TTY: the holes are chosen with the interactive selector
+    # (below). Off a TTY, --words stays required — the batch / piped contract is unchanged.
     words_arg = args.words
-    if words_arg is None:
-        if interactive:
-            words_arg = prompt_words()
-        else:
-            die("--words est requis hors mode interactif (exactement 3 mots).")
+    if words_arg is None and not interactive:
+        die("--words est requis hors mode interactif (exactement 3 mots).")
 
     cfg = CONFIG[lang]
     random.seed(0)  # reproducible start words
@@ -391,82 +698,19 @@ def main():
     # Existence set for the front: the whole (slugged) reduced vocabulary V.
     write_vocab(V, lang)
 
-    holes = []
-    ranks = {}
-    used_pos = set()
-
-    for raw in words_arg:
-        tgt = normalize(raw, cfg)
-        tslug = slug(tgt)
-        if not tslug:
-            die(f"'{raw}' ne contient aucune lettre valide pour la langue '{lang}'.")
-
-        # 1) the word must appear in the sentence, matched by SLUG against a word-CORE
-        # of some free token (so "attends" is found inside "t'attends"). The token is
-        # decomposed into the secret core + display prefix/suffix (clitic + punctuation).
-        pos = decomposed = None
-        for i, w in enumerate(words):
-            if i in used_pos:
-                continue
-            d = locate_core(w, tslug, cfg)
-            if d is not None:
-                pos, decomposed = i, d
-                break
-        if pos is None:
-            if any(locate_core(w, tslug, cfg) for w in words):
-                die(f"'{raw}' apparaît mais toutes ses positions sont déjà prises "
-                    f"(mot en double dans --words ?).")
-            die(f"'{raw}' n'apparaît pas dans la phrase : {' '.join(words)}")
-
-        # secret = the pure word core (accents kept, no punctuation); prefix/suffix =
-        # the display text around it. The secret is what the player types / we rank.
-        secret, prefix, suffix = decomposed
-
-        # 2) the word must be in the reduced vocabulary V (= in the vectors). If it
-        # is not, it did not survive reduction and cannot be used here.
-        if secret not in Vset:
-            die(f"'{raw}' (→ '{secret}') n'a pas survécu à la réduction : absent du "
-                f"vocabulaire réduit '{lang}'. Choisis un autre mot cible, ou "
-                f"ajuste puis relance la réduction (scripts/reduce_embedding.py).")
-
-        used_pos.add(pos)
-
-        # Top-K ranking of V against the secret; closest neighbor = rank 1. The
-        # rank map is capped to these K nearest words (the start word's band sits
-        # far below K, so pick_start still has its full choice).
-        ranking = cfg["module"].closest(secret, kv, V, M, n=TOP_K)
-        # Display-keyed ranks (secret = 0) just to look up the start word's rank.
-        rank_by_display = {secret: 0}
-        for w, r, _ in ranking:
-            rank_by_display[w] = r + 1
-
-        # Slug-keyed rank map (with collision handling) for the front-end lookup.
-        rank_map = build_rank_map(secret, ranking)
-        ranks[slug(secret)] = rank_map
-
-        start = choose_start(secret, ranking, rank_map, rank_by_display)
-        hole = {
-            "pos": pos,
-            "secret": ws(secret),
-            "start": ws(start),
-            "start_rank": rank_by_display[start],
-        }
-        # Display-only affixes around the blank; omitted when empty so tokens without
-        # punctuation stay byte-compatible with the previous output.
-        if prefix:
-            hole["prefix"] = prefix
-        if suffix:
-            hole["suffix"] = suffix
-        holes.append(hole)
-
-    # Holes (and therefore the filename slugs) follow sentence order, not --words.
-    holes.sort(key=lambda h: h["pos"])
+    # Two paths to the same (holes, ranks): --words is the explicit / batch path (kept
+    # unchanged, choose_start handles its start words); with no --words on a TTY the holes
+    # are chosen with the interactive selector, which also picks each start word inline.
+    if words_arg is not None:
+        holes, ranks = holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset)
+    else:
+        holes, ranks = select_holes_interactive(words, cfg, lang, kv, V, M, Vset)
 
     # --- Optional source metadata (#5) ----------------------------------------
     # Flags win; otherwise ask on a TTY (any flag already given is not re-prompted);
     # otherwise leave omitted. Asked here, after the holes are built, so a bad word
     # errors out before any metadata is entered.
-    kind, author, work, context = args.kind, args.author, args.work, args.context
+    kind, author, work = args.kind, args.author, args.work
     if interactive:
         if kind is None:
             kind = prompt_kind()
@@ -474,9 +718,7 @@ def main():
             author = _prompt("Auteur / autrice")
         if work is None:
             work = _prompt("Titre de l'œuvre")
-        if context is None:
-            context = _prompt("Passage / contexte")
-    source = build_source(kind, author, work, context)
+    source = build_source(kind, author, work)
 
     phrase = {
         "lang": lang,
