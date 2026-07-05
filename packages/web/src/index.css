@@ -572,15 +572,6 @@ button * {
   letter-spacing: 1px;
   padding-top: var(--text-shift);
 }
-.solved-context {
-  margin: 0;
-  max-width: 720px;
-  font-family: var(--press);
-  font-size: clamp(10px, 1.3vw, 12px);
-  line-height: 1.9;
-  color: var(--muted);
-  letter-spacing: 0.5px;
-}
 
 /* Results: the heat-grid + score + share, centered in the keyboard's footprint. */
 .solved-results {

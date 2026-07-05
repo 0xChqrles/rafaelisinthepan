@@ -72,3 +72,52 @@ def test_returned_secret_slugs_back_to_the_target():
 def test_english_alphabet_splits_on_apostrophe():
     # en char_class is ASCII a-z; "don't" -> cores "don"/"t", so "don" is holeable.
     assert core("don't", "don", EN) == ("don", "", "'t")
+
+
+# --- extract_candidates: the selectable holes for the interactive selector -----------
+# CONTRACT: a candidate is a token's first word-core whose DISPLAY form is in Vset (i.e.
+# survived reduction). Since reduction already drops stopwords / single letters /
+# non-dictionary tokens, "core in Vset" IS the content-word filter (no separate stopword
+# list). One candidate per token position, carrying pos + display prefix/suffix.
+
+
+def cands(sentence, Vset, cfg=FR):
+    words = [gen_phrase.display_token(t) for t in sentence.split()]
+    return gen_phrase.extract_candidates(words, cfg, Vset)
+
+
+def test_elision_only_the_in_vocab_core_is_selectable():
+    # "l'animal": cores "l" then "animal"; "l" is a single letter (not in V), so only
+    # "animal" is selectable, keeping the clitic "l'" as its display prefix.
+    out = cands("l'animal dort", {"animal", "dort"})
+    assert out == [
+        {"pos": 0, "secret": "animal", "prefix": "l'", "suffix": ""},
+        {"pos": 1, "secret": "dort", "prefix": "", "suffix": ""},
+    ]
+
+
+def test_stopwords_and_punctuation_are_not_selectable():
+    # "la" is absent from Vset (reduction drops stopwords) -> skipped; trailing comma
+    # rides along as the suffix of the word it follows.
+    out = cands("la forêt ancienne,", {"forêt", "ancienne"})
+    assert [c["secret"] for c in out] == ["forêt", "ancienne"]
+    assert out[0]["pos"] == 1 and out[1] == {"pos": 2, "secret": "ancienne",
+                                             "prefix": "", "suffix": ","}
+
+
+def test_one_candidate_per_token_position():
+    # Even if a token had several in-vocab cores, only its first is offered, so each pick
+    # consumes exactly one position (here a plain sentence: one core each).
+    out = cands("le chat noir", {"chat", "noir"})
+    assert [(c["pos"], c["secret"]) for c in out] == [(1, "chat"), (2, "noir")]
+
+
+def test_accents_kept_and_hyphen_compound_is_one_candidate():
+    out = cands("un arc-en-ciel évanoui", {"arc-en-ciel", "évanoui"})
+    assert [c["secret"] for c in out] == ["arc-en-ciel", "évanoui"]
+
+
+def test_word_absent_from_vocab_is_not_selectable():
+    # A content word that did not survive reduction (not in Vset) is simply not offered.
+    out = cands("le xyzzy brille", {"brille"})
+    assert [c["secret"] for c in out] == ["brille"]

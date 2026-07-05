@@ -171,8 +171,7 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   "source": {                                   // OPTIONAL origin metadata (#5); ACCENTS KEPT
     "kind": "book",                             //   book | movie | music | quote | poem | … (open set)
     "author": "Victor Hugo",
-    "work": "Les Misérables",
-    "context": "…full passage…"
+    "work": "Les Misérables"
   }
 }
 ```
@@ -191,7 +190,7 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
 - Every `{word, slug}` carries **both**, even when `slug == word` (no conditional
   shortcuts).
 - **`source` is fully OPTIONAL (#5):** the whole object may be absent AND every
-  sub-field (`kind`/`author`/`work`/`context`) is independently optional, so partial
+  sub-field (`kind`/`author`/`work`) is independently optional, so partial
   metadata is valid and a puzzle without `source` stays byte-compatible. Values are
   **display forms** (accents kept, never slugged); `kind` is an **open** union (known
   values documented, but a new kind is allowed). Consumed by the solved screen (#8).
@@ -399,22 +398,49 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
 - All paths below are under `packages/`. **Tunables:** `TOP_N = 400000` (reduce),
   `TOP_K = 10000` (gen), start-rank band `50–150` (`start_word.py`).
 - **`gen_phrase` is fully interactive on a TTY (#5).** Anything not passed as a flag is
-  prompted: the **sentence** (positional, now optional), **`--lang`**, the three
-  **`--words`**, and the optional **source metadata** — `--kind` (offers `KNOWN_KINDS`
-  numbered, but free text is accepted), `--author`, `--work`, `--context`. A flag that
-  IS given is not re-prompted, and **non-TTY (piped/batch) runs keep working with flags
-  only** — no prompt ever blocks them, and their output is identical to before (missing
-  sentence/`--words` off-TTY is a clear error, and `--lang` still defaults to `en`).
-  Source metadata is asked **after** the hole loop, so a bad word errors before any
-  metadata is entered; blank answers are dropped (`build_source`) so no empty `source`
-  key is written.
-- **Start-word selection is interactive per hole** (`gen_phrase.choose_start`): on a
-  TTY it lists the rank-band candidates (numbered, each with its rank) and reads a
-  choice — Enter keeps the random default, a number picks a candidate, any other word
-  is accepted only if it is in that hole's rank map (matched by slug) else reprompts.
-  The band logic, schema, and downstream `start`/`start_rank` are unchanged; non-TTY
-  (piped/batch) runs silently keep the random default, so generation output is
-  identical to before when not interacting.
+  prompted: the **sentence** (positional, now optional), **`--lang`**, and the optional
+  **source metadata** — `--kind` (offers `KNOWN_KINDS` numbered, but free text is
+  accepted), `--author`, `--work`. The holes come from `--words` when given, else from the
+  interactive selector (below); the source/lang flags are not re-prompted when given, and
+  **non-TTY (piped/batch) runs keep working with flags only** — no prompt ever blocks them,
+  and their output is identical to before (missing sentence/`--words` off-TTY is a clear
+  error, and `--lang` still defaults to `en`). Source metadata is asked **after** the holes
+  are chosen, so a bad word errors before any metadata is entered; blank answers are
+  dropped (`build_source`) so no empty `source` key is written.
+- **Interactive hole selector (decided 2026-07-05, `select_holes_interactive`).** WITHOUT
+  `--words` on a TTY, the three holes are chosen with a small raw-mode (`termios`/`tty`
+  cbreak) full-screen selector instead of typing words. `extract_candidates` lists the
+  selectable words — each token's first word-core whose **display form is in `Vset`**;
+  because reduction already strips stopwords / single letters / non-dictionary tokens,
+  "in `V`" **is** the content-word filter (no separate stopword list), so `l'animal` offers
+  only `animal` and punctuation/stopwords are non-selectable. ←/→ navigate the content
+  words; the hovered word's **full start-word band** (`start_band`, ranks 50–150) is
+  previewed live (its neighbor ranking computed once per word and **cached**). **Enter**
+  commits the hovered word, then a **number + Enter** picks its start word (**Esc** cancels
+  back to navigation, **Ctrl-C** aborts). Three commits end it. The produced `holes`/`ranks`
+  are **identical in shape** to the `--words` path (`build_rank_map` + `_make_hole` are
+  shared). `--words` (or off-TTY) **skips** the selector entirely (`holes_from_words`,
+  behaviour unchanged), so batch/CI is unaffected. `< 3` selectable words → clear error.
+- **Editable phrase prompt (decided 2026-07-05).** `gen_phrase` `import`s `readline`, so
+  on a TTY every prompt is a line editor (arrow keys move within the line). The **sentence**
+  is the exception to "flags aren't re-prompted": in interactive mode it is **always** shown
+  in an editable prompt **pre-loaded with the flag value** (if any) — `_prefill_tty` injects
+  the phrase into the tty input queue via the `TIOCSTI` ioctl (libedit's `set_startup_hook`/
+  `set_pre_input_hook` prefill is a no-op on macOS), so a portion can be tweaked with the
+  arrows and **Enter accepts it unchanged**. Prefill is best-effort: off-TTY, without
+  `readline`, or where `TIOCSTI` is unavailable/blocked, the prompt just starts empty (typed
+  fresh). Non-TTY runs are unchanged.
+- **The `source` schema has no `context`/passage field (removed 2026-07-05).** `build_source`
+  takes only `kind`/`author`/`work`; there is no `--context` flag or prompt, `Source` in
+  `shared/src/types.ts` carries no `context`, and `SolvedCaption` renders only the kind tag +
+  attribution. Puzzles without a `source` stay byte-compatible as before.
+- **Start-word selection on the `--words` path** (`gen_phrase.choose_start`): used by
+  `holes_from_words` (the interactive selector picks starts inline instead). On a TTY it
+  lists the rank-band candidates (numbered, each with its rank) and reads a choice — Enter
+  keeps the random default, a number picks a candidate, any other word is accepted only if
+  it is in that hole's rank map (matched by slug) else reprompts. The band logic, schema,
+  and downstream `start`/`start_rank` are unchanged; non-TTY (piped/batch) runs silently
+  keep the random default, so generation output is identical to before when not interacting.
 - **Data present:** `generation/embedding/fr/cc.fr.300_reduced.vec` (+ `.kv` cache
   built), `generation/embedding/en/glove.6B.300d_reduced.txt` (+ `.kv` cache built).
   `web/public/vocab/{en,fr}.json` exist.
