@@ -42,7 +42,13 @@ export default function Phrase({
                 <Hole hole={rHole} hit={activeHit} onHitDone={onHitDone} />
                 {suffix ? <span className="word">{suffix}</span> : null}
               </span>
-              {/* line break AFTER each hole: the hole ends its line, words flow until the next hole */}
+              {/* DELIBERATE line break after each hole — do not swap for natural
+                  wrapping. A hole's word is replaced many times during a round
+                  (start word -> ever-closer words, arbitrary widths); if the
+                  sentence wrapped as prose, every swap would rewrap the whole
+                  paragraph and the text the player is reading would jump around.
+                  Ending the line at the hole pins every word to its line for the
+                  entire round; of the layouts tried, this read best. */}
               <br />
             </Fragment>
           );

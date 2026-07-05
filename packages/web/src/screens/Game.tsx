@@ -13,6 +13,7 @@ import SolvedScreen from '../components/SolvedScreen';
 import SolvedCaption from '../components/SolvedCaption';
 import LoadError from '../components/LoadError';
 import { HIT_FADE_MS } from '../components/FloatingHit';
+import { t, srHoleResult } from '../i18n';
 import { fold } from '@whippin/shared';
 import type { HitState, Hole, Puzzle, RankEntry, RankMap, RuntimeHole, Source } from '@whippin/shared';
 
@@ -43,8 +44,10 @@ const OVERRIDE_NONCE = Math.random().toString(36).slice(2);
 export default function Game({ puzzle, dayNumber }: { puzzle: Puzzle; dayNumber: number | null }) {
   const { vocab, error, retry } = useVocab(puzzle.lang);
 
-  if (error !== null) return <LoadError message="FAILED TO LOAD VOCABULARY" onRetry={retry} />;
-  if (!vocab) return <p className="status">LOADING&hellip;</p>;
+  if (error !== null) {
+    return <LoadError message={t(puzzle.lang, 'failedVocab')} lang={puzzle.lang} onRetry={retry} />;
+  }
+  if (!vocab) return <p className="status">{t(puzzle.lang, 'loading')}</p>;
 
   return (
     <Round
@@ -142,6 +145,17 @@ function Round({
   const hitId = useRef<number>(0); // monotonic id source for floating hits
   const pendingTimers = useRef<number[]>([]); // deferred word/rank swaps (fire as the hit fades)
 
+  // Screen-reader mirror of the visual guess feedback (floating numbers / "MISS" /
+  // shakes are invisible to assistive tech): each submit composes one sentence into a
+  // polite live region. The alternating zero-width suffix forces a DOM change even when
+  // two consecutive guesses produce the identical text, so it is re-announced.
+  const [announce, setAnnounce] = useState<string>('');
+  const announceFlip = useRef<boolean>(false);
+  const say = useCallback((text: string) => {
+    announceFlip.current = !announceFlip.current;
+    setAnnounce(text + (announceFlip.current ? '' : '​'));
+  }, []);
+
   // Clear any pending staggered effects when the round unmounts.
   useEffect(() => () => pendingTimers.current.forEach(clearTimeout), []);
 
@@ -235,7 +249,8 @@ function Round({
         // typed word (do NOT clear) so the player can correct it; the next edit clears
         // the message.
         setInvalidAt(Date.now());
-        setFeedback({ text: 'this word does not exist' });
+        setFeedback({ text: t(lang, 'notAWord') });
+        say(t(lang, 'notAWord'));
         return;
       }
 
@@ -255,6 +270,15 @@ function Round({
         const entry: RankEntry | undefined = ranks[h.secret][typed];
         return [{ index, entry }];
       });
+
+      // Announce the guess's outcome to assistive tech — the audible twin of the
+      // floating numbers below. One sentence covering every impacted hole (1-based, in
+      // sentence order), plus the solved fanfare when this guess finishes the round.
+      const solvesAll = holes.every((h) => h.rank === 0 || ranks[h.secret][typed]?.rank === 0);
+      const parts = impacted.map(({ index, entry }) =>
+        srHoleResult(lang, index + 1, entry ? entry.rank : null),
+      );
+      say(solvesAll ? [...parts, t(lang, 'srSolvedAll')].join(', ') : parts.join(', '));
 
       // Every impacted hole shows a floating indicator: the distance number when
       // warm, or "MISS" when too far. They start in sentence-order sequence
@@ -291,11 +315,18 @@ function Round({
         pendingTimers.current.push(timer);
       });
     },
-    [holes, ranks, solved, vocabSet, recordGuess, improveHole],
+    [holes, ranks, solved, vocabSet, recordGuess, improveHole, lang, say],
   );
 
   return (
     <div className="game">
+      {/* Invisible live region: the screen-reader mirror of the per-hole visual
+          feedback (see `say`). Polite, so it never interrupts the player's own typing
+          echo mid-word. */}
+      <div className="sr-only" role="status" aria-live="polite">
+        {announce}
+      </div>
+
       {/* Header row pinned to the top: the current puzzle's language flag (opens the
           selector) beside the reconstruction progress bar. Bar WIDTH = the
           reconstruction value; COLOR follows heat. */}
@@ -355,6 +386,7 @@ function Round({
             input={input}
             prefixSet={prefixSet}
             vocabSet={vocabSet}
+            lang={lang}
             onType={appendChar}
             onBackspace={deleteChar}
             onSubmit={submit}

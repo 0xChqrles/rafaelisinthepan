@@ -3,7 +3,18 @@
    Font: Press Start 2P
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+/* Self-hosted (no Google Fonts request): the pixel font IS the visual identity, so it
+   must not depend on a third-party origin (render-blocking @import, tracking, one more
+   failure mode). Vite hashes the file into assets/* -> immutable CDN caching. The
+   backend's share card embeds the same face (ogCard assets), so on-screen and card
+   typography stay in lockstep. */
+@font-face {
+  font-family: 'Press Start 2P';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/PressStart2P.woff2') format('woff2');
+}
 
 :root {
   --bg: #0a0b12;
@@ -75,6 +86,32 @@ button * {
   flex-direction: column;
   align-items: center;
   gap: 16px;
+}
+/* Sub-line of the missing-puzzle screen: owns that the state is ABNORMAL (a publish
+   that did not happen), so it never reads like a scheduled day off. */
+.no-puzzle-note {
+  margin: 0;
+  max-width: 36ch;
+  text-align: center;
+  font-family: var(--press);
+  font-size: 11px;
+  line-height: 1.9;
+  color: var(--muted);
+  letter-spacing: 1px;
+}
+
+/* Visually hidden but still announced: the screen-reader live region mirroring the
+   per-hole guess feedback (floating numbers / MISS are invisible to assistive tech). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* ===================== language screen ===================== */
@@ -232,7 +269,6 @@ button * {
 .home-btn:focus-visible {
   opacity: 1;
   filter: brightness(1.2);
-  outline: none;
 }
 /* The current puzzle's language flag, sized small for the HUD (the picker uses the
    larger .flag-img). */
@@ -667,7 +703,6 @@ button * {
 .share-key:hover,
 .share-key:focus-visible {
   filter: brightness(1.35);
-  outline: none;
 }
 .share-key:active {
   filter: brightness(1.5);
@@ -675,13 +710,25 @@ button * {
 .share-key.copied {
   color: var(--accent);
 }
-.go-note {
+/* Countdown to the next puzzle (the day flip), under the score/share row — the solved
+   screen's "come back" hook. Fades/rises with the same timing as .solved-actions (the
+   JS toggles the shared `.in` at the same moment); tabular digits so the ticking
+   seconds never wobble the line. */
+.next-puzzle {
   margin: 0;
   font-family: var(--press);
   font-size: 11px;
   color: var(--muted);
   letter-spacing: 1px;
+  font-variant-numeric: tabular-nums;
   padding-top: var(--text-shift);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.35s ease-out, transform 0.35s ease-out;
+}
+.next-puzzle.in {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 /* --- on-screen keyboard (issue #36): replaces the native mobile keyboard --- */
@@ -797,11 +844,9 @@ button * {
 }
 .btn-primary:hover {
   filter: brightness(1.18);
-  outline: none;
 }
 .btn-primary:focus-visible {
   filter: brightness(1.32);
-  outline: none;
 }
 /* Secondary: simple text, no fill. */
 .btn-secondary {
@@ -814,7 +859,6 @@ button * {
 .btn-secondary:hover,
 .btn-secondary:focus-visible {
   color: var(--fg);
-  outline: none;
 }
 
 /* ===================== mobile / small screens ===================== */
@@ -946,5 +990,36 @@ button * {
   .btn-primary {
     padding: calc(16px + var(--cap-shift)) 28px calc(16px - var(--cap-shift));
     font-size: 18px;
+  }
+}
+
+/* ===================== keyboard focus ===================== */
+/* Every interactive control gets a VISIBLE keyboard-focus indicator (hover keeps its
+   brightness-only affordance; :focus-visible fires only on keyboard focus). The flag
+   buttons are excluded: their focus indicator is the accent outline on the flag image
+   itself (.flag-btn:focus-visible .flag-img). */
+.kb-key:focus-visible,
+.share-key:focus-visible,
+.btn:focus-visible,
+.home-btn:focus-visible {
+  outline: 3px solid var(--accent-dim);
+  outline-offset: 2px;
+}
+
+/* ===================== reduced motion ===================== */
+/* Honor the OS "reduce motion" preference. Durations collapse to near-zero instead of
+   `animation: none` because several state machines advance on `animationend` — the
+   improved-word swap fires when word-replace-blink ends — so the events must still
+   fire. Delays are KEPT on purpose: the floating distance numbers carry real game
+   information and their show/hold/clear rhythm is delay-driven, so with zero durations
+   they still appear (statically), hold, and leave on schedule — no motion, no lost
+   information. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

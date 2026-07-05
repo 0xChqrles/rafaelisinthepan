@@ -85,6 +85,7 @@ packages/
       hooks/useVocab.ts       fetch+cache the per-language existence Set (once per session)
       hooks/usePuzzle.ts      fetch the client-computed day's puzzle (+ ?puzzle= file override)
       api.ts                  backend client: puzzleUrl/todayUrl, ?puzzle= override, 404->NO PUZZLE
+      i18n.ts                 UI chrome strings (en+fr), t(lang, key); parity type-enforced
       screens/Game.tsx        the guess loop, hole state (imports fold from @whippin/shared)
       game/scoring.ts         s(rank), holeProgress, computeProgress
       components/Phrase.tsx,Hole.tsx,WordInput.tsx,FloatingHit.tsx  rendering
@@ -278,7 +279,9 @@ variants that compare equal count once. Invalid non-words are rejected before
 counting. The score is displayed as the large background number during the round and
 as `<tries> TRIES` at game end (the unit is NAMED — on the solved screen, the share
 card, and the share text — because "SCORE" alone reads as points to maximize when
-lower is better; singular `TRY` at 1).
+lower is better; singular `TRY` at 1). Like the rest of the UI chrome the label is
+localized (fr: `ESSAIS`/`ESSAI`, decided 2026-07-06); the unit stays named in every
+language.
 
 ### Testing
 
@@ -474,6 +477,19 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   backend base and is required for `pnpm dev` / `pnpm build`; the frontend must not
   silently use its own origin as the backend. `usePuzzle` exposes `dayNumber` for
   persist (#7) / already-solved (#9).
+- **UI chrome is localized + a11y'd (decided 2026-07-06):** `web/src/i18n.ts` holds every
+  UI string in **en + fr** (`t(lang, key)`; the `satisfies` clause makes a missing
+  translation a type error, so parity needs no test). Game screens resolve strings with
+  the **puzzle's** language; the selector (no puzzle) uses the same resolution as the `/`
+  redirect. `<html lang>` is kept in sync by App. Guess feedback is mirrored to a
+  `.sr-only` polite live region (`srHoleResult`), animations honor
+  `prefers-reduced-motion` (durations collapse to ~0 — never `animation: none`, several
+  swaps advance on `animationend`; delays are kept so the floating numbers still show),
+  and every control has a visible `:focus-visible` outline. The missing-puzzle screen
+  wording owns that the state is **abnormal** (a publish that did not happen). The pixel
+  font is **self-hosted** (`web/src/assets/fonts/PressStart2P.woff2`, `@font-face` in
+  `index.css` — no Google Fonts request). The solved screen shows a **NEXT PUZZLE IN
+  HH:MM:SS** countdown (`secondsUntilNextReset`, hidden on `?puzzle=` overrides).
 - **SVG icons (pattern to follow):** monochrome UI icons live as `.svg` files under
   `web/src/assets/icons/` and are imported as **inline React components** via
   `vite-plugin-svgr` — `import Icon from '../assets/icons/name.svg?react'` (the `?react`

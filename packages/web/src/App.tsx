@@ -7,6 +7,7 @@ import NoPuzzle from './components/NoPuzzle';
 import { useGameStore } from './state/gameStore';
 import { useLocation, navigate } from './routing';
 import { parseRoute, resolveHomeLang, pathForLang, type LangCode } from './langs';
+import { t } from './i18n';
 
 export default function App() {
   const pathname = useLocation();
@@ -21,6 +22,15 @@ export default function App() {
     if (route.view !== 'home') return;
     navigate(pathForLang(resolveHomeLang(lastLang, navigator.language)), { replace: true });
   }, [route.view, lastLang]);
+
+  // Keep <html lang> honest: index.html ships lang="en", but on /fr both the puzzle
+  // content and the UI chrome are French — screen readers pick pronunciation rules from
+  // this attribute. Non-game routes use the same resolution as the `/` redirect.
+  const docLang =
+    route.view === 'game' ? route.lang : resolveHomeLang(lastLang, navigator.language);
+  useEffect(() => {
+    document.documentElement.lang = docLang;
+  }, [docLang]);
 
   return (
     <div className="app">
@@ -48,8 +58,8 @@ function GameRoute({ lang }: { lang: LangCode }) {
       {/* The header (HUD) only exists once a puzzle is loaded — Game renders it itself
           (flag + progress bar). The transient states below are header-less: loading /
           error show a bare status, and `noPuzzle` shows its own CHANGE LANGUAGE screen. */}
-      {loading && <p className="status">LOADING&hellip;</p>}
-      {error !== null && <LoadError message="FAILED TO LOAD PUZZLE" onRetry={retry} />}
+      {loading && <p className="status">{t(lang, 'loading')}</p>}
+      {error !== null && <LoadError message={t(lang, 'failedPuzzle')} lang={lang} onRetry={retry} />}
       {noPuzzle && <NoPuzzle lang={lang} />}
       {puzzle && <Game puzzle={puzzle} dayNumber={dayNumber} />}
     </>
