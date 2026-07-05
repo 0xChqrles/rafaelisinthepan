@@ -77,7 +77,8 @@ packages/
   shared/                     cross-cutting TS consumed by web (pkg @whippin/shared)
     src/slug.ts               fold() — the slug/fold contract (byte-identical to slug())
     src/types.ts              per-puzzle schema types (Puzzle, Hole, RankMap, …)
-    src/progressColor.ts      progressColor() — the ONE color ramp (bar, rank exponents, heat grid, share card)
+    src/heat.ts               heatColor() — heat ramp (rank exponents, heat grid, share card)
+    src/progressColor.ts      progressColor() — progress ramp (progress bar, selector badge); shares ramp.ts
     src/index.ts              re-exports
   web/                        React + Vite + TS front (pkg @whippin/web)
     src/

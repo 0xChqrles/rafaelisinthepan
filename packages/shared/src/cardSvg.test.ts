@@ -1,11 +1,11 @@
 // CONTRACT (light): the share-card SVG (packages/shared/src/cardSvg.ts) must render one
-// progress-colored rect per square, the score, and the puzzle id — using the SHARED
-// progress ramp so the card matches the on-screen grid. (Exact positions/sizes are
-// cosmetic and not asserted; they get tuned against the rasterized PNG.)
+// heat-colored rect per square, the score, and the puzzle id — using the SHARED heat ramp
+// so the card matches the on-screen grid. (Exact positions/sizes are cosmetic and not
+// asserted; they get tuned against the rasterized PNG.)
 
 import { describe, it, expect } from 'vitest';
 import { renderCardSvg } from './cardSvg';
-import { progressColor } from './progressColor';
+import { heatColor } from './heat';
 
 describe('renderCardSvg', () => {
   const data = { dayNumber: 123, score: 42, squares: [8, 50, 100] };
@@ -16,9 +16,9 @@ describe('renderCardSvg', () => {
     expect(rects).toHaveLength(data.squares.length + 1); // 3 squares + 1 background
   });
 
-  it('colors each square with the SHARED progress ramp (matches the on-screen grid)', () => {
+  it('colors each square with the SHARED heat ramp (matches the on-screen grid)', () => {
     const svg = renderCardSvg(data);
-    for (const pct of data.squares) expect(svg).toContain(`fill="${progressColor(pct)}"`);
+    for (const pct of data.squares) expect(svg).toContain(`fill="${heatColor(pct / 100)}"`);
   });
 
   it('shows the score and the puzzle id (#dayNumber, never a date)', () => {

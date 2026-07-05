@@ -1,9 +1,11 @@
-// The ONE color ramp of the game (the old separate "heat" ramp was dropped — one
-// quantity, one color language). Everything that colors a progress-like value uses it:
-// the progress bar, the hole rank exponents + floating hits (web), the solved heat grid,
-// and the backend-rendered share card — cross-cutting so the card matches the screen.
-// `progress` in [0,100]: low = far/cold (blue), high = near/solved (indigo).
-const PROGRESS_STOPS = [
+// The progress-% ramp: colors the top progress bar and the language selector's %
+// badge. The rank exponents, the solved heat grid, and the share card use heat.ts
+// instead — a single ramp was tried and reverted (decided 2026-07-05). Both ramps
+// share the one interpolator in ramp.ts.
+// `progress` in [0,100] (clamped to the stops).
+import { rampColor, type RampStop } from './ramp';
+
+const PROGRESS_STOPS: RampStop[] = [
   { v: 15, color: [35, 132, 242] }, // blue
   { v: 30, color: [42, 210, 235] }, // cyan
   { v: 40, color: [35, 220, 145] }, // green
@@ -15,26 +17,7 @@ const PROGRESS_STOPS = [
   { v: 100, color: [70, 66, 232] }, // indigo
 ];
 
-function mix(a: number, b: number, t: number) {
-  return Math.round(a + (b - a) * t);
-}
-
-// rgb() color interpolated on the ramp for a progress value (%, clamped to the stops).
+// rgb() color interpolated on the ramp for a progress value (%).
 export function progressColor(progress: number) {
-  const value = Math.max(PROGRESS_STOPS[0].v, Math.min(PROGRESS_STOPS[PROGRESS_STOPS.length - 1].v, progress));
-
-  let from = PROGRESS_STOPS[0];
-  let to = PROGRESS_STOPS[PROGRESS_STOPS.length - 1];
-  for (let i = 1; i < PROGRESS_STOPS.length; i += 1) {
-    if (value <= PROGRESS_STOPS[i].v) {
-      from = PROGRESS_STOPS[i - 1];
-      to = PROGRESS_STOPS[i];
-      break;
-    }
-  }
-
-  const localT = from.v === to.v ? 0 : (value - from.v) / (to.v - from.v);
-  const [r1, g1, b1] = from.color;
-  const [r2, g2, b2] = to.color;
-  return `rgb(${mix(r1, r2, localT)}, ${mix(g1, g2, localT)}, ${mix(b1, b2, localT)})`;
+  return rampColor(PROGRESS_STOPS, progress);
 }

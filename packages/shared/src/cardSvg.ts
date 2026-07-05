@@ -1,14 +1,13 @@
 // Share-card SVG (issue #8): a pure, dependency-free renderer for the minimal OG card —
-// the row of progress-colored squares, "SCORE <n>", and the puzzle id "#<dayNumber>". The
+// the row of heat-colored squares, "SCORE <n>", and the puzzle id "#<dayNumber>". The
 // backend rasterizes this SVG to a PNG (with the Press Start 2P font) for the link's OG
 // image. Pure + deterministic, so it is fully unit-testable without any AWS/rasterizer.
 //
-// Colors come from the SHARED progress ramp (progressColor.ts), so the card matches the
-// on-screen grid exactly. Only numeric fields are interpolated (score/day/pct — all
-// clamped ints from the decoded token), so there is no text to escape and no injection
-// surface.
+// Colors come from the SHARED heat ramp (heat.ts), so the card matches the on-screen grid
+// exactly. Only numeric fields are interpolated (score/day/pct — all clamped ints from the
+// decoded token), so there is no text to escape and no injection surface.
 
-import { progressColor } from './progressColor';
+import { heatColor } from './heat';
 
 // Standard OG image size (Twitter/Slack/Discord `summary_large_image`).
 export const CARD_WIDTH = 1200;
@@ -43,7 +42,7 @@ export function renderCardSvg({ dayNumber, score, squares }: CardData): string {
   const rects = squares
     .map((pct, i) => {
       const x = rowX + i * (cell + gap);
-      return `<rect x="${x.toFixed(2)}" y="${rowY}" width="${cell.toFixed(2)}" height="${cell.toFixed(2)}" fill="${progressColor(pct)}"/>`;
+      return `<rect x="${x.toFixed(2)}" y="${rowY}" width="${cell.toFixed(2)}" height="${cell.toFixed(2)}" fill="${heatColor(pct / 100)}"/>`;
     })
     .join('');
 
