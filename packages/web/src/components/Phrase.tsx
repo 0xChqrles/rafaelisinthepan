@@ -33,8 +33,7 @@ export default function Phrase({
           const { prefix, suffix } = puzzleHoleByPos.get(i) ?? {};
           // Prefix (leading clitic) and suffix (trailing punctuation) are sentence
           // context and always show. They live with the blank in a nowrap group so
-          // they can never break onto a different line from it; beyond that the
-          // sentence wraps naturally, like prose.
+          // they can never break onto a different line from it.
           return (
             <Fragment key={i}>
               {space}
@@ -43,6 +42,14 @@ export default function Phrase({
                 <Hole hole={rHole} hit={activeHit} onHitDone={onHitDone} />
                 {suffix ? <span className="word">{suffix}</span> : null}
               </span>
+              {/* DELIBERATE line break after each hole — do not swap for natural
+                  wrapping. A hole's word is replaced many times during a round
+                  (start word -> ever-closer words, arbitrary widths); if the
+                  sentence wrapped as prose, every swap would rewrap the whole
+                  paragraph and the text the player is reading would jump around.
+                  Ending the line at the hole pins every word to its line for the
+                  entire round; of the layouts tried, this read best. */}
+              <br />
             </Fragment>
           );
         }
