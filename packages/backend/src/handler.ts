@@ -1,11 +1,12 @@
 import {
   activeDate,
   dayNumber,
+  decodeResult,
   nextResetAt,
   secondsUntilNextReset,
   RESET_HOUR,
   TIME_ZONE,
-} from './day';
+} from '@whippin/shared';
 import {
   type FnUrlEvent,
   type FnUrlResult,
@@ -16,7 +17,7 @@ import {
   png,
 } from './respond';
 import { renderCardPng, renderShareHtml } from './ogCard';
-import { decodeResult } from '@whippin/shared';
+import { isValidDate } from './layout';
 import type { PuzzleStore } from './store';
 
 export interface HandlerDeps {
@@ -35,11 +36,18 @@ export interface HandlerDeps {
 // instead of being negatively cached until the next daily flip.
 const NOT_FOUND_MAX_AGE = 60;
 
-// The versioned puzzle URL (/?lang=&v=<version>) is content-addressed: a given `v` maps to
-// bytes that never change, so it can be cached hard on both the CDN and the browser. A
-// republish yields a NEW version -> a NEW URL, so nothing here ever serves stale (issue
-// #42). One day comfortably covers a puzzle's live window (and matches the CDN maxTtl).
-const PUZZLE_MAX_AGE = 86_400;
+// The puzzle URL is DATE-addressed (/?lang=&date=YYYY-MM-DD): the client computes the
+// active 22:00-ET day itself (shared day.ts) and asks for it by name, so a URL maps to
+// one day's puzzle. The CDN caches it effectively forever (s-maxage; `pnpm puzzle:publish
+// --s3` invalidates on republish), while browsers revalidate after a few minutes so a
+// corrected puzzle still shows on a normal reload without any client-side scheme.
+const PUZZLE_BROWSER_MAX_AGE = 300;
+const PUZZLE_CDN_MAX_AGE = 31_536_000;
+
+// How far (whole days) a requested date may sit from the server's active day and still
+// be served: ±1 tolerates client clock skew around the 22:00 flip without exposing the
+// archive or a pre-published future puzzle beyond the adjacent day.
+const DATE_SKEW_DAYS = 1;
 
 const LANG_RE = /^[a-z]{2}$/;
 
@@ -119,16 +127,10 @@ export function createHandler(deps: HandlerDeps) {
       const date = activeDate(instant, dayOpts);
 
       if (route(event.rawPath) === 'today') {
-        // /today is the FRESH version pointer (issue #42): it carries the current puzzle
-        // `version` so the client can request the content-addressed /?lang=&v=<version>
-        // URL. It must never be cached — else it could hand out a stale version and defeat
-        // the whole scheme — so it is `no-store`. `version` is per-lang; when `lang` is
-        // absent/invalid it is null (date/dayNumber are still useful without it).
-        const todayLang = event.queryStringParameters?.lang;
-        const version =
-          todayLang && LANG_RE.test(todayLang)
-            ? await deps.store.version(date, todayLang)
-            : null;
+        // /today is a DIAGNOSTIC: the server's view of the active day + reset info. The
+        // client computes the day itself (shared day.ts) and no longer reads this in
+        // normal play — it exists to debug clock-skew reports. `no-store` so it is
+        // always the server's live clock.
         return json(
           200,
           {
@@ -138,7 +140,6 @@ export function createHandler(deps: HandlerDeps) {
             resetHour: dayOpts.resetHour,
             nextResetAt: nextResetAt(instant, dayOpts).toISOString(),
             secondsUntilNextReset: secondsUntilNextReset(instant, dayOpts),
-            version,
           },
           { ...cors, 'Cache-Control': 'no-store' },
         );
@@ -154,49 +155,54 @@ export function createHandler(deps: HandlerDeps) {
         );
       }
 
-      // The puzzle endpoint is version-addressed (issue #42): the client must carry the
-      // `v` token it read from /today. Requiring it makes the contract explicit — a request
-      // without `v` is a protocol violation, so 400 rather than silently serving a puzzle at
-      // a non-content-addressed URL (which could then be cached wrong). `v` is not validated
-      // against the current version: it's an opaque cache key, so any non-empty value is a
-      // 200 with the current puzzle. The front reaches here only for a version /today
-      // reported as present, so a stale/garbage `v` never happens in normal play.
-      if (!event.queryStringParameters?.v) {
+      // The puzzle endpoint is DATE-addressed: the client computes the active 22:00-ET
+      // day (shared day.ts) and names it explicitly, so what is served is exactly what
+      // was asked — the old /today->puzzle pair (and its flip race) is gone. A missing
+      // or malformed date is a protocol violation.
+      const requestedDate = event.queryStringParameters?.date;
+      if (!requestedDate || !isValidDate(requestedDate)) {
         return errorResponse(
           400,
           'bad_request',
-          'Query parameter "v" is required — read it from /today?lang= (issue #42).',
+          'Query parameter "date" is required (the active game day, "YYYY-MM-DD").',
           cors,
         );
       }
 
-      const puzzle = await deps.store.getPuzzle(date, lang);
-      if (puzzle == null) {
-        // Missing puzzle is a clean 404, never a 500.
+      // Serve only the LIVE window: the requested day must sit within DATE_SKEW_DAYS of
+      // the server's active day. That tolerates a skewed client clock around the flip,
+      // but never exposes the archive or a pre-published future day. Out-of-window is a
+      // 404 like a missing puzzle (same graceful front-end path), with the short
+      // negative TTL so a corrected clock recovers quickly.
+      if (Math.abs(dayNumber(requestedDate) - dayNumber(date)) > DATE_SKEW_DAYS) {
         return errorResponse(
           404,
           'not_found',
-          `No puzzle for ${date} (${lang}).`,
+          `"${requestedDate}" is not the active game day (${date}).`,
           { ...cors, 'Cache-Control': dailyCacheControl(NOT_FOUND_MAX_AGE) },
           { date, lang },
         );
       }
 
-      // Pass the puzzle through unchanged — its shape is the front's `Puzzle` schema. Every
-      // hit here is version-addressed (the `v` guard above), so the URL is content-addressed
-      // and safe to hold `immutable` on the browser + CDN: a republish yields a new version
-      // -> a new URL, never a stale hit at this one (issue #42).
-      //
-      // X-Puzzle-Date stamps the day this puzzle was resolved for. The client fetches
-      // /today then the puzzle; when the 22:00 flip lands BETWEEN the two, this endpoint
-      // serves the NEXT day's puzzle under the previous day's `v` — the stamp lets the
-      // client detect the mismatch and re-run the pair (the header must be CORS-exposed
-      // for the cross-origin fetch to read it).
+      const puzzle = await deps.store.getPuzzle(requestedDate, lang);
+      if (puzzle == null) {
+        // Missing puzzle is a clean 404, never a 500.
+        return errorResponse(
+          404,
+          'not_found',
+          `No puzzle for ${requestedDate} (${lang}).`,
+          { ...cors, 'Cache-Control': dailyCacheControl(NOT_FOUND_MAX_AGE) },
+          { date: requestedDate, lang },
+        );
+      }
+
+      // Pass the puzzle through unchanged — its shape is the front's `Puzzle` schema.
+      // The URL names the (date, lang) pair, so the CDN holds it via s-maxage until a
+      // republish invalidates it (`pnpm puzzle:publish --s3`); browsers get the short
+      // max-age so a corrected puzzle shows on a normal reload within minutes.
       return json(200, puzzle, {
         ...cors,
-        'X-Puzzle-Date': date,
-        'Access-Control-Expose-Headers': 'X-Puzzle-Date',
-        'Cache-Control': `public, max-age=${PUZZLE_MAX_AGE}, immutable`,
+        'Cache-Control': `public, max-age=${PUZZLE_BROWSER_MAX_AGE}, s-maxage=${PUZZLE_CDN_MAX_AGE}`,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unexpected error.';

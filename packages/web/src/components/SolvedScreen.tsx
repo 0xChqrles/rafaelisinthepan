@@ -94,7 +94,8 @@ export default function SolvedScreen({
     // sharing the URL unfurls into the image.
     const url = shareUrl(origin, { lang, dayNumber, score: guessCount, squares });
     // What we share/copy: a headline line then the (unfurling) link, blank line between.
-    const text = `Whippin #${dayNumber} ${guessCount}\n\n${url}`;
+    // "N tries" (not a bare number): lower-is-better must survive without the card.
+    const text = `Whippin #${dayNumber} — ${guessCount} ${guessCount === 1 ? 'try' : 'tries'}\n\n${url}`;
 
     // Use the Web Share API only on touch/mobile devices (native share sheet). On DESKTOP
     // the share button should just copy the link — desktop Chrome/Edge/Safari expose
@@ -152,8 +153,10 @@ export default function SolvedScreen({
       </div>
 
       <div className={`solved-actions${showActions ? ' in' : ''}`}>
+        {/* "45 TRIES", not "SCORE 45": the count is the number of guesses, and naming the
+            unit is what tells a reader (especially of the shared card) that LOWER is
+            better — "SCORE" alone reads as points to maximize. */}
         <span className="solved-score">
-          SCORE{' '}
           {/* Reserve the FINAL count's exact width with a hidden ghost (same font, letter-
               spacing and all), then overlay the live tally right-aligned on top — so the
               number counting 0 -> guessCount never changes width (9 -> 10 stays put). */}
@@ -162,7 +165,8 @@ export default function SolvedScreen({
               {guessCount}
             </span>
             <span className="solved-score-live">{Math.round(shownScore)}</span>
-          </span>
+          </span>{' '}
+          {guessCount === 1 ? 'TRY' : 'TRIES'}
         </span>
         {dayNumber != null && (
           <button type="button" className={`share-key${copied ? ' copied' : ''}`} onClick={onShare}>

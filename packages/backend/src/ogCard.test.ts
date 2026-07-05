@@ -8,7 +8,7 @@ import type { FnUrlEvent } from './respond';
 import type { PuzzleStore } from './store';
 
 // The card routes never touch the store; stub it so nothing else is exercised.
-const store: PuzzleStore = { getPuzzle: async () => null, version: async () => null };
+const store: PuzzleStore = { getPuzzle: async () => null };
 const handler = createHandler({ store });
 
 const get = (rawPath: string, headers: Record<string, string> = {}): FnUrlEvent => ({
@@ -43,12 +43,12 @@ describe('GET /og/<token>.png', () => {
 });
 
 describe('GET /s/<token>', () => {
-  it('returns OG HTML pointing at /og/<token>.png with the score + day', async () => {
+  it('returns OG HTML pointing at /og/<token>.png with the try count + day', async () => {
     const res = await handler(get(`/s/${token}`, { host: 'whippin.ai', 'x-forwarded-proto': 'https' }));
     expect(res.statusCode).toBe(200);
     expect(res.headers['Content-Type']).toContain('text/html');
     expect(res.body).toContain(`content="https://whippin.ai/og/${token}.png"`);
-    expect(res.body).toContain('SCORE 42');
+    expect(res.body).toContain('42 tries'); // unit named — lower is better
     expect(res.body).toContain('#20638');
     expect(res.body).toContain('https://whippin.ai/fr'); // redirect into the game (lang from token)
   });

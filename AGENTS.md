@@ -61,7 +61,6 @@ packages/
   backend/                    daily-puzzle backend (pkg @whippin/backend, #2)
     src/
       handler.ts              createHandler() — the ONE day/404/CORS/Puzzle logic (Lambda + local)
-      day.ts                  authoritative time: 22:00-ET DST-correct active day + reset info
       store.ts                PuzzleStore interface (date+lang -> Puzzle | null)
       s3Store.ts, fsStore.ts  store impls: S3 (prod) and local FS (#17), both read the same key
       layout.ts               storeKey() — the <date>.<lang>.json key shared by readers + publish (#17/#4)
@@ -76,6 +75,7 @@ packages/
     cdk.json                  CDK config (app command, context)
   shared/                     cross-cutting TS consumed by web (pkg @whippin/shared)
     src/slug.ts               fold() — the slug/fold contract (byte-identical to slug())
+    src/day.ts                the ONE 22:00-ET DST-correct game-day logic (client + server + publish)
     src/types.ts              per-puzzle schema types (Puzzle, Hole, RankMap, …)
     src/heat.ts               heatColor() — heat ramp (rank exponents, heat grid, share card)
     src/progressColor.ts      progressColor() — progress ramp (progress bar, selector badge); shares ramp.ts
@@ -83,7 +83,7 @@ packages/
   web/                        React + Vite + TS front (pkg @whippin/web)
     src/
       hooks/useVocab.ts       fetch+cache the per-language existence Set (once per session)
-      hooks/usePuzzle.ts      ask the backend for today's puzzle (+ ?puzzle= file override)
+      hooks/usePuzzle.ts      fetch the client-computed day's puzzle (+ ?puzzle= file override)
       api.ts                  backend client: puzzleUrl/todayUrl, ?puzzle= override, 404->NO PUZZLE
       screens/Game.tsx        the guess loop, hole state (imports fold from @whippin/shared)
       game/scoring.ts         s(rank), holeProgress, computeProgress
@@ -277,7 +277,9 @@ exists in the per-language vocabulary set, including cold misses and non-improvi
 warm hits. Repeated guesses are deduped by folded slug (`fold(raw)`), so accent
 variants that compare equal count once. Invalid non-words are rejected before
 counting. The score is displayed as the large background number during the round and
-as `SCORE <tries>` at game end.
+as `<tries> TRIES` at game end (the unit is NAMED — on the solved screen, the share
+card, and the share text — because "SCORE" alone reads as points to maximize when
+lower is better; singular `TRY` at 1).
 
 ### Testing
 
@@ -423,27 +425,29 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
 - **Puzzles:** generated into `generation/output/word/<lang>/` (gitignored), then
   published to the store (`pnpm puzzle:publish`). They are no longer kept under
   `web/public/word` — the front serves the day's puzzle from the backend (#6).
-- **Routing (#6) + version-in-URL cache-busting (#42):** normal play asks the
-  **backend** for today's puzzle. `/today` is BOTH the day source and the front door:
-  `usePuzzle` fetches `GET <VITE_API_BASE_URL>/today?lang=<lang>` **first** — the
-  `no-store` version pointer (`{ date, dayNumber, version, … }`, `version` = the puzzle's
-  S3 ETag). `version === null` ⇒ **NO PUZZLE** (no second fetch); otherwise it fetches
-  `GET …/?lang=<lang>&v=<version>` for the **content-addressed** puzzle (served
-  `immutable`). A republish yields a new `version` → a new URL → a guaranteed CDN + browser
-  miss, so a corrected puzzle shows on a **normal reload with no CloudFront invalidation**.
-  The handler keys only on `lang` (`v` is an opaque cache-busting token, added to the
-  CloudFront cache key), but **`v` is REQUIRED** — the puzzle endpoint 400s a request
-  without it, so there is **no canonical fallback**: a failed `/today` is a real (retryable,
-  #14) error, not a silent degrade. The **server owns the date** (22:00 ET flip); the client
-  no longer computes it. A backend **404 → `noPuzzle`** (NO PUZZLE TODAY), any other failure
-  → `error`. The old
-  `web/src/puzzleSchedule.ts` / `todayKey()` / `PUZZLE_SCHEDULE` are **removed**. Test
-  overrides: `?puzzle=<path|url>` loads a static file directly (kept, but the app still
-  requires a configured backend base); `?date=` is **dropped** (server owns time).
-  `VITE_API_BASE_URL` (see `web/.env.example`) configures the backend base and is
-  required for `pnpm dev` / `pnpm build`; the frontend must not silently use its own
-  origin as the backend. `usePuzzle` exposes `dayNumber` for persist (#7) /
-  already-solved (#9).
+- **Routing (#6), date-addressed (decided 2026-07-05, replacing the #42 version-in-URL
+  scheme):** the **client computes the active game day itself** — `shared/src/day.ts`
+  (moved from the backend) is the ONE 22:00-ET DST-correct day definition, used by the
+  web, the handler, and `publish`. Normal play is **ONE fetch**:
+  `GET <VITE_API_BASE_URL>/?lang=<lang>&date=<YYYY-MM-DD>` with the client-computed
+  `activeDate`. The server serves exactly the requested date but **only within ±1 day**
+  of its own active day (clock-skew tolerance; never the archive or a pre-published
+  future day; beyond the window → 404). Because the URL names the day, the persisted
+  `dayNumber(date)` always matches the served puzzle — the old `/today`→puzzle pair and
+  its 22:00-flip race are gone. **Caching:** the puzzle is served
+  `max-age=300, s-maxage=31536000` — the CDN holds a (date, lang) entry effectively
+  forever, and `pnpm puzzle:publish --s3` **invalidates `/*` on the API distribution**
+  after upload, so a republished correction reaches the edge immediately and browsers
+  within ~5 min on a normal reload. `date` missing/malformed → 400 (protocol violation).
+  `/today` remains as a **diagnostic** (server's date/dayNumber/reset info, `no-store`);
+  the client no longer reads it — `useToday` computes the day locally with no fetch, and
+  the `PuzzleStore.version()` / S3 `HeadObject` plumbing was removed. A backend **404 →
+  `noPuzzle`** (NO PUZZLE TODAY), any other failure → `error`. Test overrides:
+  `?puzzle=<path|url>` loads a static file directly (kept, but the app still requires a
+  configured backend base). `VITE_API_BASE_URL` (see `web/.env.example`) configures the
+  backend base and is required for `pnpm dev` / `pnpm build`; the frontend must not
+  silently use its own origin as the backend. `usePuzzle` exposes `dayNumber` for
+  persist (#7) / already-solved (#9).
 - **SVG icons (pattern to follow):** monochrome UI icons live as `.svg` files under
   `web/src/assets/icons/` and are imported as **inline React components** via
   `vite-plugin-svgr` — `import Icon from '../assets/icons/name.svg?react'` (the `?react`
@@ -495,10 +499,13 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   <file>` places a generated puzzle into the store — **local by default**, `--s3`
   to push real S3, `--day YYYY-MM-DD` to target a game day (defaults to the
   active 22:00-ET day). `--s3` always targets the ONE bucket the infra package deploys —
-  `publish` reads its name from the `PuzzleBucketName` output of `WhippinBackendStack`
-  (us-east-1) via CloudFormation `DescribeStacks` (#4), so the infra code is the single
-  source of truth and there is **no bucket flag/env** (needs `cloudformation:DescribeStacks`
-  + the SDK `@aws-sdk/client-cloudformation`; the bucket is addressed in us-east-1 where the
+  `publish` reads its name (and the API `DistributionId`) from the outputs of
+  `WhippinBackendStack` (us-east-1) via CloudFormation `DescribeStacks` (#4), so the infra
+  code is the single source of truth and there is **no bucket flag/env**. After the upload
+  it **invalidates `/*` on the API distribution** (the date-addressed puzzle URL is
+  CDN-cached long, so a republish must purge it; needs `cloudformation:DescribeStacks` +
+  `cloudfront:CreateInvalidation`
+  + the SDKs `@aws-sdk/client-cloudformation`/`client-cloudfront`; the bucket is addressed in us-east-1 where the
   stack is pinned). Store key (shared by readers + writer in `backend/src/layout.ts`,
   identical for local FS and S3): flat `<root>/<date>.<lang>.json` — fully determined by
   (date, lang), so the stores GetObject/readFile it directly (no list+filter) and it
@@ -518,11 +525,12 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   that bundles `backend/src/index.ts` with esbuild (ESM, `@aws-sdk/*` left external) and
   carries `PUZZLE_BUCKET`/`ALLOWED_ORIGIN`, and a **CloudFront** distribution in front of an
   **IAM-auth Function URL via OAC** (only CloudFront may invoke it). The Lambda gets
-  **read-only** S3 (`bucket.grantRead`, which also covers the `HeadObject` the version
-  pointer uses). Cache policy keys on path + the `lang` **and `v`** query strings (#42) and
-  honours the origin `Cache-Control` — the puzzle endpoint **requires `v`** (400 otherwise),
-  so every 200 is version-addressed and served `immutable`; `/today` is `no-store` (the
-  always-fresh version pointer); maxTtl = 1 day.
+  **read-only** S3 (`bucket.grantRead`) and a **reserved concurrency of 10** (cost/abuse
+  ceiling for the unauthenticated `/og` render until WAF is warranted). Cache policy keys
+  on path + the `lang` **and `date`** query strings and honours the origin
+  `Cache-Control` — the puzzle endpoint **requires `date`** (400 otherwise) and is served
+  `max-age=300, s-maxage=31536000` (CDN holds it until `puzzle:publish --s3` invalidates);
+  `/today` (diagnostic) is `no-store`; maxTtl = 365 days.
   Outputs: `ApiUrl` (→ `VITE_API_BASE_URL`), `PuzzleBucketName` (#4 upload target),
   `FunctionUrl`, `DistributionDomainName`. Commands: `pnpm infra:synth` / `infra:diff` /
   `infra:deploy` (root) or `pnpm --filter @whippin/infra <synth|deploy|diff|destroy>`;

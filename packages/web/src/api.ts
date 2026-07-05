@@ -1,7 +1,8 @@
 // Client of the daily-puzzle backend (Lambda Function URL behind CloudFront, #2).
-// The SERVER is the authoritative time source: it decides "today" (the 22:00 ET,
-// DST-correct flip) and serves the matching puzzle. The client never computes the
-// date for normal play — it just asks the backend.
+// The puzzle URL is DATE-addressed: the client computes the active 22:00-ET game day
+// itself (the shared day.ts — the same DST-correct code the server validates with)
+// and asks for that date's puzzle in ONE fetch. The server only serves dates within
+// a ±1-day clock-skew window of its own active day.
 
 import type { Puzzle, Word } from '@whippin/shared';
 
@@ -20,33 +21,13 @@ function requireApiBase(base: string): string {
   return base;
 }
 
-// The active day's puzzle for a language: GET <base>/?lang=<lang>&v=<version>. The server
-// resolves which day it is; the client passes the language + the content `version` it read
-// from /today. `version` is REQUIRED (issue #42): the endpoint is version-addressed, so a
-// corrected puzzle gets a new version -> a new URL -> a guaranteed CDN + browser miss, and
-// the fresh puzzle shows on a normal reload with no CloudFront invalidation. A request
-// without `v` is a protocol violation the backend rejects with 400.
-export function puzzleUrl(lang: string, version: string, base: string = apiBase()): string {
-  return `${requireApiBase(base)}/?lang=${encodeURIComponent(lang)}&v=${encodeURIComponent(version)}`;
-}
-
-// The server's day metadata + version pointer: GET <base>/today[?lang=<lang>] ->
-// { date, dayNumber, version, ... }. The front keys on `dayNumber` (stable,
-// language-independent) for persistence (#7) and the already-solved-today screen (#9);
-// `version` (present only when a `lang` is passed) builds the cache-busting puzzle URL
-// (#42). This response is `no-store`, so it always reflects the current version. `lang`
-// is optional: callers that only need `dayNumber` (e.g. useToday) can omit it.
-export function todayUrl(lang?: string, base: string = apiBase()): string {
-  const q = lang ? `?lang=${encodeURIComponent(lang)}` : '';
-  return `${requireApiBase(base)}/today${q}`;
-}
-
-// Shape of GET /today the front keys on (the backend returns more fields, ignored).
-export interface Today {
-  date: string; // "YYYY-MM-DD"
-  dayNumber: number; // whole days since the Unix epoch
-  version?: string | null; // content version of today's puzzle (null when none) — #42
-  secondsUntilNextReset?: number; // whole seconds until the 22:00-ET flip (caches expire then)
+// A day's puzzle for a language: GET <base>/?lang=<lang>&date=<YYYY-MM-DD>. `date` is
+// the active game day the CLIENT computed (shared `activeDate`); the server validates it
+// sits within its clock-skew window and serves exactly that day's puzzle — so what the
+// front persists under `dayNumber(date)` is always the puzzle it plays (no flip race).
+// A request without `date` is a protocol violation the backend rejects with 400.
+export function puzzleUrl(lang: string, date: string, base: string = apiBase()): string {
+  return `${requireApiBase(base)}/?lang=${encodeURIComponent(lang)}&date=${encodeURIComponent(date)}`;
 }
 
 // A ?puzzle= test override resolves a puzzle FILE directly, bypassing the backend
