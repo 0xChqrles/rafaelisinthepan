@@ -1023,3 +1023,112 @@ button * {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ===================== onboarding tutorial (issue #51) ===================== */
+/* Screen contract: EXPLANATIONS in the top box, INTERACTIONS at the bottom (mix
+   button, then keyboard), the word/sentence in the middle. No modals, no backdrop —
+   the coach box is a game dialog, not an interruption. */
+
+/* The tutorial's boards are SHORT (one word / a five-word sentence): cap the whole
+   screen at the keyboard's width, much narrower than the real game's 1200px column,
+   so the sentence reads centered on desktop instead of hugging the left edge. The
+   HUD (progress bar) shrinks with it. */
+.tutorial {
+  max-width: 680px;
+}
+.tutorial .hud {
+  width: min(680px, calc(100vw - 48px));
+}
+
+/* The concept stage is CLEAN: explanation on top, ONE big centered word in the
+   middle, the interaction at the bottom, nothing else. The word is the star. */
+.tutorial--word .play,
+.tutorial--word .input-area {
+  align-items: center;
+}
+.tutorial--word .phrase {
+  font-size: clamp(28px, 7vw, 48px);
+  text-align: center;
+}
+
+/* The explanation box: app background + surface border (a dialog, not a modal),
+   pinned to the top. Its size NEVER changes: the text area is exactly three lines
+   tall whatever the copy or the typewriter's progress, and text starts on the first
+   line. On the sentence stage it sits below the HUD's progress bar. */
+.coach {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 120;
+  width: min(560px, calc(100vw - 32px));
+  background: var(--bg);
+  border: 3px solid var(--surface);
+  padding: 16px 18px;
+}
+.tutorial .hud ~ .coach,
+.tutorial:not(.tutorial--word) .coach {
+  top: 84px;
+}
+.coach-text {
+  margin: 0;
+  font-family: var(--press);
+  font-size: clamp(13px, 2vh, 16px);
+  line-height: 2;
+  /* EXACTLY three lines, top-aligned — the box is a fixed dialog window, not a
+     balloon. Copy that wraps past three lines is a COPY bug (too much to read);
+     the overflow clip makes that mistake visible instead of growing the box. */
+  height: 6em; /* 3 lines × line-height 2 */
+  overflow: hidden;
+  color: var(--fg);
+  text-shadow: none;
+}
+/* Rich inline words in the explanations — they look like what they are in-game:
+   blue = the secret (solved color); .rt-word = a hint word, gold with its
+   heat-colored exponent (the sup reuses .hole-rank). */
+.rt-blue {
+  color: var(--accent);
+}
+.rt-word {
+  color: var(--hole);
+  white-space: nowrap;
+}
+
+/* The mix button — the bottom interaction of the demo, standing where the keyboard
+   will land ("the mix button moves down, the keyboard moves up"). Full width of the
+   keyboard's footprint. */
+.mix-btn {
+  width: 100%;
+  max-width: 680px; /* the keyboard's max-width — same interaction footprint */
+  font-family: var(--press);
+  font-size: clamp(13px, 1.9vh, 16px);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--bg);
+  background: var(--hole);
+  border: 0;
+  padding: 16px 30px;
+  cursor: pointer;
+  text-shadow: none;
+  transition: filter 0.08s linear, opacity 0.08s linear;
+}
+.mix-btn:hover {
+  filter: brightness(1.12);
+}
+.mix-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.mix-btn:focus-visible {
+  outline: 3px solid var(--accent-dim);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .coach {
+    padding: 12px 14px;
+  }
+  .coach-text {
+    font-size: 12px; /* 3-line height scales with it (6em) */
+  }
+}

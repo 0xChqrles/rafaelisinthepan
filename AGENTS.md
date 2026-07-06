@@ -86,6 +86,7 @@ packages/
       hooks/usePuzzle.ts      fetch the client-computed day's puzzle (+ ?puzzle= file override)
       api.ts                  backend client: puzzleUrl/todayUrl, ?puzzle= override, 404->NO PUZZLE
       i18n.ts                 UI chrome strings (en+fr), t(lang, key); parity type-enforced
+      tutorial/               onboarding (#51): Tutorial.tsx + data scripts/<lang>.ts
       screens/Game.tsx        the guess loop, hole state (imports fold from @whippin/shared)
       game/scoring.ts         s(rank), holeProgress, computeProgress
       components/Phrase.tsx,Hole.tsx,WordInput.tsx,FloatingHit.tsx  rendering
@@ -477,6 +478,38 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   backend base and is required for `pnpm dev` / `pnpm build`; the frontend must not
   silently use its own origin as the backend. `usePuzzle` exposes `dayNumber` for
   persist (#7) / already-solved (#9).
+- **Onboarding tutorial (#51, redesigned 2026-07-06):** first visit (persisted
+  `onboarded` unset) plays a **two-stage** scripted tutorial in the REAL game
+  components instead of the day's puzzle; finishing sets the flag. **Screen
+  contract:** explanations in a TOP box (typewritten like a game dialog —
+  `tutorial/CoachText.tsx`, app-bg + surface border — with inline markup so words
+  look like what they are in-game: `[[b:]]` blue secret, `[[w:word^rank]]` gold +
+  heat exponent, `[[m:]]` coldest heat, `[[n:]]` heat number); INTERACTIONS at the
+  bottom (mix button, then keyboard). **No SKIP, no flag, no modals/NEXT** — browser
+  navigation is the exit, and the language was already chosen to get here. **Stage
+  1** is a single word, concept-first: the secret is SHOWN (blue); **MIX / MIX
+  AGAIN / MIX EVEN MORE** slot-roll it to −1, −10, −100 (one identical animation:
+  500ms, ≥9 flashed words each, decelerating; no exponent mid-spin, it pops in a
+  beat after each landing with its space pre-reserved) — landing on the start word
+  (the demo explains where start words come from), where the button gives way to
+  the keyboard (`tutorial/MixWord.tsx` is the display-only widget; Tutorial owns
+  the animation); three gated guesses then show distance
+  (farther, no move), MISS, and improvement, each rolling straight into the next
+  prompt (no after-panels); finally the player types back to the secret with the
+  REAL vocabulary (`useVocab` loads in the tutorial), nudged with the answer after 3
+  straight MISSes. **Stage 2** is an easy two-hole sentence played **unguided** —
+  its rank maps are stocked so the obvious first guesses land on BOTH holes, so
+  multi-hole broadcast is discovered, not told; solving it ends the tutorial
+  **wordlessly** (the tray swaps to `N TRIES` + PLAY TODAY'S PUZZLE; copy is
+  deliberately terse throughout, no under-the-hood talk). The tutorial is
+  **data-driven**:
+  boards, ranks, guesses and steps live in `web/src/tutorial/scripts/{en,fr}.ts`
+  (copy keys in `i18n.ts`) and `tutorial/scripts.test.ts` guards the lesson arc.
+  Gated steps use synthetic vocab/prefix sets (the keyboard's existing contract);
+  free steps use the real sets. The tutorial writes NOTHING to `rounds`; the store
+  `migrate` (v2) grandfathers any blob with prior play state so veterans never see it
+  uninvited. Replay via the HUD `?`; `?tutorial=1` forces it; a `?puzzle=` override
+  suppresses the first-visit trigger.
 - **UI chrome is localized + a11y'd (decided 2026-07-06):** `web/src/i18n.ts` holds every
   UI string in **en + fr** (`t(lang, key)`; the `satisfies` clause makes a missing
   translation a type error, so parity needs no test). Game screens resolve strings with

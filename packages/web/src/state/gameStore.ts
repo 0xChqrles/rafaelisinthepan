@@ -52,6 +52,9 @@ interface PersistedState {
   // Last-played language: seeds the `/` redirect so a return visit lands where you
   // last played (falls back to the browser language, then English).
   lastLang: string | null;
+  // The onboarding tutorial (#51) has been completed or skipped. Global, not
+  // per-language — the mechanic is the same in both.
+  onboarded: boolean;
 }
 
 interface GameState extends PersistedState {
@@ -61,6 +64,9 @@ interface GameState extends PersistedState {
 
   // Remember the last-played language (drives the `/` redirect). Ignores non-languages.
   setLastLang: (lang: string) => void;
+
+  // Mark the onboarding tutorial as seen (finish AND skip both count — never re-nag).
+  setOnboarded: () => void;
 
   // Reconcile the persisted rounds to `key`. A matching key with matching holes
   // rehydrates its stored progress; a brand-new key — or the same key whose puzzle was
@@ -95,16 +101,42 @@ function freshRound(initialHoles: RuntimeHole[]): RoundProgress {
   return { holes: initialHoles, guessCount: 0, tried: [], progress: 0 };
 }
 
+// Version upgrades for the persisted blob (exported for the invariant tests).
+//   v0 was a single top-level round ({ roundKey, holes, ... }); the shape is now a keyed
+//     map, so discard the old state rather than mis-merge it (one-time reset).
+//   v1 may still carry the RETIRED keyboard `layout` preference (removed with the AZERTY
+//     layout) — picking only the current fields silently drops it. v1 also predates the
+//     onboarding tutorial (#51): anyone with existing play state has already learned the
+//     game, so GRANDFATHER them (rounds or a lastLang -> onboarded) — a veteran must
+//     never be surprised by the tutorial.
+export function migratePersisted(persisted: unknown, version: number): PersistedState {
+  if (version < 1) return { rounds: {}, lastLang: null, onboarded: false };
+  const p = persisted as Partial<PersistedState>;
+  const rounds = p.rounds ?? {};
+  const lastLang = p.lastLang ?? null;
+  const onboarded =
+    typeof p.onboarded === 'boolean'
+      ? p.onboarded
+      : Object.keys(rounds).length > 0 || lastLang != null;
+  return { rounds, lastLang, onboarded };
+}
+
 export const useGameStore = create<GameState>()(
   persist(
     (set, get) => ({
       rounds: {},
       lastLang: null,
+      onboarded: false,
       activeKey: null,
 
       setLastLang: (lang) => {
         if (!isLang(lang) || get().lastLang === lang) return;
         set({ lastLang: lang });
+      },
+
+      setOnboarded: () => {
+        if (get().onboarded) return;
+        set({ onboarded: true });
       },
 
       ensureRound: (key, initialHoles) =>
@@ -179,18 +211,15 @@ export const useGameStore = create<GameState>()(
     {
       name: 'whippin-round',
       storage,
-      version: 1,
-      // v0 was a single top-level round ({ roundKey, holes, ... }); the shape is now a
-      // keyed map, so discard the old state rather than mis-merge it (one-time reset).
-      // A v1 blob may still carry the RETIRED keyboard `layout` preference (removed with
-      // the AZERTY layout) — pick only the current fields so it is silently dropped.
-      migrate: (persisted, version): PersistedState => {
-        if (version < 1) return { rounds: {}, lastLang: null };
-        const p = persisted as PersistedState;
-        return { rounds: p.rounds, lastLang: p.lastLang };
-      },
-      // Persist the rounds and last language; activeKey and the actions are transient.
-      partialize: (s): PersistedState => ({ rounds: s.rounds, lastLang: s.lastLang }),
+      version: 2, // v2: + onboarded (see migratePersisted for the upgrade path)
+      migrate: migratePersisted,
+      // Persist rounds, last language and the onboarding flag; activeKey and the
+      // actions are transient.
+      partialize: (s): PersistedState => ({
+        rounds: s.rounds,
+        lastLang: s.lastLang,
+        onboarded: s.onboarded,
+      }),
     },
   ),
 );

@@ -12,7 +12,7 @@
 //   - lastLang remembers the last valid language (seeds the `/` redirect).
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useGameStore, roundKeyForDay } from './gameStore';
+import { useGameStore, roundKeyForDay, migratePersisted } from './gameStore';
 import type { RuntimeHole } from '@whippin/shared';
 
 const initial = useGameStore.getState();
@@ -33,7 +33,7 @@ function activeRound() {
 
 beforeEach(() => {
   // Reset to a pristine store between tests (replace, keeping the actions).
-  useGameStore.setState({ rounds: {}, lastLang: null, activeKey: null }, false);
+  useGameStore.setState({ rounds: {}, lastLang: null, onboarded: false, activeKey: null }, false);
 });
 
 describe('roundKeyForDay', () => {
@@ -220,6 +220,47 @@ describe('setLastLang — remembers the last valid language', () => {
     expect(useGameStore.getState().lastLang).toBe('fr');
     setLastLang('de'); // not a supported language -> ignored
     expect(useGameStore.getState().lastLang).toBe('fr');
+  });
+});
+
+describe('onboarded — the tutorial flag (#51)', () => {
+  it('setOnboarded marks the tutorial seen (finish AND skip both call it)', () => {
+    expect(useGameStore.getState().onboarded).toBe(false);
+    useGameStore.getState().setOnboarded();
+    expect(useGameStore.getState().onboarded).toBe(true);
+  });
+});
+
+describe('migratePersisted — persisted-blob upgrades', () => {
+  it('discards a v0 blob entirely (one-time reset)', () => {
+    expect(migratePersisted({ roundKey: 'x', holes: [] }, 0)).toEqual({
+      rounds: {},
+      lastLang: null,
+      onboarded: false,
+    });
+  });
+
+  it('grandfathers a v1 blob with prior play state — a veteran never sees the tutorial', () => {
+    const rounds = { 'd:5:fr': { holes: freshHoles(), guessCount: 2, tried: ['a', 'b'], progress: 10 } };
+    expect(migratePersisted({ rounds, lastLang: 'fr' }, 1).onboarded).toBe(true);
+    // Either signal alone is enough: rounds without lastLang, or lastLang without rounds.
+    expect(migratePersisted({ rounds, lastLang: null }, 1).onboarded).toBe(true);
+    expect(migratePersisted({ rounds: {}, lastLang: 'en' }, 1).onboarded).toBe(true);
+  });
+
+  it('a v1 blob with NO play state gets the tutorial (onboarded stays false)', () => {
+    expect(migratePersisted({ rounds: {}, lastLang: null }, 1).onboarded).toBe(false);
+  });
+
+  it('keeps an explicit onboarded value over the grandfathering inference', () => {
+    const rounds = { 'd:5:fr': { holes: freshHoles(), guessCount: 2, tried: ['a'], progress: 0 } };
+    expect(migratePersisted({ rounds, lastLang: 'fr', onboarded: false }, 2).onboarded).toBe(false);
+  });
+
+  it('drops retired fields (v1 keyboard layout) while keeping the current ones', () => {
+    const out = migratePersisted({ rounds: {}, lastLang: 'en', layout: 'azerty' }, 1);
+    expect(out).toEqual({ rounds: {}, lastLang: 'en', onboarded: true });
+    expect('layout' in out).toBe(false);
   });
 });
 

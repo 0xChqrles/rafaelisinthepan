@@ -1,9 +1,10 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import usePuzzle from './hooks/usePuzzle';
 import LanguageSelect from './screens/LanguageSelect';
 import Game from './screens/Game';
 import LoadError from './components/LoadError';
 import NoPuzzle from './components/NoPuzzle';
+import Tutorial from './tutorial/Tutorial';
 import { useGameStore } from './state/gameStore';
 import { useLocation, navigate } from './routing';
 import { parseRoute, resolveHomeLang, pathForLang, type LangCode } from './langs';
@@ -47,11 +48,34 @@ export default function App() {
 function GameRoute({ lang }: { lang: LangCode }) {
   const { puzzle, dayNumber, error, loading, noPuzzle, retry } = usePuzzle(lang);
   const setLastLang = useGameStore((s) => s.setLastLang);
+  const setOnboarded = useGameStore((s) => s.setOnboarded);
 
   // Visiting a puzzle route makes this the last-played language (seeds the `/` redirect).
   useEffect(() => {
     setLastLang(lang);
   }, [lang, setLastLang]);
+
+  // Onboarding tutorial (#51): a first visit (no persisted `onboarded`) plays the
+  // scripted dummy round INSTEAD of the day's puzzle — which keeps loading in the
+  // background and is revealed when the tutorial finishes or is skipped (both set the
+  // flag). `?tutorial=1` forces it (dev/testing); a `?puzzle=` override is a dev path
+  // and wins over the first-visit trigger. The HUD's "?" re-opens it on demand.
+  // The URL params are read once per page load, like the ?puzzle= override itself.
+  const [forced, hasOverride] = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    return [params.get('tutorial') === '1', params.has('puzzle')] as const;
+  }, []);
+  const [tutorialOpen, setTutorialOpen] = useState<boolean>(
+    () => forced || (!useGameStore.getState().onboarded && !hasOverride),
+  );
+  const closeTutorial = useCallback(() => {
+    setOnboarded();
+    setTutorialOpen(false);
+  }, [setOnboarded]);
+  const openTutorial = useCallback(() => setTutorialOpen(true), []);
+
+  // key={lang}: switching language mid-tutorial restarts it in that language.
+  if (tutorialOpen) return <Tutorial key={lang} lang={lang} onDone={closeTutorial} />;
 
   return (
     <>
@@ -61,7 +85,7 @@ function GameRoute({ lang }: { lang: LangCode }) {
       {loading && <p className="status">{t(lang, 'loading')}</p>}
       {error !== null && <LoadError message={t(lang, 'failedPuzzle')} lang={lang} onRetry={retry} />}
       {noPuzzle && <NoPuzzle lang={lang} />}
-      {puzzle && <Game puzzle={puzzle} dayNumber={dayNumber} />}
+      {puzzle && <Game puzzle={puzzle} dayNumber={dayNumber} onHelp={openTutorial} />}
     </>
   );
 }

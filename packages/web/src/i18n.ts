@@ -41,6 +41,56 @@ const STRINGS = {
   ariaEnter: { en: 'enter', fr: 'entrée' },
   ariaBackspace: { en: 'backspace', fr: 'effacer' },
   ariaDash: { en: 'dash', fr: 'tiret' },
+  ariaHelp: { en: 'How to play', fr: 'Comment jouer' },
+  // ---- onboarding tutorial (#51). In guess-step copy, {WORD} is replaced by the
+  // script's expected word (uppercased) so the copy can never drift from the script.
+  // Tutorial copy is deliberately TERSE: the feedback on screen does the teaching,
+  // the top box only sets up the next move. No under-the-hood talk. HARD LIMIT: the
+  // coach box is exactly 3 lines and clips — if a string wraps past three lines
+  // (~70 chars incl. exponents at the mobile width), it is too much: cut it.
+  // Copy uses CoachText's inline markup so words LOOK like what they are in-game:
+  // [[b:secret]] blue, [[w:hint^rank]] gold + heat exponent, [[m:miss]] coldest heat.
+  tutMixIntro: {
+    en: 'Welcome to Whippin AI, please start by mixing this word.',
+    fr: 'Bienvenue sur Whippin AI, commence par mélanger ce mot.',
+  },
+  tutMix: { en: 'MIX', fr: 'MÉLANGER' },
+  tutMixAgain: { en: 'MIX AGAIN', fr: 'MÉLANGE ENCORE' },
+  tutMixMore: { en: 'MIX EVEN MORE', fr: 'ENCORE PLUS' },
+  tutMixed1: {
+    en: '[[w:sea^1]] is the closest word to [[b:ocean]].',
+    fr: '[[w:mer^1]] est le mot le plus proche de [[b:océan]].',
+  },
+  tutMixed10: {
+    en: '[[w:beach^10]] is the 10th closest word to [[b:ocean]].',
+    fr: '[[w:plage^10]] est le 10e mot le plus proche de [[b:océan]].',
+  },
+  tutGuessFar: {
+    en: 'Type [[w:desert^200]].',
+    fr: 'Tape [[w:désert^200]].',
+  },
+  tutGuessMiss: {
+    en: 'Now type a completely different word: [[m:music]].',
+    fr: 'Maintenant, tape un mot complètement différent : [[m:musique]].',
+  },
+  tutGuessCloser: {
+    en: '[[m:music]] was a MISS — too far to rank. Now try [[w:boat^50]].',
+    fr: '[[m:musique]] était un MISS — trop loin pour être classé. Essaie [[w:bateau^50]].',
+  },
+  tutFind: {
+    en: 'Now type the very first word — the blue one.',
+    fr: 'Maintenant, tape le tout premier mot — le bleu.',
+  },
+  tutFindNudge: {
+    en: 'Forgot it? It was [[b:ocean]].',
+    fr: "Oublié ? C'était [[b:océan]].",
+  },
+  tutSentence: {
+    en: 'Now a real one: this sentence hides TWO words. You are on your own.',
+    fr: 'Maintenant, une vraie : cette phrase cache DEUX mots. À toi de jouer.',
+  },
+  // Sits in SHARE's slot on the real solved layout, so it stays as short as SHARE.
+  tutPlay: { en: 'PLAY', fr: 'JOUER' },
 } satisfies Record<string, Record<UiLang, string>>;
 
 export type UiKey = keyof typeof STRINGS;

@@ -54,12 +54,19 @@ export default function WordInput({ value, history, onType, onBackspace, onSubmi
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      // Leave browser shortcuts (Cmd/Ctrl/Alt combos) and any real editable field alone.
+      // Leave browser shortcuts (Cmd/Ctrl/Alt combos) and any real editable field
+      // alone. A focused BUTTON keeps its native Enter/Space activation too — the
+      // on-screen keys never take focus (pointerdown+preventDefault), so this only
+      // fires for deliberate keyboard focus (Tab), where activating the focused
+      // control is what the user means (e.g. the tutorial's NEXT).
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const target = e.target as HTMLElement | null;
       if (
         target &&
-        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'BUTTON' ||
+          target.isContentEditable)
       ) {
         return;
       }

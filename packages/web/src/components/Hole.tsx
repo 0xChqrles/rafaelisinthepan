@@ -12,7 +12,9 @@ const HIT_HEAT_CAP = 150;
 // Hole heat: current rank -> [0 cold .. 1 hot] (rank 0 = solved = hot).
 // Logarithmic scale: color changes quickly near the goal (low ranks) and slowly
 // far away (the 100->150 gap weighs much less than 1->10).
-function rankHeatColor(rank: number, startRank: number) {
+// Exported: the tutorial's scramble demo (#51) paints its exponent with the same
+// ramp so its word reads exactly like a real hole.
+export function rankHeatColor(rank: number, startRank: number) {
   const maxRank = Math.max(1, startRank || rank || 1);
   const heat = 1 - Math.log(rank + 1) / Math.log(maxRank + 1);
   return heatColor(heat);
