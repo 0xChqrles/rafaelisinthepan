@@ -9,6 +9,9 @@ import { heatColor } from '@whippin/shared';
 //   [[w:word^rank]]  a hint word — gold with its heat-colored exponent, like a hole
 //   [[m:word]]       a MISS word — the coldest heat color
 //   [[n:123]]        a bare number — its heat color
+// The FULL text is laid out from the first frame — every character rendered, the
+// unrevealed ones merely invisible — so the wrap points are final before the first
+// letter shows and a word being "typed" can never jump to the next line mid-word.
 // The visible text is aria-hidden (a live region would announce every keystroke of
 // the typewriter); callers pass richToPlain() to the screen-reader region instead.
 
@@ -59,45 +62,55 @@ const TYPE_MS = 18; // per character — brisk, game-dialog pace
 // past the cold end, exactly like a far float in-game.
 const TEXT_HEAT_SCALE = 100;
 
+const HIDDEN: CSSProperties = { visibility: 'hidden' };
+
+// Every character is ALWAYS rendered — hidden until the budget reaches it — so the
+// paragraph's layout (and its wrap points) never changes while the text types on.
+// One span per character keeps the browser's normal word-wrapping (breaks still
+// happen at the spaces), it just gates each glyph's visibility.
+function chars(text: string, budget: number) {
+  return [...text].map((ch, i) => (
+    // eslint-disable-next-line react/no-array-index-key -- static per copy string
+    <span key={i} style={i < budget ? undefined : HIDDEN}>
+      {ch}
+    </span>
+  ));
+}
+
 function renderSeg(s: Seg, budget: number, key: number) {
-  const take = Math.max(0, Math.min(budget, s.text.length));
-  const shown = s.text.slice(0, take);
-  if (s.kind === 'plain') return <Fragment key={key}>{shown}</Fragment>;
+  if (s.kind === 'plain') return <Fragment key={key}>{chars(s.text, budget)}</Fragment>;
   if (s.kind === 'blue') {
     return (
       <span key={key} className="rt-blue">
-        {shown}
+        {chars(s.text, budget)}
       </span>
     );
   }
   if (s.kind === 'miss') {
     return (
       <span key={key} style={{ color: heatColor(0) }}>
-        {shown}
+        {chars(s.text, budget)}
       </span>
     );
   }
   if (s.kind === 'num') {
     return (
       <span key={key} style={{ color: rankHeatColor(s.rank, TEXT_HEAT_SCALE) }}>
-        {shown}
+        {chars(s.text, budget)}
       </span>
     );
   }
-  // Hint word: gold, then its exponent types on in the heat color of its rank.
-  const sup = `-${s.rank}`;
-  const supTake = Math.max(0, Math.min(budget - s.text.length, sup.length));
+  // Hint word: gold, then its exponent types on in the heat color of its rank. The
+  // sup is always in the layout too, so even ITS reveal moves nothing.
   const rankStyle: CSSProperties & Record<'--rank-color', string> = {
     '--rank-color': rankHeatColor(s.rank, TEXT_HEAT_SCALE),
   };
   return (
     <span key={key} className="rt-word">
-      {shown}
-      {supTake > 0 && (
-        <sup className="hole-rank" style={rankStyle}>
-          {sup.slice(0, supTake)}
-        </sup>
-      )}
+      {chars(s.text, budget)}
+      <sup className="hole-rank" style={rankStyle}>
+        {chars(`-${s.rank}`, budget - s.text.length)}
+      </sup>
     </span>
   );
 }
