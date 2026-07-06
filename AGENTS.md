@@ -478,9 +478,14 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   backend base and is required for `pnpm dev` / `pnpm build`; the frontend must not
   silently use its own origin as the backend. `usePuzzle` exposes `dayNumber` for
   persist (#7) / already-solved (#9).
-- **Onboarding tutorial (#51, redesigned 2026-07-06):** first visit (persisted
-  `onboarded` unset) plays a **two-stage** scripted tutorial in the REAL game
-  components instead of the day's puzzle; finishing sets the flag. **Screen
+- **Onboarding tutorial (#51, redesigned 2026-07-06):** the tutorial **never starts
+  without an action**. A first visit (persisted `onboarded` unset) lands on an
+  **invitation** (`tutorial/Invite.tsx`, standing in for the loading screen: "New to
+  the game? …" + TUTORIAL / SKIP — either sets the flag, so a veteran on a new
+  device is one SKIP from playing). The header's `?` re-opens it as a **replay**,
+  which carries an `×` exit on the coach box (a summoned tutorial is dismissible; a
+  chosen first run goes to its end). The tutorial itself is **two-stage**, in the
+  REAL game components. **Screen
   contract:** explanations in a TOP box (typewritten like a game dialog —
   `tutorial/CoachText.tsx`, app-bg + surface border — with inline markup so words
   look like what they are in-game: `[[b:]]` blue secret, `[[w:word^rank]]` gold +
@@ -506,8 +511,15 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   Gated steps use synthetic vocab/prefix sets (the keyboard's existing contract);
   free steps use the real sets. The tutorial writes NOTHING to `rounds`; the store
   `migrate` (v2) grandfathers any blob with prior play state so veterans never see it
-  uninvited. Replay via the HUD `?`; `?tutorial=1` forces it; a `?puzzle=` override
-  suppresses the first-visit trigger.
+  uninvited. Replay via the header `?`; `?tutorial=1` forces it; a `?puzzle=`
+  override suppresses the first-visit invitation.
+- **App header (decided 2026-07-06):** the game screen has a fixed **topbar** —
+  flag (language) left, the day's puzzle id (`#<dayNumber>`) centered, help `?`
+  right — full-bleed with a thin `--surface` bottom border separating it from the
+  app; the **progress bar sits in its own full-width row below it** (no more
+  flag/`?` squeezing the bar on mobile). The topbar is the extension point for
+  future chrome (streaks, stats, …). The tutorial renders no header (only its bar
+  on the sentence stage).
 - **UI chrome is localized + a11y'd (decided 2026-07-06):** `web/src/i18n.ts` holds every
   UI string in **en + fr** (`t(lang, key)`; the `satisfies` clause makes a missing
   translation a type error, so parity needs no test). Game screens resolve strings with

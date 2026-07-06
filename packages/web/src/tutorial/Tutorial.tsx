@@ -64,7 +64,18 @@ function freshHoles(stage: TutorialStage): RuntimeHole[] {
   }));
 }
 
-export default function Tutorial({ lang, onDone }: { lang: string; onDone: () => void }) {
+// `onExit` is passed on REPLAYS only (the header's "?"): a summoned tutorial must be
+// dismissible from anywhere — an "×" on the coach box — while a first, chosen one
+// runs to its end (the invitation was the moment to decline).
+export default function Tutorial({
+  lang,
+  onDone,
+  onExit,
+}: {
+  lang: string;
+  onDone: () => void;
+  onExit?: () => void;
+}) {
   const script = useMemo(() => scriptFor(lang), [lang]);
 
   const [stageIndex, setStageIndex] = useState(0);
@@ -342,6 +353,16 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
       {coachCopy && (
         <div className="coach">
           <CoachText key={coachCopy} copy={coachCopy} />
+          {onExit && (
+            <button
+              type="button"
+              className="coach-exit"
+              aria-label={t(lang, 'ariaExitTutorial')}
+              onClick={onExit}
+            >
+              ×
+            </button>
+          )}
         </div>
       )}
 

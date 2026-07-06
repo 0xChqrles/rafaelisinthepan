@@ -194,9 +194,9 @@ button * {
   align-items: start;
   gap: clamp(16px, 3vh, 32px);
   min-height: calc(100dvh - 48px);
-  /* Reserve the fixed HUD's band at the top so the play area centers between the HUD
-     and the tray, not between the viewport top and the tray. */
-  padding-top: 48px;
+  /* Reserve the fixed header + progress-bar band at the top so the play area centers
+     between them and the tray, not between the viewport top and the tray. */
+  padding-top: 128px;
   /* The on-screen keyboard's exact height (3 key rows + 2 gaps). The solved results
      reserve this SAME height (.tray min-height), so swapping the keyboard for the results
      never reflows the layout nor leaves an empty hole. Mirrors .kb-key / .keyboard. */
@@ -233,11 +233,49 @@ button * {
   justify-content: center;
 }
 
-/* --- HUD: header row pinned to the top — logo (home) + progress bar --- */
+/* --- App header (topbar): flag left, puzzle id centered, help right — separated
+   from the app by a thin bottom border. Full-bleed with an opaque background so
+   scrolling content passes UNDER it on mobile; the extension point for future
+   chrome (streaks, stats, …). --- */
+.topbar {
+  --hud-height: clamp(38px, 5vh, 46px);
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 60;
+  background: var(--bg);
+  border-bottom: 2px solid var(--surface);
+  font-family: var(--press);
+}
+.topbar-inner {
+  position: relative;
+  margin: 0 auto;
+  width: min(900px, calc(100vw - 48px));
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+/* The day's puzzle id — ABSOLUTELY centered so it never drifts with the side
+   controls' widths (decorative; the share text carries the real id). */
+.topbar-id {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: clamp(12px, 1.8vh, 14px);
+  letter-spacing: 1px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  padding-top: var(--cap-shift);
+}
+
+/* --- HUD: the progress bar's own full-width row, just below the header. --- */
 .hud {
   --hud-height: clamp(38px, 5vh, 46px);
   position: fixed;
-  top: 18px;
+  top: 70px; /* header (56px) + a breath */
   left: 50%;
   transform: translateX(-50%);
   z-index: 50;
@@ -246,6 +284,11 @@ button * {
   align-items: center;
   gap: 24px;
   font-family: var(--press);
+}
+/* The tutorial has no header (no flag, no help, no id) — its bar keeps the old top
+   position, right under the viewport edge. */
+.tutorial .hud {
+  top: 18px;
 }
 
 /* Logo doubles as the home button, sitting at the left of the HUD beside the bar.
@@ -896,12 +939,12 @@ button * {
     max-width: 100%;
   }
 
-  /* The play area still centers between the fixed HUD and the keyboard; a larger
-     padding-top clears the (slightly higher) mobile HUD. `stretch` makes the sentence +
-     input fill the width so their lines wrap inside the viewport rather than growing to
-     the longest line and overflowing. */
+  /* The play area still centers between the fixed header+bar and the keyboard;
+     padding-top clears both. `stretch` makes the sentence + input fill the width so
+     their lines wrap inside the viewport rather than growing to the longest line
+     and overflowing. */
   .game {
-    padding-top: 60px;
+    padding-top: 112px;
     gap: 16px;
     align-items: stretch;
     min-height: calc(100dvh - 44px);
@@ -922,11 +965,18 @@ button * {
     opacity: 0.15;
   }
 
-  /* Single-row header: the logo (home) beside a full-width progress bar. */
+  /* Compact header + a full-width progress bar right under it. */
+  .topbar-inner {
+    width: calc(100vw - 24px);
+    height: 48px;
+  }
   .hud {
-    top: 14px;
+    top: 58px;
     width: calc(100vw - 24px);
     gap: 12px;
+  }
+  .tutorial .hud {
+    top: 14px;
   }
   .progress-label {
     font-size: clamp(16px, 4.2vw, 20px);
@@ -1035,6 +1085,8 @@ button * {
    HUD (progress bar) shrinks with it. */
 .tutorial {
   max-width: 680px;
+  /* No header in the tutorial (no flag, no help, no id) — only its own bar band. */
+  padding-top: 56px;
 }
 .tutorial .hud {
   width: min(680px, calc(100vw - 48px));
@@ -1131,4 +1183,49 @@ button * {
   .coach-text {
     font-size: 12px; /* 3-line height scales with it (6em) */
   }
+}
+
+/* --- tutorial invitation (#51): the tutorial never starts without an action. It
+   stands where LOADING would on a first visit — message + TUTORIAL / SKIP. --- */
+.invite {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+}
+.invite-text {
+  margin: 0;
+  max-width: 30ch;
+  text-align: center;
+  font-family: var(--press);
+  font-size: clamp(13px, 2vh, 16px);
+  line-height: 2;
+  color: var(--fg);
+  text-shadow: none;
+  padding-top: var(--cap-shift);
+}
+.invite-actions {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+/* Replay-only exit on the coach box ("?"-summoned tutorials must be dismissible;
+   a chosen first run goes to its end — the invitation was the moment to decline). */
+.coach-exit {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  padding: 4px;
+  background: transparent;
+  border: 0;
+  font-family: var(--press);
+  font-size: 14px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+}
+.coach-exit:hover,
+.coach-exit:focus-visible {
+  color: var(--fg);
 }

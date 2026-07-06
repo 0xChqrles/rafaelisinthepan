@@ -5,6 +5,7 @@ import Game from './screens/Game';
 import LoadError from './components/LoadError';
 import NoPuzzle from './components/NoPuzzle';
 import Tutorial from './tutorial/Tutorial';
+import Invite from './tutorial/Invite';
 import { useGameStore } from './state/gameStore';
 import { useLocation, navigate } from './routing';
 import { parseRoute, resolveHomeLang, pathForLang, type LangCode } from './langs';
@@ -55,27 +56,42 @@ function GameRoute({ lang }: { lang: LangCode }) {
     setLastLang(lang);
   }, [lang, setLastLang]);
 
-  // Onboarding tutorial (#51): a first visit (no persisted `onboarded`) plays the
-  // scripted dummy round INSTEAD of the day's puzzle — which keeps loading in the
-  // background and is revealed when the tutorial finishes or is skipped (both set the
-  // flag). `?tutorial=1` forces it (dev/testing); a `?puzzle=` override is a dev path
-  // and wins over the first-visit trigger. The HUD's "?" re-opens it on demand.
-  // The URL params are read once per page load, like the ?puzzle= override itself.
+  // Onboarding tutorial (#51): it NEVER starts without an action. A first visit (no
+  // persisted `onboarded`) lands on the INVITATION — standing in for the loading
+  // screen while the day's puzzle fetches behind it — and TUTORIAL / SKIP both settle
+  // the question for good (either sets the flag). The header's "?" re-opens the
+  // tutorial as a `replay`, which carries an always-available exit (a summoned
+  // tutorial must be dismissible; a chosen first one runs to its end). `?tutorial=1`
+  // forces it (dev/testing); a `?puzzle=` override is a dev path and wins over the
+  // first-visit invite. URL params are read once per page load, like the override.
   const [forced, hasOverride] = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     return [params.get('tutorial') === '1', params.has('puzzle')] as const;
   }, []);
-  const [tutorialOpen, setTutorialOpen] = useState<boolean>(
-    () => forced || (!useGameStore.getState().onboarded && !hasOverride),
-  );
+  const [tut, setTut] = useState<'invite' | 'first' | 'replay' | 'off'>(() => {
+    if (forced) return 'first';
+    return !useGameStore.getState().onboarded && !hasOverride ? 'invite' : 'off';
+  });
   const closeTutorial = useCallback(() => {
     setOnboarded();
-    setTutorialOpen(false);
+    setTut('off');
   }, [setOnboarded]);
-  const openTutorial = useCallback(() => setTutorialOpen(true), []);
+  const openTutorial = useCallback(() => setTut('replay'), []);
 
+  if (tut === 'invite') {
+    return <Invite lang={lang} onAccept={() => setTut('first')} onSkip={closeTutorial} />;
+  }
   // key={lang}: switching language mid-tutorial restarts it in that language.
-  if (tutorialOpen) return <Tutorial key={lang} lang={lang} onDone={closeTutorial} />;
+  if (tut === 'first' || tut === 'replay') {
+    return (
+      <Tutorial
+        key={lang}
+        lang={lang}
+        onDone={closeTutorial}
+        onExit={tut === 'replay' ? closeTutorial : undefined}
+      />
+    );
+  }
 
   return (
     <>

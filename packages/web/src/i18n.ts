@@ -42,6 +42,14 @@ const STRINGS = {
   ariaBackspace: { en: 'backspace', fr: 'effacer' },
   ariaDash: { en: 'dash', fr: 'tiret' },
   ariaHelp: { en: 'How to play', fr: 'Comment jouer' },
+  ariaExitTutorial: { en: 'Back to the puzzle', fr: 'Retour au puzzle' },
+  // ---- tutorial invitation (#51): the tutorial never starts without an action.
+  inviteTitle: {
+    en: 'New to the game? Learn how to play in 30 seconds.',
+    fr: 'Nouveau ici ? Apprends à jouer en 30 secondes.',
+  },
+  inviteTutorial: { en: 'TUTORIAL', fr: 'TUTORIEL' },
+  inviteSkip: { en: 'SKIP', fr: 'PASSER' },
   // ---- onboarding tutorial (#51). In guess-step copy, {WORD} is replaced by the
   // script's expected word (uppercased) so the copy can never drift from the script.
   // Tutorial copy is deliberately TERSE: the feedback on screen does the teaching,

@@ -340,19 +340,30 @@ function Round({
         {announce}
       </div>
 
-      {/* Header row pinned to the top: the current puzzle's language flag (opens the
-          selector) beside the reconstruction progress bar. Bar WIDTH = the
-          reconstruction value; COLOR follows heat. */}
+      {/* App header pinned to the top: language flag left, the day's puzzle id
+          centered, help right, a thin bottom border separating it from the app —
+          the extension point for whatever chrome comes later. The progress bar gets
+          its own FULL-WIDTH row below it, so nothing squeezes it on mobile. Bar
+          WIDTH = the reconstruction value; COLOR follows progress. */}
+      <header className="topbar">
+        <div className="topbar-inner">
+          <FlagButton lang={lang} />
+          {dayNumber != null && (
+            <span className="topbar-id" aria-hidden="true">
+              #{dayNumber}
+            </span>
+          )}
+          {/* Replays the onboarding tutorial (#51) on demand — help is never more
+              than one tap away, but it stays out of the way. */}
+          {onHelp && (
+            <button type="button" className="home-btn help-btn" aria-label={t(lang, 'ariaHelp')} onClick={onHelp}>
+              ?
+            </button>
+          )}
+        </div>
+      </header>
       <div className="hud">
-        <FlagButton lang={lang} />
         <ProgressBar value={progress} />
-        {/* Replays the onboarding tutorial (#51) on demand — help is never more than
-            one tap away, but it stays out of the way (a small "?" beside the bar). */}
-        {onHelp && (
-          <button type="button" className="home-btn help-btn" aria-label={t(lang, 'ariaHelp')} onClick={onHelp}>
-            ?
-          </button>
-        )}
       </div>
 
       {/* The play area fills the space between the fixed HUD (top) and the keyboard
