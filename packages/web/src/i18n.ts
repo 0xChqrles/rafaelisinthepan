@@ -45,8 +45,10 @@ const STRINGS = {
   // ---- onboarding tutorial (#51). In guess-step copy, {WORD} is replaced by the
   // script's expected word (uppercased) so the copy can never drift from the script.
   // Tutorial copy is deliberately TERSE: the feedback on screen does the teaching,
-  // the top box only sets up the next move. No under-the-hood talk. Copy uses
-  // CoachText's inline markup so words LOOK like what they are in-game:
+  // the top box only sets up the next move. No under-the-hood talk. HARD LIMIT: the
+  // coach box is exactly 3 lines and clips — if a string wraps past three lines
+  // (~70 chars incl. exponents at the mobile width), it is too much: cut it.
+  // Copy uses CoachText's inline markup so words LOOK like what they are in-game:
   // [[b:secret]] blue, [[w:hint^rank]] gold + heat exponent, [[m:miss]] coldest heat.
   tutMixIntro: {
     en: 'Welcome to Whippin AI, please start by mixing this word.',
