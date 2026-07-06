@@ -42,7 +42,7 @@ const STRINGS = {
   ariaBackspace: { en: 'backspace', fr: 'effacer' },
   ariaDash: { en: 'dash', fr: 'tiret' },
   ariaHelp: { en: 'How to play', fr: 'Comment jouer' },
-  ariaExitTutorial: { en: 'Back to the puzzle', fr: 'Retour au puzzle' },
+  ariaSkipTutorial: { en: 'Skip tutorial', fr: 'Passer le tutoriel' },
   // ---- tutorial invitation (#51): the tutorial never starts without an action.
   inviteTitle: {
     en: 'New to the game? Learn how to play in 30 seconds.',

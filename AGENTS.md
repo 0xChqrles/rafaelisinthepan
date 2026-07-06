@@ -482,16 +482,20 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   without an action**. A first visit (persisted `onboarded` unset) lands on an
   **invitation** (`tutorial/Invite.tsx`, standing in for the loading screen: "New to
   the game? …" + TUTORIAL / SKIP — either sets the flag, so a veteran on a new
-  device is one SKIP from playing). The header's `?` re-opens it as a **replay**,
-  which carries an `×` exit on the coach box (a summoned tutorial is dismissible; a
-  chosen first run goes to its end). The tutorial itself is **two-stage**, in the
-  REAL game components. **Screen
-  contract:** explanations in a TOP box (typewritten like a game dialog —
-  `tutorial/CoachText.tsx`, app-bg + surface border — with inline markup so words
-  look like what they are in-game: `[[b:]]` blue secret, `[[w:word^rank]]` gold +
-  heat exponent, `[[m:]]` coldest heat, `[[n:]]` heat number); INTERACTIONS at the
-  bottom (mix button, then keyboard). **No SKIP, no flag, no modals/NEXT** — browser
-  navigation is the exit, and the language was already chosen to get here. **Stage
+  device is one SKIP from playing). The header's `?` re-opens it as a **replay**.
+  The tutorial **keeps the app header** (decided 2026-07-06, superseding the earlier
+  header-less design): flag (left) **switches the tutorial's language**
+  (`onSwitchLang` navigates to the other lang route; GameRoute stays mounted so the
+  tutorial persists and restarts in it), centre reads **"TUTORIAL"**, and the right
+  control is a **fast-forward that SKIPS the whole tutorial** (`assets/icons/skip.svg`,
+  → `onDone`) — a header affordance, NOT a coach-box `×` (which read as "close this
+  box only"). Skip is available on both the first run and replays. The tutorial
+  itself is **two-stage**, in the REAL game components. **Screen contract:**
+  explanations in a TOP box (typewritten like a game dialog — `tutorial/CoachText.tsx`,
+  app-bg + surface border — with inline markup so words look like what they are
+  in-game: `[[b:]]` blue secret, `[[w:word^rank]]` gold + heat exponent, `[[m:]]`
+  coldest heat, `[[n:]]` heat number); INTERACTIONS at the bottom (mix button, then
+  keyboard), no modals/NEXT. **Stage
   1** is a single word, concept-first: the secret is SHOWN (blue); **MIX** shakes it
   to −1, **MIX AGAIN** fast-rolls to −10, **MIX EVEN MORE** rolls to −100 — landing
   on the start word (the demo explains where start words come from), where the
@@ -513,13 +517,14 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   `migrate` (v2) grandfathers any blob with prior play state so veterans never see it
   uninvited. Replay via the header `?`; `?tutorial=1` forces it; a `?puzzle=`
   override suppresses the first-visit invitation.
-- **App header (decided 2026-07-06):** the game screen has a fixed **topbar** —
-  flag (language) left, the day's puzzle id (`#<dayNumber>`) centered, help `?`
-  right — full-bleed with a thin `--surface` bottom border separating it from the
-  app; the **progress bar sits in its own full-width row below it** (no more
-  flag/`?` squeezing the bar on mobile). The topbar is the extension point for
-  future chrome (streaks, stats, …). The tutorial renders no header (only its bar
-  on the sentence stage).
+- **App header (decided 2026-07-06):** a fixed **topbar** (`components/TopBar.tsx`) —
+  flag (language) left, a centered title, a right-hand control — full-bleed with a
+  thin `--surface` bottom border separating it from the app; the **progress bar sits
+  in its own full-width row below it** (no more flag/`?` squeezing the bar on
+  mobile). The game fills it with the day's puzzle id (`#<dayNumber>`) + help `?`;
+  the tutorial fills it with "TUTORIAL" + the skip fast-forward and overrides the
+  flag to switch its language. The topbar is the extension point for future chrome
+  (streaks, stats, …).
 - **UI chrome is localized + a11y'd (decided 2026-07-06):** `web/src/i18n.ts` holds every
   UI string in **en + fr** (`t(lang, key)`; the `satisfies` clause makes a missing
   translation a type error, so parity needs no test). Game screens resolve strings with

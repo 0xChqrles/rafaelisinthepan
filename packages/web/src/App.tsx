@@ -77,20 +77,20 @@ function GameRoute({ lang }: { lang: LangCode }) {
     setTut('off');
   }, [setOnboarded]);
   const openTutorial = useCallback(() => setTut('replay'), []);
+  // The tutorial's flag switches its language: navigate to the OTHER language's
+  // route. GameRoute stays mounted (same `game` view), so `tut` persists and the
+  // Tutorial (keyed on lang, in App) restarts in the new language — no picker, no
+  // invite bounce. For 2 languages this beats routing through the selector.
+  const switchTutorialLang = useCallback(() => {
+    navigate(pathForLang(lang === 'fr' ? 'en' : 'fr'));
+  }, [lang]);
 
   if (tut === 'invite') {
     return <Invite lang={lang} onAccept={() => setTut('first')} onSkip={closeTutorial} />;
   }
   // key={lang}: switching language mid-tutorial restarts it in that language.
   if (tut === 'first' || tut === 'replay') {
-    return (
-      <Tutorial
-        key={lang}
-        lang={lang}
-        onDone={closeTutorial}
-        onExit={tut === 'replay' ? closeTutorial : undefined}
-      />
-    );
+    return <Tutorial key={lang} lang={lang} onDone={closeTutorial} onSwitchLang={switchTutorialLang} />;
   }
 
   return (

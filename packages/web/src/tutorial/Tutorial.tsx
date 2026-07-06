@@ -5,7 +5,9 @@ import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import LoadError from '../components/LoadError';
 import SolvedScreen from '../components/SolvedScreen';
+import TopBar from '../components/TopBar';
 import { HIT_FADE_MS } from '../components/FloatingHit';
+import SkipIcon from '../assets/icons/skip.svg?react';
 import { STAGGER_MS, FLOATING_HIT_INTRO_MS, WORD_BLINK_MS } from '../screens/Game';
 import MixWord, { SCRAMBLE_MS } from './MixWord';
 import CoachText, { richToPlain } from './CoachText';
@@ -64,17 +66,20 @@ function freshHoles(stage: TutorialStage): RuntimeHole[] {
   }));
 }
 
-// `onExit` is passed on REPLAYS only (the header's "?"): a summoned tutorial must be
-// dismissible from anywhere — an "×" on the coach box — while a first, chosen one
-// runs to its end (the invitation was the moment to decline).
+// The header stays in place throughout: the flag (left) switches the tutorial's
+// language via `onSwitchLang`, the centre reads "TUTORIAL", and the right control is
+// a fast-forward that SKIPS the whole tutorial (`onDone`) — a header affordance, not
+// a "close this box" icon, so it can't be mistaken for dismissing the explanation
+// alone. `onDone` fires on both a natural finish (PLAY) and a skip; `onSwitchLang`
+// toggles to the other language (the tutorial restarts in it).
 export default function Tutorial({
   lang,
   onDone,
-  onExit,
+  onSwitchLang,
 }: {
   lang: string;
   onDone: () => void;
-  onExit?: () => void;
+  onSwitchLang: () => void;
 }) {
   const script = useMemo(() => scriptFor(lang), [lang]);
 
@@ -339,9 +344,25 @@ export default function Tutorial({
         {announce}
       </div>
 
-      {/* No flag (the language was already chosen to get here), no SKIP (browser
-          navigation is the exit): the HUD exists only on the sentence stage, and
-          only for the progress bar. */}
+      {/* The header stays in place: flag (switch language) / "TUTORIAL" / a
+          fast-forward that SKIPS the tutorial. */}
+      <TopBar
+        lang={lang}
+        onFlag={onSwitchLang}
+        center={<span className="topbar-title">{t(lang, 'inviteTutorial')}</span>}
+        right={
+          <button
+            type="button"
+            className="home-btn topbar-skip"
+            aria-label={t(lang, 'ariaSkipTutorial')}
+            onClick={onDone}
+          >
+            <SkipIcon className="skip-icon" aria-hidden />
+          </button>
+        }
+      />
+
+      {/* The progress bar's own row (sentence stage only), below the header. */}
       {liveStage && (
         <div className="hud">
           <ProgressBar value={progress} />
@@ -353,16 +374,6 @@ export default function Tutorial({
       {coachCopy && (
         <div className="coach">
           <CoachText key={coachCopy} copy={coachCopy} />
-          {onExit && (
-            <button
-              type="button"
-              className="coach-exit"
-              aria-label={t(lang, 'ariaExitTutorial')}
-              onClick={onExit}
-            >
-              ×
-            </button>
-          )}
         </div>
       )}
 

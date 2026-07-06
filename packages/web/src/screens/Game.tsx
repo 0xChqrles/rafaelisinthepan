@@ -6,7 +6,7 @@ import useVocab from '../hooks/useVocab';
 import { useGameStore, roundKeyForDay, holesMatchPuzzle } from '../state/gameStore';
 import Phrase from '../components/Phrase';
 import ProgressBar from '../components/ProgressBar';
-import FlagButton from '../components/FlagButton';
+import TopBar from '../components/TopBar';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import SolvedScreen from '../components/SolvedScreen';
@@ -341,27 +341,28 @@ function Round({
       </div>
 
       {/* App header pinned to the top: language flag left, the day's puzzle id
-          centered, help right, a thin bottom border separating it from the app —
-          the extension point for whatever chrome comes later. The progress bar gets
-          its own FULL-WIDTH row below it, so nothing squeezes it on mobile. Bar
-          WIDTH = the reconstruction value; COLOR follows progress. */}
-      <header className="topbar">
-        <div className="topbar-inner">
-          <FlagButton lang={lang} />
-          {dayNumber != null && (
-            <span className="topbar-id" aria-hidden="true">
+          centered, help right. The progress bar gets its own FULL-WIDTH row below it,
+          so nothing squeezes it on mobile. Bar WIDTH = the reconstruction value;
+          COLOR follows progress. */}
+      <TopBar
+        lang={lang}
+        center={
+          dayNumber != null ? (
+            <span className="topbar-title" aria-hidden="true">
               #{dayNumber}
             </span>
-          )}
-          {/* Replays the onboarding tutorial (#51) on demand — help is never more
-              than one tap away, but it stays out of the way. */}
-          {onHelp && (
+          ) : undefined
+        }
+        right={
+          // Replays the onboarding tutorial (#51) on demand — help is never more than
+          // one tap away, but it stays out of the way.
+          onHelp ? (
             <button type="button" className="home-btn help-btn" aria-label={t(lang, 'ariaHelp')} onClick={onHelp}>
               ?
             </button>
-          )}
-        </div>
-      </header>
+          ) : undefined
+        }
+      />
       <div className="hud">
         <ProgressBar value={progress} />
       </div>

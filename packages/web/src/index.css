@@ -257,22 +257,37 @@ button * {
   align-items: center;
   justify-content: space-between;
 }
-/* The header's "?" (replays the tutorial). Buttons don't inherit font/color, so the
-   pixel font and muted tint must be explicit. */
+/* The header's right control: the game's "?" (replays the tutorial, text) and the
+   tutorial's fast-forward (skip, an icon). Buttons don't inherit font/color, so the
+   pixel font and muted tint are explicit; both brighten on hover/focus. */
 .help-btn {
   font-family: var(--press);
   font-size: clamp(14px, 2.2vh, 18px);
-  color: var(--muted);
   padding-top: var(--cap-shift);
 }
+.help-btn,
+.topbar-skip {
+  color: var(--muted);
+}
 .help-btn:hover,
-.help-btn:focus-visible {
+.help-btn:focus-visible,
+.topbar-skip:hover,
+.topbar-skip:focus-visible {
   color: var(--fg);
 }
+/* The fast-forward glyph: a currentColor SVG sized by % of the button (tracks the
+   responsive header height); crispEdges keeps the pixel-art hard-edged. */
+.skip-icon {
+  display: block;
+  width: auto;
+  height: 38%;
+  shape-rendering: crispEdges;
+}
 
-/* The day's puzzle id — ABSOLUTELY centered so it never drifts with the side
-   controls' widths (decorative; the share text carries the real id). */
-.topbar-id {
+/* The header's centered title — the day's id (#N) in the game, "TUTORIAL" in the
+   tutorial. ABSOLUTELY centered so it never drifts with the side controls' widths
+   (decorative; the share text carries the real id). */
+.topbar-title {
   position: absolute;
   left: 50%;
   top: 50%;
@@ -298,10 +313,9 @@ button * {
   gap: 24px;
   font-family: var(--press);
 }
-/* The tutorial has no header (no flag, no help, no id) — its bar keeps the old top
-   position, right under the viewport edge. */
+/* The tutorial shares the header, so its progress-bar row sits just below it too. */
 .tutorial .hud {
-  top: 18px;
+  top: 64px;
 }
 
 /* Logo doubles as the home button, sitting at the left of the HUD beside the bar.
@@ -989,7 +1003,8 @@ button * {
     gap: 12px;
   }
   .tutorial .hud {
-    top: 14px;
+    top: 54px; /* below the compact mobile header */
+    width: calc(100vw - 24px);
   }
   .progress-label {
     font-size: clamp(16px, 4.2vw, 20px);
@@ -1098,8 +1113,13 @@ button * {
    HUD (progress bar) shrinks with it. */
 .tutorial {
   max-width: 680px;
-  /* No header in the tutorial (no flag, no help, no id) — only its own bar band. */
-  padding-top: 56px;
+  /* Sentence stage: clear the fixed header + progress bar + coach box, so the
+     centered sentence never rides under them. (The word stage, with no bar, clears
+     less — below.) */
+  padding-top: 248px;
+}
+.tutorial--word {
+  padding-top: 200px; /* header + coach, no bar */
 }
 .tutorial .hud {
   width: min(680px, calc(100vw - 48px));
@@ -1122,7 +1142,7 @@ button * {
    line. On the sentence stage it sits below the HUD's progress bar. */
 .coach {
   position: fixed;
-  top: 24px;
+  top: 64px; /* word stage: below the header */
   left: 50%;
   transform: translateX(-50%);
   z-index: 120;
@@ -1131,9 +1151,9 @@ button * {
   border: 3px solid var(--surface);
   padding: 16px 18px;
 }
-.tutorial .hud ~ .coach,
+/* Sentence stage: below the header AND the progress-bar row. */
 .tutorial:not(.tutorial--word) .coach {
-  top: 84px;
+  top: 120px;
 }
 .coach-text {
   margin: 0;
@@ -1192,9 +1212,20 @@ button * {
 @media (max-width: 640px) {
   .coach {
     padding: 12px 14px;
+    top: 56px; /* word stage: below the compact mobile header */
+  }
+  .tutorial:not(.tutorial--word) .coach {
+    top: 108px; /* sentence stage: below the header + bar */
   }
   .coach-text {
     font-size: 12px; /* 3-line height scales with it (6em) */
+  }
+  /* Clear the compact header + coach (+ bar on the sentence stage). */
+  .tutorial {
+    padding-top: 216px;
+  }
+  .tutorial--word {
+    padding-top: 172px;
   }
 }
 
@@ -1221,24 +1252,4 @@ button * {
   display: flex;
   align-items: center;
   gap: 24px;
-}
-
-/* Replay-only exit on the coach box ("?"-summoned tutorials must be dismissible;
-   a chosen first run goes to its end — the invitation was the moment to decline). */
-.coach-exit {
-  position: absolute;
-  top: 4px;
-  right: 8px;
-  padding: 4px;
-  background: transparent;
-  border: 0;
-  font-family: var(--press);
-  font-size: 14px;
-  line-height: 1;
-  color: var(--muted);
-  cursor: pointer;
-}
-.coach-exit:hover,
-.coach-exit:focus-visible {
-  color: var(--fg);
 }
