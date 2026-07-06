@@ -1,74 +1,140 @@
-// CONTRACT: the onboarding scripts (#51). The tutorial is data-driven — the dummy
-// sentence, ranks and guesses live in scripts/<lang>.ts and are meant to be edited —
-// so these tests guard what an edit must not break:
+// CONTRACT: the onboarding scripts (#51). The tutorial is data-driven — the boards,
+// ranks and guesses live in scripts/<lang>.ts and are meant to be edited — so these
+// tests guard what an edit must not break:
 //
-//   1. the dummy puzzle stays byte-compatible with the real per-puzzle schema
-//      (parsePuzzle-valid), since it feeds the REAL game components;
-//   2. every scripted guess is a fold-stable slug (what the gated keyboard can type);
-//   3. replaying the guesses against the script's own rank maps produces the intended
-//      LESSON SEQUENCE — the pedagogy, not the numbers:
-//        A: MISS on every hole        (every guess is tested on every hole)
-//        B: improves BOTH holes       (context, not synonyms)
-//        C: solves one; warm-but-no-improve on the other (locking + best-guess-kept)
-//        D: the remaining hole solves (solved holes stay silent)
-//      An edited script that no longer teaches this fails here, not in production.
+//   Stage 1 (single word, concept first):
+//     - the scramble ladder exists: real neighbors at ranks 1..5 (the slow steps) and
+//       enough real entries up to start_rank for the fast roll, landing exactly on the
+//       start word — the demo IS the explanation of where start words come from;
+//     - the gated guesses keep their meanings: the "far" word ranks FARTHER than the
+//       start (shows a distance, changes nothing), the "miss" word is absent from the
+//       map (MISS, not INVALID), the "closer" word ranks CLOSER (the word moves), and
+//       the find target is the secret itself (rank 0).
+//   Stage 2 (unguided sentence):
+//     - two holes, and the maps are stocked for DISCOVERY: several plausible context
+//       words appear in BOTH maps, so the likely first guess lands on both holes.
+//
+// Plus, for every stage: the dummy puzzle stays byte-compatible with the real
+// per-puzzle schema (parsePuzzle-valid — it feeds the REAL game components), scripted
+// words are fold-stable slugs the gated keyboard can type, and rank-map padding stays
+// unreachable.
 
 import { describe, it, expect } from 'vitest';
 import { fold } from '@whippin/shared';
 import { parsePuzzle } from '../api';
 import { scriptFor } from './scripts';
+import { isPadWord, type TutorialStep } from './script';
 
-// A hole's reaction to one guess, by the same rule as the live game loop.
-type Outcome = 'locked' | 'miss' | 'improved' | 'solved' | 'warm-no-improve';
-
-function replay(lang: string): Outcome[][] {
-  const script = scriptFor(lang);
-  const holes = script.puzzle.holes.map((h) => ({ secret: h.secret.slug, rank: h.start_rank }));
-  const guesses = script.steps.filter((s) => s.kind === 'guess');
-  return guesses.map((g) =>
-    holes.map((h): Outcome => {
-      if (h.rank === 0) return 'locked';
-      const entry = script.puzzle.ranks[h.secret][g.expect];
-      if (!entry) return 'miss';
-      if (entry.rank >= h.rank) return 'warm-no-improve';
-      h.rank = entry.rank;
-      return entry.rank === 0 ? 'solved' : 'improved';
-    }),
-  );
-}
+const SCRAMBLE_SLOW_STEPS = 5; // the demo steps ranks 1..5 one by one
+const MIN_ROLL_WORDS = 8; // real ladder entries the fast roll can flash
+const MIN_SHARED_CONTEXT = 5; // stage-2 words present in BOTH holes' maps
 
 for (const lang of ['en', 'fr'] as const) {
   describe(`tutorial script (${lang})`, () => {
     const script = scriptFor(lang);
-    const guesses = script.steps.filter((s) => s.kind === 'guess');
+    const [wordStage, sentenceStage] = script.stages;
 
-    it('dummy puzzle passes the real schema check (parsePuzzle)', () => {
-      // Through JSON like a fetched puzzle would be.
-      expect(() => parsePuzzle(JSON.parse(JSON.stringify(script.puzzle)))).not.toThrow();
+    it('has the two-stage shape: single-word concept stage, then unguided sentence', () => {
+      expect(script.stages).toHaveLength(2);
+      expect(wordStage.puzzle.holes).toHaveLength(1);
+      expect(wordStage.steps[0].kind).toBe('scramble');
+      expect(wordStage.steps.at(-1)?.kind).toBe('find');
+      expect(sentenceStage.puzzle.holes).toHaveLength(2);
+      expect(sentenceStage.steps.some((s) => s.kind === 'play')).toBe(true);
     });
 
-    it('every expected guess is a fold-stable slug the gated keyboard can produce', () => {
-      for (const g of guesses) {
-        expect(fold(g.expect)).toBe(g.expect);
+    it('every stage puzzle passes the real schema check (parsePuzzle)', () => {
+      for (const stage of script.stages) {
+        expect(() => parsePuzzle(JSON.parse(JSON.stringify(stage.puzzle)))).not.toThrow();
       }
     });
 
-    it('replays to the intended lesson sequence and ends solved', () => {
-      expect(replay(lang)).toEqual([
-        ['miss', 'miss'],
-        ['improved', 'improved'],
-        ['solved', 'warm-no-improve'],
-        ['locked', 'solved'],
-      ]);
-    });
-
-    it('rank-map padding is inert — no pad key is a producible slug', () => {
-      for (const map of Object.values(script.puzzle.ranks)) {
-        for (const key of Object.keys(map)) {
-          // A player's input is always fold(raw); a key fold can't produce is unreachable.
-          if (fold(key) !== key) expect(key).toMatch(/^_pad\d+$/);
+    it('every scripted word is a fold-stable slug the gated keyboard can produce', () => {
+      for (const stage of script.stages) {
+        for (const s of stage.steps) {
+          if (s.kind === 'guess') expect(fold(s.expect)).toBe(s.expect);
+          if (s.kind === 'find') expect(fold(s.target)).toBe(s.target);
         }
       }
+    });
+
+    it('rank-map padding is inert — no unreachable key outside the _pad pattern', () => {
+      for (const stage of script.stages) {
+        for (const map of Object.values(stage.puzzle.ranks)) {
+          for (const key of Object.keys(map)) {
+            // A player's input is always fold(raw); a key fold can't produce must be a pad.
+            if (fold(key) !== key) expect(key).toMatch(/^_pad\d+$/);
+          }
+        }
+      }
+    });
+
+    describe('stage 1 — the scramble ladder and the guided arc', () => {
+      const hole = wordStage.puzzle.holes[0];
+      const map = wordStage.puzzle.ranks[hole.secret.slug];
+      const real = Object.values(map).filter((e) => !isPadWord(e.word));
+
+      it('steps ranks 1..5 through real words, with enough real words for the roll', () => {
+        for (let rank = 1; rank <= SCRAMBLE_SLOW_STEPS; rank += 1) {
+          expect(real.some((e) => e.rank === rank)).toBe(true);
+        }
+        const rollable = real.filter((e) => e.rank > 0 && e.rank <= hole.start_rank);
+        expect(rollable.length).toBeGreaterThanOrEqual(MIN_ROLL_WORDS);
+      });
+
+      it('lands exactly on the start word — the demo explains where start words come from', () => {
+        expect(map[hole.start.slug]).toEqual({ word: hole.start.word, rank: hole.start_rank });
+        // Nothing real sits between the last rolled word and beyond the start rank
+        // besides the far-guess demo entry, so the roll's landing IS the maximum.
+        const within = real.filter((e) => e.rank > 0 && e.rank <= hole.start_rank);
+        expect(Math.max(...within.map((e) => e.rank))).toBe(hole.start_rank);
+      });
+
+      it('keeps the guided guesses meaningful: farther / absent / closer / the secret', () => {
+        const guesses = wordStage.steps.filter(
+          (s): s is Extract<TutorialStep, { kind: 'guess' }> => s.kind === 'guess',
+        );
+        expect(guesses).toHaveLength(3);
+        const [far, miss, closer] = guesses;
+        expect(map[far.expect]!.rank).toBeGreaterThan(hole.start_rank); // shows a distance, no move
+        expect(map[miss.expect]).toBeUndefined(); // MISS, not INVALID
+        expect(map[closer.expect]!.rank).toBeLessThan(hole.start_rank); // the word moves
+        const find = wordStage.steps.at(-1)!;
+        if (find.kind !== 'find') throw new Error('last stage-1 step must be find');
+        expect(find.target).toBe(hole.secret.slug);
+        expect(map[find.target]!.rank).toBe(0);
+      });
+    });
+
+    describe('stage 2 — stocked for discovering multi-hole broadcast', () => {
+      const [h1, h2] = sentenceStage.puzzle.holes;
+      const m1 = sentenceStage.puzzle.ranks[h1.secret.slug];
+      const m2 = sentenceStage.puzzle.ranks[h2.secret.slug];
+
+      it('both secrets solve and both start words are in their maps at start_rank', () => {
+        expect(m1[h1.secret.slug]!.rank).toBe(0);
+        expect(m2[h2.secret.slug]!.rank).toBe(0);
+        expect(m1[h1.start.slug]!.rank).toBe(h1.start_rank);
+        expect(m2[h2.start.slug]!.rank).toBe(h2.start_rank);
+      });
+
+      it('several plausible context words land on BOTH holes (the discovery moment)', () => {
+        const shared = Object.keys(m1).filter(
+          (k) =>
+            !isPadWord(k) &&
+            k in m2 &&
+            k !== h1.secret.slug &&
+            k !== h2.secret.slug &&
+            m1[k]!.rank > 0 &&
+            m2[k]!.rank > 0,
+        );
+        expect(shared.length).toBeGreaterThanOrEqual(MIN_SHARED_CONTEXT);
+      });
+
+      it('each secret is also a warm word for the OTHER hole (solving one nudges the other)', () => {
+        expect(m1[h2.secret.slug]!.rank).toBeGreaterThan(0);
+        expect(m2[h1.secret.slug]!.rank).toBeGreaterThan(0);
+      });
     });
   });
 }

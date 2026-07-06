@@ -1143,3 +1143,46 @@ button * {
     font-size: 10px;
   }
 }
+
+/* --- scramble demo (tutorial stage 1) --- */
+/* Fills the HUD's bar slot on the word-only stage (no progress bar before the
+   sentence stage), keeping the flag left and SKIP right. */
+.hud-spacer {
+  flex: 1;
+}
+.scramble {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: clamp(24px, 5vh, 48px);
+  width: 100%;
+}
+/* The demo word is the star: same .hole markup as the game, sized up. */
+.scramble .phrase {
+  font-size: clamp(26px, 6vw, 44px);
+}
+/* Sits in the input row's reserved slot so the prompt appearing next step never
+   shifts the word. */
+.scramble-actions {
+  justify-content: center;
+}
+.scramble-btn {
+  font-family: var(--press);
+  font-size: clamp(13px, 1.9vh, 16px);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--bg);
+  background: var(--hole);
+  border: 0;
+  padding: 16px 30px;
+  cursor: pointer;
+  text-shadow: none;
+  transition: filter 0.08s linear;
+}
+.scramble-btn:hover {
+  filter: brightness(1.12);
+}
+.scramble-btn:focus-visible {
+  outline: 3px solid var(--accent-dim);
+  outline-offset: 2px;
+}

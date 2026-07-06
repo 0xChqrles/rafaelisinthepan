@@ -478,18 +478,26 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   backend base and is required for `pnpm dev` / `pnpm build`; the frontend must not
   silently use its own origin as the backend. `usePuzzle` exposes `dayNumber` for
   persist (#7) / already-solved (#9).
-- **Onboarding tutorial (#51, decided 2026-07-06):** first visit (persisted `onboarded`
-  unset) plays a scripted dummy round in the REAL game components instead of the day's
-  puzzle; finish/skip set the flag. The tutorial is **data-driven**: the dummy sentence,
-  fabricated ranks, scripted guesses and coach steps live in
-  `web/src/tutorial/scripts/{en,fr}.ts` (copy keys in `i18n.ts`) — editing the script
-  never touches components, and `tutorial/scripts.test.ts` replays each script to guard
-  the intended lesson arc (miss/miss → improves both → solves one + warm-no-improve →
-  solves all). Input is gated per step by synthetic vocab/prefix sets (the keyboard's
-  existing contract). The tutorial writes NOTHING to `rounds`; the store `migrate`
-  (v2) grandfathers any blob with prior play state so veterans never see it uninvited.
-  Replay via the HUD `?`; `?tutorial=1` forces it; a `?puzzle=` override suppresses the
-  first-visit trigger.
+- **Onboarding tutorial (#51, redesigned 2026-07-06):** first visit (persisted
+  `onboarded` unset) plays a **two-stage** scripted tutorial in the REAL game
+  components instead of the day's puzzle; finish/skip set the flag. **Stage 1** is a
+  single word, concept-first: the secret is SHOWN (blue), a **SCRAMBLE** demo
+  (`tutorial/ScrambleWord.tsx`, the one purpose-built widget — same classes/heat ramp
+  as `Hole`) steps it through neighbors −1…−5 then fast-rolls to −100, landing on the
+  start word (the demo literally explains where start words come from); three gated
+  guesses then show distance (farther, no move), MISS (absent), and improvement
+  (closer, word moves); finally the player types back to the secret with the REAL
+  vocabulary (`useVocab` loads in the tutorial), nudged with the answer after 3
+  straight MISSes. **Stage 2** is an easy two-hole sentence played **unguided** —
+  its rank maps are stocked so the obvious first guesses land on BOTH holes, so
+  multi-hole broadcast is discovered, not told. The tutorial is **data-driven**:
+  boards, ranks, guesses and steps live in `web/src/tutorial/scripts/{en,fr}.ts`
+  (copy keys in `i18n.ts`) and `tutorial/scripts.test.ts` guards the lesson arc.
+  Gated steps use synthetic vocab/prefix sets (the keyboard's existing contract);
+  free steps use the real sets. The tutorial writes NOTHING to `rounds`; the store
+  `migrate` (v2) grandfathers any blob with prior play state so veterans never see it
+  uninvited. Replay via the HUD `?`; `?tutorial=1` forces it; a `?puzzle=` override
+  suppresses the first-visit trigger.
 - **UI chrome is localized + a11y'd (decided 2026-07-06):** `web/src/i18n.ts` holds every
   UI string in **en + fr** (`t(lang, key)`; the `satisfies` clause makes a missing
   translation a type error, so parity needs no test). Game screens resolve strings with

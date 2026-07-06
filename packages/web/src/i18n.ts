@@ -44,45 +44,54 @@ const STRINGS = {
   ariaHelp: { en: 'How to play', fr: 'Comment jouer' },
   // ---- onboarding tutorial (#51). In guess-step copy, {WORD} is replaced by the
   // script's expected word (uppercased) so the copy can never drift from the script.
-  tutIntro: {
-    en: 'Each day, one sentence is hiding a few words. Your job: find them.',
-    fr: 'Chaque jour, une phrase cache quelques mots. À toi de les retrouver.',
+  tutScramble: {
+    en: 'This blue word is a SECRET word. Press SCRAMBLE.',
+    fr: 'Ce mot bleu est un mot SECRET. Appuie sur MÉLANGER.',
   },
-  tutHoles: {
-    en: 'The gold words are hints, not answers. The small number is a distance: an AI ranks every word by meaning, and the hint sits that many places from the secret word. 0 = found.',
-    fr: "Les mots dorés sont des indices, pas les réponses. Le petit nombre est une distance : une IA classe chaque mot selon son sens, et l'indice est à autant de places du mot secret. 0 = trouvé.",
+  tutScrambleBtn: { en: 'SCRAMBLE', fr: 'MÉLANGER' },
+  tutAfterScramble: {
+    en: 'Each step swapped the word for its next-closest neighbor — an AI ranked EVERY word by how close its meaning is to the secret. 100 steps out you get a distant cousin: that word, 100 places away, is exactly where every round starts.',
+    fr: "Chaque étape a remplacé le mot par son voisin le plus proche suivant — une IA classe TOUS les mots selon la proximité de leur sens avec le secret. Après 100 étapes, on obtient un cousin lointain : ce mot, à 100 places du secret, est exactement le point de départ de chaque manche.",
   },
   tutGuessFar: {
-    en: 'Try a word that has nothing to do with the sentence — type {WORD}, then press enter.',
-    fr: "Essaie un mot sans aucun rapport avec la phrase — tape {WORD}, puis valide avec entrée.",
+    en: 'Type {WORD} — it will land at distance 200.',
+    fr: "Tape {WORD} — il va atterrir à une distance de 200.",
   },
   tutAfterFar: {
-    en: 'BOTH holes reacted — every guess is tested on every hole at once. MISS means too far to even get a rank.',
-    fr: 'Les DEUX trous ont réagi — chaque essai est testé sur tous les trous à la fois. MISS : trop loin pour être classé.',
+    en: "There it is: 200. Every word you try shows its distance to the secret — and 200 is farther than 100, so the word didn't move.",
+    fr: "Le voilà : 200. Chaque mot essayé affiche sa distance au secret — et 200 est plus loin que 100, donc le mot n'a pas bougé.",
   },
-  tutGuessWarm: {
+  tutGuessMiss: {
     en: 'Now type {WORD}.',
     fr: 'Maintenant, tape {WORD}.',
   },
-  tutAfterWarm: {
-    en: "One word just improved BOTH holes — it isn't a synonym of either secret, it just lives in the same world. Hunt for context, not synonyms.",
-    fr: "Un seul mot vient d'améliorer les DEUX trous — ce n'est le synonyme d'aucun des deux secrets, il vit juste dans le même univers. Cherche le contexte, pas des synonymes.",
+  tutAfterMiss: {
+    en: 'MISS — too far to even get a rank. Most words are not in the neighborhood at all.',
+    fr: "MISS — trop loin pour être classé. La plupart des mots ne font pas du tout partie du voisinage.",
   },
-  tutGuessSolveOne: {
-    en: 'The first word is close now… type {WORD}.',
-    fr: 'Le premier mot est tout proche… tape {WORD}.',
+  tutGuessCloser: {
+    en: 'Try {WORD}.',
+    fr: 'Essaie {WORD}.',
   },
-  tutAfterSolveOne: {
-    en: 'Found! A solved word locks in. The other hole showed its distance but kept its word — a hole always keeps your CLOSEST guess.',
-    fr: "Trouvé ! Un mot résolu se verrouille. L'autre trou a affiché sa distance mais a gardé son mot — un trou garde toujours ton essai le PLUS PROCHE.",
+  tutAfterCloser: {
+    en: '50 beats 100 — the word moved closer and took its place. Only a CLOSER word ever replaces it.',
+    fr: "50 bat 100 — le mot s'est rapproché et a pris sa place. Seul un mot PLUS PROCHE peut le remplacer.",
   },
-  tutGuessSolveAll: {
-    en: 'Finish it — type {WORD}.',
-    fr: 'Termine — tape {WORD}, sans accent.',
+  tutFind: {
+    en: 'Now — do you remember the very first word, the blue one? Type it. Feel free to explore on the way.',
+    fr: 'Maintenant — tu te souviens du tout premier mot, le bleu ? Tape-le. Explore librement en chemin.',
   },
-  tutAfterSolveAll: {
-    en: 'Sentence solved!',
-    fr: 'Phrase résolue !',
+  tutFindNudge: {
+    en: 'Forgot it? It was {WORD}.',
+    fr: "Oublié ? C'était {WORD}.",
+  },
+  tutAfterFind: {
+    en: "Distance 0 — found! That's the whole game: close the distance.",
+    fr: "Distance 0 — trouvé ! C'est tout le jeu : réduire la distance.",
+  },
+  tutSentence: {
+    en: "Now a real one. This sentence hides TWO words — find them both. You're on your own.",
+    fr: 'Maintenant, une vraie. Cette phrase cache DEUX mots — trouve-les tous les deux. À toi de jouer.',
   },
   tutWrapTries: {
     en: 'The big number counts your tries — fewer is better, and misses count too. Guess thoughtfully.',
