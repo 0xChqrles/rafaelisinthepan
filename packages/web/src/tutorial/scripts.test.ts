@@ -25,8 +25,7 @@ import { parsePuzzle } from '../api';
 import { scriptFor } from './scripts';
 import { isPadWord, type TutorialStep } from './script';
 
-const SCRAMBLE_SLOW_STEPS = 5; // the demo steps ranks 1..5 one by one
-const MIN_ROLL_WORDS = 8; // real ladder entries the fast roll can flash
+const MIN_ROLL_WORDS = 8; // real ladder entries the fast rolls can flash
 const MIN_SHARED_CONTEXT = 5; // stage-2 words present in BOTH holes' maps
 
 for (const lang of ['en', 'fr'] as const) {
@@ -37,7 +36,7 @@ for (const lang of ['en', 'fr'] as const) {
     it('has the two-stage shape: single-word concept stage, then unguided sentence', () => {
       expect(script.stages).toHaveLength(2);
       expect(wordStage.puzzle.holes).toHaveLength(1);
-      expect(wordStage.steps[0].kind).toBe('scramble');
+      expect(wordStage.steps[0].kind).toBe('mix');
       expect(wordStage.steps.at(-1)?.kind).toBe('find');
       expect(sentenceStage.puzzle.holes).toHaveLength(2);
       expect(sentenceStage.steps.some((s) => s.kind === 'play')).toBe(true);
@@ -69,23 +68,29 @@ for (const lang of ['en', 'fr'] as const) {
       }
     });
 
-    describe('stage 1 — the scramble ladder and the guided arc', () => {
+    describe('stage 1 — the mix ladder and the guided arc', () => {
       const hole = wordStage.puzzle.holes[0];
       const map = wordStage.puzzle.ranks[hole.secret.slug];
       const real = Object.values(map).filter((e) => !isPadWord(e.word));
+      const mix = wordStage.steps[0];
+      if (mix.kind !== 'mix') throw new Error('stage 1 must open with the mix demo');
 
-      it('steps ranks 1..5 through real words, with enough real words for the roll', () => {
-        for (let rank = 1; rank <= SCRAMBLE_SLOW_STEPS; rank += 1) {
-          expect(real.some((e) => e.rank === rank)).toBe(true);
+      it('every mix stop lands on a real word, with enough real words to roll through', () => {
+        for (const stop of mix.stops) {
+          expect(real.some((e) => e.rank === stop.rank)).toBe(true);
         }
+        // Stops walk outward, so each press animates forward, never backward.
+        const ranks = mix.stops.map((s) => s.rank);
+        expect([...ranks].sort((a, b) => a - b)).toEqual(ranks);
         const rollable = real.filter((e) => e.rank > 0 && e.rank <= hole.start_rank);
         expect(rollable.length).toBeGreaterThanOrEqual(MIN_ROLL_WORDS);
       });
 
-      it('lands exactly on the start word — the demo explains where start words come from', () => {
+      it('the last stop IS the start word — the demo explains where start words come from', () => {
+        expect(mix.stops.at(-1)?.rank).toBe(hole.start_rank);
         expect(map[hole.start.slug]).toEqual({ word: hole.start.word, rank: hole.start_rank });
-        // Nothing real sits between the last rolled word and beyond the start rank
-        // besides the far-guess demo entry, so the roll's landing IS the maximum.
+        // Nothing real sits between the landing and the start rank besides the
+        // far-guess demo entry, so the final roll's landing IS the maximum.
         const within = real.filter((e) => e.rank > 0 && e.rank <= hole.start_rank);
         expect(Math.max(...within.map((e) => e.rank))).toBe(hole.start_rank);
       });

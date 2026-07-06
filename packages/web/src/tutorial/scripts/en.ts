@@ -44,6 +44,7 @@ const script: TutorialScript = {
               tide: { word: 'tide', rank: 4 },
               waves: { word: 'waves', rank: 5 },
               coral: { word: 'coral', rank: 8 },
+              beach: { word: 'beach', rank: 10 },
               sailor: { word: 'sailor', rank: 12 },
               fishing: { word: 'fishing', rank: 18 },
               shore: { word: 'shore', rank: 25 },
@@ -61,10 +62,18 @@ const script: TutorialScript = {
         },
       },
       steps: [
-        { kind: 'scramble', copyKey: 'tutScramble', afterKey: 'tutAfterScramble' },
-        // The -200 and the word moving on -50 speak for themselves: no after panels.
+        {
+          kind: 'mix',
+          copyKey: 'tutMixIntro',
+          stops: [
+            { rank: 1, labelKey: 'tutMix', copyKey: 'tutMixed1' },
+            { rank: 10, labelKey: 'tutMixAgain', copyKey: 'tutMixed10' },
+            { rank: 100, labelKey: 'tutMixMore' },
+          ],
+        },
+        // The feedback teaches; each guess rolls straight into the next prompt.
         { kind: 'guess', expect: 'desert', copyKey: 'tutGuessFar' },
-        { kind: 'guess', expect: 'pizza', copyKey: 'tutGuessMiss', afterKey: 'tutAfterMiss' },
+        { kind: 'guess', expect: 'music', copyKey: 'tutGuessMiss' },
         { kind: 'guess', expect: 'boat', copyKey: 'tutGuessCloser' },
         { kind: 'find', target: 'ocean', copyKey: 'tutFind', nudgeKey: 'tutFindNudge' },
       ],
@@ -128,9 +137,8 @@ const script: TutorialScript = {
         },
       },
       steps: [
-        { kind: 'tell', anchor: 'center', copyKey: 'tutSentence' },
         // Solving it ends the tutorial: score + PLAY TODAY'S PUZZLE, no more talk.
-        { kind: 'play' },
+        { kind: 'play', copyKey: 'tutSentence' },
       ],
     },
   ],

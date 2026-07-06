@@ -480,20 +480,27 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   persist (#7) / already-solved (#9).
 - **Onboarding tutorial (#51, redesigned 2026-07-06):** first visit (persisted
   `onboarded` unset) plays a **two-stage** scripted tutorial in the REAL game
-  components instead of the day's puzzle; finish/skip set the flag. **Stage 1** is a
-  single word, concept-first: the secret is SHOWN (blue), a **SCRAMBLE** demo
-  (`tutorial/ScrambleWord.tsx`, the one purpose-built widget — same classes/heat ramp
-  as `Hole`) steps it through neighbors −1…−5 then fast-rolls to −100, landing on the
-  start word (the demo literally explains where start words come from); three gated
-  guesses then show distance (farther, no move), MISS (absent), and improvement
-  (closer, word moves); finally the player types back to the secret with the REAL
-  vocabulary (`useVocab` loads in the tutorial), nudged with the answer after 3
+  components instead of the day's puzzle; finishing sets the flag. **Screen
+  contract:** explanations in a TOP box (typewritten like a game dialog —
+  `tutorial/CoachText.tsx`, app-bg + surface border — with inline markup so words
+  look like what they are in-game: `[[b:]]` blue secret, `[[w:word^rank]]` gold +
+  heat exponent, `[[m:]]` coldest heat, `[[n:]]` heat number); INTERACTIONS at the
+  bottom (mix button, then keyboard). **No SKIP, no flag, no modals/NEXT** — browser
+  navigation is the exit, and the language was already chosen to get here. **Stage
+  1** is a single word, concept-first: the secret is SHOWN (blue); **MIX** shakes it
+  to −1, **MIX AGAIN** fast-rolls to −10, **MIX EVEN MORE** rolls to −100 — landing
+  on the start word (the demo explains where start words come from), where the
+  button gives way to the keyboard (`tutorial/MixWord.tsx` is the display-only
+  widget; Tutorial owns the animation); three gated guesses then show distance
+  (farther, no move), MISS, and improvement, each rolling straight into the next
+  prompt (no after-panels); finally the player types back to the secret with the
+  REAL vocabulary (`useVocab` loads in the tutorial), nudged with the answer after 3
   straight MISSes. **Stage 2** is an easy two-hole sentence played **unguided** —
   its rank maps are stocked so the obvious first guesses land on BOTH holes, so
   multi-hole broadcast is discovered, not told; solving it ends the tutorial
-  **wordlessly** (the tray swaps to `N TRIES` + PLAY TODAY'S PUZZLE — no wrap-up
-  panels; copy is deliberately terse throughout, no under-the-hood talk). The
-  tutorial is **data-driven**:
+  **wordlessly** (the tray swaps to `N TRIES` + PLAY TODAY'S PUZZLE; copy is
+  deliberately terse throughout, no under-the-hood talk). The tutorial is
+  **data-driven**:
   boards, ranks, guesses and steps live in `web/src/tutorial/scripts/{en,fr}.ts`
   (copy keys in `i18n.ts`) and `tutorial/scripts.test.ts` guards the lesson arc.
   Gated steps use synthetic vocab/prefix sets (the keyboard's existing contract);

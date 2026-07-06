@@ -28,6 +28,7 @@ const script: TutorialScript = {
               maree: { word: 'marée', rank: 4 },
               vagues: { word: 'vagues', rank: 5 },
               corail: { word: 'corail', rank: 8 },
+              plage: { word: 'plage', rank: 10 },
               marin: { word: 'marin', rank: 12 },
               peche: { word: 'pêche', rank: 18 },
               rivage: { word: 'rivage', rank: 25 },
@@ -45,10 +46,18 @@ const script: TutorialScript = {
         },
       },
       steps: [
-        { kind: 'scramble', copyKey: 'tutScramble', afterKey: 'tutAfterScramble' },
-        // Le -200 et le mot qui bouge à -50 parlent d'eux-mêmes : pas de panneau après.
+        {
+          kind: 'mix',
+          copyKey: 'tutMixIntro',
+          stops: [
+            { rank: 1, labelKey: 'tutMix', copyKey: 'tutMixed1' },
+            { rank: 10, labelKey: 'tutMixAgain', copyKey: 'tutMixed10' },
+            { rank: 100, labelKey: 'tutMixMore' },
+          ],
+        },
+        // Le feedback enseigne ; chaque essai enchaîne sur l'instruction suivante.
         { kind: 'guess', expect: 'desert', copyKey: 'tutGuessFar' },
-        { kind: 'guess', expect: 'pizza', copyKey: 'tutGuessMiss', afterKey: 'tutAfterMiss' },
+        { kind: 'guess', expect: 'musique', copyKey: 'tutGuessMiss' },
         { kind: 'guess', expect: 'bateau', copyKey: 'tutGuessCloser' },
         { kind: 'find', target: 'ocean', copyKey: 'tutFind', nudgeKey: 'tutFindNudge' },
       ],
@@ -110,9 +119,8 @@ const script: TutorialScript = {
         },
       },
       steps: [
-        { kind: 'tell', anchor: 'center', copyKey: 'tutSentence' },
         // La résoudre termine le tutoriel : score + JOUER, plus un mot.
-        { kind: 'play' },
+        { kind: 'play', copyKey: 'tutSentence' },
       ],
     },
   ],

@@ -1,40 +1,43 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Phrase from '../components/Phrase';
 import ProgressBar from '../components/ProgressBar';
-import FlagButton from '../components/FlagButton';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import LoadError from '../components/LoadError';
 import { HIT_FADE_MS } from '../components/FloatingHit';
 import { STAGGER_MS, FLOATING_HIT_INTRO_MS, WORD_BLINK_MS } from '../screens/Game';
-import ScrambleWord from './ScrambleWord';
+import MixWord from './MixWord';
+import CoachText, { richToPlain } from './CoachText';
 import { computeProgress } from '../game/scoring';
 import { buildPrefixSet, canExtend } from '../game/keyboard';
 import useVocab from '../hooks/useVocab';
 import { fold } from '@whippin/shared';
 import type { HitState, RankEntry, RuntimeHole } from '@whippin/shared';
-import { t, srHoleResult } from '../i18n';
+import { t, srHoleResult, type UiKey } from '../i18n';
 import { scriptFor } from './scripts';
-import { isPadWord, type Anchor, type TutorialStage } from './script';
+import { isPadWord, type TutorialStage } from './script';
 
-// The onboarding tutorial (#51), two stages of scripted play in the REAL game UI:
+// The onboarding tutorial (#51). Screen contract: EXPLANATIONS in the top box
+// (typewritten, in-game word styling), INTERACTIONS at the bottom (the mix button,
+// then the keyboard), the word/sentence in the middle. No modals, no NEXT, no SKIP
+// (browser navigation is the exit), no flag (the language was already chosen to get
+// here) — the flow advances by playing.
 //
-//   Stage 1 — one word, concept first. The secret is SHOWN (blue/solved), the
-//   scramble demo walks it out to its 100th neighbor (= a real round's start word),
-//   three gated guesses demonstrate distance / MISS / improvement, then the player
-//   types their way back to the secret with the real vocabulary (free exploration,
-//   with a nudge after 3 straight MISSes in case they forgot the word).
+//   Stage 1 — one word, concept first. The secret is SHOWN (blue). MIX shakes it to
+//   its 1st neighbor; MIX AGAIN fast-rolls to the 10th; MIX EVEN MORE rolls to the
+//   100th — where the button gives way to the keyboard and three gated guesses show
+//   distance (farther, no move), MISS, and improvement, each rolling straight into
+//   the next prompt. Then the player types back to the secret with the real
+//   vocabulary (free exploration; a nudge reveals the word after 3 straight MISSes).
 //
 //   Stage 2 — an easy two-hole sentence played UNGUIDED (real vocabulary, tries
-//   counted, progress bar live). Its rank maps are stocked so the obvious first
-//   guess lands on BOTH holes: multi-hole broadcast is discovered, not told.
+//   counted, progress bar live). Solving it ends the tutorial wordlessly: the tray
+//   swaps to the score + PLAY TODAY'S PUZZLE.
 //
-// Everything that reacts — floating distances, MISS, exponent rolls, word swaps,
-// greyed keys — is the actual components with the actual timing constants; this file
-// adds the step machine and the coach-mark layer. The scripts are data
-// (./scripts/<lang>.ts). Deliberately NOT Round: Round is fused to the persisted
-// store, and a tutorial round must never touch `rounds` (only the `onboarded` flag
-// changes, set by the caller via onDone).
+// Everything that reacts is the real components with the real timing constants; the
+// scripts are data (./scripts/<lang>.ts). Deliberately NOT Round: Round is fused to
+// the persisted store, and a tutorial round must never touch `rounds` (only the
+// `onboarded` flag changes, set by the caller via onDone).
 
 // Gated-empty sets: every letter greys out, Enter greys out.
 const NO_WORDS = new Set<string>();
@@ -42,22 +45,11 @@ const NO_WORDS = new Set<string>();
 // Consecutive MISSes in the find step before the prompt swaps to the reminder.
 const NUDGE_AFTER_MISSES = 3;
 
-// Coach panels sit in three CSS zones rather than measuring elements: top (below the
-// HUD), center, and bottom (above the keyboard).
-function zoneOf(anchor: Anchor): 'top' | 'center' | 'bottom' {
-  if (anchor === 'center' || anchor === 'watermark') return 'center';
-  if (anchor === 'input' || anchor === 'keyboard') return 'bottom';
-  return 'top';
-}
-
-// Which coach panels float WITHOUT the dimming backdrop: the wrap-up steps point at
-// the watermark/progress bar, which a backdrop would hide.
-const UNDIMMED_ANCHORS: readonly Anchor[] = ['watermark', 'progress'];
-
-// Guess/nudge copy carries {WORD} so it can never drift from the script's word.
-function withWord(copy: string, word: string): string {
-  return copy.replace('{WORD}', word.toUpperCase());
-}
+// Mix demo pacing: the first stop shakes then swaps once; later stops roll through
+// every ladder word in between ("in a second").
+const MIX_SHAKE_MS = 450; // matches the word-shake animation (0.4s)
+const MIX_ROLL_MS = 80;
+const MIX_SETTLE_MS = 500; // hold on a landing before the copy / next prompt
 
 function freshHoles(stage: TutorialStage): RuntimeHole[] {
   return stage.puzzle.holes.map((h) => ({
@@ -74,8 +66,8 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
 
   const [stageIndex, setStageIndex] = useState(0);
   const [stepIndex, setStepIndex] = useState(0);
-  // Guided steps: idle (acting) -> feedback (choreography playing) -> after
-  // (explanation + NEXT). Free steps stay idle until they complete.
+  // idle (acting) -> feedback (choreography playing) -> after (play step only: the
+  // sentence is solved, the tray shows the score + exit).
   const [phase, setPhase] = useState<'idle' | 'feedback' | 'after'>('idle');
 
   const stage = script.stages[stageIndex];
@@ -94,6 +86,15 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
   const [invalidAt, setInvalidAt] = useState(0);
   const [feedback, setFeedback] = useState<string | null>(null);
   const hitId = useRef(0);
+
+  // Mix demo state: which ladder entry is showing (-1 = the untouched blue secret),
+  // which stop the next press goes to, the stop copy currently explaining, and a
+  // busy flag while an animation runs.
+  const [mixAt, setMixAt] = useState(-1);
+  const [mixStop, setMixStop] = useState(0);
+  const [mixCopy, setMixCopy] = useState<UiKey | null>(null);
+  const [mixShake, setMixShake] = useState(false);
+  const [mixBusy, setMixBusy] = useState(false);
 
   // The find/play steps type against the REAL vocabulary (loaded at mount, so it is
   // warm long before the free steps — and already cached for the game right after).
@@ -179,9 +180,9 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
     setHits((prev) => prev.filter((h) => h.id !== id));
   }, []);
 
-  // The same guess loop as Game.submit, on local state. `lock: true` (gated steps)
-  // freezes input through the choreography and lands on the explanation panel; free
-  // steps keep typing open and only lock when the guess completes the step.
+  // The same guess loop as Game.submit, on local state. Gated guesses freeze input
+  // through the choreography then roll into the next prompt; free steps keep typing
+  // open and only lock when the guess completes the step.
   const playGuess = useCallback(
     (typed: string, lock: boolean) => {
       const impacted = holes.flatMap((h, index) => {
@@ -220,17 +221,13 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
 
       const settleMs = fadeDelayMs + HIT_FADE_MS + (anyImprove ? WORD_BLINK_MS : 0) + 250;
       if (lock) {
+        // The feedback taught the lesson — straight to the next prompt.
         setPhase('feedback');
-        // Most gated guesses need no comment — the feedback taught the lesson, so
-        // they roll straight into the next prompt. Only a step with an afterKey
-        // (MISS, the least self-evident) pauses on an explanation.
-        const afterKey = step.kind === 'guess' ? step.afterKey : undefined;
-        later(afterKey ? () => setPhase('after') : advance, settleMs);
+        later(advance, settleMs);
       } else if (solvesAll) {
         setPhase('feedback');
-        // Solving needs no comment either: the find step rolls into the sentence
-        // stage, and the play step is the graduation — the tray swaps to the score
-        // + the PLAY TODAY'S PUZZLE exit ('after'), and nothing more is said.
+        // Solving needs no comment either: find rolls into the sentence stage; play
+        // is the graduation — the tray swaps to the score + exit ('after').
         if (step.kind === 'find') later(advance, settleMs + 350);
         else later(() => setPhase('after'), settleMs + 350);
       }
@@ -271,68 +268,92 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
     [gatedWord, freeTyping, vocab, step, lang, say, playGuess],
   );
 
-  // The scramble ladder: the stage's own real rank entries up to the start word.
-  const scrambleLadder = useMemo<RankEntry[]>(() => {
-    if (step.kind !== 'scramble') return [];
+  // The mix ladder: the stage's own real rank entries up to the start word, rank
+  // ascending — the demo's word path.
+  const ladder = useMemo<RankEntry[]>(() => {
     const hole = puzzle.holes[0];
     return Object.values(puzzle.ranks[hole.secret.slug])
       .filter((e) => !isPadWord(e.word) && e.rank > 0 && e.rank <= hole.start_rank)
       .sort((a, b) => a.rank - b.rank);
-  }, [step, puzzle]);
-  const scrambleDone = useCallback(() => setPhase('after'), []);
+  }, [puzzle]);
 
-  // The coach layer: a dimmed modal panel for tells and explanations, an undimmed
-  // floating instruction while the player acts, nothing while choreography plays.
-  let panel: { copy: string; anchor: Anchor; modal: boolean } | null = null;
-  if (step.kind === 'tell') {
-    panel = { copy: t(lang, step.copyKey), anchor: step.anchor, modal: true };
-  } else if (step.kind === 'scramble') {
-    panel =
-      phase === 'after'
-        ? { copy: t(lang, step.afterKey), anchor: 'hole', modal: true }
-        : { copy: t(lang, step.copyKey), anchor: 'hole', modal: false };
-  } else if (step.kind === 'guess') {
-    if (phase === 'idle') {
-      panel = { copy: withWord(t(lang, step.copyKey), step.expect), anchor: 'hole', modal: false };
-    } else if (phase === 'after' && step.afterKey) {
-      panel = { copy: withWord(t(lang, step.afterKey), step.expect), anchor: 'hole', modal: true };
-    }
-  } else if (step.kind === 'find' && phase === 'idle') {
-    panel = {
-      copy:
-        missStreak >= NUDGE_AFTER_MISSES
-          ? withWord(t(lang, step.nudgeKey), step.target)
-          : t(lang, step.copyKey),
-      anchor: 'hole',
-      modal: false,
+  // One press of the mix button: first stop = shake, then a single swap to the 1st
+  // neighbor; later stops = a fast roll through every ladder word up to the stop.
+  // The last stop lands on the start word, then the keyboard takes the button's
+  // place (advance -> the first guess prompt).
+  const pressMix = useCallback(() => {
+    if (step.kind !== 'mix' || mixBusy) return;
+    const stop = step.stops[mixStop];
+    if (!stop) return;
+    const targetIdx = ladder.findIndex((e) => e.rank === stop.rank);
+    if (targetIdx < 0) return;
+    setMixBusy(true);
+    const lastStop = mixStop === step.stops.length - 1;
+    const finish = () => {
+      if (stop.copyKey) setMixCopy(stop.copyKey);
+      setMixStop((s) => s + 1);
+      setMixBusy(false);
+      if (lastStop) advance();
     };
-  } // play: no panel — they're on their own, and the solve says nothing either.
-  const dimmed = panel?.modal === true && !UNDIMMED_ANCHORS.includes(panel.anchor);
-  const isVeryLast = stageIndex === script.stages.length - 1 && stepIndex === stage.steps.length - 1;
+    if (mixAt < 0) {
+      setMixShake(true);
+      later(() => {
+        setMixShake(false);
+        setMixAt(targetIdx);
+        later(finish, MIX_SETTLE_MS);
+      }, MIX_SHAKE_MS);
+      return;
+    }
+    for (let idx = mixAt + 1; idx <= targetIdx; idx += 1) {
+      later(() => setMixAt(idx), MIX_ROLL_MS * (idx - mixAt));
+    }
+    later(finish, MIX_ROLL_MS * (targetIdx - mixAt) + MIX_SETTLE_MS);
+  }, [step, mixBusy, mixStop, mixAt, ladder, later, advance]);
 
-  const showScramble = step.kind === 'scramble' && phase !== 'after';
-  const vocabNeeded = step.kind === 'find' || step.kind === 'play';
-  // The sentence solved: the tutorial's last word is the score + the exit button.
+  // The explanation currently in the top box (hidden once graduated — the score
+  // speaks last). Mix stop copy overrides the step's standing copy.
   const graduated = step.kind === 'play' && phase === 'after';
+  let coachKey: UiKey | null = null;
+  if (step.kind === 'mix') coachKey = mixCopy ?? step.copyKey;
+  else if (step.kind === 'guess' || step.kind === 'play') coachKey = step.copyKey;
+  else if (step.kind === 'find') {
+    coachKey = missStreak >= NUDGE_AFTER_MISSES ? step.nudgeKey : step.copyKey;
+  }
+  const coachCopy = !graduated && coachKey ? t(lang, coachKey) : null;
+
+  // Announce each new explanation once, in plain text (the visible typewriter is
+  // aria-hidden — a live region would read every keystroke).
+  useEffect(() => {
+    if (coachCopy) say(richToPlain(coachCopy));
+  }, [coachCopy, say]);
+
+  const vocabNeeded = step.kind === 'find' || step.kind === 'play';
+  const mixLabel = step.kind === 'mix' ? step.stops[Math.min(mixStop, step.stops.length - 1)] : null;
 
   return (
-    // tutorial--word: the concept stage is deliberately CLEAN — panel on top, one big
-    // centered word in the middle, keyboard at the bottom, nothing else.
+    // tutorial--word: the concept stage is deliberately CLEAN — explanation on top,
+    // one big centered word in the middle, the interaction at the bottom.
     <div className={`game tutorial${liveStage ? '' : ' tutorial--word'}`}>
       <div className="sr-only" role="status" aria-live="polite">
         {announce}
       </div>
 
-      {/* Same HUD as the game — but the progress bar only exists on the sentence
-          stage ("before the sentence and the progress bar, just a word"). SKIP is
-          always live; the HUD sits above the backdrop. */}
-      <div className="hud">
-        <FlagButton lang={lang} />
-        {liveStage ? <ProgressBar value={progress} /> : <div className="hud-spacer" />}
-        <button type="button" className="home-btn skip-btn" onClick={onDone}>
-          {t(lang, 'tutSkip')}
-        </button>
-      </div>
+      {/* No flag (the language was already chosen to get here), no SKIP (browser
+          navigation is the exit): the HUD exists only on the sentence stage, and
+          only for the progress bar. */}
+      {liveStage && (
+        <div className="hud">
+          <ProgressBar value={progress} />
+        </div>
+      )}
+
+      {/* The top box: the current explanation, typewritten. Same background as the
+          app, surface border — a dialog, not a modal. */}
+      {coachCopy && (
+        <div className="coach">
+          <CoachText key={coachCopy} copy={coachCopy} />
+        </div>
+      )}
 
       <div className="play">
         {liveStage && (
@@ -340,14 +361,18 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
             {tries}
           </div>
         )}
-        {showScramble ? (
-          <ScrambleWord
-            secret={puzzle.holes[0].secret.word}
-            ladder={scrambleLadder}
-            startRank={puzzle.holes[0].start_rank}
-            buttonLabel={t(lang, 'tutScrambleBtn')}
-            onDone={scrambleDone}
-          />
+        {step.kind === 'mix' ? (
+          <>
+            <MixWord
+              secret={puzzle.holes[0].secret.word}
+              entry={mixAt >= 0 ? ladder[mixAt] : null}
+              startRank={puzzle.holes[0].start_rank}
+              shaking={mixShake}
+            />
+            {/* Empty input slot: reserves the row so the prompt appearing on the
+                next step never shifts the word. */}
+            <div className="input-area" aria-hidden="true" />
+          </>
         ) : (
           <>
             <Phrase
@@ -373,10 +398,10 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
         )}
       </div>
 
+      {/* The bottom is for INTERACTIONS: the mix button, then the keyboard, and at
+          the very end the score + the way out. */}
       <div className="tray">
         {graduated ? (
-          // No more talking: the score (unit named — lower is better reads itself)
-          // and the way out, styled like the real solved screen's row.
           <div className="solved-actions in">
             <span className="solved-score">
               {tries} {t(lang, tries === 1 ? 'try' : 'tries')}
@@ -387,7 +412,13 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
               {t(lang, 'tutPlay')}
             </button>
           </div>
-        ) : step.kind === 'scramble' ? null : vocabNeeded && vocabError ? (
+        ) : step.kind === 'mix' ? (
+          mixLabel && (
+            <button type="button" className="mix-btn" onClick={pressMix} disabled={mixBusy}>
+              {t(lang, mixLabel.labelKey)}
+            </button>
+          )
+        ) : vocabNeeded && vocabError ? (
           <LoadError message={t(lang, 'failedVocab')} lang={lang} onRetry={retryVocab} />
         ) : vocabNeeded && !vocab ? (
           <p className="status">{t(lang, 'loading')}</p>
@@ -403,28 +434,6 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
           />
         )}
       </div>
-
-      {dimmed && <div className="tutorial-backdrop" />}
-      {panel && (
-        <div
-          // Remount per moment so the transition and autoFocus re-fire each step.
-          key={`${stageIndex}:${stepIndex}:${phase}:${missStreak >= NUDGE_AFTER_MISSES}`}
-          className={`coach coach--${zoneOf(panel.anchor)}${panel.modal ? '' : ' coach--prompt'}`}
-        >
-          <p className="coach-text" aria-live="polite">
-            {panel.copy}
-          </p>
-          {panel.modal && (
-            <div className="coach-actions">
-              {/* eslint-disable-next-line jsx-a11y/no-autofocus -- each step is a
-                  modal moment; focusing its only action is the accessible default */}
-              <button type="button" className="coach-btn" onClick={advance} autoFocus>
-                {isVeryLast ? t(lang, 'tutPlay') : t(lang, 'tutNext')}
-              </button>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

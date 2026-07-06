@@ -1025,78 +1025,41 @@ button * {
 }
 
 /* ===================== onboarding tutorial (issue #51) ===================== */
-/* The tutorial is the REAL game screen plus a coach-mark layer: a dimming backdrop, a
-   flat pixel panel in one of three zones (top / center / bottom), and SKIP in the HUD.
-   The game components underneath are untouched. */
+/* Screen contract: EXPLANATIONS in the top box, INTERACTIONS at the bottom (mix
+   button, then keyboard), the word/sentence in the middle. No modals, no backdrop —
+   the coach box is a game dialog, not an interruption. */
 
-/* HUD extras: "?" replays the tutorial (real game), SKIP leaves it (tutorial). Both
-   sit at the right of the progress bar, sized like the flag button. */
-.help-btn {
-  font-family: var(--press);
-  font-size: clamp(14px, 2.2vh, 18px);
-  color: var(--muted);
-  border: 3px solid var(--surface-hover);
+/* The concept stage is CLEAN: explanation on top, ONE big centered word in the
+   middle, the interaction at the bottom, nothing else. The word is the star. */
+.tutorial--word .play,
+.tutorial--word .input-area {
+  align-items: center;
 }
-.help-btn:hover,
-.help-btn:focus-visible {
-  color: var(--fg);
-}
-.skip-btn {
-  width: auto;
-  padding: 0 12px;
-  font-family: var(--press);
-  font-size: 11px;
-  letter-spacing: 1px;
-  color: var(--muted);
-  border: 3px solid var(--surface-hover);
-}
-.skip-btn:hover,
-.skip-btn:focus-visible {
-  color: var(--fg);
-}
-/* The HUD must stay above the tutorial backdrop so SKIP is always live (and the
-   wrap-up step can point at a fully visible progress bar). */
-.tutorial .hud {
-  z-index: 210;
+.tutorial--word .phrase {
+  font-size: clamp(28px, 7vw, 48px);
+  text-align: center;
 }
 
-.tutorial-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 200;
-  background: rgba(10, 11, 18, 0.62);
-}
-
-/* Coach panel: flat surface, accent border, pixel text. Zones instead of measured
-   anchors — top (below the HUD), center, bottom (above the keyboard). */
+/* The explanation box: app background + surface border (a dialog, not a modal),
+   pinned to the top. min-height keeps the typewriter from growing the box line by
+   line. On the sentence stage it sits below the HUD's progress bar. */
 .coach {
   position: fixed;
+  top: 24px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 205;
+  z-index: 120;
   width: min(560px, calc(100vw - 32px));
-  background: var(--surface);
-  border: 3px solid var(--accent);
-  padding: 16px 18px;
+  min-height: 96px;
   display: flex;
-  flex-direction: column;
-  gap: 14px;
+  align-items: center;
+  background: var(--bg);
+  border: 3px solid var(--surface);
+  padding: 16px 18px;
 }
-.coach--top {
+.tutorial .hud ~ .coach,
+.tutorial:not(.tutorial--word) .coach {
   top: 84px;
-}
-.coach--center {
-  top: 50%;
-  transform: translate(-50%, -50%);
-}
-.coach--bottom {
-  bottom: calc(var(--kb-h, 160px) + 32px);
-}
-/* The typing instruction: no backdrop, board fully interactive; gold border marks
-   "your turn" versus the accent-bordered explanation panels. */
-.coach--prompt {
-  pointer-events: none;
-  border-color: var(--hole);
 }
 .coach-text {
   margin: 0;
@@ -1106,73 +1069,20 @@ button * {
   color: var(--fg);
   text-shadow: none;
 }
-.coach-actions {
-  display: flex;
-  justify-content: flex-end;
+/* Rich inline words in the explanations — they look like what they are in-game:
+   blue = the secret (solved color); .rt-word = a hint word, gold with its
+   heat-colored exponent (the sup reuses .hole-rank). */
+.rt-blue {
+  color: var(--accent);
 }
-/* Styled like the SHARE key: a flat wide keyboard key, cohesive with the game. */
-.coach-btn {
-  font-family: var(--press);
-  font-size: 12px;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  color: var(--fg);
-  background: var(--surface-hover);
-  border: 0;
-  padding: 12px 22px;
-  cursor: pointer;
-  text-shadow: none;
-  transition: filter 0.08s linear;
-}
-.coach-btn:hover {
-  filter: brightness(1.35);
-}
-.coach-btn:focus-visible {
-  outline: 3px solid var(--accent-dim);
-  outline-offset: 2px;
+.rt-word {
+  color: var(--hole);
+  white-space: nowrap;
 }
 
-@media (max-width: 640px) {
-  .coach {
-    padding: 14px;
-  }
-  .coach--top {
-    top: 72px;
-  }
-  .coach-text {
-    font-size: 10px;
-  }
-}
-
-/* --- scramble demo (tutorial stage 1) --- */
-/* Fills the HUD's bar slot on the word-only stage (no progress bar before the
-   sentence stage), keeping the flag left and SKIP right. */
-.hud-spacer {
-  flex: 1;
-}
-.scramble {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: clamp(24px, 5vh, 48px);
-  width: 100%;
-}
-/* The concept stage is CLEAN: panel on top, ONE big centered word in the middle,
-   keyboard at the bottom, nothing else. The word is the star — bigger than in-game. */
-.tutorial--word .play,
-.tutorial--word .input-area {
-  align-items: center;
-}
-.tutorial--word .phrase {
-  font-size: clamp(28px, 7vw, 48px);
-  text-align: center;
-}
-/* Sits in the input row's reserved slot so the prompt appearing next step never
-   shifts the word. */
-.scramble-actions {
-  justify-content: center;
-}
-.scramble-btn {
+/* The mix button — the bottom interaction of the demo, standing where the keyboard
+   will land ("the mix button moves down, the keyboard moves up"). */
+.mix-btn {
   font-family: var(--press);
   font-size: clamp(13px, 1.9vh, 16px);
   letter-spacing: 2px;
@@ -1183,12 +1093,26 @@ button * {
   padding: 16px 30px;
   cursor: pointer;
   text-shadow: none;
-  transition: filter 0.08s linear;
+  transition: filter 0.08s linear, opacity 0.08s linear;
 }
-.scramble-btn:hover {
+.mix-btn:hover {
   filter: brightness(1.12);
 }
-.scramble-btn:focus-visible {
+.mix-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.mix-btn:focus-visible {
   outline: 3px solid var(--accent-dim);
   outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .coach {
+    padding: 12px 14px;
+    min-height: 84px;
+  }
+  .coach-text {
+    font-size: 10px;
+  }
 }

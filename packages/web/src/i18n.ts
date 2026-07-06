@@ -45,46 +45,48 @@ const STRINGS = {
   // ---- onboarding tutorial (#51). In guess-step copy, {WORD} is replaced by the
   // script's expected word (uppercased) so the copy can never drift from the script.
   // Tutorial copy is deliberately TERSE: the feedback on screen does the teaching,
-  // the panels only set up the next move. No under-the-hood talk.
-  tutScramble: {
-    en: 'This blue word is a SECRET word. Press SCRAMBLE.',
-    fr: 'Ce mot bleu est un mot SECRET. Appuie sur MÉLANGER.',
+  // the top box only sets up the next move. No under-the-hood talk. Copy uses
+  // CoachText's inline markup so words LOOK like what they are in-game:
+  // [[b:secret]] blue, [[w:hint^rank]] gold + heat exponent, [[m:miss]] coldest heat.
+  tutMixIntro: {
+    en: 'This blue word is a SECRET word.',
+    fr: 'Ce mot bleu est un mot SECRET.',
   },
-  tutScrambleBtn: { en: 'SCRAMBLE', fr: 'MÉLANGER' },
-  tutAfterScramble: {
-    en: 'Each step: the next-closest word by meaning. 100 steps out — this is where every round starts.',
-    fr: 'Chaque étape : le mot le plus proche par le sens. À 100 pas — le point de départ de chaque manche.',
+  tutMix: { en: 'MIX', fr: 'MÉLANGER' },
+  tutMixAgain: { en: 'MIX AGAIN', fr: 'MÉLANGE ENCORE' },
+  tutMixMore: { en: 'MIX EVEN MORE', fr: 'ENCORE PLUS' },
+  tutMixed1: {
+    en: '[[w:sea^1]] is the closest word to [[b:ocean]].',
+    fr: '[[w:mer^1]] est le mot le plus proche de [[b:océan]].',
+  },
+  tutMixed10: {
+    en: '[[w:beach^10]] is the 10th closest word to [[b:ocean]].',
+    fr: '[[w:plage^10]] est le 10e mot le plus proche de [[b:océan]].',
   },
   tutGuessFar: {
-    en: 'Type {WORD} — it will land at distance 200.',
-    fr: 'Tape {WORD} — il va atterrir à une distance de 200.',
+    en: 'Type [[w:desert^200]].',
+    fr: 'Tape [[w:désert^200]].',
   },
   tutGuessMiss: {
-    en: 'Now type {WORD}.',
-    fr: 'Maintenant, tape {WORD}.',
-  },
-  tutAfterMiss: {
-    en: 'MISS: too far to rank.',
-    fr: 'MISS : trop loin pour être classé.',
+    en: 'Now type a completely different word: [[m:music]].',
+    fr: 'Maintenant, tape un mot complètement différent : [[m:musique]].',
   },
   tutGuessCloser: {
-    en: 'Try {WORD}.',
-    fr: 'Essaie {WORD}.',
+    en: '[[m:music]] was a MISS — too far to rank. Now try [[w:boat^50]].',
+    fr: '[[m:musique]] était un MISS — trop loin pour être classé. Essaie [[w:bateau^50]].',
   },
   tutFind: {
     en: 'Now type the very first word — the blue one.',
     fr: 'Maintenant, tape le tout premier mot — le bleu.',
   },
   tutFindNudge: {
-    en: 'Forgot it? It was {WORD}.',
-    fr: "Oublié ? C'était {WORD}.",
+    en: 'Forgot it? It was [[b:ocean]].',
+    fr: "Oublié ? C'était [[b:océan]].",
   },
   tutSentence: {
     en: 'Now a real one: this sentence hides TWO words. You are on your own.',
     fr: 'Maintenant, une vraie : cette phrase cache DEUX mots. À toi de jouer.',
   },
-  tutNext: { en: 'NEXT', fr: 'SUIVANT' },
-  tutSkip: { en: 'SKIP', fr: 'PASSER' },
   tutPlay: { en: "PLAY TODAY'S PUZZLE", fr: 'JOUER AU PUZZLE DU JOUR' },
 } satisfies Record<string, Record<UiLang, string>>;
 

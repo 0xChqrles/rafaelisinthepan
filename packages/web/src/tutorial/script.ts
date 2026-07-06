@@ -18,32 +18,41 @@
 import type { Puzzle, RankMap } from '@whippin/shared';
 import type { UiKey } from '../i18n';
 
-// Where a coach panel sits. Zones, not measured elements — the panel is positioned by
-// CSS per zone, which is enough to read as "about this thing".
-export type Anchor = 'center' | 'hole' | 'input' | 'keyboard' | 'watermark' | 'progress';
+// The screen is split in two: EXPLANATIONS live in the top box (typewritten, with
+// in-game word styling — see CoachText's [[..]] markup in the copy), INTERACTIONS
+// live at the bottom (the mix button, then the keyboard). No modals, no NEXT, no
+// SKIP — the flow advances by playing.
+
+// One stop of the mix demo: pressing the button (labelled `labelKey`) animates the
+// word to `rank` — a single shake+swap for the first stop, a fast roll through every
+// ladder word for the others — then `copyKey` (if any) becomes the explanation.
+export interface MixStop {
+  rank: number;
+  labelKey: UiKey;
+  copyKey?: UiKey;
+}
 
 export type TutorialStep =
-  // A coach mark with copy and a NEXT button. The game is dimmed behind it.
-  | { kind: 'tell'; anchor: Anchor; copyKey: UiKey }
-  // The scramble demo: the stage's single hole shows its SECRET in blue; pressing
-  // SCRAMBLE steps it through neighbors 1..5, then fast-rolls to the start word
-  // (rank = start_rank), flashing every ladder word in between. The ladder is derived
-  // from the stage's own rank map (real entries, rank <= start_rank).
-  | { kind: 'scramble'; copyKey: UiKey; afterKey: UiKey }
+  // The mix demo: the stage's single hole shows its SECRET in blue; each press walks
+  // it further out (stops, e.g. -1 -> -10 -> -100), teaching the neighbor ladder.
+  // The last stop must land on the start word (rank = start_rank) — the demo IS the
+  // explanation of where start words come from. The ladder is derived from the
+  // stage's own rank map (real entries, rank <= start_rank). After the last stop the
+  // button gives way to the keyboard and the next step's prompt.
+  | { kind: 'mix'; copyKey: UiKey; stops: MixStop[] }
   // A prescribed guess: input is gated to `expect` (only its letters + enter are
-  // active) and the submit plays the REAL feedback choreography. `afterKey` is
-  // OPTIONAL and rare — the feedback usually speaks for itself, so most guesses
-  // auto-advance once it settles. {WORD} in copy renders as `expect` uppercased.
-  | { kind: 'guess'; expect: string; copyKey: UiKey; afterKey?: UiKey }
+  // active), the submit plays the REAL feedback choreography, then the flow rolls to
+  // the next prompt — the feedback speaks for itself, no explanations after.
+  | { kind: 'guess'; expect: string; copyKey: UiKey }
   // Free typing (real vocabulary) until `target` is typed, then auto-advance —
   // solving it needs no comment. Exploration is welcome — any word gets its real
   // float (ladder rank or MISS) — but after 3 consecutive MISSes the prompt swaps
-  // to `nudgeKey` ({WORD} = the target) in case they forgot.
+  // to `nudgeKey` in case they forgot the word.
   | { kind: 'find'; target: string; copyKey: UiKey; nudgeKey: UiKey }
-  // Unguided play (real vocabulary, tries counted, progress bar live). When the
-  // sentence is solved the tutorial says nothing more: the tray swaps to the score
-  // ("N TRIES" — lower is better speaks for itself) + the PLAY TODAY'S PUZZLE exit.
-  | { kind: 'play' };
+  // Unguided play (real vocabulary, tries counted, progress bar live), `copyKey` as
+  // the standing prompt. When the sentence is solved the tutorial says nothing more:
+  // the tray swaps to the score ("N TRIES") + the PLAY TODAY'S PUZZLE exit.
+  | { kind: 'play'; copyKey: UiKey };
 
 export interface TutorialStage {
   puzzle: Puzzle; // same schema as a real puzzle (parsePuzzle-valid)
