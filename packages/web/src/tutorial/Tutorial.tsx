@@ -66,21 +66,14 @@ function freshHoles(stage: TutorialStage): RuntimeHole[] {
   }));
 }
 
-// The header stays in place throughout: the flag (left) switches the tutorial's
-// language via `onSwitchLang`, the centre reads "TUTORIAL", and the right control is
-// a fast-forward that SKIPS the whole tutorial (`onDone`) — a header affordance, not
-// a "close this box" icon, so it can't be mistaken for dismissing the explanation
-// alone. `onDone` fires on both a natural finish (PLAY) and a skip; `onSwitchLang`
-// toggles to the other language (the tutorial restarts in it).
-export default function Tutorial({
-  lang,
-  onDone,
-  onSwitchLang,
-}: {
-  lang: string;
-  onDone: () => void;
-  onSwitchLang: () => void;
-}) {
+// The header stays in place throughout: the flag (left) opens the language screen —
+// the SAME navigation as everywhere else; because the open-tutorial state is
+// transient store state, picking a language there lands back INTO the tutorial in
+// that language — the centre reads "TUTORIAL", and the right control is a
+// fast-forward that SKIPS the whole tutorial (`onDone`) — a header affordance, not a
+// "close this box" icon, so it can't be mistaken for dismissing the explanation
+// alone. `onDone` fires on both a natural finish (PLAY) and a skip.
+export default function Tutorial({ lang, onDone }: { lang: string; onDone: () => void }) {
   const script = useMemo(() => scriptFor(lang), [lang]);
 
   const [stageIndex, setStageIndex] = useState(0);
@@ -344,11 +337,10 @@ export default function Tutorial({
         {announce}
       </div>
 
-      {/* The header stays in place: flag (switch language) / "TUTORIAL" / a
-          fast-forward that SKIPS the tutorial. */}
+      {/* The header stays in place: flag (language screen, round-trips back here) /
+          "TUTORIAL" / a fast-forward that SKIPS the tutorial. */}
       <TopBar
         lang={lang}
-        onFlag={onSwitchLang}
         center={<span className="topbar-title">{t(lang, 'inviteTutorial')}</span>}
         right={
           <button

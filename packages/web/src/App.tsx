@@ -60,37 +60,36 @@ function GameRoute({ lang }: { lang: LangCode }) {
   // persisted `onboarded`) lands on the INVITATION — standing in for the loading
   // screen while the day's puzzle fetches behind it — and TUTORIAL / SKIP both settle
   // the question for good (either sets the flag). The header's "?" re-opens the
-  // tutorial as a `replay`, which carries an always-available exit (a summoned
-  // tutorial must be dismissible; a chosen first one runs to its end). `?tutorial=1`
-  // forces it (dev/testing); a `?puzzle=` override is a dev path and wins over the
-  // first-visit invite. URL params are read once per page load, like the override.
+  // tutorial as a `replay`; the fast-forward in the tutorial's own header skips it.
+  // The open-tutorial state lives in the STORE (transient) so the tutorial's flag can
+  // round-trip through the /select screen — this route unmounts, and picking a
+  // language re-mounts it with the tutorial still open, now in that language.
+  // `?tutorial=1` forces it (dev/testing); a `?puzzle=` override is a dev path and
+  // wins over the first-visit invite. URL params are read once per page load.
   const [forced, hasOverride] = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     return [params.get('tutorial') === '1', params.has('puzzle')] as const;
   }, []);
-  const [tut, setTut] = useState<'invite' | 'first' | 'replay' | 'off'>(() => {
-    if (forced) return 'first';
-    return !useGameStore.getState().onboarded && !hasOverride ? 'invite' : 'off';
+  const onboarded = useGameStore((s) => s.onboarded);
+  const tutorialOpen = useGameStore((s) => s.tutorialOpen);
+  const openTutorial = useGameStore((s) => s.openTutorial);
+  // The dev force-flag opens it once per mount, before the first paint.
+  useState(() => {
+    if (forced && !useGameStore.getState().tutorialOpen) openTutorial('first');
+    return null;
   });
   const closeTutorial = useCallback(() => {
     setOnboarded();
-    setTut('off');
+    useGameStore.getState().closeTutorial();
   }, [setOnboarded]);
-  const openTutorial = useCallback(() => setTut('replay'), []);
-  // The tutorial's flag switches its language: navigate to the OTHER language's
-  // route. GameRoute stays mounted (same `game` view), so `tut` persists and the
-  // Tutorial (keyed on lang, in App) restarts in the new language — no picker, no
-  // invite bounce. For 2 languages this beats routing through the selector.
-  const switchTutorialLang = useCallback(() => {
-    navigate(pathForLang(lang === 'fr' ? 'en' : 'fr'));
-  }, [lang]);
 
-  if (tut === 'invite') {
-    return <Invite lang={lang} onAccept={() => setTut('first')} onSkip={closeTutorial} />;
+  // key={lang}: switching language mid-tutorial (via /select) restarts it in that
+  // language.
+  if (tutorialOpen) {
+    return <Tutorial key={lang} lang={lang} onDone={closeTutorial} />;
   }
-  // key={lang}: switching language mid-tutorial restarts it in that language.
-  if (tut === 'first' || tut === 'replay') {
-    return <Tutorial key={lang} lang={lang} onDone={closeTutorial} onSwitchLang={switchTutorialLang} />;
+  if (!onboarded && !hasOverride) {
+    return <Invite lang={lang} onAccept={() => openTutorial('first')} onSkip={closeTutorial} />;
   }
 
   return (
@@ -101,7 +100,7 @@ function GameRoute({ lang }: { lang: LangCode }) {
       {loading && <p className="status">{t(lang, 'loading')}</p>}
       {error !== null && <LoadError message={t(lang, 'failedPuzzle')} lang={lang} onRetry={retry} />}
       {noPuzzle && <NoPuzzle lang={lang} />}
-      {puzzle && <Game puzzle={puzzle} dayNumber={dayNumber} onHelp={openTutorial} />}
+      {puzzle && <Game puzzle={puzzle} dayNumber={dayNumber} onHelp={() => openTutorial('replay')} />}
     </>
   );
 }

@@ -18,24 +18,38 @@ function statusOf(round: RoundProgress | undefined): Status {
   return { kind: 'progress', pct: Math.round(round.progress) };
 }
 
-function StatusBadge({ status, uiLang }: { status: Status; uiLang: string }) {
-  if (status.kind === 'solved') return <span className="lang-status lang-status--solved">✓</span>;
-  // The % is tinted by its value on the same gradient the in-game progress bar uses,
-  // so a language's badge reads at a glance like its reconstruction progress. Modifier
-  // classes are namespaced (lang-status--*) so they can't collide with the .progress bar.
-  if (status.kind === 'progress') {
-    return (
-      <span className="lang-status lang-status--progress" style={{ color: progressColor(status.pct) }}>
-        {status.pct}%
-      </span>
-    );
-  }
-  return <span className="lang-status lang-status--none">{t(uiLang, 'newBadge')}</span>;
+// Today's status, spoken in the game's own visual language instead of text badges: a
+// thin strip along the card's bottom edge. Absent = not started (NOTHING is the "new"
+// signal); partial = today's reconstruction %, tinted like the in-game progress bar;
+// full GOLD = solved, the same gold as a solved word. Decorative — the aria-label
+// carries the status for screen readers.
+function StatusStrip({ status }: { status: Status }) {
+  if (status.kind === 'none') return null;
+  const pct = status.kind === 'solved' ? 100 : status.pct;
+  return (
+    <span
+      className="lang-strip"
+      style={{
+        width: `${pct}%`,
+        background: status.kind === 'solved' ? 'var(--hole)' : progressColor(pct),
+      }}
+      aria-hidden="true"
+    />
+  );
 }
 
-// The language selector is a ROUTE (/select), not a modal: the HUD flag links here.
-// Picking a language navigates to its puzzle; the existing per-(day,lang) persist keeps
-// each language's in-progress state, so switching mid-game needs no confirmation.
+function srStatus(uiLang: string, status: Status): string {
+  if (status.kind === 'solved') return ` — ${t(uiLang, 'srLangSolved')}`;
+  if (status.kind === 'progress') return ` — ${status.pct}%`;
+  return '';
+}
+
+// The language screen is a ROUTE (/select), not a modal: the header flag links here
+// from the game AND the tutorial (whose transient open-state survives the round-trip,
+// so picking a language returns into it). One CARD per language — full-opacity flag +
+// the language's NATIVE name — in a vertical list that scales to any number of
+// languages; hover/press brighten like every key in the app. The per-(day,lang)
+// persist keeps each language's in-progress state, so switching needs no confirmation.
 export default function LanguageSelect() {
   const dayNumber = useToday();
   const rounds = useGameStore((s) => s.rounds);
@@ -47,20 +61,20 @@ export default function LanguageSelect() {
   return (
     <div className="lang-screen">
       <h1 className="title">{t(uiLang, 'selectLanguage')}</h1>
-      <div className="flag-grid">
-        {LANGS.map(({ code, label }) => {
-          const round = rounds[roundKeyForDay(dayNumber, code)];
+      <div className="lang-list">
+        {LANGS.map(({ code, native }) => {
+          const status = statusOf(rounds[roundKeyForDay(dayNumber, code)]);
           return (
             <button
               key={code}
               type="button"
-              className="flag-btn"
-              aria-label={label}
-              title={label}
+              className="lang-card"
+              aria-label={`${native}${srStatus(uiLang, status)}`}
               onClick={() => navigate(pathForLang(code))}
             >
-              <Flag code={code} />
-              <StatusBadge status={statusOf(round)} uiLang={uiLang} />
+              <Flag code={code} className="lang-card-flag" />
+              <span className="lang-card-name">{native}</span>
+              <StatusStrip status={status} />
             </button>
           );
         })}

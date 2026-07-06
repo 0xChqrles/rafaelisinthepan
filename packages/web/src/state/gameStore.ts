@@ -62,6 +62,15 @@ interface GameState extends PersistedState {
   // load from the active puzzle's (day, lang). The mutating actions target rounds[activeKey].
   activeKey: string | null;
 
+  // The tutorial currently on screen (transient, NOT persisted): 'first' = the run a
+  // newcomer accepted from the invitation, 'replay' = summoned via the header's "?".
+  // It lives in the store (not GameRoute state) so it survives the /select
+  // round-trip — the tutorial's flag goes through the REAL language screen, and
+  // picking a language there returns INTO the tutorial in that language.
+  tutorialOpen: 'first' | 'replay' | null;
+  openTutorial: (kind: 'first' | 'replay') => void;
+  closeTutorial: () => void;
+
   // Remember the last-played language (drives the `/` redirect). Ignores non-languages.
   setLastLang: (lang: string) => void;
 
@@ -128,6 +137,10 @@ export const useGameStore = create<GameState>()(
       lastLang: null,
       onboarded: false,
       activeKey: null,
+      tutorialOpen: null,
+
+      openTutorial: (kind) => set({ tutorialOpen: kind }),
+      closeTutorial: () => set({ tutorialOpen: null }),
 
       setLastLang: (lang) => {
         if (!isLang(lang) || get().lastLang === lang) return;

@@ -484,11 +484,14 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   the game? …" + TUTORIAL / SKIP — either sets the flag, so a veteran on a new
   device is one SKIP from playing). The header's `?` re-opens it as a **replay**.
   The tutorial **keeps the app header** (decided 2026-07-06, superseding the earlier
-  header-less design): flag (left) **switches the tutorial's language**
-  (`onSwitchLang` navigates to the other lang route; GameRoute stays mounted so the
-  tutorial persists and restarts in it), centre reads **"TUTORIAL"**, and the right
-  control is a **fast-forward that SKIPS the whole tutorial** (`assets/icons/skip.svg`,
-  → `onDone`) — a header affordance, NOT a coach-box `×` (which read as "close this
+  header-less design): the flag (left) opens the **language screen — the ONE
+  language-switching gesture everywhere** (no per-context flag behavior; decided
+  2026-07-06 superseding a brief direct-toggle). The open-tutorial state is
+  **transient store state** (`tutorialOpen: 'first' | 'replay' | null`, NOT
+  persisted), so it survives the /select round-trip: picking a language returns INTO
+  the tutorial in that language. Centre reads **"TUTORIAL"**, and the right control
+  is a **fast-forward that SKIPS the whole tutorial** (`assets/icons/skip.svg`, →
+  `onDone`) — a header affordance, NOT a coach-box `×` (which read as "close this
   box only"). Skip is available on both the first run and replays. The tutorial
   itself is **two-stage**, in the REAL game components. **Screen contract:**
   explanations in a TOP box (typewritten like a game dialog — `tutorial/CoachText.tsx`,
@@ -522,9 +525,16 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   thin `--surface` bottom border separating it from the app; the **progress bar sits
   in its own full-width row below it** (no more flag/`?` squeezing the bar on
   mobile). The game fills it with the day's puzzle id (`#<dayNumber>`) + help `?`;
-  the tutorial fills it with "TUTORIAL" + the skip fast-forward and overrides the
-  flag to switch its language. The topbar is the extension point for future chrome
+  the tutorial fills it with "TUTORIAL" + the skip fast-forward. The flag ALWAYS
+  opens the language screen. The topbar is the extension point for future chrome
   (streaks, stats, …).
+- **Language screen (redesigned 2026-07-06):** one **card** per language — a
+  full-opacity flag + the language's **native** name (`LANGS[].native`; never
+  translated) — in a vertical list that scales to any number of languages, with the
+  app's standard brighten-on-hover/press (no dimmed flags). The old NEW/%/✓ badges
+  are gone: today's status is a thin **strip on the card's bottom edge** — absent =
+  not started, partial = reconstruction % on the progress ramp, full **gold** =
+  solved (the solved-word gold). The card's aria-label speaks the status.
 - **UI chrome is localized + a11y'd (decided 2026-07-06):** `web/src/i18n.ts` holds every
   UI string in **en + fr** (`t(lang, key)`; the `satisfies` clause makes a missing
   translation a type error, so parity needs no test). Game screens resolve strings with

@@ -87,6 +87,11 @@ button * {
   align-items: center;
   gap: 16px;
 }
+
+.load-error > p {
+  text-align: center;
+}
+
 /* Sub-line of the missing-puzzle screen: owns that the state is ABNORMAL (a publish
    that did not happen), so it never reads like a scheduled day off. */
 .no-puzzle-note {
@@ -115,7 +120,14 @@ button * {
 }
 
 /* ===================== language screen ===================== */
+/* One CARD per language — full-opacity flag + native name — in a vertical list that
+   scales to any number of languages. Cards are flat surface tiles that BRIGHTEN on
+   hover/press, the same interaction language as every key in the app (no dimmed
+   flags, no badges). Today's status is the thin strip along a card's bottom edge:
+   absent = not started, partial = reconstruction % in the progress ramp, full GOLD =
+   solved (the same gold as a solved word). */
 .lang-screen {
+  width: min(420px, 100%);
   text-align: center;
 }
 
@@ -128,58 +140,56 @@ button * {
   padding-top: var(--cap-shift);
 }
 
-.flag-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 36px;
-}
-
-.flag-btn {
+.lang-list {
   display: flex;
   flex-direction: column;
+  gap: 14px;
+}
+
+.lang-card {
+  position: relative;
+  overflow: hidden; /* keeps the status strip inside the tile */
+  display: flex;
   align-items: center;
-  gap: 16px;
-  background: transparent;
+  gap: 20px;
+  padding: 18px 22px;
+  background: var(--surface-hover);
   border: 0;
-  padding: 0;
   cursor: pointer;
+  text-shadow: none;
+  transition: filter 0.08s linear;
 }
-.flag-btn:focus-visible {
-  outline: none;
+.lang-card:hover,
+.lang-card:focus-visible {
+  filter: brightness(1.2);
 }
-
-/* Per-language status badge under each picker flag (today's puzzle): NEW / % / ✓. */
-.lang-status {
-  font-family: var(--press);
-  font-size: 13px;
-  letter-spacing: 1px;
-  font-variant-numeric: tabular-nums;
-}
-.lang-status--none {
-  color: var(--muted);
-  opacity: 0.6;
-}
-/* .lang-status--progress is tinted inline by progressColor(pct) — its color tracks the
-   percentage's value, matching the in-game progress bar. (Namespaced so it never
-   inherits the .progress bar's surface background/height.) */
-.lang-status--solved {
-  color: var(--hole);
+.lang-card:active {
+  filter: brightness(1.35);
 }
 
-.flag-img {
+.lang-card-flag {
   display: block;
-  width: 230px;
-  height: auto;
-  object-fit: cover;
-  opacity: 0.7;
+  height: 30px;
+  width: auto;
   image-rendering: pixelated;
-  outline: 5px solid transparent;
-  outline-offset: 0;
 }
-.flag-btn:hover .flag-img,
-.flag-btn:focus-visible .flag-img {
-  opacity: 1;
-  outline: 5px solid var(--accent);
+
+.lang-card-name {
+  font-family: var(--press);
+  font-size: clamp(13px, 2vh, 16px);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--fg);
+  padding-top: var(--cap-shift);
+}
+
+/* Today's status strip (width + color set inline: % on the progress ramp, full gold
+   when solved). Decorative — the card's aria-label speaks the status. */
+.lang-strip {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 4px;
 }
 
 /* ===================== game screen ===================== */
@@ -340,8 +350,8 @@ button * {
   opacity: 1;
   filter: brightness(1.2);
 }
-/* The current puzzle's language flag, sized small for the HUD (the picker uses the
-   larger .flag-img). */
+/* The current puzzle's language flag, sized small for the header (the picker uses
+   the larger .lang-card-flag). */
 .hud-flag {
   display: block;
   width: 100%;
@@ -1052,16 +1062,17 @@ button * {
     border-width: 2px;
   }
 
-  /* Language picker: the two flags must fit side by side on a phone. */
+  /* Language picker: tighter cards on a phone. */
   .title {
     font-size: clamp(20px, 7vw, 28px);
     margin-bottom: 28px;
   }
-  .flag-grid {
-    gap: 20px;
+  .lang-card {
+    padding: 16px 18px;
+    gap: 16px;
   }
-  .flag-img {
-    width: min(38vw, 200px);
+  .lang-card-flag {
+    height: 26px;
   }
 
   /* Buttons narrow enough for small screens (BACK / SHARE). */
@@ -1073,12 +1084,11 @@ button * {
 
 /* ===================== keyboard focus ===================== */
 /* Every interactive control gets a VISIBLE keyboard-focus indicator (hover keeps its
-   brightness-only affordance; :focus-visible fires only on keyboard focus). The flag
-   buttons are excluded: their focus indicator is the accent outline on the flag image
-   itself (.flag-btn:focus-visible .flag-img). */
+   brightness-only affordance; :focus-visible fires only on keyboard focus). */
 .kb-key:focus-visible,
 .share-key:focus-visible,
 .btn:focus-visible,
+.lang-card:focus-visible,
 .home-btn:focus-visible {
   outline: 3px solid var(--accent-dim);
   outline-offset: 2px;

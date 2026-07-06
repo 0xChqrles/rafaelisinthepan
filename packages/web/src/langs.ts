@@ -1,9 +1,11 @@
 // Supported game languages — the single source for the picker and the /<lang> URL
 // routing. A language is deep-linkable: /fr and /en map to the game in that language,
-// / is the picker.
+// / is the picker. `native` is the name in the language ITSELF — a language picker
+// must be readable by the person who needs that language, so the list never
+// translates the names.
 export const LANGS = [
-  { code: 'en', label: 'English' },
-  { code: 'fr', label: 'French' },
+  { code: 'en', label: 'English', native: 'English' },
+  { code: 'fr', label: 'French', native: 'Français' },
 ] as const;
 
 export type LangCode = (typeof LANGS)[number]['code'];

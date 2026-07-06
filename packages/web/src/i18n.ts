@@ -26,7 +26,7 @@ const STRINGS = {
   },
   changeLanguage: { en: 'CHANGE LANGUAGE', fr: 'CHANGER DE LANGUE' },
   selectLanguage: { en: 'SELECT LANGUAGE', fr: 'CHOISIS TA LANGUE' },
-  newBadge: { en: 'NEW', fr: 'NOUVEAU' },
+  srLangSolved: { en: 'solved', fr: 'résolu' },
   notAWord: { en: 'this word does not exist', fr: "ce mot n'existe pas" },
   // The score unit stays NAMED in both languages (lower is better must survive the
   // share card); the share text lowercases these.

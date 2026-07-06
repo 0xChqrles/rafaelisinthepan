@@ -14,9 +14,9 @@ const FLAGS: Partial<Record<string, FlagInfo>> = {
   fr: { src: flagFr, alt: 'French flag' },
 };
 
-// `className` lets a caller pick the size context: the default `flag-img` is the big
-// picker flag; the HUD passes `hud-flag` for the small in-header flag.
-export default function Flag({ code, className = 'flag-img' }: { code: string; className?: string }) {
+// `className` picks the size context — `lang-card-flag` on the language screen's
+// cards, `hud-flag` for the small in-header flag. Always passed explicitly.
+export default function Flag({ code, className }: { code: string; className: string }) {
   const flag = FLAGS[code];
   if (!flag) return null;
 
