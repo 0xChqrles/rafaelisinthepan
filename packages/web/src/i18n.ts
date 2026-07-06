@@ -49,8 +49,8 @@ const STRINGS = {
   // CoachText's inline markup so words LOOK like what they are in-game:
   // [[b:secret]] blue, [[w:hint^rank]] gold + heat exponent, [[m:miss]] coldest heat.
   tutMixIntro: {
-    en: 'This blue word is a SECRET word.',
-    fr: 'Ce mot bleu est un mot SECRET.',
+    en: 'Welcome to Whippin AI, please start by mixing this word.',
+    fr: 'Bienvenue sur Whippin AI, commence par mélanger ce mot.',
   },
   tutMix: { en: 'MIX', fr: 'MÉLANGER' },
   tutMixAgain: { en: 'MIX AGAIN', fr: 'MÉLANGE ENCORE' },
@@ -87,7 +87,8 @@ const STRINGS = {
     en: 'Now a real one: this sentence hides TWO words. You are on your own.',
     fr: 'Maintenant, une vraie : cette phrase cache DEUX mots. À toi de jouer.',
   },
-  tutPlay: { en: "PLAY TODAY'S PUZZLE", fr: 'JOUER AU PUZZLE DU JOUR' },
+  // Sits in SHARE's slot on the real solved layout, so it stays as short as SHARE.
+  tutPlay: { en: 'PLAY', fr: 'JOUER' },
 } satisfies Record<string, Record<UiLang, string>>;
 
 export type UiKey = keyof typeof STRINGS;

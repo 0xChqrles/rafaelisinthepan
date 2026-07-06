@@ -4,11 +4,13 @@ import ProgressBar from '../components/ProgressBar';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import LoadError from '../components/LoadError';
+import SolvedScreen from '../components/SolvedScreen';
 import { HIT_FADE_MS } from '../components/FloatingHit';
 import { STAGGER_MS, FLOATING_HIT_INTRO_MS, WORD_BLINK_MS } from '../screens/Game';
 import MixWord from './MixWord';
 import CoachText, { richToPlain } from './CoachText';
 import { computeProgress } from '../game/scoring';
+import { progressTrajectory } from '../game/share';
 import { buildPrefixSet, canExtend } from '../game/keyboard';
 import useVocab from '../hooks/useVocab';
 import { fold } from '@whippin/shared';
@@ -399,19 +401,18 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
       </div>
 
       {/* The bottom is for INTERACTIONS: the mix button, then the keyboard, and at
-          the very end the score + the way out. */}
+          the very end the REAL solved layout — heat squares + score reveal, with
+          PLAY standing in SHARE's slot — so graduation looks exactly like tomorrow's
+          win will. */}
       <div className="tray">
         {graduated ? (
-          <div className="solved-actions in">
-            <span className="solved-score">
-              {tries} {t(lang, tries === 1 ? 'try' : 'tries')}
-            </span>
-            {/* eslint-disable-next-line jsx-a11y/no-autofocus -- the round is over;
-                its only action is the accessible default */}
-            <button type="button" className="share-key" onClick={onDone} autoFocus>
-              {t(lang, 'tutPlay')}
-            </button>
-          </div>
+          <SolvedScreen
+            guessCount={tries}
+            trajectory={progressTrajectory(freshHoles(stage), puzzle.ranks, [...triedRef.current])}
+            dayNumber={null}
+            lang={lang}
+            action={{ label: t(lang, 'tutPlay'), onClick: onDone }}
+          />
         ) : step.kind === 'mix' ? (
           mixLabel && (
             <button type="button" className="mix-btn" onClick={pressMix} disabled={mixBusy}>

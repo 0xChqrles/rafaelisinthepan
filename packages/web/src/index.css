@@ -1064,7 +1064,7 @@ button * {
 .coach-text {
   margin: 0;
   font-family: var(--press);
-  font-size: 12px;
+  font-size: clamp(13px, 2vh, 16px);
   line-height: 2;
   color: var(--fg);
   text-shadow: none;
@@ -1081,8 +1081,11 @@ button * {
 }
 
 /* The mix button — the bottom interaction of the demo, standing where the keyboard
-   will land ("the mix button moves down, the keyboard moves up"). */
+   will land ("the mix button moves down, the keyboard moves up"). Full width of the
+   keyboard's footprint. */
 .mix-btn {
+  width: 100%;
+  max-width: 680px; /* the keyboard's max-width — same interaction footprint */
   font-family: var(--press);
   font-size: clamp(13px, 1.9vh, 16px);
   letter-spacing: 2px;
@@ -1113,6 +1116,6 @@ button * {
     min-height: 84px;
   }
   .coach-text {
-    font-size: 10px;
+    font-size: 12px;
   }
 }

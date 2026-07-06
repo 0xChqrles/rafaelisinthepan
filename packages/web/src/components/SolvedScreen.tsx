@@ -31,17 +31,21 @@ function formatHMS(totalSeconds: number): string {
 // keyboard was. Understated + flat to match the app: a heat-grid of one pixel square per
 // counted guess (colored by the game's own heat ramp — cold/far to hot/solved), the
 // score, and a share control styled like a keyboard key. Reused by the already-solved
-// screen (#9). The reconstructed sentence + attribution live above, in <SolvedCaption>.
+// screen (#9) and by the tutorial's ending (#51), which swaps SHARE for its own
+// `action` (PLAY) so the tutorial graduates into the EXACT solved layout of the real
+// game. The reconstructed sentence + attribution live above, in <SolvedCaption>.
 export default function SolvedScreen({
   guessCount,
   trajectory,
   dayNumber,
   lang,
+  action,
 }: {
   guessCount: number;
   trajectory: number[]; // reconstruction % after each counted guess (one per try)
   dayNumber: number | null;
   lang: string; // packed into the share token (drives the link's click-through target)
+  action?: { label: string; onClick: () => void }; // replaces the SHARE control (tutorial)
 }) {
   // Collapse the per-guess trajectory into a bounded set of squares (3..18), each colored
   // by its bucket's mean progress. Same array drives the on-screen grid and the share row.
@@ -190,10 +194,16 @@ export default function SolvedScreen({
           </span>{' '}
           {t(lang, guessCount === 1 ? 'try' : 'tries')}
         </span>
-        {dayNumber != null && (
-          <button type="button" className={`share-key${copied ? ' copied' : ''}`} onClick={onShare}>
-            {copied ? t(lang, 'copied') : t(lang, 'share')}
+        {action ? (
+          <button type="button" className="share-key" onClick={action.onClick}>
+            {action.label}
           </button>
+        ) : (
+          dayNumber != null && (
+            <button type="button" className={`share-key${copied ? ' copied' : ''}`} onClick={onShare}>
+              {copied ? t(lang, 'copied') : t(lang, 'share')}
+            </button>
+          )
         )}
       </div>
 
