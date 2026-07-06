@@ -528,13 +528,17 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   the tutorial fills it with "TUTORIAL" + the skip fast-forward. The flag ALWAYS
   opens the language screen. The topbar is the extension point for future chrome
   (streaks, stats, …).
-- **Language screen (redesigned 2026-07-06):** one **card** per language — a
-  full-opacity flag + the language's **native** name (`LANGS[].native`; never
-  translated) — in a vertical list that scales to any number of languages, with the
-  app's standard brighten-on-hover/press (no dimmed flags). The old NEW/%/✓ badges
-  are gone: today's status is a thin **strip on the card's bottom edge** — absent =
-  not started, partial = reconstruction % on the progress ramp, full **gold** =
-  solved (the solved-word gold). The card's aria-label speaks the status.
+- **Language screen (redesigned 2026-07-06):** headed by the **logo** (blue pixel
+  glyph, 3×/2× its native 22px — language-neutral, and the app's ONE in-app branding
+  spot), NOT a "select language" title (the cards self-explain, and a title would
+  have to guess the user's language on the screen where it is unknown). One **card**
+  per language — a full-opacity flag + the language's **native** name
+  (`LANGS[].native`; never translated) — in a vertical list that scales to any number
+  of languages, with the app's standard brighten-on-hover/press (no dimmed flags).
+  The old NEW/%/✓ badges are gone: today's status is a thin **strip on the card's
+  bottom edge** — absent = not started, partial = reconstruction % on the progress
+  ramp, full **gold** = solved (the solved-word gold). The card's aria-label speaks
+  the status.
 - **UI chrome is localized + a11y'd (decided 2026-07-06):** `web/src/i18n.ts` holds every
   UI string in **en + fr** (`t(lang, key)`; the `satisfies` clause makes a missing
   translation a type error, so parity needs no test). Game screens resolve strings with

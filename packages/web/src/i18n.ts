@@ -25,7 +25,6 @@ const STRINGS = {
     fr: "Ce n'est pas normal — revenez d'ici quelques instants.",
   },
   changeLanguage: { en: 'CHANGE LANGUAGE', fr: 'CHANGER DE LANGUE' },
-  selectLanguage: { en: 'SELECT LANGUAGE', fr: 'CHOISIS TA LANGUE' },
   srLangSolved: { en: 'solved', fr: 'résolu' },
   notAWord: { en: 'this word does not exist', fr: "ce mot n'existe pas" },
   // The score unit stays NAMED in both languages (lower is better must survive the

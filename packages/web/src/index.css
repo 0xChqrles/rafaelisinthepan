@@ -131,13 +131,18 @@ button * {
   text-align: center;
 }
 
-.title {
-  font-family: var(--press);
-  font-size: 32px;
-  color: var(--accent);
-  letter-spacing: 2px;
+/* The logo heads the screen instead of a "select language" instruction (the cards
+   self-explain; a title would have to guess the user's language). Sized at an exact
+   multiple of its 22px pixel art so it stays crisp. */
+.lang-logo-title {
   margin: 0 0 40px;
-  padding-top: var(--cap-shift);
+}
+.lang-logo {
+  display: block;
+  margin: 0 auto;
+  width: 66px; /* 3 × 22px */
+  height: 66px;
+  image-rendering: pixelated;
 }
 
 .lang-list {
@@ -1063,9 +1068,12 @@ button * {
   }
 
   /* Language picker: tighter cards on a phone. */
-  .title {
-    font-size: clamp(20px, 7vw, 28px);
+  .lang-logo-title {
     margin-bottom: 28px;
+  }
+  .lang-logo {
+    width: 44px; /* 2 × 22px */
+    height: 44px;
   }
   .lang-card {
     padding: 16px 18px;

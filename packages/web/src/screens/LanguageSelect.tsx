@@ -5,6 +5,8 @@ import useToday from '../hooks/useToday';
 import { progressColor } from '@whippin/shared';
 import { useGameStore, roundKeyForDay, type RoundProgress } from '../state/gameStore';
 import { t } from '../i18n';
+// Bundled like the flags (small enough to inline as a data URI — no extra request).
+import logo from '../assets/logo-blue.png';
 
 // Per-language status for today, read from the persisted round map (no puzzle load):
 //   - none     -> not started (no round yet, or visited without a guess);
@@ -60,7 +62,13 @@ export default function LanguageSelect() {
 
   return (
     <div className="lang-screen">
-      <h1 className="title">{t(uiLang, 'selectLanguage')}</h1>
+      {/* The logo, not a "select language" instruction: the cards self-explain, and a
+          title would have to GUESS the user's language on the one screen where it is
+          unknown. The logo is language-neutral and this quasi-menu screen is the
+          app's one in-app branding spot. The h1 + alt keep the accessible name. */}
+      <h1 className="lang-logo-title">
+        <img className="lang-logo" src={logo} alt="Whippin AI" draggable="false" />
+      </h1>
       <div className="lang-list">
         {LANGS.map(({ code, native }) => {
           const status = statusOf(rounds[roundKeyForDay(dayNumber, code)]);
