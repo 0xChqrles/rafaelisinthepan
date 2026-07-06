@@ -257,6 +257,19 @@ button * {
   align-items: center;
   justify-content: space-between;
 }
+/* The header's "?" (replays the tutorial). Buttons don't inherit font/color, so the
+   pixel font and muted tint must be explicit. */
+.help-btn {
+  font-family: var(--press);
+  font-size: clamp(14px, 2.2vh, 18px);
+  color: var(--muted);
+  padding-top: var(--cap-shift);
+}
+.help-btn:hover,
+.help-btn:focus-visible {
+  color: var(--fg);
+}
+
 /* The day's puzzle id — ABSOLUTELY centered so it never drifts with the side
    controls' widths (decorative; the share text carries the real id). */
 .topbar-id {
