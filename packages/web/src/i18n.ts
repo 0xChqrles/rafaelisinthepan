@@ -44,62 +44,44 @@ const STRINGS = {
   ariaHelp: { en: 'How to play', fr: 'Comment jouer' },
   // ---- onboarding tutorial (#51). In guess-step copy, {WORD} is replaced by the
   // script's expected word (uppercased) so the copy can never drift from the script.
+  // Tutorial copy is deliberately TERSE: the feedback on screen does the teaching,
+  // the panels only set up the next move. No under-the-hood talk.
   tutScramble: {
     en: 'This blue word is a SECRET word. Press SCRAMBLE.',
     fr: 'Ce mot bleu est un mot SECRET. Appuie sur MÉLANGER.',
   },
   tutScrambleBtn: { en: 'SCRAMBLE', fr: 'MÉLANGER' },
   tutAfterScramble: {
-    en: 'Each step swapped the word for its next-closest neighbor — an AI ranked EVERY word by how close its meaning is to the secret. 100 steps out you get a distant cousin: that word, 100 places away, is exactly where every round starts.',
-    fr: "Chaque étape a remplacé le mot par son voisin le plus proche suivant — une IA classe TOUS les mots selon la proximité de leur sens avec le secret. Après 100 étapes, on obtient un cousin lointain : ce mot, à 100 places du secret, est exactement le point de départ de chaque manche.",
+    en: 'Each step: the next-closest word by meaning. 100 steps out — this is where every round starts.',
+    fr: 'Chaque étape : le mot le plus proche par le sens. À 100 pas — le point de départ de chaque manche.',
   },
   tutGuessFar: {
     en: 'Type {WORD} — it will land at distance 200.',
-    fr: "Tape {WORD} — il va atterrir à une distance de 200.",
-  },
-  tutAfterFar: {
-    en: "There it is: 200. Every word you try shows its distance to the secret — and 200 is farther than 100, so the word didn't move.",
-    fr: "Le voilà : 200. Chaque mot essayé affiche sa distance au secret — et 200 est plus loin que 100, donc le mot n'a pas bougé.",
+    fr: 'Tape {WORD} — il va atterrir à une distance de 200.',
   },
   tutGuessMiss: {
     en: 'Now type {WORD}.',
     fr: 'Maintenant, tape {WORD}.',
   },
   tutAfterMiss: {
-    en: 'MISS — too far to even get a rank. Most words are not in the neighborhood at all.',
-    fr: "MISS — trop loin pour être classé. La plupart des mots ne font pas du tout partie du voisinage.",
+    en: 'MISS: too far to rank.',
+    fr: 'MISS : trop loin pour être classé.',
   },
   tutGuessCloser: {
     en: 'Try {WORD}.',
     fr: 'Essaie {WORD}.',
   },
-  tutAfterCloser: {
-    en: '50 beats 100 — the word moved closer and took its place. Only a CLOSER word ever replaces it.',
-    fr: "50 bat 100 — le mot s'est rapproché et a pris sa place. Seul un mot PLUS PROCHE peut le remplacer.",
-  },
   tutFind: {
-    en: 'Now — do you remember the very first word, the blue one? Type it. Feel free to explore on the way.',
-    fr: 'Maintenant — tu te souviens du tout premier mot, le bleu ? Tape-le. Explore librement en chemin.',
+    en: 'Now type the very first word — the blue one.',
+    fr: 'Maintenant, tape le tout premier mot — le bleu.',
   },
   tutFindNudge: {
     en: 'Forgot it? It was {WORD}.',
     fr: "Oublié ? C'était {WORD}.",
   },
-  tutAfterFind: {
-    en: "Distance 0 — found! That's the whole game: close the distance.",
-    fr: "Distance 0 — trouvé ! C'est tout le jeu : réduire la distance.",
-  },
   tutSentence: {
-    en: "Now a real one. This sentence hides TWO words — find them both. You're on your own.",
-    fr: 'Maintenant, une vraie. Cette phrase cache DEUX mots — trouve-les tous les deux. À toi de jouer.',
-  },
-  tutWrapTries: {
-    en: 'The big number counts your tries — fewer is better, and misses count too. Guess thoughtfully.',
-    fr: "Le grand nombre compte tes essais — moins il y en a, mieux c'est, et les MISS comptent aussi. Réfléchis bien.",
-  },
-  tutWrapProgress: {
-    en: 'This bar tracks the whole sentence. The real puzzle hides 3 words. Good luck!',
-    fr: 'Cette barre suit la phrase entière. Le vrai puzzle cache 3 mots. Bonne chance !',
+    en: 'Now a real one: this sentence hides TWO words. You are on your own.',
+    fr: 'Maintenant, une vraie : cette phrase cache DEUX mots. À toi de jouer.',
   },
   tutNext: { en: 'NEXT', fr: 'SUIVANT' },
   tutSkip: { en: 'SKIP', fr: 'PASSER' },

@@ -490,7 +490,10 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   vocabulary (`useVocab` loads in the tutorial), nudged with the answer after 3
   straight MISSes. **Stage 2** is an easy two-hole sentence played **unguided** —
   its rank maps are stocked so the obvious first guesses land on BOTH holes, so
-  multi-hole broadcast is discovered, not told. The tutorial is **data-driven**:
+  multi-hole broadcast is discovered, not told; solving it ends the tutorial
+  **wordlessly** (the tray swaps to `N TRIES` + PLAY TODAY'S PUZZLE — no wrap-up
+  panels; copy is deliberately terse throughout, no under-the-hood talk). The
+  tutorial is **data-driven**:
   boards, ranks, guesses and steps live in `web/src/tutorial/scripts/{en,fr}.ts`
   (copy keys in `i18n.ts`) and `tutorial/scripts.test.ts` guards the lesson arc.
   Gated steps use synthetic vocab/prefix sets (the keyboard's existing contract);

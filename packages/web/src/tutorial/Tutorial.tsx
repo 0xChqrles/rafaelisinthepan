@@ -221,13 +221,18 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
       const settleMs = fadeDelayMs + HIT_FADE_MS + (anyImprove ? WORD_BLINK_MS : 0) + 250;
       if (lock) {
         setPhase('feedback');
-        later(() => setPhase('after'), settleMs);
+        // Most gated guesses need no comment — the feedback taught the lesson, so
+        // they roll straight into the next prompt. Only a step with an afterKey
+        // (MISS, the least self-evident) pauses on an explanation.
+        const afterKey = step.kind === 'guess' ? step.afterKey : undefined;
+        later(afterKey ? () => setPhase('after') : advance, settleMs);
       } else if (solvesAll) {
         setPhase('feedback');
-        // The find step lands on its explanation; the play step is the graduation —
-        // no panel, straight to the wrap-up once the sentence has settled.
-        if (step.kind === 'find') later(() => setPhase('after'), settleMs);
-        else later(advance, settleMs + 350);
+        // Solving needs no comment either: the find step rolls into the sentence
+        // stage, and the play step is the graduation — the tray swaps to the score
+        // + the PLAY TODAY'S PUZZLE exit ('after'), and nothing more is said.
+        if (step.kind === 'find') later(advance, settleMs + 350);
+        else later(() => setPhase('after'), settleMs + 350);
       }
     },
     [holes, puzzle, step, lang, say, later, advance],
@@ -289,31 +294,31 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
   } else if (step.kind === 'guess') {
     if (phase === 'idle') {
       panel = { copy: withWord(t(lang, step.copyKey), step.expect), anchor: 'hole', modal: false };
-    } else if (phase === 'after') {
+    } else if (phase === 'after' && step.afterKey) {
       panel = { copy: withWord(t(lang, step.afterKey), step.expect), anchor: 'hole', modal: true };
     }
-  } else if (step.kind === 'find') {
-    if (phase === 'idle') {
-      panel = {
-        copy:
-          missStreak >= NUDGE_AFTER_MISSES
-            ? withWord(t(lang, step.nudgeKey), step.target)
-            : t(lang, step.copyKey),
-        anchor: 'hole',
-        modal: false,
-      };
-    } else if (phase === 'after') {
-      panel = { copy: t(lang, step.afterKey), anchor: 'hole', modal: true };
-    }
-  } // play: no panel — they're on their own.
+  } else if (step.kind === 'find' && phase === 'idle') {
+    panel = {
+      copy:
+        missStreak >= NUDGE_AFTER_MISSES
+          ? withWord(t(lang, step.nudgeKey), step.target)
+          : t(lang, step.copyKey),
+      anchor: 'hole',
+      modal: false,
+    };
+  } // play: no panel — they're on their own, and the solve says nothing either.
   const dimmed = panel?.modal === true && !UNDIMMED_ANCHORS.includes(panel.anchor);
   const isVeryLast = stageIndex === script.stages.length - 1 && stepIndex === stage.steps.length - 1;
 
   const showScramble = step.kind === 'scramble' && phase !== 'after';
   const vocabNeeded = step.kind === 'find' || step.kind === 'play';
+  // The sentence solved: the tutorial's last word is the score + the exit button.
+  const graduated = step.kind === 'play' && phase === 'after';
 
   return (
-    <div className="game tutorial">
+    // tutorial--word: the concept stage is deliberately CLEAN — panel on top, one big
+    // centered word in the middle, keyboard at the bottom, nothing else.
+    <div className={`game tutorial${liveStage ? '' : ' tutorial--word'}`}>
       <div className="sr-only" role="status" aria-live="polite">
         {announce}
       </div>
@@ -369,7 +374,20 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
       </div>
 
       <div className="tray">
-        {step.kind === 'scramble' ? null : vocabNeeded && vocabError ? (
+        {graduated ? (
+          // No more talking: the score (unit named — lower is better reads itself)
+          // and the way out, styled like the real solved screen's row.
+          <div className="solved-actions in">
+            <span className="solved-score">
+              {tries} {t(lang, tries === 1 ? 'try' : 'tries')}
+            </span>
+            {/* eslint-disable-next-line jsx-a11y/no-autofocus -- the round is over;
+                its only action is the accessible default */}
+            <button type="button" className="share-key" onClick={onDone} autoFocus>
+              {t(lang, 'tutPlay')}
+            </button>
+          </div>
+        ) : step.kind === 'scramble' ? null : vocabNeeded && vocabError ? (
           <LoadError message={t(lang, 'failedVocab')} lang={lang} onRetry={retryVocab} />
         ) : vocabNeeded && !vocab ? (
           <p className="status">{t(lang, 'loading')}</p>

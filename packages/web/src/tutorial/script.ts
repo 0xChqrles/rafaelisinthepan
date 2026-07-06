@@ -31,15 +31,18 @@ export type TutorialStep =
   // from the stage's own rank map (real entries, rank <= start_rank).
   | { kind: 'scramble'; copyKey: UiKey; afterKey: UiKey }
   // A prescribed guess: input is gated to `expect` (only its letters + enter are
-  // active), the submit plays the REAL feedback choreography, then `afterKey`
-  // explains what happened. {WORD} in copy renders as `expect` uppercased.
-  | { kind: 'guess'; expect: string; copyKey: UiKey; afterKey: UiKey }
-  // Free typing (real vocabulary) until `target` is typed. Exploration is welcome —
-  // any word gets its real float (ladder rank or MISS) — but after 3 consecutive
-  // MISSes the prompt swaps to `nudgeKey` ({WORD} = the target) in case they forgot.
-  | { kind: 'find'; target: string; copyKey: UiKey; nudgeKey: UiKey; afterKey: UiKey }
-  // Unguided play (real vocabulary, tries counted, progress bar live): the step —
-  // and the training wheels — end when the stage's puzzle is solved.
+  // active) and the submit plays the REAL feedback choreography. `afterKey` is
+  // OPTIONAL and rare — the feedback usually speaks for itself, so most guesses
+  // auto-advance once it settles. {WORD} in copy renders as `expect` uppercased.
+  | { kind: 'guess'; expect: string; copyKey: UiKey; afterKey?: UiKey }
+  // Free typing (real vocabulary) until `target` is typed, then auto-advance —
+  // solving it needs no comment. Exploration is welcome — any word gets its real
+  // float (ladder rank or MISS) — but after 3 consecutive MISSes the prompt swaps
+  // to `nudgeKey` ({WORD} = the target) in case they forgot.
+  | { kind: 'find'; target: string; copyKey: UiKey; nudgeKey: UiKey }
+  // Unguided play (real vocabulary, tries counted, progress bar live). When the
+  // sentence is solved the tutorial says nothing more: the tray swaps to the score
+  // ("N TRIES" — lower is better speaks for itself) + the PLAY TODAY'S PUZZLE exit.
   | { kind: 'play' };
 
 export interface TutorialStage {

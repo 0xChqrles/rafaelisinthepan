@@ -62,16 +62,11 @@ const script: TutorialScript = {
       },
       steps: [
         { kind: 'scramble', copyKey: 'tutScramble', afterKey: 'tutAfterScramble' },
-        { kind: 'guess', expect: 'desert', copyKey: 'tutGuessFar', afterKey: 'tutAfterFar' },
+        // The -200 and the word moving on -50 speak for themselves: no after panels.
+        { kind: 'guess', expect: 'desert', copyKey: 'tutGuessFar' },
         { kind: 'guess', expect: 'pizza', copyKey: 'tutGuessMiss', afterKey: 'tutAfterMiss' },
-        { kind: 'guess', expect: 'boat', copyKey: 'tutGuessCloser', afterKey: 'tutAfterCloser' },
-        {
-          kind: 'find',
-          target: 'ocean',
-          copyKey: 'tutFind',
-          nudgeKey: 'tutFindNudge',
-          afterKey: 'tutAfterFind',
-        },
+        { kind: 'guess', expect: 'boat', copyKey: 'tutGuessCloser' },
+        { kind: 'find', target: 'ocean', copyKey: 'tutFind', nudgeKey: 'tutFindNudge' },
       ],
     },
     {
@@ -134,9 +129,8 @@ const script: TutorialScript = {
       },
       steps: [
         { kind: 'tell', anchor: 'center', copyKey: 'tutSentence' },
+        // Solving it ends the tutorial: score + PLAY TODAY'S PUZZLE, no more talk.
         { kind: 'play' },
-        { kind: 'tell', anchor: 'watermark', copyKey: 'tutWrapTries' },
-        { kind: 'tell', anchor: 'progress', copyKey: 'tutWrapProgress' },
       ],
     },
   ],

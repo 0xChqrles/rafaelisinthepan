@@ -1153,13 +1153,19 @@ button * {
 .scramble {
   display: flex;
   flex-direction: column;
-  align-items: start;
+  align-items: center;
   gap: clamp(24px, 5vh, 48px);
   width: 100%;
 }
-/* The demo word is the star: same .hole markup as the game, sized up. */
-.scramble .phrase {
-  font-size: clamp(26px, 6vw, 44px);
+/* The concept stage is CLEAN: panel on top, ONE big centered word in the middle,
+   keyboard at the bottom, nothing else. The word is the star — bigger than in-game. */
+.tutorial--word .play,
+.tutorial--word .input-area {
+  align-items: center;
+}
+.tutorial--word .phrase {
+  font-size: clamp(28px, 7vw, 48px);
+  text-align: center;
 }
 /* Sits in the input row's reserved slot so the prompt appearing next step never
    shifts the word. */

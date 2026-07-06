@@ -46,16 +46,11 @@ const script: TutorialScript = {
       },
       steps: [
         { kind: 'scramble', copyKey: 'tutScramble', afterKey: 'tutAfterScramble' },
-        { kind: 'guess', expect: 'desert', copyKey: 'tutGuessFar', afterKey: 'tutAfterFar' },
+        // Le -200 et le mot qui bouge à -50 parlent d'eux-mêmes : pas de panneau après.
+        { kind: 'guess', expect: 'desert', copyKey: 'tutGuessFar' },
         { kind: 'guess', expect: 'pizza', copyKey: 'tutGuessMiss', afterKey: 'tutAfterMiss' },
-        { kind: 'guess', expect: 'bateau', copyKey: 'tutGuessCloser', afterKey: 'tutAfterCloser' },
-        {
-          kind: 'find',
-          target: 'ocean',
-          copyKey: 'tutFind',
-          nudgeKey: 'tutFindNudge',
-          afterKey: 'tutAfterFind',
-        },
+        { kind: 'guess', expect: 'bateau', copyKey: 'tutGuessCloser' },
+        { kind: 'find', target: 'ocean', copyKey: 'tutFind', nudgeKey: 'tutFindNudge' },
       ],
     },
     {
@@ -116,9 +111,8 @@ const script: TutorialScript = {
       },
       steps: [
         { kind: 'tell', anchor: 'center', copyKey: 'tutSentence' },
+        // La résoudre termine le tutoriel : score + JOUER, plus un mot.
         { kind: 'play' },
-        { kind: 'tell', anchor: 'watermark', copyKey: 'tutWrapTries' },
-        { kind: 'tell', anchor: 'progress', copyKey: 'tutWrapProgress' },
       ],
     },
   ],
