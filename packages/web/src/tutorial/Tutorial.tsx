@@ -7,7 +7,7 @@ import LoadError from '../components/LoadError';
 import SolvedScreen from '../components/SolvedScreen';
 import { HIT_FADE_MS } from '../components/FloatingHit';
 import { STAGGER_MS, FLOATING_HIT_INTRO_MS, WORD_BLINK_MS } from '../screens/Game';
-import MixWord from './MixWord';
+import MixWord, { SCRAMBLE_MS } from './MixWord';
 import CoachText, { richToPlain } from './CoachText';
 import { computeProgress } from '../game/scoring';
 import { progressTrajectory } from '../game/share';
@@ -47,10 +47,12 @@ const NO_WORDS = new Set<string>();
 // Consecutive MISSes in the find step before the prompt swaps to the reminder.
 const NUDGE_AFTER_MISSES = 3;
 
-// Mix demo pacing: the first stop shakes then swaps once; later stops roll through
-// every ladder word in between ("in a second").
-const MIX_SHAKE_MS = 450; // matches the word-shake animation (0.4s)
-const MIX_ROLL_MS = 80;
+// Mix demo pacing. The first stop letter-scrambles into the 1st neighbor (see
+// MixWord); later stops roll through every ladder word with a DECELERATING cadence —
+// fast blur first, then ticking slower and slower into the landing, like a slot
+// wheel settling — instead of a constant flicker that just stops.
+const MIX_LAND_MS = 240; // the roll's final (longest) interval
+const MIX_MIN_TICK_MS = 45; // the roll's fastest flashes
 const MIX_SETTLE_MS = 500; // hold on a landing before the copy / next prompt
 
 function freshHoles(stage: TutorialStage): RuntimeHole[] {
@@ -95,7 +97,6 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
   const [mixAt, setMixAt] = useState(-1);
   const [mixStop, setMixStop] = useState(0);
   const [mixCopy, setMixCopy] = useState<UiKey | null>(null);
-  const [mixShake, setMixShake] = useState(false);
   const [mixBusy, setMixBusy] = useState(false);
 
   // The find/play steps type against the REAL vocabulary (loaded at mount, so it is
@@ -279,10 +280,11 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
       .sort((a, b) => a.rank - b.rank);
   }, [puzzle]);
 
-  // One press of the mix button: first stop = shake, then a single swap to the 1st
-  // neighbor; later stops = a fast roll through every ladder word up to the stop.
-  // The last stop lands on the start word, then the keyboard takes the button's
-  // place (advance -> the first guess prompt).
+  // One press of the mix button: the first stop letter-scrambles into the 1st
+  // neighbor (MixWord animates it; we just wait out SCRAMBLE_MS); later stops roll
+  // through every ladder word up to the stop on a decelerating cadence (cumulative
+  // time ∝ progress², so intervals grow linearly — a slot wheel settling). The last
+  // stop lands on the start word, then the keyboard takes the button's place.
   const pressMix = useCallback(() => {
     if (step.kind !== 'mix' || mixBusy) return;
     const stop = step.stops[mixStop];
@@ -298,18 +300,24 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
       if (lastStop) advance();
     };
     if (mixAt < 0) {
-      setMixShake(true);
-      later(() => {
-        setMixShake(false);
-        setMixAt(targetIdx);
-        later(finish, MIX_SETTLE_MS);
-      }, MIX_SHAKE_MS);
+      setMixAt(targetIdx); // MixWord scrambles the letters into place
+      later(finish, SCRAMBLE_MS + MIX_SETTLE_MS);
       return;
     }
-    for (let idx = mixAt + 1; idx <= targetIdx; idx += 1) {
-      later(() => setMixAt(idx), MIX_ROLL_MS * (idx - mixAt));
+    const steps = targetIdx - mixAt;
+    // Deceleration: interval k = D·(k² − (k−1)²)/steps², sized so the LAST interval
+    // is MIX_LAND_MS; the earliest (shortest) ones clamp to MIX_MIN_TICK_MS.
+    const d = (MIX_LAND_MS * steps * steps) / (2 * steps - 1);
+    let prevAt = 0;
+    let at = 0;
+    for (let k = 1; k <= steps; k += 1) {
+      const t = d * (k / steps) ** 2;
+      at += Math.max(MIX_MIN_TICK_MS, t - prevAt);
+      prevAt = t;
+      const idx = mixAt + k;
+      later(() => setMixAt(idx), at);
     }
-    later(finish, MIX_ROLL_MS * (targetIdx - mixAt) + MIX_SETTLE_MS);
+    later(finish, at + MIX_SETTLE_MS);
   }, [step, mixBusy, mixStop, mixAt, ladder, later, advance]);
 
   // The explanation currently in the top box (hidden once graduated — the score
@@ -369,7 +377,6 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
               secret={puzzle.holes[0].secret.word}
               entry={mixAt >= 0 ? ladder[mixAt] : null}
               startRank={puzzle.holes[0].start_rank}
-              shaking={mixShake}
             />
             {/* Empty input slot: reserves the row so the prompt appearing on the
                 next step never shifts the word. */}
