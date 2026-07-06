@@ -11,12 +11,16 @@ import type { RankEntry } from '@whippin/shared';
 //
 // The FIRST transition (the untouched blue secret -> its 1st neighbor) literally
 // MIXES the word: its letters cycle through random glyphs and settle left-to-right
-// into the new word, the exponent appearing once the letters have. Later transitions
-// (the fast rolls) swap instantly — Tutorial's decelerating cadence is the animation.
+// into the new word. The exponent then POPS IN a beat after the letters settle —
+// its space is reserved (visibility, not conditional render) from the start of the
+// mix, so the centered word never shifts when it appears. Later transitions (the
+// fast rolls) swap word+exponent instantly — Tutorial's decelerating cadence is the
+// animation.
 
 // Exported so Tutorial can schedule the stop's explanation after the mix resolves.
 export const SCRAMBLE_MS = 650;
 const SCRAMBLE_TICK_MS = 40;
+const EXPONENT_DELAY_MS = 200; // beat between the letters settling and the rank pop
 const GLYPHS = 'abcdefghijklmnopqrstuvwxyz';
 
 function randomGlyphs(n: number): string {
@@ -34,12 +38,22 @@ export default function MixWord({
   entry: RankEntry | null; // current ladder word, or null = the untouched secret
   startRank: number; // heat scale (the ladder's landing rank)
 }) {
-  // Letter-scramble state: the in-flight jumble shown instead of the word, or null
-  // when settled. Only the null -> entry transition scrambles.
+  // Letter-scramble state: the in-flight jumble shown instead of the word (null =
+  // settled), and whether the exponent has had its delayed entrance yet. Only the
+  // null -> entry transition scrambles; once the exponent is in, it stays for the
+  // rolls that follow.
   const [jumble, setJumble] = useState<string | null>(null);
+  const [supIn, setSupIn] = useState(false);
   const prevEntry = useRef<RankEntry | null>(entry);
-  const timer = useRef<number | undefined>(undefined);
-  useEffect(() => () => window.clearInterval(timer.current), []);
+  const scrambleTimer = useRef<number | undefined>(undefined);
+  const supTimer = useRef<number | undefined>(undefined);
+  useEffect(
+    () => () => {
+      window.clearInterval(scrambleTimer.current);
+      window.clearTimeout(supTimer.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     const prev = prevEntry.current;
@@ -49,16 +63,20 @@ export default function MixWord({
       typeof window !== 'undefined' &&
       typeof window.matchMedia === 'function' &&
       window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reduced) return;
+    if (reduced) {
+      setSupIn(true);
+      return;
+    }
 
     const target = entry.word;
     const started = Date.now();
     setJumble(randomGlyphs(target.length));
-    timer.current = window.setInterval(() => {
+    scrambleTimer.current = window.setInterval(() => {
       const p = (Date.now() - started) / SCRAMBLE_MS;
       if (p >= 1) {
-        window.clearInterval(timer.current);
-        setJumble(null); // settled: the real word + its exponent take over
+        window.clearInterval(scrambleTimer.current);
+        setJumble(null); // letters settled…
+        supTimer.current = window.setTimeout(() => setSupIn(true), EXPONENT_DELAY_MS);
         return;
       }
       // Letters settle left to right as the mix resolves.
@@ -67,8 +85,17 @@ export default function MixWord({
     }, SCRAMBLE_TICK_MS);
   }, [entry]);
 
-  const rankStyle: (CSSProperties & Record<'--rank-color', string>) | undefined = entry
-    ? { '--rank-color': rankHeatColor(entry.rank, startRank) }
+  // The exponent's slot exists from the moment there IS an entry (hidden, not
+  // unrendered), so the centered word claims its final position immediately and the
+  // rank's entrance moves nothing. rank-pop animates with a transform only.
+  const supHidden = jumble != null || !supIn;
+  const rankStyle:
+    | (CSSProperties & Record<'--rank-color', string>)
+    | undefined = entry
+    ? {
+        '--rank-color': rankHeatColor(entry.rank, startRank),
+        visibility: supHidden ? 'hidden' : undefined,
+      }
     : undefined;
 
   return (
@@ -77,8 +104,8 @@ export default function MixWord({
         <span className="hole-word-wrap">
           <span className="hole-word">{jumble ?? (entry ? entry.word : secret)}</span>
         </span>
-        {entry && jumble == null && (
-          <sup className="hole-rank" style={rankStyle}>
+        {entry && (
+          <sup className={`hole-rank${supHidden ? '' : ' rank-pop'}`} style={rankStyle}>
             -{entry.rank}
           </sup>
         )}
