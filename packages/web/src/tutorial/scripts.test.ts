@@ -82,9 +82,9 @@ for (const lang of ['en', 'fr'] as const) {
         // Stops walk outward, so each press animates forward, never backward.
         const ranks = mix.stops.map((s) => s.rank);
         expect([...ranks].sort((a, b) => a - b)).toEqual(ranks);
-        // Each roll (stop i-1 -> stop i) flashes every real word in between and must
-        // pass through at least MIN_ROLL_WORDS of them — a roll over 2 words reads
-        // as a glitch, not a journey.
+        // Each mix (stop i-1 -> stop i) ticks its exponent through every real rank
+        // in between and must pass at least MIN_ROLL_WORDS of them — a hop over 2
+        // ranks reads as a glitch, not a journey.
         for (let i = 1; i < mix.stops.length; i += 1) {
           const passed = real.filter(
             (e) => e.rank > mix.stops[i - 1].rank && e.rank <= mix.stops[i].rank,

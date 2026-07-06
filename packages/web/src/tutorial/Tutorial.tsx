@@ -7,7 +7,7 @@ import LoadError from '../components/LoadError';
 import SolvedScreen from '../components/SolvedScreen';
 import { HIT_FADE_MS } from '../components/FloatingHit';
 import { STAGGER_MS, FLOATING_HIT_INTRO_MS, WORD_BLINK_MS } from '../screens/Game';
-import MixWord from './MixWord';
+import MixWord, { SCRAMBLE_MS } from './MixWord';
 import CoachText, { richToPlain } from './CoachText';
 import { computeProgress } from '../game/scoring';
 import { progressTrajectory } from '../game/share';
@@ -25,9 +25,10 @@ import { isPadWord, type TutorialStage } from './script';
 // (browser navigation is the exit), no flag (the language was already chosen to get
 // here) — the flow advances by playing.
 //
-//   Stage 1 — one word, concept first. The secret is SHOWN (blue). MIX shakes it to
-//   its 1st neighbor; MIX AGAIN fast-rolls to the 10th; MIX EVEN MORE rolls to the
-//   100th — where the button gives way to the keyboard and three gated guesses show
+//   Stage 1 — one word, concept first. The secret is SHOWN (blue). MIX scrambles it
+//   to its 1st neighbor; MIX AGAIN and MIX EVEN MORE scramble to the 10th and 100th
+//   (the exponent ticking through every rank in between) — then the button gives
+//   way to the keyboard and three gated guesses show
 //   distance (farther, no move), MISS, and improvement, each rolling straight into
 //   the next prompt. Then the player types back to the secret with the real
 //   vocabulary (free exploration; a nudge reveals the word after 3 straight MISSes).
@@ -47,16 +48,11 @@ const NO_WORDS = new Set<string>();
 // Consecutive MISSes in the find step before the prompt swaps to the reminder.
 const NUDGE_AFTER_MISSES = 3;
 
-// Mix demo pacing: ONE slot-machine animation for all three presses. Each roll
-// flashes >= 9 words (guarded by scripts.test.ts for the ladder segments; the first
-// press spins through shuffled neighbors since nothing sits below rank 1) in EXACTLY
-// this long, on a decelerating cadence — intervals grow linearly from the floor to
-// the landing, like a slot wheel settling — instead of a constant flicker that just
-// stops. Exponents never show mid-spin; MixWord pops them a beat after each landing.
-const MIX_ROLL_TOTAL_MS = 500; // a roll's full duration, whatever its word count
-const MIX_MIN_TICK_MS = 35; // interval floor: every word gets at least ~2 frames
+// Mix demo pacing. EVERY press is the same slot-machine letter-scramble (see
+// MixWord, SCRAMBLE_MS); on the later presses the exponent ticks through the real
+// intermediate ladder ranks (>= 9 per segment, guarded by scripts.test.ts) while
+// the letters churn.
 const MIX_SETTLE_MS = 500; // hold on a landing before the copy / next prompt
-const MIX_SPIN_WORDS = 9; // filler words the first press spins through
 
 function freshHoles(stage: TutorialStage): RuntimeHole[] {
   return stage.puzzle.holes.map((h) => ({
@@ -101,7 +97,6 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
   const [mixStop, setMixStop] = useState(0);
   const [mixCopy, setMixCopy] = useState<UiKey | null>(null);
   const [mixBusy, setMixBusy] = useState(false);
-  const [mixLanded, setMixLanded] = useState(false); // wheel stopped on a word
 
   // The find/play steps type against the REAL vocabulary (loaded at mount, so it is
   // warm long before the free steps — and already cached for the game right after).
@@ -284,12 +279,10 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
       .sort((a, b) => a.rank - b.rank);
   }, [puzzle]);
 
-  // One press of the mix button = one slot-machine roll, identical for all three
-  // stops: 500ms of flashing words on a decelerating cadence, landing on the stop's
-  // word. Ladder stops roll through every word in between; the FIRST press has
-  // nothing below rank 1, so its wheel spins through shuffled neighbors instead.
-  // The last stop lands on the start word, then the keyboard takes the button's
-  // place. Under reduced motion the wheel jumps straight to the landing.
+  // One press of the mix button: MixWord scrambles the letters into the stop's word
+  // (and, from the second press on, ticks the exponent through the intermediate
+  // ranks); we just set the landing entry and wait out the animation. The last stop
+  // lands on the start word, then the keyboard takes the button's place.
   const pressMix = useCallback(() => {
     if (step.kind !== 'mix' || mixBusy) return;
     const stop = step.stops[mixStop];
@@ -297,62 +290,15 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
     const targetIdx = ladder.findIndex((e) => e.rank === stop.rank);
     if (targetIdx < 0) return;
     setMixBusy(true);
-    setMixLanded(false);
     const lastStop = mixStop === step.stops.length - 1;
-    const finish = () => {
+    setMixAt(targetIdx);
+    later(() => {
       if (stop.copyKey) setMixCopy(stop.copyKey);
       setMixStop((s) => s + 1);
       setMixBusy(false);
       if (lastStop) advance();
-    };
-
-    const reduced =
-      typeof window !== 'undefined' &&
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reduced) {
-      setMixAt(targetIdx);
-      setMixLanded(true);
-      later(finish, MIX_SETTLE_MS);
-      return;
-    }
-
-    // The wheel's flash sequence, landing included.
-    let seq: number[];
-    if (mixAt < 0) {
-      // First press: shuffled neighbors (never the landing word), then the landing.
-      const pool = ladder.map((_, i) => i).filter((i) => i !== targetIdx);
-      for (let i = pool.length - 1; i > 0; i -= 1) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [pool[i], pool[j]] = [pool[j], pool[i]];
-      }
-      seq = [...pool.slice(0, MIX_SPIN_WORDS), targetIdx];
-    } else {
-      seq = [];
-      for (let idx = mixAt + 1; idx <= targetIdx; idx += 1) seq.push(idx);
-    }
-
-    // Deceleration inside a FIXED budget: intervals ramp linearly from the floor
-    // (interval_k = floor + slope·k, slope solved so they sum to the total). If the
-    // roll is so long the floor alone exceeds the budget, fall back to even ticks.
-    const steps = seq.length;
-    const slope = Math.max(
-      0,
-      ((MIX_ROLL_TOTAL_MS - steps * MIX_MIN_TICK_MS) * 2) / (steps * (steps + 1)),
-    );
-    const even = slope === 0 ? MIX_ROLL_TOTAL_MS / steps : 0;
-    let at = 0;
-    seq.forEach((idx, i) => {
-      const k = i + 1;
-      at += even || MIX_MIN_TICK_MS + slope * k;
-      const landing = k === steps;
-      later(() => {
-        setMixAt(idx);
-        if (landing) setMixLanded(true);
-      }, at);
-    });
-    later(finish, at + MIX_SETTLE_MS);
-  }, [step, mixBusy, mixStop, mixAt, ladder, later, advance]);
+    }, SCRAMBLE_MS + MIX_SETTLE_MS);
+  }, [step, mixBusy, mixStop, ladder, later, advance]);
 
   // The explanation currently in the top box (hidden once graduated — the score
   // speaks last). Mix stop copy overrides the step's standing copy.
@@ -411,7 +357,7 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
               secret={puzzle.holes[0].secret.word}
               entry={mixAt >= 0 ? ladder[mixAt] : null}
               startRank={puzzle.holes[0].start_rank}
-              landed={mixLanded}
+              ladder={ladder}
             />
             {/* Empty input slot: reserves the row so the prompt appearing on the
                 next step never shifts the word. */}
