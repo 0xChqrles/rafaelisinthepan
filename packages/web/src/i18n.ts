@@ -66,28 +66,28 @@ const STRINGS = {
     fr: '[[w:plage^10]] est le 10e mot le plus proche de [[b:océan]].',
   },
   tutGuessFar: {
-    en: 'Type [[w:desert^200]].',
-    fr: 'Tape [[w:désert^200]].',
+    en: 'Now type [[w:desert^200]].',
+    fr: 'Maintenant tape [[w:désert^200]] (sans l\'accent)',
   },
   tutGuessMiss: {
-    en: 'Now type a completely different word: [[m:music]].',
-    fr: 'Maintenant, tape un mot complètement différent : [[m:musique]].',
+    en: 'Type a completely different word: [[m:music]].',
+    fr: 'Tape un mot complètement différent : [[m:musique]].',
   },
   tutGuessCloser: {
-    en: '[[m:music]] was a MISS — too far to rank. Now try [[w:boat^50]].',
-    fr: '[[m:musique]] était un MISS — trop loin pour être classé. Essaie [[w:bateau^50]].',
+    en: '[[m:music]] was a [[m:MISS]] — too far to rank. Now try [[w:boat^50]].',
+    fr: '[[m:musique]] était un [[m:MISS]] — trop loin pour être classé. Essaie [[w:bateau^50]].',
   },
   tutFind: {
     en: 'Now type the very first word — the blue one.',
-    fr: 'Maintenant, tape le tout premier mot — le bleu.',
+    fr: 'Maintenant, tape le tout premier mot — celui en bleu.',
   },
   tutFindNudge: {
     en: 'Forgot it? It was [[b:ocean]].',
     fr: "Oublié ? C'était [[b:océan]].",
   },
   tutSentence: {
-    en: 'Now a real one: this sentence hides TWO words. You are on your own.',
-    fr: 'Maintenant, une vraie : cette phrase cache DEUX mots. À toi de jouer.',
+    en: 'This sentence hides TWO words. You are on your own.',
+    fr: 'Cette phrase cache DEUX mots. À toi de jouer.',
   },
   // Sits in SHARE's slot on the real solved layout, so it stays as short as SHARE.
   tutPlay: { en: 'PLAY', fr: 'JOUER' },

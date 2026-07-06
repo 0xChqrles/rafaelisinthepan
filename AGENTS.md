@@ -487,13 +487,11 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   heat exponent, `[[m:]]` coldest heat, `[[n:]]` heat number); INTERACTIONS at the
   bottom (mix button, then keyboard). **No SKIP, no flag, no modals/NEXT** — browser
   navigation is the exit, and the language was already chosen to get here. **Stage
-  1** is a single word, concept-first: the secret is SHOWN (blue); **MIX / MIX
-  AGAIN / MIX EVEN MORE** slot-roll it to −1, −10, −100 (one identical animation:
-  500ms, ≥9 flashed words each, decelerating; no exponent mid-spin, it pops in a
-  beat after each landing with its space pre-reserved) — landing on the start word
-  (the demo explains where start words come from), where the button gives way to
-  the keyboard (`tutorial/MixWord.tsx` is the display-only widget; Tutorial owns
-  the animation); three gated guesses then show distance
+  1** is a single word, concept-first: the secret is SHOWN (blue); **MIX** shakes it
+  to −1, **MIX AGAIN** fast-rolls to −10, **MIX EVEN MORE** rolls to −100 — landing
+  on the start word (the demo explains where start words come from), where the
+  button gives way to the keyboard (`tutorial/MixWord.tsx` is the display-only
+  widget; Tutorial owns the animation); three gated guesses then show distance
   (farther, no move), MISS, and improvement, each rolling straight into the next
   prompt (no after-panels); finally the player types back to the secret with the
   REAL vocabulary (`useVocab` loads in the tutorial), nudged with the answer after 3
