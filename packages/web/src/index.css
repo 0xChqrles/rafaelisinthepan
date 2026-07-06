@@ -1029,6 +1029,17 @@ button * {
    button, then keyboard), the word/sentence in the middle. No modals, no backdrop —
    the coach box is a game dialog, not an interruption. */
 
+/* The tutorial's boards are SHORT (one word / a five-word sentence): cap the whole
+   screen at the keyboard's width, much narrower than the real game's 1200px column,
+   so the sentence reads centered on desktop instead of hugging the left edge. The
+   HUD (progress bar) shrinks with it. */
+.tutorial {
+  max-width: 680px;
+}
+.tutorial .hud {
+  width: min(680px, calc(100vw - 48px));
+}
+
 /* The concept stage is CLEAN: explanation on top, ONE big centered word in the
    middle, the interaction at the bottom, nothing else. The word is the star. */
 .tutorial--word .play,
