@@ -25,7 +25,7 @@ import { parsePuzzle } from '../api';
 import { scriptFor } from './scripts';
 import { isPadWord, type TutorialStep } from './script';
 
-const MIN_ROLL_WORDS = 8; // real ladder entries the fast rolls can flash
+const MIN_ROLL_WORDS = 9; // real words each fast roll passes through (incl. landing)
 const MIN_SHARED_CONTEXT = 5; // stage-2 words present in BOTH holes' maps
 
 for (const lang of ['en', 'fr'] as const) {
@@ -75,15 +75,22 @@ for (const lang of ['en', 'fr'] as const) {
       const mix = wordStage.steps[0];
       if (mix.kind !== 'mix') throw new Error('stage 1 must open with the mix demo');
 
-      it('every mix stop lands on a real word, with enough real words to roll through', () => {
+      it('every mix stop lands on a real word, every roll passes enough words', () => {
         for (const stop of mix.stops) {
           expect(real.some((e) => e.rank === stop.rank)).toBe(true);
         }
         // Stops walk outward, so each press animates forward, never backward.
         const ranks = mix.stops.map((s) => s.rank);
         expect([...ranks].sort((a, b) => a - b)).toEqual(ranks);
-        const rollable = real.filter((e) => e.rank > 0 && e.rank <= hole.start_rank);
-        expect(rollable.length).toBeGreaterThanOrEqual(MIN_ROLL_WORDS);
+        // Each roll (stop i-1 -> stop i) flashes every real word in between and must
+        // pass through at least MIN_ROLL_WORDS of them — a roll over 2 words reads
+        // as a glitch, not a journey.
+        for (let i = 1; i < mix.stops.length; i += 1) {
+          const passed = real.filter(
+            (e) => e.rank > mix.stops[i - 1].rank && e.rank <= mix.stops[i].rank,
+          );
+          expect(passed.length).toBeGreaterThanOrEqual(MIN_ROLL_WORDS);
+        }
       });
 
       it('the last stop IS the start word — the demo explains where start words come from', () => {

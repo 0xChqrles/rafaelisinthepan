@@ -48,11 +48,12 @@ const NO_WORDS = new Set<string>();
 const NUDGE_AFTER_MISSES = 3;
 
 // Mix demo pacing. The first stop letter-scrambles into the 1st neighbor (see
-// MixWord); later stops roll through every ladder word with a DECELERATING cadence —
-// fast blur first, then ticking slower and slower into the landing, like a slot
-// wheel settling — instead of a constant flicker that just stops.
-const MIX_LAND_MS = 240; // the roll's final (longest) interval
-const MIX_MIN_TICK_MS = 45; // the roll's fastest flashes
+// MixWord); later stops roll through every ladder word (>= 9 per roll, guarded by
+// scripts.test.ts) in EXACTLY this long, on a decelerating cadence — intervals grow
+// linearly from the floor to the landing, like a slot wheel settling — instead of a
+// constant flicker that just stops.
+const MIX_ROLL_TOTAL_MS = 500; // a roll's full duration, whatever its word count
+const MIX_MIN_TICK_MS = 35; // interval floor: every word gets at least ~2 frames
 const MIX_SETTLE_MS = 500; // hold on a landing before the copy / next prompt
 
 function freshHoles(stage: TutorialStage): RuntimeHole[] {
@@ -305,15 +306,17 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
       return;
     }
     const steps = targetIdx - mixAt;
-    // Deceleration: interval k = D·(k² − (k−1)²)/steps², sized so the LAST interval
-    // is MIX_LAND_MS; the earliest (shortest) ones clamp to MIX_MIN_TICK_MS.
-    const d = (MIX_LAND_MS * steps * steps) / (2 * steps - 1);
-    let prevAt = 0;
+    // Deceleration inside a FIXED budget: intervals ramp linearly from the floor
+    // (interval_k = floor + slope·k, slope solved so they sum to the total). If the
+    // roll is so long the floor alone exceeds the budget, fall back to even ticks.
+    const slope = Math.max(
+      0,
+      ((MIX_ROLL_TOTAL_MS - steps * MIX_MIN_TICK_MS) * 2) / (steps * (steps + 1)),
+    );
+    const even = slope === 0 ? MIX_ROLL_TOTAL_MS / steps : 0;
     let at = 0;
     for (let k = 1; k <= steps; k += 1) {
-      const t = d * (k / steps) ** 2;
-      at += Math.max(MIX_MIN_TICK_MS, t - prevAt);
-      prevAt = t;
+      at += even || MIX_MIN_TICK_MS + slope * k;
       const idx = mixAt + k;
       later(() => setMixAt(idx), at);
     }
