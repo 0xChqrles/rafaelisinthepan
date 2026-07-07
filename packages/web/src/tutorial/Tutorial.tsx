@@ -18,6 +18,7 @@ import useVocab from '../hooks/useVocab';
 import { fold } from '@whippin/shared';
 import type { HitState, RankEntry, RuntimeHole } from '@whippin/shared';
 import { t, srHoleResult, type UiKey } from '../i18n';
+import { track } from '../analytics';
 import { scriptFor } from './scripts';
 import { isPadWord, type TutorialStage } from './script';
 
@@ -347,7 +348,10 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
             type="button"
             className="home-btn topbar-skip"
             aria-label={t(lang, 'ariaSkipTutorial')}
-            onClick={onDone}
+            onClick={() => {
+              track('tutorial', { action: 'skip' });
+              onDone();
+            }}
           >
             <SkipIcon className="skip-icon" aria-hidden />
           </button>
@@ -423,7 +427,13 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
             trajectory={progressTrajectory(freshHoles(stage), puzzle.ranks, [...triedRef.current])}
             dayNumber={null}
             lang={lang}
-            action={{ label: t(lang, 'tutPlay'), onClick: onDone }}
+            action={{
+              label: t(lang, 'tutPlay'),
+              onClick: () => {
+                track('tutorial', { action: 'finish' });
+                onDone();
+              },
+            }}
           />
         ) : step.kind === 'mix' ? (
           mixLabel && (

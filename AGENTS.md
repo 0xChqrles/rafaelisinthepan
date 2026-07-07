@@ -682,8 +682,10 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   authenticates to AWS via **GitHub OIDC** (repo secret `AWS_DEPLOY_ROLE_ARN`, no
   long-lived keys) and deploys **only the changed stack(s)** via `dorny/paths-filter`
   (`shared`/`infra`/root-deps fan out to both; `generation` deploys nothing). Web deploy
-  runs `pnpm build` with `VITE_API_BASE_URL` (repo **variable**, no fallback) before
-  `cdk deploy WhippinWebStack`. `workflow_dispatch` `stacks` input forces
+  runs `pnpm build` (reads `VITE_API_BASE_URL` from the committed `.env.production` — the
+  single source of truth; only the optional `VITE_PLAUSIBLE_DOMAIN` analytics var is passed
+  via a repo variable, #60) before `cdk deploy WhippinWebStack`. `workflow_dispatch`
+  `stacks` input forces
   `changed`|`web`|`backend`|`all` (default `changed`).
   - **Keep the pipeline in sync with the architecture.** `ci.yml` is self-maintaining
     (`pnpm -r --if-present` fans out to every workspace's `test`/`typecheck`), but
@@ -693,6 +695,24 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
     which stack — remember `shared`-like libs consumed by a stack must fan out to it),
     the per-stack deploy jobs, and the `workflow_dispatch` `stacks` options. A new
     deployable stack with no job/filter entry will silently never deploy.
+- **Analytics (#60, decided 2026-07-07):** privacy-first, cookieless **Plausible** — no
+  cookies, no consent banner (the developer is in France, GDPR-relevant), ~1 KB script.
+  An explicit, **user-approved EXCEPTION** to the no-third-party-origin stance (same
+  rationale that self-hosts the pixel font); proxying the script through our own domain
+  is a possible later step. **`web/src/analytics.ts` is the ONLY module that knows
+  Plausible exists:** `initAnalytics()` (called once from `main.tsx`) injects the classic
+  `script.js` + `data-domain` snippet **only when `VITE_PLAUSIBLE_DOMAIN` is set** (else
+  nothing), plus Plausible's queue stub so `track` works before the async script loads;
+  `track(event, props)` wraps `window.plausible` and is a **silent, never-throwing no-op**
+  when unconfigured. **Env-gated:** `VITE_PLAUSIBLE_DOMAIN` is a GitHub **repo variable**
+  (like `VITE_API_BASE_URL`) set ONLY on the CI prod deploy (`deploy.yml` web build) and
+  deliberately **NOT** in `.env.production`, so dev/preview/local `pnpm build` stay fully
+  inert. **Exactly three events** (low-cardinality props only — **NEVER** a typed
+  word/guess): `solve {lang, tries, day, archive:'no'}` — the play-solve transition in
+  `Game.tsx` (NOT rehydration; skipped on a `?puzzle=` override; `archive` hardcoded
+  `'no'` until the archive ships); `share {method:'native'|'clipboard'}` — `SolvedScreen`
+  success paths; `tutorial {action:'start'|'finish'|'skip'}` — invite accept / PLAY
+  finish / skip (fast-forward or invite SKIP). Plus automatic pageviews.
 - The `.codex/skills/whippin-game/` skill + `validate_game_data.mjs` describe a
   **superseded** schema (see Discrepancies).
 

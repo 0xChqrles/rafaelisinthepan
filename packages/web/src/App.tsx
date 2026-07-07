@@ -7,6 +7,7 @@ import NoPuzzle from './components/NoPuzzle';
 import Tutorial from './tutorial/Tutorial';
 import Invite from './tutorial/Invite';
 import { useGameStore } from './state/gameStore';
+import { track } from './analytics';
 import { useLocation, navigate } from './routing';
 import { parseRoute, resolveHomeLang, pathForLang, type LangCode } from './langs';
 import { t } from './i18n';
@@ -89,7 +90,19 @@ function GameRoute({ lang }: { lang: LangCode }) {
     return <Tutorial key={lang} lang={lang} onDone={closeTutorial} />;
   }
   if (!onboarded && !hasOverride) {
-    return <Invite lang={lang} onAccept={() => openTutorial('first')} onSkip={closeTutorial} />;
+    return (
+      <Invite
+        lang={lang}
+        onAccept={() => {
+          track('tutorial', { action: 'start' });
+          openTutorial('first');
+        }}
+        onSkip={() => {
+          track('tutorial', { action: 'skip' });
+          closeTutorial();
+        }}
+      />
+    );
   }
 
   return (
