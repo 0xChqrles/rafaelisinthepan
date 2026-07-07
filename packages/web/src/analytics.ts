@@ -6,10 +6,12 @@
 // later step.
 //
 // Env-gated by `VITE_PLAUSIBLE_DOMAIN` = the site's domain as registered in Plausible
-// (e.g. whippin.ai). It is set ONLY on the CI production deploy (a GitHub repo variable,
-// see deploy.yml) and deliberately NOT in `.env.production`, so dev / preview / local
-// `pnpm build` all leave it unset and analytics stays fully inert: no script is loaded
-// and every `track()` is a no-op.
+// (e.g. whippin.ai). The domain is PUBLIC (it ships in the bundle), so it lives in the
+// committed `.env.production` — every PRODUCTION build reports, whether deployed by CI or
+// by `pnpm build` from a laptop. `pnpm dev` (development mode) never loads that file, so
+// dev stays fully inert: no script is loaded and every `track()` is a no-op. (Plausible's
+// script also self-suppresses on localhost, so a local `pnpm preview` of a prod build
+// sends nothing either.)
 
 const PLAUSIBLE_DOMAIN = import.meta.env.VITE_PLAUSIBLE_DOMAIN;
 

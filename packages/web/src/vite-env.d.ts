@@ -7,8 +7,8 @@ interface ImportMetaEnv {
   // Base URL of the daily-puzzle backend (Lambda Function URL behind CloudFront).
   // Unset in local dev with no backend; required for normal play in production.
   readonly VITE_API_BASE_URL?: string;
-  // Plausible site domain (analytics, #60). Set ONLY on the CI production deploy so
-  // dev/preview/local builds stay inert; when set, analytics.ts loads the Plausible
-  // script. Optional.
+  // Plausible site domain (analytics, #60). Committed in .env.production so production
+  // builds report; unset in dev (dev never loads .env.production) -> analytics inert.
+  // When set, analytics.ts loads the Plausible script. Optional.
   readonly VITE_PLAUSIBLE_DOMAIN?: string;
 }
