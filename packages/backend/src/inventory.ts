@@ -1,15 +1,18 @@
 // Publish-buffer coverage report (issue #61). READ-ONLY: probes the store for the next N
 // game days × langs and reports which (date, lang) puzzles exist, so a thinning buffer is
-// visible BEFORE players hit a gap. CI/cron-friendly via the exit code.
+// visible BEFORE players hit a gap.
 //
-//   pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr]
+//   pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--fail-on-gap]
+//
+// By default it just REPORTS and exits 0 — a gap is normal while buffering, not a command
+// failure, so an interactive run stays clean. `--fail-on-gap` turns a gap into exit 1 for
+// the machine path, so a cron/CI step can `pnpm puzzle:inventory --fail-on-gap || alarm`.
 //
 // Local by default — probes the filesystem store via the SAME root resolution as
 // `serve`/`fsStore` (`PUZZLE_STORE`, default backend/.local-store), no AWS creds. `--s3`
 // probes the deployed bucket with HeadObject; the bucket is discovered from the
 // WhippinBackendStack outputs exactly like `publish` (reusing `stack.ts`), so the flat key
-// layout means ≤ ~30 requests at the default window with no listing. Exit 0 iff EVERY
-// (day, lang) in the window exists, 1 otherwise — a cron/CI step can alarm on the code.
+// layout means ≤ ~30 requests at the default window with no listing.
 import { access } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -24,6 +27,7 @@ interface Args {
   s3: boolean;
   days: number;
   langs: string[];
+  failOnGap: boolean; // opt in to exit 1 on a gap (the CI/cron alarm); default: report + exit 0
 }
 
 function die(msg: string): never {
@@ -32,12 +36,15 @@ function die(msg: string): never {
 }
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { s3: false, days: DEFAULT_DAYS, langs: DEFAULT_LANGS };
+  const args: Args = { s3: false, days: DEFAULT_DAYS, langs: DEFAULT_LANGS, failOnGap: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     switch (a) {
       case '--s3':
         args.s3 = true;
+        break;
+      case '--fail-on-gap':
+        args.failOnGap = true;
         break;
       case '--days': {
         const raw = argv[++i];
@@ -193,7 +200,9 @@ async function main() {
   console.log(renderTable(days, args.langs, summary.present));
   console.log('');
   console.log(renderSummary(summary));
-  process.exit(summary.complete ? 0 : 1);
+  // Report-only by default (exit 0); the gap becomes a failing code only when the caller
+  // opted into the alarm with --fail-on-gap.
+  process.exit(args.failOnGap && !summary.complete ? 1 : 0);
 }
 
 // Run as a CLI only when executed directly (`tsx src/inventory.ts ...`), NOT when this
