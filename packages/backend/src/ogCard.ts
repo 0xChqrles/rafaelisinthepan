@@ -52,15 +52,21 @@ const escapeAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;
 // no-JS fallback. Crawlers still read the OG meta below (a <script> doesn't end the head).
 export function renderShareHtml(token: string, result: ShareResult, base: string): string {
   const lang = /^[a-z]{2}$/.test(result.lang) ? result.lang : 'en'; // sanitize (token-sourced)
+  // Localized by the token's language (#59). Fixed per-lang constants (never interpolated
+  // input), so the title stays escape-safe. Unknown lang already normalized to 'en' above.
+  const L =
+    lang === 'fr'
+      ? { one: 'essai', many: 'essais', play: 'Jouer à Whippin AI' }
+      : { one: 'try', many: 'tries', play: 'Play Whippin AI' };
   // "N tries" (unit named), matching the card image — "SCORE" alone reads as
   // points to maximize when lower is better.
   const title = escapeAttr(
-    `Whippin AI #${result.dayNumber} — ${result.score} ${result.score === 1 ? 'try' : 'tries'}`,
+    `Whippin AI #${result.dayNumber} — ${result.score} ${result.score === 1 ? L.one : L.many}`,
   );
   const image = escapeAttr(`${base}/og/${token}.png`);
   const gameUrl = `${base}/${lang}`; // safe: base is server-set, lang is /^[a-z]{2}$/
   return `<!doctype html>
-<html lang="en">
+<html lang="${lang}">
 <head>
 <meta charset="utf-8">
 <script>location.replace(${JSON.stringify(gameUrl)})</script>
@@ -75,6 +81,6 @@ export function renderShareHtml(token: string, result: ShareResult, base: string
 <meta name="twitter:title" content="${title}">
 <meta name="twitter:image" content="${image}">
 </head>
-<body><a href="${escapeAttr(gameUrl)}">Play Whippin AI</a></body>
+<body><a href="${escapeAttr(gameUrl)}">${L.play}</a></body>
 </html>`;
 }

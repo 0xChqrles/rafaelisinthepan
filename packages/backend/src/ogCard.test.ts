@@ -18,12 +18,9 @@ const get = (rawPath: string, headers: Record<string, string> = {}): FnUrlEvent 
 });
 
 // A real dayNumber (days since 1970) and a score whose squareCount matches the 9 squares.
-const token = encodeResult({
-  lang: 'fr',
-  dayNumber: 20638,
-  score: 42,
-  squares: [8, 20, 35, 50, 65, 78, 90, 100, 100],
-});
+const squares = [8, 20, 35, 50, 65, 78, 90, 100, 100];
+const token = encodeResult({ lang: 'fr', dayNumber: 20638, score: 42, squares });
+const enToken = encodeResult({ lang: 'en', dayNumber: 20638, score: 42, squares });
 
 describe('GET /og/<token>.png', () => {
   it('returns a base64 PNG (real image bytes), cached immutable', async () => {
@@ -43,14 +40,25 @@ describe('GET /og/<token>.png', () => {
 });
 
 describe('GET /s/<token>', () => {
-  it('returns OG HTML pointing at /og/<token>.png with the try count + day', async () => {
+  it('localizes the OG HTML by the token language (fr): unit, <html lang>, body link', async () => {
     const res = await handler(get(`/s/${token}`, { host: 'whippin.ai', 'x-forwarded-proto': 'https' }));
     expect(res.statusCode).toBe(200);
     expect(res.headers['Content-Type']).toContain('text/html');
     expect(res.body).toContain(`content="https://whippin.ai/og/${token}.png"`);
-    expect(res.body).toContain('42 tries'); // unit named — lower is better
+    expect(res.body).toContain('42 essais'); // fr unit named — lower is better
     expect(res.body).toContain('#20638');
+    expect(res.body).toContain('<html lang="fr">');
+    expect(res.body).toContain('Jouer à Whippin AI'); // no-JS body link (fr)
     expect(res.body).toContain('https://whippin.ai/fr'); // redirect into the game (lang from token)
+  });
+
+  it('keeps English for an en token: try/tries, <html lang="en">, English link', async () => {
+    const res = await handler(get(`/s/${enToken}`, { host: 'whippin.ai', 'x-forwarded-proto': 'https' }));
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('42 tries');
+    expect(res.body).toContain('<html lang="en">');
+    expect(res.body).toContain('Play Whippin AI');
+    expect(res.body).toContain('https://whippin.ai/en');
   });
 
   it('404s a token-shaped but undecodable value', async () => {

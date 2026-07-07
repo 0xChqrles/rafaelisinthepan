@@ -8,7 +8,7 @@ import { renderCardSvg } from './cardSvg';
 import { heatColor } from './heat';
 
 describe('renderCardSvg', () => {
-  const data = { dayNumber: 123, score: 42, squares: [8, 50, 100] };
+  const data = { lang: 'en', dayNumber: 123, score: 42, squares: [8, 50, 100] };
 
   it('renders one <rect> per square (plus the background rect)', () => {
     const svg = renderCardSvg(data);
@@ -31,6 +31,15 @@ describe('renderCardSvg', () => {
     expect(renderCardSvg({ ...data, score: 1 })).toContain('1 TRY');
   });
 
+  it('localizes the unit by the token language (fr -> ESSAIS/ESSAI)', () => {
+    expect(renderCardSvg({ ...data, lang: 'fr' })).toContain('42 ESSAIS');
+    expect(renderCardSvg({ ...data, lang: 'fr', score: 1 })).toContain('1 ESSAI');
+  });
+
+  it('falls back to en for an unknown language', () => {
+    expect(renderCardSvg({ ...data, lang: 'zz' })).toContain('42 TRIES');
+  });
+
   it('is a well-formed standalone svg at OG dimensions', () => {
     const svg = renderCardSvg(data);
     expect(svg.startsWith('<svg')).toBe(true);
@@ -40,7 +49,7 @@ describe('renderCardSvg', () => {
   });
 
   it('handles the maximum 18 squares without overflowing the card width', () => {
-    const svg = renderCardSvg({ dayNumber: 300, score: 300, squares: Array(18).fill(60) });
+    const svg = renderCardSvg({ lang: 'en', dayNumber: 300, score: 300, squares: Array(18).fill(60) });
     // Every rect's x + width must stay within the 1200px canvas.
     const coords = [...svg.matchAll(/<rect x="([\d.]+)" y="\d+" width="([\d.]+)"/g)];
     expect(coords).toHaveLength(18);
