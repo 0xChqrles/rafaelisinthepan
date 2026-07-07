@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { bucketMeans, shareUrl } from '../game/share';
+import { bucketMeans, shareText, shareUrl } from '../game/share';
 import { heatColor, secondsUntilNextReset } from '@whippin/shared';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import { t } from '../i18n';
@@ -117,11 +117,13 @@ export default function SolvedScreen({
     // The result is packed into the link; the backend renders /s/<token> as the OG card, so
     // sharing the URL unfurls into the image.
     const url = shareUrl(origin, { lang, dayNumber, score: guessCount, squares });
-    // What we share/copy: a headline line then the (unfurling) link, blank line between.
-    // "N tries" (not a bare number): lower-is-better must survive without the card.
-    // Localized like the rest of the chrome — a French result reads "essais".
+    // What we share/copy: a headline line, then the heat-square emoji row (the plain-text
+    // fallback for the OG card — same `squares`, so they can't disagree), a blank line, then
+    // the (unfurling) link. "N tries" (not a bare number): lower-is-better must survive
+    // without the card. Localized like the rest of the chrome — a French result reads "essais".
     const unit = t(lang, guessCount === 1 ? 'try' : 'tries').toLowerCase();
-    const text = `Whippin #${dayNumber} — ${guessCount} ${unit}\n\n${url}`;
+    const headline = `Whippin #${dayNumber} — ${guessCount} ${unit}`;
+    const text = shareText(headline, squares, url);
 
     // Use the Web Share API only on touch/mobile devices (native share sheet). On DESKTOP
     // the share button should just copy the link — desktop Chrome/Edge/Safari expose
