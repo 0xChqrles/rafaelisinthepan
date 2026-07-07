@@ -639,7 +639,13 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   Outputs: `ApiUrl` (→ `VITE_API_BASE_URL`), `PuzzleBucketName` (#4 upload target),
   `FunctionUrl`, `DistributionDomainName`. Commands: `pnpm infra:synth` / `infra:diff` /
   `infra:deploy` (root) or `pnpm --filter @whippin/infra <synth|deploy|diff|destroy>`;
-  deploy needs AWS creds + a bootstrapped account. **`-c domainName=<apex>` defaults to
+  deploy needs AWS creds + a bootstrapped account. **App deploys go through CI** (PR →
+  `ci.yml` → merge → `deploy.yml`); `main` is branch-protected (enforce_admins, require
+  PR + the "Typecheck + test" check, strict). So the local `deploy`/`deploy:app` scripts
+  are **guarded** by `scripts/guard-local-deploy.mjs`: they refuse unless `CI` is set (CI
+  runs `cdk deploy` directly, unaffected) or **`ALLOW_LOCAL_DEPLOY=1`** is passed
+  (deliberate break-glass). `synth`/`diff`/`destroy`/`deploy:auth` (the by-hand
+  WhippinDeployStack bootstrap) are unguarded. **`-c domainName=<apex>` defaults to
   `whippin.ai`** (`bin/app.ts`), so every cdk command works with no flag; it drives the
   API/site domains and `WebStack` (override `-c domainName=<other>`
   for a different deployment). The API gets the stable custom domain `api.<domain>` (override
