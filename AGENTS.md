@@ -380,6 +380,7 @@ pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--
 
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
 pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output)
+pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--ci]  # publish-buffer coverage (#61); reports + exits 0 by default, --ci exits 1 on any (day,lang) gap for cron/CI
 pnpm backend:dev                # local server (GET /?lang=, /today) on :8787 over the local store
 
 # Front end (@whippin/web)
