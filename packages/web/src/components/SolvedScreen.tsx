@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react';
 import { bucketMeans, shareText, shareUrl } from '../game/share';
 import { heatColor, secondsUntilNextReset } from '@whippin/shared';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
+import { track } from '../analytics';
 import { t } from '../i18n';
 
 // Reveal choreography (this component MOUNTS at the reveal moment — Game gates it on the last
@@ -136,6 +137,7 @@ export default function SolvedScreen({
     if (isTouch && typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
       try {
         await navigator.share({ title: 'Whippin AI', text });
+        track('share', { method: 'native' });
         return;
       } catch (err) {
         if ((err as DOMException)?.name === 'AbortError') return; // user dismissed the sheet
@@ -144,6 +146,7 @@ export default function SolvedScreen({
     }
     try {
       await navigator.clipboard.writeText(text);
+      track('share', { method: 'clipboard' });
       setCopied(true);
       window.clearTimeout(copiedTimer.current);
       copiedTimer.current = window.setTimeout(() => setCopied(false), 2000);

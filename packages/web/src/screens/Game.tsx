@@ -14,6 +14,7 @@ import SolvedCaption from '../components/SolvedCaption';
 import LoadError from '../components/LoadError';
 import { HIT_FADE_MS } from '../components/FloatingHit';
 import { t, srHoleResult } from '../i18n';
+import { track } from '../analytics';
 import { fold } from '@whippin/shared';
 import type { HitState, Hole, Puzzle, RankEntry, RankMap, RuntimeHole, Source } from '@whippin/shared';
 
@@ -202,6 +203,13 @@ function Round({
     if (!justSolved) {
       setShowResults(true); // already solved on load (rehydrated) -> reveal without waiting
       return undefined;
+    }
+    // The one analytics beat for "did the player finish today's puzzle": fired ONLY on
+    // the play-solve transition (never on the rehydration branch above). A ?puzzle=
+    // override has no real day, so it isn't a countable daily solve — skip it. `archive`
+    // is hardcoded 'no' until the archive ships (no way to play a non-active day yet).
+    if (dayNumber != null) {
+      track('solve', { lang, tries: guessCount, day: dayNumber, archive: 'no' });
     }
     const t = window.setTimeout(() => setShowResults(true), LAST_HOLE_SETTLE_MS);
     return () => window.clearTimeout(t);
