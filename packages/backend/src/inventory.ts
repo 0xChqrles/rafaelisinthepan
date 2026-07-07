@@ -2,11 +2,11 @@
 // game days × langs and reports which (date, lang) puzzles exist, so a thinning buffer is
 // visible BEFORE players hit a gap.
 //
-//   pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--fail-on-gap]
+//   pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--ci]
 //
 // By default it just REPORTS and exits 0 — a gap is normal while buffering, not a command
-// failure, so an interactive run stays clean. `--fail-on-gap` turns a gap into exit 1 for
-// the machine path, so a cron/CI step can `pnpm puzzle:inventory --fail-on-gap || alarm`.
+// failure, so an interactive run stays clean. `--ci` turns a gap into exit 1 for the
+// machine path, so a cron/CI step can `pnpm puzzle:inventory --ci || alarm`.
 //
 // Local by default — probes the filesystem store via the SAME root resolution as
 // `serve`/`fsStore` (`PUZZLE_STORE`, default backend/.local-store), no AWS creds. `--s3`
@@ -27,7 +27,7 @@ interface Args {
   s3: boolean;
   days: number;
   langs: string[];
-  failOnGap: boolean; // opt in to exit 1 on a gap (the CI/cron alarm); default: report + exit 0
+  ci: boolean; // opt in to exit 1 on a gap (the CI/cron alarm); default: report + exit 0
 }
 
 function die(msg: string): never {
@@ -36,15 +36,15 @@ function die(msg: string): never {
 }
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { s3: false, days: DEFAULT_DAYS, langs: DEFAULT_LANGS, failOnGap: false };
+  const args: Args = { s3: false, days: DEFAULT_DAYS, langs: DEFAULT_LANGS, ci: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     switch (a) {
       case '--s3':
         args.s3 = true;
         break;
-      case '--fail-on-gap':
-        args.failOnGap = true;
+      case '--ci':
+        args.ci = true;
         break;
       case '--days': {
         const raw = argv[++i];
@@ -201,8 +201,8 @@ async function main() {
   console.log('');
   console.log(renderSummary(summary));
   // Report-only by default (exit 0); the gap becomes a failing code only when the caller
-  // opted into the alarm with --fail-on-gap.
-  process.exit(args.failOnGap && !summary.complete ? 1 : 0);
+  // opted into the alarm with --ci.
+  process.exit(args.ci && !summary.complete ? 1 : 0);
 }
 
 // Run as a CLI only when executed directly (`tsx src/inventory.ts ...`), NOT when this
