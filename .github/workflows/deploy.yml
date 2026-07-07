@@ -119,12 +119,11 @@ jobs:
     needs: plan
     if: needs.plan.outputs.web == 'true'
     runs-on: ubuntu-latest
-    # Required for the SPA build; no fallback — fail fast if the repo variable is unset.
+    # VITE_API_BASE_URL is the committed single source of truth in packages/web/.env.production
+    # (loaded by `pnpm build`), so it is NOT passed here. Only the OPTIONAL analytics var is
+    # injected — unset ships the SPA with analytics inert (no script, every track() a no-op).
+    # Create the repo VARIABLE VITE_PLAUSIBLE_DOMAIN (e.g. whippin.ai) to enable it (#60).
     env:
-      VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
-      # Privacy-first analytics (#60). OPTIONAL — unset ships the SPA with analytics
-      # inert (no script, every track() a no-op). Create the repo VARIABLE
-      # VITE_PLAUSIBLE_DOMAIN (e.g. whippin.ai) to enable it on the deployed site.
       VITE_PLAUSIBLE_DOMAIN: ${{ vars.VITE_PLAUSIBLE_DOMAIN }}
     steps:
       - uses: actions/checkout@v4
@@ -141,14 +140,8 @@ jobs:
       - name: Install JS deps
         run: pnpm install --frozen-lockfile
 
-      - name: Require VITE_API_BASE_URL
-        run: |
-          if [ -z "${VITE_API_BASE_URL}" ]; then
-            echo "::error::VITE_API_BASE_URL repo variable is not set. Set it under repo Settings -> Secrets and variables -> Actions -> Variables (e.g. https://api.whippin.ai)."
-            exit 1
-          fi
-
-      # Must build (with VITE_API_BASE_URL) BEFORE cdk deploy — WebStack uploads dist/.
+      # Must build BEFORE cdk deploy — WebStack uploads dist/. VITE_API_BASE_URL comes
+      # from the committed packages/web/.env.production.
       - name: Build SPA
         run: pnpm build
 
