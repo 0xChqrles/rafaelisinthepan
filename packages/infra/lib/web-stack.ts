@@ -74,19 +74,21 @@ export class WebStack extends Stack {
     }
 
     // ── Security response headers (HSTS + CSP + sniff/frame/referrer hardening) ─
-    // The SPA's only external origins are Google Fonts (CSS + woff2) and the backend API
-    // (connect-src). Scripts are 'self' (Vite emits hashed module files, no inline JS);
+    // The SPA's only external origins are Google Fonts (CSS + woff2), the backend API,
+    // and Plausible's analytics endpoint (connect-src). Scripts are 'self' (Vite emits
+    // hashed module files, no inline JS; Plausible is bundled via its npm tracker package);
     // inline styles are allowed because the app sets dynamic `style={{…}}` (e.g.
     // ProgressBar) and the CSS @imports the Google Fonts stylesheet; flags are inlined as
     // data: URIs. CSP MUST be re-verified after deploy — an over-tight policy breaks the page.
     const apiOrigin = props.apiOrigin ?? (domainName ? `https://api.${domainName}` : undefined);
+    const plausibleOrigin = 'https://plausible.io';
     const csp = [
       "default-src 'self'",
       "script-src 'self'",
       "img-src 'self' data:",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com",
-      `connect-src 'self'${apiOrigin ? ` ${apiOrigin}` : ''}`,
+      `connect-src 'self'${apiOrigin ? ` ${apiOrigin}` : ''} ${plausibleOrigin}`,
       "object-src 'none'",
       "base-uri 'self'",
       "frame-ancestors 'none'",
