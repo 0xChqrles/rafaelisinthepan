@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "synth": "cdk synth",
-    "deploy": "cdk deploy",
-    "deploy:app": "cdk deploy WhippinBackendStack WhippinWebStack",
+    "deploy": "node scripts/guard-local-deploy.mjs && cdk deploy",
+    "deploy:app": "node scripts/guard-local-deploy.mjs && cdk deploy WhippinBackendStack WhippinWebStack",
     "deploy:auth": "cdk deploy WhippinDeployStack",
     "diff": "cdk diff",
     "destroy": "cdk destroy",
