@@ -696,18 +696,22 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
     the per-stack deploy jobs, and the `workflow_dispatch` `stacks` options. A new
     deployable stack with no job/filter entry will silently never deploy.
 - **Analytics (#60, decided 2026-07-07):** privacy-first, cookieless **Plausible** — no
-  cookies, no consent banner (the developer is in France, GDPR-relevant), ~1 KB script.
+  cookies, no consent banner (the developer is in France, GDPR-relevant).
   An explicit, **user-approved EXCEPTION** to the no-third-party-origin stance (same
-  rationale that self-hosts the pixel font); proxying the script through our own domain
+  rationale that self-hosts the pixel font); proxying the endpoint through our own domain
   is a possible later step. **`web/src/analytics.ts` is the ONLY module that knows
-  Plausible exists:** `initAnalytics()` (called once from `main.tsx`) injects the classic
-  `script.js` + `data-domain` snippet **only when `VITE_PLAUSIBLE_DOMAIN` is set** (else
-  nothing), plus Plausible's queue stub so `track` works before the async script loads;
-  `track(event, props)` wraps `window.plausible` and is a **silent, never-throwing no-op**
-  when unconfigured. **Env-gated:** `VITE_PLAUSIBLE_DOMAIN` is a GitHub **repo variable**
+  Plausible exists:** it uses the official `@plausible-analytics/tracker` package
+  (follow-up decision 2026-07-07, replacing manual `script.js` injection) and
+  `initAnalytics()` (called once from `main.tsx`) loads/initializes the tracker **only
+  when `VITE_PLAUSIBLE_DOMAIN` is set** (else nothing). `track(event, props)` initializes
+  the same tracker if needed, stringifies low-cardinality props at the Plausible boundary,
+  and is a **silent, never-throwing no-op** when unconfigured. **Env-gated:**
+  `VITE_PLAUSIBLE_DOMAIN` is a GitHub **repo variable**
   (like `VITE_API_BASE_URL`) set ONLY on the CI prod deploy (`deploy.yml` web build) and
   deliberately **NOT** in `.env.production`, so dev/preview/local `pnpm build` stay fully
-  inert. **Exactly three events** (low-cardinality props only — **NEVER** a typed
+  inert. The web CloudFront CSP (`infra/lib/web-stack.ts`) allows `https://plausible.io`
+  in `connect-src` for the tracker endpoint; `script-src` stays `'self'` because the
+  tracker is bundled. **Exactly three events** (low-cardinality props only — **NEVER** a typed
   word/guess): `solve {lang, tries, day, archive:'no'}` — the play-solve transition in
   `Game.tsx` (NOT rehydration; skipped on a `?puzzle=` override; `archive` hardcoded
   `'no'` until the archive ships); `share {method:'native'|'clipboard'}` — `SolvedScreen`

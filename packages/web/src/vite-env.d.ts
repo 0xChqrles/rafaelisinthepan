@@ -8,7 +8,7 @@ interface ImportMetaEnv {
   // Unset in local dev with no backend; required for normal play in production.
   readonly VITE_API_BASE_URL?: string;
   // Plausible site domain (analytics, #60). Set ONLY on the CI production deploy so
-  // dev/preview/local builds stay inert; when set, analytics.ts loads the Plausible
-  // script. Optional.
+  // dev/preview/local builds stay inert; when set, analytics.ts loads Plausible's
+  // official tracker package. Optional.
   readonly VITE_PLAUSIBLE_DOMAIN?: string;
 }
