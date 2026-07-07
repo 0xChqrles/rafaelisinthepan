@@ -44,9 +44,10 @@ const NOT_FOUND_MAX_AGE = 60;
 const PUZZLE_BROWSER_MAX_AGE = 300;
 const PUZZLE_CDN_MAX_AGE = 31_536_000;
 
-// How far (whole days) a requested date may sit from the server's active day and still
-// be served: ±1 tolerates client clock skew around the 22:00 flip without exposing the
-// archive or a pre-published future puzzle beyond the adjacent day.
+// How far (whole days) a requested date may sit AHEAD of the server's active day and
+// still be served: +1 tolerates client clock skew around the 22:00 flip without exposing
+// a pre-published future puzzle beyond the adjacent day. The PAST is open (the archive is
+// date-addressed), so only the future is guarded.
 const DATE_SKEW_DAYS = 1;
 
 const LANG_RE = /^[a-z]{2}$/;
@@ -170,16 +171,17 @@ export function createHandler(deps: HandlerDeps) {
         );
       }
 
-      // Serve only the LIVE window: the requested day must sit within DATE_SKEW_DAYS of
-      // the server's active day. That tolerates a skewed client clock around the flip,
-      // but never exposes the archive or a pre-published future day. Out-of-window is a
-      // 404 like a missing puzzle (same graceful front-end path), with the short
-      // negative TTL so a corrected clock recovers quickly.
-      if (Math.abs(dayNumber(requestedDate) - dayNumber(date)) > DATE_SKEW_DAYS) {
+      // Guard only the FUTURE: any PAST day is servable (the archive is date-addressed),
+      // but a day more than DATE_SKEW_DAYS ahead of the server's active day is not — that
+      // keeps clock-skew tolerance around the flip (+1 is served) while a pre-published
+      // buffer day never leaks early. Out-of-window is a 404 like a missing puzzle (same
+      // graceful front-end path), with the short negative TTL so a corrected clock recovers
+      // quickly.
+      if (dayNumber(requestedDate) - dayNumber(date) > DATE_SKEW_DAYS) {
         return errorResponse(
           404,
           'not_found',
-          `"${requestedDate}" is not the active game day (${date}).`,
+          `"${requestedDate}" is not released yet (active day: ${date}).`,
           { ...cors, 'Cache-Control': dailyCacheControl(NOT_FOUND_MAX_AGE) },
           { date, lang },
         );
