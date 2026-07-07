@@ -2,11 +2,19 @@
 // requested lang, returns it in the front's `Puzzle` shape, answers a missing puzzle
 // with a clean JSON 404 (never a 500), sends CORS headers, and exposes day metadata.
 
-import { describe, it, expect } from 'vitest';
-import type { Puzzle } from '@whippin/shared';
+import { describe, it, expect, vi } from 'vitest';
+import { type Puzzle, encodeResult } from '@whippin/shared';
 import { createHandler, type HandlerDeps } from './handler';
+import { renderCardPng } from './ogCard';
 import type { FnUrlEvent } from './respond';
 import type { PuzzleStore } from './store';
+
+// Spy on the card rasterizer (real PNG bytes are opaque to a lang assertion); a stub PNG
+// lets us assert the /og route forwards the token's lang into the renderer.
+vi.mock('./ogCard', async () => {
+  const actual = await vi.importActual<typeof import('./ogCard')>('./ogCard');
+  return { ...actual, renderCardPng: vi.fn(async () => Buffer.from([0x89, 0x50, 0x4e, 0x47])) };
+});
 
 // A minimal but schema-valid puzzle, keyed by the date the fixed clock resolves to.
 const PUZZLE: Puzzle = {
@@ -141,6 +149,20 @@ describe('puzzle endpoint — date-addressed (GET /?lang=&date=)', () => {
     const res = await handler(event({ query: { lang: 'fr', date: ACTIVE_DATE } }));
     expect(res.statusCode).toBe(500);
     expect(JSON.parse(res.body).error).toBe('internal_error');
+  });
+});
+
+describe('share-card /og route — lang passthrough (#59)', () => {
+  it('forwards the token language into the card renderer', async () => {
+    const token = encodeResult({
+      lang: 'fr',
+      dayNumber: 20638,
+      score: 42,
+      squares: [8, 20, 35, 50, 65, 78, 90, 100, 100],
+    });
+    const res = await makeHandler()(event({ path: `/og/${token}.png` }));
+    expect(res.statusCode).toBe(200);
+    expect(renderCardPng).toHaveBeenCalledWith(expect.objectContaining({ lang: 'fr' }));
   });
 });
 

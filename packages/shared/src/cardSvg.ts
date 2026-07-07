@@ -4,8 +4,9 @@
 // image. Pure + deterministic, so it is fully unit-testable without any AWS/rasterizer.
 //
 // Colors come from the SHARED heat ramp (heat.ts), so the card matches the on-screen grid
-// exactly. Only numeric fields are interpolated (score/day/pct — all clamped ints from the
-// decoded token), so there is no text to escape and no injection surface.
+// exactly. The only interpolated strings are numeric fields (score/day/pct — all clamped
+// ints from the decoded token) and the try-count UNIT, which is a fixed per-lang table
+// CONSTANT (never interpolated input) — so there is no text to escape and no injection surface.
 
 import { heatColor } from './heat';
 
@@ -20,13 +21,22 @@ const MUTED = '#c4c9d8';
 
 const CARD_FONT = 'Press Start 2P';
 
+// The try-count unit, keyed by the token's language. A FIXED table of constants (never
+// interpolated input), so the renderer's "no text to escape" guarantee holds. Unknown
+// lang -> en (matches the token codec, which only ever encodes a known lang).
+const UNITS: Record<string, { one: string; many: string }> = {
+  en: { one: 'TRY', many: 'TRIES' },
+  fr: { one: 'ESSAI', many: 'ESSAIS' },
+};
+
 export interface CardData {
+  lang: string; // 2-letter code; selects the try-count unit (en/fr), unknown -> en
   dayNumber: number;
   score: number;
   squares: number[]; // per-square mean progress % (0..100)
 }
 
-export function renderCardSvg({ dayNumber, score, squares }: CardData): string {
+export function renderCardSvg({ lang, dayNumber, score, squares }: CardData): string {
   const n = Math.max(1, squares.length);
 
   // The row of squares, centered. Cells shrink to fit the widest game (18) within the
@@ -46,14 +56,15 @@ export function renderCardSvg({ dayNumber, score, squares }: CardData): string {
     })
     .join('');
 
+  const unit = UNITS[lang] ?? UNITS.en;
   const cx = CARD_WIDTH / 2;
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_WIDTH}" height="${CARD_HEIGHT}" viewBox="0 0 ${CARD_WIDTH} ${CARD_HEIGHT}">`,
     `<rect width="${CARD_WIDTH}" height="${CARD_HEIGHT}" fill="${BG}"/>`,
     `<g shape-rendering="crispEdges">${rects}</g>`,
     // "N TRIES", not "SCORE N": naming the unit is what tells a stranger seeing the
-    // card that lower is better.
-    `<text x="${cx}" y="430" text-anchor="middle" font-family="${CARD_FONT}" font-size="76" fill="${FG}">${score} ${score === 1 ? 'TRY' : 'TRIES'}</text>`,
+    // card that lower is better. Localized by the token's lang (#59).
+    `<text x="${cx}" y="430" text-anchor="middle" font-family="${CARD_FONT}" font-size="76" fill="${FG}">${score} ${score === 1 ? unit.one : unit.many}</text>`,
     `<text x="${cx}" y="500" text-anchor="middle" font-family="${CARD_FONT}" font-size="30" fill="${MUTED}">#${dayNumber}</text>`,
     `</svg>`,
   ].join('');
