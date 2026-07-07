@@ -15,8 +15,13 @@ import LoadError from '../components/LoadError';
 import { HIT_FADE_MS } from '../components/FloatingHit';
 import { t, srHoleResult } from '../i18n';
 import { track } from '../analytics';
+import { navigate } from '../routing';
+import { pathForArchive } from '../langs';
 import { fold } from '@whippin/shared';
 import type { HitState, Hole, Puzzle, RankEntry, RankMap, RuntimeHole, Source } from '@whippin/shared';
+// Inline SVG (vite-plugin-svgr): renders into the DOM, paints with currentColor. The
+// calendar entry into the archive (#55); decorative glyph, the button's aria-label names it.
+import CalendarIcon from '../assets/icons/calendar.svg?react';
 
 // Feedback shown under the input. Only INVALID words use it now (red shake +
 // "does not exist"); a valid-but-too-far guess gives per-hole "MISS" feedback
@@ -47,10 +52,14 @@ const OVERRIDE_NONCE = Math.random().toString(36).slice(2);
 export default function Game({
   puzzle,
   dayNumber,
+  isActiveDay = true,
   onHelp,
 }: {
   puzzle: Puzzle;
   dayNumber: number | null;
+  // Whether this is the client's active day (false when replaying an archive day, #55):
+  // gates the solved-screen countdown and tags the solve-analytics `archive` prop.
+  isActiveDay?: boolean;
   onHelp?: () => void;
 }) {
   const { vocab, error, retry } = useVocab(puzzle.lang);
@@ -70,6 +79,7 @@ export default function Game({
       prefixSet={vocab.prefixSet}
       lang={puzzle.lang}
       dayNumber={dayNumber}
+      isActiveDay={isActiveDay}
       onHelp={onHelp}
     />
   );
@@ -86,6 +96,7 @@ function Round({
   prefixSet,
   lang,
   dayNumber,
+  isActiveDay,
   onHelp,
 }: {
   words: string[];
@@ -96,6 +107,7 @@ function Round({
   prefixSet: Set<string>;
   lang: string;
   dayNumber: number | null;
+  isActiveDay: boolean;
   onHelp?: () => void;
 }) {
   // Fresh per-hole state derived from the puzzle. Used until the persisted store
@@ -204,12 +216,12 @@ function Round({
       setShowResults(true); // already solved on load (rehydrated) -> reveal without waiting
       return undefined;
     }
-    // The one analytics beat for "did the player finish today's puzzle": fired ONLY on
-    // the play-solve transition (never on the rehydration branch above). A ?puzzle=
-    // override has no real day, so it isn't a countable daily solve — skip it. `archive`
-    // is hardcoded 'no' until the archive ships (no way to play a non-active day yet).
+    // The one analytics beat for "did the player finish a puzzle": fired ONLY on the
+    // play-solve transition (never on the rehydration branch above). A ?puzzle= override
+    // has no real day, so it isn't a countable solve — skip it. `archive` distinguishes a
+    // replayed past day ('yes', #55) from the live daily puzzle ('no').
     if (dayNumber != null) {
-      track('solve', { lang, tries: guessCount, day: dayNumber, archive: 'no' });
+      track('solve', { lang, tries: guessCount, day: dayNumber, archive: isActiveDay ? 'no' : 'yes' });
     }
     const t = window.setTimeout(() => setShowResults(true), LAST_HOLE_SETTLE_MS);
     return () => window.clearTimeout(t);
@@ -362,13 +374,24 @@ function Round({
           ) : undefined
         }
         right={
-          // Replays the onboarding tutorial (#51) on demand — help is never more than
-          // one tap away, but it stays out of the way.
-          onHelp ? (
-            <button type="button" className="home-btn help-btn" aria-label={t(lang, 'ariaHelp')} onClick={onHelp}>
-              ?
+          <div className="topbar-right">
+            {/* Into the archive calendar (#55) — past days, one tap from the game. */}
+            <button
+              type="button"
+              className="home-btn archive-btn"
+              aria-label={t(lang, 'ariaArchive')}
+              onClick={() => navigate(pathForArchive(lang))}
+            >
+              <CalendarIcon className="topbar-cal-icon" aria-hidden />
             </button>
-          ) : undefined
+            {/* Replays the onboarding tutorial (#51) on demand — help is never more than
+                one tap away, but it stays out of the way. */}
+            {onHelp && (
+              <button type="button" className="home-btn help-btn" aria-label={t(lang, 'ariaHelp')} onClick={onHelp}>
+                ?
+              </button>
+            )}
+          </div>
         }
       />
       <div className="hud">
@@ -420,7 +443,13 @@ function Round({
           take its place and animate in. */}
       <div className="tray">
         {showResults ? (
-          <SolvedScreen guessCount={guessCount} trajectory={trajectory} dayNumber={dayNumber} lang={lang} />
+          <SolvedScreen
+            guessCount={guessCount}
+            trajectory={trajectory}
+            dayNumber={dayNumber}
+            lang={lang}
+            isActiveDay={isActiveDay}
+          />
         ) : (
           <Keyboard
             input={input}

@@ -2,12 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { activeDate, dayNumber as dayNumberOf, type Puzzle } from '@whippin/shared';
 import { puzzleUrl, resolveOverride, puzzleOutcome, parsePuzzle } from '../api';
 
-// Loads the day's puzzle for the selected language. The client computes the active
-// 22:00-ET game day itself (shared day.ts) and fetches that date's puzzle in ONE
-// request — the served puzzle is BY CONSTRUCTION the day it is persisted under. The
-// ?puzzle=<path|url> override loads a static file directly for local dev / testing.
-// Idle (no fetch) until a language is chosen.
-export default function usePuzzle(lang: string | null) {
+// Loads a day's puzzle for the selected language. Normal play (no `date`) fetches the
+// client-computed active 22:00-ET game day (shared day.ts) — the served puzzle is BY
+// CONSTRUCTION the day it is persisted under. The archive (#55) passes an explicit past
+// `date` to replay it: same one fetch, same 404 -> noPuzzle path, only the requested day
+// changes. The ?puzzle=<path|url> override loads a static file directly for local dev /
+// testing. Idle (no fetch) until a language is chosen.
+export default function usePuzzle(lang: string | null, date?: string) {
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
   // The stable day id of the loaded puzzle — dayNumber(activeDate) computed at fetch
   // time, so it always matches the date the puzzle was requested for (null under an
@@ -46,14 +47,15 @@ export default function usePuzzle(lang: string | null) {
           return;
         }
 
-        // Normal play: ONE fetch for the client-computed active day. The date names the
-        // puzzle, so the response can never belong to a different day than the round key
-        // (dayNumber below) — the old /today->puzzle pair and its 22:00-flip race are
-        // gone. A 404 covers both "no puzzle published" and "date outside the server's
-        // clock-skew window" — both are the graceful NO PUZZLE state, not an error.
-        const date = activeDate(new Date());
-        const day = dayNumberOf(date);
-        const puzzleRes = await fetch(puzzleUrl(lang, date));
+        // ONE fetch for the requested day: the archive's explicit past `date`, else the
+        // client-computed active day. The date names the puzzle, so the response can
+        // never belong to a different day than the round key (dayNumber below) — the old
+        // /today->puzzle pair and its 22:00-flip race are gone. A 404 covers both "no
+        // puzzle published" and "date outside the server's window" — both are the
+        // graceful NO PUZZLE state, not an error.
+        const reqDate = date ?? activeDate(new Date());
+        const day = dayNumberOf(reqDate);
+        const puzzleRes = await fetch(puzzleUrl(lang, reqDate));
         const outcome = puzzleOutcome(puzzleRes.status);
         if (outcome === 'missing') {
           if (!cancelled) {
@@ -78,7 +80,7 @@ export default function usePuzzle(lang: string | null) {
     return () => {
       cancelled = true;
     };
-  }, [lang, override, reloadTick]);
+  }, [lang, date, override, reloadTick]);
 
   // Language chosen but the puzzle hasn't resolved to a puzzle / error / no-puzzle yet.
   const loading = lang != null && puzzle == null && error == null && !noPuzzle;

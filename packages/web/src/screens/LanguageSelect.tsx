@@ -3,22 +3,10 @@ import { LANGS, pathForLang, resolveHomeLang } from '../langs';
 import { navigate } from '../routing';
 import useToday from '../hooks/useToday';
 import { progressColor } from '@whippin/shared';
-import { useGameStore, roundKeyForDay, type RoundProgress } from '../state/gameStore';
-import { t } from '../i18n';
+import { useGameStore, roundKeyForDay } from '../state/gameStore';
+import { statusOf, srStatus, type Status } from '../state/status';
 // Bundled like the flags (small enough to inline as a data URI — no extra request).
 import logo from '../assets/logo-blue.png';
-
-// Per-language status for today, read from the persisted round map (no puzzle load):
-//   - none     -> not started (no round yet, or visited without a guess);
-//   - solved   -> every hole discovered;
-//   - progress -> in progress, with the cached reconstruction %.
-type Status = { kind: 'none' } | { kind: 'solved' } | { kind: 'progress'; pct: number };
-
-function statusOf(round: RoundProgress | undefined): Status {
-  if (!round || round.guessCount === 0) return { kind: 'none' };
-  if (round.holes.length > 0 && round.holes.every((h) => h.rank === 0)) return { kind: 'solved' };
-  return { kind: 'progress', pct: Math.round(round.progress) };
-}
 
 // Today's status, spoken in the game's own visual language instead of text badges: a
 // thin strip along the card's bottom edge. Absent = not started (NOTHING is the "new"
@@ -38,12 +26,6 @@ function StatusStrip({ status }: { status: Status }) {
       aria-hidden="true"
     />
   );
-}
-
-function srStatus(uiLang: string, status: Status): string {
-  if (status.kind === 'solved') return ` — ${t(uiLang, 'srLangSolved')}`;
-  if (status.kind === 'progress') return ` — ${status.pct}%`;
-  return '';
 }
 
 // The language screen is a ROUTE (/select), not a modal: the header flag links here

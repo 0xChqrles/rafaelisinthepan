@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { activeDate } from '@whippin/shared';
 import usePuzzle from './hooks/usePuzzle';
 import LanguageSelect from './screens/LanguageSelect';
+import Archive from './screens/Archive';
 import Game from './screens/Game';
 import LoadError from './components/LoadError';
 import NoPuzzle from './components/NoPuzzle';
@@ -14,7 +16,9 @@ import { t } from './i18n';
 
 export default function App() {
   const pathname = useLocation();
-  const route = parseRoute(pathname);
+  // The client's active game day bounds the date deep-link range (a future date -> home),
+  // so parsing gets it here (kept out of parseRoute so parsing stays pure/testable).
+  const route = parseRoute(pathname, { activeDate: activeDate(new Date()) });
   const lastLang = useGameStore((s) => s.lastLang);
 
   // The game IS the home: `/` (and any unknown path) redirects to a language — the
@@ -28,9 +32,12 @@ export default function App() {
 
   // Keep <html lang> honest: index.html ships lang="en", but on /fr both the puzzle
   // content and the UI chrome are French — screen readers pick pronunciation rules from
-  // this attribute. Non-game routes use the same resolution as the `/` redirect.
+  // this attribute. Language-scoped routes (game + archive) use their own lang; the
+  // language-less routes use the same resolution as the `/` redirect.
   const docLang =
-    route.view === 'game' ? route.lang : resolveHomeLang(lastLang, navigator.language);
+    route.view === 'game' || route.view === 'archive'
+      ? route.lang
+      : resolveHomeLang(lastLang, navigator.language);
   useEffect(() => {
     document.documentElement.lang = docLang;
   }, [docLang]);
@@ -38,19 +45,25 @@ export default function App() {
   return (
     <div className="app">
       {route.view === 'select' && <LanguageSelect />}
-      {route.view === 'game' && <GameRoute lang={route.lang} />}
+      {route.view === 'archive' && <Archive lang={route.lang} />}
+      {route.view === 'game' && <GameRoute lang={route.lang} date={route.date} />}
       {/* home: redirecting on the next tick — render nothing. */}
     </div>
   );
 }
 
-// One puzzle route (/fr, /en). Loads the day's puzzle for the language and records it
-// as the last-played one. There is no header until the puzzle loads — Game owns the HUD
-// (flag + progress bar), so it always shows the loaded puzzle's language.
-function GameRoute({ lang }: { lang: LangCode }) {
-  const { puzzle, dayNumber, error, loading, noPuzzle, retry } = usePuzzle(lang);
+// One puzzle route: /<lang> plays today's puzzle, /<lang>/<date> replays a past archive
+// day (#55). Loads the day's puzzle for the language and records it as the last-played
+// one. There is no header until the puzzle loads — Game owns the HUD (flag + progress
+// bar), so it always shows the loaded puzzle's language.
+function GameRoute({ lang, date }: { lang: LangCode; date?: string }) {
+  const { puzzle, dayNumber, error, loading, noPuzzle, retry } = usePuzzle(lang, date);
   const setLastLang = useGameStore((s) => s.setLastLang);
   const setOnboarded = useGameStore((s) => s.setOnboarded);
+
+  // A dated route replays a past day when its date is not today's active game day; the
+  // undated route is always the active day. Gates the solved-screen countdown + analytics.
+  const isActiveDay = date == null || date === activeDate(new Date());
 
   // Visiting a puzzle route makes this the last-played language (seeds the `/` redirect).
   useEffect(() => {
@@ -113,7 +126,14 @@ function GameRoute({ lang }: { lang: LangCode }) {
       {loading && <p className="status">{t(lang, 'loading')}</p>}
       {error !== null && <LoadError message={t(lang, 'failedPuzzle')} lang={lang} onRetry={retry} />}
       {noPuzzle && <NoPuzzle lang={lang} />}
-      {puzzle && <Game puzzle={puzzle} dayNumber={dayNumber} onHelp={() => openTutorial('replay')} />}
+      {puzzle && (
+        <Game
+          puzzle={puzzle}
+          dayNumber={dayNumber}
+          isActiveDay={isActiveDay}
+          onHelp={() => openTutorial('replay')}
+        />
+      )}
     </>
   );
 }

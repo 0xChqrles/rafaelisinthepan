@@ -197,6 +197,134 @@ button * {
   height: 4px;
 }
 
+/* ===================== archive calendar (issue #55) ===================== */
+/* A month of playable past days under the app header (no progress-bar row). Day cells are
+   flat keys like the language cards / keyboard — surface tiles that brighten on hover /
+   press — carrying the same status language (gold solved, progress-ramp strip in
+   progress, plain surface not started). Sits below the fixed header (align-self flex-start
+   + padding clears it); a bounded month grid never needs to scroll on desktop. */
+.archive {
+  width: min(420px, 100%);
+  align-self: flex-start;
+  padding-top: 48px; /* + the .app 24px padding clears the fixed 56px header */
+}
+
+/* Month navigation, clamped to [first puzzle month, current month] — the ‹ › ends dim
+   when the range runs out. The month/year title (locale-formatted) fills the middle. */
+.cal-nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.cal-month {
+  flex: 1;
+  text-align: center;
+  font-family: var(--press);
+  font-size: clamp(12px, 1.8vh, 15px);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--fg);
+  padding-top: var(--cap-shift);
+}
+.cal-arrow {
+  flex: none;
+  padding: 6px 10px;
+  font-family: var(--press);
+  font-size: clamp(14px, 2.4vh, 18px);
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.08s linear, filter 0.08s linear;
+}
+.cal-arrow:hover:not([disabled]),
+.cal-arrow:focus-visible {
+  color: var(--fg);
+}
+.cal-arrow[disabled] {
+  opacity: 0.26;
+  cursor: default;
+}
+
+/* One 7-column grid, shared by the weekday header and the day cells so columns align. */
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+.cal-weekdays {
+  margin-bottom: 6px;
+}
+.cal-weekday {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--press);
+  font-size: clamp(8px, 2vw, 10px);
+  color: var(--muted);
+  padding-bottom: 2px;
+}
+
+/* A day tile: a flat key that navigates to that day's game. Square (aspect-ratio) so the
+   grid stays regular; the day number is centered, the status strip pinned to the bottom. */
+.cal-day {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: var(--surface-hover);
+  border: 0;
+  color: var(--fg);
+  font-family: var(--press);
+  cursor: pointer;
+  text-shadow: none;
+  transition: filter 0.08s linear;
+}
+.cal-day:hover,
+.cal-day:focus-visible {
+  filter: brightness(1.2);
+}
+.cal-day:active {
+  filter: brightness(1.35);
+}
+/* Out of range (before the first puzzle or after today): dimmed, inert — no shake. */
+.cal-day-disabled {
+  opacity: 0.26;
+  color: var(--muted);
+  cursor: default;
+}
+/* The active day, highlighted with an inset accent ring. */
+.cal-day-today {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+/* Solved: gold, tying the day to a solved word (the strip is gold too). */
+.cal-day-solved .cal-day-num {
+  color: var(--hole);
+}
+.cal-day-num {
+  font-size: clamp(10px, 2.4vw, 13px);
+  padding-top: var(--cap-shift);
+  font-variant-numeric: tabular-nums;
+}
+/* Status strip (color set inline: gold solved / progress-ramp tint in progress). Mirrors
+   the language-card strip; decorative — the cell's aria-label speaks the status. */
+.cal-strip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+}
+/* Empty leading cells so day 1 lands under its weekday column. */
+.cal-pad {
+  aspect-ratio: 1;
+}
+
 /* ===================== game screen ===================== */
 .game {
   /* Three vertical zones: fixed HUD (top), the .play area (grows to fill the middle),
@@ -297,6 +425,36 @@ button * {
   width: auto;
   height: 38%;
   shape-rendering: crispEdges;
+}
+
+/* The game header's right group: the archive calendar entry + the "?" help, side by
+   side in the single right slot. */
+.topbar-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+/* The game header's archive entry + the archive's back-to-today control: currentColor
+   glyphs, muted -> fg on hover/focus like the "?" and skip. */
+.archive-btn,
+.archive-close {
+  color: var(--muted);
+}
+.archive-btn:hover,
+.archive-btn:focus-visible,
+.archive-close:hover,
+.archive-close:focus-visible {
+  color: var(--fg);
+}
+.topbar-cal-icon,
+.archive-close-icon {
+  display: block;
+  width: auto;
+  height: 42%;
+  shape-rendering: crispEdges;
+}
+.archive-close-icon {
+  height: 34%;
 }
 
 /* The header's centered title — the day's id (#N) in the game, "TUTORIAL" in the
@@ -1067,6 +1225,11 @@ button * {
     border-width: 2px;
   }
 
+  /* Archive: clear the compact (48px) mobile header; the grid already fits the width. */
+  .archive {
+    padding-top: 40px;
+  }
+
   /* Language picker: tighter cards on a phone. */
   .lang-logo-title {
     margin-bottom: 28px;
@@ -1097,6 +1260,8 @@ button * {
 .share-key:focus-visible,
 .btn:focus-visible,
 .lang-card:focus-visible,
+.cal-day:focus-visible,
+.cal-arrow:focus-visible,
 .home-btn:focus-visible {
   outline: 3px solid var(--accent-dim);
   outline-offset: 2px;

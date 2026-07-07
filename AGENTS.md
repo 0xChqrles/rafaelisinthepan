@@ -481,6 +481,23 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   backend base and is required for `pnpm dev` / `pnpm build`; the frontend must not
   silently use its own origin as the backend. `usePuzzle` exposes `dayNumber` for
   persist (#7) / already-solved (#9).
+- **Archive routing (#55, decided 2026-07-07):** the client now also fetches **explicit
+  past dates** — pairing with #53's server-side "serve any past day". `parseRoute`
+  (`web/src/langs.ts`) grew two language-scoped routes beyond `/<lang>`:
+  `/<lang>/archive` → the calendar screen (`screens/Archive.tsx`), and
+  `/<lang>/<YYYY-MM-DD>` → that past day's game (deep-linkable/shareable). A date is
+  honored only when it is a **real calendar date within `[FIRST_PUZZLE_DATE, activeDate]`**
+  (`web/src/config.ts`, a launch placeholder the user pins); a malformed or out-of-range
+  date-shaped segment → `home` redirect, while a **non-date** second segment keeps the old
+  tolerance (`/<lang>/xyz` → today's game). `parseRoute` takes the range bounds as an
+  injected arg (App passes the client `activeDate`) so parsing stays pure/testable.
+  `usePuzzle(lang, date?)` fetches the given date, else the active day (unchanged); the
+  404→`noPuzzle` path is reused as-is. The calendar reads each day's status from the
+  **persisted rounds** (device-local) via the extracted `state/status.ts` `statusOf`
+  (shared with the language selector). The solved-screen **NEXT PUZZLE IN** countdown is
+  hidden when the played day ≠ the client's active day. Entry: a calendar icon in the
+  game TopBar's right group; `dateForDayNumber` (`shared/day.ts`) is the `dayNumber`
+  inverse. The archive **must not touch streaks** (separate issue).
 - **Onboarding tutorial (#51, redesigned 2026-07-06):** the tutorial **never starts
   without an action**. A first visit (persisted `onboarded` unset) lands on an
   **invitation** (`tutorial/Invite.tsx`, standing in for the loading screen: "New to
@@ -714,9 +731,10 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   inert. The web CloudFront CSP (`infra/lib/web-stack.ts`) allows `https://plausible.io`
   in `connect-src` for the tracker endpoint; `script-src` stays `'self'` because the
   tracker is bundled. **Exactly three events** (low-cardinality props only — **NEVER** a typed
-  word/guess): `solve {lang, tries, day, archive:'no'}` — the play-solve transition in
-  `Game.tsx` (NOT rehydration; skipped on a `?puzzle=` override; `archive` hardcoded
-  `'no'` until the archive ships); `share {method:'native'|'clipboard'}` — `SolvedScreen`
+  word/guess): `solve {lang, tries, day, archive}` — the play-solve transition in
+  `Game.tsx` (NOT rehydration; skipped on a `?puzzle=` override; `archive` is `'yes'`
+  when replaying a past archive day (#55), `'no'` for the live daily puzzle);
+  `share {method:'native'|'clipboard'}` — `SolvedScreen`
   success paths; `tutorial {action:'start'|'finish'|'skip'}` — invite accept / PLAY
   finish / skip (fast-forward or invite SKIP). Plus automatic pageviews.
 - The `.codex/skills/whippin-game/` skill + `validate_game_data.mjs` describe a
