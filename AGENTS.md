@@ -497,7 +497,11 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   (shared with the language selector). The solved-screen **NEXT PUZZLE IN** countdown is
   hidden when the played day ≠ the client's active day. Entry: a calendar icon in the
   game TopBar's right group; `dateForDayNumber` (`shared/day.ts`) is the `dayNumber`
-  inverse. The archive **must not touch streaks** (separate issue).
+  inverse. The **OG share page** (`backend/ogCard.ts` `renderShareHtml`) now click-throughs
+  to the **shared day's** date-addressed URL (`/<lang>/<dateForDayNumber(dayNumber)>`),
+  not bare `/<lang>` — so a shared archive result opens that archived date, not today (the
+  card/title were already `#dayNumber`-correct). The archive **must not touch streaks**
+  (separate issue).
 - **Onboarding tutorial (#51, redesigned 2026-07-06):** the tutorial **never starts
   without an action**. A first visit (persisted `onboarded` unset) lands on an
   **invitation** (`tutorial/Invite.tsx`, standing in for the loading screen: "New to
