@@ -6,8 +6,9 @@ import { isLang } from '../langs';
 // A round is identified by its `roundKey` = (server day, language). The store keeps a
 // MAP of rounds keyed by this string so progress in one language survives switching to
 // another and back (the selector reads each language's status out of this map). The
-// SAME key rehydrates its stored progress untouched; a NEW day prunes the previous
-// day's rounds so a new day never bleeds yesterday's state in.
+// SAME key rehydrates its stored progress untouched. Day rounds are KEPT across days so
+// the archive can rehydrate a past day's progress (#54); only ?puzzle= override rounds
+// are pruned, and the map is bounded by a most-recent cap (MAX_DAY_ROUNDS).
 export interface RoundProgress {
   holes: RuntimeHole[];
   // Score = number of unique valid tries.
@@ -28,10 +29,42 @@ export function roundKeyForDay(dayNumber: number, lang: string): string {
 }
 
 // The day-part prefix of a round key ("d:5:"), or null for a non-day key (the ?puzzle=
-// override's "o:<nonce>:<lang>"). Drives pruning of rounds from other game days.
+// override's "o:<nonce>:<lang>"). Distinguishes archivable day rounds from override rounds.
 function dayPrefixOf(key: string): string | null {
   const m = /^(d:\d+:)/.exec(key);
   return m ? m[1] : null;
+}
+
+// The dayNumber a day-keyed round belongs to, or null for an override key. Orders day
+// rounds newest-first for the retention cap.
+function dayNumberOf(key: string): number | null {
+  const m = /^d:(\d+):/.exec(key);
+  return m ? Number(m[1]) : null;
+}
+
+// Retention cap: keep at most this many day rounds (newest by dayNumber). ~800 ≈ a year
+// of daily play in two languages with headroom; rounds are small (holes + tried list),
+// so the map stays well under localStorage limits.
+const MAX_DAY_ROUNDS = 800;
+
+// Enforce the cap: with more than MAX_DAY_ROUNDS day rounds, drop the oldest (lowest
+// dayNumber), always keeping the active key and every override round (exempt — at most
+// one survives ensureRound's prune).
+function capDayRounds(
+  rounds: Record<string, RoundProgress>,
+  activeKey: string,
+): Record<string, RoundProgress> {
+  const dayKeys = Object.keys(rounds).filter((k) => dayNumberOf(k) !== null);
+  if (dayKeys.length <= MAX_DAY_ROUNDS) return rounds;
+  const survivors = new Set(
+    dayKeys.sort((a, b) => dayNumberOf(b)! - dayNumberOf(a)!).slice(0, MAX_DAY_ROUNDS),
+  );
+  survivors.add(activeKey);
+  const out: Record<string, RoundProgress> = {};
+  for (const [k, v] of Object.entries(rounds)) {
+    if (dayNumberOf(k) === null || survivors.has(k)) out[k] = v;
+  }
+  return out;
 }
 
 // Do the stored round's holes still describe THIS puzzle? A round key is only
@@ -47,7 +80,8 @@ export function holesMatchPuzzle(stored: RuntimeHole[], puzzle: RuntimeHole[]): 
 }
 
 interface PersistedState {
-  // All rounds keyed by roundKey. Bounded to the current day's languages by ensureRound.
+  // All rounds keyed by roundKey. Day rounds accumulate across days (archive history),
+  // bounded to the MAX_DAY_ROUNDS most recent by ensureRound; override rounds are pruned.
   rounds: Record<string, RoundProgress>;
   // Last-played language: seeds the `/` redirect so a return visit lands where you
   // last played (falls back to the browser language, then English).
@@ -79,9 +113,9 @@ interface GameState extends PersistedState {
 
   // Reconcile the persisted rounds to `key`. A matching key with matching holes
   // rehydrates its stored progress; a brand-new key — or the same key whose puzzle was
-  // re-published with a different sentence — starts fresh from `initialHoles`. Always
-  // prunes rounds from other game days (a new day never keeps yesterday's), keeping the
-  // map bounded.
+  // re-published with a different sentence — starts fresh from `initialHoles`. Keeps
+  // every day round (the archive needs history) and prunes only override rounds, then
+  // bounds the map with the MAX_DAY_ROUNDS most-recent cap.
   ensureRound: (key: string, initialHoles: RuntimeHole[]) => void;
 
   // Count a valid guess on the active round. Deduped by folded slug: a repeat neither
@@ -154,14 +188,15 @@ export const useGameStore = create<GameState>()(
 
       ensureRound: (key, initialHoles) =>
         set((s) => {
-          // Prune rounds from other game days (and stale override rounds): a day key
-          // keeps every same-day language (so switching language preserves the others),
-          // an override/non-day key keeps every DAY round — a ?puzzle= test load must
-          // never wipe the real day's progress — and prunes only other override rounds.
-          const dayPrefix = dayPrefixOf(key);
+          // Retention: keep EVERY day round regardless of its day — the archive rehydrates
+          // a past day's progress, so a new day must not wipe yesterday's (#54). Override
+          // (?puzzle=) rounds are transient: an override key keeps only itself among them
+          // (a test load never wipes real day rounds), and a day key drops all overrides.
+          const isOverride = dayPrefixOf(key) === null;
           const kept: Record<string, RoundProgress> = {};
           for (const [k, v] of Object.entries(s.rounds)) {
-            if (dayPrefix ? k.startsWith(dayPrefix) : dayPrefixOf(k) !== null) kept[k] = v;
+            if (dayPrefixOf(k) !== null) kept[k] = v; // day round — always retained
+            else if (isOverride && k === key) kept[k] = v; // this override round only
           }
           // Same key + matching holes -> rehydrate untouched; a brand-new key OR a
           // re-published sentence under the same (day, lang) key (holes no longer match)
@@ -171,7 +206,8 @@ export const useGameStore = create<GameState>()(
             existing && holesMatchPuzzle(existing.holes, initialHoles)
               ? existing
               : freshRound(initialHoles);
-          return { activeKey: key, rounds: kept };
+          // Bound the map: evict the oldest day rounds beyond MAX_DAY_ROUNDS.
+          return { activeKey: key, rounds: capDayRounds(kept, key) };
         }),
 
       recordGuess: (typed) =>
