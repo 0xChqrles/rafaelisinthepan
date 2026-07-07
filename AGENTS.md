@@ -696,14 +696,10 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   `script.js` + `data-domain` snippet **only when `VITE_PLAUSIBLE_DOMAIN` is set** (else
   nothing), plus Plausible's queue stub so `track` works before the async script loads;
   `track(event, props)` wraps `window.plausible` and is a **silent, never-throwing no-op**
-  when unconfigured. **Env-gated by `VITE_PLAUSIBLE_DOMAIN`** (the site domain — PUBLIC, it
-  ships in the bundle, so it's **committed in `.env.production`**, not a secret/repo
-  variable): every PRODUCTION build reports, **whether deployed by CI or by a local `pnpm
-  build`**. `pnpm dev` (development mode) never loads `.env.production`, so dev stays inert
-  (and Plausible self-suppresses on localhost, so a local `pnpm preview` sends nothing).
-  It is **not** passed through `deploy.yml` (an unset repo variable would inject an empty
-  string that overrides the committed value). **Exactly three events** (low-cardinality
-  props only — **NEVER** a typed
+  when unconfigured. **Env-gated:** `VITE_PLAUSIBLE_DOMAIN` is a GitHub **repo variable**
+  (like `VITE_API_BASE_URL`) set ONLY on the CI prod deploy (`deploy.yml` web build) and
+  deliberately **NOT** in `.env.production`, so dev/preview/local `pnpm build` stay fully
+  inert. **Exactly three events** (low-cardinality props only — **NEVER** a typed
   word/guess): `solve {lang, tries, day, archive:'no'}` — the play-solve transition in
   `Game.tsx` (NOT rehydration; skipped on a `?puzzle=` override; `archive` hardcoded
   `'no'` until the archive ships); `share {method:'native'|'clipboard'}` — `SolvedScreen`
