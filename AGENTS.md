@@ -461,9 +461,11 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   (moved from the backend) is the ONE 22:00-ET DST-correct day definition, used by the
   web, the handler, and `publish`. Normal play is **ONE fetch**:
   `GET <VITE_API_BASE_URL>/?lang=<lang>&date=<YYYY-MM-DD>` with the client-computed
-  `activeDate`. The server serves exactly the requested date but **only within ±1 day**
-  of its own active day (clock-skew tolerance; never the archive or a pre-published
-  future day; beyond the window → 404). Because the URL names the day, the persisted
+  `activeDate`. The server serves **any past day** (the archive is date-addressed —
+  decided 2026-07-07, #53, superseding the earlier symmetric ±1-day window that refused
+  the archive) but the **future only within +1 day** of its own active day (clock-skew
+  tolerance around the 22:00 flip; a pre-published buffer day at +2 or beyond → 404). An
+  unpublished past day falls through to the normal missing-puzzle 404. Because the URL names the day, the persisted
   `dayNumber(date)` always matches the served puzzle — the old `/today`→puzzle pair and
   its 22:00-flip race are gone. **Caching:** the puzzle is served
   `max-age=300, s-maxage=31536000` — the CDN holds a (date, lang) entry effectively

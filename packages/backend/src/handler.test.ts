@@ -39,13 +39,19 @@ const PUZZLE: Puzzle = {
 // 2026-06-29 10:00 EDT (14:00 UTC) -> active date "2026-06-29".
 const FIXED_NOW = new Date('2026-06-29T14:00:00Z');
 const ACTIVE_DATE = '2026-06-29';
-const YESTERDAY = '2026-06-28'; // within the ±1 clock-skew window
+const PAST_30 = '2026-05-30'; // 30 days back — archive-eligible past day
+const NEXT_DAY = '2026-06-30'; // active +1: within the future clock-skew window
+const DAY_AFTER_NEXT = '2026-07-01'; // active +2: future, still locked
 const ORIGIN = 'https://whippin.example';
+
+// The store has a French puzzle for the active day, a far-past day, and both the +1 and
+// +2 days — so the handler's future guard (not store emptiness) is what rejects +2.
+const PUBLISHED_FR = new Set([ACTIVE_DATE, PAST_30, NEXT_DAY, DAY_AFTER_NEXT]);
 
 function fakeStore(): PuzzleStore {
   return {
     async getPuzzle(date, lang) {
-      return date === ACTIVE_DATE && lang === 'fr' ? PUZZLE : null;
+      return PUBLISHED_FR.has(date) && lang === 'fr' ? PUZZLE : null;
     },
   };
 }
@@ -99,20 +105,32 @@ describe('puzzle endpoint — date-addressed (GET /?lang=&date=)', () => {
     }
   });
 
-  it('serves only the live window: a date beyond ±1 day of the active day is a 404', async () => {
-    // Yesterday is within the clock-skew window -> resolved against the store (which has
-    // no puzzle for it -> 404 not_found for THAT date, not a window rejection).
-    const skew = await makeHandler()(event({ query: { lang: 'fr', date: YESTERDAY } }));
-    expect(skew.statusCode).toBe(404);
-    expect(JSON.parse(skew.body).date).toBe(YESTERDAY);
+  it('serves any PAST day (the archive is date-addressed): a published day 30 days back is a 200', async () => {
+    const res = await makeHandler()(event({ query: { lang: 'fr', date: PAST_30 } }));
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual(PUZZLE);
+  });
 
-    // Beyond the window: never served, even if the store had it (no archive, no
-    // pre-published future day).
-    for (const far of ['2026-06-27', '2026-07-01', '1999-01-01']) {
-      const res = await makeHandler()(event({ query: { lang: 'fr', date: far } }));
-      expect(res.statusCode).toBe(404);
-      expect(JSON.parse(res.body).error).toBe('not_found');
-    }
+  it('an unpublished past day -> clean 404 not_found with the short negative TTL', async () => {
+    const res = await makeHandler()(event({ query: { lang: 'fr', date: '2026-01-01' } }));
+    expect(res.statusCode).toBe(404);
+    expect(JSON.parse(res.body).error).toBe('not_found');
+    expect(JSON.parse(res.body).date).toBe('2026-01-01');
+    expect(res.headers['Cache-Control']).toMatch(/max-age=60\b/);
+  });
+
+  it('active day +1 (published) -> 200: clock-skew tolerance around the flip is intact', async () => {
+    const res = await makeHandler()(event({ query: { lang: 'fr', date: NEXT_DAY } }));
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual(PUZZLE);
+  });
+
+  it('active day +2 (published) -> 404: the future stays locked even when the store has it', async () => {
+    const res = await makeHandler()(event({ query: { lang: 'fr', date: DAY_AFTER_NEXT } }));
+    expect(res.statusCode).toBe(404);
+    expect(JSON.parse(res.body).error).toBe('not_found');
+    // The rejection carries the SERVER's active day (the future guard fired before the store).
+    expect(JSON.parse(res.body).date).toBe(ACTIVE_DATE);
   });
 
   it('missing puzzle -> clean JSON 404, never 500', async () => {
