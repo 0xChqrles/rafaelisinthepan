@@ -1,6 +1,8 @@
 // CONTRACT: the day-keyed round store (packages/web/src/state/gameStore.ts). Rounds are
 // held in a MAP keyed by roundKey = (dayNumber, language), so:
-//   - a NEW day prunes the previous day's rounds (a new day never bleeds yesterday's in);
+//   - day rounds are KEPT across days so the archive can rehydrate a past day's progress
+//     (#54); only ?puzzle= override rounds are pruned, and the map is bounded by the
+//     MAX_DAY_ROUNDS most-recent cap (oldest day rounds evicted beyond it);
 //   - switching LANGUAGE keeps BOTH rounds — coming back restores the in-progress one
 //     (drives the language selector's per-language status + no-confirmation switching);
 //   - the SAME key rehydrates the stored progress untouched (mid-round reload) — UNLESS
@@ -56,19 +58,42 @@ describe('ensureRound — day/language keying', () => {
     });
   });
 
-  it('discards other-day rounds when a new day flips (never bleeds yesterday in)', () => {
+  it('KEEPS yesterday\'s day round when a new day flips (archive history, #54)', () => {
     const { ensureRound, recordGuess, improveHole } = useGameStore.getState();
     ensureRound('d:5:fr', freshHoles());
     recordGuess('bois');
     improveHole(0, 'forêt', 0); // solved a hole yesterday
     expect(activeRound()?.guessCount).toBe(1);
 
-    // A new day flips -> a different key -> yesterday's round is pruned, today starts fresh.
+    // A new day flips -> a different key -> today starts fresh, but yesterday's round
+    // survives so the archive can rehydrate its progress.
     ensureRound('d:6:fr', freshHoles());
     const s = useGameStore.getState();
     expect(s.activeKey).toBe('d:6:fr');
-    expect(s.rounds['d:5:fr']).toBeUndefined(); // pruned
+    expect(s.rounds['d:5:fr']?.guessCount).toBe(1); // preserved
+    expect(s.rounds['d:5:fr']?.holes[0].rank).toBe(0);
     expect(s.rounds['d:6:fr']).toEqual({ holes: freshHoles(), guessCount: 0, tried: [], progress: 0 });
+  });
+
+  it('caps the map: with > MAX_DAY_ROUNDS day rounds the oldest are evicted, the newest kept', () => {
+    const CAP = 800;
+    // Seed CAP day rounds (days 1..CAP), each with a distinguishing guessCount, directly
+    // in the store (bypassing ensureRound so the seeding itself never caps).
+    const seeded: Record<string, typeof initial.rounds[string]> = {};
+    for (let day = 1; day <= CAP; day++) {
+      seeded[`d:${day}:fr`] = { holes: freshHoles(), guessCount: day, tried: [], progress: 0 };
+    }
+    useGameStore.setState({ rounds: seeded, activeKey: null }, false);
+
+    // A brand-new newest day pushes the count over the cap -> the single oldest (day 1) is
+    // evicted; everything newer, including the new active round, is kept.
+    useGameStore.getState().ensureRound(`d:${CAP + 1}:fr`, freshHoles());
+    const s = useGameStore.getState();
+    expect(Object.keys(s.rounds).length).toBe(CAP); // still capped
+    expect(s.rounds['d:1:fr']).toBeUndefined(); // oldest evicted
+    expect(s.rounds['d:2:fr']?.guessCount).toBe(2); // next-oldest survives
+    expect(s.rounds[`d:${CAP + 1}:fr`]).toBeDefined(); // newest kept
+    expect(s.rounds[`d:${CAP}:fr`]?.guessCount).toBe(CAP); // prior newest kept
   });
 
   it('switching LANGUAGE keeps both rounds; coming back restores the in-progress one', () => {
@@ -124,6 +149,22 @@ describe('ensureRound — day/language keying', () => {
     s = useGameStore.getState();
     expect(s.rounds['o:nonce:fr']).toBeUndefined();
     expect(s.rounds['d:5:fr']?.guessCount).toBe(1);
+  });
+
+  it('a new override key prunes the previous override but keeps the day rounds', () => {
+    const { ensureRound, recordGuess } = useGameStore.getState();
+    ensureRound('d:5:fr', freshHoles());
+    recordGuess('bois');
+    ensureRound('o:one:fr', freshHoles()); // first ?puzzle= load
+
+    // A second override load replaces the first among override rounds, but the real day
+    // round stays untouched.
+    ensureRound('o:two:fr', freshHoles());
+    const s = useGameStore.getState();
+    expect(s.activeKey).toBe('o:two:fr');
+    expect(s.rounds['o:one:fr']).toBeUndefined(); // previous override pruned
+    expect(s.rounds['o:two:fr']).toBeDefined();
+    expect(s.rounds['d:5:fr']?.guessCount).toBe(1); // day round intact
   });
 
   it('resets when the same (day, lang) key is re-published with a DIFFERENT sentence', () => {
