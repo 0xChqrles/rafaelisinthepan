@@ -8,7 +8,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "serve:local": "tsx watch src/serve.ts",
-    "puzzle:publish": "tsx src/publish.ts"
+    "puzzle:publish": "tsx src/publish.ts",
+    "puzzle:inventory": "tsx src/inventory.ts"
   },
   "dependencies": {
     "@aws-sdk/client-cloudformation": "^3.700.0",

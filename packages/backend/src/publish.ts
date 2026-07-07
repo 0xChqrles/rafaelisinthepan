@@ -17,14 +17,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { activeDate, type Puzzle } from '@whippin/shared';
 import { defaultLocalStoreRoot, isValidDate, storeKey } from './layout';
-
-// The infra identifiers publish reads from the deployed stack — mirror packages/infra:
-// the stack id in `bin/app.ts` and the CfnOutput ids in `lib/backend-stack.ts`. The stack
-// is pinned to us-east-1 (see bin/app.ts), so its outputs and its bucket live there.
-const STACK_NAME = 'WhippinBackendStack';
-const BUCKET_OUTPUT_KEY = 'PuzzleBucketName';
-const DISTRIBUTION_OUTPUT_KEY = 'DistributionId';
-const STACK_REGION = 'us-east-1';
+import { STACK_REGION, stackOutputs } from './stack';
 
 interface Args {
   file?: string;
@@ -62,30 +55,6 @@ function parseArgs(argv: string[]): Args {
 function die(msg: string): never {
   console.error(`[publish] ${msg}`);
   process.exit(1);
-}
-
-// Resolve the puzzle bucket + API distribution from the deployed stack's outputs — the
-// infra code is the single source of truth for both. Needs AWS creds (already required to
-// upload) + `cloudformation:DescribeStacks`. The SDK is imported lazily so the local path
-// stays AWS-free. Dies with a clear, actionable error if the stack/output is missing.
-async function stackOutputs(): Promise<{ bucket: string; distributionId: string }> {
-  const { CloudFormationClient, DescribeStacksCommand } = await import(
-    '@aws-sdk/client-cloudformation'
-  );
-  const cf = new CloudFormationClient({ region: STACK_REGION });
-  const res = await cf.send(new DescribeStacksCommand({ StackName: STACK_NAME }));
-  const outputs = res.Stacks?.[0]?.Outputs;
-  const get = (key: string): string => {
-    const value = outputs?.find((o) => o.OutputKey === key)?.OutputValue;
-    if (!value) {
-      die(
-        `stack "${STACK_NAME}" (${STACK_REGION}) has no "${key}" output — ` +
-          `deploy the infra package first (pnpm infra:deploy).`,
-      );
-    }
-    return value;
-  };
-  return { bucket: get(BUCKET_OUTPUT_KEY), distributionId: get(DISTRIBUTION_OUTPUT_KEY) };
 }
 
 export interface PublishPlan {

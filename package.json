@@ -18,6 +18,7 @@
     "gen:phrase": "pnpm --filter @whippin/generation gen:phrase",
     "backend:dev": "pnpm --filter @whippin/backend serve:local",
     "puzzle:publish": "pnpm --filter @whippin/backend puzzle:publish",
+    "puzzle:inventory": "pnpm --filter @whippin/backend puzzle:inventory",
     "infra:synth": "pnpm --filter @whippin/infra synth",
     "infra:diff": "pnpm --filter @whippin/infra diff",
     "infra:deploy": "pnpm --filter @whippin/infra run deploy",
