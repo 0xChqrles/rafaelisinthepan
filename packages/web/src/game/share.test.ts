@@ -11,6 +11,8 @@ import {
   progressTrajectory,
   squareCount,
   bucketMeans,
+  emojiRow,
+  shareText,
   shareUrl,
   SQUARE_BREAKPOINTS,
   MIN_SQUARES,
@@ -141,6 +143,50 @@ describe('progressTrajectory — replay the ordered guesses', () => {
     const holes: RuntimeHole[] = [hole('a', 300), hole('b', 300)];
     const t = progressTrajectory(holes, two, ['w0']);
     expect(t[0]).toBeCloseTo(100, 9);
+  });
+});
+
+describe('emojiRow — one heat emoji per square (plain-text fallback for the card)', () => {
+  it('buckets on the heat ramp arc: <20 red, <40 orange, <60 yellow, <80 green, >=80 blue', () => {
+    // One value squarely inside each band.
+    expect(emojiRow([10, 30, 50, 70, 90])).toBe('🟥🟧🟨🟩🟦');
+  });
+
+  it('is half-open at each boundary (20/40/60/80 fall into the HIGHER band)', () => {
+    expect(emojiRow([19, 20])).toBe('🟥🟧'); // 19 red, 20 orange
+    expect(emojiRow([39, 40])).toBe('🟧🟨');
+    expect(emojiRow([59, 60])).toBe('🟨🟩');
+    expect(emojiRow([79, 80])).toBe('🟩🟦');
+  });
+
+  it('covers the extremes: 0 -> red, 100 -> blue', () => {
+    expect(emojiRow([0])).toBe('🟥');
+    expect(emojiRow([100])).toBe('🟦');
+  });
+
+  it('emits exactly one emoji per input square (row length = input length)', () => {
+    const squares = bucketMeans(Array.from({ length: 137 }, (_, i) => (100 * (i + 1)) / 137));
+    // Each colored-square emoji is a single code point (2 UTF-16 units).
+    expect([...emojiRow(squares)]).toHaveLength(squares.length);
+    expect(squares.length).toBe(squareCount(137)); // and that IS the card's row length
+  });
+});
+
+describe('shareText — headline, emoji row, blank line, URL in order', () => {
+  it('composes the four parts on the agreed lines', () => {
+    const text = shareText('Whippin #12 — 45 tries', [10, 50, 90], 'https://whippin.ai/s/tok');
+    expect(text).toBe('Whippin #12 — 45 tries\n🟥🟨🟦\n\nhttps://whippin.ai/s/tok');
+  });
+
+  it('keeps the row attached to the headline and a blank line before the (unfurling) URL', () => {
+    const headline = 'Whippin #7 — 3 tries';
+    const url = 'https://whippin.ai/s/abc';
+    const squares = [40, 70, 100];
+    const lines = shareText(headline, squares, url).split('\n');
+    expect(lines[0]).toBe(headline); // headline first
+    expect(lines[1]).toBe(emojiRow(squares)); // row on its own line, under the headline
+    expect(lines[2]).toBe(''); // blank line preserves the OG-unfurl separation
+    expect(lines[3]).toBe(url); // link last
   });
 });
 

@@ -71,3 +71,30 @@ export function bucketMeans(trajectory: number[]): number[] {
 export function shareUrl(origin: string, result: ShareResult): string {
   return `${origin}/s/${encodeResult(result)}`;
 }
+
+// One emoji per share square — the SAME bucketMeans output that drives the card, so the row
+// length (squareCount, 3..18) and its colors always agree with the rendered OG image. Bucketed
+// on the heat ramp's arc (cold crimson -> hot cyan):
+//   pct < 20 🟥, < 40 🟧, < 60 🟨, < 80 🟩, >= 80 🟦
+// Emoji, NOT the heat hexes: the row must survive contexts with zero rendering support beyond
+// Unicode (SMS, forwarded/plain-text messages, preview-less clients) — the plain-text fallback
+// for the OG card, carrying the same information so the two never disagree.
+export function emojiRow(squares: number[]): string {
+  return squares
+    .map((pct) => {
+      if (pct < 20) return '🟥';
+      if (pct < 40) return '🟧';
+      if (pct < 60) return '🟨';
+      if (pct < 80) return '🟩';
+      return '🟦';
+    })
+    .join('');
+}
+
+// The shared/copied plain text: the headline, then the heat-square emoji row on its own line
+// (attached to the headline block), a blank line for unfurl separation, then the (unfurling)
+// link. Pure + i18n-free (the caller localizes `headline`) so the composition is unit-testable
+// without the DOM. Same `squares` the card receives, so link and row can never disagree.
+export function shareText(headline: string, squares: number[], url: string): string {
+  return `${headline}\n${emojiRow(squares)}\n\n${url}`;
+}
