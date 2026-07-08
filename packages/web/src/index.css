@@ -1132,8 +1132,8 @@ button * {
     gap: 16px;
     align-items: stretch;
     min-height: calc(100dvh - 44px);
-    /* Mobile keyboard is shorter (see .kb-key below): 3 rows of clamp(38,6.2vh,48) + gaps. */
-    --kb-h: calc(3 * clamp(38px, 6.2vh, 48px) + 2 * 5px);
+    /* Mobile keyboard height (see .kb-key below): 3 rows of clamp(44,6.8vh,52) + gaps. */
+    --kb-h: calc(3 * clamp(44px, 6.8vh, 52px) + 2 * 5px);
   }
   .play {
     align-items: stretch;
@@ -1171,7 +1171,7 @@ button * {
      right edge still fits (and otherwise the hole wraps as one unit to the next line). */
   .phrase,
   .word-input {
-    font-size: clamp(15px, 4.8vw, 22px);
+    font-size: clamp(13px, 4.2vw, 19px);
   }
   /* The input must be able to shrink below its desktop min-width on a narrow screen. */
   .word-input {
@@ -1181,7 +1181,7 @@ button * {
 
   /* Floating hit / MISS scaled down to sit over the smaller hole words. */
   .floating-hit {
-    font-size: 20px;
+    font-size: 18px;
   }
 
   .input-area {
@@ -1205,7 +1205,7 @@ button * {
     gap: 5px;
   }
   .kb-key {
-    height: clamp(38px, 6.2vh, 48px);
+    height: clamp(44px, 6.8vh, 52px);
     border-width: 2px;
   }
 
