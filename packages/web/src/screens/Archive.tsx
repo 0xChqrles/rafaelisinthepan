@@ -162,9 +162,10 @@ export default function Archive({ lang }: { lang: LangCode }) {
 }
 
 // One day: a flat key that navigates to that day's game when in range, disabled (dimmed)
-// otherwise. The bottom strip mirrors the language cards — gold when solved, a progress-
-// ramp tint while in progress, absent when not started. The aria-label speaks the full
-// date + status; the strip is decorative.
+// otherwise. A day with any reconstruction (>0%) is FILLED with its progress-ramp color
+// (solved = 100%), and its number is drawn in the app background color so it reads on the
+// fill; disabled and not-started/0% days stay the neutral surface. The aria-label speaks
+// the full date + status; the fill is decorative.
 function DayCell({
   date,
   lang,
@@ -182,11 +183,15 @@ function DayCell({
 }) {
   const day = Number(date.slice(8, 10));
   const dateObj = new Date(`${date}T00:00:00Z`);
+  // Reconstruction %: solved counts as 100, not-started as 0. Only an in-range day with
+  // progress is filled; disabled and 0% days keep the neutral surface + number color.
+  const pct = status.kind === 'solved' ? 100 : status.kind === 'progress' ? status.pct : 0;
+  const filled = inRange && pct > 0;
   const className =
     'cal-day' +
     (inRange ? '' : ' cal-day-disabled') +
     (isToday ? ' cal-day-today' : '') +
-    (status.kind === 'solved' ? ' cal-day-solved' : '');
+    (filled ? ' cal-day-filled' : '');
   return (
     <button
       type="button"
@@ -195,20 +200,11 @@ function DayCell({
       aria-disabled={!inRange}
       disabled={!inRange}
       onClick={() => inRange && navigate(pathForDay(lang, date))}
+      // Only the fill color is dynamic (per-day %); the bg-colored number is static CSS
+      // (.cal-day-filled). Neutral days pass no style, so the surface default stands.
+      style={filled ? ({ background: progressColor(pct) } as CSSProperties) : undefined}
     >
       <span className="cal-day-num">{day}</span>
-      {status.kind !== 'none' && (
-        <span
-          className="cal-strip"
-          aria-hidden="true"
-          style={
-            {
-              background:
-                status.kind === 'solved' ? 'var(--hole)' : progressColor(status.pct),
-            } as CSSProperties
-          }
-        />
-      )}
     </button>
   );
 }

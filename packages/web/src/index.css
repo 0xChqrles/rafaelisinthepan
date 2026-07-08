@@ -267,7 +267,9 @@ button * {
 }
 
 /* A day tile: a flat key that navigates to that day's game. Square (aspect-ratio) so the
-   grid stays regular; the day number is centered, the status strip pinned to the bottom. */
+   grid stays regular; the day number is centered. A day with progress is FILLED with its
+   progress-ramp color (set inline per-day, .cal-day-filled below); a neutral day keeps the
+   surface. */
 .cal-day {
   position: relative;
   overflow: hidden;
@@ -302,23 +304,16 @@ button * {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
-/* Solved: gold, tying the day to a solved word (the strip is gold too). */
-.cal-day-solved .cal-day-num {
-  color: var(--hole);
+/* Filled (>0% reconstruction): the fill color is inline (per-day % on the progress ramp);
+   the number is drawn in the app background so it reads on the fill. Compound selector so
+   it beats the base .cal-day color. */
+.cal-day.cal-day-filled {
+  color: var(--bg);
 }
 .cal-day-num {
   font-size: clamp(10px, 2.4vw, 13px);
   padding-top: var(--cap-shift);
   font-variant-numeric: tabular-nums;
-}
-/* Status strip (color set inline: gold solved / progress-ramp tint in progress). Mirrors
-   the language-card strip; decorative — the cell's aria-label speaks the status. */
-.cal-strip {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 4px;
 }
 /* Empty leading cells so day 1 lands under its weekday column. */
 .cal-pad {

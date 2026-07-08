@@ -494,7 +494,11 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   `usePuzzle(lang, date?)` fetches the given date, else the active day (unchanged); the
   404→`noPuzzle` path is reused as-is. The calendar reads each day's status from the
   **persisted rounds** (device-local) via the extracted `state/status.ts` `statusOf`
-  (shared with the language selector). The solved-screen **NEXT PUZZLE IN** countdown is
+  (shared with the language selector). **Cell coloring (decided 2026-07-08):** a day with
+  any reconstruction (>0%) is FILLED with its `progressColor(pct)` (solved counts as
+  **100%** — the ramp top, NOT the language-card gold), and its number is drawn in `--bg`
+  so it reads on the fill; disabled and not-started/0% days keep the neutral surface +
+  number color. The solved-screen **NEXT PUZZLE IN** countdown is
   hidden when the played day ≠ the client's active day. Entry: a calendar icon in the
   game TopBar's right group; `dateForDayNumber` (`shared/day.ts`) is the `dayNumber`
   inverse. The **OG share page** (`backend/ogCard.ts` `renderShareHtml`) now click-throughs
