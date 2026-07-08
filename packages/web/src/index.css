@@ -331,10 +331,10 @@ button * {
 
 /* Solved-day ripple: the shading WAVE that marks a solved (validated) day so it differs
    from an in-progress one by motion, not only color. It plays `ultracode.png` — a
-   horizontal sprite sheet of 14 square (12×12) frames — as a CSS background. `background-
-   size: 1400% 100%` scales the sheet so ONE frame fills the square cell; `steps(14)` then
-   walks `background-position-x` frame by frame. The end value is 100% × 14/13 so frame 13
-   lands exactly on 100% (each of the 14 frames shown 1/14 of the cycle, looping cleanly).
+   horizontal sprite sheet of 12 square (12×12) frames — as a CSS background. `background-
+   size: 1200% 100%` scales the sheet so ONE frame fills the square cell; `steps(12)` then
+   walks `background-position-x` frame by frame. The end value is 100% × 12/11 so frame 11
+   lands exactly on 100% (each of the 12 frames shown 1/12 of the cycle, looping cleanly).
    `image-rendering: pixelated` keeps the 12px pixels crisp; the number paints above. */
 .cal-ripple {
   position: absolute;
@@ -342,16 +342,16 @@ button * {
   --ripple-dur: 1.5s;
   background-image: url('./assets/ultracode.png');
   background-repeat: no-repeat;
-  background-size: 1400% 100%;
+  background-size: 1200% 100%;
   image-rendering: pixelated;
-  animation: cal-ripple var(--ripple-dur) steps(14) infinite;
+  animation: cal-ripple var(--ripple-dur) steps(12) infinite;
 }
 @keyframes cal-ripple {
   from {
     background-position-x: 0%;
   }
   to {
-    background-position-x: calc(100% * 14 / 13); /* frame 13 lands on 100%; endpoint wraps */
+    background-position-x: calc(100% * 12 / 11); /* frame 11 lands on 100%; endpoint wraps */
   }
 }
 /* Motion is a progressive enhancement: reduced-motion users get the solid base fill

@@ -500,10 +500,10 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   so it reads on the fill; disabled and not-started/0% days keep the neutral surface +
   number color. **A SOLVED day also RIPPLES (decided 2026-07-08):** a shading wave, so a
   validated day is distinguishable from an in-progress one by MOTION, not only color. It
-  plays `web/src/assets/ultracode.png` — a **14-frame horizontal sprite sheet** (168×12,
-  14 square 12×12 frames) — as a CSS background on `.cal-ripple`: `background-size:
-  1400% 100%` fits one frame to the square cell and `steps(14)` walks `background-position-x`
-  (end value `100%×14/13` so frame 13 lands on 100% and loops cleanly), `image-rendering:
+  plays `web/src/assets/ultracode.png` — a **12-frame horizontal sprite sheet** (144×12,
+  12 square 12×12 frames) — as a CSS background on `.cal-ripple`: `background-size:
+  1200% 100%` fits one frame to the square cell and `steps(12)` walks `background-position-x`
+  (end value `100%×12/11` so frame 11 lands on 100% and loops cleanly), `image-rendering:
   pixelated` keeps it crisp. (Superseded the earlier hand-computed SVG-path ripple.)
   Reduced-motion hides it → the static fill + aria-label carry the status.
   The calendar itself is **vertically centered** (`.archive` flex column, top padding

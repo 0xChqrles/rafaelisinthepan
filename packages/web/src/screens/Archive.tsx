@@ -165,7 +165,7 @@ export default function Archive({ lang }: { lang: LangCode }) {
 // otherwise. A day with any reconstruction (>0%) is FILLED with its progress-ramp color
 // (solved = 100%), and its number is drawn in the app background color so it reads on the
 // fill; disabled and not-started/0% days stay the neutral surface. A SOLVED day also
-// carries the shading ripple — an `ultracode.png` 14-frame sprite animated in CSS
+// carries the shading ripple — an `ultracode.png` 12-frame sprite animated in CSS
 // (.cal-ripple) — so a validated day differs from an in-progress one by MOTION, not only
 // color. The aria-label speaks the full date + status.
 function DayCell({
