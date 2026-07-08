@@ -604,10 +604,16 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
     junk), and intrinsic `width`/`height` (size in CSS instead; `viewBox` preserves aspect
     ratio — a fixed `width`/`height` would fight the CSS size). This is what "remove the
     useless attributes" means for any new icon.
-  - **Size in CSS, keep the aspect ratio.** Give the icon a class and set **one** dimension
-    (here `.kb-icon { height: 30%; width: auto }`) so `viewBox` scales the other; prefer a
-    key-relative unit so it tracks responsive sizing without per-breakpoint rules. For
-    pixel-art glyphs add `shape-rendering: crispEdges` to match the pixel font.
+  - **Every icon is orthogonal PIXEL ART** (decided 2026-07-08) — shapes on an integer grid
+    with only horizontal/vertical edges (rects, or a path of `v`/`h` moves), NO diagonals —
+    so it renders crisp at integer scale. Add `shape-rendering: crispEdges`.
+  - **Display at EXACTLY 3× the viewBox** (decided 2026-07-08). A `viewBox="0 0 N M"` icon is
+    sized in CSS to `3N × 3M` **px** (literal px, BOTH dimensions), so every icon's "pixel"
+    is 3 screen px — crisp and uniform in weight across the whole set. Size in the icon's own
+    class (e.g. `.topbar-cal-icon { width: 27px; height: 27px }` for a 9×9 viewBox). **The
+    ONE exception is the on-screen keyboard's control glyphs** (`.kb-icon`, enter/back): they
+    scale with the responsive key (`height: 30%; width: auto`) because the keys shrink on
+    narrow phones and a fixed 3× would overflow — do NOT convert those to fixed px.
   - **Accessibility:** the SVG is **decorative** — pass `aria-hidden` on the component and
     let the surrounding `<button>`'s `aria-label` name the control.
   The type for `?react` imports comes from the `vite-plugin-svgr/client` reference in

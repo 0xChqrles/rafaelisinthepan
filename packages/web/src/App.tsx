@@ -14,9 +14,11 @@ import { track } from './analytics';
 import { useLocation, navigate } from './routing';
 import { parseRoute, resolveHomeLang, pathForLang, pathForArchive, type LangCode } from './langs';
 import { t } from './i18n';
-// Inline SVG (vite-plugin-svgr): the calendar entry into the archive (#55) — decorative
-// glyph, the button's aria-label names it.
+// Inline SVG (vite-plugin-svgr): the header controls — calendar into the archive (#55)
+// and the "?" help that replays the tutorial. Decorative glyphs; the buttons' aria-labels
+// name them.
 import CalendarIcon from './assets/icons/calendar.svg?react';
+import QuestionIcon from './assets/icons/question.svg?react';
 
 export default function App() {
   const pathname = useLocation();
@@ -160,7 +162,7 @@ function GameRoute({ lang, date }: { lang: LangCode; date?: string }) {
               aria-label={t(lang, 'ariaHelp')}
               onClick={() => openTutorial('replay')}
             >
-              ?
+              <QuestionIcon className="help-icon" aria-hidden />
             </button>
           </div>
         }

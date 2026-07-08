@@ -397,14 +397,9 @@ button * {
   align-items: center;
   justify-content: space-between;
 }
-/* The header's right control: the game's "?" (replays the tutorial, text) and the
-   tutorial's fast-forward (skip, an icon). Buttons don't inherit font/color, so the
-   pixel font and muted tint are explicit; both brighten on hover/focus. */
-.help-btn {
-  font-family: var(--press);
-  font-size: clamp(14px, 2.2vh, 18px);
-  padding-top: var(--cap-shift);
-}
+/* The header's right controls: the game's "?" help (replays the tutorial) and the
+   tutorial's fast-forward (skip) — both inline pixel-art icons. Buttons don't inherit
+   color, so the muted tint is explicit; both brighten to --fg on hover/focus. */
 .help-btn,
 .topbar-skip {
   color: var(--muted);
@@ -415,13 +410,21 @@ button * {
 .topbar-skip:focus-visible {
   color: var(--fg);
 }
-/* The fast-forward glyph: a currentColor SVG sized by % of the button (tracks the
-   responsive header height); crispEdges keeps the pixel-art hard-edged. */
-.skip-icon {
+/* Icon policy: a standalone pixel-art icon renders at EXACTLY 3× its viewBox (px), so
+   every icon's "pixel" is 3 screen px — pixel art stays crisp and uniform across icons.
+   Size in px = 3 × the viewBox units; crispEdges keeps the edges hard. (The on-screen
+   keyboard's control glyphs are the ONE exception — they scale with the responsive key;
+   see .kb-icon.) */
+.skip-icon,
+.topbar-cal-icon,
+.archive-close-icon,
+.help-icon {
   display: block;
-  width: auto;
-  height: 38%;
   shape-rendering: crispEdges;
+}
+.skip-icon {
+  width: 18px; /* viewBox 6×7 */
+  height: 21px;
 }
 
 /* The game header's right group: the archive calendar entry + the "?" help, side by
@@ -443,15 +446,17 @@ button * {
 .archive-close:focus-visible {
   color: var(--fg);
 }
-.topbar-cal-icon,
-.archive-close-icon {
-  display: block;
-  width: auto;
-  height: 42%;
-  shape-rendering: crispEdges;
+.topbar-cal-icon {
+  width: 27px; /* viewBox 9×9 */
+  height: 27px;
 }
 .archive-close-icon {
-  height: 34%;
+  width: 27px; /* viewBox 9×9 */
+  height: 27px;
+}
+.help-icon {
+  width: 24px; /* viewBox 8×12 */
+  height: 36px;
 }
 
 /* The header's centered title — the day's id (#N) in the game, "TUTORIAL" in the
