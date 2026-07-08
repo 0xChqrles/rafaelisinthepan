@@ -306,10 +306,17 @@ button * {
   color: var(--muted);
   cursor: default;
 }
-/* The active day, highlighted with an inset accent ring. */
-.cal-day-today {
-  outline: 3px solid var(--fg);
-  outline-offset: -3px;
+/* The active (today) day, marked with an inset --fg ring. Drawn as a pseudo-element rather
+   than `outline` so it paints ABOVE the solved-day ripple — a positioned child (inset: 0)
+   that would otherwise cover an outline — so today stays outlined even once it is completed.
+   z-index sits the ring over the ripple (auto) and the day number (1). */
+.cal-day-today::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border: 3px solid var(--fg);
+  pointer-events: none;
 }
 /* Filled (>0% reconstruction): the fill color is inline (per-day % on the progress ramp);
    the number is drawn in the app background so it reads on the fill. Compound selector so
