@@ -410,21 +410,15 @@ button * {
 .topbar-skip:focus-visible {
   color: var(--fg);
 }
-/* Icon policy: a standalone pixel-art icon renders at EXACTLY 3× its viewBox (px), so
-   every icon's "pixel" is 3 screen px — pixel art stays crisp and uniform across icons.
-   Size in px = 3 × the viewBox units; crispEdges keeps the edges hard. (The on-screen
-   keyboard's control glyphs are the ONE exception — they scale with the responsive key;
-   see .kb-icon.) */
-.skip-icon,
-.topbar-cal-icon,
-.archive-close-icon,
-.help-icon {
+/* Icon policy: a standalone pixel-art icon carries its OWN display size — the SVG's
+   `width`/`height` (= 3× its viewBox), right next to the viewBox in the .svg file, is the
+   single source of truth for its size. So the CSS here only sets shared rendering, never a
+   size. Every icon's "pixel" is 3 screen px, keeping pixel art crisp + uniform in weight.
+   (The on-screen keyboard's control glyphs are the ONE exception — they scale with the
+   responsive key, so their SVGs carry no size and .kb-icon sizes them in CSS.) */
+.pixel-icon {
   display: block;
   shape-rendering: crispEdges;
-}
-.skip-icon {
-  width: 18px; /* viewBox 6×7 */
-  height: 21px;
 }
 
 /* The game header's right group: the archive calendar entry + the "?" help, side by
@@ -445,18 +439,6 @@ button * {
 .archive-close:hover,
 .archive-close:focus-visible {
   color: var(--fg);
-}
-.topbar-cal-icon {
-  width: 27px; /* viewBox 9×9 */
-  height: 27px;
-}
-.archive-close-icon {
-  width: 27px; /* viewBox 9×9 */
-  height: 27px;
-}
-.help-icon {
-  width: 24px; /* viewBox 8×12 */
-  height: 36px;
 }
 
 /* The header's centered title — the day's id (#N) in the game, "TUTORIAL" in the

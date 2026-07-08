@@ -97,7 +97,7 @@ export default function Archive({ lang }: { lang: LangCode }) {
             aria-label={t(lang, 'ariaBackToToday')}
             onClick={() => navigate(pathForLang(lang))}
           >
-            <CloseIcon className="archive-close-icon" aria-hidden />
+            <CloseIcon className="pixel-icon" aria-hidden />
           </button>
         }
       />

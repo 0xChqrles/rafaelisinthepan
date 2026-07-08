@@ -599,21 +599,26 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
     states then come **only** from the consuming element's CSS `color` (e.g. the control
     keys' `.kb-control` / `.kb-enter` / `.kb-greyed`). Never bake a hex/`fill` into an icon
     meant to tint with its surroundings.
-  - **Strip the editor cruft.** Keep only `xmlns`, `viewBox`, `fill="currentColor"`, and the
-    shape elements. **Remove** the `<?xml …?>` prolog, `id`/`data-name` (Illustrator layer
-    junk), and intrinsic `width`/`height` (size in CSS instead; `viewBox` preserves aspect
-    ratio — a fixed `width`/`height` would fight the CSS size). This is what "remove the
-    useless attributes" means for any new icon.
+  - **Strip the editor cruft.** Keep only `xmlns`, `viewBox`, the `width`/`height` size (see
+    below), `fill="currentColor"`, and the shape elements. **Remove** the `<?xml …?>` prolog
+    and `id`/`data-name` (Illustrator layer junk). This is what "remove the useless
+    attributes" means for any new icon.
   - **Every icon is orthogonal PIXEL ART** (decided 2026-07-08) — shapes on an integer grid
     with only horizontal/vertical edges (rects, or a path of `v`/`h` moves), NO diagonals —
-    so it renders crisp at integer scale. Add `shape-rendering: crispEdges`.
-  - **Display at EXACTLY 3× the viewBox** (decided 2026-07-08). A `viewBox="0 0 N M"` icon is
-    sized in CSS to `3N × 3M` **px** (literal px, BOTH dimensions), so every icon's "pixel"
-    is 3 screen px — crisp and uniform in weight across the whole set. Size in the icon's own
-    class (e.g. `.topbar-cal-icon { width: 27px; height: 27px }` for a 9×9 viewBox). **The
-    ONE exception is the on-screen keyboard's control glyphs** (`.kb-icon`, enter/back): they
-    scale with the responsive key (`height: 30%; width: auto`) because the keys shrink on
-    narrow phones and a fixed 3× would overflow — do NOT convert those to fixed px.
+    so it renders crisp at integer scale. Rendered with `shape-rendering: crispEdges`
+    (shared in the `.pixel-icon` CSS class, not per icon).
+  - **Size lives in the SVG, at EXACTLY 3× the viewBox** (decided 2026-07-08, revised from
+    "size in CSS"). The `.svg` sets its own `width`/`height` = `3N × 3M` **px** for a
+    `viewBox="0 0 N M"`, **right next to the viewBox** — so an icon's size is a single source
+    of truth in one file, not split into a CSS rule in another folder. CSS (`.pixel-icon`)
+    only sets shared rendering (`display: block; shape-rendering: crispEdges`), never a size,
+    so a new icon needs **no** CSS: author the `.svg` with its px `width`/`height` and give
+    the element `className="pixel-icon"`. Every icon's "pixel" is then 3 screen px — crisp,
+    uniform in weight, integer-scaled (×3 vs ×2 is purely a size choice; both are crisp — ×3
+    suits the small header viewBoxes, giving ~18–27px). **The ONE exception is the on-screen
+    keyboard's control glyphs** (`.kb-icon`, enter/back): their `.svg`s carry NO `width`/
+    `height` and `.kb-icon` sizes them in CSS (`height: 30%; width: auto`), because the keys
+    shrink on narrow phones and a fixed 3× would overflow.
   - **Accessibility:** the SVG is **decorative** — pass `aria-hidden` on the component and
     let the surrounding `<button>`'s `aria-label` name the control.
   The type for `?react` imports comes from the `vite-plugin-svgr/client` reference in
