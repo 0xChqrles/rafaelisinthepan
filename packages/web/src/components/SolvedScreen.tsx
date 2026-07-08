@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { bucketMeans, shareText, shareUrl } from '../game/share';
-import { heatColor, secondsUntilNextReset } from '@whippin/shared';
+import { heatColor } from '@whippin/shared';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import useToday from '../hooks/useToday';
 import { useGameStore } from '../state/gameStore';
-import { currentStreak, bestStreak, weekView, type WeekCell } from '../game/streak';
+import { currentStreak, weekView, type WeekCell } from '../game/streak';
 import { track } from '../analytics';
 import { t } from '../i18n';
 // Inline SVG (vite-plugin-svgr): renders into the DOM so it paints with currentColor —
@@ -29,15 +29,6 @@ const SCORE_COUNT_MS = 800; // score tally 0 -> guessCount
 // The uncolored squares appear only AFTER the score is shown (row settled + tally finished)...
 const SQUARES_START_MS = ACTIONS_IN_MS + SCORE_COUNT_MS;
 const NEUTRAL_HOLD_MS = SQUARE_STAGGER_MS; // ...are held neutral this long, THEN colorize one by one.
-
-// "NEXT PUZZLE IN HH:MM:SS" — always three 2-digit groups (a game day is 24h).
-function formatHMS(totalSeconds: number): string {
-  const clamped = Math.max(0, totalSeconds);
-  const h = Math.floor(clamped / 3600);
-  const m = Math.floor((clamped % 3600) / 60);
-  const s = clamped % 60;
-  return [h, m, s].map((v) => String(v).padStart(2, '0')).join(':');
-}
 
 // The solved results (issue #8): it takes over the on-screen keyboard's footprint once
 // the sentence is solved, so the layout never reflows and no empty gap is left where the
@@ -110,26 +101,14 @@ export default function SolvedScreen({
     };
   }, [gridSpanMs]);
 
-  // Countdown to the next puzzle (the 22:00-ET day flip, from the ONE shared day
-  // definition) — the solved screen's "come back" hook. Recomputed from the clock every
-  // second, so it self-corrects after a background tab throttles the interval and rolls
-  // over to the next day on its own if the tab stays open past the flip.
-  const [nextIn, setNextIn] = useState<number>(() => secondsUntilNextReset(new Date()));
-  useEffect(() => {
-    const id = window.setInterval(() => setNextIn(secondsUntilNextReset(new Date())), 1000);
-    return () => window.clearInterval(id);
-  }, []);
-
-  // Streak line (#56): derived from the per-language solved-day SET, never a stored
-  // counter. Shown only for a streak-eligible solve — an active-day win with a real
-  // dayNumber. An archive replay (isActiveDay false) or a ?puzzle= override (dayNumber
-  // null) shows none; and a 0 guards the pre-feature rehydration whose day predates the
-  // set (a real fresh solve is always >= 1, since recordSolve added today before this
-  // screen reveals).
+  // Streak (#56/#74): derived from the per-language solved-day SET, never a stored counter.
+  // Shown only for a streak-eligible solve — an active-day win with a real dayNumber. An
+  // archive replay (isActiveDay false) or a ?puzzle= override (dayNumber null) shows none;
+  // and a 0 guards the pre-feature rehydration whose day predates the set (a real fresh
+  // solve is always >= 1, since recordSolve added today before this screen reveals).
   const solvedDays = useGameStore((s) => s.solvedDays[lang] ?? NO_SOLVED_DAYS);
   const activeDay = useToday();
   const streak = currentStreak(solvedDays, activeDay);
-  const best = bestStreak(solvedDays);
   const showStreak = dayNumber != null && isActiveDay && streak > 0;
   // The Monday-based weekly row is shown only on a "clean week so far" (#74).
   const week = useMemo(() => weekView(solvedDays, activeDay), [solvedDays, activeDay]);
@@ -213,6 +192,22 @@ export default function SolvedScreen({
         ))}
       </div>
 
+      {/* Streak (#56/#74): the flame + STREAK n line and, on a clean week, the bigger
+          Duolingo-style 7-day row — ABOVE the score/share row (decided 2026-07-09), riding
+          the same fade/rise. Only for a streak-eligible solve (active day, real dayNumber);
+          an archive replay and a ?puzzle= override show none. */}
+      {showStreak && (
+        <div className={`streak-block${showActions ? ' in' : ''}`}>
+          <p className="streak-line">
+            <FlameDetailed className="streak-flame" aria-hidden />
+            <span>
+              {t(lang, 'streak')} {streak}
+            </span>
+          </p>
+          {week.clean && <WeekRow cells={week.cells} lang={lang} />}
+        </div>
+      )}
+
       <div className={`solved-actions${showActions ? ' in' : ''}`}>
         {/* "45 TRIES", not "SCORE 45": the count is the number of guesses, and naming the
             unit is what tells a reader (especially of the shared card) that LOWER is
@@ -241,32 +236,6 @@ export default function SolvedScreen({
           )
         )}
       </div>
-
-      {/* Streak (#56/#74): the flame + STREAK n · BEST m line and, on a clean week, the
-          Duolingo-style 7-day row — under the score/share row, riding the same fade/rise.
-          Only for a streak-eligible solve (active day, real dayNumber); an archive replay
-          and a ?puzzle= override show none. */}
-      {showStreak && (
-        <div className={`streak-block${showActions ? ' in' : ''}`}>
-          <p className="streak-line">
-            <FlameDetailed className="streak-flame" aria-hidden />
-            <span>
-              {t(lang, 'streak')} {streak} · {t(lang, 'best')} {best}
-            </span>
-          </p>
-          {week.clean && <WeekRow cells={week.cells} lang={lang} />}
-        </div>
-      )}
-
-      {/* The "come back" hook: a live countdown to the day flip, under the score/share
-          row. Rides the same fade/rise as the row (shared `.in` timing). Hidden on a
-          ?puzzle= override round (no real daily context) and when replaying a past
-          archive day (the countdown is about TODAY, not the day being played, #55). */}
-      {dayNumber != null && isActiveDay && (
-        <p className={`next-puzzle${showActions ? ' in' : ''}`}>
-          {t(lang, 'nextPuzzleIn')} {formatHMS(nextIn)}
-        </p>
-      )}
     </div>
   );
 }

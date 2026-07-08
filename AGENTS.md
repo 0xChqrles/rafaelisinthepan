@@ -507,8 +507,7 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   pixelated` keeps it crisp. (Superseded the earlier hand-computed SVG-path ripple.)
   Reduced-motion hides it → the static fill + aria-label carry the status.
   The calendar itself is **vertically centered** (`.archive` flex column, top padding
-  clears the fixed header). The solved-screen **NEXT PUZZLE IN** countdown is
-  hidden when the played day ≠ the client's active day. Entry: a calendar icon in the
+  clears the fixed header). Entry: a calendar icon in the
   game TopBar's right group; `dateForDayNumber` (`shared/day.ts`) is the `dayNumber`
   inverse. The **OG share page** (`backend/ogCard.ts` `renderShareHtml`) now click-throughs
   to the **shared day's** date-addressed URL (`/<lang>/<dateForDayNumber(dayNumber)>`),
@@ -596,8 +595,7 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   and every control has a visible `:focus-visible` outline. The missing-puzzle screen
   wording owns that the state is **abnormal** (a publish that did not happen). The pixel
   font is **self-hosted** (`web/src/assets/fonts/PressStart2P.woff2`, `@font-face` in
-  `index.css` — no Google Fonts request). The solved screen shows a **NEXT PUZZLE IN
-  HH:MM:SS** countdown (`secondsUntilNextReset`, hidden on `?puzzle=` overrides).
+  `index.css` — no Google Fonts request).
 - **SVG icons (pattern to follow):** monochrome UI icons live as `.svg` files under
   `web/src/assets/icons/` and are imported as **inline React components** via
   `vite-plugin-svgr` — `import Icon from '../assets/icons/name.svg?react'` (the `?react`

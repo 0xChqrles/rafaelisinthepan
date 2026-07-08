@@ -33,10 +33,9 @@ const STRINGS = {
   tries: { en: 'TRIES', fr: 'ESSAIS' },
   share: { en: 'SHARE', fr: 'PARTAGER' },
   copied: { en: 'COPIED', fr: 'COPIÉ' },
-  nextPuzzleIn: { en: 'NEXT PUZZLE IN', fr: 'PROCHAIN PUZZLE DANS' },
-  // Streak line on the solved screen (#56): `STREAK 3 · BEST 7`.
-  streak: { en: 'STREAK', fr: 'SÉRIE' },
-  best: { en: 'BEST', fr: 'RECORD' },
+  // Streak label on the solved screen + archive (#56/#74). "STREAK" stays UNTRANSLATED in
+  // French too — it became a global game concept across languages (decided 2026-07-09).
+  streak: { en: 'STREAK', fr: 'STREAK' },
   srSolvedAll: { en: 'sentence solved!', fr: 'phrase résolue !' },
   ariaChangeLanguage: { en: 'Change language', fr: 'Changer de langue' },
   ariaKeyboard: { en: 'on-screen keyboard', fr: 'clavier virtuel' },

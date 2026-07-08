@@ -7,7 +7,7 @@ import { pathForLang, pathForDay, type LangCode } from '../langs';
 import { FIRST_PUZZLE_DATE } from '../config';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
 import { statusOf, srStatus, type Status } from '../state/status';
-import { currentStreak, bestStreak } from '../game/streak';
+import { currentStreak } from '../game/streak';
 import { t } from '../i18n';
 import {
   yearMonthOf,
@@ -92,10 +92,10 @@ export default function Archive({ lang }: { lang: LangCode }) {
   const cells = useMemo(() => monthGrid(current, weekStart), [current, weekStart]);
 
   // Streak stat below the calendar (#74): derived from the per-language solved-day set,
-  // never a stored counter. Hidden until there is at least one solved day (best > 0).
+  // never a stored counter. Shown only while a streak is LIVE (streak > 0) — a broken or
+  // empty streak shows nothing rather than "STREAK 0".
   const activeDay = useMemo(() => dayNumber(today), [today]);
   const streak = currentStreak(solvedDays, activeDay);
-  const best = bestStreak(solvedDays);
 
   return (
     <div className="archive">
@@ -170,14 +170,14 @@ export default function Archive({ lang }: { lang: LangCode }) {
         </div>
       </div>
 
-      {/* Streak stat below the calendar (#74): a small flame + STREAK n · BEST m for this
-          language. Muted, understated — the flame reward moment lives on the solved screen.
-          The stat carries its own value for assistive tech (the flame is decorative). */}
-      {best > 0 && (
+      {/* Streak stat below the calendar (#74): a small flame + STREAK n for this language.
+          Muted, understated — the flame reward moment lives on the solved screen. The stat
+          carries its own value for assistive tech (the flame is decorative). */}
+      {streak > 0 && (
         <p className="archive-streak">
           <FlameSmall className="archive-flame" aria-hidden />
           <span>
-            {t(lang, 'streak')} {streak} · {t(lang, 'best')} {best}
+            {t(lang, 'streak')} {streak}
           </span>
         </p>
       )}

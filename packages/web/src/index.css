@@ -990,34 +990,14 @@ button * {
 .share-key.copied {
   color: var(--accent);
 }
-/* Countdown to the next puzzle (the day flip), under the score/share row — a muted footer
-   line. Fades/rises with the same timing as .solved-actions (the JS toggles the shared
-   `.in` at the same moment); tabular digits so the ticking seconds never wobble the line. */
-.next-puzzle {
-  margin: 0;
-  font-family: var(--press);
-  font-size: 11px;
-  color: var(--muted);
-  letter-spacing: 1px;
-  font-variant-numeric: tabular-nums;
-  padding-top: var(--text-shift);
-  opacity: 0;
-  transform: translateY(8px);
-  transition: opacity 0.35s ease-out, transform 0.35s ease-out;
-}
-.next-puzzle.in {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-/* Streak block (#56/#74): the flame + STREAK/BEST line, and on a clean week the 7-day
-   Duolingo-style row below it. The BLOCK rides the shared fade/rise (`.in`); the reduced-
-   motion rule already collapses the transition. */
+/* Streak block (#56/#74): the flame + STREAK line, and on a clean week the 7-day
+   Duolingo-style row below it — ABOVE the score/share row. The BLOCK rides the shared
+   fade/rise (`.in`); the reduced-motion rule already collapses the transition. */
 .streak-block {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   opacity: 0;
   transform: translateY(8px);
   transition: opacity 0.35s ease-out, transform 0.35s ease-out;
@@ -1026,8 +1006,7 @@ button * {
   opacity: 1;
   transform: translateY(0);
 }
-/* The flame + STREAK n · BEST m line (same muted pixel styling as .next-puzzle, now a flex
-   row so the flame sits beside the text). */
+/* The flame + STREAK n line, a flex row so the flame sits beside the text. */
 .streak-line {
   display: inline-flex;
   align-items: center;
@@ -1057,35 +1036,35 @@ button * {
    initial over a mark slot (the small flame on a solved day). Decorative (aria-hidden). */
 .week-row {
   display: flex;
-  gap: 6px;
+  gap: 8px;
 }
 .week-cell {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  width: 22px;
+  gap: 6px;
+  width: 32px;
 }
 .week-label {
   font-family: var(--press);
-  font-size: 8px;
+  font-size: 9px;
   line-height: 1;
   color: var(--muted);
   opacity: 0.6;
 }
-/* A fixed square so solved (flame) and empty days keep the row perfectly aligned. Empty +
-   future days show a faint dot placeholder; today's slot is ringed. */
+/* A fixed square so solved (flame) and empty days keep the row perfectly aligned. Empty
+   days show the neutral surface tile; future days are faded; today's slot is ringed. */
 .week-mark {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 4px;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
   background: var(--surface);
 }
 .week-cell.today .week-mark {
-  box-shadow: inset 0 0 0 2px var(--flame);
+  box-shadow: inset 0 0 0 3px var(--flame);
 }
 .week-cell.future .week-mark {
   opacity: 0.4;
@@ -1093,13 +1072,13 @@ button * {
 .week-flame {
   display: block;
   width: auto;
-  height: 15px;
+  height: 21px;
   color: var(--flame);
   shape-rendering: crispEdges;
 }
 
-/* Streak stat below the archive calendar (#74): a small flame + STREAK n · BEST m, muted
-   and centered, in the same pixel style as the solved-screen line. */
+/* Streak stat below the archive calendar (#74): a small flame + STREAK n, muted and
+   centered, in the same pixel style as the solved-screen line. */
 .archive-streak {
   display: inline-flex;
   align-self: center;
