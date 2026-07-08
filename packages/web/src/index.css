@@ -989,11 +989,12 @@ button * {
 .share-key.copied {
   color: var(--accent);
 }
-/* Countdown to the next puzzle (the day flip), under the score/share row — the solved
-   screen's "come back" hook. Fades/rises with the same timing as .solved-actions (the
-   JS toggles the shared `.in` at the same moment); tabular digits so the ticking
-   seconds never wobble the line. */
-.next-puzzle {
+/* Countdown to the next puzzle (the day flip) and the streak line (#56), under the
+   score/share row — the solved screen's muted footer lines. Both fade/rise with the same
+   timing as .solved-actions (the JS toggles the shared `.in` at the same moment); tabular
+   digits so the ticking countdown seconds never wobble the line. */
+.next-puzzle,
+.streak-line {
   margin: 0;
   font-family: var(--press);
   font-size: 11px;
@@ -1005,7 +1006,8 @@ button * {
   transform: translateY(8px);
   transition: opacity 0.35s ease-out, transform 0.35s ease-out;
 }
-.next-puzzle.in {
+.next-puzzle.in,
+.streak-line.in {
   opacity: 1;
   transform: translateY(0);
 }

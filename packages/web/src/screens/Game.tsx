@@ -3,6 +3,7 @@ import { computeProgress } from '../game/scoring';
 import { progressTrajectory } from '../game/share';
 import { canExtend } from '../game/keyboard';
 import useVocab from '../hooks/useVocab';
+import useToday from '../hooks/useToday';
 import { useGameStore, roundKeyForDay, holesMatchPuzzle } from '../state/gameStore';
 import Phrase from '../components/Phrase';
 import ProgressBar from '../components/ProgressBar';
@@ -125,6 +126,12 @@ function Round({
   const recordGuess = useGameStore((s) => s.recordGuess);
   const improveHole = useGameStore((s) => s.improveHole);
   const syncProgress = useGameStore((s) => s.syncProgress);
+  const recordSolve = useGameStore((s) => s.recordSolve);
+
+  // The client's active game day (local, DST-correct) — the streak's reference point. May
+  // be dayNumber + 1 when an in-flight round is finished just past the 22:00 flip; the
+  // store's recordSolve resolves that flip-edge case (and refuses archive replays).
+  const todayDayNumber = useToday();
 
   // Reconcile before paint: a matching key rehydrates the stored progress, a new key
   // (new day OR new language) resets to freshHoles. useLayoutEffect commits the reset
@@ -212,6 +219,10 @@ function Round({
     // replayed past day ('yes', #55) from the live daily puzzle ('no').
     if (dayNumber != null) {
       track('solve', { lang, tries: guessCount, day: dayNumber, archive: isActiveDay ? 'no' : 'yes' });
+      // Streak (#56): record this solved day. recordSolve no-ops on an archive replay
+      // (solvedDay older than yesterday) and on a re-solve, so this fires unconditionally
+      // for a real day — the guards live in the store, next to the data.
+      recordSolve(lang, dayNumber, todayDayNumber);
     }
     const t = window.setTimeout(() => setShowResults(true), LAST_HOLE_SETTLE_MS);
     return () => window.clearTimeout(t);

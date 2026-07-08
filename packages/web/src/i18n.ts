@@ -34,6 +34,9 @@ const STRINGS = {
   share: { en: 'SHARE', fr: 'PARTAGER' },
   copied: { en: 'COPIED', fr: 'COPIÉ' },
   nextPuzzleIn: { en: 'NEXT PUZZLE IN', fr: 'PROCHAIN PUZZLE DANS' },
+  // Streak line on the solved screen (#56): `STREAK 3 · BEST 7`.
+  streak: { en: 'STREAK', fr: 'SÉRIE' },
+  best: { en: 'BEST', fr: 'RECORD' },
   srSolvedAll: { en: 'sentence solved!', fr: 'phrase résolue !' },
   ariaChangeLanguage: { en: 'Change language', fr: 'Changer de langue' },
   ariaKeyboard: { en: 'on-screen keyboard', fr: 'clavier virtuel' },

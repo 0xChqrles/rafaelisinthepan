@@ -47,6 +47,23 @@ function dayNumberOf(key: string): number | null {
 // so the map stays well under localStorage limits.
 const MAX_DAY_ROUNDS = 800;
 
+// Cap for each language's solved-day set (#56), same spirit as MAX_DAY_ROUNDS. The array
+// is kept sorted ascending, so the newest solves are at the tail.
+const MAX_SOLVED_DAYS = 800;
+
+// Bound one language's solved-day array to its most recent MAX_SOLVED_DAYS entries.
+function capSolvedDays(days: number[]): number[] {
+  return days.length > MAX_SOLVED_DAYS ? days.slice(-MAX_SOLVED_DAYS) : days;
+}
+
+// Bound every language's solved-day array (used by partialize so the persisted blob is
+// capped even if a set somehow grew past the limit outside recordSolve).
+function capAllSolvedDays(solvedDays: Record<string, number[]>): Record<string, number[]> {
+  const out: Record<string, number[]> = {};
+  for (const [lang, days] of Object.entries(solvedDays)) out[lang] = capSolvedDays(days);
+  return out;
+}
+
 // Enforce the cap: with more than MAX_DAY_ROUNDS day rounds, drop the oldest (lowest
 // dayNumber), always keeping the active key and every override round (exempt — at most
 // one survives ensureRound's prune).
@@ -89,6 +106,12 @@ interface PersistedState {
   // The onboarding tutorial (#51) has been completed or skipped. Global, not
   // per-language — the mechanic is the same in both.
   onboarded: boolean;
+  // Per-language SET of solved game days (ascending, deduped dayNumbers). The raw fact,
+  // not the derived stat: the streak counters (current/best) are DERIVED from this at read
+  // time (game/streak.ts), never persisted (#56). The day-set shape is what makes a future
+  // cross-device merge a set union + recompute, so it is purely client-side by decision
+  // (2026-07-07). Bounded to the most recent MAX_SOLVED_DAYS per language.
+  solvedDays: Record<string, number[]>;
 }
 
 interface GameState extends PersistedState {
@@ -110,6 +133,13 @@ interface GameState extends PersistedState {
 
   // Mark the onboarding tutorial as seen (finish AND skip both count — never re-nag).
   setOnboarded: () => void;
+
+  // Record a solved game day for the streak (#56). No-op when `solvedDay` is already in
+  // the set (re-solves / rehydration never double-count) OR when `solvedDay < activeDay -
+  // 1` (an in-flight round solved just past the 22:00 flip still counts for its own day;
+  // anything older is an ARCHIVE play (#55) and must NOT touch the streak). Otherwise
+  // inserts it, keeping the array sorted + deduped and bounded to MAX_SOLVED_DAYS.
+  recordSolve: (lang: string, solvedDay: number, activeDay: number) => void;
 
   // Reconcile the persisted rounds to `key`. A matching key with matching holes
   // rehydrates its stored progress; a brand-new key — or the same key whose puzzle was
@@ -152,8 +182,11 @@ function freshRound(initialHoles: RuntimeHole[]): RoundProgress {
 //     onboarding tutorial (#51): anyone with existing play state has already learned the
 //     game, so GRANDFATHER them (rounds or a lastLang -> onboarded) — a veteran must
 //     never be surprised by the tutorial.
+//   v3 adds the per-language solved-day set (#56): any older blob gets an empty set (NO
+//     backfill from rounds — the streak starts fresh, by decision), and the counters are
+//     derived from it, never persisted.
 export function migratePersisted(persisted: unknown, version: number): PersistedState {
-  if (version < 1) return { rounds: {}, lastLang: null, onboarded: false };
+  if (version < 1) return { rounds: {}, lastLang: null, onboarded: false, solvedDays: {} };
   const p = persisted as Partial<PersistedState>;
   const rounds = p.rounds ?? {};
   const lastLang = p.lastLang ?? null;
@@ -161,7 +194,8 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
     typeof p.onboarded === 'boolean'
       ? p.onboarded
       : Object.keys(rounds).length > 0 || lastLang != null;
-  return { rounds, lastLang, onboarded };
+  const solvedDays = p.solvedDays ?? {};
+  return { rounds, lastLang, onboarded, solvedDays };
 }
 
 export const useGameStore = create<GameState>()(
@@ -170,6 +204,7 @@ export const useGameStore = create<GameState>()(
       rounds: {},
       lastLang: null,
       onboarded: false,
+      solvedDays: {},
       activeKey: null,
       tutorialOpen: null,
 
@@ -185,6 +220,20 @@ export const useGameStore = create<GameState>()(
         if (get().onboarded) return;
         set({ onboarded: true });
       },
+
+      recordSolve: (lang, solvedDay, activeDay) =>
+        set((s) => {
+          // Archive plays (a solve older than yesterday) NEVER touch the streak; an
+          // in-flight round solved just past the 22:00 flip (solvedDay === activeDay - 1)
+          // still counts for its own day.
+          if (solvedDay < activeDay - 1) return {};
+          const days = s.solvedDays[lang] ?? [];
+          // Re-solves and rehydration must not double-count.
+          if (days.includes(solvedDay)) return {};
+          // Insert keeping the array sorted ascending + deduped, then bound it.
+          const next = capSolvedDays([...days, solvedDay].sort((a, b) => a - b));
+          return { solvedDays: { ...s.solvedDays, [lang]: next } };
+        }),
 
       ensureRound: (key, initialHoles) =>
         set((s) => {
@@ -260,14 +309,16 @@ export const useGameStore = create<GameState>()(
     {
       name: 'whippin-round',
       storage,
-      version: 2, // v2: + onboarded (see migratePersisted for the upgrade path)
+      version: 3, // v3: + solvedDays (see migratePersisted for the upgrade path)
       migrate: migratePersisted,
-      // Persist rounds, last language and the onboarding flag; activeKey and the
-      // actions are transient.
+      // Persist rounds, last language, the onboarding flag and the solved-day sets;
+      // activeKey and the actions are transient. Each language's solved-day set is
+      // capped to MAX_SOLVED_DAYS on write.
       partialize: (s): PersistedState => ({
         rounds: s.rounds,
         lastLang: s.lastLang,
         onboarded: s.onboarded,
+        solvedDays: capAllSolvedDays(s.solvedDays),
       }),
     },
   ),

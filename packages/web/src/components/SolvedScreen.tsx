@@ -3,8 +3,15 @@ import type { CSSProperties } from 'react';
 import { bucketMeans, shareText, shareUrl } from '../game/share';
 import { heatColor, secondsUntilNextReset } from '@whippin/shared';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
+import useToday from '../hooks/useToday';
+import { useGameStore } from '../state/gameStore';
+import { currentStreak, bestStreak } from '../game/streak';
 import { track } from '../analytics';
 import { t } from '../i18n';
+
+// Stable empty reference so the zustand selector below never returns a fresh array (which
+// would churn renders) when a language has no solved days yet.
+const NO_SOLVED_DAYS: number[] = [];
 
 // Reveal choreography (this component MOUNTS at the reveal moment — Game gates it on the last
 // hole's solve animation finishing, so the animations below ARE the reveal): the score/share
@@ -107,6 +114,18 @@ export default function SolvedScreen({
     const id = window.setInterval(() => setNextIn(secondsUntilNextReset(new Date())), 1000);
     return () => window.clearInterval(id);
   }, []);
+
+  // Streak line (#56): derived from the per-language solved-day SET, never a stored
+  // counter. Shown only for a streak-eligible solve — an active-day win with a real
+  // dayNumber. An archive replay (isActiveDay false) or a ?puzzle= override (dayNumber
+  // null) shows none; and a 0 guards the pre-feature rehydration whose day predates the
+  // set (a real fresh solve is always >= 1, since recordSolve added today before this
+  // screen reveals).
+  const solvedDays = useGameStore((s) => s.solvedDays[lang] ?? NO_SOLVED_DAYS);
+  const activeDay = useToday();
+  const streak = currentStreak(solvedDays, activeDay);
+  const best = bestStreak(solvedDays);
+  const showStreak = dayNumber != null && isActiveDay && streak > 0;
 
   // "COPIED" confirmation after a clipboard fallback (the native share sheet needs none).
   const [copied, setCopied] = useState(false);
@@ -215,6 +234,15 @@ export default function SolvedScreen({
           )
         )}
       </div>
+
+      {/* Streak (#56): STREAK n · BEST m, under the score/share row. Muted pixel line,
+          rides the same fade/rise as the row. Only for a streak-eligible solve (active
+          day, real dayNumber) — an archive replay and a ?puzzle= override show none. */}
+      {showStreak && (
+        <p className={`streak-line${showActions ? ' in' : ''}`}>
+          {t(lang, 'streak')} {streak} · {t(lang, 'best')} {best}
+        </p>
+      )}
 
       {/* The "come back" hook: a live countdown to the day flip, under the score/share
           row. Rides the same fade/rise as the row (shared `.in` timing). Hidden on a
