@@ -353,7 +353,7 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
               onDone();
             }}
           >
-            <SkipIcon className="skip-icon" aria-hidden />
+            <SkipIcon className="pixel-icon" aria-hidden />
           </button>
         }
       />

@@ -42,6 +42,12 @@ const STRINGS = {
   ariaDash: { en: 'dash', fr: 'tiret' },
   ariaHelp: { en: 'How to play', fr: 'Comment jouer' },
   ariaSkipTutorial: { en: 'Skip tutorial', fr: 'Passer le tutoriel' },
+  // ---- archive calendar (#55): playable past days behind a calendar screen.
+  archive: { en: 'ARCHIVE', fr: 'ARCHIVE' },
+  ariaArchive: { en: 'Past puzzles', fr: 'Puzzles précédents' },
+  ariaBackToToday: { en: "Back to today's puzzle", fr: 'Retour au puzzle du jour' },
+  ariaPrevMonth: { en: 'Previous month', fr: 'Mois précédent' },
+  ariaNextMonth: { en: 'Next month', fr: 'Mois suivant' },
   // ---- tutorial invitation (#51): the tutorial never starts without an action.
   inviteTitle: {
     en: 'New to the game? Learn how to play in 30 seconds.',

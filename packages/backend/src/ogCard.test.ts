@@ -2,7 +2,7 @@
 // logic — so they never hit the "lang required" guard. /og/<token>.png returns a PNG,
 // /s/<token> returns OG HTML pointing at that image, and a bad token 404s.
 import { describe, it, expect } from 'vitest';
-import { encodeResult } from '@whippin/shared';
+import { encodeResult, dateForDayNumber } from '@whippin/shared';
 import { createHandler } from './handler';
 import type { FnUrlEvent } from './respond';
 import type { PuzzleStore } from './store';
@@ -49,7 +49,8 @@ describe('GET /s/<token>', () => {
     expect(res.body).toContain('#20638');
     expect(res.body).toContain('<html lang="fr">');
     expect(res.body).toContain('Jouer à Whippin AI'); // no-JS body link (fr)
-    expect(res.body).toContain('https://whippin.ai/fr'); // redirect into the game (lang from token)
+    // Redirect into the game AT THE SHARED DAY (date-addressed, #55), not bare /fr.
+    expect(res.body).toContain(`https://whippin.ai/fr/${dateForDayNumber(20638)}`);
   });
 
   it('keeps English for an en token: try/tries, <html lang="en">, English link', async () => {
@@ -58,7 +59,20 @@ describe('GET /s/<token>', () => {
     expect(res.body).toContain('42 tries');
     expect(res.body).toContain('<html lang="en">');
     expect(res.body).toContain('Play Whippin AI');
-    expect(res.body).toContain('https://whippin.ai/en');
+    expect(res.body).toContain(`https://whippin.ai/en/${dateForDayNumber(20638)}`);
+  });
+
+  it('click-through targets the SHARED archive day, not today (#55)', async () => {
+    // A past day distinct from any "today": both the JS redirect and the no-JS body link
+    // must point at /<lang>/<that date>, never the bare /<lang> (which would be today).
+    const day = 20500;
+    const date = dateForDayNumber(day); // e.g. 2026-02-...
+    const tok = encodeResult({ lang: 'en', dayNumber: day, score: 42, squares });
+    const res = await handler(get(`/s/${tok}`, { host: 'whippin.ai', 'x-forwarded-proto': 'https' }));
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain(`location.replace("https://whippin.ai/en/${date}")`); // JS redirect
+    expect(res.body).toContain(`href="https://whippin.ai/en/${date}"`); // no-JS fallback link
+    expect(res.body).not.toContain('"https://whippin.ai/en"'); // never bare (today)
   });
 
   it('404s a token-shaped but undecodable value', async () => {

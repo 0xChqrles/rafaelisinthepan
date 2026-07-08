@@ -7,6 +7,7 @@ import {
   zonedParts,
   activeDate,
   dayNumber,
+  dateForDayNumber,
   nextResetAt,
   secondsUntilNextReset,
 } from './day';
@@ -54,6 +55,26 @@ describe('dayNumber — monotonic integer id for a date', () => {
   });
   it('consecutive dates differ by exactly one', () => {
     expect(dayNumber('2026-06-29') - dayNumber('2026-06-28')).toBe(1);
+  });
+});
+
+describe('dateForDayNumber — inverse of dayNumber', () => {
+  it('maps day 0/1 back to the epoch dates', () => {
+    expect(dateForDayNumber(0)).toBe('1970-01-01');
+    expect(dateForDayNumber(1)).toBe('1970-01-02');
+  });
+  it('round-trips dayNumber for a range of dates (including month/year/leap boundaries)', () => {
+    for (const date of [
+      '1970-01-01',
+      '2020-02-29', // leap day
+      '2024-12-31',
+      '2025-01-01',
+      '2026-06-12',
+      '2026-07-07',
+      '2030-03-01',
+    ]) {
+      expect(dateForDayNumber(dayNumber(date))).toBe(date);
+    }
   });
 });
 

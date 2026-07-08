@@ -40,12 +40,16 @@ export default function SolvedScreen({
   trajectory,
   dayNumber,
   lang,
+  isActiveDay = true,
   action,
 }: {
   guessCount: number;
   trajectory: number[]; // reconstruction % after each counted guess (one per try)
   dayNumber: number | null;
   lang: string; // packed into the share token (drives the link's click-through target)
+  // Whether the solved day is the client's active day. The "NEXT PUZZLE IN" countdown is
+  // a statement about TODAY, so it is hidden when replaying a past archive day (#55).
+  isActiveDay?: boolean;
   action?: { label: string; onClick: () => void }; // replaces the SHARE control (tutorial)
 }) {
   // Collapse the per-guess trajectory into a bounded set of squares (3..18), each colored
@@ -214,8 +218,9 @@ export default function SolvedScreen({
 
       {/* The "come back" hook: a live countdown to the day flip, under the score/share
           row. Rides the same fade/rise as the row (shared `.in` timing). Hidden on a
-          ?puzzle= override round (no real daily context to count toward). */}
-      {dayNumber != null && (
+          ?puzzle= override round (no real daily context) and when replaying a past
+          archive day (the countdown is about TODAY, not the day being played, #55). */}
+      {dayNumber != null && isActiveDay && (
         <p className={`next-puzzle${showActions ? ' in' : ''}`}>
           {t(lang, 'nextPuzzleIn')} {formatHMS(nextIn)}
         </p>

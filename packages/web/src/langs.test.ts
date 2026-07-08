@@ -8,6 +8,8 @@ import {
   isLang,
   langFromPath,
   pathForLang,
+  pathForArchive,
+  pathForDay,
   parseRoute,
   resolveHomeLang,
   LANGS,
@@ -70,6 +72,71 @@ describe('parseRoute', () => {
     expect(parseRoute('')).toEqual({ view: 'home' });
     expect(parseRoute('/de')).toEqual({ view: 'home' });
     expect(parseRoute('/vocab')).toEqual({ view: 'home' });
+  });
+});
+
+describe('parseRoute — archive + past-day deep links (#55)', () => {
+  // A wide, deterministic range so the shape/range logic is tested independently of the
+  // launch FIRST_PUZZLE_DATE const.
+  const bounds = { firstDate: '2026-01-01', activeDate: '2026-06-30' };
+
+  it('routes /<lang>/archive to the calendar', () => {
+    expect(parseRoute('/fr/archive')).toEqual({ view: 'archive', lang: 'fr' });
+    expect(parseRoute('/en/archive/')).toEqual({ view: 'archive', lang: 'en' });
+  });
+
+  it('routes /<lang>/<YYYY-MM-DD> in range to that day’s game', () => {
+    expect(parseRoute('/fr/2026-06-12', bounds)).toEqual({
+      view: 'game',
+      lang: 'fr',
+      date: '2026-06-12',
+    });
+    // The active day itself is a valid (shareable) dated URL.
+    expect(parseRoute('/en/2026-06-30', bounds)).toEqual({
+      view: 'game',
+      lang: 'en',
+      date: '2026-06-30',
+    });
+  });
+
+  it('treats malformed / impossible dates as unknown -> home', () => {
+    expect(parseRoute('/fr/2026-13-40', bounds)).toEqual({ view: 'home' }); // no month 13
+    expect(parseRoute('/fr/2026-02-30', bounds)).toEqual({ view: 'home' }); // no Feb 30
+    expect(parseRoute('/fr/2026-6-1', bounds)).toEqual({ view: 'game', lang: 'fr' }); // not \d{4}-\d{2}-\d{2}: tolerated -> today
+  });
+
+  it('treats a real date outside [firstDate, activeDate] as unknown -> home', () => {
+    expect(parseRoute('/fr/2025-12-31', bounds)).toEqual({ view: 'home' }); // before first
+    expect(parseRoute('/fr/2026-07-01', bounds)).toEqual({ view: 'home' }); // after active day
+  });
+
+  it('skips the future bound when no activeDate is supplied', () => {
+    expect(parseRoute('/fr/2999-01-01', { firstDate: '2026-01-01' })).toEqual({
+      view: 'game',
+      lang: 'fr',
+      date: '2999-01-01',
+    });
+  });
+
+  it('keeps /<lang> (no second segment) as today’s game', () => {
+    expect(parseRoute('/fr', bounds)).toEqual({ view: 'game', lang: 'fr' });
+  });
+});
+
+describe('pathForArchive / pathForDay', () => {
+  it('builds the archive + dated paths, / for an unknown lang', () => {
+    expect(pathForArchive('fr')).toBe('/fr/archive');
+    expect(pathForArchive('de')).toBe('/');
+    expect(pathForDay('en', '2026-06-12')).toBe('/en/2026-06-12');
+    expect(pathForDay(null, '2026-06-12')).toBe('/');
+  });
+  it('pathForDay round-trips through parseRoute for an in-range date', () => {
+    const bounds = { firstDate: '2026-01-01', activeDate: '2026-12-31' };
+    expect(parseRoute(pathForDay('fr', '2026-06-12'), bounds)).toEqual({
+      view: 'game',
+      lang: 'fr',
+      date: '2026-06-12',
+    });
   });
 });
 

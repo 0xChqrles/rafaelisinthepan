@@ -197,6 +197,176 @@ button * {
   height: 4px;
 }
 
+/* ===================== archive calendar (issue #55) ===================== */
+/* A month of playable past days under the app header (no progress-bar row). Day cells are
+   flat keys like the language cards / keyboard — surface tiles that brighten on hover /
+   press — filled with the progress-ramp color (solved = 100%, and a solved day also
+   ripples; see .cal-ripple), plain surface when not started. The calendar is centered
+   vertically: .archive fills the app height as a flex column that centers .cal, with top
+   padding so the centering region starts BELOW the fixed header (the TopBar inside is
+   position:fixed, out of flow, so only .cal participates). */
+.archive {
+  width: min(420px, 100%);
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-top: 56px;
+}
+
+/* Month navigation, clamped to [first puzzle month, current month] — the ‹ › ends dim
+   when the range runs out. The month/year title (locale-formatted) fills the middle. */
+.cal-nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.cal-month {
+  flex: 1;
+  text-align: center;
+  font-family: var(--press);
+  font-size: clamp(12px, 1.8vh, 15px);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--fg);
+  padding-top: var(--cap-shift);
+}
+.cal-arrow {
+  flex: none;
+  padding: 6px 10px;
+  font-family: var(--press);
+  font-size: clamp(14px, 2.4vh, 18px);
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.08s linear, filter 0.08s linear;
+}
+.cal-arrow:hover:not([disabled]),
+.cal-arrow:focus-visible {
+  color: var(--fg);
+}
+.cal-arrow[disabled] {
+  opacity: 0.26;
+  cursor: default;
+}
+
+/* One 7-column grid, shared by the weekday header and the day cells so columns align. */
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+.cal-weekdays {
+  margin-bottom: 6px;
+}
+.cal-weekday {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--press);
+  font-size: clamp(8px, 2vw, 10px);
+  color: var(--muted);
+  padding-bottom: 2px;
+}
+
+/* A day tile: a flat key that navigates to that day's game. Square (aspect-ratio) so the
+   grid stays regular; the day number is centered. A day with progress is FILLED with its
+   progress-ramp color (set inline per-day, .cal-day-filled below); a neutral day keeps the
+   surface. */
+.cal-day {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: var(--surface-hover);
+  border: 0;
+  color: var(--fg);
+  font-family: var(--press);
+  cursor: pointer;
+  text-shadow: none;
+  transition: filter 0.08s linear;
+}
+/* Brighten only PLAYABLE days — a disabled day is inert, so it must not react to hover
+   (native :disabled can still match :hover). */
+.cal-day:not([disabled]):hover,
+.cal-day:not([disabled]):focus-visible {
+  filter: brightness(1.2);
+}
+.cal-day:not([disabled]):active {
+  filter: brightness(1.35);
+}
+/* Out of range (before the first puzzle or after today): dimmed, inert — no hover, no shake. */
+.cal-day-disabled {
+  opacity: 0.26;
+  color: var(--muted);
+  cursor: default;
+}
+/* The active day, highlighted with an inset accent ring. */
+.cal-day-today {
+  outline: 3px solid var(--fg);
+  outline-offset: -3px;
+}
+/* Filled (>0% reconstruction): the fill color is inline (per-day % on the progress ramp);
+   the number is drawn in the app background so it reads on the fill. Compound selector so
+   it beats the base .cal-day color. */
+.cal-day.cal-day-filled {
+  color: var(--bg);
+}
+/* A COMPLETE (solved) day keeps its number in --fg — legible over the darker frames of
+   the ripple. Placed after .cal-day-filled (same specificity) so it wins for solved days. */
+.cal-day.cal-day-solved {
+  color: var(--fg);
+}
+.cal-day-num {
+  position: relative; /* above the ripple */
+  z-index: 1;
+  font-size: clamp(11.5px, 2.75vw, 15px);
+  padding-top: var(--cap-shift);
+  font-variant-numeric: tabular-nums;
+}
+/* Empty leading cells so day 1 lands under its weekday column. */
+.cal-pad {
+  aspect-ratio: 1;
+}
+
+/* Solved-day ripple: the shading WAVE that marks a solved (validated) day so it differs
+   from an in-progress one by motion, not only color. It plays `ultracode.png` — a
+   horizontal sprite sheet of 12 square (12×12) frames — as a CSS background. `background-
+   size: 1200% 100%` scales the sheet so ONE frame fills the square cell; `steps(12)` then
+   walks `background-position-x` frame by frame. The end value is 100% × 12/11 so frame 11
+   lands exactly on 100% (each of the 12 frames shown 1/12 of the cycle, looping cleanly).
+   `image-rendering: pixelated` keeps the 12px pixels crisp; the number paints above. */
+.cal-ripple {
+  position: absolute;
+  inset: 0;
+  --ripple-dur: 1.5s;
+  background-image: url('./assets/ultracode.png');
+  background-repeat: no-repeat;
+  background-size: 1200% 100%;
+  image-rendering: pixelated;
+  animation: cal-ripple var(--ripple-dur) steps(12) infinite;
+}
+@keyframes cal-ripple {
+  from {
+    background-position-x: 0%;
+  }
+  to {
+    background-position-x: calc(100% * 12 / 11); /* frame 11 lands on 100%; endpoint wraps */
+  }
+}
+/* Motion is a progressive enhancement: reduced-motion users get the solid base fill
+   (solved still reads as its color + the aria-label), never a frozen frame. */
+@media (prefers-reduced-motion: reduce) {
+  .cal-ripple {
+    display: none;
+  }
+}
+
 /* ===================== game screen ===================== */
 .game {
   /* Three vertical zones: fixed HUD (top), the .play area (grows to fill the middle),
@@ -272,14 +442,9 @@ button * {
   align-items: center;
   justify-content: space-between;
 }
-/* The header's right control: the game's "?" (replays the tutorial, text) and the
-   tutorial's fast-forward (skip, an icon). Buttons don't inherit font/color, so the
-   pixel font and muted tint are explicit; both brighten on hover/focus. */
-.help-btn {
-  font-family: var(--press);
-  font-size: clamp(14px, 2.2vh, 18px);
-  padding-top: var(--cap-shift);
-}
+/* The header's right controls: the game's "?" help (replays the tutorial) and the
+   tutorial's fast-forward (skip) — both inline pixel-art icons. Buttons don't inherit
+   color, so the muted tint is explicit; both brighten to --fg on hover/focus. */
 .help-btn,
 .topbar-skip {
   color: var(--muted);
@@ -290,13 +455,35 @@ button * {
 .topbar-skip:focus-visible {
   color: var(--fg);
 }
-/* The fast-forward glyph: a currentColor SVG sized by % of the button (tracks the
-   responsive header height); crispEdges keeps the pixel-art hard-edged. */
-.skip-icon {
+/* Icon policy: a standalone pixel-art icon carries its OWN display size — the SVG's
+   `width`/`height` (= 3× its viewBox), right next to the viewBox in the .svg file, is the
+   single source of truth for its size. So the CSS here only sets shared rendering, never a
+   size. Every icon's "pixel" is 3 screen px, keeping pixel art crisp + uniform in weight.
+   (The on-screen keyboard's control glyphs are the ONE exception — they scale with the
+   responsive key, so their SVGs carry no size and .kb-icon sizes them in CSS.) */
+.pixel-icon {
   display: block;
-  width: auto;
-  height: 38%;
   shape-rendering: crispEdges;
+}
+
+/* The game header's right group: the archive calendar entry + the "?" help, side by
+   side in the single right slot. */
+.topbar-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+/* The game header's archive entry + the archive's back-to-today control: currentColor
+   glyphs, muted -> fg on hover/focus like the "?" and skip. */
+.archive-btn,
+.archive-close {
+  color: var(--muted);
+}
+.archive-btn:hover,
+.archive-btn:focus-visible,
+.archive-close:hover,
+.archive-close:focus-visible {
+  color: var(--fg);
 }
 
 /* The header's centered title — the day's id (#N) in the game, "TUTORIAL" in the
@@ -990,8 +1177,8 @@ button * {
     gap: 16px;
     align-items: stretch;
     min-height: calc(100dvh - 44px);
-    /* Mobile keyboard is shorter (see .kb-key below): 3 rows of clamp(38,6.2vh,48) + gaps. */
-    --kb-h: calc(3 * clamp(38px, 6.2vh, 48px) + 2 * 5px);
+    /* Mobile keyboard height (see .kb-key below): 3 rows of clamp(44,6.8vh,52) + gaps. */
+    --kb-h: calc(3 * clamp(44px, 6.8vh, 52px) + 2 * 5px);
   }
   .play {
     align-items: stretch;
@@ -1029,7 +1216,7 @@ button * {
      right edge still fits (and otherwise the hole wraps as one unit to the next line). */
   .phrase,
   .word-input {
-    font-size: clamp(15px, 4.8vw, 22px);
+    font-size: clamp(13px, 4.2vw, 19px);
   }
   /* The input must be able to shrink below its desktop min-width on a narrow screen. */
   .word-input {
@@ -1039,7 +1226,7 @@ button * {
 
   /* Floating hit / MISS scaled down to sit over the smaller hole words. */
   .floating-hit {
-    font-size: 20px;
+    font-size: 18px;
   }
 
   .input-area {
@@ -1063,8 +1250,14 @@ button * {
     gap: 5px;
   }
   .kb-key {
-    height: clamp(38px, 6.2vh, 48px);
+    height: clamp(44px, 6.8vh, 52px);
     border-width: 2px;
+  }
+
+  /* Archive: the centering column carries over from the base rule; just clear the
+     compact (48px) mobile header. */
+  .archive {
+    padding-top: 48px;
   }
 
   /* Language picker: tighter cards on a phone. */
@@ -1097,6 +1290,8 @@ button * {
 .share-key:focus-visible,
 .btn:focus-visible,
 .lang-card:focus-visible,
+.cal-day:focus-visible,
+.cal-arrow:focus-visible,
 .home-btn:focus-visible {
   outline: 3px solid var(--accent-dim);
   outline-offset: 2px;

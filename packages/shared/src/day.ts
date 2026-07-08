@@ -77,6 +77,15 @@ export function dayNumber(date: string): number {
   return Math.floor(Date.parse(`${date}T00:00:00Z`) / 86_400_000);
 }
 
+// Inverse of dayNumber: the "YYYY-MM-DD" date `n` whole days after the Unix epoch
+// (pure UTC arithmetic — a dayNumber IS whole days since epoch). The archive (#55) uses
+// it to turn a persisted round's dayNumber back into a shareable date URL. Round-trips
+// with dayNumber for any date at UTC midnight: dateForDayNumber(dayNumber(d)) === d.
+export function dateForDayNumber(n: number): string {
+  const d = new Date(n * 86_400_000);
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+}
+
 // Offset (minutes, east-positive) of `timeZone` from UTC at `instant`, DST-correct.
 function offsetMinutes(instant: Date, timeZone: string): number {
   const p = zonedParts(instant, timeZone);

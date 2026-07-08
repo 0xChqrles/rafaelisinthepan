@@ -6,7 +6,6 @@ import useVocab from '../hooks/useVocab';
 import { useGameStore, roundKeyForDay, holesMatchPuzzle } from '../state/gameStore';
 import Phrase from '../components/Phrase';
 import ProgressBar from '../components/ProgressBar';
-import TopBar from '../components/TopBar';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import SolvedScreen from '../components/SolvedScreen';
@@ -43,15 +42,18 @@ const OVERRIDE_NONCE = Math.random().toString(36).slice(2);
 
 // Wrapper: drives the single puzzle. Loads the language's fixed vocabulary
 // (existence set + keyboard prefix set) before playing — existence is decided by it,
-// not by ranks. `onHelp` (optional) replays the onboarding tutorial from the HUD.
+// not by ranks. The header lives ABOVE this (GameRoute), so Game renders only the game
+// body (progress-bar row + play + tray) under the fixed header.
 export default function Game({
   puzzle,
   dayNumber,
-  onHelp,
+  isActiveDay = true,
 }: {
   puzzle: Puzzle;
   dayNumber: number | null;
-  onHelp?: () => void;
+  // Whether this is the client's active day (false when replaying an archive day, #55):
+  // gates the solved-screen countdown and tags the solve-analytics `archive` prop.
+  isActiveDay?: boolean;
 }) {
   const { vocab, error, retry } = useVocab(puzzle.lang);
 
@@ -70,7 +72,7 @@ export default function Game({
       prefixSet={vocab.prefixSet}
       lang={puzzle.lang}
       dayNumber={dayNumber}
-      onHelp={onHelp}
+      isActiveDay={isActiveDay}
     />
   );
 }
@@ -86,7 +88,7 @@ function Round({
   prefixSet,
   lang,
   dayNumber,
-  onHelp,
+  isActiveDay,
 }: {
   words: string[];
   puzzleHoles: Hole[];
@@ -96,7 +98,7 @@ function Round({
   prefixSet: Set<string>;
   lang: string;
   dayNumber: number | null;
-  onHelp?: () => void;
+  isActiveDay: boolean;
 }) {
   // Fresh per-hole state derived from the puzzle. Used until the persisted store
   // reconciles to this round, and as the reset state on a new day/language.
@@ -204,12 +206,12 @@ function Round({
       setShowResults(true); // already solved on load (rehydrated) -> reveal without waiting
       return undefined;
     }
-    // The one analytics beat for "did the player finish today's puzzle": fired ONLY on
-    // the play-solve transition (never on the rehydration branch above). A ?puzzle=
-    // override has no real day, so it isn't a countable daily solve — skip it. `archive`
-    // is hardcoded 'no' until the archive ships (no way to play a non-active day yet).
+    // The one analytics beat for "did the player finish a puzzle": fired ONLY on the
+    // play-solve transition (never on the rehydration branch above). A ?puzzle= override
+    // has no real day, so it isn't a countable solve — skip it. `archive` distinguishes a
+    // replayed past day ('yes', #55) from the live daily puzzle ('no').
     if (dayNumber != null) {
-      track('solve', { lang, tries: guessCount, day: dayNumber, archive: 'no' });
+      track('solve', { lang, tries: guessCount, day: dayNumber, archive: isActiveDay ? 'no' : 'yes' });
     }
     const t = window.setTimeout(() => setShowResults(true), LAST_HOLE_SETTLE_MS);
     return () => window.clearTimeout(t);
@@ -348,29 +350,10 @@ function Round({
         {announce}
       </div>
 
-      {/* App header pinned to the top: language flag left, the day's puzzle id
-          centered, help right. The progress bar gets its own FULL-WIDTH row below it,
-          so nothing squeezes it on mobile. Bar WIDTH = the reconstruction value;
-          COLOR follows progress. */}
-      <TopBar
-        lang={lang}
-        center={
-          dayNumber != null ? (
-            <span className="topbar-title" aria-hidden="true">
-              #{dayNumber}
-            </span>
-          ) : undefined
-        }
-        right={
-          // Replays the onboarding tutorial (#51) on demand — help is never more than
-          // one tap away, but it stays out of the way.
-          onHelp ? (
-            <button type="button" className="home-btn help-btn" aria-label={t(lang, 'ariaHelp')} onClick={onHelp}>
-              ?
-            </button>
-          ) : undefined
-        }
-      />
+      {/* The header (flag / day id / archive + help) is rendered by GameRoute ABOVE this,
+          so it stays put across the route's states. The progress bar gets its own
+          FULL-WIDTH row just below that fixed header — nothing squeezes it on mobile.
+          Bar WIDTH = the reconstruction value; COLOR follows progress. */}
       <div className="hud">
         <ProgressBar value={progress} />
       </div>
@@ -420,7 +403,13 @@ function Round({
           take its place and animate in. */}
       <div className="tray">
         {showResults ? (
-          <SolvedScreen guessCount={guessCount} trajectory={trajectory} dayNumber={dayNumber} lang={lang} />
+          <SolvedScreen
+            guessCount={guessCount}
+            trajectory={trajectory}
+            dayNumber={dayNumber}
+            lang={lang}
+            isActiveDay={isActiveDay}
+          />
         ) : (
           <Keyboard
             input={input}

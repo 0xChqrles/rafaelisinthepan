@@ -481,6 +481,40 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   backend base and is required for `pnpm dev` / `pnpm build`; the frontend must not
   silently use its own origin as the backend. `usePuzzle` exposes `dayNumber` for
   persist (#7) / already-solved (#9).
+- **Archive routing (#55, decided 2026-07-07):** the client now also fetches **explicit
+  past dates** — pairing with #53's server-side "serve any past day". `parseRoute`
+  (`web/src/langs.ts`) grew two language-scoped routes beyond `/<lang>`:
+  `/<lang>/archive` → the calendar screen (`screens/Archive.tsx`), and
+  `/<lang>/<YYYY-MM-DD>` → that past day's game (deep-linkable/shareable). A date is
+  honored only when it is a **real calendar date within `[FIRST_PUZZLE_DATE, activeDate]`**
+  (`web/src/config.ts`, a launch placeholder the user pins); a malformed or out-of-range
+  date-shaped segment → `home` redirect, while a **non-date** second segment keeps the old
+  tolerance (`/<lang>/xyz` → today's game). `parseRoute` takes the range bounds as an
+  injected arg (App passes the client `activeDate`) so parsing stays pure/testable.
+  `usePuzzle(lang, date?)` fetches the given date, else the active day (unchanged); the
+  404→`noPuzzle` path is reused as-is. The calendar reads each day's status from the
+  **persisted rounds** (device-local) via the extracted `state/status.ts` `statusOf`
+  (shared with the language selector). **Cell coloring (decided 2026-07-08):** a day with
+  any reconstruction (>0%) is FILLED with its `progressColor(pct)` (solved counts as
+  **100%** — the ramp top, NOT the language-card gold), and its number is drawn in `--bg`
+  so it reads on the fill; disabled and not-started/0% days keep the neutral surface +
+  number color. **A SOLVED day also RIPPLES (decided 2026-07-08):** a shading wave, so a
+  validated day is distinguishable from an in-progress one by MOTION, not only color. It
+  plays `web/src/assets/ultracode.png` — a **12-frame horizontal sprite sheet** (144×12,
+  12 square 12×12 frames) — as a CSS background on `.cal-ripple`: `background-size:
+  1200% 100%` fits one frame to the square cell and `steps(12)` walks `background-position-x`
+  (end value `100%×12/11` so frame 11 lands on 100% and loops cleanly), `image-rendering:
+  pixelated` keeps it crisp. (Superseded the earlier hand-computed SVG-path ripple.)
+  Reduced-motion hides it → the static fill + aria-label carry the status.
+  The calendar itself is **vertically centered** (`.archive` flex column, top padding
+  clears the fixed header). The solved-screen **NEXT PUZZLE IN** countdown is
+  hidden when the played day ≠ the client's active day. Entry: a calendar icon in the
+  game TopBar's right group; `dateForDayNumber` (`shared/day.ts`) is the `dayNumber`
+  inverse. The **OG share page** (`backend/ogCard.ts` `renderShareHtml`) now click-throughs
+  to the **shared day's** date-addressed URL (`/<lang>/<dateForDayNumber(dayNumber)>`),
+  not bare `/<lang>` — so a shared archive result opens that archived date, not today (the
+  card/title were already `#dayNumber`-correct). The archive **must not touch streaks**
+  (separate issue).
 - **Onboarding tutorial (#51, redesigned 2026-07-06):** the tutorial **never starts
   without an action**. A first visit (persisted `onboarded` unset) lands on an
   **invitation** (`tutorial/Invite.tsx`, standing in for the loading screen: "New to
@@ -527,10 +561,19 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   flag (language) left, a centered title, a right-hand control — full-bleed with a
   thin `--surface` bottom border separating it from the app; the **progress bar sits
   in its own full-width row below it** (no more flag/`?` squeezing the bar on
-  mobile). The game fills it with the day's puzzle id (`#<dayNumber>`) + help `?`;
-  the tutorial fills it with "TUTORIAL" + the skip fast-forward. The flag ALWAYS
-  opens the language screen. The topbar is the extension point for future chrome
-  (streaks, stats, …).
+  mobile). The game fills it with the day's puzzle id (`#<dayNumber>`) + a right group
+  of the **archive calendar icon** and help `?` (#55); the tutorial fills it with
+  "TUTORIAL" + the skip fast-forward. The flag ALWAYS opens the language screen. The
+  game header is rendered by **`GameRoute` (App), NOT inside `Game`** (decided
+  2026-07-08): it wraps EVERY state of the route — loading / error / missing-puzzle /
+  the loaded game — so navigating into a game (e.g. from the archive) never blinks the
+  header away; only the body under the fixed header refreshes. Its `#<dayNumber>` comes
+  from `usePuzzle`'s **stable `dayNumber`** — captured ONCE per request (`useMemo` on the
+  requested date, not re-read from the clock each render) and shared by the fetch, the
+  header, the round key and the share — so it shows correctly while loading AND can never
+  drift from the loaded puzzle (an undated tab held open across the 22:00 flip keeps the
+  fetched day, since the puzzle itself does not silently swap). The topbar is the
+  extension point for future chrome (streaks, stats, …).
 - **Language screen (redesigned 2026-07-06):** headed by the **logo** (blue pixel
   glyph, 3×/2× its native 22px — language-neutral, and the app's ONE in-app branding
   spot), NOT a "select language" title (the cards self-explain, and a title would
@@ -565,15 +608,26 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
     states then come **only** from the consuming element's CSS `color` (e.g. the control
     keys' `.kb-control` / `.kb-enter` / `.kb-greyed`). Never bake a hex/`fill` into an icon
     meant to tint with its surroundings.
-  - **Strip the editor cruft.** Keep only `xmlns`, `viewBox`, `fill="currentColor"`, and the
-    shape elements. **Remove** the `<?xml …?>` prolog, `id`/`data-name` (Illustrator layer
-    junk), and intrinsic `width`/`height` (size in CSS instead; `viewBox` preserves aspect
-    ratio — a fixed `width`/`height` would fight the CSS size). This is what "remove the
-    useless attributes" means for any new icon.
-  - **Size in CSS, keep the aspect ratio.** Give the icon a class and set **one** dimension
-    (here `.kb-icon { height: 30%; width: auto }`) so `viewBox` scales the other; prefer a
-    key-relative unit so it tracks responsive sizing without per-breakpoint rules. For
-    pixel-art glyphs add `shape-rendering: crispEdges` to match the pixel font.
+  - **Strip the editor cruft.** Keep only `xmlns`, `viewBox`, the `width`/`height` size (see
+    below), `fill="currentColor"`, and the shape elements. **Remove** the `<?xml …?>` prolog
+    and `id`/`data-name` (Illustrator layer junk). This is what "remove the useless
+    attributes" means for any new icon.
+  - **Every icon is orthogonal PIXEL ART** (decided 2026-07-08) — shapes on an integer grid
+    with only horizontal/vertical edges (rects, or a path of `v`/`h` moves), NO diagonals —
+    so it renders crisp at integer scale. Rendered with `shape-rendering: crispEdges`
+    (shared in the `.pixel-icon` CSS class, not per icon).
+  - **Size lives in the SVG, at EXACTLY 3× the viewBox** (decided 2026-07-08, revised from
+    "size in CSS"). The `.svg` sets its own `width`/`height` = `3N × 3M` **px** for a
+    `viewBox="0 0 N M"`, **right next to the viewBox** — so an icon's size is a single source
+    of truth in one file, not split into a CSS rule in another folder. CSS (`.pixel-icon`)
+    only sets shared rendering (`display: block; shape-rendering: crispEdges`), never a size,
+    so a new icon needs **no** CSS: author the `.svg` with its px `width`/`height` and give
+    the element `className="pixel-icon"`. Every icon's "pixel" is then 3 screen px — crisp,
+    uniform in weight, integer-scaled (×3 vs ×2 is purely a size choice; both are crisp — ×3
+    suits the small header viewBoxes, giving ~18–27px). **The ONE exception is the on-screen
+    keyboard's control glyphs** (`.kb-icon`, enter/back): their `.svg`s carry NO `width`/
+    `height` and `.kb-icon` sizes them in CSS (`height: 30%; width: auto`), because the keys
+    shrink on narrow phones and a fixed 3× would overflow.
   - **Accessibility:** the SVG is **decorative** — pass `aria-hidden` on the component and
     let the surrounding `<button>`'s `aria-label` name the control.
   The type for `?react` imports comes from the `vite-plugin-svgr/client` reference in
@@ -714,9 +768,10 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   inert. The web CloudFront CSP (`infra/lib/web-stack.ts`) allows `https://plausible.io`
   in `connect-src` for the tracker endpoint; `script-src` stays `'self'` because the
   tracker is bundled. **Exactly three events** (low-cardinality props only — **NEVER** a typed
-  word/guess): `solve {lang, tries, day, archive:'no'}` — the play-solve transition in
-  `Game.tsx` (NOT rehydration; skipped on a `?puzzle=` override; `archive` hardcoded
-  `'no'` until the archive ships); `share {method:'native'|'clipboard'}` — `SolvedScreen`
+  word/guess): `solve {lang, tries, day, archive}` — the play-solve transition in
+  `Game.tsx` (NOT rehydration; skipped on a `?puzzle=` override; `archive` is `'yes'`
+  when replaying a past archive day (#55), `'no'` for the live daily puzzle);
+  `share {method:'native'|'clipboard'}` — `SolvedScreen`
   success paths; `tutorial {action:'start'|'finish'|'skip'}` — invite accept / PLAY
   finish / skip (fast-forward or invite SKIP). Plus automatic pageviews.
 - The `.codex/skills/whippin-game/` skill + `validate_game_data.mjs` describe a

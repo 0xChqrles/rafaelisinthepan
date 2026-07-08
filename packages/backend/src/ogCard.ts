@@ -10,7 +10,14 @@
 // locally (tsx/vitest) and in the deployed bundle (index.mjs at the bundle root).
 import { readFile } from 'node:fs/promises';
 import { Resvg, initWasm } from '@resvg/resvg-wasm';
-import { renderCardSvg, type CardData, type ShareResult, CARD_WIDTH, CARD_HEIGHT } from '@whippin/shared';
+import {
+  renderCardSvg,
+  dateForDayNumber,
+  type CardData,
+  type ShareResult,
+  CARD_WIDTH,
+  CARD_HEIGHT,
+} from '@whippin/shared';
 
 const WASM_URL = new URL('./assets/resvg.wasm', import.meta.url);
 const FONT_URL = new URL('./assets/PressStart2P-Regular.ttf', import.meta.url);
@@ -64,7 +71,12 @@ export function renderShareHtml(token: string, result: ShareResult, base: string
     `Whippin AI #${result.dayNumber} — ${result.score} ${result.score === 1 ? L.one : L.many}`,
   );
   const image = escapeAttr(`${base}/og/${token}.png`);
-  const gameUrl = `${base}/${lang}`; // safe: base is server-set, lang is /^[a-z]{2}$/
+  // Click-through lands on the SHARED day, not today (#55): the token carries the
+  // puzzle's dayNumber, and past days are playable at /<lang>/<YYYY-MM-DD>, so a shared
+  // ARCHIVE result opens that archived date (a shared "today" result opens today's date,
+  // which the front routes identically to /<lang>). Safe: base is server-set, lang is
+  // /^[a-z]{2}$/, and dateForDayNumber emits only digits + hyphens.
+  const gameUrl = `${base}/${lang}/${dateForDayNumber(result.dayNumber)}`;
   return `<!doctype html>
 <html lang="${lang}">
 <head>
