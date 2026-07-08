@@ -219,10 +219,14 @@ function Round({
     // replayed past day ('yes', #55) from the live daily puzzle ('no').
     if (dayNumber != null) {
       track('solve', { lang, tries: guessCount, day: dayNumber, archive: isActiveDay ? 'no' : 'yes' });
-      // Streak (#56): record this solved day. recordSolve no-ops on an archive replay
-      // (solvedDay older than yesterday) and on a re-solve, so this fires unconditionally
-      // for a real day — the guards live in the store, next to the data.
-      recordSolve(lang, dayNumber, todayDayNumber);
+      // Streak (#56): only an ACTIVE-DAY solve counts — archive replays must not touch the
+      // streak. The gate lives HERE, not in the store: recordSolve's activeDay-1 tolerance
+      // (the genuine flip-edge — an undated tab finished just past 22:00) is
+      // INDISTINGUISHABLE from deliberately opening /<lang>/<yesterday>, since both have
+      // solvedDay === activeDay - 1. Only the caller knows which route this is — the undated
+      // active route keeps isActiveDay true across the flip, a dated past route is false —
+      // so the flip-edge still records while an archive-yesterday solve does not.
+      if (isActiveDay) recordSolve(lang, dayNumber, todayDayNumber);
     }
     const t = window.setTimeout(() => setShowResults(true), LAST_HOLE_SETTLE_MS);
     return () => window.clearTimeout(t);

@@ -136,9 +136,12 @@ interface GameState extends PersistedState {
 
   // Record a solved game day for the streak (#56). No-op when `solvedDay` is already in
   // the set (re-solves / rehydration never double-count) OR when `solvedDay < activeDay -
-  // 1` (an in-flight round solved just past the 22:00 flip still counts for its own day;
-  // anything older is an ARCHIVE play (#55) and must NOT touch the streak). Otherwise
-  // inserts it, keeping the array sorted + deduped and bounded to MAX_SOLVED_DAYS.
+  // 1` (days OLDER than yesterday are archive plays (#55) and must NOT touch the streak).
+  // The activeDay-1 case is KEPT because it is the genuine flip-edge — an undated in-flight
+  // round finished just past the 22:00 flip. That case is indistinguishable HERE from an
+  // archive replay of yesterday, so the ACTIVE-DAY gate lives at the caller (Game.tsx);
+  // recordSolve only ever sees active-day solves. Otherwise inserts, keeping the array
+  // sorted + deduped and bounded to MAX_SOLVED_DAYS.
   recordSolve: (lang: string, solvedDay: number, activeDay: number) => void;
 
   // Reconcile the persisted rounds to `key`. A matching key with matching holes

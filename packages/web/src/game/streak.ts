@@ -28,8 +28,13 @@ export function currentStreak(days: number[], activeDay: number): number {
   return run;
 }
 
-// The longest consecutive run ANYWHERE in the set (the all-time best), independent of the
-// active day. Empty set -> 0, a single day -> 1.
+// The longest consecutive run ANYWHERE in the retained set, independent of the active day.
+// Empty set -> 0, a single day -> 1. NOTE: this is "best within retained history", not a
+// literally-forever best — solvedDays is bounded to the most recent MAX_SOLVED_DAYS per
+// language (gameStore), by the issue's derive-only + capped-set design (persisting a real
+// forever-best counter is exactly what that design refuses, since a counter can't merge
+// across devices). The cap is far beyond any reachable streak for years, so in practice
+// this IS the all-time best.
 export function bestStreak(days: number[]): number {
   const sorted = normalize(days);
   if (sorted.length === 0) return 0;
