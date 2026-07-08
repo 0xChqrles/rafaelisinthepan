@@ -286,14 +286,16 @@ button * {
   text-shadow: none;
   transition: filter 0.08s linear;
 }
-.cal-day:hover,
-.cal-day:focus-visible {
+/* Brighten only PLAYABLE days — a disabled day is inert, so it must not react to hover
+   (native :disabled can still match :hover). */
+.cal-day:not([disabled]):hover,
+.cal-day:not([disabled]):focus-visible {
   filter: brightness(1.2);
 }
-.cal-day:active {
+.cal-day:not([disabled]):active {
   filter: brightness(1.35);
 }
-/* Out of range (before the first puzzle or after today): dimmed, inert — no shake. */
+/* Out of range (before the first puzzle or after today): dimmed, inert — no hover, no shake. */
 .cal-day-disabled {
   opacity: 0.26;
   color: var(--muted);
