@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { activeDate, dayNumber as dayNumberFor } from '@whippin/shared';
+import { activeDate } from '@whippin/shared';
 import usePuzzle from './hooks/usePuzzle';
 import LanguageSelect from './screens/LanguageSelect';
 import Archive from './screens/Archive';
@@ -124,23 +124,21 @@ function GameRoute({ lang, date }: { lang: LangCode; date?: string }) {
     );
   }
 
-  // The header's day id (#N). Derived from the ROUTE (not the loaded puzzle) so it is
-  // stable from the first frame — the same value usePuzzle resolves to — and shows even
-  // while the body still loads. A ?puzzle= override has no real day, so no id (as before).
-  const headerDay = hasOverride ? null : dayNumberFor(date ?? activeDate(new Date()));
-
   return (
     <>
       {/* One persistent header for the whole route: flag (language screen) / the day's id
           / the archive + help controls. It renders in EVERY state below — loading, error,
           the missing-puzzle screen, and the loaded game — so navigating into a game never
-          blinks the header away; only the body under it refreshes. */}
+          blinks the header away; only the body under it refreshes. The id comes from
+          usePuzzle's STABLE `dayNumber` (captured once at fetch), so it is available while
+          loading AND can never drift from the loaded puzzle — e.g. a tab held open across
+          the 22:00 flip keeps showing the fetched day, not the newly-active one. */}
       <TopBar
         lang={lang}
         center={
-          headerDay != null ? (
+          dayNumber != null ? (
             <span className="topbar-title" aria-hidden="true">
-              #{headerDay}
+              #{dayNumber}
             </span>
           ) : undefined
         }

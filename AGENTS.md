@@ -554,10 +554,13 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   game header is rendered by **`GameRoute` (App), NOT inside `Game`** (decided
   2026-07-08): it wraps EVERY state of the route — loading / error / missing-puzzle /
   the loaded game — so navigating into a game (e.g. from the archive) never blinks the
-  header away; only the body under the fixed header refreshes. Its `#<dayNumber>` is
-  derived from the ROUTE (`date ?? activeDate`), so it is correct from the first frame,
-  before the puzzle resolves. The topbar is the extension point for future chrome
-  (streaks, stats, …).
+  header away; only the body under the fixed header refreshes. Its `#<dayNumber>` comes
+  from `usePuzzle`'s **stable `dayNumber`** — captured ONCE per request (`useMemo` on the
+  requested date, not re-read from the clock each render) and shared by the fetch, the
+  header, the round key and the share — so it shows correctly while loading AND can never
+  drift from the loaded puzzle (an undated tab held open across the 22:00 flip keeps the
+  fetched day, since the puzzle itself does not silently swap). The topbar is the
+  extension point for future chrome (streaks, stats, …).
 - **Language screen (redesigned 2026-07-06):** headed by the **logo** (blue pixel
   glyph, 3×/2× its native 22px — language-neutral, and the app's ONE in-app branding
   spot), NOT a "select language" title (the cards self-explain, and a title would
