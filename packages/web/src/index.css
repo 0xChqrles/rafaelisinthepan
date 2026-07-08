@@ -26,6 +26,7 @@
   --danger: #ff1f54;
   --hole: #ffc400; /* vivid gold for holes */
   --muted: #c4c9d8;
+  --flame: #ff8a3d; /* warm streak flame (#74); future milestone tiers swap this color */
 
   --pixel-font: 'Press Start 2P', monospace;
   --press: var(--pixel-font);
@@ -989,12 +990,10 @@ button * {
 .share-key.copied {
   color: var(--accent);
 }
-/* Countdown to the next puzzle (the day flip) and the streak line (#56), under the
-   score/share row — the solved screen's muted footer lines. Both fade/rise with the same
-   timing as .solved-actions (the JS toggles the shared `.in` at the same moment); tabular
-   digits so the ticking countdown seconds never wobble the line. */
-.next-puzzle,
-.streak-line {
+/* Countdown to the next puzzle (the day flip), under the score/share row — a muted footer
+   line. Fades/rises with the same timing as .solved-actions (the JS toggles the shared
+   `.in` at the same moment); tabular digits so the ticking seconds never wobble the line. */
+.next-puzzle {
   margin: 0;
   font-family: var(--press);
   font-size: 11px;
@@ -1006,10 +1005,120 @@ button * {
   transform: translateY(8px);
   transition: opacity 0.35s ease-out, transform 0.35s ease-out;
 }
-.next-puzzle.in,
-.streak-line.in {
+.next-puzzle.in {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* Streak block (#56/#74): the flame + STREAK/BEST line, and on a clean week the 7-day
+   Duolingo-style row below it. The BLOCK rides the shared fade/rise (`.in`); the reduced-
+   motion rule already collapses the transition. */
+.streak-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.35s ease-out, transform 0.35s ease-out;
+}
+.streak-block.in {
+  opacity: 1;
+  transform: translateY(0);
+}
+/* The flame + STREAK n · BEST m line (same muted pixel styling as .next-puzzle, now a flex
+   row so the flame sits beside the text). */
+.streak-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  font-family: var(--press);
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 1px;
+  font-variant-numeric: tabular-nums;
+}
+/* The detailed hero flame on the solved-screen streak line. Flames are the on-screen
+   keyboard's sibling exception to the "size lives in the SVG at 3×" rule: they appear at
+   several sizes across screens, so their .svgs carry NO width/height and CSS sizes them —
+   and their warm tint comes from `color` (currentColor), so a milestone PR is a color swap.
+   crispEdges keeps the pixels sharp (the SVGs are not tagged .pixel-icon). */
+.streak-flame {
+  display: block;
+  flex: none;
+  width: auto;
+  height: 26px;
+  color: var(--flame);
+  shape-rendering: crispEdges;
+}
+
+/* The Monday-based weekly streak row (#74): 7 fixed-width day columns, each a weekday
+   initial over a mark slot (the small flame on a solved day). Decorative (aria-hidden). */
+.week-row {
+  display: flex;
+  gap: 6px;
+}
+.week-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 22px;
+}
+.week-label {
+  font-family: var(--press);
+  font-size: 8px;
+  line-height: 1;
+  color: var(--muted);
+  opacity: 0.6;
+}
+/* A fixed square so solved (flame) and empty days keep the row perfectly aligned. Empty +
+   future days show a faint dot placeholder; today's slot is ringed. */
+.week-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: var(--surface);
+}
+.week-cell.today .week-mark {
+  box-shadow: inset 0 0 0 2px var(--flame);
+}
+.week-cell.future .week-mark {
+  opacity: 0.4;
+}
+.week-flame {
+  display: block;
+  width: auto;
+  height: 15px;
+  color: var(--flame);
+  shape-rendering: crispEdges;
+}
+
+/* Streak stat below the archive calendar (#74): a small flame + STREAK n · BEST m, muted
+   and centered, in the same pixel style as the solved-screen line. */
+.archive-streak {
+  display: inline-flex;
+  align-self: center;
+  align-items: center;
+  gap: 7px;
+  margin: 16px 0 0;
+  font-family: var(--press);
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 1px;
+  font-variant-numeric: tabular-nums;
+}
+.archive-flame {
+  display: block;
+  flex: none;
+  width: auto;
+  height: 16px;
+  color: var(--flame);
+  shape-rendering: crispEdges;
 }
 
 /* --- on-screen keyboard (issue #36): replaces the native mobile keyboard --- */

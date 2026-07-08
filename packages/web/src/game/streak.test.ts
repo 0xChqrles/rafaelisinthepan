@@ -8,7 +8,13 @@
 //     for — it makes a future cross-device merge a union + recompute).
 
 import { describe, it, expect } from 'vitest';
-import { currentStreak, bestStreak } from './streak';
+import { currentStreak, bestStreak, weekView } from './streak';
+
+// 2024-01-01 is a MONDAY; its dayNumber is a clean anchor for the Monday-based week math.
+const MON = Math.floor(Date.UTC(2024, 0, 1) / 86_400_000);
+const TUE = MON + 1;
+const WED = MON + 2;
+const SUN = MON + 6;
 
 describe('currentStreak', () => {
   it('is 0 for an empty set', () => {
@@ -82,5 +88,52 @@ describe('merge-friendliness — the reason the day-set shape exists', () => {
     const union = [...A, ...B];
     expect(bestStreak(union)).toBe(4);
     expect(currentStreak(union, 12)).toBe(3);
+  });
+});
+
+describe('weekView — the Monday-based weekly row (#74)', () => {
+  it('returns 7 cells, Monday-first, for the week containing the active day', () => {
+    const { cells } = weekView([WED], WED);
+    expect(cells).toHaveLength(7);
+    expect(cells[0].dayNumber).toBe(MON); // Monday first
+    expect(cells[6].dayNumber).toBe(SUN); // Sunday last
+  });
+
+  it('anchors the same week from ANY day in it (Monday, mid-week, and Sunday)', () => {
+    // A Sunday active day still belongs to the Monday-starting week (not the next one).
+    expect(weekView([MON], MON).cells[0].dayNumber).toBe(MON);
+    expect(weekView([WED], WED).cells[0].dayNumber).toBe(MON);
+    expect(weekView([SUN], SUN).cells[0].dayNumber).toBe(MON);
+  });
+
+  it('flags solved / today / future correctly on a clean partial week', () => {
+    // First solve Monday, played through Wednesday (today); Thu..Sun still to come.
+    const { clean, cells } = weekView([MON, TUE, WED], WED);
+    expect(clean).toBe(true);
+    expect(cells.map((c) => c.solved)).toEqual([true, true, true, false, false, false, false]);
+    expect(cells.map((c) => c.isFuture)).toEqual([false, false, false, true, true, true, true]);
+    expect(cells.find((c) => c.isToday)?.dayNumber).toBe(WED);
+  });
+
+  it('a full solved week is clean, all solved, none future', () => {
+    const days = [MON, TUE, WED, MON + 3, MON + 4, MON + 5, SUN];
+    const { clean, cells } = weekView(days, SUN);
+    expect(clean).toBe(true);
+    expect(cells.every((c) => c.solved)).toBe(true);
+    expect(cells.some((c) => c.isFuture)).toBe(false);
+  });
+
+  it('a MISSED elapsed day on/after the first solve breaks clean', () => {
+    // First solve Monday, today Wednesday, but Tuesday was missed -> not clean.
+    const { clean } = weekView([MON, WED], WED);
+    expect(clean).toBe(false);
+  });
+
+  it('pre-start days do NOT break clean — a mid-week newcomer still gets the row', () => {
+    // First-ever solve is Wednesday: Mon/Tue are elapsed + unsolved but BEFORE the first
+    // solve, so they are ignored, and the week stays clean.
+    const { clean, cells } = weekView([WED], WED);
+    expect(clean).toBe(true);
+    expect(cells.slice(0, 2).every((c) => !c.solved && !c.isFuture)).toBe(true); // Mon/Tue empty, not missed
   });
 });

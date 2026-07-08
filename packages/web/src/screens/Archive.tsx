@@ -7,6 +7,7 @@ import { pathForLang, pathForDay, type LangCode } from '../langs';
 import { FIRST_PUZZLE_DATE } from '../config';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
 import { statusOf, srStatus, type Status } from '../state/status';
+import { currentStreak, bestStreak } from '../game/streak';
 import { t } from '../i18n';
 import {
   yearMonthOf,
@@ -19,6 +20,10 @@ import {
 // Inline SVG (vite-plugin-svgr): renders into the DOM and paints with currentColor, so
 // it inherits the header control's tint. Decorative — the button's aria-label names it.
 import CloseIcon from '../assets/icons/close.svg?react';
+import FlameSmall from '../assets/icons/flame.svg?react';
+
+// Stable empty reference so the zustand selector never returns a fresh array (render churn).
+const NO_SOLVED_DAYS: number[] = [];
 
 // The locale's first weekday (0 = Sunday … 6 = Saturday). Prefers Intl's `weekInfo`
 // (fr weeks start Monday, en-US Sunday); falls back to a per-language default where it
@@ -43,6 +48,7 @@ function firstDayOfWeek(lang: string): number {
 // progress / not started) is read from the persisted rounds — device-local, as intended.
 export default function Archive({ lang }: { lang: LangCode }) {
   const rounds = useGameStore((s) => s.rounds);
+  const solvedDays = useGameStore((s) => s.solvedDays[lang] ?? NO_SOLVED_DAYS);
 
   // The window of playable days: [FIRST_PUZZLE_DATE, the client's active game day]. Both
   // are ISO labels, so cells compare against them by string order (offset-free).
@@ -84,6 +90,12 @@ export default function Archive({ lang }: { lang: LangCode }) {
   );
 
   const cells = useMemo(() => monthGrid(current, weekStart), [current, weekStart]);
+
+  // Streak stat below the calendar (#74): derived from the per-language solved-day set,
+  // never a stored counter. Hidden until there is at least one solved day (best > 0).
+  const activeDay = useMemo(() => dayNumber(today), [today]);
+  const streak = currentStreak(solvedDays, activeDay);
+  const best = bestStreak(solvedDays);
 
   return (
     <div className="archive">
@@ -157,6 +169,18 @@ export default function Archive({ lang }: { lang: LangCode }) {
           )}
         </div>
       </div>
+
+      {/* Streak stat below the calendar (#74): a small flame + STREAK n · BEST m for this
+          language. Muted, understated — the flame reward moment lives on the solved screen.
+          The stat carries its own value for assistive tech (the flame is decorative). */}
+      {best > 0 && (
+        <p className="archive-streak">
+          <FlameSmall className="archive-flame" aria-hidden />
+          <span>
+            {t(lang, 'streak')} {streak} · {t(lang, 'best')} {best}
+          </span>
+        </p>
+      )}
     </div>
   );
 }

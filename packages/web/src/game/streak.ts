@@ -28,6 +28,52 @@ export function currentStreak(days: number[], activeDay: number): number {
   return run;
 }
 
+// One cell of the weekly streak row (#74).
+export interface WeekCell {
+  dayNumber: number;
+  solved: boolean;
+  isToday: boolean; // the active day (just solved on the solved screen)
+  isFuture: boolean; // after the active day — not yet playable
+}
+
+export interface WeekView {
+  // Whether the current week is "clean so far" — no elapsed day on/after the player's
+  // first-ever solve is unsolved. The Duolingo-style row is shown ONLY when clean.
+  clean: boolean;
+  cells: WeekCell[]; // exactly 7, Monday..Sunday
+}
+
+// Monday-based weekday index (0 = Mon … 6 = Sun) of a dayNumber. dayNumber is whole days
+// since the Unix epoch at UTC midnight, so getUTCDay of that instant is the calendar
+// weekday; remap Sunday (0) to the Monday-first order. DST-safe — no local time involved.
+function mondayIndex(dayNumber: number): number {
+  const dow = new Date(dayNumber * 86_400_000).getUTCDay(); // 0 = Sun … 6 = Sat
+  return (dow + 6) % 7; // 0 = Mon … 6 = Sun
+}
+
+// The current week (the Monday..Sunday that contains `activeDay`, #74) as 7 cells, plus
+// whether it is "clean so far": every elapsed day (<= activeDay) that is on/after the
+// player's FIRST-ever solve is solved. Days BEFORE the first solve are ignored — a
+// mid-week newcomer still has a clean week (decided 2026-07-08). Pure over the day array,
+// like the counters, so it stays correct under any future set union.
+export function weekView(days: number[], activeDay: number): WeekView {
+  const sorted = normalize(days);
+  const solvedSet = new Set(sorted);
+  const firstSolve = sorted.length > 0 ? sorted[0] : Infinity;
+  const weekStart = activeDay - mondayIndex(activeDay); // this week's Monday
+  let clean = true;
+  const cells: WeekCell[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = weekStart + i;
+    const solved = solvedSet.has(d);
+    const isFuture = d > activeDay;
+    cells.push({ dayNumber: d, solved, isToday: d === activeDay, isFuture });
+    // A "miss" = an elapsed day, on/after the player's first solve, left unsolved.
+    if (!isFuture && d >= firstSolve && !solved) clean = false;
+  }
+  return { clean, cells };
+}
+
 // The longest consecutive run ANYWHERE in the retained set, independent of the active day.
 // Empty set -> 0, a single day -> 1. NOTE: this is "best within retained history", not a
 // literally-forever best — solvedDays is bounded to the most recent MAX_SOLVED_DAYS per

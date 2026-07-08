@@ -5,9 +5,14 @@ import { heatColor, secondsUntilNextReset } from '@whippin/shared';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import useToday from '../hooks/useToday';
 import { useGameStore } from '../state/gameStore';
-import { currentStreak, bestStreak } from '../game/streak';
+import { currentStreak, bestStreak, weekView, type WeekCell } from '../game/streak';
 import { track } from '../analytics';
 import { t } from '../i18n';
+// Inline SVG (vite-plugin-svgr): renders into the DOM so it paints with currentColor —
+// the flame's warm tint comes from CSS (`color`), so a future milestone PR is a color swap
+// (#74). The detailed flame is the solved-screen hero; the small one marks weekly days.
+import FlameDetailed from '../assets/icons/flame-detailed.svg?react';
+import FlameSmall from '../assets/icons/flame.svg?react';
 
 // Stable empty reference so the zustand selector below never returns a fresh array (which
 // would churn renders) when a language has no solved days yet.
@@ -126,6 +131,8 @@ export default function SolvedScreen({
   const streak = currentStreak(solvedDays, activeDay);
   const best = bestStreak(solvedDays);
   const showStreak = dayNumber != null && isActiveDay && streak > 0;
+  // The Monday-based weekly row is shown only on a "clean week so far" (#74).
+  const week = useMemo(() => weekView(solvedDays, activeDay), [solvedDays, activeDay]);
 
   // "COPIED" confirmation after a clipboard fallback (the native share sheet needs none).
   const [copied, setCopied] = useState(false);
@@ -235,13 +242,20 @@ export default function SolvedScreen({
         )}
       </div>
 
-      {/* Streak (#56): STREAK n · BEST m, under the score/share row. Muted pixel line,
-          rides the same fade/rise as the row. Only for a streak-eligible solve (active
-          day, real dayNumber) — an archive replay and a ?puzzle= override show none. */}
+      {/* Streak (#56/#74): the flame + STREAK n · BEST m line and, on a clean week, the
+          Duolingo-style 7-day row — under the score/share row, riding the same fade/rise.
+          Only for a streak-eligible solve (active day, real dayNumber); an archive replay
+          and a ?puzzle= override show none. */}
       {showStreak && (
-        <p className={`streak-line${showActions ? ' in' : ''}`}>
-          {t(lang, 'streak')} {streak} · {t(lang, 'best')} {best}
-        </p>
+        <div className={`streak-block${showActions ? ' in' : ''}`}>
+          <p className="streak-line">
+            <FlameDetailed className="streak-flame" aria-hidden />
+            <span>
+              {t(lang, 'streak')} {streak} · {t(lang, 'best')} {best}
+            </span>
+          </p>
+          {week.clean && <WeekRow cells={week.cells} lang={lang} />}
+        </div>
       )}
 
       {/* The "come back" hook: a live countdown to the day flip, under the score/share
@@ -253,6 +267,41 @@ export default function SolvedScreen({
           {t(lang, 'nextPuzzleIn')} {formatHMS(nextIn)}
         </p>
       )}
+    </div>
+  );
+}
+
+// Monday-first narrow weekday initials, localized (en: M T W T F S S; fr: L M M J V S D).
+// Generated via Intl like the archive's weekday header, but FORCED to a Monday start — the
+// weekly row is Monday-based for every language (decided 2026-07-08), not the locale's own
+// first day. 2024-01-01 is a Monday, so offset it 0..6 (UTC, to match the date math).
+function mondayNarrowLabels(lang: string): string[] {
+  const fmt = new Intl.DateTimeFormat(lang, { weekday: 'narrow', timeZone: 'UTC' });
+  return Array.from({ length: 7 }, (_, i) => fmt.format(new Date(Date.UTC(2024, 0, 1 + i))));
+}
+
+// The Monday-based weekly streak row (#74), Duolingo-style: the 7 days Mon..Sun of the
+// current week, shown only on a clean week (see weekView). DECORATIVE (aria-hidden) — the
+// streak line above already announces the count, same rationale as the heat grid. A solved
+// day shows the small flame; today is emphasized; future + pre-start days stay empty.
+function WeekRow({ cells, lang }: { cells: WeekCell[]; lang: string }) {
+  const labels = useMemo(() => mondayNarrowLabels(lang), [lang]);
+  return (
+    <div className="week-row" aria-hidden="true">
+      {cells.map((c, i) => (
+        <div
+          key={c.dayNumber}
+          className={
+            'week-cell' +
+            (c.solved ? ' solved' : '') +
+            (c.isToday ? ' today' : '') +
+            (c.isFuture ? ' future' : '')
+          }
+        >
+          <span className="week-label">{labels[i]}</span>
+          <span className="week-mark">{c.solved && <FlameSmall className="week-flame" />}</span>
+        </div>
+      ))}
     </div>
   );
 }
