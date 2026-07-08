@@ -6,7 +6,6 @@ import useVocab from '../hooks/useVocab';
 import { useGameStore, roundKeyForDay, holesMatchPuzzle } from '../state/gameStore';
 import Phrase from '../components/Phrase';
 import ProgressBar from '../components/ProgressBar';
-import TopBar from '../components/TopBar';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import SolvedScreen from '../components/SolvedScreen';
@@ -15,13 +14,8 @@ import LoadError from '../components/LoadError';
 import { HIT_FADE_MS } from '../components/FloatingHit';
 import { t, srHoleResult } from '../i18n';
 import { track } from '../analytics';
-import { navigate } from '../routing';
-import { pathForArchive } from '../langs';
 import { fold } from '@whippin/shared';
 import type { HitState, Hole, Puzzle, RankEntry, RankMap, RuntimeHole, Source } from '@whippin/shared';
-// Inline SVG (vite-plugin-svgr): renders into the DOM, paints with currentColor. The
-// calendar entry into the archive (#55); decorative glyph, the button's aria-label names it.
-import CalendarIcon from '../assets/icons/calendar.svg?react';
 
 // Feedback shown under the input. Only INVALID words use it now (red shake +
 // "does not exist"); a valid-but-too-far guess gives per-hole "MISS" feedback
@@ -48,19 +42,18 @@ const OVERRIDE_NONCE = Math.random().toString(36).slice(2);
 
 // Wrapper: drives the single puzzle. Loads the language's fixed vocabulary
 // (existence set + keyboard prefix set) before playing — existence is decided by it,
-// not by ranks. `onHelp` (optional) replays the onboarding tutorial from the HUD.
+// not by ranks. The header lives ABOVE this (GameRoute), so Game renders only the game
+// body (progress-bar row + play + tray) under the fixed header.
 export default function Game({
   puzzle,
   dayNumber,
   isActiveDay = true,
-  onHelp,
 }: {
   puzzle: Puzzle;
   dayNumber: number | null;
   // Whether this is the client's active day (false when replaying an archive day, #55):
   // gates the solved-screen countdown and tags the solve-analytics `archive` prop.
   isActiveDay?: boolean;
-  onHelp?: () => void;
 }) {
   const { vocab, error, retry } = useVocab(puzzle.lang);
 
@@ -80,7 +73,6 @@ export default function Game({
       lang={puzzle.lang}
       dayNumber={dayNumber}
       isActiveDay={isActiveDay}
-      onHelp={onHelp}
     />
   );
 }
@@ -97,7 +89,6 @@ function Round({
   lang,
   dayNumber,
   isActiveDay,
-  onHelp,
 }: {
   words: string[];
   puzzleHoles: Hole[];
@@ -108,7 +99,6 @@ function Round({
   lang: string;
   dayNumber: number | null;
   isActiveDay: boolean;
-  onHelp?: () => void;
 }) {
   // Fresh per-hole state derived from the puzzle. Used until the persisted store
   // reconciles to this round, and as the reset state on a new day/language.
@@ -360,40 +350,10 @@ function Round({
         {announce}
       </div>
 
-      {/* App header pinned to the top: language flag left, the day's puzzle id
-          centered, help right. The progress bar gets its own FULL-WIDTH row below it,
-          so nothing squeezes it on mobile. Bar WIDTH = the reconstruction value;
-          COLOR follows progress. */}
-      <TopBar
-        lang={lang}
-        center={
-          dayNumber != null ? (
-            <span className="topbar-title" aria-hidden="true">
-              #{dayNumber}
-            </span>
-          ) : undefined
-        }
-        right={
-          <div className="topbar-right">
-            {/* Into the archive calendar (#55) — past days, one tap from the game. */}
-            <button
-              type="button"
-              className="home-btn archive-btn"
-              aria-label={t(lang, 'ariaArchive')}
-              onClick={() => navigate(pathForArchive(lang))}
-            >
-              <CalendarIcon className="topbar-cal-icon" aria-hidden />
-            </button>
-            {/* Replays the onboarding tutorial (#51) on demand — help is never more than
-                one tap away, but it stays out of the way. */}
-            {onHelp && (
-              <button type="button" className="home-btn help-btn" aria-label={t(lang, 'ariaHelp')} onClick={onHelp}>
-                ?
-              </button>
-            )}
-          </div>
-        }
-      />
+      {/* The header (flag / day id / archive + help) is rendered by GameRoute ABOVE this,
+          so it stays put across the route's states. The progress bar gets its own
+          FULL-WIDTH row just below that fixed header — nothing squeezes it on mobile.
+          Bar WIDTH = the reconstruction value; COLOR follows progress. */}
       <div className="hud">
         <ProgressBar value={progress} />
       </div>

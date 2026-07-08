@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { activeDate } from '@whippin/shared';
+import { activeDate, dayNumber as dayNumberFor } from '@whippin/shared';
 import usePuzzle from './hooks/usePuzzle';
 import LanguageSelect from './screens/LanguageSelect';
 import Archive from './screens/Archive';
 import Game from './screens/Game';
+import TopBar from './components/TopBar';
 import LoadError from './components/LoadError';
 import NoPuzzle from './components/NoPuzzle';
 import Tutorial from './tutorial/Tutorial';
@@ -11,8 +12,11 @@ import Invite from './tutorial/Invite';
 import { useGameStore } from './state/gameStore';
 import { track } from './analytics';
 import { useLocation, navigate } from './routing';
-import { parseRoute, resolveHomeLang, pathForLang, type LangCode } from './langs';
+import { parseRoute, resolveHomeLang, pathForLang, pathForArchive, type LangCode } from './langs';
 import { t } from './i18n';
+// Inline SVG (vite-plugin-svgr): the calendar entry into the archive (#55) — decorative
+// glyph, the button's aria-label names it.
+import CalendarIcon from './assets/icons/calendar.svg?react';
 
 export default function App() {
   const pathname = useLocation();
@@ -54,8 +58,10 @@ export default function App() {
 
 // One puzzle route: /<lang> plays today's puzzle, /<lang>/<date> replays a past archive
 // day (#55). Loads the day's puzzle for the language and records it as the last-played
-// one. There is no header until the puzzle loads — Game owns the HUD (flag + progress
-// bar), so it always shows the loaded puzzle's language.
+// one. The header (TopBar) is rendered HERE — above every transient state (loading /
+// error / noPuzzle) and the loaded Game alike — so it stays put while only the body swaps
+// (a navigation into a game never blinks the header, matching the archive direction). The
+// game body owns just its progress-bar row + play area below the fixed header.
 function GameRoute({ lang, date }: { lang: LangCode; date?: string }) {
   const { puzzle, dayNumber, error, loading, noPuzzle, retry } = usePuzzle(lang, date);
   const setLastLang = useGameStore((s) => s.setLastLang);
@@ -118,22 +124,53 @@ function GameRoute({ lang, date }: { lang: LangCode; date?: string }) {
     );
   }
 
+  // The header's day id (#N). Derived from the ROUTE (not the loaded puzzle) so it is
+  // stable from the first frame — the same value usePuzzle resolves to — and shows even
+  // while the body still loads. A ?puzzle= override has no real day, so no id (as before).
+  const headerDay = hasOverride ? null : dayNumberFor(date ?? activeDate(new Date()));
+
   return (
     <>
-      {/* The header (HUD) only exists once a puzzle is loaded — Game renders it itself
-          (flag + progress bar). The transient states below are header-less: loading /
-          error show a bare status, and `noPuzzle` shows its own CHANGE LANGUAGE screen. */}
+      {/* One persistent header for the whole route: flag (language screen) / the day's id
+          / the archive + help controls. It renders in EVERY state below — loading, error,
+          the missing-puzzle screen, and the loaded game — so navigating into a game never
+          blinks the header away; only the body under it refreshes. */}
+      <TopBar
+        lang={lang}
+        center={
+          headerDay != null ? (
+            <span className="topbar-title" aria-hidden="true">
+              #{headerDay}
+            </span>
+          ) : undefined
+        }
+        right={
+          <div className="topbar-right">
+            {/* Into the archive calendar (#55) — past days, one tap from the game. */}
+            <button
+              type="button"
+              className="home-btn archive-btn"
+              aria-label={t(lang, 'ariaArchive')}
+              onClick={() => navigate(pathForArchive(lang))}
+            >
+              <CalendarIcon className="topbar-cal-icon" aria-hidden />
+            </button>
+            {/* Replays the onboarding tutorial (#51) on demand — one tap, out of the way. */}
+            <button
+              type="button"
+              className="home-btn help-btn"
+              aria-label={t(lang, 'ariaHelp')}
+              onClick={() => openTutorial('replay')}
+            >
+              ?
+            </button>
+          </div>
+        }
+      />
       {loading && <p className="status">{t(lang, 'loading')}</p>}
       {error !== null && <LoadError message={t(lang, 'failedPuzzle')} lang={lang} onRetry={retry} />}
       {noPuzzle && <NoPuzzle lang={lang} />}
-      {puzzle && (
-        <Game
-          puzzle={puzzle}
-          dayNumber={dayNumber}
-          isActiveDay={isActiveDay}
-          onHelp={() => openTutorial('replay')}
-        />
-      )}
+      {puzzle && <Game puzzle={puzzle} dayNumber={dayNumber} isActiveDay={isActiveDay} />}
     </>
   );
 }

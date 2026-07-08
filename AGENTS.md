@@ -548,9 +548,15 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   flag (language) left, a centered title, a right-hand control — full-bleed with a
   thin `--surface` bottom border separating it from the app; the **progress bar sits
   in its own full-width row below it** (no more flag/`?` squeezing the bar on
-  mobile). The game fills it with the day's puzzle id (`#<dayNumber>`) + help `?`;
-  the tutorial fills it with "TUTORIAL" + the skip fast-forward. The flag ALWAYS
-  opens the language screen. The topbar is the extension point for future chrome
+  mobile). The game fills it with the day's puzzle id (`#<dayNumber>`) + a right group
+  of the **archive calendar icon** and help `?` (#55); the tutorial fills it with
+  "TUTORIAL" + the skip fast-forward. The flag ALWAYS opens the language screen. The
+  game header is rendered by **`GameRoute` (App), NOT inside `Game`** (decided
+  2026-07-08): it wraps EVERY state of the route — loading / error / missing-puzzle /
+  the loaded game — so navigating into a game (e.g. from the archive) never blinks the
+  header away; only the body under the fixed header refreshes. Its `#<dayNumber>` is
+  derived from the ROUTE (`date ?? activeDate`), so it is correct from the first frame,
+  before the puzzle resolves. The topbar is the extension point for future chrome
   (streaks, stats, …).
 - **Language screen (redesigned 2026-07-06):** headed by the **logo** (blue pixel
   glyph, 3×/2× its native 22px — language-neutral, and the app's ONE in-app branding
