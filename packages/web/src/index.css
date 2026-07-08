@@ -329,43 +329,33 @@ button * {
   aspect-ratio: 1;
 }
 
-/* Solved-day ripple: a 6×6-pixel shading WAVE that expands from the centre outward, so a
-   solved (validated) day differs from an in-progress one by motion, not only color. The
-   cell rests at its base fill rgb(70,66,232) = progressColor(100); a band of 2 adjacent
-   rings DARKENS to each ring's own shade (--shade, one of the 6 radial levels, deepest =
-   rgb(52,21,143) at the edge) and travels outward. The 6 concentric rings (one <path>
-   each, innermost..outermost) are delayed by ring × dur/6, so the band expands and a new
-   wave leaves the centre before the last fades at the edge. crispEdges keeps the 1×1
-   pixels hard; the number paints above (z-index). */
+/* Solved-day ripple: the shading WAVE that marks a solved (validated) day so it differs
+   from an in-progress one by motion, not only color. It plays `ultracode.png` — a
+   horizontal sprite sheet of 14 square (12×12) frames — as a CSS background. `background-
+   size: 1400% 100%` scales the sheet so ONE frame fills the square cell; `steps(14)` then
+   walks `background-position-x` frame by frame. The end value is 100% × 14/13 so frame 13
+   lands exactly on 100% (each of the 14 frames shown 1/14 of the cycle, looping cleanly).
+   `image-rendering: pixelated` keeps the 12px pixels crisp; the number paints above. */
 .cal-ripple {
   position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-  shape-rendering: crispEdges;
-  --ripple-dur: 1.8s;
+  --ripple-dur: 1.5s;
+  background-image: url('./assets/ultracode.png');
+  background-repeat: no-repeat;
+  background-size: 1400% 100%;
+  image-rendering: pixelated;
+  animation: cal-ripple var(--ripple-dur) steps(14) infinite;
 }
-.cal-ripple-ring {
-  fill: rgb(70, 66, 232); /* base (= the cell fill) when the wave is elsewhere */
-  animation: cal-ripple var(--ripple-dur) step-end infinite backwards;
-  animation-delay: calc(var(--ring) * var(--ripple-dur) / 6);
-}
-/* Base for two-thirds of the cycle, then this ring's --shade for the last third; the
-   per-ring delay slides that "lit" third outward, and its 2/6 width overlaps neighbours
-   into a soft band. `backwards` shows the base (0%) during the stagger delay. */
 @keyframes cal-ripple {
-  0%,
-  66.66% {
-    fill: rgb(70, 66, 232);
+  from {
+    background-position-x: 0%;
   }
-  66.67%,
-  100% {
-    fill: var(--shade);
+  to {
+    background-position-x: calc(100% * 14 / 13); /* frame 13 lands on 100%; endpoint wraps */
   }
 }
 /* Motion is a progressive enhancement: reduced-motion users get the solid base fill
-   (solved still reads as its color + the aria-label), never a frozen dark frame. */
+   (solved still reads as its color + the aria-label), never a frozen frame. */
 @media (prefers-reduced-motion: reduce) {
   .cal-ripple {
     display: none;
