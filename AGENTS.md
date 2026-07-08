@@ -498,7 +498,13 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   any reconstruction (>0%) is FILLED with its `progressColor(pct)` (solved counts as
   **100%** — the ramp top, NOT the language-card gold), and its number is drawn in `--bg`
   so it reads on the fill; disabled and not-started/0% days keep the neutral surface +
-  number color. The solved-screen **NEXT PUZZLE IN** countdown is
+  number color. **A SOLVED day also RIPPLES (decided 2026-07-08):** a 6×6-pixel shading
+  wave (`CalRipple` in `Archive.tsx` + `.cal-ripple*` CSS) darkens outward from the cell
+  centre in 6 radial levels (`rgb(70,66,232)`=the base fill → `rgb(52,21,143)` at the
+  edge) and loops, so a validated day is distinguishable from an in-progress one by
+  MOTION, not only color (reduced-motion hides it → the static fill + aria-label carry it).
+  The calendar itself is **vertically centered** (`.archive` flex column, top padding
+  clears the fixed header). The solved-screen **NEXT PUZZLE IN** countdown is
   hidden when the played day ≠ the client's active day. Entry: a calendar icon in the
   game TopBar's right group; `dateForDayNumber` (`shared/day.ts`) is the `dayNumber`
   inverse. The **OG share page** (`backend/ogCard.ts` `renderShareHtml`) now click-throughs

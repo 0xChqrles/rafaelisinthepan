@@ -161,11 +161,60 @@ export default function Archive({ lang }: { lang: LangCode }) {
   );
 }
 
+// A SOLVED day gets a 6×6-pixel shading ripple so it is distinguishable from an
+// in-progress day by MOTION, not only color. The 36 pixels fall into 6 concentric rings by
+// distance from the centre; each ring is one SVG path. A shared 6-shade keyframe (lightest
+// = progressColor(100) = the cell's base fill, darkening to rgb(52,21,143)) runs on every
+// ring, delayed by its ring index — so the darkening front expands from the centre outward
+// and loops (a new wave leaves the middle before the previous fades at the edge). Computed
+// once at module load: innermost ring first, each ring -> a path of 1×1 pixels.
+const RIPPLE_RINGS: string[] = (() => {
+  const byDist = new Map<number, [number, number][]>();
+  for (let y = 0; y < 6; y += 1) {
+    for (let x = 0; x < 6; x += 1) {
+      const d2 = (x - 2.5) ** 2 + (y - 2.5) ** 2; // centre between pixels (even grid)
+      const cell = byDist.get(d2);
+      if (cell) cell.push([x, y]);
+      else byDist.set(d2, [[x, y]]);
+    }
+  }
+  return [...byDist.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, pixels]) => pixels.map(([x, y]) => `M${x} ${y}h1v1h-1z`).join(''));
+})();
+
+// The 6 shade levels by ring (radius): ring 0 = the base fill rgb(70,66,232) = progress-
+// Color(100) (an invisible flash at the centre), darkening in 5 even steps to rgb(52,21,143)
+// at the outer ring. The wave darkens as it expands, so each ring flashes its own shade.
+const RIPPLE_SHADES = [
+  'rgb(70, 66, 232)',
+  'rgb(66, 57, 214)',
+  'rgb(63, 48, 196)',
+  'rgb(59, 39, 179)',
+  'rgb(56, 30, 161)',
+  'rgb(52, 21, 143)',
+];
+
+function CalRipple() {
+  return (
+    <svg className="cal-ripple" viewBox="0 0 6 6" aria-hidden="true">
+      {RIPPLE_RINGS.map((d, ring) => (
+        <path
+          key={ring} // eslint-disable-line react/no-array-index-key
+          d={d}
+          className="cal-ripple-ring"
+          style={{ '--ring': ring, '--shade': RIPPLE_SHADES[ring] } as CSSProperties}
+        />
+      ))}
+    </svg>
+  );
+}
+
 // One day: a flat key that navigates to that day's game when in range, disabled (dimmed)
 // otherwise. A day with any reconstruction (>0%) is FILLED with its progress-ramp color
 // (solved = 100%), and its number is drawn in the app background color so it reads on the
-// fill; disabled and not-started/0% days stay the neutral surface. The aria-label speaks
-// the full date + status; the fill is decorative.
+// fill; disabled and not-started/0% days stay the neutral surface. A SOLVED day also
+// carries the shading ripple (see CalRipple). The aria-label speaks the full date + status.
 function DayCell({
   date,
   lang,
@@ -187,6 +236,7 @@ function DayCell({
   // progress is filled; disabled and 0% days keep the neutral surface + number color.
   const pct = status.kind === 'solved' ? 100 : status.kind === 'progress' ? status.pct : 0;
   const filled = inRange && pct > 0;
+  const solved = inRange && status.kind === 'solved';
   const className =
     'cal-day' +
     (inRange ? '' : ' cal-day-disabled') +
@@ -204,6 +254,8 @@ function DayCell({
       // (.cal-day-filled). Neutral days pass no style, so the surface default stands.
       style={filled ? ({ background: progressColor(pct) } as CSSProperties) : undefined}
     >
+      {/* A solved day ripples (motion differentiates it from an in-progress day). */}
+      {solved && <CalRipple />}
       <span className="cal-day-num">{day}</span>
     </button>
   );

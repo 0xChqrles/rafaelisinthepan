@@ -200,13 +200,18 @@ button * {
 /* ===================== archive calendar (issue #55) ===================== */
 /* A month of playable past days under the app header (no progress-bar row). Day cells are
    flat keys like the language cards / keyboard — surface tiles that brighten on hover /
-   press — carrying the same status language (gold solved, progress-ramp strip in
-   progress, plain surface not started). Sits below the fixed header (align-self flex-start
-   + padding clears it); a bounded month grid never needs to scroll on desktop. */
+   press — filled with the progress-ramp color (solved = 100%, and a solved day also
+   ripples; see .cal-ripple), plain surface when not started. The calendar is centered
+   vertically: .archive fills the app height as a flex column that centers .cal, with top
+   padding so the centering region starts BELOW the fixed header (the TopBar inside is
+   position:fixed, out of flow, so only .cal participates). */
 .archive {
   width: min(420px, 100%);
-  align-self: flex-start;
-  padding-top: 48px; /* + the .app 24px padding clears the fixed 56px header */
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-top: 56px;
 }
 
 /* Month navigation, clamped to [first puzzle month, current month] — the ‹ › ends dim
@@ -301,10 +306,10 @@ button * {
   color: var(--muted);
   cursor: default;
 }
-/* The active day, highlighted with an inset gold ring. */
+/* The active day, highlighted with an inset accent ring. */
 .cal-day-today {
-  outline: 4px solid var(--hole);
-  outline-offset: -4px;
+  outline: 3px solid var(--fg);
+  outline-offset: -3px;
 }
 /* Filled (>0% reconstruction): the fill color is inline (per-day % on the progress ramp);
    the number is drawn in the app background so it reads on the fill. Compound selector so
@@ -313,6 +318,8 @@ button * {
   color: var(--bg);
 }
 .cal-day-num {
+  position: relative; /* above the ripple */
+  z-index: 1;
   font-size: clamp(11.5px, 2.75vw, 15px);
   padding-top: var(--cap-shift);
   font-variant-numeric: tabular-nums;
@@ -320,6 +327,49 @@ button * {
 /* Empty leading cells so day 1 lands under its weekday column. */
 .cal-pad {
   aspect-ratio: 1;
+}
+
+/* Solved-day ripple: a 6×6-pixel shading WAVE that expands from the centre outward, so a
+   solved (validated) day differs from an in-progress one by motion, not only color. The
+   cell rests at its base fill rgb(70,66,232) = progressColor(100); a band of 2 adjacent
+   rings DARKENS to each ring's own shade (--shade, one of the 6 radial levels, deepest =
+   rgb(52,21,143) at the edge) and travels outward. The 6 concentric rings (one <path>
+   each, innermost..outermost) are delayed by ring × dur/6, so the band expands and a new
+   wave leaves the centre before the last fades at the edge. crispEdges keeps the 1×1
+   pixels hard; the number paints above (z-index). */
+.cal-ripple {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  shape-rendering: crispEdges;
+  --ripple-dur: 1.8s;
+}
+.cal-ripple-ring {
+  fill: rgb(70, 66, 232); /* base (= the cell fill) when the wave is elsewhere */
+  animation: cal-ripple var(--ripple-dur) step-end infinite backwards;
+  animation-delay: calc(var(--ring) * var(--ripple-dur) / 6);
+}
+/* Base for two-thirds of the cycle, then this ring's --shade for the last third; the
+   per-ring delay slides that "lit" third outward, and its 2/6 width overlaps neighbours
+   into a soft band. `backwards` shows the base (0%) during the stagger delay. */
+@keyframes cal-ripple {
+  0%,
+  66.66% {
+    fill: rgb(70, 66, 232);
+  }
+  66.67%,
+  100% {
+    fill: var(--shade);
+  }
+}
+/* Motion is a progressive enhancement: reduced-motion users get the solid base fill
+   (solved still reads as its color + the aria-label), never a frozen dark frame. */
+@media (prefers-reduced-motion: reduce) {
+  .cal-ripple {
+    display: none;
+  }
 }
 
 /* ===================== game screen ===================== */
@@ -1209,9 +1259,10 @@ button * {
     border-width: 2px;
   }
 
-  /* Archive: clear the compact (48px) mobile header; the grid already fits the width. */
+  /* Archive: the centering column carries over from the base rule; just clear the
+     compact (48px) mobile header. */
   .archive {
-    padding-top: 40px;
+    padding-top: 48px;
   }
 
   /* Language picker: tighter cards on a phone. */
