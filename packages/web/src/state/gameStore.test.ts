@@ -34,8 +34,11 @@ function activeRound() {
 }
 
 beforeEach(() => {
-  // Reset to a pristine store between tests (replace, keeping the actions).
-  useGameStore.setState({ rounds: {}, lastLang: null, onboarded: false, activeKey: null }, false);
+  // Reset to a pristine store between tests (merge, keeping the actions).
+  useGameStore.setState(
+    { rounds: {}, lastLang: null, onboarded: false, solvedDays: {}, activeKey: null },
+    false,
+  );
 });
 
 describe('roundKeyForDay', () => {
@@ -272,12 +275,64 @@ describe('onboarded — the tutorial flag (#51)', () => {
   });
 });
 
+describe('recordSolve — per-language solved-day set (#56)', () => {
+  const solved = (lang: string) => useGameStore.getState().solvedDays[lang];
+
+  it('inserts a solved day and keeps the array sorted + deduped', () => {
+    const { recordSolve } = useGameStore.getState();
+    recordSolve('fr', 12, 12); // solved today -> [12]
+    recordSolve('fr', 11, 12); // then yesterday (flip-edge, eligible) -> sorted back to [11, 12]
+    expect(solved('fr')).toEqual([11, 12]);
+  });
+
+  it('same-day double call is a no-op (re-solves / rehydration never double-count)', () => {
+    const { recordSolve } = useGameStore.getState();
+    recordSolve('fr', 12, 12);
+    recordSolve('fr', 12, 12);
+    expect(solved('fr')).toEqual([12]);
+  });
+
+  it('an older solvedDay (archive replay) is a no-op — never touches the streak', () => {
+    const { recordSolve } = useGameStore.getState();
+    recordSolve('fr', 12, 12);
+    recordSolve('fr', 5, 12); // an archive day (< activeDay - 1)
+    expect(solved('fr')).toEqual([12]);
+  });
+
+  it('the activeDay - 1 flip-edge case inserts (in-flight round finished just past 22:00)', () => {
+    const { recordSolve } = useGameStore.getState();
+    // The round is yesterday's (dayNumber 11) but the active day already flipped to 12.
+    recordSolve('fr', 11, 12);
+    expect(solved('fr')).toEqual([11]);
+  });
+
+  it('caps each language to MAX_SOLVED_DAYS, dropping the oldest', () => {
+    const CAP = 800;
+    // Seed CAP consecutive solved days directly, then solve one more past the active day.
+    const seeded = Array.from({ length: CAP }, (_, i) => i + 1); // 1..CAP
+    useGameStore.setState({ solvedDays: { fr: seeded } }, false);
+    useGameStore.getState().recordSolve('fr', CAP + 1, CAP + 1);
+    const days = solved('fr');
+    expect(days.length).toBe(CAP); // still capped
+    expect(days[0]).toBe(2); // oldest (day 1) evicted
+    expect(days[days.length - 1]).toBe(CAP + 1); // newest kept
+  });
+
+  it('is per-language — an fr solve does not touch en', () => {
+    const { recordSolve } = useGameStore.getState();
+    recordSolve('fr', 12, 12);
+    expect(solved('fr')).toEqual([12]);
+    expect(solved('en')).toBeUndefined();
+  });
+});
+
 describe('migratePersisted — persisted-blob upgrades', () => {
   it('discards a v0 blob entirely (one-time reset)', () => {
     expect(migratePersisted({ roundKey: 'x', holes: [] }, 0)).toEqual({
       rounds: {},
       lastLang: null,
       onboarded: false,
+      solvedDays: {},
     });
   });
 
@@ -300,8 +355,21 @@ describe('migratePersisted — persisted-blob upgrades', () => {
 
   it('drops retired fields (v1 keyboard layout) while keeping the current ones', () => {
     const out = migratePersisted({ rounds: {}, lastLang: 'en', layout: 'azerty' }, 1);
-    expect(out).toEqual({ rounds: {}, lastLang: 'en', onboarded: true });
+    expect(out).toEqual({ rounds: {}, lastLang: 'en', onboarded: true, solvedDays: {} });
     expect('layout' in out).toBe(false);
+  });
+
+  it('v2 -> v3 adds an empty solvedDays and preserves rounds/lastLang/onboarded', () => {
+    const rounds = { 'd:5:fr': { holes: freshHoles(), guessCount: 2, tried: ['a', 'b'], progress: 10 } };
+    const out = migratePersisted({ rounds, lastLang: 'fr', onboarded: true }, 2);
+    expect(out).toEqual({ rounds, lastLang: 'fr', onboarded: true, solvedDays: {} });
+  });
+
+  it('keeps an existing solvedDays across the upgrade (no backfill, but no data loss)', () => {
+    const solvedDays = { fr: [10, 11], en: [10] };
+    expect(migratePersisted({ rounds: {}, lastLang: 'fr', onboarded: true, solvedDays }, 2).solvedDays).toEqual(
+      solvedDays,
+    );
   });
 });
 

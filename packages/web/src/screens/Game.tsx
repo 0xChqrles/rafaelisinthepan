@@ -3,6 +3,7 @@ import { computeProgress } from '../game/scoring';
 import { progressTrajectory } from '../game/share';
 import { canExtend } from '../game/keyboard';
 import useVocab from '../hooks/useVocab';
+import useToday from '../hooks/useToday';
 import { useGameStore, roundKeyForDay, holesMatchPuzzle } from '../state/gameStore';
 import Phrase from '../components/Phrase';
 import ProgressBar from '../components/ProgressBar';
@@ -125,6 +126,12 @@ function Round({
   const recordGuess = useGameStore((s) => s.recordGuess);
   const improveHole = useGameStore((s) => s.improveHole);
   const syncProgress = useGameStore((s) => s.syncProgress);
+  const recordSolve = useGameStore((s) => s.recordSolve);
+
+  // The client's active game day (local, DST-correct) — the streak's reference point. May
+  // be dayNumber + 1 when an in-flight round is finished just past the 22:00 flip; the
+  // store's recordSolve resolves that flip-edge case (and refuses archive replays).
+  const todayDayNumber = useToday();
 
   // Reconcile before paint: a matching key rehydrates the stored progress, a new key
   // (new day OR new language) resets to freshHoles. useLayoutEffect commits the reset
@@ -212,6 +219,14 @@ function Round({
     // replayed past day ('yes', #55) from the live daily puzzle ('no').
     if (dayNumber != null) {
       track('solve', { lang, tries: guessCount, day: dayNumber, archive: isActiveDay ? 'no' : 'yes' });
+      // Streak (#56): only an ACTIVE-DAY solve counts — archive replays must not touch the
+      // streak. The gate lives HERE, not in the store: recordSolve's activeDay-1 tolerance
+      // (the genuine flip-edge — an undated tab finished just past 22:00) is
+      // INDISTINGUISHABLE from deliberately opening /<lang>/<yesterday>, since both have
+      // solvedDay === activeDay - 1. Only the caller knows which route this is — the undated
+      // active route keeps isActiveDay true across the flip, a dated past route is false —
+      // so the flip-edge still records while an archive-yesterday solve does not.
+      if (isActiveDay) recordSolve(lang, dayNumber, todayDayNumber);
     }
     const t = window.setTimeout(() => setShowResults(true), LAST_HOLE_SETTLE_MS);
     return () => window.clearTimeout(t);
