@@ -194,7 +194,8 @@ function DayCell({
     'cal-day' +
     (inRange ? '' : ' cal-day-disabled') +
     (isToday ? ' cal-day-today' : '') +
-    (filled ? ' cal-day-filled' : '');
+    (filled ? ' cal-day-filled' : '') +
+    (solved ? ' cal-day-solved' : '');
   return (
     <button
       type="button"

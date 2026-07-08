@@ -317,6 +317,11 @@ button * {
 .cal-day.cal-day-filled {
   color: var(--bg);
 }
+/* A COMPLETE (solved) day keeps its number in --fg — legible over the darker frames of
+   the ripple. Placed after .cal-day-filled (same specificity) so it wins for solved days. */
+.cal-day.cal-day-solved {
+  color: var(--fg);
+}
 .cal-day-num {
   position: relative; /* above the ripple */
   z-index: 1;
