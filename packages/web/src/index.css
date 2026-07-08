@@ -902,10 +902,15 @@ button * {
    cold-to-hot trail. Wraps within the keyboard's width for longer games. */
 .heat-grid {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
+  align-items: center;
   gap: 5px;
-  max-width: 100%;
+  /* Always a SINGLE centered row (never wraps). The row hugs its content up to `--n` cells
+     at the 22px cap — so a short 3-square game is a tidy centered cluster, not a sparse
+     full-width row — and on a narrow screen the cells SHRINK to fit one line instead of
+     wrapping to a ragged second row. `--n` (the square count) is set inline; the row is
+     centered in the results column by .solved-results. */
+  width: 100%;
+  max-width: calc(var(--n) * 22px + (var(--n) - 1) * 5px);
 }
 /* Squares roll in ONE BY ONE as neutral surface tiles, then colorize ONE BY ONE. Driven by
    two class flips on .heat-grid (JS): `.shown` reveals each tile on its staggered --show-delay;
@@ -913,8 +918,8 @@ button * {
    to its heat color on its staggered --color-delay. Near-zero durations keep the pixel-art snap
    (no smooth fade); the per-cell delays produce the two left-to-right waves. */
 .heat-cell {
-  width: clamp(14px, 2.4vh, 20px);
-  height: clamp(14px, 2.4vh, 20px);
+  flex: 1 1 0;
+  aspect-ratio: 1;
   image-rendering: pixelated;
   opacity: 0;
   background-color: var(--surface-hover); /* shown uncolored first, until it colorizes */

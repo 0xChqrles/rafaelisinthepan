@@ -166,6 +166,23 @@ export default function SolvedScreen({
 
   return (
     <div className="solved-results">
+      {/* Streak (#56/#74): the flame + STREAK n line and, on a clean week, the bigger
+          Duolingo-style 7-day row — at the TOP; the heat squares stay grouped with the
+          score/share below, as they describe the same result (decided 2026-07-09). Rides
+          the shared fade/rise. Only for a streak-eligible solve (active day, real
+          dayNumber); an archive replay and a ?puzzle= override show none. */}
+      {showStreak && (
+        <div className={`streak-block${showActions ? ' in' : ''}`}>
+          <p className="streak-line">
+            <FlameDetailed className="streak-flame" aria-hidden />
+            <span>
+              {t(lang, 'streak')} {streak}
+            </span>
+          </p>
+          {week.clean && <WeekRow cells={week.cells} lang={lang} />}
+        </div>
+      )}
+
       {/* One flat square per bucket (3..18). AFTER the score is shown, neutral surface tiles
           roll in one by one (.shown + staggered --show-delay), then each colorizes to its
           bucket's MEAN reconstruction % one by one (.colorized + staggered --color-delay).
@@ -175,6 +192,8 @@ export default function SolvedScreen({
       <div
         className={`heat-grid${gridShown ? ' shown' : ''}${gridColorized ? ' colorized' : ''}`}
         aria-hidden="true"
+        // --n (square count) sizes the row so it hugs its content and never wraps (see CSS).
+        style={{ '--n': n } as CSSProperties}
       >
         {squares.map((pct, i) => (
           <span
@@ -191,22 +210,6 @@ export default function SolvedScreen({
           />
         ))}
       </div>
-
-      {/* Streak (#56/#74): the flame + STREAK n line and, on a clean week, the bigger
-          Duolingo-style 7-day row — ABOVE the score/share row (decided 2026-07-09), riding
-          the same fade/rise. Only for a streak-eligible solve (active day, real dayNumber);
-          an archive replay and a ?puzzle= override show none. */}
-      {showStreak && (
-        <div className={`streak-block${showActions ? ' in' : ''}`}>
-          <p className="streak-line">
-            <FlameDetailed className="streak-flame" aria-hidden />
-            <span>
-              {t(lang, 'streak')} {streak}
-            </span>
-          </p>
-          {week.clean && <WeekRow cells={week.cells} lang={lang} />}
-        </div>
-      )}
 
       <div className={`solved-actions${showActions ? ' in' : ''}`}>
         {/* "45 TRIES", not "SCORE 45": the count is the number of guesses, and naming the
