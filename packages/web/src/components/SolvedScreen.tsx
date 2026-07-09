@@ -8,10 +8,11 @@ import { useGameStore } from '../state/gameStore';
 import { currentStreak, weekView, type WeekCell } from '../game/streak';
 import { track } from '../analytics';
 import { t } from '../i18n';
-// Inline SVG (vite-plugin-svgr): renders into the DOM so it paints with currentColor —
-// the flame's warm tint comes from CSS (`color`), so a future milestone PR is a color swap
-// (#74). The detailed flame is the solved-screen hero; the small one marks weekly days.
-import FlameDetailed from '../assets/icons/flame-detailed.svg?react';
+// The hero streak flame is a 32×32 pixel-art sprite (raster PNG, rendered at its NATIVE
+// 32px so it stays crisp — pixel art only scales cleanly by integer factors). The small
+// weekly-day marks stay the simple inline SVG flame (currentColor, crisp at any size) — a
+// detailed hero + simpler repeated marks is the intended pattern (#74).
+import streakFlame from '../assets/streak.png';
 import FlameSmall from '../assets/icons/flame.svg?react';
 
 // Stable empty reference so the zustand selector below never returns a fresh array (which
@@ -174,7 +175,7 @@ export default function SolvedScreen({
       {showStreak && (
         <div className={`streak-block${showActions ? ' in' : ''}`}>
           <p className="streak-line">
-            <FlameDetailed className="streak-flame" aria-hidden />
+            <img className="streak-flame" src={streakFlame} width={32} height={32} alt="" aria-hidden />
             <span>
               {t(lang, 'streak')} {streak}
             </span>

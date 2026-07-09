@@ -1023,18 +1023,15 @@ button * {
   letter-spacing: 1px;
   font-variant-numeric: tabular-nums;
 }
-/* The detailed hero flame on the solved-screen streak line. Flames are the on-screen
-   keyboard's sibling exception to the "size lives in the SVG at 3×" rule: they appear at
-   several sizes across screens, so their .svgs carry NO width/height and CSS sizes them —
-   and their warm tint comes from `color` (currentColor), so a milestone PR is a color swap.
-   crispEdges keeps the pixels sharp (the SVGs are not tagged .pixel-icon). */
+/* The hero flame on the solved-screen streak line: a 32×32 pixel-art PNG sprite, drawn at
+   its NATIVE 32px (`pixelated` keeps it crisp — a raster sprite only scales cleanly by
+   integer factors, so 32 is its home; 16/21px downscales soften it). */
 .streak-flame {
   display: block;
   flex: none;
-  width: auto;
-  height: 26px;
-  color: var(--flame);
-  shape-rendering: crispEdges;
+  width: 32px;
+  height: 32px;
+  image-rendering: pixelated;
 }
 
 /* The Monday-based weekly streak row (#74): 7 fixed-width day columns, each a weekday
