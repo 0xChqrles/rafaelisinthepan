@@ -174,12 +174,15 @@ export default function SolvedScreen({
           dayNumber); an archive replay and a ?puzzle= override show none. */}
       {showStreak && (
         <div className={`streak-block${showActions ? ' in' : ''}`}>
-          <p className="streak-line">
-            <img className="streak-flame" src={streakFlame} width={32} height={32} alt="" aria-hidden />
-            <span>
-              {t(lang, 'streak')} {streak}
-            </span>
-          </p>
+          {/* Duolingo-style: the big flame + count are the headline, the small "DAY STREAK"
+              label sits under them. SR reads "3 DAY STREAK"; the flame is decorative. */}
+          <div className="streak-headline">
+            <div className="streak-head">
+              <img className="streak-flame" src={streakFlame} width={96} height={96} alt="" aria-hidden />
+              <span className="streak-count">{streak}</span>
+            </div>
+            <p className="streak-label">{t(lang, 'dayStreak')}</p>
+          </div>
           {week.clean && <WeekRow cells={week.cells} lang={lang} />}
         </div>
       )}

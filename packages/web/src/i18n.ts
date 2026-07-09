@@ -33,9 +33,11 @@ const STRINGS = {
   tries: { en: 'TRIES', fr: 'ESSAIS' },
   share: { en: 'SHARE', fr: 'PARTAGER' },
   copied: { en: 'COPIED', fr: 'COPIÉ' },
-  // Streak label on the solved screen + archive (#56/#74). "STREAK" stays UNTRANSLATED in
-  // French too — it became a global game concept across languages (decided 2026-07-09).
+  // Streak labels (#56/#74). Untranslated in French too — a global game concept across
+  // languages (decided 2026-07-09). `streak` is the compact archive stat ("STREAK 3");
+  // `dayStreak` is the big solved-screen label under the number ("3 / DAY STREAK").
   streak: { en: 'STREAK', fr: 'STREAK' },
+  dayStreak: { en: 'DAY STREAK', fr: 'DAY STREAK' },
   srSolvedAll: { en: 'sentence solved!', fr: 'phrase résolue !' },
   ariaChangeLanguage: { en: 'Change language', fr: 'Changer de langue' },
   ariaKeyboard: { en: 'on-screen keyboard', fr: 'clavier virtuel' },

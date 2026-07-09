@@ -995,14 +995,14 @@ button * {
 .share-key.copied {
   color: var(--accent);
 }
-/* Streak block (#56/#74): the flame + STREAK line, and on a clean week the 7-day
-   Duolingo-style row below it — ABOVE the score/share row. The BLOCK rides the shared
-   fade/rise (`.in`); the reduced-motion rule already collapses the transition. */
+/* Streak block (#56/#74): the big flame + count headline with a small "DAY STREAK" label
+   under it, and on a clean week the 7-day Duolingo-style row below — ABOVE the score/share
+   row. The BLOCK rides the shared fade/rise (`.in`); reduced-motion collapses the transition. */
 .streak-block {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 18px;
   opacity: 0;
   transform: translateY(8px);
   transition: opacity 0.35s ease-out, transform 0.35s ease-out;
@@ -1011,27 +1011,43 @@ button * {
   opacity: 1;
   transform: translateY(0);
 }
-/* The flame + STREAK n line, a flex row so the flame sits beside the text. */
-.streak-line {
-  display: inline-flex;
+/* Headline: the flame + count row, with the small label tucked under it (tight gap so the
+   three read as one unit, then the block's larger gap separates them from the week row). */
+.streak-headline {
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 7px;
-  margin: 0;
-  font-family: var(--press);
-  font-size: 11px;
-  color: var(--muted);
-  letter-spacing: 1px;
-  font-variant-numeric: tabular-nums;
+  gap: 8px;
 }
-/* The hero flame on the solved-screen streak line: a 32×32 pixel-art PNG sprite, drawn at
-   its NATIVE 32px (`pixelated` keeps it crisp — a raster sprite only scales cleanly by
-   integer factors, so 32 is its home; 16/21px downscales soften it). */
+.streak-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+/* The hero flame: a 32×32 pixel-art PNG sprite drawn at 3× = 96px, an INTEGER scale so the
+   pixels stay razor-crisp (`pixelated`) — the point of blowing it up is to read the pixels. */
 .streak-flame {
   display: block;
   flex: none;
-  width: 32px;
-  height: 32px;
+  width: 96px;
+  height: 96px;
   image-rendering: pixelated;
+}
+/* The streak count — the headline number, sized to co-star with the 96px flame. */
+.streak-count {
+  font-family: var(--press);
+  font-size: 48px;
+  line-height: 1;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+/* The small "DAY STREAK" label under the number. */
+.streak-label {
+  margin: 0;
+  font-family: var(--press);
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--muted);
 }
 
 /* The Monday-based weekly streak row (#74): 7 fixed-width day columns, each a weekday
