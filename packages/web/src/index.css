@@ -26,7 +26,7 @@
   --danger: #ff1f54;
   --hole: #ffc400; /* vivid gold for holes */
   --muted: #c4c9d8;
-  --flame: #ff8a3d; /* warm streak flame (#74); future milestone tiers swap this color */
+  --flame: #4642e8; /* streak flame indigo — the sprite's body color (#74); milestone tiers swap it */
 
   --pixel-font: 'Press Start 2P', monospace;
   --press: var(--pixel-font);
@@ -995,14 +995,14 @@ button * {
 .share-key.copied {
   color: var(--accent);
 }
-/* Streak block (#56/#74): the big flame + count headline with a small "DAY STREAK" label
-   under it, and on a clean week the 7-day Duolingo-style row below — ABOVE the score/share
+/* Streak block (#56/#74): the animated flame + count headline with a small "DAY STREAK"
+   label under it, and on a clean week the flat 7-day row below — ABOVE the score/share
    row. The BLOCK rides the shared fade/rise (`.in`); reduced-motion collapses the transition. */
 .streak-block {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 18px;
+  gap: 14px;
   opacity: 0;
   transform: translateY(8px);
   transition: opacity 0.35s ease-out, transform 0.35s ease-out;
@@ -1017,24 +1017,25 @@ button * {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 .streak-head {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
 }
-/* The hero flame: an ANIMATED 6-frame pixel-art sprite sheet (streak.png, 192×32 = six
-   32×32 frames), played the same way as the calendar ripple. Drawn at 3× = 96px (integer
-   scale, `pixelated` keeps the pixels razor-crisp); `background-size: 600% 100%` fits ONE
-   frame to the box, and `steps(6)` walks `background-position-x` frame by frame — end value
+/* The hero flame: an ANIMATED 6-frame pixel-art sprite sheet (streak2.png, 144×24 = six
+   24×24 frames — the art is ~22px inside a 24px canvas), played the same way as the
+   calendar ripple. Drawn at 3× = 72px (INTEGER scale so `pixelated` keeps the pixels
+   razor-crisp; the art itself reads ≈66px); `background-size: 600% 100%` fits ONE frame to
+   the box, and `steps(6)` walks `background-position-x` frame by frame — end value
    100% × 6/5 so frame 5 lands on 100% and the loop wraps cleanly. */
 .streak-flame {
   display: block;
   flex: none;
-  width: 96px;
-  height: 96px;
-  background-image: url('./assets/streak.png');
+  width: 72px;
+  height: 72px;
+  background-image: url('./assets/streak2.png');
   background-repeat: no-repeat;
   background-size: 600% 100%;
   image-rendering: pixelated;
@@ -1055,10 +1056,10 @@ button * {
     animation: none;
   }
 }
-/* The streak count — the headline number, sized to co-star with the 96px flame. */
+/* The streak count — the headline number, sized to co-star with the 72px flame. */
 .streak-count {
   font-family: var(--press);
-  font-size: 48px;
+  font-size: 44px;
   line-height: 1;
   color: var(--fg);
   font-variant-numeric: tabular-nums;
@@ -1072,49 +1073,40 @@ button * {
   color: var(--muted);
 }
 
-/* The Monday-based weekly streak row (#74): 7 fixed-width day columns, each a weekday
-   initial over a mark slot (the small flame on a solved day). Decorative (aria-hidden). */
+/* The Monday-based weekly streak row (#74): 7 flat pixel squares (the solved screen's
+   heat-grid language — no boxes, no rings, no mini icons), a weekday initial above each.
+   Solved = flame-indigo fill, empty/future = neutral surface; TODAY is marked by its
+   bright label, not a ring. Decorative (aria-hidden). */
 .week-row {
   display: flex;
-  gap: 8px;
+  gap: 6px;
 }
 .week-cell {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  width: 32px;
+  gap: 5px;
+  width: 20px;
 }
 .week-label {
   font-family: var(--press);
-  font-size: 9px;
+  font-size: 8px;
   line-height: 1;
   color: var(--muted);
-  opacity: 0.6;
+  opacity: 0.55;
 }
-/* A fixed square so solved (flame) and empty days keep the row perfectly aligned. Empty
-   days show the neutral surface tile; future days are faded; today's slot is ringed. */
+.week-cell.today .week-label {
+  color: var(--fg);
+  opacity: 1;
+}
 .week-mark {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
+  width: 20px;
+  height: 20px;
   background: var(--surface);
+  image-rendering: pixelated;
 }
-.week-cell.today .week-mark {
-  box-shadow: inset 0 0 0 3px var(--flame);
-}
-.week-cell.future .week-mark {
-  opacity: 0.4;
-}
-.week-flame {
-  display: block;
-  width: auto;
-  height: 21px;
-  color: var(--flame);
-  shape-rendering: crispEdges;
+.week-cell.solved .week-mark {
+  background: var(--flame);
 }
 
 /* Streak stat below the archive calendar (#74): a small flame + STREAK n, muted and

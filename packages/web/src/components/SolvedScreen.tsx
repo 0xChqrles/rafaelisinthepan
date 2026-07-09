@@ -10,10 +10,8 @@ import { track } from '../analytics';
 import { t } from '../i18n';
 // The hero flame is an ANIMATED 6-frame pixel-art sprite sheet, played entirely in CSS
 // (.streak-flame — a background sprite-sheet walked by steps(6), same technique as the
-// calendar ripple), so it needs no JS asset import here. The small weekly-day marks stay
-// the simple inline SVG flame (currentColor, crisp at any size) — a detailed hero + simpler
-// repeated marks is the intended pattern (#74).
-import FlameSmall from '../assets/icons/flame.svg?react';
+// calendar ripple), so it needs no JS asset import here. The weekly-day marks are plain
+// flat squares (CSS only) — a detailed hero + minimal repeated marks (#74).
 
 // Stable empty reference so the zustand selector below never returns a fresh array (which
 // would churn renders) when a language has no solved days yet.
@@ -258,8 +256,9 @@ function mondayNarrowLabels(lang: string): string[] {
 
 // The Monday-based weekly streak row (#74), Duolingo-style: the 7 days Mon..Sun of the
 // current week, shown only on a clean week (see weekView). DECORATIVE (aria-hidden) — the
-// streak line above already announces the count, same rationale as the heat grid. A solved
-// day shows the small flame; today is emphasized; future + pre-start days stay empty.
+// headline above already announces the count, same rationale as the heat grid. Flat pixel
+// squares (the heat-grid language): a solved day is filled, an unsolved/future day keeps
+// the neutral surface, and TODAY is marked by its brightened label.
 function WeekRow({ cells, lang }: { cells: WeekCell[]; lang: string }) {
   const labels = useMemo(() => mondayNarrowLabels(lang), [lang]);
   return (
@@ -267,15 +266,10 @@ function WeekRow({ cells, lang }: { cells: WeekCell[]; lang: string }) {
       {cells.map((c, i) => (
         <div
           key={c.dayNumber}
-          className={
-            'week-cell' +
-            (c.solved ? ' solved' : '') +
-            (c.isToday ? ' today' : '') +
-            (c.isFuture ? ' future' : '')
-          }
+          className={'week-cell' + (c.solved ? ' solved' : '') + (c.isToday ? ' today' : '')}
         >
           <span className="week-label">{labels[i]}</span>
-          <span className="week-mark">{c.solved && <FlameSmall className="week-flame" />}</span>
+          <span className="week-mark" />
         </div>
       ))}
     </div>
