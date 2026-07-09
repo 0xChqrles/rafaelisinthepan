@@ -8,11 +8,11 @@ import { useGameStore } from '../state/gameStore';
 import { currentStreak, weekView, type WeekCell } from '../game/streak';
 import { track } from '../analytics';
 import { t } from '../i18n';
-// The hero streak flame is a 32×32 pixel-art sprite (raster PNG, rendered at its NATIVE
-// 32px so it stays crisp — pixel art only scales cleanly by integer factors). The small
-// weekly-day marks stay the simple inline SVG flame (currentColor, crisp at any size) — a
-// detailed hero + simpler repeated marks is the intended pattern (#74).
-import streakFlame from '../assets/streak.png';
+// The hero flame is an ANIMATED 6-frame pixel-art sprite sheet, played entirely in CSS
+// (.streak-flame — a background sprite-sheet walked by steps(6), same technique as the
+// calendar ripple), so it needs no JS asset import here. The small weekly-day marks stay
+// the simple inline SVG flame (currentColor, crisp at any size) — a detailed hero + simpler
+// repeated marks is the intended pattern (#74).
 import FlameSmall from '../assets/icons/flame.svg?react';
 
 // Stable empty reference so the zustand selector below never returns a fresh array (which
@@ -178,7 +178,7 @@ export default function SolvedScreen({
               label sits under them. SR reads "3 DAY STREAK"; the flame is decorative. */}
           <div className="streak-headline">
             <div className="streak-head">
-              <img className="streak-flame" src={streakFlame} width={96} height={96} alt="" aria-hidden />
+              <span className="streak-flame" aria-hidden />
               <span className="streak-count">{streak}</span>
             </div>
             <p className="streak-label">{t(lang, 'dayStreak')}</p>

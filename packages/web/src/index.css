@@ -1024,14 +1024,36 @@ button * {
   align-items: center;
   gap: 14px;
 }
-/* The hero flame: a 32×32 pixel-art PNG sprite drawn at 3× = 96px, an INTEGER scale so the
-   pixels stay razor-crisp (`pixelated`) — the point of blowing it up is to read the pixels. */
+/* The hero flame: an ANIMATED 6-frame pixel-art sprite sheet (streak.png, 192×32 = six
+   32×32 frames), played the same way as the calendar ripple. Drawn at 3× = 96px (integer
+   scale, `pixelated` keeps the pixels razor-crisp); `background-size: 600% 100%` fits ONE
+   frame to the box, and `steps(6)` walks `background-position-x` frame by frame — end value
+   100% × 6/5 so frame 5 lands on 100% and the loop wraps cleanly. */
 .streak-flame {
   display: block;
   flex: none;
   width: 96px;
   height: 96px;
+  background-image: url('./assets/streak.png');
+  background-repeat: no-repeat;
+  background-size: 600% 100%;
   image-rendering: pixelated;
+  animation: streak-flame var(--streak-flame-dur, 0.7s) steps(6) infinite;
+}
+@keyframes streak-flame {
+  from {
+    background-position-x: 0%;
+  }
+  to {
+    background-position-x: calc(100% * 6 / 5); /* frame 5 lands on 100%; endpoint wraps */
+  }
+}
+/* The flame is the hero, not decorative motion on top of something else — so reduced-motion
+   users KEEP it, frozen on a single frame (animation off) rather than losing the icon. */
+@media (prefers-reduced-motion: reduce) {
+  .streak-flame {
+    animation: none;
+  }
 }
 /* The streak count — the headline number, sized to co-star with the 96px flame. */
 .streak-count {
