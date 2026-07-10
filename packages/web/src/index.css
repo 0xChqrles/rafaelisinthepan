@@ -991,22 +991,41 @@ button * {
   align-items: flex-end;
   gap: 16px;
 }
-/* The hero flame: an ANIMATED 6-frame pixel-art sprite sheet (streak2.png, 192×30 = six
-   32×30 frames — a glowing flame; the added glow makes the frame non-square), played the
-   same way as the calendar ripple. Drawn at 4× = 128×120px (INTEGER scale so `pixelated`
-   keeps the pixels razor-crisp); `background-size: 600% 100%` fits ONE frame to the box,
-   and `steps(6)` walks `background-position-x` frame by frame — end value 100% × 6/5 so
-   frame 5 lands on 100% and the loop wraps cleanly. */
+/* The hero flame: TWO stacked 6-frame pixel-art sprite sheets (each 192×30 = six 32×30
+   frames) — streak-glow.png (the halo) behind streak-flamme.png (the flame core) — so the
+   glow's opacity can breathe independently of the core. Drawn at 4× = 128×120px (INTEGER
+   scale so `pixelated` keeps the pixels razor-crisp). Both layers play the same sprite
+   walk as the calendar ripple: `background-size: 600% 100%` fits ONE frame to the box and
+   `steps(6)` walks `background-position-x` — end value 100% × 6/5 so frame 5 lands on 100%
+   and the loop wraps cleanly; same duration + start time keeps the two sheets frame-locked. */
 .streak-flame {
+  position: relative;
   display: block;
   flex: none;
   width: 128px;
   height: 120px;
-  background-image: url('./assets/streak2.png');
+}
+.streak-flame::before,
+.streak-flame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
   background-repeat: no-repeat;
   background-size: 600% 100%;
   image-rendering: pixelated;
   animation: streak-flame var(--streak-flame-dur, 0.7s) steps(6) infinite;
+}
+/* The glow layer, painted BEHIND the core (::before precedes ::after): on top of the
+   frame walk, its opacity BREATHES on a slow, slightly irregular pulse. 2.5s against the
+   0.7s flicker is a non-integer ratio, so the two loops drift and never read as a metronome. */
+.streak-flame::before {
+  background-image: url('./assets/streak-glow.png');
+  animation:
+    streak-flame var(--streak-flame-dur, 0.7s) steps(6) infinite,
+    streak-glow-pulse var(--streak-glow-dur, 2.5s) ease-in-out infinite;
+}
+.streak-flame::after {
+  background-image: url('./assets/streak-flamme.png');
 }
 @keyframes streak-flame {
   from {
@@ -1016,10 +1035,30 @@ button * {
     background-position-x: calc(100% * 6 / 5); /* frame 5 lands on 100%; endpoint wraps */
   }
 }
+/* Uneven stops so the glow breathing feels organic (fire), not sinusoidal. */
+@keyframes streak-glow-pulse {
+  0% {
+    opacity: 0.95;
+  }
+  30% {
+    opacity: 0.55;
+  }
+  55% {
+    opacity: 0.85;
+  }
+  75% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 0.95;
+  }
+}
 /* The flame is the hero, not decorative motion on top of something else — so reduced-motion
-   users KEEP it, frozen on a single frame (animation off) rather than losing the icon. */
+   users KEEP it, frozen on a single frame (animations off, glow at rest) rather than losing
+   the icon. */
 @media (prefers-reduced-motion: reduce) {
-  .streak-flame {
+  .streak-flame::before,
+  .streak-flame::after {
     animation: none;
   }
 }

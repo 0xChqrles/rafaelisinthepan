@@ -6,10 +6,11 @@ import { useGameStore } from '../state/gameStore';
 import { currentStreak, weekView, type WeekCell } from '../game/streak';
 import { track } from '../analytics';
 import { t } from '../i18n';
-// The hero flame is an ANIMATED 6-frame pixel-art sprite sheet, played entirely in CSS
-// (.streak-flame — a background sprite-sheet walked by steps(6), same technique as the
-// calendar ripple), so it needs no JS asset import here. The weekly-day marks are plain
-// flat squares (CSS only) — a detailed hero + minimal repeated marks (#74).
+// The hero flame is TWO stacked animated 6-frame sprite sheets — the flame core over a
+// glow layer whose opacity breathes independently — played entirely in CSS (.streak-flame
+// pseudo-elements walked by steps(6), same technique as the calendar ripple), so it needs
+// no JS asset import here. The weekly-day marks are plain flat squares (CSS only) — a
+// detailed hero + minimal repeated marks (#74).
 
 // Stable empty reference so the zustand selector below never returns a fresh array (which
 // would churn renders) when a language has no solved days yet.
