@@ -1024,17 +1024,18 @@ button * {
   align-items: center;
   gap: 12px;
 }
-/* The hero flame: an ANIMATED 6-frame pixel-art sprite sheet (streak2.png, 144×24 = six
-   24×24 frames — the art is ~22px inside a 24px canvas), played the same way as the
-   calendar ripple. Drawn at 3× = 72px (INTEGER scale so `pixelated` keeps the pixels
-   razor-crisp; the art itself reads ≈66px); `background-size: 600% 100%` fits ONE frame to
-   the box, and `steps(6)` walks `background-position-x` frame by frame — end value
-   100% × 6/5 so frame 5 lands on 100% and the loop wraps cleanly. */
+/* The hero flame: an ANIMATED 6-frame pixel-art sprite sheet (streak2.png, 192×30 = six
+   32×30 frames — a glowing flame; the added glow makes the frame non-square), played the
+   same way as the calendar ripple. Drawn at 3× = 96×90px (INTEGER scale so `pixelated`
+   keeps the pixels razor-crisp; the flame core reads ≈66px, the glow haloes past it);
+   `background-size: 600% 100%` fits ONE frame to the box, and `steps(6)` walks
+   `background-position-x` frame by frame — end value 100% × 6/5 so frame 5 lands on 100%
+   and the loop wraps cleanly. */
 .streak-flame {
   display: block;
   flex: none;
-  width: 72px;
-  height: 72px;
+  width: 96px;
+  height: 90px;
   background-image: url('./assets/streak2.png');
   background-repeat: no-repeat;
   background-size: 600% 100%;
