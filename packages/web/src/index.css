@@ -426,7 +426,7 @@ button * {
   justify-content: center;
 }
 
-/* --- App header (topbar): flag left, puzzle id centered, help right — separated
+/* --- App header (topbar): flag + streak left, puzzle id centered, help right — separated
    from the app by a thin bottom border. Full-bleed with an opaque background so
    scrolling content passes UNDER it on mobile; the extension point for future
    chrome (streaks, stats, …). --- */
@@ -450,6 +450,46 @@ button * {
   align-items: center;
   justify-content: space-between;
 }
+.topbar-left {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px; /* flame box and flag box both carry their own padding; a small gap suffices */
+}
+/* The live streak stat: the count is the datum, the flame its icon. The flame sits in a
+   square hud-height box like every other header glyph; the count's 4px offset below is an
+   optical correction for the flame's shape and the pixel font's naturally high glyphs. */
+.topbar-streak {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--fg);
+  font-size: 22px; /* the header's most prominent figure now the day id is gone */
+  line-height: 1;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+/* The flame's square box — same var(--hud-height) footprint as the flag/help/archive
+   glyphs, centering the fixed-size sprite within it. */
+.topbar-streak-flame-box {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--hud-height);
+  height: var(--hud-height);
+}
+.topbar-streak-flame {
+  display: block;
+  flex: none;
+  width: 24px; /* 3 × the source's 8px width */
+  height: 30px; /* 3 × the source's 10px height */
+  image-rendering: pixelated;
+}
+.topbar-streak-count {
+  transform: translateY(4px);
+}
 /* The header's right controls: the game's "?" help (replays the tutorial) and the
    tutorial's fast-forward (skip) — both inline pixel-art icons. Buttons don't inherit
    color, so the muted tint is explicit; both brighten to --fg on hover/focus. */
@@ -466,20 +506,21 @@ button * {
 /* Icon policy: a standalone pixel-art icon carries its OWN display size — the SVG's
    `width`/`height` (= 3× its viewBox), right next to the viewBox in the .svg file, is the
    single source of truth for its size. So the CSS here only sets shared rendering, never a
-   size. Every icon's "pixel" is 3 screen px, keeping pixel art crisp + uniform in weight.
-   (The on-screen keyboard's control glyphs are the ONE exception — they scale with the
-   responsive key, so their SVGs carry no size and .kb-icon sizes them in CSS.) */
+   size. Every control icon's "pixel" is 3 screen px, keeping pixel art crisp + uniform in
+   weight. The streak micro-stat's flame and the responsive keyboard glyphs are
+   intentionally sized by their own component classes instead. */
 .pixel-icon {
   display: block;
   shape-rendering: crispEdges;
 }
 
 /* The game header's right group: the archive calendar entry + the "?" help, side by
-   side in the single right slot. */
+   side in the single right slot. A small gap — enough that the two glyphs don't read as
+   one control, while the pair still groups against the wide center. */
 .topbar-right {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
 }
 /* The game header's archive entry + the archive's back-to-today control: currentColor
    glyphs, muted -> fg on hover/focus like the "?" and skip. */
@@ -788,6 +829,14 @@ button * {
   align-items: start;
   gap: 20px;
   min-height: 90px;
+  opacity: 1;
+  transform: translateX(0);
+  transition: opacity 220ms ease-out, transform 220ms ease-out;
+}
+.input-area.solving {
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(-24px);
 }
 
 .word-input {
@@ -888,92 +937,57 @@ button * {
   letter-spacing: 1px;
   padding-top: var(--text-shift);
 }
+.source-type-slot {
+  position: relative;
+}
+.source-type-slot .source-type-cursor {
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+}
+.source-type-cursor {
+  color: var(--fg);
+  animation: blink 0.55s steps(1) infinite;
+}
 
-/* Results: the streak block + score + share, centered in the keyboard's footprint. (The
-   per-guess heat squares live only in the share preview now — OG card + emoji row.)
-   MOBILE stacks the two groups vertically; DESKTOP (the media query below) sets them side
-   by side so the wide tray isn't one tall narrow column. */
+/* Sentence result: one stable hierarchy in the keyboard's footprint at every viewport —
+   tries, the reconstruction trajectory, then the result action. Player progression is
+   deliberately outside this layout in .streak-dialog. */
 .solved-results {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: clamp(16px, 3vh, 26px);
+  justify-content: center;
+  gap: clamp(13px, 2.2vh, 18px);
   width: 100%;
   max-width: 680px; /* match the keyboard's max-width */
-}
-/* Score + share fade/rise in (JS toggles `.in`, ACTIONS_DELAY_MS after the streak block)
-   as the score tallies up from 0. */
-.solved-actions {
-  display: flex;
-  align-items: center;
-  gap: clamp(16px, 4vw, 28px);
   opacity: 0;
   transform: translateY(8px);
   transition: opacity 0.35s ease-out, transform 0.35s ease-out;
 }
-.solved-actions.in {
+.solved-results.in {
   opacity: 1;
   transform: translateY(0);
 }
-/* Number + unit ("45 TRIES"): an inline pair on mobile (the 1em gap stands in for the
-   space character), a stacked stat on desktop (media query below). */
+/* "45 TRIES" is the result headline: one number/label treatment everywhere, so changing
+   breakpoints never changes the meaning or visual weight of the metric. */
 .solved-score {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 1em;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
   font-family: var(--press);
-  font-size: clamp(14px, 1.9vh, 18px);
-  color: var(--muted);
   letter-spacing: 2px;
   font-variant-numeric: tabular-nums;
-}
-
-/* DESKTOP (≥640px): the two groups sit SIDE BY SIDE — streak left, score/share right of a
-   thin flat divider — and the score becomes a labeled stat (big number over a small unit),
-   mirroring the streak headline, so the row reads as two balanced stat groups. */
-@media (min-width: 640px) {
-  .solved-results {
-    flex-direction: row;
-    justify-content: center;
-    align-items: stretch;
-    gap: clamp(36px, 7vw, 56px);
-  }
-  .streak-block {
-    justify-content: center;
-  }
-  .solved-actions {
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    gap: 22px;
-  }
-  /* The divider exists only when the streak block actually stands beside the actions
-     (adjacent sibling); the block margin insets the line from the row's edges. */
-  .streak-block + .solved-actions {
-    border-left: 2px solid var(--surface);
-    padding-left: clamp(36px, 7vw, 56px);
-    margin-block: 8px;
-  }
-  .solved-score {
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
-  }
-  .solved-score-num {
-    font-size: 40px;
-    line-height: 1;
-    color: var(--fg);
-  }
-  .solved-score-unit {
-    font-size: 10px;
-  }
 }
 /* A hidden ghost of the final count reserves the exact width (incl. letter-spacing, which
    `ch` units miss); the live tally is overlaid right-aligned, so counting never reflows. */
 .solved-score-num {
   position: relative;
   display: inline-block;
-  vertical-align: baseline;
+  font-size: clamp(30px, 4.6vh, 40px);
+  line-height: 1;
+  color: var(--fg);
   font-variant-numeric: tabular-nums;
 }
 .solved-score-ghost {
@@ -984,63 +998,199 @@ button * {
   inset: 0;
   text-align: right;
 }
-/* Share control styled as a wide keyboard key (flat filled surface, uppercase pixel),
-   cohesive with the keyboard it stands in for. Turns accent on a successful copy. */
-.share-key {
+.solved-score-unit {
+  font-size: 10px;
+  line-height: 1;
+  color: var(--muted);
+}
+/* One flat pixel square per bounded trajectory bucket. The row stays centered and on one
+   line; cells shrink together on narrow screens instead of producing a ragged wrap. */
+.heat-grid {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  max-width: calc(var(--n) * 22px + (var(--n) - 1) * 5px);
+}
+.heat-cell {
+  flex: 1 1 0;
+  aspect-ratio: 1;
+  image-rendering: pixelated;
+  opacity: 0;
+  background-color: var(--surface-hover);
+  transition:
+    opacity 1ms linear var(--show-delay, 0ms),
+    background-color 1ms linear var(--color-delay, 0ms);
+}
+.heat-grid.shown .heat-cell {
+  opacity: 1;
+}
+.heat-grid.colorized .heat-cell {
+  background-color: var(--cell-color);
+}
+/* Result action: the same flat key language as the keyboard it replaces. */
+.result-action {
+  min-width: 164px;
   font-family: var(--press);
-  font-size: clamp(12px, 1.7vh, 15px);
+  font-size: clamp(11px, 1.55vh, 13px);
   letter-spacing: 2px;
   text-transform: uppercase;
   color: var(--fg);
   background: var(--surface-hover);
   border: 0;
-  padding: 16px 30px;
+  padding: 14px 26px;
   cursor: pointer;
   text-shadow: none;
   transition: filter 0.08s linear, color 0.08s linear;
 }
-.share-key:hover,
-.share-key:focus-visible {
+.result-action:hover,
+.result-action:focus-visible {
   filter: brightness(1.35);
 }
-.share-key:active {
+.result-action:active {
   filter: brightness(1.5);
 }
-.share-key.copied {
+.result-action.copied {
   color: var(--accent);
 }
-/* Streak block (#56/#74): the animated flame + count headline with a small "DAY STREAK"
-   label under it, and on a clean week the flat 7-day row below — above the score/share
-   group on mobile, beside it on desktop. Its `.in` fade/rise is the FIRST beat of the
-   sequenced reveal (the score/share group follows ACTIONS_DELAY_MS later); reduced-motion
-   collapses the transition. */
-.streak-block {
+
+/* Player-progression celebration: the native dialog IS the borderless full-screen surface.
+   React Spring owns every staged entrance/bounce; fixed rows reserve the final composition
+   so the flame, number, week, and action never move each other as they appear. */
+.streak-dialog[open] {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  padding: 20px;
+  border: 0;
+  outline: 0;
+  background: var(--bg);
+  color: var(--fg);
+  display: flex;
+  /* Sequence centering comes from its auto margins (below), NOT align/justify center:
+     auto margins collapse to 0 when the content is taller than a short viewport, so
+     nothing is clipped and the scroll fallback can always reach CONTINUE. */
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.streak-dialog::backdrop {
+  background: transparent;
+}
+/* Once the ending hint is up the WHOLE screen dismisses — let the cursor say so. */
+.streak-dialog.done {
+  cursor: pointer;
+}
+.streak-sequence {
+  width: min(520px, 100%);
+  margin: auto;
+  display: grid;
+  grid-template-rows: 120px 96px 80px 45px;
+  justify-items: center;
+  align-items: center;
+  gap: 18px;
+}
+.streak-flame-slot {
+  width: 128px;
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.streak-number-block {
+  height: 96px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
-  opacity: 0;
-  transform: translateY(8px);
-  transition: opacity 0.35s ease-out, transform 0.35s ease-out;
+  justify-content: center;
+  gap: 20px;
 }
-.streak-block.in {
-  opacity: 1;
-  transform: translateY(0);
+.streak-digits {
+  position: relative;
+  height: 1em;
+  font-family: var(--press);
+  font-size: 72px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
-/* Headline: the flame + count row, with the small label tucked under it (tight gap so the
-   three read as one unit, then the block's larger gap separates them from the week row). */
-.streak-headline {
+.streak-digit-layer {
+  position: absolute;
+  inset: 0;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 12px;
 }
-/* Flame + count, BOTTOM-aligned: the count's digits sit on the flame CORE's bottom edge,
-   not the glow's (the glow halo extends 8 sprite-rows below the core — see .streak-count). */
-.streak-head {
+.streak-digit-old-layer {
+  will-change: transform;
+}
+.streak-digit-slot {
+  position: relative;
+  display: block;
+  width: 1em;
+  height: 1.44em;
+  overflow: hidden;
+}
+.streak-digit {
+  position: absolute;
+  inset: 0.22em 0;
   display: flex;
-  align-items: flex-end;
-  gap: 16px;
+  align-items: center;
+  justify-content: center;
+  will-change: transform, opacity;
+  /* Transparent by default so the flame shadow (below) eases in as a COLOR fade when the
+     flame arrives — `text-shadow: none` would pop instead of transitioning. */
+  text-shadow: 0px 4px transparent;
+  transition: text-shadow 260ms ease-out;
+}
+.streak-digit-old {
+  color: var(--surface);
+}
+.streak-digit-new,
+.streak-number-block.final .streak-digit-old {
+  color: var(--fg);
+}
+/* When the flame appears (JS adds `flamed`), the settled number drops a flame-indigo pixel
+   shadow — the flame's light casting off the digits. Applied to the whole new number: the
+   changed digits plus the unchanged ones (faded-out old digits are opacity 0, so their
+   shadow stays invisible). */
+.streak-number-block.flamed .streak-digit {
+  text-shadow: 0px 6px var(--flame);
+}
+/* The ending hint — arcade "press any key / tap anywhere" idiom: muted pulsing text, no
+   chrome. It is NON-interactive (a plain element, nothing focusable in the celebration);
+   the whole modal dismisses on click/tap/any key, so a boxed, focusable button would both
+   lie about the target being local and show an unwanted focus ring. */
+.streak-hint {
+  font-family: var(--press);
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: var(--muted);
+  padding: 14px 20px; /* keeps the pulsing text off the tile row above it */
+  cursor: pointer;
+}
+.streak-hint-pulse {
+  display: block;
+  animation: streak-hint-pulse 1.6s ease-in-out infinite;
+}
+/* Ends at full opacity so the reduced-motion rule (duration ~0, one iteration) leaves the
+   hint steady and readable instead of frozen mid-fade. */
+@keyframes streak-hint-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.streak-hint-slot {
+  height: 45px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 /* The hero flame: TWO stacked 6-frame pixel-art sprite sheets (each 192×30 = six 32×30
    frames) — streak-glow.png (the halo) behind streak-flamme.png (the flame core) — so the
@@ -1113,37 +1263,6 @@ button * {
     animation: none;
   }
 }
-/* The streak count — the headline number beside the flame. Sized as large as the WORST
-   case allows: Press Start 2P advances exactly 1em per digit, so a 3-digit streak is 3×
-   the font-size; the viewport must fit app padding (48px) + flame (128px) + gap (16px)
-   + 3 digits -> font-size = min(64px, (100vw - 192px) / 3). 64px on desktop, ~56px on a
-   360px phone — 3 digits always fit with the flame beside them.
-   Bottom alignment: .streak-head bottom-aligns the boxes; the flame core's bottom edge is
-   8 sprite-rows above the box bottom (the glow halo, ×4 = 32px), and the digits' bottoms
-   sit 0.15em above their box bottom (the font's yMin = 15/1000, descent 0) — so lifting
-   the count by 32px − 0.15em lands the digits exactly on the core's bottom edge. */
-.streak-count {
-  position: relative; /* contains the absolute live overlay */
-  display: inline-block;
-  font-family: var(--press);
-  font-size: min(64px, calc((100vw - 192px) / 3));
-  line-height: 1;
-  margin-bottom: calc(32px - 0.15em);
-  color: var(--fg);
-  font-variant-numeric: tabular-nums;
-}
-/* Ghost = the final streak value, invisible: it reserves the exact width (tabular digits)
-   so the tallying number never resizes the head + shifts the flame. */
-.streak-count-ghost {
-  visibility: hidden;
-}
-/* Live = the animating count, overlaid right-aligned on the ghost's box. */
-.streak-count-live {
-  position: absolute;
-  inset: 0;
-  text-align: right;
-  text-shadow: 4px 4px 0 var(--flame);
-}
 /* The small "DAY STREAK" label under the number. */
 .streak-label {
   margin: 0;
@@ -1153,24 +1272,25 @@ button * {
   color: var(--muted);
 }
 
-/* The Monday-based weekly streak row (#74): 7 flat pixel squares (the solved screen's
+/* The Monday-based weekly streak row (#74): 7 flat pixel squares (the streak dialog's
    heat-grid language — no boxes, no rings, no mini icons), a weekday initial above each.
    Solved = flame-indigo fill, empty/future = neutral surface; TODAY is marked by its
    bright label, not a ring. Decorative (aria-hidden). */
 .week-row {
   display: flex;
-  gap: 6px;
+  gap: 10px;
+  align-self: end;
 }
 .week-cell {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
-  width: 20px;
+  gap: 6px;
+  width: 30px;
 }
 .week-label {
   font-family: var(--press);
-  font-size: 8px;
+  font-size: 12px;
   line-height: 1;
   color: var(--muted);
   opacity: 0.55;
@@ -1180,36 +1300,65 @@ button * {
   opacity: 1;
 }
 .week-mark {
-  width: 20px;
-  height: 20px;
+  display: block;
+  width: 30px;
+  height: 30px;
   background: var(--surface);
   image-rendering: pixelated;
+  transform-origin: center;
+  will-change: transform;
 }
 .week-cell.solved .week-mark {
   background: var(--flame);
 }
-
-/* Streak stat below the archive calendar (#74): a small flame + STREAK n, muted and
-   centered, in the same pixel style as the solved-screen line. */
-.archive-streak {
-  display: inline-flex;
-  align-self: center;
-  align-items: center;
-  gap: 7px;
-  margin: 16px 0 0;
-  font-family: var(--press);
-  font-size: 10px;
-  color: var(--muted);
-  letter-spacing: 1px;
-  font-variant-numeric: tabular-nums;
+.week-mark-flip,
+.week-cell.solved .week-mark-flip {
+  position: relative;
+  /* The lifted tile grows well past its 30px cell mid-flight; without a raised paint
+     order, later sibling cells would draw over its edges and flatten the illusion. */
+  z-index: 1;
+  background: transparent;
+  transform-style: preserve-3d;
 }
-.archive-flame {
+.week-mark-face {
+  position: absolute;
+  inset: 0;
   display: block;
-  flex: none;
-  width: auto;
-  height: 16px;
-  color: var(--flame);
-  shape-rendering: crispEdges;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.week-mark-front {
+  background: var(--surface);
+}
+.week-mark-back {
+  background: var(--flame);
+  transform: rotateX(180deg);
+}
+
+/* Compact composition: narrow phones AND short viewports (landscape phones) — the full
+   composition is ~435px tall, so height must trigger this too, not width alone. */
+@media (max-width: 420px), (max-height: 500px) {
+  .streak-dialog[open] {
+    padding: 16px;
+  }
+  .streak-sequence {
+    grid-template-rows: 90px 82px 80px 45px;
+    gap: 15px;
+  }
+  .streak-flame-slot {
+    width: 96px;
+    height: 90px;
+  }
+  .streak-flame {
+    width: 96px;
+    height: 90px;
+  }
+  .streak-number-block {
+    height: 82px;
+  }
+  .streak-digits {
+    font-size: 64px;
+  }
 }
 
 /* --- on-screen keyboard (issue #36): replaces the native mobile keyboard --- */
@@ -1492,11 +1641,26 @@ button * {
   }
 }
 
+/* On the narrowest phones, compress only the header GAPS — never the hud-height flame box
+   or the 22px count — so the streak stays whole beside the centered title the archive and
+   tutorial still carry (the game has none). */
+@media (max-width: 340px) {
+  .topbar-inner {
+    width: calc(100vw - 16px);
+  }
+  .topbar-left {
+    gap: 2px;
+  }
+  .topbar-streak {
+    gap: 0;
+  }
+}
+
 /* ===================== keyboard focus ===================== */
 /* Every interactive control gets a VISIBLE keyboard-focus indicator (hover keeps its
    brightness-only affordance; :focus-visible fires only on keyboard focus). */
 .kb-key:focus-visible,
-.share-key:focus-visible,
+.result-action:focus-visible,
 .btn:focus-visible,
 .lang-card:focus-visible,
 .cal-day:focus-visible,

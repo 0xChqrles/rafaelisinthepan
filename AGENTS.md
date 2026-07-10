@@ -507,13 +507,61 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   pixelated` keeps it crisp. (Superseded the earlier hand-computed SVG-path ripple.)
   Reduced-motion hides it → the static fill + aria-label carry the status.
   The calendar itself is **vertically centered** (`.archive` flex column, top padding
-  clears the fixed header). Entry: a calendar icon in the
+  clears the fixed header). **The live streak stat moved out of the archive body and into
+  the shared `TopBar` (decided 2026-07-11):** immediately right of the language flag it is
+  only `assets/streak-small.png` (the 8×10 pixel-art source displayed at an exact 3× =
+  24×30) plus a larger bare streak amount; a zero/broken streak remains hidden. Entry: a
+  calendar icon in the
   game TopBar's right group; `dateForDayNumber` (`shared/day.ts`) is the `dayNumber`
   inverse. The **OG share page** (`backend/ogCard.ts` `renderShareHtml`) now click-throughs
   to the **shared day's** date-addressed URL (`/<lang>/<dateForDayNumber(dayNumber)>`),
   not bare `/<lang>` — so a shared archive result opens that archived date, not today (the
   card/title were already `#dayNumber`-correct). The archive **must not touch streaks**
   (separate issue).
+- **Solved-result hierarchy (decided 2026-07-10):** the solved tray is sentence-specific:
+  one centered stack at every breakpoint with the named `<tries> TRIES` headline, the
+  restored 3–18 cold-to-hot trajectory squares (`bucketMeans` — the SAME values used by
+  the share card/text), then SHARE. **Fresh-solve sequence (decided 2026-07-10):** the
+  solving submit immediately sends the prompt left while fading it out, in the same render
+  that launches the final hole-hit feedback. The next stage waits until EVERY `Hole` reports
+  its final secret rendered after the real `word-replace-blink` `animationend` — never a
+  guessed timeout — so multi-word or throttled animation cannot be covered mid-resolution.
+  A fresh active-day solve then holds the fully resolved sentence for 300ms before mounting
+  the streak modal. Once that modal has completely dismissed (including its exit fade), the
+  optional sentence source types quickly, letter by letter, with a trailing `_`; archive /
+  no-streak play starts this source beat immediately after the final holes settle. Only when
+  source typing finishes do the tries rise/tally, trajectory-square, and SHARE animations
+  begin (no metadata skips the typewriter); rehydrated solves render the full source/results
+  immediately without replaying the sequence. Player progression is separate:
+  `StreakDialog` is a
+  **borderless full-screen** native modal, opened only by a FRESH active-day
+  unsolved→solved transition. Its staged animation uses `@react-spring/web` (v9 for React
+  18): 200ms empty-screen fade → previous streak (derived without the solved day; 0 when
+  broken) 200ms fade → 500ms hold → changed digits wheel down/in from above, staggered
+  90ms right-to-left with a slower, subtly bouncing incoming spring → whole new number
+  foreground → flame → week with the solved day still empty → that tile lifts toward the
+  player, flips onto its completed face, and falls back to the screen plane → its impact
+  sends the prior completed-day scale pulse nearest-first across the week at 65ms intervals
+  → the ending hint. Unchanged streak digits never move, and the previous value stays
+  horizontally centered when the new streak adds a digit. It
+  never opens for archive solves, `?puzzle=` overrides, the tutorial, a reload, or an
+  already-solved revisit. **Dismissal (decided 2026-07-10, replacing the CONTINUE button):**
+  the ending beat is a pulsing arcade-style hint — pure "what to do", never a why (the
+  game is done; CONTINUE/CLOSE would beg "continue to what?") — reading TAP ANYWHERE on
+  coarse pointers / CLICK ANYWHERE otherwise (localized). **The celebration has NOTHING
+  focusable (decided 2026-07-10):** the hint is a plain non-interactive element, not a
+  button, and nothing is auto-focused — so no focus ring ever appears and a stray Tab has
+  nowhere to land (the modal traps focus; Tab is also swallowed). Once the hint appears the
+  WHOLE modal dismisses — click/tap anywhere, ANY key (the "press any key" twin of
+  tap-anywhere), or Escape — but dismissal is completely disabled until the hint's entrance
+  finishes and it is fully visible. Every dismissal then fades the whole modal opacity over
+  200ms before unmounting; after source typing and the result rise, focus moves to the result
+  action. While any streak screen is open, the source and solved-result timers stay at their
+  initial frame. **Dev-only preview:**
+  `?streak=N` (integer `0..99999`)
+  opens the sequence immediately with `N` as the PREVIOUS value (`?streak=9` → `9→10`),
+  suppresses the first-visit invitation, and synthesizes its visual week without mutating
+  persisted rounds/solved days; production builds ignore the parameter.
 - **Onboarding tutorial (#51, redesigned 2026-07-06):** the tutorial **never starts
   without an action**. A first visit (persisted `onboarded` unset) lands on an
   **invitation** (`tutorial/Invite.tsx`, standing in for the loading screen: "New to

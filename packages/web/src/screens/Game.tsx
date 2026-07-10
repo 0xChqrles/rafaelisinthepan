@@ -9,10 +9,10 @@ import Phrase from '../components/Phrase';
 import ProgressBar from '../components/ProgressBar';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
-import SolvedScreen from '../components/SolvedScreen';
+import SolvedScreen, { RESULTS_IN_MS } from '../components/SolvedScreen';
+import StreakDialog from '../components/StreakDialog';
 import SolvedCaption from '../components/SolvedCaption';
 import LoadError from '../components/LoadError';
-import { HIT_FADE_MS } from '../components/FloatingHit';
 import { t, srHoleResult } from '../i18n';
 import { track } from '../analytics';
 import { fold } from '@whippin/shared';
@@ -30,12 +30,10 @@ type Feedback = { text: string };
 export const STAGGER_MS = 200;
 export const FLOATING_HIT_INTRO_MS = 320;
 
-// Once the last hole is solved it still animates: the exponent rolls to 0 (HIT_FADE_MS),
-// then the secret word blinks into place (.word-replace-blink = 0.2s x 3). Hold the
-// playing UI until that finishes, then transition to the solved presentation — so the
-// results never pop in over a still-resolving word. Kept in sync with those two effects.
+// Shared with the tutorial's scripted timing. The real game no longer guesses when this
+// finishes: each Hole reports its actual resolved animation completion to Round.
 export const WORD_BLINK_MS = 600; // .word-replace-blink in index.css (0.2s steps(1) 3)
-const LAST_HOLE_SETTLE_MS = HIT_FADE_MS + WORD_BLINK_MS;
+const STREAK_AFTER_WORDS_MS = 300;
 
 // Per page-load token isolating a ?puzzle= override round (no server day to key on),
 // so testing a static file always starts fresh and never rehydrates another file.
@@ -49,12 +47,16 @@ export default function Game({
   puzzle,
   dayNumber,
   isActiveDay = true,
+  deferResultsAnimation = false,
 }: {
   puzzle: Puzzle;
   dayNumber: number | null;
   // Whether this is the client's active day (false when replaying an archive day, #55):
-  // gates the solved-screen countdown and tags the solve-analytics `archive` prop.
+  // gates the fresh-solve streak celebration and tags solve analytics as archive/live.
   isActiveDay?: boolean;
+  // The dev streak preview lives above Game in App, so it supplies the same animation gate
+  // as the real in-round dialog without coupling the preview to persisted round state.
+  deferResultsAnimation?: boolean;
 }) {
   const { vocab, error, retry } = useVocab(puzzle.lang);
 
@@ -74,6 +76,7 @@ export default function Game({
       lang={puzzle.lang}
       dayNumber={dayNumber}
       isActiveDay={isActiveDay}
+      deferResultsAnimation={deferResultsAnimation}
     />
   );
 }
@@ -90,6 +93,7 @@ function Round({
   lang,
   dayNumber,
   isActiveDay,
+  deferResultsAnimation,
 }: {
   words: string[];
   puzzleHoles: Hole[];
@@ -100,6 +104,7 @@ function Round({
   lang: string;
   dayNumber: number | null;
   isActiveDay: boolean;
+  deferResultsAnimation: boolean;
 }) {
   // Fresh per-hole state derived from the puzzle. Used until the persisted store
   // reconciles to this round, and as the reset state on a new day/language.
@@ -156,7 +161,27 @@ function Round({
   // Sourced from the persisted `tried` list, so recall survives a reload (per day+lang).
   const history = live ? live.tried : [];
 
+  // Hole owns the actual word-replacement animation, so it also owns the reliable finish
+  // signal. Keep every resolved hole reported for this round; the round-key dependency on
+  // the callback makes already-resolved rehydrated holes report again after navigation.
+  const [resolvedHoleIndices, setResolvedHoleIndices] = useState<Set<number>>(() => new Set());
+  useLayoutEffect(() => {
+    setResolvedHoleIndices(new Set());
+  }, [roundKey]);
+  const markHoleResolved = useCallback((index: number) => {
+    setResolvedHoleIndices((current) => {
+      if (current.has(index)) return current;
+      const next = new Set(current);
+      next.add(index);
+      return next;
+    });
+  }, [roundKey]);
+
   const [input, setInput] = useState<string>('');
+  // A solving submit closes the prompt immediately, on the same render that launches
+  // the final floating hits. The actual hole/store updates still finish on their existing
+  // delayed choreography; this flag only owns the prompt's leftward fade and input lock.
+  const [promptExiting, setPromptExiting] = useState(false);
   // One transient floating indicator per impacted hole: a distance number when
   // warm, or "MISS" when too far. An improving hole shows the distance too; its
   // exponent drops as the number fades, then the old word blinks out and the
@@ -167,6 +192,7 @@ function Round({
   const [feedback, setFeedback] = useState<Feedback | null>(null); // message under the input
   const hitId = useRef<number>(0); // monotonic id source for floating hits
   const pendingTimers = useRef<number[]>([]); // deferred word/rank swaps (fire as the hit fades)
+  const resultFocusTimer = useRef<number | undefined>(undefined);
 
   // Screen-reader mirror of the visual guess feedback (floating numbers / "MISS" /
   // shakes are invisible to assistive tech): each submit composes one sentence into a
@@ -180,9 +206,16 @@ function Round({
   }, []);
 
   // Clear any pending staggered effects when the round unmounts.
-  useEffect(() => () => pendingTimers.current.forEach(clearTimeout), []);
+  useEffect(
+    () => () => {
+      pendingTimers.current.forEach(clearTimeout);
+      window.clearTimeout(resultFocusTimer.current);
+    },
+    [],
+  );
 
   const solved = holes.every((h) => h.rank === 0); // sentence discovered -> round over
+  const allWordsResolved = solved && resolvedHoleIndices.size === holes.length;
 
   // Reconstruction progress (0–100): how much of the sentence is rebuilt. Drives the
   // WIDTH of the top progress bar. Distinct from the guess-count performance number.
@@ -196,21 +229,45 @@ function Round({
     [freshHoles, ranks, history],
   );
 
-  // Gate the solved presentation on the last hole's solve animation finishing (see
-  // LAST_HOLE_SETTLE_MS): the playing UI (input + keyboard) stays up until then, so the
-  // sentence resolves in place and the results reveal cleanly afterwards — no reflow, no
-  // pop-over. An already-solved round on load has no animation to wait for.
+  // Gate the solved presentation on every Hole reporting its final displayed secret. The
+  // playing UI stays up through the real animationend events, so slow/throttled frames and
+  // a multi-hole final guess cannot let the streak cover words that are still resolving.
+  // An already-solved round on load still reveals immediately.
   const [showResults, setShowResults] = useState<boolean>(solved);
+  // Player progression gets a separate, one-time celebration. This is deliberately
+  // transient rather than persisted: only the live unsolved -> solved transition may open
+  // it, so refreshing or revisiting an already-solved round never interrupts the player.
+  const [showStreakDialog, setShowStreakDialog] = useState(false);
+  const [awaitingWordAnimations, setAwaitingWordAnimations] = useState(false);
+  // Sentence metadata is its own reveal beat between player progression and the
+  // sentence-specific metrics. Results may mount behind the streak, but their timers stay
+  // frozen until the source typewriter explicitly reports that it has finished.
+  const [sourceRevealStarted, setSourceRevealStarted] = useState(solved);
+  const [sourceRevealComplete, setSourceRevealComplete] = useState(solved);
+  const focusResultAfterSource = useRef(false);
   const prevSolved = useRef<boolean>(solved);
   useEffect(() => {
     const justSolved = solved && !prevSolved.current;
     prevSolved.current = solved;
     if (!solved) {
       setShowResults(false);
+      setShowStreakDialog(false);
+      setAwaitingWordAnimations(false);
+      setPromptExiting(false);
+      setSourceRevealStarted(false);
+      setSourceRevealComplete(false);
+      focusResultAfterSource.current = false;
+      window.clearTimeout(resultFocusTimer.current);
       return undefined;
     }
     if (!justSolved) {
       setShowResults(true); // already solved on load (rehydrated) -> reveal without waiting
+      setShowStreakDialog(false);
+      setAwaitingWordAnimations(false);
+      setPromptExiting(false);
+      setSourceRevealStarted(true);
+      setSourceRevealComplete(true);
+      focusResultAfterSource.current = false;
       return undefined;
     }
     // The one analytics beat for "did the player finish a puzzle": fired ONLY on the
@@ -228,9 +285,60 @@ function Round({
       // so the flip-edge still records while an archive-yesterday solve does not.
       if (isActiveDay) recordSolve(lang, dayNumber, todayDayNumber);
     }
-    const t = window.setTimeout(() => setShowResults(true), LAST_HOLE_SETTLE_MS);
-    return () => window.clearTimeout(t);
+    setSourceRevealStarted(false);
+    setSourceRevealComplete(false);
+    setAwaitingWordAnimations(true);
+    return undefined;
   }, [solved]);
+
+  useEffect(() => {
+    if (!awaitingWordAnimations || !allWordsResolved) return;
+    // The archive, tutorial (?puzzle= has no day), and rehydration branches never open
+    // this dialog. recordSolve has already updated the solved-day set synchronously —
+    // and its freshness tolerance is mirrored here (solvedDay >= activeDay - 1), so a
+    // tab left open 2+ days can't celebrate a solve the store just refused to record.
+    const willShowStreak = dayNumber != null && isActiveDay && dayNumber >= todayDayNumber - 1;
+    if (!willShowStreak) {
+      setShowResults(true);
+      setShowStreakDialog(false);
+      setSourceRevealStarted(true);
+      setAwaitingWordAnimations(false);
+      return;
+    }
+
+    // Let the player see the fully resolved sentence for one clean beat before the
+    // full-screen progression celebration begins. Mount results and the modal together so
+    // the tries/squares choreography remains paused behind the streak until dismissal.
+    const timer = window.setTimeout(() => {
+      setShowResults(true);
+      setShowStreakDialog(true);
+      setAwaitingWordAnimations(false);
+    }, STREAK_AFTER_WORDS_MS);
+    return () => window.clearTimeout(timer);
+  }, [allWordsResolved, awaitingWordAnimations, dayNumber, isActiveDay, todayDayNumber]);
+
+  const dismissStreakDialog = useCallback(() => {
+    // StreakDialog calls this only AFTER its 200ms exit fade. That callback is the source
+    // typewriter's start line, so the citation can never appear underneath the fading
+    // progression screen.
+    setShowStreakDialog(false);
+    focusResultAfterSource.current = true;
+    setSourceRevealStarted(true);
+  }, []);
+
+  const finishSourceReveal = useCallback(() => {
+    setSourceRevealComplete(true);
+    if (!focusResultAfterSource.current) return;
+    focusResultAfterSource.current = false;
+    // This dialog has no trigger to restore focus to. Wait until the now-unblocked result
+    // stack has risen in before focusing its next relevant sentence action.
+    window.clearTimeout(resultFocusTimer.current);
+    resultFocusTimer.current = window.setTimeout(
+      () =>
+        document.querySelector<HTMLButtonElement>('.result-action')?.focus({ preventScroll: true }),
+      RESULTS_IN_MS,
+    );
+  }, []);
 
   // Cache the progress on the persisted round so the language selector can badge an
   // in-progress language without re-loading its rank map. No-op when unchanged.
@@ -253,28 +361,31 @@ function Round({
   // a submitted word).
   const appendChar = useCallback(
     (char: string) => {
+      if (promptExiting) return;
       setFeedback(null);
       if (canExtend(prefixSet, input, char)) setInput(input + char);
       else setInvalidAt(Date.now());
     },
-    [prefixSet, input],
+    [prefixSet, input, promptExiting],
   );
 
   const deleteChar = useCallback(() => {
+    if (promptExiting) return;
     setFeedback(null);
     setInput((cur) => cur.slice(0, -1));
-  }, []);
+  }, [promptExiting]);
 
   // Replace the whole input (physical-keyboard history recall). Recalled values are
   // past valid words, hence valid prefixes, so no re-validation is needed.
   const replaceInput = useCallback((v: string) => {
+    if (promptExiting) return;
     setFeedback(null);
     setInput(v);
-  }, []);
+  }, [promptExiting]);
 
   const submit = useCallback(
     (raw: string) => {
-      if (solved) return;
+      if (solved || promptExiting) return;
       const typed = fold(raw);
       if (!typed) {
         setInput('');
@@ -292,8 +403,13 @@ function Round({
         return;
       }
 
+      // Know at submit time whether this valid guess closes every remaining hole. Start
+      // the prompt exit NOW — in the same React commit as the final hit indicators —
+      // instead of waiting for the delayed store improvements to mark the round solved.
+      const solvesAll = holes.every((h) => h.rank === 0 || ranks[h.secret][typed]?.rank === 0);
       setInput('');
       setFeedback(null);
+      if (solvesAll) setPromptExiting(true);
       // Counted guess: a unique valid word (misses included). The store dedupes by
       // folded slug, so repeats and the non-existent words returned above never
       // increase the score.
@@ -312,7 +428,6 @@ function Round({
       // Announce the guess's outcome to assistive tech — the audible twin of the
       // floating numbers below. One sentence covering every impacted hole (1-based, in
       // sentence order), plus the solved fanfare when this guess finishes the round.
-      const solvesAll = holes.every((h) => h.rank === 0 || ranks[h.secret][typed]?.rank === 0);
       const parts = impacted.map(({ index, entry }) =>
         srHoleResult(lang, index + 1, entry ? entry.rank : null),
       );
@@ -353,7 +468,7 @@ function Round({
         pendingTimers.current.push(timer);
       });
     },
-    [holes, ranks, solved, vocabSet, recordGuess, improveHole, lang, say],
+    [holes, ranks, solved, promptExiting, vocabSet, recordGuess, improveHole, lang, say],
   );
 
   return (
@@ -387,16 +502,33 @@ function Round({
         {/* The reconstructed sentence stays visible in BOTH states: while playing (with
             the live holes/hits) and once solved (every hole resolved to its accented
             secret) — it is the "full reconstructed sentence" of the solved screen. */}
-        <Phrase words={words} holes={holes} puzzleHoles={puzzleHoles} hits={hits} onHitDone={removeHit} />
+        <Phrase
+          words={words}
+          holes={holes}
+          puzzleHoles={puzzleHoles}
+          hits={hits}
+          onHitDone={removeHit}
+          onHoleResolved={markHoleResolved}
+        />
 
-        {/* Below the sentence: the input while playing, its attribution once the results
-            reveal. Both reserve the same height, so the transition never shifts the
-            sentence up. The swap waits for the last hole to finish animating (showResults),
-            so the input stays put while the final word resolves. */}
+        {/* Below the sentence: the prompt exits on the solving submit; after every final
+            word settles (and, on the active day, after the streak closes), the source is
+            typed into the same reserved footprint. Nothing shifts the sentence. */}
         {showResults ? (
-          <SolvedCaption source={source} />
+          sourceRevealStarted ? (
+            <SolvedCaption
+              source={source}
+              animate={!sourceRevealComplete}
+              onComplete={finishSourceReveal}
+            />
+          ) : (
+            <div className="solved-caption" aria-hidden="true" />
+          )
         ) : (
-          <div className="input-area">
+          <div
+            className={`input-area${promptExiting ? ' solving' : ''}`}
+            aria-hidden={promptExiting || undefined}
+          >
             <WordInput
               value={input}
               history={history}
@@ -423,7 +555,9 @@ function Round({
             trajectory={trajectory}
             dayNumber={dayNumber}
             lang={lang}
-            isActiveDay={isActiveDay}
+            startAnimation={
+              sourceRevealComplete && !showStreakDialog && !deferResultsAnimation
+            }
           />
         ) : (
           <Keyboard
@@ -437,6 +571,10 @@ function Round({
           />
         )}
       </div>
+
+      {showStreakDialog && dayNumber != null && (
+        <StreakDialog lang={lang} solvedDay={dayNumber} onDismiss={dismissStreakDialog} />
+      )}
     </div>
   );
 }

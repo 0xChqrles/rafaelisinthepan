@@ -28,6 +28,21 @@ export function currentStreak(days: number[], activeDay: number): number {
   return run;
 }
 
+export interface StreakTransition {
+  previous: number;
+  next: number;
+}
+
+// The before/after values for the celebration triggered by `solvedDay`. The store has
+// already inserted that day when the dialog mounts, so derive the previous state by removing
+// it and anchor BOTH calculations to the solved game day (not a possibly-flipped wall clock).
+export function streakTransition(days: number[], solvedDay: number): StreakTransition {
+  return {
+    previous: currentStreak(days.filter((day) => day !== solvedDay), solvedDay),
+    next: currentStreak(days, solvedDay),
+  };
+}
+
 // One cell of the weekly streak row (#74).
 export interface WeekCell {
   dayNumber: number;
@@ -38,7 +53,8 @@ export interface WeekCell {
 
 export interface WeekView {
   // Whether the current week is "clean so far" — no elapsed day on/after the player's
-  // first-ever solve is unsolved. The Duolingo-style row is shown ONLY when clean.
+  // first-ever solve is unsolved. Kept as a derived signal even though the celebration now
+  // always shows the row (including a restarted streak after a missed day).
   clean: boolean;
   cells: WeekCell[]; // exactly 7, Monday..Sunday
 }

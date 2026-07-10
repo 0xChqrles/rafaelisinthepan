@@ -8,7 +8,7 @@
 //     for — it makes a future cross-device merge a union + recompute).
 
 import { describe, it, expect } from 'vitest';
-import { currentStreak, bestStreak, weekView } from './streak';
+import { currentStreak, bestStreak, streakTransition, weekView } from './streak';
 
 // 2024-01-01 is a MONDAY; its dayNumber is a clean anchor for the Monday-based week math.
 const MON = Math.floor(Date.UTC(2024, 0, 1) / 86_400_000);
@@ -41,6 +41,20 @@ describe('currentStreak', () => {
 
   it('a single solved day today is a streak of 1', () => {
     expect(currentStreak([10], 10)).toBe(1);
+  });
+});
+
+describe('streakTransition', () => {
+  it('increments a live consecutive streak', () => {
+    expect(streakTransition([8, 9, 10], 10)).toEqual({ previous: 2, next: 3 });
+  });
+
+  it('starts at 0 -> 1 when there was no live streak', () => {
+    expect(streakTransition([5, 10], 10)).toEqual({ previous: 0, next: 1 });
+  });
+
+  it('starts at 0 -> 1 on the first-ever solve', () => {
+    expect(streakTransition([10], 10)).toEqual({ previous: 0, next: 1 });
   });
 });
 

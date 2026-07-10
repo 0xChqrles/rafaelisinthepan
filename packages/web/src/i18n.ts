@@ -33,9 +33,14 @@ const STRINGS = {
   tries: { en: 'TRIES', fr: 'ESSAIS' },
   share: { en: 'SHARE', fr: 'PARTAGER' },
   copied: { en: 'COPIED', fr: 'COPIÉ' },
+  // The streak celebration's ending hint: pure "what to do" — the whole screen dismisses,
+  // so naming a "why" (continue/close — continue to WHAT? the game is done) would only
+  // raise a question it can't answer. Pointer-aware: coarse pointers read TAP.
+  tapAnywhere: { en: 'TAP ANYWHERE', fr: "TOUCHEZ L'ÉCRAN" },
+  clickAnywhere: { en: 'CLICK ANYWHERE', fr: "CLIQUEZ N'IMPORTE OÙ" },
   // Streak labels (#56/#74). Untranslated in French too — a global game concept across
-  // languages (decided 2026-07-09). `streak` is the compact archive stat ("STREAK 3");
-  // `dayStreak` is the big solved-screen label under the number ("3 / DAY STREAK").
+  // languages (decided 2026-07-09). `streak` names the compact header stat to screen readers;
+  // `dayStreak` is the celebration-dialog label under the number ("3 / DAY STREAK").
   streak: { en: 'STREAK', fr: 'STREAK' },
   dayStreak: { en: 'DAY STREAK', fr: 'DAY STREAK' },
   srSolvedAll: { en: 'sentence solved!', fr: 'phrase résolue !' },
