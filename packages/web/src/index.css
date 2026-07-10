@@ -1033,12 +1033,25 @@ button * {
    sit 0.125em above their box bottom (the font's yMin = 125/1000, descent 0) — so lifting
    the count by 32px − 0.125em lands the digits exactly on the core's bottom edge. */
 .streak-count {
+  position: relative; /* contains the absolute live overlay */
+  display: inline-block;
   font-family: var(--press);
   font-size: min(64px, calc((100vw - 192px) / 3));
   line-height: 1;
   margin-bottom: calc(32px - 0.125em);
   color: var(--fg);
   font-variant-numeric: tabular-nums;
+}
+/* Ghost = the final streak value, invisible: it reserves the exact width (tabular digits)
+   so the tallying number never resizes the head + shifts the flame. */
+.streak-count-ghost {
+  visibility: hidden;
+}
+/* Live = the animating count, overlaid right-aligned on the ghost's box. */
+.streak-count-live {
+  position: absolute;
+  inset: 0;
+  text-align: right;
 }
 /* The small "DAY STREAK" label under the number. */
 .streak-label {

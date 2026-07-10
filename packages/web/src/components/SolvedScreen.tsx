@@ -20,6 +20,7 @@ const NO_SOLVED_DAYS: number[] = [];
 // and score/share row fade in together, then the score tallies up from 0.
 const ACTIONS_IN_MS = 350; // score+share fade/rise into place (matches .solved-actions transition)
 const SCORE_COUNT_MS = 800; // score tally 0 -> guessCount
+const STREAK_COUNT_MS = 800; // streak count tally 0 -> streak (same beat + duration as the score)
 
 // The solved results (issue #8): it takes over the on-screen keyboard's footprint once
 // the sentence is solved, so the layout never reflows and no empty gap is left where the
@@ -53,7 +54,7 @@ export default function SolvedScreen({
   const squares = useMemo(() => bucketMeans(trajectory), [trajectory]);
 
   // Reveal in two beats: (1) the streak block + score/share row fade/rise into place,
-  // (2) the score tallies up from 0 in its final position.
+  // (2) once settled, the streak count AND the score both tally up from 0 in place.
   const [countTarget, setCountTarget] = useState(0);
   const [showActions, setShowActions] = useState(false);
   // (1) On mount (the reveal moment), bring the row in on the next frame so its fade/rise
@@ -81,6 +82,17 @@ export default function SolvedScreen({
   const showStreak = dayNumber != null && isActiveDay && streak > 0;
   // The Monday-based weekly row is shown only on a "clean week so far" (#74).
   const week = useMemo(() => weekView(solvedDays, activeDay), [solvedDays, activeDay]);
+
+  // The hero streak count tallies up from 0 as the block settles — the same beat as the
+  // score tally below. Reserving the final width (ghost) keeps the growing digits from
+  // shifting the flame beside them.
+  const [streakTarget, setStreakTarget] = useState(0);
+  useEffect(() => {
+    if (!showActions || !showStreak) return undefined;
+    const id = window.setTimeout(() => setStreakTarget(streak), ACTIONS_IN_MS);
+    return () => window.clearTimeout(id);
+  }, [showActions, showStreak, streak]);
+  const shownStreak = useAnimatedNumber(streakTarget, STREAK_COUNT_MS);
 
   // "COPIED" confirmation after a clipboard fallback (the native share sheet needs none).
   const [copied, setCopied] = useState(false);
@@ -146,7 +158,14 @@ export default function SolvedScreen({
           <div className="streak-headline">
             <div className="streak-head">
               <span className="streak-flame" aria-hidden />
-              <span className="streak-count">{streak}</span>
+              {/* Ghost reserves the FINAL streak's width (so the counting digits never
+                  shift the flame); the live overlay right-aligns the tallying number. */}
+              <span className="streak-count">
+                <span className="streak-count-ghost" aria-hidden="true">
+                  {streak}
+                </span>
+                <span className="streak-count-live">{Math.round(shownStreak)}</span>
+              </span>
             </div>
             <p className="streak-label">{t(lang, 'dayStreak')}</p>
           </div>
