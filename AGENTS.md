@@ -77,7 +77,7 @@ packages/
     src/slug.ts               fold() — the slug/fold contract (byte-identical to slug())
     src/day.ts                the ONE 22:00-ET DST-correct game-day logic (client + server + publish)
     src/types.ts              per-puzzle schema types (Puzzle, Hole, RankMap, …)
-    src/heat.ts               heatColor() — heat ramp (rank exponents, heat grid, share card)
+    src/heat.ts               heatColor() — heat ramp (rank exponents, share card)
     src/progressColor.ts      progressColor() — progress ramp (progress bar, selector badge); shares ramp.ts
     src/index.ts              re-exports
   web/                        React + Vite + TS front (pkg @whippin/web)

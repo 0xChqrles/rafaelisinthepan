@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
 import { bucketMeans, shareText, shareUrl } from '../game/share';
-import { heatColor } from '@whippin/shared';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import useToday from '../hooks/useToday';
 import { useGameStore } from '../state/gameStore';
@@ -18,25 +16,20 @@ import { t } from '../i18n';
 const NO_SOLVED_DAYS: number[] = [];
 
 // Reveal choreography (this component MOUNTS at the reveal moment — Game gates it on the last
-// hole's solve animation finishing, so the animations below ARE the reveal): the score/share
-// row fades in and the score tallies up from 0, THEN the heat squares appear as neutral
-// surface tiles and colorize one by one. Score first (the headline), heat trail after.
-const SQUARE_STAGGER_MS = 55; // gap between consecutive squares colorizing...
-const GRID_MAX_SPAN_MS = 1400; // ...compressed so even a long game's grid stays snappy
+// hole's solve animation finishing, so the animations below ARE the reveal): the streak block
+// and score/share row fade in together, then the score tallies up from 0.
 const ACTIONS_IN_MS = 350; // score+share fade/rise into place (matches .solved-actions transition)
 const SCORE_COUNT_MS = 800; // score tally 0 -> guessCount
-// The uncolored squares appear only AFTER the score is shown (row settled + tally finished)...
-const SQUARES_START_MS = ACTIONS_IN_MS + SCORE_COUNT_MS;
-const NEUTRAL_HOLD_MS = SQUARE_STAGGER_MS; // ...are held neutral this long, THEN colorize one by one.
 
 // The solved results (issue #8): it takes over the on-screen keyboard's footprint once
 // the sentence is solved, so the layout never reflows and no empty gap is left where the
-// keyboard was. Understated + flat to match the app: a heat-grid of one pixel square per
-// counted guess (colored by the game's own heat ramp — cold/far to hot/solved), the
-// score, and a share control styled like a keyboard key. Reused by the already-solved
-// screen (#9) and by the tutorial's ending (#51), which swaps SHARE for its own
-// `action` (PLAY) so the tutorial graduates into the EXACT solved layout of the real
-// game. The reconstructed sentence + attribution live above, in <SolvedCaption>.
+// keyboard was. Understated + flat to match the app: the streak block (#74), the score,
+// and a share control styled like a keyboard key. The per-guess heat squares live ONLY in
+// the share preview now (OG card + emoji row — decided 2026-07-10): on screen their 3..18
+// variable width fought the fixed-width streak block, and they duplicated the card.
+// Reused by the already-solved screen (#9) and by the tutorial's ending (#51), which swaps
+// SHARE for its own `action` (PLAY) so the tutorial graduates into the EXACT solved layout
+// of the real game. The reconstructed sentence + attribution live above, in <SolvedCaption>.
 export default function SolvedScreen({
   guessCount,
   trajectory,
@@ -55,16 +48,12 @@ export default function SolvedScreen({
   action?: { label: string; onClick: () => void }; // replaces the SHARE control (tutorial)
 }) {
   // Collapse the per-guess trajectory into a bounded set of squares (3..18), each colored
-  // by its bucket's mean progress. Same array drives the on-screen grid and the share row.
+  // by its bucket's mean progress. Share-only now: it drives the OG card + the emoji row
+  // of the share text (the on-screen grid was removed — see the component comment).
   const squares = useMemo(() => bucketMeans(trajectory), [trajectory]);
-  const n = squares.length;
-  // Per-square stagger, compressed for long games so the whole grid lands within a bound.
-  const stagger = n > 1 ? Math.min(SQUARE_STAGGER_MS, GRID_MAX_SPAN_MS / (n - 1)) : 0;
 
-  // Reveal in three beats: (1) the score+share row fades/rises into place, (2) the score
-  // tallies up from 0 in its final position, and only THEN (3) the squares pop in one by one
-  // (their staggered CSS delays are offset by SQUARES_START_MS, below). Score first, squares
-  // after — the score is the headline, the heat trail the follow-up.
+  // Reveal in two beats: (1) the streak block + score/share row fade/rise into place,
+  // (2) the score tallies up from 0 in its final position.
   const [countTarget, setCountTarget] = useState(0);
   const [showActions, setShowActions] = useState(false);
   // (1) On mount (the reveal moment), bring the row in on the next frame so its fade/rise
@@ -80,25 +69,6 @@ export default function SolvedScreen({
     return () => window.clearTimeout(t);
   }, [showActions, guessCount]);
   const shownScore = useAnimatedNumber(countTarget, SCORE_COUNT_MS);
-
-  // (3) After the score is shown: neutral tiles roll in one by one (gridShown + per-cell
-  //     --show-delay), and once they are all in (+ a brief hold) each colorizes one by one
-  //     (gridColorized + per-cell --color-delay). Two class flips on .heat-grid drive the
-  //     CSS transitions. gridSpanMs = how long the staggered wave takes end to end.
-  const gridSpanMs = Math.max(0, n - 1) * stagger;
-  const [gridShown, setGridShown] = useState(false);
-  const [gridColorized, setGridColorized] = useState(false);
-  useEffect(() => {
-    const show = window.setTimeout(() => setGridShown(true), SQUARES_START_MS);
-    const color = window.setTimeout(
-      () => setGridColorized(true),
-      SQUARES_START_MS + gridSpanMs + NEUTRAL_HOLD_MS,
-    );
-    return () => {
-      window.clearTimeout(show);
-      window.clearTimeout(color);
-    };
-  }, [gridSpanMs]);
 
   // Streak (#56/#74): derived from the per-language solved-day SET, never a stored counter.
   // Shown only for a streak-eligible solve — an active-day win with a real dayNumber. An
@@ -165,10 +135,9 @@ export default function SolvedScreen({
 
   return (
     <div className="solved-results">
-      {/* Streak (#56/#74): the flame + STREAK n line and, on a clean week, the bigger
-          Duolingo-style 7-day row — at the TOP; the heat squares stay grouped with the
-          score/share below, as they describe the same result (decided 2026-07-09). Rides
-          the shared fade/rise. Only for a streak-eligible solve (active day, real
+      {/* Streak (#56/#74): the flame + count headline and, on a clean week, the
+          Duolingo-style 7-day row — at the TOP, above the score/share row. Rides the
+          shared fade/rise. Only for a streak-eligible solve (active day, real
           dayNumber); an archive replay and a ?puzzle= override show none. */}
       {showStreak && (
         <div className={`streak-block${showActions ? ' in' : ''}`}>
@@ -184,34 +153,6 @@ export default function SolvedScreen({
           {week.clean && <WeekRow cells={week.cells} lang={lang} />}
         </div>
       )}
-
-      {/* One flat square per bucket (3..18). AFTER the score is shown, neutral surface tiles
-          roll in one by one (.shown + staggered --show-delay), then each colorizes to its
-          bucket's MEAN reconstruction % one by one (.colorized + staggered --color-delay).
-          heatColor: 0 = cold/far crimson .. 1 = hot/solved cyan — the same ramp as the
-          rank exponents and the share card. Decorative — the score/share carry the real
-          numbers. The grid keeps its height throughout, so nothing shifts. */}
-      <div
-        className={`heat-grid${gridShown ? ' shown' : ''}${gridColorized ? ' colorized' : ''}`}
-        aria-hidden="true"
-        // --n (square count) sizes the row so it hugs its content and never wraps (see CSS).
-        style={{ '--n': n } as CSSProperties}
-      >
-        {squares.map((pct, i) => (
-          <span
-            // eslint-disable-next-line react/no-array-index-key
-            key={i}
-            className="heat-cell"
-            style={
-              {
-                '--cell-color': heatColor(pct / 100),
-                '--show-delay': `${Math.round(i * stagger)}ms`,
-                '--color-delay': `${Math.round(i * stagger)}ms`,
-              } as CSSProperties & Record<'--cell-color' | '--show-delay' | '--color-delay', string>
-            }
-          />
-        ))}
-      </div>
 
       <div className={`solved-actions${showActions ? ' in' : ''}`}>
         {/* "45 TRIES", not "SCORE 45": the count is the number of guesses, and naming the

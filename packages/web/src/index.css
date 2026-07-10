@@ -889,7 +889,8 @@ button * {
   padding-top: var(--text-shift);
 }
 
-/* Results: the heat-grid + score + share, centered in the keyboard's footprint. */
+/* Results: the streak block + score + share, centered in the keyboard's footprint. (The
+   per-guess heat squares live only in the share preview now — OG card + emoji row.) */
 .solved-results {
   display: flex;
   flex-direction: column;
@@ -898,43 +899,7 @@ button * {
   width: 100%;
   max-width: 680px; /* match the keyboard's max-width */
 }
-/* One flat pixel square per counted guess, colored inline by the heat ramp — the solve's
-   cold-to-hot trail. Wraps within the keyboard's width for longer games. */
-.heat-grid {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  /* Always a SINGLE centered row (never wraps). The row hugs its content up to `--n` cells
-     at the 22px cap — so a short 3-square game is a tidy centered cluster, not a sparse
-     full-width row — and on a narrow screen the cells SHRINK to fit one line instead of
-     wrapping to a ragged second row. `--n` (the square count) is set inline; the row is
-     centered in the results column by .solved-results. */
-  width: 100%;
-  max-width: calc(var(--n) * 22px + (var(--n) - 1) * 5px);
-}
-/* Squares roll in ONE BY ONE as neutral surface tiles, then colorize ONE BY ONE. Driven by
-   two class flips on .heat-grid (JS): `.shown` reveals each tile on its staggered --show-delay;
-   `.colorized` (added once every tile is in) snaps each cell's background from the surface tile
-   to its heat color on its staggered --color-delay. Near-zero durations keep the pixel-art snap
-   (no smooth fade); the per-cell delays produce the two left-to-right waves. */
-.heat-cell {
-  flex: 1 1 0;
-  aspect-ratio: 1;
-  image-rendering: pixelated;
-  opacity: 0;
-  background-color: var(--surface-hover); /* shown uncolored first, until it colorizes */
-  transition: opacity 1ms linear var(--show-delay, 0ms), background-color 1ms linear var(--color-delay, 0ms);
-}
-/* Wave 1: neutral tiles appear one by one. */
-.heat-grid.shown .heat-cell {
-  opacity: 1;
-}
-/* Wave 2: each tile snaps to its own heat color, one by one. */
-.heat-grid.colorized .heat-cell {
-  background-color: var(--cell-color);
-}
-/* Score + share fade/rise in AFTER the grid has landed (JS toggles `.in`), as the score
-   tallies up from 0. */
+/* Score + share fade/rise in (JS toggles `.in`) as the score tallies up from 0. */
 .solved-actions {
   display: flex;
   align-items: center;
@@ -1019,23 +984,24 @@ button * {
   align-items: center;
   gap: 6px;
 }
+/* Flame + count, BOTTOM-aligned: the count's digits sit on the flame CORE's bottom edge,
+   not the glow's (the glow halo extends 8 sprite-rows below the core — see .streak-count). */
 .streak-head {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  align-items: flex-end;
+  gap: 16px;
 }
 /* The hero flame: an ANIMATED 6-frame pixel-art sprite sheet (streak2.png, 192×30 = six
    32×30 frames — a glowing flame; the added glow makes the frame non-square), played the
-   same way as the calendar ripple. Drawn at 3× = 96×90px (INTEGER scale so `pixelated`
-   keeps the pixels razor-crisp; the flame core reads ≈66px, the glow haloes past it);
-   `background-size: 600% 100%` fits ONE frame to the box, and `steps(6)` walks
-   `background-position-x` frame by frame — end value 100% × 6/5 so frame 5 lands on 100%
-   and the loop wraps cleanly. */
+   same way as the calendar ripple. Drawn at 4× = 128×120px (INTEGER scale so `pixelated`
+   keeps the pixels razor-crisp); `background-size: 600% 100%` fits ONE frame to the box,
+   and `steps(6)` walks `background-position-x` frame by frame — end value 100% × 6/5 so
+   frame 5 lands on 100% and the loop wraps cleanly. */
 .streak-flame {
   display: block;
   flex: none;
-  width: 96px;
-  height: 90px;
+  width: 128px;
+  height: 120px;
   background-image: url('./assets/streak2.png');
   background-repeat: no-repeat;
   background-size: 600% 100%;
@@ -1057,11 +1023,20 @@ button * {
     animation: none;
   }
 }
-/* The streak count — the headline number, sized to co-star with the 72px flame. */
+/* The streak count — the headline number beside the flame. Sized as large as the WORST
+   case allows: Press Start 2P advances exactly 1em per digit, so a 3-digit streak is 3×
+   the font-size; the viewport must fit app padding (48px) + flame (128px) + gap (16px)
+   + 3 digits -> font-size = min(64px, (100vw - 192px) / 3). 64px on desktop, ~56px on a
+   360px phone — 3 digits always fit with the flame beside them.
+   Bottom alignment: .streak-head bottom-aligns the boxes; the flame core's bottom edge is
+   8 sprite-rows above the box bottom (the glow halo, ×4 = 32px), and the digits' bottoms
+   sit 0.125em above their box bottom (the font's yMin = 125/1000, descent 0) — so lifting
+   the count by 32px − 0.125em lands the digits exactly on the core's bottom edge. */
 .streak-count {
   font-family: var(--press);
-  font-size: 44px;
+  font-size: min(64px, calc((100vw - 192px) / 3));
   line-height: 1;
+  margin-bottom: calc(32px - 0.125em);
   color: var(--fg);
   font-variant-numeric: tabular-nums;
 }
