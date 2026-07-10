@@ -19,9 +19,13 @@ const NO_SOLVED_DAYS: number[] = [];
 // Reveal choreography (this component MOUNTS at the reveal moment — Game gates it on the last
 // hole's solve animation finishing, so the animations below ARE the reveal): the streak block
 // and score/share row fade in together, then the score tallies up from 0.
-const ACTIONS_IN_MS = 350; // score+share fade/rise into place (matches .solved-actions transition)
+const ACTIONS_IN_MS = 350; // a group's fade/rise into place (matches the CSS transition)
 const SCORE_COUNT_MS = 800; // score tally 0 -> guessCount
-const STREAK_COUNT_MS = 800; // streak count tally 0 -> streak (same beat + duration as the score)
+const STREAK_COUNT_MS = 800; // streak count tally 0 -> streak (same duration as the score)
+// The score/share group enters this long AFTER the streak block (sequenced introduction:
+// streak first, then the result) — as the streak tally is landing. 0 when there is no
+// streak block, so a streak-less reveal is as immediate as before.
+const ACTIONS_DELAY_MS = 700;
 
 // The solved results (issue #8): it takes over the on-screen keyboard's footprint once
 // the sentence is solved, so the layout never reflows and no empty gap is left where the
@@ -54,24 +58,6 @@ export default function SolvedScreen({
   // of the share text (the on-screen grid was removed — see the component comment).
   const squares = useMemo(() => bucketMeans(trajectory), [trajectory]);
 
-  // Reveal in two beats: (1) the streak block + score/share row fade/rise into place,
-  // (2) once settled, the streak count AND the score both tally up from 0 in place.
-  const [countTarget, setCountTarget] = useState(0);
-  const [showActions, setShowActions] = useState(false);
-  // (1) On mount (the reveal moment), bring the row in on the next frame so its fade/rise
-  //     transition actually plays.
-  useEffect(() => {
-    const raf = requestAnimationFrame(() => setShowActions(true));
-    return () => cancelAnimationFrame(raf);
-  }, []);
-  // (2) Once the row has settled into position, start the score tally from 0.
-  useEffect(() => {
-    if (!showActions) return undefined;
-    const t = window.setTimeout(() => setCountTarget(guessCount), ACTIONS_IN_MS);
-    return () => window.clearTimeout(t);
-  }, [showActions, guessCount]);
-  const shownScore = useAnimatedNumber(countTarget, SCORE_COUNT_MS);
-
   // Streak (#56/#74): derived from the per-language solved-day SET, never a stored counter.
   // Shown only for a streak-eligible solve — an active-day win with a real dayNumber. An
   // archive replay (isActiveDay false) or a ?puzzle= override (dayNumber null) shows none;
@@ -84,16 +70,42 @@ export default function SolvedScreen({
   // The Monday-based weekly row is shown only on a "clean week so far" (#74).
   const week = useMemo(() => weekView(solvedDays, activeDay), [solvedDays, activeDay]);
 
-  // The hero streak count tallies up from 0 as the block settles — the same beat as the
-  // score tally below. Reserving the final width (ghost) keeps the growing digits from
-  // shifting the flame beside them.
+  // SEQUENCED reveal (this component mounts at the reveal moment): the streak block rises
+  // first and its count tallies; the score/share group follows ACTIONS_DELAY_MS later and
+  // its score tallies in turn. Without a streak block the group enters immediately.
+  const [streakIn, setStreakIn] = useState(false);
+  const [showActions, setShowActions] = useState(false);
+  useEffect(() => {
+    let delay: number | undefined;
+    // Next frame, so the first group's fade/rise transition actually plays.
+    const raf = requestAnimationFrame(() => {
+      setStreakIn(true);
+      delay = window.setTimeout(() => setShowActions(true), showStreak ? ACTIONS_DELAY_MS : 0);
+    });
+    return () => {
+      cancelAnimationFrame(raf);
+      window.clearTimeout(delay);
+    };
+  }, [showStreak]);
+
+  // Each number starts tallying once its own group has settled into place (ACTIONS_IN_MS
+  // after that group's rise begins). Ghost spans reserve the final widths, so neither
+  // tally reflows its group.
   const [streakTarget, setStreakTarget] = useState(0);
   useEffect(() => {
-    if (!showActions || !showStreak) return undefined;
+    if (!streakIn || !showStreak) return undefined;
     const id = window.setTimeout(() => setStreakTarget(streak), ACTIONS_IN_MS);
     return () => window.clearTimeout(id);
-  }, [showActions, showStreak, streak]);
+  }, [streakIn, showStreak, streak]);
   const shownStreak = useAnimatedNumber(streakTarget, STREAK_COUNT_MS);
+
+  const [countTarget, setCountTarget] = useState(0);
+  useEffect(() => {
+    if (!showActions) return undefined;
+    const t = window.setTimeout(() => setCountTarget(guessCount), ACTIONS_IN_MS);
+    return () => window.clearTimeout(t);
+  }, [showActions, guessCount]);
+  const shownScore = useAnimatedNumber(countTarget, SCORE_COUNT_MS);
 
   // "COPIED" confirmation after a clipboard fallback (the native share sheet needs none).
   const [copied, setCopied] = useState(false);
@@ -153,7 +165,7 @@ export default function SolvedScreen({
           shared fade/rise. Only for a streak-eligible solve (active day, real
           dayNumber); an archive replay and a ?puzzle= override show none. */}
       {showStreak && (
-        <div className={`streak-block${showActions ? ' in' : ''}`}>
+        <div className={`streak-block${streakIn ? ' in' : ''}`}>
           {/* Duolingo-style: the big flame + count are the headline, the small "DAY STREAK"
               label sits under them. SR reads "3 DAY STREAK"; the flame is decorative. */}
           <div className="streak-headline">
@@ -187,8 +199,8 @@ export default function SolvedScreen({
               {guessCount}
             </span>
             <span className="solved-score-live">{Math.round(shownScore)}</span>
-          </span>{' '}
-          {t(lang, guessCount === 1 ? 'try' : 'tries')}
+          </span>
+          <span className="solved-score-unit">{t(lang, guessCount === 1 ? 'try' : 'tries')}</span>
         </span>
         {action ? (
           <button type="button" className="share-key" onClick={action.onClick}>

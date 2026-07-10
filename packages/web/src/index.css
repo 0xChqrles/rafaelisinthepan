@@ -890,7 +890,9 @@ button * {
 }
 
 /* Results: the streak block + score + share, centered in the keyboard's footprint. (The
-   per-guess heat squares live only in the share preview now — OG card + emoji row.) */
+   per-guess heat squares live only in the share preview now — OG card + emoji row.)
+   MOBILE stacks the two groups vertically; DESKTOP (the media query below) sets them side
+   by side so the wide tray isn't one tall narrow column. */
 .solved-results {
   display: flex;
   flex-direction: column;
@@ -899,7 +901,8 @@ button * {
   width: 100%;
   max-width: 680px; /* match the keyboard's max-width */
 }
-/* Score + share fade/rise in (JS toggles `.in`) as the score tallies up from 0. */
+/* Score + share fade/rise in (JS toggles `.in`, ACTIONS_DELAY_MS after the streak block)
+   as the score tallies up from 0. */
 .solved-actions {
   display: flex;
   align-items: center;
@@ -912,12 +915,58 @@ button * {
   opacity: 1;
   transform: translateY(0);
 }
+/* Number + unit ("45 TRIES"): an inline pair on mobile (the 1em gap stands in for the
+   space character), a stacked stat on desktop (media query below). */
 .solved-score {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 1em;
   font-family: var(--press);
   font-size: clamp(14px, 1.9vh, 18px);
   color: var(--muted);
   letter-spacing: 2px;
   font-variant-numeric: tabular-nums;
+}
+
+/* DESKTOP (≥640px): the two groups sit SIDE BY SIDE — streak left, score/share right of a
+   thin flat divider — and the score becomes a labeled stat (big number over a small unit),
+   mirroring the streak headline, so the row reads as two balanced stat groups. */
+@media (min-width: 640px) {
+  .solved-results {
+    flex-direction: row;
+    justify-content: center;
+    align-items: stretch;
+    gap: clamp(36px, 7vw, 56px);
+  }
+  .streak-block {
+    justify-content: center;
+  }
+  .solved-actions {
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 22px;
+  }
+  /* The divider exists only when the streak block actually stands beside the actions
+     (adjacent sibling); the block margin insets the line from the row's edges. */
+  .streak-block + .solved-actions {
+    border-left: 2px solid var(--surface);
+    padding-left: clamp(36px, 7vw, 56px);
+    margin-block: 8px;
+  }
+  .solved-score {
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+  .solved-score-num {
+    font-size: 40px;
+    line-height: 1;
+    color: var(--fg);
+  }
+  .solved-score-unit {
+    font-size: 10px;
+  }
 }
 /* A hidden ghost of the final count reserves the exact width (incl. letter-spacing, which
    `ch` units miss); the live tally is overlaid right-aligned, so counting never reflows. */
@@ -961,8 +1010,10 @@ button * {
   color: var(--accent);
 }
 /* Streak block (#56/#74): the animated flame + count headline with a small "DAY STREAK"
-   label under it, and on a clean week the flat 7-day row below — ABOVE the score/share
-   row. The BLOCK rides the shared fade/rise (`.in`); reduced-motion collapses the transition. */
+   label under it, and on a clean week the flat 7-day row below — above the score/share
+   group on mobile, beside it on desktop. Its `.in` fade/rise is the FIRST beat of the
+   sequenced reveal (the score/share group follows ACTIONS_DELAY_MS later); reduced-motion
+   collapses the transition. */
 .streak-block {
   display: flex;
   flex-direction: column;
@@ -982,7 +1033,7 @@ button * {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 12px;
 }
 /* Flame + count, BOTTOM-aligned: the count's digits sit on the flame CORE's bottom edge,
    not the glow's (the glow halo extends 8 sprite-rows below the core — see .streak-count). */
@@ -1069,15 +1120,15 @@ button * {
    360px phone — 3 digits always fit with the flame beside them.
    Bottom alignment: .streak-head bottom-aligns the boxes; the flame core's bottom edge is
    8 sprite-rows above the box bottom (the glow halo, ×4 = 32px), and the digits' bottoms
-   sit 0.125em above their box bottom (the font's yMin = 125/1000, descent 0) — so lifting
-   the count by 32px − 0.125em lands the digits exactly on the core's bottom edge. */
+   sit 0.15em above their box bottom (the font's yMin = 15/1000, descent 0) — so lifting
+   the count by 32px − 0.15em lands the digits exactly on the core's bottom edge. */
 .streak-count {
   position: relative; /* contains the absolute live overlay */
   display: inline-block;
   font-family: var(--press);
   font-size: min(64px, calc((100vw - 192px) / 3));
   line-height: 1;
-  margin-bottom: calc(32px - 0.125em);
+  margin-bottom: calc(32px - 0.15em);
   color: var(--fg);
   font-variant-numeric: tabular-nums;
 }
@@ -1091,6 +1142,7 @@ button * {
   position: absolute;
   inset: 0;
   text-align: right;
+  text-shadow: 4px 4px 0 var(--flame);
 }
 /* The small "DAY STREAK" label under the number. */
 .streak-label {
