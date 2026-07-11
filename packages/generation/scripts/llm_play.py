@@ -143,6 +143,7 @@ class RunResult:
     counted_tries: int
     turns: int
     duration: float
+    tried_words: tuple[str, ...]
     conversation: tuple[Message, ...]
 
 
@@ -153,6 +154,7 @@ class ModelSummary:
     turns: int
     duration: float
     runs: int
+    run_tried_words: tuple[tuple[str, ...], ...]
 
     def benchmark_entry(self) -> dict[str, str | int | None]:
         return {
@@ -270,6 +272,7 @@ class PuzzleReferee:
         # every provider/run instead of copying hundreds of thousands of slugs each time.
         self.vocab = vocab if isinstance(vocab, set) else set(vocab)
         self.tried: set[str] = set()
+        self.tried_words: list[str] = []
         self.holes: list[RuntimeHole] = []
 
         # The schema guarantees sentence order, but sorting here makes the feedback order
@@ -360,6 +363,7 @@ class PuzzleReferee:
             )
 
         self.tried.add(folded)
+        self.tried_words.append(guess)
         outcomes: list[HoleOutcome] = []
         for hole in self.holes:
             # Solved holes are locked: they receive no feedback and can never regress.
@@ -518,6 +522,7 @@ def play_puzzle(
                 counted_tries=feedback.tries,
                 turns=turns,
                 duration=time.monotonic() - started,
+                tried_words=tuple(referee.tried_words),
                 conversation=tuple(message.copy() for message in messages),
             )
         if feedback.tries >= cap:
@@ -526,6 +531,7 @@ def play_puzzle(
                 counted_tries=feedback.tries,
                 turns=turns,
                 duration=time.monotonic() - started,
+                tried_words=tuple(referee.tried_words),
                 conversation=tuple(message.copy() for message in messages),
             )
 
@@ -782,6 +788,7 @@ def benchmark_model(
         turns=sum(result.turns for result in results),
         duration=sum(result.duration for result in results),
         runs=runs,
+        run_tried_words=tuple(result.tried_words for result in results),
     )
 
 
@@ -1016,6 +1023,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"{config['label']:<8} {score:>9}  "
             f"turns={summary.turns}  duration={summary.duration:.1f}s  model={config['model_id']}"
         )
+        for run_number, tried_words in enumerate(summary.run_tried_words, start=1):
+            run_label = f"run={run_number} " if summary.runs > 1 else ""
+            words_json = json.dumps(tried_words, ensure_ascii=False)
+            print(f"{config['label']:<8} {run_label}tried={words_json}")
 
     if args.in_place:
         if summaries:

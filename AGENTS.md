@@ -434,9 +434,11 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   Claude.ai auth, strips API/cloud credential overrides, then uses a fresh Agent SDK
   session per run with an empty replacement system prompt and no tools, MCP, skills,
   plugins, or filesystem settings. Five parsed invalid/repeated replies without a counted
-  try abort a stuck paid loop. Missing API keys still skip for API transports, median
-  `--runs` is supported, and only `--in-place` mutates a puzzle; this curator tool is never
-  called by CI/tests.
+  try abort a stuck paid loop. After each run the CLI prints `tried=[...]` in submission
+  order for the counted valid unique words only (invalid, unparseable, and folded duplicate
+  replies remain excluded exactly like the score). Missing API keys still skip for API
+  transports, median `--runs` is supported, and only `--in-place` mutates a puzzle; this
+  curator tool is never called by CI/tests.
 - **`gen_phrase` is fully interactive on a TTY (#5).** Anything not passed as a flag is
   prompted: the **sentence** (positional, now optional), **`--lang`**, and the optional
   **source metadata** — `--kind` (offers `KNOWN_KINDS` numbered, but free text is

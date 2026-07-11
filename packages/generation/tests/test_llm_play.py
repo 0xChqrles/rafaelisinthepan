@@ -29,6 +29,7 @@ from llm_play import (
     PuzzleReferee,
     UnparseableReplyError,
     feedback_message,
+    main,
     median_tries,
     parse_args,
     play_puzzle,
@@ -460,6 +461,7 @@ def test_invalid_and_folded_duplicate_do_not_count_and_are_reprompted():
     assert result.tries == 3
     assert result.counted_tries == 3
     assert result.turns == 5
+    assert result.tried_words == ("sharéd", "forest", "ocean")
     user_feedback = [m["content"] for m in result.conversation if m["role"] == "user"]
     assert '"nonesuch" is not a word — this did not count.' in user_feedback[1]
     assert "Tries: 0" in user_feedback[1]
@@ -516,6 +518,7 @@ def test_cap_after_counted_tries_is_a_dnf():
     assert result.tries is None
     assert result.counted_tries == 2
     assert result.turns == 2
+    assert result.tried_words == ("cold", "other")
 
 
 def test_final_score_matches_front_unique_try_semantics_for_same_sequence():
@@ -527,6 +530,30 @@ def test_final_score_matches_front_unique_try_semantics_for_same_sequence():
     folded_unique_valid = {"shared", "cold", "forest", "ocean"}
     assert result.tries == len(folded_unique_valid) == 4
     assert result.turns == len(sequence)
+    assert result.tried_words == ("sharéd", "cold", "forest", "ocean")
+
+
+def test_cli_prints_counted_words_in_order_for_each_run(monkeypatch, tmp_path, capsys):
+    path = tmp_path / "puzzle.json"
+    path.write_text(json.dumps(puzzle()), encoding="utf-8")
+    model = ScriptedModel(
+        [
+            "forest",
+            "ocean",
+            "shared",
+            "forest",
+            "ocean",
+        ]
+    )
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr("llm_play.load_vocab", lambda _lang: VOCAB)
+    monkeypatch.setattr("llm_play.provider_reply", lambda *_args, **_kwargs: model)
+
+    assert main([str(path), "--models", "OPUS", "--runs", "2"]) == 0
+
+    output = capsys.readouterr().out
+    assert 'OPUS     run=1 tried=["forest", "ocean"]' in output
+    assert 'OPUS     run=2 tried=["shared", "forest", "ocean"]' in output
 
 
 def test_opening_board_keeps_hole_affixes_and_full_sentence_tokens():
