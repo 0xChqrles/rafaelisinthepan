@@ -59,8 +59,12 @@ const STRINGS = {
   ariaNextMonth: { en: 'Next month', fr: 'Mois suivant' },
   // ---- tutorial invitation (#51): the tutorial never starts without an action.
   inviteTitle: {
-    en: 'New to the game? Learn how to play in 30 seconds.',
-    fr: 'Nouveau ici ? Apprends à jouer en 30 secondes.',
+    en: 'First time playing?',
+    fr: 'Première partie ?',
+  },
+  inviteText: {
+    en: 'Learn how to play in 30 seconds.',
+    fr: 'Apprends à jouer en 30 secondes.',
   },
   inviteTutorial: { en: 'TUTORIAL', fr: 'TUTORIEL' },
   inviteSkip: { en: 'SKIP', fr: 'PASSER' },

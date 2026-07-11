@@ -1460,23 +1460,20 @@ button * {
   border: 0;
   cursor: pointer;
 }
-/* Primary: "ghost" button with no fill, thick accent border, accent text.
-   hover/focus play with brightness (border + text brighten). */
+/* Primary: the same flat gold action as the tutorial's MIX button — dark text,
+   compact pixel type, and a brightness-only interaction. */
 .btn-primary {
-  /* Asymmetric vertical padding: recenters capitals (see --cap-shift), unchanged height. */
-  padding: calc(20px + var(--cap-shift)) 40px calc(20px - var(--cap-shift));
-  font-size: clamp(18px, 2.6vh, 26px);
-  letter-spacing: 1px;
-  background: transparent;
-  border: 5px solid var(--accent);
-  color: var(--accent);
-  transition: filter 0.12s ease;
+  padding: 16px 30px;
+  font-size: clamp(13px, 1.9vh, 16px);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--bg);
+  background: var(--hole);
+  text-shadow: none;
+  transition: filter 0.08s linear, opacity 0.08s linear;
 }
 .btn-primary:hover {
-  filter: brightness(1.18);
-}
-.btn-primary:focus-visible {
-  filter: brightness(1.32);
+  filter: brightness(1.12);
 }
 /* Secondary: simple text, no fill. */
 .btn-secondary {
@@ -1634,11 +1631,6 @@ button * {
     height: 26px;
   }
 
-  /* Buttons narrow enough for small screens (BACK / SHARE). */
-  .btn-primary {
-    padding: calc(16px + var(--cap-shift)) 28px calc(16px - var(--cap-shift));
-    font-size: 18px;
-  }
 }
 
 /* On the narrowest phones, compress only the header GAPS — never the hud-height flame box
@@ -1815,27 +1807,94 @@ button * {
   }
 }
 
-/* --- tutorial invitation (#51): the tutorial never starts without an action. It
-   stands where LOADING would on a first visit — message + TUTORIAL / SKIP. --- */
+/* --- tutorial invitation (#51): a direct-on-background first-run prompt. The gold
+   primary action previews the interaction language the player meets on MIX; SKIP stays
+   a quiet text exit. --- */
 .invite {
+  width: min(480px, 100%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 32px;
-}
-.invite-text {
-  margin: 0;
-  max-width: 30ch;
   text-align: center;
+}
+.invite-logo {
+  display: block;
+  width: 66px; /* 3 × the 22px source — crisp pixel art. */
+  height: 66px;
+  margin-bottom: 34px;
+  image-rendering: pixelated;
+}
+.invite-title {
+  margin: 0;
   font-family: var(--press);
-  font-size: clamp(13px, 2vh, 16px);
-  line-height: 2;
+  font-size: clamp(15px, 2.3vh, 19px);
+  line-height: 1.7;
+  letter-spacing: 1px;
+  text-transform: uppercase;
   color: var(--fg);
   text-shadow: none;
   padding-top: var(--cap-shift);
 }
+.invite-text {
+  margin: 12px auto 0;
+  max-width: 34ch;
+  font-family: var(--press);
+  font-size: 11px;
+  line-height: 1.9;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  text-shadow: none;
+}
 .invite-actions {
+  width: 100%;
+  margin-top: 32px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 24px;
+}
+.invite-actions .btn-primary {
+  width: 100%;
+}
+.invite-actions .btn-secondary {
+  font-size: 11px;
+  letter-spacing: 2px;
+}
+
+@media (max-width: 640px) {
+  /* Like the other no-HUD states, center while it fits and start at the top if a very
+     short viewport needs to scroll. */
+  .app > .invite {
+    margin: auto 0;
+    max-width: 100%;
+  }
+  .invite-logo {
+    margin-bottom: 28px;
+  }
+  .invite-actions {
+    margin-top: 26px;
+    gap: 20px;
+  }
+}
+
+/* Landscape phones and short browser windows keep the full choice visible without
+   changing the primary action's MIX-sized tap target. */
+@media (max-height: 520px) {
+  .invite-logo {
+    width: 44px;
+    height: 44px;
+    margin-bottom: 16px;
+  }
+  .invite-title {
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .invite-text {
+    margin-top: 6px;
+    line-height: 1.7;
+  }
+  .invite-actions {
+    margin-top: 20px;
+    gap: 18px;
+  }
 }

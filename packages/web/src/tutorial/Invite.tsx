@@ -1,5 +1,6 @@
 import Button from '../components/Button';
 import { t } from '../i18n';
+import logo from '../assets/logo-blue.png';
 
 // The tutorial invitation (#51): the tutorial NEVER starts without an action. On a
 // first visit this screen stands where LOADING would (the day's puzzle keeps loading
@@ -17,8 +18,13 @@ export default function Invite({
   onSkip: () => void;
 }) {
   return (
-    <div className="invite">
-      <p className="invite-text">{t(lang, 'inviteTitle')}</p>
+    <main className="invite" aria-labelledby="tutorial-invite-title">
+      <img className="invite-logo" src={logo} alt="" draggable="false" />
+      <h1 id="tutorial-invite-title" className="invite-title">
+        {t(lang, 'inviteTitle')}
+      </h1>
+      <p className="invite-text">{t(lang, 'inviteText')}</p>
+
       <div className="invite-actions">
         <Button variant="primary" onClick={onAccept}>
           {t(lang, 'inviteTutorial')}
@@ -27,6 +33,6 @@ export default function Invite({
           {t(lang, 'inviteSkip')}
         </Button>
       </div>
-    </div>
+    </main>
   );
 }
