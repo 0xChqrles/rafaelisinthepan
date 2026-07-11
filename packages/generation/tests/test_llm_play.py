@@ -24,6 +24,7 @@ from llm_play import (
     MAX_CONSECUTIVE_UNPARSEABLE,
     MAX_NONCOUNTING_REPLIES,
     MODELS,
+    PROMPT_VERSION,
     PROVIDER_ENV,
     REASONING_MAX_TOKENS,
     NoProgressReplyError,
@@ -617,6 +618,19 @@ def test_opening_board_keeps_hole_affixes_and_full_sentence_tokens():
     opening = model.calls[0][0]["content"]
     assert "Board: the (tree(-50), meets lake(-40)" in opening
     assert "English" in opening
+
+
+def test_opening_prompt_prioritizes_context_correct_inflections():
+    model = ScriptedModel(["forest", "ocean"])
+    play_puzzle(puzzle(), VOCAB, model)
+
+    opening = model.calls[0][0]["content"]
+    assert PROMPT_VERSION == "2"
+    assert "infer the hidden word's grammar from the fixed context" in opening
+    assert "singular/plural" in opening
+    assert "masculine/feminine" in opening
+    assert "Before exploring more synonyms" in opening
+    assert "number, gender, agreement, or conjugation" in opening
 
 
 def test_unparseable_replies_reprompt_then_abort_after_five_consecutive_turns():

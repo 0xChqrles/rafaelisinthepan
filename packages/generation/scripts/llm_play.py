@@ -41,7 +41,7 @@ MODELS = [
 
 # Bump whenever the opening rules or turn-feedback scaffold changes materially. Results
 # are attributable to a model id plus this prompt version and the CLI's printed effort.
-PROMPT_VERSION = "1"
+PROMPT_VERSION = "2"
 
 DEFAULT_CAP = 300
 MAX_CONSECUTIVE_UNPARSEABLE = 5
@@ -449,6 +449,19 @@ def opening_message(referee: PuzzleReferee) -> str:
             f"Play Whippin AI in {language}. Reply with exactly one {language} word per turn.",
             "Each hidden word reports a closeness rank: lower is closer, 0 is found, and MISS is too far to rank.",
             "Invalid words and repeated words do not count. One guess is tested against every unsolved hidden word.",
+            (
+                "The board is a sentence: treat each word(-rank) as a replaceable "
+                "clue and infer the hidden word's grammar from the fixed context."
+            ),
+            (
+                "Guesses are exact inflected forms, not lemmas: singular/plural and "
+                "masculine/feminine forms are distinct guesses."
+            ),
+            (
+                "Before exploring more synonyms, promptly try a promising candidate "
+                "in the form required by the sentence's number, gender, agreement, "
+                "or conjugation."
+            ),
             f"Board: {referee.board()}",
             "Tries: 0",
         ]
