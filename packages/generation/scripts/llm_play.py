@@ -36,7 +36,9 @@ from slug import slug
 MODELS = [
     {"provider": "anthropic", "model_id": "claude-opus-4-8", "label": "OPUS"},
     {"provider": "anthropic", "model_id": "claude-sonnet-5", "label": "SONNET"},
-    {"provider": "openai", "model_id": "gpt-5.6-sol", "label": "GPT"},
+    {"provider": "openai", "model_id": "gpt-5.6-sol", "label": "SOL"},
+    {"provider": "openai", "model_id": "gpt-5.6-terra", "label": "TERRA"},
+    {"provider": "openai", "model_id": "gpt-5.6-luna", "label": "LUNA"},
 ]
 
 # Bump whenever the opening rules or turn-feedback scaffold changes materially. Results
@@ -64,13 +66,9 @@ DEFAULT_EFFORT: ReasoningEffort = "none"
 REASONING_MAX_TOKENS = 25_000
 DEEP_REASONING_MAX_TOKENS = 64_000
 
-AnthropicAuth = Literal["api", "subscription"]
-ANTHROPIC_AUTH_MODES: tuple[AnthropicAuth, ...] = ("api", "subscription")
-DEFAULT_ANTHROPIC_AUTH: AnthropicAuth = "api"
-
-OpenAIAuth = Literal["api", "subscription"]
-OPENAI_AUTH_MODES: tuple[OpenAIAuth, ...] = ("api", "subscription")
-DEFAULT_OPENAI_AUTH: OpenAIAuth = "api"
+AuthMode = Literal["api", "subscription"]
+AUTH_MODES: tuple[AuthMode, ...] = ("api", "subscription")
+DEFAULT_AUTH: AuthMode = "api"
 CODEX_SUBSCRIPTION_EFFORTS: tuple[ReasoningEffort, ...] = (
     "low",
     "medium",
@@ -980,21 +978,18 @@ def provider_reply(
     api_key: str | None,
     *,
     effort: ReasoningEffort = DEFAULT_EFFORT,
-    anthropic_auth: AnthropicAuth = DEFAULT_ANTHROPIC_AUTH,
-    openai_auth: OpenAIAuth = DEFAULT_OPENAI_AUTH,
+    auth: AuthMode = DEFAULT_AUTH,
 ) -> ModelReply:
     """Build one provider adapter. Paid SDK imports stay lazy for offline tests."""
     provider = config["provider"]
     model_id = config["model_id"]
     if effort not in EFFORT_LEVELS:
         raise ValueError(f"unsupported reasoning effort: {effort}")
-    if anthropic_auth not in ANTHROPIC_AUTH_MODES:
-        raise ValueError(f"unsupported Anthropic auth mode: {anthropic_auth}")
-    if openai_auth not in OPENAI_AUTH_MODES:
-        raise ValueError(f"unsupported OpenAI auth mode: {openai_auth}")
+    if auth not in AUTH_MODES:
+        raise ValueError(f"unsupported auth mode: {auth}")
 
     if provider == "anthropic":
-        if anthropic_auth == "subscription":
+        if auth == "subscription":
             return AnthropicSubscriptionReply(model_id, effort)
         if not api_key:
             raise ValueError("Anthropic API auth requires ANTHROPIC_API_KEY")
@@ -1030,7 +1025,7 @@ def provider_reply(
         return reply
 
     if provider == "openai":
-        if openai_auth == "subscription":
+        if auth == "subscription":
             return OpenAISubscriptionReply(model_id, effort)
         if not api_key:
             raise ValueError("OpenAI auth requires OPENAI_API_KEY")
@@ -1120,6 +1115,16 @@ def benchmark_model(
 
 
 def select_models(requested: Sequence[str] | None) -> list[ModelConfig]:
+    def selection_keys(config: ModelConfig) -> set[str]:
+        keys = {
+            config["provider"].lower(),
+            config["model_id"].lower(),
+            config["label"].lower(),
+        }
+        if config["model_id"].startswith("gpt-5.6-"):
+            keys.update(("gpt", "gpt-5.6"))
+        return keys
+
     configs: list[ModelConfig] = []
     for raw in MODELS:
         provider = raw.get("provider")
@@ -1146,28 +1151,11 @@ def select_models(requested: Sequence[str] | None) -> list[ModelConfig]:
         for part in value.split(",")
         if part.strip()
     }
-    selected = [
-        config
-        for config in configs
-        if selectors
-        & {
-            config["provider"].lower(),
-            config["model_id"].lower(),
-            config["label"].lower(),
-        }
-    ]
+    selected = [config for config in configs if selectors & selection_keys(config)]
     matched = {
         selector
         for selector in selectors
-        if any(
-            selector
-            in {
-                config["provider"].lower(),
-                config["model_id"].lower(),
-                config["label"].lower(),
-            }
-            for config in configs
-        )
+        if any(selector in selection_keys(config) for config in configs)
     }
     unknown = sorted(selectors - matched)
     if unknown:
@@ -1267,21 +1255,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--anthropic-auth",
-        choices=ANTHROPIC_AUTH_MODES,
-        default=DEFAULT_ANTHROPIC_AUTH,
+        "--auth",
+        choices=AUTH_MODES,
+        default=DEFAULT_AUTH,
         help=(
-            "Anthropic transport: API key billing or isolated Agent SDK access "
-            f"through a paid Claude.ai subscription (default: {DEFAULT_ANTHROPIC_AUTH})"
-        ),
-    )
-    parser.add_argument(
-        "--openai-auth",
-        choices=OPENAI_AUTH_MODES,
-        default=DEFAULT_OPENAI_AUTH,
-        help=(
-            "OpenAI transport: API key billing or isolated Codex CLI access "
-            f"through ChatGPT subscription auth (default: {DEFAULT_OPENAI_AUTH})"
+            "transport for every selected provider: API-key billing or isolated "
+            f"Claude.ai/ChatGPT plan access (default: {DEFAULT_AUTH})"
         ),
     )
     parser.add_argument(
@@ -1294,6 +1273,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         args.model_configs = select_models(args.models)
     except ValueError as exc:
         parser.error(str(exc))
+    if (
+        args.auth == "subscription"
+        and args.effort not in CODEX_SUBSCRIPTION_EFFORTS
+        and any(config["provider"] == "openai" for config in args.model_configs)
+    ):
+        supported = "|".join(CODEX_SUBSCRIPTION_EFFORTS)
+        parser.error(
+            "OpenAI subscription auth does not support reasoning effort "
+            f"{args.effort!r}; use {supported}"
+        )
     return args
 
 
@@ -1312,7 +1301,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    anthropic_subscription_selected = args.anthropic_auth == "subscription" and any(
+    anthropic_subscription_selected = args.auth == "subscription" and any(
         config["provider"] == "anthropic" for config in args.model_configs
     )
     if anthropic_subscription_selected:
@@ -1322,7 +1311,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"error: {exc}", file=sys.stderr)
             return 2
 
-    openai_subscription_selected = args.openai_auth == "subscription" and any(
+    openai_subscription_selected = args.auth == "subscription" and any(
         config["provider"] == "openai" for config in args.model_configs
     )
     if openai_subscription_selected:
@@ -1334,15 +1323,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     print(
         f"Whippin benchmark prompt={PROMPT_VERSION} effort={args.effort} "
-        f"anthropic_auth={args.anthropic_auth} openai_auth={args.openai_auth} "
-        f"cap={args.cap} runs={args.runs}",
+        f"auth={args.auth} cap={args.cap} runs={args.runs}",
         flush=True,
     )
     summaries: list[ModelSummary] = []
     for config in args.model_configs:
-        subscription_auth = (
-            config["provider"] == "anthropic" and args.anthropic_auth == "subscription"
-        ) or (config["provider"] == "openai" and args.openai_auth == "subscription")
+        subscription_auth = args.auth == "subscription"
         api_key = None
         if not subscription_auth:
             env_name = PROVIDER_ENV[config["provider"]]
@@ -1373,8 +1359,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     config,
                     api_key,
                     effort=args.effort,
-                    anthropic_auth=args.anthropic_auth,
-                    openai_auth=args.openai_auth,
+                    auth=args.auth,
                 ),
                 cap=args.cap,
                 runs=args.runs,

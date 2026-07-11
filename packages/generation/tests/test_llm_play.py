@@ -16,19 +16,17 @@ import sys
 import pytest
 
 from llm_play import (
-    ANTHROPIC_AUTH_MODES,
+    AUTH_MODES,
     CODEX_BENCHMARK_INSTRUCTIONS,
     CODEX_SUBSCRIPTION_EFFORTS,
     CODEX_TURN_TIMEOUT_SECONDS,
     DEEP_REASONING_MAX_TOKENS,
-    DEFAULT_ANTHROPIC_AUTH,
+    DEFAULT_AUTH,
     DEFAULT_EFFORT,
-    DEFAULT_OPENAI_AUTH,
     EFFORT_LEVELS,
     MAX_CONSECUTIVE_UNPARSEABLE,
     MAX_NONCOUNTING_REPLIES,
     MODELS,
-    OPENAI_AUTH_MODES,
     OPENAI_SUBSCRIPTION_CONFLICT_ENV,
     PROMPT_VERSION,
     PROVIDER_ENV,
@@ -43,6 +41,7 @@ from llm_play import (
     play_puzzle,
     provider_reply,
     resolve_puzzle_path,
+    select_models,
     validate_anthropic_subscription_auth,
     validate_openai_subscription_auth,
     write_benchmark,
@@ -85,11 +84,13 @@ def puzzle():
 VOCAB = {"shared", "forest", "ocean", "cold", "other"}
 
 
-def test_supported_model_roster_is_only_opus_sonnet_and_gpt_sol():
+def test_supported_model_roster_has_claude_and_all_gpt_56_variants():
     assert MODELS == [
         {"provider": "anthropic", "model_id": "claude-opus-4-8", "label": "OPUS"},
         {"provider": "anthropic", "model_id": "claude-sonnet-5", "label": "SONNET"},
-        {"provider": "openai", "model_id": "gpt-5.6-sol", "label": "GPT"},
+        {"provider": "openai", "model_id": "gpt-5.6-sol", "label": "SOL"},
+        {"provider": "openai", "model_id": "gpt-5.6-terra", "label": "TERRA"},
+        {"provider": "openai", "model_id": "gpt-5.6-luna", "label": "LUNA"},
     ]
     assert PROVIDER_ENV == {
         "anthropic": "ANTHROPIC_API_KEY",
@@ -228,9 +229,7 @@ def test_anthropic_subscription_adapter_isolates_and_resumes_agent_sdk(
         ),
     )
     monkeypatch.setenv("ANTHROPIC_API_KEY", "must-not-be-used")
-    reply = provider_reply(
-        MODELS[0], None, effort=effort, anthropic_auth="subscription"
-    )
+    reply = provider_reply(MODELS[0], None, effort=effort, auth="subscription")
 
     assert reply([{"role": "user", "content": "opening"}]) == "forest"
     assert (
@@ -332,8 +331,11 @@ def test_subscription_auth_preflight_rejects_non_plan_sessions(monkeypatch, stat
         validate_anthropic_subscription_auth()
 
 
+@pytest.mark.parametrize("config", MODELS[2:], ids=lambda config: config["label"])
 @pytest.mark.parametrize("effort", CODEX_SUBSCRIPTION_EFFORTS)
-def test_openai_subscription_adapter_isolates_fresh_codex_exec(monkeypatch, effort):
+def test_openai_subscription_adapter_isolates_fresh_codex_exec(
+    monkeypatch, config, effort
+):
     calls = []
 
     def fake_run(command, **kwargs):
@@ -365,7 +367,7 @@ def test_openai_subscription_adapter_isolates_fresh_codex_exec(monkeypatch, effo
     for name in OPENAI_SUBSCRIPTION_CONFLICT_ENV:
         monkeypatch.setenv(name, "must-not-be-used")
 
-    reply = provider_reply(MODELS[2], None, effort=effort, openai_auth="subscription")
+    reply = provider_reply(config, None, effort=effort, auth="subscription")
     opening = [{"role": "user", "content": "opening"}]
     continued = opening + [
         {"role": "assistant", "content": "forest"},
@@ -380,7 +382,7 @@ def test_openai_subscription_adapter_isolates_fresh_codex_exec(monkeypatch, effo
     command, kwargs = calls[0]
     assert command[:2] == ["/usr/local/bin/codex", "exec"]
     assert command[-1] == "-"
-    assert command[command.index("--model") + 1] == "gpt-5.6-sol"
+    assert command[command.index("--model") + 1] == config["model_id"]
     assert command[command.index("--sandbox") + 1] == "read-only"
     workspace = Path(command[command.index("--cd") + 1])
     assert workspace == Path(kwargs["cwd"])
@@ -431,11 +433,12 @@ def test_openai_subscription_adapter_isolates_fresh_codex_exec(monkeypatch, effo
     assert not workspace.exists()
 
 
-def test_openai_subscription_rejects_unsupported_none_effort(monkeypatch):
+@pytest.mark.parametrize("config", MODELS[2:], ids=lambda config: config["label"])
+def test_openai_subscription_rejects_unsupported_none_effort(monkeypatch, config):
     monkeypatch.setattr("llm_play.shutil.which", lambda _command: "/usr/bin/codex")
 
     with pytest.raises(ValueError, match="does not support.*none.*low.*medium"):
-        provider_reply(MODELS[2], None, effort="none", openai_auth="subscription")
+        provider_reply(config, None, effort="none", auth="subscription")
 
 
 def test_openai_subscription_rejects_codex_tool_activity(monkeypatch):
@@ -453,7 +456,7 @@ def test_openai_subscription_rejects_codex_tool_activity(monkeypatch):
             stderr="",
         ),
     )
-    reply = provider_reply(MODELS[2], None, effort="medium", openai_auth="subscription")
+    reply = provider_reply(MODELS[2], None, effort="medium", auth="subscription")
 
     with pytest.raises(RuntimeError, match="forbidden tool activity"):
         reply([{"role": "user", "content": "opening"}])
@@ -495,7 +498,8 @@ def test_openai_subscription_auth_preflight_rejects_api_login(monkeypatch):
         validate_openai_subscription_auth()
 
 
-def test_openai_adapter_uses_responses_with_explicit_none_effort(monkeypatch):
+@pytest.mark.parametrize("config", MODELS[2:], ids=lambda config: config["label"])
+def test_openai_adapter_uses_responses_with_explicit_none_effort(monkeypatch, config):
     calls = []
 
     class FakeOpenAI:
@@ -508,12 +512,12 @@ def test_openai_adapter_uses_responses_with_explicit_none_effort(monkeypatch):
             return SimpleNamespace(output_text="ocean", status="completed")
 
     monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=FakeOpenAI))
-    reply = provider_reply(MODELS[2], "secret", effort="none")
+    reply = provider_reply(config, "secret", effort="none")
 
     assert reply([{"role": "user", "content": "board"}]) == "ocean"
     assert calls == [
         {
-            "model": "gpt-5.6-sol",
+            "model": config["model_id"],
             "input": [{"role": "user", "content": "board"}],
             "reasoning": {"effort": "none"},
             "max_output_tokens": 256,
@@ -531,8 +535,9 @@ def test_openai_adapter_uses_responses_with_explicit_none_effort(monkeypatch):
         ("max", DEEP_REASONING_MAX_TOKENS),
     ],
 )
+@pytest.mark.parametrize("config", MODELS[2:], ids=lambda config: config["label"])
 def test_openai_adapter_applies_requested_reasoning_effort(
-    monkeypatch, effort, max_tokens
+    monkeypatch, config, effort, max_tokens
 ):
     calls = []
 
@@ -546,12 +551,12 @@ def test_openai_adapter_applies_requested_reasoning_effort(
             return SimpleNamespace(output_text="ocean", status="completed")
 
     monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=FakeOpenAI))
-    reply = provider_reply(MODELS[2], "secret", effort=effort)
+    reply = provider_reply(config, "secret", effort=effort)
 
     assert reply([{"role": "user", "content": "board"}]) == "ocean"
     assert calls == [
         {
-            "model": "gpt-5.6-sol",
+            "model": config["model_id"],
             "input": [{"role": "user", "content": "board"}],
             "reasoning": {"effort": effort},
             "max_output_tokens": max_tokens,
@@ -578,19 +583,42 @@ def test_openai_adapter_surfaces_an_incomplete_reasoning_response(monkeypatch):
         reply([{"role": "user", "content": "board"}])
 
 
-def test_effort_cli_defaults_to_none_and_accepts_every_shared_level():
+def test_cli_defaults_to_api_and_accepts_shared_effort_and_auth_levels():
     defaults = parse_args(["puzzle.json"])
     assert defaults.effort == DEFAULT_EFFORT
-    assert defaults.anthropic_auth == DEFAULT_ANTHROPIC_AUTH
-    assert defaults.openai_auth == DEFAULT_OPENAI_AUTH
+    assert defaults.auth == DEFAULT_AUTH
     for effort in EFFORT_LEVELS:
         assert parse_args(["puzzle.json", "--effort", effort]).effort == effort
-    for auth in ANTHROPIC_AUTH_MODES:
-        assert (
-            parse_args(["puzzle.json", "--anthropic-auth", auth]).anthropic_auth == auth
-        )
-    for auth in OPENAI_AUTH_MODES:
-        assert parse_args(["puzzle.json", "--openai-auth", auth]).openai_auth == auth
+    for auth in AUTH_MODES:
+        arguments = ["puzzle.json", "--auth", auth]
+        if auth == "subscription":
+            arguments.extend(("--effort", "medium"))
+        assert parse_args(arguments).auth == auth
+
+
+@pytest.mark.parametrize("legacy_flag", ["--anthropic-auth", "--openai-auth"])
+def test_cli_rejects_removed_provider_specific_auth_flags(legacy_flag):
+    with pytest.raises(SystemExit):
+        parse_args(["puzzle.json", legacy_flag, "subscription"])
+
+
+def test_cli_rejects_none_effort_before_an_openai_subscription_call():
+    with pytest.raises(SystemExit):
+        parse_args(["puzzle.json", "--models", "SOL", "--auth", "subscription"])
+    assert (
+        parse_args(["puzzle.json", "--models", "OPUS", "--auth", "subscription"]).effort
+        == "none"
+    )
+
+
+def test_gpt_family_and_variant_model_selectors():
+    expected = [MODELS[2], MODELS[3], MODELS[4]]
+    assert select_models(["GPT"]) == expected
+    assert select_models(["gpt-5.6"]) == expected
+    assert select_models(["openai"]) == expected
+    assert select_models(["SOL"]) == [MODELS[2]]
+    assert select_models(["TERRA"]) == [MODELS[3]]
+    assert select_models(["LUNA"]) == [MODELS[4]]
 
 
 def test_puzzle_path_accepts_repo_and_generation_relative_forms(monkeypatch, tmp_path):
@@ -621,7 +649,9 @@ def test_in_place_output_writes_static_entries_and_preserves_file_mode(tmp_path)
     entries = [
         {"model": "claude-opus-4-8", "label": "OPUS", "tries": 12},
         {"model": "claude-sonnet-5", "label": "SONNET", "tries": None},
-        {"model": "gpt-5.6-sol", "label": "GPT", "tries": 18},
+        {"model": "gpt-5.6-sol", "label": "SOL", "tries": 18},
+        {"model": "gpt-5.6-terra", "label": "TERRA", "tries": 14},
+        {"model": "gpt-5.6-luna", "label": "LUNA", "tries": 20},
     ]
 
     write_benchmark(path, source, entries)
@@ -803,7 +833,7 @@ def test_cli_openai_subscription_uses_plan_without_api_key(
         assert config == MODELS[2]
         assert api_key is None
         assert kwargs["effort"] == "medium"
-        assert kwargs["openai_auth"] == "subscription"
+        assert kwargs["auth"] == "subscription"
         return model
 
     monkeypatch.setattr("llm_play.provider_reply", fake_provider)
@@ -813,10 +843,10 @@ def test_cli_openai_subscription_uses_plan_without_api_key(
             [
                 str(path),
                 "--models",
-                "GPT",
+                "SOL",
                 "--effort",
                 "medium",
-                "--openai-auth",
+                "--auth",
                 "subscription",
             ]
         )
@@ -825,9 +855,58 @@ def test_cli_openai_subscription_uses_plan_without_api_key(
 
     output = capsys.readouterr()
     assert preflights == ["ChatGPT"]
-    assert "openai_auth=subscription" in output.out
-    assert 'GPT      try=1 word="forest" progress=50.00%' in output.out
+    assert "auth=subscription" in output.out
+    assert 'SOL      try=1 word="forest" progress=50.00%' in output.out
     assert "OPENAI_API_KEY is not set" not in output.err
+
+
+def test_cli_unified_subscription_preflights_both_selected_providers(
+    monkeypatch, tmp_path
+):
+    path = tmp_path / "puzzle.json"
+    path.write_text(json.dumps(puzzle()), encoding="utf-8")
+    preflights = []
+    provider_calls = []
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr("llm_play.load_vocab", lambda _lang: VOCAB)
+    monkeypatch.setattr(
+        "llm_play.validate_anthropic_subscription_auth",
+        lambda: preflights.append("anthropic") or "pro",
+    )
+    monkeypatch.setattr(
+        "llm_play.validate_openai_subscription_auth",
+        lambda: preflights.append("openai") or "ChatGPT",
+    )
+
+    def fake_provider(config, api_key, **kwargs):
+        provider_calls.append((config["label"], api_key, kwargs["auth"]))
+        return ScriptedModel(["forest", "ocean"])
+
+    monkeypatch.setattr("llm_play.provider_reply", fake_provider)
+
+    assert (
+        main(
+            [
+                str(path),
+                "--models",
+                "OPUS",
+                "SOL",
+                "--effort",
+                "medium",
+                "--auth",
+                "subscription",
+            ]
+        )
+        == 0
+    )
+
+    assert preflights == ["anthropic", "openai"]
+    assert provider_calls == [
+        ("OPUS", None, "subscription"),
+        ("SOL", None, "subscription"),
+    ]
 
 
 def test_opening_board_keeps_hole_affixes_and_full_sentence_tokens():

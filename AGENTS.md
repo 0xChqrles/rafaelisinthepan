@@ -179,7 +179,9 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   "benchmark": [                                // OPTIONAL offline LLM scores (#68)
     { "model": "claude-opus-4-8", "label": "OPUS", "tries": 42 },
     { "model": "claude-sonnet-5", "label": "SONNET", "tries": 55 },
-    { "model": "gpt-5.6-sol", "label": "GPT", "tries": null }
+    { "model": "gpt-5.6-sol", "label": "SOL", "tries": null },
+    { "model": "gpt-5.6-terra", "label": "TERRA", "tries": 37 },
+    { "model": "gpt-5.6-luna", "label": "LUNA", "tries": 64 }
   ]                                              // null tries = DNF at the curator's cap
 }
 ```
@@ -393,13 +395,12 @@ pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--
 
 # 4. Optionally benchmark the generated puzzle offline before publish. Missing provider
 #    keys skip with a warning; --effort applies one reasoning level to every selected
-#    model (none|low|medium|high|xhigh|max; default none). Anthropic defaults to API-key
-#    billing; --anthropic-auth subscription uses an authenticated paid Claude.ai plan.
-#    OpenAI also defaults to API-key billing; --openai-auth subscription uses saved ChatGPT
-#    Codex-plan auth (low|medium|high|xhigh|max; the Codex catalog does not offer none).
+#    model (none|low|medium|high|xhigh|max; default none). --auth api (default) uses each
+#    provider's API key; --auth subscription uses authenticated Claude.ai / saved ChatGPT
+#    Codex-plan access (GPT supports low|medium|high|xhigh|max; Codex offers no none).
 #    Puzzle paths may be repo-root-relative (packages/generation/output/...) or
 #    generation-package-relative (output/...); --in-place writes the resolved file.
-pnpm bench:puzzle <puzzle.json> [--models ...] [--effort LEVEL] [--anthropic-auth api|subscription] [--openai-auth api|subscription] [--cap N] [--runs N] [--in-place]
+pnpm bench:puzzle <puzzle.json> [--models ...] [--effort LEVEL] [--auth api|subscription] [--cap N] [--runs N] [--in-place]
 
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
 pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output)
@@ -428,21 +429,23 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
 - **Offline LLM benchmark harness (#68).** `generation/scripts/llm_play.py` replays the
   folded-vocab existence, unique-try score, per-unsolved-hole rank/MISS, strict-improvement,
   solved-lock, and counted-try cap rules against an append-only provider conversation.
-  `pnpm bench:puzzle` supports only the curator-editable `MODELS` trio (Claude Opus 4.8,
-  Claude Sonnet 5, and GPT-5.6 Sol, via Anthropic/OpenAI). `--effort` applies the shared
-  `none|low|medium|high|xhigh|max` scale to every selected model (default `none` preserves
-  thinking-off one-word calls; enabled levels use provider-native reasoning with larger
-  output headroom). Anthropic defaults to raw API-key auth and enables an automatic moving
-  prompt-cache breakpoint. Opt-in `--anthropic-auth subscription` first verifies paid
-  Claude.ai auth, strips API/cloud credential overrides, then uses a fresh Agent SDK
-  session per run with an empty replacement system prompt and no tools, MCP, skills,
-  plugins, or filesystem settings. OpenAI also defaults to raw API-key auth. Opt-in
-  `--openai-auth subscription` verifies that Codex CLI is logged in with ChatGPT, strips API
-  credentials plus parent-Codex thread metadata, and runs each turn as a fresh `codex exec`
-  process with the complete append-only transcript. Those turns are ephemeral, use a temporary
-  non-repository cwd and replacement benchmark instructions, and ignore user config/rules with
+  `pnpm bench:puzzle` supports only the curator-editable five-model `MODELS` roster: Claude
+  Opus 4.8, Claude Sonnet 5, and GPT-5.6 Sol/Terra/Luna via Anthropic/OpenAI. Labels `SOL`,
+  `TERRA`, and `LUNA` select individual GPT variants; `GPT` / `gpt-5.6` / `openai` select all
+  three. `--effort` applies the shared `none|low|medium|high|xhigh|max` scale to every selected
+  model (default `none` preserves thinking-off one-word API calls; enabled levels use
+  provider-native reasoning with larger output headroom). The single `--auth` flag applies to
+  every selected provider: `api` (default) uses raw API keys, with an automatic moving prompt-
+  cache breakpoint for Anthropic. Opt-in `subscription` first verifies paid Claude.ai auth for
+  selected Claude models, strips API/cloud credential overrides, then uses a fresh Agent SDK
+  session per run with an empty replacement system prompt and no tools, MCP, skills, plugins,
+  or filesystem settings. For selected GPT models it verifies that Codex CLI is logged in with
+  ChatGPT, strips API credentials plus parent-Codex thread metadata, and runs each turn as a
+  fresh `codex exec` process with the complete append-only transcript. Those turns are
+  ephemeral, use a temporary non-repository cwd and replacement benchmark instructions, and
+  ignore user config/rules with
   read-only sandboxing and apps/shell/multi-agent/web disabled; the unavoidable Codex bootstrap
-  remains. GPT-5.6 Sol's Codex-plan catalog supports `low|medium|high|xhigh|max`, not `none`.
+  remains. The GPT-5.6 Codex-plan models support `low|medium|high|xhigh|max`, not `none`.
   Five parsed invalid/repeated replies without a counted try abort a stuck paid loop. Prompt
   version 4 rejects strict left-to-right play: before spending many tries on one position, models
   sample candidates/probes motivated by every unsolved hole, pursue whichever has the strongest
