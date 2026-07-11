@@ -395,9 +395,11 @@ pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--
 #    keys skip with a warning; --effort applies one reasoning level to every selected
 #    model (none|low|medium|high|xhigh|max; default none). Anthropic defaults to API-key
 #    billing; --anthropic-auth subscription uses an authenticated paid Claude.ai plan.
+#    OpenAI also defaults to API-key billing; --openai-auth subscription uses saved ChatGPT
+#    Codex-plan auth (low|medium|high|xhigh|max; the Codex catalog does not offer none).
 #    Puzzle paths may be repo-root-relative (packages/generation/output/...) or
 #    generation-package-relative (output/...); --in-place writes the resolved file.
-pnpm bench:puzzle <puzzle.json> [--models ...] [--effort LEVEL] [--anthropic-auth api|subscription] [--cap N] [--runs N] [--in-place]
+pnpm bench:puzzle <puzzle.json> [--models ...] [--effort LEVEL] [--anthropic-auth api|subscription] [--openai-auth api|subscription] [--cap N] [--runs N] [--in-place]
 
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
 pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output)
@@ -434,23 +436,29 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   prompt-cache breakpoint. Opt-in `--anthropic-auth subscription` first verifies paid
   Claude.ai auth, strips API/cloud credential overrides, then uses a fresh Agent SDK
   session per run with an empty replacement system prompt and no tools, MCP, skills,
-  plugins, or filesystem settings. Five parsed invalid/repeated replies without a counted
-  try abort a stuck paid loop. Prompt version 4 rejects strict left-to-right play: before spending
-  many tries on one position, models sample candidates/probes motivated by every unsolved hole,
-  pursue whichever has the strongest signal or easiest target, switch when stalled, and
-  reprioritize when a solved word adds context. It retains version 3's balance between direct
-  candidates and exploratory probes: even a word that cannot grammatically be the answer can
-  provide intermediate rank hints, so broader categories, contrasts, related concepts, and
-  neighbors of warm clues can triangulate a semantic direction. It also retains version 2's
-  exact-inflection strategy: infer number/gender/agreement from the fixed sentence context and
-  try a promising candidate's context-correct form before listing more direct synonyms. During
-  a run, every counted try prints immediately with its word and post-guess overall progress
-  percentage (the same logarithmic multi-hole formula as the web progress bar, to two decimals);
-  misses and non-improving warm tries still print with unchanged progress. After each run the CLI
-  prints `tried=[...]` in submission order for the counted valid unique words only (invalid,
-  unparseable, and folded duplicate replies remain excluded exactly like the score). Missing API
-  keys still skip for API transports, median `--runs` is supported, and only `--in-place`
-  mutates a puzzle; this curator tool is
+  plugins, or filesystem settings. OpenAI also defaults to raw API-key auth. Opt-in
+  `--openai-auth subscription` verifies that Codex CLI is logged in with ChatGPT, strips API
+  credentials plus parent-Codex thread metadata, and runs each turn as a fresh `codex exec`
+  process with the complete append-only transcript. Those turns are ephemeral, use a temporary
+  non-repository cwd and replacement benchmark instructions, and ignore user config/rules with
+  read-only sandboxing and apps/shell/multi-agent/web disabled; the unavoidable Codex bootstrap
+  remains. GPT-5.6 Sol's Codex-plan catalog supports `low|medium|high|xhigh|max`, not `none`.
+  Five parsed invalid/repeated replies without a counted try abort a stuck paid loop. Prompt
+  version 4 rejects strict left-to-right play: before spending many tries on one position, models
+  sample candidates/probes motivated by every unsolved hole, pursue whichever has the strongest
+  signal or easiest target, switch when stalled, and reprioritize when a solved word adds context.
+  It retains version 3's balance between direct candidates and exploratory probes: even a word
+  that cannot grammatically be the answer can provide intermediate rank hints, so broader
+  categories, contrasts, related concepts, and neighbors of warm clues can triangulate a semantic
+  direction. It also retains version 2's exact-inflection strategy: infer number/gender/agreement
+  from the fixed sentence context and try a promising candidate's context-correct form before
+  listing more direct synonyms. During a run, every counted try prints immediately with its word
+  and post-guess overall progress percentage (the same logarithmic multi-hole formula as the web
+  progress bar, to two decimals); misses and non-improving warm tries still print with unchanged
+  progress. After each run the CLI prints `tried=[...]` in submission order for the counted valid
+  unique words only (invalid, unparseable, and folded duplicate replies remain excluded exactly
+  like the score). Missing API keys still skip for API transports, median `--runs` is supported,
+  and only `--in-place` mutates a puzzle; this curator tool is
   never called by CI/tests.
 - **`gen_phrase` is fully interactive on a TTY (#5).** Anything not passed as a flag is
   prompted: the **sentence** (positional, now optional), **`--lang`**, and the optional

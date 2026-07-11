@@ -17,13 +17,19 @@ import pytest
 
 from llm_play import (
     ANTHROPIC_AUTH_MODES,
+    CODEX_BENCHMARK_INSTRUCTIONS,
+    CODEX_SUBSCRIPTION_EFFORTS,
+    CODEX_TURN_TIMEOUT_SECONDS,
     DEEP_REASONING_MAX_TOKENS,
     DEFAULT_ANTHROPIC_AUTH,
     DEFAULT_EFFORT,
+    DEFAULT_OPENAI_AUTH,
     EFFORT_LEVELS,
     MAX_CONSECUTIVE_UNPARSEABLE,
     MAX_NONCOUNTING_REPLIES,
     MODELS,
+    OPENAI_AUTH_MODES,
+    OPENAI_SUBSCRIPTION_CONFLICT_ENV,
     PROMPT_VERSION,
     PROVIDER_ENV,
     REASONING_MAX_TOKENS,
@@ -38,6 +44,7 @@ from llm_play import (
     provider_reply,
     resolve_puzzle_path,
     validate_anthropic_subscription_auth,
+    validate_openai_subscription_auth,
     write_benchmark,
 )
 
@@ -325,6 +332,169 @@ def test_subscription_auth_preflight_rejects_non_plan_sessions(monkeypatch, stat
         validate_anthropic_subscription_auth()
 
 
+@pytest.mark.parametrize("effort", CODEX_SUBSCRIPTION_EFFORTS)
+def test_openai_subscription_adapter_isolates_fresh_codex_exec(monkeypatch, effort):
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        assert not (set(OPENAI_SUBSCRIPTION_CONFLICT_ENV) & kwargs["env"].keys())
+        return SimpleNamespace(
+            returncode=0,
+            stdout="\n".join(
+                [
+                    json.dumps({"type": "thread.started", "thread_id": "fresh"}),
+                    json.dumps({"type": "turn.started"}),
+                    json.dumps(
+                        {
+                            "type": "item.completed",
+                            "item": {"type": "agent_message", "text": "forest"},
+                        }
+                    ),
+                    json.dumps({"type": "turn.completed"}),
+                ]
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(
+        "llm_play.shutil.which",
+        lambda command: "/usr/local/bin/codex" if command == "codex" else None,
+    )
+    monkeypatch.setattr("llm_play.subprocess.run", fake_run)
+    for name in OPENAI_SUBSCRIPTION_CONFLICT_ENV:
+        monkeypatch.setenv(name, "must-not-be-used")
+
+    reply = provider_reply(MODELS[2], None, effort=effort, openai_auth="subscription")
+    opening = [{"role": "user", "content": "opening"}]
+    continued = opening + [
+        {"role": "assistant", "content": "forest"},
+        {"role": "user", "content": "feedback"},
+    ]
+
+    assert reply(opening) == "forest"
+    assert reply(continued) == "forest"
+    assert reply([{"role": "user", "content": "opening again"}]) == "forest"
+
+    assert len(calls) == 3
+    command, kwargs = calls[0]
+    assert command[:2] == ["/usr/local/bin/codex", "exec"]
+    assert command[-1] == "-"
+    assert command[command.index("--model") + 1] == "gpt-5.6-sol"
+    assert command[command.index("--sandbox") + 1] == "read-only"
+    workspace = Path(command[command.index("--cd") + 1])
+    assert workspace == Path(kwargs["cwd"])
+    assert workspace.is_dir()
+    for flag in (
+        "--ephemeral",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "--skip-git-repo-check",
+        "--strict-config",
+        "--json",
+    ):
+        assert flag in command
+
+    configs = [
+        command[index + 1] for index, value in enumerate(command) if value == "--config"
+    ]
+    assert f'model_reasoning_effort="{effort}"' in configs
+    assert 'approval_policy="never"' in configs
+    assert "features.apps=false" in configs
+    assert "features.shell_tool=false" in configs
+    assert "features.multi_agent=false" in configs
+    assert 'web_search="disabled"' in configs
+    assert 'history.persistence="none"' in configs
+    instructions_config = next(
+        value for value in configs if value.startswith("model_instructions_file=")
+    )
+    instructions_path = Path(json.loads(instructions_config.split("=", 1)[1]))
+    assert instructions_path.read_text(encoding="utf-8").strip() == (
+        CODEX_BENCHMARK_INSTRUCTIONS
+    )
+
+    assert kwargs["check"] is False
+    assert kwargs["capture_output"] is True
+    assert kwargs["text"] is True
+    assert kwargs["timeout"] == CODEX_TURN_TIMEOUT_SECONDS
+    transcripts = [
+        json.loads(call_kwargs["input"].splitlines()[-1])
+        for _call_command, call_kwargs in calls
+    ]
+    assert transcripts == [
+        opening,
+        continued,
+        [{"role": "user", "content": "opening again"}],
+    ]
+
+    reply.close()
+    assert not workspace.exists()
+
+
+def test_openai_subscription_rejects_unsupported_none_effort(monkeypatch):
+    monkeypatch.setattr("llm_play.shutil.which", lambda _command: "/usr/bin/codex")
+
+    with pytest.raises(ValueError, match="does not support.*none.*low.*medium"):
+        provider_reply(MODELS[2], None, effort="none", openai_auth="subscription")
+
+
+def test_openai_subscription_rejects_codex_tool_activity(monkeypatch):
+    monkeypatch.setattr("llm_play.shutil.which", lambda _command: "/usr/bin/codex")
+    monkeypatch.setattr(
+        "llm_play.subprocess.run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(
+                {
+                    "type": "item.started",
+                    "item": {"type": "command_execution", "command": "pwd"},
+                }
+            ),
+            stderr="",
+        ),
+    )
+    reply = provider_reply(MODELS[2], None, effort="medium", openai_auth="subscription")
+
+    with pytest.raises(RuntimeError, match="forbidden tool activity"):
+        reply([{"role": "user", "content": "opening"}])
+    reply.close()
+
+
+def test_openai_subscription_auth_preflight_strips_api_credentials(monkeypatch):
+    def fake_run(command, **kwargs):
+        assert command == ["/usr/local/bin/codex", "login", "status"]
+        assert not (set(OPENAI_SUBSCRIPTION_CONFLICT_ENV) & kwargs["env"].keys())
+        return SimpleNamespace(
+            returncode=0,
+            stdout="Logged in using ChatGPT\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(
+        "llm_play.shutil.which", lambda _command: "/usr/local/bin/codex"
+    )
+    monkeypatch.setattr("llm_play.subprocess.run", fake_run)
+    for name in OPENAI_SUBSCRIPTION_CONFLICT_ENV:
+        monkeypatch.setenv(name, "must-not-be-used")
+
+    assert validate_openai_subscription_auth() == "ChatGPT"
+
+
+def test_openai_subscription_auth_preflight_rejects_api_login(monkeypatch):
+    monkeypatch.setattr("llm_play.shutil.which", lambda _command: "/usr/bin/codex")
+    monkeypatch.setattr(
+        "llm_play.subprocess.run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="Logged in using an API key\n",
+            stderr="",
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="not using ChatGPT subscription auth"):
+        validate_openai_subscription_auth()
+
+
 def test_openai_adapter_uses_responses_with_explicit_none_effort(monkeypatch):
     calls = []
 
@@ -412,12 +582,15 @@ def test_effort_cli_defaults_to_none_and_accepts_every_shared_level():
     defaults = parse_args(["puzzle.json"])
     assert defaults.effort == DEFAULT_EFFORT
     assert defaults.anthropic_auth == DEFAULT_ANTHROPIC_AUTH
+    assert defaults.openai_auth == DEFAULT_OPENAI_AUTH
     for effort in EFFORT_LEVELS:
         assert parse_args(["puzzle.json", "--effort", effort]).effort == effort
     for auth in ANTHROPIC_AUTH_MODES:
         assert (
             parse_args(["puzzle.json", "--anthropic-auth", auth]).anthropic_auth == auth
         )
+    for auth in OPENAI_AUTH_MODES:
+        assert parse_args(["puzzle.json", "--openai-auth", auth]).openai_auth == auth
 
 
 def test_puzzle_path_accepts_repo_and_generation_relative_forms(monkeypatch, tmp_path):
@@ -609,6 +782,52 @@ def test_cli_prints_counted_words_in_order_for_each_run(monkeypatch, tmp_path, c
     assert 'OPUS     run=2 try=3 word="ocean" progress=100.00%' in output
     assert 'OPUS     run=1 tried=["forest", "ocean"]' in output
     assert 'OPUS     run=2 tried=["shared", "forest", "ocean"]' in output
+
+
+def test_cli_openai_subscription_uses_plan_without_api_key(
+    monkeypatch, tmp_path, capsys
+):
+    path = tmp_path / "puzzle.json"
+    path.write_text(json.dumps(puzzle()), encoding="utf-8")
+    model = ScriptedModel(["forest", "ocean"])
+    preflights = []
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr("llm_play.load_vocab", lambda _lang: VOCAB)
+    monkeypatch.setattr(
+        "llm_play.validate_openai_subscription_auth",
+        lambda: preflights.append("ChatGPT") or "ChatGPT",
+    )
+
+    def fake_provider(config, api_key, **kwargs):
+        assert config == MODELS[2]
+        assert api_key is None
+        assert kwargs["effort"] == "medium"
+        assert kwargs["openai_auth"] == "subscription"
+        return model
+
+    monkeypatch.setattr("llm_play.provider_reply", fake_provider)
+
+    assert (
+        main(
+            [
+                str(path),
+                "--models",
+                "GPT",
+                "--effort",
+                "medium",
+                "--openai-auth",
+                "subscription",
+            ]
+        )
+        == 0
+    )
+
+    output = capsys.readouterr()
+    assert preflights == ["ChatGPT"]
+    assert "openai_auth=subscription" in output.out
+    assert 'GPT      try=1 word="forest" progress=50.00%' in output.out
+    assert "OPENAI_API_KEY is not set" not in output.err
 
 
 def test_opening_board_keeps_hole_affixes_and_full_sentence_tokens():

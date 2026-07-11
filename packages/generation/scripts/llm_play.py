@@ -68,6 +68,17 @@ AnthropicAuth = Literal["api", "subscription"]
 ANTHROPIC_AUTH_MODES: tuple[AnthropicAuth, ...] = ("api", "subscription")
 DEFAULT_ANTHROPIC_AUTH: AnthropicAuth = "api"
 
+OpenAIAuth = Literal["api", "subscription"]
+OPENAI_AUTH_MODES: tuple[OpenAIAuth, ...] = ("api", "subscription")
+DEFAULT_OPENAI_AUTH: OpenAIAuth = "api"
+CODEX_SUBSCRIPTION_EFFORTS: tuple[ReasoningEffort, ...] = (
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+)
+
 # A subscription run must never inherit a developer-platform credential or cloud
 # provider override: Claude Code gives environment credentials precedence over the
 # logged-in Claude.ai plan. Temporarily removing these also keeps the auth preflight and
@@ -80,6 +91,37 @@ SUBSCRIPTION_CONFLICT_ENV = (
     "CLAUDE_CODE_USE_VERTEX",
     "CLAUDE_CODE_USE_FOUNDRY",
 )
+
+# `CODEX_API_KEY` overrides saved CLI auth for one `codex exec` invocation. Strip it,
+# every other OpenAI/Azure API route, and the parent Codex thread metadata so a plan run
+# can only use the separately persisted ChatGPT login in CODEX_HOME.
+OPENAI_SUBSCRIPTION_CONFLICT_ENV = (
+    "OPENAI_API_KEY",
+    "CODEX_API_KEY",
+    "CODEX_ACCESS_TOKEN",
+    "OPENAI_BASE_URL",
+    "OPENAI_ORG_ID",
+    "OPENAI_PROJECT_ID",
+    "AZURE_OPENAI_API_KEY",
+    "AZURE_OPENAI_ENDPOINT",
+    "AZURE_OPENAI_AD_TOKEN",
+    "CODEX_THREAD_ID",
+    "CODEX_CI",
+)
+
+CODEX_TURN_TIMEOUT_SECONDS = 300
+CODEX_BENCHMARK_INSTRUCTIONS = (
+    "You are an isolated word-game player. Treat the user's complete game transcript "
+    "as your only task context. Never inspect files, use tools, search, or modify "
+    "anything. Reply to the final user message with exactly one word and no punctuation "
+    "or explanation."
+)
+CODEX_TOOL_ITEM_TYPES = {
+    "command_execution",
+    "file_change",
+    "mcp_tool_call",
+    "web_search",
+}
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 GENERATION_DIR = SCRIPT_DIR.parent
@@ -249,6 +291,43 @@ def validate_anthropic_subscription_auth() -> str:
             "use `/login`, and select the subscription account"
         )
     return subscription
+
+
+def _environment_without(names: Iterable[str]) -> dict[str, str]:
+    blocked = set(names)
+    return {name: value for name, value in os.environ.items() if name not in blocked}
+
+
+def validate_openai_subscription_auth() -> str:
+    """Refuse a plan run unless Codex CLI confirms saved ChatGPT authentication."""
+    cli = shutil.which("codex")
+    if cli is None:
+        raise RuntimeError(
+            "Codex CLI is not installed; install it, run `codex login`, and sign in "
+            "with the ChatGPT account that owns the Codex plan"
+        )
+    try:
+        completed = subprocess.run(
+            [cli, "login", "status"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            env=_environment_without(OPENAI_SUBSCRIPTION_CONFLICT_ENV),
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(
+            f"could not inspect Codex CLI authentication: {exc}"
+        ) from exc
+    status_lines = (completed.stdout + "\n" + completed.stderr).splitlines()
+    if completed.returncode != 0 or not any(
+        line.strip() == "Logged in using ChatGPT" for line in status_lines
+    ):
+        raise RuntimeError(
+            "Codex CLI is not using ChatGPT subscription auth; run `codex logout`, "
+            "then `codex login` and choose ChatGPT"
+        )
+    return "ChatGPT"
 
 
 def _is_int(value: object) -> bool:
@@ -747,20 +826,172 @@ class AnthropicSubscriptionReply:
         self._workspace.cleanup()
 
 
+def _codex_transcript_prompt(messages: list[Message]) -> str:
+    transcript = json.dumps(messages, ensure_ascii=False, separators=(",", ":"))
+    return "\n".join(
+        [
+            "Continue the word-game conversation encoded as JSON below.",
+            "It is the complete append-only transcript; answer its final user message.",
+            "Return exactly one word and nothing else.",
+            transcript,
+        ]
+    )
+
+
+def _codex_final_message(stdout: str, model_id: str) -> str:
+    final_message: str | None = None
+    for line_number, line in enumerate(stdout.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f"{model_id} Codex CLI returned malformed JSONL on line {line_number}"
+            ) from exc
+        if not isinstance(event, dict):
+            raise RuntimeError(f"{model_id} Codex CLI returned a malformed event")
+        event_type = event.get("type")
+        if event_type in {"error", "turn.failed"}:
+            detail = event.get("message") or event.get("error") or "unknown error"
+            raise RuntimeError(f"{model_id} Codex CLI turn failed: {detail}")
+        if not isinstance(event_type, str) or not event_type.startswith("item."):
+            continue
+        item = event.get("item")
+        if not isinstance(item, dict):
+            raise RuntimeError(f"{model_id} Codex CLI returned a malformed item event")
+        item_type = item.get("type")
+        if item_type in CODEX_TOOL_ITEM_TYPES:
+            raise RuntimeError(
+                f"{model_id} Codex CLI attempted forbidden tool activity: {item_type}"
+            )
+        if event_type == "item.completed" and item_type == "agent_message":
+            text = item.get("text")
+            if not isinstance(text, str):
+                raise RuntimeError(
+                    f"{model_id} Codex CLI returned a malformed agent message"
+                )
+            final_message = text
+    if final_message is None:
+        raise RuntimeError(f"{model_id} Codex CLI returned no final agent message")
+    return final_message
+
+
+class OpenAISubscriptionReply:
+    """Fresh, isolated Codex CLI turns backed by saved ChatGPT plan auth."""
+
+    def __init__(self, model_id: str, effort: ReasoningEffort):
+        if effort not in CODEX_SUBSCRIPTION_EFFORTS:
+            supported = "|".join(CODEX_SUBSCRIPTION_EFFORTS)
+            raise ValueError(
+                "OpenAI subscription auth does not support reasoning effort "
+                f"{effort!r}; use {supported}"
+            )
+        cli = shutil.which("codex")
+        if cli is None:
+            raise RuntimeError("Codex CLI is not installed")
+        self.cli = cli
+        self.model_id = model_id
+        self.effort = effort
+        self._message_count = 0
+        self._workspace = tempfile.TemporaryDirectory(prefix="whippin-codex-")
+        self._instructions_path = Path(self._workspace.name) / "instructions.md"
+        self._instructions_path.write_text(
+            CODEX_BENCHMARK_INSTRUCTIONS + "\n", encoding="utf-8"
+        )
+
+    def _command(self) -> list[str]:
+        config = [
+            f"approval_policy={json.dumps('never')}",
+            f"model_reasoning_effort={json.dumps(self.effort)}",
+            f"model_instructions_file={json.dumps(str(self._instructions_path))}",
+            "features.apps=false",
+            "features.shell_tool=false",
+            "features.multi_agent=false",
+            f"web_search={json.dumps('disabled')}",
+            f"history.persistence={json.dumps('none')}",
+            "feedback.enabled=false",
+            "analytics.enabled=false",
+        ]
+        command = [
+            self.cli,
+            "exec",
+            "--ephemeral",
+            "--ignore-user-config",
+            "--ignore-rules",
+            "--skip-git-repo-check",
+            "--strict-config",
+            "--json",
+            "--sandbox",
+            "read-only",
+            "--cd",
+            self._workspace.name,
+            "--model",
+            self.model_id,
+        ]
+        for value in config:
+            command.extend(("--config", value))
+        command.append("-")
+        return command
+
+    def __call__(self, messages: list[Message]) -> str:
+        if not messages or messages[-1].get("role") != "user":
+            raise ValueError("Codex CLI reply requires a final user message")
+
+        if len(messages) == 1:
+            self._message_count = 0
+        expected_count = 1 if self._message_count == 0 else self._message_count + 2
+        if len(messages) != expected_count:
+            raise RuntimeError(
+                "Codex CLI conversation diverged from the append-only referee transcript"
+            )
+
+        try:
+            completed = subprocess.run(
+                self._command(),
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=CODEX_TURN_TIMEOUT_SECONDS,
+                cwd=self._workspace.name,
+                env=_environment_without(OPENAI_SUBSCRIPTION_CONFLICT_ENV),
+                input=_codex_transcript_prompt(messages),
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise RuntimeError(f"{self.model_id} Codex CLI turn failed: {exc}") from exc
+        if completed.returncode != 0:
+            detail = (
+                completed.stderr.strip() or completed.stdout.strip() or "unknown error"
+            )
+            raise RuntimeError(
+                f"{self.model_id} Codex CLI exited {completed.returncode}: "
+                f"{detail[-1000:]}"
+            )
+        result = _codex_final_message(completed.stdout, self.model_id)
+        self._message_count = len(messages)
+        return result
+
+    def close(self) -> None:
+        self._workspace.cleanup()
+
+
 def provider_reply(
     config: ModelConfig,
     api_key: str | None,
     *,
     effort: ReasoningEffort = DEFAULT_EFFORT,
     anthropic_auth: AnthropicAuth = DEFAULT_ANTHROPIC_AUTH,
+    openai_auth: OpenAIAuth = DEFAULT_OPENAI_AUTH,
 ) -> ModelReply:
-    """Build one official-SDK adapter. Imports stay lazy for offline contract tests."""
+    """Build one provider adapter. Paid SDK imports stay lazy for offline tests."""
     provider = config["provider"]
     model_id = config["model_id"]
     if effort not in EFFORT_LEVELS:
         raise ValueError(f"unsupported reasoning effort: {effort}")
     if anthropic_auth not in ANTHROPIC_AUTH_MODES:
         raise ValueError(f"unsupported Anthropic auth mode: {anthropic_auth}")
+    if openai_auth not in OPENAI_AUTH_MODES:
+        raise ValueError(f"unsupported OpenAI auth mode: {openai_auth}")
 
     if provider == "anthropic":
         if anthropic_auth == "subscription":
@@ -799,6 +1030,8 @@ def provider_reply(
         return reply
 
     if provider == "openai":
+        if openai_auth == "subscription":
+            return OpenAISubscriptionReply(model_id, effort)
         if not api_key:
             raise ValueError("OpenAI auth requires OPENAI_API_KEY")
         from openai import OpenAI
@@ -1043,6 +1276,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--openai-auth",
+        choices=OPENAI_AUTH_MODES,
+        default=DEFAULT_OPENAI_AUTH,
+        help=(
+            "OpenAI transport: API key billing or isolated Codex CLI access "
+            f"through ChatGPT subscription auth (default: {DEFAULT_OPENAI_AUTH})"
+        ),
+    )
+    parser.add_argument(
         "--in-place",
         action="store_true",
         help='write successful results to the puzzle\'s optional "benchmark" field',
@@ -1070,26 +1312,37 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    subscription_selected = args.anthropic_auth == "subscription" and any(
+    anthropic_subscription_selected = args.anthropic_auth == "subscription" and any(
         config["provider"] == "anthropic" for config in args.model_configs
     )
-    if subscription_selected:
+    if anthropic_subscription_selected:
         try:
             validate_anthropic_subscription_auth()
         except RuntimeError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
 
+    openai_subscription_selected = args.openai_auth == "subscription" and any(
+        config["provider"] == "openai" for config in args.model_configs
+    )
+    if openai_subscription_selected:
+        try:
+            validate_openai_subscription_auth()
+        except RuntimeError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+
     print(
         f"Whippin benchmark prompt={PROMPT_VERSION} effort={args.effort} "
-        f"anthropic_auth={args.anthropic_auth} cap={args.cap} runs={args.runs}",
+        f"anthropic_auth={args.anthropic_auth} openai_auth={args.openai_auth} "
+        f"cap={args.cap} runs={args.runs}",
         flush=True,
     )
     summaries: list[ModelSummary] = []
     for config in args.model_configs:
         subscription_auth = (
             config["provider"] == "anthropic" and args.anthropic_auth == "subscription"
-        )
+        ) or (config["provider"] == "openai" and args.openai_auth == "subscription")
         api_key = None
         if not subscription_auth:
             env_name = PROVIDER_ENV[config["provider"]]
@@ -1121,6 +1374,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     api_key,
                     effort=args.effort,
                     anthropic_auth=args.anthropic_auth,
+                    openai_auth=args.openai_auth,
                 ),
                 cap=args.cap,
                 runs=args.runs,
