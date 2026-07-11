@@ -10,7 +10,7 @@ import ProgressBar from '../components/ProgressBar';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import SolvedScreen, { RESULTS_IN_MS } from '../components/SolvedScreen';
-import StreakDialog from '../components/StreakDialog';
+import LazyStreakDialog, { preloadStreakDialog } from '../components/LazyStreakDialog';
 import SolvedCaption from '../components/SolvedCaption';
 import LoadError from '../components/LoadError';
 import { t, srHoleResult } from '../i18n';
@@ -217,6 +217,20 @@ function Round({
   const solved = holes.every((h) => h.rank === 0); // sentence discovered -> round over
   const allWordsResolved = solved && resolvedHoleIndices.size === holes.length;
 
+  // The celebration is deliberately code-split out of startup. Warm its chunk only while
+  // an eligible unsolved daily round is idle; if a player solves before idle fires, the
+  // just-solved transition below starts the same preload immediately. Both scheduling paths
+  // are cleaned up with the round, and a speculative load failure remains retryable.
+  useEffect(() => {
+    if (solved || dayNumber == null || !isActiveDay) return undefined;
+    if (typeof window.requestIdleCallback === 'function') {
+      const id = window.requestIdleCallback(() => preloadStreakDialog(), { timeout: 4_000 });
+      return () => window.cancelIdleCallback(id);
+    }
+    const id = window.setTimeout(() => preloadStreakDialog(), 1_500);
+    return () => window.clearTimeout(id);
+  }, [dayNumber, isActiveDay, roundKey, solved]);
+
   // Reconstruction progress (0–100): how much of the sentence is rebuilt. Drives the
   // WIDTH of the top progress bar. Distinct from the guess-count performance number.
   const progress = useMemo<number>(() => computeProgress(holes, ranks), [holes, ranks]);
@@ -234,10 +248,17 @@ function Round({
   // a multi-hole final guess cannot let the streak cover words that are still resolving.
   // An already-solved round on load still reveals immediately.
   const [showResults, setShowResults] = useState<boolean>(solved);
+  // The results component also mounts behind the streak screen. Fresh solves keep it at
+  // frame zero until the source finishes; rehydrated solves start at the final frame.
+  // A dev streak preview deliberately opts a rehydrated result back into the choreography.
+  const [animateResults, setAnimateResults] = useState<boolean>(
+    () => solved && deferResultsAnimation,
+  );
   // Player progression gets a separate, one-time celebration. This is deliberately
   // transient rather than persisted: only the live unsolved -> solved transition may open
   // it, so refreshing or revisiting an already-solved round never interrupts the player.
   const [showStreakDialog, setShowStreakDialog] = useState(false);
+  const [streakAdvanced, setStreakAdvanced] = useState(false);
   const [awaitingWordAnimations, setAwaitingWordAnimations] = useState(false);
   // Sentence metadata is its own reveal beat between player progression and the
   // sentence-specific metrics. Results may mount behind the streak, but their timers stay
@@ -251,7 +272,9 @@ function Round({
     prevSolved.current = solved;
     if (!solved) {
       setShowResults(false);
+      setAnimateResults(false);
       setShowStreakDialog(false);
+      setStreakAdvanced(false);
       setAwaitingWordAnimations(false);
       setPromptExiting(false);
       setSourceRevealStarted(false);
@@ -262,7 +285,9 @@ function Round({
     }
     if (!justSolved) {
       setShowResults(true); // already solved on load (rehydrated) -> reveal without waiting
+      setAnimateResults(deferResultsAnimation);
       setShowStreakDialog(false);
+      setStreakAdvanced(false);
       setAwaitingWordAnimations(false);
       setPromptExiting(false);
       setSourceRevealStarted(true);
@@ -274,6 +299,7 @@ function Round({
     // play-solve transition (never on the rehydration branch above). A ?puzzle= override
     // has no real day, so it isn't a countable solve — skip it. `archive` distinguishes a
     // replayed past day ('yes', #55) from the live daily puzzle ('no').
+    let didAdvanceStreak = false;
     if (dayNumber != null) {
       track('solve', { lang, tries: guessCount, day: dayNumber, archive: isActiveDay ? 'no' : 'yes' });
       // Streak (#56): only an ACTIVE-DAY solve counts — archive replays must not touch the
@@ -283,8 +309,11 @@ function Round({
       // solvedDay === activeDay - 1. Only the caller knows which route this is — the undated
       // active route keeps isActiveDay true across the flip, a dated past route is false —
       // so the flip-edge still records while an archive-yesterday solve does not.
-      if (isActiveDay) recordSolve(lang, dayNumber, todayDayNumber);
+      if (isActiveDay) didAdvanceStreak = recordSolve(lang, dayNumber, todayDayNumber);
     }
+    setAnimateResults(true);
+    setStreakAdvanced(didAdvanceStreak);
+    if (didAdvanceStreak) preloadStreakDialog();
     setSourceRevealStarted(false);
     setSourceRevealComplete(false);
     setAwaitingWordAnimations(true);
@@ -297,7 +326,8 @@ function Round({
     // this dialog. recordSolve has already updated the solved-day set synchronously —
     // and its freshness tolerance is mirrored here (solvedDay >= activeDay - 1), so a
     // tab left open 2+ days can't celebrate a solve the store just refused to record.
-    const willShowStreak = dayNumber != null && isActiveDay && dayNumber >= todayDayNumber - 1;
+    const willShowStreak =
+      streakAdvanced && dayNumber != null && isActiveDay && dayNumber >= todayDayNumber - 1;
     if (!willShowStreak) {
       setShowResults(true);
       setShowStreakDialog(false);
@@ -315,7 +345,14 @@ function Round({
       setAwaitingWordAnimations(false);
     }, STREAK_AFTER_WORDS_MS);
     return () => window.clearTimeout(timer);
-  }, [allWordsResolved, awaitingWordAnimations, dayNumber, isActiveDay, todayDayNumber]);
+  }, [
+    allWordsResolved,
+    awaitingWordAnimations,
+    dayNumber,
+    isActiveDay,
+    streakAdvanced,
+    todayDayNumber,
+  ]);
 
   const dismissStreakDialog = useCallback(() => {
     // StreakDialog calls this only AFTER its 200ms exit fade. That callback is the source
@@ -555,6 +592,7 @@ function Round({
             trajectory={trajectory}
             dayNumber={dayNumber}
             lang={lang}
+            animate={animateResults}
             startAnimation={
               sourceRevealComplete && !showStreakDialog && !deferResultsAnimation
             }
@@ -573,7 +611,7 @@ function Round({
       </div>
 
       {showStreakDialog && dayNumber != null && (
-        <StreakDialog lang={lang} solvedDay={dayNumber} onDismiss={dismissStreakDialog} />
+        <LazyStreakDialog lang={lang} solvedDay={dayNumber} onDismiss={dismissStreakDialog} />
       )}
     </div>
   );

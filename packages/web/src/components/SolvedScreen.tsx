@@ -25,6 +25,7 @@ export default function SolvedScreen({
   dayNumber,
   lang,
   action,
+  animate = true,
   startAnimation = true,
 }: {
   guessCount: number;
@@ -32,6 +33,9 @@ export default function SolvedScreen({
   dayNumber: number | null;
   lang: string; // packed into the share token (drives the link's click-through target)
   action?: { label: string; onClick: () => void }; // replaces SHARE in the tutorial
+  // Rehydrated solves render their final result immediately. Fresh solves animate, with
+  // startAnimation acting as the source/streak gate while this component stays mounted.
+  animate?: boolean;
   // A live active-day solve holds this at false while StreakDialog is open. No-dialog
   // paths (archive, tutorial, override, and rehydration) use the immediate default.
   startAnimation?: boolean;
@@ -47,27 +51,40 @@ export default function SolvedScreen({
   // Bring the whole result into place first, then tally its headline number. Keeping the
   // component mounted but inert lets the streak dialog own the screen without allowing
   // this sequence to finish invisibly underneath it.
-  const [resultsIn, setResultsIn] = useState(false);
+  const [resultsIn, setResultsIn] = useState(() => !animate);
   useEffect(() => {
+    if (!animate) {
+      setResultsIn(true);
+      return undefined;
+    }
     if (!startAnimation) return undefined;
     const raf = requestAnimationFrame(() => setResultsIn(true));
     return () => cancelAnimationFrame(raf);
-  }, [startAnimation]);
+  }, [animate, startAnimation]);
 
-  const [countTarget, setCountTarget] = useState(0);
+  const [countTarget, setCountTarget] = useState(() => (animate ? 0 : guessCount));
   useEffect(() => {
+    if (!animate) {
+      setCountTarget(guessCount);
+      return undefined;
+    }
     if (!resultsIn) return undefined;
     const id = window.setTimeout(() => setCountTarget(guessCount), reduceMotion ? 0 : RESULTS_IN_MS);
     return () => window.clearTimeout(id);
-  }, [resultsIn, guessCount, reduceMotion]);
-  const shownScore = useAnimatedNumber(countTarget, reduceMotion ? 1 : SCORE_COUNT_MS);
+  }, [animate, resultsIn, guessCount, reduceMotion]);
+  const shownScore = useAnimatedNumber(countTarget, !animate || reduceMotion ? 1 : SCORE_COUNT_MS);
 
   // After the score lands, reveal the neutral tiles and then color them cold-to-hot. The
   // row always reserves its final footprint, so neither animation moves the share action.
   const gridSpanMs = Math.max(0, n - 1) * stagger;
-  const [gridShown, setGridShown] = useState(false);
-  const [gridColorized, setGridColorized] = useState(false);
+  const [gridShown, setGridShown] = useState(() => !animate);
+  const [gridColorized, setGridColorized] = useState(() => !animate);
   useEffect(() => {
+    if (!animate) {
+      setGridShown(true);
+      setGridColorized(true);
+      return undefined;
+    }
     if (!resultsIn) return undefined;
     if (reduceMotion) {
       setGridShown(true);
@@ -83,7 +100,7 @@ export default function SolvedScreen({
       window.clearTimeout(show);
       window.clearTimeout(color);
     };
-  }, [gridSpanMs, reduceMotion, resultsIn]);
+  }, [animate, gridSpanMs, reduceMotion, resultsIn]);
 
   // "COPIED" confirmation after a clipboard fallback (the native share sheet needs none).
   const [copied, setCopied] = useState(false);

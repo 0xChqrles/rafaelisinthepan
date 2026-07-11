@@ -604,23 +604,24 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   `migrate` (v2) grandfathers any blob with prior play state so veterans never see it
   uninvited. Replay via the header `?`; `?tutorial=1` forces it; a `?puzzle=`
   override suppresses the first-visit invitation.
-- **App header (decided 2026-07-06):** a fixed **topbar** (`components/TopBar.tsx`) —
-  flag (language) left, a centered title, a right-hand control — full-bleed with a
+- **App header (decided 2026-07-06; game day-id removal confirmed 2026-07-11):** a fixed
+  **topbar** (`components/TopBar.tsx`) — flag (language) plus the optional live streak left,
+  an optional centered title, and a right-hand control — full-bleed with a
   thin `--surface` bottom border separating it from the app; the **progress bar sits
   in its own full-width row below it** (no more flag/`?` squeezing the bar on
-  mobile). The game fills it with the day's puzzle id (`#<dayNumber>`) + a right group
-  of the **archive calendar icon** and help `?` (#55); the tutorial fills it with
-  "TUTORIAL" + the skip fast-forward. The flag ALWAYS opens the language screen. The
+  mobile). The game's center is deliberately **empty** — `#<dayNumber>` was removed — and
+  its right group holds the **archive calendar icon** and help `?` (#55); the tutorial
+  fills the center with "TUTORIAL" + the skip fast-forward. The flag ALWAYS opens the
+  language screen. The
   game header is rendered by **`GameRoute` (App), NOT inside `Game`** (decided
   2026-07-08): it wraps EVERY state of the route — loading / error / missing-puzzle /
   the loaded game — so navigating into a game (e.g. from the archive) never blinks the
-  header away; only the body under the fixed header refreshes. Its `#<dayNumber>` comes
-  from `usePuzzle`'s **stable `dayNumber`** — captured ONCE per request (`useMemo` on the
-  requested date, not re-read from the clock each render) and shared by the fetch, the
-  header, the round key and the share — so it shows correctly while loading AND can never
-  drift from the loaded puzzle (an undated tab held open across the 22:00 flip keeps the
-  fetched day, since the puzzle itself does not silently swap). The topbar is the
-  extension point for future chrome (streaks, stats, …).
+  header away; only the body under the fixed header refreshes. `usePuzzle`'s **stable
+  `dayNumber`** is still captured ONCE per request (`useMemo` on the requested date) and
+  shared by the fetch, round key, and share, but is no longer rendered in the header. An
+  undated tab held open across the 22:00 flip therefore still keeps its fetched puzzle/day;
+  the puzzle itself does not silently swap. The topbar is the extension point for future
+  chrome (streaks, stats, …).
 - **Language screen (redesigned 2026-07-06):** headed by the **logo** (blue pixel
   glyph, 3×/2× its native 22px — language-neutral, and the app's ONE in-app branding
   spot), NOT a "select language" title (the cards self-explain, and a title would

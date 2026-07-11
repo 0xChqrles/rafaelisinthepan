@@ -142,7 +142,10 @@ interface GameState extends PersistedState {
   // archive replay of yesterday, so the ACTIVE-DAY gate lives at the caller (Game.tsx);
   // recordSolve only ever sees active-day solves. Otherwise inserts, keeping the array
   // sorted + deduped and bounded to MAX_SOLVED_DAYS.
-  recordSolve: (lang: string, solvedDay: number, activeDay: number) => void;
+  // Returns true only when this call actually inserts a new day. The fresh-solve UI uses
+  // that signal to avoid replaying historical streak progression after a same-day re-solve
+  // (for example when a re-published puzzle reset the round but not the solved-day fact).
+  recordSolve: (lang: string, solvedDay: number, activeDay: number) => boolean;
 
   // Reconcile the persisted rounds to `key`. A matching key with matching holes
   // rehydrates its stored progress; a brand-new key — or the same key whose puzzle was
@@ -224,19 +227,21 @@ export const useGameStore = create<GameState>()(
         set({ onboarded: true });
       },
 
-      recordSolve: (lang, solvedDay, activeDay) =>
-        set((s) => {
-          // Archive plays (a solve older than yesterday) NEVER touch the streak; an
-          // in-flight round solved just past the 22:00 flip (solvedDay === activeDay - 1)
-          // still counts for its own day.
-          if (solvedDay < activeDay - 1) return {};
-          const days = s.solvedDays[lang] ?? [];
-          // Re-solves and rehydration must not double-count.
-          if (days.includes(solvedDay)) return {};
-          // Insert keeping the array sorted ascending + deduped, then bound it.
-          const next = capSolvedDays([...days, solvedDay].sort((a, b) => a - b));
-          return { solvedDays: { ...s.solvedDays, [lang]: next } };
-        }),
+      recordSolve: (lang, solvedDay, activeDay) => {
+        // Archive plays (a solve older than yesterday) NEVER touch the streak; an
+        // in-flight round solved just past the 22:00 flip (solvedDay === activeDay - 1)
+        // still counts for its own day.
+        if (solvedDay < activeDay - 1) return false;
+        const state = get();
+        const days = state.solvedDays[lang] ?? [];
+        // Re-solves and rehydration must not double-count — and must not replay the
+        // celebration as though this historical insertion had happened again.
+        if (days.includes(solvedDay)) return false;
+        // Insert keeping the array sorted ascending + deduped, then bound it.
+        const next = capSolvedDays([...days, solvedDay].sort((a, b) => a - b));
+        set({ solvedDays: { ...state.solvedDays, [lang]: next } });
+        return true;
+      },
 
       ensureRound: (key, initialHoles) =>
         set((s) => {

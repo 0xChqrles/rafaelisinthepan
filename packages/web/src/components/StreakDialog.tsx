@@ -28,14 +28,14 @@ const DIGIT_SETTLE_MS = 120; // rebound peak → rest back on the baseline
 const DIGIT_BOUNCE_EM = 0.1;
 const easeInQuad = (t: number) => t * t;
 const easeOutQuad = (t: number) => 1 - (1 - t) * (1 - t);
+const easeOutCubic = (t: number) => 1 - (1 - t) ** 3;
 const APPEAR_SPRING = { mass: 0.7, tension: 280, friction: 18 };
 // The tile animates TWO decoupled values — `flip` (rotation) and `lift` (height) — so it
 // can complete its half-turn WHILE airborne: phase 1 rises and fully flips it, a short
 // hang holds it above the screen on its completed face, then phase 2 drops it straight
 // down and slams it through the plane, launching the wave. The rise and the fall also
 // need opposite spring characters: one spring can't be slow going up AND land hard.
-const DAY_RISE_SPRING = { mass: 1, tension: 150, friction: 20 }; // brisk decelerating rise
-const DAY_RISE_MS = 300; // rise + full rotation (a fixed beat, not the spring's settle tail)
+const DAY_RISE_MS = 300; // rise + full rotation, completion-driven at this fixed duration
 const DAY_HANG_MS = 150; // the airborne pause on the completed face before the drop
 const DAY_SLAM_SPRING = { mass: 1, tension: 210, friction: 13 }; // ~20% undershoot: hard landing
 // The eye sees contact slightly before the height reaches 0 (the last px are sub-visual).
@@ -43,7 +43,6 @@ const DAY_SLAM_SPRING = { mass: 1, tension: 210, friction: 13 }; // ~20% undersh
 // latch makes it fire once even as the undershoot keeps values below the threshold.
 const DAY_CONTACT_LIFT = 0.06;
 const DAY_WAVE_STAGGER_MS = 65;
-const DAY_PREP_SPRING = { mass: 0.6, tension: 340, friction: 26 };
 const DAY_BOUNCE_SPRING = { mass: 0.75, tension: 300, friction: 11 };
 
 // A tile catches light as it nears the player: its fill brightens toward this tint at its
@@ -77,17 +76,19 @@ const AnimatedSpan = animated.span as unknown as ComponentType<AnimatedIntrinsic
 // A fresh daily solve changes player-level progression, so that moment gets a full-screen
 // temporal sequence instead of competing with the sentence result. Game controls when this
 // mounts: active-day transition only, never archive, tutorial, override, or rehydration.
+export interface StreakDialogProps {
+  lang: string;
+  solvedDay: number;
+  previewPreviousStreak?: number;
+  onDismiss: () => void;
+}
+
 export default function StreakDialog({
   lang,
   solvedDay,
   previewPreviousStreak,
   onDismiss,
-}: {
-  lang: string;
-  solvedDay: number;
-  previewPreviousStreak?: number;
-  onDismiss: () => void;
-}) {
+}: StreakDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const dismissingRef = useRef(false);
   const mountedRef = useRef(false);
@@ -319,10 +320,16 @@ export default function StreakDialog({
         setDayComplete(true);
       } else {
         // Phase 1 — the tile lifts off and completes its rotation while airborne, then
-        // hangs above the screen on its completed face. Fixed beats (not the springs'
-        // imperceptible settle tails) keep the rise and the pause deterministic.
-        dayFlipApi.start({ lift: 1, flip: 1, config: DAY_RISE_SPRING });
-        await wait(DAY_RISE_MS);
+        // hangs above the screen on its completed face. The fixed-duration controller is
+        // awaited: a backgrounded/throttled tab cannot advance to the slam before the rise
+        // has actually committed its final frame.
+        await Promise.all(
+          dayFlipApi.start({
+            lift: 1,
+            flip: 1,
+            config: { duration: DAY_RISE_MS, easing: easeOutCubic },
+          }),
+        );
         if (stopped()) return;
         await wait(DAY_HANG_MS);
         if (stopped()) return;
@@ -359,25 +366,34 @@ export default function StreakDialog({
         await Promise.race([impact, flip]);
         if (stopped()) return;
         setDayComplete(true);
-        const wave = Promise.all(
-          completedWaveIndices.map(async (cellIndex, order) => {
-            await wait(order * DAY_WAVE_STAGGER_MS);
-            if (stopped()) return;
+        // Drive the 65ms rhythm from each squish's actual completion rather than timers
+        // racing requestAnimationFrame. A tab resumed after throttling therefore continues
+        // nearest-first instead of collapsing every expired delay into one frame. Each pop
+        // may overlap the following tile's squish, preserving the impact-wave cadence.
+        const wavePops: Array<Promise<unknown[]>> = [];
+        for (const cellIndex of completedWaveIndices) {
+          await Promise.all(
             dayWaveApi.start((index) =>
-              index === cellIndex ? { scale: 0.9, config: DAY_PREP_SPRING } : null,
-            );
-            await wait(DAY_WAVE_STAGGER_MS);
-            if (stopped()) return;
-            await Promise.all(
+              index === cellIndex
+                ? {
+                    scale: 0.9,
+                    config: { duration: DAY_WAVE_STAGGER_MS, easing: easeOutQuad },
+                  }
+                : null,
+            ),
+          );
+          if (stopped()) return;
+          wavePops.push(
+            Promise.all(
               dayWaveApi.start((index) =>
                 index === cellIndex
                   ? { scale: 1, from: { scale: 1.2 }, config: DAY_BOUNCE_SPRING }
                   : null,
               ),
-            );
-          }),
-        );
-        await Promise.all([flip, wave]);
+            ),
+          );
+        }
+        await Promise.all([flip, ...wavePops]);
         if (stopped()) return;
         dayWaveApi.set(() => ({ scale: 1 }));
       }

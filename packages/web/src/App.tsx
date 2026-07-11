@@ -5,7 +5,7 @@ import LanguageSelect from './screens/LanguageSelect';
 import Archive from './screens/Archive';
 import Game from './screens/Game';
 import TopBar from './components/TopBar';
-import StreakDialog from './components/StreakDialog';
+import LazyStreakDialog from './components/LazyStreakDialog';
 import LoadError from './components/LoadError';
 import NoPuzzle from './components/NoPuzzle';
 import Tutorial from './tutorial/Tutorial';
@@ -181,7 +181,7 @@ function GameRoute({ lang, date }: { lang: LangCode; date?: string }) {
         />
       )}
       {streakPreview != null && (
-        <StreakDialog
+        <LazyStreakDialog
           lang={lang}
           solvedDay={dayNumber ?? dayNumberOf(activeDate(new Date()))}
           previewPreviousStreak={streakPreview}
