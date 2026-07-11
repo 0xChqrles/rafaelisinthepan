@@ -430,9 +430,11 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   folded-vocab existence, unique-try score, per-unsolved-hole rank/MISS, strict-improvement,
   solved-lock, and counted-try cap rules against an append-only provider conversation.
   `pnpm bench:puzzle` supports only the curator-editable five-model `MODELS` roster: Claude
-  Opus 4.8, Claude Sonnet 5, and GPT-5.6 Sol/Terra/Luna via Anthropic/OpenAI. Labels `SOL`,
-  `TERRA`, and `LUNA` select individual GPT variants; `GPT` / `gpt-5.6` / `openai` select all
-  three. `--effort` applies the shared `none|low|medium|high|xhigh|max` scale to every selected
+  Opus 4.8, Claude Sonnet 5, and GPT-5.6 Sol/Terra/Luna via Anthropic/OpenAI. Model selectors
+  `GPT-SOL`, `GPT-TERRA`, and `GPT-LUNA` select individual GPT variants; `GPT` / `gpt-5.6` /
+  `openai` select all three. Their short persisted/display labels remain `SOL`, `TERRA`, and
+  `LUNA` (the schema caps labels at 8 characters). `--effort` applies the shared
+  `none|low|medium|high|xhigh|max` scale to every selected
   model (default `none` preserves thinking-off one-word API calls; enabled levels use
   provider-native reasoning with larger output headroom). The single `--auth` flag applies to
   every selected provider: `api` (default) uses raw API keys, with an automatic moving prompt-

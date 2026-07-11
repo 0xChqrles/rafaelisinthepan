@@ -604,7 +604,7 @@ def test_cli_rejects_removed_provider_specific_auth_flags(legacy_flag):
 
 def test_cli_rejects_none_effort_before_an_openai_subscription_call():
     with pytest.raises(SystemExit):
-        parse_args(["puzzle.json", "--models", "SOL", "--auth", "subscription"])
+        parse_args(["puzzle.json", "--models", "GPT-SOL", "--auth", "subscription"])
     assert (
         parse_args(["puzzle.json", "--models", "OPUS", "--auth", "subscription"]).effort
         == "none"
@@ -616,9 +616,10 @@ def test_gpt_family_and_variant_model_selectors():
     assert select_models(["GPT"]) == expected
     assert select_models(["gpt-5.6"]) == expected
     assert select_models(["openai"]) == expected
-    assert select_models(["SOL"]) == [MODELS[2]]
-    assert select_models(["TERRA"]) == [MODELS[3]]
-    assert select_models(["LUNA"]) == [MODELS[4]]
+    assert select_models(["GPT-SOL"]) == [MODELS[2]]
+    assert select_models(["GPT-TERRA"]) == [MODELS[3]]
+    assert select_models(["GPT-LUNA"]) == [MODELS[4]]
+    assert select_models(["GPT-SOL", "GPT-LUNA", "GPT-TERRA"]) == expected
 
 
 def test_puzzle_path_accepts_repo_and_generation_relative_forms(monkeypatch, tmp_path):
@@ -843,7 +844,7 @@ def test_cli_openai_subscription_uses_plan_without_api_key(
             [
                 str(path),
                 "--models",
-                "SOL",
+                "GPT-SOL",
                 "--effort",
                 "medium",
                 "--auth",
@@ -892,7 +893,7 @@ def test_cli_unified_subscription_preflights_both_selected_providers(
                 str(path),
                 "--models",
                 "OPUS",
-                "SOL",
+                "GPT-SOL",
                 "--effort",
                 "medium",
                 "--auth",

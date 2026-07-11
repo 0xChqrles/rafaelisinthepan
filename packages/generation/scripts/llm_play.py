@@ -1122,7 +1122,8 @@ def select_models(requested: Sequence[str] | None) -> list[ModelConfig]:
             config["label"].lower(),
         }
         if config["model_id"].startswith("gpt-5.6-"):
-            keys.update(("gpt", "gpt-5.6"))
+            variant = config["model_id"].removeprefix("gpt-5.6-")
+            keys.update(("gpt", "gpt-5.6", f"gpt-{variant}"))
         return keys
 
     configs: list[ModelConfig] = []
@@ -1234,7 +1235,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--models",
         nargs="+",
         metavar="MODEL",
-        help="provider, model id, or label (default: all configured models)",
+        help=(
+            "provider, model id, label, or GPT-SOL/GPT-TERRA/GPT-LUNA "
+            "(default: all configured models)"
+        ),
     )
     parser.add_argument(
         "--cap", type=_positive_int, default=DEFAULT_CAP, help="counted-try DNF cap"
