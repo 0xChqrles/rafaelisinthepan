@@ -8,13 +8,16 @@ guess broadcast to every unsolved hole, strict improvements, and a counted-try D
 from copy import deepcopy
 import json
 import os
+from pathlib import Path
 from types import SimpleNamespace
 import sys
 
 import pytest
 
 from llm_play import (
+    ANTHROPIC_AUTH_MODES,
     DEEP_REASONING_MAX_TOKENS,
+    DEFAULT_ANTHROPIC_AUTH,
     DEFAULT_EFFORT,
     EFFORT_LEVELS,
     MAX_CONSECUTIVE_UNPARSEABLE,
@@ -30,6 +33,7 @@ from llm_play import (
     parse_args,
     play_puzzle,
     provider_reply,
+    validate_anthropic_subscription_auth,
     write_benchmark,
 )
 
@@ -179,6 +183,144 @@ def test_anthropic_adapter_surfaces_reasoning_budget_exhaustion(monkeypatch):
         reply([{"role": "user", "content": "board"}])
 
 
+@pytest.mark.parametrize("effort", EFFORT_LEVELS)
+def test_anthropic_subscription_adapter_isolates_and_resumes_agent_sdk(
+    monkeypatch, effort
+):
+    calls = []
+
+    class FakeOptions:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    class FakeResultMessage:
+        def __init__(self, *, result, session_id):
+            self.result = result
+            self.session_id = session_id
+            self.is_error = False
+            self.stop_reason = "end_turn"
+            self.subtype = "success"
+
+    async def fake_query(*, prompt, options):
+        assert "ANTHROPIC_API_KEY" not in os.environ
+        calls.append((prompt, options))
+        session_id = options.resume or f"session-{len(calls)}"
+        yield FakeResultMessage(result="forest", session_id=session_id)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "claude_agent_sdk",
+        SimpleNamespace(
+            ClaudeAgentOptions=FakeOptions,
+            ResultMessage=FakeResultMessage,
+            query=fake_query,
+        ),
+    )
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "must-not-be-used")
+    reply = provider_reply(
+        MODELS[0], None, effort=effort, anthropic_auth="subscription"
+    )
+
+    assert reply([{"role": "user", "content": "opening"}]) == "forest"
+    assert (
+        reply(
+            [
+                {"role": "user", "content": "opening"},
+                {"role": "assistant", "content": "forest"},
+                {"role": "user", "content": "feedback"},
+            ]
+        )
+        == "forest"
+    )
+    # A new one-message transcript is a new median run, never a resumed attempt.
+    assert reply([{"role": "user", "content": "opening again"}]) == "forest"
+    assert os.environ["ANTHROPIC_API_KEY"] == "must-not-be-used"
+
+    first_options = calls[0][1]
+    assert [call[0] for call in calls] == ["opening", "feedback", "opening again"]
+    assert [call[1].resume for call in calls] == [None, "session-1", None]
+    assert first_options.model == "claude-opus-4-8"
+    assert first_options.system_prompt is None
+    assert first_options.tools == []
+    assert first_options.allowed_tools == []
+    assert first_options.mcp_servers == {}
+    assert first_options.strict_mcp_config is True
+    assert first_options.permission_mode == "dontAsk"
+    assert first_options.setting_sources == []
+    assert first_options.skills == []
+    assert first_options.agents == {}
+    assert first_options.plugins == []
+    assert first_options.max_turns == 1
+    assert first_options.extra_args == {
+        "safe-mode": None,
+        "disable-slash-commands": None,
+    }
+    if effort == "none":
+        assert first_options.thinking == {"type": "disabled"}
+        assert first_options.effort is None
+    else:
+        assert first_options.thinking == {"type": "adaptive"}
+        assert first_options.effort == effort
+
+    workspace = Path(first_options.cwd)
+    assert workspace.is_dir()
+    reply.close()
+    assert not workspace.exists()
+
+
+def test_subscription_auth_preflight_strips_api_credentials(monkeypatch):
+    def fake_run(command, **kwargs):
+        assert command == ["/usr/local/bin/claude", "auth", "status", "--json"]
+        assert "ANTHROPIC_API_KEY" not in kwargs["env"]
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(
+                {
+                    "loggedIn": True,
+                    "authMethod": "claude.ai",
+                    "subscriptionType": "pro",
+                }
+            ),
+        )
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "must-not-be-used")
+    monkeypatch.setattr(
+        "llm_play.shutil.which", lambda _command: "/usr/local/bin/claude"
+    )
+    monkeypatch.setattr("llm_play.subprocess.run", fake_run)
+
+    assert validate_anthropic_subscription_auth() == "pro"
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        {"loggedIn": False},
+        {
+            "loggedIn": True,
+            "authMethod": "console",
+            "subscriptionType": "pro",
+        },
+        {
+            "loggedIn": True,
+            "authMethod": "claude.ai",
+            "subscriptionType": "free",
+        },
+    ],
+)
+def test_subscription_auth_preflight_rejects_non_plan_sessions(monkeypatch, status):
+    monkeypatch.setattr("llm_play.shutil.which", lambda _command: "/usr/bin/claude")
+    monkeypatch.setattr(
+        "llm_play.subprocess.run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0, stdout=json.dumps(status)
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="paid Claude.ai subscription"):
+        validate_anthropic_subscription_auth()
+
+
 def test_openai_adapter_uses_responses_with_explicit_none_effort(monkeypatch):
     calls = []
 
@@ -263,9 +405,15 @@ def test_openai_adapter_surfaces_an_incomplete_reasoning_response(monkeypatch):
 
 
 def test_effort_cli_defaults_to_none_and_accepts_every_shared_level():
-    assert parse_args(["puzzle.json"]).effort == DEFAULT_EFFORT
+    defaults = parse_args(["puzzle.json"])
+    assert defaults.effort == DEFAULT_EFFORT
+    assert defaults.anthropic_auth == DEFAULT_ANTHROPIC_AUTH
     for effort in EFFORT_LEVELS:
         assert parse_args(["puzzle.json", "--effort", effort]).effort == effort
+    for auth in ANTHROPIC_AUTH_MODES:
+        assert (
+            parse_args(["puzzle.json", "--anthropic-auth", auth]).anthropic_auth == auth
+        )
 
 
 def test_in_place_output_writes_static_entries_and_preserves_file_mode(tmp_path):

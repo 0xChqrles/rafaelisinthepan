@@ -11,14 +11,18 @@ network access (or even the paid SDK dependencies installed).
 from __future__ import annotations
 
 import argparse
+import asyncio
 from collections.abc import Callable, Iterable, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 import json
 import math
 import os
 from pathlib import Path
 import re
+import shutil
 import stat
+import subprocess
 import sys
 import tempfile
 import time
@@ -59,6 +63,23 @@ EFFORT_LEVELS: tuple[ReasoningEffort, ...] = (
 DEFAULT_EFFORT: ReasoningEffort = "none"
 REASONING_MAX_TOKENS = 25_000
 DEEP_REASONING_MAX_TOKENS = 64_000
+
+AnthropicAuth = Literal["api", "subscription"]
+ANTHROPIC_AUTH_MODES: tuple[AnthropicAuth, ...] = ("api", "subscription")
+DEFAULT_ANTHROPIC_AUTH: AnthropicAuth = "api"
+
+# A subscription run must never inherit a developer-platform credential or cloud
+# provider override: Claude Code gives environment credentials precedence over the
+# logged-in Claude.ai plan. Temporarily removing these also keeps the auth preflight and
+# the Agent SDK subprocess on the same first-party subscription route.
+SUBSCRIPTION_CONFLICT_ENV = (
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_BASE_URL",
+    "CLAUDE_CODE_USE_BEDROCK",
+    "CLAUDE_CODE_USE_VERTEX",
+    "CLAUDE_CODE_USE_FOUNDRY",
+)
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 GENERATION_DIR = SCRIPT_DIR.parent
@@ -147,6 +168,72 @@ class UnparseableReplyError(RuntimeError):
 
 class NoProgressReplyError(RuntimeError):
     """A model produced too many parsed replies without a counted try."""
+
+
+@contextmanager
+def _subscription_environment():
+    """Hide pay-as-you-go credentials while Claude Code uses Claude.ai OAuth."""
+    saved = {
+        name: os.environ.pop(name)
+        for name in SUBSCRIPTION_CONFLICT_ENV
+        if name in os.environ
+    }
+    try:
+        yield
+    finally:
+        os.environ.update(saved)
+
+
+def validate_anthropic_subscription_auth() -> str:
+    """Refuse a subscription run unless Claude Code confirms paid Claude.ai auth."""
+    cli = shutil.which("claude")
+    if cli is None:
+        raise RuntimeError(
+            "Claude Code is not installed; install it, run `claude`, and log in "
+            "with the paid Claude.ai account"
+        )
+    env = {
+        name: value
+        for name, value in os.environ.items()
+        if name not in SUBSCRIPTION_CONFLICT_ENV
+    }
+    try:
+        completed = subprocess.run(
+            [cli, "auth", "status", "--json"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            env=env,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(
+            f"could not inspect Claude Code authentication: {exc}"
+        ) from exc
+    if completed.returncode != 0:
+        raise RuntimeError(
+            "Claude Code authentication could not be verified; run `claude` and log "
+            "in with the paid Claude.ai account"
+        )
+    try:
+        status = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            "Claude Code returned malformed authentication status"
+        ) from exc
+    subscription = status.get("subscriptionType")
+    if (
+        status.get("loggedIn") is not True
+        or status.get("authMethod") != "claude.ai"
+        or not isinstance(subscription, str)
+        or not subscription
+        or subscription.lower() == "free"
+    ):
+        raise RuntimeError(
+            "Claude Code is not using a paid Claude.ai subscription; run `claude`, "
+            "use `/login`, and select the subscription account"
+        )
+    return subscription
 
 
 def _is_int(value: object) -> bool:
@@ -468,19 +555,135 @@ def _output_token_budget(provider: str, effort: ReasoningEffort) -> int:
     return REASONING_MAX_TOKENS
 
 
+async def _agent_sdk_turn(
+    prompt: str,
+    *,
+    model_id: str,
+    effort: ReasoningEffort,
+    cwd: str,
+    resume: str | None,
+) -> tuple[str, str]:
+    """Run one isolated Claude.ai-subscription turn and return text + session id."""
+    from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
+
+    thinking: dict[str, str]
+    sdk_effort: str | None
+    if effort == "none":
+        thinking = {"type": "disabled"}
+        sdk_effort = None
+    else:
+        thinking = {"type": "adaptive"}
+        sdk_effort = effort
+
+    options = ClaudeAgentOptions(
+        model=model_id,
+        # None is intentionally serialized by the SDK as an empty replacement system
+        # prompt. Do not opt into the `claude_code` preset for this model benchmark.
+        system_prompt=None,
+        tools=[],
+        allowed_tools=[],
+        mcp_servers={},
+        strict_mcp_config=True,
+        permission_mode="dontAsk",
+        setting_sources=[],
+        skills=[],
+        agents={},
+        plugins=[],
+        cwd=cwd,
+        resume=resume,
+        max_turns=1,
+        thinking=thinking,
+        effort=sdk_effort,
+        extra_args={"safe-mode": None, "disable-slash-commands": None},
+    )
+    result_message = None
+    async for message in query(prompt=prompt, options=options):
+        if isinstance(message, ResultMessage):
+            result_message = message
+    if result_message is None:
+        raise RuntimeError(f"{model_id} Agent SDK session returned no final result")
+    if result_message.is_error:
+        detail = (
+            result_message.result
+            or result_message.stop_reason
+            or result_message.subtype
+            or "unknown error"
+        )
+        raise RuntimeError(f"{model_id} Agent SDK session failed: {detail}")
+    if not result_message.session_id:
+        raise RuntimeError(f"{model_id} Agent SDK session returned no session id")
+    return result_message.result or "", result_message.session_id
+
+
+class AnthropicSubscriptionReply:
+    """Synchronous referee adapter over isolated, resumable Agent SDK turns."""
+
+    def __init__(self, model_id: str, effort: ReasoningEffort):
+        self.model_id = model_id
+        self.effort = effort
+        self.session_id: str | None = None
+        self._message_count = 0
+        self._workspace = tempfile.TemporaryDirectory(prefix="whippin-agent-sdk-")
+
+    def __call__(self, messages: list[Message]) -> str:
+        if not messages or messages[-1].get("role") != "user":
+            raise ValueError("Agent SDK reply requires a final user message")
+
+        # `benchmark_model` reuses one adapter across median runs. The referee always
+        # starts a new run with the one-message opening transcript, so reset the remote
+        # session rather than leaking a prior attempt into the next score.
+        if len(messages) == 1:
+            self.session_id = None
+            self._message_count = 0
+        elif self.session_id is None:
+            raise RuntimeError(
+                "Agent SDK conversation cannot resume before its opening turn"
+            )
+
+        expected_count = 1 if self._message_count == 0 else self._message_count + 2
+        if len(messages) != expected_count:
+            raise RuntimeError(
+                "Agent SDK conversation diverged from the append-only referee transcript"
+            )
+
+        with _subscription_environment():
+            text, session_id = asyncio.run(
+                _agent_sdk_turn(
+                    messages[-1]["content"],
+                    model_id=self.model_id,
+                    effort=self.effort,
+                    cwd=self._workspace.name,
+                    resume=self.session_id,
+                )
+            )
+        self.session_id = session_id
+        self._message_count = len(messages)
+        return text
+
+    def close(self) -> None:
+        self._workspace.cleanup()
+
+
 def provider_reply(
     config: ModelConfig,
-    api_key: str,
+    api_key: str | None,
     *,
     effort: ReasoningEffort = DEFAULT_EFFORT,
+    anthropic_auth: AnthropicAuth = DEFAULT_ANTHROPIC_AUTH,
 ) -> ModelReply:
     """Build one official-SDK adapter. Imports stay lazy for offline contract tests."""
     provider = config["provider"]
     model_id = config["model_id"]
     if effort not in EFFORT_LEVELS:
         raise ValueError(f"unsupported reasoning effort: {effort}")
+    if anthropic_auth not in ANTHROPIC_AUTH_MODES:
+        raise ValueError(f"unsupported Anthropic auth mode: {anthropic_auth}")
 
     if provider == "anthropic":
+        if anthropic_auth == "subscription":
+            return AnthropicSubscriptionReply(model_id, effort)
+        if not api_key:
+            raise ValueError("Anthropic API auth requires ANTHROPIC_API_KEY")
         import anthropic
 
         client = anthropic.Anthropic(api_key=api_key)
@@ -513,6 +716,8 @@ def provider_reply(
         return reply
 
     if provider == "openai":
+        if not api_key:
+            raise ValueError("OpenAI auth requires OPENAI_API_KEY")
         from openai import OpenAI
 
         client = OpenAI(api_key=api_key)
@@ -563,7 +768,14 @@ def benchmark_model(
 ) -> ModelSummary:
     if not _is_int(runs) or runs <= 0:
         raise ValueError("runs must be a positive integer")
-    results = [play_puzzle(puzzle, vocab, model_reply, cap=cap) for _ in range(runs)]
+    try:
+        results = [
+            play_puzzle(puzzle, vocab, model_reply, cap=cap) for _ in range(runs)
+        ]
+    finally:
+        close = getattr(model_reply, "close", None)
+        if callable(close):
+            close()
     return ModelSummary(
         config=config,
         tries=median_tries([result.tries for result in results]),
@@ -710,6 +922,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--anthropic-auth",
+        choices=ANTHROPIC_AUTH_MODES,
+        default=DEFAULT_ANTHROPIC_AUTH,
+        help=(
+            "Anthropic transport: API key billing or isolated Agent SDK access "
+            f"through a paid Claude.ai subscription (default: {DEFAULT_ANTHROPIC_AUTH})"
+        ),
+    )
+    parser.add_argument(
         "--in-place",
         action="store_true",
         help='write successful results to the puzzle\'s optional "benchmark" field',
@@ -736,27 +957,48 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
+    subscription_selected = args.anthropic_auth == "subscription" and any(
+        config["provider"] == "anthropic" for config in args.model_configs
+    )
+    if subscription_selected:
+        try:
+            validate_anthropic_subscription_auth()
+        except RuntimeError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+
     print(
         f"Whippin benchmark prompt={PROMPT_VERSION} effort={args.effort} "
-        f"cap={args.cap} runs={args.runs}",
+        f"anthropic_auth={args.anthropic_auth} cap={args.cap} runs={args.runs}",
         flush=True,
     )
     summaries: list[ModelSummary] = []
     for config in args.model_configs:
-        env_name = PROVIDER_ENV[config["provider"]]
-        api_key = os.environ.get(env_name)
-        if not api_key:
-            print(
-                f"warning: skipping {config['label']} ({config['model_id']}); {env_name} is not set",
-                file=sys.stderr,
-            )
-            continue
+        subscription_auth = (
+            config["provider"] == "anthropic" and args.anthropic_auth == "subscription"
+        )
+        api_key = None
+        if not subscription_auth:
+            env_name = PROVIDER_ENV[config["provider"]]
+            api_key = os.environ.get(env_name)
+            if not api_key:
+                print(
+                    f"warning: skipping {config['label']} ({config['model_id']}); "
+                    f"{env_name} is not set",
+                    file=sys.stderr,
+                )
+                continue
         try:
             summary = benchmark_model(
                 config,
                 puzzle,
                 vocab,
-                provider_reply(config, api_key, effort=args.effort),
+                provider_reply(
+                    config,
+                    api_key,
+                    effort=args.effort,
+                    anthropic_auth=args.anthropic_auth,
+                ),
                 cap=args.cap,
                 runs=args.runs,
             )

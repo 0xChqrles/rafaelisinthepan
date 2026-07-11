@@ -393,8 +393,10 @@ pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--
 
 # 4. Optionally benchmark the generated puzzle offline before publish. Missing provider
 #    keys skip with a warning; --effort applies one reasoning level to every selected
-#    model (none|low|medium|high|xhigh|max; default none); --in-place writes the field.
-pnpm bench:puzzle <puzzle.json> [--models ...] [--effort LEVEL] [--cap N] [--runs N] [--in-place]
+#    model (none|low|medium|high|xhigh|max; default none). Anthropic defaults to API-key
+#    billing; --anthropic-auth subscription uses an authenticated paid Claude.ai plan.
+#    --in-place writes the field.
+pnpm bench:puzzle <puzzle.json> [--models ...] [--effort LEVEL] [--anthropic-auth api|subscription] [--cap N] [--runs N] [--in-place]
 
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
 pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output)
@@ -427,10 +429,14 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   Claude Sonnet 5, and GPT-5.6 Sol, via Anthropic/OpenAI). `--effort` applies the shared
   `none|low|medium|high|xhigh|max` scale to every selected model (default `none` preserves
   thinking-off one-word calls; enabled levels use provider-native reasoning with larger
-  output headroom). Anthropic calls enable an automatic moving prompt-cache breakpoint;
-  five parsed invalid/repeated replies without a counted try abort a stuck paid loop.
-  Missing API keys still skip, median `--runs` is supported, and only `--in-place` mutates
-  a puzzle; this paid curator tool is never called by CI/tests.
+  output headroom). Anthropic defaults to raw API-key auth and enables an automatic moving
+  prompt-cache breakpoint. Opt-in `--anthropic-auth subscription` first verifies paid
+  Claude.ai auth, strips API/cloud credential overrides, then uses a fresh Agent SDK
+  session per run with an empty replacement system prompt and no tools, MCP, skills,
+  plugins, or filesystem settings. Five parsed invalid/repeated replies without a counted
+  try abort a stuck paid loop. Missing API keys still skip for API transports, median
+  `--runs` is supported, and only `--in-place` mutates a puzzle; this curator tool is never
+  called by CI/tests.
 - **`gen_phrase` is fully interactive on a TTY (#5).** Anything not passed as a flag is
   prompted: the **sentence** (positional, now optional), **`--lang`**, and the optional
   **source metadata** — `--kind` (offers `KNOWN_KINDS` numbered, but free text is
