@@ -392,8 +392,9 @@ pnpm vocab:fr         # -> packages/web/public/vocab/fr.json
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--`)
 
 # 4. Optionally benchmark the generated puzzle offline before publish. Missing provider
-#    keys skip with a warning; --in-place writes the optional static benchmark field.
-pnpm bench:puzzle <puzzle.json> [--models ...] [--cap N] [--runs N] [--in-place]
+#    keys skip with a warning; --effort applies one reasoning level to every selected
+#    model (none|low|medium|high|xhigh|max; default none); --in-place writes the field.
+pnpm bench:puzzle <puzzle.json> [--models ...] [--effort LEVEL] [--cap N] [--runs N] [--in-place]
 
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
 pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output)
@@ -423,9 +424,13 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   folded-vocab existence, unique-try score, per-unsolved-hole rank/MISS, strict-improvement,
   solved-lock, and counted-try cap rules against an append-only provider conversation.
   `pnpm bench:puzzle` supports only the curator-editable `MODELS` trio (Claude Opus 4.8,
-  Claude Sonnet 5, and GPT-5.6 Sol, via Anthropic/OpenAI),
-  skips missing API keys, supports median `--runs`, and only mutates a puzzle with
-  `--in-place`; it is a paid curator tool and is never called by CI/tests.
+  Claude Sonnet 5, and GPT-5.6 Sol, via Anthropic/OpenAI). `--effort` applies the shared
+  `none|low|medium|high|xhigh|max` scale to every selected model (default `none` preserves
+  thinking-off one-word calls; enabled levels use provider-native reasoning with larger
+  output headroom). Anthropic calls enable an automatic moving prompt-cache breakpoint;
+  five parsed invalid/repeated replies without a counted try abort a stuck paid loop.
+  Missing API keys still skip, median `--runs` is supported, and only `--in-place` mutates
+  a puzzle; this paid curator tool is never called by CI/tests.
 - **`gen_phrase` is fully interactive on a TTY (#5).** Anything not passed as a flag is
   prompted: the **sentence** (positional, now optional), **`--lang`**, and the optional
   **source metadata** — `--kind` (offers `KNOWN_KINDS` numbered, but free text is

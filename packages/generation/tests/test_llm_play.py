@@ -14,13 +14,20 @@ import sys
 import pytest
 
 from llm_play import (
+    DEEP_REASONING_MAX_TOKENS,
+    DEFAULT_EFFORT,
+    EFFORT_LEVELS,
     MAX_CONSECUTIVE_UNPARSEABLE,
+    MAX_NONCOUNTING_REPLIES,
     MODELS,
     PROVIDER_ENV,
+    REASONING_MAX_TOKENS,
+    NoProgressReplyError,
     PuzzleReferee,
     UnparseableReplyError,
     feedback_message,
     median_tries,
+    parse_args,
     play_puzzle,
     provider_reply,
     write_benchmark,
@@ -75,7 +82,10 @@ def test_supported_model_roster_is_only_opus_sonnet_and_gpt_sol():
     }
 
 
-def test_anthropic_adapter_disables_thinking_and_omits_rejected_sampling(monkeypatch):
+@pytest.mark.parametrize("config", MODELS[:2], ids=lambda config: config["label"])
+def test_anthropic_adapter_none_disables_thinking_caches_and_omits_sampling(
+    monkeypatch, config
+):
     calls = []
 
     class FakeAnthropic:
@@ -85,26 +95,91 @@ def test_anthropic_adapter_disables_thinking_and_omits_rejected_sampling(monkeyp
 
         def create(self, **kwargs):
             calls.append(kwargs)
-            return SimpleNamespace(content=[SimpleNamespace(text="forest")])
+            return SimpleNamespace(
+                content=[SimpleNamespace(text="forest")], stop_reason="end_turn"
+            )
 
     monkeypatch.setitem(
         sys.modules, "anthropic", SimpleNamespace(Anthropic=FakeAnthropic)
     )
-    reply = provider_reply(MODELS[1], "secret")
+    reply = provider_reply(config, "secret", effort="none")
 
     assert reply([{"role": "user", "content": "board"}]) == "forest"
     assert calls == [
         {
-            "model": "claude-sonnet-5",
+            "model": config["model_id"],
             "max_tokens": 32,
             "messages": [{"role": "user", "content": "board"}],
+            "cache_control": {"type": "ephemeral"},
             "thinking": {"type": "disabled"},
         }
     ]
     assert not ({"temperature", "top_p", "top_k"} & calls[0].keys())
 
 
-def test_openai_adapter_uses_responses_with_the_exact_sol_id(monkeypatch):
+@pytest.mark.parametrize("config", MODELS[:2], ids=lambda config: config["label"])
+@pytest.mark.parametrize(
+    ("effort", "max_tokens"),
+    [
+        ("low", REASONING_MAX_TOKENS),
+        ("medium", REASONING_MAX_TOKENS),
+        ("high", REASONING_MAX_TOKENS),
+        ("xhigh", DEEP_REASONING_MAX_TOKENS),
+        ("max", DEEP_REASONING_MAX_TOKENS),
+    ],
+)
+def test_anthropic_adapter_enables_adaptive_thinking_at_requested_effort(
+    monkeypatch, config, effort, max_tokens
+):
+    calls = []
+
+    class FakeAnthropic:
+        def __init__(self, *, api_key):
+            assert api_key == "secret"
+            self.messages = SimpleNamespace(create=self.create)
+
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(
+                content=[SimpleNamespace(text="forest")], stop_reason="end_turn"
+            )
+
+    monkeypatch.setitem(
+        sys.modules, "anthropic", SimpleNamespace(Anthropic=FakeAnthropic)
+    )
+    reply = provider_reply(config, "secret", effort=effort)
+
+    assert reply([{"role": "user", "content": "board"}]) == "forest"
+    assert calls == [
+        {
+            "model": config["model_id"],
+            "max_tokens": max_tokens,
+            "messages": [{"role": "user", "content": "board"}],
+            "cache_control": {"type": "ephemeral"},
+            "thinking": {"type": "adaptive"},
+            "output_config": {"effort": effort},
+        }
+    ]
+
+
+def test_anthropic_adapter_surfaces_reasoning_budget_exhaustion(monkeypatch):
+    class FakeAnthropic:
+        def __init__(self, *, api_key):
+            self.messages = SimpleNamespace(create=self.create)
+
+        def create(self, **_kwargs):
+            return SimpleNamespace(content=[], stop_reason="max_tokens")
+
+    monkeypatch.setitem(
+        sys.modules, "anthropic", SimpleNamespace(Anthropic=FakeAnthropic)
+    )
+    reply = provider_reply(MODELS[0], "secret", effort="medium")
+
+    with pytest.raises(RuntimeError, match=f"{REASONING_MAX_TOKENS}-token"):
+        reply([{"role": "user", "content": "board"}])
+
+
+def test_openai_adapter_uses_responses_with_explicit_none_effort(monkeypatch):
     calls = []
 
     class FakeOpenAI:
@@ -114,19 +189,83 @@ def test_openai_adapter_uses_responses_with_the_exact_sol_id(monkeypatch):
 
         def create(self, **kwargs):
             calls.append(kwargs)
-            return SimpleNamespace(output_text="ocean")
+            return SimpleNamespace(output_text="ocean", status="completed")
 
     monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=FakeOpenAI))
-    reply = provider_reply(MODELS[2], "secret")
+    reply = provider_reply(MODELS[2], "secret", effort="none")
 
     assert reply([{"role": "user", "content": "board"}]) == "ocean"
     assert calls == [
         {
             "model": "gpt-5.6-sol",
             "input": [{"role": "user", "content": "board"}],
+            "reasoning": {"effort": "none"},
             "max_output_tokens": 256,
         }
     ]
+
+
+@pytest.mark.parametrize(
+    ("effort", "max_tokens"),
+    [
+        ("low", REASONING_MAX_TOKENS),
+        ("medium", REASONING_MAX_TOKENS),
+        ("high", REASONING_MAX_TOKENS),
+        ("xhigh", DEEP_REASONING_MAX_TOKENS),
+        ("max", DEEP_REASONING_MAX_TOKENS),
+    ],
+)
+def test_openai_adapter_applies_requested_reasoning_effort(
+    monkeypatch, effort, max_tokens
+):
+    calls = []
+
+    class FakeOpenAI:
+        def __init__(self, *, api_key):
+            assert api_key == "secret"
+            self.responses = SimpleNamespace(create=self.create)
+
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(output_text="ocean", status="completed")
+
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=FakeOpenAI))
+    reply = provider_reply(MODELS[2], "secret", effort=effort)
+
+    assert reply([{"role": "user", "content": "board"}]) == "ocean"
+    assert calls == [
+        {
+            "model": "gpt-5.6-sol",
+            "input": [{"role": "user", "content": "board"}],
+            "reasoning": {"effort": effort},
+            "max_output_tokens": max_tokens,
+        }
+    ]
+
+
+def test_openai_adapter_surfaces_an_incomplete_reasoning_response(monkeypatch):
+    class FakeOpenAI:
+        def __init__(self, *, api_key):
+            self.responses = SimpleNamespace(create=self.create)
+
+        def create(self, **_kwargs):
+            return SimpleNamespace(
+                output_text="",
+                status="incomplete",
+                incomplete_details=SimpleNamespace(reason="max_output_tokens"),
+            )
+
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=FakeOpenAI))
+    reply = provider_reply(MODELS[2], "secret", effort="medium")
+
+    with pytest.raises(RuntimeError, match="incomplete.*max_output_tokens"):
+        reply([{"role": "user", "content": "board"}])
+
+
+def test_effort_cli_defaults_to_none_and_accepts_every_shared_level():
+    assert parse_args(["puzzle.json"]).effort == DEFAULT_EFFORT
+    for effort in EFFORT_LEVELS:
+        assert parse_args(["puzzle.json", "--effort", effort]).effort == effort
 
 
 def test_in_place_output_writes_static_entries_and_preserves_file_mode(tmp_path):
@@ -259,3 +398,21 @@ def test_unparseable_replies_reprompt_then_abort_after_five_consecutive_turns():
 
     assert len(model.calls) == MAX_CONSECUTIVE_UNPARSEABLE
     assert "could not parse a word" in model.calls[1][-1]["content"]
+
+
+@pytest.mark.parametrize(
+    "replies",
+    [
+        ["nonesuch"] * MAX_NONCOUNTING_REPLIES,
+        ["cold"] + ["cold"] * MAX_NONCOUNTING_REPLIES,
+    ],
+    ids=["invalid", "duplicate"],
+)
+def test_parsed_replies_without_a_counted_try_abort_the_paid_loop(replies):
+    model = ScriptedModel(replies)
+
+    with pytest.raises(NoProgressReplyError, match="without a counted try"):
+        play_puzzle(puzzle(), VOCAB, model)
+
+    expected_calls = MAX_NONCOUNTING_REPLIES + (1 if replies[0] == "cold" else 0)
+    assert len(model.calls) == expected_calls

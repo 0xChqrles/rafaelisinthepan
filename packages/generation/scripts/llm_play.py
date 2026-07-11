@@ -22,7 +22,7 @@ import stat
 import sys
 import tempfile
 import time
-from typing import Any, TypedDict
+from typing import Any, Literal, TypedDict
 
 from slug import slug
 
@@ -36,11 +36,29 @@ MODELS = [
 ]
 
 # Bump whenever the opening rules or turn-feedback scaffold changes materially. Results
-# are then attributable to a model id plus this prompt version in CLI output/history.
+# are attributable to a model id plus this prompt version and the CLI's printed effort.
 PROMPT_VERSION = "1"
 
 DEFAULT_CAP = 300
 MAX_CONSECUTIVE_UNPARSEABLE = 5
+MAX_NONCOUNTING_REPLIES = 5
+
+# One cross-provider reasoning control. `none` preserves the original cheap one-word
+# requests; the other levels enable provider-native reasoning with enough output room for
+# hidden thinking plus the visible guess. OpenAI recommends starting with 25k tokens for
+# reasoning workloads, while both providers recommend more headroom at xhigh/max.
+ReasoningEffort = Literal["none", "low", "medium", "high", "xhigh", "max"]
+EFFORT_LEVELS: tuple[ReasoningEffort, ...] = (
+    "none",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+)
+DEFAULT_EFFORT: ReasoningEffort = "none"
+REASONING_MAX_TOKENS = 25_000
+DEEP_REASONING_MAX_TOKENS = 64_000
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 GENERATION_DIR = SCRIPT_DIR.parent
@@ -125,6 +143,10 @@ class ModelSummary:
 
 class UnparseableReplyError(RuntimeError):
     """A model failed to produce any parseable word five turns in a row."""
+
+
+class NoProgressReplyError(RuntimeError):
+    """A model produced too many parsed replies without a counted try."""
 
 
 def _is_int(value: object) -> bool:
@@ -361,6 +383,7 @@ def play_puzzle(
     messages: list[Message] = [{"role": "user", "content": opening_message(referee)}]
     turns = 0
     consecutive_unparseable = 0
+    noncounting_replies = 0
     started = time.monotonic()
 
     while True:
@@ -386,6 +409,19 @@ def play_puzzle(
         messages.append(
             {"role": "user", "content": feedback_message(feedback, referee)}
         )
+
+        if feedback.kind == "counted":
+            noncounting_replies = 0
+        else:
+            # The counted-try cap cannot stop a model that keeps returning invalid or
+            # repeated words. Bound those paid-but-scoreless replies independently; an
+            # occasional correction remains free and does not change game semantics.
+            noncounting_replies += 1
+            if noncounting_replies >= MAX_NONCOUNTING_REPLIES:
+                raise NoProgressReplyError(
+                    f"aborted after {MAX_NONCOUNTING_REPLIES} parsed replies "
+                    "without a counted try"
+                )
 
         # A solve on try N wins even when N equals the cap. The cap is a DNF only when
         # unsolved after that many counted, unique, vocabulary-valid guesses.
@@ -424,10 +460,25 @@ def _text_content(content: object) -> str:
     return "\n".join(parts)
 
 
-def provider_reply(config: ModelConfig, api_key: str) -> ModelReply:
+def _output_token_budget(provider: str, effort: ReasoningEffort) -> int:
+    if effort == "none":
+        return 32 if provider == "anthropic" else 256
+    if effort in {"xhigh", "max"}:
+        return DEEP_REASONING_MAX_TOKENS
+    return REASONING_MAX_TOKENS
+
+
+def provider_reply(
+    config: ModelConfig,
+    api_key: str,
+    *,
+    effort: ReasoningEffort = DEFAULT_EFFORT,
+) -> ModelReply:
     """Build one official-SDK adapter. Imports stay lazy for offline contract tests."""
     provider = config["provider"]
     model_id = config["model_id"]
+    if effort not in EFFORT_LEVELS:
+        raise ValueError(f"unsupported reasoning effort: {effort}")
 
     if provider == "anthropic":
         import anthropic
@@ -435,15 +486,28 @@ def provider_reply(config: ModelConfig, api_key: str) -> ModelReply:
         client = anthropic.Anthropic(api_key=api_key)
 
         def reply(messages: list[Message]) -> str:
-            response = client.messages.create(
-                model=model_id,
-                max_tokens=32,
-                messages=messages,
-                # Opus 4.8 and Sonnet 5 reject non-default sampling params and manual
-                # thinking budgets. Sonnet defaults to adaptive thinking, so disable it
-                # explicitly to keep the deliberately tiny one-word output budget usable.
-                thinking={"type": "disabled"},
-            )
+            request: dict[str, Any] = {
+                "model": model_id,
+                "max_tokens": _output_token_budget(provider, effort),
+                "messages": messages,
+                # Append-only play histories only receive Anthropic's automatic moving
+                # cache breakpoint when prompt caching is explicitly enabled.
+                "cache_control": {"type": "ephemeral"},
+            }
+            if effort == "none":
+                # Preserve the original one-word mode: Sonnet 5 defaults to adaptive
+                # thinking, so it must be disabled explicitly; Opus accepts the same form.
+                request["thinking"] = {"type": "disabled"}
+            else:
+                # Opus 4.8 and Sonnet 5 support adaptive (not manual-budget) thinking.
+                request["thinking"] = {"type": "adaptive"}
+                request["output_config"] = {"effort": effort}
+
+            response = client.messages.create(**request)
+            if getattr(response, "stop_reason", None) == "max_tokens":
+                raise RuntimeError(
+                    f"{model_id} exhausted its {_output_token_budget(provider, effort)}-token output budget"
+                )
             return _text_content(response.content)
 
         return reply
@@ -457,8 +521,15 @@ def provider_reply(config: ModelConfig, api_key: str) -> ModelReply:
             response = client.responses.create(
                 model=model_id,
                 input=messages,
-                max_output_tokens=256,
+                reasoning={"effort": effort},
+                max_output_tokens=_output_token_budget(provider, effort),
             )
+            if getattr(response, "status", None) == "incomplete":
+                details = getattr(response, "incomplete_details", None)
+                reason = getattr(details, "reason", None) or "unknown reason"
+                raise RuntimeError(
+                    f"{model_id} returned an incomplete response: {reason}"
+                )
             return response.output_text
 
         return reply
@@ -630,6 +701,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="runs per model; persist the median",
     )
     parser.add_argument(
+        "--effort",
+        choices=EFFORT_LEVELS,
+        default=DEFAULT_EFFORT,
+        help=(
+            "reasoning effort for every selected model "
+            f"(default: {DEFAULT_EFFORT}; enabled levels use adaptive thinking)"
+        ),
+    )
+    parser.add_argument(
         "--in-place",
         action="store_true",
         help='write successful results to the puzzle\'s optional "benchmark" field',
@@ -657,7 +737,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     print(
-        f"Whippin benchmark prompt={PROMPT_VERSION} cap={args.cap} runs={args.runs}",
+        f"Whippin benchmark prompt={PROMPT_VERSION} effort={args.effort} "
+        f"cap={args.cap} runs={args.runs}",
         flush=True,
     )
     summaries: list[ModelSummary] = []
@@ -675,7 +756,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 config,
                 puzzle,
                 vocab,
-                provider_reply(config, api_key),
+                provider_reply(config, api_key, effort=args.effort),
                 cap=args.cap,
                 runs=args.runs,
             )
