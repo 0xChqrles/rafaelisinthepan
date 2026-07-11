@@ -83,6 +83,7 @@ SUBSCRIPTION_CONFLICT_ENV = (
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 GENERATION_DIR = SCRIPT_DIR.parent
+REPO_ROOT = GENERATION_DIR.parent.parent
 WEB_VOCAB_DIR = GENERATION_DIR.parent / "web" / "public" / "vocab"
 
 PROVIDER_ENV = {
@@ -848,6 +849,17 @@ def select_models(requested: Sequence[str] | None) -> list[ModelConfig]:
     return selected
 
 
+def resolve_puzzle_path(path: Path) -> Path:
+    """Accept absolute, caller-relative, repo-relative, or generation-relative paths."""
+    if path.is_absolute():
+        return path
+    candidates = (Path.cwd() / path, REPO_ROOT / path, GENERATION_DIR / path)
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate.resolve()
+    return path
+
+
 def load_puzzle(path: Path) -> dict[str, Any]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -952,6 +964,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
+    args.puzzle = resolve_puzzle_path(args.puzzle)
     try:
         puzzle = load_puzzle(args.puzzle)
         lang = puzzle.get("lang")

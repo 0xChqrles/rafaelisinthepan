@@ -395,7 +395,8 @@ pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--
 #    keys skip with a warning; --effort applies one reasoning level to every selected
 #    model (none|low|medium|high|xhigh|max; default none). Anthropic defaults to API-key
 #    billing; --anthropic-auth subscription uses an authenticated paid Claude.ai plan.
-#    --in-place writes the field.
+#    Puzzle paths may be repo-root-relative (packages/generation/output/...) or
+#    generation-package-relative (output/...); --in-place writes the resolved file.
 pnpm bench:puzzle <puzzle.json> [--models ...] [--effort LEVEL] [--anthropic-auth api|subscription] [--cap N] [--runs N] [--in-place]
 
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.

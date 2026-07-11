@@ -34,6 +34,7 @@ from llm_play import (
     parse_args,
     play_puzzle,
     provider_reply,
+    resolve_puzzle_path,
     validate_anthropic_subscription_auth,
     write_benchmark,
 )
@@ -415,6 +416,25 @@ def test_effort_cli_defaults_to_none_and_accepts_every_shared_level():
         assert (
             parse_args(["puzzle.json", "--anthropic-auth", auth]).anthropic_auth == auth
         )
+
+
+def test_puzzle_path_accepts_repo_and_generation_relative_forms(monkeypatch, tmp_path):
+    generation_dir = tmp_path / "packages" / "generation"
+    puzzle_path = generation_dir / "output" / "word" / "fr" / "puzzle.json"
+    puzzle_path.parent.mkdir(parents=True)
+    puzzle_path.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr("llm_play.REPO_ROOT", tmp_path)
+    monkeypatch.setattr("llm_play.GENERATION_DIR", generation_dir)
+
+    monkeypatch.chdir(generation_dir)
+    assert (
+        resolve_puzzle_path(Path("packages/generation/output/word/fr/puzzle.json"))
+        == puzzle_path
+    )
+    assert resolve_puzzle_path(Path("output/word/fr/puzzle.json")) == puzzle_path
+
+    monkeypatch.chdir(tmp_path)
+    assert resolve_puzzle_path(Path("output/word/fr/puzzle.json")) == puzzle_path
 
 
 def test_in_place_output_writes_static_entries_and_preserves_file_mode(tmp_path):
