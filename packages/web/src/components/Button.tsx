@@ -1,7 +1,7 @@
 import type { ButtonHTMLAttributes } from 'react';
 
 // Reusable button.
-//   primary   : blue background, white text, large (main action)
+//   primary   : gold fill, dark text (main action; same language as the tutorial's MIX)
 //   secondary : simple text without background (discreet action, e.g. [ESC])
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: 'primary' | 'secondary';
