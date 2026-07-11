@@ -113,6 +113,7 @@ class RuntimeHole:
     secret_slug: str
     word: str
     rank: int
+    start_rank: int
     prefix: str
     suffix: str
     rank_map: dict[str, Any]
@@ -135,6 +136,13 @@ class GuessFeedback:
     outcomes: tuple[HoleOutcome, ...]
     tries: int
     solved: bool
+
+
+@dataclass(frozen=True)
+class TryProgress:
+    number: int
+    word: str
+    progress: float
 
 
 @dataclass(frozen=True)
@@ -171,6 +179,10 @@ class UnparseableReplyError(RuntimeError):
 
 class NoProgressReplyError(RuntimeError):
     """A model produced too many parsed replies without a counted try."""
+
+
+TryReporter = Callable[[TryProgress], None]
+ModelTryReporter = Callable[[int, TryProgress], None]
 
 
 @contextmanager
@@ -320,6 +332,7 @@ class PuzzleReferee:
                     secret_slug=secret_slug,
                     word=start_word,
                     rank=start_rank,
+                    start_rank=start_rank,
                     prefix=prefix,
                     suffix=suffix,
                     rank_map=rank_map,
@@ -333,6 +346,25 @@ class PuzzleReferee:
     @property
     def solved(self) -> bool:
         return all(hole.rank == 0 for hole in self.holes)
+
+    @property
+    def progress(self) -> float:
+        if not self.holes:
+            return 0.0
+        total = 0.0
+        for hole in self.holes:
+            vocab_size = len(hole.rank_map)
+            scale = math.log(vocab_size + 1)
+            start_score = 1 - math.log(hole.start_rank + 1) / scale
+            denominator = 1 - start_score
+            if denominator <= 0:
+                hole_progress = 1.0 if hole.rank <= 0 else 0.0
+            else:
+                score = 1 - math.log(hole.rank + 1) / scale
+                hole_progress = (score - start_score) / denominator
+                hole_progress = max(0.0, min(1.0, hole_progress))
+            total += hole_progress
+        return 100 * total / len(self.holes)
 
     def board(self) -> str:
         rendered = list(self.words)
@@ -464,6 +496,7 @@ def play_puzzle(
     model_reply: ModelReply,
     *,
     cap: int = DEFAULT_CAP,
+    on_try: TryReporter | None = None,
 ) -> RunResult:
     """Run one append-only model conversation through the real puzzle rules."""
     if not _is_int(cap) or cap <= 0:
@@ -504,6 +537,14 @@ def play_puzzle(
 
         if feedback.kind == "counted":
             noncounting_replies = 0
+            if on_try is not None:
+                on_try(
+                    TryProgress(
+                        number=feedback.tries,
+                        word=guess,
+                        progress=referee.progress,
+                    )
+                )
         else:
             # The counted-try cap cannot stop a model that keeps returning invalid or
             # repeated words. Bound those paid-but-scoreless replies independently; an
@@ -772,13 +813,30 @@ def benchmark_model(
     *,
     cap: int,
     runs: int,
+    on_try: ModelTryReporter | None = None,
 ) -> ModelSummary:
     if not _is_int(runs) or runs <= 0:
         raise ValueError("runs must be a positive integer")
     try:
-        results = [
-            play_puzzle(puzzle, vocab, model_reply, cap=cap) for _ in range(runs)
-        ]
+        results = []
+        for run_number in range(1, runs + 1):
+            reporter = None
+            if on_try is not None:
+
+                def reporter(
+                    update: TryProgress, current_run: int = run_number
+                ) -> None:
+                    on_try(current_run, update)
+
+            results.append(
+                play_puzzle(
+                    puzzle,
+                    vocab,
+                    model_reply,
+                    cap=cap,
+                    on_try=reporter,
+                )
+            )
     finally:
         close = getattr(model_reply, "close", None)
         if callable(close):
@@ -1009,6 +1067,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
                 continue
         try:
+
+            def print_try(run_number: int, update: TryProgress) -> None:
+                run_label = f"run={run_number} " if args.runs > 1 else ""
+                word_json = json.dumps(update.word, ensure_ascii=False)
+                print(
+                    f"{config['label']:<8} {run_label}try={update.number} "
+                    f"word={word_json} progress={update.progress:.2f}%",
+                    flush=True,
+                )
+
             summary = benchmark_model(
                 config,
                 puzzle,
@@ -1021,6 +1089,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 ),
                 cap=args.cap,
                 runs=args.runs,
+                on_try=print_try,
             )
         except (
             Exception

@@ -7,6 +7,7 @@ guess broadcast to every unsolved hole, strict improvements, and a counted-try D
 
 from copy import deepcopy
 import json
+import math
 import os
 from pathlib import Path
 from types import SimpleNamespace
@@ -476,7 +477,8 @@ class ScriptedModel:
 def test_invalid_and_folded_duplicate_do_not_count_and_are_reprompted():
     # "sharéd" and "shared" fold to the same persisted try key, exactly like Game.
     model = ScriptedModel(["nonesuch", "sharéd", "shared", "forest", "ocean"])
-    result = play_puzzle(puzzle(), VOCAB, model)
+    updates = []
+    result = play_puzzle(puzzle(), VOCAB, model, on_try=updates.append)
 
     assert result.tries == 3
     assert result.counted_tries == 3
@@ -487,6 +489,12 @@ def test_invalid_and_folded_duplicate_do_not_count_and_are_reprompted():
     assert "Tries: 0" in user_feedback[1]
     assert '"shared" was already tried — this did not count.' in user_feedback[3]
     assert "Tries: 1" in user_feedback[3]
+    assert [(update.number, update.word) for update in updates] == [
+        (1, "sharéd"),
+        (2, "forest"),
+        (3, "ocean"),
+    ]
+    assert updates[-1].progress == pytest.approx(100)
 
 
 def test_miss_and_warm_rank_feedback_match_each_secret_rank_map():
@@ -515,6 +523,29 @@ def test_one_guess_advances_two_holes_but_counts_as_one_try():
     assert feedback.tries == 1
     assert [hole.rank for hole in referee.holes] == [10, 5]
     assert all(outcome.improved for outcome in feedback.outcomes)
+
+
+def test_referee_progress_matches_the_web_logarithmic_formula():
+    referee = PuzzleReferee(puzzle(), VOCAB)
+    assert referee.progress == pytest.approx(0)
+
+    referee.submit("cold")
+    assert referee.progress == pytest.approx(0)
+
+    referee.submit("shared")
+
+    def score(rank, size):
+        return 1 - math.log(rank + 1) / math.log(size + 1)
+
+    expected = 0
+    for rank, start_rank, size in [(10, 50, 2), (5, 40, 2)]:
+        start_score = score(start_rank, size)
+        expected += (score(rank, size) - start_score) / (1 - start_score)
+    assert referee.progress == pytest.approx(100 * expected / 2)
+
+    referee.submit("forest")
+    referee.submit("ocean")
+    assert referee.progress == pytest.approx(100)
 
 
 def test_solved_holes_are_locked_and_excluded_from_later_feedback():
@@ -572,6 +603,9 @@ def test_cli_prints_counted_words_in_order_for_each_run(monkeypatch, tmp_path, c
     assert main([str(path), "--models", "OPUS", "--runs", "2"]) == 0
 
     output = capsys.readouterr().out
+    assert 'OPUS     run=1 try=1 word="forest" progress=50.00%' in output
+    assert 'OPUS     run=1 try=2 word="ocean" progress=100.00%' in output
+    assert 'OPUS     run=2 try=3 word="ocean" progress=100.00%' in output
     assert 'OPUS     run=1 tried=["forest", "ocean"]' in output
     assert 'OPUS     run=2 tried=["shared", "forest", "ocean"]' in output
 
