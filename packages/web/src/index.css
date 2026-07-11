@@ -951,8 +951,8 @@ button * {
 }
 
 /* Sentence result: one stable hierarchy in the keyboard's footprint at every viewport —
-   tries, the reconstruction trajectory, then the result action. Player progression is
-   deliberately outside this layout in .streak-dialog. */
+   tries, the reconstruction trajectory, result action, then the optional AI ranking.
+   Player progression is deliberately outside this layout in .streak-dialog. */
 .solved-results {
   display: flex;
   flex-direction: column;
@@ -968,6 +968,11 @@ button * {
 .solved-results.in {
   opacity: 1;
   transform: translateY(0);
+}
+/* The fourth benchmark row still fits the keyboard-height tray without changing the
+   solved swap's footprint. The entire stack keeps the same parent fade/rise. */
+.solved-results.benchmarked {
+  gap: clamp(5px, 0.9vh, 8px);
 }
 /* "45 TRIES" is the result headline: one number/label treatment everywhere, so changing
    breakpoints never changes the meaning or visual weight of the metric. */
@@ -1051,6 +1056,25 @@ button * {
   filter: brightness(1.5);
 }
 .result-action.copied {
+  color: var(--accent);
+}
+/* Human-vs-model result (#68): one terse line, models muted and the player accented.
+   The small responsive type keeps the full four-way ranking on one line on phones. */
+.benchmark-ranking {
+  max-width: 100%;
+  margin: 0;
+  font-family: var(--press);
+  font-size: clamp(6px, 1.8vw, 10px);
+  line-height: 1.5;
+  letter-spacing: clamp(0px, 0.1vw, 1px);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.benchmark-model,
+.benchmark-separator {
+  color: var(--muted);
+}
+.benchmark-player {
   color: var(--accent);
 }
 

@@ -31,6 +31,8 @@ const STRINGS = {
   // share card); the share text lowercases these.
   try: { en: 'TRY', fr: 'ESSAI' },
   tries: { en: 'TRIES', fr: 'ESSAIS' },
+  you: { en: 'YOU', fr: 'TOI' },
+  dnf: { en: 'DNF', fr: 'DNF' },
   share: { en: 'SHARE', fr: 'PARTAGER' },
   copied: { en: 'COPIED', fr: 'COPIÉ' },
   // The streak celebration's ending hint: pure "what to do" — the whole screen dismisses,

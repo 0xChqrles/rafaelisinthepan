@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { heatColor } from '@whippin/shared';
+import type { BenchmarkEntry } from '@whippin/shared';
 import { bucketMeans, shareText, shareUrl } from '../game/share';
+import { benchmarkRanking } from '../game/benchmark';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import { track } from '../analytics';
 import { t } from '../i18n';
@@ -24,6 +26,7 @@ export default function SolvedScreen({
   trajectory,
   dayNumber,
   lang,
+  benchmark,
   action,
   animate = true,
   startAnimation = true,
@@ -32,6 +35,7 @@ export default function SolvedScreen({
   trajectory: number[]; // reconstruction % after each counted guess (one per try)
   dayNumber: number | null;
   lang: string; // packed into the share token (drives the link's click-through target)
+  benchmark?: BenchmarkEntry[]; // offline opponents; shown only on this solved surface
   action?: { label: string; onClick: () => void }; // replaces SHARE in the tutorial
   // Rehydrated solves render their final result immediately. Fresh solves animate, with
   // startAnimation acting as the source/streak gate while this component stays mounted.
@@ -43,6 +47,13 @@ export default function SolvedScreen({
   // Collapse the per-guess trajectory into a bounded row (3..18), each square colored by
   // its bucket's mean progress. This exact array also drives the share card and emoji row.
   const squares = useMemo(() => bucketMeans(trajectory), [trajectory]);
+  const ranking = useMemo(
+    () =>
+      benchmark === undefined
+        ? null
+        : benchmarkRanking(benchmark, guessCount, t(lang, 'you')),
+    [benchmark, guessCount, lang],
+  );
   const n = squares.length;
   const stagger = n > 1 ? Math.min(SQUARE_STAGGER_MS, GRID_MAX_SPAN_MS / (n - 1)) : 0;
   const reduceMotion =
@@ -143,7 +154,9 @@ export default function SolvedScreen({
   }, [lang, dayNumber, guessCount, squares]);
 
   return (
-    <div className={`solved-results${resultsIn ? ' in' : ''}`}>
+    <div
+      className={`solved-results${ranking ? ' benchmarked' : ''}${resultsIn ? ' in' : ''}`}
+    >
       {/* The primary sentence metric. The hidden final value reserves the count's width so
           its tally never moves the centered label or the content below it. */}
       <span className="solved-score">
@@ -193,6 +206,19 @@ export default function SolvedScreen({
             {copied ? t(lang, 'copied') : t(lang, 'share')}
           </button>
         )
+      )}
+
+      {ranking && (
+        <p className="benchmark-ranking">
+          {ranking.map((entry, index) => (
+            <span key={`${entry.player ? 'player' : 'model'}-${entry.label}-${index}`}>
+              {index > 0 && <span className="benchmark-separator"> · </span>}
+              <span className={entry.player ? 'benchmark-player' : 'benchmark-model'}>
+                {entry.label} {entry.tries ?? t(lang, 'dnf')}
+              </span>
+            </span>
+          ))}
+        </p>
       )}
     </div>
   );

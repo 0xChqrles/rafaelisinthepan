@@ -68,12 +68,12 @@ function isWord(v: unknown): v is Word {
 // crash Game mid-render (a blank screen), not surface as an error. So validate the
 // load-bearing fields the game actually reads here: on success return a typed Puzzle;
 // on a bad shape throw a descriptive Error the fetch hook turns into the error state.
-// Not exhaustive — it asserts only the structure Game depends on (lang, words, each
-// hole's secret/start {word,slug} + start_rank, and a ranks map that has an entry for
-// every secret, since Game does ranks[secret][typed] on the first guess).
+// Not exhaustive — it asserts the structure Game depends on (lang, words, each hole's
+// secret/start {word,slug} + start_rank, a ranks map for every secret, and the optional
+// solved-screen benchmark contract).
 export function parsePuzzle(data: unknown): Puzzle {
   if (!isRecord(data)) throw new Error('malformed puzzle: not an object');
-  const { lang, words, holes, ranks } = data;
+  const { lang, words, holes, ranks, benchmark } = data;
   if (typeof lang !== 'string') throw new Error('malformed puzzle: missing "lang"');
   if (!Array.isArray(words) || !words.every((w) => typeof w === 'string')) {
     throw new Error('malformed puzzle: "words" must be an array of strings');
@@ -92,6 +92,27 @@ export function parsePuzzle(data: unknown): Puzzle {
     }
     if (!isRecord(ranks[h.secret.slug])) {
       throw new Error(`malformed puzzle: "ranks" missing entry for secret "${h.secret.slug}"`);
+    }
+  }
+  if (benchmark !== undefined) {
+    if (!Array.isArray(benchmark)) {
+      throw new Error('malformed puzzle: "benchmark" must be an array');
+    }
+    for (const entry of benchmark) {
+      if (
+        !isRecord(entry) ||
+        typeof entry.model !== 'string' ||
+        entry.model.trim().length === 0 ||
+        typeof entry.label !== 'string' ||
+        entry.label.trim() !== entry.label ||
+        !/^[A-Z0-9][A-Z0-9 -]{0,7}$/.test(entry.label) ||
+        !(
+          entry.tries === null ||
+          (typeof entry.tries === 'number' && Number.isInteger(entry.tries) && entry.tries > 0)
+        )
+      ) {
+        throw new Error('malformed puzzle: bad "benchmark" entry');
+      }
     }
   }
   return data as unknown as Puzzle;

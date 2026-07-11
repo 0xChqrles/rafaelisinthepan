@@ -16,7 +16,16 @@ import LoadError from '../components/LoadError';
 import { t, srHoleResult } from '../i18n';
 import { track } from '../analytics';
 import { fold } from '@whippin/shared';
-import type { HitState, Hole, Puzzle, RankEntry, RankMap, RuntimeHole, Source } from '@whippin/shared';
+import type {
+  BenchmarkEntry,
+  HitState,
+  Hole,
+  Puzzle,
+  RankEntry,
+  RankMap,
+  RuntimeHole,
+  Source,
+} from '@whippin/shared';
 
 // Feedback shown under the input. Only INVALID words use it now (red shake +
 // "does not exist"); a valid-but-too-far guess gives per-hole "MISS" feedback
@@ -71,6 +80,7 @@ export default function Game({
       puzzleHoles={puzzle.holes}
       ranks={puzzle.ranks}
       source={puzzle.source}
+      benchmark={puzzle.benchmark}
       vocabSet={vocab.vocabSet}
       prefixSet={vocab.prefixSet}
       lang={puzzle.lang}
@@ -88,6 +98,7 @@ function Round({
   puzzleHoles,
   ranks,
   source,
+  benchmark,
   vocabSet,
   prefixSet,
   lang,
@@ -99,6 +110,7 @@ function Round({
   puzzleHoles: Hole[];
   ranks: RankMap;
   source?: Source;
+  benchmark?: BenchmarkEntry[];
   vocabSet: Set<string>;
   prefixSet: Set<string>;
   lang: string;
@@ -592,6 +604,7 @@ function Round({
             trajectory={trajectory}
             dayNumber={dayNumber}
             lang={lang}
+            benchmark={benchmark}
             animate={animateResults}
             startAnimation={
               sourceRevealComplete && !showStreakDialog && !deferResultsAnimation

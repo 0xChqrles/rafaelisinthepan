@@ -54,6 +54,7 @@ packages/
       french_neighbors.py     fr paths + derived .kv cache (thin wrapper)
       start_word.py           start/hint-word selection (rank band 50-150)
       gen_phrase.py           one sentence -> one self-contained puzzle JSON
+      llm_play.py             offline LLM referee -> optional puzzle benchmark (#68)
     embedding/<lang>/...      raw + *_reduced vectors + derived .kv caches
     wordlist/<lang>.txt.gz    versioned hors-dico reference wordlist (#38); .cache/ gitignored
     output/word/<lang>/<s1>_<s2>_<s3>.json   generated puzzles (gitignored; publish to store/S3)
@@ -174,7 +175,12 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
     "kind": "book",                             //   book | movie | music | quote | poem | … (open set)
     "author": "Victor Hugo",
     "work": "Les Misérables"
-  }
+  },
+  "benchmark": [                                // OPTIONAL offline LLM scores (#68)
+    { "model": "claude-opus-4-8", "label": "OPUS", "tries": 42 },
+    { "model": "claude-sonnet-5", "label": "SONNET", "tries": 55 },
+    { "model": "gpt-5.6-sol", "label": "GPT", "tries": null }
+  ]                                              // null tries = DNF at the curator's cap
 }
 ```
 
@@ -196,6 +202,13 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   metadata is valid and a puzzle without `source` stays byte-compatible. Values are
   **display forms** (accents kept, never slugged); `kind` is an **open** union (known
   values documented, but a new kind is allowed). Consumed by the solved screen (#8).
+- **`benchmark` is fully OPTIONAL (#68, decided 2026-07-07):** absent stays
+  byte-compatible with every existing puzzle. When present, it is an array of offline
+  model results; every entry requires non-empty `model`, an uppercase pixel-friendly
+  `label` of at most 8 characters, and `tries` as a positive integer or `null` (DNF at
+  the counted-try cap). It is revealed only on the solved screen; play and share output
+  stay unchanged. This model-score anchor superseded #57's proposed `par` before `par`
+  was implemented — there is no `par` schema field.
 - `ranks` is keyed by **secret slug**; the inner map is keyed by **input slug** →
   `{word, rank}`. The value carries the **accented** word so the front can show the
   accented form of what was typed.
@@ -378,6 +391,10 @@ pnpm vocab:fr         # -> packages/web/public/vocab/fr.json
 #    NOTE: gen:phrase ALSO rewrites web/public/vocab/<lang>.json as a side effect.
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--`)
 
+# 4. Optionally benchmark the generated puzzle offline before publish. Missing provider
+#    keys skip with a warning; --in-place writes the optional static benchmark field.
+pnpm bench:puzzle <puzzle.json> [--models ...] [--cap N] [--runs N] [--in-place]
+
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
 pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output)
 pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--ci]  # publish-buffer coverage (#61); reports + exits 0 by default, --ci exits 1 on any (day,lang) gap for cron/CI
@@ -402,6 +419,13 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
 
 - All paths below are under `packages/`. **Tunables:** `TOP_N = 400000` (reduce),
   `TOP_K = 10000` (gen), start-rank band `50–150` (`start_word.py`).
+- **Offline LLM benchmark harness (#68).** `generation/scripts/llm_play.py` replays the
+  folded-vocab existence, unique-try score, per-unsolved-hole rank/MISS, strict-improvement,
+  solved-lock, and counted-try cap rules against an append-only provider conversation.
+  `pnpm bench:puzzle` supports only the curator-editable `MODELS` trio (Claude Opus 4.8,
+  Claude Sonnet 5, and GPT-5.6 Sol, via Anthropic/OpenAI),
+  skips missing API keys, supports median `--runs`, and only mutates a puzzle with
+  `--in-place`; it is a paid curator tool and is never called by CI/tests.
 - **`gen_phrase` is fully interactive on a TTY (#5).** Anything not passed as a flag is
   prompted: the **sentence** (positional, now optional), **`--lang`**, and the optional
   **source metadata** — `--kind` (offers `KNOWN_KINDS` numbered, but free text is
