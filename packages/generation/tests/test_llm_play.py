@@ -625,12 +625,24 @@ def test_opening_prompt_prioritizes_context_correct_inflections():
     play_puzzle(puzzle(), VOCAB, model)
 
     opening = model.calls[0][0]["content"]
-    assert PROMPT_VERSION == "2"
+    assert PROMPT_VERSION == "3"
     assert "infer the hidden word's grammar from the fixed context" in opening
     assert "singular/plural" in opening
     assert "masculine/feminine" in opening
-    assert "Before exploring more synonyms" in opening
     assert "number, gender, agreement, or conjugation" in opening
+
+
+def test_opening_prompt_encourages_nonanswer_probes_as_rank_hints():
+    model = ScriptedModel(["forest", "ocean"])
+    play_puzzle(puzzle(), VOCAB, model)
+
+    opening = model.calls[0][0]["content"]
+    assert "not only to check possible final answers" in opening
+    assert "exploratory probe does not need to fit the sentence" in opening
+    assert "provide intermediate hints" in opening
+    assert "Balance direct candidates with probes" in opening
+    assert "broader categories, contrasts, related objects or actions" in opening
+    assert "compare ranks and follow lower ones" in opening
 
 
 def test_unparseable_replies_reprompt_then_abort_after_five_consecutive_turns():

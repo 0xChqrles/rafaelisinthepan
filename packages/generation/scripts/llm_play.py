@@ -41,7 +41,7 @@ MODELS = [
 
 # Bump whenever the opening rules or turn-feedback scaffold changes materially. Results
 # are attributable to a model id plus this prompt version and the CLI's printed effort.
-PROMPT_VERSION = "2"
+PROMPT_VERSION = "3"
 
 DEFAULT_CAP = 300
 MAX_CONSECUTIVE_UNPARSEABLE = 5
@@ -458,9 +458,19 @@ def opening_message(referee: PuzzleReferee) -> str:
                 "masculine/feminine forms are distinct guesses."
             ),
             (
-                "Before exploring more synonyms, promptly try a promising candidate "
-                "in the form required by the sentence's number, gender, agreement, "
-                "or conjugation."
+                "Use ranks to search, not only to check possible final answers. A "
+                "valid exploratory probe does not need to fit the sentence: its ranks "
+                "can reveal semantic directions and provide intermediate hints."
+            ),
+            (
+                "Balance direct candidates with probes. To triangulate when needed, "
+                "test broader categories, contrasts, related objects or actions, and "
+                "neighbors of the warmest clues; compare ranks and follow lower ones."
+            ),
+            (
+                "Once a candidate looks promising, promptly try the form required by "
+                "the sentence's number, gender, agreement, or conjugation before "
+                "listing more direct synonyms."
             ),
             f"Board: {referee.board()}",
             "Tries: 0",
