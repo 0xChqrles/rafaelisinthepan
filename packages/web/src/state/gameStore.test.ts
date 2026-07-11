@@ -280,29 +280,29 @@ describe('recordSolve — per-language solved-day set (#56)', () => {
 
   it('inserts a solved day and keeps the array sorted + deduped', () => {
     const { recordSolve } = useGameStore.getState();
-    recordSolve('fr', 12, 12); // solved today -> [12]
-    recordSolve('fr', 11, 12); // then yesterday (flip-edge, eligible) -> sorted back to [11, 12]
+    expect(recordSolve('fr', 12, 12)).toBe(true); // solved today -> [12]
+    expect(recordSolve('fr', 11, 12)).toBe(true); // flip-edge -> sorted back to [11, 12]
     expect(solved('fr')).toEqual([11, 12]);
   });
 
   it('same-day double call is a no-op (re-solves / rehydration never double-count)', () => {
     const { recordSolve } = useGameStore.getState();
-    recordSolve('fr', 12, 12);
-    recordSolve('fr', 12, 12);
+    expect(recordSolve('fr', 12, 12)).toBe(true);
+    expect(recordSolve('fr', 12, 12)).toBe(false);
     expect(solved('fr')).toEqual([12]);
   });
 
   it('an older solvedDay (archive replay) is a no-op — never touches the streak', () => {
     const { recordSolve } = useGameStore.getState();
     recordSolve('fr', 12, 12);
-    recordSolve('fr', 5, 12); // an archive day (< activeDay - 1)
+    expect(recordSolve('fr', 5, 12)).toBe(false); // archive day (< activeDay - 1)
     expect(solved('fr')).toEqual([12]);
   });
 
   it('the activeDay - 1 flip-edge case inserts (in-flight round finished just past 22:00)', () => {
     const { recordSolve } = useGameStore.getState();
     // The round is yesterday's (dayNumber 11) but the active day already flipped to 12.
-    recordSolve('fr', 11, 12);
+    expect(recordSolve('fr', 11, 12)).toBe(true);
     expect(solved('fr')).toEqual([11]);
   });
 

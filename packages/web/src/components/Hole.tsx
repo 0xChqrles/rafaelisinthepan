@@ -24,11 +24,15 @@ export function rankHeatColor(rank: number, startRank: number) {
 export default function Hole({
   hole,
   hit,
+  holeIndex,
   onHitDone,
+  onResolved,
 }: {
   hole: RuntimeHole;
   hit: HitState | null;
+  holeIndex: number;
   onHitDone: (id: number) => void;
+  onResolved?: (index: number) => void;
 }) {
   // Exponent rolls toward the current rank over the SAME time the hit takes to
   // fade out: on an improvement the number drops as the floating hit disappears,
@@ -52,6 +56,9 @@ export default function Hole({
   // Accent ("resolved") styling only once the FINAL secret word is on screen —
   // not during the exponent drop / blink that precedes the swap.
   const resolved = hole.rank === 0 && displayWord === hole.word;
+  useEffect(() => {
+    if (resolved) onResolved?.(holeIndex);
+  }, [holeIndex, onResolved, resolved]);
 
   // Small "pop" on each improvement (rank decreases). Double-toggle through rAF
   // to replay the animation even on two consecutive improvements.

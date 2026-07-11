@@ -12,12 +12,14 @@ export default function Phrase({
   puzzleHoles,
   hits,
   onHitDone,
+  onHoleResolved,
 }: {
   words: string[];
   holes: RuntimeHole[];
   puzzleHoles: PuzzleHole[]; // static per-hole data (affixes), keyed by pos below
   hits: HitState[]; // one transient number per warm hole (multi-hit)
   onHitDone: (id: number) => void;
+  onHoleResolved?: (index: number) => void;
 }) {
   const holeIndexByPos = new Map<number, number>(holes.map((h, i) => [h.pos, i]));
   const puzzleHoleByPos = new Map<number, PuzzleHole>(puzzleHoles.map((h) => [h.pos, h]));
@@ -39,7 +41,13 @@ export default function Phrase({
               {space}
               <span className="hole-group">
                 {prefix ? <span className="word">{prefix}</span> : null}
-                <Hole hole={rHole} hit={activeHit} onHitDone={onHitDone} />
+                <Hole
+                  hole={rHole}
+                  hit={activeHit}
+                  holeIndex={idx}
+                  onHitDone={onHitDone}
+                  onResolved={onHoleResolved}
+                />
                 {suffix ? <span className="word">{suffix}</span> : null}
               </span>
               {/* DELIBERATE line break after each hole — do not swap for natural

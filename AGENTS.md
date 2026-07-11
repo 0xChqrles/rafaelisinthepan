@@ -77,7 +77,7 @@ packages/
     src/slug.ts               fold() — the slug/fold contract (byte-identical to slug())
     src/day.ts                the ONE 22:00-ET DST-correct game-day logic (client + server + publish)
     src/types.ts              per-puzzle schema types (Puzzle, Hole, RankMap, …)
-    src/heat.ts               heatColor() — heat ramp (rank exponents, heat grid, share card)
+    src/heat.ts               heatColor() — heat ramp (rank exponents, share card)
     src/progressColor.ts      progressColor() — progress ramp (progress bar, selector badge); shares ramp.ts
     src/index.ts              re-exports
   web/                        React + Vite + TS front (pkg @whippin/web)
@@ -507,14 +507,61 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   pixelated` keeps it crisp. (Superseded the earlier hand-computed SVG-path ripple.)
   Reduced-motion hides it → the static fill + aria-label carry the status.
   The calendar itself is **vertically centered** (`.archive` flex column, top padding
-  clears the fixed header). The solved-screen **NEXT PUZZLE IN** countdown is
-  hidden when the played day ≠ the client's active day. Entry: a calendar icon in the
+  clears the fixed header). **The live streak stat moved out of the archive body and into
+  the shared `TopBar` (decided 2026-07-11):** immediately right of the language flag it is
+  only `assets/streak-small.png` (the 8×10 pixel-art source displayed at an exact 3× =
+  24×30) plus a larger bare streak amount; a zero/broken streak remains hidden. Entry: a
+  calendar icon in the
   game TopBar's right group; `dateForDayNumber` (`shared/day.ts`) is the `dayNumber`
   inverse. The **OG share page** (`backend/ogCard.ts` `renderShareHtml`) now click-throughs
   to the **shared day's** date-addressed URL (`/<lang>/<dateForDayNumber(dayNumber)>`),
   not bare `/<lang>` — so a shared archive result opens that archived date, not today (the
   card/title were already `#dayNumber`-correct). The archive **must not touch streaks**
   (separate issue).
+- **Solved-result hierarchy (decided 2026-07-10):** the solved tray is sentence-specific:
+  one centered stack at every breakpoint with the named `<tries> TRIES` headline, the
+  restored 3–18 cold-to-hot trajectory squares (`bucketMeans` — the SAME values used by
+  the share card/text), then SHARE. **Fresh-solve sequence (decided 2026-07-10):** the
+  solving submit immediately sends the prompt left while fading it out, in the same render
+  that launches the final hole-hit feedback. The next stage waits until EVERY `Hole` reports
+  its final secret rendered after the real `word-replace-blink` `animationend` — never a
+  guessed timeout — so multi-word or throttled animation cannot be covered mid-resolution.
+  A fresh active-day solve then holds the fully resolved sentence for 300ms before mounting
+  the streak modal. Once that modal has completely dismissed (including its exit fade), the
+  optional sentence source types quickly, letter by letter, with a trailing `_`; archive /
+  no-streak play starts this source beat immediately after the final holes settle. Only when
+  source typing finishes do the tries rise/tally, trajectory-square, and SHARE animations
+  begin (no metadata skips the typewriter); rehydrated solves render the full source/results
+  immediately without replaying the sequence. Player progression is separate:
+  `StreakDialog` is a
+  **borderless full-screen** native modal, opened only by a FRESH active-day
+  unsolved→solved transition. Its staged animation uses `@react-spring/web` (v9 for React
+  18): 200ms empty-screen fade → previous streak (derived without the solved day; 0 when
+  broken) 200ms fade → 500ms hold → changed digits wheel down/in from above, staggered
+  90ms right-to-left with a slower, subtly bouncing incoming spring → whole new number
+  foreground → flame → week with the solved day still empty → that tile lifts toward the
+  player, flips onto its completed face, and falls back to the screen plane → its impact
+  sends the prior completed-day scale pulse nearest-first across the week at 65ms intervals
+  → the ending hint. Unchanged streak digits never move, and the previous value stays
+  horizontally centered when the new streak adds a digit. It
+  never opens for archive solves, `?puzzle=` overrides, the tutorial, a reload, or an
+  already-solved revisit. **Dismissal (decided 2026-07-10, replacing the CONTINUE button):**
+  the ending beat is a pulsing arcade-style hint — pure "what to do", never a why (the
+  game is done; CONTINUE/CLOSE would beg "continue to what?") — reading TAP ANYWHERE on
+  coarse pointers / CLICK ANYWHERE otherwise (localized). **The celebration has NOTHING
+  focusable (decided 2026-07-10):** the hint is a plain non-interactive element, not a
+  button, and nothing is auto-focused — so no focus ring ever appears and a stray Tab has
+  nowhere to land (the modal traps focus; Tab is also swallowed). Once the hint appears the
+  WHOLE modal dismisses — click/tap anywhere, ANY key (the "press any key" twin of
+  tap-anywhere), or Escape — but dismissal is completely disabled until the hint's entrance
+  finishes and it is fully visible. Every dismissal then fades the whole modal opacity over
+  200ms before unmounting; after source typing and the result rise, focus moves to the result
+  action. While any streak screen is open, the source and solved-result timers stay at their
+  initial frame. **Dev-only preview:**
+  `?streak=N` (integer `0..99999`)
+  opens the sequence immediately with `N` as the PREVIOUS value (`?streak=9` → `9→10`),
+  suppresses the first-visit invitation, and synthesizes its visual week without mutating
+  persisted rounds/solved days; production builds ignore the parameter.
 - **Onboarding tutorial (#51, redesigned 2026-07-06):** the tutorial **never starts
   without an action**. A first visit (persisted `onboarded` unset) lands on an
   **invitation** (`tutorial/Invite.tsx`, standing in for the loading screen: "New to
@@ -557,23 +604,24 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   `migrate` (v2) grandfathers any blob with prior play state so veterans never see it
   uninvited. Replay via the header `?`; `?tutorial=1` forces it; a `?puzzle=`
   override suppresses the first-visit invitation.
-- **App header (decided 2026-07-06):** a fixed **topbar** (`components/TopBar.tsx`) —
-  flag (language) left, a centered title, a right-hand control — full-bleed with a
+- **App header (decided 2026-07-06; game day-id removal confirmed 2026-07-11):** a fixed
+  **topbar** (`components/TopBar.tsx`) — flag (language) plus the optional live streak left,
+  an optional centered title, and a right-hand control — full-bleed with a
   thin `--surface` bottom border separating it from the app; the **progress bar sits
   in its own full-width row below it** (no more flag/`?` squeezing the bar on
-  mobile). The game fills it with the day's puzzle id (`#<dayNumber>`) + a right group
-  of the **archive calendar icon** and help `?` (#55); the tutorial fills it with
-  "TUTORIAL" + the skip fast-forward. The flag ALWAYS opens the language screen. The
+  mobile). The game's center is deliberately **empty** — `#<dayNumber>` was removed — and
+  its right group holds the **archive calendar icon** and help `?` (#55); the tutorial
+  fills the center with "TUTORIAL" + the skip fast-forward. The flag ALWAYS opens the
+  language screen. The
   game header is rendered by **`GameRoute` (App), NOT inside `Game`** (decided
   2026-07-08): it wraps EVERY state of the route — loading / error / missing-puzzle /
   the loaded game — so navigating into a game (e.g. from the archive) never blinks the
-  header away; only the body under the fixed header refreshes. Its `#<dayNumber>` comes
-  from `usePuzzle`'s **stable `dayNumber`** — captured ONCE per request (`useMemo` on the
-  requested date, not re-read from the clock each render) and shared by the fetch, the
-  header, the round key and the share — so it shows correctly while loading AND can never
-  drift from the loaded puzzle (an undated tab held open across the 22:00 flip keeps the
-  fetched day, since the puzzle itself does not silently swap). The topbar is the
-  extension point for future chrome (streaks, stats, …).
+  header away; only the body under the fixed header refreshes. `usePuzzle`'s **stable
+  `dayNumber`** is still captured ONCE per request (`useMemo` on the requested date) and
+  shared by the fetch, round key, and share, but is no longer rendered in the header. An
+  undated tab held open across the 22:00 flip therefore still keeps its fetched puzzle/day;
+  the puzzle itself does not silently swap. The topbar is the extension point for future
+  chrome (streaks, stats, …).
 - **Language screen (redesigned 2026-07-06):** headed by the **logo** (blue pixel
   glyph, 3×/2× its native 22px — language-neutral, and the app's ONE in-app branding
   spot), NOT a "select language" title (the cards self-explain, and a title would
@@ -596,8 +644,7 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   and every control has a visible `:focus-visible` outline. The missing-puzzle screen
   wording owns that the state is **abnormal** (a publish that did not happen). The pixel
   font is **self-hosted** (`web/src/assets/fonts/PressStart2P.woff2`, `@font-face` in
-  `index.css` — no Google Fonts request). The solved screen shows a **NEXT PUZZLE IN
-  HH:MM:SS** countdown (`secondsUntilNextReset`, hidden on `?puzzle=` overrides).
+  `index.css` — no Google Fonts request).
 - **SVG icons (pattern to follow):** monochrome UI icons live as `.svg` files under
   `web/src/assets/icons/` and are imported as **inline React components** via
   `vite-plugin-svgr` — `import Icon from '../assets/icons/name.svg?react'` (the `?react`

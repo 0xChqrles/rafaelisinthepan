@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { activeDate } from '@whippin/shared';
+import { activeDate, dayNumber as dayNumberOf } from '@whippin/shared';
 import usePuzzle from './hooks/usePuzzle';
 import LanguageSelect from './screens/LanguageSelect';
 import Archive from './screens/Archive';
 import Game from './screens/Game';
 import TopBar from './components/TopBar';
+import LazyStreakDialog from './components/LazyStreakDialog';
 import LoadError from './components/LoadError';
 import NoPuzzle from './components/NoPuzzle';
 import Tutorial from './tutorial/Tutorial';
@@ -14,6 +15,7 @@ import { track } from './analytics';
 import { useLocation, navigate } from './routing';
 import { parseRoute, resolveHomeLang, pathForLang, pathForArchive, type LangCode } from './langs';
 import { t } from './i18n';
+import { streakPreviewFromSearch } from './dev/streakPreview';
 // Inline SVG (vite-plugin-svgr): the header controls — calendar into the archive (#55)
 // and the "?" help that replays the tutorial. Decorative glyphs; the buttons' aria-labels
 // name them.
@@ -70,7 +72,7 @@ function GameRoute({ lang, date }: { lang: LangCode; date?: string }) {
   const setOnboarded = useGameStore((s) => s.setOnboarded);
 
   // A dated route replays a past day when its date is not today's active game day; the
-  // undated route is always the active day. Gates the solved-screen countdown + analytics.
+  // undated route is always the active day. Gates the streak celebration + solve analytics.
   const isActiveDay = date == null || date === activeDate(new Date());
 
   // Visiting a puzzle route makes this the last-played language (seeds the `/` redirect).
@@ -86,12 +88,20 @@ function GameRoute({ lang, date }: { lang: LangCode; date?: string }) {
   // The open-tutorial state lives in the STORE (transient) so the tutorial's flag can
   // round-trip through the /select screen — this route unmounts, and picking a
   // language re-mounts it with the tutorial still open, now in that language.
-  // `?tutorial=1` forces it (dev/testing); a `?puzzle=` override is a dev path and
-  // wins over the first-visit invite. URL params are read once per page load.
+  // `?tutorial=1` forces it (dev/testing); the `?puzzle=` and dev-only `?streak=`
+  // harnesses both win over the first-visit invite. URL params are read once per load.
   const [forced, hasOverride] = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     return [params.get('tutorial') === '1', params.has('puzzle')] as const;
   }, []);
+  // Dev-only animation harness: the value is the PREVIOUS streak, so ?streak=9 previews
+  // 9 -> 10 immediately without mutating persisted rounds or solved-day history.
+  const [streakPreview, setStreakPreview] = useState<number | null>(() =>
+    streakPreviewFromSearch(window.location.search),
+  );
+  // Stable across renders: StreakDialog keys its whole staged sequence on onDismiss, so
+  // an inline closure would restart the animation every time this route re-renders.
+  const dismissStreakPreview = useCallback(() => setStreakPreview(null), []);
   const onboarded = useGameStore((s) => s.onboarded);
   const tutorialOpen = useGameStore((s) => s.tutorialOpen);
   const openTutorial = useGameStore((s) => s.openTutorial);
@@ -110,7 +120,7 @@ function GameRoute({ lang, date }: { lang: LangCode; date?: string }) {
   if (tutorialOpen) {
     return <Tutorial key={lang} lang={lang} onDone={closeTutorial} />;
   }
-  if (!onboarded && !hasOverride) {
+  if (!onboarded && !hasOverride && streakPreview == null) {
     return (
       <Invite
         lang={lang}
@@ -128,22 +138,14 @@ function GameRoute({ lang, date }: { lang: LangCode; date?: string }) {
 
   return (
     <>
-      {/* One persistent header for the whole route: flag (language screen) / the day's id
-          / the archive + help controls. It renders in EVERY state below — loading, error,
-          the missing-puzzle screen, and the loaded game — so navigating into a game never
-          blinks the header away; only the body under it refreshes. The id comes from
-          usePuzzle's STABLE `dayNumber` (captured once at fetch), so it is available while
-          loading AND can never drift from the loaded puzzle — e.g. a tab held open across
-          the 22:00 flip keeps showing the fetched day, not the newly-active one. */}
+      {/* One persistent header for the whole route: flag (language screen) + live streak on
+          the left, the archive + help controls on the right, no center title. It renders in
+          EVERY state below — loading, error, the missing-puzzle screen, and the loaded game —
+          so navigating into a game never blinks the header away; only the body under it
+          refreshes. (`dayNumber` is still usePuzzle's STABLE, once-at-fetch value — it just
+          no longer surfaces in the header; it keys the round + share below.) */}
       <TopBar
         lang={lang}
-        center={
-          dayNumber != null ? (
-            <span className="topbar-title" aria-hidden="true">
-              #{dayNumber}
-            </span>
-          ) : undefined
-        }
         right={
           <div className="topbar-right">
             {/* Into the archive calendar (#55) — past days, one tap from the game. */}
@@ -170,7 +172,22 @@ function GameRoute({ lang, date }: { lang: LangCode; date?: string }) {
       {loading && <p className="status">{t(lang, 'loading')}</p>}
       {error !== null && <LoadError message={t(lang, 'failedPuzzle')} lang={lang} onRetry={retry} />}
       {noPuzzle && <NoPuzzle lang={lang} />}
-      {puzzle && <Game puzzle={puzzle} dayNumber={dayNumber} isActiveDay={isActiveDay} />}
+      {puzzle && (
+        <Game
+          puzzle={puzzle}
+          dayNumber={dayNumber}
+          isActiveDay={isActiveDay}
+          deferResultsAnimation={streakPreview != null}
+        />
+      )}
+      {streakPreview != null && (
+        <LazyStreakDialog
+          lang={lang}
+          solvedDay={dayNumber ?? dayNumberOf(activeDate(new Date()))}
+          previewPreviousStreak={streakPreview}
+          onDismiss={dismissStreakPreview}
+        />
+      )}
     </>
   );
 }

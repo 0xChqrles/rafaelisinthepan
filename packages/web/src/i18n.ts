@@ -33,10 +33,16 @@ const STRINGS = {
   tries: { en: 'TRIES', fr: 'ESSAIS' },
   share: { en: 'SHARE', fr: 'PARTAGER' },
   copied: { en: 'COPIED', fr: 'COPIÉ' },
-  nextPuzzleIn: { en: 'NEXT PUZZLE IN', fr: 'PROCHAIN PUZZLE DANS' },
-  // Streak line on the solved screen (#56): `STREAK 3 · BEST 7`.
-  streak: { en: 'STREAK', fr: 'SÉRIE' },
-  best: { en: 'BEST', fr: 'RECORD' },
+  // The streak celebration's ending hint: pure "what to do" — the whole screen dismisses,
+  // so naming a "why" (continue/close — continue to WHAT? the game is done) would only
+  // raise a question it can't answer. Pointer-aware: coarse pointers read TAP.
+  tapAnywhere: { en: 'TAP ANYWHERE', fr: "TOUCHEZ L'ÉCRAN" },
+  clickAnywhere: { en: 'CLICK ANYWHERE', fr: "CLIQUEZ N'IMPORTE OÙ" },
+  // Streak labels (#56/#74). Untranslated in French too — a global game concept across
+  // languages (decided 2026-07-09). `streak` names the compact header stat to screen readers;
+  // `dayStreak` is the celebration-dialog label under the number ("3 / DAY STREAK").
+  streak: { en: 'STREAK', fr: 'STREAK' },
+  dayStreak: { en: 'DAY STREAK', fr: 'DAY STREAK' },
   srSolvedAll: { en: 'sentence solved!', fr: 'phrase résolue !' },
   ariaChangeLanguage: { en: 'Change language', fr: 'Changer de langue' },
   ariaKeyboard: { en: 'on-screen keyboard', fr: 'clavier virtuel' },

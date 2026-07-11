@@ -1,99 +1,96 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
+import { heatColor } from '@whippin/shared';
 import { bucketMeans, shareText, shareUrl } from '../game/share';
-import { heatColor, secondsUntilNextReset } from '@whippin/shared';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
-import useToday from '../hooks/useToday';
-import { useGameStore } from '../state/gameStore';
-import { currentStreak, bestStreak } from '../game/streak';
 import { track } from '../analytics';
 import { t } from '../i18n';
 
-// Stable empty reference so the zustand selector below never returns a fresh array (which
-// would churn renders) when a language has no solved days yet.
-const NO_SOLVED_DAYS: number[] = [];
+// Reveal choreography (this component mounts after the last hole has settled): the result
+// stack rises in, the score tallies, then the neutral trajectory squares colorize in order.
+const SQUARE_STAGGER_MS = 55;
+const GRID_MAX_SPAN_MS = 1400;
+export const RESULTS_IN_MS = 350;
+const SCORE_COUNT_MS = 800;
+const SQUARES_START_MS = RESULTS_IN_MS + SCORE_COUNT_MS;
+const NEUTRAL_HOLD_MS = SQUARE_STAGGER_MS;
 
-// Reveal choreography (this component MOUNTS at the reveal moment — Game gates it on the last
-// hole's solve animation finishing, so the animations below ARE the reveal): the score/share
-// row fades in and the score tallies up from 0, THEN the heat squares appear as neutral
-// surface tiles and colorize one by one. Score first (the headline), heat trail after.
-const SQUARE_STAGGER_MS = 55; // gap between consecutive squares colorizing...
-const GRID_MAX_SPAN_MS = 1400; // ...compressed so even a long game's grid stays snappy
-const ACTIONS_IN_MS = 350; // score+share fade/rise into place (matches .solved-actions transition)
-const SCORE_COUNT_MS = 800; // score tally 0 -> guessCount
-// The uncolored squares appear only AFTER the score is shown (row settled + tally finished)...
-const SQUARES_START_MS = ACTIONS_IN_MS + SCORE_COUNT_MS;
-const NEUTRAL_HOLD_MS = SQUARE_STAGGER_MS; // ...are held neutral this long, THEN colorize one by one.
-
-// "NEXT PUZZLE IN HH:MM:SS" — always three 2-digit groups (a game day is 24h).
-function formatHMS(totalSeconds: number): string {
-  const clamped = Math.max(0, totalSeconds);
-  const h = Math.floor(clamped / 3600);
-  const m = Math.floor((clamped % 3600) / 60);
-  const s = clamped % 60;
-  return [h, m, s].map((v) => String(v).padStart(2, '0')).join(':');
-}
-
-// The solved results (issue #8): it takes over the on-screen keyboard's footprint once
-// the sentence is solved, so the layout never reflows and no empty gap is left where the
-// keyboard was. Understated + flat to match the app: a heat-grid of one pixel square per
-// counted guess (colored by the game's own heat ramp — cold/far to hot/solved), the
-// score, and a share control styled like a keyboard key. Reused by the already-solved
-// screen (#9) and by the tutorial's ending (#51), which swaps SHARE for its own
-// `action` (PLAY) so the tutorial graduates into the EXACT solved layout of the real
-// game. The reconstructed sentence + attribution live above, in <SolvedCaption>.
+// Sentence-specific results only: tries, the solve's progress trajectory, and its share
+// action. Player-level progression lives in StreakDialog, outside this layout. Keeping the
+// stack identical at every breakpoint gives the three result elements one stable hierarchy.
+// The tutorial reuses it with PLAY in SHARE's slot.
 export default function SolvedScreen({
   guessCount,
   trajectory,
   dayNumber,
   lang,
-  isActiveDay = true,
   action,
+  animate = true,
+  startAnimation = true,
 }: {
   guessCount: number;
   trajectory: number[]; // reconstruction % after each counted guess (one per try)
   dayNumber: number | null;
   lang: string; // packed into the share token (drives the link's click-through target)
-  // Whether the solved day is the client's active day. The "NEXT PUZZLE IN" countdown is
-  // a statement about TODAY, so it is hidden when replaying a past archive day (#55).
-  isActiveDay?: boolean;
-  action?: { label: string; onClick: () => void }; // replaces the SHARE control (tutorial)
+  action?: { label: string; onClick: () => void }; // replaces SHARE in the tutorial
+  // Rehydrated solves render their final result immediately. Fresh solves animate, with
+  // startAnimation acting as the source/streak gate while this component stays mounted.
+  animate?: boolean;
+  // A live active-day solve holds this at false while StreakDialog is open. No-dialog
+  // paths (archive, tutorial, override, and rehydration) use the immediate default.
+  startAnimation?: boolean;
 }) {
-  // Collapse the per-guess trajectory into a bounded set of squares (3..18), each colored
-  // by its bucket's mean progress. Same array drives the on-screen grid and the share row.
+  // Collapse the per-guess trajectory into a bounded row (3..18), each square colored by
+  // its bucket's mean progress. This exact array also drives the share card and emoji row.
   const squares = useMemo(() => bucketMeans(trajectory), [trajectory]);
   const n = squares.length;
-  // Per-square stagger, compressed for long games so the whole grid lands within a bound.
   const stagger = n > 1 ? Math.min(SQUARE_STAGGER_MS, GRID_MAX_SPAN_MS / (n - 1)) : 0;
+  const reduceMotion =
+    typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  // Reveal in three beats: (1) the score+share row fades/rises into place, (2) the score
-  // tallies up from 0 in its final position, and only THEN (3) the squares pop in one by one
-  // (their staggered CSS delays are offset by SQUARES_START_MS, below). Score first, squares
-  // after — the score is the headline, the heat trail the follow-up.
-  const [countTarget, setCountTarget] = useState(0);
-  const [showActions, setShowActions] = useState(false);
-  // (1) On mount (the reveal moment), bring the row in on the next frame so its fade/rise
-  //     transition actually plays.
+  // Bring the whole result into place first, then tally its headline number. Keeping the
+  // component mounted but inert lets the streak dialog own the screen without allowing
+  // this sequence to finish invisibly underneath it.
+  const [resultsIn, setResultsIn] = useState(() => !animate);
   useEffect(() => {
-    const raf = requestAnimationFrame(() => setShowActions(true));
+    if (!animate) {
+      setResultsIn(true);
+      return undefined;
+    }
+    if (!startAnimation) return undefined;
+    const raf = requestAnimationFrame(() => setResultsIn(true));
     return () => cancelAnimationFrame(raf);
-  }, []);
-  // (2) Once the row has settled into position, start the score tally from 0.
-  useEffect(() => {
-    if (!showActions) return undefined;
-    const t = window.setTimeout(() => setCountTarget(guessCount), ACTIONS_IN_MS);
-    return () => window.clearTimeout(t);
-  }, [showActions, guessCount]);
-  const shownScore = useAnimatedNumber(countTarget, SCORE_COUNT_MS);
+  }, [animate, startAnimation]);
 
-  // (3) After the score is shown: neutral tiles roll in one by one (gridShown + per-cell
-  //     --show-delay), and once they are all in (+ a brief hold) each colorizes one by one
-  //     (gridColorized + per-cell --color-delay). Two class flips on .heat-grid drive the
-  //     CSS transitions. gridSpanMs = how long the staggered wave takes end to end.
-  const gridSpanMs = Math.max(0, n - 1) * stagger;
-  const [gridShown, setGridShown] = useState(false);
-  const [gridColorized, setGridColorized] = useState(false);
+  const [countTarget, setCountTarget] = useState(() => (animate ? 0 : guessCount));
   useEffect(() => {
+    if (!animate) {
+      setCountTarget(guessCount);
+      return undefined;
+    }
+    if (!resultsIn) return undefined;
+    const id = window.setTimeout(() => setCountTarget(guessCount), reduceMotion ? 0 : RESULTS_IN_MS);
+    return () => window.clearTimeout(id);
+  }, [animate, resultsIn, guessCount, reduceMotion]);
+  const shownScore = useAnimatedNumber(countTarget, !animate || reduceMotion ? 1 : SCORE_COUNT_MS);
+
+  // After the score lands, reveal the neutral tiles and then color them cold-to-hot. The
+  // row always reserves its final footprint, so neither animation moves the share action.
+  const gridSpanMs = Math.max(0, n - 1) * stagger;
+  const [gridShown, setGridShown] = useState(() => !animate);
+  const [gridColorized, setGridColorized] = useState(() => !animate);
+  useEffect(() => {
+    if (!animate) {
+      setGridShown(true);
+      setGridColorized(true);
+      return undefined;
+    }
+    if (!resultsIn) return undefined;
+    if (reduceMotion) {
+      setGridShown(true);
+      setGridColorized(true);
+      return undefined;
+    }
     const show = window.setTimeout(() => setGridShown(true), SQUARES_START_MS);
     const color = window.setTimeout(
       () => setGridColorized(true),
@@ -103,29 +100,7 @@ export default function SolvedScreen({
       window.clearTimeout(show);
       window.clearTimeout(color);
     };
-  }, [gridSpanMs]);
-
-  // Countdown to the next puzzle (the 22:00-ET day flip, from the ONE shared day
-  // definition) — the solved screen's "come back" hook. Recomputed from the clock every
-  // second, so it self-corrects after a background tab throttles the interval and rolls
-  // over to the next day on its own if the tab stays open past the flip.
-  const [nextIn, setNextIn] = useState<number>(() => secondsUntilNextReset(new Date()));
-  useEffect(() => {
-    const id = window.setInterval(() => setNextIn(secondsUntilNextReset(new Date())), 1000);
-    return () => window.clearInterval(id);
-  }, []);
-
-  // Streak line (#56): derived from the per-language solved-day SET, never a stored
-  // counter. Shown only for a streak-eligible solve — an active-day win with a real
-  // dayNumber. An archive replay (isActiveDay false) or a ?puzzle= override (dayNumber
-  // null) shows none; and a 0 guards the pre-feature rehydration whose day predates the
-  // set (a real fresh solve is always >= 1, since recordSolve added today before this
-  // screen reveals).
-  const solvedDays = useGameStore((s) => s.solvedDays[lang] ?? NO_SOLVED_DAYS);
-  const activeDay = useToday();
-  const streak = currentStreak(solvedDays, activeDay);
-  const best = bestStreak(solvedDays);
-  const showStreak = dayNumber != null && isActiveDay && streak > 0;
+  }, [animate, gridSpanMs, reduceMotion, resultsIn]);
 
   // "COPIED" confirmation after a clipboard fallback (the native share sheet needs none).
   const [copied, setCopied] = useState(false);
@@ -133,26 +108,15 @@ export default function SolvedScreen({
   useEffect(() => () => window.clearTimeout(copiedTimer.current), []);
 
   const onShare = useCallback(async () => {
-    // No server day (a ?puzzle= override) -> no share: the token has no real dayNumber
-    // to carry (the codec would clamp it to a bogus id). The button isn't rendered then;
-    // this guard just makes the invariant local.
+    // A ?puzzle= override has no real day to encode, so its share button is not rendered.
     if (dayNumber == null) return;
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    // The result is packed into the link; the backend renders /s/<token> as the OG card, so
-    // sharing the URL unfurls into the image.
     const url = shareUrl(origin, { lang, dayNumber, score: guessCount, squares });
-    // What we share/copy: a headline line, then the heat-square emoji row (the plain-text
-    // fallback for the OG card — same `squares`, so they can't disagree), a blank line, then
-    // the (unfurling) link. "N tries" (not a bare number): lower-is-better must survive
-    // without the card. Localized like the rest of the chrome — a French result reads "essais".
     const unit = t(lang, guessCount === 1 ? 'try' : 'tries').toLowerCase();
     const headline = `Whippin #${dayNumber} — ${guessCount} ${unit}`;
     const text = shareText(headline, squares, url);
 
-    // Use the Web Share API only on touch/mobile devices (native share sheet). On DESKTOP
-    // the share button should just copy the link — desktop Chrome/Edge/Safari expose
-    // navigator.share too, so gate on the device (coarse pointer), not the API's presence.
-    // Fall back to the clipboard everywhere else, matching the "copy to clipboard" default.
+    // Touch devices get their native share sheet; desktop copies the result directly.
     const isTouch =
       typeof window !== 'undefined' &&
       typeof window.matchMedia === 'function' &&
@@ -163,8 +127,8 @@ export default function SolvedScreen({
         track('share', { method: 'native' });
         return;
       } catch (err) {
-        if ((err as DOMException)?.name === 'AbortError') return; // user dismissed the sheet
-        // any other failure -> fall through to the clipboard
+        if ((err as DOMException)?.name === 'AbortError') return;
+        // Any other native-share failure falls through to the clipboard.
       }
     }
     try {
@@ -174,21 +138,30 @@ export default function SolvedScreen({
       window.clearTimeout(copiedTimer.current);
       copiedTimer.current = window.setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Clipboard blocked (insecure context / denied): nothing more we can do here.
+      // Clipboard blocked (insecure context / denied): there is no further browser fallback.
     }
   }, [lang, dayNumber, guessCount, squares]);
 
   return (
-    <div className="solved-results">
-      {/* One flat square per bucket (3..18). AFTER the score is shown, neutral surface tiles
-          roll in one by one (.shown + staggered --show-delay), then each colorizes to its
-          bucket's MEAN reconstruction % one by one (.colorized + staggered --color-delay).
-          heatColor: 0 = cold/far crimson .. 1 = hot/solved cyan — the same ramp as the
-          rank exponents and the share card. Decorative — the score/share carry the real
-          numbers. The grid keeps its height throughout, so nothing shifts. */}
+    <div className={`solved-results${resultsIn ? ' in' : ''}`}>
+      {/* The primary sentence metric. The hidden final value reserves the count's width so
+          its tally never moves the centered label or the content below it. */}
+      <span className="solved-score">
+        <span className="solved-score-num">
+          <span className="solved-score-ghost" aria-hidden="true">
+            {guessCount}
+          </span>
+          <span className="solved-score-live">{Math.round(shownScore)}</span>
+        </span>
+        <span className="solved-score-unit">{t(lang, guessCount === 1 ? 'try' : 'tries')}</span>
+      </span>
+
+      {/* Decorative visual history of this sentence. The named try count and share text carry
+          the accessible result; the same bucket values are encoded into the share card. */}
       <div
         className={`heat-grid${gridShown ? ' shown' : ''}${gridColorized ? ' colorized' : ''}`}
         aria-hidden="true"
+        style={{ '--n': n } as CSSProperties}
       >
         {squares.map((pct, i) => (
           <span
@@ -206,52 +179,20 @@ export default function SolvedScreen({
         ))}
       </div>
 
-      <div className={`solved-actions${showActions ? ' in' : ''}`}>
-        {/* "45 TRIES", not "SCORE 45": the count is the number of guesses, and naming the
-            unit is what tells a reader (especially of the shared card) that LOWER is
-            better — "SCORE" alone reads as points to maximize. */}
-        <span className="solved-score">
-          {/* Reserve the FINAL count's exact width with a hidden ghost (same font, letter-
-              spacing and all), then overlay the live tally right-aligned on top — so the
-              number counting 0 -> guessCount never changes width (9 -> 10 stays put). */}
-          <span className="solved-score-num">
-            <span className="solved-score-ghost" aria-hidden="true">
-              {guessCount}
-            </span>
-            <span className="solved-score-live">{Math.round(shownScore)}</span>
-          </span>{' '}
-          {t(lang, guessCount === 1 ? 'try' : 'tries')}
-        </span>
-        {action ? (
-          <button type="button" className="share-key" onClick={action.onClick}>
-            {action.label}
+      {action ? (
+        <button type="button" className="result-action" onClick={action.onClick}>
+          {action.label}
+        </button>
+      ) : (
+        dayNumber != null && (
+          <button
+            type="button"
+            className={`result-action${copied ? ' copied' : ''}`}
+            onClick={onShare}
+          >
+            {copied ? t(lang, 'copied') : t(lang, 'share')}
           </button>
-        ) : (
-          dayNumber != null && (
-            <button type="button" className={`share-key${copied ? ' copied' : ''}`} onClick={onShare}>
-              {copied ? t(lang, 'copied') : t(lang, 'share')}
-            </button>
-          )
-        )}
-      </div>
-
-      {/* Streak (#56): STREAK n · BEST m, under the score/share row. Muted pixel line,
-          rides the same fade/rise as the row. Only for a streak-eligible solve (active
-          day, real dayNumber) — an archive replay and a ?puzzle= override show none. */}
-      {showStreak && (
-        <p className={`streak-line${showActions ? ' in' : ''}`}>
-          {t(lang, 'streak')} {streak} · {t(lang, 'best')} {best}
-        </p>
-      )}
-
-      {/* The "come back" hook: a live countdown to the day flip, under the score/share
-          row. Rides the same fade/rise as the row (shared `.in` timing). Hidden on a
-          ?puzzle= override round (no real daily context) and when replaying a past
-          archive day (the countdown is about TODAY, not the day being played, #55). */}
-      {dayNumber != null && isActiveDay && (
-        <p className={`next-puzzle${showActions ? ' in' : ''}`}>
-          {t(lang, 'nextPuzzleIn')} {formatHMS(nextIn)}
-        </p>
+        )
       )}
     </div>
   );
