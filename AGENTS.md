@@ -435,16 +435,19 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   Claude.ai auth, strips API/cloud credential overrides, then uses a fresh Agent SDK
   session per run with an empty replacement system prompt and no tools, MCP, skills,
   plugins, or filesystem settings. Five parsed invalid/repeated replies without a counted
-  try abort a stuck paid loop. Prompt version 3 tells every provider to balance direct target
-  candidates with exploratory probes: even a word that cannot grammatically be the answer can
+  try abort a stuck paid loop. Prompt version 4 rejects strict left-to-right play: before spending
+  many tries on one position, models sample candidates/probes motivated by every unsolved hole,
+  pursue whichever has the strongest signal or easiest target, switch when stalled, and
+  reprioritize when a solved word adds context. It retains version 3's balance between direct
+  candidates and exploratory probes: even a word that cannot grammatically be the answer can
   provide intermediate rank hints, so broader categories, contrasts, related concepts, and
-  neighbors of warm clues can triangulate a semantic direction. It retains version 2's exact-
-  inflection strategy: infer number/gender/agreement from the fixed sentence context and try a
-  promising candidate's context-correct form before listing more direct synonyms. During a run,
-  every counted try prints immediately with its word and post-guess overall progress percentage
-  (the same logarithmic multi-hole formula as the web progress bar, to two decimals); misses and
-  non-improving warm tries still print with unchanged progress. After each run the CLI prints
-  `tried=[...]` in submission order for the counted valid unique words only (invalid,
+  neighbors of warm clues can triangulate a semantic direction. It also retains version 2's
+  exact-inflection strategy: infer number/gender/agreement from the fixed sentence context and
+  try a promising candidate's context-correct form before listing more direct synonyms. During
+  a run, every counted try prints immediately with its word and post-guess overall progress
+  percentage (the same logarithmic multi-hole formula as the web progress bar, to two decimals);
+  misses and non-improving warm tries still print with unchanged progress. After each run the CLI
+  prints `tried=[...]` in submission order for the counted valid unique words only (invalid,
   unparseable, and folded duplicate replies remain excluded exactly like the score). Missing API
   keys still skip for API transports, median `--runs` is supported, and only `--in-place`
   mutates a puzzle; this curator tool is

@@ -41,7 +41,7 @@ MODELS = [
 
 # Bump whenever the opening rules or turn-feedback scaffold changes materially. Results
 # are attributable to a model id plus this prompt version and the CLI's printed effort.
-PROMPT_VERSION = "3"
+PROMPT_VERSION = "4"
 
 DEFAULT_CAP = 300
 MAX_CONSECUTIVE_UNPARSEABLE = 5
@@ -456,6 +456,18 @@ def opening_message(referee: PuzzleReferee) -> str:
             (
                 "Guesses are exact inflected forms, not lemmas: singular/plural and "
                 "masculine/feminine forms are distinct guesses."
+            ),
+            (
+                "Do not work strictly left-to-right or exhaust one hidden word "
+                "before considering the others. Before committing many tries to one, "
+                "sample candidates or probes motivated by every unsolved position; "
+                "this may expose a surprisingly easy target."
+            ),
+            (
+                "Compare rank signals and pursue whichever position or direction "
+                "looks easiest, regardless of order. If it stalls, switch focus. "
+                "After any solve, reread the board and reprioritize: the revealed "
+                "word gives new context for the rest."
             ),
             (
                 "Use ranks to search, not only to check possible final answers. A "

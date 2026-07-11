@@ -625,7 +625,7 @@ def test_opening_prompt_prioritizes_context_correct_inflections():
     play_puzzle(puzzle(), VOCAB, model)
 
     opening = model.calls[0][0]["content"]
-    assert PROMPT_VERSION == "3"
+    assert PROMPT_VERSION == "4"
     assert "infer the hidden word's grammar from the fixed context" in opening
     assert "singular/plural" in opening
     assert "masculine/feminine" in opening
@@ -643,6 +643,20 @@ def test_opening_prompt_encourages_nonanswer_probes_as_rank_hints():
     assert "Balance direct candidates with probes" in opening
     assert "broader categories, contrasts, related objects or actions" in opening
     assert "compare ranks and follow lower ones" in opening
+
+
+def test_opening_prompt_samples_and_reprioritizes_all_holes():
+    model = ScriptedModel(["forest", "ocean"])
+    play_puzzle(puzzle(), VOCAB, model)
+
+    opening = model.calls[0][0]["content"]
+    assert "Do not work strictly left-to-right" in opening
+    assert "sample candidates or probes motivated by every unsolved position" in opening
+    assert "surprisingly easy target" in opening
+    assert "pursue whichever position or direction looks easiest" in opening
+    assert "If it stalls, switch focus" in opening
+    assert "After any solve, reread the board and reprioritize" in opening
+    assert "revealed word gives new context for the rest" in opening
 
 
 def test_unparseable_replies_reprompt_then_abort_after_five_consecutive_turns():
