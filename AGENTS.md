@@ -502,8 +502,10 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   `agent_sdk` / `codex_cli` transport, effort, prompt version, cap, and UTC timestamp to the
   gitignored `benchmark/output/<puzzle-stem>.bench.json`. Lab-only models never enter the
   puzzle; display results are embedded in roster order only when all 3 current-prompt entries
-  are available, so a published `benchmark` is never partial. This paid curator tool is never
-  called by CI/tests.
+  are available, so a published `benchmark` is never partial. During a prompt-version
+  recalibration, an existing valid/replay-consistent trio remains published until the new trio
+  is complete, then the harness replaces it atomically; legacy or malformed benchmark data is
+  still removed rather than preserved. This paid curator tool is never called by CI/tests.
 - **`gen_phrase` is fully interactive on a TTY (#5).** Anything not passed as a flag is
   prompted: the **sentence** (positional, now optional), **`--lang`**, and the optional
   **source metadata** — `--kind` (offers `KNOWN_KINDS` numbered, but free text is

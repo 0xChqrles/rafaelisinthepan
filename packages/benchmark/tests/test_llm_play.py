@@ -1119,7 +1119,11 @@ def test_in_place_cli_accumulates_lab_runs_then_embeds_only_the_complete_trio(
     monkeypatch, tmp_path
 ):
     puzzle_path = tmp_path / "puzzle.json"
-    puzzle_path.write_text(json.dumps(puzzle()), encoding="utf-8")
+    source = puzzle()
+    source["benchmark"] = [
+        {"model": "claude-opus-4-8", "label": "OPUS", "tries": 4}
+    ]
+    puzzle_path.write_text(json.dumps(source), encoding="utf-8")
     lab_dir = tmp_path / "lab"
     monkeypatch.setattr("llm_play.BENCHMARK_OUTPUT_DIR", lab_dir)
     monkeypatch.setattr("llm_play.load_vocab", lambda _lang: VOCAB)
@@ -1192,6 +1196,109 @@ def test_in_place_cli_accumulates_lab_runs_then_embeds_only_the_complete_trio(
     )
     assert len(artifact["sessions"]) == 4
     assert artifact["sessions"][-1]["model_id"] == "gpt-5.6-terra"
+
+
+def test_prompt_bump_keeps_the_existing_trio_until_atomic_replacement(
+    monkeypatch, tmp_path, capsys
+):
+    old_entries = [
+        {
+            "model": "claude-opus-4-8",
+            "label": "CLAUDE OPUS",
+            "tag": "OPUS",
+            "tries": 4,
+            "run": ["cold", "other", "forest", "ocean"],
+        },
+        {
+            "model": "claude-sonnet-5",
+            "label": "CLAUDE SONNET",
+            "tag": "SONNET",
+            "tries": 4,
+            "run": ["shared", "cold", "forest", "ocean"],
+        },
+        {
+            "model": "gpt-5.6-sol",
+            "label": "GPT-5.6",
+            "tag": "GPT",
+            "tries": 3,
+            "run": ["other", "forest", "ocean"],
+        },
+    ]
+    source = puzzle()
+    source["benchmark"] = deepcopy(old_entries)
+    puzzle_path = tmp_path / "puzzle.json"
+    puzzle_path.write_text(json.dumps(source), encoding="utf-8")
+
+    lab_dir = tmp_path / "lab"
+    lab_dir.mkdir()
+    old_sessions = [
+        {
+            "prompt_version": "3",
+            "model_id": entry["model"],
+            "benchmark_entry": entry,
+        }
+        for entry in old_entries
+    ]
+    (lab_dir / "puzzle.bench.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "puzzle": "puzzle.json",
+                "sessions": old_sessions,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("llm_play.BENCHMARK_OUTPUT_DIR", lab_dir)
+    monkeypatch.setattr("llm_play.load_vocab", lambda _lang: VOCAB)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(
+        "llm_play.provider_reply",
+        lambda *_args, **_kwargs: ScriptedModel(["forest", "ocean"]),
+    )
+
+    for selector in ("OPUS", "SONNET"):
+        assert (
+            main(
+                [
+                    str(puzzle_path),
+                    "--model",
+                    selector,
+                    "--runs",
+                    "1",
+                    "--in-place",
+                ]
+            )
+            == 0
+        )
+        assert json.loads(puzzle_path.read_text(encoding="utf-8"))[
+            "benchmark"
+        ] == old_entries
+
+    assert "kept existing benchmark" in capsys.readouterr().out
+
+    assert (
+        main(
+            [
+                str(puzzle_path),
+                "--model",
+                "GPT-SOL",
+                "--runs",
+                "1",
+                "--in-place",
+            ]
+        )
+        == 0
+    )
+    replacement = json.loads(puzzle_path.read_text(encoding="utf-8"))["benchmark"]
+    assert [entry["model"] for entry in replacement] == [
+        "claude-opus-4-8",
+        "claude-sonnet-5",
+        "gpt-5.6-sol",
+    ]
+    assert all(entry["tries"] == 2 for entry in replacement)
+    assert all(entry["run"] == ["forest", "ocean"] for entry in replacement)
 
 
 def test_verbose_reply_is_reprompted_without_scoring_its_first_word():

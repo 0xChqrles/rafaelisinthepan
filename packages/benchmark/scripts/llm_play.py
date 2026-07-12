@@ -1605,6 +1605,65 @@ def display_benchmark_entries(artifact: Mapping[str, Any]) -> list[dict[str, Any
     ]
 
 
+def validated_existing_benchmark_entries(
+    puzzle: dict[str, Any], vocab: Iterable[str]
+) -> list[dict[str, Any]] | None:
+    """Return an existing schema-v2 trio only when every run still replays cleanly."""
+    raw_entries = puzzle.get("benchmark")
+    if not isinstance(raw_entries, list) or len(raw_entries) != DISPLAY_MODEL_COUNT:
+        return None
+
+    entries: list[dict[str, Any]] = []
+    model_ids: set[str] = set()
+    tags: set[str] = set()
+    required = {"model", "label", "tag", "tries", "run"}
+    for raw_entry in raw_entries:
+        if not isinstance(raw_entry, dict) or not required.issubset(raw_entry):
+            return None
+        entry = dict(raw_entry)
+        model_id = entry["model"]
+        label = entry["label"]
+        tag = entry["tag"]
+        tries = entry["tries"]
+        run = entry["run"]
+        if (
+            not isinstance(model_id, str)
+            or not model_id
+            or model_id != model_id.strip()
+            or not isinstance(label, str)
+            or label != label.strip()
+            or not MODEL_LABEL_RE.fullmatch(label)
+            or not isinstance(tag, str)
+            or tag != tag.strip()
+            or not MODEL_TAG_RE.fullmatch(tag)
+            or (tries is not None and (not _is_int(tries) or tries <= 0))
+            or not isinstance(run, list)
+            or not run
+            or not all(
+                isinstance(word, str) and word and word == word.strip()
+                for word in run
+            )
+            or (tries is not None and len(run) != tries)
+        ):
+            return None
+        model_ids.add(model_id)
+        tags.add(tag)
+        try:
+            # A DNF's complete run ends exactly at its original cap, so its length is
+            # sufficient to reconstruct that cap even though the lean payload omits it.
+            replay_cap = len(run) if tries is None else DEFAULT_CAP
+            assert_benchmark_entry_consistent(
+                puzzle, vocab, entry, cap=replay_cap
+            )
+        except ValueError:
+            return None
+        entries.append(entry)
+
+    if len(model_ids) != DISPLAY_MODEL_COUNT or len(tags) != DISPLAY_MODEL_COUNT:
+        return None
+    return entries
+
+
 def write_benchmark(
     path: Path,
     puzzle: dict[str, Any],
@@ -1831,6 +1890,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             # This assertion intentionally precedes BOTH output writes: a replay mismatch
             # must never reach the lean puzzle payload or the durable lab record.
             assert_benchmark_entry_consistent(puzzle, vocab, entry, cap=args.cap)
+            existing_entries = validated_existing_benchmark_entries(puzzle, vocab)
+            had_existing_benchmark = "benchmark" in puzzle
             artifact_path, artifact = write_lab_artifact(
                 args.puzzle,
                 summary,
@@ -1863,14 +1924,28 @@ def main(argv: Sequence[str] | None = None) -> int:
                     write_benchmark(args.puzzle, puzzle, entries)
                     print(f"Wrote benchmark trio -> {args.puzzle}")
                 else:
-                    # A partial array violates the published schema. Keep the optional
-                    # field absent until all three current-prompt display runs exist.
-                    write_benchmark(args.puzzle, puzzle, None)
-                    print(
-                        "Benchmark trio pending "
-                        f"({len(entries)}/{DISPLAY_MODEL_COUNT}); "
-                        f'omitted "benchmark" -> {args.puzzle}'
-                    )
+                    # Never replace a valid published trio with a partial recalibration.
+                    # A legacy/malformed field is still removed because the v2 client
+                    # would reject it; an absent field can remain absent without a rewrite.
+                    if existing_entries is not None:
+                        print(
+                            "Benchmark trio pending "
+                            f"({len(entries)}/{DISPLAY_MODEL_COUNT}); "
+                            f"kept existing benchmark -> {args.puzzle}"
+                        )
+                    elif had_existing_benchmark:
+                        write_benchmark(args.puzzle, puzzle, None)
+                        print(
+                            "Benchmark trio pending "
+                            f"({len(entries)}/{DISPLAY_MODEL_COUNT}); "
+                            f'omitted legacy/malformed "benchmark" -> {args.puzzle}'
+                        )
+                    else:
+                        print(
+                            "Benchmark trio pending "
+                            f"({len(entries)}/{DISPLAY_MODEL_COUNT}); "
+                            f'"benchmark" remains absent -> {args.puzzle}'
+                        )
             else:
                 print("Lab-only model; puzzle benchmark unchanged")
         except Exception as exc:
