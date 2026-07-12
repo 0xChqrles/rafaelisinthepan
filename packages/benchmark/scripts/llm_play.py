@@ -1157,14 +1157,14 @@ def benchmark_model(
 
 
 def select_model(requested: str) -> ModelConfig:
-    def selection_keys(config: ModelConfig) -> set[str]:
-        keys = {config["model_id"].lower()}
+    def friendly_selector(config: ModelConfig) -> str:
         if config["model_id"].startswith("gpt-5.6-"):
             variant = config["model_id"].removeprefix("gpt-5.6-")
-            keys.add(f"gpt-{variant}")
-        else:
-            keys.add(config["label"].lower())
-        return keys
+            return f"GPT-{variant.upper()}"
+        return config["label"]
+
+    def selection_keys(config: ModelConfig) -> set[str]:
+        return {config["model_id"].lower(), friendly_selector(config).lower()}
 
     configs: list[ModelConfig] = []
     for raw in MODELS:
@@ -1188,7 +1188,12 @@ def select_model(requested: str) -> ModelConfig:
     for config in configs:
         if selector in selection_keys(config):
             return config
-    raise ValueError(f"unknown model selector: {requested}")
+    aliases = ", ".join(friendly_selector(config) for config in configs)
+    model_ids = ", ".join(config["model_id"] for config in configs)
+    raise ValueError(
+        f"unknown model selector {requested!r}. Valid values: {aliases}. "
+        f"Exact model IDs are also accepted: {model_ids}."
+    )
 
 
 def resolve_puzzle_path(path: Path) -> Path:
