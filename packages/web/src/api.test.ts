@@ -147,6 +147,7 @@ describe('parsePuzzle (shape validation)', () => {
   it('rejects malformed benchmark containers and entries', () => {
     const notArray = { ...valid(), benchmark: {} };
     expect(() => parsePuzzle(notArray)).toThrow(/benchmark/);
+    expect(() => parsePuzzle({ ...valid(), benchmark: [] })).toThrow(/benchmark/);
 
     const malformed = [
       { model: '', label: 'GPT', tries: 12 },

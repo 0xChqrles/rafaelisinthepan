@@ -73,6 +73,7 @@ EFFORT_LEVELS: tuple[ReasoningEffort, ...] = (
     "max",
 )
 DEFAULT_EFFORT: ReasoningEffort = "none"
+DIRECT_OUTPUT_MAX_TOKENS = 256
 REASONING_MAX_TOKENS = 25_000
 DEEP_REASONING_MAX_TOKENS = 64_000
 
@@ -85,6 +86,16 @@ CODEX_SUBSCRIPTION_EFFORTS: tuple[ReasoningEffort, ...] = (
     "high",
     "xhigh",
     "max",
+)
+# The current GPT-5.6 reasoning guide documents these API levels. The Responses
+# schema is broader, but model support is explicitly model-dependent; reject `max`
+# before a paid call until the GPT-5.6 model pages document it.
+OPENAI_API_EFFORTS: tuple[ReasoningEffort, ...] = (
+    "none",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
 )
 
 # A subscription run must never inherit a developer-platform credential or cloud
@@ -514,14 +525,15 @@ class PuzzleReferee:
         )
 
 
-# First Unicode letter-run, optionally joined by internal ASCII dashes. Formatting around
-# a word (quotes, Markdown, punctuation) is harmless; a reply with no lexical word is not.
-_FIRST_WORD = re.compile(r"[^\W\d_]+(?:-[^\W\d_]+)*", re.UNICODE)
+# Unicode letter-runs optionally joined by internal ASCII dashes. Formatting around one
+# word (quotes, Markdown, punctuation) is harmless, but prose must not silently score its
+# first token as a guess.
+_LEXICAL_WORD = re.compile(r"[^\W\d_]+(?:-[^\W\d_]+)*", re.UNICODE)
 
 
-def parse_first_word(reply: str) -> str | None:
-    match = _FIRST_WORD.search(reply)
-    return match.group(0) if match else None
+def parse_single_word(reply: str) -> str | None:
+    matches = _LEXICAL_WORD.findall(reply)
+    return matches[0] if len(matches) == 1 else None
 
 
 def opening_message(referee: PuzzleReferee) -> str:
@@ -636,7 +648,7 @@ def play_puzzle(
         assistant_content = raw_reply.strip() or "[empty response]"
         messages.append({"role": "assistant", "content": assistant_content})
 
-        guess = parse_first_word(raw_reply)
+        guess = parse_single_word(raw_reply)
         if guess is None:
             consecutive_unparseable += 1
             if consecutive_unparseable >= MAX_CONSECUTIVE_UNPARSEABLE:
@@ -712,12 +724,40 @@ def _text_content(content: object) -> str:
     return "\n".join(parts)
 
 
-def _output_token_budget(provider: str, effort: ReasoningEffort) -> int:
+def _output_token_budget(effort: ReasoningEffort) -> int:
     if effort == "none":
-        return 32 if provider == "anthropic" else 256
+        # Thinking-off models can still emit visible explanation despite the one-word
+        # contract. Leave enough room for a complete reply; strict parsing rejects prose.
+        return DIRECT_OUTPUT_MAX_TOKENS
     if effort in {"xhigh", "max"}:
         return DEEP_REASONING_MAX_TOKENS
     return REASONING_MAX_TOKENS
+
+
+def _supported_efforts(provider: str, auth: AuthMode) -> tuple[ReasoningEffort, ...]:
+    if provider == "openai" and auth == "api":
+        return OPENAI_API_EFFORTS
+    if provider == "openai" and auth == "subscription":
+        return CODEX_SUBSCRIPTION_EFFORTS
+    return EFFORT_LEVELS
+
+
+def _validate_provider_effort(
+    provider: str, auth: AuthMode, effort: ReasoningEffort
+) -> None:
+    if effort not in EFFORT_LEVELS:
+        raise ValueError(f"unsupported reasoning effort: {effort}")
+    if auth not in AUTH_MODES:
+        raise ValueError(f"unsupported auth mode: {auth}")
+    supported = _supported_efforts(provider, auth)
+    if effort not in supported:
+        levels = "|".join(supported)
+        provider_name = "OpenAI" if provider == "openai" else provider.title()
+        auth_name = "API" if auth == "api" else "subscription"
+        raise ValueError(
+            f"{provider_name} {auth_name} benchmark does not allow reasoning effort "
+            f"{effort!r}; use {levels}"
+        )
 
 
 async def _agent_sdk_turn(
@@ -988,10 +1028,7 @@ def provider_reply(
     """Build one provider adapter. Paid SDK imports stay lazy for offline tests."""
     provider = config["provider"]
     model_id = config["model_id"]
-    if effort not in EFFORT_LEVELS:
-        raise ValueError(f"unsupported reasoning effort: {effort}")
-    if auth not in AUTH_MODES:
-        raise ValueError(f"unsupported auth mode: {auth}")
+    _validate_provider_effort(provider, auth, effort)
 
     if provider == "anthropic":
         if auth == "subscription":
@@ -1005,7 +1042,7 @@ def provider_reply(
         def reply(messages: list[Message]) -> str:
             request: dict[str, Any] = {
                 "model": model_id,
-                "max_tokens": _output_token_budget(provider, effort),
+                "max_tokens": _output_token_budget(effort),
                 "messages": messages,
                 # Append-only play histories only receive Anthropic's automatic moving
                 # cache breakpoint when prompt caching is explicitly enabled.
@@ -1023,7 +1060,7 @@ def provider_reply(
             response = client.messages.create(**request)
             if getattr(response, "stop_reason", None) == "max_tokens":
                 raise RuntimeError(
-                    f"{model_id} exhausted its {_output_token_budget(provider, effort)}-token output budget"
+                    f"{model_id} exhausted its {_output_token_budget(effort)}-token output budget"
                 )
             return _text_content(response.content)
 
@@ -1043,7 +1080,7 @@ def provider_reply(
                 model=model_id,
                 input=messages,
                 reasoning={"effort": effort},
-                max_output_tokens=_output_token_budget(provider, effort),
+                max_output_tokens=_output_token_budget(effort),
             )
             if getattr(response, "status", None) == "incomplete":
                 details = getattr(response, "incomplete_details", None)
@@ -1272,16 +1309,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         args.model_config = select_model(args.model)
     except ValueError as exc:
         parser.error(str(exc))
-    if (
-        args.auth == "subscription"
-        and args.effort not in CODEX_SUBSCRIPTION_EFFORTS
-        and args.model_config["provider"] == "openai"
-    ):
-        supported = "|".join(CODEX_SUBSCRIPTION_EFFORTS)
-        parser.error(
-            "OpenAI subscription auth does not support reasoning effort "
-            f"{args.effort!r}; use {supported}"
-        )
+    try:
+        _validate_provider_effort(args.model_config["provider"], args.auth, args.effort)
+    except ValueError as exc:
+        parser.error(str(exc))
     return args
 
 

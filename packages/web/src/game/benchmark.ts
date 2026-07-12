@@ -1,4 +1,4 @@
-import type { BenchmarkEntry } from '@whippin/shared';
+import type { BenchmarkResults } from '@whippin/shared';
 
 export interface BenchmarkRankingEntry {
   label: string;
@@ -9,7 +9,7 @@ export interface BenchmarkRankingEntry {
 // Build the solved-screen race result. Modern JS sort is stable, so equal-scoring models
 // retain the curator's puzzle order and the player (inserted last) follows tied models.
 export function benchmarkRanking(
-  entries: BenchmarkEntry[],
+  entries: BenchmarkResults,
   playerTries: number,
   playerLabel: string,
 ): BenchmarkRankingEntry[] {

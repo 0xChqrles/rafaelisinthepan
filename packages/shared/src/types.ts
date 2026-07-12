@@ -52,13 +52,15 @@ export interface BenchmarkEntry {
   tries: number | null;
 }
 
+export type BenchmarkResults = [BenchmarkEntry, ...BenchmarkEntry[]];
+
 export interface Puzzle {
   lang: string;
   words: string[]; // full sentence, accents kept
   holes: Hole[]; // sorted by pos ascending
   ranks: RankMap; // keyed by secret slug, then input slug
   source?: Source; // optional origin metadata (#5), shown on the solved screen (#8)
-  benchmark?: BenchmarkEntry[]; // optional offline model scores (#68), shown only once solved
+  benchmark?: BenchmarkResults; // optional non-empty model scores (#68)
 }
 
 export interface RuntimeHole {

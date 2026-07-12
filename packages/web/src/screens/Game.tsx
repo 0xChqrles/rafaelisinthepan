@@ -17,7 +17,7 @@ import { t, srHoleResult } from '../i18n';
 import { track } from '../analytics';
 import { fold } from '@whippin/shared';
 import type {
-  BenchmarkEntry,
+  BenchmarkResults,
   HitState,
   Hole,
   Puzzle,
@@ -110,7 +110,7 @@ function Round({
   puzzleHoles: Hole[];
   ranks: RankMap;
   source?: Source;
-  benchmark?: BenchmarkEntry[];
+  benchmark?: BenchmarkResults;
   vocabSet: Set<string>;
   prefixSet: Set<string>;
   lang: string;

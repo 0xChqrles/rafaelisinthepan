@@ -209,8 +209,9 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   **display forms** (accents kept, never slugged); `kind` is an **open** union (known
   values documented, but a new kind is allowed). Consumed by the solved screen (#8).
 - **`benchmark` is fully OPTIONAL (#68, decided 2026-07-07):** absent stays
-  byte-compatible with every existing puzzle. When present, it is an array of offline
-  model results; every entry requires non-empty `model`, an uppercase pixel-friendly
+  byte-compatible with every existing puzzle. When present, it is a **non-empty** array
+  of offline model results; every entry requires non-empty `model`, an uppercase
+  pixel-friendly
   `label` of at most 8 characters, and `tries` as a positive integer or `null` (DNF at
   the counted-try cap). It is revealed only on the solved screen; play and share output
   stay unchanged. This model-score anchor superseded #57's proposed `par` before `par`
@@ -403,8 +404,8 @@ pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--
 #    and runs exactly one model. Missing provider keys skip with a warning; --effort applies
 #    one reasoning level (none|low|medium|high|xhigh|max; default none). --auth api
 #    (default) uses the selected provider's API key; --auth subscription uses authenticated
-#    Claude.ai / saved ChatGPT Codex-plan access (GPT supports low|medium|high|xhigh|max;
-#    Codex offers no none).
+#    Claude.ai / saved ChatGPT Codex-plan access. GPT API runs allow the documented
+#    none|low|medium|high|xhigh; Codex-plan GPT supports low|medium|high|xhigh|max.
 #    Puzzle paths may be repo-root-relative (packages/generation/output/...) or
 #    generation-package-relative (output/...); --in-place writes the resolved file.
 pnpm bench:puzzle <puzzle.json> --model MODEL [--effort LEVEL] [--auth api|subscription] [--cap N] [--runs N] [--in-place]
@@ -444,10 +445,13 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   singular `--model` accepts `OPUS`, `SONNET`, `GPT-SOL`, `GPT-TERRA`, `GPT-LUNA`, or an
   exact model id; provider/family selectors such as `GPT` are not supported. Each invocation
   runs exactly one model. The short persisted/display labels remain `SOL`, `TERRA`, and
-  `LUNA` (the schema caps labels at 8 characters). `--effort` applies the shared
-  `none|low|medium|high|xhigh|max` scale to the selected
-  model (default `none` preserves thinking-off one-word API calls; enabled levels use
-  provider-native reasoning with larger output headroom). The single `--auth` flag applies to
+  `LUNA` (the schema caps labels at 8 characters). `--effort` exposes the shared
+  `none|low|medium|high|xhigh|max` scale, then validates the selected transport before any
+  paid call: GPT API runs allow the currently documented levels through `xhigh` (`max`
+  is blocked pending model-specific documentation), while Codex-plan GPT accepts `low`
+  through `max` (not `none`). Default `none` preserves thinking-off one-word API calls;
+  enabled levels use provider-native reasoning with larger output headroom. The single
+  `--auth` flag applies to
   the selected provider: `api` (default) uses raw API keys, with an automatic moving prompt-
   cache breakpoint for Anthropic. Opt-in `subscription` first verifies paid Claude.ai auth for
   the selected Claude model, strips API/cloud credential overrides, then uses a fresh Agent SDK
@@ -459,7 +463,11 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   ignore user config/rules with
   read-only sandboxing and apps/shell/multi-agent/web disabled; the unavoidable Codex bootstrap
   remains. The GPT-5.6 Codex-plan models support `low|medium|high|xhigh|max`, not `none`.
-  Five parsed invalid/repeated replies without a counted try abort a stuck paid loop. Prompt
+  A provider reply must contain exactly one lexical word (surrounding punctuation/Markdown is
+  harmless); prose is unparseable and reprompted instead of silently scoring its first word.
+  Thinking-off API calls reserve 256 output tokens so a verbose reply can complete and be
+  rejected cleanly. Five parsed invalid/repeated replies without a counted try abort a
+  stuck paid loop. Prompt
   version 4 rejects strict left-to-right play: before spending many tries on one position, models
   sample candidates/probes motivated by every unsolved hole, pursue whichever has the strongest
   signal or easiest target, switch when stalled, and reprioritize when a solved word adds context.

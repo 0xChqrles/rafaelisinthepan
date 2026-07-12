@@ -95,8 +95,8 @@ export function parsePuzzle(data: unknown): Puzzle {
     }
   }
   if (benchmark !== undefined) {
-    if (!Array.isArray(benchmark)) {
-      throw new Error('malformed puzzle: "benchmark" must be an array');
+    if (!Array.isArray(benchmark) || benchmark.length === 0) {
+      throw new Error('malformed puzzle: "benchmark" must be a non-empty array');
     }
     for (const entry of benchmark) {
       if (

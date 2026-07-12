@@ -23,10 +23,12 @@ from llm_play import (
     DEEP_REASONING_MAX_TOKENS,
     DEFAULT_AUTH,
     DEFAULT_EFFORT,
+    DIRECT_OUTPUT_MAX_TOKENS,
     EFFORT_LEVELS,
     MAX_CONSECUTIVE_UNPARSEABLE,
     MAX_NONCOUNTING_REPLIES,
     MODELS,
+    OPENAI_API_EFFORTS,
     OPENAI_SUBSCRIPTION_CONFLICT_ENV,
     PROMPT_VERSION,
     PROVIDER_ENV,
@@ -38,6 +40,7 @@ from llm_play import (
     main,
     median_tries,
     parse_args,
+    parse_single_word,
     play_puzzle,
     provider_reply,
     resolve_puzzle_path,
@@ -124,7 +127,7 @@ def test_anthropic_adapter_none_disables_thinking_caches_and_omits_sampling(
     assert calls == [
         {
             "model": config["model_id"],
-            "max_tokens": 32,
+            "max_tokens": DIRECT_OUTPUT_MAX_TOKENS,
             "messages": [{"role": "user", "content": "board"}],
             "cache_control": {"type": "ephemeral"},
             "thinking": {"type": "disabled"},
@@ -193,6 +196,21 @@ def test_anthropic_adapter_surfaces_reasoning_budget_exhaustion(monkeypatch):
 
     with pytest.raises(RuntimeError, match=f"{REASONING_MAX_TOKENS}-token"):
         reply([{"role": "user", "content": "board"}])
+
+
+@pytest.mark.parametrize(
+    ("reply", "expected"),
+    [
+        ("chien", "chien"),
+        ('**"forêt".**', "forêt"),
+        ("arc-en-ciel", "arc-en-ciel"),
+        ("The answer is chien", None),
+        ("chien chat", None),
+        ("...", None),
+    ],
+)
+def test_reply_parser_requires_exactly_one_lexical_word(reply, expected):
+    assert parse_single_word(reply) == expected
 
 
 @pytest.mark.parametrize("effort", EFFORT_LEVELS)
@@ -437,7 +455,7 @@ def test_openai_subscription_adapter_isolates_fresh_codex_exec(
 def test_openai_subscription_rejects_unsupported_none_effort(monkeypatch, config):
     monkeypatch.setattr("llm_play.shutil.which", lambda _command: "/usr/bin/codex")
 
-    with pytest.raises(ValueError, match="does not support.*none.*low.*medium"):
+    with pytest.raises(ValueError, match="does not allow.*none.*low.*medium"):
         provider_reply(config, None, effort="none", auth="subscription")
 
 
@@ -532,7 +550,6 @@ def test_openai_adapter_uses_responses_with_explicit_none_effort(monkeypatch, co
         ("medium", REASONING_MAX_TOKENS),
         ("high", REASONING_MAX_TOKENS),
         ("xhigh", DEEP_REASONING_MAX_TOKENS),
-        ("max", DEEP_REASONING_MAX_TOKENS),
     ],
 )
 @pytest.mark.parametrize("config", MODELS[2:], ids=lambda config: config["label"])
@@ -562,6 +579,13 @@ def test_openai_adapter_applies_requested_reasoning_effort(
             "max_output_tokens": max_tokens,
         }
     ]
+
+
+@pytest.mark.parametrize("config", MODELS[2:], ids=lambda config: config["label"])
+def test_openai_api_rejects_undocumented_max_effort_before_a_paid_call(config):
+    assert OPENAI_API_EFFORTS == ("none", "low", "medium", "high", "xhigh")
+    with pytest.raises(ValueError, match="OpenAI API benchmark.*'max'"):
+        provider_reply(config, "secret", effort="max")
 
 
 def test_openai_adapter_surfaces_an_incomplete_reasoning_response(monkeypatch):
@@ -612,6 +636,11 @@ def test_cli_rejects_none_effort_before_an_openai_subscription_call():
         parse_args(["puzzle.json", "--model", "OPUS", "--auth", "subscription"]).effort
         == "none"
     )
+
+
+def test_cli_rejects_max_effort_before_an_openai_api_call():
+    with pytest.raises(SystemExit):
+        parse_args(["puzzle.json", "--model", "GPT-SOL", "--effort", "max"])
 
 
 @pytest.mark.parametrize(
@@ -718,6 +747,17 @@ class ScriptedModel:
     def __call__(self, messages):
         self.calls.append(deepcopy(messages))
         return next(self.replies)
+
+
+def test_verbose_reply_is_reprompted_without_scoring_its_first_word():
+    model = ScriptedModel(["The answer is forest", "forest", "ocean"])
+
+    result = play_puzzle(puzzle(), VOCAB, model)
+
+    assert result.tries == 2
+    assert result.turns == 3
+    assert result.tried_words == ("forest", "ocean")
+    assert "could not parse a word" in model.calls[1][-1]["content"]
 
 
 def test_invalid_and_folded_duplicate_do_not_count_and_are_reprompted():

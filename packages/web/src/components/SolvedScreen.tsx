@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { heatColor } from '@whippin/shared';
-import type { BenchmarkEntry } from '@whippin/shared';
+import type { BenchmarkResults } from '@whippin/shared';
 import { bucketMeans, shareText, shareUrl } from '../game/share';
 import { benchmarkRanking } from '../game/benchmark';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
@@ -35,7 +35,7 @@ export default function SolvedScreen({
   trajectory: number[]; // reconstruction % after each counted guess (one per try)
   dayNumber: number | null;
   lang: string; // packed into the share token (drives the link's click-through target)
-  benchmark?: BenchmarkEntry[]; // offline opponents; shown only on this solved surface
+  benchmark?: BenchmarkResults; // offline opponents; shown only on this solved surface
   action?: { label: string; onClick: () => void }; // replaces SHARE in the tutorial
   // Rehydrated solves render their final result immediately. Fresh solves animate, with
   // startAnimation acting as the source/streak gate while this component stays mounted.

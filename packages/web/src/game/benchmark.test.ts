@@ -20,8 +20,4 @@ describe('benchmarkRanking', () => {
       { label: 'GPT', tries: null, player: false },
     ]);
   });
-
-  it('keeps the player in the race when the benchmark array is empty', () => {
-    expect(benchmarkRanking([], 7, 'TOI')).toEqual([{ label: 'TOI', tries: 7, player: true }]);
-  });
 });
