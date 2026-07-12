@@ -5,7 +5,7 @@ Two workflows drive the pipeline (issue #33):
 - **`ci.yml`** — test gate. On every PR into `main` and on pushes to `main`: sets up
   pnpm (`11.9.0` from the root `packageManager` field) + Node 22 + `uv`/Python 3.12,
   then runs `pnpm -r --if-present run typecheck` and `pnpm test` (Vitest for
-  `shared`/`web`/`backend` + pytest for `generation`).
+  `shared`/`web`/`backend` + pytest for `generation`/`benchmark`).
 - **`deploy.yml`** — CD. On push to `main` and on manual `workflow_dispatch`: figures
   out which CDK stack(s) changed and deploys only those, authenticating to AWS via
   **GitHub OIDC** (no long-lived keys).
@@ -26,6 +26,7 @@ changed paths to stacks:
 | `pnpm-lock.yaml`, `package.json`, `pnpm-workspace.yaml` | ✅ | ✅ (safe default) |
 | `.github/workflows/deploy.yml` | ✅ | ✅ |
 | `packages/generation/**` | — | — (not deployed; tested in CI only) |
+| `packages/benchmark/**` | — | — (not deployed; tested in CI only) |
 
 `workflow_dispatch` takes a `stacks` input — `changed` (default) | `web` | `backend` |
 `all` — to force a selection. `changed` on a manual run diffs the tip commit (`HEAD~1`).

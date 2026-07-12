@@ -84,7 +84,8 @@ describe('puzzleOutcome (graceful 404)', () => {
 // shape (truncated body, wrong file behind ?puzzle=, store/CDN mishap) must surface as
 // an ERROR — parsePuzzle throws — rather than crash Game mid-render. Assert against the
 // schema in AGENTS.md, not the implementation: lang, words[], each hole's {secret,start}
-// {word,slug} + start_rank, and a ranks map with an entry for every secret slug.
+// {word,slug} + start_rank, a ranks map with an entry for every secret slug, and the
+// optional benchmark entries introduced by #68.
 describe('parsePuzzle (shape validation)', () => {
   // A minimal well-formed puzzle per the schema (accents kept in words/display forms).
   const valid = () => ({
@@ -123,6 +124,44 @@ describe('parsePuzzle (shape validation)', () => {
       source: { kind: 'book', author: 'Victor Hugo', work: 'Les Misérables' },
     };
     expect(parsePuzzle(p).source).toEqual(p.source);
+  });
+
+  it('accepts an absent benchmark (existing puzzles stay byte-compatible)', () => {
+    const p = valid();
+    expect('benchmark' in p).toBe(false);
+    expect(parsePuzzle(p)).toEqual(p);
+  });
+
+  it('accepts model scores and a null DNF in the optional benchmark', () => {
+    const p = {
+      ...valid(),
+      benchmark: [
+        { model: 'claude-opus-4-8', label: 'OPUS', tries: 42 },
+        { model: 'claude-sonnet-5', label: 'SONNET', tries: 55 },
+        { model: 'gpt-5.6-sol', label: 'GPT', tries: null },
+      ],
+    };
+    expect(parsePuzzle(p).benchmark).toEqual(p.benchmark);
+  });
+
+  it('rejects malformed benchmark containers and entries', () => {
+    const notArray = { ...valid(), benchmark: {} };
+    expect(() => parsePuzzle(notArray)).toThrow(/benchmark/);
+    expect(() => parsePuzzle({ ...valid(), benchmark: [] })).toThrow(/benchmark/);
+
+    const malformed = [
+      { model: '', label: 'GPT', tries: 12 },
+      { model: 'gpt-5.6-sol', label: ' ', tries: 12 },
+      { model: 'gpt-5.6-sol', label: ' GPT', tries: 12 },
+      { model: 'gpt-5.6-sol', label: 'lower', tries: 12 },
+      { model: 'gpt-5.6-sol', label: 'TOO-LONG!', tries: 12 },
+      { model: 'gpt-5.6-sol', label: 'GPT', tries: 0 },
+      { model: 'gpt-5.6-sol', label: 'GPT', tries: 1.5 },
+      { model: 'gpt-5.6-sol', label: 'GPT' },
+    ];
+    for (const entry of malformed) {
+      expect(() => parsePuzzle({ ...valid(), benchmark: [entry] })).toThrow(/benchmark/);
+    }
   });
 
   // Optional hole affixes: display-only text around the blank (leading clitic /

@@ -44,12 +44,23 @@ export interface Source {
   work?: string; // the piece's title
 }
 
+// Offline LLM opponent result (#68). Every field is present within an entry; null tries
+// means the model hit the curator's counted-try cap without solving (DNF).
+export interface BenchmarkEntry {
+  model: string;
+  label: string;
+  tries: number | null;
+}
+
+export type BenchmarkResults = [BenchmarkEntry, ...BenchmarkEntry[]];
+
 export interface Puzzle {
   lang: string;
   words: string[]; // full sentence, accents kept
   holes: Hole[]; // sorted by pos ascending
   ranks: RankMap; // keyed by secret slug, then input slug
   source?: Source; // optional origin metadata (#5), shown on the solved screen (#8)
+  benchmark?: BenchmarkResults; // optional non-empty model scores (#68)
 }
 
 export interface RuntimeHole {

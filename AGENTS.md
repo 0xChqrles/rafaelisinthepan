@@ -13,7 +13,8 @@ through `pnpm`). Two languages: **en** (Stanford GloVe `glove.6B.300d`) and **fr
 
 A **pnpm-workspaces monorepo** (`pnpm-workspace.yaml`; pnpm pinned via the root
 `packageManager` field): `packages/web` (the front + served `public/`),
-`packages/generation` (the Python scripts + `embedding/` data), and
+`packages/generation` (the Python generation scripts + `embedding/` data),
+`packages/benchmark` (the offline LLM benchmark harness), and
 `packages/shared` (cross-cutting TS: the slug/fold contract + schema types).
 Generation writes **puzzles** into its own `packages/generation/output/` (then published
 to the store), and the **vocab** existence set into `packages/web/public/` (a web asset).
@@ -58,6 +59,10 @@ packages/
     wordlist/<lang>.txt.gz    versioned hors-dico reference wordlist (#38); .cache/ gitignored
     output/word/<lang>/<s1>_<s2>_<s3>.json   generated puzzles (gitignored; publish to store/S3)
     pyproject.toml, uv.lock   Python project (uv)
+  benchmark/                  offline LLM puzzle benchmark (pkg @whippin/benchmark, #68)
+    scripts/llm_play.py       LLM player/referee; reads generation output + web vocab
+    tests/test_llm_play.py    provider-adapter + game-rules parity tests
+    pyproject.toml, uv.lock   isolated Anthropic/OpenAI Python dependencies (uv)
   backend/                    daily-puzzle backend (pkg @whippin/backend, #2)
     src/
       handler.ts              createHandler() — the ONE day/404/CORS/Puzzle logic (Lambda + local)
@@ -174,7 +179,14 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
     "kind": "book",                             //   book | movie | music | quote | poem | … (open set)
     "author": "Victor Hugo",
     "work": "Les Misérables"
-  }
+  },
+  "benchmark": [                                // OPTIONAL offline LLM scores (#68)
+    { "model": "claude-opus-4-8", "label": "OPUS", "tries": 42 },
+    { "model": "claude-sonnet-5", "label": "SONNET", "tries": 55 },
+    { "model": "gpt-5.6-sol", "label": "SOL", "tries": null },
+    { "model": "gpt-5.6-terra", "label": "TERRA", "tries": 37 },
+    { "model": "gpt-5.6-luna", "label": "LUNA", "tries": 64 }
+  ]                                              // null tries = DNF at the curator's cap
 }
 ```
 
@@ -196,6 +208,14 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   metadata is valid and a puzzle without `source` stays byte-compatible. Values are
   **display forms** (accents kept, never slugged); `kind` is an **open** union (known
   values documented, but a new kind is allowed). Consumed by the solved screen (#8).
+- **`benchmark` is fully OPTIONAL (#68, decided 2026-07-07):** absent stays
+  byte-compatible with every existing puzzle. When present, it is a **non-empty** array
+  of offline model results; every entry requires non-empty `model`, an uppercase
+  pixel-friendly
+  `label` of at most 8 characters, and `tries` as a positive integer or `null` (DNF at
+  the counted-try cap). It is revealed only on the solved screen; play and share output
+  stay unchanged. This model-score anchor superseded #57's proposed `par` before `par`
+  was implemented — there is no `par` schema field.
 - `ranks` is keyed by **secret slug**; the inner map is keyed by **input slug** →
   `{word, rank}`. The value carries the **accented** word so the front can show the
   accented form of what was typed.
@@ -295,7 +315,8 @@ language.
 - **A failing invariant test is a real regression — fix the CODE, never weaken the test**
   to make it pass.
 - **Run `pnpm test` before a contract-touching task is done.** It runs Vitest (TS:
-  `packages/shared`, `packages/web`) and pytest (`packages/generation`). The slug/fold
+  `packages/shared`, `packages/web`) and pytest (`packages/generation`,
+  `packages/benchmark`). The slug/fold
   case table is **one shared fixture** (`packages/shared/fixtures/slug-cases.json`)
   consumed by BOTH languages — add a case there, never on one side only.
 
@@ -347,13 +368,14 @@ When asked to work/implement/do/resolve issue #N:
 Uses **pnpm** (workspaces in `pnpm-workspace.yaml`, version pinned via the root
 `packageManager` field). Each root script runs from the repo **root** (it delegates
 to the right workspace via `pnpm --filter`) or from inside the package directly. The
-generation scripts are scoped to `@whippin/generation`; reduce/gen paths below are
-relative to `packages/generation/`. Unlike `npm`, **pnpm forwards args straight to
+generation scripts are scoped to `@whippin/generation`, while the LLM harness is scoped
+to `@whippin/benchmark`; reduce/gen paths below are relative to `packages/generation/`.
+Unlike `npm`, **pnpm forwards args straight to
 the script — do NOT add a `--` separator** (a literal `--` is passed through and
 breaks `gen_phrase.py`'s arg parsing).
 
 ```bash
-pnpm install                    # installs all workspaces (web + shared)
+pnpm install                    # installs all workspaces
 
 # 0. (Re)build the hors-dico reference wordlist ONCE per language (offline, #38). The
 #    committed wordlist/<lang>.txt.gz is already versioned — only rerun to refresh sources.
@@ -378,6 +400,16 @@ pnpm vocab:fr         # -> packages/web/public/vocab/fr.json
 #    NOTE: gen:phrase ALSO rewrites web/public/vocab/<lang>.json as a side effect.
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--`)
 
+# 4. Optionally benchmark the generated puzzle offline before publish. --model is required
+#    and runs exactly one model. Missing provider keys skip with a warning; --effort applies
+#    one reasoning level (none|low|medium|high|xhigh|max; default none). --auth api
+#    (default) uses the selected provider's API key; --auth subscription uses authenticated
+#    Claude.ai / saved ChatGPT Codex-plan access. GPT API runs allow the documented
+#    none|low|medium|high|xhigh; Codex-plan GPT supports low|medium|high|xhigh|max.
+#    Puzzle paths may be repo-root-relative (packages/generation/output/...) or
+#    generation-package-relative (output/...); --in-place writes the resolved file.
+pnpm bench:puzzle <puzzle.json> --model MODEL [--effort LEVEL] [--auth api|subscription] [--cap N] [--runs N] [--in-place]
+
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
 pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output)
 pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--ci]  # publish-buffer coverage (#61); reports + exits 0 by default, --ci exits 1 on any (day,lang) gap for cron/CI
@@ -387,7 +419,7 @@ pnpm backend:dev                # local server (GET /?lang=, /today) on :8787 ov
 pnpm dev                        # dev server (set VITE_API_BASE_URL=http://localhost:8787 for the local backend)
 pnpm build                      # production build -> packages/web/dist
 pnpm typecheck                  # tsc --noEmit
-pnpm test                       # invariant tests: Vitest (web + shared + backend) + pytest (generation)
+pnpm test                       # invariant tests: Vitest (web + shared + backend) + pytest (generation + benchmark)
 ```
 
 `gen_phrase.py` requires **exactly 3** `--words`; they must appear in the sentence
@@ -402,6 +434,60 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
 
 - All paths below are under `packages/`. **Tunables:** `TOP_N = 400000` (reduce),
   `TOP_K = 10000` (gen), start-rank band `50–150` (`start_word.py`).
+- **Offline LLM benchmark harness (#68).** The dedicated `benchmark` workspace owns
+  `benchmark/scripts/llm_play.py`, its tests, and its Anthropic/OpenAI dependencies. It
+  imports generation's canonical `scripts/slug.py`, reads puzzles from generation output,
+  and reads the same web vocab as the SPA. The referee replays the
+  folded-vocab existence, unique-try score, per-unsolved-hole rank/MISS, strict-improvement,
+  solved-lock, and counted-try cap rules against an append-only provider conversation.
+  `pnpm bench:puzzle` supports only the curator-editable five-model `MODELS` roster: Claude
+  Opus 4.8, Claude Sonnet 5, and GPT-5.6 Sol/Terra/Luna via Anthropic/OpenAI. The required
+  singular `--model` accepts `OPUS`, `SONNET`, `GPT-SOL`, `GPT-TERRA`, `GPT-LUNA`, or an
+  exact model id; provider/family selectors such as `GPT` are not supported. An invalid
+  selector or a bare `--model` error lists every valid alias and exact model id; bare
+  `--effort` and `--auth` errors list every valid value. Each invocation runs exactly one
+  model. The short persisted/display labels remain `SOL`,
+  `TERRA`, and
+  `LUNA` (the schema caps labels at 8 characters). `--effort` exposes the shared
+  `none|low|medium|high|xhigh|max` scale, then validates the selected transport before any
+  paid call: GPT API runs allow the currently documented levels through `xhigh` (`max`
+  is blocked pending model-specific documentation), while Codex-plan GPT accepts `low`
+  through `max` (not `none`). Default `none` preserves thinking-off one-word API calls;
+  enabled levels use provider-native reasoning with larger output headroom. The single
+  `--auth` flag applies to
+  the selected provider: `api` (default) uses raw API keys, with an automatic moving prompt-
+  cache breakpoint for Anthropic. Opt-in `subscription` first verifies paid Claude.ai auth for
+  the selected Claude model, strips API/cloud credential overrides, then uses a fresh Agent SDK
+  session per run with an empty replacement system prompt and no tools, MCP, skills, plugins,
+  or filesystem settings. For a selected GPT model it verifies that Codex CLI is logged in with
+  ChatGPT, strips API credentials plus parent-Codex thread metadata, and runs each turn as a
+  fresh `codex exec` process with the complete append-only transcript. Those turns are
+  ephemeral, use a temporary non-repository cwd and replacement benchmark instructions, and
+  ignore user config/rules with
+  read-only sandboxing and apps/shell/multi-agent/web disabled; the unavoidable Codex bootstrap
+  remains. The GPT-5.6 Codex-plan models support `low|medium|high|xhigh|max`, not `none`.
+  A provider reply must contain exactly one lexical word (surrounding punctuation/Markdown is
+  harmless); prose is unparseable and reprompted instead of silently scoring its first word.
+  Thinking-off API calls reserve 256 output tokens so a verbose reply can complete and be
+  rejected cleanly. Five parsed invalid/repeated replies without a counted try abort a
+  stuck paid loop. Prompt
+  version 4 rejects strict left-to-right play: before spending many tries on one position, models
+  sample candidates/probes motivated by every unsolved hole, pursue whichever has the strongest
+  signal or easiest target, switch when stalled, and reprioritize when a solved word adds context.
+  It retains version 3's balance between direct candidates and exploratory probes: even a word
+  that cannot grammatically be the answer can provide intermediate rank hints, so broader
+  categories, contrasts, related concepts, and neighbors of warm clues can triangulate a semantic
+  direction. It also retains version 2's exact-inflection strategy: infer number/gender/agreement
+  from the fixed sentence context and try a promising candidate's context-correct form before
+  listing more direct synonyms. During a run, every counted try prints immediately with its word
+  and post-guess overall progress percentage (the same logarithmic multi-hole formula as the web
+  progress bar, to two decimals); misses and non-improving warm tries still print with unchanged
+  progress. After each run the CLI prints `tried=[...]` in submission order for the counted valid
+  unique words only (invalid, unparseable, and folded duplicate replies remain excluded exactly
+  like the score). Missing API keys still skip for API transports, median `--runs` is supported,
+  and only `--in-place` mutates a puzzle by upserting that model's result while preserving prior
+  benchmark entries; this curator tool is
+  never called by CI/tests.
 - **`gen_phrase` is fully interactive on a TTY (#5).** Anything not passed as a flag is
   prompted: the **sentence** (positional, now optional), **`--lang`**, and the optional
   **source metadata** — `--kind` (offers `KNOWN_KINDS` numbered, but free text is

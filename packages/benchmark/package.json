@@ -1,0 +1,9 @@
+{
+  "name": "@whippin/benchmark",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "bench:puzzle": "uv run scripts/llm_play.py",
+    "test": "uv run --no-project --with pytest pytest -q tests"
+  }
+}
