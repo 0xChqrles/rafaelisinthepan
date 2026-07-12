@@ -34,8 +34,8 @@ jobs:
       - name: Install JS deps
         run: pnpm install --frozen-lockfile
 
-      # uv + Python 3.12 for @whippin/generation's pytest (dependency-free: its
-      # conftest stubs gensim/numpy, so an ephemeral pytest env is enough).
+      # uv + Python 3.12 for generation + benchmark pytest (dependency-free:
+      # their conftests/path wiring make an ephemeral pytest env enough).
       - name: Set up uv (+ Python)
         uses: astral-sh/setup-uv@v5
         with:
@@ -44,6 +44,6 @@ jobs:
       - name: Typecheck
         run: pnpm -r --if-present run typecheck
 
-      # Fans out to Vitest (shared/web/backend) + pytest (generation).
+      # Fans out to Vitest (shared/web/backend) + pytest (generation/benchmark).
       - name: Test
         run: pnpm test

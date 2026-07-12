@@ -1,4 +1,4 @@
-"""Rules-parity contract for the offline LLM benchmark referee (#68).
+"""Rules-parity contract for the dedicated offline LLM benchmark package (#68).
 
 The scripted model is deliberately network-free. These assertions describe the same
 score/guess semantics as the browser: folded-vocab existence, folded dedupe, one counted

@@ -10,7 +10,6 @@
     "vocab:en": "uv run scripts/build_vocab.py --lang en",
     "vocab:fr": "uv run scripts/build_vocab.py --lang fr",
     "gen:phrase": "uv run scripts/gen_phrase.py",
-    "bench:puzzle": "uv run scripts/llm_play.py",
     "test": "uv run --no-project --with pytest pytest -q tests"
   }
 }

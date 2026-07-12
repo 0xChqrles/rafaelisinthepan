@@ -13,7 +13,8 @@ through `pnpm`). Two languages: **en** (Stanford GloVe `glove.6B.300d`) and **fr
 
 A **pnpm-workspaces monorepo** (`pnpm-workspace.yaml`; pnpm pinned via the root
 `packageManager` field): `packages/web` (the front + served `public/`),
-`packages/generation` (the Python scripts + `embedding/` data), and
+`packages/generation` (the Python generation scripts + `embedding/` data),
+`packages/benchmark` (the offline LLM benchmark harness), and
 `packages/shared` (cross-cutting TS: the slug/fold contract + schema types).
 Generation writes **puzzles** into its own `packages/generation/output/` (then published
 to the store), and the **vocab** existence set into `packages/web/public/` (a web asset).
@@ -54,11 +55,14 @@ packages/
       french_neighbors.py     fr paths + derived .kv cache (thin wrapper)
       start_word.py           start/hint-word selection (rank band 50-150)
       gen_phrase.py           one sentence -> one self-contained puzzle JSON
-      llm_play.py             offline LLM referee -> optional puzzle benchmark (#68)
     embedding/<lang>/...      raw + *_reduced vectors + derived .kv caches
     wordlist/<lang>.txt.gz    versioned hors-dico reference wordlist (#38); .cache/ gitignored
     output/word/<lang>/<s1>_<s2>_<s3>.json   generated puzzles (gitignored; publish to store/S3)
     pyproject.toml, uv.lock   Python project (uv)
+  benchmark/                  offline LLM puzzle benchmark (pkg @whippin/benchmark, #68)
+    scripts/llm_play.py       LLM player/referee; reads generation output + web vocab
+    tests/test_llm_play.py    provider-adapter + game-rules parity tests
+    pyproject.toml, uv.lock   isolated Anthropic/OpenAI Python dependencies (uv)
   backend/                    daily-puzzle backend (pkg @whippin/backend, #2)
     src/
       handler.ts              createHandler() — the ONE day/404/CORS/Puzzle logic (Lambda + local)
@@ -310,7 +314,8 @@ language.
 - **A failing invariant test is a real regression — fix the CODE, never weaken the test**
   to make it pass.
 - **Run `pnpm test` before a contract-touching task is done.** It runs Vitest (TS:
-  `packages/shared`, `packages/web`) and pytest (`packages/generation`). The slug/fold
+  `packages/shared`, `packages/web`) and pytest (`packages/generation`,
+  `packages/benchmark`). The slug/fold
   case table is **one shared fixture** (`packages/shared/fixtures/slug-cases.json`)
   consumed by BOTH languages — add a case there, never on one side only.
 
@@ -362,13 +367,14 @@ When asked to work/implement/do/resolve issue #N:
 Uses **pnpm** (workspaces in `pnpm-workspace.yaml`, version pinned via the root
 `packageManager` field). Each root script runs from the repo **root** (it delegates
 to the right workspace via `pnpm --filter`) or from inside the package directly. The
-generation scripts are scoped to `@whippin/generation`; reduce/gen paths below are
-relative to `packages/generation/`. Unlike `npm`, **pnpm forwards args straight to
+generation scripts are scoped to `@whippin/generation`, while the LLM harness is scoped
+to `@whippin/benchmark`; reduce/gen paths below are relative to `packages/generation/`.
+Unlike `npm`, **pnpm forwards args straight to
 the script — do NOT add a `--` separator** (a literal `--` is passed through and
 breaks `gen_phrase.py`'s arg parsing).
 
 ```bash
-pnpm install                    # installs all workspaces (web + shared)
+pnpm install                    # installs all workspaces
 
 # 0. (Re)build the hors-dico reference wordlist ONCE per language (offline, #38). The
 #    committed wordlist/<lang>.txt.gz is already versioned — only rerun to refresh sources.
@@ -412,7 +418,7 @@ pnpm backend:dev                # local server (GET /?lang=, /today) on :8787 ov
 pnpm dev                        # dev server (set VITE_API_BASE_URL=http://localhost:8787 for the local backend)
 pnpm build                      # production build -> packages/web/dist
 pnpm typecheck                  # tsc --noEmit
-pnpm test                       # invariant tests: Vitest (web + shared + backend) + pytest (generation)
+pnpm test                       # invariant tests: Vitest (web + shared + backend) + pytest (generation + benchmark)
 ```
 
 `gen_phrase.py` requires **exactly 3** `--words`; they must appear in the sentence
@@ -427,7 +433,10 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
 
 - All paths below are under `packages/`. **Tunables:** `TOP_N = 400000` (reduce),
   `TOP_K = 10000` (gen), start-rank band `50–150` (`start_word.py`).
-- **Offline LLM benchmark harness (#68).** `generation/scripts/llm_play.py` replays the
+- **Offline LLM benchmark harness (#68).** The dedicated `benchmark` workspace owns
+  `benchmark/scripts/llm_play.py`, its tests, and its Anthropic/OpenAI dependencies. It
+  imports generation's canonical `scripts/slug.py`, reads puzzles from generation output,
+  and reads the same web vocab as the SPA. The referee replays the
   folded-vocab existence, unique-try score, per-unsolved-hole rank/MISS, strict-improvement,
   solved-lock, and counted-try cap rules against an append-only provider conversation.
   `pnpm bench:puzzle` supports only the curator-editable five-model `MODELS` roster: Claude

@@ -40,6 +40,8 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  packages/benchmark: {}
+
   packages/generation: {}
 
   packages/infra:

@@ -28,7 +28,17 @@ import tempfile
 import time
 from typing import Any, Literal, TypedDict
 
-from slug import slug
+SCRIPT_DIR = Path(__file__).resolve().parent
+BENCHMARK_DIR = SCRIPT_DIR.parent
+REPO_ROOT = BENCHMARK_DIR.parent.parent
+GENERATION_DIR = REPO_ROOT / "packages" / "generation"
+GENERATION_SCRIPTS_DIR = GENERATION_DIR / "scripts"
+WEB_VOCAB_DIR = REPO_ROOT / "packages" / "web" / "public" / "vocab"
+
+# Reuse generation's stdlib-only implementation so the benchmark never grows a second
+# copy of the slug/fold contract.
+sys.path.insert(0, str(GENERATION_SCRIPTS_DIR))
+from slug import slug  # noqa: E402
 
 
 # Curator-editable benchmark roster. Keep labels short, uppercase, and pixel-friendly;
@@ -120,11 +130,6 @@ CODEX_TOOL_ITEM_TYPES = {
     "mcp_tool_call",
     "web_search",
 }
-
-SCRIPT_DIR = Path(__file__).resolve().parent
-GENERATION_DIR = SCRIPT_DIR.parent
-REPO_ROOT = GENERATION_DIR.parent.parent
-WEB_VOCAB_DIR = GENERATION_DIR.parent / "web" / "public" / "vocab"
 
 PROVIDER_ENV = {
     "anthropic": "ANTHROPIC_API_KEY",
