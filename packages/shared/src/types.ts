@@ -44,15 +44,21 @@ export interface Source {
   work?: string; // the piece's title
 }
 
-// Offline LLM opponent result (#68). Every field is present within an entry; null tries
-// means the model hit the curator's counted-try cap without solving (DNF).
+// Offline LLM opponent result (#68/#80). The full label is used on the solved screen;
+// the short tag is used by compact race UI. `run` is the selected median run's counted
+// display-form guesses in submission order. Null tries means the model hit the curator's
+// counted-try cap without solving (DNF); its full run is still retained.
 export interface BenchmarkEntry {
   model: string;
   label: string;
+  tag: string;
   tries: number | null;
+  run: string[];
 }
 
-export type BenchmarkResults = [BenchmarkEntry, ...BenchmarkEntry[]];
+// The player-facing model set is one fixed trio. Wider benchmark rosters remain in the
+// unpublished lab artifact and never enter the puzzle payload.
+export type BenchmarkResults = [BenchmarkEntry, BenchmarkEntry, BenchmarkEntry];
 
 export interface Puzzle {
   lang: string;
@@ -60,7 +66,7 @@ export interface Puzzle {
   holes: Hole[]; // sorted by pos ascending
   ranks: RankMap; // keyed by secret slug, then input slug
   source?: Source; // optional origin metadata (#5), shown on the solved screen (#8)
-  benchmark?: BenchmarkResults; // optional non-empty model scores (#68)
+  benchmark?: BenchmarkResults; // optional player-facing model trio (#68/#80)
 }
 
 export interface RuntimeHole {

@@ -23,7 +23,9 @@ from llm_play import (
     DEEP_REASONING_MAX_TOKENS,
     DEFAULT_AUTH,
     DEFAULT_EFFORT,
+    DEFAULT_RUNS,
     DIRECT_OUTPUT_MAX_TOKENS,
+    DISPLAY_MODEL_COUNT,
     EFFORT_LEVELS,
     MAX_CONSECUTIVE_UNPARSEABLE,
     MAX_NONCOUNTING_REPLIES,
@@ -33,21 +35,27 @@ from llm_play import (
     PROMPT_VERSION,
     PROVIDER_ENV,
     REASONING_MAX_TOKENS,
+    ModelSummary,
     NoProgressReplyError,
     PuzzleReferee,
+    RunResult,
     UnparseableReplyError,
+    assert_benchmark_entry_consistent,
+    benchmark_model,
+    display_benchmark_entries,
     feedback_message,
     main,
-    median_tries,
     parse_args,
     parse_single_word,
     play_puzzle,
     provider_reply,
     resolve_puzzle_path,
+    select_median_run,
     select_model,
     validate_anthropic_subscription_auth,
     validate_openai_subscription_auth,
     write_benchmark,
+    write_lab_artifact,
 )
 
 
@@ -89,12 +97,43 @@ VOCAB = {"shared", "forest", "ocean", "cold", "other"}
 
 def test_supported_model_roster_has_claude_and_all_gpt_56_variants():
     assert MODELS == [
-        {"provider": "anthropic", "model_id": "claude-opus-4-8", "label": "OPUS"},
-        {"provider": "anthropic", "model_id": "claude-sonnet-5", "label": "SONNET"},
-        {"provider": "openai", "model_id": "gpt-5.6-sol", "label": "SOL"},
-        {"provider": "openai", "model_id": "gpt-5.6-terra", "label": "TERRA"},
-        {"provider": "openai", "model_id": "gpt-5.6-luna", "label": "LUNA"},
+        {
+            "provider": "anthropic",
+            "model_id": "claude-opus-4-8",
+            "label": "CLAUDE OPUS",
+            "tag": "OPUS",
+            "display": True,
+        },
+        {
+            "provider": "anthropic",
+            "model_id": "claude-sonnet-5",
+            "label": "CLAUDE SONNET",
+            "tag": "SONNET",
+            "display": True,
+        },
+        {
+            "provider": "openai",
+            "model_id": "gpt-5.6-sol",
+            "label": "GPT-5.6",
+            "tag": "GPT",
+            "display": True,
+        },
+        {
+            "provider": "openai",
+            "model_id": "gpt-5.6-terra",
+            "label": "GPT-5.6 TERRA",
+            "tag": "TERRA",
+            "display": False,
+        },
+        {
+            "provider": "openai",
+            "model_id": "gpt-5.6-luna",
+            "label": "GPT-5.6 LUNA",
+            "tag": "LUNA",
+            "display": False,
+        },
     ]
+    assert sum(config["display"] for config in MODELS) == DISPLAY_MODEL_COUNT == 3
     assert PROVIDER_ENV == {
         "anthropic": "ANTHROPIC_API_KEY",
         "openai": "OPENAI_API_KEY",
@@ -115,7 +154,9 @@ def test_anthropic_adapter_none_disables_thinking_caches_and_omits_sampling(
         def create(self, **kwargs):
             calls.append(kwargs)
             return SimpleNamespace(
-                content=[SimpleNamespace(text="forest")], stop_reason="end_turn"
+                content=[SimpleNamespace(text="forest")],
+                stop_reason="end_turn",
+                usage={"input_tokens": 11, "output_tokens": 1},
             )
 
     monkeypatch.setitem(
@@ -124,6 +165,7 @@ def test_anthropic_adapter_none_disables_thinking_caches_and_omits_sampling(
     reply = provider_reply(config, "secret", effort="none")
 
     assert reply([{"role": "user", "content": "board"}]) == "forest"
+    assert reply.last_token_usage == {"input_tokens": 11, "output_tokens": 1}
     assert calls == [
         {
             "model": config["model_id"],
@@ -230,6 +272,7 @@ def test_anthropic_subscription_adapter_isolates_and_resumes_agent_sdk(
             self.is_error = False
             self.stop_reason = "end_turn"
             self.subtype = "success"
+            self.usage = {"input_tokens": 12, "output_tokens": 1}
 
     async def fake_query(*, prompt, options):
         assert "ANTHROPIC_API_KEY" not in os.environ
@@ -263,6 +306,7 @@ def test_anthropic_subscription_adapter_isolates_and_resumes_agent_sdk(
     # A new one-message transcript is a new median run, never a resumed attempt.
     assert reply([{"role": "user", "content": "opening again"}]) == "forest"
     assert os.environ["ANTHROPIC_API_KEY"] == "must-not-be-used"
+    assert reply.last_token_usage == {"input_tokens": 12, "output_tokens": 1}
 
     first_options = calls[0][1]
     assert [call[0] for call in calls] == ["opening", "feedback", "opening again"]
@@ -371,7 +415,12 @@ def test_openai_subscription_adapter_isolates_fresh_codex_exec(
                             "item": {"type": "agent_message", "text": "forest"},
                         }
                     ),
-                    json.dumps({"type": "turn.completed"}),
+                    json.dumps(
+                        {
+                            "type": "turn.completed",
+                            "usage": {"input_tokens": 20, "output_tokens": 2},
+                        }
+                    ),
                 ]
             ),
             stderr="",
@@ -395,6 +444,7 @@ def test_openai_subscription_adapter_isolates_fresh_codex_exec(
     assert reply(opening) == "forest"
     assert reply(continued) == "forest"
     assert reply([{"role": "user", "content": "opening again"}]) == "forest"
+    assert reply.last_token_usage == {"input_tokens": 20, "output_tokens": 2}
 
     assert len(calls) == 3
     command, kwargs = calls[0]
@@ -527,12 +577,21 @@ def test_openai_adapter_uses_responses_with_explicit_none_effort(monkeypatch, co
 
         def create(self, **kwargs):
             calls.append(kwargs)
-            return SimpleNamespace(output_text="ocean", status="completed")
+            return SimpleNamespace(
+                output_text="ocean",
+                status="completed",
+                usage={"input_tokens": 9, "output_tokens": 1, "total_tokens": 10},
+            )
 
     monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=FakeOpenAI))
     reply = provider_reply(config, "secret", effort="none")
 
     assert reply([{"role": "user", "content": "board"}]) == "ocean"
+    assert reply.last_token_usage == {
+        "input_tokens": 9,
+        "output_tokens": 1,
+        "total_tokens": 10,
+    }
     assert calls == [
         {
             "model": config["model_id"],
@@ -611,6 +670,7 @@ def test_cli_defaults_to_api_and_accepts_shared_effort_and_auth_levels():
     defaults = parse_args(["puzzle.json", "--model", "OPUS"])
     assert defaults.effort == DEFAULT_EFFORT
     assert defaults.auth == DEFAULT_AUTH
+    assert defaults.runs == DEFAULT_RUNS == 7
     for effort in EFFORT_LEVELS:
         assert (
             parse_args(["puzzle.json", "--model", "OPUS", "--effort", effort]).effort
@@ -621,6 +681,16 @@ def test_cli_defaults_to_api_and_accepts_shared_effort_and_auth_levels():
         if auth == "subscription":
             arguments.extend(("--effort", "medium"))
         assert parse_args(arguments).auth == auth
+
+
+def test_cli_requires_an_odd_run_count_so_the_median_is_a_real_run(capsys):
+    for runs in (0, 2, 8):
+        with pytest.raises(SystemExit):
+            parse_args(
+                ["puzzle.json", "--model", "OPUS", "--runs", str(runs)]
+            )
+    error = capsys.readouterr().err
+    assert "must be odd so the median is an actual run" in error
 
 
 @pytest.mark.parametrize("legacy_flag", ["--anthropic-auth", "--openai-auth"])
@@ -738,45 +808,100 @@ def test_puzzle_path_accepts_repo_and_generation_relative_forms(monkeypatch, tmp
     assert resolve_puzzle_path(Path("output/word/fr/puzzle.json")) == puzzle_path
 
 
-def test_in_place_output_upserts_one_model_and_preserves_other_results_and_file_mode(
-    tmp_path,
-):
+def test_in_place_output_writes_only_an_exact_trio_and_preserves_file_mode(tmp_path):
     path = tmp_path / "puzzle.json"
     source = puzzle()
     source["source"] = {"work": "L'été"}
-    source["benchmark"] = [
-        {"model": "claude-opus-4-8", "label": "OPUS", "tries": 30},
-        {"model": "gpt-5.6-terra", "label": "TERRA", "tries": 14},
+    entries = [
+        {
+            "model": "claude-opus-4-8",
+            "label": "CLAUDE OPUS",
+            "tag": "OPUS",
+            "tries": 12,
+            "run": ["forest"],
+        },
+        {
+            "model": "claude-sonnet-5",
+            "label": "CLAUDE SONNET",
+            "tag": "SONNET",
+            "tries": 20,
+            "run": ["forest"],
+        },
+        {
+            "model": "gpt-5.6-sol",
+            "label": "GPT-5.6",
+            "tag": "GPT",
+            "tries": None,
+            "run": ["cold", "other"],
+        },
     ]
     path.write_text(json.dumps(source, ensure_ascii=False), encoding="utf-8")
     os.chmod(path, 0o640)
-    opus = {"model": "claude-opus-4-8", "label": "OPUS", "tries": 12}
 
-    write_benchmark(path, source, opus)
-
-    written = json.loads(path.read_text(encoding="utf-8"))
-    assert written["benchmark"] == [
-        opus,
-        {"model": "gpt-5.6-terra", "label": "TERRA", "tries": 14},
-    ]
-
-    luna = {"model": "gpt-5.6-luna", "label": "LUNA", "tries": 20}
-    write_benchmark(path, source, luna)
+    write_benchmark(path, source, entries)
 
     written = json.loads(path.read_text(encoding="utf-8"))
-    assert written["benchmark"] == [
-        opus,
-        {"model": "gpt-5.6-terra", "label": "TERRA", "tries": 14},
-        luna,
-    ]
+    assert written["benchmark"] == entries
     assert written["source"]["work"] == "L'été"
     assert os.stat(path).st_mode & 0o777 == 0o640
 
+    with pytest.raises(ValueError, match="exactly 3"):
+        write_benchmark(path, source, entries[:2])
 
-def test_multiple_runs_use_a_numeric_median_with_dnf_last():
-    assert median_tries([10, 30, 20]) == 20
-    assert median_tries([10, 21]) == 16
-    assert median_tries([10, None]) is None
+    write_benchmark(path, source, None)
+    assert "benchmark" not in json.loads(path.read_text(encoding="utf-8"))
+
+
+def make_run(
+    tries,
+    *,
+    turns,
+    words=(),
+    duration=1.0,
+    token_usage=(),
+):
+    return RunResult(
+        tries=tries,
+        counted_tries=len(words),
+        turns=turns,
+        duration=duration,
+        tried_words=tuple(words),
+        conversation=({"role": "user", "content": "opening"},),
+        turn_token_usage=tuple(token_usage),
+    )
+
+
+def test_median_selection_returns_an_actual_run_with_dnf_last_and_stable_ties():
+    score_order = [
+        make_run(10, turns=4),
+        make_run(30, turns=5),
+        make_run(20, turns=6),
+    ]
+    assert select_median_run(score_order) == 2
+
+    dnf_last = [
+        make_run(10, turns=4),
+        make_run(None, turns=1),
+        make_run(20, turns=6),
+    ]
+    assert select_median_run(dnf_last) == 2
+
+    fewer_turns_breaks_score_ties = [
+        make_run(10, turns=4),
+        make_run(20, turns=8),
+        make_run(20, turns=3),
+    ]
+    assert select_median_run(fewer_turns_breaks_score_ties) == 2
+
+    earlier_index_breaks_full_ties = [
+        make_run(10, turns=4),
+        make_run(20, turns=3),
+        make_run(20, turns=3),
+    ]
+    assert select_median_run(earlier_index_breaks_full_ties) == 1
+
+    with pytest.raises(ValueError, match="odd"):
+        select_median_run(score_order[:2])
 
 
 class ScriptedModel:
@@ -787,6 +912,393 @@ class ScriptedModel:
     def __call__(self, messages):
         self.calls.append(deepcopy(messages))
         return next(self.replies)
+
+
+class UsageScriptedModel(ScriptedModel):
+    def __init__(self, replies, usages):
+        super().__init__(replies)
+        self.usages = iter(usages)
+        self.last_token_usage = None
+
+    def __call__(self, messages):
+        reply = super().__call__(messages)
+        self.last_token_usage = next(self.usages)
+        return reply
+
+
+def test_run_result_collects_each_transport_reported_turn_usage():
+    model = UsageScriptedModel(
+        ["forest", "ocean"],
+        [
+            {"input_tokens": 10, "output_tokens": 1},
+            {"input_tokens": 20, "output_tokens": 1},
+        ],
+    )
+
+    result = play_puzzle(puzzle(), VOCAB, model)
+
+    assert result.turn_token_usage == (
+        {"input_tokens": 10, "output_tokens": 1},
+        {"input_tokens": 20, "output_tokens": 1},
+    )
+
+
+def test_benchmark_model_persists_the_selected_median_runs_counted_display_forms():
+    model = ScriptedModel(
+        [
+            "forest",
+            "ocean",
+            "shared",
+            "forest",
+            "ocean",
+            "cold",
+            "other",
+            "forest",
+            "ocean",
+        ]
+    )
+
+    summary = benchmark_model(
+        MODELS[0], puzzle(), VOCAB, model, cap=300, runs=3
+    )
+
+    assert summary.median_run_index == 1
+    assert summary.tries == 3
+    assert summary.benchmark_entry() == {
+        "model": "claude-opus-4-8",
+        "label": "CLAUDE OPUS",
+        "tag": "OPUS",
+        "tries": 3,
+        "run": ["shared", "forest", "ocean"],
+    }
+
+    with pytest.raises(ValueError, match="odd"):
+        benchmark_model(
+            MODELS[0], puzzle(), VOCAB, ScriptedModel([]), cap=300, runs=2
+        )
+
+
+def test_embed_consistency_replays_score_and_solved_or_dnf_state():
+    solved_entry = {
+        "model": "claude-opus-4-8",
+        "label": "CLAUDE OPUS",
+        "tag": "OPUS",
+        "tries": 2,
+        "run": ["forest", "ocean"],
+    }
+    assert_benchmark_entry_consistent(puzzle(), VOCAB, solved_entry, cap=300)
+
+    dnf_entry = {**solved_entry, "tries": None, "run": ["cold", "other"]}
+    assert_benchmark_entry_consistent(puzzle(), VOCAB, dnf_entry, cap=2)
+
+    with pytest.raises(ValueError, match="score/state mismatch"):
+        assert_benchmark_entry_consistent(
+            puzzle(), VOCAB, {**solved_entry, "tries": 3}, cap=300
+        )
+    with pytest.raises(ValueError, match="folded-duplicate"):
+        assert_benchmark_entry_consistent(
+            puzzle(), VOCAB, {**solved_entry, "run": ["sharéd", "shared"]}, cap=300
+        )
+    with pytest.raises(ValueError, match="DNF run"):
+        assert_benchmark_entry_consistent(
+            puzzle(), VOCAB, {**solved_entry, "tries": None}, cap=2
+        )
+
+
+def test_raw_lab_artifact_keeps_all_runs_transcripts_transport_and_token_usage(
+    tmp_path,
+):
+    output_dir = tmp_path / "lab"
+    puzzle_path = tmp_path / "forest_ocean.json"
+    usage = (
+        {
+            "input_tokens": 10,
+            "output_tokens": 1,
+            "input_tokens_details": {"cached_tokens": 2},
+        },
+        {"input_tokens": 5, "output_tokens": 2},
+    )
+    first_summary = ModelSummary(
+        config=MODELS[0],
+        results=(
+            make_run(2, turns=2, words=("forest", "ocean")),
+            make_run(
+                3,
+                turns=3,
+                words=("shared", "forest", "ocean"),
+                duration=2.0,
+                token_usage=usage,
+            ),
+            make_run(4, turns=4, words=("cold", "other", "forest", "ocean")),
+        ),
+        median_run_index=1,
+    )
+
+    artifact_path, artifact = write_lab_artifact(
+        puzzle_path,
+        first_summary,
+        cap=300,
+        effort="medium",
+        auth="subscription",
+        output_dir=output_dir,
+        timestamp="2026-07-12T15:00:00Z",
+    )
+
+    assert artifact_path == output_dir / "forest_ocean.bench.json"
+    session = artifact["sessions"][0]
+    assert session["timestamp"] == "2026-07-12T15:00:00Z"
+    assert session["prompt_version"] == PROMPT_VERSION
+    assert session["cap"] == 300
+    assert session["model_id"] == "claude-opus-4-8"
+    assert session["provider"] == "anthropic"
+    assert session["transport"] == "agent_sdk"
+    assert session["effort"] == "medium"
+    assert session["median_run"] == 2
+    assert len(session["runs"]) == 3
+    assert [run["selected"] for run in session["runs"]] == [False, True, False]
+    selected = session["runs"][1]
+    assert selected["guesses"] == ["shared", "forest", "ocean"]
+    assert selected["tries"] == 3
+    assert selected["turns"] == 3
+    assert selected["duration"] == 2.0
+    assert selected["transcript"] == [
+        {"role": "user", "content": "opening"}
+    ]
+    assert selected["token_usage"] == {
+        "input_tokens": 15,
+        "output_tokens": 3,
+    }
+    assert selected["turn_token_usage"] == list(usage)
+    assert session["benchmark_entry"]["run"] == ["shared", "forest", "ocean"]
+
+    transports = [(MODELS[1], "api", "api"), (MODELS[2], "subscription", "codex_cli")]
+    for index, (config, auth, expected_transport) in enumerate(transports, start=1):
+        summary = ModelSummary(
+            config=config,
+            results=(make_run(2 + index, turns=2, words=("forest", "ocean")),),
+            median_run_index=0,
+        )
+        _, artifact = write_lab_artifact(
+            puzzle_path,
+            summary,
+            cap=300,
+            effort="medium",
+            auth=auth,
+            output_dir=output_dir,
+            timestamp=f"2026-07-12T15:0{index}:00Z",
+        )
+        assert artifact["sessions"][-1]["transport"] == expected_transport
+
+    entries = display_benchmark_entries(artifact)
+    assert [entry["model"] for entry in entries] == [
+        "claude-opus-4-8",
+        "claude-sonnet-5",
+        "gpt-5.6-sol",
+    ]
+    assert [entry["tag"] for entry in entries] == ["OPUS", "SONNET", "GPT"]
+
+    lab_only = ModelSummary(
+        config=MODELS[3],
+        results=(make_run(9, turns=9, words=("other",)),),
+        median_run_index=0,
+    )
+    _, artifact = write_lab_artifact(
+        puzzle_path,
+        lab_only,
+        cap=300,
+        effort="none",
+        auth="api",
+        output_dir=output_dir,
+        timestamp="2026-07-12T16:00:00Z",
+    )
+    assert artifact["sessions"][-1]["display"] is False
+    assert len(display_benchmark_entries(artifact)) == DISPLAY_MODEL_COUNT
+
+
+def test_in_place_cli_accumulates_lab_runs_then_embeds_only_the_complete_trio(
+    monkeypatch, tmp_path
+):
+    puzzle_path = tmp_path / "puzzle.json"
+    source = puzzle()
+    source["benchmark"] = [
+        {"model": "claude-opus-4-8", "label": "OPUS", "tries": 4}
+    ]
+    puzzle_path.write_text(json.dumps(source), encoding="utf-8")
+    lab_dir = tmp_path / "lab"
+    monkeypatch.setattr("llm_play.BENCHMARK_OUTPUT_DIR", lab_dir)
+    monkeypatch.setattr("llm_play.load_vocab", lambda _lang: VOCAB)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(
+        "llm_play.provider_reply",
+        lambda *_args, **_kwargs: ScriptedModel(["forest", "ocean"]),
+    )
+
+    for selector in ("OPUS", "SONNET"):
+        assert (
+            main(
+                [
+                    str(puzzle_path),
+                    "--model",
+                    selector,
+                    "--runs",
+                    "1",
+                    "--in-place",
+                ]
+            )
+            == 0
+        )
+        assert "benchmark" not in json.loads(
+            puzzle_path.read_text(encoding="utf-8")
+        )
+
+    assert (
+        main(
+            [
+                str(puzzle_path),
+                "--model",
+                "GPT-SOL",
+                "--runs",
+                "1",
+                "--in-place",
+            ]
+        )
+        == 0
+    )
+    embedded = json.loads(puzzle_path.read_text(encoding="utf-8"))["benchmark"]
+    assert [entry["model"] for entry in embedded] == [
+        "claude-opus-4-8",
+        "claude-sonnet-5",
+        "gpt-5.6-sol",
+    ]
+    assert all(entry["tries"] == 2 for entry in embedded)
+    assert all(entry["run"] == ["forest", "ocean"] for entry in embedded)
+
+    before_lab_only = deepcopy(embedded)
+    assert (
+        main(
+            [
+                str(puzzle_path),
+                "--model",
+                "GPT-TERRA",
+                "--runs",
+                "1",
+                "--in-place",
+            ]
+        )
+        == 0
+    )
+    assert json.loads(puzzle_path.read_text(encoding="utf-8"))["benchmark"] == (
+        before_lab_only
+    )
+    artifact = json.loads(
+        (lab_dir / "puzzle.bench.json").read_text(encoding="utf-8")
+    )
+    assert len(artifact["sessions"]) == 4
+    assert artifact["sessions"][-1]["model_id"] == "gpt-5.6-terra"
+
+
+def test_prompt_bump_keeps_the_existing_trio_until_atomic_replacement(
+    monkeypatch, tmp_path, capsys
+):
+    old_entries = [
+        {
+            "model": "claude-opus-4-8",
+            "label": "CLAUDE OPUS",
+            "tag": "OPUS",
+            "tries": 4,
+            "run": ["cold", "other", "forest", "ocean"],
+        },
+        {
+            "model": "claude-sonnet-5",
+            "label": "CLAUDE SONNET",
+            "tag": "SONNET",
+            "tries": 4,
+            "run": ["shared", "cold", "forest", "ocean"],
+        },
+        {
+            "model": "gpt-5.6-sol",
+            "label": "GPT-5.6",
+            "tag": "GPT",
+            "tries": 3,
+            "run": ["other", "forest", "ocean"],
+        },
+    ]
+    source = puzzle()
+    source["benchmark"] = deepcopy(old_entries)
+    puzzle_path = tmp_path / "puzzle.json"
+    puzzle_path.write_text(json.dumps(source), encoding="utf-8")
+
+    lab_dir = tmp_path / "lab"
+    lab_dir.mkdir()
+    old_sessions = [
+        {
+            "prompt_version": "3",
+            "model_id": entry["model"],
+            "benchmark_entry": entry,
+        }
+        for entry in old_entries
+    ]
+    (lab_dir / "puzzle.bench.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "puzzle": "puzzle.json",
+                "sessions": old_sessions,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("llm_play.BENCHMARK_OUTPUT_DIR", lab_dir)
+    monkeypatch.setattr("llm_play.load_vocab", lambda _lang: VOCAB)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(
+        "llm_play.provider_reply",
+        lambda *_args, **_kwargs: ScriptedModel(["forest", "ocean"]),
+    )
+
+    for selector in ("OPUS", "SONNET"):
+        assert (
+            main(
+                [
+                    str(puzzle_path),
+                    "--model",
+                    selector,
+                    "--runs",
+                    "1",
+                    "--in-place",
+                ]
+            )
+            == 0
+        )
+        assert json.loads(puzzle_path.read_text(encoding="utf-8"))[
+            "benchmark"
+        ] == old_entries
+
+    assert "kept existing benchmark" in capsys.readouterr().out
+
+    assert (
+        main(
+            [
+                str(puzzle_path),
+                "--model",
+                "GPT-SOL",
+                "--runs",
+                "1",
+                "--in-place",
+            ]
+        )
+        == 0
+    )
+    replacement = json.loads(puzzle_path.read_text(encoding="utf-8"))["benchmark"]
+    assert [entry["model"] for entry in replacement] == [
+        "claude-opus-4-8",
+        "claude-sonnet-5",
+        "gpt-5.6-sol",
+    ]
+    assert all(entry["tries"] == 2 for entry in replacement)
+    assert all(entry["run"] == ["forest", "ocean"] for entry in replacement)
 
 
 def test_verbose_reply_is_reprompted_without_scoring_its_first_word():
@@ -920,20 +1432,25 @@ def test_cli_prints_counted_words_in_order_for_each_run(monkeypatch, tmp_path, c
             "shared",
             "forest",
             "ocean",
+            "cold",
+            "forest",
+            "ocean",
         ]
     )
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setattr("llm_play.load_vocab", lambda _lang: VOCAB)
     monkeypatch.setattr("llm_play.provider_reply", lambda *_args, **_kwargs: model)
 
-    assert main([str(path), "--model", "OPUS", "--runs", "2"]) == 0
+    assert main([str(path), "--model", "OPUS", "--runs", "3"]) == 0
 
     output = capsys.readouterr().out
     assert 'OPUS     run=1 try=1 word="forest" progress=50.00%' in output
     assert 'OPUS     run=1 try=2 word="ocean" progress=100.00%' in output
     assert 'OPUS     run=2 try=3 word="ocean" progress=100.00%' in output
+    assert 'OPUS     run=3 try=3 word="ocean" progress=100.00%' in output
     assert 'OPUS     run=1 tried=["forest", "ocean"]' in output
     assert 'OPUS     run=2 tried=["shared", "forest", "ocean"]' in output
+    assert 'OPUS     run=3 tried=["cold", "forest", "ocean"]' in output
 
 
 def test_cli_openai_subscription_uses_plan_without_api_key(
@@ -970,6 +1487,8 @@ def test_cli_openai_subscription_uses_plan_without_api_key(
                 "medium",
                 "--auth",
                 "subscription",
+                "--runs",
+                "1",
             ]
         )
         == 0
@@ -978,7 +1497,7 @@ def test_cli_openai_subscription_uses_plan_without_api_key(
     output = capsys.readouterr()
     assert preflights == ["ChatGPT"]
     assert "auth=subscription" in output.out
-    assert 'SOL      try=1 word="forest" progress=50.00%' in output.out
+    assert 'GPT      try=1 word="forest" progress=50.00%' in output.out
     assert "OPENAI_API_KEY is not set" not in output.err
 
 
@@ -1003,7 +1522,7 @@ def test_cli_anthropic_subscription_preflights_only_the_selected_provider(
     )
 
     def fake_provider(config, api_key, **kwargs):
-        provider_calls.append((config["label"], api_key, kwargs["auth"]))
+        provider_calls.append((config["tag"], api_key, kwargs["auth"]))
         return ScriptedModel(["forest", "ocean"])
 
     monkeypatch.setattr("llm_play.provider_reply", fake_provider)
@@ -1018,6 +1537,8 @@ def test_cli_anthropic_subscription_preflights_only_the_selected_provider(
                 "medium",
                 "--auth",
                 "subscription",
+                "--runs",
+                "1",
             ]
         )
         == 0

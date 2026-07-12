@@ -104,6 +104,30 @@ describe('parsePuzzle (shape validation)', () => {
     },
   });
 
+  const validBenchmark = () => [
+    {
+      model: 'claude-opus-4-8',
+      label: 'CLAUDE OPUS',
+      tag: 'OPUS',
+      tries: 2,
+      run: ['bois', 'forêt'],
+    },
+    {
+      model: 'claude-sonnet-5',
+      label: 'CLAUDE SONNET',
+      tag: 'SONNET',
+      tries: 3,
+      run: ['arbre', 'bois', 'forêt'],
+    },
+    {
+      model: 'gpt-5.6-sol',
+      label: 'GPT-5.6',
+      tag: 'GPT',
+      tries: null,
+      run: ['arbre', 'bois', 'nature'],
+    },
+  ];
+
   it('accepts and returns a well-formed puzzle unchanged', () => {
     const p = valid();
     expect(parsePuzzle(p)).toEqual(p);
@@ -132,14 +156,10 @@ describe('parsePuzzle (shape validation)', () => {
     expect(parsePuzzle(p)).toEqual(p);
   });
 
-  it('accepts model scores and a null DNF in the optional benchmark', () => {
+  it('accepts the exact display trio, median runs, and a null DNF', () => {
     const p = {
       ...valid(),
-      benchmark: [
-        { model: 'claude-opus-4-8', label: 'OPUS', tries: 42 },
-        { model: 'claude-sonnet-5', label: 'SONNET', tries: 55 },
-        { model: 'gpt-5.6-sol', label: 'GPT', tries: null },
-      ],
+      benchmark: validBenchmark(),
     };
     expect(parsePuzzle(p).benchmark).toEqual(p.benchmark);
   });
@@ -148,20 +168,60 @@ describe('parsePuzzle (shape validation)', () => {
     const notArray = { ...valid(), benchmark: {} };
     expect(() => parsePuzzle(notArray)).toThrow(/benchmark/);
     expect(() => parsePuzzle({ ...valid(), benchmark: [] })).toThrow(/benchmark/);
+    expect(() => parsePuzzle({ ...valid(), benchmark: validBenchmark().slice(0, 2) })).toThrow(
+      /exactly 3/,
+    );
+    expect(() =>
+      parsePuzzle({ ...valid(), benchmark: [...validBenchmark(), validBenchmark()[0]] }),
+    ).toThrow(/exactly 3/);
 
     const malformed = [
-      { model: '', label: 'GPT', tries: 12 },
-      { model: 'gpt-5.6-sol', label: ' ', tries: 12 },
-      { model: 'gpt-5.6-sol', label: ' GPT', tries: 12 },
-      { model: 'gpt-5.6-sol', label: 'lower', tries: 12 },
-      { model: 'gpt-5.6-sol', label: 'TOO-LONG!', tries: 12 },
-      { model: 'gpt-5.6-sol', label: 'GPT', tries: 0 },
-      { model: 'gpt-5.6-sol', label: 'GPT', tries: 1.5 },
-      { model: 'gpt-5.6-sol', label: 'GPT' },
+      { model: '', label: 'GPT-5.6', tag: 'GPT', tries: 12, run: ['forêt'] },
+      { model: 'gpt-5.6-sol', label: ' ', tag: 'GPT', tries: 12, run: ['forêt'] },
+      { model: 'gpt-5.6-sol', label: ' GPT-5.6', tag: 'GPT', tries: 12, run: ['forêt'] },
+      { model: 'gpt-5.6-sol', label: 'lower', tag: 'GPT', tries: 12, run: ['forêt'] },
+      { model: 'gpt-5.6-sol', label: 'GPT-5.6!', tag: 'GPT', tries: 12, run: ['forêt'] },
+      { model: 'gpt-5.6-sol', label: 'GPT-5.6', tag: '', tries: 12, run: ['forêt'] },
+      { model: 'gpt-5.6-sol', label: 'GPT-5.6', tag: 'TOOLONG', tries: 12, run: ['forêt'] },
+      { model: 'gpt-5.6-sol', label: 'GPT-5.6', tag: 'gpt', tries: 12, run: ['forêt'] },
+      { model: 'gpt-5.6-sol', label: 'GPT-5.6', tag: 'GPT', tries: 0, run: ['forêt'] },
+      { model: 'gpt-5.6-sol', label: 'GPT-5.6', tag: 'GPT', tries: 1.5, run: ['forêt'] },
+      { model: 'gpt-5.6-sol', label: 'GPT-5.6', tag: 'GPT', tries: 12, run: 'forêt' },
+      { model: 'gpt-5.6-sol', label: 'GPT-5.6', tag: 'GPT', tries: 12, run: [''] },
+      { model: 'gpt-5.6-sol', label: 'GPT-5.6', tag: 'GPT', tries: 1, run: [] },
+      {
+        model: 'gpt-5.6-sol',
+        label: 'GPT-5.6',
+        tag: 'GPT',
+        tries: 2,
+        run: ['forêt'],
+      },
+      {
+        model: 'gpt-5.6-sol',
+        label: 'GPT-5.6',
+        tag: 'GPT',
+        tries: 2,
+        run: ['forêt', 'foret'],
+      },
+      { model: 'gpt-5.6-sol', label: 'GPT-5.6', tag: 'GPT', run: ['forêt'] },
     ];
     for (const entry of malformed) {
-      expect(() => parsePuzzle({ ...valid(), benchmark: [entry] })).toThrow(/benchmark/);
+      const entries: unknown[] = validBenchmark();
+      entries[2] = entry;
+      expect(() => parsePuzzle({ ...valid(), benchmark: entries })).toThrow(/benchmark/);
     }
+  });
+
+  it('rejects duplicate model identities in the display trio', () => {
+    const benchmark = validBenchmark();
+    benchmark[2] = { ...benchmark[2], model: benchmark[0].model };
+    expect(() => parsePuzzle({ ...valid(), benchmark })).toThrow(/unique/);
+  });
+
+  it('rejects duplicate compact tags in the display trio', () => {
+    const benchmark = validBenchmark();
+    benchmark[2] = { ...benchmark[2], tag: benchmark[0].tag };
+    expect(() => parsePuzzle({ ...valid(), benchmark })).toThrow(/unique/);
   });
 
   // Optional hole affixes: display-only text around the blank (leading clitic /
