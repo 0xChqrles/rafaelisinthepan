@@ -15,6 +15,7 @@ import asyncio
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import json
 import math
 import os
@@ -34,6 +35,7 @@ REPO_ROOT = BENCHMARK_DIR.parent.parent
 GENERATION_DIR = REPO_ROOT / "packages" / "generation"
 GENERATION_SCRIPTS_DIR = GENERATION_DIR / "scripts"
 WEB_VOCAB_DIR = REPO_ROOT / "packages" / "web" / "public" / "vocab"
+BENCHMARK_OUTPUT_DIR = BENCHMARK_DIR / "output"
 
 # Reuse generation's stdlib-only implementation so the benchmark never grows a second
 # copy of the slug/fold contract.
@@ -41,21 +43,54 @@ sys.path.insert(0, str(GENERATION_SCRIPTS_DIR))
 from slug import slug  # noqa: E402
 
 
-# Curator-editable benchmark roster. Keep labels short, uppercase, and pixel-friendly;
-# these exact display forms are shipped in the puzzle JSON.
+# Curator-editable benchmark roster. Exactly three `display` entries ship in the puzzle;
+# the rest remain available for unpublished lab comparisons. Full labels are honest model
+# family names for the solved screen, while tags are compact pixel-friendly strip forms.
 MODELS = [
-    {"provider": "anthropic", "model_id": "claude-opus-4-8", "label": "OPUS"},
-    {"provider": "anthropic", "model_id": "claude-sonnet-5", "label": "SONNET"},
-    {"provider": "openai", "model_id": "gpt-5.6-sol", "label": "SOL"},
-    {"provider": "openai", "model_id": "gpt-5.6-terra", "label": "TERRA"},
-    {"provider": "openai", "model_id": "gpt-5.6-luna", "label": "LUNA"},
+    {
+        "provider": "anthropic",
+        "model_id": "claude-opus-4-8",
+        "label": "CLAUDE OPUS",
+        "tag": "OPUS",
+        "display": True,
+    },
+    {
+        "provider": "anthropic",
+        "model_id": "claude-sonnet-5",
+        "label": "CLAUDE SONNET",
+        "tag": "SONNET",
+        "display": True,
+    },
+    {
+        "provider": "openai",
+        "model_id": "gpt-5.6-sol",
+        "label": "GPT-5.6",
+        "tag": "GPT",
+        "display": True,
+    },
+    {
+        "provider": "openai",
+        "model_id": "gpt-5.6-terra",
+        "label": "GPT-5.6 TERRA",
+        "tag": "TERRA",
+        "display": False,
+    },
+    {
+        "provider": "openai",
+        "model_id": "gpt-5.6-luna",
+        "label": "GPT-5.6 LUNA",
+        "tag": "LUNA",
+        "display": False,
+    },
 ]
+DISPLAY_MODEL_COUNT = 3
 
 # Bump whenever the opening rules or turn-feedback scaffold changes materially. Results
 # are attributable to a model id plus this prompt version and the CLI's printed effort.
 PROMPT_VERSION = "4"
 
 DEFAULT_CAP = 300
+DEFAULT_RUNS = 7
 MAX_CONSECUTIVE_UNPARSEABLE = 5
 MAX_NONCOUNTING_REPLIES = 5
 
@@ -147,7 +182,8 @@ PROVIDER_ENV = {
     "openai": "OPENAI_API_KEY",
 }
 
-MODEL_LABEL_RE = re.compile(r"^[A-Z0-9][A-Z0-9 -]{0,7}$")
+MODEL_LABEL_RE = re.compile(r"^[A-Z0-9][A-Z0-9 .-]*$")
+MODEL_TAG_RE = re.compile(r"^[A-Z0-9][A-Z0-9 -]{0,5}$")
 
 LANGUAGE_NAMES = {"en": "English", "fr": "French"}
 
@@ -156,6 +192,8 @@ class ModelConfig(TypedDict):
     provider: str
     model_id: str
     label: str
+    tag: str
+    display: bool
 
 
 Message = dict[str, str]
@@ -210,22 +248,46 @@ class RunResult:
     duration: float
     tried_words: tuple[str, ...]
     conversation: tuple[Message, ...]
+    turn_token_usage: tuple[dict[str, Any], ...]
 
 
 @dataclass(frozen=True)
 class ModelSummary:
     config: ModelConfig
-    tries: int | None
-    turns: int
-    duration: float
-    runs: int
-    run_tried_words: tuple[tuple[str, ...], ...]
+    results: tuple[RunResult, ...]
+    median_run_index: int
 
-    def benchmark_entry(self) -> dict[str, str | int | None]:
+    @property
+    def median_run(self) -> RunResult:
+        return self.results[self.median_run_index]
+
+    @property
+    def tries(self) -> int | None:
+        return self.median_run.tries
+
+    @property
+    def turns(self) -> int:
+        return sum(result.turns for result in self.results)
+
+    @property
+    def duration(self) -> float:
+        return sum(result.duration for result in self.results)
+
+    @property
+    def runs(self) -> int:
+        return len(self.results)
+
+    @property
+    def run_tried_words(self) -> tuple[tuple[str, ...], ...]:
+        return tuple(result.tried_words for result in self.results)
+
+    def benchmark_entry(self) -> dict[str, Any]:
         return {
             "model": self.config["model_id"],
             "label": self.config["label"],
+            "tag": self.config["tag"],
             "tries": self.tries,
+            "run": list(self.median_run.tried_words),
         }
 
 
@@ -352,6 +414,40 @@ def _as_record(value: object, description: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"malformed puzzle: {description} must be an object")
     return value
+
+
+def _json_token_usage(value: object) -> dict[str, Any] | None:
+    """Preserve provider token accounting as JSON without coupling to SDK classes."""
+    if value is None:
+        return None
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        value = model_dump(exclude_none=True)
+    if not isinstance(value, Mapping):
+        return None
+
+    def normalize(item: object) -> Any:
+        nested_dump = getattr(item, "model_dump", None)
+        if callable(nested_dump):
+            item = nested_dump(exclude_none=True)
+        if isinstance(item, Mapping):
+            return {
+                str(key): normalize(nested)
+                for key, nested in item.items()
+                if nested is not None
+            }
+        if isinstance(item, Sequence) and not isinstance(item, (str, bytes)):
+            return [normalize(nested) for nested in item]
+        if item is None or isinstance(item, (str, int, float, bool)):
+            return item
+        return str(item)
+
+    normalized = normalize(value)
+    return normalized if isinstance(normalized, dict) and normalized else None
+
+
+def _last_token_usage(model_reply: ModelReply) -> dict[str, Any] | None:
+    return _json_token_usage(getattr(model_reply, "last_token_usage", None))
 
 
 class PuzzleReferee:
@@ -639,9 +735,13 @@ def play_puzzle(
     consecutive_unparseable = 0
     noncounting_replies = 0
     started = time.monotonic()
+    turn_token_usage: list[dict[str, Any]] = []
 
     while True:
         raw_reply = model_reply([message.copy() for message in messages])
+        usage = _last_token_usage(model_reply)
+        if usage is not None:
+            turn_token_usage.append(usage)
         turns += 1
         if not isinstance(raw_reply, str):
             raw_reply = ""
@@ -695,6 +795,7 @@ def play_puzzle(
                 duration=time.monotonic() - started,
                 tried_words=tuple(referee.tried_words),
                 conversation=tuple(message.copy() for message in messages),
+                turn_token_usage=tuple(turn_token_usage),
             )
         if feedback.tries >= cap:
             return RunResult(
@@ -704,6 +805,7 @@ def play_puzzle(
                 duration=time.monotonic() - started,
                 tried_words=tuple(referee.tried_words),
                 conversation=tuple(message.copy() for message in messages),
+                turn_token_usage=tuple(turn_token_usage),
             )
 
 
@@ -767,8 +869,8 @@ async def _agent_sdk_turn(
     effort: ReasoningEffort,
     cwd: str,
     resume: str | None,
-) -> tuple[str, str]:
-    """Run one isolated Claude.ai-subscription turn and return text + session id."""
+) -> tuple[str, str, dict[str, Any] | None]:
+    """Run one isolated Claude.ai-subscription turn and return text, session, usage."""
     from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
 
     thinking: dict[str, str]
@@ -817,7 +919,11 @@ async def _agent_sdk_turn(
         raise RuntimeError(f"{model_id} Agent SDK session failed: {detail}")
     if not result_message.session_id:
         raise RuntimeError(f"{model_id} Agent SDK session returned no session id")
-    return result_message.result or "", result_message.session_id
+    return (
+        result_message.result or "",
+        result_message.session_id,
+        _json_token_usage(getattr(result_message, "usage", None)),
+    )
 
 
 class AnthropicSubscriptionReply:
@@ -829,6 +935,7 @@ class AnthropicSubscriptionReply:
         self.session_id: str | None = None
         self._message_count = 0
         self._workspace = tempfile.TemporaryDirectory(prefix="whippin-agent-sdk-")
+        self.last_token_usage: dict[str, Any] | None = None
 
     def __call__(self, messages: list[Message]) -> str:
         if not messages or messages[-1].get("role") != "user":
@@ -852,7 +959,7 @@ class AnthropicSubscriptionReply:
             )
 
         with _subscription_environment():
-            text, session_id = asyncio.run(
+            text, session_id, usage = asyncio.run(
                 _agent_sdk_turn(
                     messages[-1]["content"],
                     model_id=self.model_id,
@@ -863,6 +970,7 @@ class AnthropicSubscriptionReply:
             )
         self.session_id = session_id
         self._message_count = len(messages)
+        self.last_token_usage = usage
         return text
 
     def close(self) -> None:
@@ -881,8 +989,11 @@ def _codex_transcript_prompt(messages: list[Message]) -> str:
     )
 
 
-def _codex_final_message(stdout: str, model_id: str) -> str:
+def _codex_final_message(
+    stdout: str, model_id: str
+) -> tuple[str, dict[str, Any] | None]:
     final_message: str | None = None
+    token_usage: dict[str, Any] | None = None
     for line_number, line in enumerate(stdout.splitlines(), start=1):
         if not line.strip():
             continue
@@ -898,6 +1009,9 @@ def _codex_final_message(stdout: str, model_id: str) -> str:
         if event_type in {"error", "turn.failed"}:
             detail = event.get("message") or event.get("error") or "unknown error"
             raise RuntimeError(f"{model_id} Codex CLI turn failed: {detail}")
+        if event_type == "turn.completed":
+            token_usage = _json_token_usage(event.get("usage"))
+            continue
         if not isinstance(event_type, str) or not event_type.startswith("item."):
             continue
         item = event.get("item")
@@ -917,7 +1031,7 @@ def _codex_final_message(stdout: str, model_id: str) -> str:
             final_message = text
     if final_message is None:
         raise RuntimeError(f"{model_id} Codex CLI returned no final agent message")
-    return final_message
+    return final_message, token_usage
 
 
 class OpenAISubscriptionReply:
@@ -938,6 +1052,7 @@ class OpenAISubscriptionReply:
         self.effort = effort
         self._message_count = 0
         self._workspace = tempfile.TemporaryDirectory(prefix="whippin-codex-")
+        self.last_token_usage: dict[str, Any] | None = None
         self._instructions_path = Path(self._workspace.name) / "instructions.md"
         self._instructions_path.write_text(
             CODEX_BENCHMARK_INSTRUCTIONS + "\n", encoding="utf-8"
@@ -1010,8 +1125,9 @@ class OpenAISubscriptionReply:
                 f"{self.model_id} Codex CLI exited {completed.returncode}: "
                 f"{detail[-1000:]}"
             )
-        result = _codex_final_message(completed.stdout, self.model_id)
+        result, usage = _codex_final_message(completed.stdout, self.model_id)
         self._message_count = len(messages)
+        self.last_token_usage = usage
         return result
 
     def close(self) -> None:
@@ -1040,6 +1156,7 @@ def provider_reply(
         client = anthropic.Anthropic(api_key=api_key)
 
         def reply(messages: list[Message]) -> str:
+            setattr(reply, "last_token_usage", None)
             request: dict[str, Any] = {
                 "model": model_id,
                 "max_tokens": _output_token_budget(effort),
@@ -1062,8 +1179,14 @@ def provider_reply(
                 raise RuntimeError(
                     f"{model_id} exhausted its {_output_token_budget(effort)}-token output budget"
                 )
+            setattr(
+                reply,
+                "last_token_usage",
+                _json_token_usage(getattr(response, "usage", None)),
+            )
             return _text_content(response.content)
 
+        setattr(reply, "last_token_usage", None)
         return reply
 
     if provider == "openai":
@@ -1076,6 +1199,7 @@ def provider_reply(
         client = OpenAI(api_key=api_key)
 
         def reply(messages: list[Message]) -> str:
+            setattr(reply, "last_token_usage", None)
             response = client.responses.create(
                 model=model_id,
                 input=messages,
@@ -1088,26 +1212,34 @@ def provider_reply(
                 raise RuntimeError(
                     f"{model_id} returned an incomplete response: {reason}"
                 )
+            setattr(
+                reply,
+                "last_token_usage",
+                _json_token_usage(getattr(response, "usage", None)),
+            )
             return response.output_text
 
+        setattr(reply, "last_token_usage", None)
         return reply
 
     raise ValueError(f"unsupported provider: {provider}")
 
 
-def median_tries(scores: Sequence[int | None]) -> int | None:
-    """Numeric median with DNF treated as +infinity, rounded up to a schema integer."""
-    if not scores:
-        raise ValueError("cannot take the median of zero runs")
-    ordered = sorted(math.inf if score is None else score for score in scores)
-    midpoint = len(ordered) // 2
-    if len(ordered) % 2:
-        value = ordered[midpoint]
-    else:
-        value = (ordered[midpoint - 1] + ordered[midpoint]) / 2
-    if math.isinf(value):
-        return None
-    return math.floor(value + 0.5)
+def select_median_run(results: Sequence[RunResult]) -> int:
+    """Return the actual median run's original index under the contract ordering."""
+    if not results:
+        raise ValueError("cannot select the median of zero runs")
+    if len(results) % 2 == 0:
+        raise ValueError("run count must be odd so the median is an actual run")
+    ordered = sorted(
+        enumerate(results),
+        key=lambda item: (
+            math.inf if item[1].tries is None else item[1].tries,
+            item[1].turns,
+            item[0],
+        ),
+    )
+    return ordered[(len(results) - 1) // 2][0]
 
 
 def benchmark_model(
@@ -1122,8 +1254,10 @@ def benchmark_model(
 ) -> ModelSummary:
     if not _is_int(runs) or runs <= 0:
         raise ValueError("runs must be a positive integer")
+    if runs % 2 == 0:
+        raise ValueError("runs must be odd so the median is an actual run")
     try:
-        results = []
+        results: list[RunResult] = []
         for run_number in range(1, runs + 1):
             reporter = None
             if on_try is not None:
@@ -1148,12 +1282,52 @@ def benchmark_model(
             close()
     return ModelSummary(
         config=config,
-        tries=median_tries([result.tries for result in results]),
-        turns=sum(result.turns for result in results),
-        duration=sum(result.duration for result in results),
-        runs=runs,
-        run_tried_words=tuple(result.tried_words for result in results),
+        results=tuple(results),
+        median_run_index=select_median_run(results),
     )
+
+
+def assert_benchmark_entry_consistent(
+    puzzle: dict[str, Any],
+    vocab: Iterable[str],
+    entry: Mapping[str, Any],
+    *,
+    cap: int,
+) -> None:
+    """Hard-fail before embed if the distilled run cannot reproduce its score/state."""
+    run = entry.get("run")
+    stored_tries = entry.get("tries")
+    if not isinstance(run, list) or not all(isinstance(word, str) for word in run):
+        raise ValueError("benchmark consistency: run must be an array of strings")
+    if stored_tries is not None and (
+        not _is_int(stored_tries) or stored_tries <= 0
+    ):
+        raise ValueError("benchmark consistency: tries must be positive or null")
+
+    referee = PuzzleReferee(puzzle, vocab)
+    for word in run:
+        if referee.solved:
+            raise ValueError(
+                "benchmark consistency: run contains guesses after the puzzle was solved"
+            )
+        feedback = referee.submit(word)
+        if feedback.kind != "counted":
+            raise ValueError(
+                "benchmark consistency: run contains an invalid or folded-duplicate guess"
+            )
+
+    if stored_tries is None:
+        if referee.solved or referee.tries != cap:
+            raise ValueError(
+                "benchmark consistency: DNF run must remain unsolved at the counted-try cap"
+            )
+        return
+    if not referee.solved or referee.tries != stored_tries:
+        state = "solved" if referee.solved else "unsolved"
+        raise ValueError(
+            "benchmark consistency: replay score/state mismatch "
+            f"(stored={stored_tries}, replayed={referee.tries}, {state})"
+        )
 
 
 def _configured_models() -> list[ModelConfig]:
@@ -1162,6 +1336,8 @@ def _configured_models() -> list[ModelConfig]:
         provider = raw.get("provider")
         model_id = raw.get("model_id")
         label = raw.get("label")
+        tag = raw.get("tag")
+        display = raw.get("display")
         if provider not in PROVIDER_ENV:
             raise ValueError(f"unsupported provider in MODELS: {provider!r}")
         if not isinstance(model_id, str) or not model_id.strip():
@@ -1172,9 +1348,35 @@ def _configured_models() -> list[ModelConfig]:
             or not MODEL_LABEL_RE.fullmatch(label)
         ):
             raise ValueError(
-                "every MODELS label must be 1–8 uppercase pixel-friendly characters"
+                "every MODELS label must be a non-empty uppercase display name"
             )
-        configs.append({"provider": provider, "model_id": model_id, "label": label})
+        if (
+            not isinstance(tag, str)
+            or tag != tag.strip()
+            or not MODEL_TAG_RE.fullmatch(tag)
+        ):
+            raise ValueError(
+                "every MODELS tag must be 1–6 uppercase pixel-friendly characters"
+            )
+        if not isinstance(display, bool):
+            raise ValueError("every MODELS entry needs a boolean display flag")
+        configs.append(
+            {
+                "provider": provider,
+                "model_id": model_id,
+                "label": label,
+                "tag": tag,
+                "display": display,
+            }
+        )
+    if sum(config["display"] for config in configs) != DISPLAY_MODEL_COUNT:
+        raise ValueError(
+            f"MODELS must select exactly {DISPLAY_MODEL_COUNT} display entries"
+        )
+    if len({config["model_id"] for config in configs}) != len(configs):
+        raise ValueError("MODELS model_id values must be unique")
+    if len({config["tag"] for config in configs}) != len(configs):
+        raise ValueError("MODELS tag values must be unique")
     return configs
 
 
@@ -1182,7 +1384,7 @@ def _friendly_model_selector(config: ModelConfig) -> str:
     if config["model_id"].startswith("gpt-5.6-"):
         variant = config["model_id"].removeprefix("gpt-5.6-")
         return f"GPT-{variant.upper()}"
-    return config["label"]
+    return config["tag"]
 
 
 def _model_selector_guidance(configs: Sequence[ModelConfig]) -> str:
@@ -1236,22 +1438,10 @@ def load_vocab(lang: str, vocab_dir: Path = WEB_VOCAB_DIR) -> set[str]:
     return set(data)
 
 
-def write_benchmark(
-    path: Path,
-    puzzle: dict[str, Any],
-    entry: dict[str, str | int | None],
-) -> None:
-    existing = puzzle.get("benchmark")
-    entries = list(existing) if isinstance(existing, list) else []
-    for index, current in enumerate(entries):
-        if isinstance(current, dict) and current.get("model") == entry["model"]:
-            entries[index] = entry
-            break
-    else:
-        entries.append(entry)
-    puzzle["benchmark"] = entries
+def _write_json_atomic(path: Path, data: object, *, indent: int | None = None) -> None:
     temp_path: str | None = None
-    original_mode = stat.S_IMODE(path.stat().st_mode)
+    original_mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else None
+    path.parent.mkdir(parents=True, exist_ok=True)
     try:
         with tempfile.NamedTemporaryFile(
             "w",
@@ -1261,18 +1451,197 @@ def write_benchmark(
             delete=False,
         ) as handle:
             temp_path = handle.name
-            json.dump(puzzle, handle, ensure_ascii=False)
-        os.chmod(temp_path, original_mode)
+            json.dump(data, handle, ensure_ascii=False, indent=indent)
+            if indent is not None:
+                handle.write("\n")
+        if original_mode is not None:
+            os.chmod(temp_path, original_mode)
         os.replace(temp_path, path)
     finally:
         if temp_path and os.path.exists(temp_path):
             os.unlink(temp_path)
 
 
+def _transport_name(config: ModelConfig, auth: AuthMode) -> str:
+    if auth == "api":
+        return "api"
+    return "agent_sdk" if config["provider"] == "anthropic" else "codex_cli"
+
+
+def _aggregate_token_usage(
+    turn_token_usage: Sequence[Mapping[str, Any]],
+) -> dict[str, int] | None:
+    totals: dict[str, int] = {}
+    for usage in turn_token_usage:
+        for key, value in usage.items():
+            if "token" in key.lower() and _is_int(value):
+                totals[key] = totals.get(key, 0) + value
+    return totals or None
+
+
+def _lab_session(
+    summary: ModelSummary,
+    *,
+    cap: int,
+    effort: ReasoningEffort,
+    auth: AuthMode,
+    timestamp: str,
+) -> dict[str, Any]:
+    runs: list[dict[str, Any]] = []
+    for index, result in enumerate(summary.results, start=1):
+        run: dict[str, Any] = {
+            "index": index,
+            "selected": index - 1 == summary.median_run_index,
+            "guesses": list(result.tried_words),
+            "tries": result.tries,
+            "counted_tries": result.counted_tries,
+            "turns": result.turns,
+            "duration": result.duration,
+            "transcript": [message.copy() for message in result.conversation],
+        }
+        token_usage = _aggregate_token_usage(result.turn_token_usage)
+        if token_usage is not None:
+            run["token_usage"] = token_usage
+            run["turn_token_usage"] = [
+                dict(usage) for usage in result.turn_token_usage
+            ]
+        runs.append(run)
+
+    config = summary.config
+    return {
+        "timestamp": timestamp,
+        "prompt_version": PROMPT_VERSION,
+        "cap": cap,
+        "model_id": config["model_id"],
+        "provider": config["provider"],
+        "transport": _transport_name(config, auth),
+        "effort": effort,
+        "label": config["label"],
+        "tag": config["tag"],
+        "display": config["display"],
+        "median_run": summary.median_run_index + 1,
+        "benchmark_entry": summary.benchmark_entry(),
+        "runs": runs,
+    }
+
+
+def write_lab_artifact(
+    puzzle_path: Path,
+    summary: ModelSummary,
+    *,
+    cap: int,
+    effort: ReasoningEffort,
+    auth: AuthMode,
+    output_dir: Path | None = None,
+    timestamp: str | None = None,
+) -> tuple[Path, dict[str, Any]]:
+    """Append one complete model session to the puzzle's unpublished lab record."""
+    directory = BENCHMARK_OUTPUT_DIR if output_dir is None else output_dir
+    path = directory / f"{puzzle_path.stem}.bench.json"
+    if path.exists():
+        try:
+            artifact = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"could not read benchmark artifact {path}: {exc}") from exc
+        artifact = _as_record(artifact, "benchmark artifact root")
+        sessions = artifact.get("sessions")
+        if artifact.get("schema_version") != 1 or not isinstance(sessions, list):
+            raise ValueError(f"malformed benchmark artifact {path}")
+    else:
+        artifact = {
+            "schema_version": 1,
+            "puzzle": puzzle_path.name,
+            "sessions": [],
+        }
+        sessions = artifact["sessions"]
+
+    recorded_at = timestamp or datetime.now(timezone.utc).isoformat().replace(
+        "+00:00", "Z"
+    )
+    sessions.append(
+        _lab_session(
+            summary,
+            cap=cap,
+            effort=effort,
+            auth=auth,
+            timestamp=recorded_at,
+        )
+    )
+    _write_json_atomic(path, artifact, indent=2)
+    return path, artifact
+
+
+def display_benchmark_sessions(artifact: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Take the latest current-prompt lab session for each configured display model."""
+    sessions = artifact.get("sessions")
+    if not isinstance(sessions, list):
+        raise ValueError("malformed benchmark artifact: sessions must be an array")
+    latest: dict[str, dict[str, Any]] = {}
+    display_configs = [config for config in _configured_models() if config["display"]]
+    display_ids = {config["model_id"] for config in display_configs}
+    for raw in reversed(sessions):
+        if not isinstance(raw, dict) or raw.get("prompt_version") != PROMPT_VERSION:
+            continue
+        model_id = raw.get("model_id")
+        entry = raw.get("benchmark_entry")
+        if (
+            model_id in display_ids
+            and model_id not in latest
+            and isinstance(entry, dict)
+            and entry.get("model") == model_id
+        ):
+            latest[model_id] = raw
+    return [
+        latest[config["model_id"]]
+        for config in display_configs
+        if config["model_id"] in latest
+    ]
+
+
+def display_benchmark_entries(artifact: Mapping[str, Any]) -> list[dict[str, Any]]:
+    return [
+        dict(session["benchmark_entry"])
+        for session in display_benchmark_sessions(artifact)
+    ]
+
+
+def write_benchmark(
+    path: Path,
+    puzzle: dict[str, Any],
+    entries: Sequence[Mapping[str, Any]] | None,
+) -> None:
+    """Write only a complete unique display trio; incomplete calibration stays absent."""
+    if entries is None:
+        puzzle.pop("benchmark", None)
+    else:
+        if len(entries) != DISPLAY_MODEL_COUNT:
+            raise ValueError(
+                f"benchmark payload needs exactly {DISPLAY_MODEL_COUNT} entries"
+            )
+        copied = [dict(entry) for entry in entries]
+        model_ids = {entry.get("model") for entry in copied}
+        if len(model_ids) != DISPLAY_MODEL_COUNT or None in model_ids:
+            raise ValueError("benchmark payload model entries must be unique")
+        tags = {entry.get("tag") for entry in copied}
+        if len(tags) != DISPLAY_MODEL_COUNT or None in tags:
+            raise ValueError("benchmark payload tag entries must be unique")
+        puzzle["benchmark"] = copied
+    _write_json_atomic(path, puzzle)
+
+
 def _positive_int(value: str) -> int:
     parsed = int(value)
     if parsed <= 0:
         raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
+def _odd_positive_int(value: str) -> int:
+    parsed = _positive_int(value)
+    if parsed % 2 == 0:
+        raise argparse.ArgumentTypeError(
+            "must be odd so the median is an actual run"
+        )
     return parsed
 
 
@@ -1317,9 +1686,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--runs",
-        type=_positive_int,
-        default=1,
-        help="runs for the selected model; persist the median",
+        type=_odd_positive_int,
+        default=DEFAULT_RUNS,
+        help=(
+            "odd run count for the selected model; persist the actual median run "
+            f"(default: {DEFAULT_RUNS})"
+        ),
     )
     parser.add_argument(
         "--effort",
@@ -1342,7 +1714,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--in-place",
         action="store_true",
-        help='write successful results to the puzzle\'s optional "benchmark" field',
+        help=(
+            "append the full lab artifact and refresh the puzzle's optional "
+            "display trio when complete"
+        ),
     )
     args = parser.parse_args(argv)
     try:
@@ -1404,7 +1779,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         api_key = os.environ.get(env_name)
         if not api_key:
             print(
-                f"warning: skipping {config['label']} ({config['model_id']}); "
+                f"warning: skipping {config['tag']} ({config['model_id']}); "
                 f"{env_name} is not set",
                 file=sys.stderr,
             )
@@ -1415,7 +1790,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             run_label = f"run={run_number} " if args.runs > 1 else ""
             word_json = json.dumps(update.word, ensure_ascii=False)
             print(
-                f"{config['label']:<8} {run_label}try={update.number} "
+                f"{config['tag']:<8} {run_label}try={update.number} "
                 f"word={word_json} progress={update.progress:.2f}%",
                 flush=True,
             )
@@ -1436,23 +1811,74 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     except Exception as exc:
         print(
-            f"error: {config['label']} ({config['model_id']}) failed: {exc}",
+            f"error: {config['tag']} ({config['model_id']}) failed: {exc}",
             file=sys.stderr,
         )
         return 1
     score = "DNF" if summary.tries is None else f"{summary.tries} tries"
     print(
-        f"{config['label']:<8} {score:>9}  "
+        f"{config['tag']:<8} {score:>9}  median_run={summary.median_run_index + 1}  "
         f"turns={summary.turns}  duration={summary.duration:.1f}s  model={config['model_id']}"
     )
     for run_number, tried_words in enumerate(summary.run_tried_words, start=1):
         run_label = f"run={run_number} " if summary.runs > 1 else ""
         words_json = json.dumps(tried_words, ensure_ascii=False)
-        print(f"{config['label']:<8} {run_label}tried={words_json}")
+        print(f"{config['tag']:<8} {run_label}tried={words_json}")
 
     if args.in_place:
-        write_benchmark(args.puzzle, puzzle, summary.benchmark_entry())
-        print(f"Wrote benchmark -> {args.puzzle}")
+        try:
+            entry = summary.benchmark_entry()
+            # This assertion intentionally precedes BOTH output writes: a replay mismatch
+            # must never reach the lean puzzle payload or the durable lab record.
+            assert_benchmark_entry_consistent(puzzle, vocab, entry, cap=args.cap)
+            artifact_path, artifact = write_lab_artifact(
+                args.puzzle,
+                summary,
+                cap=args.cap,
+                effort=args.effort,
+                auth=args.auth,
+            )
+            print(f"Wrote lab artifact -> {artifact_path}")
+
+            if config["display"]:
+                display_sessions = display_benchmark_sessions(artifact)
+                entries = [
+                    dict(session["benchmark_entry"])
+                    for session in display_sessions
+                ]
+                if len(entries) == DISPLAY_MODEL_COUNT:
+                    # Recheck every accumulated model against the puzzle as it exists at
+                    # embed time. The sentence/ranks may have changed between paid runs.
+                    for session, display_entry in zip(
+                        display_sessions, entries, strict=True
+                    ):
+                        session_cap = session.get("cap")
+                        if not _is_int(session_cap) or session_cap <= 0:
+                            raise ValueError(
+                                "benchmark artifact session has an invalid cap"
+                            )
+                        assert_benchmark_entry_consistent(
+                            puzzle, vocab, display_entry, cap=session_cap
+                        )
+                    write_benchmark(args.puzzle, puzzle, entries)
+                    print(f"Wrote benchmark trio -> {args.puzzle}")
+                else:
+                    # A partial array violates the published schema. Keep the optional
+                    # field absent until all three current-prompt display runs exist.
+                    write_benchmark(args.puzzle, puzzle, None)
+                    print(
+                        "Benchmark trio pending "
+                        f"({len(entries)}/{DISPLAY_MODEL_COUNT}); "
+                        f'omitted "benchmark" -> {args.puzzle}'
+                    )
+            else:
+                print("Lab-only model; puzzle benchmark unchanged")
+        except Exception as exc:
+            print(
+                f"error: could not persist {config['tag']} benchmark: {exc}",
+                file=sys.stderr,
+            )
+            return 1
     return 0
 
 

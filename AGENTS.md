@@ -62,6 +62,7 @@ packages/
   benchmark/                  offline LLM puzzle benchmark (pkg @whippin/benchmark, #68)
     scripts/llm_play.py       LLM player/referee; reads generation output + web vocab
     tests/test_llm_play.py    provider-adapter + game-rules parity tests
+    output/<puzzle-stem>.bench.json  full local lab record (#80; gitignored, never published)
     pyproject.toml, uv.lock   isolated Anthropic/OpenAI Python dependencies (uv)
   backend/                    daily-puzzle backend (pkg @whippin/backend, #2)
     src/
@@ -180,13 +181,14 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
     "author": "Victor Hugo",
     "work": "Les Misérables"
   },
-  "benchmark": [                                // OPTIONAL offline LLM scores (#68)
-    { "model": "claude-opus-4-8", "label": "OPUS", "tries": 42 },
-    { "model": "claude-sonnet-5", "label": "SONNET", "tries": 55 },
-    { "model": "gpt-5.6-sol", "label": "SOL", "tries": null },
-    { "model": "gpt-5.6-terra", "label": "TERRA", "tries": 37 },
-    { "model": "gpt-5.6-luna", "label": "LUNA", "tries": 64 }
-  ]                                              // null tries = DNF at the curator's cap
+  "benchmark": [                                // OPTIONAL exact display trio (#68/#80)
+    { "model": "claude-opus-4-8", "label": "CLAUDE OPUS", "tag": "OPUS",
+      "tries": 3, "run": ["bois", "arbre", "forêt"] },
+    { "model": "claude-sonnet-5", "label": "CLAUDE SONNET", "tag": "SONNET",
+      "tries": 4, "run": ["nature", "bois", "arbre", "forêt"] },
+    { "model": "gpt-5.6-sol", "label": "GPT-5.6", "tag": "GPT",
+      "tries": null, "run": ["bois", "arbre", /* …full run through cap… */ "nature"] }
+  ]                                              // null tries = DNF; its full run is kept
 }
 ```
 
@@ -208,14 +210,19 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   metadata is valid and a puzzle without `source` stays byte-compatible. Values are
   **display forms** (accents kept, never slugged); `kind` is an **open** union (known
   values documented, but a new kind is allowed). Consumed by the solved screen (#8).
-- **`benchmark` is fully OPTIONAL (#68, decided 2026-07-07):** absent stays
-  byte-compatible with every existing puzzle. When present, it is a **non-empty** array
-  of offline model results; every entry requires non-empty `model`, an uppercase
-  pixel-friendly
-  `label` of at most 8 characters, and `tries` as a positive integer or `null` (DNF at
-  the counted-try cap). It is revealed only on the solved screen; play and share output
-  stay unchanged. This model-score anchor superseded #57's proposed `par` before `par`
-  was implemented — there is no `par` schema field.
+- **`benchmark` is fully OPTIONAL (#68, decided 2026-07-07; schema v2 decided
+  2026-07-12 on #68):** absent stays byte-compatible with every existing puzzle. When
+  present, it contains **exactly 3** results — the one player-facing trio everywhere:
+  Claude Opus, Claude Sonnet, and GPT-5.6 Sol; wider roster entries stay lab-only. Every
+  entry requires the exact non-empty `model` id, an honest uppercase full-family `label`
+  (`CLAUDE OPUS`, `CLAUDE SONNET`, `GPT-5.6` — never ambiguous `CLAUDE`), an uppercase
+  pixel-friendly `tag` of at most 6 characters (`OPUS`/`SONNET`/`GPT`), `tries` as a
+  positive integer or `null` (DNF at the counted-try cap), and `run` as the **selected
+  median run's counted display-form guesses in submission order**. Run words retain
+  accents exactly as typed/validated and are folded only when replayed; a DNF keeps its
+  full run. The client can replay this list against the puzzle rank maps; play scoring
+  and share output stay unchanged. This model-score anchor superseded #57's proposed
+  `par` before `par` was implemented — there is no `par` schema field.
 - `ranks` is keyed by **secret slug**; the inner map is keyed by **input slug** →
   `{word, rank}`. The value carries the **accented** word so the front can show the
   accented form of what was typed.
@@ -406,8 +413,10 @@ pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--
 #    (default) uses the selected provider's API key; --auth subscription uses authenticated
 #    Claude.ai / saved ChatGPT Codex-plan access. GPT API runs allow the documented
 #    none|low|medium|high|xhigh; Codex-plan GPT supports low|medium|high|xhigh|max.
-#    Puzzle paths may be repo-root-relative (packages/generation/output/...) or
-#    generation-package-relative (output/...); --in-place writes the resolved file.
+#    --runs must be odd (default 7) so one actual median run can be selected. Puzzle paths
+#    may be repo-root-relative (packages/generation/output/...) or generation-package-
+#    relative (output/...). --in-place appends the full local lab artifact and embeds the
+#    lean display trio once all 3 current-prompt display models have results.
 pnpm bench:puzzle <puzzle.json> --model MODEL [--effort LEVEL] [--auth api|subscription] [--cap N] [--runs N] [--in-place]
 
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
@@ -446,9 +455,9 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   exact model id; provider/family selectors such as `GPT` are not supported. An invalid
   selector or a bare `--model` error lists every valid alias and exact model id; bare
   `--effort` and `--auth` errors list every valid value. Each invocation runs exactly one
-  model. The short persisted/display labels remain `SOL`,
-  `TERRA`, and
-  `LUNA` (the schema caps labels at 8 characters). `--effort` exposes the shared
+  model. `MODELS` also records whether an entry ships: the exact player-facing trio is
+  Opus/Sonnet/Sol with full labels `CLAUDE OPUS` / `CLAUDE SONNET` / `GPT-5.6` and short
+  tags `OPUS` / `SONNET` / `GPT`; Terra/Luna remain lab-only. `--effort` exposes the shared
   `none|low|medium|high|xhigh|max` scale, then validates the selected transport before any
   paid call: GPT API runs allow the currently documented levels through `xhigh` (`max`
   is blocked pending model-specific documentation), while Codex-plan GPT accepts `low`
@@ -484,10 +493,17 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   progress bar, to two decimals); misses and non-improving warm tries still print with unchanged
   progress. After each run the CLI prints `tried=[...]` in submission order for the counted valid
   unique words only (invalid, unparseable, and folded duplicate replies remain excluded exactly
-  like the score). Missing API keys still skip for API transports, median `--runs` is supported,
-  and only `--in-place` mutates a puzzle by upserting that model's result while preserving prior
-  benchmark entries; this curator tool is
-  never called by CI/tests.
+  like the score). Missing API keys still skip for API transports. `--runs` must be odd and
+  defaults to 7; runs sort by tries (DNF last), then fewer total turns, then original run order,
+  and the actual middle run supplies both `tries` and `run`. Before any write, the harness
+  replays that selected run through `PuzzleReferee` and hard-errors unless score plus solved/DNF
+  state match. With `--in-place`, every invocation appends all runs — guesses, transcripts,
+  score, turns, duration, reported token usage — plus model/provider, explicit `api` /
+  `agent_sdk` / `codex_cli` transport, effort, prompt version, cap, and UTC timestamp to the
+  gitignored `benchmark/output/<puzzle-stem>.bench.json`. Lab-only models never enter the
+  puzzle; display results are embedded in roster order only when all 3 current-prompt entries
+  are available, so a published `benchmark` is never partial. This paid curator tool is never
+  called by CI/tests.
 - **`gen_phrase` is fully interactive on a TTY (#5).** Anything not passed as a flag is
   prompted: the **sentence** (positional, now optional), **`--lang`**, and the optional
   **source metadata** — `--kind` (offers `KNOWN_KINDS` numbered, but free text is
