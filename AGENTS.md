@@ -444,8 +444,9 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   Opus 4.8, Claude Sonnet 5, and GPT-5.6 Sol/Terra/Luna via Anthropic/OpenAI. The required
   singular `--model` accepts `OPUS`, `SONNET`, `GPT-SOL`, `GPT-TERRA`, `GPT-LUNA`, or an
   exact model id; provider/family selectors such as `GPT` are not supported. An invalid
-  selector or a bare `--model` error lists every valid alias and exact model id. Each
-  invocation runs exactly one model. The short persisted/display labels remain `SOL`,
+  selector or a bare `--model` error lists every valid alias and exact model id; bare
+  `--effort` and `--auth` errors list every valid value. Each invocation runs exactly one
+  model. The short persisted/display labels remain `SOL`,
   `TERRA`, and
   `LUNA` (the schema caps labels at 8 characters). `--effort` exposes the shared
   `none|low|medium|high|xhigh|max` scale, then validates the selected transport before any

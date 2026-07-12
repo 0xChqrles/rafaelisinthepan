@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 import json
@@ -1277,20 +1277,32 @@ def _positive_int(value: str) -> int:
 
 
 class _BenchmarkArgumentParser(argparse.ArgumentParser):
-    def __init__(self, *args: Any, model_guidance: str, **kwargs: Any):
-        self.model_guidance = model_guidance
+    def __init__(
+        self,
+        *args: Any,
+        argument_guidance: Mapping[str, str],
+        **kwargs: Any,
+    ):
+        self.argument_guidance = argument_guidance
         super().__init__(*args, **kwargs)
 
     def error(self, message: str) -> None:
-        if "--model" in message and "expected one argument" in message:
-            message = f"{message}. {self.model_guidance}"
+        if "expected one argument" in message:
+            for argument, guidance in self.argument_guidance.items():
+                if f"argument {argument}:" in message:
+                    message = f"{message}. {guidance}"
+                    break
         super().error(message)
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     configs = _configured_models()
     parser = _BenchmarkArgumentParser(
-        model_guidance=_model_selector_guidance(configs),
+        argument_guidance={
+            "--model": _model_selector_guidance(configs),
+            "--effort": f"Valid values: {', '.join(EFFORT_LEVELS)}.",
+            "--auth": f"Valid values: {', '.join(AUTH_MODES)}.",
+        },
         description="Make one configured LLM play a Whippin puzzle offline and report its score.",
     )
     parser.add_argument("puzzle", type=Path, help="generated puzzle JSON")

@@ -688,6 +688,24 @@ def test_cli_model_flag_without_value_lists_every_valid_model(capsys):
         assert config["model_id"] in error
 
 
+@pytest.mark.parametrize(
+    ("argument", "values"),
+    [
+        ("--effort", EFFORT_LEVELS),
+        ("--auth", AUTH_MODES),
+    ],
+)
+def test_cli_choice_flag_without_value_lists_every_valid_value(
+    argument, values, capsys
+):
+    with pytest.raises(SystemExit):
+        parse_args([argument])
+
+    error = capsys.readouterr().err
+    assert f"argument {argument}: expected one argument" in error
+    assert f"Valid values: {', '.join(values)}." in error
+
+
 def test_cli_requires_exactly_one_model_and_rejects_the_plural_flag():
     with pytest.raises(SystemExit):
         parse_args(["puzzle.json"])
