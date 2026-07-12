@@ -1114,16 +1114,14 @@ def benchmark_model(
     )
 
 
-def select_models(requested: Sequence[str] | None) -> list[ModelConfig]:
+def select_model(requested: str) -> ModelConfig:
     def selection_keys(config: ModelConfig) -> set[str]:
-        keys = {
-            config["provider"].lower(),
-            config["model_id"].lower(),
-            config["label"].lower(),
-        }
+        keys = {config["model_id"].lower()}
         if config["model_id"].startswith("gpt-5.6-"):
             variant = config["model_id"].removeprefix("gpt-5.6-")
-            keys.update(("gpt", "gpt-5.6", f"gpt-{variant}"))
+            keys.add(f"gpt-{variant}")
+        else:
+            keys.add(config["label"].lower())
         return keys
 
     configs: list[ModelConfig] = []
@@ -1144,24 +1142,11 @@ def select_models(requested: Sequence[str] | None) -> list[ModelConfig]:
                 "every MODELS label must be 1–8 uppercase pixel-friendly characters"
             )
         configs.append({"provider": provider, "model_id": model_id, "label": label})
-    if not requested:
-        return configs
-    selectors = {
-        part.strip().lower()
-        for value in requested
-        for part in value.split(",")
-        if part.strip()
-    }
-    selected = [config for config in configs if selectors & selection_keys(config)]
-    matched = {
-        selector
-        for selector in selectors
-        if any(selector in selection_keys(config) for config in configs)
-    }
-    unknown = sorted(selectors - matched)
-    if unknown:
-        raise ValueError("unknown model selector(s): " + ", ".join(unknown))
-    return selected
+    selector = requested.strip().lower()
+    for config in configs:
+        if selector in selection_keys(config):
+            return config
+    raise ValueError(f"unknown model selector: {requested}")
 
 
 def resolve_puzzle_path(path: Path) -> Path:
@@ -1197,8 +1182,16 @@ def load_vocab(lang: str, vocab_dir: Path = WEB_VOCAB_DIR) -> set[str]:
 def write_benchmark(
     path: Path,
     puzzle: dict[str, Any],
-    entries: list[dict[str, str | int | None]],
+    entry: dict[str, str | int | None],
 ) -> None:
+    existing = puzzle.get("benchmark")
+    entries = list(existing) if isinstance(existing, list) else []
+    for index, current in enumerate(entries):
+        if isinstance(current, dict) and current.get("model") == entry["model"]:
+            entries[index] = entry
+            break
+    else:
+        entries.append(entry)
     puzzle["benchmark"] = entries
     temp_path: str | None = None
     original_mode = stat.S_IMODE(path.stat().st_mode)
@@ -1228,17 +1221,14 @@ def _positive_int(value: str) -> int:
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Make configured LLMs play one Whippin puzzle offline and report their scores."
+        description="Make one configured LLM play a Whippin puzzle offline and report its score."
     )
     parser.add_argument("puzzle", type=Path, help="generated puzzle JSON")
     parser.add_argument(
-        "--models",
-        nargs="+",
+        "--model",
+        required=True,
         metavar="MODEL",
-        help=(
-            "provider, model id, label, or GPT-SOL/GPT-TERRA/GPT-LUNA "
-            "(default: all configured models)"
-        ),
+        help=("OPUS, SONNET, GPT-SOL, GPT-TERRA, GPT-LUNA, or an exact model id"),
     )
     parser.add_argument(
         "--cap", type=_positive_int, default=DEFAULT_CAP, help="counted-try DNF cap"
@@ -1247,14 +1237,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--runs",
         type=_positive_int,
         default=1,
-        help="runs per model; persist the median",
+        help="runs for the selected model; persist the median",
     )
     parser.add_argument(
         "--effort",
         choices=EFFORT_LEVELS,
         default=DEFAULT_EFFORT,
         help=(
-            "reasoning effort for every selected model "
+            "reasoning effort for the selected model "
             f"(default: {DEFAULT_EFFORT}; enabled levels use adaptive thinking)"
         ),
     )
@@ -1263,7 +1253,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         choices=AUTH_MODES,
         default=DEFAULT_AUTH,
         help=(
-            "transport for every selected provider: API-key billing or isolated "
+            "transport for the selected model's provider: API-key billing or isolated "
             f"Claude.ai/ChatGPT plan access (default: {DEFAULT_AUTH})"
         ),
     )
@@ -1274,13 +1264,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     args = parser.parse_args(argv)
     try:
-        args.model_configs = select_models(args.models)
+        args.model_config = select_model(args.model)
     except ValueError as exc:
         parser.error(str(exc))
     if (
         args.auth == "subscription"
         and args.effort not in CODEX_SUBSCRIPTION_EFFORTS
-        and any(config["provider"] == "openai" for config in args.model_configs)
+        and args.model_config["provider"] == "openai"
     ):
         supported = "|".join(CODEX_SUBSCRIPTION_EFFORTS)
         parser.error(
@@ -1305,8 +1295,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    anthropic_subscription_selected = args.auth == "subscription" and any(
-        config["provider"] == "anthropic" for config in args.model_configs
+    config = args.model_config
+    anthropic_subscription_selected = (
+        args.auth == "subscription" and config["provider"] == "anthropic"
     )
     if anthropic_subscription_selected:
         try:
@@ -1315,8 +1306,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"error: {exc}", file=sys.stderr)
             return 2
 
-    openai_subscription_selected = args.auth == "subscription" and any(
-        config["provider"] == "openai" for config in args.model_configs
+    openai_subscription_selected = (
+        args.auth == "subscription" and config["provider"] == "openai"
     )
     if openai_subscription_selected:
         try:
@@ -1330,77 +1321,62 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"auth={args.auth} cap={args.cap} runs={args.runs}",
         flush=True,
     )
-    summaries: list[ModelSummary] = []
-    for config in args.model_configs:
-        subscription_auth = args.auth == "subscription"
-        api_key = None
-        if not subscription_auth:
-            env_name = PROVIDER_ENV[config["provider"]]
-            api_key = os.environ.get(env_name)
-            if not api_key:
-                print(
-                    f"warning: skipping {config['label']} ({config['model_id']}); "
-                    f"{env_name} is not set",
-                    file=sys.stderr,
-                )
-                continue
-        try:
-
-            def print_try(run_number: int, update: TryProgress) -> None:
-                run_label = f"run={run_number} " if args.runs > 1 else ""
-                word_json = json.dumps(update.word, ensure_ascii=False)
-                print(
-                    f"{config['label']:<8} {run_label}try={update.number} "
-                    f"word={word_json} progress={update.progress:.2f}%",
-                    flush=True,
-                )
-
-            summary = benchmark_model(
-                config,
-                puzzle,
-                vocab,
-                provider_reply(
-                    config,
-                    api_key,
-                    effort=args.effort,
-                    auth=args.auth,
-                ),
-                cap=args.cap,
-                runs=args.runs,
-                on_try=print_try,
-            )
-        except (
-            Exception
-        ) as exc:  # provider/model failures must not stop the other models
+    subscription_auth = args.auth == "subscription"
+    api_key = None
+    if not subscription_auth:
+        env_name = PROVIDER_ENV[config["provider"]]
+        api_key = os.environ.get(env_name)
+        if not api_key:
             print(
-                f"error: {config['label']} ({config['model_id']}) failed: {exc}",
+                f"warning: skipping {config['label']} ({config['model_id']}); "
+                f"{env_name} is not set",
                 file=sys.stderr,
             )
-            continue
-        summaries.append(summary)
-        score = "DNF" if summary.tries is None else f"{summary.tries} tries"
-        print(
-            f"{config['label']:<8} {score:>9}  "
-            f"turns={summary.turns}  duration={summary.duration:.1f}s  model={config['model_id']}"
+            return 0
+    try:
+
+        def print_try(run_number: int, update: TryProgress) -> None:
+            run_label = f"run={run_number} " if args.runs > 1 else ""
+            word_json = json.dumps(update.word, ensure_ascii=False)
+            print(
+                f"{config['label']:<8} {run_label}try={update.number} "
+                f"word={word_json} progress={update.progress:.2f}%",
+                flush=True,
+            )
+
+        summary = benchmark_model(
+            config,
+            puzzle,
+            vocab,
+            provider_reply(
+                config,
+                api_key,
+                effort=args.effort,
+                auth=args.auth,
+            ),
+            cap=args.cap,
+            runs=args.runs,
+            on_try=print_try,
         )
-        for run_number, tried_words in enumerate(summary.run_tried_words, start=1):
-            run_label = f"run={run_number} " if summary.runs > 1 else ""
-            words_json = json.dumps(tried_words, ensure_ascii=False)
-            print(f"{config['label']:<8} {run_label}tried={words_json}")
+    except Exception as exc:
+        print(
+            f"error: {config['label']} ({config['model_id']}) failed: {exc}",
+            file=sys.stderr,
+        )
+        return 1
+    score = "DNF" if summary.tries is None else f"{summary.tries} tries"
+    print(
+        f"{config['label']:<8} {score:>9}  "
+        f"turns={summary.turns}  duration={summary.duration:.1f}s  model={config['model_id']}"
+    )
+    for run_number, tried_words in enumerate(summary.run_tried_words, start=1):
+        run_label = f"run={run_number} " if summary.runs > 1 else ""
+        words_json = json.dumps(tried_words, ensure_ascii=False)
+        print(f"{config['label']:<8} {run_label}tried={words_json}")
 
     if args.in_place:
-        if summaries:
-            write_benchmark(
-                args.puzzle,
-                puzzle,
-                [summary.benchmark_entry() for summary in summaries],
-            )
-            print(f"Wrote benchmark -> {args.puzzle}")
-        else:
-            print(
-                "warning: no completed model results; puzzle left unchanged",
-                file=sys.stderr,
-            )
+        write_benchmark(args.puzzle, puzzle, summary.benchmark_entry())
+        print(f"Wrote benchmark -> {args.puzzle}")
     return 0
 
 

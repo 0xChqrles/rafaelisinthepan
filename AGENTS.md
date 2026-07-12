@@ -393,14 +393,15 @@ pnpm vocab:fr         # -> packages/web/public/vocab/fr.json
 #    NOTE: gen:phrase ALSO rewrites web/public/vocab/<lang>.json as a side effect.
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--`)
 
-# 4. Optionally benchmark the generated puzzle offline before publish. Missing provider
-#    keys skip with a warning; --effort applies one reasoning level to every selected
-#    model (none|low|medium|high|xhigh|max; default none). --auth api (default) uses each
-#    provider's API key; --auth subscription uses authenticated Claude.ai / saved ChatGPT
-#    Codex-plan access (GPT supports low|medium|high|xhigh|max; Codex offers no none).
+# 4. Optionally benchmark the generated puzzle offline before publish. --model is required
+#    and runs exactly one model. Missing provider keys skip with a warning; --effort applies
+#    one reasoning level (none|low|medium|high|xhigh|max; default none). --auth api
+#    (default) uses the selected provider's API key; --auth subscription uses authenticated
+#    Claude.ai / saved ChatGPT Codex-plan access (GPT supports low|medium|high|xhigh|max;
+#    Codex offers no none).
 #    Puzzle paths may be repo-root-relative (packages/generation/output/...) or
 #    generation-package-relative (output/...); --in-place writes the resolved file.
-pnpm bench:puzzle <puzzle.json> [--models ...] [--effort LEVEL] [--auth api|subscription] [--cap N] [--runs N] [--in-place]
+pnpm bench:puzzle <puzzle.json> --model MODEL [--effort LEVEL] [--auth api|subscription] [--cap N] [--runs N] [--in-place]
 
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
 pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output)
@@ -430,18 +431,19 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   folded-vocab existence, unique-try score, per-unsolved-hole rank/MISS, strict-improvement,
   solved-lock, and counted-try cap rules against an append-only provider conversation.
   `pnpm bench:puzzle` supports only the curator-editable five-model `MODELS` roster: Claude
-  Opus 4.8, Claude Sonnet 5, and GPT-5.6 Sol/Terra/Luna via Anthropic/OpenAI. Model selectors
-  `GPT-SOL`, `GPT-TERRA`, and `GPT-LUNA` select individual GPT variants; `GPT` / `gpt-5.6` /
-  `openai` select all three. Their short persisted/display labels remain `SOL`, `TERRA`, and
+  Opus 4.8, Claude Sonnet 5, and GPT-5.6 Sol/Terra/Luna via Anthropic/OpenAI. The required
+  singular `--model` accepts `OPUS`, `SONNET`, `GPT-SOL`, `GPT-TERRA`, `GPT-LUNA`, or an
+  exact model id; provider/family selectors such as `GPT` are not supported. Each invocation
+  runs exactly one model. The short persisted/display labels remain `SOL`, `TERRA`, and
   `LUNA` (the schema caps labels at 8 characters). `--effort` applies the shared
-  `none|low|medium|high|xhigh|max` scale to every selected
+  `none|low|medium|high|xhigh|max` scale to the selected
   model (default `none` preserves thinking-off one-word API calls; enabled levels use
   provider-native reasoning with larger output headroom). The single `--auth` flag applies to
-  every selected provider: `api` (default) uses raw API keys, with an automatic moving prompt-
+  the selected provider: `api` (default) uses raw API keys, with an automatic moving prompt-
   cache breakpoint for Anthropic. Opt-in `subscription` first verifies paid Claude.ai auth for
-  selected Claude models, strips API/cloud credential overrides, then uses a fresh Agent SDK
+  the selected Claude model, strips API/cloud credential overrides, then uses a fresh Agent SDK
   session per run with an empty replacement system prompt and no tools, MCP, skills, plugins,
-  or filesystem settings. For selected GPT models it verifies that Codex CLI is logged in with
+  or filesystem settings. For a selected GPT model it verifies that Codex CLI is logged in with
   ChatGPT, strips API credentials plus parent-Codex thread metadata, and runs each turn as a
   fresh `codex exec` process with the complete append-only transcript. Those turns are
   ephemeral, use a temporary non-repository cwd and replacement benchmark instructions, and
@@ -463,7 +465,8 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   progress. After each run the CLI prints `tried=[...]` in submission order for the counted valid
   unique words only (invalid, unparseable, and folded duplicate replies remain excluded exactly
   like the score). Missing API keys still skip for API transports, median `--runs` is supported,
-  and only `--in-place` mutates a puzzle; this curator tool is
+  and only `--in-place` mutates a puzzle by upserting that model's result while preserving prior
+  benchmark entries; this curator tool is
   never called by CI/tests.
 - **`gen_phrase` is fully interactive on a TTY (#5).** Anything not passed as a flag is
   prompted: the **sentence** (positional, now optional), **`--lang`**, and the optional

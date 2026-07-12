@@ -41,7 +41,7 @@ from llm_play import (
     play_puzzle,
     provider_reply,
     resolve_puzzle_path,
-    select_models,
+    select_model,
     validate_anthropic_subscription_auth,
     validate_openai_subscription_auth,
     write_benchmark,
@@ -584,13 +584,16 @@ def test_openai_adapter_surfaces_an_incomplete_reasoning_response(monkeypatch):
 
 
 def test_cli_defaults_to_api_and_accepts_shared_effort_and_auth_levels():
-    defaults = parse_args(["puzzle.json"])
+    defaults = parse_args(["puzzle.json", "--model", "OPUS"])
     assert defaults.effort == DEFAULT_EFFORT
     assert defaults.auth == DEFAULT_AUTH
     for effort in EFFORT_LEVELS:
-        assert parse_args(["puzzle.json", "--effort", effort]).effort == effort
+        assert (
+            parse_args(["puzzle.json", "--model", "OPUS", "--effort", effort]).effort
+            == effort
+        )
     for auth in AUTH_MODES:
-        arguments = ["puzzle.json", "--auth", auth]
+        arguments = ["puzzle.json", "--model", "OPUS", "--auth", auth]
         if auth == "subscription":
             arguments.extend(("--effort", "medium"))
         assert parse_args(arguments).auth == auth
@@ -599,27 +602,52 @@ def test_cli_defaults_to_api_and_accepts_shared_effort_and_auth_levels():
 @pytest.mark.parametrize("legacy_flag", ["--anthropic-auth", "--openai-auth"])
 def test_cli_rejects_removed_provider_specific_auth_flags(legacy_flag):
     with pytest.raises(SystemExit):
-        parse_args(["puzzle.json", legacy_flag, "subscription"])
+        parse_args(["puzzle.json", "--model", "OPUS", legacy_flag, "subscription"])
 
 
 def test_cli_rejects_none_effort_before_an_openai_subscription_call():
     with pytest.raises(SystemExit):
-        parse_args(["puzzle.json", "--models", "GPT-SOL", "--auth", "subscription"])
+        parse_args(["puzzle.json", "--model", "GPT-SOL", "--auth", "subscription"])
     assert (
-        parse_args(["puzzle.json", "--models", "OPUS", "--auth", "subscription"]).effort
+        parse_args(["puzzle.json", "--model", "OPUS", "--auth", "subscription"]).effort
         == "none"
     )
 
 
-def test_gpt_family_and_variant_model_selectors():
-    expected = [MODELS[2], MODELS[3], MODELS[4]]
-    assert select_models(["GPT"]) == expected
-    assert select_models(["gpt-5.6"]) == expected
-    assert select_models(["openai"]) == expected
-    assert select_models(["GPT-SOL"]) == [MODELS[2]]
-    assert select_models(["GPT-TERRA"]) == [MODELS[3]]
-    assert select_models(["GPT-LUNA"]) == [MODELS[4]]
-    assert select_models(["GPT-SOL", "GPT-LUNA", "GPT-TERRA"]) == expected
+@pytest.mark.parametrize(
+    ("selector", "expected"),
+    [
+        ("OPUS", MODELS[0]),
+        ("SONNET", MODELS[1]),
+        ("GPT-SOL", MODELS[2]),
+        ("GPT-TERRA", MODELS[3]),
+        ("GPT-LUNA", MODELS[4]),
+        *[(config["model_id"], config) for config in MODELS],
+    ],
+)
+def test_singular_model_selectors(selector, expected):
+    assert select_model(selector) == expected
+
+
+@pytest.mark.parametrize(
+    "selector", ["GPT", "gpt-5.6", "openai", "anthropic", "SOL", "TERRA", "LUNA"]
+)
+def test_model_selector_rejects_family_provider_and_short_gpt_aliases(selector):
+    with pytest.raises(ValueError, match="unknown model selector"):
+        select_model(selector)
+
+
+def test_cli_requires_exactly_one_model_and_rejects_the_plural_flag():
+    with pytest.raises(SystemExit):
+        parse_args(["puzzle.json"])
+    with pytest.raises(SystemExit):
+        parse_args(["puzzle.json", "--models", "OPUS"])
+    with pytest.raises(SystemExit):
+        parse_args(["puzzle.json", "--model", "OPUS", "GPT-SOL"])
+    with pytest.raises(SystemExit):
+        parse_args(["puzzle.json", "--model", "OPUS,GPT-SOL"])
+    with pytest.raises(SystemExit):
+        parse_args(["puzzle.json", "--model", "GPT"])
 
 
 def test_puzzle_path_accepts_repo_and_generation_relative_forms(monkeypatch, tmp_path):
@@ -641,24 +669,37 @@ def test_puzzle_path_accepts_repo_and_generation_relative_forms(monkeypatch, tmp
     assert resolve_puzzle_path(Path("output/word/fr/puzzle.json")) == puzzle_path
 
 
-def test_in_place_output_writes_static_entries_and_preserves_file_mode(tmp_path):
+def test_in_place_output_upserts_one_model_and_preserves_other_results_and_file_mode(
+    tmp_path,
+):
     path = tmp_path / "puzzle.json"
     source = puzzle()
     source["source"] = {"work": "L'été"}
+    source["benchmark"] = [
+        {"model": "claude-opus-4-8", "label": "OPUS", "tries": 30},
+        {"model": "gpt-5.6-terra", "label": "TERRA", "tries": 14},
+    ]
     path.write_text(json.dumps(source, ensure_ascii=False), encoding="utf-8")
     os.chmod(path, 0o640)
-    entries = [
-        {"model": "claude-opus-4-8", "label": "OPUS", "tries": 12},
-        {"model": "claude-sonnet-5", "label": "SONNET", "tries": None},
-        {"model": "gpt-5.6-sol", "label": "SOL", "tries": 18},
-        {"model": "gpt-5.6-terra", "label": "TERRA", "tries": 14},
-        {"model": "gpt-5.6-luna", "label": "LUNA", "tries": 20},
-    ]
+    opus = {"model": "claude-opus-4-8", "label": "OPUS", "tries": 12}
 
-    write_benchmark(path, source, entries)
+    write_benchmark(path, source, opus)
 
     written = json.loads(path.read_text(encoding="utf-8"))
-    assert written["benchmark"] == entries
+    assert written["benchmark"] == [
+        opus,
+        {"model": "gpt-5.6-terra", "label": "TERRA", "tries": 14},
+    ]
+
+    luna = {"model": "gpt-5.6-luna", "label": "LUNA", "tries": 20}
+    write_benchmark(path, source, luna)
+
+    written = json.loads(path.read_text(encoding="utf-8"))
+    assert written["benchmark"] == [
+        opus,
+        {"model": "gpt-5.6-terra", "label": "TERRA", "tries": 14},
+        luna,
+    ]
     assert written["source"]["work"] == "L'été"
     assert os.stat(path).st_mode & 0o777 == 0o640
 
@@ -805,7 +846,7 @@ def test_cli_prints_counted_words_in_order_for_each_run(monkeypatch, tmp_path, c
     monkeypatch.setattr("llm_play.load_vocab", lambda _lang: VOCAB)
     monkeypatch.setattr("llm_play.provider_reply", lambda *_args, **_kwargs: model)
 
-    assert main([str(path), "--models", "OPUS", "--runs", "2"]) == 0
+    assert main([str(path), "--model", "OPUS", "--runs", "2"]) == 0
 
     output = capsys.readouterr().out
     assert 'OPUS     run=1 try=1 word="forest" progress=50.00%' in output
@@ -843,7 +884,7 @@ def test_cli_openai_subscription_uses_plan_without_api_key(
         main(
             [
                 str(path),
-                "--models",
+                "--model",
                 "GPT-SOL",
                 "--effort",
                 "medium",
@@ -861,7 +902,7 @@ def test_cli_openai_subscription_uses_plan_without_api_key(
     assert "OPENAI_API_KEY is not set" not in output.err
 
 
-def test_cli_unified_subscription_preflights_both_selected_providers(
+def test_cli_anthropic_subscription_preflights_only_the_selected_provider(
     monkeypatch, tmp_path
 ):
     path = tmp_path / "puzzle.json"
@@ -891,9 +932,8 @@ def test_cli_unified_subscription_preflights_both_selected_providers(
         main(
             [
                 str(path),
-                "--models",
+                "--model",
                 "OPUS",
-                "GPT-SOL",
                 "--effort",
                 "medium",
                 "--auth",
@@ -903,11 +943,8 @@ def test_cli_unified_subscription_preflights_both_selected_providers(
         == 0
     )
 
-    assert preflights == ["anthropic", "openai"]
-    assert provider_calls == [
-        ("OPUS", None, "subscription"),
-        ("SOL", None, "subscription"),
-    ]
+    assert preflights == ["anthropic"]
+    assert provider_calls == [("OPUS", None, "subscription")]
 
 
 def test_opening_board_keeps_hole_affixes_and_full_sentence_tokens():
