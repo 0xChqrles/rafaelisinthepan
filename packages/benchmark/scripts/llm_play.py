@@ -1156,16 +1156,7 @@ def benchmark_model(
     )
 
 
-def select_model(requested: str) -> ModelConfig:
-    def friendly_selector(config: ModelConfig) -> str:
-        if config["model_id"].startswith("gpt-5.6-"):
-            variant = config["model_id"].removeprefix("gpt-5.6-")
-            return f"GPT-{variant.upper()}"
-        return config["label"]
-
-    def selection_keys(config: ModelConfig) -> set[str]:
-        return {config["model_id"].lower(), friendly_selector(config).lower()}
-
+def _configured_models() -> list[ModelConfig]:
     configs: list[ModelConfig] = []
     for raw in MODELS:
         provider = raw.get("provider")
@@ -1184,15 +1175,34 @@ def select_model(requested: str) -> ModelConfig:
                 "every MODELS label must be 1–8 uppercase pixel-friendly characters"
             )
         configs.append({"provider": provider, "model_id": model_id, "label": label})
+    return configs
+
+
+def _friendly_model_selector(config: ModelConfig) -> str:
+    if config["model_id"].startswith("gpt-5.6-"):
+        variant = config["model_id"].removeprefix("gpt-5.6-")
+        return f"GPT-{variant.upper()}"
+    return config["label"]
+
+
+def _model_selector_guidance(configs: Sequence[ModelConfig]) -> str:
+    aliases = ", ".join(_friendly_model_selector(config) for config in configs)
+    model_ids = ", ".join(config["model_id"] for config in configs)
+    return f"Valid values: {aliases}. Exact model IDs are also accepted: {model_ids}."
+
+
+def select_model(requested: str) -> ModelConfig:
+    configs = _configured_models()
     selector = requested.strip().lower()
     for config in configs:
-        if selector in selection_keys(config):
+        selection_keys = {
+            config["model_id"].lower(),
+            _friendly_model_selector(config).lower(),
+        }
+        if selector in selection_keys:
             return config
-    aliases = ", ".join(friendly_selector(config) for config in configs)
-    model_ids = ", ".join(config["model_id"] for config in configs)
     raise ValueError(
-        f"unknown model selector {requested!r}. Valid values: {aliases}. "
-        f"Exact model IDs are also accepted: {model_ids}."
+        f"unknown model selector {requested!r}. {_model_selector_guidance(configs)}"
     )
 
 
@@ -1266,9 +1276,22 @@ def _positive_int(value: str) -> int:
     return parsed
 
 
+class _BenchmarkArgumentParser(argparse.ArgumentParser):
+    def __init__(self, *args: Any, model_guidance: str, **kwargs: Any):
+        self.model_guidance = model_guidance
+        super().__init__(*args, **kwargs)
+
+    def error(self, message: str) -> None:
+        if "--model" in message and "expected one argument" in message:
+            message = f"{message}. {self.model_guidance}"
+        super().error(message)
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Make one configured LLM play a Whippin puzzle offline and report its score."
+    configs = _configured_models()
+    parser = _BenchmarkArgumentParser(
+        model_guidance=_model_selector_guidance(configs),
+        description="Make one configured LLM play a Whippin puzzle offline and report its score.",
     )
     parser.add_argument("puzzle", type=Path, help="generated puzzle JSON")
     parser.add_argument(

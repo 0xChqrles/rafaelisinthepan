@@ -677,6 +677,17 @@ def test_cli_unknown_model_lists_every_valid_alias_and_exact_model_id(capsys):
         assert config["model_id"] in error
 
 
+def test_cli_model_flag_without_value_lists_every_valid_model(capsys):
+    with pytest.raises(SystemExit):
+        parse_args(["--model"])
+
+    error = capsys.readouterr().err
+    assert "argument --model: expected one argument" in error
+    assert "Valid values: OPUS, SONNET, GPT-SOL, GPT-TERRA, GPT-LUNA" in error
+    for config in MODELS:
+        assert config["model_id"] in error
+
+
 def test_cli_requires_exactly_one_model_and_rejects_the_plural_flag():
     with pytest.raises(SystemExit):
         parse_args(["puzzle.json"])
