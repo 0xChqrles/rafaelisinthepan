@@ -448,16 +448,18 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   imports generation's canonical `scripts/slug.py`, reads puzzles from generation output,
   and reads the same web vocab as the SPA. The referee replays the
   folded-vocab existence, unique-try score, per-unsolved-hole rank/MISS, strict-improvement,
-  solved-lock, and counted-try cap rules against an append-only provider conversation.
-  `pnpm bench:puzzle` supports only the curator-editable five-model `MODELS` roster: Claude
-  Opus 4.8, Claude Sonnet 5, and GPT-5.6 Sol/Terra/Luna via Anthropic/OpenAI. The required
-  singular `--model` accepts `OPUS`, `SONNET`, `GPT-SOL`, `GPT-TERRA`, `GPT-LUNA`, or an
+  solved-lock, and counted-try cap rules while retaining an append-only lab transcript.
+  `pnpm bench:puzzle` supports only the curator-editable six-model `MODELS` roster: Claude
+  Opus 4.8, Claude Sonnet 5, Claude Fable 5, and GPT-5.6 Sol/Terra/Luna via
+  Anthropic/OpenAI. The required
+  singular `--model` accepts `OPUS`, `SONNET`, `FABLE`, `GPT-SOL`, `GPT-TERRA`, `GPT-LUNA`,
+  or an
   exact model id; provider/family selectors such as `GPT` are not supported. An invalid
   selector or a bare `--model` error lists every valid alias and exact model id; bare
   `--effort` and `--auth` errors list every valid value. Each invocation runs exactly one
   model. `MODELS` also records whether an entry ships: the exact player-facing trio is
   Opus/Sonnet/Sol with full labels `CLAUDE OPUS` / `CLAUDE SONNET` / `GPT-5.6` and short
-  tags `OPUS` / `SONNET` / `GPT`; Terra/Luna remain lab-only. `--effort` exposes the shared
+  tags `OPUS` / `SONNET` / `GPT`; Fable/Terra/Luna remain lab-only. `--effort` exposes the shared
   `none|low|medium|high|xhigh|max` scale, then validates the selected transport before any
   paid call: GPT API runs allow the currently documented levels through `xhigh` (`max`
   is blocked pending model-specific documentation), while Codex-plan GPT accepts `low`
@@ -470,7 +472,9 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   session per run with an empty replacement system prompt and no tools, MCP, skills, plugins,
   or filesystem settings. For a selected GPT model it verifies that Codex CLI is logged in with
   ChatGPT, strips API credentials plus parent-Codex thread metadata, and runs each turn as a
-  fresh `codex exec` process with the complete append-only transcript. Those turns are
+  fresh `codex exec` process with a compact snapshot: the static opening rules plus only the
+  latest authoritative aggregate state; obsolete intermediate turns and prior one-word replies
+  remain in the lab transcript but are omitted from the paid prompt. Those turns are
   ephemeral, use a temporary non-repository cwd and replacement benchmark instructions, and
   ignore user config/rules with
   read-only sandboxing and apps/shell/multi-agent/web disabled; the unavoidable Codex bootstrap
@@ -479,21 +483,22 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   harmless); prose is unparseable and reprompted instead of silently scoring its first word.
   Thinking-off API calls reserve 256 output tokens so a verbose reply can complete and be
   rejected cleanly. Five parsed invalid/repeated replies without a counted try abort a
-  stuck paid loop. Prompt
-  version 4 rejects strict left-to-right play: before spending many tries on one position, models
-  sample candidates/probes motivated by every unsolved hole, pursue whichever has the strongest
-  signal or easiest target, switch when stalled, and reprioritize when a solved word adds context.
-  It retains version 3's balance between direct candidates and exploratory probes: even a word
-  that cannot grammatically be the answer can provide intermediate rank hints, so broader
-  categories, contrasts, related concepts, and neighbors of warm clues can triangulate a semantic
-  direction. It also retains version 2's exact-inflection strategy: infer number/gender/agreement
-  from the fixed sentence context and try a promising candidate's context-correct form before
-  listing more direct synonyms. During a run, every counted try prints immediately with its word
-  and post-guess overall progress percentage (the same logarithmic multi-hole formula as the web
-  progress bar, to two decimals); misses and non-improving warm tries still print with unchanged
-  progress. After each run the CLI prints `tried=[...]` in submission order for the counted valid
-  unique words only (invalid, unparseable, and folded duplicate replies remain excluded exactly
-  like the score). Missing API keys still skip for API transports. `--runs` must be odd and
+  stuck paid loop. Prompt version 13 renders the fixed sentence as a true `CLOZE`: solved answers
+  appear in place, unsolved positions remain `[WORD N]`, and ranked clues are explicitly separate
+  from sentence text. Its guidance is strategy-neutral: it explains the rules and available
+  evidence and leaves search order and tactics to the model. Its general judgment guidelines distinguish
+  fixed-sentence/referee evidence from the model's self-generated word associations: improvement supports
+  a hypothesis, repeated non-improvement lowers that support, and thematic similarity among guesses is
+  not itself progress. The aggregate state reports the latest named outcome, current best clue for each
+  unsolved word, and a salient consecutive no-improvement trend. All earlier guesses remain available only
+  as a complete alphabetically ordered exclusion set, not a chronological trajectory that can prime the
+  next item in the same conceptual list. It neither hides ranked evidence nor forces context-only play,
+  probes, synonym search, or any other next-step method. During a run, every counted try prints immediately with its
+  word and post-guess overall progress percentage (the same logarithmic multi-hole formula as the
+  web progress bar, to two decimals); misses and non-improving warm tries still print with
+  unchanged progress. After each run the CLI prints `tried=[...]` in submission order for the
+  counted valid unique words only (invalid, unparseable, and folded duplicate replies remain
+  excluded exactly like the score). Missing API keys still skip for API transports. `--runs` must be odd and
   defaults to 7; runs sort by tries (DNF last), then fewer total turns, then original run order,
   and the actual middle run supplies both `tries` and `run`. Before any write, the harness
   replays that selected run through `PuzzleReferee` and hard-errors unless score plus solved/DNF

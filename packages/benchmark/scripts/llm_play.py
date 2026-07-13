@@ -82,12 +82,19 @@ MODELS = [
         "tag": "LUNA",
         "display": False,
     },
+    {
+        "provider": "anthropic",
+        "model_id": "claude-fable-5",
+        "label": "CLAUDE FABLE",
+        "tag": "FABLE",
+        "display": False,
+    },
 ]
 DISPLAY_MODEL_COUNT = 3
 
 # Bump whenever the opening rules or turn-feedback scaffold changes materially. Results
 # are attributable to a model id plus this prompt version and the CLI's printed effort.
-PROMPT_VERSION = "4"
+PROMPT_VERSION = "15"
 
 DEFAULT_CAP = 300
 DEFAULT_RUNS = 7
@@ -111,6 +118,13 @@ DEFAULT_EFFORT: ReasoningEffort = "none"
 DIRECT_OUTPUT_MAX_TOKENS = 256
 REASONING_MAX_TOKENS = 25_000
 DEEP_REASONING_MAX_TOKENS = 64_000
+# The pre-game strategy turn (v14) answers in free text; the one-word budget would
+# truncate it mid-plan. Only lifts the `none` budget — reasoning budgets already exceed it.
+STRATEGY_OUTPUT_MAX_TOKENS = 1_024
+# Deep-stall threshold (v15): once this many consecutive counted guesses improve
+# nothing, every turn's feedback re-surfaces the model's own committed method verbatim.
+# The referee still prescribes no tactic — it quotes the model back to itself.
+METHOD_REMINDER_AFTER = 5
 
 AuthMode = Literal["api", "subscription"]
 AUTH_MODES: tuple[AuthMode, ...] = ("api", "subscription")
@@ -167,8 +181,9 @@ CODEX_TURN_TIMEOUT_SECONDS = 300
 CODEX_BENCHMARK_INSTRUCTIONS = (
     "You are an isolated word-game player. Treat the user's complete game transcript "
     "as your only task context. Never inspect files, use tools, search, or modify "
-    "anything. Reply to the final user message with exactly one word and no punctuation "
-    "or explanation."
+    "anything. Answer the final user message in the form it asks for: free text when "
+    "it asks for your method, otherwise exactly one word with no punctuation or "
+    "explanation."
 )
 CODEX_TOOL_ITEM_TYPES = {
     "command_execution",
@@ -476,6 +491,13 @@ class PuzzleReferee:
         self.tried: set[str] = set()
         self.tried_words: list[str] = []
         self.holes: list[RuntimeHole] = []
+        # Consecutive counted tries that improved no hole's rank (MISS or warm-but-not-
+        # closer). This is reported as evidence, not used to force a solving method.
+        # Any improvement resets it; non-counting replies leave it untouched.
+        self.stalled_tries = 0
+        # The model's own pre-game method (v15), quoted back verbatim during deep
+        # stalls. Set by play_puzzle after the strategy turn; empty means no reminder.
+        self.method = ""
 
         # The schema guarantees sentence order, but sorting here makes the feedback order
         # robust and explicit: hole numbers always read left-to-right like the front.
@@ -555,11 +577,27 @@ class PuzzleReferee:
             total += hole_progress
         return 100 * total / len(self.holes)
 
-    def board(self) -> str:
+    def cloze(self) -> str:
+        """Render fixed sentence context without presenting guesses as sentence text."""
         rendered = list(self.words)
         for hole in self.holes:
-            rendered[hole.pos] = f"{hole.prefix}{hole.word}(-{hole.rank}){hole.suffix}"
+            content = hole.word if hole.rank == 0 else f"[WORD {hole.number}]"
+            rendered[hole.pos] = f"{hole.prefix}{content}{hole.suffix}"
         return " ".join(rendered)
+
+    def best_clue_lines(self) -> list[str]:
+        """Show only the current best rank for each unsolved word.
+
+        Earlier words remain available in an unordered exclusion set, while only the
+        latest outcome is repeated. Keeping the trajectory out of a semantic list avoids
+        turning the state itself into an invitation to autocomplete the same cluster.
+        """
+        lines: list[str] = []
+        for hole in self.holes:
+            if hole.rank == 0:
+                continue
+            lines.append(f"WORD {hole.number}: {hole.word} (rank {hole.rank})")
+        return lines or ["All hidden words are solved."]
 
     def submit(self, guess: str) -> GuessFeedback:
         folded = slug(guess)
@@ -610,12 +648,19 @@ class PuzzleReferee:
                 HoleOutcome(hole.number, rank, improved, improved and rank == 0)
             )
 
+        recorded_outcomes = tuple(outcomes)
+        improved = any(outcome.improved for outcome in recorded_outcomes)
+        if improved:
+            self.stalled_tries = 0
+        else:
+            self.stalled_tries += 1
+
         return GuessFeedback(
             kind="counted",
             guess=guess,
             folded=folded,
             message="",
-            outcomes=tuple(outcomes),
+            outcomes=recorded_outcomes,
             tries=self.tries,
             solved=self.solved,
         )
@@ -632,85 +677,203 @@ def parse_single_word(reply: str) -> str | None:
     return matches[0] if len(matches) == 1 else None
 
 
+ADAPTATION_GUIDELINE = (
+    "JUDGMENT: Choose your own method and update it from the evidence. Treat each "
+    "counted guess as a costly hypothesis: improvement supports continuing a direction; "
+    "repeated non-improvement lowers that support. Similarity among your own guesses "
+    "is not evidence of progress. Decide for yourself how to adapt."
+)
+
+
+def _state_snapshot_lines(referee: PuzzleReferee) -> list[str]:
+    tried = ", ".join(sorted(referee.tried_words, key=slug)) or "none"
+    if referee.tries == 0:
+        trend = "NO-IMPROVEMENT STREAK: 0. No counted guesses yet."
+    elif referee.stalled_tries == 0:
+        trend = (
+            "NO-IMPROVEMENT STREAK: 0. The latest counted guess improved at "
+            "least one word."
+        )
+    else:
+        guess_unit = "guess" if referee.stalled_tries == 1 else "guesses"
+        trend = (
+            f"NO-IMPROVEMENT STREAK: {referee.stalled_tries}. The last "
+            f"{referee.stalled_tries} counted {guess_unit} improved no word; all "
+            "current best ranks stayed unchanged."
+        )
+    return [
+        "CURRENT STATE",
+        f"CLOZE: {referee.cloze()}",
+        "CURRENT BEST RANKED CLUE PER UNSOLVED WORD — SEMANTIC EVIDENCE, "
+        "NOT SENTENCE TEXT:",
+        *referee.best_clue_lines(),
+        trend,
+        f"EXCLUDED AS ALREADY TRIED (unordered; do not repeat): {tried}",
+    ]
+
+
 def opening_message(referee: PuzzleReferee) -> str:
     language = LANGUAGE_NAMES.get(referee.lang, referee.lang)
     return "\n".join(
         [
             f"Play Whippin AI in {language}. Reply with exactly one {language} word per turn.",
-            "Each hidden word reports a closeness rank: lower is closer, 0 is found, and MISS is too far to rank.",
-            "Invalid words and repeated words do not count. One guess is tested against every unsolved hidden word.",
+            "",
+            "GOAL",
             (
-                "The board is a sentence: treat each word(-rank) as a replaceable "
-                "clue and infer the hidden word's grammar from the fixed context."
+                "Solve every hidden word in as few counted tries as possible. "
+                "Your score is the total number of unique valid guesses — lower is "
+                "better, so every counted guess is expensive."
+            ),
+            "",
+            "RULES",
+            (
+                "The CLOZE is a real sentence whose [WORD N] blanks must be found "
+                "exactly. Solved words appear in the sentence; ranked clues never do."
             ),
             (
-                "Guesses are exact inflected forms, not lemmas: singular/plural and "
-                "masculine/feminine forms are distinct guesses."
+                "One guess is tested against every unsolved word. Each reports a "
+                "closeness rank: lower is closer, 0 is solved, and MISS is outside "
+                "the stored neighborhood."
             ),
             (
-                "Do not work strictly left-to-right or exhaust one hidden word "
-                "before considering the others. Before committing many tries to one, "
-                "sample candidates or probes motivated by every unsolved position; "
-                "this may expose a surprisingly easy target."
+                "A valid guess may be a proposed answer or simply a word used to "
+                "gather rank evidence. Invalid and repeated words do not count."
             ),
             (
-                "Compare rank signals and pursue whichever position or direction "
-                "looks easiest, regardless of order. If it stalls, switch focus. "
-                "After any solve, reread the board and reprioritize: the revealed "
-                "word gives new context for the rest."
+                "Answers are exact inflected forms, not lemmas: number, gender, "
+                "agreement, and conjugation can distinguish words."
+            ),
+            "",
+            "EVIDENCE",
+            (
+                "Ranks come from word-embedding similarity: they measure contextual "
+                "relatedness, not synonymy or grammatical fit. A warm rank is useful "
+                "evidence but does not prove that its apparent concept is the answer."
             ),
             (
-                "Use ranks to search, not only to check possible final answers. A "
-                "valid exploratory probe does not need to fit the sentence: its ranks "
-                "can reveal semantic directions and provide intermediate hints."
+                "Embedding relatedness is not transitive: a word strongly related to "
+                "the current best clue can still be much farther from the hidden word. "
+                "The referee's returned rank, not similarity between your guesses, "
+                "shows whether the new guess made progress."
             ),
             (
-                "Balance direct candidates with probes. To triangulate when needed, "
-                "test broader categories, contrasts, related objects or actions, and "
-                "neighbors of the warmest clues; compare ranks and follow lower ones."
+                "The fixed sentence and the referee's rank changes are independent "
+                "sources of evidence. One guess is evaluated against every unsolved "
+                "word, and a solved word becomes fixed sentence evidence for the rest."
             ),
             (
-                "Once a candidate looks promising, promptly try the form required by "
-                "the sentence's number, gender, agreement, or conjugation before "
-                "listing more direct synonyms."
+                "A sequence of related guesses can feel coherent even while the game "
+                "reports no progress. That coherence was generated by your own word "
+                "associations; only the sentence and referee outcomes provide new "
+                "evidence about the hidden words."
             ),
-            f"Board: {referee.board()}",
-            "Tries: 0",
+            "",
+            "YOUR METHOD",
+            (
+                "Choose your own solving method. There is no required search order, "
+                "reset rule, or mandated next-step tactic; decide how to combine the "
+                "available evidence on each turn. Keep, revise, or replace hypotheses "
+                "according to how well the evidence supports them."
+            ),
+            (
+                "Before playing, state the method you commit to, in your own words. "
+                "It must cover, at minimum: how you will pick each guess; how you "
+                "will read rank evidence; a concrete stopping rule — the exact "
+                "number of consecutive non-improving counted guesses after which "
+                "you abandon a direction; the specific, different move you will "
+                "make when that rule triggers; and how you will keep consecutive "
+                "guesses from all coming from one semantic family. Choose every "
+                "number and move yourself — but once stated, the plan is your "
+                "commitment, and the referee will quote it back to you if your "
+                "play drifts from it."
+            ),
+            ADAPTATION_GUIDELINE,
+            "",
+            "FEEDBACK FORMAT",
+            (
+                "After each guess you receive its result and an authoritative current "
+                "snapshot. It shows the CLOZE, only the current best ranked clue for "
+                "each unsolved word, the consecutive no-improvement count, and all "
+                "already-tried words as an unordered exclusion set. Earlier outcomes "
+                "are not replayed as a word sequence."
+            ),
+            "",
+            *_state_snapshot_lines(referee),
+            "Tries: 0 (your score — lower is better)",
+            ADAPTATION_GUIDELINE,
+            (
+                "First reply: your method, in free text — no guess yet. Every "
+                "reply after it must be exactly one word."
+            ),
         ]
     )
 
 
-def _outcome_text(outcome: HoleOutcome) -> str:
+def game_start_message(referee: PuzzleReferee) -> str:
+    return "\n".join(
+        [
+            (
+                "Method noted. It is your own commitment: play by it, and revise "
+                "it yourself when the evidence stops supporting it. The game "
+                "starts now."
+            ),
+            *_state_snapshot_lines(referee),
+            f"Tries: {referee.tries} (your score — lower is better)",
+            ADAPTATION_GUIDELINE,
+            "Reply with exactly one word.",
+        ]
+    )
+
+
+def _outcome_text(outcome: HoleOutcome, referee: PuzzleReferee) -> str:
+    current_rank = referee.holes[outcome.number - 1].rank
     if outcome.rank is None:
-        return f"word {outcome.number}: MISS"
+        return (
+            f"word {outcome.number}: MISS "
+            f"(current best remains rank {current_rank})"
+        )
     if outcome.solved:
         return f"word {outcome.number}: 0 solved!"
     if outcome.improved:
-        return f"word {outcome.number}: {outcome.rank} closer!"
-    return f"word {outcome.number}: {outcome.rank} (not closer)"
+        return f"word {outcome.number}: {outcome.rank} closer! New best rank {outcome.rank}."
+    return (
+        f"word {outcome.number}: rank {outcome.rank} did not improve current best "
+        f"rank {current_rank}"
+    )
 
 
 def feedback_message(feedback: GuessFeedback, referee: PuzzleReferee) -> str:
     if feedback.kind == "counted":
-        lead = "\n".join(_outcome_text(outcome) for outcome in feedback.outcomes)
+        outcomes = "\n".join(
+            _outcome_text(outcome, referee) for outcome in feedback.outcomes
+        )
+        lead = f'RESULT FOR "{feedback.guess}":\n{outcomes}'
     else:
         lead = feedback.message
-    return "\n".join(
-        [
-            lead,
-            f"Board: {referee.board()}",
-            f"Tries: {feedback.tries}",
-            "Reply with exactly one word.",
+    lines = [lead, *_state_snapshot_lines(referee)]
+    if referee.method and referee.stalled_tries >= METHOD_REMINDER_AFTER:
+        lines += [
+            (
+                "YOUR STATED METHOD — you committed to this before the game; if "
+                "its stopping rule has triggered, execute it now:"
+            ),
+            referee.method,
         ]
-    )
+    lines += [
+        f"Tries: {feedback.tries} (your score — lower is better)",
+        ADAPTATION_GUIDELINE,
+        "Reply with exactly one word.",
+    ]
+    return "\n".join(lines)
 
 
 def unparseable_message(referee: PuzzleReferee) -> str:
     return "\n".join(
         [
             "I could not parse a word — this did not count. Reply with exactly one word.",
-            f"Board: {referee.board()}",
-            f"Tries: {referee.tries}",
+            *_state_snapshot_lines(referee),
+            f"Tries: {referee.tries} (your score — lower is better)",
+            ADAPTATION_GUIDELINE,
         ]
     )
 
@@ -736,6 +899,21 @@ def play_puzzle(
     noncounting_replies = 0
     started = time.monotonic()
     turn_token_usage: list[dict[str, Any]] = []
+
+    # Strategy turn (v14): the first reply is the model's own method, never a guess.
+    # Accepted as-is — free text, unparsed, unscored — and kept in the transcript so
+    # every later turn is anchored to a self-authored plan instead of imposed tactics.
+    strategy = model_reply([message.copy() for message in messages])
+    strategy_usage = _last_token_usage(model_reply)
+    if strategy_usage is not None:
+        turn_token_usage.append(strategy_usage)
+    turns += 1
+    if not isinstance(strategy, str):
+        strategy = ""
+    strategy = strategy.strip() or "[empty response]"
+    referee.method = strategy
+    messages.append({"role": "assistant", "content": strategy})
+    messages.append({"role": "user", "content": game_start_message(referee)})
 
     while True:
         raw_reply = model_reply([message.copy() for message in messages])
@@ -826,14 +1004,24 @@ def _text_content(content: object) -> str:
     return "\n".join(parts)
 
 
-def _output_token_budget(effort: ReasoningEffort) -> int:
+def _is_strategy_turn(messages: list[Message]) -> bool:
+    # The conversation holds no assistant reply yet exactly once: the pre-game turn
+    # where the model states its own method in free text.
+    return not any(message["role"] == "assistant" for message in messages)
+
+
+def _output_token_budget(effort: ReasoningEffort, messages: list[Message]) -> int:
     if effort == "none":
         # Thinking-off models can still emit visible explanation despite the one-word
         # contract. Leave enough room for a complete reply; strict parsing rejects prose.
-        return DIRECT_OUTPUT_MAX_TOKENS
-    if effort in {"xhigh", "max"}:
-        return DEEP_REASONING_MAX_TOKENS
-    return REASONING_MAX_TOKENS
+        budget = DIRECT_OUTPUT_MAX_TOKENS
+    elif effort in {"xhigh", "max"}:
+        budget = DEEP_REASONING_MAX_TOKENS
+    else:
+        budget = REASONING_MAX_TOKENS
+    if _is_strategy_turn(messages):
+        return max(budget, STRATEGY_OUTPUT_MAX_TOKENS)
+    return budget
 
 
 def _supported_efforts(provider: str, auth: AuthMode) -> tuple[ReasoningEffort, ...]:
@@ -977,14 +1165,30 @@ class AnthropicSubscriptionReply:
         self._workspace.cleanup()
 
 
-def _codex_transcript_prompt(messages: list[Message]) -> str:
-    transcript = json.dumps(messages, ensure_ascii=False, separators=(",", ":"))
+def _codex_snapshot_prompt(messages: list[Message]) -> str:
+    opening = messages[0]["content"]
+    opening_rules, marker, initial_state = opening.partition("\nCURRENT STATE\n")
+    if marker:
+        initial_state = f"CURRENT STATE\n{initial_state}"
+    else:
+        # Defensive fallback for callers outside play_puzzle; production openings
+        # always carry the explicit state marker.
+        opening_rules = opening
+        initial_state = opening
+    snapshot = {
+        "opening_rules": opening_rules,
+        "current_state": (
+            messages[-1]["content"] if len(messages) > 1 else initial_state
+        ),
+    }
+    encoded = json.dumps(snapshot, ensure_ascii=False, separators=(",", ":"))
     return "\n".join(
         [
-            "Continue the word-game conversation encoded as JSON below.",
-            "It is the complete append-only transcript; answer its final user message.",
+            "Play the word game from the compact JSON snapshot below.",
+            "The opening rules and latest current state are authoritative; obsolete "
+            "intermediate turns are intentionally omitted.",
             "Return exactly one word and nothing else.",
-            transcript,
+            encoded,
         ]
     )
 
@@ -1113,7 +1317,7 @@ class OpenAISubscriptionReply:
                 timeout=CODEX_TURN_TIMEOUT_SECONDS,
                 cwd=self._workspace.name,
                 env=_environment_without(OPENAI_SUBSCRIPTION_CONFLICT_ENV),
-                input=_codex_transcript_prompt(messages),
+                input=_codex_snapshot_prompt(messages),
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise RuntimeError(f"{self.model_id} Codex CLI turn failed: {exc}") from exc
@@ -1157,9 +1361,10 @@ def provider_reply(
 
         def reply(messages: list[Message]) -> str:
             setattr(reply, "last_token_usage", None)
+            budget = _output_token_budget(effort, messages)
             request: dict[str, Any] = {
                 "model": model_id,
-                "max_tokens": _output_token_budget(effort),
+                "max_tokens": budget,
                 "messages": messages,
                 # Append-only play histories only receive Anthropic's automatic moving
                 # cache breakpoint when prompt caching is explicitly enabled.
@@ -1177,7 +1382,7 @@ def provider_reply(
             response = client.messages.create(**request)
             if getattr(response, "stop_reason", None) == "max_tokens":
                 raise RuntimeError(
-                    f"{model_id} exhausted its {_output_token_budget(effort)}-token output budget"
+                    f"{model_id} exhausted its {budget}-token output budget"
                 )
             setattr(
                 reply,
@@ -1204,7 +1409,7 @@ def provider_reply(
                 model=model_id,
                 input=messages,
                 reasoning={"effort": effort},
-                max_output_tokens=_output_token_budget(effort),
+                max_output_tokens=_output_token_budget(effort, messages),
             )
             if getattr(response, "status", None) == "incomplete":
                 details = getattr(response, "incomplete_details", None)
