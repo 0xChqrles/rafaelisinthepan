@@ -14,8 +14,10 @@ logic; nothing here re-filters vocabulary or changes daily-generation defaults.
 from __future__ import annotations
 
 import argparse
+import csv
 from dataclasses import dataclass, field
 import hashlib
+import io
 import json
 from pathlib import Path
 import random
@@ -43,10 +45,21 @@ from phrase_core import (  # noqa: E402  (stdlib-only shared contract)
     make_hole,
 )
 from start_word import is_variant  # noqa: E402
+from curriculum_io import (  # noqa: E402
+    load_json as load_puzzle_json,
+    read_data_bytes,
+    sha256_bytes,
+    write_deterministic_gzip,
+)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 DATASET_ID = "strategy-fr-v1"
 LANG = "fr"
+
+LEXIQUE_SOURCE_PATH = (
+    REPO_ROOT / "packages" / "generation" / "wordlist" / ".cache" / "fr.lexique.tsv"
+)
+FR_LEXICON_PATH = DATASETS_DIR / "fr-lexicon.tsv.gz"
 
 PUZZLE_COUNT = 20
 CURRICULUM_COUNT = 15
@@ -75,6 +88,8 @@ META_LANGUAGE_SLUGS = frozenset(
 
 # The canonical fr regex config (word cores, alphabet) from phrase_core.
 _FR_CFG = build_lang_config()[LANG]
+
+CanonicalMetadata = dict[str, set[tuple[str, str | None]]]
 
 
 @dataclass(frozen=True)
@@ -141,8 +156,94 @@ def frequency_lookup(V: list[str]) -> dict[str, int]:
     return {word: rank for rank, word in enumerate(V)}
 
 
+def _canonical_rows(metadata: CanonicalMetadata) -> list[tuple[str, str, str]]:
+    return sorted(
+        (word, pos, gender or "")
+        for word, entries in metadata.items()
+        for pos, gender in entries
+    )
+
+
+def canonical_metadata_bytes(metadata: CanonicalMetadata) -> bytes:
+    output = io.StringIO(newline="")
+    writer = csv.writer(output, delimiter="\t", lineterminator="\n")
+    writer.writerow(("word", "pos", "gender"))
+    writer.writerows(_canonical_rows(metadata))
+    return output.getvalue().encode("utf-8")
+
+
+def build_fr_lexicon(
+    V: list[str],
+    *,
+    source_path: Path = LEXIQUE_SOURCE_PATH,
+    out_path: Path = FR_LEXICON_PATH,
+) -> CanonicalMetadata:
+    """Build the committed V∩Lexique POS/gender reference deterministically."""
+    if not source_path.is_file():
+        raise FileNotFoundError(
+            f"missing cached Lexique source at {source_path}; run pnpm wordlist:fr "
+            "once to download the offline source"
+        )
+    vocabulary = set(V)
+    metadata: CanonicalMetadata = {}
+    with source_path.open(encoding="utf-8", newline="") as handle:
+        for row in csv.DictReader(handle, delimiter="\t"):
+            word = unicodedata.normalize("NFC", row.get("ortho", "").lower())
+            if word not in vocabulary:
+                continue
+            cgram = row.get("cgram")
+            lexique_gender = row.get("genre")
+            entries: tuple[tuple[str, str | None], ...] = ()
+            if cgram == "NOM" and lexique_gender in GENDER_VALUES:
+                entries = (("noun", lexique_gender),)
+            elif cgram == "ADJ":
+                # Lexique leaves gender blank for epicene adjective forms.
+                genders = (
+                    (lexique_gender,)
+                    if lexique_gender in GENDER_VALUES
+                    else GENDER_VALUES
+                )
+                entries = tuple(("adjective", gender) for gender in genders)
+            elif cgram in {"VER", "AUX"}:
+                entries = (("verb", None),)
+            elif cgram == "ADV":
+                entries = (("adverb", None),)
+            if entries:
+                metadata.setdefault(word, set()).update(entries)
+
+    write_deterministic_gzip(out_path, canonical_metadata_bytes(metadata))
+    return metadata
+
+
+def load_fr_lexicon(path: Path = FR_LEXICON_PATH) -> CanonicalMetadata:
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"missing committed French canonical metadata at {path}; run "
+            "pnpm bench:curriculum:lexicon"
+        )
+    text = read_data_bytes(path).decode("utf-8")
+    reader = csv.DictReader(io.StringIO(text), delimiter="\t")
+    if reader.fieldnames != ["word", "pos", "gender"]:
+        raise ValueError(f"malformed canonical metadata header in {path}")
+    metadata: CanonicalMetadata = {}
+    for row in reader:
+        word = row["word"]
+        pos = row["pos"]
+        gender = row["gender"] or None
+        gender_is_valid = (
+            gender in GENDER_VALUES if pos in GENDERED_POS else gender is None
+        )
+        if pos not in POS_VALUES or not gender_is_valid:
+            raise ValueError(f"malformed canonical metadata row for {word!r}")
+        metadata.setdefault(word, set()).add((pos, gender))
+    return metadata
+
+
 def validate_candidate(
-    index: int, raw: Any, freq: dict[str, int]
+    index: int,
+    raw: Any,
+    freq: dict[str, int],
+    canonical_metadata: CanonicalMetadata,
 ) -> Candidate | Rejection:
     """Deterministically validate one LLM-authored candidate.
 
@@ -189,10 +290,19 @@ def validate_candidate(
                     f"{pos} target {word!r} needs gender m|f",
                 )
             else:
+                _require(
+                    gender is None,
+                    f"{pos} target {word!r} must not declare a gender",
+                )
                 gender = None
             _require(
                 word in freq,
                 f"target {word!r} is not in the reduced vocabulary",
+            )
+            _require(
+                (pos, gender) in canonical_metadata.get(word, set()),
+                f"target {word!r} metadata {(pos, gender)!r} is not attested "
+                "by Lexique",
             )
 
             target_slug = slug(word)
@@ -448,11 +558,57 @@ def build_puzzle(
 
 
 def _sha256_file(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while chunk := handle.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _puzzle_json_bytes(puzzle: dict[str, Any]) -> bytes:
+    return (json.dumps(puzzle, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+
+
+def dataset_content_sha256(manifest: dict[str, Any]) -> str:
+    """Stable dataset identity: scientific content only, never timestamps."""
+    identity = {
+        "schema_version": manifest["schema_version"],
+        "dataset_id": manifest["dataset_id"],
+        "lang": manifest["lang"],
+        "seed": manifest["seed"],
+        "generator_output_sha256": manifest["generator_output"]["sha256"],
+        "vocabulary": manifest["vocabulary"],
+        "embedding": manifest["embedding"],
+        "canonical_metadata": {
+            "sha256": manifest["canonical_metadata"]["sha256"],
+            "verified_fields": manifest["canonical_metadata"]["verified_fields"],
+            "declared_fields": manifest["canonical_metadata"]["declared_fields"],
+        },
+        "frequency_bands": manifest["frequency_bands"],
+        "start_band": manifest["start_band"],
+        "counts": manifest["counts"],
+        "balance": manifest["balance"],
+        "puzzles": sorted(
+            (
+                {
+                    "number": record["number"],
+                    "split": record["split"],
+                    "sha256": record["sha256"],
+                    "targets": record["targets"],
+                }
+                for record in manifest["puzzles"]
+            ),
+            key=lambda record: record["number"],
+        ),
+    }
+    encoded = json.dumps(
+        identity, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return sha256_bytes(encoded)
 
 
 def _puzzle_stem(number: int, candidate: Candidate) -> str:
@@ -471,6 +627,10 @@ def build_dataset(
     seed: int,
     out_dir: Path,
     quotas: Quotas | None = None,
+    canonical_metadata: CanonicalMetadata | None = None,
+    canonical_metadata_source: str = "datasets/fr-lexicon.tsv.gz",
+    embedding_source: str | None = None,
+    embedding_sha256: str | None = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
     """Validate, select, split, build, and write the dataset deterministically.
@@ -479,6 +639,7 @@ def build_dataset(
     nothing (no ranking_for calls either).
     """
     quotas = quotas or Quotas()
+    canonical_metadata = canonical_metadata or load_fr_lexicon()
     raw_candidates = generator_output.get("candidates")
     if not isinstance(raw_candidates, list) or not raw_candidates:
         raise ValueError('generator output needs a non-empty "candidates" array')
@@ -487,7 +648,7 @@ def build_dataset(
     validated: list[Candidate] = []
     rejections: list[Rejection] = []
     for index, raw in enumerate(raw_candidates):
-        result = validate_candidate(index, raw, freq)
+        result = validate_candidate(index, raw, freq, canonical_metadata)
         (validated if isinstance(result, Candidate) else rejections).append(result)
 
     selected = select_balanced(validated, seed=seed, quotas=quotas)
@@ -501,6 +662,11 @@ def build_dataset(
             "curriculum": [c.sentence for c in curriculum],
             "holdout": [c.sentence for c in holdout],
         }
+
+    if not embedding_source or not embedding_sha256:
+        raise ValueError(
+            "a real dataset build requires the reduced embedding source and sha256"
+        )
 
     rng = random.Random(seed)
     puzzles_dir = out_dir / "puzzles"
@@ -519,10 +685,9 @@ def build_dataset(
                 f"{built.reason} (sentence: {built.sentence!r})"
             )
         stem = _puzzle_stem(number, candidate)
-        path = puzzles_dir / f"{stem}.json"
-        path.write_text(
-            json.dumps(built, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-        )
+        path = puzzles_dir / f"{stem}.json.gz"
+        uncompressed = _puzzle_json_bytes(built)
+        write_deterministic_gzip(path, uncompressed)
         split = "curriculum" if number <= quotas.curriculum_count else "holdout"
         target_records = []
         for target, hole in zip(
@@ -556,24 +721,41 @@ def build_dataset(
             {
                 "number": number,
                 "split": split,
-                "path": f"puzzles/{stem}.json",
-                "sha256": _sha256_file(path),
+                "path": f"puzzles/{stem}.json.gz",
+                "sha256": sha256_bytes(uncompressed),
                 "sentence": candidate.sentence,
                 "targets": target_records,
             }
         )
 
     generator = generator_output.get("generator", {})
+    generator_output_bytes = (
+        json.dumps(generator_output, ensure_ascii=False, indent=2) + "\n"
+    ).encode("utf-8")
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "dataset_id": DATASET_ID,
         "lang": LANG,
         "seed": seed,
         "generator": generator,
+        "generator_output": {
+            "path": "generator-output.json",
+            "sha256": sha256_bytes(generator_output_bytes),
+        },
         "vocabulary": {
             "source": "reduced-vocabulary order (V)",
             "size": len(V),
             "sha256": _sha256_text("\n".join(V)),
+        },
+        "embedding": {
+            "source": embedding_source,
+            "sha256": embedding_sha256,
+        },
+        "canonical_metadata": {
+            "source": canonical_metadata_source,
+            "sha256": sha256_bytes(canonical_metadata_bytes(canonical_metadata)),
+            "verified_fields": ["pos", "gender"],
+            "declared_fields": ["semantic_class"],
         },
         "frequency_bands": {
             "common": f"frequency rank < {COMMON_MAX_FREQ_RANK}",
@@ -585,21 +767,26 @@ def build_dataset(
             "curriculum": quotas.curriculum_count,
             "holdout": quotas.holdout_count,
         },
-        "balance": balance,
+        "balance": {
+            "verified": {
+                "pos": balance["pos"],
+                "gender": balance["gender"],
+                "frequency_band": balance["frequency_band"],
+            },
+            "declared": {"semantic_class": balance["semantic_class"]},
+        },
         "puzzles": puzzle_records,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+    manifest["dataset_content_sha256"] = dataset_content_sha256(manifest)
     (out_dir / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
-    (out_dir / "generator-output.json").write_text(
-        json.dumps(generator_output, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    (out_dir / "generator-output.json").write_bytes(generator_output_bytes)
     return manifest
 
 
-def _real_embedding() -> tuple[list[str], RankingFor]:
+def _real_embedding() -> tuple[list[str], RankingFor, Path]:
     """Load the fr reduced embedding once and expose the canonical ranking."""
     import french_neighbors
 
@@ -610,7 +797,7 @@ def _real_embedding() -> tuple[list[str], RankingFor]:
     def ranking_for(word: str) -> list[tuple[str, int, float]]:
         return french_neighbors.closest(word, kv, V, M, n=TOP_K)
 
-    return V, ranking_for
+    return V, ranking_for, Path(french_neighbors.FASTTEXT_VEC)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -649,13 +836,15 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0
 
-    V, ranking_for = _real_embedding()
+    V, ranking_for, embedding_path = _real_embedding()
     manifest = build_dataset(
         generator_output,
         V=V,
         ranking_for=ranking_for,
         seed=args.seed,
         out_dir=args.out_dir,
+        embedding_source=str(embedding_path.relative_to(REPO_ROOT)),
+        embedding_sha256=_sha256_file(embedding_path),
     )
     print(
         f"dataset {manifest['dataset_id']} written to {args.out_dir} "

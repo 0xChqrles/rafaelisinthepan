@@ -712,7 +712,69 @@ def _state_snapshot_lines(referee: PuzzleReferee) -> list[str]:
     ]
 
 
-def opening_message(referee: PuzzleReferee, strategy: str | None = None) -> str:
+def _rules_only_opening(
+    referee: PuzzleReferee, language: str, strategy_section: list[str]
+) -> str:
+    return "\n".join(
+        [
+            f"Play Whippin AI in {language}. Reply with exactly one {language} word per turn.",
+            "",
+            "GOAL",
+            (
+                "Solve every hidden word in as few counted tries as possible. "
+                "Your score is the total number of unique valid guesses — lower is "
+                "better, so every counted guess is expensive."
+            ),
+            "",
+            "RULES",
+            (
+                "The CLOZE is a real sentence whose [WORD N] blanks must be found "
+                "exactly. Solved words appear in the sentence; ranked clues never do."
+            ),
+            (
+                "One guess is tested against every unsolved word. Each reports a "
+                "closeness rank: lower is closer, 0 is solved, and MISS is outside "
+                "the stored neighborhood."
+            ),
+            (
+                "A guess counts only when it exists in the game vocabulary and has "
+                "not already been submitted; invalid and repeated words do not count."
+            ),
+            (
+                "Answers are exact inflected forms, not lemmas: number, gender, "
+                "agreement, and conjugation can distinguish words."
+            ),
+            "",
+            "EMBEDDING INFO",
+            (
+                "Ranks come from word-embedding similarity: they measure contextual "
+                "relatedness, not synonymy or grammatical fit. A warm rank is useful "
+                "evidence but does not prove that its apparent concept is the answer."
+            ),
+            "",
+            "FEEDBACK FORMAT",
+            (
+                "After each guess you receive its result and an authoritative current "
+                "snapshot. It shows the CLOZE, only the current best ranked clue for "
+                "each unsolved word, the consecutive no-improvement count, and all "
+                "already-tried words as an unordered exclusion set. Earlier outcomes "
+                "are not replayed as a word sequence."
+            ),
+            *strategy_section,
+            "",
+            *_state_snapshot_lines(referee),
+            "Tries: 0 (your score — lower is better)",
+            "Reply with exactly one word.",
+        ]
+    )
+
+
+def opening_message(
+    referee: PuzzleReferee,
+    strategy: str | None = None,
+    *,
+    rules_only: bool = False,
+) -> str:
     language = LANGUAGE_NAMES.get(referee.lang, referee.lang)
     strategy_section: list[str] = []
     if strategy:
@@ -725,6 +787,8 @@ def opening_message(referee: PuzzleReferee, strategy: str | None = None) -> str:
             ),
             strategy,
         ]
+    if rules_only:
+        return _rules_only_opening(referee, language, strategy_section)
     return "\n".join(
         [
             f"Play Whippin AI in {language}. Reply with exactly one {language} word per turn.",
@@ -823,7 +887,12 @@ def _outcome_text(outcome: HoleOutcome, referee: PuzzleReferee) -> str:
     )
 
 
-def feedback_message(feedback: GuessFeedback, referee: PuzzleReferee) -> str:
+def feedback_message(
+    feedback: GuessFeedback,
+    referee: PuzzleReferee,
+    *,
+    rules_only: bool = False,
+) -> str:
     if feedback.kind == "counted":
         outcomes = "\n".join(
             _outcome_text(outcome, referee) for outcome in feedback.outcomes
@@ -831,26 +900,28 @@ def feedback_message(feedback: GuessFeedback, referee: PuzzleReferee) -> str:
         lead = f'RESULT FOR "{feedback.guess}":\n{outcomes}'
     else:
         lead = feedback.message
-    return "\n".join(
-        [
-            lead,
-            *_state_snapshot_lines(referee),
-            f"Tries: {feedback.tries} (your score — lower is better)",
-            ADAPTATION_GUIDELINE,
-            "Reply with exactly one word.",
-        ]
-    )
+    lines = [
+        lead,
+        *_state_snapshot_lines(referee),
+        f"Tries: {feedback.tries} (your score — lower is better)",
+    ]
+    if not rules_only:
+        lines.append(ADAPTATION_GUIDELINE)
+    lines.append("Reply with exactly one word.")
+    return "\n".join(lines)
 
 
-def unparseable_message(referee: PuzzleReferee) -> str:
-    return "\n".join(
-        [
-            "I could not parse a word — this did not count. Reply with exactly one word.",
-            *_state_snapshot_lines(referee),
-            f"Tries: {referee.tries} (your score — lower is better)",
-            ADAPTATION_GUIDELINE,
-        ]
-    )
+def unparseable_message(
+    referee: PuzzleReferee, *, rules_only: bool = False
+) -> str:
+    lines = [
+        "I could not parse a word — this did not count. Reply with exactly one word.",
+        *_state_snapshot_lines(referee),
+        f"Tries: {referee.tries} (your score — lower is better)",
+    ]
+    if not rules_only:
+        lines.append(ADAPTATION_GUIDELINE)
+    return "\n".join(lines)
 
 
 def play_puzzle(
@@ -861,6 +932,7 @@ def play_puzzle(
     cap: int = DEFAULT_CAP,
     on_try: TryReporter | None = None,
     strategy: str | None = None,
+    rules_only: bool = False,
 ) -> RunResult:
     """Run one append-only model conversation through the real puzzle rules.
 
@@ -875,7 +947,10 @@ def play_puzzle(
         raise ValueError("puzzle starts solved; no benchmark can be played")
 
     messages: list[Message] = [
-        {"role": "user", "content": opening_message(referee, strategy)}
+        {
+            "role": "user",
+            "content": opening_message(referee, strategy, rules_only=rules_only),
+        }
     ]
     turns = 0
     consecutive_unparseable = 0
@@ -901,13 +976,23 @@ def play_puzzle(
                 raise UnparseableReplyError(
                     f"aborted after {MAX_CONSECUTIVE_UNPARSEABLE} consecutive unparseable replies"
                 )
-            messages.append({"role": "user", "content": unparseable_message(referee)})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": unparseable_message(referee, rules_only=rules_only),
+                }
+            )
             continue
 
         consecutive_unparseable = 0
         feedback = referee.submit(guess)
         messages.append(
-            {"role": "user", "content": feedback_message(feedback, referee)}
+            {
+                "role": "user",
+                "content": feedback_message(
+                    feedback, referee, rules_only=rules_only
+                ),
+            }
         )
 
         if feedback.kind == "counted":
@@ -1128,7 +1213,9 @@ class AnthropicSubscriptionReply:
         self._workspace.cleanup()
 
 
-def _codex_snapshot_prompt(messages: list[Message]) -> str:
+def _codex_snapshot_prompt(
+    messages: list[Message], output: OutputMode = "word"
+) -> str:
     opening = messages[0]["content"]
     opening_rules, marker, initial_state = opening.partition("\nCURRENT STATE\n")
     if marker:
@@ -1145,12 +1232,18 @@ def _codex_snapshot_prompt(messages: list[Message]) -> str:
         ),
     }
     encoded = json.dumps(snapshot, ensure_ascii=False, separators=(",", ":"))
+    if output == "prose":
+        lead = "Complete the task from the compact JSON snapshot below."
+        response_rule = "Answer fully in the exact format requested."
+    else:
+        lead = "Play the word game from the compact JSON snapshot below."
+        response_rule = "Return exactly one word and nothing else."
     return "\n".join(
         [
-            "Play the word game from the compact JSON snapshot below.",
+            lead,
             "The opening rules and latest current state are authoritative; obsolete "
             "intermediate turns are intentionally omitted.",
-            "Return exactly one word and nothing else.",
+            response_rule,
             encoded,
         ]
     )
@@ -1219,6 +1312,7 @@ class OpenAISubscriptionReply:
         self.cli = cli
         self.model_id = model_id
         self.effort = effort
+        self.output = output
         self._message_count = 0
         self._workspace = tempfile.TemporaryDirectory(prefix="whippin-codex-")
         self.last_token_usage: dict[str, Any] | None = None
@@ -1285,7 +1379,7 @@ class OpenAISubscriptionReply:
                 timeout=CODEX_TURN_TIMEOUT_SECONDS,
                 cwd=self._workspace.name,
                 env=_environment_without(OPENAI_SUBSCRIPTION_CONFLICT_ENV),
-                input=_codex_snapshot_prompt(messages),
+                input=_codex_snapshot_prompt(messages, self.output),
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise RuntimeError(f"{self.model_id} Codex CLI turn failed: {exc}") from exc

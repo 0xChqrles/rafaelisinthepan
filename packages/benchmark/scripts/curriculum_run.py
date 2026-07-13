@@ -40,12 +40,18 @@ from llm_play import (  # noqa: E402
     play_puzzle,
     provider_reply,
     select_model,
+    validate_anthropic_subscription_auth,
+    validate_openai_subscription_auth,
+    _last_token_usage,
     _transport_name,
+    _validate_provider_effort,
 )
+from curriculum_dataset import dataset_content_sha256  # noqa: E402
+from curriculum_io import load_json, read_data_bytes, sha256_bytes  # noqa: E402
 from slug import slug  # noqa: E402
 import strategy_profiles as sp  # noqa: E402
 
-CURRICULUM_PROMPT_VERSION = "1"
+CURRICULUM_PROMPT_VERSION = "2"
 RUNS_PER_PUZZLE = 3
 HOLDOUT_RUNS_PER_CONDITION = 3
 CONDITIONS = ("neutral", "learned", "v7")
@@ -232,22 +238,48 @@ def _banned_slugs(
     puzzle: dict[str, Any], records: list[dict[str, Any]]
 ) -> set[str]:
     banned = set()
+
+    def add(word: str) -> None:
+        folded = slug(word)
+        if folded:
+            banned.add(folded)
+            banned.update(part for part in folded.split("-") if part)
+
     for hole in puzzle["holes"]:
-        banned.add(hole["secret"]["slug"])
-        banned.add(hole["start"]["slug"])
+        add(hole["secret"]["slug"])
+        add(hole["start"]["slug"])
     for record in records:
         for word in record["tried_words"]:
-            banned.add(slug(word))
-    banned.discard("")
+            add(word)
     return banned
 
 
-def _sentence_quotes(puzzle: dict[str, Any]) -> list[str]:
-    words = [w for w in puzzle["words"]]
-    return [
-        " ".join(words[i : i + 4]).lower()
-        for i in range(max(0, len(words) - 3))
-    ]
+def _token_slug_forms(token: str) -> set[str]:
+    folded = slug(token)
+    if not folded:
+        return set()
+    return {folded, *(part for part in folded.split("-") if part)}
+
+
+def _core_slug_sequence(text: str) -> list[str]:
+    return [folded for token in _WORD_RE.findall(text) if (folded := slug(token))]
+
+
+def _sentence_trigrams(puzzle: dict[str, Any]) -> set[tuple[str, str, str]]:
+    sequence = _core_slug_sequence(" ".join(puzzle["words"]))
+    return {
+        tuple(sequence[index : index + 3])
+        for index in range(max(0, len(sequence) - 2))
+    }
+
+
+def _quotes_sentence(item: str, puzzle: dict[str, Any]) -> bool:
+    advice = _core_slug_sequence(item)
+    advice_trigrams = {
+        tuple(advice[index : index + 3])
+        for index in range(max(0, len(advice) - 2))
+    }
+    return bool(_sentence_trigrams(puzzle) & advice_trigrams)
 
 
 def validate_revised_strategy(
@@ -256,18 +288,15 @@ def validate_revised_strategy(
     """Bounded format + puzzle-leak rejection (targets, starts, guesses, quotes)."""
     revised = sp.validate_strategy_items(items)
     banned = _banned_slugs(puzzle, records)
-    quotes = _sentence_quotes(puzzle)
     for item in revised:
         for token in _WORD_RE.findall(item):
-            if slug(token) in banned:
+            if _token_slug_forms(token) & banned:
                 raise ValueError(
                     f"strategy item leaks puzzle word {token!r}; advice must be "
                     "general and reusable"
                 )
-        lowered = item.lower()
-        for quote in quotes:
-            if quote and quote in lowered:
-                raise ValueError("strategy item quotes the puzzle sentence")
+        if _quotes_sentence(item, puzzle):
+            raise ValueError("strategy item quotes the puzzle sentence")
     return revised
 
 
@@ -292,14 +321,28 @@ def structured_call(
     prose_reply: Callable[[list[dict[str, str]]], str],
     prompt: str,
     validate: Callable[[dict[str, Any]], Any],
-) -> tuple[Any, list[dict[str, str]]]:
+) -> tuple[Any, list[dict[str, str]], dict[str, Any]]:
     """One fresh prose call; on malformed/leaking output, reprompt ONCE then fail."""
     messages = [{"role": "user", "content": prompt}]
+    started = time.monotonic()
+    attempts: list[dict[str, Any]] = []
     for attempt in range(2):
+        attempt_started = time.monotonic()
         reply = prose_reply([m.copy() for m in messages])
+        attempts.append(
+            {
+                "number": attempt + 1,
+                "wall_duration": time.monotonic() - attempt_started,
+                "token_usage": _last_token_usage(prose_reply),
+            }
+        )
         messages.append({"role": "assistant", "content": reply})
         try:
-            return validate(parse_json_reply(reply)), messages
+            telemetry = {
+                "wall_duration": time.monotonic() - started,
+                "attempts": attempts,
+            }
+            return validate(parse_json_reply(reply)), messages, telemetry
         except ValueError as exc:
             if attempt == 1:
                 raise CurriculumError(
@@ -360,16 +403,16 @@ def validate_synthesis(
         raise ValueError('synthesis needs a non-empty "comprehensive_summary"')
     banned: set[str] = set()
     for puzzle in curriculum_puzzles:
-        for hole in puzzle["holes"]:
-            banned.add(hole["secret"]["slug"])
-            banned.add(hole["start"]["slug"])
+        banned.update(_banned_slugs(puzzle, []))
     final = sp.validate_strategy_items(payload.get("final_strategy"))
     for item in final:
         for token in _WORD_RE.findall(item):
-            if slug(token) in banned:
+            if _token_slug_forms(token) & banned:
                 raise ValueError(
                     f"final strategy leaks curriculum word {token!r}"
                 )
+        if any(_quotes_sentence(item, puzzle) for puzzle in curriculum_puzzles):
+            raise ValueError("final strategy quotes a curriculum sentence")
     return summary.strip(), final
 
 
@@ -377,7 +420,11 @@ def validate_synthesis(
 
 
 def _sha256_file(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while chunk := handle.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def save_artifact(path: Path, state: dict[str, Any]) -> None:
@@ -389,23 +436,33 @@ def save_artifact(path: Path, state: dict[str, Any]) -> None:
     tmp.replace(path)
 
 
-def load_manifest(manifest_path: Path) -> tuple[dict[str, Any], str]:
+def load_manifest(manifest_path: Path) -> tuple[dict[str, Any], str, str]:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     dataset_dir = manifest_path.parent
     for record in manifest["puzzles"]:
-        actual = _sha256_file(dataset_dir / record["path"])
+        actual = sha256_bytes(read_data_bytes(dataset_dir / record["path"]))
         if actual != record["sha256"]:
             raise CurriculumError(
                 f"dataset puzzle {record['path']} does not match its manifest "
                 "sha256; refusing to run on a modified dataset"
             )
-    return manifest, _sha256_file(manifest_path)
+    generator_record = manifest["generator_output"]
+    generator_actual = _sha256_file(dataset_dir / generator_record["path"])
+    if generator_actual != generator_record["sha256"]:
+        raise CurriculumError(
+            "dataset generator output does not match its manifest sha256; "
+            "refusing to run on modified provenance"
+        )
+    content_sha = dataset_content_sha256(manifest)
+    if content_sha != manifest.get("dataset_content_sha256"):
+        raise CurriculumError(
+            "dataset content identity does not match its manifest; refusing to run"
+        )
+    return manifest, content_sha, _sha256_file(manifest_path)
 
 
 def _load_puzzle(dataset_dir: Path, record: dict[str, Any]) -> dict[str, Any]:
-    return json.loads(
-        (dataset_dir / record["path"]).read_text(encoding="utf-8")
-    )
+    return load_json(dataset_dir / record["path"])
 
 
 # --- Orchestration -----------------------------------------------------------------
@@ -426,9 +483,13 @@ def run_curriculum(
     output_root: Path = OUTPUT_ROOT,
     v7_strategy: str | None = None,
 ) -> Path | None:
-    manifest, manifest_sha = load_manifest(manifest_path)
+    manifest, dataset_sha, manifest_sha = load_manifest(manifest_path)
     dataset_dir = manifest_path.parent
     config = select_model(model)
+    try:
+        _validate_provider_effort(config["provider"], auth, effort)
+    except ValueError as exc:
+        raise CurriculumError(str(exc)) from exc
     transport = _transport_name(config, auth)
     api_key = None
     if auth == "api":
@@ -438,15 +499,33 @@ def run_curriculum(
                 f"{PROVIDER_ENV[config['provider']]} is required for API auth"
             )
 
+    auth_verification: dict[str, Any] = {"mode": auth}
+    if auth == "subscription":
+        if dry_run:
+            auth_verification["status"] = "skipped_dry_run"
+        else:
+            try:
+                verified_session = (
+                    validate_anthropic_subscription_auth()
+                    if config["provider"] == "anthropic"
+                    else validate_openai_subscription_auth()
+                )
+            except RuntimeError as exc:
+                raise CurriculumError(str(exc)) from exc
+            auth_verification.update(
+                {"status": "verified", "provider_session": verified_session}
+            )
+
     run_config = {
         "dataset_id": manifest["dataset_id"],
-        "dataset_sha256": manifest_sha,
+        "dataset_sha256": dataset_sha,
         "lang": manifest["lang"],
         "model_id": config["model_id"],
         "provider": config["provider"],
         "transport": transport,
         "effort": effort,
         "auth": auth,
+        "auth_verification": auth_verification,
         "cap": cap,
         "prompt_version": PROMPT_VERSION,
         "curriculum_prompt_version": CURRICULUM_PROMPT_VERSION,
@@ -475,6 +554,7 @@ def run_curriculum(
         )
         state = {
             "config": run_config,
+            "manifest_sha256": manifest_sha,
             "started_at": datetime.now(timezone.utc).isoformat(),
             "puzzles": [],
             "synthesis": None,
@@ -522,6 +602,7 @@ def run_curriculum(
             fresh_word_player(),
             cap=cap,
             strategy=sp.strategy_text(strategy_items) if strategy_items else None,
+            rules_only=True,
         )
         metrics = derive_run_metrics(puzzle, vocab, result.tried_words)
         record = run_record(result, metrics)
@@ -558,7 +639,7 @@ def run_curriculum(
             prompt = retrospective_prompt(
                 puzzle_state["incoming_strategy"], puzzle, puzzle_state["runs"]
             )
-            (analysis, revised), messages = structured_call(
+            (analysis, revised), messages, telemetry = structured_call(
                 fresh_prose_caller(),
                 prompt,
                 lambda payload: validate_retrospective(
@@ -569,6 +650,7 @@ def run_curriculum(
                 "analysis": analysis,
                 "revised_strategy": revised,
                 "conversation": messages,
+                "telemetry": telemetry,
             }
             save_artifact(artifact_path, state)
 
@@ -580,7 +662,7 @@ def run_curriculum(
         curriculum_puzzles = [
             _load_puzzle(dataset_dir, record) for record in curriculum_records
         ]
-        (summary, final_strategy), messages = structured_call(
+        (summary, final_strategy), messages, telemetry = structured_call(
             fresh_prose_caller(),
             synthesis_prompt(state),
             lambda payload: validate_synthesis(payload, curriculum_puzzles),
@@ -589,6 +671,7 @@ def run_curriculum(
             "comprehensive_summary": summary,
             "final_strategy": final_strategy,
             "conversation": messages,
+            "telemetry": telemetry,
         }
         save_artifact(artifact_path, state)
 
@@ -625,7 +708,7 @@ def run_curriculum(
         effort=effort,
         lang=manifest["lang"],
         dataset_id=manifest["dataset_id"],
-        dataset_sha256=manifest_sha,
+        dataset_sha256=dataset_sha,
         prompt_version=PROMPT_VERSION,
         curriculum_prompt_version=CURRICULUM_PROMPT_VERSION,
         created_at=datetime.now(timezone.utc).isoformat(),
@@ -650,6 +733,72 @@ def _median_tries(runs: list[dict[str, Any]]) -> int | None:
     return ordered[len(ordered) // 2]
 
 
+def _dnf_aware_median(values: list[int | None]) -> int | None:
+    ordered = sorted(values, key=lambda tries: (tries is None, tries))
+    return ordered[len(ordered) // 2] if ordered else None
+
+
+def _merge_token_usage(
+    total: dict[str, Any], usage: dict[str, Any] | None
+) -> None:
+    if not usage:
+        return
+    for key, value in usage.items():
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, (int, float)):
+            total[key] = total.get(key, 0) + value
+        elif isinstance(value, dict):
+            nested = total.setdefault(key, {})
+            if isinstance(nested, dict):
+                _merge_token_usage(nested, value)
+
+
+def _cost_split(state: dict[str, Any]) -> dict[str, Any]:
+    buckets = {
+        phase: {"calls": 0, "wall_duration": 0.0, "token_usage": {}}
+        for phase in ("play", "retrospective", "synthesis")
+    }
+
+    def add_play(record: dict[str, Any]) -> None:
+        bucket = buckets["play"]
+        bucket["calls"] += record.get("turns", 0)
+        bucket["wall_duration"] += record.get(
+            "wall_duration", record.get("duration", 0.0)
+        )
+        for usage in record.get("turn_token_usage", []):
+            _merge_token_usage(bucket["token_usage"], usage)
+
+    for puzzle_state in state.get("puzzles", []):
+        for record in puzzle_state.get("runs", []):
+            add_play(record)
+        retrospective = puzzle_state.get("retrospective") or {}
+        telemetry = retrospective.get("telemetry") or {}
+        buckets["retrospective"]["wall_duration"] += telemetry.get(
+            "wall_duration", 0.0
+        )
+        for attempt in telemetry.get("attempts", []):
+            buckets["retrospective"]["calls"] += 1
+            _merge_token_usage(
+                buckets["retrospective"]["token_usage"],
+                attempt.get("token_usage"),
+            )
+    for condition in state.get("holdout", {}).values():
+        for entry in condition:
+            for record in entry.get("runs", []):
+                add_play(record)
+
+    synthesis = state.get("synthesis") or {}
+    telemetry = synthesis.get("telemetry") or {}
+    buckets["synthesis"]["wall_duration"] = telemetry.get("wall_duration", 0.0)
+    for attempt in telemetry.get("attempts", []):
+        buckets["synthesis"]["calls"] += 1
+        _merge_token_usage(
+            buckets["synthesis"]["token_usage"], attempt.get("token_usage")
+        )
+    return buckets
+
+
 def evaluate_artifact(state: dict[str, Any]) -> dict[str, Any]:
     trend = [
         {
@@ -665,12 +814,13 @@ def evaluate_artifact(state: dict[str, Any]) -> dict[str, Any]:
         per_puzzle = {
             entry["number"]: _median_tries(entry["runs"]) for entry in entries
         }
-        numeric = [m for m in per_puzzle.values() if m is not None]
+        medians = list(per_puzzle.values())
+        numeric = [m for m in medians if m is not None]
         holdout[condition] = {
             "per_puzzle_median": per_puzzle,
-            "median_of_medians": (
-                statistics.median(numeric) if numeric else None
-            ),
+            "median_of_medians": _dnf_aware_median(medians),
+            "solved_only_median": statistics.median(numeric) if numeric else None,
+            "dnf_puzzles": sum(median is None for median in medians),
             "dnf_runs": sum(
                 1
                 for entry in entries
@@ -708,6 +858,7 @@ def evaluate_artifact(state: dict[str, Any]) -> dict[str, Any]:
         "paired_differences": paired,
         "strategy_adherence": adherence,
         "final_strategy": (state.get("synthesis") or {}).get("final_strategy"),
+        "cost_split": _cost_split(state),
     }
 
 

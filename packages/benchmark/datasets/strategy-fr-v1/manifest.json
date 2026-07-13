@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "dataset_id": "strategy-fr-v1",
   "lang": "fr",
   "seed": 84,
@@ -9,10 +9,29 @@
     "prompt": "Authored interactively in a Claude Code session for issue #84: original French sentences, 3 exact-inflection targets each, balanced across POS/gender/frequency per the deterministic quotas. Deterministic code performs all validation and selection.",
     "timestamp": "2026-07-13T00:00:00Z"
   },
+  "generator_output": {
+    "path": "generator-output.json",
+    "sha256": "4f38949a77c82cd62e5a5cfa9b9e4d486369eb2d8e15fa59bd8f4a96b9f9fdd6"
+  },
   "vocabulary": {
     "source": "reduced-vocabulary order (V)",
     "size": 133050,
     "sha256": "daf096e211a10ec8c8d671b7dcc255f8502f1d8ea5ce53d5af674bb90767673a"
+  },
+  "embedding": {
+    "source": "packages/generation/embedding/fr/cc.fr.300_reduced.vec",
+    "sha256": "e4f04d27b27ad3508f9d9f0b2e705dc1b16fd4c768194a3e31740d45da485ced"
+  },
+  "canonical_metadata": {
+    "source": "datasets/fr-lexicon.tsv.gz",
+    "sha256": "71b2a2d0324e4491c138034060cd71b3592f1c5a765d1f67bb77173645cafacf",
+    "verified_fields": [
+      "pos",
+      "gender"
+    ],
+    "declared_fields": [
+      "semantic_class"
+    ]
   },
   "frequency_bands": {
     "common": "frequency rank < 20000",
@@ -28,30 +47,34 @@
     "holdout": 5
   },
   "balance": {
-    "pos": {
-      "noun": 15,
-      "adjective": 15,
-      "verb": 15,
-      "adverb": 15
+    "verified": {
+      "pos": {
+        "noun": 15,
+        "adjective": 15,
+        "verb": 15,
+        "adverb": 15
+      },
+      "gender": {
+        "m": 15,
+        "f": 15
+      },
+      "frequency_band": {
+        "common": 30,
+        "difficult": 30
+      }
     },
-    "gender": {
-      "m": 15,
-      "f": 15
-    },
-    "frequency_band": {
-      "common": 30,
-      "difficult": 30
-    },
-    "semantic_class": {
-      "tangible": 32,
-      "abstract": 28
+    "declared": {
+      "semantic_class": {
+        "tangible": 32,
+        "abstract": 28
+      }
     }
   },
   "puzzles": [
     {
       "number": 1,
       "split": "curriculum",
-      "path": "puzzles/001-chemin_paisible_traverser.json",
+      "path": "puzzles/001-chemin_paisible_traverser.json.gz",
       "sha256": "846d69e5d05202454016108a8d6bfba6a8e15a6c3decac3af7d8cff843e7fc38",
       "sentence": "le chemin paisible semblait traverser des terres oubliées",
       "targets": [
@@ -93,7 +116,7 @@
     {
       "number": 2,
       "split": "curriculum",
-      "path": "puzzles/002-autrefois_fremir_sillage.json",
+      "path": "puzzles/002-autrefois_fremir_sillage.json.gz",
       "sha256": "63adf59b6ef4af1a0b016bcce45a4aa2bd2875240fc6c119bac126d27f60ac68",
       "sentence": "autrefois, les voiliers laissaient frémir la mer dans leur sillage",
       "targets": [
@@ -135,7 +158,7 @@
     {
       "number": 3,
       "split": "curriculum",
-      "path": "puzzles/003-hativement_feroce_rugir.json",
+      "path": "puzzles/003-hativement_feroce_rugir.json.gz",
       "sha256": "93462ac292af6e9149e31bca8b03bdf29dbb3944cdb970fce2bbb2cae8d13fb7",
       "sentence": "hâtivement, il recula devant la bête féroce qu'il entendait rugir",
       "targets": [
@@ -177,7 +200,7 @@
     {
       "number": 4,
       "split": "curriculum",
-      "path": "puzzles/004-felure_muette_jadis.json",
+      "path": "puzzles/004-felure_muette_jadis.json.gz",
       "sha256": "ceb1509ad1724f6b6f454bc6a73bbe81af18f5b243b682a169759bfbf0d7b887",
       "sentence": "cette fêlure muette datait d'une promesse trahie jadis",
       "targets": [
@@ -219,7 +242,7 @@
     {
       "number": 5,
       "split": "curriculum",
-      "path": "puzzles/005-febrilement_fugace_dechirer.json",
+      "path": "puzzles/005-febrilement_fugace_dechirer.json.gz",
       "sha256": "50fedd98fd387fec5f82b21efdb0a28963f600d07fb3a052ecefdc4f54d1d50d",
       "sentence": "fébrilement, il guettait la lueur fugace qui pouvait déchirer la nuit",
       "targets": [
@@ -261,7 +284,7 @@
     {
       "number": 6,
       "split": "curriculum",
-      "path": "puzzles/006-clairiere_ardente_rarement.json",
+      "path": "puzzles/006-clairiere_ardente_rarement.json.gz",
       "sha256": "f3bd88817aa9e761dc4fafb00701045dbec7cf04c96c8cfb5e1cd4a274eb8dc2",
       "sentence": "la clairière gardait une chaleur ardente que l'on trouve rarement",
       "targets": [
@@ -303,7 +326,7 @@
     {
       "number": 7,
       "split": "curriculum",
-      "path": "puzzles/007-falaise_tremble_timidement.json",
+      "path": "puzzles/007-falaise_tremble_timidement.json.gz",
       "sha256": "de1f687f42e242d20236aeea8e9646ac523c3b16a99ce5cd0e26af835291add0",
       "sentence": "au pied de la falaise, la terre tremble et l'on avance timidement",
       "targets": [
@@ -345,7 +368,7 @@
     {
       "number": 8,
       "split": "curriculum",
-      "path": "puzzles/008-immobile_scintiller_eperdument.json",
+      "path": "puzzles/008-immobile_scintiller_eperdument.json.gz",
       "sha256": "021a8bf8652d4031abafb7d0af180349347cf6f7ff84b36fbabe732aa1087bab",
       "sentence": "le lac immobile faisait scintiller des reflets qu'il aimait éperdument",
       "targets": [
@@ -387,7 +410,7 @@
     {
       "number": 9,
       "split": "curriculum",
-      "path": "puzzles/009-obstine_gravir_sommet.json",
+      "path": "puzzles/009-obstine_gravir_sommet.json.gz",
       "sha256": "35fcd66f4c8f5b7147904b6bebe7ea2f54b36c58d2c2fdcb36c526312fc6ef4d",
       "sentence": "un marcheur obstiné jurait de gravir le sommet avant l'aube",
       "targets": [
@@ -429,7 +452,7 @@
     {
       "number": 10,
       "split": "curriculum",
-      "path": "puzzles/010-aprement_jaillir_obscure.json",
+      "path": "puzzles/010-aprement_jaillir_obscure.json.gz",
       "sha256": "8ca606d71e302cd35c94617b4161043fc05f66961a5c8d1401fc1b897042f732",
       "sentence": "les mineurs, âprement éprouvés, virent jaillir une source dans la galerie obscure",
       "targets": [
@@ -471,7 +494,7 @@
     {
       "number": 11,
       "split": "curriculum",
-      "path": "puzzles/011-orage_sombre_brusquement.json",
+      "path": "puzzles/011-orage_sombre_brusquement.json.gz",
       "sha256": "553714378972f6ea2f582920c65e754d0eaad67e751da1dc7678c60acc8ad324",
       "sentence": "un orage sombre éclata brusquement au-dessus du village",
       "targets": [
@@ -513,7 +536,7 @@
     {
       "number": 12,
       "split": "curriculum",
-      "path": "puzzles/012-dehors_vertige_vaciller.json",
+      "path": "puzzles/012-dehors_vertige_vaciller.json.gz",
       "sha256": "515944f1cc06211942028501a2ceb2c9f33bb69fbd9a1b28199ba0f876a80526",
       "sentence": "dehors, le vertige le fit vaciller contre la rampe",
       "targets": [
@@ -555,7 +578,7 @@
     {
       "number": 13,
       "split": "curriculum",
-      "path": "puzzles/013-penombre_sereine_doucement.json",
+      "path": "puzzles/013-penombre_sereine_doucement.json.gz",
       "sha256": "7728953fe518d67b15c583225a13f416da48a97ccf17a4768e360d98203b5ab7",
       "sentence": "la pénombre sereine enveloppait doucement les ruelles endormies",
       "targets": [
@@ -597,7 +620,7 @@
     {
       "number": 14,
       "split": "curriculum",
-      "path": "puzzles/014-apaiser_tumulte_amer.json",
+      "path": "puzzles/014-apaiser_tumulte_amer.json.gz",
       "sha256": "5d30a223c89466f19f24b1cbeb3950b8ed3232530b90297cbc1ad5d96fce2809",
       "sentence": "rien ne pouvait apaiser le tumulte amer de son esprit",
       "targets": [
@@ -639,7 +662,7 @@
     {
       "number": 15,
       "split": "curriculum",
-      "path": "puzzles/015-ecume_legere_chavirer.json",
+      "path": "puzzles/015-ecume_legere_chavirer.json.gz",
       "sha256": "d0e2d21ca797864029ab487332b29d082bdbb30e7abeb7e1ecc6e27171610ba6",
       "sentence": "une écume légère faisait chavirer les barques du port",
       "targets": [
@@ -681,7 +704,7 @@
     {
       "number": 16,
       "split": "holdout",
-      "path": "puzzles/016-frisson_brulant_aussitot.json",
+      "path": "puzzles/016-frisson_brulant_aussitot.json.gz",
       "sha256": "68b3bd8c4da5d8d87c1a3a35ad4f19ed60aa1d673514ffe5031e147655830fae",
       "sentence": "un frisson brûlant la parcourut aussitôt qu'il parla",
       "targets": [
@@ -723,7 +746,7 @@
     {
       "number": 17,
       "split": "holdout",
-      "path": "puzzles/017-brouillard_dissiper_lentement.json",
+      "path": "puzzles/017-brouillard_dissiper_lentement.json.gz",
       "sha256": "426fa517c321cce58436a8485dcfc39734e7f465589b3b9c430d1bb3db5b55bb",
       "sentence": "le brouillard commença à se dissiper lentement sur la vallée",
       "targets": [
@@ -765,7 +788,7 @@
     {
       "number": 18,
       "split": "holdout",
-      "path": "puzzles/018-lumiere_douce_brille.json",
+      "path": "puzzles/018-lumiere_douce_brille.json.gz",
       "sha256": "65166d596690dc3e756462cf2da1fe720f49ccf466ffad527fa460992f8523d9",
       "sentence": "une lumière douce brille encore derrière les volets clos",
       "targets": [
@@ -807,7 +830,7 @@
     {
       "number": 19,
       "split": "holdout",
-      "path": "puzzles/019-soudain_braise_crepiter.json",
+      "path": "puzzles/019-soudain_braise_crepiter.json.gz",
       "sha256": "6ef5da84a89e538a5824384047d99fb8cfe7df60411b378eac8a2fc7c9c659fa",
       "sentence": "soudain, la braise se mit à crépiter sous la cendre froide",
       "targets": [
@@ -849,7 +872,7 @@
     {
       "number": 20,
       "split": "holdout",
-      "path": "puzzles/020-rugueux_resplendir_follement.json",
+      "path": "puzzles/020-rugueux_resplendir_follement.json.gz",
       "sha256": "c7b380f42f4485c027009cfcebc82737d41637fe1c8cf188d731a50df031190b",
       "sentence": "cet artisan rugueux voulait faire resplendir son œuvre, follement peut-être",
       "targets": [
@@ -889,5 +912,6 @@
       ]
     }
   ],
-  "generated_at": "2026-07-13T19:28:19.349971+00:00"
+  "generated_at": "2026-07-13T20:16:31.466898+00:00",
+  "dataset_content_sha256": "1d2496c715a91223ab65c1fcf75a9c14f41b7ea9c36f71a3b372f15308d21f3a"
 }

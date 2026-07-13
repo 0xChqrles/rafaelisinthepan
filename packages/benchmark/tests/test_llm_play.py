@@ -543,6 +543,43 @@ def test_openai_subscription_adapter_isolates_fresh_codex_exec(
     assert not workspace.exists()
 
 
+def test_openai_subscription_prose_payload_has_no_one_word_directive(monkeypatch):
+    calls = []
+
+    def fake_run(_command, **kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            returncode=0,
+            stdout="\n".join(
+                [
+                    json.dumps(
+                        {
+                            "type": "item.completed",
+                            "item": {
+                                "type": "agent_message",
+                                "text": '{"analysis": "complete"}',
+                            },
+                        }
+                    ),
+                    json.dumps({"type": "turn.completed", "usage": {}}),
+                ]
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr("llm_play.shutil.which", lambda _command: "/usr/bin/codex")
+    monkeypatch.setattr("llm_play.subprocess.run", fake_run)
+    reply = provider_reply(
+        MODELS[2], None, effort="medium", auth="subscription", output="prose"
+    )
+
+    assert reply([{"role": "user", "content": "Return a complete JSON report."}])
+    payload = calls[0]["input"]
+    assert "exactly one word" not in payload.lower()
+    assert "Answer fully in the exact format requested." in payload
+    reply.close()
+
+
 @pytest.mark.parametrize("config", OPENAI_MODELS, ids=lambda config: config["label"])
 def test_openai_subscription_rejects_unsupported_none_effort(monkeypatch, config):
     monkeypatch.setattr("llm_play.shutil.which", lambda _command: "/usr/bin/codex")

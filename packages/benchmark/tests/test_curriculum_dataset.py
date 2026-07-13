@@ -73,6 +73,18 @@ CANDIDATES = [
     },
 ]
 
+CANONICAL_METADATA = {}
+for candidate in CANDIDATES:
+    for target in candidate["targets"]:
+        CANONICAL_METADATA.setdefault(target["word"], set()).add(
+            (target["pos"], target.get("gender"))
+        )
+
+SYNTHETIC_EMBEDDING = {
+    "embedding_source": "fixtures/synthetic.vec",
+    "embedding_sha256": "e" * 64,
+}
+
 LETTERS = "abcdefghijklmnopqrstuvwxyz"
 
 
@@ -102,7 +114,7 @@ def generator_output():
 
 
 def test_validate_locates_targets_with_affixes_and_frequency_bands(freq):
-    result = validate_candidate(2, CANDIDATES[2], freq)
+    result = validate_candidate(2, CANDIDATES[2], freq, CANONICAL_METADATA)
     assert isinstance(result, Candidate)
     arbre = result.targets[0]
     assert (arbre.word, arbre.prefix, arbre.suffix) == ("arbre", "l'", "")
@@ -118,16 +130,17 @@ def test_validate_locates_targets_with_affixes_and_frequency_bands(freq):
         (lambda c: c["targets"][0].update(word="absent"), "not in the reduced vocabulary"),
         (lambda c: c.update(sentence="l'arbre aime manger un arbre ailleurs"), "exactly once"),
         (lambda c: c["targets"][1].update(word="mangers"), "not in the reduced vocabulary"),
-        (lambda c: [t.update(pos="noun") or t.update(gender="m") for t in c["targets"]], "share one POS"),
+        (lambda c: [t.update(pos="noun") or t.update(gender="m") for t in c["targets"]], "not attested"),
         (lambda c: [t.update(semantic_class="abstract") for t in c["targets"]], "share one semantic domain"),
         (lambda c: c["targets"][0].pop("gender"), "needs gender"),
+        (lambda c: c["targets"][1].update(gender="m"), "must not declare a gender"),
         (lambda c: c.update(sentence="l'arbre aime manger le puzzle ailleurs"), "meta-language"),
     ],
 )
 def test_validate_rejects_with_a_reason_and_never_rewrites(freq, mutation, reason_part):
     candidate = json.loads(json.dumps(CANDIDATES[2]))
     mutation(candidate)
-    result = validate_candidate(0, candidate, freq)
+    result = validate_candidate(0, candidate, freq, CANONICAL_METADATA)
     assert isinstance(result, Rejection)
     assert reason_part in result.reason
 
@@ -136,14 +149,62 @@ def test_exact_inflection_is_required_not_slug_equality(freq):
     candidate = json.loads(json.dumps(CANDIDATES[2]))
     # Accented sentence form vs unaccented target word: same slug, wrong inflection.
     candidate["sentence"] = "l'àrbre aime manger ailleurs"
-    result = validate_candidate(0, candidate, freq)
+    result = validate_candidate(0, candidate, freq, CANONICAL_METADATA)
     assert isinstance(result, Rejection)
     assert "exact inflection" in result.reason
 
 
+@pytest.mark.parametrize(
+    ("word", "pos", "gender"),
+    [("arbre", "verb", None), ("manger", "noun", "m")],
+)
+def test_canonical_metadata_rejects_author_asserted_pos_and_gender(
+    freq, word, pos, gender
+):
+    candidate = json.loads(json.dumps(CANDIDATES[2]))
+    target = next(target for target in candidate["targets"] if target["word"] == word)
+    target["pos"] = pos
+    if gender is None:
+        target.pop("gender", None)
+    else:
+        target["gender"] = gender
+    result = validate_candidate(0, candidate, freq, CANONICAL_METADATA)
+    assert isinstance(result, Rejection)
+    assert "not attested by Lexique" in result.reason
+
+
+def test_lexique_export_is_vocabulary_scoped_and_deterministic(tmp_path):
+    source = tmp_path / "lexique.tsv"
+    source.write_text(
+        "ortho\tcgram\tgenre\n"
+        "arbre\tNOM\tm\n"
+        "manger\tVER\t\n"
+        "paisible\tADJ\t\n"
+        "exclu\tNOM\tm\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "fr-lexicon.tsv.gz"
+    metadata = cd.build_fr_lexicon(
+        ["arbre", "manger", "paisible"], source_path=source, out_path=output
+    )
+    first_bytes = output.read_bytes()
+
+    assert metadata == {
+        "arbre": {("noun", "m")},
+        "manger": {("verb", None)},
+        "paisible": {("adjective", "m"), ("adjective", "f")},
+    }
+    assert cd.load_fr_lexicon(output) == metadata
+    cd.build_fr_lexicon(
+        ["arbre", "manger", "paisible"], source_path=source, out_path=output
+    )
+    assert output.read_bytes() == first_bytes
+
+
 def test_selection_is_deterministic_and_quota_exact(freq):
     validated = [
-        validate_candidate(i, raw, freq) for i, raw in enumerate(CANDIDATES)
+        validate_candidate(i, raw, freq, CANONICAL_METADATA)
+        for i, raw in enumerate(CANDIDATES)
     ]
     assert all(isinstance(v, Candidate) for v in validated)
 
@@ -159,7 +220,8 @@ def test_selection_is_deterministic_and_quota_exact(freq):
 
 def test_split_is_stratified_and_sized(freq):
     validated = [
-        validate_candidate(i, raw, freq) for i, raw in enumerate(CANDIDATES)
+        validate_candidate(i, raw, freq, CANONICAL_METADATA)
+        for i, raw in enumerate(CANDIDATES)
     ]
     selected = select_balanced(validated, seed=7, quotas=QUOTAS)
     curriculum, holdout = stratify_split(selected, quotas=QUOTAS)
@@ -190,7 +252,7 @@ def test_curriculum_start_stays_in_band_and_never_falls_back():
 def test_build_puzzle_produces_the_canonical_schema(freq):
     import random
 
-    candidate = validate_candidate(2, CANDIDATES[2], freq)
+    candidate = validate_candidate(2, CANDIDATES[2], freq, CANONICAL_METADATA)
     puzzle = build_puzzle(candidate, ranking_for=ranking_for, rng=random.Random(3))
     assert puzzle["lang"] == "fr"
     assert puzzle["words"] == ["l'arbre", "aime", "manger", "ailleurs"]
@@ -218,6 +280,8 @@ def test_build_dataset_writes_manifest_puzzles_and_stable_hashes(tmp_path):
         seed=42,
         out_dir=first_dir,
         quotas=QUOTAS,
+        canonical_metadata=CANONICAL_METADATA,
+        **SYNTHETIC_EMBEDDING,
     )
     again = build_dataset(
         generator_output(),
@@ -226,6 +290,8 @@ def test_build_dataset_writes_manifest_puzzles_and_stable_hashes(tmp_path):
         seed=42,
         out_dir=second_dir,
         quotas=QUOTAS,
+        canonical_metadata=CANONICAL_METADATA,
+        **SYNTHETIC_EMBEDDING,
     )
 
     assert manifest["counts"] == {"puzzles": 4, "curriculum": 3, "holdout": 1}
@@ -234,16 +300,30 @@ def test_build_dataset_writes_manifest_puzzles_and_stable_hashes(tmp_path):
     assert [p["split"] for p in manifest["puzzles"]] == ["curriculum"] * 3 + [
         "holdout"
     ]
-    assert manifest["balance"]["pos"] == {
+    assert manifest["balance"]["verified"]["pos"] == {
         "noun": 3, "adjective": 3, "verb": 3, "adverb": 3
     }
-    assert manifest["balance"]["gender"] == {"m": 3, "f": 3}
-    assert manifest["balance"]["frequency_band"] == {"common": 6, "difficult": 6}
+    assert manifest["balance"]["verified"]["gender"] == {"m": 3, "f": 3}
+    assert manifest["balance"]["verified"]["frequency_band"] == {
+        "common": 6,
+        "difficult": 6,
+    }
+    assert "semantic_class" not in manifest["balance"]["verified"]
+    assert manifest["balance"]["declared"]["semantic_class"]
+    assert manifest["canonical_metadata"]["verified_fields"] == ["pos", "gender"]
+    assert manifest["canonical_metadata"]["declared_fields"] == [
+        "semantic_class"
+    ]
+    assert manifest["embedding"] == {
+        "source": "fixtures/synthetic.vec",
+        "sha256": "e" * 64,
+    }
 
     for record in manifest["puzzles"]:
         path = first_dir / record["path"]
-        assert cd._sha256_file(path) == record["sha256"]
-        puzzle = json.loads(path.read_text(encoding="utf-8"))
+        assert record["path"].endswith(".json.gz")
+        assert cd.sha256_bytes(cd.read_data_bytes(path)) == record["sha256"]
+        puzzle = cd.load_puzzle_json(path)
         assert len(puzzle["holes"]) == 3
         for hole in puzzle["holes"]:
             assert 100 <= hole["start_rank"] <= 150
@@ -258,6 +338,16 @@ def test_build_dataset_writes_manifest_puzzles_and_stable_hashes(tmp_path):
         ).read_bytes()
     for key in ("puzzles", "balance", "vocabulary", "seed"):
         assert manifest[key] == again[key]
+    assert manifest["dataset_content_sha256"] == again["dataset_content_sha256"]
+    changed_timestamp = dict(manifest, generated_at="2099-01-01T00:00:00+00:00")
+    assert cd.dataset_content_sha256(changed_timestamp) == manifest[
+        "dataset_content_sha256"
+    ]
+    changed_split = json.loads(json.dumps(manifest))
+    changed_split["puzzles"][0]["split"] = "holdout"
+    assert cd.dataset_content_sha256(changed_split) != manifest[
+        "dataset_content_sha256"
+    ]
 
     # The generator output is archived verbatim.
     archived = json.loads(
@@ -275,6 +365,7 @@ def test_dry_run_reports_without_writing(tmp_path):
         seed=42,
         out_dir=out_dir,
         quotas=QUOTAS,
+        canonical_metadata=CANONICAL_METADATA,
         dry_run=True,
     )
     assert report["dry_run"] is True
@@ -313,10 +404,12 @@ def test_committed_dataset_satisfies_every_invariant():
     assert splits == ["curriculum"] * 15 + ["holdout"] * 5
 
     seen_slugs = set()
+    canonical_metadata = cd.load_fr_lexicon()
     for record in manifest["puzzles"]:
         path = COMMITTED_DATASET / record["path"]
-        assert cd._sha256_file(path) == record["sha256"]
-        puzzle = json.loads(path.read_text(encoding="utf-8"))
+        assert record["path"].endswith(".json.gz")
+        assert cd.sha256_bytes(cd.read_data_bytes(path)) == record["sha256"]
+        puzzle = cd.load_puzzle_json(path)
         assert puzzle["lang"] == "fr"
         assert len(puzzle["holes"]) == 3
         for hole in puzzle["holes"]:
@@ -324,9 +417,16 @@ def test_committed_dataset_satisfies_every_invariant():
         for target in record["targets"]:
             assert target["slug"] not in seen_slugs
             seen_slugs.add(target["slug"])
+            assert (target["pos"], target["gender"]) in canonical_metadata[
+                target["word"]
+            ]
 
-    assert manifest["balance"]["pos"] == {
+    assert manifest["balance"]["verified"]["pos"] == {
         "noun": 15, "adjective": 15, "verb": 15, "adverb": 15
     }
-    assert manifest["balance"]["gender"] == {"m": 15, "f": 15}
-    assert manifest["balance"]["frequency_band"] == {"common": 30, "difficult": 30}
+    assert manifest["balance"]["verified"]["gender"] == {"m": 15, "f": 15}
+    assert manifest["balance"]["verified"]["frequency_band"] == {
+        "common": 30,
+        "difficult": 30,
+    }
+    assert manifest["dataset_content_sha256"] == cd.dataset_content_sha256(manifest)

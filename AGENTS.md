@@ -63,11 +63,14 @@ packages/
     pyproject.toml, uv.lock   Python project (uv)
   benchmark/                  offline LLM puzzle benchmark (pkg @whippin/benchmark, #68)
     scripts/llm_play.py       LLM player/referee; reads generation output + web vocab
+    scripts/build_curriculum_lexicon.py  offline V∩Lexique POS/gender export (#84)
     scripts/curriculum_dataset.py  deterministic strategy-curriculum dataset builder (#84)
+    scripts/curriculum_io.py       deterministic gzip-aware curriculum data I/O (#84)
     scripts/curriculum_run.py      curriculum orchestrator: plays/retrospectives/holdout (#84)
     scripts/strategy_profiles.py   compact model-specific learned-strategy profiles (#84)
-    datasets/strategy-fr-v1/  frozen curriculum dataset (manifest + generator output committed;
-                              built puzzles/ gitignored, SHA-256-pinned, rebuilt deterministically)
+    datasets/fr-lexicon.tsv.gz committed V∩Lexique canonical POS/gender reference (#84)
+    datasets/strategy-fr-v1/  frozen curriculum dataset (manifest + generator output +
+                              compressed puzzles committed and SHA-256-pinned)
     datasets/v7-strategy.txt  exact v7 strategy control, recovered verbatim from a recorded transcript
     tests/test_llm_play.py    provider-adapter + game-rules parity tests
     output/<puzzle-stem>.bench.json  full local lab record (#80; gitignored, never published)
@@ -427,11 +430,13 @@ pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--
 #    lean display trio once all 3 current-prompt display models have results.
 pnpm bench:puzzle <puzzle.json> --model MODEL [--effort LEVEL] [--auth api|subscription] [--cap N] [--runs N] [--in-place]
 
-# 5. (Lab-only, #84) Strategy curriculum. `generate` rebuilds the frozen dataset
-#    deterministically from the committed generator output (needs the fr embedding;
+# 5. (Lab-only, #84) Strategy curriculum. `lexicon` refreshes the committed canonical
+#    POS/gender reference from cached Lexique + the reduced V. `generate` rebuilds the
+#    frozen dataset deterministically from the committed generator output (needs the fr embedding;
 #    --dry-run validates without building). `run` plays one model through the curriculum
 #    (paid; resumable, checkpointed, --dry-run plans without provider calls);
 #    `evaluate` reports on an artifact or profile. Curriculum data never enters puzzles.
+pnpm bench:curriculum:lexicon [--lexique-source <lexique.tsv>] [--out <fr-lexicon.tsv.gz>]
 pnpm bench:curriculum:generate --from-output <generator-output.json> --seed 84 [--dry-run]
 pnpm bench:curriculum:run <manifest.json> --model MODEL [--effort LEVEL] [--auth api|subscription] [--cap N] [--resume ARTIFACT] [--force] [--dry-run]
 pnpm bench:curriculum:evaluate <artifact-or-profile.json>
@@ -535,22 +540,30 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   frozen 20-puzzle French dataset `benchmark/datasets/strategy-fr-v1/` (15 curriculum + 5
   holdout, 3 targets each, start ranks 100–150 stored-rank with no fallback, quota-exact
   POS/gender/frequency balance): the LLM only authors candidates (`generator-output.json`,
-  committed); deterministic code validates, selects (seeded backtracking), splits, builds
-  puzzles via generation's canonical logic, and pins everything by SHA-256 in the committed
-  `manifest.json`. The built `puzzles/` (~45 MB of rank maps) are gitignored and rebuild
-  byte-identically via `pnpm bench:curriculum:generate --from-output <generator-output.json>
-  --seed 84`; every run re-verifies the hashes first. `curriculum_run.py run` plays each
+  committed); deterministic code validates canonical POS/gender against the committed
+  V∩Lexique `benchmark/datasets/fr-lexicon.tsv.gz` (semantic class remains explicitly
+  author-declared), selects (seeded backtracking), splits, and builds puzzles via generation's
+  canonical logic. The 20 `puzzles/*.json.gz` files (~6.5 MB) are committed; their manifest
+  hashes cover uncompressed JSON bytes. The manifest also pins the full reduced-vector file,
+  and its timestamp-independent `dataset_content_sha256` — not the informational manifest-file
+  hash — anchors resume checks and profiles. Rebuild with `pnpm bench:curriculum:generate
+  --from-output <generator-output.json> --seed 84`; every run re-verifies content first.
+  `curriculum_run.py run` preflights subscription auth even on resume and plays each
   curriculum puzzle 3 times from fresh provider contexts with the same incoming strategy, then
   one fresh prose retrospective call revises a compact strategy (≤8 items/2000 chars,
-  puzzle-leak and sentence-quote validation, one reprompt then hard error; revisions REPLACE,
-  never append); a final synthesis freezes `final_strategy`, then holdout evaluates
+  segment-aware puzzle-leak and 3-word slug-sequence quote validation, one reprompt then hard
+  error; revisions REPLACE, never append). Curriculum play uses a rules-only fixed opening and
+  feedback path; the shipping `bench:puzzle` prompt remains unchanged. A final synthesis freezes
+  `final_strategy`, then holdout evaluates
   neutral/learned/v7 (the exact v7 strategy text recovered verbatim from a recorded transcript
   into `benchmark/datasets/v7-strategy.txt`) 3 runs each with no further learning. Artifacts
   checkpoint atomically under the gitignored `benchmark/output/curriculum/` with `--resume`
   (config/hash-verified, completed paid calls never repeat without `--force`) and `--dry-run`;
   `strategy_profiles.py` writes the compact model/configuration-specific profile that is never
-  cross-applied. `curriculum_run.py evaluate` reports medians (DNF never averaged), stall
-  metrics, curriculum trend, and paired neutral/learned/v7 differences. The pure phrase/puzzle
+  cross-applied. Retrospective/synthesis records retain per-attempt token usage and wall time.
+  `curriculum_run.py evaluate` reports DNF-aware headline medians plus explicit solved-only
+  medians/DNF counts, three-way play/retrospective/synthesis costs, stall metrics, curriculum
+  trend, and paired neutral/learned/v7 differences. The pure phrase/puzzle
   contract shared with generation lives in `generation/scripts/phrase_core.py` (stdlib-only,
   extracted from `gen_phrase.py`; gen_phrase re-exports it). Like `bench:puzzle`, running the
   curriculum is paid curator work, never done by CI/tests.
