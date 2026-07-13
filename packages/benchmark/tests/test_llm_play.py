@@ -34,7 +34,7 @@ from llm_play import (
     OPENAI_SUBSCRIPTION_CONFLICT_ENV,
     PROMPT_VERSION,
     PROVIDER_ENV,
-    STRATEGY_OUTPUT_MAX_TOKENS,
+    PROSE_OUTPUT_MAX_TOKENS,
     REASONING_MAX_TOKENS,
     ModelSummary,
     NoProgressReplyError,
@@ -94,10 +94,6 @@ def puzzle():
 
 
 VOCAB = {"shared", "forest", "ocean", "cold", "other"}
-
-# The v14 strategy turn: every run's first scripted reply is the model's own method,
-# consumed as free text before any guess.
-PLAN = "I will complete the sentence first, then follow rank evidence."
 
 ANTHROPIC_MODELS = [config for config in MODELS if config["provider"] == "anthropic"]
 OPENAI_MODELS = [config for config in MODELS if config["provider"] == "openai"]
@@ -179,33 +175,25 @@ def test_anthropic_adapter_none_disables_thinking_caches_and_omits_sampling(
     )
     reply = provider_reply(config, "secret", effort="none")
 
-    strategy_turn = [{"role": "user", "content": "rules"}]
-    game_turn = strategy_turn + [
-        {"role": "assistant", "content": "my plan"},
-        {"role": "user", "content": "board"},
-    ]
-    assert reply(strategy_turn) == "forest"
-    assert reply(game_turn) == "forest"
+    assert reply([{"role": "user", "content": "board"}]) == "forest"
     assert reply.last_token_usage == {"input_tokens": 11, "output_tokens": 1}
-    # The free-text strategy turn gets prose headroom; game turns keep the strict
-    # one-word budget.
     assert calls == [
         {
             "model": config["model_id"],
-            "max_tokens": STRATEGY_OUTPUT_MAX_TOKENS,
-            "messages": strategy_turn,
-            "cache_control": {"type": "ephemeral"},
-            "thinking": {"type": "disabled"},
-        },
-        {
-            "model": config["model_id"],
             "max_tokens": DIRECT_OUTPUT_MAX_TOKENS,
-            "messages": game_turn,
+            "messages": [{"role": "user", "content": "board"}],
             "cache_control": {"type": "ephemeral"},
             "thinking": {"type": "disabled"},
-        },
+        }
     ]
     assert not ({"temperature", "top_p", "top_k"} & calls[0].keys())
+
+    # Prose mode is a construction-time choice (#84): same call shape, prose budget.
+    prose_calls = calls.copy()
+    prose = provider_reply(config, "secret", effort="none", output="prose")
+    assert prose([{"role": "user", "content": "retrospective"}]) == "forest"
+    assert calls[-1]["max_tokens"] == PROSE_OUTPUT_MAX_TOKENS
+    assert len(calls) == len(prose_calls) + 1
 
 
 @pytest.mark.parametrize("config", ANTHROPIC_MODELS, ids=lambda config: config["label"])
@@ -640,13 +628,7 @@ def test_openai_adapter_uses_responses_with_explicit_none_effort(monkeypatch, co
     monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=FakeOpenAI))
     reply = provider_reply(config, "secret", effort="none")
 
-    strategy_turn = [{"role": "user", "content": "rules"}]
-    game_turn = strategy_turn + [
-        {"role": "assistant", "content": "my plan"},
-        {"role": "user", "content": "board"},
-    ]
-    assert reply(strategy_turn) == "ocean"
-    assert reply(game_turn) == "ocean"
+    assert reply([{"role": "user", "content": "board"}]) == "ocean"
     assert reply.last_token_usage == {
         "input_tokens": 9,
         "output_tokens": 1,
@@ -655,17 +637,15 @@ def test_openai_adapter_uses_responses_with_explicit_none_effort(monkeypatch, co
     assert calls == [
         {
             "model": config["model_id"],
-            "input": strategy_turn,
-            "reasoning": {"effort": "none"},
-            "max_output_tokens": STRATEGY_OUTPUT_MAX_TOKENS,
-        },
-        {
-            "model": config["model_id"],
-            "input": game_turn,
+            "input": [{"role": "user", "content": "board"}],
             "reasoning": {"effort": "none"},
             "max_output_tokens": 256,
-        },
+        }
     ]
+
+    prose = provider_reply(config, "secret", effort="none", output="prose")
+    assert prose([{"role": "user", "content": "retrospective"}]) == "ocean"
+    assert calls[-1]["max_output_tokens"] == PROSE_OUTPUT_MAX_TOKENS
 
 
 @pytest.mark.parametrize(
@@ -995,9 +975,8 @@ class UsageScriptedModel(ScriptedModel):
 
 def test_run_result_collects_each_transport_reported_turn_usage():
     model = UsageScriptedModel(
-        [PLAN, "forest", "ocean"],
+        ["forest", "ocean"],
         [
-            {"input_tokens": 5, "output_tokens": 40},
             {"input_tokens": 10, "output_tokens": 1},
             {"input_tokens": 20, "output_tokens": 1},
         ],
@@ -1006,7 +985,6 @@ def test_run_result_collects_each_transport_reported_turn_usage():
     result = play_puzzle(puzzle(), VOCAB, model)
 
     assert result.turn_token_usage == (
-        {"input_tokens": 5, "output_tokens": 40},
         {"input_tokens": 10, "output_tokens": 1},
         {"input_tokens": 20, "output_tokens": 1},
     )
@@ -1015,14 +993,11 @@ def test_run_result_collects_each_transport_reported_turn_usage():
 def test_benchmark_model_persists_the_selected_median_runs_counted_display_forms():
     model = ScriptedModel(
         [
-            PLAN,
             "forest",
             "ocean",
-            PLAN,
             "shared",
             "forest",
             "ocean",
-            PLAN,
             "cold",
             "other",
             "forest",
@@ -1203,7 +1178,7 @@ def test_in_place_cli_accumulates_lab_runs_then_embeds_only_the_complete_trio(
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setattr(
         "llm_play.provider_reply",
-        lambda *_args, **_kwargs: ScriptedModel([PLAN, "forest", "ocean"]),
+        lambda *_args, **_kwargs: ScriptedModel(["forest", "ocean"]),
     )
 
     for selector in ("OPUS", "SONNET"):
@@ -1327,7 +1302,7 @@ def test_prompt_bump_keeps_the_existing_trio_until_atomic_replacement(
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setattr(
         "llm_play.provider_reply",
-        lambda *_args, **_kwargs: ScriptedModel([PLAN, "forest", "ocean"]),
+        lambda *_args, **_kwargs: ScriptedModel(["forest", "ocean"]),
     )
 
     for selector in ("OPUS", "SONNET"):
@@ -1374,33 +1349,31 @@ def test_prompt_bump_keeps_the_existing_trio_until_atomic_replacement(
 
 
 def test_verbose_reply_is_reprompted_without_scoring_its_first_word():
-    model = ScriptedModel([PLAN, "The answer is forest", "forest", "ocean"])
+    model = ScriptedModel(["The answer is forest", "forest", "ocean"])
 
     result = play_puzzle(puzzle(), VOCAB, model)
 
     assert result.tries == 2
-    assert result.turns == 4
+    assert result.turns == 3
     assert result.tried_words == ("forest", "ocean")
-    assert "could not parse a word" in model.calls[2][-1]["content"]
+    assert "could not parse a word" in model.calls[1][-1]["content"]
 
 
 def test_invalid_and_folded_duplicate_do_not_count_and_are_reprompted():
     # "sharéd" and "shared" fold to the same persisted try key, exactly like Game.
-    model = ScriptedModel([PLAN, "nonesuch", "sharéd", "shared", "forest", "ocean"])
+    model = ScriptedModel(["nonesuch", "sharéd", "shared", "forest", "ocean"])
     updates = []
     result = play_puzzle(puzzle(), VOCAB, model, on_try=updates.append)
 
     assert result.tries == 3
     assert result.counted_tries == 3
-    assert result.turns == 6
+    assert result.turns == 5
     assert result.tried_words == ("sharéd", "forest", "ocean")
     user_feedback = [m["content"] for m in result.conversation if m["role"] == "user"]
-    # user_feedback[0] is the opening rules, [1] the game-start turn after the method.
-    assert "Method noted." in user_feedback[1]
-    assert '"nonesuch" is not a word — this did not count.' in user_feedback[2]
-    assert "Tries: 0" in user_feedback[2]
-    assert '"shared" was already tried — this did not count.' in user_feedback[4]
-    assert "Tries: 1" in user_feedback[4]
+    assert '"nonesuch" is not a word — this did not count.' in user_feedback[1]
+    assert "Tries: 0" in user_feedback[1]
+    assert '"shared" was already tried — this did not count.' in user_feedback[3]
+    assert "Tries: 1" in user_feedback[3]
     assert [(update.number, update.word) for update in updates] == [
         (1, "sharéd"),
         (2, "forest"),
@@ -1559,12 +1532,12 @@ def test_solved_holes_are_locked_and_excluded_from_later_feedback():
 
 
 def test_cap_after_counted_tries_is_a_dnf():
-    model = ScriptedModel([PLAN, "cold", "other"])
+    model = ScriptedModel(["cold", "other"])
     result = play_puzzle(puzzle(), VOCAB, model, cap=2)
 
     assert result.tries is None
     assert result.counted_tries == 2
-    assert result.turns == 3
+    assert result.turns == 2
     assert result.tried_words == ("cold", "other")
 
 
@@ -1572,11 +1545,11 @@ def test_final_score_matches_front_unique_try_semantics_for_same_sequence():
     # Invalid and folded duplicate submissions are visible turns but not tries; a MISS is
     # a vocabulary-valid unique try; the two secret guesses complete the round.
     sequence = ["???", "sharéd", "shared", "cold", "forest", "ocean"]
-    result = play_puzzle(puzzle(), VOCAB, ScriptedModel([PLAN, *sequence]))
+    result = play_puzzle(puzzle(), VOCAB, ScriptedModel(sequence))
 
     folded_unique_valid = {"shared", "cold", "forest", "ocean"}
     assert result.tries == len(folded_unique_valid) == 4
-    assert result.turns == len(sequence) + 1  # + the strategy turn
+    assert result.turns == len(sequence)
     assert result.tried_words == ("sharéd", "cold", "forest", "ocean")
 
 
@@ -1585,14 +1558,11 @@ def test_cli_prints_counted_words_in_order_for_each_run(monkeypatch, tmp_path, c
     path.write_text(json.dumps(puzzle()), encoding="utf-8")
     model = ScriptedModel(
         [
-            PLAN,
             "forest",
             "ocean",
-            PLAN,
             "shared",
             "forest",
             "ocean",
-            PLAN,
             "cold",
             "forest",
             "ocean",
@@ -1619,7 +1589,7 @@ def test_cli_openai_subscription_uses_plan_without_api_key(
 ):
     path = tmp_path / "puzzle.json"
     path.write_text(json.dumps(puzzle()), encoding="utf-8")
-    model = ScriptedModel([PLAN, "forest", "ocean"])
+    model = ScriptedModel(["forest", "ocean"])
     preflights = []
 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -1684,7 +1654,7 @@ def test_cli_anthropic_subscription_preflights_only_the_selected_provider(
 
     def fake_provider(config, api_key, **kwargs):
         provider_calls.append((config["tag"], api_key, kwargs["auth"]))
-        return ScriptedModel([PLAN, "forest", "ocean"])
+        return ScriptedModel(["forest", "ocean"])
 
     monkeypatch.setattr("llm_play.provider_reply", fake_provider)
 
@@ -1710,7 +1680,7 @@ def test_cli_anthropic_subscription_preflights_only_the_selected_provider(
 
 
 def test_opening_cloze_keeps_affixes_but_never_inserts_ranked_guesses():
-    model = ScriptedModel([PLAN, "forest", "ocean"])
+    model = ScriptedModel(["forest", "ocean"])
     play_puzzle(puzzle(), VOCAB, model)
 
     opening = model.calls[0][0]["content"]
@@ -1737,73 +1707,39 @@ def test_feedback_cloze_reveals_solutions_but_not_improving_clues():
     assert "WORD 1:" not in solved
 
 
-def test_first_reply_is_the_models_own_method_and_never_scores_a_guess():
-    # Even a clean one-word first reply is consumed as the method, not a guess.
-    model = ScriptedModel(["forest", "forest", "ocean"])
-    result = play_puzzle(puzzle(), VOCAB, model)
+def test_opening_injects_learned_strategy_as_guidance_and_first_reply_is_a_guess():
+    learned = "Probe two domains early. Abandon a direction after 3 flat guesses."
 
+    bare = ScriptedModel(["forest", "ocean"])
+    play_puzzle(puzzle(), VOCAB, bare)
+    bare_opening = bare.calls[0][0]["content"]
+    assert "YOUR STRATEGY" not in bare_opening
+    assert "Reply with exactly one word." in bare_opening
+    # No pre-game plan is requested anywhere (#84).
+    assert "state the method you commit to" not in bare_opening
+    assert "your method" not in bare_opening
+
+    model = ScriptedModel(["forest", "ocean"])
+    result = play_puzzle(puzzle(), VOCAB, model, strategy=learned)
+
+    # The first reply is the first guess: it scores immediately.
     assert result.tries == 2
-    assert result.turns == 3
-    assert result.tried_words == ("forest", "ocean")
+    assert result.turns == 2
+    assert result.conversation[1] == {"role": "assistant", "content": "forest"}
 
     opening = model.calls[0][0]["content"]
-    assert "state the method you commit to" in opening
-    # The plan must pre-commit its own anti-loop machinery; the values stay the
-    # model's choice.
-    assert "a concrete stopping rule" in opening
-    assert "exact number of consecutive non-improving counted guesses" in opening
-    assert "specific, different move you will make when that rule triggers" in opening
-    assert "keep consecutive guesses from all coming from one semantic family" in opening
-    assert "Choose every number and move yourself" in opening
-    assert "the referee will quote it back to you" in opening
-    assert "First reply: your method, in free text — no guess yet." in opening
-    assert "Every reply after it must be exactly one word." in opening
-    assert "Reply with exactly one word." not in opening
-
-    # The method stays verbatim in the transcript; the game-start turn follows it.
-    assert result.conversation[1] == {"role": "assistant", "content": "forest"}
-    game_start = result.conversation[2]
-    assert game_start["role"] == "user"
-    assert "Method noted." in game_start["content"]
-    assert "The game starts now." in game_start["content"]
-    assert "Reply with exactly one word." in game_start["content"]
-    assert "CURRENT STATE" in game_start["content"]
-    assert model.calls[1] == list(result.conversation[:3])
-
-
-def test_deep_stall_quotes_the_models_own_method_back_verbatim():
-    misses = ["missa", "missb", "missc", "missd", "misse", "missf"]
-    model = ScriptedModel([PLAN, *misses, "forest", "ocean"])
-    result = play_puzzle(puzzle(), VOCAB | set(misses), model)
-
-    assert result.tries == 8
-    reminders = [
-        m["content"]
-        for m in result.conversation
-        if m["role"] == "user" and "YOUR STATED METHOD" in m["content"]
-    ]
-    # Streak reaches METHOD_REMINDER_AFTER on the 5th miss: that turn and the next
-    # stalled one carry the quote-back; earlier turns and post-improvement turns don't.
-    assert len(reminders) == 2
-    for reminder in reminders:
-        assert PLAN in reminder
-        assert "if its stopping rule has triggered, execute it now" in reminder
-    fourth_miss_feedback = next(
-        m["content"]
-        for m in result.conversation
-        if m["role"] == "user" and "NO-IMPROVEMENT STREAK: 4" in m["content"]
-    )
-    assert "YOUR STATED METHOD" not in fourth_miss_feedback
-    solved_feedback = result.conversation[-1]["content"]
-    assert "YOUR STATED METHOD" not in solved_feedback
+    assert "YOUR STRATEGY" in opening
+    assert learned in opening
+    assert "advice, not rules" in opening
+    assert "fixed game rules above always take precedence" in opening
 
 
 def test_opening_prompt_explains_rules_without_prescribing_a_solving_plan():
-    model = ScriptedModel([PLAN, "forest", "ocean"])
+    model = ScriptedModel(["forest", "ocean"])
     play_puzzle(puzzle(), VOCAB, model)
 
     opening = model.calls[0][0]["content"]
-    assert PROMPT_VERSION == "15"
+    assert PROMPT_VERSION == "16"
     for header in ("GOAL", "RULES", "EVIDENCE", "YOUR METHOD", "FEEDBACK FORMAT"):
         assert header in opening
     assert "Choose your own solving method" in opening
@@ -1825,7 +1761,7 @@ def test_opening_prompt_explains_rules_without_prescribing_a_solving_plan():
 
 
 def test_opening_prompt_explains_rank_evidence_without_smuggling_in_a_method():
-    model = ScriptedModel([PLAN, "forest", "ocean"])
+    model = ScriptedModel(["forest", "ocean"])
     play_puzzle(puzzle(), VOCAB, model)
 
     opening = model.calls[0][0]["content"]
@@ -1863,7 +1799,7 @@ def test_feedback_uses_current_best_without_replaying_a_word_cluster():
 
 
 def test_prompt_states_the_minimize_tries_objective_everywhere():
-    model = ScriptedModel([PLAN, "cold", "forest", "ocean"])
+    model = ScriptedModel(["cold", "forest", "ocean"])
     play_puzzle(puzzle(), VOCAB, model)
 
     opening = model.calls[0][0]["content"]
@@ -1873,7 +1809,7 @@ def test_prompt_states_the_minimize_tries_objective_everywhere():
     assert "every counted guess is expensive" in opening
     # Every turn restates the score framing next to the count, opening included.
     assert "Tries: 0 (your score — lower is better)" in opening
-    feedback = model.calls[2][-1]["content"]
+    feedback = model.calls[1][-1]["content"]
     assert "Tries: 1 (your score — lower is better)" in feedback
     for turn in model.calls:
         current = turn[-1]["content"]
@@ -1882,13 +1818,13 @@ def test_prompt_states_the_minimize_tries_objective_everywhere():
 
 
 def test_unparseable_replies_reprompt_then_abort_after_five_consecutive_turns():
-    model = ScriptedModel([PLAN, "123", "...", "—", "42", "!!!"])
+    model = ScriptedModel(["123", "...", "—", "42", "!!!"])
 
     with pytest.raises(UnparseableReplyError, match="5 consecutive"):
         play_puzzle(puzzle(), VOCAB, model)
 
-    assert len(model.calls) == MAX_CONSECUTIVE_UNPARSEABLE + 1  # + the strategy turn
-    assert "could not parse a word" in model.calls[2][-1]["content"]
+    assert len(model.calls) == MAX_CONSECUTIVE_UNPARSEABLE
+    assert "could not parse a word" in model.calls[1][-1]["content"]
 
 
 @pytest.mark.parametrize(
@@ -1900,13 +1836,10 @@ def test_unparseable_replies_reprompt_then_abort_after_five_consecutive_turns():
     ids=["invalid", "duplicate"],
 )
 def test_parsed_replies_without_a_counted_try_abort_the_paid_loop(replies):
-    model = ScriptedModel([PLAN, *replies])
+    model = ScriptedModel(replies)
 
     with pytest.raises(NoProgressReplyError, match="without a counted try"):
         play_puzzle(puzzle(), VOCAB, model)
 
-    strategy_turn = 1
-    expected_calls = (
-        strategy_turn + MAX_NONCOUNTING_REPLIES + (1 if replies[0] == "cold" else 0)
-    )
+    expected_calls = MAX_NONCOUNTING_REPLIES + (1 if replies[0] == "cold" else 0)
     assert len(model.calls) == expected_calls

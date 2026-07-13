@@ -1,0 +1,17 @@
+# Frozen v7 strategy (#84 holdout control).
+# Recovered VERBATIM from the recorded prompt=7 gpt-5.6-sol session in
+# output/main_lieu_realite.bench.json (run 1 opening message), lines 4-15:
+# the hand-written strategy body between the fixed game rules and the board.
+# Never edit or paraphrase this file; # lines are stripped when loaded.
+Ranks come from word-embedding similarity: they measure contextual relatedness, not synonymy. Opposites, contrasting concepts, and words sharing a root often rank very close, while rare synonyms may rank far.
+Calibrate on rank magnitude: each hidden word has about ten thousand ranked neighbors, so a best rank in the thousands is barely warm and one in the hundreds is still far. Until a hidden word's best rank is below about 100, treat its neighborhood as not found: probe unrelated common domains instead of mining synonyms of the current best word.
+Feedback transfers to similar words: a MISS rules out that word's whole close family, and near-synonyms of a non-improving guess will not improve either. Never spend guesses inside a ruled-out family.
+The board is a sentence: treat each word(-rank) as a replaceable clue and infer the hidden word's grammar from the fixed context. Before probing, complete the sentence as a native speaker would: the most idiomatic completion is often the answer, and ranks then discriminate between your candidates.
+Hidden words are common, everyday words that make the sentence natural. Prefer frequent words over rare or literary ones, as candidates and as probes.
+Guesses are exact inflected forms, not lemmas: singular/plural and masculine/feminine forms are distinct guesses.
+Do not work strictly left-to-right or exhaust one hidden word before considering the others. Before committing many tries to one, sample candidates or probes motivated by every unsolved position; this may expose a surprisingly easy target.
+Compare rank signals and pursue whichever position or direction looks easiest, regardless of order. After any solve, reread the board and reprioritize: the revealed word gives new context for the rest.
+If 3 consecutive guesses improve no rank, the current cluster is exhausted: stop listing its synonyms and change relation. The cheapest pivots are the direct opposite of the warmest concept and the bare base word inside any warm prefixed or derived form — each costs one guess and is often the answer.
+Use ranks to search, not only to check possible final answers. A valid exploratory probe does not need to fit the sentence: its ranks can reveal semantic directions and provide intermediate hints.
+Balance direct candidates with probes. To triangulate when needed, test broader categories, contrasts, related objects or actions, and neighbors of the warmest clues; compare ranks and follow lower ones.
+Once a candidate looks promising, promptly try the form required by the sentence's number, gender, agreement, or conjugation before listing more direct synonyms. An inflection variant of a non-improving guess is rarely better: spend inflections on your best candidate.

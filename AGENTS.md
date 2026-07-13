@@ -50,6 +50,8 @@ packages/
       build_wordlist.py       offline builder: sources -> wordlist/<lang>.txt.gz (hors-dico ref, #38)
       build_vocab.py          reduced vectors -> web/public/vocab/<lang>.json (escape hatch; no re-reduce)
       slug.py                 stdlib-only: slug() contract + write_vocab (shared by reduce + gen_phrase)
+      phrase_core.py          stdlib-only phrase/puzzle contract (target location, rank maps,
+                              hole schema) shared by gen_phrase + the benchmark curriculum (#84)
       embedding_neighbors.py  shared load/vocab/matrix/cosine-rank logic
       glove_neighbors.py      en paths + derived .kv cache (thin wrapper over the above)
       french_neighbors.py     fr paths + derived .kv cache (thin wrapper)
@@ -61,6 +63,12 @@ packages/
     pyproject.toml, uv.lock   Python project (uv)
   benchmark/                  offline LLM puzzle benchmark (pkg @whippin/benchmark, #68)
     scripts/llm_play.py       LLM player/referee; reads generation output + web vocab
+    scripts/curriculum_dataset.py  deterministic strategy-curriculum dataset builder (#84)
+    scripts/curriculum_run.py      curriculum orchestrator: plays/retrospectives/holdout (#84)
+    scripts/strategy_profiles.py   compact model-specific learned-strategy profiles (#84)
+    datasets/strategy-fr-v1/  frozen curriculum dataset (manifest + generator output committed;
+                              built puzzles/ gitignored, SHA-256-pinned, rebuilt deterministically)
+    datasets/v7-strategy.txt  exact v7 strategy control, recovered verbatim from a recorded transcript
     tests/test_llm_play.py    provider-adapter + game-rules parity tests
     output/<puzzle-stem>.bench.json  full local lab record (#80; gitignored, never published)
     pyproject.toml, uv.lock   isolated Anthropic/OpenAI Python dependencies (uv)
@@ -419,6 +427,15 @@ pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--
 #    lean display trio once all 3 current-prompt display models have results.
 pnpm bench:puzzle <puzzle.json> --model MODEL [--effort LEVEL] [--auth api|subscription] [--cap N] [--runs N] [--in-place]
 
+# 5. (Lab-only, #84) Strategy curriculum. `generate` rebuilds the frozen dataset
+#    deterministically from the committed generator output (needs the fr embedding;
+#    --dry-run validates without building). `run` plays one model through the curriculum
+#    (paid; resumable, checkpointed, --dry-run plans without provider calls);
+#    `evaluate` reports on an artifact or profile. Curriculum data never enters puzzles.
+pnpm bench:curriculum:generate --from-output <generator-output.json> --seed 84 [--dry-run]
+pnpm bench:curriculum:run <manifest.json> --model MODEL [--effort LEVEL] [--auth api|subscription] [--cap N] [--resume ARTIFACT] [--force] [--dry-run]
+pnpm bench:curriculum:evaluate <artifact-or-profile.json>
+
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
 pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output)
 pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--ci]  # publish-buffer coverage (#61); reports + exits 0 by default, --ci exits 1 on any (day,lang) gap for cron/CI
@@ -483,10 +500,13 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   harmless); prose is unparseable and reprompted instead of silently scoring its first word.
   Thinking-off API calls reserve 256 output tokens so a verbose reply can complete and be
   rejected cleanly. Five parsed invalid/repeated replies without a counted try abort a
-  stuck paid loop. Prompt version 13 renders the fixed sentence as a true `CLOZE`: solved answers
+  stuck paid loop. Prompt version 16 renders the fixed sentence as a true `CLOZE`: solved answers
   appear in place, unsolved positions remain `[WORD N]`, and ranked clues are explicitly separate
   from sentence text. Its guidance is strategy-neutral: it explains the rules and available
-  evidence and leaves search order and tactics to the model. Its general judgment guidelines distinguish
+  evidence and leaves search order and tactics to the model. There is no pre-game planning
+  turn — the first reply is the first guess — and `play_puzzle` can inject optional
+  model-authored guidance (a learned curriculum strategy, #84) as a `YOUR STRATEGY` advice
+  block under the fixed rules. Its general judgment guidelines distinguish
   fixed-sentence/referee evidence from the model's self-generated word associations: improvement supports
   a hypothesis, repeated non-improvement lowers that support, and thematic similarity among guesses is
   not itself progress. The aggregate state reports the latest named outcome, current best clue for each
@@ -511,6 +531,29 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   recalibration, an existing valid/replay-consistent trio remains published until the new trio
   is complete, then the harness replaces it atomically; legacy or malformed benchmark data is
   still removed rather than preserved. This paid curator tool is never called by CI/tests.
+- **Strategy curriculum (#84, lab-only).** `benchmark/scripts/curriculum_dataset.py` builds the
+  frozen 20-puzzle French dataset `benchmark/datasets/strategy-fr-v1/` (15 curriculum + 5
+  holdout, 3 targets each, start ranks 100–150 stored-rank with no fallback, quota-exact
+  POS/gender/frequency balance): the LLM only authors candidates (`generator-output.json`,
+  committed); deterministic code validates, selects (seeded backtracking), splits, builds
+  puzzles via generation's canonical logic, and pins everything by SHA-256 in the committed
+  `manifest.json`. The built `puzzles/` (~45 MB of rank maps) are gitignored and rebuild
+  byte-identically via `pnpm bench:curriculum:generate --from-output <generator-output.json>
+  --seed 84`; every run re-verifies the hashes first. `curriculum_run.py run` plays each
+  curriculum puzzle 3 times from fresh provider contexts with the same incoming strategy, then
+  one fresh prose retrospective call revises a compact strategy (≤8 items/2000 chars,
+  puzzle-leak and sentence-quote validation, one reprompt then hard error; revisions REPLACE,
+  never append); a final synthesis freezes `final_strategy`, then holdout evaluates
+  neutral/learned/v7 (the exact v7 strategy text recovered verbatim from a recorded transcript
+  into `benchmark/datasets/v7-strategy.txt`) 3 runs each with no further learning. Artifacts
+  checkpoint atomically under the gitignored `benchmark/output/curriculum/` with `--resume`
+  (config/hash-verified, completed paid calls never repeat without `--force`) and `--dry-run`;
+  `strategy_profiles.py` writes the compact model/configuration-specific profile that is never
+  cross-applied. `curriculum_run.py evaluate` reports medians (DNF never averaged), stall
+  metrics, curriculum trend, and paired neutral/learned/v7 differences. The pure phrase/puzzle
+  contract shared with generation lives in `generation/scripts/phrase_core.py` (stdlib-only,
+  extracted from `gen_phrase.py`; gen_phrase re-exports it). Like `bench:puzzle`, running the
+  curriculum is paid curator work, never done by CI/tests.
 - **`gen_phrase` is fully interactive on a TTY (#5).** Anything not passed as a flag is
   prompted: the **sentence** (positional, now optional), **`--lang`**, and the optional
   **source metadata** — `--kind` (offers `KNOWN_KINDS` numbered, but free text is

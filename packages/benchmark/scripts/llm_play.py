@@ -94,7 +94,7 @@ DISPLAY_MODEL_COUNT = 3
 
 # Bump whenever the opening rules or turn-feedback scaffold changes materially. Results
 # are attributable to a model id plus this prompt version and the CLI's printed effort.
-PROMPT_VERSION = "15"
+PROMPT_VERSION = "16"
 
 DEFAULT_CAP = 300
 DEFAULT_RUNS = 7
@@ -118,13 +118,11 @@ DEFAULT_EFFORT: ReasoningEffort = "none"
 DIRECT_OUTPUT_MAX_TOKENS = 256
 REASONING_MAX_TOKENS = 25_000
 DEEP_REASONING_MAX_TOKENS = 64_000
-# The pre-game strategy turn (v14) answers in free text; the one-word budget would
-# truncate it mid-plan. Only lifts the `none` budget — reasoning budgets already exceed it.
-STRATEGY_OUTPUT_MAX_TOKENS = 1_024
-# Deep-stall threshold (v15): once this many consecutive counted guesses improve
-# nothing, every turn's feedback re-surfaces the model's own committed method verbatim.
-# The referee still prescribes no tactic — it quotes the model back to itself.
-METHOD_REMINDER_AFTER = 5
+# Output budget for prose/JSON calls (curriculum retrospectives and synthesis, #84).
+# Play replies stay one word; prose mode is an explicit construction-time choice on the
+# provider adapter, never inferred from message counts.
+PROSE_OUTPUT_MAX_TOKENS = 8_192
+OutputMode = Literal["word", "prose"]
 
 AuthMode = Literal["api", "subscription"]
 AUTH_MODES: tuple[AuthMode, ...] = ("api", "subscription")
@@ -181,9 +179,14 @@ CODEX_TURN_TIMEOUT_SECONDS = 300
 CODEX_BENCHMARK_INSTRUCTIONS = (
     "You are an isolated word-game player. Treat the user's complete game transcript "
     "as your only task context. Never inspect files, use tools, search, or modify "
-    "anything. Answer the final user message in the form it asks for: free text when "
-    "it asks for your method, otherwise exactly one word with no punctuation or "
-    "explanation."
+    "anything. Reply to the final user message with exactly one word and no punctuation "
+    "or explanation."
+)
+# Prose mode (#84): curriculum retrospective/synthesis calls need full-text answers.
+CODEX_PROSE_INSTRUCTIONS = (
+    "You are an isolated game analyst. Treat the user's complete message as your only "
+    "task context. Never inspect files, use tools, search, or modify anything. Answer "
+    "the final user message fully, in the exact format it requests."
 )
 CODEX_TOOL_ITEM_TYPES = {
     "command_execution",
@@ -495,9 +498,6 @@ class PuzzleReferee:
         # closer). This is reported as evidence, not used to force a solving method.
         # Any improvement resets it; non-counting replies leave it untouched.
         self.stalled_tries = 0
-        # The model's own pre-game method (v15), quoted back verbatim during deep
-        # stalls. Set by play_puzzle after the strategy turn; empty means no reminder.
-        self.method = ""
 
         # The schema guarantees sentence order, but sorting here makes the feedback order
         # robust and explicit: hole numbers always read left-to-right like the front.
@@ -712,8 +712,19 @@ def _state_snapshot_lines(referee: PuzzleReferee) -> list[str]:
     ]
 
 
-def opening_message(referee: PuzzleReferee) -> str:
+def opening_message(referee: PuzzleReferee, strategy: str | None = None) -> str:
     language = LANGUAGE_NAMES.get(referee.lang, referee.lang)
+    strategy_section: list[str] = []
+    if strategy:
+        strategy_section = [
+            "",
+            "YOUR STRATEGY",
+            (
+                "Guidance you distilled from your own earlier games. It is advice, "
+                "not rules: the fixed game rules above always take precedence."
+            ),
+            strategy,
+        ]
     return "\n".join(
         [
             f"Play Whippin AI in {language}. Reply with exactly one {language} word per turn.",
@@ -775,18 +786,6 @@ def opening_message(referee: PuzzleReferee) -> str:
                 "available evidence on each turn. Keep, revise, or replace hypotheses "
                 "according to how well the evidence supports them."
             ),
-            (
-                "Before playing, state the method you commit to, in your own words. "
-                "It must cover, at minimum: how you will pick each guess; how you "
-                "will read rank evidence; a concrete stopping rule — the exact "
-                "number of consecutive non-improving counted guesses after which "
-                "you abandon a direction; the specific, different move you will "
-                "make when that rule triggers; and how you will keep consecutive "
-                "guesses from all coming from one semantic family. Choose every "
-                "number and move yourself — but once stated, the plan is your "
-                "commitment, and the referee will quote it back to you if your "
-                "play drifts from it."
-            ),
             ADAPTATION_GUIDELINE,
             "",
             "FEEDBACK FORMAT",
@@ -797,28 +796,10 @@ def opening_message(referee: PuzzleReferee) -> str:
                 "already-tried words as an unordered exclusion set. Earlier outcomes "
                 "are not replayed as a word sequence."
             ),
+            *strategy_section,
             "",
             *_state_snapshot_lines(referee),
             "Tries: 0 (your score — lower is better)",
-            ADAPTATION_GUIDELINE,
-            (
-                "First reply: your method, in free text — no guess yet. Every "
-                "reply after it must be exactly one word."
-            ),
-        ]
-    )
-
-
-def game_start_message(referee: PuzzleReferee) -> str:
-    return "\n".join(
-        [
-            (
-                "Method noted. It is your own commitment: play by it, and revise "
-                "it yourself when the evidence stops supporting it. The game "
-                "starts now."
-            ),
-            *_state_snapshot_lines(referee),
-            f"Tries: {referee.tries} (your score — lower is better)",
             ADAPTATION_GUIDELINE,
             "Reply with exactly one word.",
         ]
@@ -850,21 +831,15 @@ def feedback_message(feedback: GuessFeedback, referee: PuzzleReferee) -> str:
         lead = f'RESULT FOR "{feedback.guess}":\n{outcomes}'
     else:
         lead = feedback.message
-    lines = [lead, *_state_snapshot_lines(referee)]
-    if referee.method and referee.stalled_tries >= METHOD_REMINDER_AFTER:
-        lines += [
-            (
-                "YOUR STATED METHOD — you committed to this before the game; if "
-                "its stopping rule has triggered, execute it now:"
-            ),
-            referee.method,
+    return "\n".join(
+        [
+            lead,
+            *_state_snapshot_lines(referee),
+            f"Tries: {feedback.tries} (your score — lower is better)",
+            ADAPTATION_GUIDELINE,
+            "Reply with exactly one word.",
         ]
-    lines += [
-        f"Tries: {feedback.tries} (your score — lower is better)",
-        ADAPTATION_GUIDELINE,
-        "Reply with exactly one word.",
-    ]
-    return "\n".join(lines)
+    )
 
 
 def unparseable_message(referee: PuzzleReferee) -> str:
@@ -885,35 +860,28 @@ def play_puzzle(
     *,
     cap: int = DEFAULT_CAP,
     on_try: TryReporter | None = None,
+    strategy: str | None = None,
 ) -> RunResult:
-    """Run one append-only model conversation through the real puzzle rules."""
+    """Run one append-only model conversation through the real puzzle rules.
+
+    `strategy` is optional model-authored guidance (a learned curriculum strategy,
+    #84) injected into the opening as advice under the fixed rules. There is no
+    pre-game planning turn: the first reply is the first guess.
+    """
     if not _is_int(cap) or cap <= 0:
         raise ValueError("cap must be a positive integer")
     referee = PuzzleReferee(puzzle, vocab)
     if referee.solved:
         raise ValueError("puzzle starts solved; no benchmark can be played")
 
-    messages: list[Message] = [{"role": "user", "content": opening_message(referee)}]
+    messages: list[Message] = [
+        {"role": "user", "content": opening_message(referee, strategy)}
+    ]
     turns = 0
     consecutive_unparseable = 0
     noncounting_replies = 0
     started = time.monotonic()
     turn_token_usage: list[dict[str, Any]] = []
-
-    # Strategy turn (v14): the first reply is the model's own method, never a guess.
-    # Accepted as-is — free text, unparsed, unscored — and kept in the transcript so
-    # every later turn is anchored to a self-authored plan instead of imposed tactics.
-    strategy = model_reply([message.copy() for message in messages])
-    strategy_usage = _last_token_usage(model_reply)
-    if strategy_usage is not None:
-        turn_token_usage.append(strategy_usage)
-    turns += 1
-    if not isinstance(strategy, str):
-        strategy = ""
-    strategy = strategy.strip() or "[empty response]"
-    referee.method = strategy
-    messages.append({"role": "assistant", "content": strategy})
-    messages.append({"role": "user", "content": game_start_message(referee)})
 
     while True:
         raw_reply = model_reply([message.copy() for message in messages])
@@ -1004,13 +972,8 @@ def _text_content(content: object) -> str:
     return "\n".join(parts)
 
 
-def _is_strategy_turn(messages: list[Message]) -> bool:
-    # The conversation holds no assistant reply yet exactly once: the pre-game turn
-    # where the model states its own method in free text.
-    return not any(message["role"] == "assistant" for message in messages)
-
-
-def _output_token_budget(effort: ReasoningEffort, messages: list[Message]) -> int:
+def _output_token_budget(effort: ReasoningEffort, output: OutputMode) -> int:
+    """Explicit construction-time output mode — never inferred from message counts."""
     if effort == "none":
         # Thinking-off models can still emit visible explanation despite the one-word
         # contract. Leave enough room for a complete reply; strict parsing rejects prose.
@@ -1019,8 +982,8 @@ def _output_token_budget(effort: ReasoningEffort, messages: list[Message]) -> in
         budget = DEEP_REASONING_MAX_TOKENS
     else:
         budget = REASONING_MAX_TOKENS
-    if _is_strategy_turn(messages):
-        return max(budget, STRATEGY_OUTPUT_MAX_TOKENS)
+    if output == "prose":
+        return max(budget, PROSE_OUTPUT_MAX_TOKENS)
     return budget
 
 
@@ -1241,7 +1204,9 @@ def _codex_final_message(
 class OpenAISubscriptionReply:
     """Fresh, isolated Codex CLI turns backed by saved ChatGPT plan auth."""
 
-    def __init__(self, model_id: str, effort: ReasoningEffort):
+    def __init__(
+        self, model_id: str, effort: ReasoningEffort, output: OutputMode = "word"
+    ):
         if effort not in CODEX_SUBSCRIPTION_EFFORTS:
             supported = "|".join(CODEX_SUBSCRIPTION_EFFORTS)
             raise ValueError(
@@ -1257,10 +1222,13 @@ class OpenAISubscriptionReply:
         self._message_count = 0
         self._workspace = tempfile.TemporaryDirectory(prefix="whippin-codex-")
         self.last_token_usage: dict[str, Any] | None = None
-        self._instructions_path = Path(self._workspace.name) / "instructions.md"
-        self._instructions_path.write_text(
-            CODEX_BENCHMARK_INSTRUCTIONS + "\n", encoding="utf-8"
+        instructions = (
+            CODEX_BENCHMARK_INSTRUCTIONS
+            if output == "word"
+            else CODEX_PROSE_INSTRUCTIONS
         )
+        self._instructions_path = Path(self._workspace.name) / "instructions.md"
+        self._instructions_path.write_text(instructions + "\n", encoding="utf-8")
 
     def _command(self) -> list[str]:
         config = [
@@ -1344,8 +1312,13 @@ def provider_reply(
     *,
     effort: ReasoningEffort = DEFAULT_EFFORT,
     auth: AuthMode = DEFAULT_AUTH,
+    output: OutputMode = "word",
 ) -> ModelReply:
-    """Build one provider adapter. Paid SDK imports stay lazy for offline tests."""
+    """Build one provider adapter. Paid SDK imports stay lazy for offline tests.
+
+    `output` fixes the adapter's response mode at construction: "word" for play
+    replies, "prose" for curriculum retrospective/synthesis calls (#84).
+    """
     provider = config["provider"]
     model_id = config["model_id"]
     _validate_provider_effort(provider, auth, effort)
@@ -1361,7 +1334,7 @@ def provider_reply(
 
         def reply(messages: list[Message]) -> str:
             setattr(reply, "last_token_usage", None)
-            budget = _output_token_budget(effort, messages)
+            budget = _output_token_budget(effort, output)
             request: dict[str, Any] = {
                 "model": model_id,
                 "max_tokens": budget,
@@ -1396,7 +1369,7 @@ def provider_reply(
 
     if provider == "openai":
         if auth == "subscription":
-            return OpenAISubscriptionReply(model_id, effort)
+            return OpenAISubscriptionReply(model_id, effort, output)
         if not api_key:
             raise ValueError("OpenAI auth requires OPENAI_API_KEY")
         from openai import OpenAI
@@ -1409,7 +1382,7 @@ def provider_reply(
                 model=model_id,
                 input=messages,
                 reasoning={"effort": effort},
-                max_output_tokens=_output_token_budget(effort, messages),
+                max_output_tokens=_output_token_budget(effort, output),
             )
             if getattr(response, "status", None) == "incomplete":
                 details = getattr(response, "incomplete_details", None)

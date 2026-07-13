@@ -38,6 +38,12 @@ packages/generation/output
 # only the distilled display trio is embedded in a puzzle before publish.
 packages/benchmark/output
 
+# ── Curriculum dataset puzzles (issue #84) ───────────────────
+# The built puzzles carry 3x10k-entry rank maps (~45 MB); they rebuild
+# byte-identically from the committed generator-output.json + seed and are
+# pinned by SHA-256 in the committed manifest.json (verified before every run).
+packages/benchmark/datasets/*/puzzles
+
 # ── Embeddings (all excluded — too large for GitHub) ─────────
 # Raw sources are multi-GB; even the *_reduced files are 400-500 MB each,
 # over GitHub's 100 MB hard limit. Regenerate locally with

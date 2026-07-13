@@ -4,6 +4,9 @@
   "version": "0.0.0",
   "scripts": {
     "bench:puzzle": "uv run scripts/llm_play.py",
-    "test": "uv run --no-project --with pytest pytest -q tests"
+    "test": "uv run --no-project --with pytest pytest -q tests",
+    "bench:curriculum:generate": "uv run --project ../generation python scripts/curriculum_dataset.py",
+    "bench:curriculum:run": "uv run scripts/curriculum_run.py run",
+    "bench:curriculum:evaluate": "uv run scripts/curriculum_run.py evaluate"
   }
 }

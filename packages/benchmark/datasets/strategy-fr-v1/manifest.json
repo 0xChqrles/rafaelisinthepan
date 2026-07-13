@@ -1,0 +1,893 @@
+{
+  "schema_version": 1,
+  "dataset_id": "strategy-fr-v1",
+  "lang": "fr",
+  "seed": 84,
+  "generator": {
+    "model": "claude-fable-5",
+    "effort": "interactive",
+    "prompt": "Authored interactively in a Claude Code session for issue #84: original French sentences, 3 exact-inflection targets each, balanced across POS/gender/frequency per the deterministic quotas. Deterministic code performs all validation and selection.",
+    "timestamp": "2026-07-13T00:00:00Z"
+  },
+  "vocabulary": {
+    "source": "reduced-vocabulary order (V)",
+    "size": 133050,
+    "sha256": "daf096e211a10ec8c8d671b7dcc255f8502f1d8ea5ce53d5af674bb90767673a"
+  },
+  "frequency_bands": {
+    "common": "frequency rank < 20000",
+    "difficult": "frequency rank >= 20000"
+  },
+  "start_band": {
+    "lo": 100,
+    "hi": 150
+  },
+  "counts": {
+    "puzzles": 20,
+    "curriculum": 15,
+    "holdout": 5
+  },
+  "balance": {
+    "pos": {
+      "noun": 15,
+      "adjective": 15,
+      "verb": 15,
+      "adverb": 15
+    },
+    "gender": {
+      "m": 15,
+      "f": 15
+    },
+    "frequency_band": {
+      "common": 30,
+      "difficult": 30
+    },
+    "semantic_class": {
+      "tangible": 32,
+      "abstract": 28
+    }
+  },
+  "puzzles": [
+    {
+      "number": 1,
+      "split": "curriculum",
+      "path": "puzzles/001-chemin_paisible_traverser.json",
+      "sha256": "846d69e5d05202454016108a8d6bfba6a8e15a6c3decac3af7d8cff843e7fc38",
+      "sentence": "le chemin paisible semblait traverser des terres oubliées",
+      "targets": [
+        {
+          "word": "chemin",
+          "slug": "chemin",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 756,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "raidillon",
+          "start_rank": 148
+        },
+        {
+          "word": "paisible",
+          "slug": "paisible",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 5625,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "familiale",
+          "start_rank": 118
+        },
+        {
+          "word": "traverser",
+          "slug": "traverser",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 5410,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "longeront",
+          "start_rank": 150
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "split": "curriculum",
+      "path": "puzzles/002-autrefois_fremir_sillage.json",
+      "sha256": "63adf59b6ef4af1a0b016bcce45a4aa2bd2875240fc6c119bac126d27f60ac68",
+      "sentence": "autrefois, les voiliers laissaient frémir la mer dans leur sillage",
+      "targets": [
+        {
+          "word": "autrefois",
+          "slug": "autrefois",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 3525,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "connue",
+          "start_rank": 102
+        },
+        {
+          "word": "frémir",
+          "slug": "fremir",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 26470,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "répugner",
+          "start_rank": 132
+        },
+        {
+          "word": "sillage",
+          "slug": "sillage",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 13519,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "jaillissement",
+          "start_rank": 100
+        }
+      ]
+    },
+    {
+      "number": 3,
+      "split": "curriculum",
+      "path": "puzzles/003-hativement_feroce_rugir.json",
+      "sha256": "93462ac292af6e9149e31bca8b03bdf29dbb3944cdb970fce2bbb2cae8d13fb7",
+      "sentence": "hâtivement, il recula devant la bête féroce qu'il entendait rugir",
+      "targets": [
+        {
+          "word": "hâtivement",
+          "slug": "hativement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 37929,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "ingénieusement",
+          "start_rank": 133
+        },
+        {
+          "word": "féroce",
+          "slug": "feroce",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 13978,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "autoritaire",
+          "start_rank": 142
+        },
+        {
+          "word": "rugir",
+          "slug": "rugir",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 51316,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "fondre",
+          "start_rank": 120
+        }
+      ]
+    },
+    {
+      "number": 4,
+      "split": "curriculum",
+      "path": "puzzles/004-felure_muette_jadis.json",
+      "sha256": "ceb1509ad1724f6b6f454bc6a73bbe81af18f5b243b682a169759bfbf0d7b887",
+      "sentence": "cette fêlure muette datait d'une promesse trahie jadis",
+      "targets": [
+        {
+          "word": "fêlure",
+          "slug": "felure",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 53117,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "dissemblance",
+          "start_rank": 113
+        },
+        {
+          "word": "muette",
+          "slug": "muette",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 20197,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "dubitative",
+          "start_rank": 129
+        },
+        {
+          "word": "jadis",
+          "slug": "jadis",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 7864,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "affectionnaient",
+          "start_rank": 131
+        }
+      ]
+    },
+    {
+      "number": 5,
+      "split": "curriculum",
+      "path": "puzzles/005-febrilement_fugace_dechirer.json",
+      "sha256": "50fedd98fd387fec5f82b21efdb0a28963f600d07fb3a052ecefdc4f54d1d50d",
+      "sentence": "fébrilement, il guettait la lueur fugace qui pouvait déchirer la nuit",
+      "targets": [
+        {
+          "word": "fébrilement",
+          "slug": "febrilement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 50084,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "passivement",
+          "start_rank": 135
+        },
+        {
+          "word": "fugace",
+          "slug": "fugace",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 34460,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "désagréable",
+          "start_rank": 148
+        },
+        {
+          "word": "déchirer",
+          "slug": "dechirer",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 21939,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "rétrécir",
+          "start_rank": 148
+        }
+      ]
+    },
+    {
+      "number": 6,
+      "split": "curriculum",
+      "path": "puzzles/006-clairiere_ardente_rarement.json",
+      "sha256": "f3bd88817aa9e761dc4fafb00701045dbec7cf04c96c8cfb5e1cd4a274eb8dc2",
+      "sentence": "la clairière gardait une chaleur ardente que l'on trouve rarement",
+      "targets": [
+        {
+          "word": "clairière",
+          "slug": "clairiere",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 23017,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "stèle",
+          "start_rank": 123
+        },
+        {
+          "word": "ardente",
+          "slug": "ardente",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 22083,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "capiteuse",
+          "start_rank": 138
+        },
+        {
+          "word": "rarement",
+          "slug": "rarement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 3095,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "justement",
+          "start_rank": 109
+        }
+      ]
+    },
+    {
+      "number": 7,
+      "split": "curriculum",
+      "path": "puzzles/007-falaise_tremble_timidement.json",
+      "sha256": "de1f687f42e242d20236aeea8e9646ac523c3b16a99ce5cd0e26af835291add0",
+      "sentence": "au pied de la falaise, la terre tremble et l'on avance timidement",
+      "targets": [
+        {
+          "word": "falaise",
+          "slug": "falaise",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 10623,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "coralline",
+          "start_rank": 135
+        },
+        {
+          "word": "tremble",
+          "slug": "tremble",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 20909,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "bruisse",
+          "start_rank": 148
+        },
+        {
+          "word": "timidement",
+          "slug": "timidement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 25802,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "sensuellement",
+          "start_rank": 145
+        }
+      ]
+    },
+    {
+      "number": 8,
+      "split": "curriculum",
+      "path": "puzzles/008-immobile_scintiller_eperdument.json",
+      "sha256": "021a8bf8652d4031abafb7d0af180349347cf6f7ff84b36fbabe732aa1087bab",
+      "sentence": "le lac immobile faisait scintiller des reflets qu'il aimait éperdument",
+      "targets": [
+        {
+          "word": "immobile",
+          "slug": "immobile",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 14833,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "fantomatique",
+          "start_rank": 116
+        },
+        {
+          "word": "scintiller",
+          "slug": "scintiller",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 52337,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "magnifier",
+          "start_rank": 133
+        },
+        {
+          "word": "éperdument",
+          "slug": "eperdument",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 29387,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "muettement",
+          "start_rank": 129
+        }
+      ]
+    },
+    {
+      "number": 9,
+      "split": "curriculum",
+      "path": "puzzles/009-obstine_gravir_sommet.json",
+      "sha256": "35fcd66f4c8f5b7147904b6bebe7ea2f54b36c58d2c2fdcb36c526312fc6ef4d",
+      "sentence": "un marcheur obstiné jurait de gravir le sommet avant l'aube",
+      "targets": [
+        {
+          "word": "obstiné",
+          "slug": "obstine",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 33959,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "partisan",
+          "start_rank": 125
+        },
+        {
+          "word": "gravir",
+          "slug": "gravir",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 20985,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "aventurer",
+          "start_rank": 147
+        },
+        {
+          "word": "sommet",
+          "slug": "sommet",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 1779,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "monter",
+          "start_rank": 121
+        }
+      ]
+    },
+    {
+      "number": 10,
+      "split": "curriculum",
+      "path": "puzzles/010-aprement_jaillir_obscure.json",
+      "sha256": "8ca606d71e302cd35c94617b4161043fc05f66961a5c8d1401fc1b897042f732",
+      "sentence": "les mineurs, âprement éprouvés, virent jaillir une source dans la galerie obscure",
+      "targets": [
+        {
+          "word": "âprement",
+          "slug": "aprement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 37707,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "odieusement",
+          "start_rank": 138
+        },
+        {
+          "word": "jaillir",
+          "slug": "jaillir",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 26753,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "surgit",
+          "start_rank": 114
+        },
+        {
+          "word": "obscure",
+          "slug": "obscure",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 14500,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "maudite",
+          "start_rank": 108
+        }
+      ]
+    },
+    {
+      "number": 11,
+      "split": "curriculum",
+      "path": "puzzles/011-orage_sombre_brusquement.json",
+      "sha256": "553714378972f6ea2f582920c65e754d0eaad67e751da1dc7678c60acc8ad324",
+      "sentence": "un orage sombre éclata brusquement au-dessus du village",
+      "targets": [
+        {
+          "word": "orage",
+          "slug": "orage",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 9375,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "rougeoiement",
+          "start_rank": 142
+        },
+        {
+          "word": "sombre",
+          "slug": "sombre",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 3254,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "intrigant",
+          "start_rank": 130
+        },
+        {
+          "word": "brusquement",
+          "slug": "brusquement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 13068,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "irruption",
+          "start_rank": 102
+        }
+      ]
+    },
+    {
+      "number": 12,
+      "split": "curriculum",
+      "path": "puzzles/012-dehors_vertige_vaciller.json",
+      "sha256": "515944f1cc06211942028501a2ceb2c9f33bb69fbd9a1b28199ba0f876a80526",
+      "sentence": "dehors, le vertige le fit vaciller contre la rampe",
+      "targets": [
+        {
+          "word": "dehors",
+          "slug": "dehors",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 1545,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "directement",
+          "start_rank": 133
+        },
+        {
+          "word": "vertige",
+          "slug": "vertige",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 17699,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "frissonnements",
+          "start_rank": 102
+        },
+        {
+          "word": "vaciller",
+          "slug": "vaciller",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 38281,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "ployer",
+          "start_rank": 109
+        }
+      ]
+    },
+    {
+      "number": 13,
+      "split": "curriculum",
+      "path": "puzzles/013-penombre_sereine_doucement.json",
+      "sha256": "7728953fe518d67b15c583225a13f416da48a97ccf17a4768e360d98203b5ab7",
+      "sentence": "la pénombre sereine enveloppait doucement les ruelles endormies",
+      "targets": [
+        {
+          "word": "pénombre",
+          "slug": "penombre",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 25561,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "froideur",
+          "start_rank": 102
+        },
+        {
+          "word": "sereine",
+          "slug": "sereine",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 16911,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "ambitieuse",
+          "start_rank": 131
+        },
+        {
+          "word": "doucement",
+          "slug": "doucement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 5394,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "vers",
+          "start_rank": 133
+        }
+      ]
+    },
+    {
+      "number": 14,
+      "split": "curriculum",
+      "path": "puzzles/014-apaiser_tumulte_amer.json",
+      "sha256": "5d30a223c89466f19f24b1cbeb3950b8ed3232530b90297cbc1ad5d96fce2809",
+      "sentence": "rien ne pouvait apaiser le tumulte amer de son esprit",
+      "targets": [
+        {
+          "word": "apaiser",
+          "slug": "apaiser",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 12824,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "modérer",
+          "start_rank": 143
+        },
+        {
+          "word": "tumulte",
+          "slug": "tumulte",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 25203,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "tambourinement",
+          "start_rank": 118
+        },
+        {
+          "word": "amer",
+          "slug": "amer",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 13138,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "savoureux",
+          "start_rank": 134
+        }
+      ]
+    },
+    {
+      "number": 15,
+      "split": "curriculum",
+      "path": "puzzles/015-ecume_legere_chavirer.json",
+      "sha256": "d0e2d21ca797864029ab487332b29d082bdbb30e7abeb7e1ecc6e27171610ba6",
+      "sentence": "une écume légère faisait chavirer les barques du port",
+      "targets": [
+        {
+          "word": "écume",
+          "slug": "ecume",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 21428,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "blanchâtre",
+          "start_rank": 107
+        },
+        {
+          "word": "légère",
+          "slug": "legere",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 2620,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "maniable",
+          "start_rank": 100
+        },
+        {
+          "word": "chavirer",
+          "slug": "chavirer",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 33573,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "rejaillir",
+          "start_rank": 115
+        }
+      ]
+    },
+    {
+      "number": 16,
+      "split": "holdout",
+      "path": "puzzles/016-frisson_brulant_aussitot.json",
+      "sha256": "68b3bd8c4da5d8d87c1a3a35ad4f19ed60aa1d673514ffe5031e147655830fae",
+      "sentence": "un frisson brûlant la parcourut aussitôt qu'il parla",
+      "targets": [
+        {
+          "word": "frisson",
+          "slug": "frisson",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 21062,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "couinement",
+          "start_rank": 112
+        },
+        {
+          "word": "brûlant",
+          "slug": "brulant",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 16353,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "brûlerons",
+          "start_rank": 127
+        },
+        {
+          "word": "aussitôt",
+          "slug": "aussitot",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 4633,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "délicatement",
+          "start_rank": 108
+        }
+      ]
+    },
+    {
+      "number": 17,
+      "split": "holdout",
+      "path": "puzzles/017-brouillard_dissiper_lentement.json",
+      "sha256": "426fa517c321cce58436a8485dcfc39734e7f465589b3b9c430d1bb3db5b55bb",
+      "sentence": "le brouillard commença à se dissiper lentement sur la vallée",
+      "targets": [
+        {
+          "word": "brouillard",
+          "slug": "brouillard",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 10392,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "ombre",
+          "start_rank": 118
+        },
+        {
+          "word": "dissiper",
+          "slug": "dissiper",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 22683,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "lénifier",
+          "start_rank": 145
+        },
+        {
+          "word": "lentement",
+          "slug": "lentement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 5463,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "régresse",
+          "start_rank": 107
+        }
+      ]
+    },
+    {
+      "number": 18,
+      "split": "holdout",
+      "path": "puzzles/018-lumiere_douce_brille.json",
+      "sha256": "65166d596690dc3e756462cf2da1fe720f49ccf466ffad527fa460992f8523d9",
+      "sentence": "une lumière douce brille encore derrière les volets clos",
+      "targets": [
+        {
+          "word": "lumière",
+          "slug": "lumiere",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 876,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "torche",
+          "start_rank": 118
+        },
+        {
+          "word": "douce",
+          "slug": "douce",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 2003,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "claire",
+          "start_rank": 107
+        },
+        {
+          "word": "brille",
+          "slug": "brille",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 11130,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "décolore",
+          "start_rank": 146
+        }
+      ]
+    },
+    {
+      "number": 19,
+      "split": "holdout",
+      "path": "puzzles/019-soudain_braise_crepiter.json",
+      "sha256": "6ef5da84a89e538a5824384047d99fb8cfe7df60411b378eac8a2fc7c9c659fa",
+      "sentence": "soudain, la braise se mit à crépiter sous la cendre froide",
+      "targets": [
+        {
+          "word": "soudain",
+          "slug": "soudain",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 7750,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "impétueusement",
+          "start_rank": 106
+        },
+        {
+          "word": "braise",
+          "slug": "braise",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 28902,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "pétillait",
+          "start_rank": 135
+        },
+        {
+          "word": "crépiter",
+          "slug": "crepiter",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 73603,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "grésilla",
+          "start_rank": 104
+        }
+      ]
+    },
+    {
+      "number": 20,
+      "split": "holdout",
+      "path": "puzzles/020-rugueux_resplendir_follement.json",
+      "sha256": "c7b380f42f4485c027009cfcebc82737d41637fe1c8cf188d731a50df031190b",
+      "sentence": "cet artisan rugueux voulait faire resplendir son œuvre, follement peut-être",
+      "targets": [
+        {
+          "word": "rugueux",
+          "slug": "rugueux",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 27433,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "mouillé",
+          "start_rank": 129
+        },
+        {
+          "word": "resplendir",
+          "slug": "resplendir",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 62160,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "revivifier",
+          "start_rank": 135
+        },
+        {
+          "word": "follement",
+          "slug": "follement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 26667,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "distrayant",
+          "start_rank": 101
+        }
+      ]
+    }
+  ],
+  "generated_at": "2026-07-13T19:28:19.349971+00:00"
+}

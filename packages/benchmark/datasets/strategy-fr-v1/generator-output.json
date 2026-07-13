@@ -1,0 +1,504 @@
+{
+  "generator": {
+    "model": "claude-fable-5",
+    "effort": "interactive",
+    "prompt": "Authored interactively in a Claude Code session for issue #84: original French sentences, 3 exact-inflection targets each, balanced across POS/gender/frequency per the deterministic quotas. Deterministic code performs all validation and selection.",
+    "timestamp": "2026-07-13T00:00:00Z"
+  },
+  "candidates": [
+    {
+      "sentence": "le chemin paisible semblait traverser des terres oubliées",
+      "targets": [
+        {
+          "word": "chemin",
+          "pos": "noun",
+          "gender": "m",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "paisible",
+          "pos": "adjective",
+          "gender": "m",
+          "semantic_class": "abstract"
+        },
+        {
+          "word": "traverser",
+          "pos": "verb",
+          "semantic_class": "tangible"
+        }
+      ]
+    },
+    {
+      "sentence": "une lumière douce brille encore derrière les volets clos",
+      "targets": [
+        {
+          "word": "lumière",
+          "pos": "noun",
+          "gender": "f",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "douce",
+          "pos": "adjective",
+          "gender": "f",
+          "semantic_class": "abstract"
+        },
+        {
+          "word": "brille",
+          "pos": "verb",
+          "semantic_class": "tangible"
+        }
+      ]
+    },
+    {
+      "sentence": "un marcheur obstiné jurait de gravir le sommet avant l'aube",
+      "targets": [
+        {
+          "word": "sommet",
+          "pos": "noun",
+          "gender": "m",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "obstiné",
+          "pos": "adjective",
+          "gender": "m",
+          "semantic_class": "abstract"
+        },
+        {
+          "word": "gravir",
+          "pos": "verb",
+          "semantic_class": "tangible"
+        }
+      ]
+    },
+    {
+      "sentence": "une écume légère faisait chavirer les barques du port",
+      "targets": [
+        {
+          "word": "écume",
+          "pos": "noun",
+          "gender": "f",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "légère",
+          "pos": "adjective",
+          "gender": "f",
+          "semantic_class": "abstract"
+        },
+        {
+          "word": "chavirer",
+          "pos": "verb",
+          "semantic_class": "tangible"
+        }
+      ]
+    },
+    {
+      "sentence": "rien ne pouvait apaiser le tumulte amer de son esprit",
+      "targets": [
+        {
+          "word": "tumulte",
+          "pos": "noun",
+          "gender": "m",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "amer",
+          "pos": "adjective",
+          "gender": "m",
+          "semantic_class": "abstract"
+        },
+        {
+          "word": "apaiser",
+          "pos": "verb",
+          "semantic_class": "abstract"
+        }
+      ]
+    },
+    {
+      "sentence": "un orage sombre éclata brusquement au-dessus du village",
+      "targets": [
+        {
+          "word": "orage",
+          "pos": "noun",
+          "gender": "m",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "sombre",
+          "pos": "adjective",
+          "gender": "m",
+          "semantic_class": "abstract"
+        },
+        {
+          "word": "brusquement",
+          "pos": "adverb",
+          "semantic_class": "abstract"
+        }
+      ]
+    },
+    {
+      "sentence": "la pénombre sereine enveloppait doucement les ruelles endormies",
+      "targets": [
+        {
+          "word": "pénombre",
+          "pos": "noun",
+          "gender": "f",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "sereine",
+          "pos": "adjective",
+          "gender": "f",
+          "semantic_class": "abstract"
+        },
+        {
+          "word": "doucement",
+          "pos": "adverb",
+          "semantic_class": "abstract"
+        }
+      ]
+    },
+    {
+      "sentence": "un frisson brûlant la parcourut aussitôt qu'il parla",
+      "targets": [
+        {
+          "word": "frisson",
+          "pos": "noun",
+          "gender": "m",
+          "semantic_class": "abstract"
+        },
+        {
+          "word": "brûlant",
+          "pos": "adjective",
+          "gender": "m",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "aussitôt",
+          "pos": "adverb",
+          "semantic_class": "abstract"
+        }
+      ]
+    },
+    {
+      "sentence": "cette fêlure muette datait d'une promesse trahie jadis",
+      "targets": [
+        {
+          "word": "fêlure",
+          "pos": "noun",
+          "gender": "f",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "muette",
+          "pos": "adjective",
+          "gender": "f",
+          "semantic_class": "abstract"
+        },
+        {
+          "word": "jadis",
+          "pos": "adverb",
+          "semantic_class": "abstract"
+        }
+      ]
+    },
+    {
+      "sentence": "la clairière gardait une chaleur ardente que l'on trouve rarement",
+      "targets": [
+        {
+          "word": "clairière",
+          "pos": "noun",
+          "gender": "f",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "ardente",
+          "pos": "adjective",
+          "gender": "f",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "rarement",
+          "pos": "adverb",
+          "semantic_class": "abstract"
+        }
+      ]
+    },
+    {
+      "sentence": "le brouillard commença à se dissiper lentement sur la vallée",
+      "targets": [
+        {
+          "word": "brouillard",
+          "pos": "noun",
+          "gender": "m",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "dissiper",
+          "pos": "verb",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "lentement",
+          "pos": "adverb",
+          "semantic_class": "abstract"
+        }
+      ]
+    },
+    {
+      "sentence": "dehors, le vertige le fit vaciller contre la rampe",
+      "targets": [
+        {
+          "word": "vertige",
+          "pos": "noun",
+          "gender": "m",
+          "semantic_class": "abstract"
+        },
+        {
+          "word": "vaciller",
+          "pos": "verb",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "dehors",
+          "pos": "adverb",
+          "semantic_class": "abstract"
+        }
+      ]
+    },
+    {
+      "sentence": "une averse soudaine parut engloutir les rues, l'eau montait partout",
+      "targets": [
+        {
+          "word": "averse",
+          "pos": "noun",
+          "gender": "f",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "engloutir",
+          "pos": "verb",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "partout",
+          "pos": "adverb",
+          "semantic_class": "abstract"
+        }
+      ]
+    },
+    {
+      "sentence": "autrefois, les voiliers laissaient frémir la mer dans leur sillage",
+      "targets": [
+        {
+          "word": "sillage",
+          "pos": "noun",
+          "gender": "m",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "frémir",
+          "pos": "verb",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "autrefois",
+          "pos": "adverb",
+          "semantic_class": "abstract"
+        }
+      ]
+    },
+    {
+      "sentence": "au pied de la falaise, la terre tremble et l'on avance timidement",
+      "targets": [
+        {
+          "word": "falaise",
+          "pos": "noun",
+          "gender": "f",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "tremble",
+          "pos": "verb",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "timidement",
+          "pos": "adverb",
+          "semantic_class": "abstract"
+        }
+      ]
+    },
+    {
+      "sentence": "les mineurs, âprement éprouvés, virent jaillir une source dans la galerie obscure",
+      "targets": [
+        {
+          "word": "obscure",
+          "pos": "adjective",
+          "gender": "f",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "jaillir",
+          "pos": "verb",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "âprement",
+          "pos": "adverb",
+          "semantic_class": "abstract"
+        }
+      ]
+    },
+    {
+      "sentence": "le lac immobile faisait scintiller des reflets qu'il aimait éperdument",
+      "targets": [
+        {
+          "word": "immobile",
+          "pos": "adjective",
+          "gender": "m",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "scintiller",
+          "pos": "verb",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "éperdument",
+          "pos": "adverb",
+          "semantic_class": "abstract"
+        }
+      ]
+    },
+    {
+      "sentence": "une joie farouche venait d'éclore, sournoisement d'abord, puis sans retenue",
+      "targets": [
+        {
+          "word": "farouche",
+          "pos": "adjective",
+          "gender": "f",
+          "semantic_class": "abstract"
+        },
+        {
+          "word": "éclore",
+          "pos": "verb",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "sournoisement",
+          "pos": "adverb",
+          "semantic_class": "abstract"
+        }
+      ]
+    },
+    {
+      "sentence": "cet artisan rugueux voulait faire resplendir son œuvre, follement peut-être",
+      "targets": [
+        {
+          "word": "rugueux",
+          "pos": "adjective",
+          "gender": "m",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "resplendir",
+          "pos": "verb",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "follement",
+          "pos": "adverb",
+          "semantic_class": "abstract"
+        }
+      ]
+    },
+    {
+      "sentence": "fébrilement, il guettait la lueur fugace qui pouvait déchirer la nuit",
+      "targets": [
+        {
+          "word": "fugace",
+          "pos": "adjective",
+          "gender": "f",
+          "semantic_class": "abstract"
+        },
+        {
+          "word": "déchirer",
+          "pos": "verb",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "fébrilement",
+          "pos": "adverb",
+          "semantic_class": "abstract"
+        }
+      ]
+    },
+    {
+      "sentence": "soudain, la braise se mit à crépiter sous la cendre froide",
+      "targets": [
+        {
+          "word": "braise",
+          "pos": "noun",
+          "gender": "f",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "crépiter",
+          "pos": "verb",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "soudain",
+          "pos": "adverb",
+          "semantic_class": "abstract"
+        }
+      ]
+    },
+    {
+      "sentence": "hâtivement, il recula devant la bête féroce qu'il entendait rugir",
+      "targets": [
+        {
+          "word": "féroce",
+          "pos": "adjective",
+          "gender": "f",
+          "semantic_class": "abstract"
+        },
+        {
+          "word": "rugir",
+          "pos": "verb",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "hâtivement",
+          "pos": "adverb",
+          "semantic_class": "abstract"
+        }
+      ]
+    },
+    {
+      "sentence": "la moisson fanée pourrissait souvent avant la fin du mois",
+      "targets": [
+        {
+          "word": "moisson",
+          "pos": "noun",
+          "gender": "f",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "fanée",
+          "pos": "adjective",
+          "gender": "f",
+          "semantic_class": "tangible"
+        },
+        {
+          "word": "souvent",
+          "pos": "adverb",
+          "semantic_class": "abstract"
+        }
+      ]
+    }
+  ]
+}
