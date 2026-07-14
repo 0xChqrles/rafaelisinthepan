@@ -56,6 +56,10 @@ CURRICULUM_PROMPT_VERSION = "2"
 RUNS_PER_PUZZLE = 3
 HOLDOUT_RUNS_PER_CONDITION = 3
 CONDITIONS = ("neutral", "learned", "v7")
+STRUCTURED_MAX_ATTEMPTS = 4
+# Models estimate character counts imperfectly. A rejected strategy is repaired
+# toward a margin below the actual validator cap instead of aiming at its edge.
+STRUCTURED_STRATEGY_REPAIR_TARGET_CHARS = sp.STRATEGY_MAX_CHARS * 9 // 10
 
 OUTPUT_ROOT = BENCHMARK_DIR / "output" / "curriculum"
 # The exact hand-written v7 strategy, recovered from a recorded v7 transcript
@@ -160,6 +164,16 @@ class CurriculumReporter:
         print(
             f"[strategy {retrospective_number}/{self.total_retrospectives}] "
             f"START retrospective after puzzle {puzzle_number}/{self.total_puzzles}",
+            flush=True,
+        )
+
+    @staticmethod
+    def structured_retry(
+        *, prefix: str, next_attempt: int, error: str
+    ) -> None:
+        print(
+            f"{prefix} RETRY structured reply "
+            f"{next_attempt}/{STRUCTURED_MAX_ATTEMPTS} — {error}",
             flush=True,
         )
 
@@ -481,12 +495,14 @@ def structured_call(
     prose_reply: Callable[[list[dict[str, str]]], str],
     prompt: str,
     validate: Callable[[dict[str, Any]], Any],
+    *,
+    on_retry: Callable[[int, str], None] | None = None,
 ) -> tuple[Any, list[dict[str, str]], dict[str, Any]]:
-    """One fresh prose call; on malformed/leaking output, reprompt ONCE then fail."""
+    """One fresh prose call with bounded validation repair attempts."""
     messages = [{"role": "user", "content": prompt}]
     started = time.monotonic()
     attempts: list[dict[str, Any]] = []
-    for attempt in range(2):
+    for attempt in range(STRUCTURED_MAX_ATTEMPTS):
         attempt_started = time.monotonic()
         reply = prose_reply([m.copy() for m in messages])
         attempts.append(
@@ -504,17 +520,38 @@ def structured_call(
             }
             return validate(parse_json_reply(reply)), messages, telemetry
         except ValueError as exc:
-            if attempt == 1:
+            if attempt + 1 == STRUCTURED_MAX_ATTEMPTS:
                 raise CurriculumError(
-                    f"structured reply is invalid after one reprompt: {exc}"
+                    "structured reply is invalid after "
+                    f"{STRUCTURED_MAX_ATTEMPTS} attempts: {exc}"
                 ) from exc
+            next_attempt = attempt + 2
+            if on_retry is not None:
+                on_retry(next_attempt, str(exc))
+            repair_lines = [
+                f"Your reply was rejected: {exc}.",
+                (
+                    "All schema, item-count, character-limit, and leak constraints "
+                    "in the original request are hard validation requirements."
+                ),
+            ]
+            length_match = re.fullmatch(
+                r"strategy is (\d+) characters; the cap is (\d+)", str(exc)
+            )
+            if length_match:
+                cap = int(length_match.group(2))
+                target = min(STRUCTURED_STRATEGY_REPAIR_TARGET_CHARS, cap)
+                repair_lines.append(
+                    f"Rewrite the strategy to no more than {target} characters "
+                    f"in total, leaving margin below the hard {cap}-character cap."
+                )
+            repair_lines.append(
+                "Reply again with a single corrected JSON object and nothing else."
+            )
             messages.append(
                 {
                     "role": "user",
-                    "content": (
-                        f"Your reply was rejected: {exc}. Reply again with a "
-                        "single corrected JSON object and nothing else."
-                    ),
+                    "content": " ".join(repair_lines),
                 }
             )
     raise AssertionError("unreachable")
@@ -869,6 +906,14 @@ def run_curriculum(
                 lambda payload: validate_retrospective(
                     payload, puzzle, puzzle_state["runs"]
                 ),
+                on_retry=lambda next_attempt, error: reporter.structured_retry(
+                    prefix=(
+                        f"[strategy {puzzle_index + 1}/"
+                        f"{len(curriculum_records)}]"
+                    ),
+                    next_attempt=next_attempt,
+                    error=error,
+                ),
             )
             puzzle_state["retrospective"] = {
                 "analysis": analysis,
@@ -897,6 +942,11 @@ def run_curriculum(
             fresh_prose_caller(),
             synthesis_prompt(state),
             lambda payload: validate_synthesis(payload, curriculum_puzzles),
+            on_retry=lambda next_attempt, error: reporter.structured_retry(
+                prefix="[synthesis]",
+                next_attempt=next_attempt,
+                error=error,
+            ),
         )
         state["synthesis"] = {
             "comprehensive_summary": summary,

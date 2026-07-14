@@ -311,7 +311,9 @@ def test_initial_checkpoint_exists_before_first_provider_turn(
     assert "[play 1/18] START curriculum puzzle 1/4 run 1/3" in output
 
 
-def test_retrospective_leak_reprompts_once_then_fails(dataset, tmp_path):
+def test_retrospective_retries_validation_and_resume_skips_completed_plays(
+    dataset, tmp_path
+):
     manifest_path, manifest = dataset
     dataset_dir = manifest_path.parent
     first = [r for r in manifest["puzzles"] if r["split"] == "curriculum"][0]
@@ -342,12 +344,36 @@ def test_retrospective_leak_reprompts_once_then_fails(dataset, tmp_path):
     ]
     assert len(state["puzzles"][0]["retrospective"]["telemetry"]["attempts"]) == 2
 
-    # Two leaking replies: fail clearly, never a third paid attempt.
+    # Four leaking replies exhaust the bounded repair attempts.
+    failure_root = tmp_path / "fails"
     provider = scripted_for(
-        manifest_path, manifest, prose_scripts=[[leaking, leaking]]
+        manifest_path,
+        manifest,
+        prose_scripts=[[leaking] * cr.STRUCTURED_MAX_ATTEMPTS],
     )
-    with pytest.raises(cr.CurriculumError, match="after one reprompt"):
-        run(dataset, tmp_path / "fails", provider)
+    with pytest.raises(cr.CurriculumError, match="after 4 attempts"):
+        run(dataset, failure_root, provider)
+
+    # All three expensive plays precede the retrospective and remain checkpointed.
+    artifacts = list((failure_root / "artifacts").rglob("*.json"))
+    assert len(artifacts) == 1
+    partial_state = json.loads(artifacts[0].read_text(encoding="utf-8"))
+    first_puzzle = partial_state["puzzles"][0]
+    assert len(first_puzzle["runs"]) == cr.RUNS_PER_PUZZLE
+    assert first_puzzle["retrospective"] is None
+
+    # Resume starts at that retrospective; no completed word-play call repeats.
+    remaining = scripted_for(manifest_path, manifest)
+    remaining.word_scripts = iter(
+        list(remaining.word_scripts)[cr.RUNS_PER_PUZZLE :]
+    )
+    artifact_path = run(
+        dataset, failure_root, remaining, resume=artifacts[0]
+    )
+    resumed_state = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert resumed_state["puzzles"][0]["runs"] == first_puzzle["runs"]
+    assert resumed_state["puzzles"][0]["retrospective"] is not None
+    assert remaining.constructed[0] == "prose"
 
 
 def test_strategy_leak_validation_covers_targets_starts_guesses_and_quotes(dataset):
@@ -618,6 +644,43 @@ def test_structured_call_captures_each_attempt_usage_and_duration():
     ]
     assert telemetry["wall_duration"] >= 0
     assert all(attempt["wall_duration"] >= 0 for attempt in telemetry["attempts"])
+
+
+def test_structured_call_repairs_overlong_strategy_with_below_cap_margin():
+    overlong = json.dumps({"strategy": ["x" * 2_209]})
+    corrected = json.dumps({"strategy": ["Keep the strategy concise."]})
+
+    class Caller:
+        def __init__(self):
+            self.replies = iter(
+                [overlong] * (cr.STRUCTURED_MAX_ATTEMPTS - 1) + [corrected]
+            )
+
+        def __call__(self, _messages):
+            return next(self.replies)
+
+    retries = []
+    parsed, messages, telemetry = cr.structured_call(
+        Caller(),
+        "prompt",
+        lambda payload: sp.validate_strategy_items(payload["strategy"]),
+        on_retry=lambda attempt, error: retries.append((attempt, error)),
+    )
+
+    assert parsed == ["Keep the strategy concise."]
+    assert len(telemetry["attempts"]) == cr.STRUCTURED_MAX_ATTEMPTS
+    assert [attempt for attempt, _error in retries] == [2, 3, 4]
+    repair_messages = messages[2::2]
+    assert len(repair_messages) == 3
+    assert all(
+        str(cr.STRUCTURED_STRATEGY_REPAIR_TARGET_CHARS)
+        in message["content"]
+        for message in repair_messages
+    )
+    assert all(
+        f"hard {sp.STRATEGY_MAX_CHARS}-character cap" in message["content"]
+        for message in repair_messages
+    )
 
 
 def test_evaluation_aggregates_play_retrospective_and_synthesis_costs():

@@ -551,8 +551,9 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   `curriculum_run.py run` preflights subscription auth even on resume and plays each
   curriculum puzzle 3 times from fresh provider contexts with the same incoming strategy, then
   one fresh prose retrospective call revises a compact strategy (≤8 items/2000 chars,
-  segment-aware puzzle-leak and 3-word slug-sequence quote validation, one reprompt then hard
-  error; revisions REPLACE, never append). Curriculum play uses a rules-only fixed opening and
+  segment-aware puzzle-leak and 3-word slug-sequence quote validation, up to four validated
+  attempts with explicit below-cap repair guidance; revisions REPLACE, never append).
+  Curriculum play uses a rules-only fixed opening and
   feedback path; the shipping `bench:puzzle` prompt remains unchanged. A final synthesis freezes
   `final_strategy`, then holdout evaluates
   neutral/learned/v7 (the exact v7 strategy text recovered verbatim from a recorded transcript
