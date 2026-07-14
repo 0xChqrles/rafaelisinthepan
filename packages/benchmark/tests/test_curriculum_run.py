@@ -447,6 +447,26 @@ def test_holdout_cannot_exist_before_strategy_freeze():
         cr._validate_distillation_state(state)
 
 
+def test_resume_rejects_holdout_without_matching_frozen_strategy_hash(
+    dataset, tmp_path
+):
+    manifest_path, manifest = dataset
+    artifact = _run(
+        dataset, tmp_path, _provider_for_full_run(manifest_path, manifest)
+    )
+    state = _state(artifact)
+
+    state["distillation"].pop("frozen_strategy_sha256")
+    cr.save_artifact(artifact, state)
+    with pytest.raises(cr.CurriculumError, match="matching frozen strategy hash"):
+        _run(dataset, tmp_path, RecordingProvider(), resume=artifact)
+
+    state["distillation"]["frozen_strategy_sha256"] = "0" * 64
+    cr.save_artifact(artifact, state)
+    with pytest.raises(cr.CurriculumError, match="matching frozen strategy hash"):
+        _run(dataset, tmp_path, RecordingProvider(), resume=artifact)
+
+
 def test_successful_resume_repeats_no_paid_calls(dataset, tmp_path):
     manifest_path, manifest = dataset
     provider = _provider_for_full_run(manifest_path, manifest)

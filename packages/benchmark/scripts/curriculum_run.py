@@ -699,6 +699,11 @@ def _completed_play_count(state: dict[str, Any]) -> int:
     )
 
 
+def _strategy_sha256(items: Any) -> str:
+    rendered = sp.strategy_text(items)
+    return hashlib.sha256(rendered.encode("utf-8")).hexdigest()
+
+
 def _validate_holdout_identity(
     state: dict[str, Any], records: list[dict[str, Any]]
 ) -> None:
@@ -747,8 +752,20 @@ def _validate_distillation_state(state: dict[str, Any]) -> None:
         raise CurriculumError("artifact marks distillation complete without an attempt")
     if stage["status"] == "failed" and len(attempts) != STRUCTURED_MAX_ATTEMPTS:
         raise CurriculumError("artifact marks distillation failed before exhausting attempts")
-    if stage["status"] != "complete" and _completed_play_count(state):
-        raise CurriculumError("artifact contains holdout play before strategy freeze")
+    completed_plays = _completed_play_count(state)
+    if completed_plays:
+        if stage["status"] != "complete":
+            raise CurriculumError("artifact contains holdout play before strategy freeze")
+        try:
+            expected_sha = _strategy_sha256(stage.get("strategy"))
+        except ValueError as exc:
+            raise CurriculumError(
+                f"artifact holdout strategy is invalid: {exc}"
+            ) from exc
+        if stage.get("frozen_strategy_sha256") != expected_sha:
+            raise CurriculumError(
+                "artifact contains holdout play without its matching frozen strategy hash"
+            )
 
 
 def _validate_completed_runs(
@@ -1066,9 +1083,7 @@ def run_curriculum(
         reporter=reporter,
     )
     learned_strategy = sp.strategy_text(strategy_items)
-    frozen_strategy_sha = hashlib.sha256(
-        learned_strategy.encode("utf-8")
-    ).hexdigest()
+    frozen_strategy_sha = _strategy_sha256(strategy_items)
     prior_strategy_sha = state["distillation"].get("frozen_strategy_sha256")
     if prior_strategy_sha is not None and prior_strategy_sha != frozen_strategy_sha:
         raise CurriculumError("checkpointed frozen strategy hash does not replay")
