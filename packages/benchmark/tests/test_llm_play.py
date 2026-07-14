@@ -1916,11 +1916,14 @@ def test_prompt_states_the_minimize_tries_objective_everywhere():
 def test_unparseable_replies_reprompt_then_abort_after_five_consecutive_turns():
     model = ScriptedModel(["123", "...", "—", "42", "!!!"])
 
-    with pytest.raises(UnparseableReplyError, match="5 consecutive"):
+    with pytest.raises(UnparseableReplyError, match="5 consecutive") as raised:
         play_puzzle(puzzle(), VOCAB, model)
 
     assert len(model.calls) == MAX_CONSECUTIVE_UNPARSEABLE
     assert "could not parse a word" in model.calls[1][-1]["content"]
+    assert raised.value.partial_result.counted_tries == 0
+    assert raised.value.partial_result.turns == MAX_CONSECUTIVE_UNPARSEABLE
+    assert raised.value.partial_result.tries is None
 
 
 @pytest.mark.parametrize(
@@ -1934,8 +1937,12 @@ def test_unparseable_replies_reprompt_then_abort_after_five_consecutive_turns():
 def test_parsed_replies_without_a_counted_try_abort_the_paid_loop(replies):
     model = ScriptedModel(replies)
 
-    with pytest.raises(NoProgressReplyError, match="without a counted try"):
+    with pytest.raises(NoProgressReplyError, match="without a counted try") as raised:
         play_puzzle(puzzle(), VOCAB, model)
 
     expected_calls = MAX_NONCOUNTING_REPLIES + (1 if replies[0] == "cold" else 0)
     assert len(model.calls) == expected_calls
+    assert raised.value.partial_result.tries is None
+    assert raised.value.partial_result.counted_tries == (
+        1 if replies[0] == "cold" else 0
+    )

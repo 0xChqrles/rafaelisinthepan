@@ -1,13 +1,12 @@
-"""Compact, model-specific strategy policy profiles (#84).
+"""Compact, model-specific distilled-strategy profiles (#84).
 
-A profile freezes the final learned policy of ONE model/configuration on ONE
+A profile freezes the final learned strategy of ONE model/configuration on ONE
 dataset. Profiles are lab-only artifacts: they never enter puzzle JSON and are
 never applied to a different model or configuration.
 
-Schema v2 replaces the free-form v1 strategy list with four controller rules.
-Legacy profiles remain readable for evaluation, but artifacts from an earlier
-curriculum prompt can never be resumed under a later prompt because the run
-configuration is version-pinned.
+Schema v3 returns to compact free-form guidance, now distilled once from a
+deterministic training-evidence packet. Legacy interactive v1/v2 profiles remain
+readable, but are never silently migrated or resumed into the new experiment.
 """
 
 from __future__ import annotations
@@ -17,11 +16,11 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-PROFILE_SCHEMA_VERSION = 2
+PROFILE_SCHEMA_VERSION = 3
+POLICY_PROFILE_SCHEMA_VERSION = 2
 LEGACY_PROFILE_SCHEMA_VERSION = 1
 
-# Kept only to validate/read already-paid prompt-v2 profiles. New runs never
-# produce or inject this free-form format.
+# Shared compact-guidance limits for distilled v3 and read-only legacy v1.
 STRATEGY_MAX_ITEMS = 8
 STRATEGY_MAX_CHARS = 2_000
 
@@ -32,9 +31,7 @@ POLICY_MAX_STALL_AFTER = 10_000
 POLICY_MAX_WARM_RANK = 10_000
 POLICY_MAX_WARM_FOLLOWUPS = 50
 
-# The neutral arm uses the same auditable decision envelope without receiving a
-# tactical reset or local-search instruction. Zero disables either conditional
-# rule.
+# Retained only to validate/read already-paid prompt-v2/v3/v4 policy profiles.
 NEUTRAL_POLICY: dict[str, Any] = {
     "always": {
         "action": "Choose one valid untried word for an unsolved target."
@@ -53,7 +50,7 @@ NEUTRAL_POLICY: dict[str, Any] = {
     },
 }
 
-_COMMON_PROFILE_FIELDS = (
+_LEGACY_COMMON_PROFILE_FIELDS = (
     "schema_version",
     "strategy_id",
     "model_id",
@@ -68,6 +65,27 @@ _COMMON_PROFILE_FIELDS = (
     "created_at",
 )
 
+_DISTILLED_PROFILE_FIELDS = (
+    "schema_version",
+    "strategy_id",
+    "model_id",
+    "provider",
+    "transport",
+    "auth",
+    "strategy_effort",
+    "play_effort",
+    "lang",
+    "dataset_id",
+    "dataset_sha256",
+    "evidence_packet_schema_version",
+    "evidence_packet_sha256",
+    "distillation_prompt_sha256",
+    "prompt_version",
+    "curriculum_prompt_version",
+    "created_at",
+    "final_strategy",
+)
+
 
 def neutral_policy() -> dict[str, Any]:
     """Return a fresh neutral policy so callers cannot mutate the constant."""
@@ -75,23 +93,26 @@ def neutral_policy() -> dict[str, Any]:
 
 
 def validate_strategy_items(items: Any) -> list[str]:
-    """Validate the legacy prompt-v2 free-form strategy representation."""
+    """Validate compact operational guidance used by v1 and distilled v3."""
     if not isinstance(items, list) or not items:
         raise ValueError("strategy must be a non-empty list of strings")
     if len(items) > STRATEGY_MAX_ITEMS:
         raise ValueError(f"strategy exceeds {STRATEGY_MAX_ITEMS} items")
     if not all(isinstance(item, str) and item.strip() for item in items):
         raise ValueError("every strategy item must be a non-empty string")
-    total = sum(len(item) for item in items)
+    normalized = [item.strip() for item in items]
+    if any("\n" in item or "\r" in item for item in normalized):
+        raise ValueError("every strategy item must be a single-line string")
+    total = sum(len(item) for item in normalized)
     if total > STRATEGY_MAX_CHARS:
         raise ValueError(
             f"strategy is {total} characters; the cap is {STRATEGY_MAX_CHARS}"
         )
-    return [item.strip() for item in items]
+    return normalized
 
 
 def strategy_text(items: list[str]) -> str:
-    """Render legacy prompt-v2 items for read-only artifact tooling."""
+    """Render compact items as the exact advice block injected into play."""
     return "\n".join(f"- {item}" for item in validate_strategy_items(items))
 
 
@@ -219,14 +240,19 @@ def build_profile(
     model_id: str,
     provider: str,
     transport: str,
-    effort: str,
+    auth: str,
+    strategy_effort: str,
+    play_effort: str,
     lang: str,
     dataset_id: str,
     dataset_sha256: str,
+    evidence_packet_schema_version: int,
+    evidence_packet_sha256: str,
+    distillation_prompt_sha256: str,
     prompt_version: str,
     curriculum_prompt_version: str,
     created_at: str,
-    final_policy: dict[str, Any],
+    final_strategy: list[str],
 ) -> dict[str, Any]:
     profile = {
         "schema_version": PROFILE_SCHEMA_VERSION,
@@ -234,14 +260,19 @@ def build_profile(
         "model_id": model_id,
         "provider": provider,
         "transport": transport,
-        "effort": effort,
+        "auth": auth,
+        "strategy_effort": strategy_effort,
+        "play_effort": play_effort,
         "lang": lang,
         "dataset_id": dataset_id,
         "dataset_sha256": dataset_sha256,
+        "evidence_packet_schema_version": evidence_packet_schema_version,
+        "evidence_packet_sha256": evidence_packet_sha256,
+        "distillation_prompt_sha256": distillation_prompt_sha256,
         "prompt_version": prompt_version,
         "curriculum_prompt_version": curriculum_prompt_version,
         "created_at": created_at,
-        "final_policy": validate_policy(final_policy),
+        "final_strategy": validate_strategy_items(final_strategy),
     }
     validate_profile(profile)
     return profile
@@ -250,13 +281,36 @@ def build_profile(
 def validate_profile(profile: Any) -> None:
     if not isinstance(profile, dict):
         raise ValueError("profile must be an object")
-    missing = [field for field in _COMMON_PROFILE_FIELDS if field not in profile]
-    if missing:
-        raise ValueError(f"profile is missing fields: {', '.join(missing)}")
-    schema_version = profile["schema_version"]
+    schema_version = profile.get("schema_version")
     if schema_version == PROFILE_SCHEMA_VERSION:
+        expected = set(_DISTILLED_PROFILE_FIELDS)
+        _exact_keys(profile, expected, "distilled profile")
+        string_fields = expected - {
+            "schema_version",
+            "evidence_packet_schema_version",
+            "final_strategy",
+        }
+        if not all(
+            isinstance(profile[field], str) and profile[field].strip()
+            for field in string_fields
+        ):
+            raise ValueError("every distilled profile identity must be non-empty")
+        if not _plain_int(profile["evidence_packet_schema_version"]):
+            raise ValueError("evidence_packet_schema_version must be an integer")
+        validate_strategy_items(profile["final_strategy"])
+        return
+    if schema_version in (
+        POLICY_PROFILE_SCHEMA_VERSION,
+        LEGACY_PROFILE_SCHEMA_VERSION,
+    ):
+        missing = [
+            field for field in _LEGACY_COMMON_PROFILE_FIELDS if field not in profile
+        ]
+        if missing:
+            raise ValueError(f"profile is missing fields: {', '.join(missing)}")
+    if schema_version == POLICY_PROFILE_SCHEMA_VERSION:
         if "final_policy" not in profile:
-            raise ValueError("profile is missing fields: final_policy")
+            raise ValueError("policy profile is missing fields: final_policy")
         validate_policy(profile["final_policy"])
         return
     if schema_version == LEGACY_PROFILE_SCHEMA_VERSION:
@@ -273,14 +327,20 @@ def assert_profile_compatible(
     *,
     model_id: str,
     transport: str,
-    effort: str,
+    auth: str,
+    strategy_effort: str,
+    play_effort: str,
 ) -> None:
     """Profiles are model/configuration specific — never cross-applied."""
     validate_profile(profile)
+    if profile["schema_version"] != PROFILE_SCHEMA_VERSION:
+        raise ValueError("only distilled schema-v3 profiles can be applied")
     for field, expected in (
         ("model_id", model_id),
         ("transport", transport),
-        ("effort", effort),
+        ("auth", auth),
+        ("strategy_effort", strategy_effort),
+        ("play_effort", play_effort),
     ):
         if profile[field] != expected:
             raise ValueError(

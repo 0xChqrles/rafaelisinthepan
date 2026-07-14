@@ -316,11 +316,19 @@ class ModelSummary:
         }
 
 
-class UnparseableReplyError(RuntimeError):
+class IncompleteRunError(RuntimeError):
+    """A bounded reply failure with the paid run prefix preserved for audit."""
+
+    def __init__(self, message: str, partial_result: RunResult | None = None):
+        super().__init__(message)
+        self.partial_result = partial_result
+
+
+class UnparseableReplyError(IncompleteRunError):
     """A model failed to produce any parseable word five turns in a row."""
 
 
-class NoProgressReplyError(RuntimeError):
+class NoProgressReplyError(IncompleteRunError):
     """A model produced too many parsed replies without a counted try."""
 
 
@@ -981,7 +989,16 @@ def play_puzzle(
             consecutive_unparseable += 1
             if consecutive_unparseable >= MAX_CONSECUTIVE_UNPARSEABLE:
                 raise UnparseableReplyError(
-                    f"aborted after {MAX_CONSECUTIVE_UNPARSEABLE} consecutive unparseable replies"
+                    f"aborted after {MAX_CONSECUTIVE_UNPARSEABLE} consecutive unparseable replies",
+                    RunResult(
+                        tries=None,
+                        counted_tries=referee.tries,
+                        turns=turns,
+                        duration=time.monotonic() - started,
+                        tried_words=tuple(referee.tried_words),
+                        conversation=tuple(message.copy() for message in messages),
+                        turn_token_usage=tuple(turn_token_usage),
+                    ),
                 )
             messages.append(
                 {
@@ -1020,7 +1037,16 @@ def play_puzzle(
             if noncounting_replies >= MAX_NONCOUNTING_REPLIES:
                 raise NoProgressReplyError(
                     f"aborted after {MAX_NONCOUNTING_REPLIES} parsed replies "
-                    "without a counted try"
+                    "without a counted try",
+                    RunResult(
+                        tries=None,
+                        counted_tries=referee.tries,
+                        turns=turns,
+                        duration=time.monotonic() - started,
+                        tried_words=tuple(referee.tried_words),
+                        conversation=tuple(message.copy() for message in messages),
+                        turn_token_usage=tuple(turn_token_usage),
+                    ),
                 )
 
         # A solve on try N wins even when N equals the cap. The cap is a DNF only when
