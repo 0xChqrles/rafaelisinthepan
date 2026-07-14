@@ -1145,6 +1145,7 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument("--force", action="store_true")
     run_parser.add_argument("--dry-run", action="store_true")
     run_parser.add_argument(
+        "-v",
         "--verbose",
         action="store_true",
         help="print every counted try plus retrospective and strategy details",

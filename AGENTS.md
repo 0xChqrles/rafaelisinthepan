@@ -438,7 +438,7 @@ pnpm bench:puzzle <puzzle.json> --model MODEL [--effort LEVEL] [--auth api|subsc
 #    `evaluate` reports on an artifact or profile. Curriculum data never enters puzzles.
 pnpm bench:curriculum:lexicon [--lexique-source <lexique.tsv>] [--out <fr-lexicon.tsv.gz>]
 pnpm bench:curriculum:generate --from-output <generator-output.json> --seed 84 [--dry-run]
-pnpm bench:curriculum:run <manifest.json> --model MODEL [--effort LEVEL] [--auth api|subscription] [--cap N] [--resume ARTIFACT] [--force] [--dry-run] [--verbose]
+pnpm bench:curriculum:run <manifest.json> --model MODEL [--effort LEVEL] [--auth api|subscription] [--cap N] [--resume ARTIFACT] [--force] [--dry-run] [-v|--verbose]
 pnpm bench:curriculum:evaluate <artifact-or-profile.json>
 
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
