@@ -5,9 +5,9 @@ dataset. Profiles are lab-only artifacts: they never enter puzzle JSON and are
 never applied to a different model or configuration.
 
 Schema v2 replaces the free-form v1 strategy list with four controller rules.
-Legacy v1 profiles remain readable for evaluation, but a prompt-v2 artifact can
-never be resumed as a prompt-v3 curriculum run because the run configuration is
-version-pinned.
+Legacy profiles remain readable for evaluation, but artifacts from an earlier
+curriculum prompt can never be resumed under a later prompt because the run
+configuration is version-pinned.
 """
 
 from __future__ import annotations
@@ -130,7 +130,7 @@ def _action(rule: Any, expected: set[str], label: str) -> str:
 
 
 def validate_policy(policy: Any) -> dict[str, Any]:
-    """Validate and normalize the prompt-v3 four-rule controller policy."""
+    """Validate and normalize the four-rule controller policy."""
     if not isinstance(policy, dict):
         raise ValueError("policy must be an object")
     _exact_keys(policy, set(POLICY_RULES), "policy")

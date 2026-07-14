@@ -104,6 +104,7 @@ class ScriptedProvider:
             replies = iter(next(self.word_scripts))
             calls = []
             turn = 0
+            active_families = {}
 
             def player(messages):
                 nonlocal turn
@@ -124,13 +125,22 @@ class ScriptedProvider:
                         "allowed unsolved targets: ", 1
                     )[1].splitlines()[0]
                 target = int(targets.split(",", 1)[0])
+                if "disabled by the neutral policy; family must be null" in latest:
+                    family = None
+                elif rule == "stall":
+                    family = f"target-{target}-pivot-{turn}"
+                    active_families[target] = family
+                else:
+                    family = active_families.setdefault(
+                        target, f"target-{target}-hypothesis"
+                    )
                 return json.dumps(
                     {
                         "guess": word,
                         "rule": rule,
                         "mode": mode,
                         "target": target,
-                        "family": f"family-{chr(96 + turn)}",
+                        "family": family,
                     }
                 )
 
@@ -197,7 +207,7 @@ def one_hole_policy_puzzle():
     }
 
 
-def decision(guess, rule, mode, *, family="cluster", target=1):
+def decision(guess, rule, mode, *, family=None, target=1):
     return json.dumps(
         {
             "guess": guess,
@@ -245,7 +255,7 @@ def test_policy_controller_repairs_before_scoring_and_audits_the_decision():
     replies = iter(
         [
             decision("alpha", "stall", "pivot"),
-            decision("secret", "invalid", "correct", family="answer"),
+            decision("secret", "invalid", "correct"),
         ]
     )
     attempts = []
@@ -265,6 +275,8 @@ def test_policy_controller_repairs_before_scoring_and_audits_the_decision():
     assert [attempt["accepted"] for attempt in attempts] == [False, True]
     assert attempts[0]["decision"]["guess"] == "alpha"
     assert attempts[1]["expected_rule"] == "invalid"
+    assert attempts[1]["decision"]["family"] is None
+    assert attempts[1]["family_event"] == "disabled"
 
 
 def test_policy_controller_records_failure_instead_of_raising_or_looping():
@@ -292,9 +304,9 @@ def test_stall_family_constraint_survives_the_invalid_correction_envelope():
     policy["stall"]["action"] = "Change semantic family after one flat guess."
     replies = iter(
         [
-            decision("alpha", "always", "explore"),
-            decision("beta", "stall", "pivot"),
-            decision("gamma", "invalid", "correct"),
+            decision("alpha", "always", "explore", family="cluster"),
+            decision("beta", "stall", "pivot", family="cluster"),
+            decision("gamma", "invalid", "correct", family="cluster"),
             decision(
                 "secret", "invalid", "correct", family="different-family"
             ),
@@ -324,8 +336,137 @@ def test_stall_family_constraint_survives_the_invalid_correction_envelope():
         True,
     ]
     assert result.policy_attempts[-1]["tactical_rule"] == "stall"
-    assert "last accepted family: cluster" in calls[1][-1]["content"]
-    assert "last accepted family: cluster" in calls[2][-1]["content"]
+    assert 'WORD 1: active family "cluster"' in calls[1][-1]["content"]
+    assert "non-improving probes 1/1" in calls[1][-1]["content"]
+    assert 'WORD 1: active family "cluster"' in calls[2][-1]["content"]
+
+
+def test_model_created_family_is_locked_until_its_target_budget_expires():
+    policy = policy_with_action(
+        "Explore.", stall_after=2, warm_rank=0, warm_followups=0
+    )
+    policy["stall"]["action"] = "Create a new hypothesis after two flat probes."
+    replies = iter(
+        [
+            decision("alpha", "always", "explore", family="mouvement"),
+            decision("beta", "always", "explore", family="mouvement"),
+            decision("gamma", "stall", "pivot", family="prudence"),
+            decision("delta", "always", "explore", family="prudence"),
+            decision("secret", "stall", "pivot", family="urgence"),
+        ]
+    )
+    calls = []
+
+    def reply(messages):
+        calls.append(messages)
+        return next(replies)
+
+    result = cr.play_policy_puzzle(
+        one_hole_policy_puzzle(),
+        {"alpha", "beta", "gamma", "delta", "secret"},
+        reply,
+        policy=policy,
+        cap=10,
+    )
+
+    assert result.tries == 5
+    assert [
+        attempt["tactical_rule"] for attempt in result.policy_attempts
+    ] == ["always", "always", "stall", "always", "stall"]
+    assert [
+        attempt["family_event"] for attempt in result.policy_attempts
+    ] == ["declare", "continue", "pivot", "continue", "pivot"]
+    assert [
+        (attempt["family_episode_after"] or {}).get("number")
+        for attempt in result.policy_attempts
+    ] == [1, 1, 2, 2, 3]
+    assert [
+        (attempt["family_episode_after"] or {}).get(
+            "non_improving_probes"
+        )
+        for attempt in result.policy_attempts
+    ] == [1, 2, 1, 2, 0]
+    assert [
+        attempt["target_outcome"]["improved"]
+        for attempt in result.policy_attempts
+    ] == [False, False, False, False, True]
+    assert "rule: stall" in calls[2][-1]["content"]
+    assert 'active family "mouvement"' in calls[2][-1]["content"]
+    # The accepted pivot resets only the family-local counter. The referee's
+    # global streak is already 3, but the new episode gets another probe.
+    assert "NO-IMPROVEMENT STREAK: 3" in calls[3][-1]["content"]
+    assert "rule: always" in calls[3][-1]["content"]
+    assert 'active family "prudence"' in calls[3][-1]["content"]
+    assert "non-improving probes 1/2" in calls[3][-1]["content"]
+
+
+def test_family_stall_budget_is_target_local():
+    puzzle = {
+        "lang": "fr",
+        "words": ["un", "deux"],
+        "holes": [
+            {
+                "pos": 0,
+                "secret": {"word": "secret", "slug": "secret"},
+                "start": {"word": "indice", "slug": "indice"},
+                "start_rank": 5,
+            },
+            {
+                "pos": 1,
+                "secret": {"word": "réponse", "slug": "reponse"},
+                "start": {"word": "départ", "slug": "depart"},
+                "start_rank": 5,
+            },
+        ],
+        "ranks": {
+            "secret": {"secret": {"word": "secret", "rank": 0}},
+            "reponse": {"reponse": {"word": "réponse", "rank": 0}},
+        },
+    }
+    referee = cr.PuzzleReferee(puzzle, {"secret", "reponse"})
+    policy = policy_with_action(
+        "Explore.", stall_after=2, warm_rank=0, warm_followups=0
+    )
+    families = {
+        1: cr.FamilyEpisode("mouvement", "mouvement", 1, 2),
+        2: cr.FamilyEpisode("animal", "animal", 1, 1),
+    }
+
+    context = cr.policy_rule_context(
+        referee, policy, family_episodes=families, warm_followups={}
+    )
+
+    assert context.rule == "stall"
+    assert context.targets == (1,)
+    assert "2/2" in context.stall_reason(1)
+
+
+def test_family_cannot_be_relabelled_between_authorized_pivots():
+    policy = policy_with_action(
+        "Explore.", stall_after=3, warm_rank=0, warm_followups=0
+    )
+    replies = iter(
+        [
+            decision("alpha", "always", "explore", family="mouvement"),
+            decision("beta", "always", "explore", family="vitesse"),
+            decision("secret", "invalid", "correct", family="mouvement"),
+        ]
+    )
+
+    result = cr.play_policy_puzzle(
+        one_hole_policy_puzzle(),
+        {"alpha", "beta", "secret"},
+        lambda _messages: next(replies),
+        policy=policy,
+        cap=10,
+    )
+
+    assert result.tries == 2
+    assert [
+        attempt["accepted"] for attempt in result.policy_attempts
+    ] == [True, False, True]
+    assert "exactly repeat" in result.policy_attempts[1]["error"]
+    assert result.policy_attempts[-1]["family_event"] == "continue"
 
 
 def test_warm_budget_counts_accepted_followups_even_when_they_improve():
@@ -344,9 +485,9 @@ def test_warm_budget_counts_accepted_followups_even_when_they_improve():
     replies = iter(
         [
             decision("alpha", "warm", "exploit", family="family-a"),
-            decision("beta", "warm", "exploit", family="family-b"),
-            decision("gamma", "stall", "pivot", family="family-c"),
-            decision("secret", "warm", "exploit", family="answer"),
+            decision("beta", "warm", "exploit", family="family-a"),
+            decision("gamma", "stall", "pivot", family="family-b"),
+            decision("secret", "warm", "exploit", family="family-b"),
         ]
     )
     calls = []
@@ -375,11 +516,14 @@ def test_warm_budget_counts_accepted_followups_even_when_they_improve():
         attempt["warm_followups_after"]
         for attempt in result.policy_attempts
     ] == [1, 2, 0, 0]
-    assert "accepted warm follow-ups in current burst: 2/2" in (
+    assert [
+        attempt["family_event"] for attempt in result.policy_attempts
+    ] == ["declare", "continue", "pivot", "continue"]
+    assert "accepted warm follow-ups by target: WORD 1 2/2" in (
         calls[2][-1]["content"]
     )
     assert "rule: stall" in calls[2][-1]["content"]
-    assert "accepted warm follow-ups in current burst: 0/2" in (
+    assert "accepted warm follow-ups by target: WORD 1 0/2" in (
         calls[3][-1]["content"]
     )
     assert "rule: warm" in calls[3][-1]["content"]
@@ -429,8 +573,11 @@ def test_full_curriculum_isolates_runs_and_freezes_holdout(
         decision = json.loads(record["conversation"][1]["content"])
         assert decision["guess"] == record["tried_words"][0]
         assert decision["rule"] == "always"
+        assert decision["family"] is None
         assert record["termination_reason"] == "solved"
         assert record["policy_compliance"]["rejected_decisions"] == 0
+        assert record["policy_compliance"]["family_declarations"] == 0
+        assert record["policy_attempts"][0]["family_event"] == "disabled"
     # No run transcript leaks into another run: each fresh player saw no
     # assistant content besides its own replies.
     for player in provider.players[:3]:
@@ -458,6 +605,9 @@ def test_full_curriculum_isolates_runs_and_freezes_holdout(
     retro_prompt = retro["conversation"][0]["content"]
     assert "authoritative replay trace:" in retro_prompt
     assert "policy decision audit:" in retro_prompt
+    assert '"family_episode_after"' in retro_prompt
+    assert '"target_outcome"' in retro_prompt
+    assert "Semantic families are never supplied by the controller" in retro_prompt
     assert "DECISION OUTPUT CONTRACT" not in retro_prompt
     synthesis_prompt = state["synthesis"]["conversation"][0]["content"]
     for structured_prompt in (retro_prompt, synthesis_prompt):
@@ -521,6 +671,9 @@ def test_full_curriculum_isolates_runs_and_freezes_holdout(
     assert state["config"]["dataset_sha256"] == manifest[
         "dataset_content_sha256"
     ]
+    assert state["config"]["policy_family_lifecycle"] == (
+        "model_created_per_target_episode"
+    )
     assert state["manifest_sha256"] != manifest["dataset_content_sha256"]
     sp.assert_profile_compatible(
         profile, model_id="claude-opus-4-8", transport="api", effort="none"
@@ -535,6 +688,12 @@ def test_full_curriculum_isolates_runs_and_freezes_holdout(
     assert report["holdout"]["neutral"]["median_of_medians"] == 3
     assert report["holdout"]["neutral"]["solved_only_median"] == 3
     assert report["holdout"]["neutral"]["dnf_puzzles"] == 0
+    assert report["holdout"]["neutral"]["policy_compliance"][
+        "family_declarations"
+    ] == 0
+    assert report["holdout"]["v7"]["policy_compliance"][
+        "family_declarations"
+    ] == 9
     assert report["paired_differences"]["learned_minus_neutral"]
     assert report["cost_split"]["retrospective"]["calls"] == 3
     assert report["cost_split"]["synthesis"]["calls"] == 1
@@ -804,11 +963,11 @@ def test_dry_run_plans_without_provider_calls(dataset, tmp_path, capsys):
     assert not (tmp_path / "artifacts").exists()
 
 
-def test_prompt_v2_artifact_is_readable_but_not_resumable_as_v3(dataset, tmp_path):
+def test_prompt_v3_artifact_is_readable_but_not_resumable_as_v4(dataset, tmp_path):
     manifest_path, _manifest = dataset
-    artifact = tmp_path / "pilot-v2.json"
+    artifact = tmp_path / "pilot-v3.json"
     artifact.write_text(
-        json.dumps({"config": {"curriculum_prompt_version": "2"}}),
+        json.dumps({"config": {"curriculum_prompt_version": "3"}}),
         encoding="utf-8",
     )
 

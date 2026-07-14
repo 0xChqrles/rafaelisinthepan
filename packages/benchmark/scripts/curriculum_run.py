@@ -53,7 +53,7 @@ from curriculum_io import load_json, read_data_bytes, sha256_bytes  # noqa: E402
 from slug import slug  # noqa: E402
 import strategy_profiles as sp  # noqa: E402
 
-CURRICULUM_PROMPT_VERSION = "3"
+CURRICULUM_PROMPT_VERSION = "4"
 RUNS_PER_PUZZLE = 3
 HOLDOUT_RUNS_PER_CONDITION = 3
 CONDITIONS = ("neutral", "learned", "v7")
@@ -162,10 +162,21 @@ class CurriculumReporter:
         )
         decision = attempt.get("decision") or {}
         if attempt["accepted"]:
+            family = json.dumps(decision["family"], ensure_ascii=False)
+            family_detail = ""
+            if attempt.get("family_event") != "disabled":
+                episode = attempt.get("family_episode_after") or {}
+                budget = attempt.get("family_probe_budget")
+                budget_label = budget if budget else "disabled"
+                family_detail = (
+                    f" family_event={attempt['family_event']}"
+                    f" episode={episode.get('number')}"
+                    f" probes={episode.get('non_improving_probes')}/{budget_label}"
+                )
             print(
                 f"{prefix} policy=accepted rule={decision['rule']} "
                 f"mode={decision['mode']} target={decision['target']} "
-                f"family={json.dumps(decision['family'], ensure_ascii=False)}",
+                f"family={family}{family_detail}",
                 flush=True,
             )
         else:
@@ -315,7 +326,7 @@ def load_v7_strategy(path: Path = V7_STRATEGY_PATH) -> str:
     return text
 
 
-# --- Prompt-v3 policy controller -------------------------------------------------
+# --- Prompt-v4 policy controller -------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -329,6 +340,28 @@ class PolicyRunResult:
     turn_token_usage: tuple[dict[str, Any], ...]
     termination_reason: str  # solved | cap | policy_failure
     policy_attempts: tuple[dict[str, Any], ...]
+
+
+@dataclass
+class FamilyEpisode:
+    """One model-created, target-local semantic hypothesis."""
+
+    label: str
+    key: str
+    number: int
+    non_improving_probes: int = 0
+
+
+@dataclass(frozen=True)
+class PolicyRuleContext:
+    """Controller-selected rule plus the targets it is allowed to act on."""
+
+    rule: str
+    targets: tuple[int, ...]
+    stall_reasons: tuple[tuple[int, str], ...] = ()
+
+    def stall_reason(self, target: int) -> str | None:
+        return dict(self.stall_reasons).get(target)
 
 
 def v7_controller_policy() -> dict[str, Any]:
@@ -381,26 +414,99 @@ def _warm_holes(
     ]
 
 
+def _family_tracking_enabled(policy: dict[str, Any]) -> bool:
+    """Neutral play receives no semantic-family scaffold or declaration duty."""
+    return (
+        policy["stall"]["after"] > 0
+        or policy["warm"]["rank_at_most"] > 0
+    )
+
+
+def _family_episode_snapshot(
+    episode: FamilyEpisode | None,
+) -> dict[str, Any] | None:
+    if episode is None:
+        return None
+    return {
+        "label": episode.label,
+        "number": episode.number,
+        "non_improving_probes": episode.non_improving_probes,
+    }
+
+
+def policy_rule_context(
+    referee: PuzzleReferee,
+    policy: dict[str, Any],
+    *,
+    family_episodes: dict[int, FamilyEpisode] | None = None,
+    warm_followups: dict[int, int] | None = None,
+) -> PolicyRuleContext:
+    """Select a rule from per-target family episodes and warm budgets."""
+    policy = sp.validate_policy(policy)
+    family_episodes = family_episodes or {}
+    warm_followups = warm_followups or {}
+    unsolved = _unsolved_holes(referee)
+    unsolved_targets = tuple(hole.number for hole in unsolved)
+    warm_targets = {hole.number for hole in _warm_holes(referee, policy)}
+    stall_after = policy["stall"]["after"]
+    warm_budget = policy["warm"]["max_followups"]
+    reasons: list[tuple[int, str]] = []
+
+    for hole in unsolved:
+        target_reasons: list[str] = []
+        episode = family_episodes.get(hole.number)
+        if (
+            stall_after > 0
+            and episode is not None
+            and episode.non_improving_probes >= stall_after
+        ):
+            target_reasons.append(
+                "family-local no-improvement budget exhausted "
+                f"({episode.non_improving_probes}/{stall_after})"
+            )
+        if (
+            hole.number in warm_targets
+            and warm_budget > 0
+            and warm_followups.get(hole.number, 0) >= warm_budget
+        ):
+            target_reasons.append(
+                "warm follow-up budget exhausted "
+                f"({warm_followups.get(hole.number, 0)}/{warm_budget})"
+            )
+        if target_reasons:
+            reasons.append((hole.number, "; ".join(target_reasons)))
+
+    if reasons:
+        return PolicyRuleContext(
+            "stall", tuple(target for target, _reason in reasons), tuple(reasons)
+        )
+    if warm_targets:
+        return PolicyRuleContext(
+            "warm",
+            tuple(
+                hole.number for hole in unsolved if hole.number in warm_targets
+            ),
+        )
+    return PolicyRuleContext("always", unsolved_targets)
+
+
 def active_policy_rule(
     referee: PuzzleReferee,
     policy: dict[str, Any],
     *,
     correcting: bool = False,
-    warm_followups: int = 0,
+    family_episodes: dict[int, FamilyEpisode] | None = None,
+    warm_followups: dict[int, int] | None = None,
 ) -> str:
-    """Select one rule from referee state plus the controller's warm budget."""
-    policy = sp.validate_policy(policy)
+    """Compatibility wrapper returning only the controller-selected rule."""
     if correcting:
         return "invalid"
-    warm = _warm_holes(referee, policy)
-    stall_after = policy["stall"]["after"]
-    if stall_after > 0 and referee.stalled_tries >= stall_after:
-        return "stall"
-    if warm and warm_followups >= policy["warm"]["max_followups"]:
-        return "stall"
-    if warm:
-        return "warm"
-    return "always"
+    return policy_rule_context(
+        referee,
+        policy,
+        family_episodes=family_episodes,
+        warm_followups=warm_followups,
+    ).rule
 
 
 def _policy_state_lines(referee: PuzzleReferee) -> list[str]:
@@ -433,12 +539,14 @@ def _policy_state_lines(referee: PuzzleReferee) -> list[str]:
 def _active_rule_lines(
     referee: PuzzleReferee,
     policy: dict[str, Any],
-    rule: str,
+    context: PolicyRuleContext,
     *,
-    last_family: str | None = None,
-    warm_followups: int = 0,
+    family_episodes: dict[int, FamilyEpisode],
+    warm_followups: dict[int, int],
+    display_rule: str | None = None,
 ) -> list[str]:
-    targets = ", ".join(str(hole.number) for hole in _unsolved_holes(referee))
+    rule = display_rule or context.rule
+    targets = ", ".join(str(target) for target in context.targets)
     lines = [
         "ACTIVE POLICY RULE — HARD REQUIREMENT",
         f"rule: {rule}",
@@ -448,34 +556,88 @@ def _active_rule_lines(
     ]
     warm_budget = policy["warm"]["max_followups"]
     if warm_budget > 0:
+        counters = ", ".join(
+            f"WORD {target} {warm_followups.get(target, 0)}/{warm_budget}"
+            for target in context.targets
+        )
+        lines.append(f"accepted warm follow-ups by target: {counters or 'none'}")
+    if context.rule == "warm":
+        lines.append(f"warm targets allowed for this rule: {targets}")
+
+    if not _family_tracking_enabled(policy):
+        lines += [
+            "FAMILY EPISODE STATE",
+            (
+                "disabled by the neutral policy; family must be null. Choose your "
+                "own method without a controller-provided semantic taxonomy."
+            ),
+        ]
+        return lines
+
+    stall_after = policy["stall"]["after"]
+    budget = str(stall_after) if stall_after > 0 else "disabled"
+    lines += [
+        "FAMILY EPISODE STATE",
+        (
+            "Families are created by you, never supplied by the controller. Each "
+            "target keeps its active family until a stall authorizes a pivot."
+        ),
+        f"family-local non-improvement budget: {budget}",
+    ]
+    for target in context.targets:
+        episode = family_episodes.get(target)
+        if episode is None:
+            lines.append(
+                f"WORD {target}: no active family; invent one broad enough for "
+                "multiple candidate probes."
+            )
+        else:
+            lines.append(
+                f"WORD {target}: active family "
+                f"{json.dumps(episode.label, ensure_ascii=False)}; episode "
+                f"{episode.number}; non-improving probes "
+                f"{episode.non_improving_probes}/{budget}."
+            )
+        reason = context.stall_reason(target)
+        if reason:
+            lines.append(f"WORD {target} pivot reason: {reason}.")
+
+    if context.rule == "stall":
         lines.append(
-            "accepted warm follow-ups in current burst: "
-            f"{warm_followups}/{warm_budget}"
+            "For the chosen target, invent a new family different from its active "
+            "family. This accepted pivot starts a new episode and resets that "
+            "target's family-local counter before its first probe is scored."
         )
-    if rule == "warm":
-        warm_targets = ", ".join(
-            str(hole.number) for hole in _warm_holes(referee, policy)
-        )
-        lines.append(f"warm targets allowed for this rule: {warm_targets}")
-    if rule == "stall":
+    else:
         lines.append(
-            "The family label must differ from the last accepted decision's family."
+            "If the chosen target already has an active family, repeat its label "
+            "exactly; only a controller-authorized stall may replace it."
         )
-        lines.append(f"last accepted family: {last_family or 'none'}")
     return lines
 
 
-def _decision_contract_lines() -> list[str]:
+def _decision_contract_lines(policy: dict[str, Any]) -> list[str]:
+    if _family_tracking_enabled(policy):
+        family_contract = (
+            "family is your own short semantic hypothesis label: declare it once, "
+            "repeat the active label exactly while probing, and replace it only for "
+            "an authorized pivot."
+        )
+    else:
+        family_contract = (
+            "family must be null; this policy imposes no semantic-family scaffold."
+        )
     return [
         "DECISION OUTPUT CONTRACT",
         (
             "Return one JSON object and nothing else with exactly these fields: "
-            '{"guess":str,"rule":str,"mode":str,"target":int,"family":str}.'
+            '{"guess":str,"rule":str,"mode":str,"target":int,'
+            '"family":str|null}.'
         ),
         (
             "guess must be exactly one valid untried game word. rule and mode must "
             "equal the active values. target must be an allowed unsolved WORD number. "
-            "family is a short auditable semantic-family label."
+            + family_contract
         ),
         (
             "The controller validates this object before scoring the guess. A rejected "
@@ -492,9 +654,16 @@ def policy_opening_message(
     verbatim_guidance: str | None = None,
 ) -> str:
     policy = sp.validate_policy(policy)
-    rule = active_policy_rule(referee, policy)
+    family_episodes: dict[int, FamilyEpisode] = {}
+    warm_followups: dict[int, int] = {}
+    context = policy_rule_context(
+        referee,
+        policy,
+        family_episodes=family_episodes,
+        warm_followups=warm_followups,
+    )
     lines = [
-        "Play Whippin AI in French under curriculum policy v3.",
+        "Play Whippin AI in French under curriculum policy v4.",
         "",
         "GOAL",
         (
@@ -519,6 +688,11 @@ def policy_opening_message(
         "FOUR-RULE POLICY",
         sp.policy_text(policy),
     ]
+    if _family_tracking_enabled(policy):
+        lines.append(
+            "The controller supplies no semantic families. You create and test "
+            "your own target-specific hypotheses."
+        )
     if verbatim_guidance:
         lines += [
             "",
@@ -529,9 +703,15 @@ def policy_opening_message(
         "",
         *_policy_state_lines(referee),
         "",
-        *_active_rule_lines(referee, policy, rule),
+        *_active_rule_lines(
+            referee,
+            policy,
+            context,
+            family_episodes=family_episodes,
+            warm_followups=warm_followups,
+        ),
         "",
-        *_decision_contract_lines(),
+        *_decision_contract_lines(policy),
     ]
     return "\n".join(lines)
 
@@ -565,8 +745,8 @@ def policy_feedback_message(
     referee: PuzzleReferee,
     policy: dict[str, Any],
     *,
-    last_family: str,
-    warm_followups: int,
+    family_episodes: dict[int, FamilyEpisode],
+    warm_followups: dict[int, int],
 ) -> str:
     lines = [
         f'RESULT FOR "{feedback.guess}":',
@@ -577,20 +757,23 @@ def policy_feedback_message(
     if feedback.solved:
         lines += ["", "RUN COMPLETE: solved."]
     else:
-        rule = active_policy_rule(
-            referee, policy, warm_followups=warm_followups
+        context = policy_rule_context(
+            referee,
+            policy,
+            family_episodes=family_episodes,
+            warm_followups=warm_followups,
         )
         lines += [
             "",
             *_active_rule_lines(
                 referee,
                 policy,
-                rule,
-                last_family=last_family,
+                context,
+                family_episodes=family_episodes,
                 warm_followups=warm_followups,
             ),
             "",
-            *_decision_contract_lines(),
+            *_decision_contract_lines(policy),
         ]
     return "\n".join(lines)
 
@@ -600,39 +783,36 @@ def policy_rejection_message(
     referee: PuzzleReferee,
     policy: dict[str, Any],
     *,
-    required_rule: str,
-    last_family: str | None,
-    warm_followups: int,
+    required_context: PolicyRuleContext,
+    family_episodes: dict[int, FamilyEpisode],
+    warm_followups: dict[int, int],
 ) -> str:
-    rule = active_policy_rule(referee, policy, correcting=True)
     lines = [
         f"POLICY REJECTION: {error}",
         "Nothing was scored and the game state did not change.",
-        f"underlying {required_rule} action: {policy[required_rule]['action']}",
+        (
+            f"underlying {required_context.rule} action: "
+            f"{policy[required_context.rule]['action']}"
+        ),
         "",
         *_policy_state_lines(referee),
         "",
         *_active_rule_lines(
             referee,
             policy,
-            rule,
+            required_context,
+            family_episodes=family_episodes,
             warm_followups=warm_followups,
+            display_rule="invalid",
         ),
         (
             "The correction envelope is invalid/correct, but the decision must "
-            f"still satisfy the underlying {required_rule} rule's target/family "
-            "constraints."
+            f"still satisfy the underlying {required_context.rule} rule's "
+            "target and family-episode constraints."
         ),
         "",
-        *_decision_contract_lines(),
+        *_decision_contract_lines(policy),
     ]
-    if required_rule == "warm":
-        warm_targets = ", ".join(
-            str(hole.number) for hole in _warm_holes(referee, policy)
-        )
-        lines.insert(3, f"underlying warm targets: {warm_targets}")
-    if required_rule == "stall":
-        lines.insert(3, f"last accepted family: {last_family or 'none'}")
     return "\n".join(lines)
 
 
@@ -665,9 +845,9 @@ def validate_policy_decision(
     policy: dict[str, Any],
     *,
     expected_rule: str,
-    tactical_rule: str | None = None,
-    last_family: str | None,
-) -> dict[str, Any]:
+    context: PolicyRuleContext,
+    family_episodes: dict[int, FamilyEpisode],
+) -> tuple[dict[str, Any], str]:
     rule = payload.get("rule")
     if rule != expected_rule:
         raise ValueError(f"rule must be {expected_rule!r}, got {rule!r}")
@@ -678,35 +858,57 @@ def validate_policy_decision(
             f"mode must be {expected_mode!r} for rule {expected_rule!r}"
         )
 
-    tactical_rule = tactical_rule or expected_rule
     target = payload.get("target")
-    unsolved = {hole.number for hole in _unsolved_holes(referee)}
     if (
         not isinstance(target, int)
         or isinstance(target, bool)
-        or target not in unsolved
+        or target not in context.targets
     ):
-        raise ValueError(f"target must be one of the unsolved words {sorted(unsolved)}")
-    if tactical_rule == "warm":
-        warm = {hole.number for hole in _warm_holes(referee, policy)}
-        if target not in warm:
-            raise ValueError(f"warm rule target must be one of {sorted(warm)}")
+        raise ValueError(
+            "target must be one of the active rule's allowed words "
+            f"{list(context.targets)}"
+        )
 
     family = payload.get("family")
-    if (
-        not isinstance(family, str)
-        or not family.strip()
-        or len(family.strip()) > 40
-        or "\n" in family
-        or "\r" in family
-    ):
-        raise ValueError("family must be a non-empty label of at most 40 characters")
-    family = family.strip()
-    family_slug = slug(family)
-    if not family_slug:
-        raise ValueError("family must contain letters")
-    if tactical_rule == "stall" and last_family == family_slug:
-        raise ValueError("stall rule requires a different semantic family")
+    if not _family_tracking_enabled(policy):
+        if family is not None:
+            raise ValueError("family must be null while family episodes are disabled")
+        family_event = "disabled"
+    else:
+        if (
+            not isinstance(family, str)
+            or not family.strip()
+            or len(family.strip()) > 40
+            or "\n" in family
+            or "\r" in family
+        ):
+            raise ValueError(
+                "family must be a non-empty label of at most 40 characters"
+            )
+        family = family.strip()
+        family_key = slug(family)
+        if not family_key:
+            raise ValueError("family must contain letters")
+        episode = family_episodes.get(target)
+        if context.rule == "stall":
+            if episode is None:
+                raise ValueError(
+                    "stall cannot pivot a target without an active family episode"
+                )
+            if family_key == episode.key:
+                raise ValueError(
+                    "stall rule requires a new family for the chosen target"
+                )
+            family_event = "pivot"
+        elif episode is None:
+            family_event = "declare"
+        else:
+            if family != episode.label:
+                raise ValueError(
+                    "family must exactly repeat the chosen target's active label "
+                    f"{episode.label!r}; only stall may pivot"
+                )
+            family_event = "continue"
 
     guess = payload.get("guess")
     if not isinstance(guess, str):
@@ -720,13 +922,16 @@ def validate_policy_decision(
     if folded in referee.tried:
         raise ValueError(f"guess {guess!r} was already tried")
 
-    return {
-        "guess": guess,
-        "rule": rule,
-        "mode": mode,
-        "target": target,
-        "family": family,
-    }
+    return (
+        {
+            "guess": guess,
+            "rule": rule,
+            "mode": mode,
+            "target": target,
+            "family": family,
+        },
+        family_event,
+    )
 
 
 def play_policy_puzzle(
@@ -759,11 +964,14 @@ def play_policy_puzzle(
     usages: list[dict[str, Any]] = []
     turns = 0
     attempts_this_try = 0
-    last_family: str | None = None
+    family_episodes: dict[int, FamilyEpisode] = {}
     correcting = False
-    warm_followups = 0
-    required_rule = active_policy_rule(
-        referee, policy, warm_followups=warm_followups
+    warm_followups: dict[int, int] = {}
+    required_context = policy_rule_context(
+        referee,
+        policy,
+        family_episodes=family_episodes,
+        warm_followups=warm_followups,
     )
     started = time.monotonic()
 
@@ -781,7 +989,7 @@ def play_policy_puzzle(
         )
 
     while True:
-        expected_rule = "invalid" if correcting else required_rule
+        expected_rule = "invalid" if correcting else required_context.rule
         attempt_started = time.monotonic()
         raw_reply = model_reply([message.copy() for message in messages])
         usage = _last_token_usage(model_reply)
@@ -794,29 +1002,52 @@ def play_policy_puzzle(
             {"role": "assistant", "content": raw_reply.strip() or "[empty response]"}
         )
         decision: dict[str, Any] | None = None
+        family_event: str | None = None
         try:
             decision = parse_policy_decision(raw_reply)
-            decision = validate_policy_decision(
+            decision, family_event = validate_policy_decision(
                 decision,
                 referee,
                 policy,
                 expected_rule=expected_rule,
-                tactical_rule=required_rule,
-                last_family=last_family,
+                context=required_context,
+                family_episodes=family_episodes,
             )
         except ValueError as exc:
             attempts_this_try += 1
+            candidate_target = (
+                decision.get("target")
+                if isinstance(decision, dict)
+                and isinstance(decision.get("target"), int)
+                and not isinstance(decision.get("target"), bool)
+                else None
+            )
+            episode = (
+                family_episodes.get(candidate_target)
+                if candidate_target is not None
+                else None
+            )
+            warm_before = (
+                warm_followups.get(candidate_target, 0)
+                if candidate_target is not None
+                else None
+            )
             attempt = {
                 "turn": turns,
                 "expected_rule": expected_rule,
-                "tactical_rule": required_rule,
+                "tactical_rule": required_context.rule,
                 "accepted": False,
                 "error": str(exc),
                 "decision": decision,
                 "wall_duration": attempt_duration,
                 "token_usage": usage,
-                "warm_followups_before": warm_followups,
-                "warm_followups_after": warm_followups,
+                "warm_followups_before": warm_before,
+                "warm_followups_after": warm_before,
+                "family_event": None,
+                "family_episode_before": _family_episode_snapshot(episode),
+                "family_episode_after": _family_episode_snapshot(episode),
+                "family_probe_budget": policy["stall"]["after"],
+                "target_outcome": None,
             }
             attempts.append(attempt)
             if on_policy_attempt is not None:
@@ -841,31 +1072,41 @@ def play_policy_puzzle(
                         str(exc),
                         referee,
                         policy,
-                        required_rule=required_rule,
-                        last_family=last_family,
+                        required_context=required_context,
+                        family_episodes=family_episodes,
                         warm_followups=warm_followups,
                     ),
                 }
             )
             continue
 
+        target = decision["target"]
+        episode_before = _family_episode_snapshot(family_episodes.get(target))
+        if family_event in {"declare", "pivot"}:
+            prior = family_episodes.get(target)
+            family_episodes[target] = FamilyEpisode(
+                label=decision["family"],
+                key=slug(decision["family"]),
+                number=(prior.number + 1 if prior is not None else 1),
+            )
+        warm_before = warm_followups.get(target, 0)
         attempt = {
             "turn": turns,
             "expected_rule": expected_rule,
-            "tactical_rule": required_rule,
+            "tactical_rule": required_context.rule,
             "accepted": True,
             "error": None,
             "decision": decision,
             "wall_duration": attempt_duration,
             "token_usage": usage,
-            "warm_followups_before": warm_followups,
+            "warm_followups_before": warm_before,
+            "family_event": family_event,
+            "family_episode_before": episode_before,
+            "family_probe_budget": policy["stall"]["after"],
+            "pivot_reason": required_context.stall_reason(target),
         }
-        attempts.append(attempt)
-        if on_policy_attempt is not None:
-            on_policy_attempt(dict(attempt))
         attempts_this_try = 0
         correcting = False
-        last_family = slug(decision["family"])
 
         # Validity and deduplication were checked above; submit is now guaranteed
         # to count. The policy controller never mutates game scoring semantics.
@@ -874,6 +1115,39 @@ def play_policy_puzzle(
             raise CurriculumError(
                 "policy controller admitted a non-counting guess; this is a bug"
             )
+        target_outcome = next(
+            outcome for outcome in feedback.outcomes if outcome.number == target
+        )
+        attempt["target_outcome"] = {
+            "rank": target_outcome.rank,
+            "improved": target_outcome.improved,
+            "solved": target_outcome.solved,
+        }
+        if _family_tracking_enabled(policy):
+            episode = family_episodes[target]
+            if target_outcome.improved:
+                episode.non_improving_probes = 0
+            else:
+                episode.non_improving_probes += 1
+
+        if required_context.rule == "warm":
+            warm_followups[target] = warm_before + 1
+        else:
+            warm_followups[target] = 0
+        warm_targets_after = {
+            hole.number for hole in _warm_holes(referee, policy)
+        }
+        for numbered_target in tuple(warm_followups):
+            if numbered_target not in warm_targets_after:
+                warm_followups[numbered_target] = 0
+
+        attempt["warm_followups_after"] = warm_followups.get(target, 0)
+        attempt["family_episode_after"] = _family_episode_snapshot(
+            family_episodes.get(target)
+        )
+        attempts.append(attempt)
+        if on_policy_attempt is not None:
+            on_policy_attempt(dict(attempt))
         if on_try is not None:
             on_try(
                 TryProgress(
@@ -882,13 +1156,6 @@ def play_policy_puzzle(
                     progress=referee.progress,
                 )
             )
-        if required_rule == "warm":
-            warm_followups += 1
-        else:
-            warm_followups = 0
-        if not _warm_holes(referee, policy):
-            warm_followups = 0
-        attempt["warm_followups_after"] = warm_followups
         messages.append(
             {
                 "role": "user",
@@ -896,7 +1163,7 @@ def play_policy_puzzle(
                     feedback,
                     referee,
                     policy,
-                    last_family=last_family,
+                    family_episodes=family_episodes,
                     warm_followups=warm_followups,
                 ),
             }
@@ -905,8 +1172,11 @@ def play_policy_puzzle(
             return finish("solved", feedback.tries)
         if feedback.tries >= cap:
             return finish("cap", None)
-        required_rule = active_policy_rule(
-            referee, policy, warm_followups=warm_followups
+        required_context = policy_rule_context(
+            referee,
+            policy,
+            family_episodes=family_episodes,
+            warm_followups=warm_followups,
         )
 
 
@@ -971,6 +1241,11 @@ def run_record(result: PolicyRunResult, metrics: dict[str, Any]) -> dict[str, An
         1 for attempt in result.policy_attempts if attempt["accepted"]
     )
     rejected = len(result.policy_attempts) - accepted
+    family_events = [
+        attempt.get("family_event")
+        for attempt in result.policy_attempts
+        if attempt["accepted"]
+    ]
     return {
         "tries": result.tries,
         "counted_tries": result.counted_tries,
@@ -989,6 +1264,9 @@ def run_record(result: PolicyRunResult, metrics: dict[str, Any]) -> dict[str, An
                 for attempt in result.policy_attempts
                 if attempt["accepted"] and attempt["expected_rule"] != "invalid"
             ),
+            "family_declarations": family_events.count("declare"),
+            "family_continuations": family_events.count("continue"),
+            "family_pivots": family_events.count("pivot"),
             "policy_failure": result.termination_reason == "policy_failure",
         },
         "metrics": metrics,
@@ -1022,8 +1300,10 @@ def _policy_format_constraints() -> str:
         "Every action must be a non-empty single-line string of at most "
         f"{sp.POLICY_MAX_ACTION_ITEM_CHARS} characters; all four actions together "
         f"may contain at most {sp.POLICY_MAX_ACTION_CHARS} characters. "
-        f"stall.after must be an integer from 0 to {sp.POLICY_MAX_STALL_AFTER} "
-        "(0 disables its standalone threshold). warm.rank_at_most must be an "
+        f"stall.after must be an integer from 0 to {sp.POLICY_MAX_STALL_AFTER}; "
+        "it is the number of target-local non-improving probes allowed in one "
+        "self-created family episode before a forced pivot (0 disables that "
+        "standalone threshold). warm.rank_at_most must be an "
         f"integer from 0 to {sp.POLICY_MAX_WARM_RANK}, and "
         f"warm.max_followups must be an integer from 0 to "
         f"{sp.POLICY_MAX_WARM_FOLLOWUPS}; the two warm values must either both be "
@@ -1068,6 +1348,19 @@ def retrospective_prompt(
             "action short and executable under that fixed mode. Exhausting the warm "
             "follow-up budget hands control to stall even when stall.after is 0."
         ),
+        (
+            "Semantic families are never supplied by the controller. When tactical "
+            "triggers are enabled, the player creates a target-specific family, "
+            "keeps it for multiple probes, and may replace it only when stall "
+            "authorizes a pivot. An accepted pivot starts a new family episode and "
+            "resets that target-local counter even if its first guess does not improve."
+        ),
+        (
+            "Use the family episode audit and target outcomes to assess whether your "
+            "own hypotheses were broad enough for meaningful testing, whether their "
+            "probes produced evidence, and whether pivots were genuinely contrasting. "
+            "Generalize the management method, never a puzzle-specific family name."
+        ),
         "",
         "INCOMING POLICY",
         json.dumps(incoming, ensure_ascii=False, separators=(",", ":")),
@@ -1109,6 +1402,18 @@ def retrospective_prompt(
                         "warm_followups_after": attempt.get(
                             "warm_followups_after"
                         ),
+                        "family_event": attempt.get("family_event"),
+                        "family_episode_before": attempt.get(
+                            "family_episode_before"
+                        ),
+                        "family_episode_after": attempt.get(
+                            "family_episode_after"
+                        ),
+                        "family_probe_budget": attempt.get(
+                            "family_probe_budget"
+                        ),
+                        "pivot_reason": attempt.get("pivot_reason"),
+                        "target_outcome": attempt.get("target_outcome"),
                     }
                     for attempt in record["policy_attempts"]
                 ],
@@ -1485,6 +1790,7 @@ def run_curriculum(
         "policy_profile_schema_version": sp.PROFILE_SCHEMA_VERSION,
         "policy_decision_fields": list(POLICY_DECISION_KEYS),
         "policy_max_attempts_per_try": POLICY_MAX_ATTEMPTS_PER_TRY,
+        "policy_family_lifecycle": "model_created_per_target_episode",
     }
 
     curriculum_records = [
@@ -1501,9 +1807,9 @@ def run_curriculum(
         if prior_prompt_version != CURRICULUM_PROMPT_VERSION:
             raise CurriculumError(
                 "resume artifact uses curriculum prompt version "
-                f"{prior_prompt_version!r}; prompt-v2 runs are readable pilot "
-                "artifacts but cannot be resumed into policy-enforced prompt-v3. "
-                "Start a new v3 artifact."
+                f"{prior_prompt_version!r}; earlier runs remain readable pilot "
+                "artifacts but cannot be resumed into policy-enforced prompt-v4. "
+                "Start a new v4 artifact."
             )
         if state["config"] != run_config:
             raise CurriculumError(
@@ -1905,6 +2211,18 @@ def _policy_compliance_summary(runs: list[dict[str, Any]]) -> dict[str, Any]:
         run.get("policy_compliance", {}).get("first_pass_decisions", 0)
         for run in runs
     )
+    family_declarations = sum(
+        run.get("policy_compliance", {}).get("family_declarations", 0)
+        for run in runs
+    )
+    family_continuations = sum(
+        run.get("policy_compliance", {}).get("family_continuations", 0)
+        for run in runs
+    )
+    family_pivots = sum(
+        run.get("policy_compliance", {}).get("family_pivots", 0)
+        for run in runs
+    )
     total = accepted + rejected
     return {
         "accepted_decisions": accepted,
@@ -1912,6 +2230,9 @@ def _policy_compliance_summary(runs: list[dict[str, Any]]) -> dict[str, Any]:
         "first_pass_decisions": first_pass,
         "accepted_rate": accepted / total if total else None,
         "first_pass_rate": first_pass / accepted if accepted else None,
+        "family_declarations": family_declarations,
+        "family_continuations": family_continuations,
+        "family_pivots": family_pivots,
         "policy_failure_runs": sum(
             run.get("termination_reason") == "policy_failure" for run in runs
         ),
