@@ -118,11 +118,12 @@ DEFAULT_EFFORT: ReasoningEffort = "none"
 DIRECT_OUTPUT_MAX_TOKENS = 256
 REASONING_MAX_TOKENS = 25_000
 DEEP_REASONING_MAX_TOKENS = 64_000
-# Output budget for prose/JSON calls (curriculum retrospectives and synthesis, #84).
-# Play replies stay one word; prose mode is an explicit construction-time choice on the
-# provider adapter, never inferred from message counts.
+# Output budgets for structured curriculum decisions and prose/JSON calls (#84).
+# The ordinary benchmark stays in one-word mode; every adapter mode is an explicit
+# construction-time choice and is never inferred from message counts.
+DECISION_OUTPUT_MAX_TOKENS = 512
 PROSE_OUTPUT_MAX_TOKENS = 8_192
-OutputMode = Literal["word", "prose"]
+OutputMode = Literal["word", "decision", "prose"]
 
 AuthMode = Literal["api", "subscription"]
 AUTH_MODES: tuple[AuthMode, ...] = ("api", "subscription")
@@ -187,6 +188,12 @@ CODEX_PROSE_INSTRUCTIONS = (
     "You are an isolated game analyst. Treat the user's complete message as your only "
     "task context. Never inspect files, use tools, search, or modify anything. Answer "
     "the final user message fully, in the exact format it requests."
+)
+CODEX_DECISION_INSTRUCTIONS = (
+    "You are an isolated word-game player under an auditable policy controller. "
+    "Treat the user's complete game snapshot as your only task context. Never inspect "
+    "files, use tools, search, or modify anything. Reply to the final user message "
+    "with only the exact JSON decision object it requests."
 )
 CODEX_TOOL_ITEM_TYPES = {
     "command_execution",
@@ -1069,6 +1076,8 @@ def _output_token_budget(effort: ReasoningEffort, output: OutputMode) -> int:
         budget = REASONING_MAX_TOKENS
     if output == "prose":
         return max(budget, PROSE_OUTPUT_MAX_TOKENS)
+    if output == "decision":
+        return max(budget, DECISION_OUTPUT_MAX_TOKENS)
     return budget
 
 
@@ -1235,6 +1244,9 @@ def _codex_snapshot_prompt(
     if output == "prose":
         lead = "Complete the task from the compact JSON snapshot below."
         response_rule = "Answer fully in the exact format requested."
+    elif output == "decision":
+        lead = "Play under the policy controller in the compact JSON snapshot below."
+        response_rule = "Return only the exact JSON decision object requested."
     else:
         lead = "Play the word game from the compact JSON snapshot below."
         response_rule = "Return exactly one word and nothing else."
@@ -1316,11 +1328,11 @@ class OpenAISubscriptionReply:
         self._message_count = 0
         self._workspace = tempfile.TemporaryDirectory(prefix="whippin-codex-")
         self.last_token_usage: dict[str, Any] | None = None
-        instructions = (
-            CODEX_BENCHMARK_INSTRUCTIONS
-            if output == "word"
-            else CODEX_PROSE_INSTRUCTIONS
-        )
+        instructions = {
+            "word": CODEX_BENCHMARK_INSTRUCTIONS,
+            "decision": CODEX_DECISION_INSTRUCTIONS,
+            "prose": CODEX_PROSE_INSTRUCTIONS,
+        }[output]
         self._instructions_path = Path(self._workspace.name) / "instructions.md"
         self._instructions_path.write_text(instructions + "\n", encoding="utf-8")
 
@@ -1410,8 +1422,9 @@ def provider_reply(
 ) -> ModelReply:
     """Build one provider adapter. Paid SDK imports stay lazy for offline tests.
 
-    `output` fixes the adapter's response mode at construction: "word" for play
-    replies, "prose" for curriculum retrospective/synthesis calls (#84).
+    `output` fixes the adapter's response mode at construction: "word" for the
+    ordinary benchmark, "decision" for curriculum play, and "prose" for
+    curriculum retrospective/synthesis calls (#84).
     """
     provider = config["provider"]
     model_id = config["model_id"]

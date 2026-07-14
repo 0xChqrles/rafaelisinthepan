@@ -7,6 +7,7 @@ leak rejection, frozen holdout conditions, and resume-without-repeat.
 """
 
 import json
+import re
 
 import pytest
 
@@ -52,6 +53,15 @@ def vocab_loader(_lang):
     return {slug(word) for word in words}
 
 
+def policy_with_action(action, *, stall_after=0, warm_rank=0, warm_followups=0):
+    policy = sp.neutral_policy()
+    policy["always"]["action"] = action
+    policy["stall"]["after"] = stall_after
+    policy["warm"]["rank_at_most"] = warm_rank
+    policy["warm"]["max_followups"] = warm_followups
+    return policy
+
+
 def retro_reply(lesson):
     return json.dumps(
         {
@@ -62,7 +72,9 @@ def retro_reply(lesson):
                 "strategy_adherence": f"followed ({lesson})",
                 "run_comparison": "identical",
             },
-            "revised_strategy": [f"Lesson {lesson}: explore opposites early."],
+            "revised_policy": policy_with_action(
+                f"Lesson {lesson}: explore distinct semantic directions early."
+            ),
         }
     )
 
@@ -70,7 +82,9 @@ def retro_reply(lesson):
 SYNTHESIS_REPLY = json.dumps(
     {
         "comprehensive_summary": "Across the curriculum, direct play won.",
-        "final_strategy": ["Final rule: diversify semantic directions."],
+        "final_policy": policy_with_action(
+            "Final rule: diversify semantic directions."
+        ),
     }
 )
 
@@ -86,13 +100,39 @@ class ScriptedProvider:
 
     def __call__(self, config, api_key, *, effort, auth, output):
         self.constructed.append(output)
-        if output == "word":
+        if output == "decision":
             replies = iter(next(self.word_scripts))
             calls = []
+            turn = 0
 
             def player(messages):
+                nonlocal turn
                 calls.append([m.copy() for m in messages])
-                return next(replies)
+                word = next(replies)
+                turn += 1
+                latest = messages[-1]["content"]
+                rule = re.findall(r"^rule: ([a-z]+)$", latest, re.MULTILINE)[-1]
+                mode = re.findall(
+                    r"^required mode: ([a-z]+)$", latest, re.MULTILINE
+                )[-1]
+                if rule == "warm":
+                    targets = latest.rsplit(
+                        "warm targets allowed for this rule: ", 1
+                    )[1].splitlines()[0]
+                else:
+                    targets = latest.rsplit(
+                        "allowed unsolved targets: ", 1
+                    )[1].splitlines()[0]
+                target = int(targets.split(",", 1)[0])
+                return json.dumps(
+                    {
+                        "guess": word,
+                        "rule": rule,
+                        "mode": mode,
+                        "target": target,
+                        "family": f"family-{chr(96 + turn)}",
+                    }
+                )
 
             player.calls = calls
             self.players.append(player)
@@ -139,6 +179,164 @@ def run(dataset, tmp_path, provider, **kwargs):
     )
 
 
+def one_hole_policy_puzzle():
+    return {
+        "lang": "fr",
+        "words": ["mot"],
+        "holes": [
+            {
+                "pos": 0,
+                "secret": {"word": "secret", "slug": "secret"},
+                "start": {"word": "indice", "slug": "indice"},
+                "start_rank": 5,
+            }
+        ],
+        "ranks": {
+            "secret": {"secret": {"word": "secret", "rank": 0}}
+        },
+    }
+
+
+def decision(guess, rule, mode, *, family="cluster", target=1):
+    return json.dumps(
+        {
+            "guess": guess,
+            "rule": rule,
+            "mode": mode,
+            "target": target,
+            "family": family,
+        }
+    )
+
+
+def test_policy_schema_is_exact_bounded_and_normalized():
+    neutral = sp.neutral_policy()
+    assert sp.validate_policy(neutral) == neutral
+    assert neutral["stall"]["after"] == 0
+    assert neutral["warm"]["rank_at_most"] == 0
+
+    missing = sp.neutral_policy()
+    del missing["invalid"]
+    with pytest.raises(ValueError, match="missing invalid"):
+        sp.validate_policy(missing)
+
+    mismatched_warm = sp.neutral_policy()
+    mismatched_warm["warm"]["rank_at_most"] = 10
+    with pytest.raises(ValueError, match="both be 0.*or both be positive"):
+        sp.validate_policy(mismatched_warm)
+
+    boolean_threshold = sp.neutral_policy()
+    boolean_threshold["stall"]["after"] = True
+    with pytest.raises(ValueError, match="stall.after must be an integer"):
+        sp.validate_policy(boolean_threshold)
+
+    multiline = sp.neutral_policy()
+    multiline["always"]["action"] = "first\nsecond"
+    with pytest.raises(ValueError, match="must be one line"):
+        sp.validate_policy(multiline)
+
+
+def test_policy_controller_repairs_before_scoring_and_audits_the_decision():
+    replies = iter(
+        [
+            decision("alpha", "stall", "pivot"),
+            decision("secret", "invalid", "correct", family="answer"),
+        ]
+    )
+    attempts = []
+    result = cr.play_policy_puzzle(
+        one_hole_policy_puzzle(),
+        {"alpha", "secret"},
+        lambda _messages: next(replies),
+        policy=sp.neutral_policy(),
+        cap=10,
+        on_policy_attempt=attempts.append,
+    )
+
+    assert result.termination_reason == "solved"
+    assert result.tries == 1
+    assert result.turns == 2
+    assert result.tried_words == ("secret",)
+    assert [attempt["accepted"] for attempt in attempts] == [False, True]
+    assert attempts[0]["decision"]["guess"] == "alpha"
+    assert attempts[1]["expected_rule"] == "invalid"
+
+
+def test_policy_controller_records_failure_instead_of_raising_or_looping():
+    replies = iter(["not json"] * cr.POLICY_MAX_ATTEMPTS_PER_TRY)
+    result = cr.play_policy_puzzle(
+        one_hole_policy_puzzle(),
+        {"secret"},
+        lambda _messages: next(replies),
+        policy=sp.neutral_policy(),
+        cap=10,
+    )
+
+    assert result.termination_reason == "policy_failure"
+    assert result.tries is None
+    assert result.counted_tries == 0
+    assert result.turns == cr.POLICY_MAX_ATTEMPTS_PER_TRY
+    assert result.tried_words == ()
+    assert all(not attempt["accepted"] for attempt in result.policy_attempts)
+
+
+def test_stall_family_constraint_survives_the_invalid_correction_envelope():
+    policy = policy_with_action(
+        "Explore.", stall_after=1, warm_rank=0, warm_followups=0
+    )
+    policy["stall"]["action"] = "Change semantic family after one flat guess."
+    replies = iter(
+        [
+            decision("alpha", "always", "explore"),
+            decision("beta", "stall", "pivot"),
+            decision("gamma", "invalid", "correct"),
+            decision(
+                "secret", "invalid", "correct", family="different-family"
+            ),
+        ]
+    )
+    calls = []
+
+    def reply(messages):
+        calls.append(messages)
+        return next(replies)
+
+    result = cr.play_policy_puzzle(
+        one_hole_policy_puzzle(),
+        {"alpha", "beta", "gamma", "secret"},
+        reply,
+        policy=policy,
+        cap=10,
+    )
+
+    assert result.termination_reason == "solved"
+    assert result.tries == 2
+    assert result.tried_words == ("alpha", "secret")
+    assert [attempt["accepted"] for attempt in result.policy_attempts] == [
+        True,
+        False,
+        False,
+        True,
+    ]
+    assert result.policy_attempts[-1]["tactical_rule"] == "stall"
+    assert "last accepted family: cluster" in calls[1][-1]["content"]
+    assert "last accepted family: cluster" in calls[2][-1]["content"]
+
+
+def test_active_rule_uses_warm_budget_then_stall_priority():
+    policy = policy_with_action(
+        "Explore.", stall_after=10, warm_rank=5, warm_followups=2
+    )
+    referee = cr.PuzzleReferee(
+        one_hole_policy_puzzle(), {"alpha", "beta", "secret"}
+    )
+    assert cr.active_policy_rule(referee, policy) == "warm"
+    referee.submit("alpha")
+    assert cr.active_policy_rule(referee, policy) == "warm"
+    referee.submit("beta")
+    assert cr.active_policy_rule(referee, policy) == "stall"
+
+
 def test_full_curriculum_isolates_runs_and_freezes_holdout(
     dataset, tmp_path, capsys
 ):
@@ -151,13 +349,16 @@ def test_full_curriculum_isolates_runs_and_freezes_holdout(
     # 3 curriculum puzzles x 3 runs, each from a genuinely fresh provider context.
     assert len(state["puzzles"]) == 3
     assert provider.constructed == (
-        ["word"] * 3 + ["prose"]
-    ) * 3 + ["prose"] + ["word"] * 9
+        ["decision"] * 3 + ["prose"]
+    ) * 3 + ["prose"] + ["decision"] * 9
 
     first_puzzle = state["puzzles"][0]
     openings = [r["conversation"][0]["content"] for r in first_puzzle["runs"]]
-    # First puzzle: no learned strategy yet, and all 3 runs got the same prompt.
-    assert all("YOUR STRATEGY" not in opening for opening in openings)
+    # First puzzle: the neutral policy has no tactical trigger, and all 3 runs
+    # get the same auditable controller prompt.
+    assert all("FOUR-RULE POLICY" in opening for opening in openings)
+    assert all("No additional neutral tactic" in opening for opening in openings)
+    assert all("FROZEN V7 GUIDANCE" not in opening for opening in openings)
     assert len(set(openings)) == 1
     for forbidden in (
         "YOUR METHOD",
@@ -167,28 +368,49 @@ def test_full_curriculum_isolates_runs_and_freezes_holdout(
         "A sequence of related guesses",
     ):
         assert all(forbidden not in opening for opening in openings)
-    assert all("EMBEDDING INFO" in opening for opening in openings)
+    assert all("FIXED GAME RULES" in opening for opening in openings)
     for record in first_puzzle["runs"]:
         assert all(
             "JUDGMENT:" not in message["content"]
             for message in record["conversation"]
             if message["role"] == "user"
         )
-    # The first play response is a guess, never a plan.
+    # The first play response is an auditable decision; only its guess scores.
     for record in first_puzzle["runs"]:
         assert record["conversation"][1]["role"] == "assistant"
-        assert record["conversation"][1]["content"] == record["tried_words"][0]
+        decision = json.loads(record["conversation"][1]["content"])
+        assert decision["guess"] == record["tried_words"][0]
+        assert decision["rule"] == "always"
+        assert record["termination_reason"] == "solved"
+        assert record["policy_compliance"]["rejected_decisions"] == 0
     # No run transcript leaks into another run: each fresh player saw no
     # assistant content besides its own replies.
     for player in provider.players[:3]:
-        own = {call_msg["content"] for call in player.calls for call_msg in call
-               if call_msg["role"] == "assistant"}
-        assert own <= set(first_puzzle["runs"][provider.players.index(player)]["tried_words"])
+        own = {
+            call_msg["content"]
+            for call in player.calls
+            for call_msg in call
+            if call_msg["role"] == "assistant"
+        }
+        recorded = {
+            message["content"]
+            for message in first_puzzle["runs"][
+                provider.players.index(player)
+            ]["conversation"]
+            if message["role"] == "assistant"
+        }
+        assert own <= recorded
 
     # Retrospection starts only after all three runs and stores the contract.
     retro = first_puzzle["retrospective"]
-    assert retro["revised_strategy"] == ["Lesson alpha: explore opposites early."]
+    assert retro["revised_policy"]["always"]["action"] == (
+        "Lesson alpha: explore distinct semantic directions early."
+    )
     assert len(retro["telemetry"]["attempts"]) == 1
+    retro_prompt = retro["conversation"][0]["content"]
+    assert "authoritative replay trace:" in retro_prompt
+    assert "policy decision audit:" in retro_prompt
+    assert "DECISION OUTPUT CONTRACT" not in retro_prompt
     for key in (
         "worked_well",
         "wasted_attempt_patterns",
@@ -213,18 +435,22 @@ def test_full_curriculum_isolates_runs_and_freezes_holdout(
         assert len(entries[0]["runs"]) == 3
         opening = entries[0]["runs"][0]["conversation"][0]["content"]
         if condition == "neutral":
-            assert "YOUR STRATEGY" not in opening
+            assert "No additional neutral tactic" in opening
+            assert "FROZEN V7 GUIDANCE" not in opening
         elif condition == "learned":
             assert "Final rule: diversify semantic directions." in opening
         else:
             assert V7_TEXT in opening
+            assert "FROZEN V7 GUIDANCE — VERBATIM CONTROL TEXT" in opening
             assert "Final rule" not in opening
 
     # Synthesis and the compact profile artifact.
-    assert state["synthesis"]["final_strategy"] == [
+    assert state["synthesis"]["final_policy"]["always"]["action"] == (
         "Final rule: diversify semantic directions."
-    ]
+    )
     profile = sp.load_profile(artifact_path.with_suffix(".profile.json"))
+    assert profile["schema_version"] == 2
+    assert profile["final_policy"] == state["synthesis"]["final_policy"]
     assert profile["dataset_sha256"] == manifest["dataset_content_sha256"]
     assert state["config"]["dataset_sha256"] == manifest[
         "dataset_content_sha256"
@@ -252,7 +478,7 @@ def test_full_curriculum_isolates_runs_and_freezes_holdout(
     assert "[play 1/18] START curriculum puzzle 1/4 run 1/3" in output
     assert "[play 1/18] DONE curriculum puzzle 1/4 run 1/3 — 3 tries" in output
     assert "[strategy 1/3] START retrospective after puzzle 1/4" in output
-    assert "[synthesis] DONE — 1 final strategy item" in output
+    assert "[synthesis] DONE — final 4-rule policy" in output
     assert "[play 18/18] DONE holdout/v7 puzzle 4/4 run 3/3" in output
     assert "curriculum complete:" in output
     assert "try=" not in output
@@ -271,11 +497,12 @@ def test_verbose_curriculum_prints_tries_analysis_and_strategies(
 
     assert '[play 1/18] curriculum puzzle 1/4 run 1/3 try=1 word=' in output
     assert "progress=" in output
+    assert "policy=accepted rule=always mode=explore" in output
     assert "[strategy 1/3] retrospective analysis:" in output
-    assert "[strategy 1/3] revised strategy:" in output
-    assert "Lesson alpha: explore opposites early." in output
+    assert "[strategy 1/3] revised policy:" in output
+    assert "Lesson alpha: explore distinct semantic directions early." in output
     assert "[synthesis] comprehensive summary:" in output
-    assert "[synthesis] final strategy:" in output
+    assert "[synthesis] final policy:" in output
     assert "Final rule: diversify semantic directions." in output
 
 
@@ -325,7 +552,7 @@ def test_retrospective_retries_validation_and_resume_skips_completed_plays(
                 "worked_well", "wasted_attempt_patterns", "missed_evidence",
                 "strategy_adherence", "run_comparison",
             )},
-            "revised_strategy": [f"Always try {secret} first."],
+            "revised_policy": policy_with_action(f"Always try {secret} first."),
         }
     )
     # Leak, then a corrected reply: accepted on the reprompt.
@@ -339,9 +566,9 @@ def test_retrospective_retries_validation_and_resume_skips_completed_plays(
     state = json.loads(artifact_path.read_text(encoding="utf-8"))
     retro_conv = state["puzzles"][0]["retrospective"]["conversation"]
     assert "rejected" in retro_conv[2]["content"]
-    assert state["puzzles"][0]["retrospective"]["revised_strategy"] == [
-        "Lesson alpha: explore opposites early."
-    ]
+    assert state["puzzles"][0]["retrospective"]["revised_policy"]["always"][
+        "action"
+    ] == "Lesson alpha: explore distinct semantic directions early."
     assert len(state["puzzles"][0]["retrospective"]["telemetry"]["attempts"]) == 2
 
     # Four leaking replies exhaust the bounded repair attempts.
@@ -385,12 +612,12 @@ def test_strategy_leak_validation_covers_targets_starts_guesses_and_quotes(datas
     records = [{"tried_words": ["intrus"]}]
 
     for item, match in (
-        ([f"Use {puzzle['holes'][0]['secret']['word']} again."], "leaks puzzle word"),
-        ([f"The clue {start_word} was useful."], "leaks puzzle word"),
-        (["Remember intrus next time."], "leaks puzzle word"),
+        (f"Use {puzzle['holes'][0]['secret']['word']} again.", "leaks puzzle word"),
+        (f"The clue {start_word} was useful.", "leaks puzzle word"),
+        ("Remember intrus next time.", "leaks puzzle word"),
     ):
         with pytest.raises(ValueError, match=match):
-            cr.validate_revised_strategy(item, puzzle, records)
+            cr.validate_revised_policy(policy_with_action(item), puzzle, records)
 
     # Quoting the sentence is rejected even when the quote contains no target.
     scenic = {
@@ -405,14 +632,18 @@ def test_strategy_leak_validation_covers_targets_starts_guesses_and_quotes(datas
         ],
     }
     with pytest.raises(ValueError, match="quotes the puzzle"):
-        cr.validate_revised_strategy(
-            ["Sentence said: les nuages flottent sur."], scenic, records
+        cr.validate_revised_policy(
+            policy_with_action("Sentence said: les nuages flottent sur."),
+            scenic,
+            records,
         )
 
     # Whole-token and segment checks work in both directions.
     with pytest.raises(ValueError, match="leaks puzzle word"):
-        cr.validate_revised_strategy(
-            ["Revisit montagne-neige after a miss."], scenic, records
+        cr.validate_revised_policy(
+            policy_with_action("Revisit montagne-neige after a miss."),
+            scenic,
+            records,
         )
     hyphenated_target = json.loads(json.dumps(scenic))
     hyphenated_target["holes"][0]["secret"] = {
@@ -420,20 +651,26 @@ def test_strategy_leak_validation_covers_targets_starts_guesses_and_quotes(datas
         "slug": "nuages-froids",
     }
     with pytest.raises(ValueError, match="leaks puzzle word"):
-        cr.validate_revised_strategy(
-            ["Revisit nuages after a miss."], hyphenated_target, records
+        cr.validate_revised_policy(
+            policy_with_action("Revisit nuages after a miss."),
+            hyphenated_target,
+            records,
         )
 
     # Quote matching follows word-core slugs, so punctuation/case/accents cannot
     # disguise a three-word sentence run.
     accented = dict(scenic, words=["L'été,", "brille", "sur", "la", "montagne"])
     with pytest.raises(ValueError, match="quotes the puzzle"):
-        cr.validate_revised_strategy(
-            ["Remember: ÉTÉ — BRILLE, SUR!"], accented, records
+        cr.validate_revised_policy(
+            policy_with_action("Remember: ÉTÉ — BRILLE, SUR!"),
+            accented,
+            records,
         )
 
-    assert cr.validate_revised_strategy(
-        ["Pivot to an opposite after three flat guesses."], puzzle, records
+    assert cr.validate_revised_policy(
+        policy_with_action("Pivot to an opposite after three flat guesses."),
+        puzzle,
+        records,
     )
 
 
@@ -499,6 +736,30 @@ def test_dry_run_plans_without_provider_calls(dataset, tmp_path, capsys):
     assert plan["planned_play_calls"] == 3 * 3 + 1 * 3 * 3
     assert plan["planned_retrospectives"] == 3
     assert not (tmp_path / "artifacts").exists()
+
+
+def test_prompt_v2_artifact_is_readable_but_not_resumable_as_v3(dataset, tmp_path):
+    manifest_path, _manifest = dataset
+    artifact = tmp_path / "pilot-v2.json"
+    artifact.write_text(
+        json.dumps({"config": {"curriculum_prompt_version": "2"}}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(cr.CurriculumError, match="readable pilot.*cannot be resumed"):
+        cr.run_curriculum(
+            manifest_path,
+            model="OPUS",
+            effort="none",
+            auth="api",
+            resume=artifact,
+            provider_factory=lambda *_args, **_kwargs: pytest.fail(
+                "provider must not be built"
+            ),
+            vocab_loader=vocab_loader,
+            output_root=tmp_path / "artifacts",
+            v7_strategy=V7_TEXT,
+        )
 
 
 @pytest.mark.parametrize(
@@ -646,9 +907,14 @@ def test_structured_call_captures_each_attempt_usage_and_duration():
     assert all(attempt["wall_duration"] >= 0 for attempt in telemetry["attempts"])
 
 
-def test_structured_call_repairs_overlong_strategy_with_below_cap_margin():
-    overlong = json.dumps({"strategy": ["x" * 2_209]})
-    corrected = json.dumps({"strategy": ["Keep the strategy concise."]})
+def test_structured_call_repairs_overlong_policy_with_below_cap_margin():
+    too_long = policy_with_action("x" * 250)
+    too_long["stall"]["action"] = "y" * 250
+    too_long["warm"]["action"] = "z" * 250
+    too_long["invalid"]["action"] = "q" * 250
+    overlong = json.dumps({"policy": too_long})
+    corrected_policy = policy_with_action("Keep the policy concise.")
+    corrected = json.dumps({"policy": corrected_policy})
 
     class Caller:
         def __init__(self):
@@ -663,22 +929,22 @@ def test_structured_call_repairs_overlong_strategy_with_below_cap_margin():
     parsed, messages, telemetry = cr.structured_call(
         Caller(),
         "prompt",
-        lambda payload: sp.validate_strategy_items(payload["strategy"]),
+        lambda payload: sp.validate_policy(payload["policy"]),
         on_retry=lambda attempt, error: retries.append((attempt, error)),
     )
 
-    assert parsed == ["Keep the strategy concise."]
+    assert parsed == corrected_policy
     assert len(telemetry["attempts"]) == cr.STRUCTURED_MAX_ATTEMPTS
     assert [attempt for attempt, _error in retries] == [2, 3, 4]
     repair_messages = messages[2::2]
     assert len(repair_messages) == 3
     assert all(
-        str(cr.STRUCTURED_STRATEGY_REPAIR_TARGET_CHARS)
+        str(cr.STRUCTURED_POLICY_REPAIR_TARGET_CHARS)
         in message["content"]
         for message in repair_messages
     )
     assert all(
-        f"hard {sp.STRATEGY_MAX_CHARS}-character cap" in message["content"]
+        f"hard {sp.POLICY_MAX_ACTION_CHARS}-character cap" in message["content"]
         for message in repair_messages
     )
 

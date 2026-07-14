@@ -1,11 +1,12 @@
 """Retrospective strategy-curriculum orchestrator (#84).
 
 Per model: play each curriculum puzzle 3 independent times (same incoming
-strategy, genuinely fresh provider contexts, no cross-run leakage), then one
-fresh retrospective call that revises a compact reusable strategy (replace,
-never append). After 15 puzzles, one synthesis call produces the final report
-and frozen strategy; holdout evaluation then compares neutral / learned / v7
-conditions without further learning.
+four-rule policy, genuinely fresh provider contexts, no cross-run leakage), then
+one fresh retrospective call that revises that compact policy (replace, never
+append). Every play turn is an auditable JSON decision checked before its guess
+can reach the game referee. After 15 puzzles, one synthesis call produces the
+final report and frozen policy; holdout evaluation then compares neutral /
+learned / v7 conditions without further learning.
 
 Everything is checkpointed atomically and resumable; completed paid calls are
 never repeated unless --force. Implementing/running these commands offline is
@@ -22,6 +23,7 @@ import re
 import statistics
 import sys
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -35,10 +37,9 @@ from llm_play import (  # noqa: E402
     PROMPT_VERSION,
     PROVIDER_ENV,
     PuzzleReferee,
-    RunResult,
     TryProgress,
     load_vocab,
-    play_puzzle,
+    parse_single_word,
     provider_reply,
     select_model,
     validate_anthropic_subscription_auth,
@@ -52,14 +53,22 @@ from curriculum_io import load_json, read_data_bytes, sha256_bytes  # noqa: E402
 from slug import slug  # noqa: E402
 import strategy_profiles as sp  # noqa: E402
 
-CURRICULUM_PROMPT_VERSION = "2"
+CURRICULUM_PROMPT_VERSION = "3"
 RUNS_PER_PUZZLE = 3
 HOLDOUT_RUNS_PER_CONDITION = 3
 CONDITIONS = ("neutral", "learned", "v7")
 STRUCTURED_MAX_ATTEMPTS = 4
-# Models estimate character counts imperfectly. A rejected strategy is repaired
+# Models estimate character counts imperfectly. A rejected policy is repaired
 # toward a margin below the actual validator cap instead of aiming at its edge.
-STRUCTURED_STRATEGY_REPAIR_TARGET_CHARS = sp.STRATEGY_MAX_CHARS * 9 // 10
+STRUCTURED_POLICY_REPAIR_TARGET_CHARS = sp.POLICY_MAX_ACTION_CHARS * 9 // 10
+POLICY_MAX_ATTEMPTS_PER_TRY = 3
+POLICY_DECISION_KEYS = ("guess", "rule", "mode", "target", "family")
+POLICY_MODES = {
+    "always": "explore",
+    "stall": "pivot",
+    "warm": "exploit",
+    "invalid": "correct",
+}
 
 OUTPUT_ROOT = BENCHMARK_DIR / "output" / "curriculum"
 # The exact hand-written v7 strategy, recovered from a recorded v7 transcript
@@ -93,7 +102,8 @@ class CurriculumReporter:
         print(f"curriculum artifact: {artifact_path}", flush=True)
         print(
             f"curriculum progress: {completed_plays}/{total_plays} plays "
-            f"checkpointed; model={model_id}; cap={cap}",
+            f"checkpointed; model={model_id}; cap={cap}; "
+            f"curriculum_prompt=v{CURRICULUM_PROMPT_VERSION}",
             flush=True,
         )
 
@@ -134,6 +144,37 @@ class CurriculumReporter:
             flush=True,
         )
 
+    def policy_attempt(
+        self,
+        attempt: dict[str, Any],
+        *,
+        play_number: int,
+        phase: str,
+        puzzle_number: int,
+        run_number: int,
+    ) -> None:
+        if not self.verbose:
+            return
+        prefix = (
+            f"[play {play_number}/{self.total_plays}] {phase} "
+            f"puzzle {puzzle_number}/{self.total_puzzles} "
+            f"run {run_number}/{self._run_total(phase)}"
+        )
+        decision = attempt.get("decision") or {}
+        if attempt["accepted"]:
+            print(
+                f"{prefix} policy=accepted rule={decision['rule']} "
+                f"mode={decision['mode']} target={decision['target']} "
+                f"family={json.dumps(decision['family'], ensure_ascii=False)}",
+                flush=True,
+            )
+        else:
+            print(
+                f"{prefix} policy=rejected expected={attempt['expected_rule']} "
+                f"reason={json.dumps(attempt['error'], ensure_ascii=False)}",
+                flush=True,
+            )
+
     def play_completed(
         self,
         record: dict[str, Any],
@@ -147,6 +188,12 @@ class CurriculumReporter:
         if record["tries"] is not None:
             unit = "try" if record["tries"] == 1 else "tries"
             score = f"{record['tries']} {unit}"
+        elif record.get("termination_reason") == "policy_failure":
+            unit = "try" if record["counted_tries"] == 1 else "tries"
+            score = (
+                "POLICY FAILURE after "
+                f"{record['counted_tries']} counted {unit}"
+            )
         else:
             unit = "try" if record["counted_tries"] == 1 else "tries"
             score = f"DNF at {record['counted_tries']} counted {unit}"
@@ -183,14 +230,13 @@ class CurriculumReporter:
         retrospective_number: int,
         puzzle_number: int,
         analysis: dict[str, Any],
-        strategy: list[str],
+        policy: dict[str, Any],
     ) -> None:
         prefix = f"[strategy {retrospective_number}/{self.total_retrospectives}]"
-        item_unit = "item" if len(strategy) == 1 else "items"
         print(
             f"{prefix} DONE retrospective after puzzle "
             f"{puzzle_number}/{self.total_puzzles} — "
-            f"{len(strategy)} {item_unit}",
+            "4-rule policy",
             flush=True,
         )
         if not self.verbose:
@@ -200,7 +246,7 @@ class CurriculumReporter:
             + json.dumps(analysis, ensure_ascii=False, indent=2),
             flush=True,
         )
-        self._strategy(prefix, "revised strategy", strategy)
+        self._policy(prefix, "revised policy", policy)
 
     def synthesis_started(self) -> None:
         print(
@@ -209,26 +255,24 @@ class CurriculumReporter:
             flush=True,
         )
 
-    def synthesis_completed(self, summary: str, strategy: list[str]) -> None:
-        item_unit = "item" if len(strategy) == 1 else "items"
-        print(
-            f"[synthesis] DONE — {len(strategy)} final strategy {item_unit}",
-            flush=True,
-        )
+    def synthesis_completed(self, summary: str, policy: dict[str, Any]) -> None:
+        print("[synthesis] DONE — final 4-rule policy", flush=True)
         if not self.verbose:
             return
         print(f"[synthesis] comprehensive summary:\n{summary}", flush=True)
-        self._strategy("[synthesis]", "final strategy", strategy)
+        self._policy("[synthesis]", "final policy", policy)
 
     def complete(self, profile_path: Path) -> None:
         print(f"curriculum complete: {self.artifact_path}", flush=True)
         print(f"strategy profile: {profile_path}", flush=True)
 
     @staticmethod
-    def _strategy(prefix: str, label: str, items: list[str]) -> None:
-        print(f"{prefix} {label}:", flush=True)
-        for number, item in enumerate(items, start=1):
-            print(f"  {number}. {item}", flush=True)
+    def _policy(prefix: str, label: str, policy: dict[str, Any]) -> None:
+        print(
+            f"{prefix} {label}:\n"
+            + json.dumps(policy, ensure_ascii=False, indent=2),
+            flush=True,
+        )
 
     @staticmethod
     def _run_total(phase: str) -> int:
@@ -271,6 +315,563 @@ def load_v7_strategy(path: Path = V7_STRATEGY_PATH) -> str:
     return text
 
 
+# --- Prompt-v3 policy controller -------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PolicyRunResult:
+    tries: int | None
+    counted_tries: int
+    turns: int
+    duration: float
+    tried_words: tuple[str, ...]
+    conversation: tuple[dict[str, str], ...]
+    turn_token_usage: tuple[dict[str, Any], ...]
+    termination_reason: str  # solved | cap | policy_failure
+    policy_attempts: tuple[dict[str, Any], ...]
+
+
+def v7_controller_policy() -> dict[str, Any]:
+    """Controller thresholds explicitly stated by the frozen v7 guidance."""
+    return sp.validate_policy(
+        {
+            "always": {
+                "action": (
+                    "Apply the frozen v7 guidance: combine sentence grammar with "
+                    "rank evidence and choose the most useful untried word."
+                )
+            },
+            "stall": {
+                "after": 3,
+                "action": (
+                    "Leave the exhausted semantic family and pivot to a different "
+                    "relation, opposite, or base form."
+                ),
+            },
+            "warm": {
+                "rank_at_most": 100,
+                "max_followups": 3,
+                "action": (
+                    "Exploit the warmest evidence briefly, prioritizing the exact "
+                    "grammatical form required by the sentence."
+                ),
+            },
+            "invalid": {
+                "action": (
+                    "Repair the rejected decision with a valid, untried word while "
+                    "preserving the intended target."
+                )
+            },
+        }
+    )
+
+
+def _unsolved_holes(referee: PuzzleReferee) -> list[Any]:
+    return [hole for hole in referee.holes if hole.rank != 0]
+
+
+def _warm_holes(
+    referee: PuzzleReferee, policy: dict[str, Any]
+) -> list[Any]:
+    threshold = policy["warm"]["rank_at_most"]
+    if threshold == 0:
+        return []
+    return [
+        hole for hole in _unsolved_holes(referee) if hole.rank <= threshold
+    ]
+
+
+def active_policy_rule(
+    referee: PuzzleReferee,
+    policy: dict[str, Any],
+    *,
+    correcting: bool = False,
+) -> str:
+    """Select one active rule from observable referee state, deterministically."""
+    policy = sp.validate_policy(policy)
+    if correcting:
+        return "invalid"
+    warm = _warm_holes(referee, policy)
+    stall_after = policy["stall"]["after"]
+    if stall_after > 0 and referee.stalled_tries >= stall_after:
+        return "stall"
+    if warm and referee.stalled_tries >= policy["warm"]["max_followups"]:
+        return "stall"
+    if warm:
+        return "warm"
+    return "always"
+
+
+def _policy_state_lines(referee: PuzzleReferee) -> list[str]:
+    tried = ", ".join(sorted(referee.tried_words, key=slug)) or "none"
+    if referee.tries == 0:
+        trend = "NO-IMPROVEMENT STREAK: 0. No counted guesses yet."
+    elif referee.stalled_tries == 0:
+        trend = (
+            "NO-IMPROVEMENT STREAK: 0. The latest counted guess improved at "
+            "least one word."
+        )
+    else:
+        unit = "guess" if referee.stalled_tries == 1 else "guesses"
+        trend = (
+            f"NO-IMPROVEMENT STREAK: {referee.stalled_tries}. The last "
+            f"{referee.stalled_tries} counted {unit} improved no word."
+        )
+    return [
+        "CURRENT STATE",
+        f"CLOZE: {referee.cloze()}",
+        "CURRENT BEST RANKED CLUE PER UNSOLVED WORD — SEMANTIC EVIDENCE, "
+        "NOT SENTENCE TEXT:",
+        *referee.best_clue_lines(),
+        trend,
+        f"EXCLUDED AS ALREADY TRIED (unordered; do not repeat): {tried}",
+        f"TRIES: {referee.tries} (lower is better)",
+    ]
+
+
+def _active_rule_lines(
+    referee: PuzzleReferee,
+    policy: dict[str, Any],
+    rule: str,
+    *,
+    last_family: str | None = None,
+) -> list[str]:
+    targets = ", ".join(str(hole.number) for hole in _unsolved_holes(referee))
+    lines = [
+        "ACTIVE POLICY RULE — HARD REQUIREMENT",
+        f"rule: {rule}",
+        f"required mode: {POLICY_MODES[rule]}",
+        f"action: {policy[rule]['action']}",
+        f"allowed unsolved targets: {targets or 'none'}",
+    ]
+    if rule == "warm":
+        warm_targets = ", ".join(
+            str(hole.number) for hole in _warm_holes(referee, policy)
+        )
+        lines.append(f"warm targets allowed for this rule: {warm_targets}")
+    if rule == "stall":
+        lines.append(
+            "The family label must differ from the last accepted decision's family."
+        )
+        lines.append(f"last accepted family: {last_family or 'none'}")
+    return lines
+
+
+def _decision_contract_lines() -> list[str]:
+    return [
+        "DECISION OUTPUT CONTRACT",
+        (
+            "Return one JSON object and nothing else with exactly these fields: "
+            '{"guess":str,"rule":str,"mode":str,"target":int,"family":str}.'
+        ),
+        (
+            "guess must be exactly one valid untried game word. rule and mode must "
+            "equal the active values. target must be an allowed unsolved WORD number. "
+            "family is a short auditable semantic-family label."
+        ),
+        (
+            "The controller validates this object before scoring the guess. A rejected "
+            "decision does not count; repeated rejection terminates the run as a "
+            "policy failure."
+        ),
+    ]
+
+
+def policy_opening_message(
+    referee: PuzzleReferee,
+    policy: dict[str, Any],
+    *,
+    verbatim_guidance: str | None = None,
+) -> str:
+    policy = sp.validate_policy(policy)
+    rule = active_policy_rule(referee, policy)
+    lines = [
+        "Play Whippin AI in French under curriculum policy v3.",
+        "",
+        "GOAL",
+        (
+            "Solve every hidden word in as few counted tries as possible. One valid "
+            "untried guess is broadcast to every unsolved word."
+        ),
+        "",
+        "FIXED GAME RULES",
+        (
+            "The CLOZE is a real sentence. Lower rank is closer, rank 0 solves, and "
+            "MISS is outside the stored neighborhood."
+        ),
+        (
+            "Ranks measure embedding relatedness, not grammatical fit or synonymy. "
+            "Answers are exact inflected forms."
+        ),
+        (
+            "Only vocabulary-valid unique guesses count. Solved words lock. The "
+            "authoritative state below replaces obsolete intermediate state."
+        ),
+        "",
+        "FOUR-RULE POLICY",
+        sp.policy_text(policy),
+    ]
+    if verbatim_guidance:
+        lines += [
+            "",
+            "FROZEN V7 GUIDANCE — VERBATIM CONTROL TEXT",
+            verbatim_guidance,
+        ]
+    lines += [
+        "",
+        *_policy_state_lines(referee),
+        "",
+        *_active_rule_lines(referee, policy, rule),
+        "",
+        *_decision_contract_lines(),
+    ]
+    return "\n".join(lines)
+
+
+def _policy_outcomes(feedback: Any, referee: PuzzleReferee) -> list[str]:
+    lines = []
+    for outcome in feedback.outcomes:
+        current_rank = referee.holes[outcome.number - 1].rank
+        if outcome.rank is None:
+            lines.append(
+                f"word {outcome.number}: MISS (current best remains rank "
+                f"{current_rank})"
+            )
+        elif outcome.solved:
+            lines.append(f"word {outcome.number}: 0 solved!")
+        elif outcome.improved:
+            lines.append(
+                f"word {outcome.number}: {outcome.rank} closer; new best rank "
+                f"{outcome.rank}"
+            )
+        else:
+            lines.append(
+                f"word {outcome.number}: rank {outcome.rank} did not improve "
+                f"current best rank {current_rank}"
+            )
+    return lines
+
+
+def policy_feedback_message(
+    feedback: Any,
+    referee: PuzzleReferee,
+    policy: dict[str, Any],
+    *,
+    last_family: str,
+) -> str:
+    lines = [
+        f'RESULT FOR "{feedback.guess}":',
+        *_policy_outcomes(feedback, referee),
+        "",
+        *_policy_state_lines(referee),
+    ]
+    if feedback.solved:
+        lines += ["", "RUN COMPLETE: solved."]
+    else:
+        rule = active_policy_rule(referee, policy)
+        lines += [
+            "",
+            *_active_rule_lines(
+                referee, policy, rule, last_family=last_family
+            ),
+            "",
+            *_decision_contract_lines(),
+        ]
+    return "\n".join(lines)
+
+
+def policy_rejection_message(
+    error: str,
+    referee: PuzzleReferee,
+    policy: dict[str, Any],
+    *,
+    required_rule: str,
+    last_family: str | None,
+) -> str:
+    rule = active_policy_rule(referee, policy, correcting=True)
+    lines = [
+        f"POLICY REJECTION: {error}",
+        "Nothing was scored and the game state did not change.",
+        f"underlying {required_rule} action: {policy[required_rule]['action']}",
+        "",
+        *_policy_state_lines(referee),
+        "",
+        *_active_rule_lines(referee, policy, rule),
+        (
+            "The correction envelope is invalid/correct, but the decision must "
+            f"still satisfy the underlying {required_rule} rule's target/family "
+            "constraints."
+        ),
+        "",
+        *_decision_contract_lines(),
+    ]
+    if required_rule == "warm":
+        warm_targets = ", ".join(
+            str(hole.number) for hole in _warm_holes(referee, policy)
+        )
+        lines.insert(3, f"underlying warm targets: {warm_targets}")
+    if required_rule == "stall":
+        lines.insert(3, f"last accepted family: {last_family or 'none'}")
+    return "\n".join(lines)
+
+
+def parse_policy_decision(reply: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(reply.strip())
+    except (json.JSONDecodeError, AttributeError) as exc:
+        raise ValueError(
+            "reply must be one JSON object with no surrounding text"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise ValueError("decision JSON must be an object")
+    actual = set(payload)
+    expected = set(POLICY_DECISION_KEYS)
+    if actual != expected:
+        missing = sorted(expected - actual)
+        extra = sorted(actual - expected)
+        detail = []
+        if missing:
+            detail.append("missing " + ", ".join(missing))
+        if extra:
+            detail.append("unexpected " + ", ".join(extra))
+        raise ValueError("decision has wrong fields (" + "; ".join(detail) + ")")
+    return payload
+
+
+def validate_policy_decision(
+    payload: dict[str, Any],
+    referee: PuzzleReferee,
+    policy: dict[str, Any],
+    *,
+    expected_rule: str,
+    tactical_rule: str | None = None,
+    last_family: str | None,
+) -> dict[str, Any]:
+    rule = payload.get("rule")
+    if rule != expected_rule:
+        raise ValueError(f"rule must be {expected_rule!r}, got {rule!r}")
+    mode = payload.get("mode")
+    expected_mode = POLICY_MODES[expected_rule]
+    if mode != expected_mode:
+        raise ValueError(
+            f"mode must be {expected_mode!r} for rule {expected_rule!r}"
+        )
+
+    tactical_rule = tactical_rule or expected_rule
+    target = payload.get("target")
+    unsolved = {hole.number for hole in _unsolved_holes(referee)}
+    if (
+        not isinstance(target, int)
+        or isinstance(target, bool)
+        or target not in unsolved
+    ):
+        raise ValueError(f"target must be one of the unsolved words {sorted(unsolved)}")
+    if tactical_rule == "warm":
+        warm = {hole.number for hole in _warm_holes(referee, policy)}
+        if target not in warm:
+            raise ValueError(f"warm rule target must be one of {sorted(warm)}")
+
+    family = payload.get("family")
+    if (
+        not isinstance(family, str)
+        or not family.strip()
+        or len(family.strip()) > 40
+        or "\n" in family
+        or "\r" in family
+    ):
+        raise ValueError("family must be a non-empty label of at most 40 characters")
+    family = family.strip()
+    family_slug = slug(family)
+    if not family_slug:
+        raise ValueError("family must contain letters")
+    if tactical_rule == "stall" and last_family == family_slug:
+        raise ValueError("stall rule requires a different semantic family")
+
+    guess = payload.get("guess")
+    if not isinstance(guess, str):
+        raise ValueError("guess must be a string")
+    guess = guess.strip()
+    if parse_single_word(guess) != guess:
+        raise ValueError("guess must be exactly one word with no punctuation")
+    folded = slug(guess)
+    if folded not in referee.vocab:
+        raise ValueError(f"guess {guess!r} is not in the game vocabulary")
+    if folded in referee.tried:
+        raise ValueError(f"guess {guess!r} was already tried")
+
+    return {
+        "guess": guess,
+        "rule": rule,
+        "mode": mode,
+        "target": target,
+        "family": family,
+    }
+
+
+def play_policy_puzzle(
+    puzzle: dict[str, Any],
+    vocab: set[str],
+    model_reply: Callable[[list[dict[str, str]]], str],
+    *,
+    policy: dict[str, Any],
+    cap: int,
+    on_try: Callable[[TryProgress], None] | None = None,
+    on_policy_attempt: Callable[[dict[str, Any]], None] | None = None,
+    verbatim_guidance: str | None = None,
+) -> PolicyRunResult:
+    """Play with bounded, pre-score policy validation and auditable decisions."""
+    if not isinstance(cap, int) or isinstance(cap, bool) or cap <= 0:
+        raise ValueError("cap must be a positive integer")
+    policy = sp.validate_policy(policy)
+    referee = PuzzleReferee(puzzle, vocab)
+    if referee.solved:
+        raise ValueError("puzzle starts solved; no benchmark can be played")
+    messages = [
+        {
+            "role": "user",
+            "content": policy_opening_message(
+                referee, policy, verbatim_guidance=verbatim_guidance
+            ),
+        }
+    ]
+    attempts: list[dict[str, Any]] = []
+    usages: list[dict[str, Any]] = []
+    turns = 0
+    attempts_this_try = 0
+    last_family: str | None = None
+    correcting = False
+    required_rule = active_policy_rule(referee, policy)
+    started = time.monotonic()
+
+    def finish(reason: str, tries: int | None) -> PolicyRunResult:
+        return PolicyRunResult(
+            tries=tries,
+            counted_tries=referee.tries,
+            turns=turns,
+            duration=time.monotonic() - started,
+            tried_words=tuple(referee.tried_words),
+            conversation=tuple(message.copy() for message in messages),
+            turn_token_usage=tuple(usages),
+            termination_reason=reason,
+            policy_attempts=tuple(dict(attempt) for attempt in attempts),
+        )
+
+    while True:
+        expected_rule = "invalid" if correcting else required_rule
+        attempt_started = time.monotonic()
+        raw_reply = model_reply([message.copy() for message in messages])
+        usage = _last_token_usage(model_reply)
+        attempt_duration = time.monotonic() - attempt_started
+        if usage is not None:
+            usages.append(usage)
+        turns += 1
+        raw_reply = raw_reply if isinstance(raw_reply, str) else ""
+        messages.append(
+            {"role": "assistant", "content": raw_reply.strip() or "[empty response]"}
+        )
+        decision: dict[str, Any] | None = None
+        try:
+            decision = parse_policy_decision(raw_reply)
+            decision = validate_policy_decision(
+                decision,
+                referee,
+                policy,
+                expected_rule=expected_rule,
+                tactical_rule=required_rule,
+                last_family=last_family,
+            )
+        except ValueError as exc:
+            attempts_this_try += 1
+            attempt = {
+                "turn": turns,
+                "expected_rule": expected_rule,
+                "tactical_rule": required_rule,
+                "accepted": False,
+                "error": str(exc),
+                "decision": decision,
+                "wall_duration": attempt_duration,
+                "token_usage": usage,
+            }
+            attempts.append(attempt)
+            if on_policy_attempt is not None:
+                on_policy_attempt(dict(attempt))
+            if attempts_this_try >= POLICY_MAX_ATTEMPTS_PER_TRY:
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "RUN TERMINATED: policy decision validation failed "
+                            f"{POLICY_MAX_ATTEMPTS_PER_TRY} times before a guess "
+                            "could be scored."
+                        ),
+                    }
+                )
+                return finish("policy_failure", None)
+            correcting = True
+            messages.append(
+                {
+                    "role": "user",
+                    "content": policy_rejection_message(
+                        str(exc),
+                        referee,
+                        policy,
+                        required_rule=required_rule,
+                        last_family=last_family,
+                    ),
+                }
+            )
+            continue
+
+        attempt = {
+            "turn": turns,
+            "expected_rule": expected_rule,
+            "tactical_rule": required_rule,
+            "accepted": True,
+            "error": None,
+            "decision": decision,
+            "wall_duration": attempt_duration,
+            "token_usage": usage,
+        }
+        attempts.append(attempt)
+        if on_policy_attempt is not None:
+            on_policy_attempt(dict(attempt))
+        attempts_this_try = 0
+        correcting = False
+        last_family = slug(decision["family"])
+
+        # Validity and deduplication were checked above; submit is now guaranteed
+        # to count. The policy controller never mutates game scoring semantics.
+        feedback = referee.submit(decision["guess"])
+        if feedback.kind != "counted":
+            raise CurriculumError(
+                "policy controller admitted a non-counting guess; this is a bug"
+            )
+        if on_try is not None:
+            on_try(
+                TryProgress(
+                    number=feedback.tries,
+                    word=decision["guess"],
+                    progress=referee.progress,
+                )
+            )
+        messages.append(
+            {
+                "role": "user",
+                "content": policy_feedback_message(
+                    feedback,
+                    referee,
+                    policy,
+                    last_family=last_family,
+                ),
+            }
+        )
+        if feedback.solved:
+            return finish("solved", feedback.tries)
+        if feedback.tries >= cap:
+            return finish("cap", None)
+        required_rule = active_policy_rule(referee, policy)
+
+
 # --- Run records and derived stall metrics --------------------------------------
 
 
@@ -282,6 +883,7 @@ def derive_run_metrics(
     max_streak = 0
     non_improving = 0
     first_sub100_try: int | None = None
+    guess_trace: list[dict[str, Any]] = []
     for word in tried_words:
         feedback = referee.submit(word)
         if feedback.kind != "counted":
@@ -295,6 +897,25 @@ def derive_run_metrics(
             0 < hole.rank <= 100 for hole in referee.holes
         ):
             first_sub100_try = feedback.tries
+        guess_trace.append(
+            {
+                "try": feedback.tries,
+                "guess": word,
+                "outcomes": [
+                    {
+                        "word": outcome.number,
+                        "rank": outcome.rank,
+                        "improved": outcome.improved,
+                        "solved": outcome.solved,
+                    }
+                    for outcome in feedback.outcomes
+                ],
+                "current_best_ranks": {
+                    str(hole.number): hole.rank for hole in referee.holes
+                },
+                "no_improvement_streak": referee.stalled_tries,
+            }
+        )
     counted = referee.tries
     return {
         "max_no_improvement_streak": max_streak,
@@ -303,10 +924,15 @@ def derive_run_metrics(
             counted - first_sub100_try if first_sub100_try is not None else 0
         ),
         "solved": referee.solved,
+        "guess_trace": guess_trace,
     }
 
 
-def run_record(result: RunResult, metrics: dict[str, Any]) -> dict[str, Any]:
+def run_record(result: PolicyRunResult, metrics: dict[str, Any]) -> dict[str, Any]:
+    accepted = sum(
+        1 for attempt in result.policy_attempts if attempt["accepted"]
+    )
+    rejected = len(result.policy_attempts) - accepted
     return {
         "tries": result.tries,
         "counted_tries": result.counted_tries,
@@ -315,6 +941,18 @@ def run_record(result: RunResult, metrics: dict[str, Any]) -> dict[str, Any]:
         "tried_words": list(result.tried_words),
         "conversation": [dict(m) for m in result.conversation],
         "turn_token_usage": list(result.turn_token_usage),
+        "termination_reason": result.termination_reason,
+        "policy_attempts": list(result.policy_attempts),
+        "policy_compliance": {
+            "accepted_decisions": accepted,
+            "rejected_decisions": rejected,
+            "first_pass_decisions": sum(
+                1
+                for attempt in result.policy_attempts
+                if attempt["accepted"] and attempt["expected_rule"] != "invalid"
+            ),
+            "policy_failure": result.termination_reason == "policy_failure",
+        },
         "metrics": metrics,
     }
 
@@ -341,7 +979,7 @@ def _puzzle_answer_lines(puzzle: dict[str, Any]) -> list[str]:
 
 
 def retrospective_prompt(
-    incoming: list[str] | None,
+    incoming: dict[str, Any],
     puzzle: dict[str, Any],
     records: list[dict[str, Any]],
 ) -> str:
@@ -351,25 +989,37 @@ def retrospective_prompt(
         "RETROSPECTIVE RULES",
         (
             "You played the 3 independent runs below with the same incoming "
-            "strategy. Diagnose what worked and what wasted guesses, then write "
-            "a REVISED operational strategy for FUTURE, UNSEEN puzzles."
+            "policy. Diagnose outcomes and the recorded policy compliance, then write "
+            "a REVISED four-rule policy for FUTURE, UNSEEN puzzles."
         ),
         (
             "Reply with a single JSON object and nothing else, shaped exactly as: "
             '{"analysis": {"worked_well": str, "wasted_attempt_patterns": str, '
             '"missed_evidence": str, "strategy_adherence": str, '
-            '"run_comparison": str}, "revised_strategy": [str, ...]}'
+            '"run_comparison": str}, "revised_policy": {"always": '
+            '{"action": str}, "stall": {"after": int, "action": str}, '
+            '"warm": {"rank_at_most": int, "max_followups": int, '
+            '"action": str}, "invalid": {"action": str}}}'
         ),
         (
-            f"revised_strategy: at most {sp.STRATEGY_MAX_ITEMS} items and "
-            f"{sp.STRATEGY_MAX_CHARS} characters in total; general and reusable "
-            "on unseen puzzles; it REPLACES the previous strategy. It must not "
+            f"The four action strings may contain at most "
+            f"{sp.POLICY_MAX_ACTION_CHARS} characters in total. Use stall.after "
+            f"0..{sp.POLICY_MAX_STALL_AFTER} (0 disables its standalone threshold). "
+            "Set both warm numbers to 0 to disable "
+            "warm, otherwise use positive values. The policy must be general and "
+            "reusable on unseen puzzles; it REPLACES the previous policy. It must not "
             "quote the sentence and must not contain any target word, starting "
             "word, or guess from THIS puzzle."
         ),
+        (
+            "The controller, not the player, selects the active rule. always maps to "
+            "explore; stall to pivot; warm to exploit; invalid to correct. Make each "
+            "action short and executable under that fixed mode. Exhausting the warm "
+            "follow-up budget hands control to stall even when stall.after is 0."
+        ),
         "",
-        "INCOMING STRATEGY",
-        sp.strategy_text(incoming) if incoming else "(none — first puzzle)",
+        "INCOMING POLICY",
+        json.dumps(incoming, ensure_ascii=False, separators=(",", ":")),
         "",
         "CORRECT ANSWERS",
         *_puzzle_answer_lines(puzzle),
@@ -386,12 +1036,27 @@ def retrospective_prompt(
                 f" | non-improving guesses: {metrics['non_improving_guesses']}"
                 f" | guesses after first sub-100 rank: "
                 f"{metrics['guesses_after_rank100']}"
+                f" | policy accepted/rejected: "
+                f"{record['policy_compliance']['accepted_decisions']}/"
+                f"{record['policy_compliance']['rejected_decisions']}"
+                f" | termination: {record['termination_reason']}"
             ),
-            "transcript:",
-        ]
-        lines += [
-            f"[{message['role']}] {message['content']}"
-            for message in record["conversation"]
+            "authoritative replay trace: "
+            + json.dumps(metrics["guess_trace"], ensure_ascii=False),
+            "policy decision audit: "
+            + json.dumps(
+                [
+                    {
+                        "accepted": attempt["accepted"],
+                        "expected_rule": attempt["expected_rule"],
+                        "tactical_rule": attempt.get("tactical_rule"),
+                        "error": attempt.get("error"),
+                        "decision": attempt.get("decision"),
+                    }
+                    for attempt in record["policy_attempts"]
+                ],
+                ensure_ascii=False,
+            ),
         ]
         lines.append("")
     return "\n".join(lines)
@@ -456,13 +1121,13 @@ def _quotes_sentence(item: str, puzzle: dict[str, Any]) -> bool:
     return bool(_sentence_trigrams(puzzle) & advice_trigrams)
 
 
-def validate_revised_strategy(
-    items: Any, puzzle: dict[str, Any], records: list[dict[str, Any]]
-) -> list[str]:
-    """Bounded format + puzzle-leak rejection (targets, starts, guesses, quotes)."""
-    revised = sp.validate_strategy_items(items)
+def validate_revised_policy(
+    value: Any, puzzle: dict[str, Any], records: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Four-rule format plus target/start/guess/sentence leak rejection."""
+    revised = sp.validate_policy(value)
     banned = _banned_slugs(puzzle, records)
-    for item in revised:
+    for item in sp.policy_actions(revised):
         for token in _WORD_RE.findall(item):
             if _token_slug_forms(token) & banned:
                 raise ValueError(
@@ -478,15 +1143,26 @@ def validate_retrospective(
     payload: dict[str, Any],
     puzzle: dict[str, Any],
     records: list[dict[str, Any]],
-) -> tuple[dict[str, Any], list[str]]:
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    if set(payload) != {"analysis", "revised_policy"}:
+        raise ValueError(
+            "retrospective must contain exactly analysis and revised_policy"
+        )
     analysis = payload.get("analysis")
     if not isinstance(analysis, dict):
         raise ValueError('retrospective needs an "analysis" object')
-    missing = [key for key in _ANALYSIS_KEYS if key not in analysis]
-    if missing:
-        raise ValueError(f"analysis is missing keys: {', '.join(missing)}")
-    revised = validate_revised_strategy(
-        payload.get("revised_strategy"), puzzle, records
+    if set(analysis) != set(_ANALYSIS_KEYS):
+        raise ValueError(
+            "analysis must contain exactly: " + ", ".join(_ANALYSIS_KEYS)
+        )
+    if not all(
+        isinstance(analysis[key], str) and analysis[key].strip()
+        for key in _ANALYSIS_KEYS
+    ):
+        raise ValueError("every analysis field must be a non-empty string")
+    analysis = {key: analysis[key].strip() for key in _ANALYSIS_KEYS}
+    revised = validate_revised_policy(
+        payload.get("revised_policy"), puzzle, records
     )
     return analysis, revised
 
@@ -531,18 +1207,19 @@ def structured_call(
             repair_lines = [
                 f"Your reply was rejected: {exc}.",
                 (
-                    "All schema, item-count, character-limit, and leak constraints "
+                    "All schema, character-limit, and leak constraints "
                     "in the original request are hard validation requirements."
                 ),
             ]
             length_match = re.fullmatch(
-                r"strategy is (\d+) characters; the cap is (\d+)", str(exc)
+                r"policy is (\d+) action characters; the cap is (\d+)", str(exc)
             )
             if length_match:
                 cap = int(length_match.group(2))
-                target = min(STRUCTURED_STRATEGY_REPAIR_TARGET_CHARS, cap)
+                target = min(STRUCTURED_POLICY_REPAIR_TARGET_CHARS, cap)
                 repair_lines.append(
-                    f"Rewrite the strategy to no more than {target} characters "
+                    f"Rewrite the four policy actions to no more than {target} "
+                    "characters "
                     f"in total, leaving margin below the hard {cap}-character cap."
                 )
             repair_lines.append(
@@ -563,10 +1240,12 @@ def synthesis_prompt(state: dict[str, Any]) -> str:
         "",
         (
             "Reply with a single JSON object and nothing else, shaped exactly as: "
-            '{"comprehensive_summary": str, "final_strategy": [str, ...]}. '
-            f"final_strategy uses the same bounded format (at most "
-            f"{sp.STRATEGY_MAX_ITEMS} items, {sp.STRATEGY_MAX_CHARS} characters "
-            "total), is general, and must not contain words from any specific "
+            '{"comprehensive_summary": str, "final_policy": {"always": '
+            '{"action": str}, "stall": {"after": int, "action": str}, '
+            '"warm": {"rank_at_most": int, "max_followups": int, '
+            '"action": str}, "invalid": {"action": str}}}. final_policy uses '
+            f"the same four-rule format and {sp.POLICY_MAX_ACTION_CHARS}-character "
+            "action cap, is general, and must not contain words from any specific "
             "puzzle."
         ),
         "",
@@ -582,9 +1261,9 @@ def synthesis_prompt(state: dict[str, Any]) -> str:
             + json.dumps(
                 puzzle_state["retrospective"]["analysis"], ensure_ascii=False
             ),
-            "revised strategy after it: "
+            "revised policy after it: "
             + json.dumps(
-                puzzle_state["retrospective"]["revised_strategy"],
+                puzzle_state["retrospective"]["revised_policy"],
                 ensure_ascii=False,
             ),
             "",
@@ -594,15 +1273,19 @@ def synthesis_prompt(state: dict[str, Any]) -> str:
 
 def validate_synthesis(
     payload: dict[str, Any], curriculum_puzzles: list[dict[str, Any]]
-) -> tuple[str, list[str]]:
+) -> tuple[str, dict[str, Any]]:
+    if set(payload) != {"comprehensive_summary", "final_policy"}:
+        raise ValueError(
+            "synthesis must contain exactly comprehensive_summary and final_policy"
+        )
     summary = payload.get("comprehensive_summary")
     if not isinstance(summary, str) or not summary.strip():
         raise ValueError('synthesis needs a non-empty "comprehensive_summary"')
     banned: set[str] = set()
     for puzzle in curriculum_puzzles:
         banned.update(_banned_slugs(puzzle, []))
-    final = sp.validate_strategy_items(payload.get("final_strategy"))
-    for item in final:
+    final = sp.validate_policy(payload.get("final_policy"))
+    for item in sp.policy_actions(final):
         for token in _WORD_RE.findall(item):
             if _token_slug_forms(token) & banned:
                 raise ValueError(
@@ -737,6 +1420,9 @@ def run_curriculum(
         "cap": cap,
         "prompt_version": PROMPT_VERSION,
         "curriculum_prompt_version": CURRICULUM_PROMPT_VERSION,
+        "policy_profile_schema_version": sp.PROFILE_SCHEMA_VERSION,
+        "policy_decision_fields": list(POLICY_DECISION_KEYS),
+        "policy_max_attempts_per_try": POLICY_MAX_ATTEMPTS_PER_TRY,
     }
 
     curriculum_records = [
@@ -747,6 +1433,16 @@ def run_curriculum(
 
     if resume is not None:
         state = json.loads(resume.read_text(encoding="utf-8"))
+        prior_prompt_version = state.get("config", {}).get(
+            "curriculum_prompt_version"
+        )
+        if prior_prompt_version != CURRICULUM_PROMPT_VERSION:
+            raise CurriculumError(
+                "resume artifact uses curriculum prompt version "
+                f"{prior_prompt_version!r}; prompt-v2 runs are readable pilot "
+                "artifacts but cannot be resumed into policy-enforced prompt-v3. "
+                "Start a new v3 artifact."
+            )
         if state["config"] != run_config:
             raise CurriculumError(
                 "resume artifact configuration does not match this invocation; "
@@ -812,9 +1508,9 @@ def run_curriculum(
 
     vocab = vocab_loader(manifest["lang"])
 
-    def fresh_word_player():
+    def fresh_decision_player():
         return provider_factory(
-            config, api_key, effort=effort, auth=auth, output="word"
+            config, api_key, effort=effort, auth=auth, output="decision"
         )
 
     def fresh_prose_caller():
@@ -824,18 +1520,22 @@ def run_curriculum(
 
     def play_once(
         puzzle: dict[str, Any],
-        strategy_items: list[str] | None,
+        policy: dict[str, Any],
         on_try: Callable[[TryProgress], None],
+        on_policy_attempt: Callable[[dict[str, Any]], None],
+        *,
+        verbatim_guidance: str | None = None,
     ):
         started = time.monotonic()
-        result = play_puzzle(
+        result = play_policy_puzzle(
             puzzle,
             vocab,
-            fresh_word_player(),
+            fresh_decision_player(),
+            policy=policy,
             cap=cap,
             on_try=on_try,
-            strategy=sp.strategy_text(strategy_items) if strategy_items else None,
-            rules_only=True,
+            on_policy_attempt=on_policy_attempt,
+            verbatim_guidance=verbatim_guidance,
         )
         metrics = derive_run_metrics(puzzle, vocab, result.tried_words)
         record = run_record(result, metrics)
@@ -843,7 +1543,7 @@ def run_curriculum(
         return record
 
     # --- Curriculum: 3 fresh plays, then one fresh retrospective, per puzzle.
-    incoming: list[str] | None = None
+    incoming = sp.neutral_policy()
     for puzzle_index, record in enumerate(curriculum_records):
         if puzzle_index < len(state["puzzles"]):
             puzzle_state = state["puzzles"][puzzle_index]
@@ -851,7 +1551,7 @@ def run_curriculum(
             puzzle_state = {
                 "number": record["number"],
                 "path": record["path"],
-                "incoming_strategy": incoming,
+                "incoming_policy": incoming,
                 "runs": [],
                 "retrospective": None,
             }
@@ -873,9 +1573,16 @@ def run_curriculum(
             )
             completed_run = play_once(
                 puzzle,
-                puzzle_state["incoming_strategy"],
+                puzzle_state["incoming_policy"],
                 lambda progress: reporter.counted_try(
                     progress,
+                    play_number=play_number,
+                    phase="curriculum",
+                    puzzle_number=record["number"],
+                    run_number=run_number,
+                ),
+                lambda attempt: reporter.policy_attempt(
+                    attempt,
                     play_number=play_number,
                     phase="curriculum",
                     puzzle_number=record["number"],
@@ -898,7 +1605,7 @@ def run_curriculum(
                 puzzle_number=record["number"],
             )
             prompt = retrospective_prompt(
-                puzzle_state["incoming_strategy"], puzzle, puzzle_state["runs"]
+                puzzle_state["incoming_policy"], puzzle, puzzle_state["runs"]
             )
             (analysis, revised), messages, telemetry = structured_call(
                 fresh_prose_caller(),
@@ -917,7 +1624,7 @@ def run_curriculum(
             )
             puzzle_state["retrospective"] = {
                 "analysis": analysis,
-                "revised_strategy": revised,
+                "revised_policy": revised,
                 "conversation": messages,
                 "telemetry": telemetry,
             }
@@ -926,11 +1633,11 @@ def run_curriculum(
                 retrospective_number=puzzle_index + 1,
                 puzzle_number=record["number"],
                 analysis=analysis,
-                strategy=revised,
+                policy=revised,
             )
 
-        # The revised strategy REPLACES the previous one for the NEXT puzzle.
-        incoming = puzzle_state["retrospective"]["revised_strategy"]
+        # The revised policy REPLACES the previous one for the NEXT puzzle.
+        incoming = puzzle_state["retrospective"]["revised_policy"]
 
     # --- Final synthesis: one fresh call over every retrospective.
     if state["synthesis"] is None:
@@ -938,7 +1645,7 @@ def run_curriculum(
         curriculum_puzzles = [
             _load_puzzle(dataset_dir, record) for record in curriculum_records
         ]
-        (summary, final_strategy), messages, telemetry = structured_call(
+        (summary, final_policy), messages, telemetry = structured_call(
             fresh_prose_caller(),
             synthesis_prompt(state),
             lambda payload: validate_synthesis(payload, curriculum_puzzles),
@@ -950,20 +1657,20 @@ def run_curriculum(
         )
         state["synthesis"] = {
             "comprehensive_summary": summary,
-            "final_strategy": final_strategy,
+            "final_policy": final_policy,
             "conversation": messages,
             "telemetry": telemetry,
         }
         save_artifact(artifact_path, state)
-        reporter.synthesis_completed(summary, final_strategy)
+        reporter.synthesis_completed(summary, final_policy)
 
-    final_strategy = state["synthesis"]["final_strategy"]
+    final_policy = state["synthesis"]["final_policy"]
 
-    # --- Holdout: frozen strategies, three conditions, no retrospectives.
-    condition_strategies: dict[str, list[str] | None] = {
-        "neutral": None,
-        "learned": final_strategy,
-        "v7": [frozen_v7],
+    # --- Holdout: frozen policies, three conditions, no retrospectives.
+    condition_policies: dict[str, dict[str, Any]] = {
+        "neutral": sp.neutral_policy(),
+        "learned": final_policy,
+        "v7": v7_controller_policy(),
     }
     curriculum_play_count = len(curriculum_records) * RUNS_PER_PUZZLE
     for condition_index, condition in enumerate(CONDITIONS):
@@ -995,7 +1702,7 @@ def run_curriculum(
                 )
                 completed_run = play_once(
                     puzzle,
-                    condition_strategies[condition],
+                    condition_policies[condition],
                     lambda progress: reporter.counted_try(
                         progress,
                         play_number=play_number,
@@ -1003,6 +1710,14 @@ def run_curriculum(
                         puzzle_number=record["number"],
                         run_number=run_number,
                     ),
+                    lambda attempt: reporter.policy_attempt(
+                        attempt,
+                        play_number=play_number,
+                        phase=phase,
+                        puzzle_number=record["number"],
+                        run_number=run_number,
+                    ),
+                    verbatim_guidance=(frozen_v7 if condition == "v7" else None),
                 )
                 entry["runs"].append(completed_run)
                 save_artifact(artifact_path, state)
@@ -1027,7 +1742,7 @@ def run_curriculum(
         prompt_version=PROMPT_VERSION,
         curriculum_prompt_version=CURRICULUM_PROMPT_VERSION,
         created_at=datetime.now(timezone.utc).isoformat(),
-        final_strategy=final_strategy,
+        final_policy=final_policy,
     )
     profile_path = artifact_path.with_suffix(".profile.json")
     sp.write_profile(profile_path, profile)
@@ -1115,12 +1830,41 @@ def _cost_split(state: dict[str, Any]) -> dict[str, Any]:
     return buckets
 
 
+def _policy_compliance_summary(runs: list[dict[str, Any]]) -> dict[str, Any]:
+    accepted = sum(
+        run.get("policy_compliance", {}).get("accepted_decisions", 0)
+        for run in runs
+    )
+    rejected = sum(
+        run.get("policy_compliance", {}).get("rejected_decisions", 0)
+        for run in runs
+    )
+    first_pass = sum(
+        run.get("policy_compliance", {}).get("first_pass_decisions", 0)
+        for run in runs
+    )
+    total = accepted + rejected
+    return {
+        "accepted_decisions": accepted,
+        "rejected_decisions": rejected,
+        "first_pass_decisions": first_pass,
+        "accepted_rate": accepted / total if total else None,
+        "first_pass_rate": first_pass / accepted if accepted else None,
+        "policy_failure_runs": sum(
+            run.get("termination_reason") == "policy_failure" for run in runs
+        ),
+    }
+
+
 def evaluate_artifact(state: dict[str, Any]) -> dict[str, Any]:
     trend = [
         {
             "number": puzzle_state["number"],
             "median_tries": _median_tries(puzzle_state["runs"]),
             "dnf": sum(1 for r in puzzle_state["runs"] if r["tries"] is None),
+            "policy_compliance": _policy_compliance_summary(
+                puzzle_state["runs"]
+            ),
         }
         for puzzle_state in state["puzzles"]
     ]
@@ -1142,6 +1886,9 @@ def evaluate_artifact(state: dict[str, Any]) -> dict[str, Any]:
                 for entry in entries
                 for run in entry["runs"]
                 if run["tries"] is None
+            ),
+            "policy_compliance": _policy_compliance_summary(
+                [run for entry in entries for run in entry["runs"]]
             ),
         }
 
@@ -1173,7 +1920,10 @@ def evaluate_artifact(state: dict[str, Any]) -> dict[str, Any]:
         "holdout": holdout,
         "paired_differences": paired,
         "strategy_adherence": adherence,
-        "final_strategy": (state.get("synthesis") or {}).get("final_strategy"),
+        "final_policy": (state.get("synthesis") or {}).get("final_policy"),
+        "legacy_final_strategy": (state.get("synthesis") or {}).get(
+            "final_strategy"
+        ),
         "cost_split": _cost_split(state),
     }
 
@@ -1221,7 +1971,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     payload = json.loads(resolve_path(args.artifact).read_text(encoding="utf-8"))
-    if "final_strategy" in payload and "puzzles" not in payload:
+    if (
+        ("final_policy" in payload or "final_strategy" in payload)
+        and "puzzles" not in payload
+    ):
         sp.validate_profile(payload)
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0

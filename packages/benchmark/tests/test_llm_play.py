@@ -18,12 +18,14 @@ import pytest
 from llm_play import (
     AUTH_MODES,
     CODEX_BENCHMARK_INSTRUCTIONS,
+    CODEX_DECISION_INSTRUCTIONS,
     CODEX_SUBSCRIPTION_EFFORTS,
     CODEX_TURN_TIMEOUT_SECONDS,
     DEEP_REASONING_MAX_TOKENS,
     DEFAULT_AUTH,
     DEFAULT_EFFORT,
     DEFAULT_RUNS,
+    DECISION_OUTPUT_MAX_TOKENS,
     DIRECT_OUTPUT_MAX_TOKENS,
     DISPLAY_MODEL_COUNT,
     EFFORT_LEVELS,
@@ -194,6 +196,10 @@ def test_anthropic_adapter_none_disables_thinking_caches_and_omits_sampling(
     assert prose([{"role": "user", "content": "retrospective"}]) == "forest"
     assert calls[-1]["max_tokens"] == PROSE_OUTPUT_MAX_TOKENS
     assert len(calls) == len(prose_calls) + 1
+
+    decision = provider_reply(config, "secret", effort="none", output="decision")
+    assert decision([{"role": "user", "content": "policy turn"}]) == "forest"
+    assert calls[-1]["max_tokens"] == DECISION_OUTPUT_MAX_TOKENS
 
 
 @pytest.mark.parametrize("config", ANTHROPIC_MODELS, ids=lambda config: config["label"])
@@ -580,6 +586,55 @@ def test_openai_subscription_prose_payload_has_no_one_word_directive(monkeypatch
     reply.close()
 
 
+def test_openai_subscription_decision_mode_uses_json_instructions(monkeypatch):
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return SimpleNamespace(
+            returncode=0,
+            stdout="\n".join(
+                [
+                    json.dumps(
+                        {
+                            "type": "item.completed",
+                            "item": {
+                                "type": "agent_message",
+                                "text": '{"guess":"forêt"}',
+                            },
+                        }
+                    ),
+                    json.dumps({"type": "turn.completed", "usage": {}}),
+                ]
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr("llm_play.shutil.which", lambda _command: "/usr/bin/codex")
+    monkeypatch.setattr("llm_play.subprocess.run", fake_run)
+    reply = provider_reply(
+        MODELS[2], None, effort="medium", auth="subscription", output="decision"
+    )
+
+    assert reply([{"role": "user", "content": "Return the policy decision."}])
+    command, kwargs = calls[0]
+    configs = [
+        command[index + 1]
+        for index, value in enumerate(command)
+        if value == "--config"
+    ]
+    instructions_config = next(
+        value for value in configs if value.startswith("model_instructions_file=")
+    )
+    instructions_path = Path(json.loads(instructions_config.split("=", 1)[1]))
+    assert instructions_path.read_text(encoding="utf-8").strip() == (
+        CODEX_DECISION_INSTRUCTIONS
+    )
+    assert "exactly one word" not in kwargs["input"].lower()
+    assert "Return only the exact JSON decision object requested." in kwargs["input"]
+    reply.close()
+
+
 @pytest.mark.parametrize("config", OPENAI_MODELS, ids=lambda config: config["label"])
 def test_openai_subscription_rejects_unsupported_none_effort(monkeypatch, config):
     monkeypatch.setattr("llm_play.shutil.which", lambda _command: "/usr/bin/codex")
@@ -683,6 +738,10 @@ def test_openai_adapter_uses_responses_with_explicit_none_effort(monkeypatch, co
     prose = provider_reply(config, "secret", effort="none", output="prose")
     assert prose([{"role": "user", "content": "retrospective"}]) == "ocean"
     assert calls[-1]["max_output_tokens"] == PROSE_OUTPUT_MAX_TOKENS
+
+    decision = provider_reply(config, "secret", effort="none", output="decision")
+    assert decision([{"role": "user", "content": "policy turn"}]) == "ocean"
+    assert calls[-1]["max_output_tokens"] == DECISION_OUTPUT_MAX_TOKENS
 
 
 @pytest.mark.parametrize(
