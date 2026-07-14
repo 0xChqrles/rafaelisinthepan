@@ -235,6 +235,11 @@ def test_policy_schema_is_exact_bounded_and_normalized():
     with pytest.raises(ValueError, match="must be one line"):
         sp.validate_policy(multiline)
 
+    overlong_action = sp.neutral_policy()
+    overlong_action["always"]["action"] = "x" * 301
+    with pytest.raises(ValueError, match="exceeds 300 characters"):
+        sp.validate_policy(overlong_action)
+
 
 def test_policy_controller_repairs_before_scoring_and_audits_the_decision():
     replies = iter(
@@ -323,18 +328,61 @@ def test_stall_family_constraint_survives_the_invalid_correction_envelope():
     assert "last accepted family: cluster" in calls[2][-1]["content"]
 
 
-def test_active_rule_uses_warm_budget_then_stall_priority():
+def test_warm_budget_counts_accepted_followups_even_when_they_improve():
     policy = policy_with_action(
-        "Explore.", stall_after=10, warm_rank=5, warm_followups=2
+        "Explore.", stall_after=0, warm_rank=5, warm_followups=2
     )
-    referee = cr.PuzzleReferee(
-        one_hole_policy_puzzle(), {"alpha", "beta", "secret"}
+    policy["warm"]["action"] = "Follow the warm target for at most two guesses."
+    policy["stall"]["action"] = "Pivot after the warm follow-up budget."
+    puzzle = one_hole_policy_puzzle()
+    puzzle["ranks"]["secret"].update(
+        {
+            "alpha": {"word": "alpha", "rank": 4},
+            "beta": {"word": "beta", "rank": 3},
+        }
     )
-    assert cr.active_policy_rule(referee, policy) == "warm"
-    referee.submit("alpha")
-    assert cr.active_policy_rule(referee, policy) == "warm"
-    referee.submit("beta")
-    assert cr.active_policy_rule(referee, policy) == "stall"
+    replies = iter(
+        [
+            decision("alpha", "warm", "exploit", family="family-a"),
+            decision("beta", "warm", "exploit", family="family-b"),
+            decision("gamma", "stall", "pivot", family="family-c"),
+            decision("secret", "warm", "exploit", family="answer"),
+        ]
+    )
+    calls = []
+
+    def reply(messages):
+        calls.append(messages)
+        return next(replies)
+
+    result = cr.play_policy_puzzle(
+        puzzle,
+        {"alpha", "beta", "gamma", "secret"},
+        reply,
+        policy=policy,
+        cap=10,
+    )
+
+    assert result.tries == 4
+    assert [
+        attempt["tactical_rule"] for attempt in result.policy_attempts
+    ] == ["warm", "warm", "stall", "warm"]
+    assert [
+        attempt["warm_followups_before"]
+        for attempt in result.policy_attempts
+    ] == [0, 1, 2, 0]
+    assert [
+        attempt["warm_followups_after"]
+        for attempt in result.policy_attempts
+    ] == [1, 2, 0, 0]
+    assert "accepted warm follow-ups in current burst: 2/2" in (
+        calls[2][-1]["content"]
+    )
+    assert "rule: stall" in calls[2][-1]["content"]
+    assert "accepted warm follow-ups in current burst: 0/2" in (
+        calls[3][-1]["content"]
+    )
+    assert "rule: warm" in calls[3][-1]["content"]
 
 
 def test_full_curriculum_isolates_runs_and_freezes_holdout(
@@ -411,6 +459,24 @@ def test_full_curriculum_isolates_runs_and_freezes_holdout(
     assert "authoritative replay trace:" in retro_prompt
     assert "policy decision audit:" in retro_prompt
     assert "DECISION OUTPUT CONTRACT" not in retro_prompt
+    synthesis_prompt = state["synthesis"]["conversation"][0]["content"]
+    for structured_prompt in (retro_prompt, synthesis_prompt):
+        assert (
+            "non-empty single-line string of at most 300 characters"
+            in structured_prompt
+        )
+        assert "all four actions together may contain at most 800" in (
+            structured_prompt
+        )
+        assert "stall.after must be an integer from 0 to 10000" in (
+            structured_prompt
+        )
+        assert "warm.rank_at_most must be an integer from 0 to 10000" in (
+            structured_prompt
+        )
+        assert "warm.max_followups must be an integer from 0 to 50" in (
+            structured_prompt
+        )
     for key in (
         "worked_well",
         "wasted_attempt_patterns",

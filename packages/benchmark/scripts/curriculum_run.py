@@ -386,8 +386,9 @@ def active_policy_rule(
     policy: dict[str, Any],
     *,
     correcting: bool = False,
+    warm_followups: int = 0,
 ) -> str:
-    """Select one active rule from observable referee state, deterministically."""
+    """Select one rule from referee state plus the controller's warm budget."""
     policy = sp.validate_policy(policy)
     if correcting:
         return "invalid"
@@ -395,7 +396,7 @@ def active_policy_rule(
     stall_after = policy["stall"]["after"]
     if stall_after > 0 and referee.stalled_tries >= stall_after:
         return "stall"
-    if warm and referee.stalled_tries >= policy["warm"]["max_followups"]:
+    if warm and warm_followups >= policy["warm"]["max_followups"]:
         return "stall"
     if warm:
         return "warm"
@@ -435,6 +436,7 @@ def _active_rule_lines(
     rule: str,
     *,
     last_family: str | None = None,
+    warm_followups: int = 0,
 ) -> list[str]:
     targets = ", ".join(str(hole.number) for hole in _unsolved_holes(referee))
     lines = [
@@ -444,6 +446,12 @@ def _active_rule_lines(
         f"action: {policy[rule]['action']}",
         f"allowed unsolved targets: {targets or 'none'}",
     ]
+    warm_budget = policy["warm"]["max_followups"]
+    if warm_budget > 0:
+        lines.append(
+            "accepted warm follow-ups in current burst: "
+            f"{warm_followups}/{warm_budget}"
+        )
     if rule == "warm":
         warm_targets = ", ".join(
             str(hole.number) for hole in _warm_holes(referee, policy)
@@ -558,6 +566,7 @@ def policy_feedback_message(
     policy: dict[str, Any],
     *,
     last_family: str,
+    warm_followups: int,
 ) -> str:
     lines = [
         f'RESULT FOR "{feedback.guess}":',
@@ -568,11 +577,17 @@ def policy_feedback_message(
     if feedback.solved:
         lines += ["", "RUN COMPLETE: solved."]
     else:
-        rule = active_policy_rule(referee, policy)
+        rule = active_policy_rule(
+            referee, policy, warm_followups=warm_followups
+        )
         lines += [
             "",
             *_active_rule_lines(
-                referee, policy, rule, last_family=last_family
+                referee,
+                policy,
+                rule,
+                last_family=last_family,
+                warm_followups=warm_followups,
             ),
             "",
             *_decision_contract_lines(),
@@ -587,6 +602,7 @@ def policy_rejection_message(
     *,
     required_rule: str,
     last_family: str | None,
+    warm_followups: int,
 ) -> str:
     rule = active_policy_rule(referee, policy, correcting=True)
     lines = [
@@ -596,7 +612,12 @@ def policy_rejection_message(
         "",
         *_policy_state_lines(referee),
         "",
-        *_active_rule_lines(referee, policy, rule),
+        *_active_rule_lines(
+            referee,
+            policy,
+            rule,
+            warm_followups=warm_followups,
+        ),
         (
             "The correction envelope is invalid/correct, but the decision must "
             f"still satisfy the underlying {required_rule} rule's target/family "
@@ -740,7 +761,10 @@ def play_policy_puzzle(
     attempts_this_try = 0
     last_family: str | None = None
     correcting = False
-    required_rule = active_policy_rule(referee, policy)
+    warm_followups = 0
+    required_rule = active_policy_rule(
+        referee, policy, warm_followups=warm_followups
+    )
     started = time.monotonic()
 
     def finish(reason: str, tries: int | None) -> PolicyRunResult:
@@ -791,6 +815,8 @@ def play_policy_puzzle(
                 "decision": decision,
                 "wall_duration": attempt_duration,
                 "token_usage": usage,
+                "warm_followups_before": warm_followups,
+                "warm_followups_after": warm_followups,
             }
             attempts.append(attempt)
             if on_policy_attempt is not None:
@@ -817,6 +843,7 @@ def play_policy_puzzle(
                         policy,
                         required_rule=required_rule,
                         last_family=last_family,
+                        warm_followups=warm_followups,
                     ),
                 }
             )
@@ -831,6 +858,7 @@ def play_policy_puzzle(
             "decision": decision,
             "wall_duration": attempt_duration,
             "token_usage": usage,
+            "warm_followups_before": warm_followups,
         }
         attempts.append(attempt)
         if on_policy_attempt is not None:
@@ -854,6 +882,13 @@ def play_policy_puzzle(
                     progress=referee.progress,
                 )
             )
+        if required_rule == "warm":
+            warm_followups += 1
+        else:
+            warm_followups = 0
+        if not _warm_holes(referee, policy):
+            warm_followups = 0
+        attempt["warm_followups_after"] = warm_followups
         messages.append(
             {
                 "role": "user",
@@ -862,6 +897,7 @@ def play_policy_puzzle(
                     referee,
                     policy,
                     last_family=last_family,
+                    warm_followups=warm_followups,
                 ),
             }
         )
@@ -869,7 +905,9 @@ def play_policy_puzzle(
             return finish("solved", feedback.tries)
         if feedback.tries >= cap:
             return finish("cap", None)
-        required_rule = active_policy_rule(referee, policy)
+        required_rule = active_policy_rule(
+            referee, policy, warm_followups=warm_followups
+        )
 
 
 # --- Run records and derived stall metrics --------------------------------------
@@ -978,6 +1016,21 @@ def _puzzle_answer_lines(puzzle: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _policy_format_constraints() -> str:
+    """Describe every validate_policy bound once for both fresh prose prompts."""
+    return (
+        "Every action must be a non-empty single-line string of at most "
+        f"{sp.POLICY_MAX_ACTION_ITEM_CHARS} characters; all four actions together "
+        f"may contain at most {sp.POLICY_MAX_ACTION_CHARS} characters. "
+        f"stall.after must be an integer from 0 to {sp.POLICY_MAX_STALL_AFTER} "
+        "(0 disables its standalone threshold). warm.rank_at_most must be an "
+        f"integer from 0 to {sp.POLICY_MAX_WARM_RANK}, and "
+        f"warm.max_followups must be an integer from 0 to "
+        f"{sp.POLICY_MAX_WARM_FOLLOWUPS}; the two warm values must either both be "
+        "0 (disabled) or both be positive."
+    )
+
+
 def retrospective_prompt(
     incoming: dict[str, Any],
     puzzle: dict[str, Any],
@@ -1001,12 +1054,10 @@ def retrospective_prompt(
             '"warm": {"rank_at_most": int, "max_followups": int, '
             '"action": str}, "invalid": {"action": str}}}'
         ),
+        _policy_format_constraints(),
         (
-            f"The four action strings may contain at most "
-            f"{sp.POLICY_MAX_ACTION_CHARS} characters in total. Use stall.after "
-            f"0..{sp.POLICY_MAX_STALL_AFTER} (0 disables its standalone threshold). "
-            "Set both warm numbers to 0 to disable "
-            "warm, otherwise use positive values. The policy must be general and "
+            "Each of the five analysis fields must be a non-empty string. The policy "
+            "must be general and "
             "reusable on unseen puzzles; it REPLACES the previous policy. It must not "
             "quote the sentence and must not contain any target word, starting "
             "word, or guess from THIS puzzle."
@@ -1052,6 +1103,12 @@ def retrospective_prompt(
                         "tactical_rule": attempt.get("tactical_rule"),
                         "error": attempt.get("error"),
                         "decision": attempt.get("decision"),
+                        "warm_followups_before": attempt.get(
+                            "warm_followups_before"
+                        ),
+                        "warm_followups_after": attempt.get(
+                            "warm_followups_after"
+                        ),
                     }
                     for attempt in record["policy_attempts"]
                 ],
@@ -1243,10 +1300,15 @@ def synthesis_prompt(state: dict[str, Any]) -> str:
             '{"comprehensive_summary": str, "final_policy": {"always": '
             '{"action": str}, "stall": {"after": int, "action": str}, '
             '"warm": {"rank_at_most": int, "max_followups": int, '
-            '"action": str}, "invalid": {"action": str}}}. final_policy uses '
-            f"the same four-rule format and {sp.POLICY_MAX_ACTION_CHARS}-character "
-            "action cap, is general, and must not contain words from any specific "
-            "puzzle."
+            '"action": str}, "invalid": {"action": str}}}.'
+        ),
+        (
+            "comprehensive_summary must be a non-empty string. "
+            + _policy_format_constraints()
+        ),
+        (
+            "final_policy must be general and must not contain words from any "
+            "specific puzzle."
         ),
         "",
     ]
