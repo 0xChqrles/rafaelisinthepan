@@ -728,6 +728,29 @@ def _validate_holdout_identity(
                 )
 
 
+def _validate_distillation_state(state: dict[str, Any]) -> None:
+    stage = state.get("distillation")
+    if not isinstance(stage, dict) or stage.get("status") not in {
+        "pending",
+        "complete",
+        "failed",
+    }:
+        raise CurriculumError("artifact has an invalid distillation stage")
+    attempts = stage.get("attempts")
+    if not isinstance(attempts, list) or len(attempts) > STRUCTURED_MAX_ATTEMPTS:
+        raise CurriculumError("artifact has an invalid distillation attempt count")
+    if [attempt.get("number") for attempt in attempts] != list(
+        range(1, len(attempts) + 1)
+    ):
+        raise CurriculumError("artifact distillation attempt numbers are not contiguous")
+    if stage["status"] == "complete" and not attempts:
+        raise CurriculumError("artifact marks distillation complete without an attempt")
+    if stage["status"] == "failed" and len(attempts) != STRUCTURED_MAX_ATTEMPTS:
+        raise CurriculumError("artifact marks distillation failed before exhausting attempts")
+    if stage["status"] != "complete" and _completed_play_count(state):
+        raise CurriculumError("artifact contains holdout play before strategy freeze")
+
+
 def _validate_completed_runs(
     state: dict[str, Any], records: list[dict[str, Any]], dataset_dir: Path, vocab: set[str]
 ) -> None:
@@ -949,6 +972,7 @@ def run_curriculum(
         }
 
     _validate_holdout_identity(state, holdout_records)
+    _validate_distillation_state(state)
 
     total_plays = (
         len(holdout_records) * len(CONDITIONS) * HOLDOUT_RUNS_PER_CONDITION

@@ -434,6 +434,19 @@ def test_resume_continues_after_checkpointed_rejected_distillation_attempt(
     assert len(resumed_provider.prose_callers) == 1
 
 
+def test_holdout_cannot_exist_before_strategy_freeze():
+    state = {
+        "distillation": {"status": "pending", "attempts": []},
+        "holdout": {
+            "neutral": [{"runs": [{"tries": 1}]}],
+            "learned": [],
+            "v7": [],
+        },
+    }
+    with pytest.raises(cr.CurriculumError, match="holdout play before strategy freeze"):
+        cr._validate_distillation_state(state)
+
+
 def test_successful_resume_repeats_no_paid_calls(dataset, tmp_path):
     manifest_path, manifest = dataset
     provider = _provider_for_full_run(manifest_path, manifest)
