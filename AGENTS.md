@@ -438,7 +438,7 @@ pnpm bench:puzzle <puzzle.json> --model MODEL [--effort LEVEL] [--auth api|subsc
 #    `evaluate` reports on an artifact or profile. Curriculum data never enters puzzles.
 pnpm bench:curriculum:lexicon [--lexique-source <lexique.tsv>] [--out <fr-lexicon.tsv.gz>]
 pnpm bench:curriculum:generate --from-output <generator-output.json> --seed 84 [--dry-run]
-pnpm bench:curriculum:run <manifest.json> --model MODEL [--effort LEVEL] [--auth api|subscription] [--cap N] [--resume ARTIFACT] [--force] [--dry-run]
+pnpm bench:curriculum:run <manifest.json> --model MODEL [--effort LEVEL] [--auth api|subscription] [--cap N] [--resume ARTIFACT] [--force] [--dry-run] [--verbose]
 pnpm bench:curriculum:evaluate <artifact-or-profile.json>
 
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
@@ -558,7 +558,12 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   neutral/learned/v7 (the exact v7 strategy text recovered verbatim from a recorded transcript
   into `benchmark/datasets/v7-strategy.txt`) 3 runs each with no further learning. Artifacts
   checkpoint atomically under the gitignored `benchmark/output/curriculum/` with `--resume`
-  (config/hash-verified, completed paid calls never repeat without `--force`) and `--dry-run`;
+  (config/hash-verified, completed paid calls never repeat without `--force`) and `--dry-run`.
+  A non-dry run prints and creates its initial artifact before the first provider turn; default
+  output then flushes global play plus puzzle/run START/DONE progress and strategy/synthesis
+  milestones. `--verbose` additionally prints every counted try with total progress and the
+  retrospective, revised-strategy, and final-strategy contents; verbosity is output-only and
+  may be changed on resume.
   `strategy_profiles.py` writes the compact model/configuration-specific profile that is never
   cross-applied. Retrospective/synthesis records retain per-attempt token usage and wall time.
   `curriculum_run.py evaluate` reports DNF-aware headline medians plus explicit solved-only

@@ -36,6 +36,7 @@ from llm_play import (  # noqa: E402
     PROVIDER_ENV,
     PuzzleReferee,
     RunResult,
+    TryProgress,
     load_vocab,
     play_puzzle,
     provider_reply,
@@ -63,6 +64,165 @@ OUTPUT_ROOT = BENCHMARK_DIR / "output" / "curriculum"
 V7_STRATEGY_PATH = BENCHMARK_DIR / "datasets" / "v7-strategy.txt"
 
 _WORD_RE = re.compile(r"[^\W\d_]+(?:-[^\W\d_]+)*", re.UNICODE)
+
+
+class CurriculumReporter:
+    """Flush progress without changing prompts, scoring, or checkpoint state."""
+
+    def __init__(
+        self,
+        *,
+        verbose: bool,
+        artifact_path: Path,
+        model_id: str,
+        cap: int,
+        total_plays: int,
+        total_puzzles: int,
+        total_retrospectives: int,
+        completed_plays: int,
+    ):
+        self.verbose = verbose
+        self.artifact_path = artifact_path
+        self.total_plays = total_plays
+        self.total_puzzles = total_puzzles
+        self.total_retrospectives = total_retrospectives
+        print(f"curriculum artifact: {artifact_path}", flush=True)
+        print(
+            f"curriculum progress: {completed_plays}/{total_plays} plays "
+            f"checkpointed; model={model_id}; cap={cap}",
+            flush=True,
+        )
+
+    def play_started(
+        self,
+        *,
+        play_number: int,
+        phase: str,
+        puzzle_number: int,
+        run_number: int,
+    ) -> None:
+        run_total = self._run_total(phase)
+        print(
+            f"[play {play_number}/{self.total_plays}] START {phase} "
+            f"puzzle {puzzle_number}/{self.total_puzzles} "
+            f"run {run_number}/{run_total}",
+            flush=True,
+        )
+
+    def counted_try(
+        self,
+        progress: TryProgress,
+        *,
+        play_number: int,
+        phase: str,
+        puzzle_number: int,
+        run_number: int,
+    ) -> None:
+        if not self.verbose:
+            return
+        run_total = self._run_total(phase)
+        word = json.dumps(progress.word, ensure_ascii=False)
+        print(
+            f"[play {play_number}/{self.total_plays}] {phase} "
+            f"puzzle {puzzle_number}/{self.total_puzzles} "
+            f"run {run_number}/{run_total} try={progress.number} "
+            f"word={word} progress={progress.progress:.2f}%",
+            flush=True,
+        )
+
+    def play_completed(
+        self,
+        record: dict[str, Any],
+        *,
+        play_number: int,
+        phase: str,
+        puzzle_number: int,
+        run_number: int,
+    ) -> None:
+        run_total = self._run_total(phase)
+        if record["tries"] is not None:
+            unit = "try" if record["tries"] == 1 else "tries"
+            score = f"{record['tries']} {unit}"
+        else:
+            unit = "try" if record["counted_tries"] == 1 else "tries"
+            score = f"DNF at {record['counted_tries']} counted {unit}"
+        print(
+            f"[play {play_number}/{self.total_plays}] DONE {phase} "
+            f"puzzle {puzzle_number}/{self.total_puzzles} "
+            f"run {run_number}/{run_total} — {score}, "
+            f"{record['wall_duration']:.2f}s",
+            flush=True,
+        )
+
+    def retrospective_started(
+        self, *, retrospective_number: int, puzzle_number: int
+    ) -> None:
+        print(
+            f"[strategy {retrospective_number}/{self.total_retrospectives}] "
+            f"START retrospective after puzzle {puzzle_number}/{self.total_puzzles}",
+            flush=True,
+        )
+
+    def retrospective_completed(
+        self,
+        *,
+        retrospective_number: int,
+        puzzle_number: int,
+        analysis: dict[str, Any],
+        strategy: list[str],
+    ) -> None:
+        prefix = f"[strategy {retrospective_number}/{self.total_retrospectives}]"
+        item_unit = "item" if len(strategy) == 1 else "items"
+        print(
+            f"{prefix} DONE retrospective after puzzle "
+            f"{puzzle_number}/{self.total_puzzles} — "
+            f"{len(strategy)} {item_unit}",
+            flush=True,
+        )
+        if not self.verbose:
+            return
+        print(
+            f"{prefix} retrospective analysis:\n"
+            + json.dumps(analysis, ensure_ascii=False, indent=2),
+            flush=True,
+        )
+        self._strategy(prefix, "revised strategy", strategy)
+
+    def synthesis_started(self) -> None:
+        print(
+            f"[synthesis] START after {self.total_retrospectives} "
+            "curriculum puzzles",
+            flush=True,
+        )
+
+    def synthesis_completed(self, summary: str, strategy: list[str]) -> None:
+        item_unit = "item" if len(strategy) == 1 else "items"
+        print(
+            f"[synthesis] DONE — {len(strategy)} final strategy {item_unit}",
+            flush=True,
+        )
+        if not self.verbose:
+            return
+        print(f"[synthesis] comprehensive summary:\n{summary}", flush=True)
+        self._strategy("[synthesis]", "final strategy", strategy)
+
+    def complete(self, profile_path: Path) -> None:
+        print(f"curriculum complete: {self.artifact_path}", flush=True)
+        print(f"strategy profile: {profile_path}", flush=True)
+
+    @staticmethod
+    def _strategy(prefix: str, label: str, items: list[str]) -> None:
+        print(f"{prefix} {label}:", flush=True)
+        for number, item in enumerate(items, start=1):
+            print(f"  {number}. {item}", flush=True)
+
+    @staticmethod
+    def _run_total(phase: str) -> int:
+        return (
+            HOLDOUT_RUNS_PER_CONDITION
+            if phase.startswith("holdout/")
+            else RUNS_PER_PUZZLE
+        )
 
 
 class CurriculumError(RuntimeError):
@@ -465,6 +625,16 @@ def _load_puzzle(dataset_dir: Path, record: dict[str, Any]) -> dict[str, Any]:
     return load_json(dataset_dir / record["path"])
 
 
+def _completed_play_count(state: dict[str, Any]) -> int:
+    curriculum = sum(len(puzzle.get("runs", [])) for puzzle in state["puzzles"])
+    holdout = sum(
+        len(entry.get("runs", []))
+        for entries in state["holdout"].values()
+        for entry in entries
+    )
+    return curriculum + holdout
+
+
 # --- Orchestration -----------------------------------------------------------------
 
 
@@ -478,6 +648,7 @@ def run_curriculum(
     resume: Path | None = None,
     force: bool = False,
     dry_run: bool = False,
+    verbose: bool = False,
     provider_factory: Callable[..., Any] = provider_reply,
     vocab_loader: Callable[[str], set[str]] = load_vocab,
     output_root: Path = OUTPUT_ROOT,
@@ -582,6 +753,26 @@ def run_curriculum(
         )
         return None
 
+    if resume is None:
+        # Make the destination visible before the first paid turn. Individual runs
+        # remain atomic: a partially played run is never recorded as complete.
+        save_artifact(artifact_path, state)
+
+    total_plays = (
+        len(curriculum_records) * RUNS_PER_PUZZLE
+        + len(holdout_records) * len(CONDITIONS) * HOLDOUT_RUNS_PER_CONDITION
+    )
+    reporter = CurriculumReporter(
+        verbose=verbose,
+        artifact_path=artifact_path,
+        model_id=config["model_id"],
+        cap=cap,
+        total_plays=total_plays,
+        total_puzzles=len(manifest["puzzles"]),
+        total_retrospectives=len(curriculum_records),
+        completed_plays=_completed_play_count(state),
+    )
+
     vocab = vocab_loader(manifest["lang"])
 
     def fresh_word_player():
@@ -594,13 +785,18 @@ def run_curriculum(
             config, api_key, effort=effort, auth=auth, output="prose"
         )
 
-    def play_once(puzzle: dict[str, Any], strategy_items: list[str] | None):
+    def play_once(
+        puzzle: dict[str, Any],
+        strategy_items: list[str] | None,
+        on_try: Callable[[TryProgress], None],
+    ):
         started = time.monotonic()
         result = play_puzzle(
             puzzle,
             vocab,
             fresh_word_player(),
             cap=cap,
+            on_try=on_try,
             strategy=sp.strategy_text(strategy_items) if strategy_items else None,
             rules_only=True,
         )
@@ -630,12 +826,40 @@ def run_curriculum(
                 raise CurriculumError(
                     "artifact has a retrospective before all runs; it is corrupt"
                 )
-            puzzle_state["runs"].append(
-                play_once(puzzle, puzzle_state["incoming_strategy"])
+            run_number = len(puzzle_state["runs"]) + 1
+            play_number = puzzle_index * RUNS_PER_PUZZLE + run_number
+            reporter.play_started(
+                play_number=play_number,
+                phase="curriculum",
+                puzzle_number=record["number"],
+                run_number=run_number,
             )
+            completed_run = play_once(
+                puzzle,
+                puzzle_state["incoming_strategy"],
+                lambda progress: reporter.counted_try(
+                    progress,
+                    play_number=play_number,
+                    phase="curriculum",
+                    puzzle_number=record["number"],
+                    run_number=run_number,
+                ),
+            )
+            puzzle_state["runs"].append(completed_run)
             save_artifact(artifact_path, state)
+            reporter.play_completed(
+                completed_run,
+                play_number=play_number,
+                phase="curriculum",
+                puzzle_number=record["number"],
+                run_number=run_number,
+            )
 
         if puzzle_state["retrospective"] is None:
+            reporter.retrospective_started(
+                retrospective_number=puzzle_index + 1,
+                puzzle_number=record["number"],
+            )
             prompt = retrospective_prompt(
                 puzzle_state["incoming_strategy"], puzzle, puzzle_state["runs"]
             )
@@ -653,12 +877,19 @@ def run_curriculum(
                 "telemetry": telemetry,
             }
             save_artifact(artifact_path, state)
+            reporter.retrospective_completed(
+                retrospective_number=puzzle_index + 1,
+                puzzle_number=record["number"],
+                analysis=analysis,
+                strategy=revised,
+            )
 
         # The revised strategy REPLACES the previous one for the NEXT puzzle.
         incoming = puzzle_state["retrospective"]["revised_strategy"]
 
     # --- Final synthesis: one fresh call over every retrospective.
     if state["synthesis"] is None:
+        reporter.synthesis_started()
         curriculum_puzzles = [
             _load_puzzle(dataset_dir, record) for record in curriculum_records
         ]
@@ -674,6 +905,7 @@ def run_curriculum(
             "telemetry": telemetry,
         }
         save_artifact(artifact_path, state)
+        reporter.synthesis_completed(summary, final_strategy)
 
     final_strategy = state["synthesis"]["final_strategy"]
 
@@ -683,9 +915,10 @@ def run_curriculum(
         "learned": final_strategy,
         "v7": [frozen_v7],
     }
-    for condition in CONDITIONS:
+    curriculum_play_count = len(curriculum_records) * RUNS_PER_PUZZLE
+    for condition_index, condition in enumerate(CONDITIONS):
         completed = state["holdout"][condition]
-        for record in holdout_records:
+        for holdout_index, record in enumerate(holdout_records):
             entry = next(
                 (e for e in completed if e["number"] == record["number"]), None
             )
@@ -694,10 +927,42 @@ def run_curriculum(
                 completed.append(entry)
             puzzle = _load_puzzle(dataset_dir, record)
             while len(entry["runs"]) < HOLDOUT_RUNS_PER_CONDITION:
-                entry["runs"].append(
-                    play_once(puzzle, condition_strategies[condition])
+                run_number = len(entry["runs"]) + 1
+                play_number = (
+                    curriculum_play_count
+                    + condition_index
+                    * len(holdout_records)
+                    * HOLDOUT_RUNS_PER_CONDITION
+                    + holdout_index * HOLDOUT_RUNS_PER_CONDITION
+                    + run_number
                 )
+                phase = f"holdout/{condition}"
+                reporter.play_started(
+                    play_number=play_number,
+                    phase=phase,
+                    puzzle_number=record["number"],
+                    run_number=run_number,
+                )
+                completed_run = play_once(
+                    puzzle,
+                    condition_strategies[condition],
+                    lambda progress: reporter.counted_try(
+                        progress,
+                        play_number=play_number,
+                        phase=phase,
+                        puzzle_number=record["number"],
+                        run_number=run_number,
+                    ),
+                )
+                entry["runs"].append(completed_run)
                 save_artifact(artifact_path, state)
+                reporter.play_completed(
+                    completed_run,
+                    play_number=play_number,
+                    phase=phase,
+                    puzzle_number=record["number"],
+                    run_number=run_number,
+                )
 
     # --- Compact reusable profile.
     profile = sp.build_profile(
@@ -718,6 +983,7 @@ def run_curriculum(
     sp.write_profile(profile_path, profile)
     state["profile_path"] = str(profile_path)
     save_artifact(artifact_path, state)
+    reporter.complete(profile_path)
     return artifact_path
 
 
@@ -878,6 +1144,11 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument("--resume", type=Path)
     run_parser.add_argument("--force", action="store_true")
     run_parser.add_argument("--dry-run", action="store_true")
+    run_parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="print every counted try plus retrospective and strategy details",
+    )
 
     eval_parser = sub.add_parser("evaluate", help="report on an artifact or profile")
     eval_parser.add_argument("artifact", type=Path)
@@ -885,7 +1156,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "run":
-        artifact_path = run_curriculum(
+        run_curriculum(
             resolve_path(args.manifest),
             model=args.model,
             effort=args.effort,
@@ -894,9 +1165,8 @@ def main(argv: list[str] | None = None) -> int:
             resume=resolve_path(args.resume) if args.resume else None,
             force=args.force,
             dry_run=args.dry_run,
+            verbose=args.verbose,
         )
-        if artifact_path is not None:
-            print(f"curriculum artifact: {artifact_path}")
         return 0
 
     payload = json.loads(resolve_path(args.artifact).read_text(encoding="utf-8"))

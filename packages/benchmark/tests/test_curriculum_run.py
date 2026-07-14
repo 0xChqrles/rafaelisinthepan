@@ -139,7 +139,9 @@ def run(dataset, tmp_path, provider, **kwargs):
     )
 
 
-def test_full_curriculum_isolates_runs_and_freezes_holdout(dataset, tmp_path):
+def test_full_curriculum_isolates_runs_and_freezes_holdout(
+    dataset, tmp_path, capsys
+):
     manifest_path, manifest = dataset
     provider = scripted_for(manifest_path, manifest)
 
@@ -245,6 +247,69 @@ def test_full_curriculum_isolates_runs_and_freezes_holdout(dataset, tmp_path):
     assert report["cost_split"]["retrospective"]["calls"] == 3
     assert report["cost_split"]["synthesis"]["calls"] == 1
 
+    output = capsys.readouterr().out
+    assert "curriculum progress: 0/18 plays checkpointed" in output
+    assert "[play 1/18] START curriculum puzzle 1/4 run 1/3" in output
+    assert "[play 1/18] DONE curriculum puzzle 1/4 run 1/3 — 3 tries" in output
+    assert "[strategy 1/3] START retrospective after puzzle 1/4" in output
+    assert "[synthesis] DONE — 1 final strategy item" in output
+    assert "[play 18/18] DONE holdout/v7 puzzle 4/4 run 3/3" in output
+    assert "curriculum complete:" in output
+    assert "try=" not in output
+    assert "Lesson alpha" not in output
+    assert "Final rule: diversify" not in output
+
+
+def test_verbose_curriculum_prints_tries_analysis_and_strategies(
+    dataset, tmp_path, capsys
+):
+    manifest_path, manifest = dataset
+    provider = scripted_for(manifest_path, manifest)
+
+    run(dataset, tmp_path, provider, verbose=True)
+    output = capsys.readouterr().out
+
+    assert '[play 1/18] curriculum puzzle 1/4 run 1/3 try=1 word=' in output
+    assert "progress=" in output
+    assert "[strategy 1/3] retrospective analysis:" in output
+    assert "[strategy 1/3] revised strategy:" in output
+    assert "Lesson alpha: explore opposites early." in output
+    assert "[synthesis] comprehensive summary:" in output
+    assert "[synthesis] final strategy:" in output
+    assert "Final rule: diversify semantic directions." in output
+
+
+def test_initial_checkpoint_exists_before_first_provider_turn(
+    dataset, tmp_path, capsys
+):
+    manifest_path, _manifest = dataset
+    output_root = tmp_path / "artifacts"
+
+    def inspect_then_stop(*_args, **_kwargs):
+        artifacts = list(output_root.rglob("*.json"))
+        assert len(artifacts) == 1
+        state = json.loads(artifacts[0].read_text(encoding="utf-8"))
+        assert state["puzzles"] == []
+        assert state["synthesis"] is None
+        raise RuntimeError("stop after checkpoint inspection")
+
+    with pytest.raises(RuntimeError, match="checkpoint inspection"):
+        cr.run_curriculum(
+            manifest_path,
+            model="OPUS",
+            effort="none",
+            auth="api",
+            cap=50,
+            provider_factory=inspect_then_stop,
+            vocab_loader=vocab_loader,
+            output_root=output_root,
+            v7_strategy=V7_TEXT,
+        )
+
+    output = capsys.readouterr().out
+    assert "curriculum artifact:" in output
+    assert "[play 1/18] START curriculum puzzle 1/4 run 1/3" in output
+
 
 def test_retrospective_leak_reprompts_once_then_fails(dataset, tmp_path):
     manifest_path, manifest = dataset
@@ -346,7 +411,7 @@ def test_strategy_leak_validation_covers_targets_starts_guesses_and_quotes(datas
     )
 
 
-def test_resume_never_repeats_completed_paid_calls(dataset, tmp_path):
+def test_resume_never_repeats_completed_paid_calls(dataset, tmp_path, capsys):
     manifest_path, manifest = dataset
     # Scripts for the first two runs only: the third play crashes the run.
     dataset_dir = manifest_path.parent
@@ -361,16 +426,24 @@ def test_resume_never_repeats_completed_paid_calls(dataset, tmp_path):
     assert len(artifacts) == 1
     partial_state = json.loads(artifacts[0].read_text(encoding="utf-8"))
     assert len(partial_state["puzzles"][0]["runs"]) == 2
+    capsys.readouterr()
 
     # Resume: only the REMAINING calls run (total scripts = full set minus 2).
     remaining = scripted_for(manifest_path, manifest)
     remaining.word_scripts = iter(list(remaining.word_scripts)[2:])
-    artifact_path = run(dataset, tmp_path, remaining, resume=artifacts[0])
+    artifact_path = run(
+        dataset, tmp_path, remaining, resume=artifacts[0], verbose=True
+    )
     state = json.loads(artifact_path.read_text(encoding="utf-8"))
     assert len(state["puzzles"]) == 3
     assert all(len(p["runs"]) == 3 for p in state["puzzles"])
     # The first two recorded runs are the pre-crash ones, byte-identical.
     assert state["puzzles"][0]["runs"][:2] == partial_state["puzzles"][0]["runs"]
+
+    output = capsys.readouterr().out
+    assert "curriculum progress: 2/18 plays checkpointed" in output
+    assert "[play 3/18] START curriculum puzzle 1/4 run 3/3" in output
+    assert "[play 3/18] curriculum puzzle 1/4 run 3/3 try=1" in output
 
     # A resume under a different configuration is refused.
     with pytest.raises(cr.CurriculumError, match="does not match"):
