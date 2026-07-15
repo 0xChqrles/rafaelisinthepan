@@ -20,6 +20,7 @@
     "bench:curriculum:generate": "pnpm --filter @whippin/benchmark bench:curriculum:generate",
     "bench:curriculum:calibrate": "pnpm --filter @whippin/benchmark bench:curriculum:calibrate",
     "bench:curriculum:run": "pnpm --filter @whippin/benchmark bench:curriculum:run",
+    "bench:curriculum:export-profile": "pnpm --filter @whippin/benchmark bench:curriculum:export-profile",
     "bench:curriculum:evaluate": "pnpm --filter @whippin/benchmark bench:curriculum:evaluate",
     "backend:dev": "pnpm --filter @whippin/backend serve:local",
     "puzzle:publish": "pnpm --filter @whippin/backend puzzle:publish",

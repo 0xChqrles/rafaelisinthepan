@@ -113,13 +113,18 @@ class CalibrationShortfallError(CalibrationError):
         )
 
 
-def resolve_path(path: Path) -> Path:
+def resolve_path(path: Path, *, destination: bool = False) -> Path:
     if path.is_absolute():
         return path
     repo_root = BENCHMARK_DIR.parent.parent
-    for candidate in (Path.cwd() / path, repo_root / path, BENCHMARK_DIR / path):
-        if candidate.is_file():
+    candidates = (Path.cwd() / path, repo_root / path, BENCHMARK_DIR / path)
+    for candidate in candidates:
+        if candidate.is_file() or (destination and candidate.parent.is_dir()):
             return candidate.resolve()
+    if destination and path.parts[:1] == ("output",):
+        return (BENCHMARK_DIR / path).resolve()
+    if destination and path.parts[:2] == ("packages", "benchmark"):
+        return (repo_root / path).resolve()
     return path
 
 
@@ -745,11 +750,19 @@ def _tier_combinations(
     chosen: list[dict[str, Any]] = []
     used = set(reserved_slugs)
     counts = _empty_counts()
+    targets_per_tier = cd.TARGETS_PER_PUZZLE * TIER_QUOTA
+    max_pos_category = math.ceil(targets_per_tier / len(cd.POS_VALUES))
+    # Under rule v1 POS balance, each gendered POS can occupy at most the POS
+    # category bound. Their sum is therefore the safe upper bound for gendered
+    # targets before the gender categories themselves are balanced.
+    max_gendered_targets = max_pos_category * sum(
+        pos in cd.GENDERED_POS for pos in cd.POS_VALUES
+    )
     max_per_category = {
-        "pos": math.ceil(cd.TARGETS_PER_PUZZLE * TIER_QUOTA / len(cd.POS_VALUES)),
-        "gender": math.ceil(8 / len(cd.GENDER_VALUES)),
-        "frequency_band": math.ceil(cd.TARGETS_PER_PUZZLE * TIER_QUOTA / 2),
-        "semantic_class": math.ceil(cd.TARGETS_PER_PUZZLE * TIER_QUOTA / 2),
+        "pos": max_pos_category,
+        "gender": math.ceil(max_gendered_targets / len(cd.GENDER_VALUES)),
+        "frequency_band": math.ceil(targets_per_tier / 2),
+        "semantic_class": math.ceil(targets_per_tier / 2),
     }
 
     def visit(
@@ -1534,6 +1547,16 @@ def _manifest_balance(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _all_runs_solved_within_cap(candidate: dict[str, Any]) -> bool:
+    runs = [run for model in candidate["models"] for run in model["runs"]]
+    return bool(runs) and all(
+        isinstance(run.get("tries"), int)
+        and not isinstance(run["tries"], bool)
+        and 0 < run["tries"] <= CALIBRATION_CAP
+        for run in runs
+    )
+
+
 def finalize_manifest(
     pool_manifest_path: Path,
     artifact_path: Path,
@@ -1599,6 +1622,11 @@ def finalize_manifest(
     holdout = []
     for offset, row in enumerate(selected_rows, start=1):
         candidate = by_id[row["candidate_id"]]
+        all_runs_solved_within_cap = _all_runs_solved_within_cap(candidate)
+        if not all_runs_solved_within_cap:
+            raise CalibrationError(
+                f"selected candidate {row['candidate_id']} has a non-solving run"
+            )
         record = copy.deepcopy(pool_by_id[row["candidate_id"]])
         record.pop("pool_index", None)
         record.pop("candidate_id", None)
@@ -1612,7 +1640,7 @@ def finalize_manifest(
             "model_run_counts": {
                 model["model_id"]: len(model["runs"]) for model in candidate["models"]
             },
-            "all_runs_solved_within_cap": True,
+            "all_runs_solved_within_cap": all_runs_solved_within_cap,
         }
         holdout.append(record)
 
@@ -1730,7 +1758,11 @@ def main(argv: list[str] | None = None) -> int:
                 resolve_path(args.candidate_manifest),
                 auth=args.auth,
                 resume=resolve_path(args.resume) if args.resume else None,
-                artifact_path=args.artifact,
+                artifact_path=(
+                    resolve_path(args.artifact, destination=True)
+                    if args.artifact
+                    else None
+                ),
                 maximum_units=maximum_units,
                 dry_run=args.dry_run,
                 verbose=args.verbose,

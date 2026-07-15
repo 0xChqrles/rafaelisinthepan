@@ -600,6 +600,42 @@ def test_dry_run_plans_fixed_roster_and_makes_no_provider_or_vocab_calls(tmp_pat
     assert not (tmp_path / "never-written.json").exists()
 
 
+def test_main_resolves_package_relative_artifact_destination(
+    tmp_path, monkeypatch, capsys
+):
+    candidate_manifest = tmp_path / "candidate-manifest.json"
+    candidate_manifest.write_text("{}\n", encoding="utf-8")
+    captured = {}
+
+    def fake_run_calibration(manifest_path, **kwargs):
+        captured["manifest_path"] = manifest_path
+        captured["artifact_path"] = kwargs["artifact_path"]
+        return {"dry_run": True}
+
+    monkeypatch.setattr(cal, "run_calibration", fake_run_calibration)
+    monkeypatch.chdir(cal.BENCHMARK_DIR.parent.parent)
+
+    assert (
+        cal.main(
+            [
+                "run",
+                str(candidate_manifest),
+                "--artifact",
+                "output/calibration/planned.json",
+                "--dry-run",
+            ]
+        )
+        == 0
+    )
+    assert captured == {
+        "manifest_path": candidate_manifest,
+        "artifact_path": (
+            cal.BENCHMARK_DIR / "output/calibration/planned.json"
+        ).resolve(),
+    }
+    assert json.loads(capsys.readouterr().out) == {"dry_run": True}
+
+
 @pytest.mark.parametrize(
     ("curriculum_count", "candidate_count", "minimum_candidates", "message"),
     [
@@ -1131,6 +1167,21 @@ def test_final_manifest_pins_calibration_without_leaking_runs_into_evidence(
     changed_state = json.loads(artifact.read_text())
     assert changed_state["hashes"] == semantic_hashes
     assert cal._sha256_file(artifact) != pinned_file_sha
+
+
+@pytest.mark.parametrize(
+    ("tries", "expected"),
+    [
+        (1, True),
+        (cal.CALIBRATION_CAP, True),
+        (None, False),
+        (cal.CALIBRATION_CAP + 1, False),
+    ],
+)
+def test_all_runs_solved_within_cap_is_derived_from_paid_runs(tries, expected):
+    candidate = {"models": [{"runs": [{"tries": tries}]}]}
+
+    assert cal._all_runs_solved_within_cap(candidate) is expected
 
 
 def test_finalization_replays_and_requires_complete_paid_run_records(tmp_path):

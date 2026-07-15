@@ -236,6 +236,70 @@ def test_full_run_distils_once_then_uses_only_fresh_one_word_holdout_contexts(
     assert profile["evidence_packet_sha256"] == state["evidence_packet"]["sha256"]
 
 
+def test_frozen_strategy_writes_profile_before_holdout_and_exports_offline(
+    dataset, tmp_path, capsys
+):
+    class StopBeforeHoldout(RecordingProvider):
+        def __call__(self, *args, **kwargs):
+            if kwargs["output"] == "word":
+                raise RuntimeError("stop before first holdout call")
+            return super().__call__(*args, **kwargs)
+
+    provider = StopBeforeHoldout()
+    with pytest.raises(RuntimeError, match="stop before first holdout call"):
+        _run(dataset, tmp_path, provider)
+
+    artifact = next(
+        path
+        for path in (tmp_path / "artifacts").rglob("*.json")
+        if not path.name.endswith(".profile.json")
+    )
+    state = _state(artifact)
+    profile_path = artifact.with_suffix(".profile.json")
+    profile_bytes = profile_path.read_bytes()
+    profile = sp.load_profile(profile_path)
+
+    assert state["distillation"]["status"] == "complete"
+    assert state["distillation"]["frozen_strategy_sha256"] == cr._strategy_sha256(
+        SAFE_STRATEGY
+    )
+    assert state["profile"] == {
+        "path": str(profile_path),
+        "sha256": hashlib.sha256(profile_bytes).hexdigest(),
+        "strategy_id": profile["strategy_id"],
+        "source": "distilled",
+    }
+    assert "evaluation" not in state
+    assert "completed_at" not in state
+    assert len(provider.constructions) == 1
+    assert provider.constructions[0]["output"] == "prose"
+
+    # Recreate the old partial-artifact shape: frozen strategy, no profile sidecar.
+    profile_path.unlink()
+    state.pop("profile")
+    cr.save_artifact(artifact, state)
+    artifact_bytes = artifact.read_bytes()
+
+    assert cr.export_profile(artifact) == profile_path
+    assert profile_path.read_bytes() == profile_bytes
+    assert artifact.read_bytes() == artifact_bytes
+    assert cr.export_profile(artifact) == profile_path  # idempotent
+
+    profile_path.unlink()
+    capsys.readouterr()
+    assert cr.main(["export-profile", str(artifact)]) == 0
+    assert profile_path.read_bytes() == profile_bytes
+    assert "frozen profile:" in capsys.readouterr().out
+
+    tampered_artifact = tmp_path / "tampered-partial.json"
+    tampered = json.loads(json.dumps(state))
+    tampered["distillation"]["frozen_strategy_sha256"] = "0" * 64
+    cr.save_artifact(tampered_artifact, tampered)
+    with pytest.raises(cr.CurriculumError, match="before the distilled strategy is frozen"):
+        cr.export_profile(tampered_artifact)
+    assert not tampered_artifact.with_suffix(".profile.json").exists()
+
+
 def test_calibrated_holdout_reuses_frozen_profile_without_distillation(
     dataset, tmp_path
 ):
@@ -380,6 +444,8 @@ def test_strategy_is_checkpointed_and_frozen_before_first_holdout_provider(
             assert state["distillation"]["status"] == "complete"
             assert state["distillation"]["strategy"] == SAFE_STRATEGY
             assert state["distillation"]["frozen_strategy_sha256"]
+            assert state["profile"]["source"] == "distilled"
+            assert Path(state["profile"]["path"]).is_file()
 
     provider = _provider_for_full_run(
         manifest_path, manifest, inspect=inspect
@@ -501,7 +567,11 @@ def test_resume_continues_after_checkpointed_rejected_distillation_attempt(
     interrupted = StopBeforeSecondAttempt(prose_replies=["bad json"])
     with pytest.raises(KeyboardInterrupt, match="process interruption"):
         _run(dataset, tmp_path, interrupted)
-    artifact = next((tmp_path / "artifacts").rglob("*.json"))
+    artifact = next(
+        path
+        for path in (tmp_path / "artifacts").rglob("*.json")
+        if not path.name.endswith(".profile.json")
+    )
     assert len(_state(artifact)["distillation"]["attempts"]) == 1
 
     resumed_provider = _provider_for_full_run(manifest_path, manifest)
@@ -617,7 +687,11 @@ def test_resume_skips_completed_holdout_runs_after_partial_failure(
     partial = StopAfterTwo(word_scripts=all_scripts)
     with pytest.raises(RuntimeError, match="provider outage"):
         _run(dataset, tmp_path, partial)
-    artifact = next((tmp_path / "artifacts").rglob("*.json"))
+    artifact = next(
+        path
+        for path in (tmp_path / "artifacts").rglob("*.json")
+        if not path.name.endswith(".profile.json")
+    )
     assert cr._completed_play_count(_state(artifact)) == 2
 
     remaining = RecordingProvider(word_scripts=all_scripts[2:])

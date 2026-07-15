@@ -775,6 +775,111 @@ def _validate_distillation_state(state: dict[str, Any]) -> None:
             )
 
 
+def _build_distilled_profile_from_state(state: dict[str, Any]) -> dict[str, Any]:
+    """Build the reusable profile pinned by a frozen prompt-v5 distillation."""
+    config = state.get("config")
+    if not isinstance(config, dict):
+        raise CurriculumError("cannot export profile: artifact config is missing")
+    if config.get("artifact_schema_version") != 5:
+        raise CurriculumError(
+            "cannot export profile: only prompt-v5 artifacts are supported"
+        )
+    if config.get("profile_schema_version") != sp.PROFILE_SCHEMA_VERSION:
+        raise CurriculumError(
+            "cannot export profile: artifact profile schema is incompatible"
+        )
+    if config.get("strategy_source", "distillation") != "distillation":
+        raise CurriculumError(
+            "cannot export profile: artifact already reuses a frozen profile"
+        )
+
+    _validate_distillation_state(state)
+    stage = state["distillation"]
+    if stage.get("status") != "complete":
+        raise CurriculumError("cannot export profile before distillation completes")
+    try:
+        expected_strategy_sha = _strategy_sha256(stage.get("strategy"))
+    except ValueError as exc:
+        raise CurriculumError(f"cannot export profile: {exc}") from exc
+    if stage.get("frozen_strategy_sha256") != expected_strategy_sha:
+        raise CurriculumError(
+            "cannot export profile before the distilled strategy is frozen"
+        )
+
+    evidence = state.get("evidence_packet")
+    if not isinstance(evidence, dict):
+        raise CurriculumError(
+            "cannot export profile: artifact evidence identity is missing"
+        )
+    if (
+        evidence.get("schema_version")
+        != config.get("evidence_packet_schema_version")
+        or evidence.get("sha256") != config.get("evidence_packet_sha256")
+    ):
+        raise CurriculumError(
+            "cannot export profile: artifact evidence identity does not match config"
+        )
+
+    try:
+        return sp.build_profile(
+            strategy_id=(
+                f"{config['dataset_id']}/{config['model_id']}/"
+                f"{config['evidence_packet_sha256'][:12]}"
+            ),
+            model_id=config["model_id"],
+            provider=config["provider"],
+            transport=config["transport"],
+            auth=config["auth"],
+            strategy_effort=config["strategy_effort"],
+            play_effort=config["play_effort"],
+            lang=config["lang"],
+            dataset_id=config["dataset_id"],
+            dataset_sha256=config["dataset_sha256"],
+            evidence_packet_schema_version=config[
+                "evidence_packet_schema_version"
+            ],
+            evidence_packet_sha256=config["evidence_packet_sha256"],
+            distillation_prompt_sha256=config["distillation_prompt_sha256"],
+            prompt_version=config["prompt_version"],
+            curriculum_prompt_version=config["curriculum_prompt_version"],
+            created_at=stage["completed_at"],
+            final_strategy=stage["strategy"],
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise CurriculumError(f"cannot export profile: {exc}") from exc
+
+
+def _write_profile_idempotently(path: Path, profile: dict[str, Any]) -> None:
+    if path.exists():
+        try:
+            existing = sp.load_profile(path)
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            raise CurriculumError(
+                f"refusing to overwrite invalid existing profile {path}: {exc}"
+            ) from exc
+        if existing != profile:
+            raise CurriculumError(
+                f"refusing to overwrite different existing profile {path}"
+            )
+        return
+    sp.write_profile(path, profile)
+
+
+def export_profile(artifact_path: Path) -> Path:
+    """Export a frozen strategy profile offline without changing the artifact."""
+    artifact_path = artifact_path.resolve()
+    try:
+        state = json.loads(artifact_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise CurriculumError(f"cannot read artifact {artifact_path}: {exc}") from exc
+    if not isinstance(state, dict):
+        raise CurriculumError("cannot export profile: artifact must be an object")
+    profile = _build_distilled_profile_from_state(state)
+    profile_path = artifact_path.with_suffix(".profile.json")
+    _write_profile_idempotently(profile_path, profile)
+    return profile_path
+
+
 def _validate_completed_runs(
     state: dict[str, Any], records: list[dict[str, Any]], dataset_dir: Path, vocab: set[str]
 ) -> None:
@@ -1204,6 +1309,25 @@ def run_curriculum(
     if prior_strategy_sha is not None and prior_strategy_sha != frozen_strategy_sha:
         raise CurriculumError("checkpointed frozen strategy hash does not replay")
     state["distillation"]["frozen_strategy_sha256"] = frozen_strategy_sha
+    if profile is None:
+        profile = _build_distilled_profile_from_state(state)
+        profile_path = artifact_path.with_suffix(".profile.json")
+        _write_profile_idempotently(profile_path, profile)
+        expected_profile_record = {
+            "path": str(profile_path),
+            "sha256": _sha256_file(profile_path),
+            "strategy_id": profile["strategy_id"],
+            "source": "distilled",
+        }
+        prior_profile_record = state.get("profile")
+        if (
+            prior_profile_record is not None
+            and prior_profile_record != expected_profile_record
+        ):
+            raise CurriculumError(
+                "checkpointed distilled-profile reference does not replay"
+            )
+        state["profile"] = expected_profile_record
     save_artifact(artifact_path, state)
 
     vocab = vocab_loader(manifest["lang"])
@@ -1278,36 +1402,6 @@ def run_curriculum(
                     run_number=run_number,
                 )
 
-    if profile is None:
-        profile = sp.build_profile(
-            strategy_id=(
-                f"{manifest['dataset_id']}/{config['model_id']}/{packet.sha256[:12]}"
-            ),
-            model_id=config["model_id"],
-            provider=config["provider"],
-            transport=transport,
-            auth=auth,
-            strategy_effort=strategy_effort,
-            play_effort=play_effort,
-            lang=manifest["lang"],
-            dataset_id=manifest["dataset_id"],
-            dataset_sha256=dataset_sha,
-            evidence_packet_schema_version=PACKET_SCHEMA_VERSION,
-            evidence_packet_sha256=packet.sha256,
-            distillation_prompt_sha256=prompt_sha,
-            prompt_version=PROMPT_VERSION,
-            curriculum_prompt_version=CURRICULUM_PROMPT_VERSION,
-            created_at=state["distillation"]["completed_at"],
-            final_strategy=strategy_items,
-        )
-        profile_path = artifact_path.with_suffix(".profile.json")
-        sp.write_profile(profile_path, profile)
-        state["profile"] = {
-            "path": str(profile_path),
-            "sha256": _sha256_file(profile_path),
-            "strategy_id": profile["strategy_id"],
-            "source": "distilled",
-        }
     assert profile_path is not None
     state["evaluation"] = evaluate_artifact(state)
     state["completed_at"] = datetime.now(timezone.utc).isoformat()
@@ -1670,6 +1764,12 @@ def main(argv: list[str] | None = None) -> int:
     eval_parser = sub.add_parser("evaluate", help="report on an artifact or profile")
     eval_parser.add_argument("artifact", type=Path)
 
+    export_parser = sub.add_parser(
+        "export-profile",
+        help="export a frozen profile from a distilled artifact without provider calls",
+    )
+    export_parser.add_argument("artifact", type=Path)
+
     args = parser.parse_args(argv)
     if args.command == "run":
         run_curriculum(
@@ -1685,6 +1785,11 @@ def main(argv: list[str] | None = None) -> int:
             dry_run=args.dry_run,
             verbose=args.verbose,
         )
+        return 0
+
+    if args.command == "export-profile":
+        profile_path = export_profile(resolve_path(args.artifact))
+        print(f"frozen profile: {profile_path}")
         return 0
 
     payload = json.loads(resolve_path(args.artifact).read_text(encoding="utf-8"))

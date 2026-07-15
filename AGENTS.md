@@ -441,11 +441,13 @@ pnpm bench:puzzle <puzzle.json> --model MODEL [--effort LEVEL] [--auth api|subsc
 #    either makes one bounded max-effort distillation stage or verifies `--profile` against that
 #    exact packet, freezes the result, then runs neutral/learned/v7 on holdout only (paid;
 #    resumable and checkpointed; --dry-run plans without provider calls). `--strategy-effort max`
-#    and `--play-effort` are both required;
+#    and `--play-effort` are both required. A distilled profile is written as soon as the strategy
+#    freezes; `export-profile` recovers the same profile offline from an older partial artifact.
 #    `evaluate` reports on an artifact or profile. Curriculum data never enters puzzles.
 pnpm bench:curriculum:lexicon [--lexique-source <lexique.tsv>] [--out <fr-lexicon.tsv.gz>]
 pnpm bench:curriculum:generate --from-output <generator-output.json> --seed 84 [--dry-run]
 pnpm bench:curriculum:run <manifest.json> --model MODEL --strategy-effort max --play-effort LEVEL [--profile <frozen-profile.json>] [--auth api|subscription] [--cap N] [--resume ARTIFACT] [--force] [--dry-run] [-v|--verbose]
+pnpm bench:curriculum:export-profile <partial-or-complete-artifact.json>
 pnpm bench:curriculum:evaluate <artifact-or-profile.json>
 
 # 6. (Lab-only, #86) Neutral holdout calibration. Build a >=45-puzzle candidate pool
@@ -584,7 +586,10 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   1–8 general single-line items capped at 2,000 total characters. Target/start/retained-evidence
   words (including hyphen segments) and copied sentence/evidence slug runs are rejected. Up to
   three standalone structured attempts retain every response/error, token usage, and duration;
-  each attempt and a successful frozen strategy are checkpointed atomically.
+  each attempt and a successful frozen strategy are checkpointed atomically. The reusable schema-v3
+  profile is written immediately when that strategy freezes, before any holdout call; the offline
+  idempotent `export-profile` command reconstructs it from an older partial prompt-v5 artifact using
+  only the artifact's pinned config/evidence identities, strategy, hash, and completion timestamp.
   There are zero curriculum plays, retrospectives, synthesis calls, policy fields, semantic-family
   labels, or strategy mutation. Once frozen, five untouched holdout puzzles run 3 times under each
   neutral/learned/v7 condition (45 runs): all use ordinary `llm_play.play_puzzle`, fresh provider
