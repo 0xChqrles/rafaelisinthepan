@@ -32,12 +32,19 @@ from curriculum_run import (  # noqa: E402
     derive_run_metrics,
 )
 from llm_play import (  # noqa: E402
+    NoProgressReplyError,
     PROMPT_VERSION,
+    UnparseableReplyError,
     _transport_name,
     _validate_provider_effort,
     load_vocab,
+    play_puzzle,
     provider_reply,
     select_model,
+)
+from strategy_evidence import (  # noqa: E402
+    PACKET_SCHEMA_VERSION,
+    build_evidence_packet,
 )
 
 
@@ -222,14 +229,21 @@ def load_candidate_pool(
     }
     if counts != expected_counts:
         raise CalibrationError("candidate pool counts do not match its records")
+    if len(curriculum) != cd.CURRICULUM_COUNT:
+        raise CalibrationError(
+            f"candidate pool needs exactly {cd.CURRICULUM_COUNT} curriculum puzzles"
+        )
     minimum = manifest.get("minimum_calibration_candidates")
     if (
         not isinstance(minimum, int)
         or isinstance(minimum, bool)
-        or minimum <= 0
+        or minimum < cd.MIN_CALIBRATION_CANDIDATES
         or len(candidates) < minimum
     ):
-        raise CalibrationError("candidate pool does not satisfy its minimum size")
+        raise CalibrationError(
+            "candidate pool must declare and contain at least "
+            f"{cd.MIN_CALIBRATION_CANDIDATES} calibration candidates"
+        )
     candidate_ids = [record.get("candidate_id") for record in candidates]
     if any(not isinstance(value, str) or not value for value in candidate_ids) or len(
         candidate_ids
@@ -969,14 +983,93 @@ def _validate_state(
 def _validate_completed_runs(
     state: dict[str, Any], manifest_path: Path, vocab: set[str]
 ) -> None:
+    completed_run_count = sum(
+        len(model.get("runs", []))
+        for candidate in state["candidates"]
+        for model in candidate["models"]
+    )
+    if completed_run_count:
+        verifications = state.get("auth_verifications")
+        if not isinstance(verifications, list) or not verifications:
+            raise CalibrationError("calibration authentication verification is missing")
+        expected_models = {
+            row["model_id"]: row for row in state["config"]["roster"]
+        }
+        for batch in verifications:
+            if (
+                not isinstance(batch, dict)
+                or not isinstance(batch.get("verified_at"), str)
+                or not batch["verified_at"]
+            ):
+                raise CalibrationError(
+                    "calibration authentication verification is malformed"
+                )
+            rows = batch.get("models")
+            if (
+                not isinstance(rows, list)
+                or len(rows) != len(expected_models)
+                or {
+                    row.get("model_id") for row in rows if isinstance(row, dict)
+                }
+                != set(expected_models)
+            ):
+                raise CalibrationError(
+                    "calibration authentication verification roster changed"
+                )
+            for row in rows:
+                expected = expected_models[row["model_id"]]
+                if row.get("mode") != expected["auth"] or row.get("status") not in {
+                    "verified_key_present",
+                    "verified",
+                }:
+                    raise CalibrationError(
+                        "calibration authentication verification is incomplete"
+                    )
+
     dataset_dir = manifest_path.parent
     for candidate in state["candidates"]:
         puzzle = load_json(dataset_dir / candidate["path"])
         for model in candidate["models"]:
             for run in model["runs"]:
-                tried_words = tuple(run.get("tried_words", []))
+                tried_word_rows = run.get("tried_words")
+                if not isinstance(tried_word_rows, list) or not all(
+                    isinstance(word, str) and word for word in tried_word_rows
+                ):
+                    raise CalibrationError("recorded calibration words are missing")
+                tried_words = tuple(tried_word_rows)
                 if run.get("counted_tries") != len(tried_words):
                     raise CalibrationError("recorded calibration count/word mismatch")
+                cap = run.get("cap")
+                if cap != state["config"]["cap"]:
+                    raise CalibrationError("recorded calibration cap identity changed")
+                turns = run.get("turns")
+                if (
+                    not isinstance(turns, int)
+                    or isinstance(turns, bool)
+                    or turns <= 0
+                    or turns < len(tried_words)
+                ):
+                    raise CalibrationError("recorded calibration turn count is malformed")
+                for field in ("duration", "wall_duration"):
+                    value = run.get(field)
+                    if (
+                        not isinstance(value, (int, float))
+                        or isinstance(value, bool)
+                        or not math.isfinite(value)
+                        or value < 0
+                    ):
+                        raise CalibrationError(
+                            f"recorded calibration {field} is missing or malformed"
+                        )
+                token_usage = run.get("turn_token_usage")
+                if (
+                    not isinstance(token_usage, list)
+                    or len(token_usage) != turns
+                    or not all(isinstance(item, dict) and item for item in token_usage)
+                ):
+                    raise CalibrationError(
+                        "recorded calibration token usage is missing or incomplete"
+                    )
                 metrics = derive_run_metrics(puzzle, vocab, tried_words)
                 if run.get("metrics") != metrics:
                     raise CalibrationError("recorded calibration rank trace changed")
@@ -984,9 +1077,24 @@ def _validate_completed_runs(
                 if run.get("tries") != expected_tries:
                     raise CalibrationError("recorded calibration score does not replay")
                 conversation = run.get("conversation")
-                if not isinstance(conversation, list) or not conversation:
+                if (
+                    not isinstance(conversation, list)
+                    or not conversation
+                    or not all(
+                        isinstance(message, dict)
+                        and message.get("role") in {"user", "assistant"}
+                        and isinstance(message.get("content"), str)
+                        and bool(message["content"])
+                        for message in conversation
+                    )
+                    or conversation[0]["role"] != "user"
+                    or sum(
+                        message["role"] == "assistant" for message in conversation
+                    )
+                    != turns
+                ):
                     raise CalibrationError(
-                        "recorded calibration conversation is missing"
+                        "recorded calibration conversation is missing or malformed"
                     )
                 opening = conversation[0].get("content")
                 if not isinstance(opening, str) or hashlib.sha256(
@@ -998,6 +1106,61 @@ def _validate_completed_runs(
                         raise CalibrationError(
                             f"recorded calibration run changed {key} identity"
                         )
+                if not isinstance(run.get("completed_at"), str) or not run[
+                    "completed_at"
+                ]:
+                    raise CalibrationError(
+                        "recorded calibration completion identity is missing"
+                    )
+
+                def recorded_reply(messages: list[dict[str, str]]) -> str:
+                    if messages != conversation[: len(messages)]:
+                        raise CalibrationError(
+                            "recorded calibration transcript does not replay"
+                        )
+                    if len(messages) >= len(conversation):
+                        raise CalibrationError(
+                            "recorded calibration transcript ended before the run"
+                        )
+                    response = conversation[len(messages)]
+                    if response["role"] != "assistant":
+                        raise CalibrationError(
+                            "recorded calibration transcript role order changed"
+                        )
+                    return response["content"]
+
+                try:
+                    replayed = play_puzzle(
+                        puzzle,
+                        vocab,
+                        recorded_reply,
+                        cap=cap,
+                        strategy=None,
+                        rules_only=True,
+                    )
+                except UnparseableReplyError as exc:
+                    replayed = getattr(exc, "partial_result", None)
+                    termination_reason = "unparseable_replies"
+                except NoProgressReplyError as exc:
+                    replayed = getattr(exc, "partial_result", None)
+                    termination_reason = "no_progress_replies"
+                else:
+                    termination_reason = "solved" if replayed.tries is not None else "cap"
+                if replayed is None:
+                    raise CalibrationError(
+                        "recorded calibration transcript has no replayable result"
+                    )
+                if (
+                    list(replayed.conversation) != conversation
+                    or replayed.tried_words != tried_words
+                    or replayed.counted_tries != run["counted_tries"]
+                    or replayed.turns != turns
+                    or replayed.tries != run["tries"]
+                    or run.get("termination_reason") != termination_reason
+                ):
+                    raise CalibrationError(
+                        "recorded calibration transcript result changed on replay"
+                    )
 
 
 def calibration_plan(
@@ -1253,12 +1416,15 @@ def finalize_manifest(
     artifact_path: Path,
     *,
     out_path: Path | None = None,
+    vocab_loader: Callable[[str], set[str]] = load_vocab,
 ) -> Path:
     """Write a final 15+15 manifest with lean, hash-pinned calibration summaries."""
     pool_manifest_path = pool_manifest_path.resolve()
     artifact_path = artifact_path.resolve()
     manifest, content_sha, manifest_sha = load_candidate_pool(pool_manifest_path)
-    state = json.loads(artifact_path.read_text(encoding="utf-8"))
+    artifact_bytes = artifact_path.read_bytes()
+    state = json.loads(artifact_bytes.decode("utf-8"))
+    artifact_file_sha256 = hashlib.sha256(artifact_bytes).hexdigest()
     expected = _run_config(
         manifest,
         content_sha,
@@ -1271,6 +1437,11 @@ def finalize_manifest(
         manifest=manifest,
         expected_config=expected,
     )
+    _validate_completed_runs(
+        state, pool_manifest_path, vocab_loader(manifest["lang"])
+    )
+    if not isinstance(state.get("completed_at"), str) or not state["completed_at"]:
+        raise CalibrationError("calibration artifact is not marked complete")
     selection = state["selection"]
     if selection.get("status") != "selected":
         raise CalibrationError("calibration has no complete selected set")
@@ -1335,6 +1506,7 @@ def finalize_manifest(
         "canonical_metadata": manifest["canonical_metadata"],
         "frequency_bands": manifest["frequency_bands"],
         "start_band": manifest["start_band"],
+        "curriculum_base": copy.deepcopy(manifest["curriculum_base"]),
         "counts": {
             "puzzles": len(records),
             "curriculum": len(curriculum),
@@ -1345,6 +1517,7 @@ def finalize_manifest(
             "schema_version": CALIBRATION_SCHEMA_VERSION,
             "rule_version": CALIBRATION_RULE_VERSION,
             "artifact_sha256": state["hashes"]["artifact_sha256"],
+            "artifact_file_sha256": artifact_file_sha256,
             "content_sha256": state["hashes"]["content_sha256"],
             "selection_sha256": state["hashes"]["selection_sha256"],
             "candidate_pool_content_sha256": content_sha,
@@ -1360,6 +1533,19 @@ def finalize_manifest(
         "puzzles": records,
         "generated_at": _utc_now(),
     }
+    evidence_base = manifest["curriculum_base"]
+    calibrated["strategy_evidence"] = {
+        "schema_version": PACKET_SCHEMA_VERSION,
+        "dataset_id": evidence_base["dataset_id"],
+        "dataset_content_sha256": evidence_base["dataset_content_sha256"],
+    }
+    frozen_packet = build_evidence_packet(calibrated, pool_manifest_path.parent)
+    calibrated["strategy_evidence"].update(
+        {
+            "packet_sha256": frozen_packet.sha256,
+            "content_sha256": frozen_packet.content_sha256,
+        }
+    )
     calibrated["dataset_content_sha256"] = cd.dataset_content_sha256(calibrated)
     if out_path is None:
         destination = pool_manifest_path.with_name("manifest.json")

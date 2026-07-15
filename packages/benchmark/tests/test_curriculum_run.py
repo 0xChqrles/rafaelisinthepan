@@ -236,6 +236,71 @@ def test_full_run_distils_once_then_uses_only_fresh_one_word_holdout_contexts(
     assert profile["evidence_packet_sha256"] == state["evidence_packet"]["sha256"]
 
 
+def test_calibrated_holdout_reuses_frozen_profile_without_distillation(
+    dataset, tmp_path
+):
+    manifest_path, manifest = dataset
+    packet = cr.build_evidence_packet(manifest, manifest_path.parent)
+    prompt = cr.distillation_prompt(packet, play_effort="none")
+    profile = sp.build_profile(
+        strategy_id="fixture/claude-opus-4-8/frozen",
+        model_id="claude-opus-4-8",
+        provider="anthropic",
+        transport="api",
+        auth="api",
+        strategy_effort="max",
+        play_effort="none",
+        lang="fr",
+        dataset_id=manifest["dataset_id"],
+        dataset_sha256=manifest["dataset_content_sha256"],
+        evidence_packet_schema_version=cr.PACKET_SCHEMA_VERSION,
+        evidence_packet_sha256=packet.sha256,
+        distillation_prompt_sha256=hashlib.sha256(prompt.encode()).hexdigest(),
+        prompt_version=cr.PROMPT_VERSION,
+        curriculum_prompt_version=cr.CURRICULUM_PROMPT_VERSION,
+        created_at="2026-07-15T00:00:00+00:00",
+        final_strategy=SAFE_STRATEGY,
+    )
+    profile_path = tmp_path / "frozen.profile.json"
+    sp.write_profile(profile_path, profile)
+
+    manifest["strategy_evidence"] = {
+        "schema_version": cr.PACKET_SCHEMA_VERSION,
+        "dataset_id": manifest["dataset_id"],
+        "dataset_content_sha256": manifest["dataset_content_sha256"],
+        "packet_sha256": packet.sha256,
+        "content_sha256": packet.content_sha256,
+    }
+    manifest["dataset_content_sha256"] = cd.dataset_content_sha256(manifest)
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+
+    provider = _provider_for_full_run(manifest_path, manifest)
+    artifact = _run(
+        (manifest_path, manifest),
+        tmp_path,
+        provider,
+        frozen_profile=profile_path,
+    )
+    state = _state(artifact)
+
+    assert provider.prose_callers == []
+    assert [row["output"] for row in provider.constructions] == ["word"] * 9
+    assert state["config"]["strategy_source"] == "frozen_profile"
+    assert state["distillation"] == {
+        "status": "complete",
+        "source": "frozen_profile",
+        "attempts": [],
+        "strategy": SAFE_STRATEGY,
+        "completed_at": "2026-07-15T00:00:00+00:00",
+        "frozen_strategy_sha256": cr._strategy_sha256(SAFE_STRATEGY),
+    }
+    assert state["profile"]["path"] == str(profile_path)
+    assert state["profile"]["source"] == "frozen"
+    assert state["evaluation"]["cost_split"]["distillation"]["calls"] == 0
+
+
 def test_all_five_by_three_by_three_holdout_runs_use_fresh_identical_configs(
     dataset, tmp_path
 ):

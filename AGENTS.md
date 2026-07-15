@@ -438,21 +438,24 @@ pnpm bench:puzzle <puzzle.json> --model MODEL [--effort LEVEL] [--auth api|subsc
 #    POS/gender reference from cached Lexique + the reduced V. `generate` rebuilds the
 #    frozen dataset deterministically from the committed generator output (needs the fr embedding;
 #    --dry-run validates without building). `run` builds the curriculum-only evidence packet,
-#    makes one bounded max-effort strategy-distillation stage, freezes the result, then runs
-#    neutral/learned/v7 on holdout only (paid; resumable and checkpointed; --dry-run plans
-#    without provider calls). `--strategy-effort max` and `--play-effort` are both required;
+#    either makes one bounded max-effort distillation stage or verifies `--profile` against that
+#    exact packet, freezes the result, then runs neutral/learned/v7 on holdout only (paid;
+#    resumable and checkpointed; --dry-run plans without provider calls). `--strategy-effort max`
+#    and `--play-effort` are both required;
 #    `evaluate` reports on an artifact or profile. Curriculum data never enters puzzles.
 pnpm bench:curriculum:lexicon [--lexique-source <lexique.tsv>] [--out <fr-lexicon.tsv.gz>]
 pnpm bench:curriculum:generate --from-output <generator-output.json> --seed 84 [--dry-run]
-pnpm bench:curriculum:run <manifest.json> --model MODEL --strategy-effort max --play-effort LEVEL [--auth api|subscription] [--cap N] [--resume ARTIFACT] [--force] [--dry-run] [-v|--verbose]
+pnpm bench:curriculum:run <manifest.json> --model MODEL --strategy-effort max --play-effort LEVEL [--profile <frozen-profile.json>] [--auth api|subscription] [--cap N] [--resume ARTIFACT] [--force] [--dry-run] [-v|--verbose]
 pnpm bench:curriculum:evaluate <artifact-or-profile.json>
 
 # 6. (Lab-only, #86) Neutral holdout calibration. Build a >=45-puzzle candidate pool
 #    around the unchanged 15 curriculum puzzles; `run` fixes Sonnet 5 + GPT-5.6 Sol,
 #    medium effort, cap 75, and defaults to one checkpointed paid puzzle-run per command.
 #    `extend` records the explicit reason for a 3->5-run median without calling a provider.
-#    `finalize` writes the selected 15-puzzle (5/5/5) holdout manifest; it does not run
-#    neutral/learned/v7 evaluation. `--dry-run` writes nothing and makes no provider calls.
+#    `finalize` writes the selected 15-puzzle (5/5/5) holdout manifest, pins the exact
+#    artifact file and original curriculum evidence packet, and does not run evaluation.
+#    A later final evaluation must pass the matching frozen `--profile`; calibrated
+#    manifests cannot re-distil. `--dry-run` writes nothing and makes no provider calls.
 pnpm bench:curriculum:generate --from-output <larger-generator-output.json> --seed 86 --calibration-pool --curriculum-manifest <frozen-manifest.json> --dataset-id <dataset-id> [--dry-run]
 pnpm bench:curriculum:calibrate run <candidate-manifest.json> [--auth api|subscription] [--resume ARTIFACT] [--max-units N] [--all] [--dry-run] [-v|--verbose]
 pnpm bench:curriculum:calibrate extend <artifact.json> --candidate ID --model <SONNET-or-GPT-SOL> --reason <unstable-or-tier_boundary>
@@ -616,10 +619,14 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   overall. Artifacts under gitignored `benchmark/output/calibration/` pin pool/manifest/prompt/
   roster/config identities, every transcript/rank trace/token record/duration, one checkpoint per
   paid puzzle-run, derived summaries, selection, and stable artifact/content/selection hashes.
-  Final calibrated dataset manifests use schema v3, pin those hashes, and contain only lean
-  per-puzzle medians/difficulty/tier/run counts — calibration runs never enter evidence packets,
-  strategies, or final evaluation data. `strategy-fr-v1` and its pathological puzzle 20 remain
-  unchanged; no paid calibration has been executed or committed as part of the tooling.
+  The paid runner rejects anything below the fixed 15-curriculum/45-candidate production shape
+  before provider setup. Finalization replays every transcript and metric, requires complete
+  identity/token/duration/auth records, and writes schema v3 manifests that pin both the exact
+  artifact-file SHA and the byte-identical original curriculum evidence packet. They contain only
+  lean per-puzzle medians/difficulty/tier/run counts; calibration runs never enter evidence,
+  strategies, or final evaluation data. Calibrated evaluation accepts only a matching frozen
+  profile and makes zero distillation calls. `strategy-fr-v1` and its pathological puzzle 20
+  remain unchanged; no paid calibration has been executed or committed as part of the tooling.
 - **`gen_phrase` is fully interactive on a TTY (#5).** Anything not passed as a flag is
   prompted: the **sentence** (positional, now optional), **`--lang`**, and the optional
   **source metadata** — `--kind` (offers `KNOWN_KINDS` numbered, but free text is

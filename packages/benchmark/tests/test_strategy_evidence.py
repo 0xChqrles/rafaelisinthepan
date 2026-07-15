@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 
@@ -172,3 +173,17 @@ def test_committed_packet_has_exact_frozen_split_and_stable_identity():
         puzzle["number"] <= 15
         for puzzle in first.document["content"]["puzzles"]
     )
+
+    calibrated = copy.deepcopy(manifest)
+    calibrated["dataset_id"] = "strategy-fr-v2"
+    calibrated["dataset_content_sha256"] = "2" * 64
+    calibrated["strategy_evidence"] = {
+        "schema_version": se.PACKET_SCHEMA_VERSION,
+        "dataset_id": manifest["dataset_id"],
+        "dataset_content_sha256": manifest["dataset_content_sha256"],
+        "packet_sha256": first.sha256,
+        "content_sha256": first.content_sha256,
+    }
+    anchored = se.build_evidence_packet(calibrated, manifest_path.parent)
+    assert anchored.canonical_bytes == first.canonical_bytes
+    assert anchored.sha256 == "ff6117bb38efc44175302361e44371f4e640119264975834cdd90227f9944f5e"

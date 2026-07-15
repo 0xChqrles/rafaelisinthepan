@@ -168,9 +168,28 @@ def build_evidence_packet(
             f"manifest declares {expected} curriculum puzzles but contains {len(records)}"
         )
 
+    frozen_identity = manifest.get("strategy_evidence")
+    if frozen_identity is None:
+        evidence_dataset_id = manifest["dataset_id"]
+        evidence_dataset_sha256 = manifest["dataset_content_sha256"]
+    else:
+        if not isinstance(frozen_identity, dict):
+            raise ValueError("strategy_evidence must be an object")
+        if frozen_identity.get("schema_version") != PACKET_SCHEMA_VERSION:
+            raise ValueError("strategy_evidence has an unsupported packet schema")
+        evidence_dataset_id = frozen_identity.get("dataset_id")
+        evidence_dataset_sha256 = frozen_identity.get("dataset_content_sha256")
+        if not isinstance(evidence_dataset_id, str) or not evidence_dataset_id:
+            raise ValueError("strategy_evidence dataset_id is missing")
+        if (
+            not isinstance(evidence_dataset_sha256, str)
+            or len(evidence_dataset_sha256) != 64
+        ):
+            raise ValueError("strategy_evidence dataset content hash is malformed")
+
     content = {
-        "dataset_id": manifest["dataset_id"],
-        "dataset_content_sha256": manifest["dataset_content_sha256"],
+        "dataset_id": evidence_dataset_id,
+        "dataset_content_sha256": evidence_dataset_sha256,
         "lang": manifest["lang"],
         "curriculum_puzzle_count": len(records),
         "target_count": sum(len(record["targets"]) for record in records),
@@ -196,13 +215,24 @@ def build_evidence_packet(
         "content": content,
     }
     packet_bytes = canonical_json_bytes(document)
-    return EvidencePacket(
+    packet = EvidencePacket(
         document=document,
         canonical_bytes=packet_bytes,
         sha256=hashlib.sha256(packet_bytes).hexdigest(),
         content_sha256=content_sha,
         content_byte_count=len(content_bytes),
     )
+    if frozen_identity is not None:
+        for field, actual in (
+            ("packet_sha256", packet.sha256),
+            ("content_sha256", packet.content_sha256),
+        ):
+            expected_hash = frozen_identity.get(field)
+            if expected_hash is not None and expected_hash != actual:
+                raise ValueError(
+                    f"strategy_evidence {field} does not match the frozen packet"
+                )
+    return packet
 
 
 def write_evidence_packet(path: Path, packet: EvidencePacket) -> None:

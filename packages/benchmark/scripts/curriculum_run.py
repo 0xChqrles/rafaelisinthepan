@@ -2,8 +2,9 @@
 
 One model receives one deterministic packet built exclusively from the 15
 curriculum puzzles.  A max-effort prose stage distils compact operational
-guidance; the guidance is then frozen while neutral, learned, and exact-v7 arms
-play the five untouched holdout puzzles through the ordinary one-word referee.
+guidance, or a calibrated dataset reuses the compatible frozen profile from that
+exact packet; the guidance is then frozen while neutral, learned, and exact-v7
+arms play untouched holdout puzzles through the ordinary one-word referee.
 
 Every completed paid unit is checkpointed atomically.  Prompt-v2/v3/v4
 interactive artifacts remain readable by ``evaluate`` but cannot be resumed
@@ -748,12 +749,17 @@ def _validate_distillation_state(state: dict[str, Any]) -> None:
         range(1, len(attempts) + 1)
     ):
         raise CurriculumError("artifact distillation attempt numbers are not contiguous")
-    if stage["status"] == "complete" and not attempts:
+    frozen_profile_source = stage.get("source") == "frozen_profile"
+    if frozen_profile_source and (stage["status"] != "complete" or attempts):
+        raise CurriculumError(
+            "artifact frozen-profile strategy must be complete without distillation attempts"
+        )
+    if stage["status"] == "complete" and not attempts and not frozen_profile_source:
         raise CurriculumError("artifact marks distillation complete without an attempt")
     if stage["status"] == "failed" and len(attempts) != STRUCTURED_MAX_ATTEMPTS:
         raise CurriculumError("artifact marks distillation failed before exhausting attempts")
     completed_plays = _completed_play_count(state)
-    if completed_plays:
+    if completed_plays or frozen_profile_source:
         if stage["status"] != "complete":
             raise CurriculumError("artifact contains holdout play before strategy freeze")
         try:
@@ -894,6 +900,7 @@ def run_curriculum(
     vocab_loader: Callable[[str], set[str]] = load_vocab,
     output_root: Path = OUTPUT_ROOT,
     v7_strategy: str | None = None,
+    frozen_profile: Path | None = None,
 ) -> Path | None:
     if strategy_effort != REQUIRED_STRATEGY_EFFORT:
         raise CurriculumError(
@@ -922,6 +929,51 @@ def run_curriculum(
     packet = build_evidence_packet(manifest, dataset_dir)
     prompt = distillation_prompt(packet, play_effort=play_effort)
     prompt_sha = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    profile: dict[str, Any] | None = None
+    profile_path: Path | None = None
+    profile_sha: str | None = None
+    if frozen_profile is not None:
+        profile_path = resolve_path(frozen_profile).resolve()
+        profile = sp.load_profile(profile_path)
+        try:
+            sp.assert_profile_compatible(
+                profile,
+                model_id=config["model_id"],
+                transport=transport,
+                auth=auth,
+                strategy_effort=strategy_effort,
+                play_effort=play_effort,
+            )
+        except ValueError as exc:
+            raise CurriculumError(str(exc)) from exc
+        packet_identity = packet.document["content"]
+        expected_profile_identity = {
+            "provider": config["provider"],
+            "lang": manifest["lang"],
+            "dataset_id": packet_identity["dataset_id"],
+            "dataset_sha256": packet_identity["dataset_content_sha256"],
+            "evidence_packet_schema_version": PACKET_SCHEMA_VERSION,
+            "evidence_packet_sha256": packet.sha256,
+            "distillation_prompt_sha256": prompt_sha,
+            "prompt_version": PROMPT_VERSION,
+            "curriculum_prompt_version": CURRICULUM_PROMPT_VERSION,
+        }
+        differing = [
+            field
+            for field, expected_value in expected_profile_identity.items()
+            if profile.get(field) != expected_value
+        ]
+        if differing:
+            raise CurriculumError(
+                "frozen profile does not match the pinned curriculum evidence "
+                f"({', '.join(differing)})"
+            )
+        profile_sha = _sha256_file(profile_path)
+    elif "strategy_evidence" in manifest:
+        raise CurriculumError(
+            "calibrated datasets require --profile with a frozen strategy; "
+            "re-distillation is forbidden"
+        )
     frozen_v7 = v7_strategy if v7_strategy is not None else load_v7_strategy()
     v7_sha = hashlib.sha256(frozen_v7.encode("utf-8")).hexdigest()
 
@@ -948,6 +1000,14 @@ def run_curriculum(
         "conditions": list(CONDITIONS),
         "v7_strategy_sha256": v7_sha,
     }
+    if profile is not None:
+        run_config.update(
+            {
+                "strategy_source": "frozen_profile",
+                "frozen_profile_sha256": profile_sha,
+                "frozen_profile_strategy_id": profile["strategy_id"],
+            }
+        )
 
     new_artifact = resume is None
     if resume is not None:
@@ -978,15 +1038,56 @@ def run_curriculum(
         evidence_path = artifact_path.with_name(
             f"{artifact_path.stem}.evidence.json.gz"
         )
+        distillation = (
+            {
+                "status": "complete",
+                "source": "frozen_profile",
+                "attempts": [],
+                "strategy": list(profile["final_strategy"]),
+                "completed_at": profile["created_at"],
+                "frozen_strategy_sha256": _strategy_sha256(
+                    profile["final_strategy"]
+                ),
+            }
+            if profile is not None
+            else {"status": "pending", "attempts": []}
+        )
         state = {
             "config": run_config,
             "manifest_sha256": manifest_sha,
             "started_at": datetime.now(timezone.utc).isoformat(),
             "evidence_packet": _evidence_metadata(packet, evidence_path),
             "auth_verifications": [],
-            "distillation": {"status": "pending", "attempts": []},
+            "distillation": distillation,
             "holdout": {condition: [] for condition in CONDITIONS},
         }
+        if profile is not None:
+            state["profile"] = {
+                "path": str(profile_path),
+                "sha256": profile_sha,
+                "strategy_id": profile["strategy_id"],
+                "source": "frozen",
+            }
+
+    if profile is not None:
+        expected_profile_record = {
+            "path": str(profile_path),
+            "sha256": profile_sha,
+            "strategy_id": profile["strategy_id"],
+            "source": "frozen",
+        }
+        if state.get("profile") != expected_profile_record:
+            raise CurriculumError(
+                "artifact frozen-profile reference does not match this invocation"
+            )
+        stage = state.get("distillation", {})
+        if (
+            stage.get("strategy") != profile["final_strategy"]
+            or stage.get("completed_at") != profile["created_at"]
+        ):
+            raise CurriculumError(
+                "artifact frozen strategy does not match the pinned profile"
+            )
 
     _validate_holdout_identity(state, holdout_records)
     _validate_distillation_state(state)
@@ -1028,6 +1129,9 @@ def run_curriculum(
                             "effort": strategy_effort,
                             "maximum_attempts": STRUCTURED_MAX_ATTEMPTS,
                             "fresh_context_per_attempt": True,
+                            "source": run_config.get(
+                                "strategy_source", "distillation"
+                            ),
                         },
                         "holdout": [
                             {
@@ -1071,17 +1175,20 @@ def run_curriculum(
         completed_plays=completed_plays,
         total_plays=total_plays,
     )
-    _analysis, strategy_items = _distil_strategy(
-        state=state,
-        artifact_path=artifact_path,
-        packet=packet,
-        prompt=prompt,
-        config=config,
-        api_key=api_key,
-        auth=auth,
-        provider_factory=provider_factory,
-        reporter=reporter,
-    )
+    if profile is None:
+        _analysis, strategy_items = _distil_strategy(
+            state=state,
+            artifact_path=artifact_path,
+            packet=packet,
+            prompt=prompt,
+            config=config,
+            api_key=api_key,
+            auth=auth,
+            provider_factory=provider_factory,
+            reporter=reporter,
+        )
+    else:
+        strategy_items = list(profile["final_strategy"])
     learned_strategy = sp.strategy_text(strategy_items)
     frozen_strategy_sha = _strategy_sha256(strategy_items)
     prior_strategy_sha = state["distillation"].get("frozen_strategy_sha256")
@@ -1162,34 +1269,37 @@ def run_curriculum(
                     run_number=run_number,
                 )
 
-    profile = sp.build_profile(
-        strategy_id=(
-            f"{manifest['dataset_id']}/{config['model_id']}/{packet.sha256[:12]}"
-        ),
-        model_id=config["model_id"],
-        provider=config["provider"],
-        transport=transport,
-        auth=auth,
-        strategy_effort=strategy_effort,
-        play_effort=play_effort,
-        lang=manifest["lang"],
-        dataset_id=manifest["dataset_id"],
-        dataset_sha256=dataset_sha,
-        evidence_packet_schema_version=PACKET_SCHEMA_VERSION,
-        evidence_packet_sha256=packet.sha256,
-        distillation_prompt_sha256=prompt_sha,
-        prompt_version=PROMPT_VERSION,
-        curriculum_prompt_version=CURRICULUM_PROMPT_VERSION,
-        created_at=state["distillation"]["completed_at"],
-        final_strategy=strategy_items,
-    )
-    profile_path = artifact_path.with_suffix(".profile.json")
-    sp.write_profile(profile_path, profile)
-    state["profile"] = {
-        "path": str(profile_path),
-        "sha256": _sha256_file(profile_path),
-        "strategy_id": profile["strategy_id"],
-    }
+    if profile is None:
+        profile = sp.build_profile(
+            strategy_id=(
+                f"{manifest['dataset_id']}/{config['model_id']}/{packet.sha256[:12]}"
+            ),
+            model_id=config["model_id"],
+            provider=config["provider"],
+            transport=transport,
+            auth=auth,
+            strategy_effort=strategy_effort,
+            play_effort=play_effort,
+            lang=manifest["lang"],
+            dataset_id=manifest["dataset_id"],
+            dataset_sha256=dataset_sha,
+            evidence_packet_schema_version=PACKET_SCHEMA_VERSION,
+            evidence_packet_sha256=packet.sha256,
+            distillation_prompt_sha256=prompt_sha,
+            prompt_version=PROMPT_VERSION,
+            curriculum_prompt_version=CURRICULUM_PROMPT_VERSION,
+            created_at=state["distillation"]["completed_at"],
+            final_strategy=strategy_items,
+        )
+        profile_path = artifact_path.with_suffix(".profile.json")
+        sp.write_profile(profile_path, profile)
+        state["profile"] = {
+            "path": str(profile_path),
+            "sha256": _sha256_file(profile_path),
+            "strategy_id": profile["strategy_id"],
+            "source": "distilled",
+        }
+    assert profile_path is not None
     state["evaluation"] = evaluate_artifact(state)
     state["completed_at"] = datetime.now(timezone.utc).isoformat()
     save_artifact(artifact_path, state)
@@ -1512,7 +1622,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
 
     run_parser = sub.add_parser(
-        "run", help="distil one strategy and run frozen holdout arms"
+        "run", help="distil or reuse one strategy and run frozen holdout arms"
     )
     run_parser.add_argument("manifest", type=Path)
     run_parser.add_argument("--model", required=True)
@@ -1530,6 +1640,11 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument("--auth", choices=("api", "subscription"), default="api")
     run_parser.add_argument("--cap", type=int, default=DEFAULT_CAP)
     run_parser.add_argument("--resume", type=Path)
+    run_parser.add_argument(
+        "--profile",
+        type=Path,
+        help="reuse a compatible frozen profile and make zero distillation calls",
+    )
     run_parser.add_argument(
         "--force",
         action="store_true",
@@ -1556,6 +1671,7 @@ def main(argv: list[str] | None = None) -> int:
             auth=args.auth,
             cap=args.cap,
             resume=resolve_path(args.resume) if args.resume else None,
+            frozen_profile=resolve_path(args.profile) if args.profile else None,
             force=args.force,
             dry_run=args.dry_run,
             verbose=args.verbose,

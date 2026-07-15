@@ -15,6 +15,7 @@ import curriculum_dataset as cd
 from curriculum_io import sha256_bytes, write_deterministic_gzip
 import curriculum_run as cr
 from slug import slug
+import strategy_profiles as sp
 from strategy_evidence import build_evidence_packet
 
 
@@ -356,47 +357,63 @@ def _write_pool(
     return path
 
 
-def _one_candidate_pool(tmp_path: Path) -> tuple[Path, list[str], set[str]]:
+def _runner_pool(
+    tmp_path: Path,
+    *,
+    curriculum_count: int = cd.CURRICULUM_COUNT,
+    candidate_count: int = cd.MIN_CALIBRATION_CANDIDATES,
+    minimum_candidates: int = cd.MIN_CALIBRATION_CANDIDATES,
+) -> tuple[Path, list[str], set[str]]:
     root = tmp_path / "pool"
-    curriculum_words = ["ancien", "calme", "marche"]
-    candidate_words = ["rivage", "brume", "danser"]
-    curriculum_path = root / "puzzles" / "curriculum.json.gz"
-    candidate_path = root / "puzzles" / "candidate.json.gz"
-    curriculum_sha = _write_puzzle(curriculum_path, _puzzle(curriculum_words))
-    candidate_sha = _write_puzzle(candidate_path, _puzzle(candidate_words))
-    curriculum = [
-        {
-            "number": 1,
-            "split": "curriculum",
-            "path": "puzzles/curriculum.json.gz",
-            "sha256": curriculum_sha,
-            "sentence": " ".join(curriculum_words),
-            "targets": _target_metadata(curriculum_words, "curriculum"),
-        }
-    ]
-    candidates = [
-        {
-            "candidate_id": hashlib.sha256(
-                " ".join(candidate_words).encode()
-            ).hexdigest(),
-            "pool_index": 1,
-            "split": cd.CALIBRATION_CANDIDATE_SPLIT,
-            "path": "puzzles/candidate.json.gz",
-            "sha256": candidate_sha,
-            "sentence": " ".join(candidate_words),
-            "targets": _target_metadata(candidate_words, "candidate"),
-        }
-    ]
+    curriculum = []
+    candidates = []
+    candidate_words_by_id = {}
+    vocab = {slug(f"depart{_alpha(index)}") for index in range(3)}
+    word_counter = 0
+    for number in range(1, curriculum_count + 1):
+        words = [f"cours{_alpha(word_counter + offset)}" for offset in range(3)]
+        word_counter += 3
+        relative = f"puzzles/curriculum-{number:03d}.json.gz"
+        sha = _write_puzzle(root / relative, _puzzle(words))
+        curriculum.append(
+            {
+                "number": number,
+                "split": "curriculum",
+                "path": relative,
+                "sha256": sha,
+                "sentence": " ".join(words),
+                "targets": _target_metadata(words, f"curriculum{number}"),
+            }
+        )
+        vocab.update(map(slug, words))
+    for pool_index in range(1, candidate_count + 1):
+        words = [f"cible{_alpha(word_counter + offset)}" for offset in range(3)]
+        word_counter += 3
+        sentence = " ".join(words)
+        candidate_id = hashlib.sha256(sentence.encode()).hexdigest()
+        relative = f"puzzles/candidate-{pool_index:03d}.json.gz"
+        sha = _write_puzzle(root / relative, _puzzle(words))
+        candidates.append(
+            {
+                "candidate_id": candidate_id,
+                "pool_index": pool_index,
+                "split": cd.CALIBRATION_CANDIDATE_SPLIT,
+                "path": relative,
+                "sha256": sha,
+                "sentence": sentence,
+                "targets": _target_metadata(words, f"candidate{pool_index}"),
+            }
+        )
+        candidate_words_by_id[candidate_id] = words
+        vocab.update(map(slug, words))
     path = _write_pool(
         root,
         curriculum_records=curriculum,
         candidate_records=candidates,
-        minimum_candidates=1,
+        minimum_candidates=minimum_candidates,
     )
-    vocab = {
-        slug(word) for word in curriculum_words + candidate_words for word in (word,)
-    } | {slug(f"depart{_alpha(index)}") for index in range(3)}
-    return path, candidate_words, vocab
+    first_candidate_id = min(candidate_words_by_id)
+    return path, candidate_words_by_id[first_candidate_id], vocab
 
 
 class ScriptedProvider:
@@ -432,7 +449,7 @@ class ScriptedProvider:
 
 
 def test_dry_run_plans_fixed_roster_and_makes_no_provider_or_vocab_calls(tmp_path):
-    manifest_path, _words, _vocab = _one_candidate_pool(tmp_path)
+    manifest_path, _words, _vocab = _runner_pool(tmp_path)
 
     def explode(*_args, **_kwargs):
         raise AssertionError("dry-run made an external call")
@@ -457,10 +474,43 @@ def test_dry_run_plans_fixed_roster_and_makes_no_provider_or_vocab_calls(tmp_pat
     assert not (tmp_path / "never-written.json").exists()
 
 
+@pytest.mark.parametrize(
+    ("curriculum_count", "candidate_count", "minimum_candidates", "message"),
+    [
+        (14, 45, 45, "exactly 15 curriculum"),
+        (15, 44, 44, "at least 45 calibration candidates"),
+    ],
+)
+def test_runner_rejects_undersized_pools_before_any_external_call(
+    tmp_path,
+    curriculum_count,
+    candidate_count,
+    minimum_candidates,
+    message,
+):
+    manifest_path, _words, _vocab = _runner_pool(
+        tmp_path,
+        curriculum_count=curriculum_count,
+        candidate_count=candidate_count,
+        minimum_candidates=minimum_candidates,
+    )
+
+    def explode(*_args, **_kwargs):
+        raise AssertionError("invalid pool reached an external call")
+
+    with pytest.raises(cal.CalibrationError, match=message):
+        cal.run_calibration(
+            manifest_path,
+            maximum_units=1,
+            provider_factory=explode,
+            vocab_loader=explode,
+        )
+
+
 def test_checkpointed_resume_repeats_no_completed_paid_run(tmp_path, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-test")
     monkeypatch.setenv("OPENAI_API_KEY", "openai-test")
-    manifest_path, words, vocab = _one_candidate_pool(tmp_path)
+    manifest_path, words, vocab = _runner_pool(tmp_path)
     artifact = tmp_path / "calibration.json"
     first_provider = ScriptedProvider(words)
 
@@ -518,7 +568,7 @@ def test_extension_is_offline_auditable_and_adds_exactly_two_pending_runs(
 ):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-test")
     monkeypatch.setenv("OPENAI_API_KEY", "openai-test")
-    manifest_path, words, vocab = _one_candidate_pool(tmp_path)
+    manifest_path, words, vocab = _runner_pool(tmp_path)
     artifact = tmp_path / "calibration.json"
     cal.run_calibration(
         manifest_path,
@@ -527,7 +577,9 @@ def test_extension_is_offline_auditable_and_adds_exactly_two_pending_runs(
         provider_factory=ScriptedProvider(words),
         vocab_loader=lambda _lang: vocab,
     )
-    candidate_id = json.loads(artifact.read_text())["candidates"][0]["candidate_id"]
+    before = json.loads(artifact.read_text())
+    candidate_id = before["candidates"][0]["candidate_id"]
+    pending_before = before["selection"]["pending_paid_units"]
 
     cal.request_extension(
         artifact,
@@ -542,7 +594,7 @@ def test_extension_is_offline_auditable_and_adds_exactly_two_pending_runs(
     assert sonnet["extension"]["reason"] == "unstable"
     assert len(sonnet["runs"]) == 3
     assert state["selection"]["status"] == "pending"
-    assert state["selection"]["pending_paid_units"] == 5
+    assert state["selection"]["pending_paid_units"] == pending_before + 2
 
 
 def test_artifact_and_content_hashes_ignore_wall_clock_noise_but_pin_results():
@@ -592,7 +644,7 @@ def test_artifact_and_content_hashes_ignore_wall_clock_noise_but_pin_results():
     assert changed["hashes"]["content_sha256"] != base["hashes"]["content_sha256"]
 
 
-def _large_complete_pool(tmp_path: Path) -> tuple[Path, Path, str]:
+def _large_complete_pool(tmp_path: Path) -> tuple[Path, Path, str, set[str]]:
     root = tmp_path / "large-pool"
     curriculum = []
     word_counter = 0
@@ -614,7 +666,17 @@ def _large_complete_pool(tmp_path: Path) -> tuple[Path, Path, str]:
 
     candidates = []
     difficulty: dict[str, int] = {}
+    candidate_words: dict[str, list[str]] = {}
     selected_canary = ""
+    vocab = {
+        slug(target["word"])
+        for record in curriculum
+        for target in record["targets"]
+    } | {
+        slug(target["start"])
+        for record in curriculum
+        for target in record["targets"]
+    }
     low_positions = {"easy": "adverb", "medium": "verb", "difficult": "adjective"}
     for tier_index, tier in enumerate(cal.TIER_ORDER):
         balanced = _balanced_targets(
@@ -670,6 +732,9 @@ def _large_complete_pool(tmp_path: Path) -> tuple[Path, Path, str]:
                 }
             )
             difficulty[candidate_id] = score
+            candidate_words[candidate_id] = words
+            vocab.update(slug(target["word"]) for target in targets)
+            vocab.update(slug(target["start"]) for target in targets)
             if tier == "easy" and local_index == 0:
                 selected_canary = words[0]
 
@@ -686,13 +751,68 @@ def _large_complete_pool(tmp_path: Path) -> tuple[Path, Path, str]:
     checkpoint = 0
     for candidate in state["candidates"]:
         score = difficulty[candidate["candidate_id"]]
+        words = candidate_words[candidate["candidate_id"]]
+        filler_prefix = "".join(
+            char for char in candidate["candidate_id"] if char.isalpha()
+        )[:8]
+        filler_words = [
+            f"essai{filler_prefix}{_alpha(index)}"
+            for index in range(score - len(words))
+        ]
+        guesses = filler_words + words
+        vocab.update(map(slug, filler_words))
+        puzzle = cd.load_puzzle_json(pool_path.parent / candidate["path"])
+        template = cr._play_once(
+            puzzle=puzzle,
+            vocab=vocab,
+            strategy=None,
+            config={
+                "model_id": candidate["models"][0]["model_id"],
+                "provider": candidate["models"][0]["provider"],
+            },
+            api_key=None,
+            play_effort=cal.CALIBRATION_EFFORT,
+            auth="api",
+            cap=cal.CALIBRATION_CAP,
+            provider_factory=ScriptedProvider(guesses),
+            on_try=lambda _progress: None,
+        )
         for model in candidate["models"]:
             model["runs"] = []
             for run_number in range(1, 4):
                 checkpoint += 1
-                model["runs"].append(
-                    {"number": run_number, "tries": score, "checkpoint": checkpoint}
+                run = copy.deepcopy(template)
+                opening = run["conversation"][0]["content"]
+                run.update(
+                    {
+                        "number": run_number,
+                        "model_id": model["model_id"],
+                        "provider": model["provider"],
+                        "transport": model["transport"],
+                        "auth": model["auth"],
+                        "effort": model["effort"],
+                        "cap": cal.CALIBRATION_CAP,
+                        "opening_prompt_sha256": hashlib.sha256(
+                            opening.encode()
+                        ).hexdigest(),
+                        "checkpoint": checkpoint,
+                        "completed_at": "2026-07-15T00:00:00+00:00",
+                    }
                 )
+                model["runs"].append(run)
+    state["auth_verifications"] = [
+        {
+            "verified_at": "2026-07-15T00:00:00+00:00",
+            "models": [
+                {
+                    "model_id": model["model_id"],
+                    "mode": model["auth"],
+                    "status": "verified_key_present",
+                }
+                for model in state["config"]["roster"]
+            ],
+        }
+    ]
     state["checkpoint"] = {
         "sequence": checkpoint,
         "completed_paid_units": checkpoint,
@@ -700,16 +820,19 @@ def _large_complete_pool(tmp_path: Path) -> tuple[Path, Path, str]:
     }
     cal._refresh_derived(state)
     assert state["selection"]["status"] == "selected"
+    state["completed_at"] = "2026-07-15T00:00:00+00:00"
     artifact = tmp_path / "complete-calibration.json"
     cal.save_artifact(artifact, state)
-    return pool_path, artifact, selected_canary
+    return pool_path, artifact, selected_canary, vocab
 
 
 def test_final_manifest_pins_calibration_without_leaking_runs_into_evidence(
     tmp_path, capsys
 ):
-    pool_path, artifact, selected_canary = _large_complete_pool(tmp_path)
-    final_path = cal.finalize_manifest(pool_path, artifact)
+    pool_path, artifact, selected_canary, vocab = _large_complete_pool(tmp_path)
+    final_path = cal.finalize_manifest(
+        pool_path, artifact, vocab_loader=lambda _lang: vocab
+    )
     manifest = json.loads(final_path.read_text())
     state = json.loads(artifact.read_text())
 
@@ -722,10 +845,18 @@ def test_final_manifest_pins_calibration_without_leaking_runs_into_evidence(
     assert (
         manifest["calibration"]["artifact_sha256"] == state["hashes"]["artifact_sha256"]
     )
+    assert manifest["calibration"]["artifact_file_sha256"] == cal._sha256_file(
+        artifact
+    )
     assert (
         manifest["calibration"]["content_sha256"] == state["hashes"]["content_sha256"]
     )
     assert manifest["dataset_content_sha256"] == cd.dataset_content_sha256(manifest)
+    changed_file_pin = copy.deepcopy(manifest)
+    changed_file_pin["calibration"]["artifact_file_sha256"] = "0" * 64
+    assert cd.dataset_content_sha256(changed_file_pin) == manifest[
+        "dataset_content_sha256"
+    ]
     changed_summary = copy.deepcopy(manifest)
     changed_summary["puzzles"][15]["calibration"]["difficulty"] += 1
     assert (
@@ -740,9 +871,29 @@ def test_final_manifest_pins_calibration_without_leaking_runs_into_evidence(
 
     loaded, dataset_sha, _manifest_sha = cr.load_manifest(final_path)
     packet = build_evidence_packet(loaded, final_path.parent)
+    pool_manifest = json.loads(pool_path.read_text())
+    curriculum = [
+        record
+        for record in pool_manifest["puzzles"]
+        if record["split"] == "curriculum"
+    ]
+    base_packet = build_evidence_packet(
+        {
+            "dataset_id": pool_manifest["curriculum_base"]["dataset_id"],
+            "dataset_content_sha256": pool_manifest["curriculum_base"][
+                "dataset_content_sha256"
+            ],
+            "lang": "fr",
+            "counts": {"puzzles": 15, "curriculum": 15, "holdout": 0},
+            "puzzles": curriculum,
+        },
+        final_path.parent,
+    )
     prompt = cr.distillation_prompt(packet, play_effort="medium")
     packet_text = packet.canonical_bytes.decode()
     assert dataset_sha == manifest["dataset_content_sha256"]
+    assert packet.canonical_bytes == base_packet.canonical_bytes
+    assert manifest["strategy_evidence"]["packet_sha256"] == packet.sha256
     assert selected_canary not in packet_text
     assert selected_canary not in prompt
     assert "model_medians" not in packet_text
@@ -751,7 +902,7 @@ def test_final_manifest_pins_calibration_without_leaking_runs_into_evidence(
     def explode(*_args, **_kwargs):
         raise AssertionError("final-evaluation dry-run made a provider/vocab call")
 
-    assert (
+    with pytest.raises(cr.CurriculumError, match="re-distillation is forbidden"):
         cr.run_curriculum(
             final_path,
             model="OPUS",
@@ -765,6 +916,44 @@ def test_final_manifest_pins_calibration_without_leaking_runs_into_evidence(
             output_root=tmp_path / "never-written",
             v7_strategy="frozen control",
         )
+    capsys.readouterr()
+
+    profile = sp.build_profile(
+        strategy_id="base/claude-opus-4-8/frozen",
+        model_id="claude-opus-4-8",
+        provider="anthropic",
+        transport="api",
+        auth="api",
+        strategy_effort="max",
+        play_effort="medium",
+        lang="fr",
+        dataset_id=packet.document["content"]["dataset_id"],
+        dataset_sha256=packet.document["content"]["dataset_content_sha256"],
+        evidence_packet_schema_version=1,
+        evidence_packet_sha256=packet.sha256,
+        distillation_prompt_sha256=hashlib.sha256(prompt.encode()).hexdigest(),
+        prompt_version=cr.PROMPT_VERSION,
+        curriculum_prompt_version=cr.CURRICULUM_PROMPT_VERSION,
+        created_at="2026-07-15T00:00:00+00:00",
+        final_strategy=["Use the frozen curriculum strategy."],
+    )
+    profile_path = tmp_path / "frozen.profile.json"
+    sp.write_profile(profile_path, profile)
+    assert (
+        cr.run_curriculum(
+            final_path,
+            model="OPUS",
+            strategy_effort="max",
+            play_effort="medium",
+            auth="api",
+            cap=300,
+            dry_run=True,
+            provider_factory=explode,
+            vocab_loader=explode,
+            output_root=tmp_path / "never-written",
+            v7_strategy="frozen control",
+            frozen_profile=profile_path,
+        )
         is None
     )
     final_plan = json.loads(capsys.readouterr().out)
@@ -775,3 +964,50 @@ def test_final_manifest_pins_calibration_without_leaking_runs_into_evidence(
         arm["fresh_context_per_run"] for arm in final_plan["call_plan"]["holdout"]
     )
     assert final_plan["curriculum_play_calls"] == 0
+    assert final_plan["planned_distillation_stage"] == 0
+    assert final_plan["config"]["strategy_source"] == "frozen_profile"
+    assert final_plan["call_plan"]["distillation"]["pending"] is False
+
+    pinned_file_sha = manifest["calibration"]["artifact_file_sha256"]
+    semantic_hashes = copy.deepcopy(state["hashes"])
+    state["candidates"][0]["models"][0]["runs"][0]["duration"] += 1
+    state["auth_verifications"][0]["verified_at"] = "2099-01-01T00:00:00+00:00"
+    cal.save_artifact(artifact, state)
+    changed_state = json.loads(artifact.read_text())
+    assert changed_state["hashes"] == semantic_hashes
+    assert cal._sha256_file(artifact) != pinned_file_sha
+
+
+def test_finalization_replays_and_requires_complete_paid_run_records(tmp_path):
+    pool_path, artifact, _selected_canary, vocab = _large_complete_pool(tmp_path)
+    valid = json.loads(artifact.read_text())
+
+    def first_run(state):
+        return state["candidates"][0]["models"][0]["runs"][0]
+
+    def make_skeletal(state):
+        run = first_run(state)
+        skeletal = {key: run[key] for key in ("number", "tries", "checkpoint")}
+        run.clear()
+        run.update(skeletal)
+
+    corruptions = {
+        "skeletal": make_skeletal,
+        "conversation": lambda state: first_run(state).pop("conversation"),
+        "metrics": lambda state: first_run(state).pop("metrics"),
+        "token usage": lambda state: first_run(state).pop("turn_token_usage"),
+        "duration": lambda state: first_run(state).pop("duration"),
+        "identity": lambda state: first_run(state).pop("model_id"),
+        "authentication": lambda state: state.update(auth_verifications=[]),
+    }
+    for label, corrupt in corruptions.items():
+        state = copy.deepcopy(valid)
+        corrupt(state)
+        corrupt_path = tmp_path / f"corrupt-{label.replace(' ', '-')}.json"
+        cal.save_artifact(corrupt_path, state)
+        with pytest.raises(cal.CalibrationError):
+            cal.finalize_manifest(
+                pool_path,
+                corrupt_path,
+                vocab_loader=lambda _lang: vocab,
+            )

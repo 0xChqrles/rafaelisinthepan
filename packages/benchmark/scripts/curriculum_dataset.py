@@ -616,7 +616,15 @@ def dataset_content_sha256(manifest: dict[str, Any]) -> str:
         ),
     }
     if "calibration" in manifest:
-        identity["calibration"] = manifest["calibration"]
+        identity["calibration"] = {
+            key: value
+            for key, value in manifest["calibration"].items()
+            if key != "artifact_file_sha256"
+        }
+    if "curriculum_base" in manifest:
+        identity["curriculum_base"] = manifest["curriculum_base"]
+    if "strategy_evidence" in manifest:
+        identity["strategy_evidence"] = manifest["strategy_evidence"]
     encoded = json.dumps(
         identity, ensure_ascii=False, sort_keys=True, separators=(",", ":")
     ).encode("utf-8")
