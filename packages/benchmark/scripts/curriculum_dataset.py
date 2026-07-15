@@ -21,7 +21,7 @@ import io
 import json
 from pathlib import Path
 import random
-import re
+import shutil
 import sys
 import unicodedata
 from datetime import datetime, timezone
@@ -46,14 +46,20 @@ from phrase_core import (  # noqa: E402  (stdlib-only shared contract)
 )
 from start_word import is_variant  # noqa: E402
 from curriculum_io import (  # noqa: E402
-    load_json as load_puzzle_json,
+    load_json as load_puzzle_json,  # noqa: F401 (public test/script convenience)
     read_data_bytes,
     sha256_bytes,
     write_deterministic_gzip,
 )
 
 SCHEMA_VERSION = 2
+CALIBRATED_DATASET_SCHEMA_VERSION = 3
+CALIBRATION_POOL_SCHEMA_VERSION = 1
+CALIBRATION_POOL_KIND = "holdout_calibration_candidates"
+CALIBRATION_CANDIDATE_SPLIT = "calibration_candidate"
+MIN_CALIBRATION_CANDIDATES = 45
 DATASET_ID = "strategy-fr-v1"
+CALIBRATED_DATASET_ID = "strategy-fr-v2"
 LANG = "fr"
 
 LEXIQUE_SOURCE_PATH = (
@@ -573,6 +579,18 @@ def _puzzle_json_bytes(puzzle: dict[str, Any]) -> bytes:
     return (json.dumps(puzzle, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
 
 
+def _dataset_puzzle_identity(record: dict[str, Any]) -> dict[str, Any]:
+    identity = {
+        "number": record["number"],
+        "split": record["split"],
+        "sha256": record["sha256"],
+        "targets": record["targets"],
+    }
+    if "calibration" in record:
+        identity["calibration"] = record["calibration"]
+    return identity
+
+
 def dataset_content_sha256(manifest: dict[str, Any]) -> str:
     """Stable dataset identity: scientific content only, never timestamps."""
     identity = {
@@ -593,18 +611,12 @@ def dataset_content_sha256(manifest: dict[str, Any]) -> str:
         "counts": manifest["counts"],
         "balance": manifest["balance"],
         "puzzles": sorted(
-            (
-                {
-                    "number": record["number"],
-                    "split": record["split"],
-                    "sha256": record["sha256"],
-                    "targets": record["targets"],
-                }
-                for record in manifest["puzzles"]
-            ),
+            (_dataset_puzzle_identity(record) for record in manifest["puzzles"]),
             key=lambda record: record["number"],
         ),
     }
+    if "calibration" in manifest:
+        identity["calibration"] = manifest["calibration"]
     encoded = json.dumps(
         identity, ensure_ascii=False, sort_keys=True, separators=(",", ":")
     ).encode("utf-8")
@@ -786,6 +798,367 @@ def build_dataset(
     return manifest
 
 
+def _validate_curriculum_base(
+    manifest_path: Path, *, expected_curriculum_count: int
+) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("lang") != LANG:
+        raise ValueError("calibration curriculum base must be French")
+    if dataset_content_sha256(manifest) != manifest.get("dataset_content_sha256"):
+        raise ValueError("calibration curriculum base content hash does not replay")
+    records = [
+        record for record in manifest["puzzles"] if record.get("split") == "curriculum"
+    ]
+    if len(records) != expected_curriculum_count:
+        raise ValueError(
+            "calibration curriculum base needs exactly "
+            f"{expected_curriculum_count} curriculum puzzles"
+        )
+    seen_slugs: set[str] = set()
+    for record in records:
+        actual = sha256_bytes(read_data_bytes(manifest_path.parent / record["path"]))
+        if actual != record.get("sha256"):
+            raise ValueError(
+                f"curriculum base puzzle {record.get('path')} does not match its sha256"
+            )
+        for target in record["targets"]:
+            if target["slug"] in seen_slugs:
+                raise ValueError("curriculum base target slugs are not unique")
+            seen_slugs.add(target["slug"])
+    generator = manifest["generator_output"]
+    if _sha256_file(manifest_path.parent / generator["path"]) != generator["sha256"]:
+        raise ValueError("curriculum base generator output hash does not replay")
+    return manifest, sorted(records, key=lambda record: record["number"]), _sha256_file(
+        manifest_path
+    )
+
+
+def _pool_record_identity(record: dict[str, Any]) -> dict[str, Any]:
+    identity = {
+        "split": record["split"],
+        "sha256": record["sha256"],
+        "targets": record["targets"],
+    }
+    if record["split"] == "curriculum":
+        identity["number"] = record["number"]
+    else:
+        identity["candidate_id"] = record["candidate_id"]
+        identity["pool_index"] = record["pool_index"]
+    return identity
+
+
+def calibration_pool_content_sha256(manifest: dict[str, Any]) -> str:
+    """Stable identity for curriculum plus the pre-calibration candidate pool."""
+    identity = {
+        "schema_version": manifest["schema_version"],
+        "manifest_kind": manifest["manifest_kind"],
+        "dataset_id": manifest["dataset_id"],
+        "lang": manifest["lang"],
+        "seed": manifest["seed"],
+        "curriculum_base": manifest["curriculum_base"],
+        "generator_output_sha256": manifest["generator_output"]["sha256"],
+        "vocabulary": manifest["vocabulary"],
+        "embedding": manifest["embedding"],
+        "canonical_metadata": {
+            "sha256": manifest["canonical_metadata"]["sha256"],
+            "verified_fields": manifest["canonical_metadata"]["verified_fields"],
+            "declared_fields": manifest["canonical_metadata"]["declared_fields"],
+        },
+        "frequency_bands": manifest["frequency_bands"],
+        "start_band": manifest["start_band"],
+        "minimum_calibration_candidates": manifest[
+            "minimum_calibration_candidates"
+        ],
+        "counts": manifest["counts"],
+        "balance": manifest["balance"],
+        "rejections": manifest["rejections"],
+        "puzzles": sorted(
+            (_pool_record_identity(record) for record in manifest["puzzles"]),
+            key=lambda record: (
+                record["split"],
+                record.get("number", 0),
+                record.get("candidate_id", ""),
+            ),
+        ),
+    }
+    return sha256_bytes(
+        json.dumps(
+            identity, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+    )
+
+
+def _counts_for_records(records: list[dict[str, Any]]) -> dict[str, Any]:
+    counts: dict[str, dict[str, int]] = {
+        "pos": {},
+        "gender": {},
+        "frequency_band": {},
+        "semantic_class": {},
+    }
+    for record in records:
+        for target in record["targets"]:
+            for attribute in counts:
+                value = target.get(attribute)
+                if attribute == "gender" and value is None:
+                    continue
+                counts[attribute][value] = counts[attribute].get(value, 0) + 1
+    return {
+        "verified": {
+            "pos": counts["pos"],
+            "gender": counts["gender"],
+            "frequency_band": counts["frequency_band"],
+        },
+        "declared": {"semantic_class": counts["semantic_class"]},
+    }
+
+
+def _target_records(candidate: Candidate, puzzle: dict[str, Any]) -> list[dict[str, Any]]:
+    records = []
+    for target, hole in zip(
+        sorted(candidate.targets, key=lambda item: item.token_index), puzzle["holes"]
+    ):
+        records.append(
+            {
+                "word": target.word,
+                "slug": target.slug,
+                "pos": target.pos,
+                "gender": target.gender,
+                "frequency_rank": target.frequency_rank,
+                "frequency_band": target.frequency_band,
+                "semantic_class": target.semantic_class,
+                "start": hole["start"]["word"],
+                "start_rank": hole["start_rank"],
+            }
+        )
+    return records
+
+
+def build_calibration_pool(
+    generator_output: dict[str, Any],
+    *,
+    curriculum_manifest_path: Path,
+    V: list[str],
+    ranking_for: RankingFor,
+    seed: int,
+    out_dir: Path,
+    dataset_id: str = CALIBRATED_DATASET_ID,
+    minimum_candidates: int = MIN_CALIBRATION_CANDIDATES,
+    expected_curriculum_count: int = CURRICULUM_COUNT,
+    canonical_metadata: CanonicalMetadata | None = None,
+    canonical_metadata_source: str = "datasets/fr-lexicon.tsv.gz",
+    embedding_source: str | None = None,
+    embedding_sha256: str | None = None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Build the frozen, statically validated pool consumed by calibration.
+
+    The original curriculum records are copied byte-for-byte and never selected
+    again.  Every authored calibration candidate passes the same schema, vocab,
+    target-location, POS/gender/frequency, rank-map, and start-band code as the
+    original dataset builder before it can enter the pool.
+    """
+    if not isinstance(minimum_candidates, int) or minimum_candidates <= 0:
+        raise ValueError("minimum_candidates must be a positive integer")
+    if not isinstance(dataset_id, str) or not dataset_id.strip():
+        raise ValueError("dataset_id must be a non-empty string")
+    curriculum_manifest_path = curriculum_manifest_path.resolve()
+    base, curriculum_records, base_manifest_sha = _validate_curriculum_base(
+        curriculum_manifest_path,
+        expected_curriculum_count=expected_curriculum_count,
+    )
+    canonical_metadata = canonical_metadata or load_fr_lexicon()
+    vocabulary = {
+        "source": "reduced-vocabulary order (V)",
+        "size": len(V),
+        "sha256": _sha256_text("\n".join(V)),
+    }
+    canonical_record = {
+        "source": canonical_metadata_source,
+        "sha256": sha256_bytes(canonical_metadata_bytes(canonical_metadata)),
+        "verified_fields": ["pos", "gender"],
+        "declared_fields": ["semantic_class"],
+    }
+    if vocabulary != base["vocabulary"]:
+        raise ValueError("candidate pool vocabulary does not match the frozen curriculum")
+    if canonical_record["sha256"] != base["canonical_metadata"]["sha256"]:
+        raise ValueError(
+            "candidate pool canonical metadata does not match the frozen curriculum"
+        )
+    if not dry_run:
+        if not embedding_source or not embedding_sha256:
+            raise ValueError(
+                "a real calibration pool build requires embedding source and sha256"
+            )
+        if embedding_sha256 != base["embedding"]["sha256"]:
+            raise ValueError(
+                "candidate pool embedding does not match the frozen curriculum"
+            )
+
+    raw_candidates = generator_output.get("candidates")
+    if not isinstance(raw_candidates, list) or not raw_candidates:
+        raise ValueError('generator output needs a non-empty "candidates" array')
+    freq = frequency_lookup(V)
+    validated: list[Candidate] = []
+    rejections: list[Rejection] = []
+    seen_candidate_ids: set[str] = set()
+    curriculum_slugs = {
+        target["slug"] for record in curriculum_records for target in record["targets"]
+    }
+    for index, raw in enumerate(raw_candidates):
+        result = validate_candidate(index, raw, freq, canonical_metadata)
+        if isinstance(result, Rejection):
+            rejections.append(result)
+            continue
+        overlap = sorted(
+            target.slug
+            for target in result.targets
+            if target.slug in curriculum_slugs
+        )
+        if overlap:
+            rejections.append(
+                Rejection(
+                    index=index,
+                    sentence=result.sentence,
+                    reason=(
+                        "target slug overlaps frozen curriculum: "
+                        + ", ".join(overlap)
+                    ),
+                )
+            )
+            continue
+        candidate_id = _candidate_key(result)
+        if candidate_id in seen_candidate_ids:
+            rejections.append(
+                Rejection(
+                    index=index,
+                    sentence=result.sentence,
+                    reason="duplicate candidate sentence identity",
+                )
+            )
+            continue
+        seen_candidate_ids.add(candidate_id)
+        validated.append(result)
+
+    if dry_run:
+        return {
+            "dry_run": True,
+            "dataset_id": dataset_id,
+            "valid_static_candidates": len(validated),
+            "minimum_calibration_candidates": minimum_candidates,
+            "meets_minimum_before_rank_map_build": len(validated)
+            >= minimum_candidates,
+            "rejections": [vars(rejection) for rejection in rejections],
+            "provider_calls": 0,
+            "ranking_calls": 0,
+        }
+
+    built_records: list[dict[str, Any]] = []
+    built_bytes: list[tuple[Path, bytes]] = []
+    for candidate in sorted(validated, key=_candidate_key):
+        candidate_id = _candidate_key(candidate)
+        candidate_seed = int(
+            hashlib.sha256(f"{seed}:{candidate_id}".encode("utf-8")).hexdigest(),
+            16,
+        )
+        puzzle = build_puzzle(
+            candidate,
+            ranking_for=ranking_for,
+            rng=random.Random(candidate_seed),
+        )
+        if isinstance(puzzle, Rejection):
+            rejections.append(puzzle)
+            continue
+        uncompressed = _puzzle_json_bytes(puzzle)
+        relative_path = Path("puzzles") / "candidates" / f"{candidate_id}.json.gz"
+        built_bytes.append((relative_path, uncompressed))
+        built_records.append(
+            {
+                "candidate_id": candidate_id,
+                "split": CALIBRATION_CANDIDATE_SPLIT,
+                "path": relative_path.as_posix(),
+                "sha256": sha256_bytes(uncompressed),
+                "sentence": candidate.sentence,
+                "targets": _target_records(candidate, puzzle),
+            }
+        )
+    if len(built_records) < minimum_candidates:
+        raise ValueError(
+            "calibration candidate shortfall after static/rank/start validation: "
+            f"need at least {minimum_candidates}, built {len(built_records)}; "
+            "generate more candidates"
+        )
+    for pool_index, record in enumerate(built_records, start=1):
+        record["pool_index"] = pool_index
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for record in curriculum_records:
+        source = curriculum_manifest_path.parent / record["path"]
+        destination = out_dir / record["path"]
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination)
+    for relative_path, uncompressed in built_bytes:
+        write_deterministic_gzip(out_dir / relative_path, uncompressed)
+
+    generator_envelope = {
+        "curriculum_base": {
+            "dataset_id": base["dataset_id"],
+            "dataset_content_sha256": base["dataset_content_sha256"],
+            "manifest_sha256": base_manifest_sha,
+        },
+        "calibration_candidates": generator_output,
+    }
+    generator_output_bytes = (
+        json.dumps(generator_envelope, ensure_ascii=False, indent=2) + "\n"
+    ).encode("utf-8")
+    (out_dir / "generator-output.json").write_bytes(generator_output_bytes)
+    records = json.loads(json.dumps(curriculum_records))
+    records.extend(built_records)
+    manifest = {
+        "schema_version": CALIBRATION_POOL_SCHEMA_VERSION,
+        "manifest_kind": CALIBRATION_POOL_KIND,
+        "dataset_id": dataset_id,
+        "lang": LANG,
+        "seed": seed,
+        "curriculum_base": generator_envelope["curriculum_base"],
+        "generator": {
+            "curriculum": base.get("generator", {}),
+            "calibration_candidates": generator_output.get("generator", {}),
+        },
+        "generator_output": {
+            "path": "generator-output.json",
+            "sha256": sha256_bytes(generator_output_bytes),
+        },
+        "vocabulary": vocabulary,
+        "embedding": {
+            "source": embedding_source,
+            "sha256": embedding_sha256,
+        },
+        "canonical_metadata": canonical_record,
+        "frequency_bands": base["frequency_bands"],
+        "start_band": base["start_band"],
+        "minimum_calibration_candidates": minimum_candidates,
+        "counts": {
+            "curriculum": len(curriculum_records),
+            "calibration_candidates": len(built_records),
+            "puzzles": len(curriculum_records) + len(built_records),
+        },
+        "balance": {
+            "curriculum": _counts_for_records(curriculum_records),
+            "calibration_candidates": _counts_for_records(built_records),
+        },
+        "rejections": [vars(rejection) for rejection in rejections],
+        "puzzles": records,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    manifest["candidate_pool_content_sha256"] = calibration_pool_content_sha256(
+        manifest
+    )
+    (out_dir / "candidate-manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    return manifest
+
+
 def _real_embedding() -> tuple[list[str], RankingFor, Path]:
     """Load the fr reduced embedding once and expose the canonical ranking."""
     import french_neighbors
@@ -809,8 +1182,20 @@ def main(argv: list[str] | None = None) -> int:
         help="generator-output.json with LLM-authored candidates",
     )
     parser.add_argument("--seed", type=int, required=True)
+    parser.add_argument("--out-dir", type=Path)
     parser.add_argument(
-        "--out-dir", type=Path, default=DATASETS_DIR / DATASET_ID
+        "--calibration-pool",
+        action="store_true",
+        help="build a frozen candidate pool around the unchanged 15-puzzle curriculum",
+    )
+    parser.add_argument(
+        "--curriculum-manifest",
+        type=Path,
+        help="existing frozen dataset whose curriculum records are copied unchanged",
+    )
+    parser.add_argument(
+        "--dataset-id",
+        help=f"candidate-pool dataset id (default: {CALIBRATED_DATASET_ID})",
     )
     parser.add_argument(
         "--dry-run",
@@ -818,6 +1203,17 @@ def main(argv: list[str] | None = None) -> int:
         help="validate and select without loading the embedding or writing",
     )
     args = parser.parse_args(argv)
+    if args.calibration_pool and args.curriculum_manifest is None:
+        parser.error("--calibration-pool requires --curriculum-manifest")
+    if not args.calibration_pool and (
+        args.curriculum_manifest is not None or args.dataset_id is not None
+    ):
+        parser.error("--curriculum-manifest/--dataset-id require --calibration-pool")
+
+    dataset_id = args.dataset_id or CALIBRATED_DATASET_ID
+    out_dir = args.out_dir or DATASETS_DIR / (
+        dataset_id if args.calibration_pool else DATASET_ID
+    )
 
     generator_output = json.loads(args.from_output.read_text(encoding="utf-8"))
     if args.dry_run:
@@ -825,32 +1221,61 @@ def main(argv: list[str] | None = None) -> int:
 
         kv = french_neighbors.load_vectors()
         V = french_neighbors.build_vocab(kv)
-        report = build_dataset(
-            generator_output,
-            V=V,
-            ranking_for=lambda word: [],
-            seed=args.seed,
-            out_dir=args.out_dir,
-            dry_run=True,
-        )
+        if args.calibration_pool:
+            report = build_calibration_pool(
+                generator_output,
+                curriculum_manifest_path=args.curriculum_manifest,
+                V=V,
+                ranking_for=lambda word: [],
+                seed=args.seed,
+                out_dir=out_dir,
+                dataset_id=dataset_id,
+                dry_run=True,
+            )
+        else:
+            report = build_dataset(
+                generator_output,
+                V=V,
+                ranking_for=lambda word: [],
+                seed=args.seed,
+                out_dir=out_dir,
+                dry_run=True,
+            )
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0
 
     V, ranking_for, embedding_path = _real_embedding()
-    manifest = build_dataset(
-        generator_output,
-        V=V,
-        ranking_for=ranking_for,
-        seed=args.seed,
-        out_dir=args.out_dir,
-        embedding_source=str(embedding_path.relative_to(REPO_ROOT)),
-        embedding_sha256=_sha256_file(embedding_path),
-    )
-    print(
-        f"dataset {manifest['dataset_id']} written to {args.out_dir} "
-        f"({manifest['counts']['curriculum']} curriculum + "
-        f"{manifest['counts']['holdout']} holdout)"
-    )
+    if args.calibration_pool:
+        manifest = build_calibration_pool(
+            generator_output,
+            curriculum_manifest_path=args.curriculum_manifest,
+            V=V,
+            ranking_for=ranking_for,
+            seed=args.seed,
+            out_dir=out_dir,
+            dataset_id=dataset_id,
+            embedding_source=str(embedding_path.relative_to(REPO_ROOT)),
+            embedding_sha256=_sha256_file(embedding_path),
+        )
+        print(
+            f"calibration candidate pool {manifest['dataset_id']} written to "
+            f"{out_dir} ({manifest['counts']['calibration_candidates']} candidates)"
+        )
+    else:
+        manifest = build_dataset(
+            generator_output,
+            V=V,
+            ranking_for=ranking_for,
+            seed=args.seed,
+            out_dir=out_dir,
+            embedding_source=str(embedding_path.relative_to(REPO_ROOT)),
+            embedding_sha256=_sha256_file(embedding_path),
+        )
+        print(
+            f"dataset {manifest['dataset_id']} written to {out_dir} "
+            f"({manifest['counts']['curriculum']} curriculum + "
+            f"{manifest['counts']['holdout']} holdout)"
+        )
     return 0
 
 

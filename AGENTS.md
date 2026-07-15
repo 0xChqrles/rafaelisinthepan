@@ -65,6 +65,7 @@ packages/
     scripts/llm_play.py       LLM player/referee; reads generation output + web vocab
     scripts/build_curriculum_lexicon.py  offline V∩Lexique POS/gender export (#84)
     scripts/curriculum_dataset.py  deterministic strategy-curriculum dataset builder (#84)
+    scripts/calibration_run.py     neutral holdout calibration + deterministic selection (#86)
     scripts/curriculum_io.py       deterministic gzip-aware curriculum data I/O (#84)
     scripts/strategy_evidence.py   curriculum-only deterministic distillation packet (#84)
     scripts/curriculum_run.py      max-effort strategy distillation + frozen holdout (#84)
@@ -74,7 +75,9 @@ packages/
                               compressed puzzles committed and SHA-256-pinned)
     datasets/v7-strategy.txt  exact v7 strategy control, recovered verbatim from a recorded transcript
     tests/test_llm_play.py    provider-adapter + game-rules parity tests
+    tests/test_calibration_run.py  scripted neutral-calibration contract tests (#86)
     output/<puzzle-stem>.bench.json  full local lab record (#80; gitignored, never published)
+    output/calibration/       resumable paid calibration artifacts (#86; gitignored, lab-only)
     pyproject.toml, uv.lock   isolated Anthropic/OpenAI Python dependencies (uv)
   backend/                    daily-puzzle backend (pkg @whippin/backend, #2)
     src/
@@ -444,6 +447,17 @@ pnpm bench:curriculum:generate --from-output <generator-output.json> --seed 84 [
 pnpm bench:curriculum:run <manifest.json> --model MODEL --strategy-effort max --play-effort LEVEL [--auth api|subscription] [--cap N] [--resume ARTIFACT] [--force] [--dry-run] [-v|--verbose]
 pnpm bench:curriculum:evaluate <artifact-or-profile.json>
 
+# 6. (Lab-only, #86) Neutral holdout calibration. Build a >=45-puzzle candidate pool
+#    around the unchanged 15 curriculum puzzles; `run` fixes Sonnet 5 + GPT-5.6 Sol,
+#    medium effort, cap 75, and defaults to one checkpointed paid puzzle-run per command.
+#    `extend` records the explicit reason for a 3->5-run median without calling a provider.
+#    `finalize` writes the selected 15-puzzle (5/5/5) holdout manifest; it does not run
+#    neutral/learned/v7 evaluation. `--dry-run` writes nothing and makes no provider calls.
+pnpm bench:curriculum:generate --from-output <larger-generator-output.json> --seed 86 --calibration-pool --curriculum-manifest <frozen-manifest.json> --dataset-id <dataset-id> [--dry-run]
+pnpm bench:curriculum:calibrate run <candidate-manifest.json> [--auth api|subscription] [--resume ARTIFACT] [--max-units N] [--all] [--dry-run] [-v|--verbose]
+pnpm bench:curriculum:calibrate extend <artifact.json> --candidate ID --model <SONNET-or-GPT-SOL> --reason <unstable-or-tier_boundary>
+pnpm bench:curriculum:calibrate finalize <candidate-manifest.json> <artifact.json> [--out manifest.json]
+
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
 pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output)
 pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--ci]  # publish-buffer coverage (#61); reports + exits 0 by default, --ci exits 1 on any (day,lang) gap for cron/CI
@@ -587,6 +601,25 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   it beats neutral without additional DNF puzzles. The phrase/puzzle contract shared with generation
   remains in `generation/scripts/phrase_core.py`; running distillation/holdout is paid curator work
   and is never done by CI/tests.
+- **Neutral holdout calibration (#86, lab-only).** `curriculum_dataset.py
+  --calibration-pool` copies the frozen 15 curriculum puzzles byte-for-byte, rejects authored
+  candidates that overlap their target slugs, and uses the existing canonical schema/vocab/
+  location/POS/gender/frequency/rank-map/start-band checks to build a frozen pool of at least 45
+  calibration candidates. `calibration_run.py` then runs neutral play only with the fixed Claude
+  Sonnet 5 + GPT-5.6 Sol roster, medium effort, fresh isolated contexts, cap 75, and three runs per
+  model; an auditable `unstable` or `tier_boundary` extension adds exactly two runs and switches
+  that model to the five-run DNF-aware median. Eligibility is fixed at every run solved, both model
+  medians in 5–50 inclusive, and cross-model spread <=20; difficulty is the maximum model median.
+  Selection is deterministic and hard-fails with a shortfall report unless it can choose 5 easy
+  (5–15), 5 medium (16–30), and 5 difficult (31–50) puzzles with unique target slugs and category
+  count spread <=1 for POS, gender, frequency band, and semantic class both within each tier and
+  overall. Artifacts under gitignored `benchmark/output/calibration/` pin pool/manifest/prompt/
+  roster/config identities, every transcript/rank trace/token record/duration, one checkpoint per
+  paid puzzle-run, derived summaries, selection, and stable artifact/content/selection hashes.
+  Final calibrated dataset manifests use schema v3, pin those hashes, and contain only lean
+  per-puzzle medians/difficulty/tier/run counts — calibration runs never enter evidence packets,
+  strategies, or final evaluation data. `strategy-fr-v1` and its pathological puzzle 20 remain
+  unchanged; no paid calibration has been executed or committed as part of the tooling.
 - **`gen_phrase` is fully interactive on a TTY (#5).** Anything not passed as a flag is
   prompted: the **sentence** (positional, now optional), **`--lang`**, and the optional
   **source metadata** — `--kind` (offers `KNOWN_KINDS` numbered, but free text is

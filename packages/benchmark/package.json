@@ -7,6 +7,7 @@
     "test": "uv run --no-project --with pytest pytest -q tests",
     "bench:curriculum:lexicon": "uv run --project ../generation python scripts/build_curriculum_lexicon.py",
     "bench:curriculum:generate": "uv run --project ../generation python scripts/curriculum_dataset.py",
+    "bench:curriculum:calibrate": "uv run scripts/calibration_run.py",
     "bench:curriculum:run": "uv run scripts/curriculum_run.py run",
     "bench:curriculum:evaluate": "uv run scripts/curriculum_run.py evaluate"
   }

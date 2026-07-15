@@ -18,6 +18,7 @@
     "gen:phrase": "pnpm --filter @whippin/generation gen:phrase",
     "bench:puzzle": "pnpm --filter @whippin/benchmark bench:puzzle",
     "bench:curriculum:generate": "pnpm --filter @whippin/benchmark bench:curriculum:generate",
+    "bench:curriculum:calibrate": "pnpm --filter @whippin/benchmark bench:curriculum:calibrate",
     "bench:curriculum:run": "pnpm --filter @whippin/benchmark bench:curriculum:run",
     "bench:curriculum:evaluate": "pnpm --filter @whippin/benchmark bench:curriculum:evaluate",
     "backend:dev": "pnpm --filter @whippin/backend serve:local",

@@ -1,0 +1,777 @@
+"""Deterministic, neutral-only holdout calibration contract (#86)."""
+
+from __future__ import annotations
+
+import copy
+import hashlib
+import json
+import random
+from pathlib import Path
+
+import pytest
+
+import calibration_run as cal
+import curriculum_dataset as cd
+from curriculum_io import sha256_bytes, write_deterministic_gzip
+import curriculum_run as cr
+from slug import slug
+from strategy_evidence import build_evidence_packet
+
+
+def _alpha(index: int) -> str:
+    value = ""
+    index += 1
+    while index:
+        index, remainder = divmod(index - 1, 26)
+        value = chr(ord("a") + remainder) + value
+    return value
+
+
+def _runs(*tries: int | None) -> list[dict]:
+    return [{"tries": value} for value in tries]
+
+
+def _score_candidate(sonnet: list[int | None], gpt: list[int | None]) -> dict:
+    return {
+        "candidate_id": "candidate",
+        "targets": [],
+        "models": [
+            {
+                "model_id": "claude-sonnet-5",
+                "required_runs": len(sonnet),
+                "extension": (
+                    {"reason": "unstable"} if len(sonnet) == cal.EXTENDED_RUNS else None
+                ),
+                "runs": _runs(*sonnet),
+            },
+            {
+                "model_id": "gpt-5.6-sol",
+                "required_runs": len(gpt),
+                "extension": (
+                    {"reason": "tier_boundary"}
+                    if len(gpt) == cal.EXTENDED_RUNS
+                    else None
+                ),
+                "runs": _runs(*gpt),
+            },
+        ],
+    }
+
+
+@pytest.mark.parametrize(
+    ("score", "tier"),
+    [
+        (5, "easy"),
+        (15, "easy"),
+        (16, "medium"),
+        (30, "medium"),
+        (31, "difficult"),
+        (50, "difficult"),
+    ],
+)
+def test_exact_eligibility_and_tier_boundaries_are_inclusive(score, tier):
+    summary = cal.summarize_candidate(_score_candidate([score] * 3, [score] * 3))
+
+    assert summary["status"] == "eligible"
+    assert summary["difficulty"] == score
+    assert summary["tier"] == tier
+
+
+@pytest.mark.parametrize("score", [4, 51])
+def test_model_median_outside_5_through_50_is_rejected(score):
+    summary = cal.summarize_candidate(_score_candidate([score] * 3, [10] * 3))
+
+    assert summary["status"] == "rejected"
+    assert "median_out_of_range" in {reason["code"] for reason in summary["reasons"]}
+
+
+def test_any_dnf_or_over_cap_run_rejects_even_when_the_median_would_pass():
+    dnf = cal.summarize_candidate(_score_candidate([10, 10, None], [10, 10, 10]))
+    over_cap = cal.summarize_candidate(
+        _score_candidate([10, 10, cal.CALIBRATION_CAP + 1], [10, 10, 10])
+    )
+
+    assert "dnf" in {reason["code"] for reason in dnf["reasons"]}
+    assert "over_cap" in {reason["code"] for reason in over_cap["reasons"]}
+
+
+def test_cross_model_spread_accepts_20_and_rejects_21():
+    accepted = cal.summarize_candidate(_score_candidate([5] * 3, [25] * 3))
+    rejected = cal.summarize_candidate(_score_candidate([5] * 3, [26] * 3))
+
+    assert accepted["status"] == "eligible"
+    assert accepted["model_median_spread"] == 20
+    assert rejected["status"] == "rejected"
+    assert "model_median_spread" in {reason["code"] for reason in rejected["reasons"]}
+
+
+def test_five_run_extension_uses_the_actual_dnf_aware_five_run_median():
+    summary = cal.summarize_candidate(
+        _score_candidate([5, 10, 15, 40, 50], [6, 11, 16, 41, 49])
+    )
+
+    assert summary["model_medians"] == {
+        "claude-sonnet-5": 15,
+        "gpt-5.6-sol": 16,
+    }
+    assert summary["difficulty"] == 16
+    assert summary["tier"] == "medium"
+
+
+def _balanced_targets(
+    prefix: str,
+    *,
+    low_pos: str = "adverb",
+    common_high: bool = True,
+    tangible_high: bool = True,
+) -> list[dict]:
+    positions = list(cd.POS_VALUES) * 4
+    positions.pop(len(positions) - 1 - list(reversed(positions)).index(low_pos))
+    gender_index = 0
+    targets = []
+    for index, pos in enumerate(positions):
+        word = f"mot{prefix}{_alpha(index)}"
+        gender = None
+        if pos in cd.GENDERED_POS:
+            gender = cd.GENDER_VALUES[gender_index % 2]
+            gender_index += 1
+        targets.append(
+            {
+                "word": word,
+                "slug": slug(word),
+                "pos": pos,
+                "gender": gender,
+                "frequency_rank": index,
+                "frequency_band": (
+                    "common"
+                    if (index < 8 if common_high else index < 7)
+                    else "difficult"
+                ),
+                "semantic_class": (
+                    "tangible" if ((index % 2 == 0) == tangible_high) else "abstract"
+                ),
+                "start": f"indice{prefix}{_alpha(index)}",
+                "start_rank": 120,
+            }
+        )
+    return targets
+
+
+def _eligible_selection_world() -> list[dict]:
+    difficulties = {"easy": 10, "medium": 20, "difficult": 40}
+    low_positions = {"easy": "adverb", "medium": "verb", "difficult": "adjective"}
+    candidates = []
+    for tier_index, tier in enumerate(cal.TIER_ORDER):
+        targets = _balanced_targets(
+            tier[0],
+            low_pos=low_positions[tier],
+            common_high=tier_index != 1,
+            tangible_high=tier_index != 1,
+        )
+        for index in range(cal.TIER_QUOTA):
+            candidate = {
+                "candidate_id": hashlib.sha256(f"{tier}:{index}".encode()).hexdigest(),
+                "targets": targets[index * 3 : index * 3 + 3],
+                "models": [],
+                "summary": {
+                    "status": "eligible",
+                    "eligible": True,
+                    "model_medians": {
+                        "claude-sonnet-5": difficulties[tier],
+                        "gpt-5.6-sol": difficulties[tier],
+                    },
+                    "model_median_spread": 0,
+                    "difficulty": difficulties[tier],
+                    "tier": tier,
+                },
+            }
+            candidates.append(candidate)
+    return candidates
+
+
+def test_selection_is_deterministic_exactly_5_5_5_and_balanced_per_tier_and_overall():
+    candidates = _eligible_selection_world()
+    first = cal.select_calibrated_candidates(
+        candidates, reserved_slugs={"curriculum"}, selection_salt="pool"
+    )
+    shuffled = list(candidates)
+    random.Random(86).shuffle(shuffled)
+    second = cal.select_calibrated_candidates(
+        shuffled, reserved_slugs={"curriculum"}, selection_salt="pool"
+    )
+
+    assert first == second
+    assert first["status"] == "selected"
+    assert first["counts"] == {tier: 5 for tier in cal.TIER_ORDER}
+    assert len(first["selected"]) == 15
+    for scope in [*first["balance"]["tiers"].values(), first["balance"]["overall"]]:
+        assert all(field["spread"] <= 1 for field in scope.values())
+
+
+def test_selection_fails_with_explicit_tier_and_balance_shortfalls():
+    candidates = _eligible_selection_world()
+    insufficient = cal.select_calibrated_candidates(
+        candidates[:-1], reserved_slugs=set(), selection_salt="pool"
+    )
+    assert insufficient["status"] == "shortfall"
+    assert insufficient["reason"] == "insufficient_eligible_candidates"
+    assert insufficient["tier_deficits"]["difficult"] == 1
+
+    unbalanced = copy.deepcopy(candidates)
+    difficult = [
+        candidate
+        for candidate in unbalanced
+        if candidate["summary"]["tier"] == "difficult"
+    ]
+    target = next(
+        target
+        for candidate in difficult
+        for target in candidate["targets"]
+        if target["pos"] == "adverb"
+    )
+    target["pos"] = "noun"
+    target["gender"] = "m"
+    no_balance = cal.select_calibrated_candidates(
+        unbalanced, reserved_slugs=set(), selection_salt="pool"
+    )
+    assert no_balance["status"] == "shortfall"
+    assert no_balance["reason"] == "no_balanced_unique_selection"
+
+    colliding = cal.select_calibrated_candidates(
+        candidates,
+        reserved_slugs={candidates[0]["targets"][0]["slug"]},
+        selection_salt="pool",
+    )
+    assert colliding["status"] == "shortfall"
+    assert colliding["reason"] == "no_balanced_unique_selection"
+
+
+def _puzzle(words: list[str], starts: list[str] | None = None) -> dict:
+    ranks = {}
+    holes = []
+    for index, word in enumerate(words):
+        secret = slug(word)
+        start_word = starts[index] if starts is not None else f"depart{_alpha(index)}"
+        rank_map = {
+            slug(other): {
+                "word": other,
+                "rank": 0 if other == word else 10 + other_index,
+            }
+            for other_index, other in enumerate(words)
+        }
+        rank_map[slug(start_word)] = {"word": start_word, "rank": 120}
+        ranks[secret] = rank_map
+        holes.append(
+            {
+                "pos": index,
+                "secret": {"word": word, "slug": secret},
+                "start": {"word": start_word, "slug": slug(start_word)},
+                "start_rank": 120,
+            }
+        )
+    return {"lang": "fr", "words": words, "holes": holes, "ranks": ranks}
+
+
+def _write_puzzle(path: Path, puzzle: dict) -> str:
+    content = (json.dumps(puzzle, ensure_ascii=False, indent=2) + "\n").encode()
+    write_deterministic_gzip(path, content)
+    return sha256_bytes(content)
+
+
+def _target_metadata(words: list[str], prefix: str) -> list[dict]:
+    rows = []
+    for index, word in enumerate(words):
+        pos = cd.POS_VALUES[index % len(cd.POS_VALUES)]
+        rows.append(
+            {
+                "word": word,
+                "slug": slug(word),
+                "pos": pos,
+                "gender": "m" if pos in cd.GENDERED_POS else None,
+                "frequency_rank": index,
+                "frequency_band": "common" if index % 2 == 0 else "difficult",
+                "semantic_class": "tangible" if index % 2 == 0 else "abstract",
+                "start": f"depart{_alpha(index)}",
+                "start_rank": 120,
+            }
+        )
+    return rows
+
+
+def _write_pool(
+    root: Path,
+    *,
+    curriculum_records: list[dict],
+    candidate_records: list[dict],
+    minimum_candidates: int,
+) -> Path:
+    generator_bytes = b'{"generator":"scripted"}\n'
+    (root / "generator-output.json").write_bytes(generator_bytes)
+    records = curriculum_records + candidate_records
+    manifest = {
+        "schema_version": cd.CALIBRATION_POOL_SCHEMA_VERSION,
+        "manifest_kind": cd.CALIBRATION_POOL_KIND,
+        "dataset_id": "strategy-fr-calibrated-test",
+        "lang": "fr",
+        "seed": 86,
+        "curriculum_base": {
+            "dataset_id": "base",
+            "dataset_content_sha256": "b" * 64,
+            "manifest_sha256": "m" * 64,
+        },
+        "generator": {"model": "scripted"},
+        "generator_output": {
+            "path": "generator-output.json",
+            "sha256": sha256_bytes(generator_bytes),
+        },
+        "vocabulary": {"source": "test", "size": 100, "sha256": "v" * 64},
+        "embedding": {"source": "test.vec", "sha256": "e" * 64},
+        "canonical_metadata": {
+            "source": "test.tsv",
+            "sha256": "l" * 64,
+            "verified_fields": ["pos", "gender"],
+            "declared_fields": ["semantic_class"],
+        },
+        "frequency_bands": {"common": "test", "difficult": "test"},
+        "start_band": {"lo": 100, "hi": 150},
+        "minimum_calibration_candidates": minimum_candidates,
+        "counts": {
+            "curriculum": len(curriculum_records),
+            "calibration_candidates": len(candidate_records),
+            "puzzles": len(records),
+        },
+        "balance": {
+            "curriculum": cd._counts_for_records(curriculum_records),
+            "calibration_candidates": cd._counts_for_records(candidate_records),
+        },
+        "rejections": [],
+        "puzzles": records,
+        "generated_at": "2026-07-15T00:00:00+00:00",
+    }
+    manifest["candidate_pool_content_sha256"] = cd.calibration_pool_content_sha256(
+        manifest
+    )
+    path = root / "candidate-manifest.json"
+    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
+    return path
+
+
+def _one_candidate_pool(tmp_path: Path) -> tuple[Path, list[str], set[str]]:
+    root = tmp_path / "pool"
+    curriculum_words = ["ancien", "calme", "marche"]
+    candidate_words = ["rivage", "brume", "danser"]
+    curriculum_path = root / "puzzles" / "curriculum.json.gz"
+    candidate_path = root / "puzzles" / "candidate.json.gz"
+    curriculum_sha = _write_puzzle(curriculum_path, _puzzle(curriculum_words))
+    candidate_sha = _write_puzzle(candidate_path, _puzzle(candidate_words))
+    curriculum = [
+        {
+            "number": 1,
+            "split": "curriculum",
+            "path": "puzzles/curriculum.json.gz",
+            "sha256": curriculum_sha,
+            "sentence": " ".join(curriculum_words),
+            "targets": _target_metadata(curriculum_words, "curriculum"),
+        }
+    ]
+    candidates = [
+        {
+            "candidate_id": hashlib.sha256(
+                " ".join(candidate_words).encode()
+            ).hexdigest(),
+            "pool_index": 1,
+            "split": cd.CALIBRATION_CANDIDATE_SPLIT,
+            "path": "puzzles/candidate.json.gz",
+            "sha256": candidate_sha,
+            "sentence": " ".join(candidate_words),
+            "targets": _target_metadata(candidate_words, "candidate"),
+        }
+    ]
+    path = _write_pool(
+        root,
+        curriculum_records=curriculum,
+        candidate_records=candidates,
+        minimum_candidates=1,
+    )
+    vocab = {
+        slug(word) for word in curriculum_words + candidate_words for word in (word,)
+    } | {slug(f"depart{_alpha(index)}") for index in range(3)}
+    return path, candidate_words, vocab
+
+
+class ScriptedProvider:
+    def __init__(self, words: list[str]):
+        self.words = words
+        self.constructions = []
+        self.players = []
+
+    def __call__(self, config, api_key, *, effort, auth, output):
+        self.constructions.append(
+            {
+                "model_id": config["model_id"],
+                "provider": config["provider"],
+                "api_key": api_key,
+                "effort": effort,
+                "auth": auth,
+                "output": output,
+            }
+        )
+        assert output == "word"
+        replies = iter(self.words)
+        calls = []
+
+        def player(messages):
+            calls.append(copy.deepcopy(messages))
+            player.last_token_usage = {"input_tokens": 3, "output_tokens": 1}
+            return next(replies)
+
+        player.last_token_usage = None
+        player.calls = calls
+        self.players.append(player)
+        return player
+
+
+def test_dry_run_plans_fixed_roster_and_makes_no_provider_or_vocab_calls(tmp_path):
+    manifest_path, _words, _vocab = _one_candidate_pool(tmp_path)
+
+    def explode(*_args, **_kwargs):
+        raise AssertionError("dry-run made an external call")
+
+    plan = cal.run_calibration(
+        manifest_path,
+        artifact_path=tmp_path / "never-written.json",
+        maximum_units=1,
+        dry_run=True,
+        provider_factory=explode,
+        vocab_loader=explode,
+    )
+
+    assert plan["provider_calls"] == 0
+    assert [row["model_id"] for row in plan["config"]["roster"]] == list(
+        cal.ROSTER_MODEL_IDS
+    )
+    assert plan["config"]["effort"] == "medium"
+    assert plan["config"]["cap"] == 75
+    assert plan["config"]["initial_runs_per_model"] == 3
+    assert len(plan["planned_paid_units"]) == 1
+    assert not (tmp_path / "never-written.json").exists()
+
+
+def test_checkpointed_resume_repeats_no_completed_paid_run(tmp_path, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-test")
+    manifest_path, words, vocab = _one_candidate_pool(tmp_path)
+    artifact = tmp_path / "calibration.json"
+    first_provider = ScriptedProvider(words)
+
+    result = cal.run_calibration(
+        manifest_path,
+        artifact_path=artifact,
+        maximum_units=1,
+        provider_factory=first_provider,
+        vocab_loader=lambda _lang: vocab,
+    )
+    first_state = json.loads(result.read_text())
+    first_run = copy.deepcopy(first_state["candidates"][0]["models"][0]["runs"][0])
+    replica = tmp_path / "calibration-replica.json"
+    cal.run_calibration(
+        manifest_path,
+        artifact_path=replica,
+        maximum_units=1,
+        provider_factory=ScriptedProvider(words),
+        vocab_loader=lambda _lang: vocab,
+    )
+    assert json.loads(replica.read_text())["hashes"] == first_state["hashes"]
+
+    resumed_provider = ScriptedProvider(words)
+    cal.run_calibration(
+        manifest_path,
+        resume=artifact,
+        maximum_units=1,
+        provider_factory=resumed_provider,
+        vocab_loader=lambda _lang: vocab,
+    )
+    resumed = json.loads(artifact.read_text())
+
+    runs = resumed["candidates"][0]["models"][0]["runs"]
+    assert runs[0] == first_run
+    assert [run["number"] for run in runs] == [1, 2]
+    assert [run["checkpoint"] for run in runs] == [1, 2]
+    assert resumed["checkpoint"]["completed_paid_units"] == 2
+    assert len(first_provider.constructions) == len(resumed_provider.constructions) == 1
+    assert all(len(player.calls[0]) == 1 for player in resumed_provider.players)
+    assert all(
+        "YOUR STRATEGY" not in player.calls[0][0]["content"]
+        for player in resumed_provider.players
+    )
+    assert runs[1]["model_id"] == "claude-sonnet-5"
+    assert runs[1]["provider"] == "anthropic"
+    assert runs[1]["transport"] == "api"
+    assert runs[1]["auth"] == "api"
+    assert runs[1]["effort"] == "medium"
+    assert runs[1]["turn_token_usage"]
+    assert runs[1]["wall_duration"] >= 0
+
+
+def test_extension_is_offline_auditable_and_adds_exactly_two_pending_runs(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-test")
+    manifest_path, words, vocab = _one_candidate_pool(tmp_path)
+    artifact = tmp_path / "calibration.json"
+    cal.run_calibration(
+        manifest_path,
+        artifact_path=artifact,
+        maximum_units=3,
+        provider_factory=ScriptedProvider(words),
+        vocab_loader=lambda _lang: vocab,
+    )
+    candidate_id = json.loads(artifact.read_text())["candidates"][0]["candidate_id"]
+
+    cal.request_extension(
+        artifact,
+        candidate_selector=candidate_id,
+        model_selector="SONNET",
+        reason="unstable",
+    )
+    state = json.loads(artifact.read_text())
+    sonnet = state["candidates"][0]["models"][0]
+
+    assert sonnet["required_runs"] == 5
+    assert sonnet["extension"]["reason"] == "unstable"
+    assert len(sonnet["runs"]) == 3
+    assert state["selection"]["status"] == "pending"
+    assert state["selection"]["pending_paid_units"] == 5
+
+
+def test_artifact_and_content_hashes_ignore_wall_clock_noise_but_pin_results():
+    base = {
+        "config": {"rule": "fixed"},
+        "candidate_pool": {
+            "manifest_path": "/tmp/pool.json",
+            "content_sha256": "p" * 64,
+        },
+        "started_at": "one",
+        "auth_verifications": [{"verified_at": "one", "status": "ok"}],
+        "checkpoint": {"sequence": 1, "completed_paid_units": 1, "updated_at": "one"},
+        "candidates": [
+            {
+                "candidate_id": "c",
+                "models": [
+                    {
+                        "model_id": "m",
+                        "runs": [
+                            {
+                                "tries": 10,
+                                "duration": 1.0,
+                                "wall_duration": 2.0,
+                                "completed_at": "one",
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+        "selection": {"status": "selected", "selected": ["c"]},
+    }
+    noisy = copy.deepcopy(base)
+    noisy["started_at"] = "two"
+    noisy["candidate_pool"]["manifest_path"] = "/another-machine/pool.json"
+    noisy["checkpoint"]["updated_at"] = "two"
+    noisy["candidates"][0]["models"][0]["runs"][0].update(
+        duration=99.0, wall_duration=100.0, completed_at="two"
+    )
+    cal.update_artifact_hashes(base)
+    cal.update_artifact_hashes(noisy)
+
+    assert base["hashes"] == noisy["hashes"]
+    changed = copy.deepcopy(base)
+    changed["candidates"][0]["models"][0]["runs"][0]["tries"] = 11
+    cal.update_artifact_hashes(changed)
+    assert changed["hashes"]["content_sha256"] != base["hashes"]["content_sha256"]
+
+
+def _large_complete_pool(tmp_path: Path) -> tuple[Path, Path, str]:
+    root = tmp_path / "large-pool"
+    curriculum = []
+    word_counter = 0
+    for number in range(1, 16):
+        words = [f"cours{_alpha(word_counter + offset)}" for offset in range(3)]
+        word_counter += 3
+        relative = f"puzzles/curriculum-{number:03d}.json.gz"
+        sha = _write_puzzle(root / relative, _puzzle(words))
+        curriculum.append(
+            {
+                "number": number,
+                "split": "curriculum",
+                "path": relative,
+                "sha256": sha,
+                "sentence": " ".join(words),
+                "targets": _target_metadata(words, f"curriculum{number}"),
+            }
+        )
+
+    candidates = []
+    difficulty: dict[str, int] = {}
+    selected_canary = ""
+    low_positions = {"easy": "adverb", "medium": "verb", "difficult": "adjective"}
+    for tier_index, tier in enumerate(cal.TIER_ORDER):
+        balanced = _balanced_targets(
+            f"z{_alpha(tier_index)}",
+            low_pos=low_positions[tier],
+            common_high=tier_index != 1,
+            tangible_high=tier_index != 1,
+        )
+        for local_index in range(15):
+            if local_index < 5:
+                targets = copy.deepcopy(balanced[local_index * 3 : local_index * 3 + 3])
+                score = {"easy": 10, "medium": 20, "difficult": 40}[tier]
+            else:
+                targets = []
+                for target_index in range(3):
+                    word = f"reserve{_alpha(word_counter)}"
+                    word_counter += 1
+                    targets.append(
+                        {
+                            "word": word,
+                            "slug": slug(word),
+                            "pos": cd.POS_VALUES[target_index],
+                            "gender": "m" if target_index < 2 else None,
+                            "frequency_rank": word_counter,
+                            "frequency_band": (
+                                "common" if target_index % 2 == 0 else "difficult"
+                            ),
+                            "semantic_class": (
+                                "tangible" if target_index % 2 == 0 else "abstract"
+                            ),
+                            "start": f"indice{_alpha(word_counter)}",
+                            "start_rank": 120,
+                        }
+                    )
+                score = 3
+            words = [target["word"] for target in targets]
+            sentence = " ".join(words)
+            candidate_id = hashlib.sha256(sentence.encode()).hexdigest()
+            relative = f"puzzles/candidates/{candidate_id}.json.gz"
+            sha = _write_puzzle(
+                root / relative,
+                _puzzle(words, [target["start"] for target in targets]),
+            )
+            candidates.append(
+                {
+                    "candidate_id": candidate_id,
+                    "pool_index": len(candidates) + 1,
+                    "split": cd.CALIBRATION_CANDIDATE_SPLIT,
+                    "path": relative,
+                    "sha256": sha,
+                    "sentence": sentence,
+                    "targets": targets,
+                }
+            )
+            difficulty[candidate_id] = score
+            if tier == "easy" and local_index == 0:
+                selected_canary = words[0]
+
+    pool_path = _write_pool(
+        root,
+        curriculum_records=curriculum,
+        candidate_records=candidates,
+        minimum_candidates=45,
+    )
+    manifest, content_sha, manifest_sha = cal.load_candidate_pool(pool_path)
+    state = cal.new_artifact_state(
+        pool_path.resolve(), manifest, content_sha, manifest_sha, auth="api"
+    )
+    checkpoint = 0
+    for candidate in state["candidates"]:
+        score = difficulty[candidate["candidate_id"]]
+        for model in candidate["models"]:
+            model["runs"] = []
+            for run_number in range(1, 4):
+                checkpoint += 1
+                model["runs"].append(
+                    {"number": run_number, "tries": score, "checkpoint": checkpoint}
+                )
+    state["checkpoint"] = {
+        "sequence": checkpoint,
+        "completed_paid_units": checkpoint,
+        "updated_at": "2026-07-15T00:00:00+00:00",
+    }
+    cal._refresh_derived(state)
+    assert state["selection"]["status"] == "selected"
+    artifact = tmp_path / "complete-calibration.json"
+    cal.save_artifact(artifact, state)
+    return pool_path, artifact, selected_canary
+
+
+def test_final_manifest_pins_calibration_without_leaking_runs_into_evidence(
+    tmp_path, capsys
+):
+    pool_path, artifact, selected_canary = _large_complete_pool(tmp_path)
+    final_path = cal.finalize_manifest(pool_path, artifact)
+    manifest = json.loads(final_path.read_text())
+    state = json.loads(artifact.read_text())
+
+    assert manifest["counts"] == {"puzzles": 30, "curriculum": 15, "holdout": 15}
+    holdout = [record for record in manifest["puzzles"] if record["split"] == "holdout"]
+    assert {
+        tier: sum(row["calibration"]["tier"] == tier for row in holdout)
+        for tier in cal.TIER_ORDER
+    } == {tier: 5 for tier in cal.TIER_ORDER}
+    assert (
+        manifest["calibration"]["artifact_sha256"] == state["hashes"]["artifact_sha256"]
+    )
+    assert (
+        manifest["calibration"]["content_sha256"] == state["hashes"]["content_sha256"]
+    )
+    assert manifest["dataset_content_sha256"] == cd.dataset_content_sha256(manifest)
+    changed_summary = copy.deepcopy(manifest)
+    changed_summary["puzzles"][15]["calibration"]["difficulty"] += 1
+    assert (
+        cd.dataset_content_sha256(changed_summary) != manifest["dataset_content_sha256"]
+    )
+    serialized_holdout = json.dumps(holdout)
+    assert '"runs"' not in serialized_holdout
+    assert '"conversation"' not in serialized_holdout
+    assert all(
+        record["calibration"]["all_runs_solved_within_cap"] for record in holdout
+    )
+
+    loaded, dataset_sha, _manifest_sha = cr.load_manifest(final_path)
+    packet = build_evidence_packet(loaded, final_path.parent)
+    prompt = cr.distillation_prompt(packet, play_effort="medium")
+    packet_text = packet.canonical_bytes.decode()
+    assert dataset_sha == manifest["dataset_content_sha256"]
+    assert selected_canary not in packet_text
+    assert selected_canary not in prompt
+    assert "model_medians" not in packet_text
+    assert "calibration" not in packet_text
+
+    def explode(*_args, **_kwargs):
+        raise AssertionError("final-evaluation dry-run made a provider/vocab call")
+
+    assert (
+        cr.run_curriculum(
+            final_path,
+            model="OPUS",
+            strategy_effort="max",
+            play_effort="medium",
+            auth="api",
+            cap=300,
+            dry_run=True,
+            provider_factory=explode,
+            vocab_loader=explode,
+            output_root=tmp_path / "never-written",
+            v7_strategy="frozen control",
+        )
+        is None
+    )
+    final_plan = json.loads(capsys.readouterr().out)
+    assert final_plan["holdout_puzzles"] == 15
+    assert final_plan["planned_holdout_runs"] == 15 * 3 * 3
+    assert final_plan["pending_holdout_runs"] == final_plan["planned_holdout_runs"]
+    assert all(
+        arm["fresh_context_per_run"] for arm in final_plan["call_plan"]["holdout"]
+    )
+    assert final_plan["curriculum_play_calls"] == 0

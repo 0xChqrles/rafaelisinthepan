@@ -373,6 +373,111 @@ def test_dry_run_reports_without_writing(tmp_path):
     assert not out_dir.exists()
 
 
+def test_calibration_pool_reuses_frozen_curriculum_and_builds_every_candidate(tmp_path):
+    base_dir = tmp_path / "base"
+    base = build_dataset(
+        generator_output(),
+        V=V,
+        ranking_for=ranking_for,
+        seed=42,
+        out_dir=base_dir,
+        quotas=QUOTAS,
+        canonical_metadata=CANONICAL_METADATA,
+        **SYNTHETIC_EMBEDDING,
+    )
+    pool_dir = tmp_path / "pool"
+    pool = cd.build_calibration_pool(
+        generator_output(),
+        curriculum_manifest_path=base_dir / "manifest.json",
+        V=V,
+        ranking_for=ranking_for,
+        seed=86,
+        out_dir=pool_dir,
+        dataset_id="strategy-fr-calibration-test",
+        minimum_candidates=1,
+        expected_curriculum_count=3,
+        canonical_metadata=CANONICAL_METADATA,
+        **SYNTHETIC_EMBEDDING,
+    )
+
+    assert pool["manifest_kind"] == cd.CALIBRATION_POOL_KIND
+    assert pool["counts"] == {
+        "curriculum": 3,
+        "calibration_candidates": 1,
+        "puzzles": 4,
+    }
+    assert pool["candidate_pool_content_sha256"] == cd.calibration_pool_content_sha256(
+        pool
+    )
+    changed_time = dict(pool, generated_at="2099-01-01T00:00:00+00:00")
+    assert cd.calibration_pool_content_sha256(changed_time) == pool[
+        "candidate_pool_content_sha256"
+    ]
+    curriculum = [record for record in pool["puzzles"] if record["split"] == "curriculum"]
+    candidates = [
+        record
+        for record in pool["puzzles"]
+        if record["split"] == cd.CALIBRATION_CANDIDATE_SPLIT
+    ]
+    assert len(candidates) == 1
+    assert len({record["candidate_id"] for record in candidates}) == 1
+    assert [record["pool_index"] for record in candidates] == [1]
+    assert sum(
+        "overlaps frozen curriculum" in rejection["reason"]
+        for rejection in pool["rejections"]
+    ) == 3
+    for record in curriculum:
+        assert (pool_dir / record["path"]).read_bytes() == (
+            base_dir / record["path"]
+        ).read_bytes()
+    for record in candidates:
+        puzzle = cd.load_puzzle_json(pool_dir / record["path"])
+        assert record["sha256"] == cd.sha256_bytes(
+            cd.read_data_bytes(pool_dir / record["path"])
+        )
+        assert all(100 <= hole["start_rank"] <= 150 for hole in puzzle["holes"])
+    assert pool["curriculum_base"]["dataset_content_sha256"] == base[
+        "dataset_content_sha256"
+    ]
+
+
+def test_calibration_pool_dry_run_never_builds_rank_maps_or_writes(tmp_path):
+    base_dir = tmp_path / "base"
+    build_dataset(
+        generator_output(),
+        V=V,
+        ranking_for=ranking_for,
+        seed=42,
+        out_dir=base_dir,
+        quotas=QUOTAS,
+        canonical_metadata=CANONICAL_METADATA,
+        **SYNTHETIC_EMBEDDING,
+    )
+    out_dir = tmp_path / "nothing"
+
+    def explode(_word):
+        raise AssertionError("dry-run built a rank map")
+
+    report = cd.build_calibration_pool(
+        generator_output(),
+        curriculum_manifest_path=base_dir / "manifest.json",
+        V=V,
+        ranking_for=explode,
+        seed=86,
+        out_dir=out_dir,
+        dataset_id="strategy-fr-calibration-test",
+        minimum_candidates=1,
+        expected_curriculum_count=3,
+        canonical_metadata=CANONICAL_METADATA,
+        dry_run=True,
+    )
+
+    assert report["valid_static_candidates"] == 1
+    assert report["meets_minimum_before_rank_map_build"] is True
+    assert report["provider_calls"] == report["ranking_calls"] == 0
+    assert not out_dir.exists()
+
+
 def test_default_quotas_match_the_issue_dataset_shape():
     quotas = Quotas()
     assert quotas.puzzle_count == 20
