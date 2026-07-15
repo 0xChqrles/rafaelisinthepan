@@ -65,6 +65,7 @@ import strategy_profiles as sp  # noqa: E402
 CURRICULUM_PROMPT_VERSION = "5"
 DISTILLATION_PROMPT_VERSION = "1"
 REQUIRED_STRATEGY_EFFORT = "max"
+CALIBRATED_PLAY_EFFORT = "medium"
 HOLDOUT_RUNS_PER_CONDITION = 3
 CONDITIONS = ("neutral", "learned", "v7")
 STRUCTURED_MAX_ATTEMPTS = 3
@@ -911,6 +912,14 @@ def run_curriculum(
         raise CurriculumError("--cap must be a positive integer")
 
     manifest, dataset_sha, manifest_sha = load_manifest(manifest_path)
+    if (
+        "calibration" in manifest or "strategy_evidence" in manifest
+    ) and play_effort != CALIBRATED_PLAY_EFFORT:
+        raise CurriculumError(
+            "calibrated datasets require --play-effort "
+            f"{CALIBRATED_PLAY_EFFORT!r}; calibration and final evaluation "
+            "must use the same reasoning effort"
+        )
     dataset_dir = manifest_path.parent
     config = select_model(model)
     try:

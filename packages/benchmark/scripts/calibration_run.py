@@ -58,12 +58,22 @@ ELIGIBLE_MIN_TRIES = 5
 ELIGIBLE_MAX_TRIES = 50
 MAX_MODEL_MEDIAN_SPREAD = 20
 TIER_QUOTA = 5
+RULE_V1_MAX_CATEGORY_COUNT_SPREAD = 1
 TIER_RANGES: dict[str, tuple[int, int]] = {
     "easy": (5, 15),
     "medium": (16, 30),
     "difficult": (31, 50),
 }
 TIER_ORDER = tuple(TIER_RANGES)
+
+COHORT_ORDER = (
+    "selected",
+    "eligible_unselected",
+    "spread_only",
+    "cap_stress",
+)
+CAP_STRESS_REASON_CODES = frozenset({"dnf", "over_cap", "median_out_of_range"})
+VALID_REJECTION_REASON_CODES = CAP_STRESS_REASON_CODES | {"model_median_spread"}
 
 ROSTER_SELECTORS = ("SONNET", "GPT-SOL")
 ROSTER_MODEL_IDS = ("claude-sonnet-5", "gpt-5.6-sol")
@@ -355,7 +365,7 @@ def _run_config(
         },
         "balance": {
             "scope": "each tier and all selected holdout targets",
-            "maximum_category_count_spread": 1,
+            "maximum_category_count_spread": RULE_V1_MAX_CATEGORY_COUNT_SPREAD,
             "fields": {key: list(values) for key, values in BALANCE_FIELDS.items()},
         },
         "roster": _fixed_roster(auth),
@@ -603,7 +613,8 @@ def _merge_counts(
 
 def _balanced(counts: dict[str, dict[str, int]]) -> bool:
     return all(
-        max(field_counts.values()) - min(field_counts.values()) <= 1
+        max(field_counts.values()) - min(field_counts.values())
+        <= RULE_V1_MAX_CATEGORY_COUNT_SPREAD
         for field_counts in counts.values()
     )
 
@@ -630,6 +641,98 @@ def _selection_key(candidate: dict[str, Any], salt: str) -> str:
     return hashlib.sha256(
         f"{salt}:{candidate['candidate_id']}".encode("utf-8")
     ).hexdigest()
+
+
+def _with_cohort_report(
+    selection: dict[str, Any], candidates: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Attach the deterministic lab-only disposition of every completed candidate."""
+    selected_ids = {
+        entry["candidate_id"] for entry in selection.get("selected", [])
+    }
+    candidate_ids = {candidate["candidate_id"] for candidate in candidates}
+    unknown_selected = selected_ids - candidate_ids
+    if unknown_selected:
+        raise CalibrationError(
+            "selection refers to unknown candidates: "
+            + ", ".join(sorted(unknown_selected))
+        )
+
+    cohorts: dict[str, list[dict[str, Any]]] = {
+        cohort: [] for cohort in COHORT_ORDER
+    }
+    for candidate in sorted(candidates, key=lambda row: row["candidate_id"]):
+        candidate_id = candidate["candidate_id"]
+        summary = candidate.get("summary", {})
+        status = summary.get("status")
+        reasons = copy.deepcopy(summary.get("reasons", []))
+        if status == "eligible":
+            cohort = (
+                "selected" if candidate_id in selected_ids else "eligible_unselected"
+            )
+            if reasons:
+                raise CalibrationError(
+                    f"eligible candidate {candidate_id} has rejection reasons"
+                )
+        elif status == "rejected":
+            if candidate_id in selected_ids:
+                raise CalibrationError(
+                    f"rejected candidate {candidate_id} appears in the selection"
+                )
+            reason_codes = {reason.get("code") for reason in reasons}
+            if "invalid_score" in reason_codes:
+                raise CalibrationError(
+                    f"candidate {candidate_id} has a malformed calibration score"
+                )
+            unknown_codes = reason_codes - VALID_REJECTION_REASON_CODES
+            if not reasons or unknown_codes:
+                rendered = ", ".join(sorted(str(code) for code in unknown_codes))
+                raise CalibrationError(
+                    f"candidate {candidate_id} has unclassifiable rejection reasons"
+                    + (f": {rendered}" if rendered else "")
+                )
+            if reason_codes & CAP_STRESS_REASON_CODES:
+                cohort = "cap_stress"
+            elif reason_codes == {"model_median_spread"}:
+                cohort = "spread_only"
+            else:  # Defensive: the accepted code set is deliberately exhaustive above.
+                raise CalibrationError(
+                    f"candidate {candidate_id} has no deterministic cohort"
+                )
+        else:
+            raise CalibrationError(
+                f"candidate {candidate_id} is incomplete and cannot enter a cohort report"
+            )
+
+        model_run_counts = {
+            model["model_id"]: len(model.get("runs", []))
+            for model in candidate.get("models", [])
+        }
+        cohorts[cohort].append(
+            {
+                "candidate_id": candidate_id,
+                "pool_index": candidate.get("pool_index"),
+                "path": candidate.get("path"),
+                "sha256": candidate.get("sha256"),
+                "cohort": cohort,
+                "tier": summary.get("tier"),
+                "difficulty": summary.get("difficulty"),
+                "model_medians": copy.deepcopy(summary.get("model_medians", {})),
+                "model_median_spread": summary.get("model_median_spread"),
+                "model_run_counts": dict(sorted(model_run_counts.items())),
+                "rejection_reasons": reasons,
+            }
+        )
+
+    return {
+        **selection,
+        "cohort_report": {
+            "schema_version": 1,
+            "total_candidates": len(candidates),
+            "counts": {cohort: len(cohorts[cohort]) for cohort in COHORT_ORDER},
+            "cohorts": cohorts,
+        },
+    }
 
 
 def _tier_combinations(
@@ -706,19 +809,31 @@ def select_calibrated_candidates(
         "required_per_tier": TIER_QUOTA,
         "eligible_per_tier": available,
         "balance_constraint": {
-            "maximum_category_count_spread": 1,
+            "maximum_category_count_spread": RULE_V1_MAX_CATEGORY_COUNT_SPREAD,
             "scope": "each tier and overall",
             "fields": {key: list(values) for key, values in BALANCE_FIELDS.items()},
+        },
+        "predeclared_balance_fallback": {
+            "rule_version": "2",
+            "activation": "explicit_rule_version_bump_only",
+            "automatic": False,
+            "trigger": "rule_v1_balance_only_shortfall",
+            "per_tier_maximum_category_count_spread": 2,
+            "overall_maximum_category_count_spread": 1,
+            "unique_target_slugs_required": True,
         },
         "reserved_curriculum_target_slug_count": len(reserved_slugs),
     }
     if any(deficits.values()):
-        return {
-            **base,
-            "status": "shortfall",
-            "reason": "insufficient_eligible_candidates",
-            "tier_deficits": deficits,
-        }
+        return _with_cohort_report(
+            {
+                **base,
+                "status": "shortfall",
+                "reason": "insufficient_eligible_candidates",
+                "tier_deficits": deficits,
+            },
+            candidates,
+        )
 
     # Precompute each tier once.  A larger candidate pool can have thousands of
     # balanced five-puzzle combinations; recomputing medium/difficult combinations
@@ -816,16 +931,19 @@ def select_calibrated_candidates(
                     break
 
     if selected_by_tier is None or tier_counts is None:
-        return {
-            **base,
-            "status": "shortfall",
-            "reason": "no_balanced_unique_selection",
-            "tier_deficits": deficits,
-            "shortfall": (
-                "eligible counts meet 5/5/5, but no set satisfies unique target "
-                "slugs and category-count spread <= 1 within every tier and overall"
-            ),
-        }
+        return _with_cohort_report(
+            {
+                **base,
+                "status": "shortfall",
+                "reason": "no_balanced_unique_selection",
+                "tier_deficits": deficits,
+                "shortfall": (
+                    "eligible counts meet 5/5/5, but no set satisfies unique target "
+                    "slugs and category-count spread <= 1 within every tier and overall"
+                ),
+            },
+            candidates,
+        )
 
     selected = [
         {
@@ -840,17 +958,22 @@ def select_calibrated_candidates(
     overall = _empty_counts()
     for counts in tier_counts.values():
         overall = _merge_counts(overall, counts)
-    return {
-        **base,
-        "status": "selected",
-        "tier_deficits": deficits,
-        "selected": selected,
-        "counts": {tier: TIER_QUOTA for tier in TIER_ORDER},
-        "balance": {
-            "tiers": {tier: _balance_report(tier_counts[tier]) for tier in TIER_ORDER},
-            "overall": _balance_report(overall),
+    return _with_cohort_report(
+        {
+            **base,
+            "status": "selected",
+            "tier_deficits": deficits,
+            "selected": selected,
+            "counts": {tier: TIER_QUOTA for tier in TIER_ORDER},
+            "balance": {
+                "tiers": {
+                    tier: _balance_report(tier_counts[tier]) for tier in TIER_ORDER
+                },
+                "overall": _balance_report(overall),
+            },
         },
-    }
+        candidates,
+    )
 
 
 def _refresh_derived(state: dict[str, Any]) -> None:

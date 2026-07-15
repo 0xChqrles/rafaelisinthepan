@@ -203,8 +203,19 @@ def test_selection_is_deterministic_exactly_5_5_5_and_balanced_per_tier_and_over
 
     assert first == second
     assert first["status"] == "selected"
+    assert first["rule_version"] == "1"
     assert first["counts"] == {tier: 5 for tier in cal.TIER_ORDER}
     assert len(first["selected"]) == 15
+    assert first["balance_constraint"]["maximum_category_count_spread"] == 1
+    assert first["predeclared_balance_fallback"] == {
+        "rule_version": "2",
+        "activation": "explicit_rule_version_bump_only",
+        "automatic": False,
+        "trigger": "rule_v1_balance_only_shortfall",
+        "per_tier_maximum_category_count_spread": 2,
+        "overall_maximum_category_count_spread": 1,
+        "unique_target_slugs_required": True,
+    }
     for scope in [*first["balance"]["tiers"].values(), first["balance"]["overall"]]:
         assert all(field["spread"] <= 1 for field in scope.values())
 
@@ -237,6 +248,10 @@ def test_selection_fails_with_explicit_tier_and_balance_shortfalls():
     )
     assert no_balance["status"] == "shortfall"
     assert no_balance["reason"] == "no_balanced_unique_selection"
+    assert no_balance["rule_version"] == "1"
+    assert "selected" not in no_balance
+    assert no_balance["predeclared_balance_fallback"]["rule_version"] == "2"
+    assert no_balance["predeclared_balance_fallback"]["automatic"] is False
 
     colliding = cal.select_calibrated_candidates(
         candidates,
@@ -245,6 +260,115 @@ def test_selection_fails_with_explicit_tier_and_balance_shortfalls():
     )
     assert colliding["status"] == "shortfall"
     assert colliding["reason"] == "no_balanced_unique_selection"
+
+
+def test_cohort_report_classifies_every_completed_candidate_deterministically():
+    candidates = copy.deepcopy(_eligible_selection_world())
+    for pool_index, candidate in enumerate(candidates, start=1):
+        candidate.update(
+            pool_index=pool_index,
+            path=f"puzzles/candidates/{candidate['candidate_id']}.json.gz",
+            sha256=f"{pool_index:064x}",
+        )
+        candidate["models"] = [
+            {
+                "model_id": model_id,
+                "required_runs": cal.INITIAL_RUNS,
+                "runs": _runs(*([median] * cal.INITIAL_RUNS)),
+            }
+            for model_id, median in candidate["summary"]["model_medians"].items()
+        ]
+
+    extra_eligible = copy.deepcopy(candidates[0])
+    extra_eligible["candidate_id"] = hashlib.sha256(b"extra-eligible").hexdigest()
+    extra_eligible["pool_index"] = len(candidates) + 1
+    extra_eligible["path"] = (
+        f"puzzles/candidates/{extra_eligible['candidate_id']}.json.gz"
+    )
+    extra_eligible["sha256"] = "e" * 64
+    for index, target in enumerate(extra_eligible["targets"]):
+        target["word"] = f"supplement{_alpha(index)}"
+        target["slug"] = slug(target["word"])
+    candidates.append(extra_eligible)
+
+    spread_only = _score_candidate([5] * 3, [26] * 3)
+    spread_only.update(
+        candidate_id=hashlib.sha256(b"spread-only").hexdigest(),
+        pool_index=len(candidates) + 1,
+        path="puzzles/candidates/spread-only.json.gz",
+        sha256="f" * 64,
+    )
+    spread_only["summary"] = cal.summarize_candidate(spread_only)
+    candidates.append(spread_only)
+
+    cap_stress = _score_candidate([10, 10, None], [10] * 3)
+    cap_stress.update(
+        candidate_id=hashlib.sha256(b"cap-stress").hexdigest(),
+        pool_index=len(candidates) + 1,
+        path="puzzles/candidates/cap-stress.json.gz",
+        sha256="a" * 64,
+    )
+    cap_stress["summary"] = cal.summarize_candidate(cap_stress)
+    candidates.append(cap_stress)
+
+    first = cal.select_calibrated_candidates(
+        candidates, reserved_slugs={"curriculum"}, selection_salt="pool"
+    )
+    shuffled = list(candidates)
+    random.Random(8600).shuffle(shuffled)
+    second = cal.select_calibrated_candidates(
+        shuffled, reserved_slugs={"curriculum"}, selection_salt="pool"
+    )
+
+    assert first == second
+    report = first["cohort_report"]
+    assert report["total_candidates"] == len(candidates)
+    assert report["counts"] == {
+        "selected": 15,
+        "eligible_unselected": 1,
+        "spread_only": 1,
+        "cap_stress": 1,
+    }
+    assert sum(report["counts"].values()) == len(candidates)
+    for rows in report["cohorts"].values():
+        assert [row["candidate_id"] for row in rows] == sorted(
+            row["candidate_id"] for row in rows
+        )
+
+    spread_row = report["cohorts"]["spread_only"][0]
+    assert spread_row["candidate_id"] == spread_only["candidate_id"]
+    assert spread_row["pool_index"] == spread_only["pool_index"]
+    assert spread_row["path"] == spread_only["path"]
+    assert spread_row["sha256"] == spread_only["sha256"]
+    assert spread_row["model_medians"] == {
+        "claude-sonnet-5": 5,
+        "gpt-5.6-sol": 26,
+    }
+    assert spread_row["model_median_spread"] == 21
+    assert spread_row["model_run_counts"] == {
+        "claude-sonnet-5": 3,
+        "gpt-5.6-sol": 3,
+    }
+    assert spread_row["rejection_reasons"] == spread_only["summary"]["reasons"]
+
+    stress_row = report["cohorts"]["cap_stress"][0]
+    assert stress_row["candidate_id"] == cap_stress["candidate_id"]
+    assert {reason["code"] for reason in stress_row["rejection_reasons"]} == {
+        "dnf",
+    }
+
+
+def test_cohort_report_rejects_malformed_scores_instead_of_classifying_them():
+    candidates = _eligible_selection_world()
+    malformed = _score_candidate([0, 10, 10], [10] * 3)
+    malformed["candidate_id"] = hashlib.sha256(b"malformed").hexdigest()
+    malformed["summary"] = cal.summarize_candidate(malformed)
+    candidates.append(malformed)
+
+    with pytest.raises(cal.CalibrationError, match="malformed calibration score"):
+        cal.select_calibrated_candidates(
+            candidates, reserved_slugs=set(), selection_salt="pool"
+        )
 
 
 def _puzzle(words: list[str], starts: list[str] | None = None) -> dict:
@@ -470,6 +594,8 @@ def test_dry_run_plans_fixed_roster_and_makes_no_provider_or_vocab_calls(tmp_pat
     assert plan["config"]["effort"] == "medium"
     assert plan["config"]["cap"] == 75
     assert plan["config"]["initial_runs_per_model"] == 3
+    assert plan["completed_paid_units"] == 0
+    assert plan["pending_paid_units"] == 45 * 2 * 3
     assert len(plan["planned_paid_units"]) == 1
     assert not (tmp_path / "never-written.json").exists()
 
@@ -836,6 +962,12 @@ def test_final_manifest_pins_calibration_without_leaking_runs_into_evidence(
     manifest = json.loads(final_path.read_text())
     state = json.loads(artifact.read_text())
 
+    assert state["selection"]["cohort_report"]["counts"] == {
+        "selected": 15,
+        "eligible_unselected": 0,
+        "spread_only": 0,
+        "cap_stress": 30,
+    }
     assert manifest["counts"] == {"puzzles": 30, "curriculum": 15, "holdout": 15}
     holdout = [record for record in manifest["puzzles"] if record["split"] == "holdout"]
     assert {
@@ -865,6 +997,11 @@ def test_final_manifest_pins_calibration_without_leaking_runs_into_evidence(
     serialized_holdout = json.dumps(holdout)
     assert '"runs"' not in serialized_holdout
     assert '"conversation"' not in serialized_holdout
+    serialized_manifest = json.dumps(manifest)
+    assert '"cohort_report"' not in serialized_manifest
+    assert '"eligible_unselected"' not in serialized_manifest
+    assert '"spread_only"' not in serialized_manifest
+    assert '"cap_stress"' not in serialized_manifest
     assert all(
         record["calibration"]["all_runs_solved_within_cap"] for record in holdout
     )
@@ -939,6 +1076,24 @@ def test_final_manifest_pins_calibration_without_leaking_runs_into_evidence(
     )
     profile_path = tmp_path / "frozen.profile.json"
     sp.write_profile(profile_path, profile)
+    with pytest.raises(
+        cr.CurriculumError,
+        match="calibrated datasets require --play-effort 'medium'",
+    ):
+        cr.run_curriculum(
+            final_path,
+            model="OPUS",
+            strategy_effort="max",
+            play_effort="high",
+            auth="api",
+            cap=300,
+            dry_run=True,
+            provider_factory=explode,
+            vocab_loader=explode,
+            output_root=tmp_path / "never-written",
+            v7_strategy="frozen control",
+            frozen_profile=profile_path,
+        )
     assert (
         cr.run_curriculum(
             final_path,

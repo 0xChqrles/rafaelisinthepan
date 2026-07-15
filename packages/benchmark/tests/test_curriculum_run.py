@@ -241,7 +241,7 @@ def test_calibrated_holdout_reuses_frozen_profile_without_distillation(
 ):
     manifest_path, manifest = dataset
     packet = cr.build_evidence_packet(manifest, manifest_path.parent)
-    prompt = cr.distillation_prompt(packet, play_effort="none")
+    prompt = cr.distillation_prompt(packet, play_effort="medium")
     profile = sp.build_profile(
         strategy_id="fixture/claude-opus-4-8/frozen",
         model_id="claude-opus-4-8",
@@ -249,7 +249,7 @@ def test_calibrated_holdout_reuses_frozen_profile_without_distillation(
         transport="api",
         auth="api",
         strategy_effort="max",
-        play_effort="none",
+        play_effort="medium",
         lang="fr",
         dataset_id=manifest["dataset_id"],
         dataset_sha256=manifest["dataset_content_sha256"],
@@ -277,11 +277,25 @@ def test_calibrated_holdout_reuses_frozen_profile_without_distillation(
     )
 
     provider = _provider_for_full_run(manifest_path, manifest)
+    with pytest.raises(
+        cr.CurriculumError,
+        match="calibrated datasets require --play-effort 'medium'",
+    ):
+        _run(
+            (manifest_path, manifest),
+            tmp_path,
+            RecordingProvider(),
+            frozen_profile=profile_path,
+            play_effort="high",
+            dry_run=True,
+        )
+
     artifact = _run(
         (manifest_path, manifest),
         tmp_path,
         provider,
         frozen_profile=profile_path,
+        play_effort="medium",
     )
     state = _state(artifact)
 

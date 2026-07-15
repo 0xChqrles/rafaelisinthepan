@@ -454,8 +454,11 @@ pnpm bench:curriculum:evaluate <artifact-or-profile.json>
 #    `extend` records the explicit reason for a 3->5-run median without calling a provider.
 #    `finalize` writes the selected 15-puzzle (5/5/5) holdout manifest, pins the exact
 #    artifact file and original curriculum evidence packet, and does not run evaluation.
-#    A later final evaluation must pass the matching frozen `--profile`; calibrated
-#    manifests cannot re-distil. `--dry-run` writes nothing and makes no provider calls.
+#    Once complete, its lab artifact reports every candidate as selected,
+#    eligible-unselected, spread-only, or cap-stress. A later final evaluation must pass
+#    the matching frozen `--profile` at `--play-effort medium`; calibrated manifests
+#    cannot re-distil.
+#    `--dry-run` writes nothing, makes no provider calls, and prints exact pending cost.
 pnpm bench:curriculum:generate --from-output <larger-generator-output.json> --seed 86 --calibration-pool --curriculum-manifest <frozen-manifest.json> --dataset-id <dataset-id> [--dry-run]
 pnpm bench:curriculum:calibrate run <candidate-manifest.json> [--auth api|subscription] [--resume ARTIFACT] [--max-units N] [--all] [--dry-run] [-v|--verbose]
 pnpm bench:curriculum:calibrate extend <artifact.json> --candidate ID --model <SONNET-or-GPT-SOL> --reason <unstable-or-tier_boundary>
@@ -616,16 +619,29 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   Selection is deterministic and hard-fails with a shortfall report unless it can choose 5 easy
   (5–15), 5 medium (16–30), and 5 difficult (31–50) puzzles with unique target slugs and category
   count spread <=1 for POS, gender, frequency band, and semantic class both within each tier and
-  overall. Artifacts under gitignored `benchmark/output/calibration/` pin pool/manifest/prompt/
-  roster/config identities, every transcript/rank trace/token record/duration, one checkpoint per
-  paid puzzle-run, derived summaries, selection, and stable artifact/content/selection hashes.
+  overall. This is rule v1. A balance-only shortfall predeclares rule v2 (per-tier spread <=2,
+  overall <=1, unique slugs unchanged), but never activates it automatically: using v2 requires an
+  explicit rule-version bump and v1 artifacts remain v1. Artifacts under gitignored
+  `benchmark/output/calibration/` pin pool/manifest/prompt/roster/config identities, every
+  transcript/rank trace/token record/duration, one checkpoint per paid puzzle-run, derived
+  summaries, selection, and stable artifact/content/selection hashes. Once every candidate is
+  complete, they also contain a deterministic lab-only cohort report: the 15 `selected` puzzles,
+  eligible-but-unselected puzzles, `spread_only` puzzles that fail only the <=20 cross-model rule,
+  and `cap_stress` puzzles with a DNF/over-cap run or median outside 5–50. Every row records candidate
+  identity, both medians, spread, run counts, and exact rejection reasons; malformed/incomplete runs
+  are certification errors rather than cohorts. These separate cohorts preserve tunnel-prone and
+  cap-stress signal but are never pooled into the primary bounded cross-model-consistent estimand.
   The paid runner rejects anything below the fixed 15-curriculum/45-candidate production shape
-  before provider setup. Finalization replays every transcript and metric, requires complete
-  identity/token/duration/auth records, and writes schema v3 manifests that pin both the exact
+  before provider setup; the minimum pool is 270 paid runs, dry-run reports the exact pending count,
+  and regeneration, extension, or constraint relaxation is never automatic. Finalization replays
+  every transcript and metric, requires complete identity/token/duration/auth records, and writes
+  schema v3 manifests that pin both the exact
   artifact-file SHA and the byte-identical original curriculum evidence packet. They contain only
   lean per-puzzle medians/difficulty/tier/run counts; calibration runs never enter evidence,
   strategies, or final evaluation data. Calibrated evaluation accepts only a matching frozen
-  profile and makes zero distillation calls. `strategy-fr-v1` and its pathological puzzle 20
+  profile at medium play effort and makes zero distillation calls. A null result applies only to the
+  selected primary cohort and does not disprove value on the separately reported tunnel-prone
+  candidates. `strategy-fr-v1` and its pathological puzzle 20
   remain unchanged; no paid calibration has been executed or committed as part of the tooling.
 - **`gen_phrase` is fully interactive on a TTY (#5).** Anything not passed as a flag is
   prompted: the **sentence** (positional, now optional), **`--lang`**, and the optional
