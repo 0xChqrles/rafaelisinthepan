@@ -1018,7 +1018,7 @@ def test_runner_rejects_undersized_pools_before_any_external_call(
         )
 
 
-def test_prompt_v19_refuses_to_resume_a_v18_paid_artifact(tmp_path):
+def test_prompt_v21_refuses_to_resume_a_v20_paid_artifact(tmp_path):
     manifest_path, _words, _vocab = _runner_pool(tmp_path)
     manifest, content_sha, manifest_sha = cal.load_candidate_pool(manifest_path)
     state = cal.new_artifact_state(
@@ -1028,8 +1028,8 @@ def test_prompt_v19_refuses_to_resume_a_v18_paid_artifact(tmp_path):
         manifest_sha,
         auth="api",
     )
-    state["config"]["prompt_version"] = "18"
-    artifact = tmp_path / "v18-calibration.json"
+    state["config"]["prompt_version"] = "20"
+    artifact = tmp_path / "v20-calibration.json"
     cal.save_artifact(artifact, state)
 
     with pytest.raises(
@@ -1145,12 +1145,17 @@ def test_checkpointed_resume_repeats_no_completed_paid_run(tmp_path, monkeypatch
         for player in resumed_provider.players
     )
     calibration_opening = first_provider.players[0].calls[0][0]["content"]
-    assert first_state["config"]["prompt_version"] == cal.PROMPT_VERSION == "19"
+    assert first_state["config"]["prompt_version"] == cal.PROMPT_VERSION == "21"
     assert len(calibration_opening.split()) <= 650
     assert "MANDATORY REPLY CONTRACT" in calibration_opening
     assert "limit of 75 counted tries" in calibration_opening
     assert "Apostrophes are forbidden" in calibration_opening
-    assert "You may reason privately as much as needed" in calibration_opening
+    assert "Reason privately as needed" in calibration_opening
+    assert (
+        "multi-step deduction over the CLOZE, ranked clues, and exclusion sets"
+        in calibration_opening
+    )
+    assert "Reply now" not in calibration_opening
     assert (
         "your entire visible reply must be exactly one bare French"
         in calibration_opening

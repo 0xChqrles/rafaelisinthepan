@@ -94,7 +94,7 @@ DISPLAY_MODEL_COUNT = 3
 
 # Bump whenever the opening rules or turn-feedback scaffold changes materially. Results
 # are attributable to a model id plus this prompt version and the CLI's printed effort.
-PROMPT_VERSION = "19"
+PROMPT_VERSION = "21"
 
 DEFAULT_CAP = 300
 DEFAULT_RUNS = 7
@@ -178,11 +178,10 @@ OPENAI_SUBSCRIPTION_CONFLICT_ENV = (
 
 CODEX_TURN_TIMEOUT_SECONDS = 300
 CODEX_BENCHMARK_INSTRUCTIONS = (
-    "You are an isolated word-game player. Treat the user's complete rules and current "
-    "state as your only task context. Never inspect files, use tools, search, or modify "
-    "anything. Reply to the final user message with exactly one bare word made only "
-    "of lowercase letters, optionally joined by internal ASCII hyphens. Never use "
-    "apostrophes, spaces, punctuation, digits, formatting, or explanation."
+    "You are an isolated word-game player. Treat the user's complete rules and "
+    "complete chronological game record as your only task context. Never inspect "
+    "files, use tools, search, or modify anything. Follow the visible-reply contract "
+    "in the user prompt exactly; do not add any other text."
 )
 # Prose mode (#84): curriculum retrospective/synthesis calls need full-text answers.
 CODEX_PROSE_INSTRUCTIONS = (
@@ -744,7 +743,7 @@ def _reply_contract_lines(referee: PuzzleReferee, language: str) -> list[str]:
         )
     return [
         (
-            "You may reason privately as much as needed; your entire visible reply "
+            "Reason privately as needed; your entire visible reply "
             f"must be exactly one bare {language} game-vocabulary word. Use "
             f"permitted letters ({alphabet}) with "
             "optional ordinary ASCII hyphens (-); they cannot lead, trail, double, or "
@@ -774,11 +773,16 @@ def _reply_contract_lines(referee: PuzzleReferee, language: str) -> list[str]:
 
 
 def _reply_reminder(referee: PuzzleReferee) -> str:
+    # An affirmative multi-step-deduction cue in recency position: adaptive-thinking
+    # transports skip reasoning on prompts that merely permit it, so the reminder must
+    # assert that choosing the next word requires deliberation before the reply.
     language = LANGUAGE_NAMES.get(referee.lang, referee.lang)
     return (
-        f"Reply now with exactly one bare {language} game-vocabulary word: permitted "
-        "lowercase letters with optional internal ASCII hyphens only; no apostrophe, "
-        "space, punctuation, formatting, or explanation."
+        "Finding the next word takes multi-step deduction over the CLOZE, ranked "
+        "clues, and exclusion sets; think it through carefully, then reply with "
+        f"exactly one bare {language} game-vocabulary word: permitted lowercase "
+        "letters, optional internal ASCII hyphens; no apostrophe, space, "
+        "punctuation, formatting, or explanation."
     )
 
 
@@ -828,8 +832,8 @@ def _rules_opening(
             "OBJECTIVE AND SCORE",
             (
                 "Solve every hidden word in as few counted tries as possible. "
-                "Your score is the total number of unique valid guesses — lower is "
-                "better; every counted guess is expensive."
+                "Your score is the total number of unique valid guesses; every "
+                "counted guess is expensive."
             ),
             (
                 f"The run has a limit of {cap} counted tries. Solving every word on "
@@ -878,19 +882,22 @@ def _rules_opening(
             "",
             "AUTHORITATIVE STATE",
             (
-                "Each turn supplies these complete rules plus the latest authoritative "
-                "CURRENT STATE; earlier conversation is unnecessary. RESULT is the "
-                "latest counted outcome. State gives the CLOZE, each current best, "
-                "no-improvement streak, score, and unordered do-not-repeat sets for "
-                "counted and rejected words—not a trajectory."
+                "Each turn includes rules, initial state and starting clues, then "
+                "every prior PLAYER REPLY and exact REFEREE FEEDBACK in order. "
+                "Snapshots never erase earlier rank/MISS evidence; the last feedback is "
+                "current."
+            ),
+            (
+                "Every model receives the identical record; hidden session "
+                "memory supplies no evidence."
             ),
             (
                 "Any strict improvement resets the streak; non-counting leaves it "
-                "unchanged. Format-invalid, outside-vocabulary, and duplicate replies "
-                "change no score, rank, or puzzle state."
+                "unchanged."
             ),
             *strategy_section,
             "",
+            "COMPLETE CHRONOLOGICAL GAME RECORD",
             *_state_snapshot_lines(referee),
             "Tries: 0 (your score — lower is better)",
             _reply_reminder(referee),
@@ -917,7 +924,7 @@ def opening_message(
             ),
             strategy,
         ]
-    # Prompt v19 has one strategy-neutral rules scaffold for every caller. The flag is
+    # Prompt v21 has one strategy-neutral rules scaffold for every caller. The flag is
     # retained for API compatibility with frozen calibration/curriculum call sites; only
     # an explicitly supplied strategy can add solving guidance.
     _ = rules_only
@@ -964,7 +971,7 @@ def feedback_message(
         *_state_snapshot_lines(referee),
         f"Tries: {feedback.tries} (your score — lower is better)",
     ]
-    # Prompt v19 never adds generic solving advice during play. Keep the keyword for
+    # Prompt v21 never adds generic solving advice during play. Keep the keyword for
     # caller compatibility; explicit learned/v7 guidance lives only in the opening.
     _ = rules_only
     lines.append(_reply_reminder(referee))
@@ -1211,31 +1218,74 @@ def _validate_provider_effort(
         )
 
 
-def _stateless_word_prompt(messages: list[Message]) -> str:
-    """Return fixed opening rules plus only the latest authoritative turn state.
+def _stateless_word_parts(messages: list[Message]) -> tuple[str, str]:
+    """Split a fresh-turn prompt into fixed rules and its complete public record.
 
-    The full append-only transcript remains the audit record, but every real word-play
-    transport sees this identical user prompt. That prevents provider-specific session
-    memory from becoming an experimental treatment.
+    The concatenation of the two parts is the exact prompt text; the prefix is
+    byte-identical across every turn of a run so a prompt-cache breakpoint placed on
+    it can actually be read back.
     """
     if not messages or messages[0].get("role") != "user":
         raise ValueError("word reply requires an opening user message")
     if messages[-1].get("role") != "user":
         raise ValueError("word reply requires a final user message")
+    for index, message in enumerate(messages):
+        expected_role = "user" if index % 2 == 0 else "assistant"
+        if message.get("role") != expected_role:
+            raise ValueError(
+                "word reply requires an alternating user/assistant transcript"
+            )
+        if not isinstance(message.get("content"), str):
+            raise ValueError("word reply message content must be text")
 
-    opening = messages[0].get("content", "")
-    latest = messages[-1].get("content", "")
-    opening_rules, marker, initial_state = opening.partition("\nCURRENT STATE\n")
-    if not marker:
-        # Defensive compatibility for direct adapter callers. Production game openings
-        # always carry the state marker.
-        if len(messages) == 1:
-            return opening
-        return f"{opening.rstrip()}\n\n{latest.lstrip()}"
-    current_state = (
-        f"CURRENT STATE\n{initial_state}" if len(messages) == 1 else latest
-    )
-    return f"{opening_rules.rstrip()}\n\n{current_state.lstrip()}"
+    opening = messages[0]["content"]
+    record_marker = "\nCOMPLETE CHRONOLOGICAL GAME RECORD\n"
+    opening_rules, marker, initial_state = opening.partition(record_marker)
+    if marker:
+        stable = (
+            f"{opening_rules.rstrip()}\n\n"
+            "COMPLETE CHRONOLOGICAL GAME RECORD\n"
+        )
+    else:
+        # Defensive compatibility for direct adapter callers. Production v21 game
+        # openings carry the complete-record marker; older fixtures may expose only
+        # CURRENT STATE, and arbitrary one-message calls remain byte-preserving.
+        opening_rules, state_marker, state_tail = opening.partition(
+            "\nCURRENT STATE\n"
+        )
+        if state_marker:
+            stable = f"{opening_rules.rstrip()}\n\n"
+            initial_state = f"CURRENT STATE\n{state_tail}"
+        elif len(messages) == 1:
+            return "", opening
+        else:
+            stable = ""
+            initial_state = opening
+
+    record = [initial_state]
+    for turn_index, message_index in enumerate(range(1, len(messages), 2), start=1):
+        record.extend(
+            [
+                f"PLAYER REPLY {turn_index}\n{messages[message_index]['content']}",
+                (
+                    f"REFEREE FEEDBACK {turn_index}\n"
+                    f"{messages[message_index + 1]['content']}"
+                ),
+            ]
+        )
+    return stable, "\n\n".join(record)
+
+
+def _stateless_word_prompt(messages: list[Message]) -> str:
+    """Return one fresh prompt containing the complete chronological public record.
+
+    Every real word-play transport sees this identical user prompt. All prior replies,
+    exact referee outcomes, and the initial starting clues are explicit, so neither
+    provider-specific session memory nor a lossy current-best snapshot becomes an
+    experimental treatment.
+    """
+    stable, volatile = _stateless_word_parts(messages)
+    return f"{stable}{volatile}"
 
 
 def _provider_messages(
@@ -1347,8 +1397,8 @@ class AnthropicSubscriptionReply:
                 "Agent SDK conversation diverged from the append-only referee transcript"
             )
 
-        # Word play is deliberately stateless: every turn receives the same fixed
-        # rules plus latest aggregate state as every other transport. Other output
+        # Word play uses a fresh provider turn containing the same fixed rules and
+        # complete chronological public record as every other transport. Other output
         # modes retain their existing resumable-session behavior.
         prompt = messages[-1]["content"]
         resume = self.session_id
@@ -1598,11 +1648,35 @@ def provider_reply(
             request: dict[str, Any] = {
                 "model": model_id,
                 "max_tokens": budget,
-                "messages": _provider_messages(messages, output),
-                # The repeated rules prefix can still receive Anthropic's automatic
-                # moving cache breakpoint when prompt caching is explicitly enabled.
-                "cache_control": {"type": "ephemeral"},
             }
+            stable_rules = ""
+            if output == "word":
+                stable_rules, volatile_state = _stateless_word_parts(messages)
+            if stable_rules:
+                # Word turns are one user message whose tail (the complete public
+                # record) changes every turn. A breakpoint placed after the whole
+                # message therefore never produces a cache read; pinning it on the
+                # byte-identical rules prefix does. Prefixes below the model's
+                # minimum cacheable size silently skip caching, which is still
+                # cheaper than writing an unreadable full-prompt entry per turn.
+                request["messages"] = [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": stable_rules,
+                                "cache_control": {"type": "ephemeral"},
+                            },
+                            {"type": "text", "text": volatile_state},
+                        ],
+                    }
+                ]
+            else:
+                request["messages"] = _provider_messages(messages, output)
+                # Append-only prose/decision conversations still use Anthropic's
+                # automatic moving cache breakpoint on the last cacheable block.
+                request["cache_control"] = {"type": "ephemeral"}
             if effort == "none":
                 # Preserve the original one-word mode: Sonnet 5 defaults to adaptive
                 # thinking, so it must be disabled explicitly; Opus accepts the same form.

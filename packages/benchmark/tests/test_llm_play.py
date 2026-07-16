@@ -318,10 +318,15 @@ def test_api_word_adapters_receive_the_same_stateless_authoritative_prompt(
     messages = [
         {
             "role": "user",
-            "content": "fixed rules\nCURRENT STATE\nobsolete initial state",
+            "content": (
+                "fixed rules\n\nCOMPLETE CHRONOLOGICAL GAME RECORD\n"
+                "CURRENT STATE\ninitial state"
+            ),
         },
-        {"role": "assistant", "content": "obsolete model reply"},
-        {"role": "user", "content": "RESULT\nCURRENT STATE\nlatest state"},
+        {"role": "assistant", "content": "first model reply"},
+        {"role": "user", "content": "FIRST RESULT\nCURRENT STATE\nafter first"},
+        {"role": "assistant", "content": "second model reply"},
+        {"role": "user", "content": "SECOND RESULT\nCURRENT STATE\nlatest state"},
     ]
     expected = [
         {"role": "user", "content": _stateless_word_prompt(messages)}
@@ -330,13 +335,71 @@ def test_api_word_adapters_receive_the_same_stateless_authoritative_prompt(
     anthropic = provider_reply(MODELS[0], "secret", effort="none")
     openai = provider_reply(MODELS[2], "secret", effort="none")
     assert anthropic(messages) == openai(messages) == "forest"
-    assert anthropic_calls[0]["messages"] == expected
     assert openai_calls[0]["input"] == expected
-    assert "obsolete initial state" not in expected[0]["content"]
-    assert "obsolete model reply" not in expected[0]["content"]
-    assert expected[0]["content"] == (
-        "fixed rules\n\nRESULT\nCURRENT STATE\nlatest state"
+    # Anthropic splits the identical prompt into a cached fixed-rules block plus the
+    # volatile state so the per-run prefix can produce cache reads; the visible text
+    # is byte-identical to the OpenAI prompt.
+    anthropic_messages = anthropic_calls[0]["messages"]
+    assert "cache_control" not in anthropic_calls[0]
+    assert len(anthropic_messages) == 1 and anthropic_messages[0]["role"] == "user"
+    blocks = anthropic_messages[0]["content"]
+    assert [block["type"] for block in blocks] == ["text", "text"]
+    assert blocks[0]["cache_control"] == {"type": "ephemeral"}
+    assert "cache_control" not in blocks[1]
+    assert blocks[0]["text"] + blocks[1]["text"] == expected[0]["content"]
+    assert blocks[0]["text"] == (
+        "fixed rules\n\nCOMPLETE CHRONOLOGICAL GAME RECORD\n"
     )
+    assert expected[0]["content"] == (
+        "fixed rules\n\nCOMPLETE CHRONOLOGICAL GAME RECORD\n"
+        "CURRENT STATE\ninitial state\n\n"
+        "PLAYER REPLY 1\nfirst model reply\n\n"
+        "REFEREE FEEDBACK 1\nFIRST RESULT\nCURRENT STATE\nafter first\n\n"
+        "PLAYER REPLY 2\nsecond model reply\n\n"
+        "REFEREE FEEDBACK 2\nSECOND RESULT\nCURRENT STATE\nlatest state"
+    )
+
+
+def test_stateless_word_prompt_preserves_initial_clues_and_every_exact_result():
+    model = ScriptedModel(["shared", "cold", "forest", "ocean"])
+
+    play_puzzle(puzzle(), VOCAB, model)
+
+    assert _stateless_word_prompt(model.calls[0]) == model.calls[0][0]["content"]
+    # Before the third guess, the current-best snapshot has replaced both starting
+    # clues with "shared". The provider prompt must nevertheless retain the initial
+    # clues plus both guesses and their exact, ordered per-hole outcomes.
+    prompt = _stateless_word_prompt(model.calls[2])
+    assert "WORD 1: tree (rank 50)" in prompt
+    assert "WORD 2: lake (rank 40)" in prompt
+    assert "WORD 1: shared (rank 10)" in prompt
+    assert "WORD 2: shared (rank 5)" in prompt
+    ordered_markers = (
+        "PLAYER REPLY 1\nshared",
+        'REFEREE FEEDBACK 1\nRESULT FOR "shared":',
+        "PLAYER REPLY 2\ncold",
+        'REFEREE FEEDBACK 2\nRESULT FOR "cold":',
+    )
+    positions = [prompt.index(marker) for marker in ordered_markers]
+    assert positions == sorted(positions)
+    assert "word 1: 10 closer! New best rank 10." in prompt
+    assert "word 2: MISS (current best remains rank 5)" in prompt
+
+
+def test_codex_bootstrap_does_not_define_provider_specific_game_rules():
+    assert "Follow the visible-reply contract in the user prompt exactly" in (
+        CODEX_BENCHMARK_INSTRUCTIONS
+    )
+    for gameplay_rule in (
+        "exactly one bare word",
+        "lowercase letters",
+        "ASCII hyphens",
+        "apostrophes",
+        "CURRENT STATE",
+        "rank",
+        "CLOZE",
+    ):
+        assert gameplay_rule not in CODEX_BENCHMARK_INSTRUCTIONS
 
 
 @pytest.mark.parametrize(
@@ -429,6 +492,9 @@ def test_anthropic_subscription_word_adapter_uses_fresh_stateless_agent_sdk_turn
         _stateless_word_prompt(continued),
         "opening again",
     ]
+    assert "CURRENT STATE\ninitial state" in calls[1][0]
+    assert "PLAYER REPLY 1\nforest" in calls[1][0]
+    assert "REFEREE FEEDBACK 1\nlatest state" in calls[1][0]
     assert [call[1].resume for call in calls] == [None, None, None]
     assert first_options.model == "claude-opus-4-8"
     assert first_options.system_prompt is None
@@ -622,10 +688,16 @@ def test_openai_subscription_adapter_isolates_fresh_codex_exec(
         _stateless_word_prompt(latest),
         "opening again",
     ]
-    # Fresh Codex turns receive the rules plus one aggregate state, never the model's
-    # prior one-word replies or obsolete referee snapshots.
-    assert all("forest" not in call_kwargs["input"] for _, call_kwargs in calls)
-    assert "feedback" not in calls[2][1]["input"]
+    # Fresh Codex turns get the same explicit full record as every other transport;
+    # they do not need provider-side session memory to retain earlier evidence.
+    assert "CURRENT STATE\ninitial state" in calls[2][1]["input"]
+    assert "PLAYER REPLY 1\nforest" in calls[2][1]["input"]
+    assert "REFEREE FEEDBACK 1\nfeedback" in calls[2][1]["input"]
+    assert "PLAYER REPLY 2\nocean" in calls[2][1]["input"]
+    assert (
+        "REFEREE FEEDBACK 2\nlatest authoritative state"
+        in calls[2][1]["input"]
+    )
 
     reply.close()
     assert not workspace.exists()
@@ -1670,7 +1742,7 @@ def test_referee_reports_stagnation_as_evidence_without_forcing_a_tactic():
     assert "WORD 2: better (rank 4)" in better_message
 
 
-def test_tried_words_are_complete_but_unordered_and_do_not_replay_the_trajectory():
+def test_individual_snapshot_keeps_a_compact_unordered_exclusion_set():
     misses = ["zulu", "alpha", "middle"]
     referee = PuzzleReferee(puzzle(), VOCAB | set(misses))
 
@@ -1684,8 +1756,8 @@ def test_tried_words_are_complete_but_unordered_and_do_not_replay_the_trajectory
     assert "RECENT COUNTED OUTCOMES" not in message
     assert "- zulu:" not in message
     assert "- alpha:" not in message
-    # Old rank-sorted and chronological histories both encouraged word-list
-    # continuation. The snapshot carries one best clue plus a de-ordered exclusion set.
+    # Each snapshot stays compact. The canonical fresh-turn prompt separately retains
+    # these exact feedback messages in chronological order for both providers.
     assert "WORD 1: tree (rank 50)" in message
     assert "WORD 1: tree(50)," not in message
 
@@ -1919,7 +1991,7 @@ def test_opening_injects_learned_strategy_as_guidance_and_first_reply_is_a_guess
     play_puzzle(puzzle(), VOCAB, bare)
     bare_opening = bare.calls[0][0]["content"]
     assert "YOUR STRATEGY" not in bare_opening
-    assert "Reply now with exactly one bare English game-vocabulary word" in bare_opening
+    assert "then reply with exactly one bare English game-vocabulary word" in bare_opening
     # No pre-game plan is requested anywhere (#84).
     assert "state the method you commit to" not in bare_opening
     assert "your method" not in bare_opening
@@ -1959,10 +2031,17 @@ def test_stateless_reply_contract_permits_private_thinking_but_binds_visible_out
 
     for messages in model.calls:
         prompt = _stateless_word_prompt(messages)
-        assert "You may reason privately as much as needed" in prompt
+        assert "Reason privately as needed" in prompt
         assert "your entire visible reply must be exactly one bare English" in prompt
         assert "The visible reply must contain no uppercase" in prompt
         assert "labels, reasoning, or explanations" not in prompt
+        # Every stateless turn ends with the affirmative deliberation cue so
+        # adaptive-thinking transports treat the choice as multi-step reasoning.
+        assert (
+            "multi-step deduction over the CLOZE, ranked clues, and exclusion sets"
+            in prompt
+        )
+        assert "Reply now" not in prompt
 
 
 def test_opening_prompt_explains_rules_without_prescribing_a_solving_plan():
@@ -1970,13 +2049,14 @@ def test_opening_prompt_explains_rules_without_prescribing_a_solving_plan():
     play_puzzle(puzzle(), VOCAB, model, cap=75)
 
     opening = model.calls[0][0]["content"]
-    assert PROMPT_VERSION == "19"
+    assert PROMPT_VERSION == "21"
     for header in (
         "OBJECTIVE AND SCORE",
         "MANDATORY REPLY CONTRACT",
         "CLOZE AND EXACT ANSWERS",
         "GUESS AND RANK RULES",
         "AUTHORITATIVE STATE",
+        "COMPLETE CHRONOLOGICAL GAME RECORD",
     ):
         assert header in opening
     assert len(opening.split()) <= 650
@@ -2103,7 +2183,7 @@ def test_prompt_states_the_minimize_tries_objective_everywhere():
     assert "Tries: 1 (your score — lower is better)" in feedback
     for turn in model.calls:
         current = turn[-1]["content"]
-        assert "Reply now with exactly one bare English game-vocabulary word" in current
+        assert "then reply with exactly one bare English game-vocabulary word" in current
         assert "Decide for yourself how to adapt" not in current
 
 

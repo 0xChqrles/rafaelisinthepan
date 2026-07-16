@@ -519,28 +519,37 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   through `max` (not `none`). Default `none` preserves thinking-off one-word API calls;
   enabled levels use provider-native reasoning with larger output headroom. The single
   `--auth` flag applies to
-  the selected provider: `api` (default) uses raw API keys, with an automatic moving prompt-
-  cache breakpoint for Anthropic. Opt-in `subscription` first verifies paid Claude.ai auth for
+  the selected provider: `api` (default) uses raw API keys; Anthropic word turns pin an
+  explicit prompt-cache breakpoint on the byte-identical fixed-rules block (the volatile
+  chronological record follows uncached), while prose/decision calls keep the automatic moving
+  breakpoint. Opt-in `subscription` first verifies paid Claude.ai auth for
   the selected Claude model, strips API/cloud credential overrides, then uses a fresh Agent SDK
   session per word-play turn with an empty replacement system prompt and no tools, MCP, skills,
   plugins, or filesystem settings. For a selected GPT model it verifies that Codex CLI is logged
   in with ChatGPT, strips API credentials plus parent-Codex thread metadata, and runs each turn as
   a fresh `codex exec` process. Every API and subscription word-play transport receives the same
-  stateless user prompt: compact fixed opening rules plus only the latest authoritative aggregate
-  state. Obsolete intermediate turns and prior one-word replies remain in the append-only lab
-  transcript but are omitted from every paid prompt, so hidden provider session memory is not an
-  experimental treatment. Codex turns are
+  canonical fresh-turn user prompt: compact fixed opening rules plus the complete chronological
+  public game record, beginning with the initial state and every starting clue, then every prior
+  `PLAYER REPLY` and exact `REFEREE FEEDBACK` in order. That record is reconstructed from the
+  append-only lab transcript and is byte-identical across providers; no provider resumes hidden
+  word-play session memory. This restores the useful full-history property of prompt v17 without
+  its Sonnet-only resumed-session treatment. Codex turns are
   ephemeral, use a temporary non-repository cwd and replacement benchmark instructions, and
   ignore user config/rules with
   read-only sandboxing and apps/shell/multi-agent/web disabled; the unavoidable Codex bootstrap
-  remains. The GPT-5.6 Codex-plan models support `low|medium|high|xhigh|max`, not `none`.
-  Prompt version 19 uses a test-enforced compact rules scaffold (at most 650 words for the
-  representative opening), explicitly permits as much private reasoning as needed, and requires
-  the provider's entire visible reply to be one bare lowercase word in the
+  remains, but its replacement instruction only isolates the turn and delegates the gameplay
+  and visible-reply contract to the canonical user prompt. The GPT-5.6 Codex-plan models support
+  `low|medium|high|xhigh|max`, not `none`.
+  Prompt version 21 uses a test-enforced compact rules scaffold (at most 650 words for the
+  representative opening), permits private reasoning, and ends every stateless turn with an
+  affirmative deliberation cue — finding the next word is stated to take multi-step deduction
+  over the CLOZE, ranked clues, and exclusion sets, thought through before replying — because
+  adaptive-thinking transports skip reasoning on prompts that merely permit it. The visible
+  reply must be one bare lowercase word in the
   advertised language-letter grammar, with optional internal ASCII hyphens only: no spaces,
   straight/curly apostrophes, other dash characters, punctuation, quotes/Markdown, digits,
   underscores, labels, prose, or explanations. The private/visible distinction keeps adaptive
-  thinking available without allowing reasoning text onto the parsed reply surface. French
+  thinking engaged without allowing reasoning text onto the parsed reply surface. French
   clitics/prefixes shown beside `[WORD N]` are fixed sentence context, so the model submits only
   the hidden lexical core. Parsing uses
   that exact full-reply grammar instead of extracting one token from formatting/prose. The prompt
@@ -555,11 +564,12 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   limits, and authoritative snapshot fields. It contains no built-in search/adaptation strategy
   and has no pre-game planning turn — the first reply is the first guess. Only an explicitly
   supplied learned/v7 treatment may add a `YOUR STRATEGY` advice block under the fixed rules.
-  The aggregate state reports the latest named outcome, current best clue for each
-  unsolved word, and a salient consecutive no-improvement trend. All counted guesses remain available only
-  as a complete alphabetically ordered exclusion set, and parsed outside-vocabulary words persist in a
-  separate folded-deduplicated rejection set, so stateless turns do not pay to repeat them. Neither set is a
-  chronological trajectory that can prime the next item in the same conceptual list. The prompt neither hides ranked evidence nor forces context-only play,
+  Each individual aggregate snapshot reports the latest named outcome, current best clue for each
+  unsolved word, and a salient consecutive no-improvement trend. The canonical prompt also retains
+  all earlier replies and exact per-hole rank/MISS/solve outcomes chronologically, so a later best
+  clue never erases the starting clue or intermediate evidence. Counted guesses additionally remain
+  available as a complete alphabetically ordered exclusion set, and parsed outside-vocabulary words
+  persist in a separate folded-deduplicated rejection set. The prompt neither hides ranked evidence nor forces context-only play,
   probes, synonym search, or any other next-step method. During a run, every counted try prints immediately with its
   word and post-guess overall progress percentage (the same logarithmic multi-hole formula as the
   web progress bar, to two decimals); misses and non-improving warm tries still print with
@@ -641,7 +651,7 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   rank to the referenced puzzle and its rank map before any provider setup.
   The committed `strategy-fr-v2/` pool pins 92 candidates in `pool_index` order; strategy-fr-v1
   and all pilot artifacts remain immutable. `calibration_run.py` processes that order one
-  candidate at a time with neutral prompt v19, Claude Sonnet 5 + GPT-5.6 Sol, medium effort,
+  candidate at a time with neutral prompt v21, Claude Sonnet 5 + GPT-5.6 Sol, medium effort,
   fresh stateless word-play turns, cap 75, and three runs per model. An explicitly recorded
   `unstable`/`tier_boundary` extension adds exactly two runs for one model. Both models and any
   declared extension finish before the completed-prefix stopping check.

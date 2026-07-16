@@ -157,8 +157,9 @@ def _without_guidance(opening):
     if marker not in opening:
         return opening
     prefix, remainder = opening.split(marker, 1)
-    _guidance, suffix = remainder.split("\n\nCURRENT STATE\n", 1)
-    return prefix + "\n\nCURRENT STATE\n" + suffix
+    record_marker = "\n\nCOMPLETE CHRONOLOGICAL GAME RECORD\n"
+    _guidance, suffix = remainder.split(record_marker, 1)
+    return prefix + record_marker + suffix
 
 
 def test_full_run_distils_once_then_uses_only_fresh_one_word_holdout_contexts(
@@ -199,7 +200,7 @@ def test_full_run_distils_once_then_uses_only_fresh_one_word_holdout_contexts(
         player.calls[0][0]["role"] == "user" for player in provider.word_players
     )
     assert all(
-        "Reply now with exactly one bare French game-vocabulary word"
+        "then reply with exactly one bare French game-vocabulary word"
         in player.calls[0][0]["content"]
         for player in provider.word_players
     )
