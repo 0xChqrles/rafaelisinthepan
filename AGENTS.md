@@ -665,10 +665,13 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   Finalization replays every completed transcript/metric/identity, then writes deterministic
   schema-v4 `training-manifest.json` and `test-manifest.json`, per-model deterministic training
   evidence sidecars, a finalization seal, and a certified full-lab artifact pinning both manifest
-  hashes. Training has 5/5/5 curriculum records and may expose only a roster model's own compact
-  neutral trajectories/rejected events to its packet; raw conversations stay audit-only and
-  non-roster models get static training puzzles. Test has 5/5/5 holdout records with lean
-  calibration summaries only. It never exposes test files/sentences/answers/starts/rank maps,
+  hashes. Before any write it resolves the complete input/output path graph, rejects resolved-path
+  and existing hard-link collisions, and validates any existing seal. It stages every output,
+  revalidates the paid artifact and seal, then publishes with rollback. Training has 5/5/5
+  curriculum records and may expose only a roster model's own compact neutral trajectories/rejected
+  events to its packet; raw conversations stay audit-only and non-roster models get static training
+  puzzles. Test has 5/5/5 holdout records with lean calibration summaries only. It never exposes
+  test files/sentences/answers/starts/rank maps,
   transcripts, or trajectories to distillation, and test calibration runs are never final neutral
   runs. Final neutral/learned/v7 uses a matching model-specific frozen profile, fresh medium-effort
   contexts, and the separately frozen test manifest. Tool implementation and dry-run never

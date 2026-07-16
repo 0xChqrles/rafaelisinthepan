@@ -1496,6 +1496,147 @@ def _large_complete_pool(tmp_path: Path) -> tuple[Path, Path, str, set[str]]:
     return pool_path, artifact, selected_canary, vocab
 
 
+def _tree_bytes(root: Path) -> dict[str, bytes]:
+    return {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in root.rglob("*")
+        if path.is_file()
+    }
+
+
+def test_finalization_path_plan_resolves_and_rejects_every_role_collision(tmp_path):
+    pool_path = tmp_path / "candidate-manifest.json"
+    artifact_path = tmp_path / "paid-artifact.json"
+    generator_path = tmp_path / "generator-output.json"
+    puzzle_path = tmp_path / "puzzles" / "candidate.json.gz"
+    puzzle_path.parent.mkdir()
+    for path in (pool_path, artifact_path, generator_path, puzzle_path):
+        path.write_bytes(path.name.encode())
+    manifest = {
+        "generator_output": {"path": generator_path.name},
+        "puzzles": [{"path": puzzle_path.relative_to(tmp_path).as_posix()}],
+    }
+
+    inputs, outputs = cal._resolve_finalization_paths(
+        pool_path,
+        artifact_path,
+        manifest,
+        training_out=None,
+        test_out=None,
+        certified_artifact_out=None,
+    )
+    assert all(path.is_absolute() for path in (*inputs.values(), *outputs.values()))
+
+    collisions = [
+        {"training_out": Path("candidate-manifest.json")},
+        {"training_out": Path("paid-artifact.json")},
+        {"training_out": Path("generator-output.json")},
+        {"training_out": Path("training-provenance.json")},
+        {"test_out": Path("training-manifest.json")},
+        {"certified_artifact_out": pool_path},
+        {"certified_artifact_out": artifact_path},
+        {"certified_artifact_out": generator_path},
+        {"certified_artifact_out": puzzle_path},
+        {"certified_artifact_out": tmp_path / "test-provenance.json"},
+        {
+            "certified_artifact_out": (
+                tmp_path
+                / "training-evidence"
+                / f"{cal.ROSTER_MODEL_IDS[0]}.json.gz"
+            )
+        },
+        {"certified_artifact_out": cal._finalization_seal_path(artifact_path)},
+    ]
+    for overrides in collisions:
+        with pytest.raises(cal.CalibrationError, match="finalization path collision"):
+            cal._resolve_finalization_paths(
+                pool_path,
+                artifact_path,
+                manifest,
+                training_out=overrides.get("training_out"),
+                test_out=overrides.get("test_out"),
+                certified_artifact_out=overrides.get("certified_artifact_out"),
+            )
+
+    hardlink = tmp_path / "pool-hardlink.json"
+    hardlink.hardlink_to(pool_path)
+    with pytest.raises(cal.CalibrationError, match="finalization path collision"):
+        cal._resolve_finalization_paths(
+            pool_path,
+            artifact_path,
+            manifest,
+            training_out=None,
+            test_out=None,
+            certified_artifact_out=hardlink,
+        )
+
+
+def test_finalization_collision_preflight_preserves_every_input_and_writes_nothing(
+    tmp_path,
+):
+    pool_path, artifact, _selected_canary, _vocab = _large_complete_pool(tmp_path)
+    paid_beside_pool = pool_path.with_name("paid-calibration.json")
+    paid_beside_pool.write_bytes(artifact.read_bytes())
+    before = _tree_bytes(tmp_path)
+
+    def explode(_lang):
+        raise AssertionError("path collision reached vocabulary loading")
+
+    cases = [
+        {"training_out": Path("training-provenance.json")},
+        {"training_out": Path(paid_beside_pool.name)},
+        {"certified_artifact_out": pool_path},
+    ]
+    for overrides in cases:
+        with pytest.raises(cal.CalibrationError, match="finalization path collision"):
+            cal.finalize_manifests(
+                pool_path,
+                paid_beside_pool,
+                training_out=overrides.get("training_out"),
+                certified_artifact_out=overrides.get("certified_artifact_out"),
+                vocab_loader=explode,
+            )
+
+    assert _tree_bytes(tmp_path) == before
+
+
+def test_output_transaction_rolls_back_after_mid_publication_failure(
+    tmp_path, monkeypatch
+):
+    first = tmp_path / "first.json"
+    second = tmp_path / "second.json"
+    third = tmp_path / "third.json"
+    first.write_bytes(b"old-first")
+    second.write_bytes(b"old-second")
+    real_replace = cal.os.replace
+    failed = False
+
+    def fail_second_once(source, destination):
+        nonlocal failed
+        if (
+            not failed
+            and Path(destination) == second
+            and ".stage-" in Path(source).name
+        ):
+            failed = True
+            raise OSError("scripted publication failure")
+        return real_replace(source, destination)
+
+    monkeypatch.setattr(cal.os, "replace", fail_second_once)
+    with pytest.raises(cal.CalibrationError, match="output transaction failed"):
+        cal._publish_output_transaction(
+            [(first, b"new-first"), (second, b"new-second"), (third, b"new-third")]
+        )
+
+    assert first.read_bytes() == b"old-first"
+    assert second.read_bytes() == b"old-second"
+    assert not third.exists()
+    assert sorted(path.name for path in tmp_path.iterdir()) == [
+        "first.json",
+        "second.json",
+    ]
+
+
 def test_finalization_rejects_replayable_work_after_earliest_feasible_prefix(
     tmp_path,
 ):
@@ -1834,6 +1975,21 @@ def test_finalization_writes_deterministic_isolated_training_and_test_views(
     changed_state = json.loads(artifact.read_text())
     assert changed_state["hashes"] == semantic_hashes
     assert cal._sha256_file(artifact) != pinned_file_sha
+    before_conflict = _tree_bytes(tmp_path)
+
+    def seal_explode(_lang):
+        raise AssertionError("seal conflict reached vocabulary loading")
+
+    with pytest.raises(
+        cal.CalibrationError,
+        match="existing calibration finalization seal has a different identity",
+    ):
+        cal.finalize_manifests(
+            pool_path,
+            artifact,
+            vocab_loader=seal_explode,
+        )
+    assert _tree_bytes(tmp_path) == before_conflict
 
 
 @pytest.mark.parametrize(

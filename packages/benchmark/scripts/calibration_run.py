@@ -16,11 +16,16 @@ from __future__ import annotations
 import argparse
 import copy
 from datetime import datetime, timezone
+import gzip
 import hashlib
+import io
 import json
 import math
+import os
 import sys
 from pathlib import Path
+import shutil
+import tempfile
 from typing import Any, Callable, Iterable, Iterator
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -32,7 +37,6 @@ from curriculum_io import (  # noqa: E402
     load_json,
     read_data_bytes,
     sha256_bytes,
-    write_deterministic_gzip,
 )
 from curriculum_run import (  # noqa: E402
     CurriculumError,
@@ -2210,34 +2214,134 @@ def _json_file_bytes(value: Any) -> bytes:
     return (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
 
 
-def _write_atomic(path: Path, content: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_bytes(content)
-    tmp.replace(path)
+def _deterministic_gzip_bytes(content: bytes) -> bytes:
+    buffer = io.BytesIO()
+    with gzip.GzipFile(filename="", fileobj=buffer, mode="wb", mtime=0) as zipped:
+        zipped.write(content)
+    return buffer.getvalue()
 
 
 def _finalization_seal_path(artifact_path: Path) -> Path:
-    return artifact_path.with_suffix(artifact_path.suffix + ".finalization.json")
+    resolved = artifact_path.resolve()
+    return resolved.with_suffix(resolved.suffix + ".finalization.json")
 
 
-def _write_finalization_seal(artifact_path: Path, artifact_file_sha256: str) -> Path:
-    path = _finalization_seal_path(artifact_path)
-    content = _json_file_bytes(
+def _finalization_seal_bytes(artifact_file_sha256: str) -> bytes:
+    return _json_file_bytes(
         {
             "schema_version": 1,
             "kind": "calibration_finalization_seal",
             "run_artifact_file_sha256": artifact_file_sha256,
         }
     )
+
+
+def _validate_existing_finalization_seal(path: Path, expected: bytes) -> bool:
+    """Validate an existing seal before staging or writing any output."""
     if path.exists():
-        if path.read_bytes() != content:
+        try:
+            actual = path.read_bytes()
+        except OSError as exc:
+            raise CalibrationError(
+                "existing calibration finalization seal cannot be read"
+            ) from exc
+        if actual != expected:
             raise CalibrationError(
                 "existing calibration finalization seal has a different identity"
             )
-        return path
-    _write_atomic(path, content)
-    return path
+        return True
+    return False
+
+
+def _publish_output_transaction(
+    outputs: list[tuple[Path, bytes]],
+    *,
+    precommit: Callable[[], None] | None = None,
+) -> None:
+    """Stage every output, then publish atomically per file with rollback on error."""
+    normalized = [(path.resolve(), content) for path, content in outputs]
+    destinations = [path for path, _content in normalized]
+    if len(destinations) != len(set(destinations)):
+        raise CalibrationError("finalization output transaction has duplicate paths")
+
+    staged: dict[Path, Path] = {}
+    backups: dict[Path, Path] = {}
+    published: list[Path] = []
+    preserve_backups = False
+    try:
+        for destination, content in normalized:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            if destination.exists() and not destination.is_file():
+                raise CalibrationError(
+                    f"finalization output is not a regular file: {destination}"
+                )
+            mode = (
+                destination.stat().st_mode & 0o777
+                if destination.exists()
+                else 0o644
+            )
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
+                dir=destination.parent,
+                prefix=f".{destination.name}.stage-",
+                delete=False,
+            ) as handle:
+                handle.write(content)
+                handle.flush()
+                os.fsync(handle.fileno())
+                staged[destination] = Path(handle.name)
+            os.chmod(staged[destination], mode)
+
+            if destination.exists():
+                with tempfile.NamedTemporaryFile(
+                    dir=destination.parent,
+                    prefix=f".{destination.name}.backup-",
+                    delete=False,
+                ) as handle:
+                    backup = Path(handle.name)
+                shutil.copy2(destination, backup)
+                backups[destination] = backup
+
+        if precommit is not None:
+            precommit()
+        for destination, _content in normalized:
+            os.replace(staged[destination], destination)
+            published.append(destination)
+    except Exception as exc:
+        rollback_errors: list[str] = []
+        for destination in reversed(published):
+            try:
+                backup = backups.pop(destination, None)
+                if backup is None:
+                    destination.unlink(missing_ok=True)
+                else:
+                    os.replace(backup, destination)
+            except OSError as rollback_exc:
+                rollback_errors.append(f"{destination}: {rollback_exc}")
+        if rollback_errors:
+            preserve_backups = True
+            raise CalibrationError(
+                "finalization output transaction failed and rollback was incomplete: "
+                + "; ".join(rollback_errors)
+                + "; recovery backups were retained"
+            ) from exc
+        if isinstance(exc, CalibrationError):
+            raise
+        raise CalibrationError(
+            "finalization output transaction failed; prior outputs were restored"
+        ) from exc
+    finally:
+        for temporary in staged.values():
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+        if not preserve_backups:
+            for temporary in backups.values():
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
 
 def _role_selection_sha256(rows: list[dict[str, Any]]) -> str:
@@ -2447,9 +2551,92 @@ def _resolve_split_destination(
         raise CalibrationError(
             "final split manifests must stay beside the candidate pool and puzzle files"
         )
-    if destination == pool_manifest_path:
-        raise CalibrationError("final split manifest must not overwrite the candidate pool")
     return destination
+
+
+def _paths_collide(left: Path, right: Path) -> bool:
+    if left == right:
+        return True
+    try:
+        return left.exists() and right.exists() and left.samefile(right)
+    except OSError:
+        return False
+
+
+def _reject_finalization_path_collisions(
+    inputs: dict[str, Path], outputs: dict[str, Path]
+) -> None:
+    output_items = list(outputs.items())
+    for index, (left_role, left_path) in enumerate(output_items):
+        for right_role, right_path in output_items[index + 1 :]:
+            if _paths_collide(left_path, right_path):
+                raise CalibrationError(
+                    "finalization path collision: "
+                    f"{left_role} at {left_path} aliases {right_role} at {right_path}"
+                )
+        for input_role, input_path in inputs.items():
+            if _paths_collide(left_path, input_path):
+                raise CalibrationError(
+                    "finalization path collision: "
+                    f"{left_role} at {left_path} would overwrite "
+                    f"{input_role} at {input_path}"
+                )
+
+
+def _resolve_finalization_paths(
+    pool_manifest_path: Path,
+    artifact_path: Path,
+    manifest: dict[str, Any],
+    *,
+    training_out: Path | None,
+    test_out: Path | None,
+    certified_artifact_out: Path | None,
+) -> tuple[dict[str, Path], dict[str, Path]]:
+    """Resolve and validate the complete finalization input/output path graph."""
+    pool_manifest_path = pool_manifest_path.resolve()
+    artifact_path = artifact_path.resolve()
+    dataset_dir = pool_manifest_path.parent
+    generator_value = manifest.get("generator_output", {}).get("path", "")
+    inputs = {
+        "candidate pool manifest": pool_manifest_path,
+        "paid calibration artifact": artifact_path,
+        "candidate generator output": (dataset_dir / str(generator_value)).resolve(),
+    }
+    for index, record in enumerate(manifest.get("puzzles", []), start=1):
+        inputs[f"candidate pool puzzle {index}"] = (
+            dataset_dir / str(record.get("path", ""))
+        ).resolve()
+
+    training_destination = _resolve_split_destination(
+        pool_manifest_path, training_out, "training-manifest.json"
+    )
+    test_destination = _resolve_split_destination(
+        pool_manifest_path, test_out, "test-manifest.json"
+    )
+    certified_destination = (
+        artifact_path.with_name(f"{artifact_path.stem}.finalized.json")
+        if certified_artifact_out is None
+        else certified_artifact_out.resolve()
+    )
+    outputs = {
+        "training manifest": training_destination,
+        "test manifest": test_destination,
+        "training provenance": pool_manifest_path.with_name(
+            "training-provenance.json"
+        ).resolve(),
+        "test provenance": pool_manifest_path.with_name(
+            "test-provenance.json"
+        ).resolve(),
+        "certified artifact": certified_destination.resolve(),
+        "finalization seal": _finalization_seal_path(artifact_path),
+    }
+    for model_id in ROSTER_MODEL_IDS:
+        outputs[f"training evidence {model_id}"] = (
+            dataset_dir / "training-evidence" / f"{model_id}.json.gz"
+        ).resolve()
+
+    _reject_finalization_path_collisions(inputs, outputs)
+    return inputs, outputs
 
 
 def finalize_manifests(
@@ -2468,6 +2655,19 @@ def finalize_manifests(
     artifact_bytes = artifact_path.read_bytes()
     state = json.loads(artifact_bytes.decode("utf-8"))
     artifact_file_sha256 = hashlib.sha256(artifact_bytes).hexdigest()
+    _inputs, finalization_paths = _resolve_finalization_paths(
+        pool_manifest_path,
+        artifact_path,
+        manifest,
+        training_out=training_out,
+        test_out=test_out,
+        certified_artifact_out=certified_artifact_out,
+    )
+    finalization_seal = finalization_paths["finalization seal"]
+    seal_bytes = _finalization_seal_bytes(artifact_file_sha256)
+    seal_exists = _validate_existing_finalization_seal(
+        finalization_seal, seal_bytes
+    )
     expected = _run_config(
         manifest,
         content_sha,
@@ -2539,19 +2739,14 @@ def finalize_manifests(
         for number, row in enumerate(test_rows, start=1)
     ]
 
-    training_destination = _resolve_split_destination(
-        pool_manifest_path, training_out, "training-manifest.json"
-    )
-    test_destination = _resolve_split_destination(
-        pool_manifest_path, test_out, "test-manifest.json"
-    )
-    if training_destination == test_destination:
-        raise CalibrationError("training and test manifests need different paths")
+    training_destination = finalization_paths["training manifest"]
+    test_destination = finalization_paths["test manifest"]
 
     training_selection_sha256 = _role_selection_sha256(training_rows)
     test_selection_sha256 = _role_selection_sha256(test_rows)
     evidence_records: dict[str, dict[str, Any]] = {}
     evidence_paths: dict[str, Path] = {}
+    evidence_payloads: dict[Path, bytes] = {}
     for model_id in ROSTER_MODEL_IDS:
         document = _training_evidence_document(
             model_id=model_id,
@@ -2563,9 +2758,9 @@ def finalize_manifests(
             vocab=vocab,
         )
         content = _canonical_bytes(document)
-        path = pool_manifest_path.parent / "training-evidence" / f"{model_id}.json.gz"
-        write_deterministic_gzip(path, content)
+        path = finalization_paths[f"training evidence {model_id}"]
         evidence_paths[model_id] = path
+        evidence_payloads[path] = _deterministic_gzip_bytes(content)
         evidence_records[model_id] = {
             "schema_version": document["schema_version"],
             "path": path.relative_to(pool_manifest_path.parent).as_posix(),
@@ -2574,10 +2769,8 @@ def finalize_manifests(
             "run_count": document["run_count"],
         }
 
-    training_provenance_path = pool_manifest_path.with_name(
-        "training-provenance.json"
-    )
-    test_provenance_path = pool_manifest_path.with_name("test-provenance.json")
+    training_provenance_path = finalization_paths["training provenance"]
+    test_provenance_path = finalization_paths["test provenance"]
     training_provenance_bytes = _json_file_bytes(
         _role_provenance(
             role="training",
@@ -2596,9 +2789,6 @@ def finalize_manifests(
             selection_sha256=test_selection_sha256,
         )
     )
-    _write_atomic(training_provenance_path, training_provenance_bytes)
-    _write_atomic(test_provenance_path, test_provenance_bytes)
-
     common = {
         "schema_version": cd.CALIBRATED_DATASET_SCHEMA_VERSION,
         "lang": manifest["lang"],
@@ -2671,7 +2861,6 @@ def finalize_manifests(
     if cd.dataset_content_sha256(training) != training["dataset_content_sha256"]:
         raise CalibrationError("training manifest content identity is not stable")
     training_bytes = _json_file_bytes(training)
-    _write_atomic(training_destination, training_bytes)
     training_file_sha256 = sha256_bytes(training_bytes)
 
     test = {
@@ -2703,16 +2892,9 @@ def finalize_manifests(
     }
     test["dataset_content_sha256"] = cd.dataset_content_sha256(test)
     test_bytes = _json_file_bytes(test)
-    _write_atomic(test_destination, test_bytes)
     test_file_sha256 = sha256_bytes(test_bytes)
 
-    certified_destination = (
-        artifact_path.with_name(f"{artifact_path.stem}.finalized.json")
-        if certified_artifact_out is None
-        else certified_artifact_out.resolve()
-    )
-    if certified_destination == artifact_path:
-        raise CalibrationError("certified artifact must not overwrite the paid-run artifact")
+    certified_destination = finalization_paths["certified artifact"]
     certified_state = copy.deepcopy(state)
     certified_state["finalization"] = {
         "schema_version": 1,
@@ -2733,9 +2915,43 @@ def finalize_manifests(
         "test_selection_sha256": test_selection_sha256,
         "model_training_evidence": copy.deepcopy(evidence_records),
     }
-    save_artifact(certified_destination, certified_state)
-    finalization_seal = _write_finalization_seal(
-        artifact_path, artifact_file_sha256
+    update_artifact_hashes(certified_state)
+    certified_bytes = _json_file_bytes(certified_state)
+
+    def revalidate_inputs_before_commit() -> None:
+        try:
+            current_artifact_sha256 = hashlib.sha256(
+                artifact_path.read_bytes()
+            ).hexdigest()
+        except OSError as exc:
+            raise CalibrationError(
+                "paid calibration artifact cannot be re-read before finalization commit"
+            ) from exc
+        if current_artifact_sha256 != artifact_file_sha256:
+            raise CalibrationError("paid calibration artifact changed during finalization")
+        current_seal_exists = _validate_existing_finalization_seal(
+            finalization_seal, seal_bytes
+        )
+        if current_seal_exists != seal_exists:
+            raise CalibrationError("calibration finalization seal changed during staging")
+
+    output_payloads = [
+        (evidence_paths[model_id], evidence_payloads[evidence_paths[model_id]])
+        for model_id in ROSTER_MODEL_IDS
+    ]
+    output_payloads.extend(
+        [
+            (training_provenance_path, training_provenance_bytes),
+            (test_provenance_path, test_provenance_bytes),
+            (training_destination, training_bytes),
+            (test_destination, test_bytes),
+            (certified_destination, certified_bytes),
+        ]
+    )
+    if not seal_exists:
+        output_payloads.append((finalization_seal, seal_bytes))
+    _publish_output_transaction(
+        output_payloads, precommit=revalidate_inputs_before_commit
     )
 
     return {
