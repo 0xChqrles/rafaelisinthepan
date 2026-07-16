@@ -564,6 +564,59 @@ def test_anthropic_subscription_word_adapter_uses_fresh_stateless_agent_sdk_turn
     assert not workspace.exists()
 
 
+def test_anthropic_subscription_assembles_max_output_recovery_chunks(monkeypatch):
+    class FakeOptions:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    class FakeAssistantMessage:
+        def __init__(self, text):
+            self.content = [{"type": "text", "text": text}]
+
+    class FakeResultMessage:
+        result = "not as facts available during play.\n\n## 11. Continue"
+        session_id = "recovered-session"
+        is_error = False
+        stop_reason = "end_turn"
+        subtype = "success"
+        usage = {"input_tokens": 10, "output_tokens": 132_844}
+
+    async def fake_query(*, prompt, options):
+        assert prompt == "analyze everything"
+        assert options.effort == "max"
+        yield FakeAssistantMessage("# Full report\nTreat metadata as priors, not")
+        yield FakeAssistantMessage(
+            "not as facts available during play.\n\n## 11. Continue"
+        )
+        # Claude Code exposes only the final continuation through ResultMessage.result.
+        yield FakeResultMessage()
+
+    monkeypatch.setitem(
+        sys.modules,
+        "claude_agent_sdk",
+        SimpleNamespace(
+            AssistantMessage=FakeAssistantMessage,
+            ClaudeAgentOptions=FakeOptions,
+            ResultMessage=FakeResultMessage,
+            query=fake_query,
+        ),
+    )
+    reply = provider_reply(
+        MODELS[1], None, effort="max", auth="subscription", output="prose"
+    )
+    try:
+        assert reply([{"role": "user", "content": "analyze everything"}]) == (
+            "# Full report\nTreat metadata as priors, not as facts available during "
+            "play.\n\n## 11. Continue"
+        )
+        assert reply.last_token_usage == {
+            "input_tokens": 10,
+            "output_tokens": 132_844,
+        }
+    finally:
+        reply.close()
+
+
 def test_anthropic_subscription_surfaces_provider_status_and_sdk_errors(monkeypatch):
     class FakeOptions:
         def __init__(self, **kwargs):

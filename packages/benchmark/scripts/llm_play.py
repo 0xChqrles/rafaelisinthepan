@@ -1327,6 +1327,25 @@ def _provider_messages(
     return [{"role": "user", "content": _stateless_word_prompt(messages)}]
 
 
+def _merge_agent_text_continuation(current: str, continuation: str) -> str:
+    """Join Claude Code max-output recovery chunks without duplicating their seam.
+
+    Claude Code can recover a logical turn that hit ``max_tokens`` by issuing another
+    provider message. The continuation may repeat the final word fragment from the
+    preceding message. The Agent SDK's final ``ResultMessage.result`` contains only the
+    last recovery chunk, so callers must assemble the emitted assistant messages.
+    """
+    if not current:
+        return continuation
+    if not continuation:
+        return current
+    overlap_limit = min(len(current), len(continuation), 4_096)
+    for overlap in range(overlap_limit, 2, -1):
+        if current.endswith(continuation[:overlap]):
+            return current + continuation[overlap:]
+    return current + continuation
+
+
 async def _agent_sdk_turn(
     prompt: str,
     *,
@@ -1336,7 +1355,12 @@ async def _agent_sdk_turn(
     resume: str | None,
 ) -> tuple[str, str, dict[str, Any] | None]:
     """Run one isolated Claude.ai-subscription turn and return text, session, usage."""
-    from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
+    import claude_agent_sdk
+
+    ClaudeAgentOptions = claude_agent_sdk.ClaudeAgentOptions
+    ResultMessage = claude_agent_sdk.ResultMessage
+    AssistantMessage = getattr(claude_agent_sdk, "AssistantMessage", None)
+    query = claude_agent_sdk.query
 
     thinking: dict[str, str]
     sdk_effort: str | None
@@ -1369,7 +1393,13 @@ async def _agent_sdk_turn(
         extra_args={"safe-mode": None, "disable-slash-commands": None},
     )
     result_message = None
+    assistant_text = ""
     async for message in query(prompt=prompt, options=options):
+        if AssistantMessage is not None and isinstance(message, AssistantMessage):
+            assistant_text = _merge_agent_text_continuation(
+                assistant_text,
+                _text_content(message.content),
+            )
         if isinstance(message, ResultMessage):
             result_message = message
     if result_message is None:
@@ -1394,7 +1424,7 @@ async def _agent_sdk_turn(
     if not result_message.session_id:
         raise RuntimeError(f"{model_id} Agent SDK session returned no session id")
     return (
-        result_message.result or "",
+        assistant_text or result_message.result or "",
         result_message.session_id,
         _json_token_usage(getattr(result_message, "usage", None)),
     )
