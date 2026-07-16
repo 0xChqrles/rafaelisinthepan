@@ -406,7 +406,7 @@ def _leak_corpus(packet: EvidencePacket) -> tuple[
     calibration = packet.document["content"].get("model_calibration_evidence", {})
     for puzzle in calibration.get("puzzles", []):
         for run in puzzle.get("runs", []):
-            for word in run.get("tried_words", []):
+            for word in run.get("counted_guesses", []):
                 if isinstance(word, str):
                     ban(word)
     return banned_words, sentence_runs, evidence_runs

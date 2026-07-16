@@ -25,6 +25,7 @@ from curriculum_io import (
 
 LEGACY_PACKET_SCHEMA_VERSION = 1
 PACKET_SCHEMA_VERSION = 2
+MODEL_RUN_EVIDENCE_SCHEMA_VERSION = 2
 EXACT_MAX_RANK = 250
 SAMPLES_PER_BAND = 20
 SAMPLE_BANDS: tuple[tuple[int, int], ...] = (
@@ -203,8 +204,10 @@ def _model_calibration_evidence(
     expected_ids = [record["calibration"]["candidate_id"] for record in records]
     puzzles = document.get("puzzles")
     if (
-        document.get("schema_version") != 1
+        document.get("schema_version") != MODEL_RUN_EVIDENCE_SCHEMA_VERSION
         or document.get("model_id") != model_id
+        or document.get("prompt_version")
+        != manifest.get("calibration", {}).get("prompt_version")
         or document.get("training_selection_sha256")
         != identity.get("training_selection_sha256")
         or not isinstance(puzzles, list)
@@ -214,6 +217,7 @@ def _model_calibration_evidence(
         != sum(len(puzzle.get("runs", [])) for puzzle in puzzles)
         or reference.get("puzzle_count") != document.get("puzzle_count")
         or reference.get("run_count") != document.get("run_count")
+        or reference.get("schema_version") != document.get("schema_version")
     ):
         raise ValueError("model calibration evidence identity is malformed")
     for record, puzzle in zip(records, puzzles):
@@ -222,14 +226,64 @@ def _model_calibration_evidence(
         runs = puzzle.get("runs")
         if not isinstance(runs, list) or not runs:
             raise ValueError("model calibration evidence has no runs")
-        if not all(
-            isinstance(run, dict)
-            and isinstance(run.get("conversation"), list)
-            and isinstance(run.get("tried_words"), list)
-            and isinstance(run.get("metrics"), dict)
-            for run in runs
-        ):
-            raise ValueError("model calibration evidence run is malformed")
+        for run in runs:
+            if not isinstance(run, dict) or any(
+                raw_key in run
+                for raw_key in ("conversation", "tried_words", "turn_token_usage")
+            ):
+                raise ValueError(
+                    "model calibration evidence must not contain raw conversations"
+                )
+            guesses = run.get("counted_guesses")
+            trajectory = run.get("trajectory")
+            rejected = run.get("rejected_events")
+            turns = run.get("turns")
+            if (
+                not isinstance(guesses, list)
+                or not all(isinstance(word, str) and word for word in guesses)
+                or not isinstance(trajectory, list)
+                or len(trajectory) != len(guesses)
+                or run.get("counted_tries") != len(guesses)
+                or not isinstance(rejected, list)
+                or not isinstance(turns, int)
+                or isinstance(turns, bool)
+                or turns != len(guesses) + len(rejected)
+                or not isinstance(run.get("metrics"), dict)
+                or run.get("model_id") != model_id
+                or not all(
+                    isinstance(run.get(key), str) and run[key]
+                    for key in ("provider", "transport", "auth", "effort")
+                )
+                or not isinstance(run.get("cap"), int)
+                or isinstance(run.get("cap"), bool)
+                or not isinstance(run.get("opening_prompt_sha256"), str)
+                or len(run["opening_prompt_sha256"]) != 64
+            ):
+                raise ValueError("model calibration evidence run is malformed")
+            if (
+                not all(
+                    isinstance(step, dict)
+                    and isinstance(step.get("outcomes"), list)
+                    and isinstance(step.get("current_best_ranks"), dict)
+                    and isinstance(step.get("solved_locks"), list)
+                    and isinstance(step.get("no_improvement_streak"), int)
+                    for step in trajectory
+                )
+                or [step["try"] for step in trajectory]
+                != list(range(1, len(guesses) + 1))
+                or [step["guess"] for step in trajectory] != guesses
+            ):
+                raise ValueError("model calibration evidence trajectory is malformed")
+            if not all(
+                isinstance(event, dict)
+                and event.get("kind") in {"malformed", "invalid", "duplicate"}
+                and isinstance(event.get("turn"), int)
+                and not isinstance(event.get("turn"), bool)
+                and 1 <= event["turn"] <= turns
+                and isinstance(event.get("reply"), str)
+                for event in rejected
+            ) or len({event["turn"] for event in rejected}) != len(rejected):
+                raise ValueError("model calibration rejected events are malformed")
     return document
 
 

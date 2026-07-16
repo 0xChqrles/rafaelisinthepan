@@ -457,11 +457,13 @@ pnpm bench:curriculum:evaluate <artifact-or-profile.json>
 #    completes both models (plus any declared 3->5 extension) for the current candidate,
 #    checks the completed prefix, and stops at the first jointly feasible allocation of
 #    15 training + 15 test puzzles (5/5/5 each). The frozen manifest `pool_index` order is
-#    authoritative; the suffix remains unrun. Training allows spread >20, while test
-#    requires spread <=20. `finalize` writes separate training/test manifests,
-#    model-isolated training-run evidence, and a certified full-lab artifact; it makes no
-#    provider call. Distil separately from the training manifest, then pass that model's
-#    frozen profile to fresh final evaluation on the test manifest at medium effort.
+#    authoritative; the suffix remains unrun. Before finalization, `extend` may reopen only
+#    the selected stopping candidate and pins the superseded selection identity. Training
+#    allows spread >20, while test requires spread <=20. `finalize` closes that window with
+#    a seal, writes separate training/test manifests, compact model-isolated trajectory
+#    evidence, and a certified full-lab artifact; it makes no provider call. Distil separately
+#    from the training manifest, then pass that model's frozen profile to fresh final
+#    evaluation on the test manifest at medium effort.
 #    `--dry-run` writes nothing, makes no provider call, and reports the 180-run minimum,
 #    552-run initial maximum for the current 92-candidate pool, completed prefix, next
 #    candidate, declared extensions, and the currently schedulable unit plan.
@@ -591,9 +593,11 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   each 251–500 / 501–1000 / 1001–2500 / 2501–5000 / 5001–10000 band. It records source/retained
   counts, sampling constants, ordered curriculum puzzle hashes, byte counts, and content/packet
   hashes. Legacy strategy-fr-v1 packet-v1 bytes stay model-independent. A #86 training manifest
-  uses packet v2: Sonnet/GPT packets add only that same model's selected-training neutral runs;
-  later models receive static training evidence only. Test records/files never enter any packet
-  or distillation prompt. `curriculum_run.py run` uses prompt v6. It validates both
+  uses packet v2: Sonnet/GPT packets add only that same model's selected-training counted-guess
+  trajectories, per-hole rank/MISS outcomes, solved locks, compact metrics, and exact malformed/
+  invalid/duplicate reply events. Repeated raw prompt/conversation snapshots remain audit-only in
+  the full lab artifact; later models receive static training evidence only. Test records/files
+  never enter any packet or distillation prompt. `curriculum_run.py run` uses prompt v6. It validates both
   transports/efforts and preflights
   subscription auth even on resume. One fresh prose stage at required `--strategy-effort max`
   analyzes the packet and returns `{analysis, strategy}`; analysis is audit-only, while strategy is
@@ -630,6 +634,8 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   `curriculum_dataset.py --calibration-pool` copies the frozen 15 strategy-fr-v1 curriculum
   puzzles byte-for-byte for provenance/reserved-slug checks, then applies the canonical schema,
   vocab, location, POS/gender/frequency, rank-map, and start-band validation to every candidate.
+  The paid loader independently binds every manifest sentence, secret, start, and stored start
+  rank to the referenced puzzle and its rank map before any provider setup.
   The committed `strategy-fr-v2/` pool pins 92 candidates in `pool_index` order; strategy-fr-v1
   and all pilot artifacts remain immutable. `calibration_run.py` processes that order one
   candidate at a time with neutral prompt v18, Claude Sonnet 5 + GPT-5.6 Sol, medium effort,
@@ -641,10 +647,13 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   ceiling. Test eligibility adds median spread <=20. The deterministic selector jointly assigns
   5 training + 5 test puzzles in every tier (30 distinct total), globally unique target slugs,
   and POS/gender/frequency/semantic category-count spread <=1 inside every role+tier and complete
-  15-puzzle split. It stops at the first feasible completed prefix, records allocation/selection
-  hashes plus the stopping candidate/checkpoint, makes no suffix call, and marks the suffix
-  `unrun`. Exhaustion produces a deterministic shortfall; order, quotas, balance, and thresholds
-  never regenerate, relax, or continue automatically.
+  15-puzzle split. It rescans the completed prefixes during resume/finalization, rejects any paid
+  work after the earliest feasible one, records allocation/selection hashes plus the stopping
+  candidate/checkpoint, makes no suffix call, and marks the suffix `unrun`. The selected stopping
+  candidate alone may reopen for an explicit extension before finalization; the extension pins
+  the superseded selection, and a deterministic finalization seal closes that window. Exhaustion
+  produces a deterministic shortfall; order, quotas, balance, and thresholds never regenerate,
+  relax, or continue automatically.
   The full artifact checkpoints every paid run/transcript, counted and rejected replies, rank
   trajectory, token usage, duration, auth/transport/prompt identity, completed prefix, next
   candidate, extensions, cohort report, and semantic hashes. Completed candidates are exactly
@@ -655,9 +664,10 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   current candidate's exact schedulable units without predicting the stopping point.
   Finalization replays every completed transcript/metric/identity, then writes deterministic
   schema-v4 `training-manifest.json` and `test-manifest.json`, per-model deterministic training
-  evidence sidecars, and a certified full-lab artifact pinning both manifest hashes. Training has
-  5/5/5 curriculum records and may expose only a roster model's own neutral training runs to its
-  packet; non-roster models get static training puzzles. Test has 5/5/5 holdout records with lean
+  evidence sidecars, a finalization seal, and a certified full-lab artifact pinning both manifest
+  hashes. Training has 5/5/5 curriculum records and may expose only a roster model's own compact
+  neutral trajectories/rejected events to its packet; raw conversations stay audit-only and
+  non-roster models get static training puzzles. Test has 5/5/5 holdout records with lean
   calibration summaries only. It never exposes test files/sentences/answers/starts/rank maps,
   transcripts, or trajectories to distillation, and test calibration runs are never final neutral
   runs. Final neutral/learned/v7 uses a matching model-specific frozen profile, fresh medium-effort

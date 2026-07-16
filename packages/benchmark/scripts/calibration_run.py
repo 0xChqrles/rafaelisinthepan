@@ -43,15 +43,18 @@ from curriculum_run import (  # noqa: E402
 from llm_play import (  # noqa: E402
     NoProgressReplyError,
     PROMPT_VERSION,
+    PuzzleReferee,
     UnparseableReplyError,
     _transport_name,
     _validate_provider_effort,
     load_vocab,
+    parse_single_word,
     play_puzzle,
     provider_reply,
     select_model,
 )
 from strategy_evidence import (  # noqa: E402
+    MODEL_RUN_EVIDENCE_SCHEMA_VERSION,
     PACKET_SCHEMA_VERSION,
     build_evidence_packet,
 )
@@ -231,6 +234,105 @@ def save_artifact(path: Path, state: dict[str, Any]) -> None:
     tmp.replace(path)
 
 
+def _validate_pool_record_puzzle(
+    record: dict[str, Any], puzzle: Any, *, lang: str
+) -> None:
+    """Bind selection metadata to the exact puzzle content used for paid play."""
+    label = str(record.get("path", record.get("candidate_id", "<unknown>")))
+    if not isinstance(puzzle, dict):
+        raise CalibrationError(f"candidate-pool puzzle {label} is not an object")
+    if puzzle.get("lang") != lang:
+        raise CalibrationError(
+            f"candidate-pool puzzle {label} language does not match the manifest"
+        )
+    words = puzzle.get("words")
+    if not isinstance(words, list) or not all(isinstance(word, str) for word in words):
+        raise CalibrationError(f"candidate-pool puzzle {label} has malformed words")
+    if record.get("sentence") != " ".join(words):
+        raise CalibrationError(
+            f"candidate-pool puzzle {label} sentence does not match puzzle words"
+        )
+
+    targets = record.get("targets")
+    holes = puzzle.get("holes")
+    ranks = puzzle.get("ranks")
+    if (
+        not isinstance(targets, list)
+        or not isinstance(holes, list)
+        or len(holes) != len(targets)
+        or not isinstance(ranks, dict)
+    ):
+        raise CalibrationError(
+            f"candidate-pool puzzle {label} target/hole structure does not match"
+        )
+    holes_by_slug: dict[str, dict[str, Any]] = {}
+    for hole in holes:
+        secret = hole.get("secret") if isinstance(hole, dict) else None
+        secret_slug = secret.get("slug") if isinstance(secret, dict) else None
+        if (
+            not isinstance(secret_slug, str)
+            or not secret_slug
+            or secret_slug in holes_by_slug
+        ):
+            raise CalibrationError(
+                f"candidate-pool puzzle {label} has malformed or duplicate secrets"
+            )
+        holes_by_slug[secret_slug] = hole
+
+    target_slugs = [
+        target.get("slug") if isinstance(target, dict) else None for target in targets
+    ]
+    if set(target_slugs) != set(holes_by_slug) or len(set(target_slugs)) != len(
+        target_slugs
+    ):
+        raise CalibrationError(
+            f"candidate-pool puzzle {label} target slugs do not match puzzle secrets"
+        )
+
+    for target in targets:
+        target_slug = target["slug"]
+        hole = holes_by_slug[target_slug]
+        secret = hole.get("secret")
+        start = hole.get("start")
+        if not isinstance(secret, dict) or secret.get("word") != target.get("word"):
+            raise CalibrationError(
+                f"candidate-pool puzzle {label} secret metadata does not match"
+            )
+        if not isinstance(start, dict) or start.get("word") != target.get("start"):
+            raise CalibrationError(
+                f"candidate-pool puzzle {label} start metadata does not match"
+            )
+        if hole.get("start_rank") != target.get("start_rank"):
+            raise CalibrationError(
+                f"candidate-pool puzzle {label} start rank metadata does not match"
+            )
+
+        rank_map = ranks.get(target_slug)
+        if not isinstance(rank_map, dict):
+            raise CalibrationError(
+                f"candidate-pool puzzle {label} has no rank map for {target_slug!r}"
+            )
+        secret_entry = rank_map.get(target_slug)
+        if (
+            not isinstance(secret_entry, dict)
+            or secret_entry.get("rank") != 0
+            or secret_entry.get("word") != secret.get("word")
+        ):
+            raise CalibrationError(
+                f"candidate-pool puzzle {label} secret rank parity does not match"
+            )
+        start_slug = start.get("slug")
+        start_entry = rank_map.get(start_slug) if isinstance(start_slug, str) else None
+        if (
+            not isinstance(start_entry, dict)
+            or start_entry.get("rank") != hole.get("start_rank")
+            or start_entry.get("word") != start.get("word")
+        ):
+            raise CalibrationError(
+                f"candidate-pool puzzle {label} start rank-map parity does not match"
+            )
+
+
 def load_candidate_pool(
     manifest_path: Path,
 ) -> tuple[dict[str, Any], str, str]:
@@ -313,11 +415,19 @@ def load_candidate_pool(
                 "calibration candidate overlaps a frozen curriculum target slug"
             )
     for record in records:
-        actual = sha256_bytes(read_data_bytes(dataset_dir / record["path"]))
+        content = read_data_bytes(dataset_dir / record["path"])
+        actual = sha256_bytes(content)
         if actual != record.get("sha256"):
             raise CalibrationError(
                 f"candidate-pool puzzle {record.get('path')} does not match its sha256"
             )
+        try:
+            puzzle = json.loads(content.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise CalibrationError(
+                f"candidate-pool puzzle {record.get('path')} is not valid JSON"
+            ) from exc
+        _validate_pool_record_puzzle(record, puzzle, lang=manifest.get("lang"))
     generator = manifest.get("generator_output", {})
     generator_path = dataset_dir / str(generator.get("path", ""))
     if not generator_path.is_file() or _sha256_file(generator_path) != generator.get(
@@ -429,6 +539,10 @@ def _run_config(
             * INITIAL_RUNS,
             "check_after_each_completed_candidate": True,
             "stop_at_first_feasible_prefix": True,
+            "extension_decision_window": {
+                "reopen_selected_stopping_candidate_before_finalization": True,
+                "additional_runs": EXTENDED_RUNS - INITIAL_RUNS,
+            },
         },
         "roster": _fixed_roster(auth),
     }
@@ -1199,6 +1313,38 @@ def select_calibrated_candidates(
     )
 
 
+def _earliest_prefix_feasibility(
+    completed_prefix: list[dict[str, Any]],
+    *,
+    reserved_slugs: set[str],
+    selection_salt: str,
+) -> tuple[int | None, dict[str, Any]]:
+    """Return the first feasible completed prefix and its exact allocation."""
+    first_count = min(SELECTED_TOTAL, len(completed_prefix))
+    counts = (
+        range(SELECTED_TOTAL, len(completed_prefix) + 1)
+        if len(completed_prefix) >= SELECTED_TOTAL
+        else (first_count,)
+    )
+    last: dict[str, Any] | None = None
+    for prefix_count in counts:
+        feasibility = select_calibrated_candidates(
+            completed_prefix[:prefix_count],
+            reserved_slugs=reserved_slugs,
+            selection_salt=selection_salt,
+        )
+        feasibility.pop("cohort_report", None)
+        last = feasibility
+        if feasibility["status"] == "selected":
+            return prefix_count, feasibility
+    if last is None:
+        last = select_calibrated_candidates(
+            [], reserved_slugs=reserved_slugs, selection_salt=selection_salt
+        )
+        last.pop("cohort_report", None)
+    return None, last
+
+
 def _refresh_derived(state: dict[str, Any]) -> None:
     candidates = state["candidates"]
     completed_prefix: list[dict[str, Any]] = []
@@ -1240,30 +1386,46 @@ def _refresh_derived(state: dict[str, Any]) -> None:
         }
     )
 
-    feasibility = select_calibrated_candidates(
+    earliest_prefix_count, feasibility = _earliest_prefix_feasibility(
         completed_prefix,
         reserved_slugs=set(state["candidate_pool"]["reserved_target_slugs"]),
         selection_salt=state["config"]["candidate_pool_content_sha256"],
     )
-    feasibility.pop("cohort_report", None)
 
-    if feasibility["status"] == "selected":
-        if next_candidate is not None and next_candidate["summary"]["status"] == "pending":
+    if earliest_prefix_count is not None:
+        first_late = next(
+            (
+                candidate
+                for candidate in candidates[earliest_prefix_count:]
+                if any(model.get("runs") for model in candidate["models"])
+            ),
+            None,
+        )
+        if first_late is not None:
             raise CalibrationError(
-                "paid work continued beyond the first feasible completed prefix"
+                "paid work continued beyond the earliest feasible completed prefix "
+                f"{earliest_prefix_count}; candidate {first_late['pool_index']} "
+                "must remain unrun"
             )
+        stopping_candidate = completed_prefix[earliest_prefix_count - 1]
+        stopping_checkpoint = max(
+            run["checkpoint"]
+            for candidate in completed_prefix[:earliest_prefix_count]
+            for model in candidate["models"]
+            for run in model["runs"]
+        )
         selection = {
             **feasibility,
-            "completed_prefix_count": prefix_count,
-            "stopping_candidate_id": completed_prefix[-1]["candidate_id"],
-            "stopping_pool_index": completed_prefix[-1]["pool_index"],
-            "stopping_checkpoint": state["checkpoint"]["sequence"],
+            "completed_prefix_count": earliest_prefix_count,
+            "stopping_candidate_id": stopping_candidate["candidate_id"],
+            "stopping_pool_index": stopping_candidate["pool_index"],
+            "stopping_checkpoint": stopping_checkpoint,
         }
         selection["allocation_sha256"] = hashlib.sha256(
             _canonical_bytes(
                 {
                     "rule_version": selection["rule_version"],
-                    "completed_prefix_count": prefix_count,
+                    "completed_prefix_count": earliest_prefix_count,
                     "stopping_candidate_id": selection["stopping_candidate_id"],
                     "stopping_checkpoint": selection["stopping_checkpoint"],
                     "selected_training": selection["selected_training"],
@@ -1361,6 +1523,7 @@ def _validate_state(
     ):
         raise CalibrationError("resume artifact frozen candidate order changed")
     checkpoints: list[int] = []
+    extension_records: list[dict[str, Any]] = []
     for candidate, record in zip(state["candidates"], records):
         actual_core = {
             key: candidate.get(key) for key in _expected_candidate_core(record)
@@ -1382,6 +1545,8 @@ def _validate_state(
             required = model.get("required_runs")
             if required not in {INITIAL_RUNS, EXTENDED_RUNS}:
                 raise CalibrationError("artifact has an invalid requested run count")
+            if required == INITIAL_RUNS and model.get("extension") is not None:
+                raise CalibrationError("three-run result has unexpected extension metadata")
             if required == EXTENDED_RUNS and not isinstance(
                 model.get("extension"), dict
             ):
@@ -1393,6 +1558,35 @@ def _validate_state(
                 "tier_boundary",
             }:
                 raise CalibrationError("five-run result has an invalid extension reason")
+            if required == EXTENDED_RUNS:
+                extension = model["extension"]
+                reopened = extension.get("reopened_selection")
+                if (
+                    not isinstance(extension.get("requested_at"), str)
+                    or not extension["requested_at"]
+                    or not isinstance(extension.get("requested_checkpoint"), int)
+                    or isinstance(extension["requested_checkpoint"], bool)
+                    or (
+                        reopened is not None
+                        and (
+                            not isinstance(reopened, dict)
+                            or set(reopened)
+                            != {
+                                "selection_sha256",
+                                "stopping_checkpoint",
+                                "allocation_sha256",
+                            }
+                            or not all(
+                                isinstance(reopened.get(key), str)
+                                and len(reopened[key]) == 64
+                                for key in ("selection_sha256", "allocation_sha256")
+                            )
+                            or not isinstance(reopened.get("stopping_checkpoint"), int)
+                        )
+                    )
+                ):
+                    raise CalibrationError("five-run extension audit metadata is malformed")
+                extension_records.append(extension)
             runs = model.get("runs")
             if not isinstance(runs, list) or len(runs) > required:
                 raise CalibrationError("artifact has an invalid completed run count")
@@ -1410,6 +1604,11 @@ def _validate_state(
         raise CalibrationError(
             "artifact checkpoint count does not match completed runs"
         )
+    if any(
+        not 0 <= extension["requested_checkpoint"] <= checkpoint["sequence"]
+        for extension in extension_records
+    ):
+        raise CalibrationError("extension request checkpoint is outside the artifact")
 
     probe = copy.deepcopy(state)
     _refresh_derived(probe)
@@ -1841,6 +2040,51 @@ def run_calibration(
     return destination
 
 
+def _validate_extension_source(state: dict[str, Any]) -> None:
+    """Reject legacy/incompatible artifacts before extension can mutate them."""
+    config = state.get("config")
+    if not isinstance(config, dict):
+        raise CalibrationError("extension artifact has no calibration configuration")
+    expected_versions = {
+        "artifact_schema_version": CALIBRATION_SCHEMA_VERSION,
+        "calibration_rule_version": CALIBRATION_RULE_VERSION,
+        "prompt_version": PROMPT_VERSION,
+    }
+    incompatible = [
+        key for key, value in expected_versions.items() if config.get(key) != value
+    ]
+    if incompatible:
+        raise CalibrationError(
+            "extension refuses a legacy or incompatible calibration artifact "
+            f"({', '.join(incompatible)})"
+        )
+
+    roster = config.get("roster")
+    auth_modes = {
+        row.get("auth") for row in roster if isinstance(row, dict)
+    } if isinstance(roster, list) else set()
+    if len(auth_modes) != 1 or not all(isinstance(value, str) for value in auth_modes):
+        raise CalibrationError("extension artifact calibration auth identity is malformed")
+    manifest_value = state.get("candidate_pool", {}).get("manifest_path")
+    if not isinstance(manifest_value, str) or not manifest_value:
+        raise CalibrationError("extension artifact candidate-pool path is missing")
+    manifest_path = Path(manifest_value)
+    if not manifest_path.is_file():
+        raise CalibrationError(
+            "extension needs the original candidate-pool manifest for identity validation"
+        )
+    manifest, content_sha, manifest_sha = load_candidate_pool(manifest_path)
+    expected_config = _run_config(
+        manifest, content_sha, manifest_sha, auth=next(iter(auth_modes))
+    )
+    _validate_state(
+        state,
+        manifest_path=manifest_path,
+        manifest=manifest,
+        expected_config=expected_config,
+    )
+
+
 def request_extension(
     artifact_path: Path,
     *,
@@ -1853,13 +2097,25 @@ def request_extension(
         raise CalibrationError("extension reason must be unstable or tier_boundary")
     state = json.loads(artifact_path.read_text(encoding="utf-8"))
     _validate_artifact_hashes(state)
+    if state.get("finalization") is not None:
+        raise CalibrationError("extension cannot change a finalized calibration artifact")
+    seal_path = _finalization_seal_path(artifact_path)
+    if seal_path.exists():
+        try:
+            seal = json.loads(seal_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise CalibrationError("calibration finalization seal is malformed") from exc
+        if seal.get("run_artifact_file_sha256") != _sha256_file(artifact_path):
+            raise CalibrationError(
+                "calibration artifact does not match its finalization seal"
+            )
+        raise CalibrationError("extension cannot change a finalized calibration artifact")
+    _validate_extension_source(state)
     selection_status = state.get("selection", {}).get("status")
-    if selection_status in {"selected", "shortfall"}:
+    if selection_status == "shortfall":
         raise CalibrationError(
             "extension cannot change a calibration experiment after its stopping check"
         )
-    if state.get("finalization") is not None:
-        raise CalibrationError("extension cannot change a finalized calibration artifact")
     matches = [
         candidate
         for candidate in state["candidates"]
@@ -1872,6 +2128,12 @@ def request_extension(
         )
     candidate = matches[0]
     candidate_index = state["candidates"].index(candidate)
+    if selection_status == "selected" and candidate["candidate_id"] != state[
+        "selection"
+    ].get("stopping_candidate_id"):
+        raise CalibrationError(
+            "a selected calibration can reopen only its stopping candidate"
+        )
     if any(
         model.get("runs")
         for later in state["candidates"][candidate_index + 1 :]
@@ -1897,11 +2159,19 @@ def request_extension(
         raise CalibrationError(
             "extension can be requested only after exactly three completed runs"
         )
+    reopened_selection = None
+    if selection_status == "selected":
+        reopened_selection = {
+            "selection_sha256": state["hashes"]["selection_sha256"],
+            "stopping_checkpoint": state["selection"]["stopping_checkpoint"],
+            "allocation_sha256": state["selection"]["allocation_sha256"],
+        }
     model["required_runs"] = EXTENDED_RUNS
     model["extension"] = {
         "reason": reason,
         "requested_at": _utc_now(),
         "requested_checkpoint": state["checkpoint"]["sequence"],
+        "reopened_selection": reopened_selection,
     }
     state.pop("completed_at", None)
     _refresh_derived(state)
@@ -1933,7 +2203,7 @@ def _all_runs_solved_within_cap(candidate: dict[str, Any]) -> bool:
     )
 
 
-TRAINING_RUN_EVIDENCE_SCHEMA_VERSION = 1
+TRAINING_RUN_EVIDENCE_SCHEMA_VERSION = MODEL_RUN_EVIDENCE_SCHEMA_VERSION
 
 
 def _json_file_bytes(value: Any) -> bytes:
@@ -1947,28 +2217,119 @@ def _write_atomic(path: Path, content: bytes) -> None:
     tmp.replace(path)
 
 
+def _finalization_seal_path(artifact_path: Path) -> Path:
+    return artifact_path.with_suffix(artifact_path.suffix + ".finalization.json")
+
+
+def _write_finalization_seal(artifact_path: Path, artifact_file_sha256: str) -> Path:
+    path = _finalization_seal_path(artifact_path)
+    content = _json_file_bytes(
+        {
+            "schema_version": 1,
+            "kind": "calibration_finalization_seal",
+            "run_artifact_file_sha256": artifact_file_sha256,
+        }
+    )
+    if path.exists():
+        if path.read_bytes() != content:
+            raise CalibrationError(
+                "existing calibration finalization seal has a different identity"
+            )
+        return path
+    _write_atomic(path, content)
+    return path
+
+
 def _role_selection_sha256(rows: list[dict[str, Any]]) -> str:
     return hashlib.sha256(_canonical_bytes(rows)).hexdigest()
 
 
-def _training_run_view(run: dict[str, Any]) -> dict[str, Any]:
-    """Keep gameplay evidence while excluding billing/transport audit metadata."""
-    return copy.deepcopy(
-        {
-            key: run[key]
-            for key in (
-                "number",
-                "tries",
-                "counted_tries",
-                "turns",
-                "termination_reason",
-                "tried_words",
-                "conversation",
-                "metrics",
-                "opening_prompt_sha256",
-            )
-        }
+def _rejected_reply_events(
+    puzzle: dict[str, Any], vocab: set[str], conversation: list[dict[str, str]]
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Replay assistant replies into compact non-counting events and counted words."""
+    referee = PuzzleReferee(puzzle, vocab)
+    events: list[dict[str, Any]] = []
+    counted: list[str] = []
+    turn = 0
+    for message in conversation:
+        if message["role"] != "assistant":
+            continue
+        turn += 1
+        reply = message["content"]
+        guess = parse_single_word(reply, lang=referee.lang)
+        if guess is None:
+            events.append({"turn": turn, "kind": "malformed", "reply": reply})
+            continue
+        feedback = referee.submit(guess)
+        if feedback.kind == "counted":
+            counted.append(guess)
+            continue
+        events.append(
+            {
+                "turn": turn,
+                "kind": feedback.kind,
+                "reply": reply,
+                "guess": guess,
+                "folded": feedback.folded,
+            }
+        )
+    return events, counted
+
+
+def _training_run_view(
+    run: dict[str, Any], *, puzzle: dict[str, Any], vocab: set[str]
+) -> dict[str, Any]:
+    """Project a raw audit run into complete, compact distillation evidence."""
+    metrics = run["metrics"]
+    trace = metrics.get("guess_trace")
+    if not isinstance(trace, list):
+        raise CalibrationError("training run has no replayable guess trajectory")
+    trajectory = []
+    for step in trace:
+        current = step.get("current_best_ranks")
+        if not isinstance(current, dict):
+            raise CalibrationError("training run trajectory has no current ranks")
+        projected = copy.deepcopy(step)
+        projected["solved_locks"] = sorted(
+            int(number) for number, rank in current.items() if rank == 0
+        )
+        trajectory.append(projected)
+
+    rejected_events, counted = _rejected_reply_events(
+        puzzle, vocab, run["conversation"]
     )
+    if counted != run["tried_words"] or len(trajectory) != run["counted_tries"]:
+        raise CalibrationError("training run compact trajectory does not replay")
+    if len(rejected_events) + len(counted) != run["turns"]:
+        raise CalibrationError("training run compact reply events do not match turns")
+    compact_metrics = {
+        key: copy.deepcopy(value)
+        for key, value in metrics.items()
+        if key != "guess_trace"
+    }
+    return {
+        key: copy.deepcopy(run[key])
+        for key in (
+            "number",
+            "model_id",
+            "provider",
+            "transport",
+            "auth",
+            "effort",
+            "cap",
+            "tries",
+            "counted_tries",
+            "turns",
+            "termination_reason",
+            "opening_prompt_sha256",
+        )
+    } | {
+        "counted_guesses": copy.deepcopy(run["tried_words"]),
+        "trajectory": trajectory,
+        "rejected_events": rejected_events,
+        "metrics": compact_metrics,
+    }
 
 
 def _training_evidence_document(
@@ -1978,6 +2339,8 @@ def _training_evidence_document(
     candidates_by_id: dict[str, dict[str, Any]],
     training_selection_sha256: str,
     prompt_version: str,
+    dataset_dir: Path,
+    vocab: set[str],
 ) -> dict[str, Any]:
     puzzles = []
     for row in selected_rows:
@@ -1990,6 +2353,7 @@ def _training_evidence_document(
                 f"training evidence cannot isolate calibration model {model_id}"
             )
         model = models[0]
+        puzzle = load_json(dataset_dir / candidate["path"])
         puzzles.append(
             {
                 "candidate_id": candidate["candidate_id"],
@@ -1997,7 +2361,10 @@ def _training_evidence_document(
                 "tier": row["tier"],
                 "difficulty": row["difficulty"],
                 "extension": copy.deepcopy(model.get("extension")),
-                "runs": [_training_run_view(run) for run in model["runs"]],
+                "runs": [
+                    _training_run_view(run, puzzle=puzzle, vocab=vocab)
+                    for run in model["runs"]
+                ],
             }
         )
     return {
@@ -2113,9 +2480,8 @@ def finalize_manifests(
         manifest=manifest,
         expected_config=expected,
     )
-    _validate_completed_runs(
-        state, pool_manifest_path, vocab_loader(manifest["lang"])
-    )
+    vocab = vocab_loader(manifest["lang"])
+    _validate_completed_runs(state, pool_manifest_path, vocab)
     if not isinstance(state.get("completed_at"), str) or not state["completed_at"]:
         raise CalibrationError("calibration artifact is not marked complete")
     selection = state["selection"]
@@ -2193,12 +2559,15 @@ def finalize_manifests(
             candidates_by_id=by_id,
             training_selection_sha256=training_selection_sha256,
             prompt_version=state["config"]["prompt_version"],
+            dataset_dir=pool_manifest_path.parent,
+            vocab=vocab,
         )
         content = _canonical_bytes(document)
         path = pool_manifest_path.parent / "training-evidence" / f"{model_id}.json.gz"
         write_deterministic_gzip(path, content)
         evidence_paths[model_id] = path
         evidence_records[model_id] = {
+            "schema_version": document["schema_version"],
             "path": path.relative_to(pool_manifest_path.parent).as_posix(),
             "sha256": sha256_bytes(content),
             "puzzle_count": document["puzzle_count"],
@@ -2365,11 +2734,15 @@ def finalize_manifests(
         "model_training_evidence": copy.deepcopy(evidence_records),
     }
     save_artifact(certified_destination, certified_state)
+    finalization_seal = _write_finalization_seal(
+        artifact_path, artifact_file_sha256
+    )
 
     return {
         "training_manifest": training_destination,
         "test_manifest": test_destination,
         "certified_artifact": certified_destination,
+        "finalization_seal": finalization_seal,
         **{
             f"training_evidence_{model_id}": path
             for model_id, path in evidence_paths.items()

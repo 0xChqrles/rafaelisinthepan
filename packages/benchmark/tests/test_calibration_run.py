@@ -12,7 +12,7 @@ import pytest
 
 import calibration_run as cal
 import curriculum_dataset as cd
-from curriculum_io import sha256_bytes, write_deterministic_gzip
+from curriculum_io import read_data_bytes, sha256_bytes, write_deterministic_gzip
 import curriculum_run as cr
 from slug import slug
 import strategy_profiles as sp
@@ -774,6 +774,59 @@ def test_frozen_pool_index_order_drives_processing_even_if_manifest_rows_are_shu
     assert state["checkpoint"]["next_pool_index"] == 1
 
 
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("sentence", "sentence does not match puzzle words"),
+        ("target_slug", "target slugs do not match puzzle secrets"),
+        ("secret_word", "secret metadata does not match"),
+        ("start_word", "start metadata does not match"),
+        ("start_rank", "start rank metadata does not match"),
+        ("rank_map", "start rank-map parity does not match"),
+    ],
+)
+def test_paid_loader_binds_manifest_metadata_to_puzzle_content(
+    tmp_path, mutation, message
+):
+    manifest_path, _words, _vocab = _runner_pool(tmp_path)
+    manifest = json.loads(manifest_path.read_text())
+    candidate = next(
+        row
+        for row in manifest["puzzles"]
+        if row["split"] == cd.CALIBRATION_CANDIDATE_SPLIT
+    )
+    target = candidate["targets"][0]
+    if mutation == "sentence":
+        candidate["sentence"] += " falsifie"
+        candidate["candidate_id"] = hashlib.sha256(
+            candidate["sentence"].encode()
+        ).hexdigest()
+    elif mutation == "target_slug":
+        target["slug"] = "cible-falsifiee"
+    elif mutation == "secret_word":
+        target["word"] = "cible-falsifiee"
+    elif mutation == "start_word":
+        target["start"] = "depart-falsifie"
+    elif mutation == "start_rank":
+        target["start_rank"] += 1
+    else:
+        puzzle_path = manifest_path.parent / candidate["path"]
+        puzzle = json.loads(read_data_bytes(puzzle_path))
+        hole = puzzle["holes"][0]
+        rank_entry = puzzle["ranks"][hole["secret"]["slug"]][hole["start"]["slug"]]
+        rank_entry["rank"] += 1
+        candidate["sha256"] = _write_puzzle(puzzle_path, puzzle)
+    manifest["candidate_pool_content_sha256"] = cd.calibration_pool_content_sha256(
+        manifest
+    )
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+
+    with pytest.raises(cal.CalibrationError, match=message):
+        cal.load_candidate_pool(manifest_path)
+
+
 def test_completed_prefix_advances_only_after_both_models_finish():
     candidate = _score_candidate([10] * 3, [])
     candidate["candidate_id"] = "first"
@@ -834,7 +887,7 @@ def test_first_feasible_prefix_stops_every_suffix_call_and_marks_it_unrun(
     assert cal._pending_units(state) == []
     with pytest.raises(
         cal.CalibrationError,
-        match="cannot change a calibration experiment after its stopping check",
+        match="can reopen only its stopping candidate",
     ):
         cal.request_extension(
             artifact,
@@ -842,6 +895,31 @@ def test_first_feasible_prefix_stops_every_suffix_call_and_marks_it_unrun(
             model_selector="SONNET",
             reason="unstable",
         )
+    stopping = state["candidates"][state["selection"]["completed_prefix_count"] - 1]
+    frozen_selection_sha = state["hashes"]["selection_sha256"]
+    frozen_allocation_sha = state["selection"]["allocation_sha256"]
+    frozen_checkpoint = state["selection"]["stopping_checkpoint"]
+
+    cal.request_extension(
+        artifact,
+        candidate_selector=stopping["candidate_id"],
+        model_selector="GPT-SOL",
+        reason="tier_boundary",
+    )
+    reopened = json.loads(artifact.read_text())
+    extension = reopened["candidates"][29]["models"][1]["extension"]
+    assert reopened["selection"]["status"] == "pending"
+    assert reopened["checkpoint"]["completed_prefix_count"] == 29
+    assert reopened["selection"]["pending_paid_units"] == 2
+    assert "completed_at" not in reopened
+    assert extension["reason"] == "tier_boundary"
+    assert extension["requested_checkpoint"] == frozen_checkpoint
+    assert extension["reopened_selection"] == {
+        "selection_sha256": frozen_selection_sha,
+        "stopping_checkpoint": frozen_checkpoint,
+        "allocation_sha256": frozen_allocation_sha,
+    }
+    assert len(calls) == 30 * 2 * 3
 
 
 def test_exhausted_pool_fails_with_deterministic_shortfall_and_no_relaxation(
@@ -988,6 +1066,37 @@ def test_rule_v2_refuses_to_resume_an_exhaustive_rule_v1_artifact(tmp_path):
         )
 
 
+def test_extension_refuses_legacy_rule_and_prompt_artifacts_without_rewriting(
+    tmp_path,
+):
+    manifest_path, _words, _vocab = _runner_pool(tmp_path)
+    manifest, content_sha, manifest_sha = cal.load_candidate_pool(manifest_path)
+    state = cal.new_artifact_state(
+        manifest_path.resolve(), manifest, content_sha, manifest_sha, auth="api"
+    )
+    state["config"].update(
+        artifact_schema_version=1,
+        calibration_rule_version="1",
+        prompt_version="16",
+    )
+    artifact = tmp_path / "legacy-calibration.json"
+    cal.save_artifact(artifact, state)
+    before = artifact.read_bytes()
+
+    with pytest.raises(
+        cal.CalibrationError,
+        match="extension refuses a legacy or incompatible calibration artifact",
+    ):
+        cal.request_extension(
+            artifact,
+            candidate_selector=state["candidates"][0]["candidate_id"],
+            model_selector="SONNET",
+            reason="unstable",
+        )
+
+    assert artifact.read_bytes() == before
+
+
 def test_checkpointed_resume_repeats_no_completed_paid_run(tmp_path, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-test")
     monkeypatch.setenv("OPENAI_API_KEY", "openai-test")
@@ -1095,6 +1204,59 @@ def test_extension_is_offline_auditable_and_adds_exactly_two_pending_runs(
     assert len(sonnet["runs"]) == 3
     assert state["selection"]["status"] == "pending"
     assert state["selection"]["pending_paid_units"] == pending_before + 2
+
+
+def test_training_run_projection_keeps_complete_trajectory_without_prompt_snapshots():
+    puzzle = _puzzle(["alpha", "beta", "gamma"])
+    vocab = {
+        slug(word)
+        for word in ["alpha", "beta", "gamma", "departa", "departb", "departc"]
+    }
+    run = cr._play_once(
+        puzzle=puzzle,
+        vocab=vocab,
+        strategy=None,
+        config={"model_id": "claude-sonnet-5", "provider": "anthropic"},
+        api_key=None,
+        play_effort=cal.CALIBRATION_EFFORT,
+        auth="api",
+        cap=cal.CALIBRATION_CAP,
+        provider_factory=ScriptedProvider(
+            ["two words", "horsjeu", "alpha", "alpha", "beta", "gamma"]
+        ),
+        on_try=lambda _progress: None,
+    )
+    opening = run["conversation"][0]["content"]
+    run.update(
+        {
+            "number": 1,
+            "model_id": "claude-sonnet-5",
+            "provider": "anthropic",
+            "transport": "api",
+            "auth": "api",
+            "effort": cal.CALIBRATION_EFFORT,
+            "cap": cal.CALIBRATION_CAP,
+            "opening_prompt_sha256": hashlib.sha256(opening.encode()).hexdigest(),
+        }
+    )
+
+    compact = cal._training_run_view(run, puzzle=puzzle, vocab=vocab)
+    serialized = json.dumps(compact, ensure_ascii=False)
+
+    assert compact["counted_guesses"] == ["alpha", "beta", "gamma"]
+    assert [event["kind"] for event in compact["rejected_events"]] == [
+        "malformed",
+        "invalid",
+        "duplicate",
+    ]
+    assert [event["turn"] for event in compact["rejected_events"]] == [1, 2, 4]
+    assert [step["try"] for step in compact["trajectory"]] == [1, 2, 3]
+    assert compact["trajectory"][-1]["solved_locks"] == [1, 2, 3]
+    assert compact["metrics"]["solved"] is True
+    for raw_only in ("conversation", "tried_words", "turn_token_usage"):
+        assert raw_only not in compact
+    assert "WHIPPIN WORD GAME" not in serialized
+    assert len(serialized.encode()) < len(json.dumps(run, ensure_ascii=False).encode())
 
 
 def test_artifact_and_content_hashes_ignore_wall_clock_noise_but_pin_results():
@@ -1334,6 +1496,91 @@ def _large_complete_pool(tmp_path: Path) -> tuple[Path, Path, str, set[str]]:
     return pool_path, artifact, selected_canary, vocab
 
 
+def test_finalization_rejects_replayable_work_after_earliest_feasible_prefix(
+    tmp_path,
+):
+    pool_path, artifact, _selected_canary, vocab = _large_complete_pool(tmp_path)
+    state = json.loads(artifact.read_text())
+    earliest = state["selection"]["completed_prefix_count"]
+    assert earliest < len(state["candidates"])
+    late_candidate = state["candidates"][earliest]
+    puzzle = cd.load_puzzle_json(pool_path.parent / late_candidate["path"])
+    guesses = [target["word"] for target in late_candidate["targets"]]
+    template = cr._play_once(
+        puzzle=puzzle,
+        vocab=vocab,
+        strategy=None,
+        config={
+            "model_id": late_candidate["models"][0]["model_id"],
+            "provider": late_candidate["models"][0]["provider"],
+        },
+        api_key=None,
+        play_effort=cal.CALIBRATION_EFFORT,
+        auth="api",
+        cap=cal.CALIBRATION_CAP,
+        provider_factory=ScriptedProvider(guesses),
+        on_try=lambda _progress: None,
+    )
+    checkpoint = state["checkpoint"]["sequence"]
+    for model in late_candidate["models"]:
+        for run_number in range(1, cal.INITIAL_RUNS + 1):
+            checkpoint += 1
+            run = copy.deepcopy(template)
+            opening = run["conversation"][0]["content"]
+            run.update(
+                {
+                    "number": run_number,
+                    "model_id": model["model_id"],
+                    "provider": model["provider"],
+                    "transport": model["transport"],
+                    "auth": model["auth"],
+                    "effort": model["effort"],
+                    "cap": cal.CALIBRATION_CAP,
+                    "opening_prompt_sha256": hashlib.sha256(
+                        opening.encode()
+                    ).hexdigest(),
+                    "checkpoint": checkpoint,
+                    "completed_at": "2026-07-16T00:00:00+00:00",
+                }
+            )
+            model["runs"].append(run)
+    state["checkpoint"].update(
+        sequence=checkpoint,
+        completed_paid_units=checkpoint,
+        updated_at="2026-07-16T00:00:00+00:00",
+    )
+    partial = copy.deepcopy(state)
+    for model in partial["candidates"][earliest]["models"]:
+        model["runs"] = []
+    partial["candidates"][earliest]["models"][0]["runs"] = [
+        copy.deepcopy(late_candidate["models"][0]["runs"][0])
+    ]
+    partial_checkpoint = state["selection"]["stopping_checkpoint"] + 1
+    partial["checkpoint"].update(
+        sequence=partial_checkpoint,
+        completed_paid_units=partial_checkpoint,
+    )
+    with pytest.raises(
+        cal.CalibrationError,
+        match="paid work continued beyond the earliest feasible completed prefix",
+    ):
+        cal._refresh_derived(partial)
+
+    # The six late runs and their transcripts are individually valid. Certification
+    # must still reject them because the preceding prefix was already feasible.
+    cal._validate_completed_runs(state, pool_path, vocab)
+    adversarial = tmp_path / "late-work-calibration.json"
+    cal.save_artifact(adversarial, state)
+
+    with pytest.raises(
+        cal.CalibrationError,
+        match="paid work continued beyond the earliest feasible completed prefix",
+    ):
+        cal.finalize_manifests(
+            pool_path, adversarial, vocab_loader=lambda _lang: vocab
+        )
+
+
 def test_finalization_writes_deterministic_isolated_training_and_test_views(
     tmp_path, capsys
 ):
@@ -1357,6 +1604,23 @@ def test_finalization_writes_deterministic_isolated_training_and_test_views(
     )
     assert repeated["training_manifest"].read_bytes() == training_path.read_bytes()
     assert repeated["test_manifest"].read_bytes() == test_path.read_bytes()
+    assert repeated["finalization_seal"] == outputs["finalization_seal"]
+    assert json.loads(outputs["finalization_seal"].read_text()) == {
+        "schema_version": 1,
+        "kind": "calibration_finalization_seal",
+        "run_artifact_file_sha256": cal._sha256_file(artifact),
+    }
+    stopping_candidate = state["selection"]["stopping_candidate_id"]
+    with pytest.raises(
+        cal.CalibrationError,
+        match="cannot change a finalized calibration artifact",
+    ):
+        cal.request_extension(
+            artifact,
+            candidate_selector=stopping_candidate,
+            model_selector="GPT-SOL",
+            reason="unstable",
+        )
 
     assert state["selection"]["cohort_report"]["counts"] == {
         "selected_training": 15,
@@ -1408,9 +1672,26 @@ def test_finalization_writes_deterministic_isolated_training_and_test_views(
     )
 
     # The training view and both model-isolated sidecars contain no selected-test
-    # identity or puzzle material.  Sonnet and GPT packets receive only their own
-    # calibration transcripts; a later model receives static training evidence only.
+    # identity or puzzle material. Sonnet and GPT packets receive only their own
+    # compact trajectories; raw repeated conversations stay in the lab artifact.
     assert selected_canary not in json.dumps(training, ensure_ascii=False)
+    for model_id, reference in training["strategy_evidence"][
+        "model_run_evidence"
+    ].items():
+        evidence_bytes = read_data_bytes(training_path.parent / reference["path"])
+        evidence = json.loads(evidence_bytes)
+        assert evidence["schema_version"] == reference["schema_version"] == 2
+        assert b'"conversation"' not in evidence_bytes
+        assert b'"turn_token_usage"' not in evidence_bytes
+        for puzzle in evidence["puzzles"]:
+            for run in puzzle["runs"]:
+                assert run["model_id"] == model_id
+                assert len(run["counted_guesses"]) == run["counted_tries"]
+                assert len(run["trajectory"]) == run["counted_tries"]
+                assert len(run["counted_guesses"]) + len(
+                    run["rejected_events"]
+                ) == run["turns"]
+                assert "guess_trace" not in run["metrics"]
     packets = {
         model_id: build_evidence_packet(
             training, training_path.parent, model_id=model_id
@@ -1419,6 +1700,7 @@ def test_finalization_writes_deterministic_isolated_training_and_test_views(
     }
     for packet in packets.values():
         assert selected_canary not in packet.canonical_bytes.decode()
+        assert b'"conversation"' not in packet.canonical_bytes
     sonnet_text = packets["claude-sonnet-5"].canonical_bytes.decode()
     gpt_text = packets["gpt-5.6-sol"].canonical_bytes.decode()
     assert '"model_id":"claude-sonnet-5"' in sonnet_text
