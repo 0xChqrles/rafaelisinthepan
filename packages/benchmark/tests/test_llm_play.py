@@ -6,6 +6,7 @@ guess broadcast to every unsolved hole, strict improvements, and a counted-try D
 """
 
 from copy import deepcopy
+import hashlib
 import json
 import math
 import os
@@ -18,12 +19,14 @@ import pytest
 from llm_play import (
     AUTH_MODES,
     CODEX_BENCHMARK_INSTRUCTIONS,
+    CODEX_DECISION_INSTRUCTIONS,
     CODEX_SUBSCRIPTION_EFFORTS,
     CODEX_TURN_TIMEOUT_SECONDS,
     DEEP_REASONING_MAX_TOKENS,
     DEFAULT_AUTH,
     DEFAULT_EFFORT,
     DEFAULT_RUNS,
+    DECISION_OUTPUT_MAX_TOKENS,
     DIRECT_OUTPUT_MAX_TOKENS,
     DISPLAY_MODEL_COUNT,
     EFFORT_LEVELS,
@@ -34,7 +37,7 @@ from llm_play import (
     OPENAI_SUBSCRIPTION_CONFLICT_ENV,
     PROMPT_VERSION,
     PROVIDER_ENV,
-    STRATEGY_OUTPUT_MAX_TOKENS,
+    PROSE_OUTPUT_MAX_TOKENS,
     REASONING_MAX_TOKENS,
     ModelSummary,
     NoProgressReplyError,
@@ -45,6 +48,7 @@ from llm_play import (
     benchmark_model,
     display_benchmark_entries,
     feedback_message,
+    load_playbook_profile,
     main,
     parse_args,
     parse_single_word,
@@ -57,7 +61,44 @@ from llm_play import (
     validate_openai_subscription_auth,
     write_benchmark,
     write_lab_artifact,
+    _stateless_word_prompt,
 )
+
+
+def test_playbook_profile_loader_accepts_only_hash_verified_final_for_selected_model(
+    tmp_path,
+):
+    playbook = "Use the sentence and rank history together."
+    path = tmp_path / "sonnet.playbook.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "whippin_model_playbook",
+                "model_id": MODELS[1]["model_id"],
+                "provider": MODELS[1]["provider"],
+                "gameplay_prompt_version": PROMPT_VERSION,
+                "final_playbook": playbook,
+                "final_playbook_sha256": hashlib.sha256(
+                    playbook.encode("utf-8")
+                ).hexdigest(),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert load_playbook_profile(path, MODELS[1]) == (
+        playbook,
+        hashlib.sha256(playbook.encode("utf-8")).hexdigest(),
+    )
+    with pytest.raises(ValueError, match="selected model"):
+        load_playbook_profile(path, MODELS[0])
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["final_playbook"] += " tampered"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(ValueError, match="hash does not match"):
+        load_playbook_profile(path, MODELS[1])
 
 
 def puzzle():
@@ -93,11 +134,28 @@ def puzzle():
     }
 
 
-VOCAB = {"shared", "forest", "ocean", "cold", "other"}
+def french_clitic_puzzle():
+    return {
+        "lang": "fr",
+        "words": ["il", "s'endormait", "paisiblement"],
+        "holes": [
+            {
+                "pos": 1,
+                "secret": {"word": "endormait", "slug": "endormait"},
+                "start": {"word": "reposait", "slug": "reposait"},
+                "start_rank": 50,
+                "prefix": "s'",
+            }
+        ],
+        "ranks": {
+            "endormait": {
+                "endormait": {"word": "endormait", "rank": 0},
+            }
+        },
+    }
 
-# The v14 strategy turn: every run's first scripted reply is the model's own method,
-# consumed as free text before any guess.
-PLAN = "I will complete the sentence first, then follow rank evidence."
+
+VOCAB = {"shared", "forest", "ocean", "cold", "other"}
 
 ANTHROPIC_MODELS = [config for config in MODELS if config["provider"] == "anthropic"]
 OPENAI_MODELS = [config for config in MODELS if config["provider"] == "openai"]
@@ -179,33 +237,29 @@ def test_anthropic_adapter_none_disables_thinking_caches_and_omits_sampling(
     )
     reply = provider_reply(config, "secret", effort="none")
 
-    strategy_turn = [{"role": "user", "content": "rules"}]
-    game_turn = strategy_turn + [
-        {"role": "assistant", "content": "my plan"},
-        {"role": "user", "content": "board"},
-    ]
-    assert reply(strategy_turn) == "forest"
-    assert reply(game_turn) == "forest"
+    assert reply([{"role": "user", "content": "board"}]) == "forest"
     assert reply.last_token_usage == {"input_tokens": 11, "output_tokens": 1}
-    # The free-text strategy turn gets prose headroom; game turns keep the strict
-    # one-word budget.
     assert calls == [
         {
             "model": config["model_id"],
-            "max_tokens": STRATEGY_OUTPUT_MAX_TOKENS,
-            "messages": strategy_turn,
-            "cache_control": {"type": "ephemeral"},
-            "thinking": {"type": "disabled"},
-        },
-        {
-            "model": config["model_id"],
             "max_tokens": DIRECT_OUTPUT_MAX_TOKENS,
-            "messages": game_turn,
+            "messages": [{"role": "user", "content": "board"}],
             "cache_control": {"type": "ephemeral"},
             "thinking": {"type": "disabled"},
-        },
+        }
     ]
     assert not ({"temperature", "top_p", "top_k"} & calls[0].keys())
+
+    # Prose mode is a construction-time choice: same call shape, prose budget.
+    prose_calls = calls.copy()
+    prose = provider_reply(config, "secret", effort="none", output="prose")
+    assert prose([{"role": "user", "content": "retrospective"}]) == "forest"
+    assert calls[-1]["max_tokens"] == PROSE_OUTPUT_MAX_TOKENS
+    assert len(calls) == len(prose_calls) + 1
+
+    decision = provider_reply(config, "secret", effort="none", output="decision")
+    assert decision([{"role": "user", "content": "policy turn"}]) == "forest"
+    assert calls[-1]["max_tokens"] == DECISION_OUTPUT_MAX_TOKENS
 
 
 @pytest.mark.parametrize("config", ANTHROPIC_MODELS, ids=lambda config: config["label"])
@@ -216,6 +270,7 @@ def test_anthropic_adapter_none_disables_thinking_caches_and_omits_sampling(
         ("medium", REASONING_MAX_TOKENS),
         ("high", REASONING_MAX_TOKENS),
         ("xhigh", DEEP_REASONING_MAX_TOKENS),
+        ("max", DEEP_REASONING_MAX_TOKENS),
         ("max", DEEP_REASONING_MAX_TOKENS),
     ],
 )
@@ -270,23 +325,150 @@ def test_anthropic_adapter_surfaces_reasoning_budget_exhaustion(monkeypatch):
         reply([{"role": "user", "content": "board"}])
 
 
+def test_api_word_adapters_receive_the_same_stateless_authoritative_prompt(
+    monkeypatch,
+):
+    anthropic_calls = []
+    openai_calls = []
+
+    class FakeAnthropic:
+        def __init__(self, *, api_key):
+            self.messages = SimpleNamespace(create=self.create)
+
+        def create(self, **kwargs):
+            anthropic_calls.append(kwargs)
+            return SimpleNamespace(
+                content=[SimpleNamespace(text="forest")], stop_reason="end_turn"
+            )
+
+    class FakeOpenAI:
+        def __init__(self, *, api_key):
+            self.responses = SimpleNamespace(create=self.create)
+
+        def create(self, **kwargs):
+            openai_calls.append(kwargs)
+            return SimpleNamespace(output_text="forest", status="completed")
+
+    monkeypatch.setitem(
+        sys.modules, "anthropic", SimpleNamespace(Anthropic=FakeAnthropic)
+    )
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=FakeOpenAI))
+
+    messages = [
+        {
+            "role": "user",
+            "content": (
+                "fixed rules\n\nCOMPLETE CHRONOLOGICAL GAME RECORD\n"
+                "CURRENT STATE\ninitial state"
+            ),
+        },
+        {"role": "assistant", "content": "first model reply"},
+        {"role": "user", "content": "FIRST RESULT\nCURRENT STATE\nafter first"},
+        {"role": "assistant", "content": "second model reply"},
+        {"role": "user", "content": "SECOND RESULT\nCURRENT STATE\nlatest state"},
+    ]
+    expected = [
+        {"role": "user", "content": _stateless_word_prompt(messages)}
+    ]
+
+    anthropic = provider_reply(MODELS[0], "secret", effort="none")
+    openai = provider_reply(MODELS[2], "secret", effort="none")
+    assert anthropic(messages) == openai(messages) == "forest"
+    assert openai_calls[0]["input"] == expected
+    # Anthropic splits the identical prompt into a cached fixed-rules block plus the
+    # volatile state so the per-run prefix can produce cache reads; the visible text
+    # is byte-identical to the OpenAI prompt.
+    anthropic_messages = anthropic_calls[0]["messages"]
+    assert "cache_control" not in anthropic_calls[0]
+    assert len(anthropic_messages) == 1 and anthropic_messages[0]["role"] == "user"
+    blocks = anthropic_messages[0]["content"]
+    assert [block["type"] for block in blocks] == ["text", "text"]
+    assert blocks[0]["cache_control"] == {"type": "ephemeral"}
+    assert "cache_control" not in blocks[1]
+    assert blocks[0]["text"] + blocks[1]["text"] == expected[0]["content"]
+    assert blocks[0]["text"] == (
+        "fixed rules\n\nCOMPLETE CHRONOLOGICAL GAME RECORD\n"
+    )
+    assert expected[0]["content"] == (
+        "fixed rules\n\nCOMPLETE CHRONOLOGICAL GAME RECORD\n"
+        "CURRENT STATE\ninitial state\n\n"
+        "PLAYER REPLY 1\nfirst model reply\n\n"
+        "REFEREE FEEDBACK 1\nFIRST RESULT\nCURRENT STATE\nafter first\n\n"
+        "PLAYER REPLY 2\nsecond model reply\n\n"
+        "REFEREE FEEDBACK 2\nSECOND RESULT\nCURRENT STATE\nlatest state"
+    )
+
+
+def test_stateless_word_prompt_preserves_initial_clues_and_every_exact_result():
+    model = ScriptedModel(["shared", "cold", "forest", "ocean"])
+
+    play_puzzle(puzzle(), VOCAB, model)
+
+    assert _stateless_word_prompt(model.calls[0]) == model.calls[0][0]["content"]
+    # Before the third guess, the current-best snapshot has replaced both starting
+    # clues with "shared". The provider prompt must nevertheless retain the initial
+    # clues plus both guesses and their exact, ordered per-hole outcomes.
+    prompt = _stateless_word_prompt(model.calls[2])
+    assert "WORD 1: tree (rank 50)" in prompt
+    assert "WORD 2: lake (rank 40)" in prompt
+    assert "WORD 1: shared (rank 10)" in prompt
+    assert "WORD 2: shared (rank 5)" in prompt
+    ordered_markers = (
+        "PLAYER REPLY 1\nshared",
+        'REFEREE FEEDBACK 1\nRESULT FOR "shared":',
+        "PLAYER REPLY 2\ncold",
+        'REFEREE FEEDBACK 2\nRESULT FOR "cold":',
+    )
+    positions = [prompt.index(marker) for marker in ordered_markers]
+    assert positions == sorted(positions)
+    assert "word 1: 10 closer! New best rank 10." in prompt
+    assert "word 2: MISS (current best remains rank 5)" in prompt
+
+
+def test_codex_bootstrap_does_not_define_provider_specific_game_rules():
+    assert "Follow the visible-reply contract in the user prompt exactly" in (
+        CODEX_BENCHMARK_INSTRUCTIONS
+    )
+    for gameplay_rule in (
+        "exactly one bare word",
+        "lowercase letters",
+        "ASCII hyphens",
+        "apostrophes",
+        "CURRENT STATE",
+        "rank",
+        "CLOZE",
+    ):
+        assert gameplay_rule not in CODEX_BENCHMARK_INSTRUCTIONS
+
+
 @pytest.mark.parametrize(
-    ("reply", "expected"),
+    ("reply", "lang", "expected"),
     [
-        ("chien", "chien"),
-        ('**"forêt".**', "forêt"),
-        ("arc-en-ciel", "arc-en-ciel"),
-        ("The answer is chien", None),
-        ("chien chat", None),
-        ("...", None),
+        ("chien", "fr", "chien"),
+        ("Chien", "fr", None),
+        (" forêt \n", "fr", "forêt"),
+        ("arc-en-ciel", "fr", "arc-en-ciel"),
+        ('**"forêt".**', "fr", None),
+        ("s'endormir", "fr", None),
+        ("s’endormir", "fr", None),
+        ("arc–en–ciel", "fr", None),
+        ("chien2", "fr", None),
+        ("chien_chat", "fr", None),
+        ("The answer is chien", "fr", None),
+        ("chien chat", "fr", None),
+        ("...", "fr", None),
+        ("mañana", "fr", None),
+        ("well-being", "en", "well-being"),
     ],
 )
-def test_reply_parser_requires_exactly_one_lexical_word(reply, expected):
-    assert parse_single_word(reply) == expected
+def test_reply_parser_enforces_the_advertised_language_word_shape(
+    reply, lang, expected
+):
+    assert parse_single_word(reply, lang=lang) == expected
 
 
 @pytest.mark.parametrize("effort", EFFORT_LEVELS)
-def test_anthropic_subscription_adapter_isolates_and_resumes_agent_sdk(
+def test_anthropic_subscription_word_adapter_uses_fresh_stateless_agent_sdk_turns(
     monkeypatch, effort
 ):
     calls = []
@@ -322,15 +504,20 @@ def test_anthropic_subscription_adapter_isolates_and_resumes_agent_sdk(
     monkeypatch.setenv("ANTHROPIC_API_KEY", "must-not-be-used")
     reply = provider_reply(MODELS[0], None, effort=effort, auth="subscription")
 
-    assert reply([{"role": "user", "content": "opening"}]) == "forest"
+    opening = [
+        {
+            "role": "user",
+            "content": "opening rules\nCURRENT STATE\ninitial state",
+        }
+    ]
+    continued = opening + [
+        {"role": "assistant", "content": "forest"},
+        {"role": "user", "content": "latest state"},
+    ]
+
+    assert reply(opening) == "forest"
     assert (
-        reply(
-            [
-                {"role": "user", "content": "opening"},
-                {"role": "assistant", "content": "forest"},
-                {"role": "user", "content": "feedback"},
-            ]
-        )
+        reply(continued)
         == "forest"
     )
     # A new one-message transcript is a new median run, never a resumed attempt.
@@ -339,8 +526,15 @@ def test_anthropic_subscription_adapter_isolates_and_resumes_agent_sdk(
     assert reply.last_token_usage == {"input_tokens": 12, "output_tokens": 1}
 
     first_options = calls[0][1]
-    assert [call[0] for call in calls] == ["opening", "feedback", "opening again"]
-    assert [call[1].resume for call in calls] == [None, "session-1", None]
+    assert [call[0] for call in calls] == [
+        _stateless_word_prompt(opening),
+        _stateless_word_prompt(continued),
+        "opening again",
+    ]
+    assert "CURRENT STATE\ninitial state" in calls[1][0]
+    assert "PLAYER REPLY 1\nforest" in calls[1][0]
+    assert "REFEREE FEEDBACK 1\nlatest state" in calls[1][0]
+    assert [call[1].resume for call in calls] == [None, None, None]
     assert first_options.model == "claude-opus-4-8"
     assert first_options.system_prompt is None
     assert first_options.tools == []
@@ -368,6 +562,48 @@ def test_anthropic_subscription_adapter_isolates_and_resumes_agent_sdk(
     assert workspace.is_dir()
     reply.close()
     assert not workspace.exists()
+
+
+def test_anthropic_subscription_surfaces_provider_status_and_sdk_errors(monkeypatch):
+    class FakeOptions:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    class FakeResultMessage:
+        result = "Claude Code returned an error result: success"
+        session_id = "failed-session"
+        is_error = True
+        stop_reason = None
+        subtype = "success"
+        usage = None
+        errors = ["session limit; resets at 16:10"]
+        api_error_status = 429
+
+    async def fake_query(*, prompt, options):
+        assert prompt == "analyze"
+        assert options.effort == "max"
+        yield FakeResultMessage()
+
+    monkeypatch.setitem(
+        sys.modules,
+        "claude_agent_sdk",
+        SimpleNamespace(
+            ClaudeAgentOptions=FakeOptions,
+            ResultMessage=FakeResultMessage,
+            query=fake_query,
+        ),
+    )
+    reply = provider_reply(
+        MODELS[1], None, effort="max", auth="subscription", output="prose"
+    )
+    try:
+        with pytest.raises(
+            RuntimeError,
+            match=r"session limit.*provider HTTP status 429",
+        ):
+            reply([{"role": "user", "content": "analyze"}])
+    finally:
+        reply.close()
 
 
 def test_subscription_auth_preflight_strips_api_credentials(monkeypatch):
@@ -527,32 +763,111 @@ def test_openai_subscription_adapter_isolates_fresh_codex_exec(
     assert kwargs["capture_output"] is True
     assert kwargs["text"] is True
     assert kwargs["timeout"] == CODEX_TURN_TIMEOUT_SECONDS
-    snapshots = [
-        json.loads(call_kwargs["input"].splitlines()[-1])
-        for _call_command, call_kwargs in calls
+    assert [call_kwargs["input"] for _command, call_kwargs in calls] == [
+        _stateless_word_prompt(opening),
+        _stateless_word_prompt(continued),
+        _stateless_word_prompt(latest),
+        "opening again",
     ]
-    assert snapshots == [
-        {
-            "opening_rules": "opening rules",
-            "current_state": "CURRENT STATE\ninitial state",
-        },
-        {"opening_rules": "opening rules", "current_state": "feedback"},
-        {
-            "opening_rules": "opening rules",
-            "current_state": "latest authoritative state",
-        },
-        {
-            "opening_rules": "opening again",
-            "current_state": "opening again",
-        },
-    ]
-    # Fresh Codex turns receive the rules plus one aggregate state, never the model's
-    # prior one-word replies or obsolete referee snapshots.
-    assert all("forest" not in call_kwargs["input"] for _, call_kwargs in calls)
-    assert "feedback" not in calls[2][1]["input"]
+    # Fresh Codex turns get the same explicit full record as every other transport;
+    # they do not need provider-side session memory to retain earlier evidence.
+    assert "CURRENT STATE\ninitial state" in calls[2][1]["input"]
+    assert "PLAYER REPLY 1\nforest" in calls[2][1]["input"]
+    assert "REFEREE FEEDBACK 1\nfeedback" in calls[2][1]["input"]
+    assert "PLAYER REPLY 2\nocean" in calls[2][1]["input"]
+    assert (
+        "REFEREE FEEDBACK 2\nlatest authoritative state"
+        in calls[2][1]["input"]
+    )
 
     reply.close()
     assert not workspace.exists()
+
+
+def test_openai_subscription_prose_payload_has_no_one_word_directive(monkeypatch):
+    calls = []
+
+    def fake_run(_command, **kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            returncode=0,
+            stdout="\n".join(
+                [
+                    json.dumps(
+                        {
+                            "type": "item.completed",
+                            "item": {
+                                "type": "agent_message",
+                                "text": '{"analysis": "complete"}',
+                            },
+                        }
+                    ),
+                    json.dumps({"type": "turn.completed", "usage": {}}),
+                ]
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr("llm_play.shutil.which", lambda _command: "/usr/bin/codex")
+    monkeypatch.setattr("llm_play.subprocess.run", fake_run)
+    reply = provider_reply(
+        MODELS[2], None, effort="medium", auth="subscription", output="prose"
+    )
+
+    assert reply([{"role": "user", "content": "Return a complete JSON report."}])
+    payload = calls[0]["input"]
+    assert "exactly one word" not in payload.lower()
+    assert payload == "Return a complete JSON report."
+    reply.close()
+
+
+def test_openai_subscription_decision_mode_uses_json_instructions(monkeypatch):
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return SimpleNamespace(
+            returncode=0,
+            stdout="\n".join(
+                [
+                    json.dumps(
+                        {
+                            "type": "item.completed",
+                            "item": {
+                                "type": "agent_message",
+                                "text": '{"guess":"forêt"}',
+                            },
+                        }
+                    ),
+                    json.dumps({"type": "turn.completed", "usage": {}}),
+                ]
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr("llm_play.shutil.which", lambda _command: "/usr/bin/codex")
+    monkeypatch.setattr("llm_play.subprocess.run", fake_run)
+    reply = provider_reply(
+        MODELS[2], None, effort="medium", auth="subscription", output="decision"
+    )
+
+    assert reply([{"role": "user", "content": "Return the policy decision."}])
+    command, kwargs = calls[0]
+    configs = [
+        command[index + 1]
+        for index, value in enumerate(command)
+        if value == "--config"
+    ]
+    instructions_config = next(
+        value for value in configs if value.startswith("model_instructions_file=")
+    )
+    instructions_path = Path(json.loads(instructions_config.split("=", 1)[1]))
+    assert instructions_path.read_text(encoding="utf-8").strip() == (
+        CODEX_DECISION_INSTRUCTIONS
+    )
+    assert "exactly one word" not in kwargs["input"].lower()
+    assert "Return only the exact JSON decision object requested." in kwargs["input"]
+    reply.close()
 
 
 @pytest.mark.parametrize("config", OPENAI_MODELS, ids=lambda config: config["label"])
@@ -640,13 +955,7 @@ def test_openai_adapter_uses_responses_with_explicit_none_effort(monkeypatch, co
     monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=FakeOpenAI))
     reply = provider_reply(config, "secret", effort="none")
 
-    strategy_turn = [{"role": "user", "content": "rules"}]
-    game_turn = strategy_turn + [
-        {"role": "assistant", "content": "my plan"},
-        {"role": "user", "content": "board"},
-    ]
-    assert reply(strategy_turn) == "ocean"
-    assert reply(game_turn) == "ocean"
+    assert reply([{"role": "user", "content": "board"}]) == "ocean"
     assert reply.last_token_usage == {
         "input_tokens": 9,
         "output_tokens": 1,
@@ -655,17 +964,19 @@ def test_openai_adapter_uses_responses_with_explicit_none_effort(monkeypatch, co
     assert calls == [
         {
             "model": config["model_id"],
-            "input": strategy_turn,
-            "reasoning": {"effort": "none"},
-            "max_output_tokens": STRATEGY_OUTPUT_MAX_TOKENS,
-        },
-        {
-            "model": config["model_id"],
-            "input": game_turn,
+            "input": [{"role": "user", "content": "board"}],
             "reasoning": {"effort": "none"},
             "max_output_tokens": 256,
-        },
+        }
     ]
+
+    prose = provider_reply(config, "secret", effort="none", output="prose")
+    assert prose([{"role": "user", "content": "retrospective"}]) == "ocean"
+    assert calls[-1]["max_output_tokens"] == PROSE_OUTPUT_MAX_TOKENS
+
+    decision = provider_reply(config, "secret", effort="none", output="decision")
+    assert decision([{"role": "user", "content": "policy turn"}]) == "ocean"
+    assert calls[-1]["max_output_tokens"] == DECISION_OUTPUT_MAX_TOKENS
 
 
 @pytest.mark.parametrize(
@@ -706,11 +1017,57 @@ def test_openai_adapter_applies_requested_reasoning_effort(
     ]
 
 
-@pytest.mark.parametrize("config", OPENAI_MODELS, ids=lambda config: config["label"])
-def test_openai_api_rejects_undocumented_max_effort_before_a_paid_call(config):
-    assert OPENAI_API_EFFORTS == ("none", "low", "medium", "high", "xhigh")
-    with pytest.raises(ValueError, match="OpenAI API benchmark.*'max'"):
-        provider_reply(config, "secret", effort="max")
+def test_openai_api_ultra_mapping_uses_documented_max_effort_and_pro_mode(
+    monkeypatch,
+):
+    calls = []
+
+    class FakeOpenAI:
+        def __init__(self, *, api_key):
+            assert api_key == "secret"
+            self.responses = SimpleNamespace(create=self.create)
+
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(output_text="playbook", status="completed")
+
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=FakeOpenAI))
+    assert OPENAI_API_EFFORTS == (
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+    )
+    reply = provider_reply(
+        MODELS[2],
+        "secret",
+        effort="max",
+        output="prose",
+        reasoning_mode="pro",
+    )
+
+    assert reply([{"role": "user", "content": "distill"}]) == "playbook"
+    assert calls[0]["reasoning"] == {"effort": "max", "mode": "pro"}
+    assert calls[0]["max_output_tokens"] == DEEP_REASONING_MAX_TOKENS
+
+
+def test_pro_mode_rejects_non_api_or_non_max_transports():
+    with pytest.raises(ValueError, match="requires OpenAI API effort 'max'"):
+        provider_reply(
+            MODELS[2],
+            "secret",
+            effort="high",
+            reasoning_mode="pro",
+        )
+    with pytest.raises(ValueError, match="only through the OpenAI API"):
+        provider_reply(
+            MODELS[1],
+            "secret",
+            effort="max",
+            reasoning_mode="pro",
+        )
 
 
 def test_openai_adapter_surfaces_an_incomplete_reasoning_response(monkeypatch):
@@ -774,9 +1131,13 @@ def test_cli_rejects_none_effort_before_an_openai_subscription_call():
     )
 
 
-def test_cli_rejects_max_effort_before_an_openai_api_call():
+def test_regular_cli_accepts_openai_api_max_but_reserves_ultra_for_distillation():
+    assert (
+        parse_args(["puzzle.json", "--model", "GPT-SOL", "--effort", "max"]).effort
+        == "max"
+    )
     with pytest.raises(SystemExit):
-        parse_args(["puzzle.json", "--model", "GPT-SOL", "--effort", "max"])
+        parse_args(["puzzle.json", "--model", "GPT-SOL", "--effort", "ultra"])
 
 
 @pytest.mark.parametrize(
@@ -995,9 +1356,8 @@ class UsageScriptedModel(ScriptedModel):
 
 def test_run_result_collects_each_transport_reported_turn_usage():
     model = UsageScriptedModel(
-        [PLAN, "forest", "ocean"],
+        ["forest", "ocean"],
         [
-            {"input_tokens": 5, "output_tokens": 40},
             {"input_tokens": 10, "output_tokens": 1},
             {"input_tokens": 20, "output_tokens": 1},
         ],
@@ -1006,7 +1366,6 @@ def test_run_result_collects_each_transport_reported_turn_usage():
     result = play_puzzle(puzzle(), VOCAB, model)
 
     assert result.turn_token_usage == (
-        {"input_tokens": 5, "output_tokens": 40},
         {"input_tokens": 10, "output_tokens": 1},
         {"input_tokens": 20, "output_tokens": 1},
     )
@@ -1015,14 +1374,11 @@ def test_run_result_collects_each_transport_reported_turn_usage():
 def test_benchmark_model_persists_the_selected_median_runs_counted_display_forms():
     model = ScriptedModel(
         [
-            PLAN,
             "forest",
             "ocean",
-            PLAN,
             "shared",
             "forest",
             "ocean",
-            PLAN,
             "cold",
             "other",
             "forest",
@@ -1203,7 +1559,7 @@ def test_in_place_cli_accumulates_lab_runs_then_embeds_only_the_complete_trio(
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setattr(
         "llm_play.provider_reply",
-        lambda *_args, **_kwargs: ScriptedModel([PLAN, "forest", "ocean"]),
+        lambda *_args, **_kwargs: ScriptedModel(["forest", "ocean"]),
     )
 
     for selector in ("OPUS", "SONNET"):
@@ -1327,7 +1683,7 @@ def test_prompt_bump_keeps_the_existing_trio_until_atomic_replacement(
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setattr(
         "llm_play.provider_reply",
-        lambda *_args, **_kwargs: ScriptedModel([PLAN, "forest", "ocean"]),
+        lambda *_args, **_kwargs: ScriptedModel(["forest", "ocean"]),
     )
 
     for selector in ("OPUS", "SONNET"):
@@ -1374,39 +1730,64 @@ def test_prompt_bump_keeps_the_existing_trio_until_atomic_replacement(
 
 
 def test_verbose_reply_is_reprompted_without_scoring_its_first_word():
-    model = ScriptedModel([PLAN, "The answer is forest", "forest", "ocean"])
+    model = ScriptedModel(["The answer is forest", "forest", "ocean"])
 
     result = play_puzzle(puzzle(), VOCAB, model)
 
     assert result.tries == 2
-    assert result.turns == 4
+    assert result.turns == 3
     assert result.tried_words == ("forest", "ocean")
-    assert "could not parse a word" in model.calls[2][-1]["content"]
+    correction = model.calls[1][-1]["content"]
+    assert "INVALID REPLY FORMAT" in correction
+    assert "contains whitespace" in correction
+    assert "no apostrophe, space, punctuation, formatting, or explanation" in correction
 
 
 def test_invalid_and_folded_duplicate_do_not_count_and_are_reprompted():
     # "sharéd" and "shared" fold to the same persisted try key, exactly like Game.
-    model = ScriptedModel([PLAN, "nonesuch", "sharéd", "shared", "forest", "ocean"])
+    model = ScriptedModel(["nonesuch", "sharéd", "shared", "forest", "ocean"])
     updates = []
     result = play_puzzle(puzzle(), VOCAB, model, on_try=updates.append)
 
     assert result.tries == 3
     assert result.counted_tries == 3
-    assert result.turns == 6
+    assert result.turns == 5
     assert result.tried_words == ("sharéd", "forest", "ocean")
     user_feedback = [m["content"] for m in result.conversation if m["role"] == "user"]
-    # user_feedback[0] is the opening rules, [1] the game-start turn after the method.
-    assert "Method noted." in user_feedback[1]
-    assert '"nonesuch" is not a word — this did not count.' in user_feedback[2]
-    assert "Tries: 0" in user_feedback[2]
-    assert '"shared" was already tried — this did not count.' in user_feedback[4]
-    assert "Tries: 1" in user_feedback[4]
+    assert '"nonesuch" is not in the fixed game vocabulary' in user_feedback[1]
+    assert "reply format was valid" in user_feedback[1]
+    assert "Tries: 0" in user_feedback[1]
+    assert all(
+        "REJECTED OUTSIDE VOCABULARY "
+        "(unordered; did not count; do not repeat): nonesuch" in message
+        for message in user_feedback[1:]
+    )
+    assert '"shared" has the same folded lookup form' in user_feedback[3]
+    assert "Tries: 1" in user_feedback[3]
     assert [(update.number, update.word) for update in updates] == [
         (1, "sharéd"),
         (2, "forest"),
         (3, "ocean"),
     ]
     assert updates[-1].progress == pytest.approx(100)
+
+
+def test_rejected_vocabulary_words_persist_by_folded_form_without_counting():
+    referee = PuzzleReferee(puzzle(), VOCAB)
+
+    first = referee.submit("inlassé")
+    second = referee.submit("inlasse")
+    counted = referee.submit("cold")
+
+    assert first.kind == second.kind == "invalid"
+    assert counted.kind == "counted"
+    assert referee.tries == 1
+    assert referee.rejected_words == {"inlasse": "inlassé"}
+    message = feedback_message(counted, referee)
+    assert (
+        "REJECTED OUTSIDE VOCABULARY "
+        "(unordered; did not count; do not repeat): inlassé" in message
+    )
 
 
 def test_miss_and_warm_rank_feedback_match_each_secret_rank_map():
@@ -1459,8 +1840,8 @@ def test_referee_reports_stagnation_as_evidence_without_forcing_a_tactic():
     assert "The last 2 counted guesses improved no word" in message
     assert "all current best ranks stayed unchanged" in message
     assert "EXCLUDED AS ALREADY TRIED (unordered; do not repeat): cold, shared, warm" in message
-    assert "Similarity among your own guesses is not evidence of progress" in message
-    assert "Decide for yourself how to adapt" in message
+    assert "Similarity among your own guesses is not evidence of progress" not in message
+    assert "Decide for yourself how to adapt" not in message
     assert "RECENT COUNTED OUTCOMES" not in message
     assert "- shared:" not in message
     assert "- warm:" not in message
@@ -1492,7 +1873,7 @@ def test_referee_reports_stagnation_as_evidence_without_forcing_a_tactic():
     assert "WORD 2: better (rank 4)" in better_message
 
 
-def test_tried_words_are_complete_but_unordered_and_do_not_replay_the_trajectory():
+def test_individual_snapshot_keeps_a_compact_unordered_exclusion_set():
     misses = ["zulu", "alpha", "middle"]
     referee = PuzzleReferee(puzzle(), VOCAB | set(misses))
 
@@ -1506,8 +1887,8 @@ def test_tried_words_are_complete_but_unordered_and_do_not_replay_the_trajectory
     assert "RECENT COUNTED OUTCOMES" not in message
     assert "- zulu:" not in message
     assert "- alpha:" not in message
-    # Old rank-sorted and chronological histories both encouraged word-list
-    # continuation. The snapshot carries one best clue plus a de-ordered exclusion set.
+    # Each snapshot stays compact. The canonical fresh-turn prompt separately retains
+    # these exact feedback messages in chronological order for both providers.
     assert "WORD 1: tree (rank 50)" in message
     assert "WORD 1: tree(50)," not in message
 
@@ -1559,12 +1940,12 @@ def test_solved_holes_are_locked_and_excluded_from_later_feedback():
 
 
 def test_cap_after_counted_tries_is_a_dnf():
-    model = ScriptedModel([PLAN, "cold", "other"])
+    model = ScriptedModel(["cold", "other"])
     result = play_puzzle(puzzle(), VOCAB, model, cap=2)
 
     assert result.tries is None
     assert result.counted_tries == 2
-    assert result.turns == 3
+    assert result.turns == 2
     assert result.tried_words == ("cold", "other")
 
 
@@ -1572,11 +1953,11 @@ def test_final_score_matches_front_unique_try_semantics_for_same_sequence():
     # Invalid and folded duplicate submissions are visible turns but not tries; a MISS is
     # a vocabulary-valid unique try; the two secret guesses complete the round.
     sequence = ["???", "sharéd", "shared", "cold", "forest", "ocean"]
-    result = play_puzzle(puzzle(), VOCAB, ScriptedModel([PLAN, *sequence]))
+    result = play_puzzle(puzzle(), VOCAB, ScriptedModel(sequence))
 
     folded_unique_valid = {"shared", "cold", "forest", "ocean"}
     assert result.tries == len(folded_unique_valid) == 4
-    assert result.turns == len(sequence) + 1  # + the strategy turn
+    assert result.turns == len(sequence)
     assert result.tried_words == ("sharéd", "cold", "forest", "ocean")
 
 
@@ -1585,14 +1966,11 @@ def test_cli_prints_counted_words_in_order_for_each_run(monkeypatch, tmp_path, c
     path.write_text(json.dumps(puzzle()), encoding="utf-8")
     model = ScriptedModel(
         [
-            PLAN,
             "forest",
             "ocean",
-            PLAN,
             "shared",
             "forest",
             "ocean",
-            PLAN,
             "cold",
             "forest",
             "ocean",
@@ -1619,7 +1997,7 @@ def test_cli_openai_subscription_uses_plan_without_api_key(
 ):
     path = tmp_path / "puzzle.json"
     path.write_text(json.dumps(puzzle()), encoding="utf-8")
-    model = ScriptedModel([PLAN, "forest", "ocean"])
+    model = ScriptedModel(["forest", "ocean"])
     preflights = []
 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -1684,7 +2062,7 @@ def test_cli_anthropic_subscription_preflights_only_the_selected_provider(
 
     def fake_provider(config, api_key, **kwargs):
         provider_calls.append((config["tag"], api_key, kwargs["auth"]))
-        return ScriptedModel([PLAN, "forest", "ocean"])
+        return ScriptedModel(["forest", "ocean"])
 
     monkeypatch.setattr("llm_play.provider_reply", fake_provider)
 
@@ -1710,7 +2088,7 @@ def test_cli_anthropic_subscription_preflights_only_the_selected_provider(
 
 
 def test_opening_cloze_keeps_affixes_but_never_inserts_ranked_guesses():
-    model = ScriptedModel([PLAN, "forest", "ocean"])
+    model = ScriptedModel(["forest", "ocean"])
     play_puzzle(puzzle(), VOCAB, model)
 
     opening = model.calls[0][0]["content"]
@@ -1737,81 +2115,95 @@ def test_feedback_cloze_reveals_solutions_but_not_improving_clues():
     assert "WORD 1:" not in solved
 
 
-def test_first_reply_is_the_models_own_method_and_never_scores_a_guess():
-    # Even a clean one-word first reply is consumed as the method, not a guess.
-    model = ScriptedModel(["forest", "forest", "ocean"])
-    result = play_puzzle(puzzle(), VOCAB, model)
+def test_opening_injects_learned_strategy_as_guidance_and_first_reply_is_a_guess():
+    learned = "Probe two domains early. Abandon a direction after 3 flat guesses."
 
+    bare = ScriptedModel(["forest", "ocean"])
+    play_puzzle(puzzle(), VOCAB, bare)
+    bare_opening = bare.calls[0][0]["content"]
+    assert "YOUR STRATEGY" not in bare_opening
+    assert "then reply with exactly one bare English game-vocabulary word" in bare_opening
+    # No pre-game plan is requested anywhere (#84).
+    assert "state the method you commit to" not in bare_opening
+    assert "your method" not in bare_opening
+
+    model = ScriptedModel(["forest", "ocean"])
+    result = play_puzzle(puzzle(), VOCAB, model, strategy=learned)
+
+    # The first reply is the first guess: it scores immediately.
     assert result.tries == 2
-    assert result.turns == 3
-    assert result.tried_words == ("forest", "ocean")
+    assert result.turns == 2
+    assert result.conversation[1] == {"role": "assistant", "content": "forest"}
 
     opening = model.calls[0][0]["content"]
-    assert "state the method you commit to" in opening
-    # The plan must pre-commit its own anti-loop machinery; the values stay the
-    # model's choice.
-    assert "a concrete stopping rule" in opening
-    assert "exact number of consecutive non-improving counted guesses" in opening
-    assert "specific, different move you will make when that rule triggers" in opening
-    assert "keep consecutive guesses from all coming from one semantic family" in opening
-    assert "Choose every number and move yourself" in opening
-    assert "the referee will quote it back to you" in opening
-    assert "First reply: your method, in free text — no guess yet." in opening
-    assert "Every reply after it must be exactly one word." in opening
-    assert "Reply with exactly one word." not in opening
-
-    # The method stays verbatim in the transcript; the game-start turn follows it.
-    assert result.conversation[1] == {"role": "assistant", "content": "forest"}
-    game_start = result.conversation[2]
-    assert game_start["role"] == "user"
-    assert "Method noted." in game_start["content"]
-    assert "The game starts now." in game_start["content"]
-    assert "Reply with exactly one word." in game_start["content"]
-    assert "CURRENT STATE" in game_start["content"]
-    assert model.calls[1] == list(result.conversation[:3])
+    assert "YOUR STRATEGY" in opening
+    assert learned in opening
+    assert "advice, not rules" in opening
+    assert "fixed game rules above always take precedence" in opening
 
 
-def test_deep_stall_quotes_the_models_own_method_back_verbatim():
-    misses = ["missa", "missb", "missc", "missd", "misse", "missf"]
-    model = ScriptedModel([PLAN, *misses, "forest", "ocean"])
-    result = play_puzzle(puzzle(), VOCAB | set(misses), model)
+def test_every_unconditioned_caller_gets_the_same_strategy_neutral_rules():
+    ordinary = ScriptedModel(["forest", "ocean"])
+    play_puzzle(puzzle(), VOCAB, ordinary)
 
-    assert result.tries == 8
-    reminders = [
-        m["content"]
-        for m in result.conversation
-        if m["role"] == "user" and "YOUR STATED METHOD" in m["content"]
-    ]
-    # Streak reaches METHOD_REMINDER_AFTER on the 5th miss: that turn and the next
-    # stalled one carry the quote-back; earlier turns and post-improvement turns don't.
-    assert len(reminders) == 2
-    for reminder in reminders:
-        assert PLAN in reminder
-        assert "if its stopping rule has triggered, execute it now" in reminder
-    fourth_miss_feedback = next(
-        m["content"]
-        for m in result.conversation
-        if m["role"] == "user" and "NO-IMPROVEMENT STREAK: 4" in m["content"]
-    )
-    assert "YOUR STATED METHOD" not in fourth_miss_feedback
-    solved_feedback = result.conversation[-1]["content"]
-    assert "YOUR STATED METHOD" not in solved_feedback
+    neutral_alias = ScriptedModel(["forest", "ocean"])
+    play_puzzle(puzzle(), VOCAB, neutral_alias, rules_only=True)
+
+    assert ordinary.calls[0][0]["content"] == neutral_alias.calls[0][0]["content"]
+    opening = ordinary.calls[0][0]["content"]
+    assert "YOUR STRATEGY" not in opening
+    assert "YOUR METHOD" not in opening
+    assert "Decide for yourself how to adapt" not in opening
+
+
+def test_stateless_reply_contract_permits_private_thinking_but_binds_visible_output():
+    model = ScriptedModel(["forest", "ocean"])
+    play_puzzle(puzzle(), VOCAB, model)
+
+    for messages in model.calls:
+        prompt = _stateless_word_prompt(messages)
+        assert "Reason privately as needed" in prompt
+        assert "your entire visible reply must be exactly one bare English" in prompt
+        assert "The visible reply must contain no uppercase" in prompt
+        assert "labels, reasoning, or explanations" not in prompt
+        # Every stateless turn ends with the affirmative deliberation cue so
+        # adaptive-thinking transports treat the choice as multi-step reasoning.
+        assert (
+            "multi-step deduction over the CLOZE, ranked clues, and exclusion sets"
+            in prompt
+        )
+        assert "Reply now" not in prompt
 
 
 def test_opening_prompt_explains_rules_without_prescribing_a_solving_plan():
-    model = ScriptedModel([PLAN, "forest", "ocean"])
-    play_puzzle(puzzle(), VOCAB, model)
+    model = ScriptedModel(["forest", "ocean"])
+    play_puzzle(puzzle(), VOCAB, model, cap=75)
 
     opening = model.calls[0][0]["content"]
-    assert PROMPT_VERSION == "15"
-    for header in ("GOAL", "RULES", "EVIDENCE", "YOUR METHOD", "FEEDBACK FORMAT"):
+    assert PROMPT_VERSION == "21"
+    for header in (
+        "OBJECTIVE AND SCORE",
+        "MANDATORY REPLY CONTRACT",
+        "CLOZE AND EXACT ANSWERS",
+        "GUESS AND RANK RULES",
+        "AUTHORITATIVE STATE",
+        "COMPLETE CHRONOLOGICAL GAME RECORD",
+    ):
         assert header in opening
-    assert "Choose your own solving method" in opening
-    assert "no required search order, reset rule, or mandated next-step tactic" in opening
-    assert "Decide for yourself how to adapt" in opening
-    assert "number, gender, agreement, and conjugation" in opening
-    # These v11 instructions dictated the next tactic and must not return.
+    assert len(opening.split()) <= 650
+    assert "limit of 75 counted tries" in opening
+    assert "counted try 75 succeeds" in opening
+    assert "first reply is the first guess, not a plan" in opening
+    assert "Singular/plural, masculine/feminine" in opening
+    assert "person, tense, mood, and conjugation" in opening
+    # No built-in solving policy or formerly prescribed tactic may enter the neutral
+    # contract. Only an explicit treatment strategy gets a YOUR STRATEGY block.
     for prescribed_tactic in (
+        "YOUR METHOD",
+        "Choose your own solving method",
+        "Decide for yourself how to adapt",
+        "counted guess as a costly hypothesis",
+        "improvement supports continuing a direction",
         "DECISION: First reread the CLOZE",
         "DECISION — CONTEXT ONLY",
         "Do not work strictly left-to-right",
@@ -1824,25 +2216,70 @@ def test_opening_prompt_explains_rules_without_prescribing_a_solving_plan():
         assert prescribed_tactic not in opening
 
 
+def test_french_prompt_makes_apostrophe_and_clitic_contract_explicit():
+    model = ScriptedModel(["s’endormait", "endormait"])
+
+    result = play_puzzle(
+        french_clitic_puzzle(),
+        {"endormait"},
+        model,
+        cap=75,
+        rules_only=True,
+    )
+
+    assert result.tries == 1
+    assert result.turns == 2
+    opening = model.calls[0][0]["content"]
+    assert "CLOZE: il s'[WORD 1] paisiblement" in opening
+    assert "exactly one bare French game-vocabulary word" in opening
+    assert "French letters à â ä é è ê ë î ï ô ö ù û ü ÿ ç œ æ" in opening
+    assert "ordinary ASCII hyphen" in opening
+    assert "spaces, straight/curly apostrophes" in opening
+    assert "Apostrophes are forbidden" in opening
+    assert "shape s’+verb or l’+word" in opening
+    assert "submit only the hidden lexical core" in opening
+    assert "folded form must exist in the fixed vocabulary" in opening
+    assert "equal folds are duplicates" in opening
+    assert "5 consecutive malformed replies end the run" in opening
+    assert "5 parsed non-counting replies without a counted guess" in opening
+    assert "Rejected vocabulary forms persist" in opening
+    assert "YOUR STRATEGY" not in opening
+
+    correction = model.calls[1][-1]["content"]
+    assert 'INVALID REPLY FORMAT: "s’endormait"' in correction
+    assert "contains an apostrophe" in correction
+    assert "Submit only one standalone lexical core" in correction
+    assert "This did not count, changed no state, and produced no rank feedback" in correction
+
+
 def test_opening_prompt_explains_rank_evidence_without_smuggling_in_a_method():
-    model = ScriptedModel([PLAN, "forest", "ocean"])
+    model = ScriptedModel(["forest", "ocean"])
     play_puzzle(puzzle(), VOCAB, model)
 
     opening = model.calls[0][0]["content"]
-    assert "contextual relatedness, not synonymy or grammatical fit" in opening
-    assert "A warm rank is useful evidence" in opening
-    assert "does not prove that its apparent concept is the answer" in opening
-    assert "Embedding relatedness is not transitive" in opening
-    assert "can still be much farther from the hidden word" in opening
-    assert "not similarity between your guesses" in opening
-    assert "independent sources of evidence" in opening
-    assert "a solved word becomes fixed sentence evidence for the rest" in opening
-    assert "A sequence of related guesses can feel coherent" in opening
-    assert "coherence was generated by your own word associations" in opening
-    assert "Similarity among your own guesses is not evidence of progress" in opening
-    # Describing legal moves is a rule, while selecting one of them remains the model's
-    # choice.
-    assert "may be a proposed answer or simply a word used to gather rank evidence" in opening
+    assert "distributional contextual relatedness" in opening
+    assert "not guaranteed synonymy, grammar, or implication" in opening
+    assert "Only rank 0 certifies the exact word" in opening
+    assert "tested against every unsolved word" in opening
+    assert "solved words are locked" in opening
+    assert "A valid MISS still counts" in opening
+    assert "strictly lower rank" in opening
+    assert "One guess can produce different outcomes" in opening
+    assert "fits no blank" in opening
+    assert "improve or solve several words" in opening
+    assert "Starting and later ranked clues" in opening
+    assert "starting clue is uncounted" in opening
+    assert "strict improvement resets the streak" in opening
+    assert "non-counting leaves it unchanged" in opening
+    for strategy_like_text in (
+        "probe",
+        "hypothesis",
+        "search order",
+        "follow a warm",
+        "switch direction",
+        "semantic search",
+    ):
+        assert strategy_like_text not in opening.lower()
 
 
 def test_feedback_uses_current_best_without_replaying_a_word_cluster():
@@ -1863,7 +2300,7 @@ def test_feedback_uses_current_best_without_replaying_a_word_cluster():
 
 
 def test_prompt_states_the_minimize_tries_objective_everywhere():
-    model = ScriptedModel([PLAN, "cold", "forest", "ocean"])
+    model = ScriptedModel(["cold", "forest", "ocean"])
     play_puzzle(puzzle(), VOCAB, model)
 
     opening = model.calls[0][0]["content"]
@@ -1873,22 +2310,26 @@ def test_prompt_states_the_minimize_tries_objective_everywhere():
     assert "every counted guess is expensive" in opening
     # Every turn restates the score framing next to the count, opening included.
     assert "Tries: 0 (your score — lower is better)" in opening
-    feedback = model.calls[2][-1]["content"]
+    feedback = model.calls[1][-1]["content"]
     assert "Tries: 1 (your score — lower is better)" in feedback
     for turn in model.calls:
         current = turn[-1]["content"]
-        assert "Choose your own method and update it from the evidence" in current
-        assert "Decide for yourself how to adapt" in current
+        assert "then reply with exactly one bare English game-vocabulary word" in current
+        assert "Decide for yourself how to adapt" not in current
 
 
 def test_unparseable_replies_reprompt_then_abort_after_five_consecutive_turns():
-    model = ScriptedModel([PLAN, "123", "...", "—", "42", "!!!"])
+    model = ScriptedModel(["123", "...", "—", "42", "!!!"])
 
-    with pytest.raises(UnparseableReplyError, match="5 consecutive"):
+    with pytest.raises(UnparseableReplyError, match="5 consecutive") as raised:
         play_puzzle(puzzle(), VOCAB, model)
 
-    assert len(model.calls) == MAX_CONSECUTIVE_UNPARSEABLE + 1  # + the strategy turn
-    assert "could not parse a word" in model.calls[2][-1]["content"]
+    assert len(model.calls) == MAX_CONSECUTIVE_UNPARSEABLE
+    assert "INVALID REPLY FORMAT" in model.calls[1][-1]["content"]
+    assert "outside the stated grammar" in model.calls[1][-1]["content"]
+    assert raised.value.partial_result.counted_tries == 0
+    assert raised.value.partial_result.turns == MAX_CONSECUTIVE_UNPARSEABLE
+    assert raised.value.partial_result.tries is None
 
 
 @pytest.mark.parametrize(
@@ -1900,13 +2341,14 @@ def test_unparseable_replies_reprompt_then_abort_after_five_consecutive_turns():
     ids=["invalid", "duplicate"],
 )
 def test_parsed_replies_without_a_counted_try_abort_the_paid_loop(replies):
-    model = ScriptedModel([PLAN, *replies])
+    model = ScriptedModel(replies)
 
-    with pytest.raises(NoProgressReplyError, match="without a counted try"):
+    with pytest.raises(NoProgressReplyError, match="without a counted try") as raised:
         play_puzzle(puzzle(), VOCAB, model)
 
-    strategy_turn = 1
-    expected_calls = (
-        strategy_turn + MAX_NONCOUNTING_REPLIES + (1 if replies[0] == "cold" else 0)
-    )
+    expected_calls = MAX_NONCOUNTING_REPLIES + (1 if replies[0] == "cold" else 0)
     assert len(model.calls) == expected_calls
+    assert raised.value.partial_result.tries is None
+    assert raised.value.partial_result.counted_tries == (
+        1 if replies[0] == "cold" else 0
+    )

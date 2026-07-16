@@ -16,6 +16,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import hashlib
 import json
 import math
 import os
@@ -94,7 +95,7 @@ DISPLAY_MODEL_COUNT = 3
 
 # Bump whenever the opening rules or turn-feedback scaffold changes materially. Results
 # are attributable to a model id plus this prompt version and the CLI's printed effort.
-PROMPT_VERSION = "15"
+PROMPT_VERSION = "21"
 
 DEFAULT_CAP = 300
 DEFAULT_RUNS = 7
@@ -105,7 +106,9 @@ MAX_NONCOUNTING_REPLIES = 5
 # requests; the other levels enable provider-native reasoning with enough output room for
 # hidden thinking plus the visible guess. OpenAI recommends starting with 25k tokens for
 # reasoning workloads, while both providers recommend more headroom at xhigh/max.
-ReasoningEffort = Literal["none", "low", "medium", "high", "xhigh", "max"]
+ReasoningEffort = Literal[
+    "none", "low", "medium", "high", "xhigh", "max", "ultra"
+]
 EFFORT_LEVELS: tuple[ReasoningEffort, ...] = (
     "none",
     "low",
@@ -114,17 +117,17 @@ EFFORT_LEVELS: tuple[ReasoningEffort, ...] = (
     "xhigh",
     "max",
 )
+ALL_REASONING_EFFORTS: tuple[ReasoningEffort, ...] = (*EFFORT_LEVELS, "ultra")
 DEFAULT_EFFORT: ReasoningEffort = "none"
 DIRECT_OUTPUT_MAX_TOKENS = 256
 REASONING_MAX_TOKENS = 25_000
 DEEP_REASONING_MAX_TOKENS = 64_000
-# The pre-game strategy turn (v14) answers in free text; the one-word budget would
-# truncate it mid-plan. Only lifts the `none` budget — reasoning budgets already exceed it.
-STRATEGY_OUTPUT_MAX_TOKENS = 1_024
-# Deep-stall threshold (v15): once this many consecutive counted guesses improve
-# nothing, every turn's feedback re-surfaces the model's own committed method verbatim.
-# The referee still prescribes no tactic — it quotes the model back to itself.
-METHOD_REMINDER_AFTER = 5
+# Output budgets for structured decisions and long-form analysis calls.
+# The ordinary benchmark stays in one-word mode; every adapter mode is an explicit
+# construction-time choice and is never inferred from message counts.
+DECISION_OUTPUT_MAX_TOKENS = 512
+PROSE_OUTPUT_MAX_TOKENS = 8_192
+OutputMode = Literal["word", "decision", "prose"]
 
 AuthMode = Literal["api", "subscription"]
 AUTH_MODES: tuple[AuthMode, ...] = ("api", "subscription")
@@ -135,17 +138,27 @@ CODEX_SUBSCRIPTION_EFFORTS: tuple[ReasoningEffort, ...] = (
     "high",
     "xhigh",
     "max",
+    "ultra",
 )
-# The current GPT-5.6 reasoning guide documents these API levels. The Responses
-# schema is broader, but model support is explicitly model-dependent; reject `max`
-# before a paid call until the GPT-5.6 model pages document it.
+# GPT-5.6 documents max effort and an independent Pro reasoning mode. `ultra` is a
+# Codex-plan control, not a Responses API wire value.
 OPENAI_API_EFFORTS: tuple[ReasoningEffort, ...] = (
     "none",
     "low",
     "medium",
     "high",
     "xhigh",
+    "max",
 )
+ANTHROPIC_EFFORTS: tuple[ReasoningEffort, ...] = (
+    "none",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+)
+ReasoningMode = Literal["standard", "pro"]
 
 # A subscription run must never inherit a developer-platform credential or cloud
 # provider override: Claude Code gives environment credentials precedence over the
@@ -178,12 +191,24 @@ OPENAI_SUBSCRIPTION_CONFLICT_ENV = (
 )
 
 CODEX_TURN_TIMEOUT_SECONDS = 300
+CODEX_PROSE_TIMEOUT_SECONDS = 1_800
 CODEX_BENCHMARK_INSTRUCTIONS = (
-    "You are an isolated word-game player. Treat the user's complete game transcript "
-    "as your only task context. Never inspect files, use tools, search, or modify "
-    "anything. Answer the final user message in the form it asks for: free text when "
-    "it asks for your method, otherwise exactly one word with no punctuation or "
-    "explanation."
+    "You are an isolated word-game player. Treat the user's complete rules and "
+    "complete chronological game record as your only task context. Never inspect "
+    "files, use tools, search, or modify anything. Follow the visible-reply contract "
+    "in the user prompt exactly; do not add any other text."
+)
+# Prose mode gives offline analysis/distillation calls full-text answers.
+CODEX_PROSE_INSTRUCTIONS = (
+    "You are an isolated game analyst. Treat the user's complete message as your only "
+    "task context. Never inspect files, use tools, search, or modify anything. Answer "
+    "the final user message fully, in the exact format it requests."
+)
+CODEX_DECISION_INSTRUCTIONS = (
+    "You are an isolated word-game player under an auditable policy controller. "
+    "Treat the user's complete game snapshot as your only task context. Never inspect "
+    "files, use tools, search, or modify anything. Reply to the final user message "
+    "with only the exact JSON decision object it requests."
 )
 CODEX_TOOL_ITEM_TYPES = {
     "command_execution",
@@ -306,11 +331,19 @@ class ModelSummary:
         }
 
 
-class UnparseableReplyError(RuntimeError):
+class IncompleteRunError(RuntimeError):
+    """A bounded reply failure with the paid run prefix preserved for audit."""
+
+    def __init__(self, message: str, partial_result: RunResult | None = None):
+        super().__init__(message)
+        self.partial_result = partial_result
+
+
+class UnparseableReplyError(IncompleteRunError):
     """A model failed to produce any parseable word five turns in a row."""
 
 
-class NoProgressReplyError(RuntimeError):
+class NoProgressReplyError(IncompleteRunError):
     """A model produced too many parsed replies without a counted try."""
 
 
@@ -490,14 +523,15 @@ class PuzzleReferee:
         self.vocab = vocab if isinstance(vocab, set) else set(vocab)
         self.tried: set[str] = set()
         self.tried_words: list[str] = []
+        # Parsed words outside the fixed vocabulary do not count, but keeping their
+        # folded forms in the authoritative snapshot prevents a stateless transport
+        # from paying repeatedly for the same rejected answer.
+        self.rejected_words: dict[str, str] = {}
         self.holes: list[RuntimeHole] = []
         # Consecutive counted tries that improved no hole's rank (MISS or warm-but-not-
         # closer). This is reported as evidence, not used to force a solving method.
         # Any improvement resets it; non-counting replies leave it untouched.
         self.stalled_tries = 0
-        # The model's own pre-game method (v15), quoted back verbatim during deep
-        # stalls. Set by play_puzzle after the strategy turn; empty means no reminder.
-        self.method = ""
 
         # The schema guarantees sentence order, but sorting here makes the feedback order
         # robust and explicit: hole numbers always read left-to-right like the front.
@@ -602,11 +636,16 @@ class PuzzleReferee:
     def submit(self, guess: str) -> GuessFeedback:
         folded = slug(guess)
         if folded not in self.vocab:
+            self.rejected_words.setdefault(folded, guess)
             return GuessFeedback(
                 kind="invalid",
                 guess=guess,
                 folded=folded,
-                message=f'"{guess}" is not a word — this did not count.',
+                message=(
+                    f'"{guess}" is not in the fixed game vocabulary — this did not '
+                    "count and produced no rank feedback. Its reply format was valid, "
+                    "but vocabulary membership was not."
+                ),
                 outcomes=(),
                 tries=self.tries,
                 solved=self.solved,
@@ -616,7 +655,10 @@ class PuzzleReferee:
                 kind="duplicate",
                 guess=guess,
                 folded=folded,
-                message=f'"{guess}" was already tried — this did not count.',
+                message=(
+                    f'"{guess}" has the same folded lookup form as an already tried '
+                    "word — this did not count and produced no rank feedback."
+                ),
                 outcomes=(),
                 tries=self.tries,
                 solved=self.solved,
@@ -666,27 +708,104 @@ class PuzzleReferee:
         )
 
 
-# Unicode letter-runs optionally joined by internal ASCII dashes. Formatting around one
-# word (quotes, Markdown, punctuation) is harmless, but prose must not silently score its
-# first token as a guess.
-_LEXICAL_WORD = re.compile(r"[^\W\d_]+(?:-[^\W\d_]+)*", re.UNICODE)
-
-
-def parse_single_word(reply: str) -> str | None:
-    matches = _LEXICAL_WORD.findall(reply)
-    return matches[0] if len(matches) == 1 else None
-
-
-ADAPTATION_GUIDELINE = (
-    "JUDGMENT: Choose your own method and update it from the evidence. Treat each "
-    "counted guess as a costly hypothesis: improvement supports continuing a direction; "
-    "repeated non-improvement lowers that support. Similarity among your own guesses "
-    "is not evidence of progress. Decide for yourself how to adapt."
+# The model-channel grammar is deliberately narrower and more explicit than free-form
+# browser input. It mirrors the token shapes admitted by generation's language wordlists:
+# language letters, optionally joined by ordinary internal ASCII hyphens. The prompt states
+# this grammar verbatim so a conforming model reply cannot fail parsing. Leading/trailing
+# transport whitespace is harmless; everything else must be the word itself.
+_REPLY_CHAR_CLASSES = {
+    # The browser folds accents before its existence lookup for both languages. Accept
+    # the same Latin display forms here, then let the shared slug/vocab contract decide
+    # membership. This preserves parity for inputs such as an accented spelling of an
+    # otherwise ASCII English lookup key.
+    "en": "a-zàâäéèêëîïôöùûüÿçœæ",
+    "fr": "a-zàâäéèêëîïôöùûüÿçœæ",
+}
+_REPLY_PATTERNS = {
+    lang: re.compile(rf"[{chars}]+(?:-[{chars}]+)*")
+    for lang, chars in _REPLY_CHAR_CLASSES.items()
+}
+_GENERIC_REPLY_PATTERN = re.compile(
+    r"[^\W\d_]+(?:-[^\W\d_]+)*", re.UNICODE
 )
+
+
+def parse_single_word(reply: str, *, lang: str | None = None) -> str | None:
+    candidate = reply.strip()
+    pattern = _REPLY_PATTERNS.get(lang, _GENERIC_REPLY_PATTERN)
+    return candidate if candidate and pattern.fullmatch(candidate) else None
+
+
+def _reply_contract_lines(referee: PuzzleReferee, language: str) -> list[str]:
+    if referee.lang == "fr":
+        alphabet = (
+            "lowercase a-z and the French letters à â ä é è ê ë î ï ô ö ù û ü "
+            "ÿ ç œ æ"
+        )
+        clitic_rule = (
+            "Apostrophes are forbidden. A French clitic plus lexical word (the shape "
+            "s’+verb or l’+word) is multiple pieces here. A visible clitic/apostrophe "
+            "beside [WORD N] is fixed context; submit only the hidden lexical core."
+        )
+    else:
+        alphabet = (
+            "lowercase a-z and Latin display variants à â ä é è ê ë î ï ô ö ù û ü "
+            "ÿ ç œ æ, which lookup folds to ASCII"
+        )
+        clitic_rule = (
+            "Apostrophes are forbidden. Text beside [WORD N], including a "
+            "clitic/apostrophe, is fixed context; submit only the hidden lexical core."
+        )
+    return [
+        (
+            "Reason privately as needed; your entire visible reply "
+            f"must be exactly one bare {language} game-vocabulary word. Use "
+            f"permitted letters ({alphabet}) with "
+            "optional ordinary ASCII hyphens (-); they cannot lead, trail, double, or "
+            "be another dash character."
+        ),
+        (
+            "The visible reply must contain no uppercase, spaces, straight/curly "
+            "apostrophes, punctuation, quotes, Markdown, digits, underscores, labels, "
+            "prose, or explanations; a multiword expression is not one reply."
+        ),
+        clitic_rule,
+        (
+            "Its folded form must exist in the fixed vocabulary. Use an established "
+            f"standalone {language} dictionary content word, not an invented, "
+            "concatenated, clitic-attached, single-letter, or excluded function form. "
+            "Folding lowercases, expands œ/æ, removes accents, and keeps hyphens; equal "
+            "folds are duplicates. Use normal accents."
+        ),
+        (
+            "Malformed, outside-vocabulary, and duplicate replies give no ranks and do "
+            f"not count. {MAX_CONSECUTIVE_UNPARSEABLE} consecutive malformed replies "
+            f"end the run; {MAX_NONCOUNTING_REPLIES} parsed non-counting replies without "
+            "a counted guess also end it. Rejected vocabulary forms persist; do not "
+            "repeat them."
+        ),
+    ]
+
+
+def _reply_reminder(referee: PuzzleReferee) -> str:
+    # An affirmative multi-step-deduction cue in recency position: adaptive-thinking
+    # transports skip reasoning on prompts that merely permit it, so the reminder must
+    # assert that choosing the next word requires deliberation before the reply.
+    language = LANGUAGE_NAMES.get(referee.lang, referee.lang)
+    return (
+        "Finding the next word takes multi-step deduction over the CLOZE, ranked "
+        "clues, and exclusion sets; think it through carefully, then reply with "
+        f"exactly one bare {language} game-vocabulary word: permitted lowercase "
+        "letters, optional internal ASCII hyphens; no apostrophe, space, "
+        "punctuation, formatting, or explanation."
+    )
 
 
 def _state_snapshot_lines(referee: PuzzleReferee) -> list[str]:
     tried = ", ".join(sorted(referee.tried_words, key=slug)) or "none"
+    rejected = (
+        ", ".join(sorted(referee.rejected_words.values(), key=slug)) or "none"
+    )
     if referee.tries == 0:
         trend = "NO-IMPROVEMENT STREAK: 0. No counted guesses yet."
     elif referee.stalled_tries == 0:
@@ -709,119 +828,126 @@ def _state_snapshot_lines(referee: PuzzleReferee) -> list[str]:
         *referee.best_clue_lines(),
         trend,
         f"EXCLUDED AS ALREADY TRIED (unordered; do not repeat): {tried}",
+        "REJECTED OUTSIDE VOCABULARY (unordered; did not count; do not repeat): "
+        f"{rejected}",
     ]
 
 
-def opening_message(referee: PuzzleReferee) -> str:
-    language = LANGUAGE_NAMES.get(referee.lang, referee.lang)
+def _rules_opening(
+    referee: PuzzleReferee,
+    language: str,
+    strategy_section: list[str],
+    *,
+    cap: int,
+) -> str:
     return "\n".join(
         [
-            f"Play Whippin AI in {language}. Reply with exactly one {language} word per turn.",
+            f"WHIPPIN AI — {language.upper()} WORD GAME",
             "",
-            "GOAL",
+            "OBJECTIVE AND SCORE",
             (
                 "Solve every hidden word in as few counted tries as possible. "
-                "Your score is the total number of unique valid guesses — lower is "
-                "better, so every counted guess is expensive."
+                "Your score is the total number of unique valid guesses; every "
+                "counted guess is expensive."
+            ),
+            (
+                f"The run has a limit of {cap} counted tries. Solving every word on "
+                f"counted try {cap} succeeds; if any word remains unsolved after that "
+                "try, the run is DNF. The first reply is the first guess, not a plan."
             ),
             "",
-            "RULES",
+            "MANDATORY REPLY CONTRACT",
+            *_reply_contract_lines(referee, language),
+            "",
+            "CLOZE AND EXACT ANSWERS",
             (
-                "The CLOZE is a real sentence whose [WORD N] blanks must be found "
-                "exactly. Solved words appear in the sentence; ranked clues never do."
+                "The CLOZE is a fixed real sentence. Each [WORD N] hides exactly one "
+                "lexical core. Visible words, clitics, apostrophes, and punctuation are "
+                "fixed context, not reply text; solved cores appear in place."
             ),
             (
-                "One guess is tested against every unsolved word. Each reports a "
-                "closeness rank: lower is closer, 0 is solved, and MISS is outside "
-                "the stored neighborhood."
+                "The answer is the sentence's exact inflected form, not merely a lemma. "
+                "Singular/plural, masculine/feminine, agreement, person, tense, mood, "
+                "and conjugation can change it; folding preserves distinguishing letters."
             ),
             (
-                "A valid guess may be a proposed answer or simply a word used to "
-                "gather rank evidence. Invalid and repeated words do not count."
-            ),
-            (
-                "Answers are exact inflected forms, not lemmas: number, gender, "
-                "agreement, and conjugation can distinguish words."
+                "Starting and later ranked clues are semantic evidence, never proposed "
+                "sentence text or answer reveals. They need not match grammar, number, "
+                "gender, or exact meaning; the starting clue is uncounted."
             ),
             "",
-            "EVIDENCE",
+            "GUESS AND RANK RULES",
             (
-                "Ranks come from word-embedding similarity: they measure contextual "
-                "relatedness, not synonymy or grammatical fit. A warm rank is useful "
-                "evidence but does not prove that its apparent concept is the answer."
+                "Any unique vocabulary-valid reply is legal and counts once even if it "
+                "fits no blank or improves nothing. It is tested against every unsolved "
+                "word; solved words are locked. One guess can produce different outcomes "
+                "and improve or solve several words."
             ),
             (
-                "Embedding relatedness is not transitive: a word strongly related to "
-                "the current best clue can still be much farther from the hidden word. "
-                "The referee's returned rank, not similarity between your guesses, "
-                "shows whether the new guess made progress."
+                "For each word, rank 0 is exact; lower positive ranks are closer; MISS "
+                "is outside its stored neighborhood. A valid MISS still counts. Only a "
+                "strictly lower rank changes the best; equal, higher, and MISS do not. "
+                "Rank 0 solves and locks the word."
             ),
             (
-                "The fixed sentence and the referee's rank changes are independent "
-                "sources of evidence. One guess is evaluated against every unsolved "
-                "word, and a solved word becomes fixed sentence evidence for the rest."
-            ),
-            (
-                "A sequence of related guesses can feel coherent even while the game "
-                "reports no progress. That coherence was generated by your own word "
-                "associations; only the sentence and referee outcomes provide new "
-                "evidence about the hidden words."
+                "Embedding ranks measure distributional contextual relatedness, not "
+                "guaranteed synonymy, grammar, or implication. Only rank 0 certifies "
+                "the exact word."
             ),
             "",
-            "YOUR METHOD",
+            "AUTHORITATIVE STATE",
             (
-                "Choose your own solving method. There is no required search order, "
-                "reset rule, or mandated next-step tactic; decide how to combine the "
-                "available evidence on each turn. Keep, revise, or replace hypotheses "
-                "according to how well the evidence supports them."
+                "Each turn includes rules, initial state and starting clues, then "
+                "every prior PLAYER REPLY and exact REFEREE FEEDBACK in order. "
+                "Snapshots never erase earlier rank/MISS evidence; the last feedback is "
+                "current."
             ),
             (
-                "Before playing, state the method you commit to, in your own words. "
-                "It must cover, at minimum: how you will pick each guess; how you "
-                "will read rank evidence; a concrete stopping rule — the exact "
-                "number of consecutive non-improving counted guesses after which "
-                "you abandon a direction; the specific, different move you will "
-                "make when that rule triggers; and how you will keep consecutive "
-                "guesses from all coming from one semantic family. Choose every "
-                "number and move yourself — but once stated, the plan is your "
-                "commitment, and the referee will quote it back to you if your "
-                "play drifts from it."
+                "Every model receives the identical record; hidden session "
+                "memory supplies no evidence."
             ),
-            ADAPTATION_GUIDELINE,
+            (
+                "Any strict improvement resets the streak; non-counting leaves it "
+                "unchanged."
+            ),
+            *strategy_section,
             "",
-            "FEEDBACK FORMAT",
-            (
-                "After each guess you receive its result and an authoritative current "
-                "snapshot. It shows the CLOZE, only the current best ranked clue for "
-                "each unsolved word, the consecutive no-improvement count, and all "
-                "already-tried words as an unordered exclusion set. Earlier outcomes "
-                "are not replayed as a word sequence."
-            ),
-            "",
+            "COMPLETE CHRONOLOGICAL GAME RECORD",
             *_state_snapshot_lines(referee),
             "Tries: 0 (your score — lower is better)",
-            ADAPTATION_GUIDELINE,
-            (
-                "First reply: your method, in free text — no guess yet. Every "
-                "reply after it must be exactly one word."
-            ),
+            _reply_reminder(referee),
         ]
     )
 
 
-def game_start_message(referee: PuzzleReferee) -> str:
-    return "\n".join(
-        [
+def opening_message(
+    referee: PuzzleReferee,
+    strategy: str | None = None,
+    *,
+    rules_only: bool = False,
+    cap: int = DEFAULT_CAP,
+) -> str:
+    language = LANGUAGE_NAMES.get(referee.lang, referee.lang)
+    strategy_section: list[str] = []
+    if strategy:
+        strategy_section = [
+            "",
+            "YOUR STRATEGY",
             (
-                "Method noted. It is your own commitment: play by it, and revise "
-                "it yourself when the evidence stops supporting it. The game "
-                "starts now."
+                "Guidance you distilled from your own earlier games. It is advice, "
+                "not rules: the fixed game rules above always take precedence."
             ),
-            *_state_snapshot_lines(referee),
-            f"Tries: {referee.tries} (your score — lower is better)",
-            ADAPTATION_GUIDELINE,
-            "Reply with exactly one word.",
+            strategy,
         ]
+    # Prompt v21 has one strategy-neutral rules scaffold for every caller. The flag is
+    # retained for API compatibility with callers that request neutral rules; only
+    # an explicitly supplied strategy can add solving guidance.
+    _ = rules_only
+    return _rules_opening(
+        referee,
+        language,
+        strategy_section,
+        cap=cap,
     )
 
 
@@ -842,7 +968,12 @@ def _outcome_text(outcome: HoleOutcome, referee: PuzzleReferee) -> str:
     )
 
 
-def feedback_message(feedback: GuessFeedback, referee: PuzzleReferee) -> str:
+def feedback_message(
+    feedback: GuessFeedback,
+    referee: PuzzleReferee,
+    *,
+    rules_only: bool = False,
+) -> str:
     if feedback.kind == "counted":
         outcomes = "\n".join(
             _outcome_text(outcome, referee) for outcome in feedback.outcomes
@@ -850,32 +981,53 @@ def feedback_message(feedback: GuessFeedback, referee: PuzzleReferee) -> str:
         lead = f'RESULT FOR "{feedback.guess}":\n{outcomes}'
     else:
         lead = feedback.message
-    lines = [lead, *_state_snapshot_lines(referee)]
-    if referee.method and referee.stalled_tries >= METHOD_REMINDER_AFTER:
-        lines += [
-            (
-                "YOUR STATED METHOD — you committed to this before the game; if "
-                "its stopping rule has triggered, execute it now:"
-            ),
-            referee.method,
-        ]
-    lines += [
+    lines = [
+        lead,
+        *_state_snapshot_lines(referee),
         f"Tries: {feedback.tries} (your score — lower is better)",
-        ADAPTATION_GUIDELINE,
-        "Reply with exactly one word.",
     ]
+    # Prompt v21 never adds generic solving advice during play. Keep the keyword for
+    # caller compatibility; explicit learned/v7 guidance lives only in the opening.
+    _ = rules_only
+    lines.append(_reply_reminder(referee))
     return "\n".join(lines)
 
 
-def unparseable_message(referee: PuzzleReferee) -> str:
-    return "\n".join(
-        [
-            "I could not parse a word — this did not count. Reply with exactly one word.",
-            *_state_snapshot_lines(referee),
-            f"Tries: {referee.tries} (your score — lower is better)",
-            ADAPTATION_GUIDELINE,
-        ]
+def _unparseable_reason(reply: str) -> str:
+    candidate = reply.strip()
+    if not candidate:
+        return "The reply was empty."
+    if any(mark in candidate for mark in ("'", "’", "ʼ")):
+        return (
+            "The reply contains an apostrophe, which separates a clitic/prefix from "
+            "the lexical word and is never permitted in this interface. Submit only "
+            "one standalone lexical core."
+        )
+    if any(character.isspace() for character in candidate):
+        return (
+            "The reply contains whitespace, so it is not one bare word. Remove every "
+            "extra word, label, and explanation."
+        )
+    return (
+        "The reply contains a character or word shape outside the stated grammar. "
+        "Only permitted language letters and optional internal ASCII hyphens are allowed."
     )
+
+
+def unparseable_message(
+    referee: PuzzleReferee, reply: str, *, rules_only: bool = False
+) -> str:
+    rendered_reply = json.dumps(reply.strip(), ensure_ascii=False)
+    lines = [
+        f"INVALID REPLY FORMAT: {rendered_reply}",
+        _unparseable_reason(reply),
+        "This did not count, changed no state, and produced no rank feedback.",
+        *_state_snapshot_lines(referee),
+        f"Tries: {referee.tries} (your score — lower is better)",
+    ]
+    _ = rules_only
+    lines.append(_reply_reminder(referee))
+    return "\n".join(lines)
 
 
 def play_puzzle(
@@ -885,35 +1037,37 @@ def play_puzzle(
     *,
     cap: int = DEFAULT_CAP,
     on_try: TryReporter | None = None,
+    strategy: str | None = None,
+    rules_only: bool = False,
 ) -> RunResult:
-    """Run one append-only model conversation through the real puzzle rules."""
+    """Run one append-only model conversation through the real puzzle rules.
+
+    `strategy` is optional model-authored playbook guidance injected into the opening
+    as advice under the fixed rules. There is no
+    pre-game planning turn: the first reply is the first guess.
+    """
     if not _is_int(cap) or cap <= 0:
         raise ValueError("cap must be a positive integer")
     referee = PuzzleReferee(puzzle, vocab)
     if referee.solved:
         raise ValueError("puzzle starts solved; no benchmark can be played")
 
-    messages: list[Message] = [{"role": "user", "content": opening_message(referee)}]
+    messages: list[Message] = [
+        {
+            "role": "user",
+            "content": opening_message(
+                referee,
+                strategy,
+                rules_only=rules_only,
+                cap=cap,
+            ),
+        }
+    ]
     turns = 0
     consecutive_unparseable = 0
     noncounting_replies = 0
     started = time.monotonic()
     turn_token_usage: list[dict[str, Any]] = []
-
-    # Strategy turn (v14): the first reply is the model's own method, never a guess.
-    # Accepted as-is — free text, unparsed, unscored — and kept in the transcript so
-    # every later turn is anchored to a self-authored plan instead of imposed tactics.
-    strategy = model_reply([message.copy() for message in messages])
-    strategy_usage = _last_token_usage(model_reply)
-    if strategy_usage is not None:
-        turn_token_usage.append(strategy_usage)
-    turns += 1
-    if not isinstance(strategy, str):
-        strategy = ""
-    strategy = strategy.strip() or "[empty response]"
-    referee.method = strategy
-    messages.append({"role": "assistant", "content": strategy})
-    messages.append({"role": "user", "content": game_start_message(referee)})
 
     while True:
         raw_reply = model_reply([message.copy() for message in messages])
@@ -926,20 +1080,43 @@ def play_puzzle(
         assistant_content = raw_reply.strip() or "[empty response]"
         messages.append({"role": "assistant", "content": assistant_content})
 
-        guess = parse_single_word(raw_reply)
+        guess = parse_single_word(raw_reply, lang=referee.lang)
         if guess is None:
             consecutive_unparseable += 1
             if consecutive_unparseable >= MAX_CONSECUTIVE_UNPARSEABLE:
                 raise UnparseableReplyError(
-                    f"aborted after {MAX_CONSECUTIVE_UNPARSEABLE} consecutive unparseable replies"
+                    f"aborted after {MAX_CONSECUTIVE_UNPARSEABLE} consecutive unparseable replies",
+                    RunResult(
+                        tries=None,
+                        counted_tries=referee.tries,
+                        turns=turns,
+                        duration=time.monotonic() - started,
+                        tried_words=tuple(referee.tried_words),
+                        conversation=tuple(message.copy() for message in messages),
+                        turn_token_usage=tuple(turn_token_usage),
+                    ),
                 )
-            messages.append({"role": "user", "content": unparseable_message(referee)})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": unparseable_message(
+                        referee,
+                        raw_reply,
+                        rules_only=rules_only,
+                    ),
+                }
+            )
             continue
 
         consecutive_unparseable = 0
         feedback = referee.submit(guess)
         messages.append(
-            {"role": "user", "content": feedback_message(feedback, referee)}
+            {
+                "role": "user",
+                "content": feedback_message(
+                    feedback, referee, rules_only=rules_only
+                ),
+            }
         )
 
         if feedback.kind == "counted":
@@ -960,7 +1137,16 @@ def play_puzzle(
             if noncounting_replies >= MAX_NONCOUNTING_REPLIES:
                 raise NoProgressReplyError(
                     f"aborted after {MAX_NONCOUNTING_REPLIES} parsed replies "
-                    "without a counted try"
+                    "without a counted try",
+                    RunResult(
+                        tries=None,
+                        counted_tries=referee.tries,
+                        turns=turns,
+                        duration=time.monotonic() - started,
+                        tried_words=tuple(referee.tried_words),
+                        conversation=tuple(message.copy() for message in messages),
+                        turn_token_usage=tuple(turn_token_usage),
+                    ),
                 )
 
         # A solve on try N wins even when N equals the cap. The cap is a DNF only when
@@ -1004,23 +1190,20 @@ def _text_content(content: object) -> str:
     return "\n".join(parts)
 
 
-def _is_strategy_turn(messages: list[Message]) -> bool:
-    # The conversation holds no assistant reply yet exactly once: the pre-game turn
-    # where the model states its own method in free text.
-    return not any(message["role"] == "assistant" for message in messages)
-
-
-def _output_token_budget(effort: ReasoningEffort, messages: list[Message]) -> int:
+def _output_token_budget(effort: ReasoningEffort, output: OutputMode) -> int:
+    """Explicit construction-time output mode — never inferred from message counts."""
     if effort == "none":
         # Thinking-off models can still emit visible explanation despite the one-word
         # contract. Leave enough room for a complete reply; strict parsing rejects prose.
         budget = DIRECT_OUTPUT_MAX_TOKENS
-    elif effort in {"xhigh", "max"}:
+    elif effort in {"xhigh", "max", "ultra"}:
         budget = DEEP_REASONING_MAX_TOKENS
     else:
         budget = REASONING_MAX_TOKENS
-    if _is_strategy_turn(messages):
-        return max(budget, STRATEGY_OUTPUT_MAX_TOKENS)
+    if output == "prose":
+        return max(budget, PROSE_OUTPUT_MAX_TOKENS)
+    if output == "decision":
+        return max(budget, DECISION_OUTPUT_MAX_TOKENS)
     return budget
 
 
@@ -1029,13 +1212,13 @@ def _supported_efforts(provider: str, auth: AuthMode) -> tuple[ReasoningEffort, 
         return OPENAI_API_EFFORTS
     if provider == "openai" and auth == "subscription":
         return CODEX_SUBSCRIPTION_EFFORTS
-    return EFFORT_LEVELS
+    return ANTHROPIC_EFFORTS
 
 
 def _validate_provider_effort(
     provider: str, auth: AuthMode, effort: ReasoningEffort
 ) -> None:
-    if effort not in EFFORT_LEVELS:
+    if effort not in ALL_REASONING_EFFORTS:
         raise ValueError(f"unsupported reasoning effort: {effort}")
     if auth not in AUTH_MODES:
         raise ValueError(f"unsupported auth mode: {auth}")
@@ -1048,6 +1231,100 @@ def _validate_provider_effort(
             f"{provider_name} {auth_name} benchmark does not allow reasoning effort "
             f"{effort!r}; use {levels}"
         )
+
+
+def _validate_reasoning_mode(
+    provider: str,
+    auth: AuthMode,
+    effort: ReasoningEffort,
+    reasoning_mode: ReasoningMode,
+) -> None:
+    if reasoning_mode not in {"standard", "pro"}:
+        raise ValueError(f"unsupported reasoning mode: {reasoning_mode}")
+    if reasoning_mode == "standard":
+        return
+    if provider != "openai" or auth != "api":
+        raise ValueError("Pro reasoning mode is available only through the OpenAI API")
+    if effort != "max":
+        raise ValueError("Pro reasoning mode requires OpenAI API effort 'max'")
+
+
+def _stateless_word_parts(messages: list[Message]) -> tuple[str, str]:
+    """Split a fresh-turn prompt into fixed rules and its complete public record.
+
+    The concatenation of the two parts is the exact prompt text; the prefix is
+    byte-identical across every turn of a run so a prompt-cache breakpoint placed on
+    it can actually be read back.
+    """
+    if not messages or messages[0].get("role") != "user":
+        raise ValueError("word reply requires an opening user message")
+    if messages[-1].get("role") != "user":
+        raise ValueError("word reply requires a final user message")
+    for index, message in enumerate(messages):
+        expected_role = "user" if index % 2 == 0 else "assistant"
+        if message.get("role") != expected_role:
+            raise ValueError(
+                "word reply requires an alternating user/assistant transcript"
+            )
+        if not isinstance(message.get("content"), str):
+            raise ValueError("word reply message content must be text")
+
+    opening = messages[0]["content"]
+    record_marker = "\nCOMPLETE CHRONOLOGICAL GAME RECORD\n"
+    opening_rules, marker, initial_state = opening.partition(record_marker)
+    if marker:
+        stable = (
+            f"{opening_rules.rstrip()}\n\n"
+            "COMPLETE CHRONOLOGICAL GAME RECORD\n"
+        )
+    else:
+        # Defensive compatibility for direct adapter callers. Production v21 game
+        # openings carry the complete-record marker; older fixtures may expose only
+        # CURRENT STATE, and arbitrary one-message calls remain byte-preserving.
+        opening_rules, state_marker, state_tail = opening.partition(
+            "\nCURRENT STATE\n"
+        )
+        if state_marker:
+            stable = f"{opening_rules.rstrip()}\n\n"
+            initial_state = f"CURRENT STATE\n{state_tail}"
+        elif len(messages) == 1:
+            return "", opening
+        else:
+            stable = ""
+            initial_state = opening
+
+    record = [initial_state]
+    for turn_index, message_index in enumerate(range(1, len(messages), 2), start=1):
+        record.extend(
+            [
+                f"PLAYER REPLY {turn_index}\n{messages[message_index]['content']}",
+                (
+                    f"REFEREE FEEDBACK {turn_index}\n"
+                    f"{messages[message_index + 1]['content']}"
+                ),
+            ]
+        )
+    return stable, "\n\n".join(record)
+
+
+def _stateless_word_prompt(messages: list[Message]) -> str:
+    """Return one fresh prompt containing the complete chronological public record.
+
+    Every real word-play transport sees this identical user prompt. All prior replies,
+    exact referee outcomes, and the initial starting clues are explicit, so neither
+    provider-specific session memory nor a lossy current-best snapshot becomes an
+    experimental treatment.
+    """
+    stable, volatile = _stateless_word_parts(messages)
+    return f"{stable}{volatile}"
+
+
+def _provider_messages(
+    messages: list[Message], output: OutputMode
+) -> list[Message]:
+    if output != "word":
+        return messages
+    return [{"role": "user", "content": _stateless_word_prompt(messages)}]
 
 
 async def _agent_sdk_turn(
@@ -1098,12 +1375,21 @@ async def _agent_sdk_turn(
     if result_message is None:
         raise RuntimeError(f"{model_id} Agent SDK session returned no final result")
     if result_message.is_error:
-        detail = (
-            result_message.result
-            or result_message.stop_reason
-            or result_message.subtype
-            or "unknown error"
-        )
+        details: list[str] = []
+        errors = getattr(result_message, "errors", None)
+        if isinstance(errors, list):
+            details.extend(error for error in errors if isinstance(error, str) and error)
+        api_status = getattr(result_message, "api_error_status", None)
+        if isinstance(api_status, int):
+            details.append(f"provider HTTP status {api_status}")
+        for candidate in (
+            result_message.result,
+            result_message.stop_reason,
+            result_message.subtype,
+        ):
+            if isinstance(candidate, str) and candidate and candidate not in details:
+                details.append(candidate)
+        detail = "; ".join(details) or "unknown error"
         raise RuntimeError(f"{model_id} Agent SDK session failed: {detail}")
     if not result_message.session_id:
         raise RuntimeError(f"{model_id} Agent SDK session returned no session id")
@@ -1115,11 +1401,17 @@ async def _agent_sdk_turn(
 
 
 class AnthropicSubscriptionReply:
-    """Synchronous referee adapter over isolated, resumable Agent SDK turns."""
+    """Synchronous referee adapter over isolated Agent SDK turns."""
 
-    def __init__(self, model_id: str, effort: ReasoningEffort):
+    def __init__(
+        self,
+        model_id: str,
+        effort: ReasoningEffort,
+        output: OutputMode = "word",
+    ):
         self.model_id = model_id
         self.effort = effort
+        self.output = output
         self.session_id: str | None = None
         self._message_count = 0
         self._workspace = tempfile.TemporaryDirectory(prefix="whippin-agent-sdk-")
@@ -1129,15 +1421,14 @@ class AnthropicSubscriptionReply:
         if not messages or messages[-1].get("role") != "user":
             raise ValueError("Agent SDK reply requires a final user message")
 
-        # `benchmark_model` reuses one adapter across median runs. The referee always
-        # starts a new run with the one-message opening transcript, so reset the remote
-        # session rather than leaking a prior attempt into the next score.
+        # `benchmark_model` reuses one adapter across median runs. A one-message
+        # transcript always starts a fresh attempt.
         if len(messages) == 1:
             self.session_id = None
             self._message_count = 0
-        elif self.session_id is None:
+        elif self._message_count == 0:
             raise RuntimeError(
-                "Agent SDK conversation cannot resume before its opening turn"
+                "Agent SDK conversation cannot continue before its opening turn"
             )
 
         expected_count = 1 if self._message_count == 0 else self._message_count + 2
@@ -1146,17 +1437,26 @@ class AnthropicSubscriptionReply:
                 "Agent SDK conversation diverged from the append-only referee transcript"
             )
 
+        # Word play uses a fresh provider turn containing the same fixed rules and
+        # complete chronological public record as every other transport. Other output
+        # modes retain their existing resumable-session behavior.
+        prompt = messages[-1]["content"]
+        resume = self.session_id
+        if self.output == "word":
+            prompt = _stateless_word_prompt(messages)
+            resume = None
+
         with _subscription_environment():
             text, session_id, usage = asyncio.run(
                 _agent_sdk_turn(
-                    messages[-1]["content"],
+                    prompt,
                     model_id=self.model_id,
                     effort=self.effort,
                     cwd=self._workspace.name,
-                    resume=self.session_id,
+                    resume=resume,
                 )
             )
-        self.session_id = session_id
+        self.session_id = session_id if self.output != "word" else None
         self._message_count = len(messages)
         self.last_token_usage = usage
         return text
@@ -1165,7 +1465,17 @@ class AnthropicSubscriptionReply:
         self._workspace.cleanup()
 
 
-def _codex_snapshot_prompt(messages: list[Message]) -> str:
+def _codex_snapshot_prompt(
+    messages: list[Message], output: OutputMode = "word"
+) -> str:
+    if output == "word":
+        return _stateless_word_prompt(messages)
+    if output == "prose" and len(messages) == 1:
+        # One-shot analyst/critic prompts must be byte-identical across transports.
+        # Wrapping a single message as both opening_rules and current_state would also
+        # duplicate large evidence packets and can push them over the model context.
+        return messages[0]["content"]
+
     opening = messages[0]["content"]
     opening_rules, marker, initial_state = opening.partition("\nCURRENT STATE\n")
     if marker:
@@ -1182,12 +1492,18 @@ def _codex_snapshot_prompt(messages: list[Message]) -> str:
         ),
     }
     encoded = json.dumps(snapshot, ensure_ascii=False, separators=(",", ":"))
+    if output == "prose":
+        lead = "Complete the task from the compact JSON snapshot below."
+        response_rule = "Answer fully in the exact format requested."
+    else:
+        lead = "Play under the policy controller in the compact JSON snapshot below."
+        response_rule = "Return only the exact JSON decision object requested."
     return "\n".join(
         [
-            "Play the word game from the compact JSON snapshot below.",
+            lead,
             "The opening rules and latest current state are authoritative; obsolete "
             "intermediate turns are intentionally omitted.",
-            "Return exactly one word and nothing else.",
+            response_rule,
             encoded,
         ]
     )
@@ -1241,7 +1557,9 @@ def _codex_final_message(
 class OpenAISubscriptionReply:
     """Fresh, isolated Codex CLI turns backed by saved ChatGPT plan auth."""
 
-    def __init__(self, model_id: str, effort: ReasoningEffort):
+    def __init__(
+        self, model_id: str, effort: ReasoningEffort, output: OutputMode = "word"
+    ):
         if effort not in CODEX_SUBSCRIPTION_EFFORTS:
             supported = "|".join(CODEX_SUBSCRIPTION_EFFORTS)
             raise ValueError(
@@ -1254,13 +1572,22 @@ class OpenAISubscriptionReply:
         self.cli = cli
         self.model_id = model_id
         self.effort = effort
+        self.output = output
+        self.timeout_seconds = (
+            CODEX_PROSE_TIMEOUT_SECONDS
+            if output == "prose"
+            else CODEX_TURN_TIMEOUT_SECONDS
+        )
         self._message_count = 0
         self._workspace = tempfile.TemporaryDirectory(prefix="whippin-codex-")
         self.last_token_usage: dict[str, Any] | None = None
+        instructions = {
+            "word": CODEX_BENCHMARK_INSTRUCTIONS,
+            "decision": CODEX_DECISION_INSTRUCTIONS,
+            "prose": CODEX_PROSE_INSTRUCTIONS,
+        }[output]
         self._instructions_path = Path(self._workspace.name) / "instructions.md"
-        self._instructions_path.write_text(
-            CODEX_BENCHMARK_INSTRUCTIONS + "\n", encoding="utf-8"
-        )
+        self._instructions_path.write_text(instructions + "\n", encoding="utf-8")
 
     def _command(self) -> list[str]:
         config = [
@@ -1314,10 +1641,10 @@ class OpenAISubscriptionReply:
                 check=False,
                 capture_output=True,
                 text=True,
-                timeout=CODEX_TURN_TIMEOUT_SECONDS,
+                timeout=self.timeout_seconds,
                 cwd=self._workspace.name,
                 env=_environment_without(OPENAI_SUBSCRIPTION_CONFLICT_ENV),
-                input=_codex_snapshot_prompt(messages),
+                input=_codex_snapshot_prompt(messages, self.output),
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise RuntimeError(f"{self.model_id} Codex CLI turn failed: {exc}") from exc
@@ -1344,15 +1671,24 @@ def provider_reply(
     *,
     effort: ReasoningEffort = DEFAULT_EFFORT,
     auth: AuthMode = DEFAULT_AUTH,
+    output: OutputMode = "word",
+    reasoning_mode: ReasoningMode = "standard",
 ) -> ModelReply:
-    """Build one provider adapter. Paid SDK imports stay lazy for offline tests."""
+    """Build one provider adapter. Paid SDK imports stay lazy for offline tests.
+
+    `output` fixes the adapter's response mode at construction: "word" for the
+    ordinary benchmark, "decision" for structured controllers, and "prose" for
+    long-form analysis. OpenAI API callers can additionally request documented Pro
+    reasoning with max effort; other transports reject that wire-only option.
+    """
     provider = config["provider"]
     model_id = config["model_id"]
     _validate_provider_effort(provider, auth, effort)
+    _validate_reasoning_mode(provider, auth, effort, reasoning_mode)
 
     if provider == "anthropic":
         if auth == "subscription":
-            return AnthropicSubscriptionReply(model_id, effort)
+            return AnthropicSubscriptionReply(model_id, effort, output)
         if not api_key:
             raise ValueError("Anthropic API auth requires ANTHROPIC_API_KEY")
         import anthropic
@@ -1361,15 +1697,39 @@ def provider_reply(
 
         def reply(messages: list[Message]) -> str:
             setattr(reply, "last_token_usage", None)
-            budget = _output_token_budget(effort, messages)
+            budget = _output_token_budget(effort, output)
             request: dict[str, Any] = {
                 "model": model_id,
                 "max_tokens": budget,
-                "messages": messages,
-                # Append-only play histories only receive Anthropic's automatic moving
-                # cache breakpoint when prompt caching is explicitly enabled.
-                "cache_control": {"type": "ephemeral"},
             }
+            stable_rules = ""
+            if output == "word":
+                stable_rules, volatile_state = _stateless_word_parts(messages)
+            if stable_rules:
+                # Word turns are one user message whose tail (the complete public
+                # record) changes every turn. A breakpoint placed after the whole
+                # message therefore never produces a cache read; pinning it on the
+                # byte-identical rules prefix does. Prefixes below the model's
+                # minimum cacheable size silently skip caching, which is still
+                # cheaper than writing an unreadable full-prompt entry per turn.
+                request["messages"] = [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": stable_rules,
+                                "cache_control": {"type": "ephemeral"},
+                            },
+                            {"type": "text", "text": volatile_state},
+                        ],
+                    }
+                ]
+            else:
+                request["messages"] = _provider_messages(messages, output)
+                # Append-only prose/decision conversations still use Anthropic's
+                # automatic moving cache breakpoint on the last cacheable block.
+                request["cache_control"] = {"type": "ephemeral"}
             if effort == "none":
                 # Preserve the original one-word mode: Sonnet 5 defaults to adaptive
                 # thinking, so it must be disabled explicitly; Opus accepts the same form.
@@ -1396,7 +1756,7 @@ def provider_reply(
 
     if provider == "openai":
         if auth == "subscription":
-            return OpenAISubscriptionReply(model_id, effort)
+            return OpenAISubscriptionReply(model_id, effort, output)
         if not api_key:
             raise ValueError("OpenAI auth requires OPENAI_API_KEY")
         from openai import OpenAI
@@ -1405,11 +1765,14 @@ def provider_reply(
 
         def reply(messages: list[Message]) -> str:
             setattr(reply, "last_token_usage", None)
+            reasoning: dict[str, str] = {"effort": effort}
+            if reasoning_mode == "pro":
+                reasoning["mode"] = "pro"
             response = client.responses.create(
                 model=model_id,
-                input=messages,
-                reasoning={"effort": effort},
-                max_output_tokens=_output_token_budget(effort, messages),
+                input=_provider_messages(messages, output),
+                reasoning=reasoning,
+                max_output_tokens=_output_token_budget(effort, output),
             )
             if getattr(response, "status", None) == "incomplete":
                 details = getattr(response, "incomplete_details", None)
@@ -1456,6 +1819,7 @@ def benchmark_model(
     cap: int,
     runs: int,
     on_try: ModelTryReporter | None = None,
+    playbook: str | None = None,
 ) -> ModelSummary:
     if not _is_int(runs) or runs <= 0:
         raise ValueError("runs must be a positive integer")
@@ -1479,6 +1843,7 @@ def benchmark_model(
                     model_reply,
                     cap=cap,
                     on_try=reporter,
+                    strategy=playbook,
                 )
             )
     finally:
@@ -1632,6 +1997,41 @@ def load_puzzle(path: Path) -> dict[str, Any]:
     return _as_record(data, "puzzle root")
 
 
+def load_playbook_profile(
+    path: Path, config: ModelConfig
+) -> tuple[str, str]:
+    """Load only a finalized model-specific playbook from a distillation profile."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"could not read playbook profile {path}: {exc}") from exc
+    profile = _as_record(data, "playbook profile root")
+    if (
+        profile.get("schema_version") != 1
+        or profile.get("kind") != "whippin_model_playbook"
+    ):
+        raise ValueError(f"malformed playbook profile {path}")
+    if profile.get("model_id") != config["model_id"]:
+        raise ValueError(
+            "playbook profile model does not match the selected model "
+            f"({profile.get('model_id')!r} != {config['model_id']!r})"
+        )
+    if profile.get("provider") != config["provider"]:
+        raise ValueError("playbook profile provider does not match the selected model")
+    if profile.get("gameplay_prompt_version") != PROMPT_VERSION:
+        raise ValueError(
+            "playbook profile was distilled for a different gameplay prompt version"
+        )
+    playbook = profile.get("final_playbook")
+    recorded_sha = profile.get("final_playbook_sha256")
+    if not isinstance(playbook, str) or not playbook.strip():
+        raise ValueError("playbook profile has no finalized playbook")
+    actual_sha = hashlib.sha256(playbook.encode("utf-8")).hexdigest()
+    if recorded_sha != actual_sha:
+        raise ValueError("playbook profile final playbook hash does not match")
+    return playbook, actual_sha
+
+
 def load_vocab(lang: str, vocab_dir: Path = WEB_VOCAB_DIR) -> set[str]:
     path = vocab_dir / f"{lang}.json"
     try:
@@ -1691,6 +2091,7 @@ def _lab_session(
     effort: ReasoningEffort,
     auth: AuthMode,
     timestamp: str,
+    playbook_sha256: str | None = None,
 ) -> dict[str, Any]:
     runs: list[dict[str, Any]] = []
     for index, result in enumerate(summary.results, start=1):
@@ -1713,7 +2114,7 @@ def _lab_session(
         runs.append(run)
 
     config = summary.config
-    return {
+    session: dict[str, Any] = {
         "timestamp": timestamp,
         "prompt_version": PROMPT_VERSION,
         "cap": cap,
@@ -1728,6 +2129,9 @@ def _lab_session(
         "benchmark_entry": summary.benchmark_entry(),
         "runs": runs,
     }
+    if playbook_sha256 is not None:
+        session["playbook_sha256"] = playbook_sha256
+    return session
 
 
 def write_lab_artifact(
@@ -1739,6 +2143,7 @@ def write_lab_artifact(
     auth: AuthMode,
     output_dir: Path | None = None,
     timestamp: str | None = None,
+    playbook_sha256: str | None = None,
 ) -> tuple[Path, dict[str, Any]]:
     """Append one complete model session to the puzzle's unpublished lab record."""
     directory = BENCHMARK_OUTPUT_DIR if output_dir is None else output_dir
@@ -1770,6 +2175,7 @@ def write_lab_artifact(
             effort=effort,
             auth=auth,
             timestamp=recorded_at,
+            playbook_sha256=playbook_sha256,
         )
     )
     _write_json_atomic(path, artifact, indent=2)
@@ -1874,7 +2280,7 @@ def write_benchmark(
     puzzle: dict[str, Any],
     entries: Sequence[Mapping[str, Any]] | None,
 ) -> None:
-    """Write only a complete unique display trio; incomplete calibration stays absent."""
+    """Write only a complete unique display trio; an incomplete refresh stays absent."""
     if entries is None:
         puzzle.pop("benchmark", None)
     else:
@@ -1976,6 +2382,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--playbook",
+        type=Path,
+        help=(
+            "final whippin_model_playbook profile for the selected model; only its "
+            "hash-verified final_playbook is injected"
+        ),
+    )
+    parser.add_argument(
         "--in-place",
         action="store_true",
         help=(
@@ -2011,6 +2425,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     config = args.model_config
+    playbook: str | None = None
+    playbook_sha256: str | None = None
+    if args.playbook is not None:
+        args.playbook = resolve_puzzle_path(args.playbook)
+        try:
+            playbook, playbook_sha256 = load_playbook_profile(args.playbook, config)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
     anthropic_subscription_selected = (
         args.auth == "subscription" and config["provider"] == "anthropic"
     )
@@ -2033,7 +2456,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     print(
         f"Whippin benchmark prompt={PROMPT_VERSION} effort={args.effort} "
-        f"auth={args.auth} cap={args.cap} runs={args.runs}",
+        f"auth={args.auth} cap={args.cap} runs={args.runs} "
+        f"playbook={playbook_sha256 or 'none'}",
         flush=True,
     )
     subscription_auth = args.auth == "subscription"
@@ -2072,6 +2496,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             cap=args.cap,
             runs=args.runs,
             on_try=print_try,
+            playbook=playbook,
         )
     except Exception as exc:
         print(
@@ -2103,6 +2528,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 cap=args.cap,
                 effort=args.effort,
                 auth=args.auth,
+                playbook_sha256=playbook_sha256,
             )
             print(f"Wrote lab artifact -> {artifact_path}")
 
@@ -2129,7 +2555,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     write_benchmark(args.puzzle, puzzle, entries)
                     print(f"Wrote benchmark trio -> {args.puzzle}")
                 else:
-                    # Never replace a valid published trio with a partial recalibration.
+                    # Never replace a valid published trio with a partial refresh.
                     # A legacy/malformed field is still removed because the v2 client
                     # would reject it; an absent field can remain absent without a rewrite.
                     if existing_entries is not None:

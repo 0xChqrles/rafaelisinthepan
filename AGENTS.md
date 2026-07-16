@@ -61,8 +61,10 @@ packages/
     pyproject.toml, uv.lock   Python project (uv)
   benchmark/                  offline LLM puzzle benchmark (pkg @whippin/benchmark, #68)
     scripts/llm_play.py       LLM player/referee; reads generation output + web vocab
+    scripts/playbook_distill.py  92-puzzle ultra analyst -> critic playbook distiller (#88)
+    datasets/strategy-fr-92/  frozen static distillation corpus (92 gzipped puzzles)
     tests/test_llm_play.py    provider-adapter + game-rules parity tests
-    output/<puzzle-stem>.bench.json  full local lab record (#80; gitignored, never published)
+    output/                   full local benchmark/distillation records (gitignored)
     pyproject.toml, uv.lock   isolated Anthropic/OpenAI Python dependencies (uv)
   backend/                    daily-puzzle backend (pkg @whippin/backend, #2)
     src/
@@ -412,12 +414,23 @@ pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--
 #    one reasoning level (none|low|medium|high|xhigh|max; default none). --auth api
 #    (default) uses the selected provider's API key; --auth subscription uses authenticated
 #    Claude.ai / saved ChatGPT Codex-plan access. GPT API runs allow the documented
-#    none|low|medium|high|xhigh; Codex-plan GPT supports low|medium|high|xhigh|max.
+#    none|low|medium|high|xhigh|max; ordinary Codex-plan play supports
+#    low|medium|high|xhigh|max. --playbook accepts only a hash-verified final profile for
+#    the selected model; no analyst/critic audit text enters the game prompt.
 #    --runs must be odd (default 7) so one actual median run can be selected. Puzzle paths
 #    may be repo-root-relative (packages/generation/output/...) or generation-package-
 #    relative (output/...). --in-place appends the full local lab artifact and embeds the
 #    lean display trio once all 3 current-prompt display models have results.
-pnpm bench:puzzle <puzzle.json> --model MODEL [--effort LEVEL] [--auth api|subscription] [--cap N] [--runs N] [--in-place]
+pnpm bench:puzzle <puzzle.json> --model MODEL [--playbook <model>.playbook.json] [--effort LEVEL] [--auth api|subscription] [--cap N] [--runs N] [--in-place]
+
+# 5. Bootstrap one model's playbook from all 92 static French puzzles (#88). Each real
+#    run makes exactly two resumable paid calls: unrestricted analyst, then independent
+#    critic/rewrite. Workflow-level ultra maps to Sonnet adaptive+max, Codex-plan GPT
+#    literal ultra, or GPT API max+Pro. --dry-run validates all inputs and reports exact
+#    identities/call count without auth checks, writes, or provider calls. Outputs are
+#    gitignored; only the generated *.playbook.json is accepted by bench:puzzle.
+pnpm bench:playbook:distill --model SONNET --auth subscription [--dry-run]
+pnpm bench:playbook:distill --model GPT-SOL --auth subscription [--dry-run]
 
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
 pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output)
@@ -445,72 +458,39 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   `TOP_K = 10000` (gen), start-rank band `50–150` (`start_word.py`).
 - **Offline LLM benchmark harness (#68).** The dedicated `benchmark` workspace owns
   `benchmark/scripts/llm_play.py`, its tests, and its Anthropic/OpenAI dependencies. It
-  imports generation's canonical `scripts/slug.py`, reads puzzles from generation output,
-  and reads the same web vocab as the SPA. The referee replays the
-  folded-vocab existence, unique-try score, per-unsolved-hole rank/MISS, strict-improvement,
-  solved-lock, and counted-try cap rules while retaining an append-only lab transcript.
-  `pnpm bench:puzzle` supports only the curator-editable six-model `MODELS` roster: Claude
-  Opus 4.8, Claude Sonnet 5, Claude Fable 5, and GPT-5.6 Sol/Terra/Luna via
-  Anthropic/OpenAI. The required
-  singular `--model` accepts `OPUS`, `SONNET`, `FABLE`, `GPT-SOL`, `GPT-TERRA`, `GPT-LUNA`,
-  or an
-  exact model id; provider/family selectors such as `GPT` are not supported. An invalid
-  selector or a bare `--model` error lists every valid alias and exact model id; bare
-  `--effort` and `--auth` errors list every valid value. Each invocation runs exactly one
-  model. `MODELS` also records whether an entry ships: the exact player-facing trio is
-  Opus/Sonnet/Sol with full labels `CLAUDE OPUS` / `CLAUDE SONNET` / `GPT-5.6` and short
-  tags `OPUS` / `SONNET` / `GPT`; Fable/Terra/Luna remain lab-only. `--effort` exposes the shared
-  `none|low|medium|high|xhigh|max` scale, then validates the selected transport before any
-  paid call: GPT API runs allow the currently documented levels through `xhigh` (`max`
-  is blocked pending model-specific documentation), while Codex-plan GPT accepts `low`
-  through `max` (not `none`). Default `none` preserves thinking-off one-word API calls;
-  enabled levels use provider-native reasoning with larger output headroom. The single
-  `--auth` flag applies to
-  the selected provider: `api` (default) uses raw API keys, with an automatic moving prompt-
-  cache breakpoint for Anthropic. Opt-in `subscription` first verifies paid Claude.ai auth for
-  the selected Claude model, strips API/cloud credential overrides, then uses a fresh Agent SDK
-  session per run with an empty replacement system prompt and no tools, MCP, skills, plugins,
-  or filesystem settings. For a selected GPT model it verifies that Codex CLI is logged in with
-  ChatGPT, strips API credentials plus parent-Codex thread metadata, and runs each turn as a
-  fresh `codex exec` process with a compact snapshot: the static opening rules plus only the
-  latest authoritative aggregate state; obsolete intermediate turns and prior one-word replies
-  remain in the lab transcript but are omitted from the paid prompt. Those turns are
-  ephemeral, use a temporary non-repository cwd and replacement benchmark instructions, and
-  ignore user config/rules with
-  read-only sandboxing and apps/shell/multi-agent/web disabled; the unavoidable Codex bootstrap
-  remains. The GPT-5.6 Codex-plan models support `low|medium|high|xhigh|max`, not `none`.
-  A provider reply must contain exactly one lexical word (surrounding punctuation/Markdown is
-  harmless); prose is unparseable and reprompted instead of silently scoring its first word.
-  Thinking-off API calls reserve 256 output tokens so a verbose reply can complete and be
-  rejected cleanly. Five parsed invalid/repeated replies without a counted try abort a
-  stuck paid loop. Prompt version 13 renders the fixed sentence as a true `CLOZE`: solved answers
-  appear in place, unsolved positions remain `[WORD N]`, and ranked clues are explicitly separate
-  from sentence text. Its guidance is strategy-neutral: it explains the rules and available
-  evidence and leaves search order and tactics to the model. Its general judgment guidelines distinguish
-  fixed-sentence/referee evidence from the model's self-generated word associations: improvement supports
-  a hypothesis, repeated non-improvement lowers that support, and thematic similarity among guesses is
-  not itself progress. The aggregate state reports the latest named outcome, current best clue for each
-  unsolved word, and a salient consecutive no-improvement trend. All earlier guesses remain available only
-  as a complete alphabetically ordered exclusion set, not a chronological trajectory that can prime the
-  next item in the same conceptual list. It neither hides ranked evidence nor forces context-only play,
-  probes, synonym search, or any other next-step method. During a run, every counted try prints immediately with its
-  word and post-guess overall progress percentage (the same logarithmic multi-hole formula as the
-  web progress bar, to two decimals); misses and non-improving warm tries still print with
-  unchanged progress. After each run the CLI prints `tried=[...]` in submission order for the
-  counted valid unique words only (invalid, unparseable, and folded duplicate replies remain
-  excluded exactly like the score). Missing API keys still skip for API transports. `--runs` must be odd and
-  defaults to 7; runs sort by tries (DNF last), then fewer total turns, then original run order,
-  and the actual middle run supplies both `tries` and `run`. Before any write, the harness
-  replays that selected run through `PuzzleReferee` and hard-errors unless score plus solved/DNF
-  state match. With `--in-place`, every invocation appends all runs — guesses, transcripts,
-  score, turns, duration, reported token usage — plus model/provider, explicit `api` /
-  `agent_sdk` / `codex_cli` transport, effort, prompt version, cap, and UTC timestamp to the
-  gitignored `benchmark/output/<puzzle-stem>.bench.json`. Lab-only models never enter the
-  puzzle; display results are embedded in roster order only when all 3 current-prompt entries
-  are available, so a published `benchmark` is never partial. During a prompt-version
-  recalibration, an existing valid/replay-consistent trio remains published until the new trio
-  is complete, then the harness replaces it atomically; legacy or malformed benchmark data is
-  still removed rather than preserved. This paid curator tool is never called by CI/tests.
+  imports generation's canonical `scripts/slug.py`, reads the same web vocab as the SPA,
+  and replays folded-vocab existence, unique-try scoring, broadcast rank/MISS feedback,
+  strict improvement, solved locks, and the counted-try cap. The singular `--model`
+  accepts the six-model roster's friendly selector (`OPUS`, `SONNET`, `FABLE`, `GPT-SOL`,
+  `GPT-TERRA`, `GPT-LUNA`) or exact id; each invocation runs exactly one model. Ordinary
+  play exposes `none|low|medium|high|xhigh|max`: GPT-5.6 API supports the full scale;
+  Codex-plan GPT supports `low` through `max`; Anthropic supports `none` through `max`.
+  Prompt v21 gives EVERY provider the same fresh, stateless single-user-message prompt:
+  fixed rules, the initial clues, then every prior player reply and exact referee feedback
+  in chronological order. No provider session memory or lossy current-best-only snapshot is
+  an experimental treatment. Anthropic receives the byte-identical prompt as a cacheable
+  fixed-rules block plus the growing record. The visible reply must be one word, while the
+  prompt affirmatively requires private multi-step deduction; malformed prose is rejected,
+  never truncated into a guess. `--playbook` accepts only a model/provider/prompt-matched,
+  hash-verified `whippin_model_playbook` profile and injects its `final_playbook` under the
+  fixed rules as advice. `--runs` stays odd (default 7); the actual median run is replayed
+  before any write. `--in-place` records full local transcripts/token usage and publishes
+  only a complete replay-valid display trio; local benchmark output is gitignored and paid
+  provider calls never run in tests/CI.
+- **Bootstrap playbook distillation (#88, decided 2026-07-16).** The rigorous calibrated
+  neutral-play curriculum from #84/#86 is postponed, not discarded: its exact combined tip
+  is preserved remotely at `archive/rigorous-calibration-curriculum-2026-07-16` (`5d727aa`).
+  The active branch instead commits `benchmark/datasets/strategy-fr-92`: exactly 92 French
+  static puzzles / 276 targets with manifest-bound sentences, secrets, starts, ranks, and
+  hashes. `playbook_distill.py` validates the whole graph before auth or writes, then builds
+  one deterministic context packet containing every puzzle/target, all neighbors through
+  rank 50, and deterministic landmarks through rank 10,000. Each model makes exactly TWO
+  resumable long-form calls: an unrestricted analyst pass, then a second critic/rewrite pass
+  over the same evidence plus the draft. Workflow `ultra` maps to Anthropic adaptive thinking
+  + `max`, Codex-plan GPT literal `ultra`, or GPT API `max` + Pro reasoning. There is no old
+  eight-item/2,000-character playbook cap. Both raw stages remain only in the gitignored audit
+  artifact; the separate hash-pinned profile contains the critic's final playbook, and ONLY
+  that final text can enter `llm_play`. `--dry-run` performs zero auth checks, writes, or calls.
 - **`gen_phrase` is fully interactive on a TTY (#5).** Anything not passed as a flag is
   prompted: the **sentence** (positional, now optional), **`--lang`**, and the optional
   **source metadata** — `--kind` (offers `KNOWN_KINDS` numbered, but free text is
