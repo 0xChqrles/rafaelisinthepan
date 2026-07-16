@@ -140,7 +140,7 @@ def test_exact_top250_and_each_band_sample_are_spec_correct_and_deterministic(
     # Canonical JSON is compact, sorted, self-identifying, and byte-counted.
     packet = packets[0]
     assert packet.canonical_bytes == se.canonical_json_bytes(packet.document)
-    assert packet.document["schema_version"] == se.PACKET_SCHEMA_VERSION
+    assert packet.document["schema_version"] == se.LEGACY_PACKET_SCHEMA_VERSION
     assert packet.document["content_byte_count"] == packet.content_byte_count
     assert packet.document["content_sha256"] == packet.content_sha256
 
@@ -178,7 +178,7 @@ def test_committed_packet_has_exact_frozen_split_and_stable_identity():
     calibrated["dataset_id"] = "strategy-fr-v2"
     calibrated["dataset_content_sha256"] = "2" * 64
     calibrated["strategy_evidence"] = {
-        "schema_version": se.PACKET_SCHEMA_VERSION,
+        "schema_version": se.LEGACY_PACKET_SCHEMA_VERSION,
         "dataset_id": manifest["dataset_id"],
         "dataset_content_sha256": manifest["dataset_content_sha256"],
         "packet_sha256": first.sha256,

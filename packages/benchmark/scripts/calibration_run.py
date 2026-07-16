@@ -1,10 +1,14 @@
-"""Deterministic neutral-play holdout calibration (#86).
+"""Sequential neutral calibration and frozen train/test allocation (#86).
 
-Calibration is a separate, selection-only experiment.  It plays every candidate
-with the fixed Sonnet/GPT roster under the ordinary neutral referee, checkpoints
-one completed puzzle run at a time, derives DNF-aware difficulty, and selects a
-strictly balanced 5/5/5 holdout.  It never builds evidence, distils a strategy, or
-runs the final neutral/learned/v7 evaluation.
+Candidates are processed in the manifest's frozen order, one complete candidate
+at a time.  After both fixed-roster medians (and any declared extensions) are
+complete, the deterministic joint selector checks the completed prefix for a
+balanced 15-puzzle training split and a disjoint 15-puzzle test split.  The first
+feasible prefix is frozen and the unneeded suffix remains explicitly unrun.
+
+This module performs calibration and split certification only.  It never makes a
+strategy-distillation or final-evaluation provider call.  Finalization emits
+separate training/test views plus model-isolated training-run evidence for #84.
 """
 
 from __future__ import annotations
@@ -24,7 +28,12 @@ BENCHMARK_DIR = SCRIPT_DIR.parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 import curriculum_dataset as cd  # noqa: E402
-from curriculum_io import load_json, read_data_bytes, sha256_bytes  # noqa: E402
+from curriculum_io import (  # noqa: E402
+    load_json,
+    read_data_bytes,
+    sha256_bytes,
+    write_deterministic_gzip,
+)
 from curriculum_run import (  # noqa: E402
     CurriculumError,
     _auth_preflight,
@@ -48,8 +57,8 @@ from strategy_evidence import (  # noqa: E402
 )
 
 
-CALIBRATION_SCHEMA_VERSION = 1
-CALIBRATION_RULE_VERSION = "1"
+CALIBRATION_SCHEMA_VERSION = 2
+CALIBRATION_RULE_VERSION = "2"
 CALIBRATION_EFFORT = "medium"
 CALIBRATION_CAP = 75
 INITIAL_RUNS = 3
@@ -58,7 +67,10 @@ ELIGIBLE_MIN_TRIES = 5
 ELIGIBLE_MAX_TRIES = 50
 MAX_MODEL_MEDIAN_SPREAD = 20
 TIER_QUOTA = 5
-RULE_V1_MAX_CATEGORY_COUNT_SPREAD = 1
+SELECTED_PER_TIER = TIER_QUOTA * 2
+SELECTED_PER_SPLIT = TIER_QUOTA * 3
+SELECTED_TOTAL = SELECTED_PER_SPLIT * 2
+RULE_V2_MAX_CATEGORY_COUNT_SPREAD = 1
 TIER_RANGES: dict[str, tuple[int, int]] = {
     "easy": (5, 15),
     "medium": (16, 30),
@@ -67,13 +79,14 @@ TIER_RANGES: dict[str, tuple[int, int]] = {
 TIER_ORDER = tuple(TIER_RANGES)
 
 COHORT_ORDER = (
-    "selected",
+    "selected_training",
+    "selected_test",
     "eligible_unselected",
-    "spread_only",
+    "training_only_spread",
     "cap_stress",
 )
 CAP_STRESS_REASON_CODES = frozenset({"dnf", "over_cap", "median_out_of_range"})
-VALID_REJECTION_REASON_CODES = CAP_STRESS_REASON_CODES | {"model_median_spread"}
+VALID_REJECTION_REASON_CODES = CAP_STRESS_REASON_CODES
 
 ROSTER_SELECTORS = ("SONNET", "GPT-SOL")
 ROSTER_MODEL_IDS = ("claude-sonnet-5", "gpt-5.6-sol")
@@ -91,6 +104,7 @@ _VOLATILE_KEYS = {
     "started_at",
     "updated_at",
     "completed_at",
+    "finalized_at",
     "requested_at",
     "verified_at",
     "duration",
@@ -341,9 +355,27 @@ def _fixed_roster(auth: str) -> list[dict[str, Any]]:
     return roster
 
 
+def _ordered_candidate_records(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return the one frozen processing order pinned by ``pool_index``."""
+    return sorted(
+        (
+            record
+            for record in manifest["puzzles"]
+            if record.get("split") == cd.CALIBRATION_CANDIDATE_SPLIT
+        ),
+        key=lambda record: record["pool_index"],
+    )
+
+
+def _candidate_order_identity(manifest: dict[str, Any]) -> tuple[list[str], str]:
+    order = [record["candidate_id"] for record in _ordered_candidate_records(manifest)]
+    return order, hashlib.sha256(_canonical_bytes(order)).hexdigest()
+
+
 def _run_config(
     manifest: dict[str, Any], content_sha: str, manifest_sha: str, *, auth: str
 ) -> dict[str, Any]:
+    candidate_order, candidate_order_sha256 = _candidate_order_identity(manifest)
     return {
         "artifact_schema_version": CALIBRATION_SCHEMA_VERSION,
         "calibration_rule_version": CALIBRATION_RULE_VERSION,
@@ -352,26 +384,51 @@ def _run_config(
         "candidate_pool_content_sha256": content_sha,
         "candidate_pool_manifest_sha256": manifest_sha,
         "prompt_version": PROMPT_VERSION,
+        "gameplay_prompt_hash_scope": "per_run_opening_prompt_sha256",
         "neutral_prompt_only": True,
         "fresh_context_per_run": True,
+        "fresh_stateless_context_per_turn": True,
         "effort": CALIBRATION_EFFORT,
         "cap": CALIBRATION_CAP,
         "initial_runs_per_model": INITIAL_RUNS,
         "extended_runs_per_model": EXTENDED_RUNS,
         "eligibility": {
-            "minimum_model_median": ELIGIBLE_MIN_TRIES,
-            "maximum_model_median": ELIGIBLE_MAX_TRIES,
-            "every_run_must_solve": True,
-            "maximum_model_median_spread": MAX_MODEL_MEDIAN_SPREAD,
+            "training": {
+                "minimum_model_median": ELIGIBLE_MIN_TRIES,
+                "maximum_model_median": ELIGIBLE_MAX_TRIES,
+                "every_run_must_solve": True,
+                "maximum_model_median_spread": None,
+            },
+            "test": {
+                "requires_training_eligibility": True,
+                "maximum_model_median_spread": MAX_MODEL_MEDIAN_SPREAD,
+            },
         },
         "tiers": {
-            tier: {"minimum": bounds[0], "maximum": bounds[1], "quota": TIER_QUOTA}
+            tier: {
+                "minimum": bounds[0],
+                "maximum": bounds[1],
+                "training_quota": TIER_QUOTA,
+                "test_quota": TIER_QUOTA,
+            }
             for tier, bounds in TIER_RANGES.items()
         },
         "balance": {
-            "scope": "each tier and all selected holdout targets",
-            "maximum_category_count_spread": RULE_V1_MAX_CATEGORY_COUNT_SPREAD,
+            "scope": "each tier of each split and each complete split",
+            "maximum_category_count_spread": RULE_V2_MAX_CATEGORY_COUNT_SPREAD,
             "fields": {key: list(values) for key, values in BALANCE_FIELDS.items()},
+        },
+        "sequential_stopping": {
+            "candidate_order": candidate_order,
+            "candidate_order_sha256": candidate_order_sha256,
+            "minimum_initial_paid_units": SELECTED_TOTAL
+            * len(ROSTER_MODEL_IDS)
+            * INITIAL_RUNS,
+            "maximum_initial_paid_units": len(candidate_order)
+            * len(ROSTER_MODEL_IDS)
+            * INITIAL_RUNS,
+            "check_after_each_completed_candidate": True,
+            "stop_at_first_feasible_prefix": True,
         },
         "roster": _fixed_roster(auth),
     }
@@ -409,14 +466,7 @@ def new_artifact_state(
     auth: str,
 ) -> dict[str, Any]:
     config = _run_config(manifest, content_sha, manifest_sha, auth=auth)
-    candidates = sorted(
-        (
-            record
-            for record in manifest["puzzles"]
-            if record.get("split") == cd.CALIBRATION_CANDIDATE_SPLIT
-        ),
-        key=lambda record: record["candidate_id"],
-    )
+    candidates = _ordered_candidate_records(manifest)
     curriculum = [
         record for record in manifest["puzzles"] if record.get("split") == "curriculum"
     ]
@@ -435,6 +485,10 @@ def new_artifact_state(
             "content_sha256": content_sha,
             "curriculum_puzzle_count": len(curriculum),
             "candidate_count": len(candidates),
+            "candidate_order": [record["candidate_id"] for record in candidates],
+            "candidate_order_sha256": config["sequential_stopping"][
+                "candidate_order_sha256"
+            ],
             "reserved_target_slugs": reserved_slugs,
         },
         "started_at": _utc_now(),
@@ -442,13 +496,22 @@ def new_artifact_state(
         "checkpoint": {
             "sequence": 0,
             "completed_paid_units": 0,
+            "completed_prefix_count": 0,
+            "next_candidate_id": candidates[0]["candidate_id"],
+            "next_pool_index": candidates[0]["pool_index"],
             "updated_at": _utc_now(),
         },
         "candidates": [
             _candidate_state(record, config["roster"]) for record in candidates
         ],
-        "selection": {"status": "pending"},
+        "selection": {
+            "status": "pending",
+            "completed_prefix_count": 0,
+            "next_candidate_id": candidates[0]["candidate_id"],
+            "next_pool_index": candidates[0]["pool_index"],
+        },
     }
+    _refresh_derived(state)
     update_artifact_hashes(state)
     return state
 
@@ -548,18 +611,12 @@ def summarize_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
 
     numeric_medians = [value for value in medians.values() if isinstance(value, int)]
     spread = max(numeric_medians) - min(numeric_medians) if numeric_medians else None
-    if spread is None or spread > MAX_MODEL_MEDIAN_SPREAD:
-        reasons.append(
-            {
-                "code": "model_median_spread",
-                "spread": spread,
-                "maximum": MAX_MODEL_MEDIAN_SPREAD,
-            }
-        )
     if reasons:
         return {
             "status": "rejected",
             "eligible": False,
+            "training_eligible": False,
+            "test_eligible": False,
             "model_medians": medians,
             "model_median_spread": spread,
             "reasons": reasons,
@@ -568,6 +625,9 @@ def summarize_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
     return {
         "status": "eligible",
         "eligible": True,
+        "training_eligible": True,
+        "test_eligible": spread is not None
+        and spread <= MAX_MODEL_MEDIAN_SPREAD,
         "model_medians": medians,
         "model_median_spread": spread,
         "difficulty": difficulty,
@@ -619,7 +679,7 @@ def _merge_counts(
 def _balanced(counts: dict[str, dict[str, int]]) -> bool:
     return all(
         max(field_counts.values()) - min(field_counts.values())
-        <= RULE_V1_MAX_CATEGORY_COUNT_SPREAD
+        <= RULE_V2_MAX_CATEGORY_COUNT_SPREAD
         for field_counts in counts.values()
     )
 
@@ -651,10 +711,17 @@ def _selection_key(candidate: dict[str, Any], salt: str) -> str:
 def _with_cohort_report(
     selection: dict[str, Any], candidates: list[dict[str, Any]]
 ) -> dict[str, Any]:
-    """Attach the deterministic lab-only disposition of every completed candidate."""
-    selected_ids = {
-        entry["candidate_id"] for entry in selection.get("selected", [])
+    """Attach the deterministic disposition of the completed prefix and unrun suffix."""
+    selected_training_ids = {
+        entry["candidate_id"]
+        for entry in selection.get("selected_training", [])
     }
+    selected_test_ids = {
+        entry["candidate_id"] for entry in selection.get("selected_test", [])
+    }
+    if selected_training_ids & selected_test_ids:
+        raise CalibrationError("a candidate was assigned to both frozen splits")
+    selected_ids = selected_training_ids | selected_test_ids
     candidate_ids = {candidate["candidate_id"] for candidate in candidates}
     unknown_selected = selected_ids - candidate_ids
     if unknown_selected:
@@ -666,15 +733,43 @@ def _with_cohort_report(
     cohorts: dict[str, list[dict[str, Any]]] = {
         cohort: [] for cohort in COHORT_ORDER
     }
-    for candidate in sorted(candidates, key=lambda row: row["candidate_id"]):
+    unrun: list[dict[str, Any]] = []
+    for candidate in sorted(
+        candidates,
+        key=lambda row: (row.get("pool_index", sys.maxsize), row["candidate_id"]),
+    ):
         candidate_id = candidate["candidate_id"]
         summary = candidate.get("summary", {})
         status = summary.get("status")
         reasons = copy.deepcopy(summary.get("reasons", []))
-        if status == "eligible":
-            cohort = (
-                "selected" if candidate_id in selected_ids else "eligible_unselected"
+        if status == "unrun":
+            if candidate_id in selected_ids:
+                raise CalibrationError(
+                    f"unrun candidate {candidate_id} appears in the selection"
+                )
+            unrun.append(
+                {
+                    "candidate_id": candidate_id,
+                    "pool_index": candidate.get("pool_index"),
+                    "path": candidate.get("path"),
+                    "sha256": candidate.get("sha256"),
+                    "status": "unrun",
+                }
             )
+            continue
+        if status == "eligible":
+            if candidate_id in selected_training_ids:
+                cohort = "selected_training"
+            elif candidate_id in selected_test_ids:
+                if not summary.get("test_eligible"):
+                    raise CalibrationError(
+                        f"test selection contains spread-ineligible candidate {candidate_id}"
+                    )
+                cohort = "selected_test"
+            elif summary.get("test_eligible"):
+                cohort = "eligible_unselected"
+            else:
+                cohort = "training_only_spread"
             if reasons:
                 raise CalibrationError(
                     f"eligible candidate {candidate_id} has rejection reasons"
@@ -698,15 +793,13 @@ def _with_cohort_report(
                 )
             if reason_codes & CAP_STRESS_REASON_CODES:
                 cohort = "cap_stress"
-            elif reason_codes == {"model_median_spread"}:
-                cohort = "spread_only"
             else:  # Defensive: the accepted code set is deliberately exhaustive above.
                 raise CalibrationError(
                     f"candidate {candidate_id} has no deterministic cohort"
                 )
         else:
             raise CalibrationError(
-                f"candidate {candidate_id} is incomplete and cannot enter a cohort report"
+                f"candidate {candidate_id} is incomplete and cannot be certified"
             )
 
         model_run_counts = {
@@ -734,8 +827,11 @@ def _with_cohort_report(
         "cohort_report": {
             "schema_version": 1,
             "total_candidates": len(candidates),
+            "completed_candidates": sum(len(rows) for rows in cohorts.values()),
+            "unrun_candidates": len(unrun),
             "counts": {cohort: len(cohorts[cohort]) for cohort in COHORT_ORDER},
             "cohorts": cohorts,
+            "unrun": unrun,
         },
     }
 
@@ -752,7 +848,7 @@ def _tier_combinations(
     counts = _empty_counts()
     targets_per_tier = cd.TARGETS_PER_PUZZLE * TIER_QUOTA
     max_pos_category = math.ceil(targets_per_tier / len(cd.POS_VALUES))
-    # Under rule v1 POS balance, each gendered POS can occupy at most the POS
+    # Under rule v2 POS balance, each gendered POS can occupy at most the POS
     # category bound. Their sum is therefore the safe upper bound for gendered
     # targets before the gender categories themselves are balanced.
     max_gendered_targets = max_pos_category * sum(
@@ -797,47 +893,244 @@ def _tier_combinations(
     yield from visit(0)
 
 
+def _tier_role_pairs(
+    *,
+    training_candidates: list[dict[str, Any]],
+    test_candidates: list[dict[str, Any]],
+    reserved_slugs: set[str],
+    selection_salt: str,
+    tier: str,
+) -> Iterator[
+    tuple[
+        list[dict[str, Any]],
+        list[dict[str, Any]],
+        set[str],
+        dict[str, dict[str, int]],
+        dict[str, dict[str, int]],
+    ]
+]:
+    """Yield deterministic disjoint balanced training/test choices for one tier."""
+    for test_combo, test_used, test_counts in _tier_combinations(
+        test_candidates,
+        reserved_slugs=reserved_slugs,
+        salt=f"{selection_salt}:test:{tier}",
+    ):
+        test_ids = {candidate["candidate_id"] for candidate in test_combo}
+        remaining = [
+            candidate
+            for candidate in training_candidates
+            if candidate["candidate_id"] not in test_ids
+            and not (_target_slugs(candidate) & test_used)
+        ]
+        remaining.sort(
+            key=lambda candidate: _selection_key(
+                candidate, f"{selection_salt}:training:{tier}"
+            )
+        )
+        if len(remaining) < TIER_QUOTA:
+            continue
+        if len(remaining) == TIER_QUOTA:
+            training_counts = _empty_counts()
+            training_used = set(test_used)
+            valid = True
+            for candidate in remaining:
+                slugs = _target_slugs(candidate)
+                if slugs & training_used:
+                    valid = False
+                    break
+                training_used.update(slugs)
+                _add_targets(training_counts, candidate["targets"])
+            if valid and _balanced(training_counts):
+                yield (
+                    remaining,
+                    test_combo,
+                    training_used,
+                    training_counts,
+                    test_counts,
+                )
+            continue
+        for training_combo, training_used, training_counts in _tier_combinations(
+            remaining,
+            reserved_slugs=test_used,
+            salt=f"{selection_salt}:training:{tier}",
+        ):
+            yield (
+                training_combo,
+                test_combo,
+                training_used,
+                training_counts,
+                test_counts,
+            )
+
+
+def _split_counts_can_finish(
+    counts: dict[str, dict[str, int]], *, completed_tiers: int
+) -> bool:
+    """Safe feasibility bounds for the still-unselected balanced tiers."""
+    remaining = len(TIER_ORDER) - completed_tiers
+    total_targets = cd.TARGETS_PER_PUZZLE * SELECTED_PER_SPLIT
+    for field in ("pos", "frequency_band", "semantic_class"):
+        categories = BALANCE_FIELDS[field]
+        final_floor = total_targets // len(categories)
+        final_ceiling = math.ceil(total_targets / len(categories))
+        per_tier_ceiling = math.ceil(
+            cd.TARGETS_PER_PUZZLE * TIER_QUOTA / len(categories)
+        )
+        for value in counts[field].values():
+            if value > final_ceiling:
+                return False
+            if value + remaining * per_tier_ceiling < final_floor:
+                return False
+    gender_values = list(counts["gender"].values())
+    if len(gender_values) == 2 and abs(gender_values[0] - gender_values[1]) > remaining + 1:
+        return False
+    return True
+
+
+def _joint_role_solution(
+    training_grouped: dict[str, list[dict[str, Any]]],
+    test_grouped: dict[str, list[dict[str, Any]]],
+    *,
+    reserved_slugs: set[str],
+    selection_salt: str,
+) -> tuple[
+    dict[str, list[dict[str, Any]]],
+    dict[str, list[dict[str, Any]]],
+    dict[str, dict[str, dict[str, dict[str, int]]]],
+] | None:
+    selected = {"training": {}, "test": {}}
+    tier_counts = {"training": {}, "test": {}}
+    overall = {"training": _empty_counts(), "test": _empty_counts()}
+
+    def visit(tier_index: int, used_slugs: set[str]) -> bool:
+        nonlocal overall
+        if tier_index == len(TIER_ORDER):
+            return _balanced(overall["training"]) and _balanced(overall["test"])
+
+        tier = TIER_ORDER[tier_index]
+        for (
+            training_combo,
+            test_combo,
+            next_used,
+            training_counts,
+            test_counts,
+        ) in _tier_role_pairs(
+            training_candidates=training_grouped[tier],
+            test_candidates=test_grouped[tier],
+            reserved_slugs=used_slugs,
+            selection_salt=selection_salt,
+            tier=tier,
+        ):
+            merged = {
+                "training": _merge_counts(overall["training"], training_counts),
+                "test": _merge_counts(overall["test"], test_counts),
+            }
+            if not all(
+                _split_counts_can_finish(
+                    merged[role], completed_tiers=tier_index + 1
+                )
+                for role in ("training", "test")
+            ):
+                continue
+            selected["training"][tier] = training_combo
+            selected["test"][tier] = test_combo
+            tier_counts["training"][tier] = training_counts
+            tier_counts["test"][tier] = test_counts
+            previous = overall
+            overall = merged
+            if visit(tier_index + 1, next_used):
+                return True
+            overall = previous
+            del selected["training"][tier]
+            del selected["test"][tier]
+            del tier_counts["training"][tier]
+            del tier_counts["test"][tier]
+        return False
+
+    if not visit(0, set(reserved_slugs)):
+        return None
+    return (
+        copy.deepcopy(selected["training"]),
+        copy.deepcopy(selected["test"]),
+        copy.deepcopy(tier_counts),
+    )
+
+
+def _selected_rows(
+    selected_by_tier: dict[str, list[dict[str, Any]]], *, role: str
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "candidate_id": candidate["candidate_id"],
+            "role": role,
+            "tier": tier,
+            "difficulty": candidate["summary"]["difficulty"],
+            "model_medians": candidate["summary"]["model_medians"],
+            "model_median_spread": candidate["summary"]["model_median_spread"],
+        }
+        for tier in TIER_ORDER
+        for candidate in selected_by_tier[tier]
+    ]
+
+
 def select_calibrated_candidates(
     candidates: list[dict[str, Any]],
     *,
     reserved_slugs: set[str],
     selection_salt: str,
 ) -> dict[str, Any]:
-    """Select the first deterministic exact-balance 5/5/5 solution."""
-    eligible = [
+    """Jointly assign the first deterministic balanced 15+15 allocation."""
+    training_eligible = [
         candidate
         for candidate in candidates
-        if candidate.get("summary", {}).get("status") == "eligible"
+        if candidate.get("summary", {}).get("training_eligible") is True
     ]
-    grouped = {
-        tier: [
-            candidate for candidate in eligible if candidate["summary"]["tier"] == tier
-        ]
+    test_eligible = [
+        candidate
+        for candidate in training_eligible
+        if candidate["summary"].get("test_eligible") is True
+    ]
+    training_grouped = {
+        tier: [candidate for candidate in training_eligible if candidate["summary"]["tier"] == tier]
         for tier in TIER_ORDER
     }
-    available = {tier: len(values) for tier, values in grouped.items()}
-    deficits = {tier: max(0, TIER_QUOTA - count) for tier, count in available.items()}
+    test_grouped = {
+        tier: [candidate for candidate in test_eligible if candidate["summary"]["tier"] == tier]
+        for tier in TIER_ORDER
+    }
+    available = {
+        "training": {tier: len(training_grouped[tier]) for tier in TIER_ORDER},
+        "test": {tier: len(test_grouped[tier]) for tier in TIER_ORDER},
+    }
+    deficits = {
+        "training_total": {
+            tier: max(0, SELECTED_PER_TIER - available["training"][tier])
+            for tier in TIER_ORDER
+        },
+        "test": {
+            tier: max(0, TIER_QUOTA - available["test"][tier])
+            for tier in TIER_ORDER
+        },
+    }
     base = {
         "rule_version": CALIBRATION_RULE_VERSION,
-        "required_per_tier": TIER_QUOTA,
+        "required_per_tier": {
+            "training": TIER_QUOTA,
+            "test": TIER_QUOTA,
+        },
         "eligible_per_tier": available,
         "balance_constraint": {
-            "maximum_category_count_spread": RULE_V1_MAX_CATEGORY_COUNT_SPREAD,
-            "scope": "each tier and overall",
+            "maximum_category_count_spread": RULE_V2_MAX_CATEGORY_COUNT_SPREAD,
+            "scope": "each tier of each split and each complete split",
             "fields": {key: list(values) for key, values in BALANCE_FIELDS.items()},
         },
-        "predeclared_balance_fallback": {
-            "rule_version": "2",
-            "activation": "explicit_rule_version_bump_only",
-            "automatic": False,
-            "trigger": "rule_v1_balance_only_shortfall",
-            "per_tier_maximum_category_count_spread": 2,
-            "overall_maximum_category_count_spread": 1,
-            "unique_target_slugs_required": True,
-        },
+        "automatic_relaxation": False,
+        "test_maximum_model_median_spread": MAX_MODEL_MEDIAN_SPREAD,
+        "training_maximum_model_median_spread": None,
+        "global_unique_target_slugs_required": True,
         "reserved_curriculum_target_slug_count": len(reserved_slugs),
     }
-    if any(deficits.values()):
+    if any(value for role in deficits.values() for value in role.values()):
         return _with_cohort_report(
             {
                 **base,
@@ -848,102 +1141,18 @@ def select_calibrated_candidates(
             candidates,
         )
 
-    # Precompute each tier once.  A larger candidate pool can have thousands of
-    # balanced five-puzzle combinations; recomputing medium/difficult combinations
-    # for every earlier choice would make a legitimate shortfall needlessly costly.
-    tier_combinations: dict[
-        str,
-        list[
-            tuple[
-                list[dict[str, Any]],
-                set[str],
-                dict[str, dict[str, int]],
-            ]
-        ],
-    ] = {}
-    for tier in TIER_ORDER:
-        tier_combinations[tier] = [
-            (combo, used - reserved_slugs, counts)
-            for combo, used, counts in _tier_combinations(
-                grouped[tier],
-                reserved_slugs=reserved_slugs,
-                salt=f"{selection_salt}:{tier}",
-            )
-        ]
+    solution = _joint_role_solution(
+        training_grouped,
+        test_grouped,
+        reserved_slugs=reserved_slugs,
+        selection_salt=selection_salt,
+    )
+    if solution is None:
+        selected_training = selected_test = selected_counts = None
+    else:
+        selected_training, selected_test, selected_counts = solution
 
-    selected_by_tier: dict[str, list[dict[str, Any]]] | None = None
-    tier_counts: dict[str, dict[str, dict[str, int]]] | None = None
-    if all(tier_combinations.values()):
-        easy_tier, medium_tier, difficult_tier = TIER_ORDER
-        medium_groups: dict[
-            tuple[int, ...],
-            list[
-                tuple[
-                    list[dict[str, Any]],
-                    set[str],
-                    dict[str, dict[str, int]],
-                ]
-            ],
-        ] = {}
-        difficult_groups: dict[
-            tuple[int, ...],
-            list[
-                tuple[
-                    list[dict[str, Any]],
-                    set[str],
-                    dict[str, dict[str, int]],
-                ]
-            ],
-        ] = {}
-        for combo in tier_combinations[medium_tier]:
-            medium_groups.setdefault(_counts_signature(combo[2]), []).append(combo)
-        for combo in tier_combinations[difficult_tier]:
-            difficult_groups.setdefault(_counts_signature(combo[2]), []).append(combo)
-
-        for easy_combo, easy_slugs, easy_counts in tier_combinations[easy_tier]:
-            if selected_by_tier is not None:
-                break
-            for medium_options in medium_groups.values():
-                medium_counts = medium_options[0][2]
-                partial = _merge_counts(easy_counts, medium_counts)
-                compatible_difficult = [
-                    options
-                    for options in difficult_groups.values()
-                    if _balanced(_merge_counts(partial, options[0][2]))
-                ]
-                if not compatible_difficult:
-                    continue
-                for medium_combo, medium_slugs, _counts in medium_options:
-                    if easy_slugs & medium_slugs:
-                        continue
-                    used = easy_slugs | medium_slugs
-                    for difficult_options in compatible_difficult:
-                        for (
-                            difficult_combo,
-                            difficult_slugs,
-                            difficult_counts,
-                        ) in difficult_options:
-                            if used & difficult_slugs:
-                                continue
-                            selected_by_tier = {
-                                easy_tier: easy_combo,
-                                medium_tier: medium_combo,
-                                difficult_tier: difficult_combo,
-                            }
-                            tier_counts = {
-                                easy_tier: easy_counts,
-                                medium_tier: medium_counts,
-                                difficult_tier: difficult_counts,
-                            }
-                            break
-                        if selected_by_tier is not None:
-                            break
-                    if selected_by_tier is not None:
-                        break
-                if selected_by_tier is not None:
-                    break
-
-    if selected_by_tier is None or tier_counts is None:
+    if selected_training is None or selected_test is None or selected_counts is None:
         return _with_cohort_report(
             {
                 **base,
@@ -951,70 +1160,161 @@ def select_calibrated_candidates(
                 "reason": "no_balanced_unique_selection",
                 "tier_deficits": deficits,
                 "shortfall": (
-                    "eligible counts meet 5/5/5, but no set satisfies unique target "
-                    "slugs and category-count spread <= 1 within every tier and overall"
+                    "eligible counts meet the role quotas, but no joint 15-training/"
+                    "15-test assignment satisfies global target uniqueness and category-"
+                    "count spread <= 1 within every split tier and complete split"
                 ),
             },
             candidates,
         )
 
-    selected = [
-        {
-            "candidate_id": candidate["candidate_id"],
-            "tier": tier,
-            "difficulty": candidate["summary"]["difficulty"],
-            "model_medians": candidate["summary"]["model_medians"],
+    balance: dict[str, Any] = {}
+    for role in ("training", "test"):
+        overall = _empty_counts()
+        for counts in selected_counts[role].values():
+            overall = _merge_counts(overall, counts)
+        balance[role] = {
+            "tiers": {
+                tier: _balance_report(selected_counts[role][tier])
+                for tier in TIER_ORDER
+            },
+            "overall": _balance_report(overall),
         }
-        for tier in TIER_ORDER
-        for candidate in selected_by_tier[tier]
-    ]
-    overall = _empty_counts()
-    for counts in tier_counts.values():
-        overall = _merge_counts(overall, counts)
     return _with_cohort_report(
         {
             **base,
             "status": "selected",
             "tier_deficits": deficits,
-            "selected": selected,
-            "counts": {tier: TIER_QUOTA for tier in TIER_ORDER},
-            "balance": {
-                "tiers": {
-                    tier: _balance_report(tier_counts[tier]) for tier in TIER_ORDER
-                },
-                "overall": _balance_report(overall),
+            "selected_training": _selected_rows(
+                selected_training, role="training"
+            ),
+            "selected_test": _selected_rows(selected_test, role="test"),
+            "counts": {
+                role: {tier: TIER_QUOTA for tier in TIER_ORDER}
+                for role in ("training", "test")
             },
+            "balance": balance,
         },
         candidates,
     )
 
 
 def _refresh_derived(state: dict[str, Any]) -> None:
-    for candidate in state["candidates"]:
-        candidate["summary"] = summarize_candidate(candidate)
-    if any(
-        candidate["summary"]["status"] == "pending" for candidate in state["candidates"]
-    ):
-        state["selection"] = {
-            "status": "pending",
-            "pending_paid_units": len(_pending_units(state)),
+    candidates = state["candidates"]
+    completed_prefix: list[dict[str, Any]] = []
+    incomplete_index: int | None = None
+
+    for index, candidate in enumerate(candidates):
+        derived = summarize_candidate(candidate)
+        has_work = any(
+            model.get("runs")
+            or model.get("extension") is not None
+            or model.get("required_runs") != INITIAL_RUNS
+            for model in candidate["models"]
+        )
+        if incomplete_index is None and derived["status"] != "pending":
+            candidate["summary"] = derived
+            completed_prefix.append(candidate)
+            continue
+        if incomplete_index is None:
+            incomplete_index = index
+            candidate["summary"] = derived if has_work else {"status": "unrun"}
+            continue
+        if has_work:
+            raise CalibrationError(
+                "calibration contains paid work beyond the first incomplete candidate"
+            )
+        candidate["summary"] = {"status": "unrun"}
+
+    prefix_count = len(completed_prefix)
+    next_candidate = candidates[prefix_count] if prefix_count < len(candidates) else None
+    state["checkpoint"].update(
+        {
+            "completed_prefix_count": prefix_count,
+            "next_candidate_id": (
+                next_candidate["candidate_id"] if next_candidate is not None else None
+            ),
+            "next_pool_index": (
+                next_candidate["pool_index"] if next_candidate is not None else None
+            ),
         }
-        return
-    state["selection"] = select_calibrated_candidates(
-        state["candidates"],
+    )
+
+    feasibility = select_calibrated_candidates(
+        completed_prefix,
         reserved_slugs=set(state["candidate_pool"]["reserved_target_slugs"]),
         selection_salt=state["config"]["candidate_pool_content_sha256"],
     )
+    feasibility.pop("cohort_report", None)
+
+    if feasibility["status"] == "selected":
+        if next_candidate is not None and next_candidate["summary"]["status"] == "pending":
+            raise CalibrationError(
+                "paid work continued beyond the first feasible completed prefix"
+            )
+        selection = {
+            **feasibility,
+            "completed_prefix_count": prefix_count,
+            "stopping_candidate_id": completed_prefix[-1]["candidate_id"],
+            "stopping_pool_index": completed_prefix[-1]["pool_index"],
+            "stopping_checkpoint": state["checkpoint"]["sequence"],
+        }
+        selection["allocation_sha256"] = hashlib.sha256(
+            _canonical_bytes(
+                {
+                    "rule_version": selection["rule_version"],
+                    "completed_prefix_count": prefix_count,
+                    "stopping_candidate_id": selection["stopping_candidate_id"],
+                    "stopping_checkpoint": selection["stopping_checkpoint"],
+                    "selected_training": selection["selected_training"],
+                    "selected_test": selection["selected_test"],
+                    "balance": selection["balance"],
+                }
+            )
+        ).hexdigest()
+        state["selection"] = _with_cohort_report(selection, candidates)
+        return
+
+    if next_candidate is None:
+        state["selection"] = _with_cohort_report(
+            {
+                **feasibility,
+                "status": "shortfall",
+                "completed_prefix_count": prefix_count,
+                "pool_exhausted": True,
+                "stopping_checkpoint": state["checkpoint"]["sequence"],
+            },
+            candidates,
+        )
+        return
+
+    state["selection"] = {
+        "status": "pending",
+        "rule_version": CALIBRATION_RULE_VERSION,
+        "completed_prefix_count": prefix_count,
+        "next_candidate_id": next_candidate["candidate_id"],
+        "next_pool_index": next_candidate["pool_index"],
+        "next_candidate_status": next_candidate["summary"]["status"],
+        "last_completed_prefix_feasibility": feasibility,
+    }
+    state["selection"]["pending_paid_units"] = len(_pending_units(state))
 
 
 def _pending_units(
     state: dict[str, Any],
 ) -> list[tuple[dict[str, Any], dict[str, Any], int]]:
+    if state.get("selection", {}).get("status") in {"selected", "shortfall"}:
+        return []
+    prefix_count = state.get("checkpoint", {}).get("completed_prefix_count", 0)
+    if not isinstance(prefix_count, int) or not 0 <= prefix_count < len(
+        state["candidates"]
+    ):
+        return []
+    candidate = state["candidates"][prefix_count]
     pending = []
-    for candidate in state["candidates"]:
-        for model in candidate["models"]:
-            for number in range(len(model["runs"]) + 1, model["required_runs"] + 1):
-                pending.append((candidate, model, number))
+    for model in candidate["models"]:
+        for number in range(len(model["runs"]) + 1, model["required_runs"] + 1):
+            pending.append((candidate, model, number))
     return pending
 
 
@@ -1050,16 +1350,16 @@ def _validate_state(
     pool = state.get("candidate_pool", {})
     if pool.get("manifest_path") != str(manifest_path):
         raise CalibrationError("resume artifact points at a different candidate pool")
-    records = sorted(
-        (
-            record
-            for record in manifest["puzzles"]
-            if record.get("split") == cd.CALIBRATION_CANDIDATE_SPLIT
-        ),
-        key=lambda record: record["candidate_id"],
-    )
+    records = _ordered_candidate_records(manifest)
     if len(state.get("candidates", [])) != len(records):
         raise CalibrationError("resume artifact candidate count changed")
+    expected_order = [record["candidate_id"] for record in records]
+    if (
+        pool.get("candidate_order") != expected_order
+        or pool.get("candidate_order_sha256")
+        != expected_config["sequential_stopping"]["candidate_order_sha256"]
+    ):
+        raise CalibrationError("resume artifact frozen candidate order changed")
     checkpoints: list[int] = []
     for candidate, record in zip(state["candidates"], records):
         actual_core = {
@@ -1088,6 +1388,11 @@ def _validate_state(
                 raise CalibrationError(
                     "five-run result has no recorded extension reason"
                 )
+            if required == EXTENDED_RUNS and model["extension"].get("reason") not in {
+                "unstable",
+                "tier_boundary",
+            }:
+                raise CalibrationError("five-run result has an invalid extension reason")
             runs = model.get("runs")
             if not isinstance(runs, list) or len(runs) > required:
                 raise CalibrationError("artifact has an invalid completed run count")
@@ -1114,6 +1419,13 @@ def _validate_state(
         raise CalibrationError("artifact candidate summaries do not replay")
     if probe["selection"] != state.get("selection"):
         raise CalibrationError("artifact selection report does not replay")
+    for field in (
+        "completed_prefix_count",
+        "next_candidate_id",
+        "next_pool_index",
+    ):
+        if probe["checkpoint"].get(field) != checkpoint.get(field):
+            raise CalibrationError(f"artifact checkpoint {field} does not replay")
 
 
 def _validate_completed_runs(
@@ -1304,12 +1616,49 @@ def calibration_plan(
 ) -> dict[str, Any]:
     pending = _pending_units(state)
     planned = pending if maximum_units is None else pending[:maximum_units]
+    candidate_count = state["candidate_pool"]["candidate_count"]
+    declared_extension_units = sum(
+        max(0, model["required_runs"] - INITIAL_RUNS)
+        for candidate in state["candidates"]
+        for model in candidate["models"]
+    )
+    maximum_remaining = (
+        0
+        if state["selection"]["status"] in {"selected", "shortfall"}
+        else sum(
+            model["required_runs"] - len(model["runs"])
+            for candidate in state["candidates"]
+            for model in candidate["models"]
+        )
+    )
+    next_candidate = (
+        {
+            "candidate_id": state["checkpoint"]["next_candidate_id"],
+            "pool_index": state["checkpoint"]["next_pool_index"],
+        }
+        if state["checkpoint"].get("next_candidate_id") is not None
+        else None
+    )
     return {
         "dry_run": True,
         "config": state["config"],
         "candidate_pool": state["candidate_pool"],
+        "minimum_initial_paid_units": SELECTED_TOTAL
+        * len(ROSTER_MODEL_IDS)
+        * INITIAL_RUNS,
+        "maximum_initial_paid_units": candidate_count
+        * len(ROSTER_MODEL_IDS)
+        * INITIAL_RUNS,
+        "declared_extension_paid_units": declared_extension_units,
+        "maximum_paid_units_with_declared_extensions": candidate_count
+        * len(ROSTER_MODEL_IDS)
+        * INITIAL_RUNS
+        + declared_extension_units,
         "completed_paid_units": state["checkpoint"]["completed_paid_units"],
+        "completed_prefix_count": state["checkpoint"]["completed_prefix_count"],
+        "next_candidate": next_candidate,
         "pending_paid_units": len(pending),
+        "maximum_remaining_paid_units": maximum_remaining,
         "planned_paid_units": [
             {
                 "candidate_id": candidate["candidate_id"],
@@ -1411,8 +1760,13 @@ def run_calibration(
     state["auth_verifications"].append(verification_batch)
     save_artifact(destination, state)
 
-    budget = len(pending) if maximum_units is None else maximum_units
-    for candidate, model, run_number in pending[:budget]:
+    budget = math.inf if maximum_units is None else maximum_units
+    executed = 0
+    while executed < budget:
+        pending = _pending_units(state)
+        if not pending:
+            break
+        candidate, model, run_number = pending[0]
         config = select_model(model["model_id"])
         if verbose:
             print(
@@ -1471,16 +1825,17 @@ def run_calibration(
             }
         )
         _refresh_derived(state)
-        if not _pending_units(state) and state["selection"]["status"] == "selected":
+        if state["selection"]["status"] in {"selected", "shortfall"}:
             state["completed_at"] = _utc_now()
         save_artifact(destination, state)
+        executed += 1
         if verbose:
             score = completed["tries"] if completed["tries"] is not None else "DNF"
             print(
                 f"[calibration] DONE checkpoint {checkpoint} score={score}", flush=True
             )
 
-    if not _pending_units(state) and state["selection"]["status"] == "shortfall":
+    if state["selection"]["status"] == "shortfall":
         if raise_on_shortfall:
             raise CalibrationShortfallError(state["selection"])
     return destination
@@ -1498,6 +1853,13 @@ def request_extension(
         raise CalibrationError("extension reason must be unstable or tier_boundary")
     state = json.loads(artifact_path.read_text(encoding="utf-8"))
     _validate_artifact_hashes(state)
+    selection_status = state.get("selection", {}).get("status")
+    if selection_status in {"selected", "shortfall"}:
+        raise CalibrationError(
+            "extension cannot change a calibration experiment after its stopping check"
+        )
+    if state.get("finalization") is not None:
+        raise CalibrationError("extension cannot change a finalized calibration artifact")
     matches = [
         candidate
         for candidate in state["candidates"]
@@ -1508,9 +1870,19 @@ def request_extension(
         raise CalibrationError(
             f"candidate selector {candidate_selector!r} matched {len(matches)} candidates"
         )
+    candidate = matches[0]
+    candidate_index = state["candidates"].index(candidate)
+    if any(
+        model.get("runs")
+        for later in state["candidates"][candidate_index + 1 :]
+        for model in later["models"]
+    ):
+        raise CalibrationError(
+            "extension cannot be declared after a later candidate has paid work"
+        )
     requested_model = select_model(model_selector)["model_id"]
     models = [
-        model for model in matches[0]["models"] if model["model_id"] == requested_model
+        model for model in candidate["models"] if model["model_id"] == requested_model
     ]
     if len(models) != 1:
         raise CalibrationError(
@@ -1526,7 +1898,11 @@ def request_extension(
             "extension can be requested only after exactly three completed runs"
         )
     model["required_runs"] = EXTENDED_RUNS
-    model["extension"] = {"reason": reason, "requested_at": _utc_now()}
+    model["extension"] = {
+        "reason": reason,
+        "requested_at": _utc_now(),
+        "requested_checkpoint": state["checkpoint"]["sequence"],
+    }
     state.pop("completed_at", None)
     _refresh_derived(state)
     state["checkpoint"]["updated_at"] = _utc_now()
@@ -1557,14 +1933,168 @@ def _all_runs_solved_within_cap(candidate: dict[str, Any]) -> bool:
     )
 
 
-def finalize_manifest(
+TRAINING_RUN_EVIDENCE_SCHEMA_VERSION = 1
+
+
+def _json_file_bytes(value: Any) -> bytes:
+    return (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+
+
+def _write_atomic(path: Path, content: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_bytes(content)
+    tmp.replace(path)
+
+
+def _role_selection_sha256(rows: list[dict[str, Any]]) -> str:
+    return hashlib.sha256(_canonical_bytes(rows)).hexdigest()
+
+
+def _training_run_view(run: dict[str, Any]) -> dict[str, Any]:
+    """Keep gameplay evidence while excluding billing/transport audit metadata."""
+    return copy.deepcopy(
+        {
+            key: run[key]
+            for key in (
+                "number",
+                "tries",
+                "counted_tries",
+                "turns",
+                "termination_reason",
+                "tried_words",
+                "conversation",
+                "metrics",
+                "opening_prompt_sha256",
+            )
+        }
+    )
+
+
+def _training_evidence_document(
+    *,
+    model_id: str,
+    selected_rows: list[dict[str, Any]],
+    candidates_by_id: dict[str, dict[str, Any]],
+    training_selection_sha256: str,
+    prompt_version: str,
+) -> dict[str, Any]:
+    puzzles = []
+    for row in selected_rows:
+        candidate = candidates_by_id[row["candidate_id"]]
+        models = [
+            model for model in candidate["models"] if model["model_id"] == model_id
+        ]
+        if len(models) != 1:
+            raise CalibrationError(
+                f"training evidence cannot isolate calibration model {model_id}"
+            )
+        model = models[0]
+        puzzles.append(
+            {
+                "candidate_id": candidate["candidate_id"],
+                "source_sha256": candidate["sha256"],
+                "tier": row["tier"],
+                "difficulty": row["difficulty"],
+                "extension": copy.deepcopy(model.get("extension")),
+                "runs": [_training_run_view(run) for run in model["runs"]],
+            }
+        )
+    return {
+        "schema_version": TRAINING_RUN_EVIDENCE_SCHEMA_VERSION,
+        "calibration_rule_version": CALIBRATION_RULE_VERSION,
+        "prompt_version": prompt_version,
+        "model_id": model_id,
+        "training_selection_sha256": training_selection_sha256,
+        "puzzle_count": len(puzzles),
+        "run_count": sum(len(puzzle["runs"]) for puzzle in puzzles),
+        "puzzles": puzzles,
+    }
+
+
+def _split_record(
+    *,
+    pool_record: dict[str, Any],
+    candidate: dict[str, Any],
+    selection_row: dict[str, Any],
+    number: int,
+    split: str,
+) -> dict[str, Any]:
+    record = copy.deepcopy(pool_record)
+    record.pop("pool_index", None)
+    record.pop("candidate_id", None)
+    record["number"] = number
+    record["split"] = split
+    record["calibration"] = {
+        "candidate_id": selection_row["candidate_id"],
+        "role": selection_row["role"],
+        "tier": selection_row["tier"],
+        "difficulty": selection_row["difficulty"],
+        "model_medians": selection_row["model_medians"],
+        "model_median_spread": selection_row["model_median_spread"],
+        "model_run_counts": {
+            model["model_id"]: len(model["runs"]) for model in candidate["models"]
+        },
+        "all_runs_solved_within_cap": _all_runs_solved_within_cap(candidate),
+    }
+    return record
+
+
+def _role_provenance(
+    *,
+    role: str,
+    pool_manifest: dict[str, Any],
+    pool_content_sha256: str,
+    selection_rows: list[dict[str, Any]],
+    selection_sha256: str,
+) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "kind": "calibration_split_provenance",
+        "role": role,
+        "candidate_pool": {
+            "dataset_id": pool_manifest["dataset_id"],
+            "content_sha256": pool_content_sha256,
+        },
+        "selection_sha256": selection_sha256,
+        "selected": [
+            {
+                "candidate_id": row["candidate_id"],
+                "tier": row["tier"],
+                "difficulty": row["difficulty"],
+            }
+            for row in selection_rows
+        ],
+    }
+
+
+def _resolve_split_destination(
+    pool_manifest_path: Path, value: Path | None, default_name: str
+) -> Path:
+    destination = (
+        pool_manifest_path.with_name(default_name)
+        if value is None
+        else (value if value.is_absolute() else pool_manifest_path.parent / value)
+    ).resolve()
+    if destination.parent != pool_manifest_path.parent:
+        raise CalibrationError(
+            "final split manifests must stay beside the candidate pool and puzzle files"
+        )
+    if destination == pool_manifest_path:
+        raise CalibrationError("final split manifest must not overwrite the candidate pool")
+    return destination
+
+
+def finalize_manifests(
     pool_manifest_path: Path,
     artifact_path: Path,
     *,
-    out_path: Path | None = None,
+    training_out: Path | None = None,
+    test_out: Path | None = None,
+    certified_artifact_out: Path | None = None,
     vocab_loader: Callable[[str], set[str]] = load_vocab,
-) -> Path:
-    """Write a final 15+15 manifest with lean, hash-pinned calibration summaries."""
+) -> dict[str, Path]:
+    """Certify and write isolated training/test views plus the full lab receipt."""
     pool_manifest_path = pool_manifest_path.resolve()
     artifact_path = artifact_path.resolve()
     manifest, content_sha, manifest_sha = load_candidate_pool(pool_manifest_path)
@@ -1591,133 +2121,276 @@ def finalize_manifest(
     selection = state["selection"]
     if selection.get("status") != "selected":
         raise CalibrationError("calibration has no complete selected set")
-    selected_rows = selection.get("selected", [])
-    if len(selected_rows) != len(TIER_ORDER) * TIER_QUOTA:
-        raise CalibrationError("calibration selection is not exactly 15 puzzles")
-    if {
-        tier: sum(row["tier"] == tier for row in selected_rows) for tier in TIER_ORDER
-    } != {tier: TIER_QUOTA for tier in TIER_ORDER}:
-        raise CalibrationError("calibration selection is not 5/5/5")
+    training_rows = selection.get("selected_training", [])
+    test_rows = selection.get("selected_test", [])
+    for role, rows in (("training", training_rows), ("test", test_rows)):
+        if len(rows) != SELECTED_PER_SPLIT:
+            raise CalibrationError(f"calibration {role} selection is not 15 puzzles")
+        if {
+            tier: sum(row["tier"] == tier for row in rows) for tier in TIER_ORDER
+        } != {tier: TIER_QUOTA for tier in TIER_ORDER}:
+            raise CalibrationError(f"calibration {role} selection is not 5/5/5")
+    if {row["candidate_id"] for row in training_rows} & {
+        row["candidate_id"] for row in test_rows
+    }:
+        raise CalibrationError("training and test selections overlap")
 
-    curriculum = sorted(
-        (
-            copy.deepcopy(record)
-            for record in manifest["puzzles"]
-            if record.get("split") == "curriculum"
-        ),
-        key=lambda record: record["number"],
-    )
-    if len(curriculum) != cd.CURRICULUM_COUNT:
-        raise CalibrationError(
-            f"final calibrated dataset needs {cd.CURRICULUM_COUNT} curriculum puzzles"
-        )
-    if len(curriculum) != state["candidate_pool"]["curriculum_puzzle_count"]:
-        raise CalibrationError("candidate-pool curriculum count changed")
     by_id = {candidate["candidate_id"]: candidate for candidate in state["candidates"]}
     pool_by_id = {
         record["candidate_id"]: record
         for record in manifest["puzzles"]
         if record.get("split") == cd.CALIBRATION_CANDIDATE_SPLIT
     }
-    holdout = []
-    for offset, row in enumerate(selected_rows, start=1):
+    for row in training_rows + test_rows:
         candidate = by_id[row["candidate_id"]]
-        all_runs_solved_within_cap = _all_runs_solved_within_cap(candidate)
-        if not all_runs_solved_within_cap:
+        if not _all_runs_solved_within_cap(candidate):
             raise CalibrationError(
                 f"selected candidate {row['candidate_id']} has a non-solving run"
             )
-        record = copy.deepcopy(pool_by_id[row["candidate_id"]])
-        record.pop("pool_index", None)
-        record.pop("candidate_id", None)
-        record["number"] = len(curriculum) + offset
-        record["split"] = "holdout"
-        record["calibration"] = {
-            "candidate_id": row["candidate_id"],
-            "tier": row["tier"],
-            "difficulty": row["difficulty"],
-            "model_medians": row["model_medians"],
-            "model_run_counts": {
-                model["model_id"]: len(model["runs"]) for model in candidate["models"]
-            },
-            "all_runs_solved_within_cap": all_runs_solved_within_cap,
-        }
-        holdout.append(record)
+        if row["role"] == "test" and not candidate["summary"].get("test_eligible"):
+            raise CalibrationError(
+                f"test candidate {row['candidate_id']} violates the spread boundary"
+            )
 
-    records = curriculum + holdout
-    calibrated = {
+    training_records = [
+        _split_record(
+            pool_record=pool_by_id[row["candidate_id"]],
+            candidate=by_id[row["candidate_id"]],
+            selection_row=row,
+            number=number,
+            split="curriculum",
+        )
+        for number, row in enumerate(training_rows, start=1)
+    ]
+    test_records = [
+        _split_record(
+            pool_record=pool_by_id[row["candidate_id"]],
+            candidate=by_id[row["candidate_id"]],
+            selection_row=row,
+            number=number,
+            split="holdout",
+        )
+        for number, row in enumerate(test_rows, start=1)
+    ]
+
+    training_destination = _resolve_split_destination(
+        pool_manifest_path, training_out, "training-manifest.json"
+    )
+    test_destination = _resolve_split_destination(
+        pool_manifest_path, test_out, "test-manifest.json"
+    )
+    if training_destination == test_destination:
+        raise CalibrationError("training and test manifests need different paths")
+
+    training_selection_sha256 = _role_selection_sha256(training_rows)
+    test_selection_sha256 = _role_selection_sha256(test_rows)
+    evidence_records: dict[str, dict[str, Any]] = {}
+    evidence_paths: dict[str, Path] = {}
+    for model_id in ROSTER_MODEL_IDS:
+        document = _training_evidence_document(
+            model_id=model_id,
+            selected_rows=training_rows,
+            candidates_by_id=by_id,
+            training_selection_sha256=training_selection_sha256,
+            prompt_version=state["config"]["prompt_version"],
+        )
+        content = _canonical_bytes(document)
+        path = pool_manifest_path.parent / "training-evidence" / f"{model_id}.json.gz"
+        write_deterministic_gzip(path, content)
+        evidence_paths[model_id] = path
+        evidence_records[model_id] = {
+            "path": path.relative_to(pool_manifest_path.parent).as_posix(),
+            "sha256": sha256_bytes(content),
+            "puzzle_count": document["puzzle_count"],
+            "run_count": document["run_count"],
+        }
+
+    training_provenance_path = pool_manifest_path.with_name(
+        "training-provenance.json"
+    )
+    test_provenance_path = pool_manifest_path.with_name("test-provenance.json")
+    training_provenance_bytes = _json_file_bytes(
+        _role_provenance(
+            role="training",
+            pool_manifest=manifest,
+            pool_content_sha256=content_sha,
+            selection_rows=training_rows,
+            selection_sha256=training_selection_sha256,
+        )
+    )
+    test_provenance_bytes = _json_file_bytes(
+        _role_provenance(
+            role="test",
+            pool_manifest=manifest,
+            pool_content_sha256=content_sha,
+            selection_rows=test_rows,
+            selection_sha256=test_selection_sha256,
+        )
+    )
+    _write_atomic(training_provenance_path, training_provenance_bytes)
+    _write_atomic(test_provenance_path, test_provenance_bytes)
+
+    common = {
         "schema_version": cd.CALIBRATED_DATASET_SCHEMA_VERSION,
-        "dataset_id": manifest["dataset_id"],
         "lang": manifest["lang"],
         "seed": manifest["seed"],
         "generator": manifest["generator"],
-        "generator_output": manifest["generator_output"],
         "vocabulary": manifest["vocabulary"],
         "embedding": manifest["embedding"],
         "canonical_metadata": manifest["canonical_metadata"],
         "frequency_bands": manifest["frequency_bands"],
         "start_band": manifest["start_band"],
-        "curriculum_base": copy.deepcopy(manifest["curriculum_base"]),
-        "counts": {
-            "puzzles": len(records),
-            "curriculum": len(curriculum),
-            "holdout": len(holdout),
-        },
-        "balance": _manifest_balance(records),
-        "calibration": {
+    }
+    calibration_common = {
             "schema_version": CALIBRATION_SCHEMA_VERSION,
             "rule_version": CALIBRATION_RULE_VERSION,
             "artifact_sha256": state["hashes"]["artifact_sha256"],
+            "run_artifact_sha256": state["hashes"]["artifact_sha256"],
             "artifact_file_sha256": artifact_file_sha256,
+            "run_artifact_file_sha256": artifact_file_sha256,
             "content_sha256": state["hashes"]["content_sha256"],
             "selection_sha256": state["hashes"]["selection_sha256"],
+            "allocation_sha256": selection["allocation_sha256"],
             "candidate_pool_content_sha256": content_sha,
-            "prompt_version": PROMPT_VERSION,
+            "candidate_order_sha256": state["candidate_pool"][
+                "candidate_order_sha256"
+            ],
+            "completed_prefix_count": selection["completed_prefix_count"],
+            "stopping_candidate_id": selection["stopping_candidate_id"],
+            "stopping_pool_index": selection["stopping_pool_index"],
+            "stopping_checkpoint": selection["stopping_checkpoint"],
+            "prompt_version": state["config"]["prompt_version"],
             "roster": copy.deepcopy(state["config"]["roster"]),
             "effort": CALIBRATION_EFFORT,
             "cap": CALIBRATION_CAP,
             "initial_runs_per_model": INITIAL_RUNS,
             "extended_runs_per_model": EXTENDED_RUNS,
-            "selected_tier_counts": {tier: TIER_QUOTA for tier in TIER_ORDER},
             "lab_only": True,
+    }
+
+    training = {
+        **copy.deepcopy(common),
+        "manifest_kind": cd.CALIBRATION_TRAINING_MANIFEST_KIND,
+        "dataset_id": f"{manifest['dataset_id']}-training",
+        "generator_output": {
+            "path": training_provenance_path.name,
+            "sha256": sha256_bytes(training_provenance_bytes),
         },
-        "puzzles": records,
-        "generated_at": _utc_now(),
+        "counts": {"puzzles": SELECTED_PER_SPLIT, "curriculum": SELECTED_PER_SPLIT, "holdout": 0},
+        "balance": copy.deepcopy(selection["balance"]["training"]),
+        "calibration": {
+            **copy.deepcopy(calibration_common),
+            "role": "training",
+            "split_selection_sha256": training_selection_sha256,
+            "selected_tier_counts": {tier: TIER_QUOTA for tier in TIER_ORDER},
+        },
+        "strategy_evidence": {
+            "schema_version": PACKET_SCHEMA_VERSION,
+            "dataset_id": f"{manifest['dataset_id']}-training",
+            "training_selection_sha256": training_selection_sha256,
+            "calibration_roster_model_ids": list(ROSTER_MODEL_IDS),
+            "model_run_evidence": evidence_records,
+            "non_roster_model_evidence": "static_training_puzzles_only",
+        },
+        "puzzles": training_records,
+        "generated_at": state["completed_at"],
     }
-    evidence_base = manifest["curriculum_base"]
-    calibrated["strategy_evidence"] = {
-        "schema_version": PACKET_SCHEMA_VERSION,
-        "dataset_id": evidence_base["dataset_id"],
-        "dataset_content_sha256": evidence_base["dataset_content_sha256"],
+    training["dataset_content_sha256"] = cd.dataset_content_sha256(training)
+    training["strategy_evidence"]["dataset_content_sha256"] = training[
+        "dataset_content_sha256"
+    ]
+    if cd.dataset_content_sha256(training) != training["dataset_content_sha256"]:
+        raise CalibrationError("training manifest content identity is not stable")
+    training_bytes = _json_file_bytes(training)
+    _write_atomic(training_destination, training_bytes)
+    training_file_sha256 = sha256_bytes(training_bytes)
+
+    test = {
+        **copy.deepcopy(common),
+        "manifest_kind": cd.CALIBRATION_TEST_MANIFEST_KIND,
+        "dataset_id": f"{manifest['dataset_id']}-test",
+        "generator_output": {
+            "path": test_provenance_path.name,
+            "sha256": sha256_bytes(test_provenance_bytes),
+        },
+        "counts": {"puzzles": SELECTED_PER_SPLIT, "curriculum": 0, "holdout": SELECTED_PER_SPLIT},
+        "balance": copy.deepcopy(selection["balance"]["test"]),
+        "calibration": {
+            **copy.deepcopy(calibration_common),
+            "role": "test",
+            "split_selection_sha256": test_selection_sha256,
+            "selected_tier_counts": {tier: TIER_QUOTA for tier in TIER_ORDER},
+        },
+        "strategy_evidence": {
+            "schema_version": PACKET_SCHEMA_VERSION,
+            "dataset_id": training["dataset_id"],
+            "dataset_content_sha256": training["dataset_content_sha256"],
+            "training_manifest_file_sha256": training_file_sha256,
+            "training_selection_sha256": training_selection_sha256,
+            "model_specific": True,
+        },
+        "puzzles": test_records,
+        "generated_at": state["completed_at"],
     }
-    frozen_packet = build_evidence_packet(calibrated, pool_manifest_path.parent)
-    calibrated["strategy_evidence"].update(
-        {
-            "packet_sha256": frozen_packet.sha256,
-            "content_sha256": frozen_packet.content_sha256,
-        }
+    test["dataset_content_sha256"] = cd.dataset_content_sha256(test)
+    test_bytes = _json_file_bytes(test)
+    _write_atomic(test_destination, test_bytes)
+    test_file_sha256 = sha256_bytes(test_bytes)
+
+    certified_destination = (
+        artifact_path.with_name(f"{artifact_path.stem}.finalized.json")
+        if certified_artifact_out is None
+        else certified_artifact_out.resolve()
     )
-    calibrated["dataset_content_sha256"] = cd.dataset_content_sha256(calibrated)
-    if out_path is None:
-        destination = pool_manifest_path.with_name("manifest.json")
-    else:
-        destination = (
-            out_path if out_path.is_absolute() else pool_manifest_path.parent / out_path
-        )
-    destination = destination.resolve()
-    if destination.parent != pool_manifest_path.parent:
-        raise CalibrationError(
-            "final manifest must stay beside the candidate pool and puzzle files"
-        )
-    if destination == pool_manifest_path:
-        raise CalibrationError("final manifest must not overwrite the candidate pool")
-    tmp = destination.with_suffix(destination.suffix + ".tmp")
-    tmp.write_text(
-        json.dumps(calibrated, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    tmp.replace(destination)
-    return destination
+    if certified_destination == artifact_path:
+        raise CalibrationError("certified artifact must not overwrite the paid-run artifact")
+    certified_state = copy.deepcopy(state)
+    certified_state["finalization"] = {
+        "schema_version": 1,
+        "finalized_at": _utc_now(),
+        "run_artifact_path": str(artifact_path),
+        "run_artifact_file_sha256": artifact_file_sha256,
+        "training_manifest": {
+            "path": str(training_destination),
+            "dataset_content_sha256": training["dataset_content_sha256"],
+            "file_sha256": training_file_sha256,
+        },
+        "test_manifest": {
+            "path": str(test_destination),
+            "dataset_content_sha256": test["dataset_content_sha256"],
+            "file_sha256": test_file_sha256,
+        },
+        "training_selection_sha256": training_selection_sha256,
+        "test_selection_sha256": test_selection_sha256,
+        "model_training_evidence": copy.deepcopy(evidence_records),
+    }
+    save_artifact(certified_destination, certified_state)
+
+    return {
+        "training_manifest": training_destination,
+        "test_manifest": test_destination,
+        "certified_artifact": certified_destination,
+        **{
+            f"training_evidence_{model_id}": path
+            for model_id, path in evidence_paths.items()
+        },
+    }
+
+
+def finalize_manifest(
+    pool_manifest_path: Path,
+    artifact_path: Path,
+    *,
+    out_path: Path | None = None,
+    vocab_loader: Callable[[str], set[str]] = load_vocab,
+) -> Path:
+    """Compatibility wrapper returning the test view while still writing both views."""
+    return finalize_manifests(
+        pool_manifest_path,
+        artifact_path,
+        test_out=out_path,
+        vocab_loader=vocab_loader,
+    )["test_manifest"]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1744,11 +2417,13 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     finalize_parser = sub.add_parser(
-        "finalize", help="write the selected evaluation dataset manifest"
+        "finalize", help="write isolated training/test manifests and certification"
     )
     finalize_parser.add_argument("candidate_manifest", type=Path)
     finalize_parser.add_argument("artifact", type=Path)
-    finalize_parser.add_argument("--out", type=Path)
+    finalize_parser.add_argument("--training-out", type=Path)
+    finalize_parser.add_argument("--test-out", type=Path)
+    finalize_parser.add_argument("--certified-artifact-out", type=Path)
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -1789,12 +2464,20 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"calibration extension recorded: {result}")
         return 0
-    result = finalize_manifest(
+    result = finalize_manifests(
         resolve_path(args.candidate_manifest),
         resolve_path(args.artifact),
-        out_path=args.out,
+        training_out=args.training_out,
+        test_out=args.test_out,
+        certified_artifact_out=args.certified_artifact_out,
     )
-    print(f"calibrated dataset manifest: {result}")
+    print(
+        json.dumps(
+            {key: str(path) for key, path in result.items()},
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
     return 0
 
 

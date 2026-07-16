@@ -53,10 +53,12 @@ from curriculum_io import (  # noqa: E402
 )
 
 SCHEMA_VERSION = 2
-CALIBRATED_DATASET_SCHEMA_VERSION = 3
+CALIBRATED_DATASET_SCHEMA_VERSION = 4
 CALIBRATION_POOL_SCHEMA_VERSION = 1
 CALIBRATION_POOL_KIND = "holdout_calibration_candidates"
 CALIBRATION_CANDIDATE_SPLIT = "calibration_candidate"
+CALIBRATION_TRAINING_MANIFEST_KIND = "calibration_training_split"
+CALIBRATION_TEST_MANIFEST_KIND = "calibration_test_split"
 MIN_CALIBRATION_CANDIDATES = 45
 DATASET_ID = "strategy-fr-v1"
 CALIBRATED_DATASET_ID = "strategy-fr-v2"
@@ -615,16 +617,31 @@ def dataset_content_sha256(manifest: dict[str, Any]) -> str:
             key=lambda record: record["number"],
         ),
     }
+    if "manifest_kind" in manifest:
+        identity["manifest_kind"] = manifest["manifest_kind"]
     if "calibration" in manifest:
         identity["calibration"] = {
             key: value
             for key, value in manifest["calibration"].items()
-            if key != "artifact_file_sha256"
+            if key not in {"artifact_file_sha256", "run_artifact_file_sha256"}
         }
     if "curriculum_base" in manifest:
         identity["curriculum_base"] = manifest["curriculum_base"]
     if "strategy_evidence" in manifest:
-        identity["strategy_evidence"] = manifest["strategy_evidence"]
+        identity["strategy_evidence"] = {
+            key: value
+            for key, value in manifest["strategy_evidence"].items()
+            # Schema-v4 split manifests self-identify their evidence with the
+            # manifest's own semantic hash.  Excluding that one self-reference
+            # makes the identity computable while every evidence file/hash remains
+            # pinned by the surrounding object.
+            if not (
+                manifest.get("schema_version") >= 4
+                and manifest.get("manifest_kind")
+                == CALIBRATION_TRAINING_MANIFEST_KIND
+                and key == "dataset_content_sha256"
+            )
+        }
     encoded = json.dumps(
         identity, ensure_ascii=False, sort_keys=True, separators=(",", ":")
     ).encode("utf-8")

@@ -65,14 +65,15 @@ packages/
     scripts/llm_play.py       LLM player/referee; reads generation output + web vocab
     scripts/build_curriculum_lexicon.py  offline V∩Lexique POS/gender export (#84)
     scripts/curriculum_dataset.py  deterministic strategy-curriculum dataset builder (#84)
-    scripts/calibration_run.py     neutral holdout calibration + deterministic selection (#86)
+    scripts/calibration_run.py     sequential neutral calibration + joint train/test selection (#86)
     scripts/curriculum_io.py       deterministic gzip-aware curriculum data I/O (#84)
-    scripts/strategy_evidence.py   curriculum-only deterministic distillation packet (#84)
+    scripts/strategy_evidence.py   model-isolated deterministic distillation packet (#84/#86)
     scripts/curriculum_run.py      max-effort strategy distillation + frozen holdout (#84)
     scripts/strategy_profiles.py   compact model-specific distilled-strategy profiles (#84)
     datasets/fr-lexicon.tsv.gz committed V∩Lexique canonical POS/gender reference (#84)
     datasets/strategy-fr-v1/  frozen curriculum dataset (manifest + generator output +
                               compressed puzzles committed and SHA-256-pinned)
+    datasets/strategy-fr-v2/  frozen 92-candidate calibration pool + copied v1 curriculum (#86)
     datasets/v7-strategy.txt  exact v7 strategy control, recovered verbatim from a recorded transcript
     tests/test_llm_play.py    provider-adapter + game-rules parity tests
     tests/test_calibration_run.py  scripted neutral-calibration contract tests (#86)
@@ -450,21 +451,24 @@ pnpm bench:curriculum:run <manifest.json> --model MODEL --strategy-effort max --
 pnpm bench:curriculum:export-profile <partial-or-complete-artifact.json>
 pnpm bench:curriculum:evaluate <artifact-or-profile.json>
 
-# 6. (Lab-only, #86) Neutral holdout calibration. Build a >=45-puzzle candidate pool
-#    around the unchanged 15 curriculum puzzles; `run` fixes Sonnet 5 + GPT-5.6 Sol,
-#    medium effort, cap 75, and defaults to one checkpointed paid puzzle-run per command.
-#    `extend` records the explicit reason for a 3->5-run median without calling a provider.
-#    `finalize` writes the selected 15-puzzle (5/5/5) holdout manifest, pins the exact
-#    artifact file and original curriculum evidence packet, and does not run evaluation.
-#    Once complete, its lab artifact reports every candidate as selected,
-#    eligible-unselected, spread-only, or cap-stress. A later final evaluation must pass
-#    the matching frozen `--profile` at `--play-effort medium`; calibrated manifests
-#    cannot re-distil.
-#    `--dry-run` writes nothing, makes no provider calls, and prints exact pending cost.
+# 6. (Lab-only, #86) Sequential neutral calibration. Build a >=45-puzzle candidate pool
+#    around the unchanged 15 legacy curriculum puzzles; `run` fixes Sonnet 5 + GPT-5.6
+#    Sol, medium effort, cap 75, and defaults to one checkpointed paid puzzle-run. It
+#    completes both models (plus any declared 3->5 extension) for the current candidate,
+#    checks the completed prefix, and stops at the first jointly feasible allocation of
+#    15 training + 15 test puzzles (5/5/5 each). The frozen manifest `pool_index` order is
+#    authoritative; the suffix remains unrun. Training allows spread >20, while test
+#    requires spread <=20. `finalize` writes separate training/test manifests,
+#    model-isolated training-run evidence, and a certified full-lab artifact; it makes no
+#    provider call. Distil separately from the training manifest, then pass that model's
+#    frozen profile to fresh final evaluation on the test manifest at medium effort.
+#    `--dry-run` writes nothing, makes no provider call, and reports the 180-run minimum,
+#    552-run initial maximum for the current 92-candidate pool, completed prefix, next
+#    candidate, declared extensions, and the currently schedulable unit plan.
 pnpm bench:curriculum:generate --from-output <larger-generator-output.json> --seed 86 --calibration-pool --curriculum-manifest <frozen-manifest.json> --dataset-id <dataset-id> [--dry-run]
 pnpm bench:curriculum:calibrate run <candidate-manifest.json> [--auth api|subscription] [--resume ARTIFACT] [--max-units N] [--all] [--dry-run] [-v|--verbose]
 pnpm bench:curriculum:calibrate extend <artifact.json> --candidate ID --model <SONNET-or-GPT-SOL> --reason <unstable-or-tier_boundary>
-pnpm bench:curriculum:calibrate finalize <candidate-manifest.json> <artifact.json> [--out manifest.json]
+pnpm bench:curriculum:calibrate finalize <candidate-manifest.json> <artifact.json> [--training-out training-manifest.json] [--test-out test-manifest.json] [--certified-artifact-out finalized.json]
 
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
 pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output)
@@ -516,33 +520,41 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   the selected provider: `api` (default) uses raw API keys, with an automatic moving prompt-
   cache breakpoint for Anthropic. Opt-in `subscription` first verifies paid Claude.ai auth for
   the selected Claude model, strips API/cloud credential overrides, then uses a fresh Agent SDK
-  session per run with an empty replacement system prompt and no tools, MCP, skills, plugins,
-  or filesystem settings. For a selected GPT model it verifies that Codex CLI is logged in with
-  ChatGPT, strips API credentials plus parent-Codex thread metadata, and runs each turn as a
-  fresh `codex exec` process with a compact snapshot: the static opening rules plus only the
-  latest authoritative aggregate state; obsolete intermediate turns and prior one-word replies
-  remain in the lab transcript but are omitted from the paid prompt. Those turns are
+  session per word-play turn with an empty replacement system prompt and no tools, MCP, skills,
+  plugins, or filesystem settings. For a selected GPT model it verifies that Codex CLI is logged
+  in with ChatGPT, strips API credentials plus parent-Codex thread metadata, and runs each turn as
+  a fresh `codex exec` process. Every API and subscription word-play transport receives the same
+  stateless user prompt: compact fixed opening rules plus only the latest authoritative aggregate
+  state. Obsolete intermediate turns and prior one-word replies remain in the append-only lab
+  transcript but are omitted from every paid prompt, so hidden provider session memory is not an
+  experimental treatment. Codex turns are
   ephemeral, use a temporary non-repository cwd and replacement benchmark instructions, and
   ignore user config/rules with
   read-only sandboxing and apps/shell/multi-agent/web disabled; the unavoidable Codex bootstrap
   remains. The GPT-5.6 Codex-plan models support `low|medium|high|xhigh|max`, not `none`.
-  A provider reply must contain exactly one lexical word (surrounding punctuation/Markdown is
-  harmless); prose is unparseable and reprompted instead of silently scoring its first word.
-  Thinking-off API calls reserve 256 output tokens so a verbose reply can complete and be
-  rejected cleanly. Five parsed invalid/repeated replies without a counted try abort a
-  stuck paid loop. Prompt version 16 renders the fixed sentence as a true `CLOZE`: solved answers
-  appear in place, unsolved positions remain `[WORD N]`, and ranked clues are explicitly separate
-  from sentence text. Its guidance is strategy-neutral: it explains the rules and available
-  evidence and leaves search order and tactics to the model. There is no pre-game planning
-  turn — the first reply is the first guess — and `play_puzzle` can inject optional
-  model-authored guidance (a learned curriculum strategy, #84) as a `YOUR STRATEGY` advice
-  block under the fixed rules. Its general judgment guidelines distinguish
-  fixed-sentence/referee evidence from the model's self-generated word associations: improvement supports
-  a hypothesis, repeated non-improvement lowers that support, and thematic similarity among guesses is
-  not itself progress. The aggregate state reports the latest named outcome, current best clue for each
-  unsolved word, and a salient consecutive no-improvement trend. All earlier guesses remain available only
-  as a complete alphabetically ordered exclusion set, not a chronological trajectory that can prime the
-  next item in the same conceptual list. It neither hides ranked evidence nor forces context-only play,
+  Prompt version 18 uses a test-enforced compact rules scaffold (at most 650 words for the
+  representative opening) and requires the provider's entire visible reply to be one bare lowercase word in the
+  advertised language-letter grammar, with optional internal ASCII hyphens only: no spaces,
+  straight/curly apostrophes, other dash characters, punctuation, quotes/Markdown, digits,
+  underscores, labels, prose, or reasoning. French clitics/prefixes shown beside `[WORD N]`
+  are fixed sentence context, so the model submits only the hidden lexical core. Parsing uses
+  that exact full-reply grammar instead of extracting one token from formatting/prose. The prompt
+  also states that folded membership in the fixed vocabulary is required, case/accent variants
+  are duplicates, malformed/out-of-vocab/duplicate replies yield no ranks, five consecutive
+  malformed replies abort, and five parsed non-counting replies without an intervening counted
+  guess abort. Thinking-off API calls still reserve 256 output tokens so a bad reply can complete
+  and be rejected cleanly. The one strategy-neutral rules scaffold fully explains the dynamic
+  counted-try cap, score/minimize-guesses objective, true `CLOZE` and fixed affixes, exact
+  inflection (number/gender/agreement/person/tense/mood/conjugation), broadcast-to-every-unsolved-
+  hole outcomes, strict improvement, solved locks, rank/MISS/counting semantics, embedding-rank
+  limits, and authoritative snapshot fields. It contains no built-in search/adaptation strategy
+  and has no pre-game planning turn — the first reply is the first guess. Only an explicitly
+  supplied learned/v7 treatment may add a `YOUR STRATEGY` advice block under the fixed rules.
+  The aggregate state reports the latest named outcome, current best clue for each
+  unsolved word, and a salient consecutive no-improvement trend. All counted guesses remain available only
+  as a complete alphabetically ordered exclusion set, and parsed outside-vocabulary words persist in a
+  separate folded-deduplicated rejection set, so stateless turns do not pay to repeat them. Neither set is a
+  chronological trajectory that can prime the next item in the same conceptual list. The prompt neither hides ranked evidence nor forces context-only play,
   probes, synonym search, or any other next-step method. During a run, every counted try prints immediately with its
   word and post-guess overall progress percentage (the same logarithmic multi-hole formula as the
   web progress bar, to two decimals); misses and non-improving warm tries still print with
@@ -574,13 +586,15 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   hash — anchors resume checks and profiles. Rebuild with `pnpm bench:curriculum:generate
   --from-output <generator-output.json> --seed 84`; every run re-verifies content first.
   Interactive curriculum play/policy prompts v2–v4 are superseded. `strategy_evidence.py` opens
-  only the 15 curriculum records and deterministically builds one canonical JSON training packet:
+  only the 15 training/curriculum records and deterministically builds a canonical JSON packet:
   labeled sentences/targets/starts, exact ranks 1–250, then 20 evenly spaced retained entries in
   each 251–500 / 501–1000 / 1001–2500 / 2501–5000 / 5001–10000 band. It records source/retained
   counts, sampling constants, ordered curriculum puzzle hashes, byte counts, and content/packet
-  hashes. The exact bytes are model-independent and stored in deterministic gzip beside each raw
-  run artifact; holdout records/files never enter the packet or distillation prompt.
-  `curriculum_run.py run` uses prompt v5. It validates both transports/efforts and preflights
+  hashes. Legacy strategy-fr-v1 packet-v1 bytes stay model-independent. A #86 training manifest
+  uses packet v2: Sonnet/GPT packets add only that same model's selected-training neutral runs;
+  later models receive static training evidence only. Test records/files never enter any packet
+  or distillation prompt. `curriculum_run.py run` uses prompt v6. It validates both
+  transports/efforts and preflights
   subscription auth even on resume. One fresh prose stage at required `--strategy-effort max`
   analyzes the packet and returns `{analysis, strategy}`; analysis is audit-only, while strategy is
   1–8 general single-line items capped at 2,000 total characters. Target/start/retained-evidence
@@ -588,11 +602,11 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   three standalone structured attempts retain every response/error, token usage, and duration;
   each attempt and a successful frozen strategy are checkpointed atomically. The reusable schema-v3
   profile is written immediately when that strategy freezes, before any holdout call; the offline
-  idempotent `export-profile` command reconstructs it from an older partial prompt-v5 artifact using
+  idempotent `export-profile` command reconstructs it from an older partial prompt-v5/v6 artifact using
   only the artifact's pinned config/evidence identities, strategy, hash, and completion timestamp.
   There are zero curriculum plays, retrospectives, synthesis calls, policy fields, semantic-family
-  labels, or strategy mutation. Once frozen, five untouched holdout puzzles run 3 times under each
-  neutral/learned/v7 condition (45 runs): all use ordinary `llm_play.play_puzzle`, fresh provider
+  labels, or strategy mutation. Once frozen, the untouched holdout/test puzzles run 3 times under each
+  neutral/learned/v7 condition (45 legacy-v1 runs; 135 #86 test-split runs): all use ordinary `llm_play.play_puzzle`, fresh provider
   contexts, the same model/auth/transport/`--play-effort`/cap/fixed rules, and one-word actions from
   the first reply. The guidance block is the only intended opening difference: absent for neutral,
   distilled strategy for learned, exact committed `datasets/v7-strategy.txt` for v7. Bounded
@@ -605,49 +619,50 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   exact call plan, writes nothing, and makes no provider calls. Default output prints strategy-stage
   and every run START/DONE milestones; `--verbose` also prints the frozen strategy and every counted try.
   `strategy_profiles.py` schema v3 pins the compact model/config-specific strategy and all relevant
-  identities; legacy schema-v1/v2 profiles and prompt-v2/v3/v4 artifacts remain read-only and cannot
-  resume or cross-apply into v5. `curriculum_run.py evaluate` reports all five paired puzzle results,
+  identities; legacy schema-v1/v2 profiles and pre-v6 artifacts remain read-only and cannot
+  resume or cross-apply into v6. `curriculum_run.py evaluate` reports every paired puzzle result,
   DNF-aware medians, explicit solved-only medians, DNF/solve rates, non-improving/stall/rank-100
   metrics, distillation plus per-arm costs, and the rule that learned counts as successful only when
   it beats neutral without additional DNF puzzles. The phrase/puzzle contract shared with generation
   remains in `generation/scripts/phrase_core.py`; running distillation/holdout is paid curator work
   and is never done by CI/tests.
-- **Neutral holdout calibration (#86, lab-only).** `curriculum_dataset.py
-  --calibration-pool` copies the frozen 15 curriculum puzzles byte-for-byte, rejects authored
-  candidates that overlap their target slugs, and uses the existing canonical schema/vocab/
-  location/POS/gender/frequency/rank-map/start-band checks to build a frozen pool of at least 45
-  calibration candidates. `calibration_run.py` then runs neutral play only with the fixed Claude
-  Sonnet 5 + GPT-5.6 Sol roster, medium effort, fresh isolated contexts, cap 75, and three runs per
-  model; an auditable `unstable` or `tier_boundary` extension adds exactly two runs and switches
-  that model to the five-run DNF-aware median. Eligibility is fixed at every run solved, both model
-  medians in 5–50 inclusive, and cross-model spread <=20; difficulty is the maximum model median.
-  Selection is deterministic and hard-fails with a shortfall report unless it can choose 5 easy
-  (5–15), 5 medium (16–30), and 5 difficult (31–50) puzzles with unique target slugs and category
-  count spread <=1 for POS, gender, frequency band, and semantic class both within each tier and
-  overall. This is rule v1. A balance-only shortfall predeclares rule v2 (per-tier spread <=2,
-  overall <=1, unique slugs unchanged), but never activates it automatically: using v2 requires an
-  explicit rule-version bump and v1 artifacts remain v1. Artifacts under gitignored
-  `benchmark/output/calibration/` pin pool/manifest/prompt/roster/config identities, every
-  transcript/rank trace/token record/duration, one checkpoint per paid puzzle-run, derived
-  summaries, selection, and stable artifact/content/selection hashes. Once every candidate is
-  complete, they also contain a deterministic lab-only cohort report: the 15 `selected` puzzles,
-  eligible-but-unselected puzzles, `spread_only` puzzles that fail only the <=20 cross-model rule,
-  and `cap_stress` puzzles with a DNF/over-cap run or median outside 5–50. Every row records candidate
-  identity, both medians, spread, run counts, and exact rejection reasons; malformed/incomplete runs
-  are certification errors rather than cohorts. These separate cohorts preserve tunnel-prone and
-  cap-stress signal but are never pooled into the primary bounded cross-model-consistent estimand.
-  The paid runner rejects anything below the fixed 15-curriculum/45-candidate production shape
-  before provider setup; the minimum pool is 270 paid runs, dry-run reports the exact pending count,
-  and regeneration, extension, or constraint relaxation is never automatic. Finalization replays
-  every transcript and metric, requires complete identity/token/duration/auth records, and writes
-  schema v3 manifests that pin both the exact
-  artifact-file SHA and the byte-identical original curriculum evidence packet. They contain only
-  lean per-puzzle medians/difficulty/tier/run counts; calibration runs never enter evidence,
-  strategies, or final evaluation data. Calibrated evaluation accepts only a matching frozen
-  profile at medium play effort and makes zero distillation calls. A null result applies only to the
-  selected primary cohort and does not disprove value on the separately reported tunnel-prone
-  candidates. `strategy-fr-v1` and its pathological puzzle 20
-  remain unchanged; no paid calibration has been executed or committed as part of the tooling.
+- **Sequential neutral calibration (#86, lab-only; rule v2).**
+  `curriculum_dataset.py --calibration-pool` copies the frozen 15 strategy-fr-v1 curriculum
+  puzzles byte-for-byte for provenance/reserved-slug checks, then applies the canonical schema,
+  vocab, location, POS/gender/frequency, rank-map, and start-band validation to every candidate.
+  The committed `strategy-fr-v2/` pool pins 92 candidates in `pool_index` order; strategy-fr-v1
+  and all pilot artifacts remain immutable. `calibration_run.py` processes that order one
+  candidate at a time with neutral prompt v18, Claude Sonnet 5 + GPT-5.6 Sol, medium effort,
+  fresh stateless word-play turns, cap 75, and three runs per model. An explicitly recorded
+  `unstable`/`tier_boundary` extension adds exactly two runs for one model. Both models and any
+  declared extension finish before the completed-prefix stopping check.
+  Difficulty is the maximum DNF-aware model median: easy 5–15, medium 16–30, difficult 31–50.
+  Training eligibility requires every run solved at <=75 and both medians in 5–50, with no spread
+  ceiling. Test eligibility adds median spread <=20. The deterministic selector jointly assigns
+  5 training + 5 test puzzles in every tier (30 distinct total), globally unique target slugs,
+  and POS/gender/frequency/semantic category-count spread <=1 inside every role+tier and complete
+  15-puzzle split. It stops at the first feasible completed prefix, records allocation/selection
+  hashes plus the stopping candidate/checkpoint, makes no suffix call, and marks the suffix
+  `unrun`. Exhaustion produces a deterministic shortfall; order, quotas, balance, and thresholds
+  never regenerate, relax, or continue automatically.
+  The full artifact checkpoints every paid run/transcript, counted and rejected replies, rank
+  trajectory, token usage, duration, auth/transport/prompt identity, completed prefix, next
+  candidate, extensions, cohort report, and semantic hashes. Completed candidates are exactly
+  `selected_training`, `selected_test`, `eligible_unselected`, `training_only_spread`, or
+  `cap_stress`; unprocessed candidates are `unrun`, while malformed/incomplete certification data
+  is an error. Dry-run makes zero external calls and reports the 180 initial-run theoretical
+  minimum, 552 initial-run 92-pool maximum, declared extensions, prefix, next candidate, and the
+  current candidate's exact schedulable units without predicting the stopping point.
+  Finalization replays every completed transcript/metric/identity, then writes deterministic
+  schema-v4 `training-manifest.json` and `test-manifest.json`, per-model deterministic training
+  evidence sidecars, and a certified full-lab artifact pinning both manifest hashes. Training has
+  5/5/5 curriculum records and may expose only a roster model's own neutral training runs to its
+  packet; non-roster models get static training puzzles. Test has 5/5/5 holdout records with lean
+  calibration summaries only. It never exposes test files/sentences/answers/starts/rank maps,
+  transcripts, or trajectories to distillation, and test calibration runs are never final neutral
+  runs. Final neutral/learned/v7 uses a matching model-specific frozen profile, fresh medium-effort
+  contexts, and the separately frozen test manifest. Tool implementation and dry-run never
+  authorize paid calibration; none is run by CI/tests.
 - **`gen_phrase` is fully interactive on a TTY (#5).** Anything not passed as a flag is
   prompted: the **sentence** (positional, now optional), **`--lang`**, and the optional
   **source metadata** — `--kind` (offers `KNOWN_KINDS` numbered, but free text is

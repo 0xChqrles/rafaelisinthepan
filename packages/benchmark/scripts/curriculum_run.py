@@ -1,14 +1,15 @@
 """Offline strategy distillation and frozen holdout evaluation (#84).
 
-One model receives one deterministic packet built exclusively from the 15
-curriculum puzzles.  A max-effort prose stage distils compact operational
-guidance, or a calibrated dataset reuses the compatible frozen profile from that
-exact packet; the guidance is then frozen while neutral, learned, and exact-v7
-arms play untouched holdout puzzles through the ordinary one-word referee.
+One model receives one deterministic packet built exclusively from a frozen
+15-puzzle training view.  For #86 calibration-roster models that packet may add
+only that same model's own training-split neutral runs; no other model or test
+data is opened.  A max-effort prose stage distils compact operational guidance,
+then a separate test view reuses the compatible frozen profile while neutral,
+learned, and exact-v7 arms play fresh untouched test puzzles.
 
-Every completed paid unit is checkpointed atomically.  Prompt-v2/v3/v4
-interactive artifacts remain readable by ``evaluate`` but cannot be resumed
-into this prompt-v5 experiment.  Running this module is the only operation that
+Every completed paid unit is checkpointed atomically.  Older prompt artifacts
+remain readable by ``evaluate`` but cannot be resumed into this prompt-v6
+experiment.  Running this module is the only operation that
 can make provider calls; importing it, building a packet, dry-running, and
 evaluating artifacts are offline.
 """
@@ -62,8 +63,8 @@ from strategy_evidence import (  # noqa: E402
 import strategy_profiles as sp  # noqa: E402
 
 
-CURRICULUM_PROMPT_VERSION = "5"
-DISTILLATION_PROMPT_VERSION = "1"
+CURRICULUM_PROMPT_VERSION = "6"
+DISTILLATION_PROMPT_VERSION = "2"
 REQUIRED_STRATEGY_EFFORT = "max"
 CALIBRATED_PLAY_EFFORT = "medium"
 HOLDOUT_RUNS_PER_CONDITION = 3
@@ -278,6 +279,14 @@ def distillation_prompt(packet: EvidencePacket, *, play_effort: str) -> str:
     """Return the exact deterministic prompt whose hash is pinned in artifacts."""
     packet_text = packet.canonical_bytes.decode("utf-8")
     target_count = packet.document["content"]["target_count"]
+    calibration_guidance = (
+        "The packet also contains only this model's own neutral calibration runs "
+        "on these training puzzles. Use their counted guesses, rejections, rank "
+        "trajectories, and failures as behavioral evidence; no other model or test "
+        "run is present."
+        if packet.document["schema_version"] == PACKET_SCHEMA_VERSION
+        else "The packet contains static labeled curriculum evidence only."
+    )
     return "\n".join(
         [
             f"WHIPPIN STRATEGY DISTILLATION PROMPT v{DISTILLATION_PROMPT_VERSION}",
@@ -305,6 +314,7 @@ def distillation_prompt(packet: EvidencePacket, *, play_effort: str) -> str:
             f"Analyze all {target_count} labeled curriculum targets and infer a compact "
             "method that the same model can reliably execute from runtime-visible evidence "
             "alone.",
+            calibration_guidance,
             "The answers and rank evidence below are privileged training data. Do not copy "
             "any answer, start, retained evidence word, sentence quotation, puzzle-specific "
             "clue, memorized hint, or semantic-family name into the strategy.",
@@ -393,6 +403,12 @@ def _leak_corpus(packet: EvidencePacket) -> tuple[
                     ban(entry["slug"])
                     sequence.append(entry["slug"])
                 evidence_runs.update(_trigrams(sequence))
+    calibration = packet.document["content"].get("model_calibration_evidence", {})
+    for puzzle in calibration.get("puzzles", []):
+        for run in puzzle.get("runs", []):
+            for word in run.get("tried_words", []):
+                if isinstance(word, str):
+                    ban(word)
     return banned_words, sentence_runs, evidence_runs
 
 
@@ -711,7 +727,7 @@ def _validate_holdout_identity(
 ) -> None:
     holdout = state.get("holdout")
     if not isinstance(holdout, dict) or set(holdout) != set(CONDITIONS):
-        raise CurriculumError("artifact holdout arms do not match prompt-v5 conditions")
+        raise CurriculumError("artifact holdout arms do not match prompt-v6 conditions")
     expected = {record["number"]: record for record in records}
     for condition in CONDITIONS:
         entries = holdout[condition]
@@ -776,13 +792,13 @@ def _validate_distillation_state(state: dict[str, Any]) -> None:
 
 
 def _build_distilled_profile_from_state(state: dict[str, Any]) -> dict[str, Any]:
-    """Build the reusable profile pinned by a frozen prompt-v5 distillation."""
+    """Build the reusable profile pinned by a frozen prompt-v5/v6 distillation."""
     config = state.get("config")
     if not isinstance(config, dict):
         raise CurriculumError("cannot export profile: artifact config is missing")
-    if config.get("artifact_schema_version") != 5:
+    if config.get("artifact_schema_version") not in {5, 6}:
         raise CurriculumError(
-            "cannot export profile: only prompt-v5 artifacts are supported"
+            "cannot export profile: only prompt-v5/v6 artifacts are supported"
         )
     if config.get("profile_schema_version") != sp.PROFILE_SCHEMA_VERSION:
         raise CurriculumError(
@@ -909,7 +925,7 @@ def _validate_completed_runs(
 def _evidence_metadata(packet: EvidencePacket, path: Path) -> dict[str, Any]:
     content = packet.document["content"]
     return {
-        "schema_version": PACKET_SCHEMA_VERSION,
+        "schema_version": packet.document["schema_version"],
         "path": str(path),
         "sha256": packet.sha256,
         "content_sha256": packet.content_sha256,
@@ -921,6 +937,24 @@ def _evidence_metadata(packet: EvidencePacket, path: Path) -> dict[str, Any]:
             "ordered_curriculum_puzzle_sha256s"
         ],
         "sampling": content["sampling"],
+    }
+
+
+def _profile_only_evidence_metadata(
+    profile: dict[str, Any], manifest: dict[str, Any]
+) -> dict[str, Any]:
+    """Pin training evidence identity without opening it from the test view."""
+    training = manifest["strategy_evidence"]
+    return {
+        "schema_version": profile["evidence_packet_schema_version"],
+        "sha256": profile["evidence_packet_sha256"],
+        "source": "frozen_profile_only",
+        "training_dataset_id": training["dataset_id"],
+        "training_dataset_sha256": training["dataset_content_sha256"],
+        "training_manifest_file_sha256": training[
+            "training_manifest_file_sha256"
+        ],
+        "training_selection_sha256": training["training_selection_sha256"],
     }
 
 
@@ -948,8 +982,8 @@ def _verify_run_config(state: dict[str, Any], expected: dict[str, Any]) -> None:
     if prior_prompt != CURRICULUM_PROMPT_VERSION:
         raise CurriculumError(
             "resume artifact uses curriculum prompt version "
-            f"{prior_prompt!r}; prompt-v2/v3/v4 artifacts remain readable but "
-            "cannot resume as offline-distillation prompt-v5. Start a new artifact."
+            f"{prior_prompt!r}; older artifacts remain readable but cannot resume "
+            "as model-isolated prompt-v6. Start a new artifact."
         )
     if prior != expected:
         differing = sorted(
@@ -1040,9 +1074,23 @@ def run_curriculum(
     holdout_records = [
         record for record in manifest["puzzles"] if record["split"] == "holdout"
     ]
-    packet = build_evidence_packet(manifest, dataset_dir)
-    prompt = distillation_prompt(packet, play_effort=play_effort)
-    prompt_sha = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    manifest_kind = manifest.get("manifest_kind")
+    is_training_view = manifest_kind == "calibration_training_split"
+    is_test_view = manifest_kind == "calibration_test_split"
+    frozen_evaluation = is_test_view or (
+        "strategy_evidence" in manifest and not is_training_view
+    )
+    packet: EvidencePacket | None = None
+    prompt: str | None = None
+    prompt_sha: str | None = None
+    if not is_test_view:
+        packet = build_evidence_packet(
+            manifest,
+            dataset_dir,
+            model_id=config["model_id"],
+        )
+        prompt = distillation_prompt(packet, play_effort=play_effort)
+        prompt_sha = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
     profile: dict[str, Any] | None = None
     profile_path: Path | None = None
     profile_sha: str | None = None
@@ -1060,18 +1108,37 @@ def run_curriculum(
             )
         except ValueError as exc:
             raise CurriculumError(str(exc)) from exc
-        packet_identity = packet.document["content"]
-        expected_profile_identity = {
-            "provider": config["provider"],
-            "lang": manifest["lang"],
-            "dataset_id": packet_identity["dataset_id"],
-            "dataset_sha256": packet_identity["dataset_content_sha256"],
-            "evidence_packet_schema_version": PACKET_SCHEMA_VERSION,
-            "evidence_packet_sha256": packet.sha256,
-            "distillation_prompt_sha256": prompt_sha,
-            "prompt_version": PROMPT_VERSION,
-            "curriculum_prompt_version": CURRICULUM_PROMPT_VERSION,
-        }
+        if is_test_view:
+            training_identity = manifest.get("strategy_evidence", {})
+            expected_profile_identity = {
+                "provider": config["provider"],
+                "lang": manifest["lang"],
+                "dataset_id": training_identity.get("dataset_id"),
+                "dataset_sha256": training_identity.get(
+                    "dataset_content_sha256"
+                ),
+                "evidence_packet_schema_version": training_identity.get(
+                    "schema_version"
+                ),
+                "prompt_version": PROMPT_VERSION,
+                "curriculum_prompt_version": CURRICULUM_PROMPT_VERSION,
+            }
+        else:
+            assert packet is not None and prompt_sha is not None
+            packet_identity = packet.document["content"]
+            expected_profile_identity = {
+                "provider": config["provider"],
+                "lang": manifest["lang"],
+                "dataset_id": packet_identity["dataset_id"],
+                "dataset_sha256": packet_identity["dataset_content_sha256"],
+                "evidence_packet_schema_version": packet.document[
+                    "schema_version"
+                ],
+                "evidence_packet_sha256": packet.sha256,
+                "distillation_prompt_sha256": prompt_sha,
+                "prompt_version": PROMPT_VERSION,
+                "curriculum_prompt_version": CURRICULUM_PROMPT_VERSION,
+            }
         differing = [
             field
             for field, expected_value in expected_profile_identity.items()
@@ -1083,16 +1150,31 @@ def run_curriculum(
                 f"({', '.join(differing)})"
             )
         profile_sha = _sha256_file(profile_path)
-    elif "strategy_evidence" in manifest:
+    elif frozen_evaluation:
         raise CurriculumError(
-            "calibrated datasets require --profile with a frozen strategy; "
+            "calibrated test datasets require --profile with a frozen strategy; "
             "re-distillation is forbidden"
         )
     frozen_v7 = v7_strategy if v7_strategy is not None else load_v7_strategy()
     v7_sha = hashlib.sha256(frozen_v7.encode("utf-8")).hexdigest()
 
+    evidence_schema_version = (
+        profile["evidence_packet_schema_version"]
+        if is_test_view and profile is not None
+        else packet.document["schema_version"] if packet is not None else None
+    )
+    evidence_sha256 = (
+        profile["evidence_packet_sha256"]
+        if is_test_view and profile is not None
+        else packet.sha256 if packet is not None else None
+    )
+    distillation_prompt_sha256 = (
+        profile["distillation_prompt_sha256"]
+        if is_test_view and profile is not None
+        else prompt_sha
+    )
     run_config = {
-        "artifact_schema_version": 5,
+        "artifact_schema_version": 6,
         "dataset_id": manifest["dataset_id"],
         "dataset_sha256": dataset_sha,
         "lang": manifest["lang"],
@@ -1106,10 +1188,10 @@ def run_curriculum(
         "prompt_version": PROMPT_VERSION,
         "curriculum_prompt_version": CURRICULUM_PROMPT_VERSION,
         "distillation_prompt_version": DISTILLATION_PROMPT_VERSION,
-        "distillation_prompt_sha256": prompt_sha,
+        "distillation_prompt_sha256": distillation_prompt_sha256,
         "profile_schema_version": sp.PROFILE_SCHEMA_VERSION,
-        "evidence_packet_schema_version": PACKET_SCHEMA_VERSION,
-        "evidence_packet_sha256": packet.sha256,
+        "evidence_packet_schema_version": evidence_schema_version,
+        "evidence_packet_sha256": evidence_sha256,
         "holdout_runs_per_condition": HOLDOUT_RUNS_PER_CONDITION,
         "conditions": list(CONDITIONS),
         "v7_strategy_sha256": v7_sha,
@@ -1124,6 +1206,8 @@ def run_curriculum(
         )
 
     new_artifact = resume is None
+    evidence_path: Path | None = None
+    evidence_metadata: dict[str, Any]
     if resume is not None:
         artifact_path = resume
         state = json.loads(artifact_path.read_text(encoding="utf-8"))
@@ -1132,13 +1216,21 @@ def run_curriculum(
             raise CurriculumError(
                 "resume manifest file hash differs from the artifact's pinned hash"
             )
-        evidence_path = Path(state.get("evidence_packet", {}).get("path", ""))
-        expected_evidence_path = artifact_path.with_name(
-            f"{artifact_path.stem}.evidence.json.gz"
-        )
-        if evidence_path != expected_evidence_path:
-            raise CurriculumError("resume artifact points at an unexpected evidence path")
-        if state.get("evidence_packet") != _evidence_metadata(packet, evidence_path):
+        if is_test_view:
+            assert profile is not None
+            evidence_metadata = _profile_only_evidence_metadata(profile, manifest)
+        else:
+            assert packet is not None
+            evidence_path = Path(state.get("evidence_packet", {}).get("path", ""))
+            expected_evidence_path = artifact_path.with_name(
+                f"{artifact_path.stem}.evidence.json.gz"
+            )
+            if evidence_path != expected_evidence_path:
+                raise CurriculumError(
+                    "resume artifact points at an unexpected evidence path"
+                )
+            evidence_metadata = _evidence_metadata(packet, evidence_path)
+        if state.get("evidence_packet") != evidence_metadata:
             raise CurriculumError(
                 "resume evidence metadata does not match the deterministic packet"
             )
@@ -1149,9 +1241,15 @@ def run_curriculum(
             / manifest["dataset_id"]
             / f"{config['model_id']}.{stamp}.json"
         )
-        evidence_path = artifact_path.with_name(
-            f"{artifact_path.stem}.evidence.json.gz"
-        )
+        if is_test_view:
+            assert profile is not None
+            evidence_metadata = _profile_only_evidence_metadata(profile, manifest)
+        else:
+            assert packet is not None
+            evidence_path = artifact_path.with_name(
+                f"{artifact_path.stem}.evidence.json.gz"
+            )
+            evidence_metadata = _evidence_metadata(packet, evidence_path)
         distillation = (
             {
                 "status": "complete",
@@ -1170,7 +1268,7 @@ def run_curriculum(
             "config": run_config,
             "manifest_sha256": manifest_sha,
             "started_at": datetime.now(timezone.utc).isoformat(),
-            "evidence_packet": _evidence_metadata(packet, evidence_path),
+            "evidence_packet": evidence_metadata,
             "auth_verifications": [],
             "distillation": distillation,
             "holdout": {condition: [] for condition in CONDITIONS},
@@ -1211,9 +1309,15 @@ def run_curriculum(
     )
     completed_plays = _completed_play_count(state)
     if dry_run:
-        if not new_artifact and (
-            not evidence_path.is_file()
-            or read_data_bytes(evidence_path) != packet.canonical_bytes
+        if (
+            not new_artifact
+            and not is_test_view
+            and (
+                evidence_path is None
+                or packet is None
+                or not evidence_path.is_file()
+                or read_data_bytes(evidence_path) != packet.canonical_bytes
+            )
         ):
             raise CurriculumError(
                 "resume dry-run found a missing or mismatched evidence sidecar"
@@ -1223,9 +1327,13 @@ def run_curriculum(
                 {
                     "dry_run": True,
                     "config": run_config,
-                    "evidence_packet": _evidence_metadata(packet, evidence_path),
+                    "evidence_packet": evidence_metadata,
                     "curriculum_puzzles": len(curriculum_records),
-                    "curriculum_targets": packet.document["content"]["target_count"],
+                    "curriculum_targets": (
+                        packet.document["content"]["target_count"]
+                        if packet is not None
+                        else 0
+                    ),
                     "curriculum_play_calls": 0,
                     "planned_distillation_stage": (
                         0
@@ -1269,9 +1377,11 @@ def run_curriculum(
         )
         return None
 
-    _ensure_evidence_sidecar(
-        evidence_path, packet, force=force, new_artifact=new_artifact
-    )
+    if not is_test_view:
+        assert evidence_path is not None and packet is not None
+        _ensure_evidence_sidecar(
+            evidence_path, packet, force=force, new_artifact=new_artifact
+        )
 
     api_key, verification = _auth_preflight(
         config=config, auth=auth, dry_run=False
@@ -1290,6 +1400,7 @@ def run_curriculum(
         total_plays=total_plays,
     )
     if profile is None:
+        assert packet is not None and prompt is not None
         _analysis, strategy_items = _distil_strategy(
             state=state,
             artifact_path=artifact_path,
@@ -1676,7 +1787,7 @@ def _evaluate_legacy_artifact(state: dict[str, Any]) -> dict[str, Any]:
 
 
 def evaluate_artifact(state: dict[str, Any]) -> dict[str, Any]:
-    """Evaluate prompt-v5 artifacts and retain read-only legacy support."""
+    """Evaluate prompt-v6 artifacts and retain read-only legacy support."""
     if state.get("config", {}).get("curriculum_prompt_version") != CURRICULUM_PROMPT_VERSION:
         return _evaluate_legacy_artifact(state)
     holdout = {

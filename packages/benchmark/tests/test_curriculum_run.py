@@ -199,7 +199,8 @@ def test_full_run_distils_once_then_uses_only_fresh_one_word_holdout_contexts(
         player.calls[0][0]["role"] == "user" for player in provider.word_players
     )
     assert all(
-        "Reply with exactly one word." in player.calls[0][0]["content"]
+        "Reply now with exactly one bare French game-vocabulary word"
+        in player.calls[0][0]["content"]
         for player in provider.word_players
     )
     assert all(
@@ -317,7 +318,7 @@ def test_calibrated_holdout_reuses_frozen_profile_without_distillation(
         lang="fr",
         dataset_id=manifest["dataset_id"],
         dataset_sha256=manifest["dataset_content_sha256"],
-        evidence_packet_schema_version=cr.PACKET_SCHEMA_VERSION,
+        evidence_packet_schema_version=packet.document["schema_version"],
         evidence_packet_sha256=packet.sha256,
         distillation_prompt_sha256=hashlib.sha256(prompt.encode()).hexdigest(),
         prompt_version=cr.PROMPT_VERSION,
@@ -329,7 +330,7 @@ def test_calibrated_holdout_reuses_frozen_profile_without_distillation(
     sp.write_profile(profile_path, profile)
 
     manifest["strategy_evidence"] = {
-        "schema_version": cr.PACKET_SCHEMA_VERSION,
+        "schema_version": packet.document["schema_version"],
         "dataset_id": manifest["dataset_id"],
         "dataset_content_sha256": manifest["dataset_content_sha256"],
         "packet_sha256": packet.sha256,
@@ -857,7 +858,7 @@ def test_evaluation_keeps_dnf_nonnumeric_and_reports_all_five_pairs():
         learned_entries.append({"number": number, "runs": learned_runs})
         v7_entries.append({"number": number, "runs": v7_runs})
     state = {
-        "config": {"curriculum_prompt_version": "5"},
+        "config": {"curriculum_prompt_version": cr.CURRICULUM_PROMPT_VERSION},
         "distillation": {"strategy": SAFE_STRATEGY, "attempts": []},
         "holdout": {
             "neutral": neutral_entries,

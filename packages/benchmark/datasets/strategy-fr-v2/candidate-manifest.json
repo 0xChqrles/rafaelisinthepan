@@ -1,0 +1,4705 @@
+{
+  "schema_version": 1,
+  "manifest_kind": "holdout_calibration_candidates",
+  "dataset_id": "strategy-fr-v2",
+  "lang": "fr",
+  "seed": 86,
+  "curriculum_base": {
+    "dataset_id": "strategy-fr-v1",
+    "dataset_content_sha256": "1d2496c715a91223ab65c1fcf75a9c14f41b7ea9c36f71a3b372f15308d21f3a",
+    "manifest_sha256": "3e557d76853257313c09e80b3b3abca9dc3096937d34dfcbc05d2dfa510423be"
+  },
+  "generator": {
+    "curriculum": {
+      "model": "claude-fable-5",
+      "effort": "interactive",
+      "prompt": "Authored interactively in a Claude Code session for issue #84: original French sentences, 3 exact-inflection targets each, balanced across POS/gender/frequency per the deterministic quotas. Deterministic code performs all validation and selection.",
+      "timestamp": "2026-07-13T00:00:00Z"
+    },
+    "calibration_candidates": {
+      "model": "claude-fable-5",
+      "effort": "interactive",
+      "prompt": "Authored interactively in a Claude Code session for issue #86: original French sentences, 3 exact-inflection targets each, mixed POS per sentence, avoiding the 45 frozen strategy-fr-v1 curriculum target slugs. Deterministic code performs all validation, rank-map building, start selection, and calibration.",
+      "timestamp": "2026-07-15T00:00:00Z"
+    }
+  },
+  "generator_output": {
+    "path": "generator-output.json",
+    "sha256": "c194a9ae146405fdd85223cfa3a2e2765f8eeda16075234f04efff448eea327f"
+  },
+  "vocabulary": {
+    "source": "reduced-vocabulary order (V)",
+    "size": 133050,
+    "sha256": "daf096e211a10ec8c8d671b7dcc255f8502f1d8ea5ce53d5af674bb90767673a"
+  },
+  "embedding": {
+    "source": "packages/generation/embedding/fr/cc.fr.300_reduced.vec",
+    "sha256": "e4f04d27b27ad3508f9d9f0b2e705dc1b16fd4c768194a3e31740d45da485ced"
+  },
+  "canonical_metadata": {
+    "source": "datasets/fr-lexicon.tsv.gz",
+    "sha256": "71b2a2d0324e4491c138034060cd71b3592f1c5a765d1f67bb77173645cafacf",
+    "verified_fields": [
+      "pos",
+      "gender"
+    ],
+    "declared_fields": [
+      "semantic_class"
+    ]
+  },
+  "frequency_bands": {
+    "common": "frequency rank < 20000",
+    "difficult": "frequency rank >= 20000"
+  },
+  "start_band": {
+    "lo": 100,
+    "hi": 150
+  },
+  "minimum_calibration_candidates": 45,
+  "counts": {
+    "curriculum": 15,
+    "calibration_candidates": 92,
+    "puzzles": 107
+  },
+  "balance": {
+    "curriculum": {
+      "verified": {
+        "pos": {
+          "noun": 11,
+          "adjective": 12,
+          "verb": 11,
+          "adverb": 11
+        },
+        "gender": {
+          "m": 11,
+          "f": 12
+        },
+        "frequency_band": {
+          "common": 22,
+          "difficult": 23
+        }
+      },
+      "declared": {
+        "semantic_class": {
+          "tangible": 23,
+          "abstract": 22
+        }
+      }
+    },
+    "calibration_candidates": {
+      "verified": {
+        "pos": {
+          "noun": 76,
+          "adjective": 63,
+          "verb": 69,
+          "adverb": 68
+        },
+        "gender": {
+          "m": 75,
+          "f": 64
+        },
+        "frequency_band": {
+          "common": 145,
+          "difficult": 131
+        }
+      },
+      "declared": {
+        "semantic_class": {
+          "tangible": 157,
+          "abstract": 119
+        }
+      }
+    }
+  },
+  "rejections": [],
+  "puzzles": [
+    {
+      "number": 1,
+      "split": "curriculum",
+      "path": "puzzles/001-chemin_paisible_traverser.json.gz",
+      "sha256": "846d69e5d05202454016108a8d6bfba6a8e15a6c3decac3af7d8cff843e7fc38",
+      "sentence": "le chemin paisible semblait traverser des terres oubliées",
+      "targets": [
+        {
+          "word": "chemin",
+          "slug": "chemin",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 756,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "raidillon",
+          "start_rank": 148
+        },
+        {
+          "word": "paisible",
+          "slug": "paisible",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 5625,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "familiale",
+          "start_rank": 118
+        },
+        {
+          "word": "traverser",
+          "slug": "traverser",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 5410,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "longeront",
+          "start_rank": 150
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "split": "curriculum",
+      "path": "puzzles/002-autrefois_fremir_sillage.json.gz",
+      "sha256": "63adf59b6ef4af1a0b016bcce45a4aa2bd2875240fc6c119bac126d27f60ac68",
+      "sentence": "autrefois, les voiliers laissaient frémir la mer dans leur sillage",
+      "targets": [
+        {
+          "word": "autrefois",
+          "slug": "autrefois",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 3525,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "connue",
+          "start_rank": 102
+        },
+        {
+          "word": "frémir",
+          "slug": "fremir",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 26470,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "répugner",
+          "start_rank": 132
+        },
+        {
+          "word": "sillage",
+          "slug": "sillage",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 13519,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "jaillissement",
+          "start_rank": 100
+        }
+      ]
+    },
+    {
+      "number": 3,
+      "split": "curriculum",
+      "path": "puzzles/003-hativement_feroce_rugir.json.gz",
+      "sha256": "93462ac292af6e9149e31bca8b03bdf29dbb3944cdb970fce2bbb2cae8d13fb7",
+      "sentence": "hâtivement, il recula devant la bête féroce qu'il entendait rugir",
+      "targets": [
+        {
+          "word": "hâtivement",
+          "slug": "hativement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 37929,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "ingénieusement",
+          "start_rank": 133
+        },
+        {
+          "word": "féroce",
+          "slug": "feroce",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 13978,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "autoritaire",
+          "start_rank": 142
+        },
+        {
+          "word": "rugir",
+          "slug": "rugir",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 51316,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "fondre",
+          "start_rank": 120
+        }
+      ]
+    },
+    {
+      "number": 4,
+      "split": "curriculum",
+      "path": "puzzles/004-felure_muette_jadis.json.gz",
+      "sha256": "ceb1509ad1724f6b6f454bc6a73bbe81af18f5b243b682a169759bfbf0d7b887",
+      "sentence": "cette fêlure muette datait d'une promesse trahie jadis",
+      "targets": [
+        {
+          "word": "fêlure",
+          "slug": "felure",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 53117,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "dissemblance",
+          "start_rank": 113
+        },
+        {
+          "word": "muette",
+          "slug": "muette",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 20197,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "dubitative",
+          "start_rank": 129
+        },
+        {
+          "word": "jadis",
+          "slug": "jadis",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 7864,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "affectionnaient",
+          "start_rank": 131
+        }
+      ]
+    },
+    {
+      "number": 5,
+      "split": "curriculum",
+      "path": "puzzles/005-febrilement_fugace_dechirer.json.gz",
+      "sha256": "50fedd98fd387fec5f82b21efdb0a28963f600d07fb3a052ecefdc4f54d1d50d",
+      "sentence": "fébrilement, il guettait la lueur fugace qui pouvait déchirer la nuit",
+      "targets": [
+        {
+          "word": "fébrilement",
+          "slug": "febrilement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 50084,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "passivement",
+          "start_rank": 135
+        },
+        {
+          "word": "fugace",
+          "slug": "fugace",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 34460,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "désagréable",
+          "start_rank": 148
+        },
+        {
+          "word": "déchirer",
+          "slug": "dechirer",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 21939,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "rétrécir",
+          "start_rank": 148
+        }
+      ]
+    },
+    {
+      "number": 6,
+      "split": "curriculum",
+      "path": "puzzles/006-clairiere_ardente_rarement.json.gz",
+      "sha256": "f3bd88817aa9e761dc4fafb00701045dbec7cf04c96c8cfb5e1cd4a274eb8dc2",
+      "sentence": "la clairière gardait une chaleur ardente que l'on trouve rarement",
+      "targets": [
+        {
+          "word": "clairière",
+          "slug": "clairiere",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 23017,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "stèle",
+          "start_rank": 123
+        },
+        {
+          "word": "ardente",
+          "slug": "ardente",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 22083,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "capiteuse",
+          "start_rank": 138
+        },
+        {
+          "word": "rarement",
+          "slug": "rarement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 3095,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "justement",
+          "start_rank": 109
+        }
+      ]
+    },
+    {
+      "number": 7,
+      "split": "curriculum",
+      "path": "puzzles/007-falaise_tremble_timidement.json.gz",
+      "sha256": "de1f687f42e242d20236aeea8e9646ac523c3b16a99ce5cd0e26af835291add0",
+      "sentence": "au pied de la falaise, la terre tremble et l'on avance timidement",
+      "targets": [
+        {
+          "word": "falaise",
+          "slug": "falaise",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 10623,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "coralline",
+          "start_rank": 135
+        },
+        {
+          "word": "tremble",
+          "slug": "tremble",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 20909,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "bruisse",
+          "start_rank": 148
+        },
+        {
+          "word": "timidement",
+          "slug": "timidement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 25802,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "sensuellement",
+          "start_rank": 145
+        }
+      ]
+    },
+    {
+      "number": 8,
+      "split": "curriculum",
+      "path": "puzzles/008-immobile_scintiller_eperdument.json.gz",
+      "sha256": "021a8bf8652d4031abafb7d0af180349347cf6f7ff84b36fbabe732aa1087bab",
+      "sentence": "le lac immobile faisait scintiller des reflets qu'il aimait éperdument",
+      "targets": [
+        {
+          "word": "immobile",
+          "slug": "immobile",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 14833,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "fantomatique",
+          "start_rank": 116
+        },
+        {
+          "word": "scintiller",
+          "slug": "scintiller",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 52337,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "magnifier",
+          "start_rank": 133
+        },
+        {
+          "word": "éperdument",
+          "slug": "eperdument",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 29387,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "muettement",
+          "start_rank": 129
+        }
+      ]
+    },
+    {
+      "number": 9,
+      "split": "curriculum",
+      "path": "puzzles/009-obstine_gravir_sommet.json.gz",
+      "sha256": "35fcd66f4c8f5b7147904b6bebe7ea2f54b36c58d2c2fdcb36c526312fc6ef4d",
+      "sentence": "un marcheur obstiné jurait de gravir le sommet avant l'aube",
+      "targets": [
+        {
+          "word": "obstiné",
+          "slug": "obstine",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 33959,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "partisan",
+          "start_rank": 125
+        },
+        {
+          "word": "gravir",
+          "slug": "gravir",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 20985,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "aventurer",
+          "start_rank": 147
+        },
+        {
+          "word": "sommet",
+          "slug": "sommet",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 1779,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "monter",
+          "start_rank": 121
+        }
+      ]
+    },
+    {
+      "number": 10,
+      "split": "curriculum",
+      "path": "puzzles/010-aprement_jaillir_obscure.json.gz",
+      "sha256": "8ca606d71e302cd35c94617b4161043fc05f66961a5c8d1401fc1b897042f732",
+      "sentence": "les mineurs, âprement éprouvés, virent jaillir une source dans la galerie obscure",
+      "targets": [
+        {
+          "word": "âprement",
+          "slug": "aprement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 37707,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "odieusement",
+          "start_rank": 138
+        },
+        {
+          "word": "jaillir",
+          "slug": "jaillir",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 26753,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "surgit",
+          "start_rank": 114
+        },
+        {
+          "word": "obscure",
+          "slug": "obscure",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 14500,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "maudite",
+          "start_rank": 108
+        }
+      ]
+    },
+    {
+      "number": 11,
+      "split": "curriculum",
+      "path": "puzzles/011-orage_sombre_brusquement.json.gz",
+      "sha256": "553714378972f6ea2f582920c65e754d0eaad67e751da1dc7678c60acc8ad324",
+      "sentence": "un orage sombre éclata brusquement au-dessus du village",
+      "targets": [
+        {
+          "word": "orage",
+          "slug": "orage",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 9375,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "rougeoiement",
+          "start_rank": 142
+        },
+        {
+          "word": "sombre",
+          "slug": "sombre",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 3254,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "intrigant",
+          "start_rank": 130
+        },
+        {
+          "word": "brusquement",
+          "slug": "brusquement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 13068,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "irruption",
+          "start_rank": 102
+        }
+      ]
+    },
+    {
+      "number": 12,
+      "split": "curriculum",
+      "path": "puzzles/012-dehors_vertige_vaciller.json.gz",
+      "sha256": "515944f1cc06211942028501a2ceb2c9f33bb69fbd9a1b28199ba0f876a80526",
+      "sentence": "dehors, le vertige le fit vaciller contre la rampe",
+      "targets": [
+        {
+          "word": "dehors",
+          "slug": "dehors",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 1545,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "directement",
+          "start_rank": 133
+        },
+        {
+          "word": "vertige",
+          "slug": "vertige",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 17699,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "frissonnements",
+          "start_rank": 102
+        },
+        {
+          "word": "vaciller",
+          "slug": "vaciller",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 38281,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "ployer",
+          "start_rank": 109
+        }
+      ]
+    },
+    {
+      "number": 13,
+      "split": "curriculum",
+      "path": "puzzles/013-penombre_sereine_doucement.json.gz",
+      "sha256": "7728953fe518d67b15c583225a13f416da48a97ccf17a4768e360d98203b5ab7",
+      "sentence": "la pénombre sereine enveloppait doucement les ruelles endormies",
+      "targets": [
+        {
+          "word": "pénombre",
+          "slug": "penombre",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 25561,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "froideur",
+          "start_rank": 102
+        },
+        {
+          "word": "sereine",
+          "slug": "sereine",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 16911,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "ambitieuse",
+          "start_rank": 131
+        },
+        {
+          "word": "doucement",
+          "slug": "doucement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 5394,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "vers",
+          "start_rank": 133
+        }
+      ]
+    },
+    {
+      "number": 14,
+      "split": "curriculum",
+      "path": "puzzles/014-apaiser_tumulte_amer.json.gz",
+      "sha256": "5d30a223c89466f19f24b1cbeb3950b8ed3232530b90297cbc1ad5d96fce2809",
+      "sentence": "rien ne pouvait apaiser le tumulte amer de son esprit",
+      "targets": [
+        {
+          "word": "apaiser",
+          "slug": "apaiser",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 12824,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "modérer",
+          "start_rank": 143
+        },
+        {
+          "word": "tumulte",
+          "slug": "tumulte",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 25203,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "tambourinement",
+          "start_rank": 118
+        },
+        {
+          "word": "amer",
+          "slug": "amer",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 13138,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "savoureux",
+          "start_rank": 134
+        }
+      ]
+    },
+    {
+      "number": 15,
+      "split": "curriculum",
+      "path": "puzzles/015-ecume_legere_chavirer.json.gz",
+      "sha256": "d0e2d21ca797864029ab487332b29d082bdbb30e7abeb7e1ecc6e27171610ba6",
+      "sentence": "une écume légère faisait chavirer les barques du port",
+      "targets": [
+        {
+          "word": "écume",
+          "slug": "ecume",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 21428,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "blanchâtre",
+          "start_rank": 107
+        },
+        {
+          "word": "légère",
+          "slug": "legere",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 2620,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "maniable",
+          "start_rank": 100
+        },
+        {
+          "word": "chavirer",
+          "slug": "chavirer",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 33573,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "rejaillir",
+          "start_rank": 115
+        }
+      ]
+    },
+    {
+      "candidate_id": "00cd5d965cde3a07352f9add42501173ff6b2fdcca2ae516869501c73fbf15b9",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/00cd5d965cde3a07352f9add42501173ff6b2fdcca2ae516869501c73fbf15b9.json.gz",
+      "sha256": "834969d5ca7ab1ed23f1dbdb11201b63585bcd33cb7b9c11a9226d630b3c6963",
+      "sentence": "le torrent farouche continuait de creuser la roche",
+      "targets": [
+        {
+          "word": "torrent",
+          "slug": "torrent",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 12176,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "peer-to-peer",
+          "start_rank": 134
+        },
+        {
+          "word": "farouche",
+          "slug": "farouche",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 17161,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "rude",
+          "start_rank": 127
+        },
+        {
+          "word": "creuser",
+          "slug": "creuser",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 9668,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "progresser",
+          "start_rank": 145
+        }
+      ],
+      "pool_index": 1
+    },
+    {
+      "candidate_id": "0473ea5a09820b892d8e310aa74c3edf5a6afc79523da401b5f0ff5bbd50602b",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/0473ea5a09820b892d8e310aa74c3edf5a6afc79523da401b5f0ff5bbd50602b.json.gz",
+      "sha256": "977736e6bd3d48315db8c0152229de968f49eff8baa7a9941fc5572353007ed3",
+      "sentence": "il jurait d'arpenter inlassablement le plateau aride",
+      "targets": [
+        {
+          "word": "arpenter",
+          "slug": "arpenter",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 25627,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "quêter",
+          "start_rank": 134
+        },
+        {
+          "word": "inlassablement",
+          "slug": "inlassablement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 19680,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "bruyamment",
+          "start_rank": 105
+        },
+        {
+          "word": "plateau",
+          "slug": "plateau",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 2101,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "récipient",
+          "start_rank": 119
+        }
+      ],
+      "pool_index": 2
+    },
+    {
+      "candidate_id": "0f919a4b8e1235e76c5badf64515112535cc300b9418864d26f657293f4749ab",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/0f919a4b8e1235e76c5badf64515112535cc300b9418864d26f657293f4749ab.json.gz",
+      "sha256": "3fa66d2dc2631c728f03ffb9bce08a67e8353ff6423420aa73639d07e6339041",
+      "sentence": "le vagabond finissait par grelotter misérablement sous le porche",
+      "targets": [
+        {
+          "word": "vagabond",
+          "slug": "vagabond",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 23875,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "cabochard",
+          "start_rank": 102
+        },
+        {
+          "word": "grelotter",
+          "slug": "grelotter",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 83206,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "déprimer",
+          "start_rank": 149
+        },
+        {
+          "word": "misérablement",
+          "slug": "miserablement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 50614,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "paresseusement",
+          "start_rank": 103
+        }
+      ],
+      "pool_index": 3
+    },
+    {
+      "candidate_id": "118cd1a069e222f11162437fd221e28d87ba92096ccacc20c310f460ac3cd143",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/118cd1a069e222f11162437fd221e28d87ba92096ccacc20c310f460ac3cd143.json.gz",
+      "sha256": "66f7c64fe55cbbfba953424f82fb8f1d10ba981ad26b500c055b312eb81fc0ed",
+      "sentence": "la nappe élimée couvrait dignement la table bancale",
+      "targets": [
+        {
+          "word": "nappe",
+          "slug": "nappe",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 10872,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "sommière",
+          "start_rank": 102
+        },
+        {
+          "word": "élimée",
+          "slug": "elimee",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 93512,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "raccommodée",
+          "start_rank": 130
+        },
+        {
+          "word": "dignement",
+          "slug": "dignement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 19880,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "réjouir",
+          "start_rank": 126
+        }
+      ],
+      "pool_index": 4
+    },
+    {
+      "candidate_id": "13cce433691d482419304033c81d18624f2113fcd7054982946fa092405841c5",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/13cce433691d482419304033c81d18624f2113fcd7054982946fa092405841c5.json.gz",
+      "sha256": "efbfcfbce62ba01881a59698ddb05edb0a9ff24d6d9fe0fd0a626bac0a392f43",
+      "sentence": "le forgeron trapu détestait bâcler son ouvrage",
+      "targets": [
+        {
+          "word": "forgeron",
+          "slug": "forgeron",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 20100,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "couturière",
+          "start_rank": 102
+        },
+        {
+          "word": "trapu",
+          "slug": "trapu",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 36209,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "placide",
+          "start_rank": 107
+        },
+        {
+          "word": "bâcler",
+          "slug": "bacler",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 63421,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "alourdir",
+          "start_rank": 150
+        }
+      ],
+      "pool_index": 5
+    },
+    {
+      "candidate_id": "1544bde4ca61f49377c8108b51629236c2a3805ec700e8f5e8a04ec2ed0d5c5f",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/1544bde4ca61f49377c8108b51629236c2a3805ec700e8f5e8a04ec2ed0d5c5f.json.gz",
+      "sha256": "62bd9a6a849c5f43d1fb5b575e38da46aa228f5dda3e627f76d0d094591c2a46",
+      "sentence": "la fillette espiègle aimait sauter gaiement les flaques",
+      "targets": [
+        {
+          "word": "espiègle",
+          "slug": "espiegle",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 27633,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "mutin",
+          "start_rank": 123
+        },
+        {
+          "word": "sauter",
+          "slug": "sauter",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 5510,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "agripper",
+          "start_rank": 108
+        },
+        {
+          "word": "gaiement",
+          "slug": "gaiement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 34376,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "intrépidement",
+          "start_rank": 125
+        }
+      ],
+      "pool_index": 6
+    },
+    {
+      "candidate_id": "16473e96a0a1e816387e88904f9d826b85164df69546d0fd18bcdff27855cebe",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/16473e96a0a1e816387e88904f9d826b85164df69546d0fd18bcdff27855cebe.json.gz",
+      "sha256": "a1c664863f4ff4c9b53343121e9c33f0318a603a7c703fe23a61887642542a2d",
+      "sentence": "le rivage désert accueillait secrètement les barques de contrebande",
+      "targets": [
+        {
+          "word": "rivage",
+          "slug": "rivage",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 15050,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "chemin",
+          "start_rank": 104
+        },
+        {
+          "word": "désert",
+          "slug": "desert",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 3847,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "serpent",
+          "start_rank": 138
+        },
+        {
+          "word": "secrètement",
+          "slug": "secretement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 12655,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "solitairement",
+          "start_rank": 107
+        }
+      ],
+      "pool_index": 7
+    },
+    {
+      "candidate_id": "1edbb6bf3b598d659258c15a40ce80a6209042378cddfdb6a210338587d1f4fa",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/1edbb6bf3b598d659258c15a40ce80a6209042378cddfdb6a210338587d1f4fa.json.gz",
+      "sha256": "205f1997db80a45bdaf8fc4ced83767dbd85b86914c0d73b31c7afc14e978512",
+      "sentence": "la vitre embuée tremblait finement sous la rafale",
+      "targets": [
+        {
+          "word": "vitre",
+          "slug": "vitre",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 6923,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "serrures",
+          "start_rank": 140
+        },
+        {
+          "word": "embuée",
+          "slug": "embuee",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 96969,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "tourbillonnaient",
+          "start_rank": 145
+        },
+        {
+          "word": "finement",
+          "slug": "finement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 9098,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "aiguisée",
+          "start_rank": 133
+        }
+      ],
+      "pool_index": 8
+    },
+    {
+      "candidate_id": "1fb1c950b7bd2161fedd08f3bcced133a434acc6cf780c70a974e53bbe7714b9",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/1fb1c950b7bd2161fedd08f3bcced133a434acc6cf780c70a974e53bbe7714b9.json.gz",
+      "sha256": "d4989c2bdf20862be3c03baa9312f9c3cc321c8749db19583973d2877b7d5ef4",
+      "sentence": "la vieille barque semblait tanguer pesamment vers la jetée",
+      "targets": [
+        {
+          "word": "barque",
+          "slug": "barque",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 12637,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "amarrant",
+          "start_rank": 103
+        },
+        {
+          "word": "tanguer",
+          "slug": "tanguer",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 61594,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "tournebouler",
+          "start_rank": 105
+        },
+        {
+          "word": "pesamment",
+          "slug": "pesamment",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 86399,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "rudement",
+          "start_rank": 143
+        }
+      ],
+      "pool_index": 9
+    },
+    {
+      "candidate_id": "2485fee86d024de1abe89f6777381ab8e10cbfa20570ec486208eddb97663b16",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/2485fee86d024de1abe89f6777381ab8e10cbfa20570ec486208eddb97663b16.json.gz",
+      "sha256": "0f0b34a580b36f877c0eb90e3d904681408cc3711c61146c27a21a191eaa8a3f",
+      "sentence": "le boulanger matinal aimait pétrir la pâte en silence",
+      "targets": [
+        {
+          "word": "boulanger",
+          "slug": "boulanger",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 12970,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "barbier",
+          "start_rank": 130
+        },
+        {
+          "word": "matinal",
+          "slug": "matinal",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 24373,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "embrumé",
+          "start_rank": 122
+        },
+        {
+          "word": "pétrir",
+          "slug": "petrir",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 28602,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "baratter",
+          "start_rank": 117
+        }
+      ],
+      "pool_index": 10
+    },
+    {
+      "candidate_id": "25eda6f317ca022dabd7a669b65a771eda038221ae32faa2026d4ecd3ca296bd",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/25eda6f317ca022dabd7a669b65a771eda038221ae32faa2026d4ecd3ca296bd.json.gz",
+      "sha256": "b0a20949652ac08dedcabf6049332b441b58c3be152e984bf01c4e51f95bbf2d",
+      "sentence": "le gardien préférait verrouiller méticuleusement chaque portail",
+      "targets": [
+        {
+          "word": "verrouiller",
+          "slug": "verrouiller",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 24280,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "aligner",
+          "start_rank": 111
+        },
+        {
+          "word": "méticuleusement",
+          "slug": "meticuleusement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 33544,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "férocement",
+          "start_rank": 140
+        },
+        {
+          "word": "portail",
+          "slug": "portail",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 1833,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "modèle",
+          "start_rank": 103
+        }
+      ],
+      "pool_index": 11
+    },
+    {
+      "candidate_id": "2b719bcc48bc7b37ab6d38c6249fa766bce84efa3b36e4a8e11b1afaaecb4ece",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/2b719bcc48bc7b37ab6d38c6249fa766bce84efa3b36e4a8e11b1afaaecb4ece.json.gz",
+      "sha256": "6582d194062cb6c194d1a61e07dd05bbfb0dc5041e55261f84a3f59b28438745",
+      "sentence": "l'apprenti devait astiquer quotidiennement les cuivres",
+      "targets": [
+        {
+          "word": "apprenti",
+          "slug": "apprenti",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 10643,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "guerrier",
+          "start_rank": 101
+        },
+        {
+          "word": "astiquer",
+          "slug": "astiquer",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 55705,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "labourer",
+          "start_rank": 129
+        },
+        {
+          "word": "quotidiennement",
+          "slug": "quotidiennement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 6684,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "immanquablement",
+          "start_rank": 145
+        }
+      ],
+      "pool_index": 12
+    },
+    {
+      "candidate_id": "2c8fe19089a9c31085ae6a6629623a2286f8d9254e3c4151c52521f3e056cf84",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/2c8fe19089a9c31085ae6a6629623a2286f8d9254e3c4151c52521f3e056cf84.json.gz",
+      "sha256": "8de810f815085a8541b001cf10da537ddc77e3cfc9c074bb0a16e1e1e4e063b6",
+      "sentence": "il fallait sarcler soigneusement la parcelle d'oignons",
+      "targets": [
+        {
+          "word": "sarcler",
+          "slug": "sarcler",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 87046,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "aratoire",
+          "start_rank": 141
+        },
+        {
+          "word": "soigneusement",
+          "slug": "soigneusement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 7002,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "parcimonieusement",
+          "start_rank": 100
+        },
+        {
+          "word": "parcelle",
+          "slug": "parcelle",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 9459,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "plant",
+          "start_rank": 112
+        }
+      ],
+      "pool_index": 13
+    },
+    {
+      "candidate_id": "31dfb99cb251efd0763e65573d29cc5d7ae2a84ea31153807d7f4dbfeed304b1",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/31dfb99cb251efd0763e65573d29cc5d7ae2a84ea31153807d7f4dbfeed304b1.json.gz",
+      "sha256": "c7180a72a101b601e0cfb085a26e6ace3fc930ebe76c92e4a9d11a24421f30c5",
+      "sentence": "le mendiant transi tenait à remercier gravement les passants",
+      "targets": [
+        {
+          "word": "transi",
+          "slug": "transi",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 44299,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "naïf",
+          "start_rank": 144
+        },
+        {
+          "word": "remercier",
+          "slug": "remercier",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 5107,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "repréciser",
+          "start_rank": 139
+        },
+        {
+          "word": "gravement",
+          "slug": "gravement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 7727,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "blesser",
+          "start_rank": 143
+        }
+      ],
+      "pool_index": 14
+    },
+    {
+      "candidate_id": "362a12d09a1e12bc8df45a060415fc4ce837c608848431729d61c60374a875e3",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/362a12d09a1e12bc8df45a060415fc4ce837c608848431729d61c60374a875e3.json.gz",
+      "sha256": "a677bc1429059b2489faaa4f75a5f81bf074ee7509a6ab71761ba846c11586ae",
+      "sentence": "la malade fiévreuse voulait boire avidement un grand verre d'eau",
+      "targets": [
+        {
+          "word": "fiévreuse",
+          "slug": "fievreuse",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 54458,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "asphyxiante",
+          "start_rank": 141
+        },
+        {
+          "word": "boire",
+          "slug": "boire",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 3886,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "marcher",
+          "start_rank": 143
+        },
+        {
+          "word": "avidement",
+          "slug": "avidement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 49294,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "scrutant",
+          "start_rank": 112
+        }
+      ],
+      "pool_index": 15
+    },
+    {
+      "candidate_id": "3921e8e48c835f9330e7584c45b3fb24496bdc1070326ec96a7e97f5bc272fd4",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/3921e8e48c835f9330e7584c45b3fb24496bdc1070326ec96a7e97f5bc272fd4.json.gz",
+      "sha256": "f90005291b25f5e6e65fe37cc3cb7c013e0db56ad2461772e61665f006c29b0e",
+      "sentence": "le régisseur promettait de repeindre promptement la grille",
+      "targets": [
+        {
+          "word": "repeindre",
+          "slug": "repeindre",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 25884,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "crépis",
+          "start_rank": 130
+        },
+        {
+          "word": "promptement",
+          "slug": "promptement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 24940,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "préventivement",
+          "start_rank": 144
+        },
+        {
+          "word": "grille",
+          "slug": "grille",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 3319,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "série",
+          "start_rank": 103
+        }
+      ],
+      "pool_index": 16
+    },
+    {
+      "candidate_id": "3a4bbba8bf5b6b3fe0da62ac12a51b08fa72634a1585259be0d27d9eeb232ebe",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/3a4bbba8bf5b6b3fe0da62ac12a51b08fa72634a1585259be0d27d9eeb232ebe.json.gz",
+      "sha256": "67800c917ca104bf863ebdb1a4722cb5829187944dbaafc5808b053094800f50",
+      "sentence": "une rancune sourde continuait de ronger son cœur",
+      "targets": [
+        {
+          "word": "rancune",
+          "slug": "rancune",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 23707,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "mésintelligence",
+          "start_rank": 150
+        },
+        {
+          "word": "sourde",
+          "slug": "sourde",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 16479,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "profonde",
+          "start_rank": 104
+        },
+        {
+          "word": "ronger",
+          "slug": "ronger",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 33459,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "saccager",
+          "start_rank": 127
+        }
+      ],
+      "pool_index": 17
+    },
+    {
+      "candidate_id": "4026a50405bc4515aac79482c5d2d6c7008852139fc9db8790cf338f73aacf6b",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/4026a50405bc4515aac79482c5d2d6c7008852139fc9db8790cf338f73aacf6b.json.gz",
+      "sha256": "a78898b9c68f7753c5e43631e7478e94774226c8c93c8fcee228180dc2fccdfa",
+      "sentence": "le chat préférait somnoler placidement près du fourneau",
+      "targets": [
+        {
+          "word": "somnoler",
+          "slug": "somnoler",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 71056,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "respirer",
+          "start_rank": 145
+        },
+        {
+          "word": "placidement",
+          "slug": "placidement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 92483,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "studieusement",
+          "start_rank": 148
+        },
+        {
+          "word": "fourneau",
+          "slug": "fourneau",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 24044,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "cuisinier",
+          "start_rank": 121
+        }
+      ],
+      "pool_index": 18
+    },
+    {
+      "candidate_id": "4172e3f9437ee6e7a51d5f353f6a68aa42ebf11786af4a066162f9c970e6aca2",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/4172e3f9437ee6e7a51d5f353f6a68aa42ebf11786af4a066162f9c970e6aca2.json.gz",
+      "sha256": "28afeaa4222cf5c16baa5c66b7ee2052deda05ff499841062761316995103ba3",
+      "sentence": "la bruine froide tombait mollement sur les ardoises",
+      "targets": [
+        {
+          "word": "bruine",
+          "slug": "bruine",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 48812,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "embrume",
+          "start_rank": 136
+        },
+        {
+          "word": "froide",
+          "slug": "froide",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 3768,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "enneigée",
+          "start_rank": 145
+        },
+        {
+          "word": "mollement",
+          "slug": "mollement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 36947,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "sempiternellement",
+          "start_rank": 135
+        }
+      ],
+      "pool_index": 19
+    },
+    {
+      "candidate_id": "432f684a2c8b1b0f3a144bdfb4a2111e2d1e7472f1f212666f55e10545b909fb",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/432f684a2c8b1b0f3a144bdfb4a2111e2d1e7472f1f212666f55e10545b909fb.json.gz",
+      "sha256": "0a722534f5b9e0ef36a7823540c30066f39a13f92b585bb8e5d3225a7b6dfa74",
+      "sentence": "le notaire pointilleux voulut déplier derechef le contrat froissé",
+      "targets": [
+        {
+          "word": "pointilleux",
+          "slug": "pointilleux",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 36278,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "chipotage",
+          "start_rank": 120
+        },
+        {
+          "word": "déplier",
+          "slug": "deplier",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 39945,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "boutonner",
+          "start_rank": 113
+        },
+        {
+          "word": "derechef",
+          "slug": "derechef",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 43762,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "finalement",
+          "start_rank": 134
+        }
+      ],
+      "pool_index": 20
+    },
+    {
+      "candidate_id": "43c1c282b73217e06066d87b3b5fc091bebf019318456b82732bd8e462e94af3",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/43c1c282b73217e06066d87b3b5fc091bebf019318456b82732bd8e462e94af3.json.gz",
+      "sha256": "2231fb4ed7546e495369685a931f31c287c7f7760a418d6c5b438084500a9b53",
+      "sentence": "elle préférait ranger méthodiquement les bocaux du cellier",
+      "targets": [
+        {
+          "word": "ranger",
+          "slug": "ranger",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 6639,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "décharger",
+          "start_rank": 110
+        },
+        {
+          "word": "méthodiquement",
+          "slug": "methodiquement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 29510,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "remarquablement",
+          "start_rank": 135
+        },
+        {
+          "word": "cellier",
+          "slug": "cellier",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 20578,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "voûtées",
+          "start_rank": 101
+        }
+      ],
+      "pool_index": 21
+    },
+    {
+      "candidate_id": "484a62e932a4dd7d9deb655ae64a82eec003d50a30fb7e0f2527510325b07aea",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/484a62e932a4dd7d9deb655ae64a82eec003d50a30fb7e0f2527510325b07aea.json.gz",
+      "sha256": "6bbcc65590b6f89978c48344c0e0d49672635fa34f8862a2a6a023581d1fb21a",
+      "sentence": "le grenier sentait naguère la pomme et la sciure fraîche",
+      "targets": [
+        {
+          "word": "grenier",
+          "slug": "grenier",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 9733,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "souterrain",
+          "start_rank": 121
+        },
+        {
+          "word": "naguère",
+          "slug": "naguere",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 21066,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "laborieusement",
+          "start_rank": 118
+        },
+        {
+          "word": "fraîche",
+          "slug": "fraiche",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 5774,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "pluvieuse",
+          "start_rank": 122
+        }
+      ],
+      "pool_index": 22
+    },
+    {
+      "candidate_id": "49f505a7b75bd032daf1fd03cb38ab2ccfda2395ab7da467f8b2049b8a9dd82a",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/49f505a7b75bd032daf1fd03cb38ab2ccfda2395ab7da467f8b2049b8a9dd82a.json.gz",
+      "sha256": "c39668debc2e700916998412d01ad42899a397a75120b9e27390a0ac3d822380",
+      "sentence": "le lichen discret finissait par tapisser le vieux mur",
+      "targets": [
+        {
+          "word": "lichen",
+          "slug": "lichen",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 38811,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "pyocyanique",
+          "start_rank": 140
+        },
+        {
+          "word": "discret",
+          "slug": "discret",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 4918,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "occasionnel",
+          "start_rank": 125
+        },
+        {
+          "word": "tapisser",
+          "slug": "tapisser",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 44772,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "saloper",
+          "start_rank": 137
+        }
+      ],
+      "pool_index": 23
+    },
+    {
+      "candidate_id": "4f3c2d23c5b6bf116e534dbf49d6f01c586861044f3e9bd4cd78e0e71629eef8",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/4f3c2d23c5b6bf116e534dbf49d6f01c586861044f3e9bd4cd78e0e71629eef8.json.gz",
+      "sha256": "c53d507e44f9a3750a428a123901d84f37a8829c563bcb98f1297c86f8912e33",
+      "sentence": "il apprenait à raboter proprement les planches de chêne",
+      "targets": [
+        {
+          "word": "raboter",
+          "slug": "raboter",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 57850,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "raboteuse",
+          "start_rank": 147
+        },
+        {
+          "word": "proprement",
+          "slug": "proprement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 5182,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "logique",
+          "start_rank": 111
+        },
+        {
+          "word": "chêne",
+          "slug": "chene",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 6175,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "rustique",
+          "start_rank": 149
+        }
+      ],
+      "pool_index": 24
+    },
+    {
+      "candidate_id": "5264303b1588f8f0862ffea88cda13108e0a2cfcfdb106e97593bdc9dfeaf0fd",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/5264303b1588f8f0862ffea88cda13108e0a2cfcfdb106e97593bdc9dfeaf0fd.json.gz",
+      "sha256": "b26c53df788947032a8a73a1ce68775f0cbcbcefad783e2485a21c6e6907c195",
+      "sentence": "le projecteur cessait souvent de grésiller pendant la séance",
+      "targets": [
+        {
+          "word": "projecteur",
+          "slug": "projecteur",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 12260,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "réflectif",
+          "start_rank": 130
+        },
+        {
+          "word": "souvent",
+          "slug": "souvent",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 172,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "assurément",
+          "start_rank": 131
+        },
+        {
+          "word": "grésiller",
+          "slug": "gresiller",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 94271,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "glapir",
+          "start_rank": 118
+        }
+      ],
+      "pool_index": 25
+    },
+    {
+      "candidate_id": "526538bb3e684759a57c232aa9a078ed5fe4f99970d73fcc2e070a46261b9aef",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/526538bb3e684759a57c232aa9a078ed5fe4f99970d73fcc2e070a46261b9aef.json.gz",
+      "sha256": "48df0c0b5e2563b334a6432508f4553c1e073316f6ad9bb2b0d4f247afbc412b",
+      "sentence": "sa voix rauque trahissait parfois un grand désarroi",
+      "targets": [
+        {
+          "word": "voix",
+          "slug": "voix",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 567,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "écoutée",
+          "start_rank": 129
+        },
+        {
+          "word": "rauque",
+          "slug": "rauque",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 32947,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "borborygme",
+          "start_rank": 141
+        },
+        {
+          "word": "parfois",
+          "slug": "parfois",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 389,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "spontanément",
+          "start_rank": 123
+        }
+      ],
+      "pool_index": 26
+    },
+    {
+      "candidate_id": "56bd89eb974d1121ecca7a72bec0bbb63aee5923332d30d6dd914ffdd1bcb25c",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/56bd89eb974d1121ecca7a72bec0bbb63aee5923332d30d6dd914ffdd1bcb25c.json.gz",
+      "sha256": "f5aeffd4df6d426af79acf6b6544bb0990661d4b1f12ccd4282c5e0b390f6297",
+      "sentence": "le tonnerre lointain grondait sourdement derrière la lisière",
+      "targets": [
+        {
+          "word": "tonnerre",
+          "slug": "tonnerre",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 14773,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "mugissait",
+          "start_rank": 132
+        },
+        {
+          "word": "lointain",
+          "slug": "lointain",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 9182,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "vivace",
+          "start_rank": 142
+        },
+        {
+          "word": "sourdement",
+          "slug": "sourdement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 69561,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "insolemment",
+          "start_rank": 126
+        }
+      ],
+      "pool_index": 27
+    },
+    {
+      "candidate_id": "57b2498305d203c5a563752f448a60c2e894586bf2a062805eb826542d7727a6",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/57b2498305d203c5a563752f448a60c2e894586bf2a062805eb826542d7727a6.json.gz",
+      "sha256": "f5e30cfa61b075fdc118e7936e40da0f28a52da39f0bddf5f06451922390fa30",
+      "sentence": "la moisson hâtive finissait par épuiser les familles du bourg",
+      "targets": [
+        {
+          "word": "moisson",
+          "slug": "moisson",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 21013,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "réjouissance",
+          "start_rank": 106
+        },
+        {
+          "word": "hâtive",
+          "slug": "hative",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 37316,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "insuffisante",
+          "start_rank": 119
+        },
+        {
+          "word": "épuiser",
+          "slug": "epuiser",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 23368,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "intensifier",
+          "start_rank": 147
+        }
+      ],
+      "pool_index": 28
+    },
+    {
+      "candidate_id": "5aee0f304710c07c567e51e4ee20c9234de2e3629baa1a9fbb5008a74355f0c9",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/5aee0f304710c07c567e51e4ee20c9234de2e3629baa1a9fbb5008a74355f0c9.json.gz",
+      "sha256": "0de3a46801aa6089a1611db13bc4b3c7f5bd3278aec4fa263a9010331a7b148e",
+      "sentence": "la neige commençait à fondre paresseusement sur les corniches",
+      "targets": [
+        {
+          "word": "neige",
+          "slug": "neige",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 2035,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "caillait",
+          "start_rank": 108
+        },
+        {
+          "word": "fondre",
+          "slug": "fondre",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 6898,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "décomposer",
+          "start_rank": 118
+        },
+        {
+          "word": "paresseusement",
+          "slug": "paresseusement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 63261,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "affalent",
+          "start_rank": 104
+        }
+      ],
+      "pool_index": 29
+    },
+    {
+      "candidate_id": "5bc66efc158fba15b66e101a4eb398650d93199c62e98a745c0d8e9968858655",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/5bc66efc158fba15b66e101a4eb398650d93199c62e98a745c0d8e9968858655.json.gz",
+      "sha256": "e46135579bfed2f0ab900a7a9560998763c99bf80b2d2b895817d0e4635c42f6",
+      "sentence": "un frisson glacé vint parcourir l'assemblée",
+      "targets": [
+        {
+          "word": "frisson",
+          "slug": "frisson",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 21062,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "jubilation",
+          "start_rank": 108
+        },
+        {
+          "word": "glacé",
+          "slug": "glace",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 14466,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "givrée",
+          "start_rank": 149
+        },
+        {
+          "word": "parcourir",
+          "slug": "parcourir",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 5920,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "commencer",
+          "start_rank": 132
+        }
+      ],
+      "pool_index": 30
+    },
+    {
+      "candidate_id": "5c2f602a68aea58ef9f89d3e59dd0ca9ca40878ff58fa700fff6d0462e2a85f9",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/5c2f602a68aea58ef9f89d3e59dd0ca9ca40878ff58fa700fff6d0462e2a85f9.json.gz",
+      "sha256": "6586d3073c1b25ac695571a8f776fc864942251b074be95525295920cab291ad",
+      "sentence": "le roseau frêle pliait humblement sous la bourrasque",
+      "targets": [
+        {
+          "word": "roseau",
+          "slug": "roseau",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 26357,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "arbre",
+          "start_rank": 129
+        },
+        {
+          "word": "frêle",
+          "slug": "frele",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 29110,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "fragilement",
+          "start_rank": 119
+        },
+        {
+          "word": "humblement",
+          "slug": "humblement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 26445,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "pauvrement",
+          "start_rank": 112
+        }
+      ],
+      "pool_index": 31
+    },
+    {
+      "candidate_id": "5c455ccd02a56506f1d03de67e07d82ecd92bc9c0ef7d3006532f9f3237b03b7",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/5c455ccd02a56506f1d03de67e07d82ecd92bc9c0ef7d3006532f9f3237b03b7.json.gz",
+      "sha256": "60819868109ba04efa354cd8e0e0f879d077377d2ade43803961755832cd4cc5",
+      "sentence": "les mariniers regardaient la buée se dissiper enfin sur le canal",
+      "targets": [
+        {
+          "word": "buée",
+          "slug": "buee",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 36342,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "traînées",
+          "start_rank": 138
+        },
+        {
+          "word": "dissiper",
+          "slug": "dissiper",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 22683,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "alléger",
+          "start_rank": 122
+        },
+        {
+          "word": "enfin",
+          "slug": "enfin",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 494,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "impatiemment",
+          "start_rank": 116
+        }
+      ],
+      "pool_index": 32
+    },
+    {
+      "candidate_id": "5d145ec53914477504168bc30e93a8dca17efe7d8c7242369c50218ffeb55910",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/5d145ec53914477504168bc30e93a8dca17efe7d8c7242369c50218ffeb55910.json.gz",
+      "sha256": "a96ef0ce761b5a9fb4fdfc57a20191df3cad48248c526780002703925b7c39df",
+      "sentence": "la poutre moussue ployait imperceptiblement chaque hiver",
+      "targets": [
+        {
+          "word": "poutre",
+          "slug": "poutre",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 14456,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "chevillage",
+          "start_rank": 123
+        },
+        {
+          "word": "moussue",
+          "slug": "moussue",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 86764,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "glaiseuse",
+          "start_rank": 131
+        },
+        {
+          "word": "imperceptiblement",
+          "slug": "imperceptiblement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 54117,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "langoureusement",
+          "start_rank": 142
+        }
+      ],
+      "pool_index": 33
+    },
+    {
+      "candidate_id": "5daff6b5288e1b08af5ef724d97086c0ac9ec73b653f5f0f1f3a1463e263f3b2",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/5daff6b5288e1b08af5ef724d97086c0ac9ec73b653f5f0f1f3a1463e263f3b2.json.gz",
+      "sha256": "54c28047d40d5491b827bbe1ab2fbbcb2abe488daf6e9fef3e950330e4c40c2a",
+      "sentence": "le vieux port sombrait dorénavant dans une tristesse épaisse",
+      "targets": [
+        {
+          "word": "port",
+          "slug": "port",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 770,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "coqueron",
+          "start_rank": 132
+        },
+        {
+          "word": "dorénavant",
+          "slug": "dorenavant",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 9221,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "autrement",
+          "start_rank": 121
+        },
+        {
+          "word": "épaisse",
+          "slug": "epaisse",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 7952,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "suante",
+          "start_rank": 133
+        }
+      ],
+      "pool_index": 34
+    },
+    {
+      "candidate_id": "5eee212ffffca642091b3c587bfc9bdaa6dfd4ff172ee6f97507e3ba252afae5",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/5eee212ffffca642091b3c587bfc9bdaa6dfd4ff172ee6f97507e3ba252afae5.json.gz",
+      "sha256": "3bbfb4d62892b89366a7e574a7915bf73044fb4768806f179b992390b913dfa2",
+      "sentence": "le hameau tranquille regardait passer les saisons",
+      "targets": [
+        {
+          "word": "hameau",
+          "slug": "hameau",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 3589,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "tuilerie",
+          "start_rank": 100
+        },
+        {
+          "word": "tranquille",
+          "slug": "tranquille",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 3560,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "rustique",
+          "start_rank": 150
+        },
+        {
+          "word": "passer",
+          "slug": "passer",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 322,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "lancer",
+          "start_rank": 105
+        }
+      ],
+      "pool_index": 35
+    },
+    {
+      "candidate_id": "61440824b74d7a14f37fe00b663c2e1793bdbf648df272c1dffaa3408ef4fb3e",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/61440824b74d7a14f37fe00b663c2e1793bdbf648df272c1dffaa3408ef4fb3e.json.gz",
+      "sha256": "98245fc3c3a7d88205ca839f47cce72048d9b41ee503d0b6c9ffd8c1b396cd39",
+      "sentence": "le ressac inlassable venait polir les galets gris",
+      "targets": [
+        {
+          "word": "ressac",
+          "slug": "ressac",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 50035,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "balancier",
+          "start_rank": 136
+        },
+        {
+          "word": "inlassable",
+          "slug": "inlassable",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 37265,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "assidue",
+          "start_rank": 126
+        },
+        {
+          "word": "polir",
+          "slug": "polir",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 33332,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "chanfreiner",
+          "start_rank": 138
+        }
+      ],
+      "pool_index": 36
+    },
+    {
+      "candidate_id": "66e0d78b84dc083ebd120a5650a0ab67d6767e873dfe69e57d7aea681061e798",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/66e0d78b84dc083ebd120a5650a0ab67d6767e873dfe69e57d7aea681061e798.json.gz",
+      "sha256": "b411d623daab6ec2d33e3d9986eb92110f530e842473eea6b41d2879fa926108",
+      "sentence": "le sillon frais fumait légèrement dans l'aube",
+      "targets": [
+        {
+          "word": "sillon",
+          "slug": "sillon",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 18753,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "pied",
+          "start_rank": 118
+        },
+        {
+          "word": "frais",
+          "slug": "frais",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 555,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "aléas",
+          "start_rank": 112
+        },
+        {
+          "word": "légèrement",
+          "slug": "legerement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 2029,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "poil",
+          "start_rank": 118
+        }
+      ],
+      "pool_index": 37
+    },
+    {
+      "candidate_id": "678ee5d7cfe54cd3e4ae9b1d5e1394a8eb700d6ec0d861249328a99aabdc3f4e",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/678ee5d7cfe54cd3e4ae9b1d5e1394a8eb700d6ec0d861249328a99aabdc3f4e.json.gz",
+      "sha256": "1d7dd840d96034073cb12c5d5c6fa3cda45ef4b6d0f73d1b440c7d5720c9fa48",
+      "sentence": "la foule commença à se disperser calmement après la fanfare",
+      "targets": [
+        {
+          "word": "disperser",
+          "slug": "disperser",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 19944,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "forcir",
+          "start_rank": 141
+        },
+        {
+          "word": "calmement",
+          "slug": "calmement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 19692,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "radieusement",
+          "start_rank": 150
+        },
+        {
+          "word": "fanfare",
+          "slug": "fanfare",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 17851,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "cahotante",
+          "start_rank": 107
+        }
+      ],
+      "pool_index": 38
+    },
+    {
+      "candidate_id": "6ad7a5b57dbca03ba9ac7d27b84b1417bf3ae0ede009b20018a0b76e14e37305",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/6ad7a5b57dbca03ba9ac7d27b84b1417bf3ae0ede009b20018a0b76e14e37305.json.gz",
+      "sha256": "2932b9697a1dbec2f4ed0373a2b996164e8c09a240ab2b32c3ec5050edb6fc2d",
+      "sentence": "le douanier soupçonneux continuait de scruter fixement l'horizon",
+      "targets": [
+        {
+          "word": "soupçonneux",
+          "slug": "soupconneux",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 52637,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "apeuré",
+          "start_rank": 104
+        },
+        {
+          "word": "scruter",
+          "slug": "scruter",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 31873,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "feuilleter",
+          "start_rank": 126
+        },
+        {
+          "word": "fixement",
+          "slug": "fixement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 46655,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "hébété",
+          "start_rank": 108
+        }
+      ],
+      "pool_index": 39
+    },
+    {
+      "candidate_id": "6e9d0e7f81dc98cb647c0760e4f46503b452d9b8d90be0610ca3b012d0fbaa3d",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/6e9d0e7f81dc98cb647c0760e4f46503b452d9b8d90be0610ca3b012d0fbaa3d.json.gz",
+      "sha256": "da0e7feaa8f17e85f789fc3959d49e03daf010793b19faa68ad6434f17562dc0",
+      "sentence": "le vieux moulin cessa subitement de moudre le seigle",
+      "targets": [
+        {
+          "word": "moulin",
+          "slug": "moulin",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 4318,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "barrage",
+          "start_rank": 125
+        },
+        {
+          "word": "subitement",
+          "slug": "subitement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 13566,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "imprudemment",
+          "start_rank": 133
+        },
+        {
+          "word": "moudre",
+          "slug": "moudre",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 28859,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "conditionner",
+          "start_rank": 141
+        }
+      ],
+      "pool_index": 40
+    },
+    {
+      "candidate_id": "73c3d32a0b992cb80ad5fa0878d2af49b5abf8b15437f0373bda0755868ede2a",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/73c3d32a0b992cb80ad5fa0878d2af49b5abf8b15437f0373bda0755868ede2a.json.gz",
+      "sha256": "9c3c9c94ad51089d35213b9f7b04bb22bdc030406df75ac19819573dc346913c",
+      "sentence": "une stupeur étrange sembla figer les convives",
+      "targets": [
+        {
+          "word": "stupeur",
+          "slug": "stupeur",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 23313,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "apercevant",
+          "start_rank": 142
+        },
+        {
+          "word": "étrange",
+          "slug": "etrange",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 3205,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "ambigu",
+          "start_rank": 138
+        },
+        {
+          "word": "figer",
+          "slug": "figer",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 27707,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "phagocyter",
+          "start_rank": 142
+        }
+      ],
+      "pool_index": 41
+    },
+    {
+      "candidate_id": "7d0416aecbeae9ff7c62512849a8fa9d8897a04b197bef968e40d14327383824",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/7d0416aecbeae9ff7c62512849a8fa9d8897a04b197bef968e40d14327383824.json.gz",
+      "sha256": "203a4bbbeb679ae0669f09ca5175eb4114be63e61d67dbd948b18ea32fc4d526",
+      "sentence": "le crépuscule ambré teintait somptueusement la baie",
+      "targets": [
+        {
+          "word": "crépuscule",
+          "slug": "crepuscule",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 15173,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "milieu",
+          "start_rank": 138
+        },
+        {
+          "word": "ambré",
+          "slug": "ambre",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 41996,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "ammoniaquée",
+          "start_rank": 130
+        },
+        {
+          "word": "somptueusement",
+          "slug": "somptueusement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 50581,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "parées",
+          "start_rank": 129
+        }
+      ],
+      "pool_index": 42
+    },
+    {
+      "candidate_id": "7d1b669892716f5dda7574a9a321e3c713b784053e64d5cb3f60d95c5f759b8d",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/7d1b669892716f5dda7574a9a321e3c713b784053e64d5cb3f60d95c5f759b8d.json.gz",
+      "sha256": "94d214a39d17e0189f6559a7937c139e3399cd5f40b9fe69a32e4e455a44895c",
+      "sentence": "le vignoble somnolait tantôt sous une lumière étonnante",
+      "targets": [
+        {
+          "word": "vignoble",
+          "slug": "vignoble",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 6904,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "oliveraies",
+          "start_rank": 136
+        },
+        {
+          "word": "tantôt",
+          "slug": "tantot",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 6494,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "fondamentalement",
+          "start_rank": 107
+        },
+        {
+          "word": "étonnante",
+          "slug": "etonnante",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 9786,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "particularité",
+          "start_rank": 141
+        }
+      ],
+      "pool_index": 43
+    },
+    {
+      "candidate_id": "7d9ebe6ce07611fe16deeb15120ea5aa8135a2fb58d079aedc10dd01c84454f9",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/7d9ebe6ce07611fe16deeb15120ea5aa8135a2fb58d079aedc10dd01c84454f9.json.gz",
+      "sha256": "5efb4f607e595baafcd54bbd127e15ac533f3e5df6c0352aeb8befaeefce29fc",
+      "sentence": "il voulait glaner posément les épis du champ moissonné",
+      "targets": [
+        {
+          "word": "glaner",
+          "slug": "glaner",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 31884,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "faire",
+          "start_rank": 104
+        },
+        {
+          "word": "posément",
+          "slug": "posement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 50074,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "admirablement",
+          "start_rank": 116
+        },
+        {
+          "word": "champ",
+          "slug": "champ",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 1281,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "signal",
+          "start_rank": 112
+        }
+      ],
+      "pool_index": 44
+    },
+    {
+      "candidate_id": "868edd0789f1c8ebfa6abda41d9b167356c8bc876524ca868752a829829dbe4e",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/868edd0789f1c8ebfa6abda41d9b167356c8bc876524ca868752a829829dbe4e.json.gz",
+      "sha256": "031c313ed0aea88b65ef7d17c5ad878cf8b2433e3c574037c49f7838235a9dbc",
+      "sentence": "la rivière semblait serpenter nonchalamment entre les saules",
+      "targets": [
+        {
+          "word": "rivière",
+          "slug": "riviere",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 1010,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "valleuse",
+          "start_rank": 147
+        },
+        {
+          "word": "serpenter",
+          "slug": "serpenter",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 84812,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "zigzagant",
+          "start_rank": 111
+        },
+        {
+          "word": "nonchalamment",
+          "slug": "nonchalamment",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 51491,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "mâchouillant",
+          "start_rank": 103
+        }
+      ],
+      "pool_index": 45
+    },
+    {
+      "candidate_id": "88bae84a5d37fa65ce66b56be555afd5e4f62bc5d036db0cefb3ca54138d43b0",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/88bae84a5d37fa65ce66b56be555afd5e4f62bc5d036db0cefb3ca54138d43b0.json.gz",
+      "sha256": "4e183a0f8862c718d7221a9bf692db4cb89521e7c611f2acd6f7b2f98f60079e",
+      "sentence": "un parfum de cire semblait monter du buffet ancien",
+      "targets": [
+        {
+          "word": "cire",
+          "slug": "cire",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 8269,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "saindoux",
+          "start_rank": 126
+        },
+        {
+          "word": "monter",
+          "slug": "monter",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 2212,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "atteindre",
+          "start_rank": 110
+        },
+        {
+          "word": "ancien",
+          "slug": "ancien",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 319,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "principal",
+          "start_rank": 129
+        }
+      ],
+      "pool_index": 46
+    },
+    {
+      "candidate_id": "8baa677c2aa53cb3485ef85ab80b973fd27aaf9e22c784af79f41aba9ec33204",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/8baa677c2aa53cb3485ef85ab80b973fd27aaf9e22c784af79f41aba9ec33204.json.gz",
+      "sha256": "8d635ebdb60405fc8fb57579a9a74c35eb29838d8b80db7b6ea076cf811ae87b",
+      "sentence": "la mésange affamée venait picorer les miettes du rebord",
+      "targets": [
+        {
+          "word": "mésange",
+          "slug": "mesange",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 36851,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "libellules",
+          "start_rank": 104
+        },
+        {
+          "word": "affamée",
+          "slug": "affamee",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 39404,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "embrochée",
+          "start_rank": 115
+        },
+        {
+          "word": "picorer",
+          "slug": "picorer",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 45533,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "renifler",
+          "start_rank": 139
+        }
+      ],
+      "pool_index": 47
+    },
+    {
+      "candidate_id": "8d1938fa75dff81d43190895b923ab5870ca248a35433318a55f01b8d2015583",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/8d1938fa75dff81d43190895b923ab5870ca248a35433318a55f01b8d2015583.json.gz",
+      "sha256": "b4a65b27f21f0ce49f71b2b1701f6cc3a2b2fc83552aa940c60a35bdf9dfcf8e",
+      "sentence": "engourdi par le froid, il peinait à avancer gauchement sur le verglas",
+      "targets": [
+        {
+          "word": "engourdi",
+          "slug": "engourdi",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 64291,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "grelottait",
+          "start_rank": 150
+        },
+        {
+          "word": "avancer",
+          "slug": "avancer",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 3795,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "enclencher",
+          "start_rank": 109
+        },
+        {
+          "word": "gauchement",
+          "slug": "gauchement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 88888,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "chatouillant",
+          "start_rank": 101
+        }
+      ],
+      "pool_index": 48
+    },
+    {
+      "candidate_id": "8e748be8647be60f8b5ab48e7e1f0f01e902602d6b6b0a219d6b24489d2c8317",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/8e748be8647be60f8b5ab48e7e1f0f01e902602d6b6b0a219d6b24489d2c8317.json.gz",
+      "sha256": "762c564865fcf2415625ceb255dde7f2365913ac22c9a8c216f65910c42ae93c",
+      "sentence": "la soupe fumante devait mijoter longtemps sur la braise",
+      "targets": [
+        {
+          "word": "fumante",
+          "slug": "fumante",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 53999,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "rougie",
+          "start_rank": 106
+        },
+        {
+          "word": "mijoter",
+          "slug": "mijoter",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 17260,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "boulgour",
+          "start_rank": 128
+        },
+        {
+          "word": "longtemps",
+          "slug": "longtemps",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 686,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "loin",
+          "start_rank": 109
+        }
+      ],
+      "pool_index": 49
+    },
+    {
+      "candidate_id": "92ac19440b0e371fc121cfcd173df8bb856c2525ba3ea96ff19e912f3870fc7b",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/92ac19440b0e371fc121cfcd173df8bb856c2525ba3ea96ff19e912f3870fc7b.json.gz",
+      "sha256": "76704e2929e897328d5329474387f24ba98c449b7243ba41df9b68b07c4930ee",
+      "sentence": "une odeur suave commençait à embaumer la cuisine",
+      "targets": [
+        {
+          "word": "odeur",
+          "slug": "odeur",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 4031,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "huileuse",
+          "start_rank": 132
+        },
+        {
+          "word": "suave",
+          "slug": "suave",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 26686,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "mélodique",
+          "start_rank": 147
+        },
+        {
+          "word": "embaumer",
+          "slug": "embaumer",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 60614,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "confire",
+          "start_rank": 145
+        }
+      ],
+      "pool_index": 50
+    },
+    {
+      "candidate_id": "93bcc911bacab45432dec2f622af2303e7348506e6d828c19f58c3069a8d9c96",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/93bcc911bacab45432dec2f622af2303e7348506e6d828c19f58c3069a8d9c96.json.gz",
+      "sha256": "c64d5c8963183134dc8c227a042f2d80511a646a2340d2ba371430262ba8bc4a",
+      "sentence": "la tempête obligea chacun à rentrer précipitamment les filets",
+      "targets": [
+        {
+          "word": "tempête",
+          "slug": "tempete",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 5429,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "inclémence",
+          "start_rank": 100
+        },
+        {
+          "word": "rentrer",
+          "slug": "rentrer",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 3084,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "dormir",
+          "start_rank": 136
+        },
+        {
+          "word": "précipitamment",
+          "slug": "precipitamment",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 25953,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "raviser",
+          "start_rank": 111
+        }
+      ],
+      "pool_index": 51
+    },
+    {
+      "candidate_id": "93be22c88f19bfe30a59779c3afdee81f96cd134f56e5e8135147253f1a1e9dd",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/93be22c88f19bfe30a59779c3afdee81f96cd134f56e5e8135147253f1a1e9dd.json.gz",
+      "sha256": "0183544c52d6ebefb0536025325c99210369d9d670472d62ddf5b92166a12c56",
+      "sentence": "le vieil escalier semblait grincer sous chaque pas prudent",
+      "targets": [
+        {
+          "word": "escalier",
+          "slug": "escalier",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 4000,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "poutre",
+          "start_rank": 139
+        },
+        {
+          "word": "grincer",
+          "slug": "grincer",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 34626,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "mordiller",
+          "start_rank": 150
+        },
+        {
+          "word": "prudent",
+          "slug": "prudent",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 10695,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "nuancé",
+          "start_rank": 101
+        }
+      ],
+      "pool_index": 52
+    },
+    {
+      "candidate_id": "963a66e883f48fb779979b09b2e065f9eab45fa6bede8ccc73e376b4e67b883a",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/963a66e883f48fb779979b09b2e065f9eab45fa6bede8ccc73e376b4e67b883a.json.gz",
+      "sha256": "eba463b201127ef299c534b641afdf53d4386f375968e0e3b369c8f2ded8e4d7",
+      "sentence": "l'enfant voulait escalader prestement le muret",
+      "targets": [
+        {
+          "word": "escalader",
+          "slug": "escalader",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 27277,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "plaquer",
+          "start_rank": 130
+        },
+        {
+          "word": "prestement",
+          "slug": "prestement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 48105,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "détalé",
+          "start_rank": 116
+        },
+        {
+          "word": "muret",
+          "slug": "muret",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 26430,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "parterre",
+          "start_rank": 147
+        }
+      ],
+      "pool_index": 53
+    },
+    {
+      "candidate_id": "992466611c0be6cb48e6f1e4adb8d041f4b354c7bc9a44ba1fe58882b50c370e",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/992466611c0be6cb48e6f1e4adb8d041f4b354c7bc9a44ba1fe58882b50c370e.json.gz",
+      "sha256": "5af82246f2d65c791d400b3a00994d79efd289315713db183741b175dc2cc3a5",
+      "sentence": "le chiot affamé voulait laper goulûment le lait tiède",
+      "targets": [
+        {
+          "word": "affamé",
+          "slug": "affame",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 29021,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "abois",
+          "start_rank": 150
+        },
+        {
+          "word": "laper",
+          "slug": "laper",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 87188,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "griffer",
+          "start_rank": 112
+        },
+        {
+          "word": "goulûment",
+          "slug": "goulument",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 57373,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "consciencieusement",
+          "start_rank": 148
+        }
+      ],
+      "pool_index": 54
+    },
+    {
+      "candidate_id": "9aeddf9afe2586af6c0502aacd85bfd9db50e4e69afcfbed0d685d2f81fd0872",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/9aeddf9afe2586af6c0502aacd85bfd9db50e4e69afcfbed0d685d2f81fd0872.json.gz",
+      "sha256": "e6528071baa991e0dbc3b2ef223f9b71ea774dd63a59ebbc8f3c4cda6a83ecce",
+      "sentence": "l'orateur enroué peinait à conclure sobrement son discours",
+      "targets": [
+        {
+          "word": "enroué",
+          "slug": "enroue",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 93291,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "hurleur",
+          "start_rank": 114
+        },
+        {
+          "word": "conclure",
+          "slug": "conclure",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 5351,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "étonner",
+          "start_rank": 107
+        },
+        {
+          "word": "sobrement",
+          "slug": "sobrement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 26793,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "poliment",
+          "start_rank": 139
+        }
+      ],
+      "pool_index": 55
+    },
+    {
+      "candidate_id": "9ddca60abe04f72610df1f892a5dc5f549df80b32949a02a958c1f1109235827",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/9ddca60abe04f72610df1f892a5dc5f549df80b32949a02a958c1f1109235827.json.gz",
+      "sha256": "a2d357ee95d07e90d6eac286725bbe09f7ee24573275333236412bfcc0662ac3",
+      "sentence": "l'écolier sage voulait réciter poliment sa fable",
+      "targets": [
+        {
+          "word": "sage",
+          "slug": "sage",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 5312,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "insensé",
+          "start_rank": 126
+        },
+        {
+          "word": "réciter",
+          "slug": "reciter",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 22294,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "fourcher",
+          "start_rank": 136
+        },
+        {
+          "word": "poliment",
+          "slug": "poliment",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 26921,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "refuserais",
+          "start_rank": 101
+        }
+      ],
+      "pool_index": 56
+    },
+    {
+      "candidate_id": "a2dccc93061754e5e049c4f0ba6bf1d2db5248ad49de03d17ff3d6cd8494333c",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/a2dccc93061754e5e049c4f0ba6bf1d2db5248ad49de03d17ff3d6cd8494333c.json.gz",
+      "sha256": "c865e25d0dfc69f4451ae8b8c6f4edaf225ad2c444cb197979a22f4d29d81fa4",
+      "sentence": "un silence pesant finissait par gagner le sentier escarpé",
+      "targets": [
+        {
+          "word": "silence",
+          "slug": "silence",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 2652,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "ricanement",
+          "start_rank": 146
+        },
+        {
+          "word": "gagner",
+          "slug": "gagner",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 1300,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "maximaliser",
+          "start_rank": 148
+        },
+        {
+          "word": "escarpé",
+          "slug": "escarpe",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 34326,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "sableux",
+          "start_rank": 121
+        }
+      ],
+      "pool_index": 57
+    },
+    {
+      "candidate_id": "a5265dae4ea2e6e27c2d5ea1296e76ac2a4f819eebe05853e87bb47c96e17bdb",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/a5265dae4ea2e6e27c2d5ea1296e76ac2a4f819eebe05853e87bb47c96e17bdb.json.gz",
+      "sha256": "ab21e4c0580d0a6a1e505edf95bf8d6268669c575d83cd9e1f1e3000065d72dc",
+      "sentence": "il osa chuchoter maladroitement une excuse au concierge",
+      "targets": [
+        {
+          "word": "chuchoter",
+          "slug": "chuchoter",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 51940,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "enlacer",
+          "start_rank": 108
+        },
+        {
+          "word": "maladroitement",
+          "slug": "maladroitement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 26918,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "bizarrement",
+          "start_rank": 101
+        },
+        {
+          "word": "excuse",
+          "slug": "excuse",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 6756,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "incompétence",
+          "start_rank": 141
+        }
+      ],
+      "pool_index": 58
+    },
+    {
+      "candidate_id": "aa84f92ab4c2664a4dc513e5e0c885faa86e95563405556769a8e4a8647074d5",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/aa84f92ab4c2664a4dc513e5e0c885faa86e95563405556769a8e4a8647074d5.json.gz",
+      "sha256": "d29df992d051ceceb47d6a565c09819bec66539c8f36c1a845e790c90603306b",
+      "sentence": "le veilleur écoutait le parquet craquer sèchement la nuit",
+      "targets": [
+        {
+          "word": "parquet",
+          "slug": "parquet",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 5863,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "enquêteurs",
+          "start_rank": 117
+        },
+        {
+          "word": "craquer",
+          "slug": "craquer",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 9665,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "parler",
+          "start_rank": 120
+        },
+        {
+          "word": "sèchement",
+          "slug": "sechement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 29256,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "malicieusement",
+          "start_rank": 110
+        }
+      ],
+      "pool_index": 59
+    },
+    {
+      "candidate_id": "ac6161824c436394dda5957d0ebed833d053f87384b94b5ceeb78933a3bfd888",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/ac6161824c436394dda5957d0ebed833d053f87384b94b5ceeb78933a3bfd888.json.gz",
+      "sha256": "f8643236f32dd0e485a6938978be19adaf3a6b1af6d5be7acdb52ee9ea1babf2",
+      "sentence": "le potager cossu semblait narguer les jardins voisins",
+      "targets": [
+        {
+          "word": "potager",
+          "slug": "potager",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 9584,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "rhubarbes",
+          "start_rank": 149
+        },
+        {
+          "word": "cossu",
+          "slug": "cossu",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 47257,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "urbain",
+          "start_rank": 123
+        },
+        {
+          "word": "narguer",
+          "slug": "narguer",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 41641,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "désobliger",
+          "start_rank": 143
+        }
+      ],
+      "pool_index": 60
+    },
+    {
+      "candidate_id": "af1a9f6cb581f9d9d004ad2c4061ca1ed90195a9096e40e77405fdf4cc548a2c",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/af1a9f6cb581f9d9d004ad2c4061ca1ed90195a9096e40e77405fdf4cc548a2c.json.gz",
+      "sha256": "78e32fe747b9776c1bbba6db400801ee746131da9018d112e40b5e6c827917cf",
+      "sentence": "la ruelle déserte s'enfonçait sournoisement dans le brouillard",
+      "targets": [
+        {
+          "word": "ruelle",
+          "slug": "ruelle",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 16249,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "arrière-salle",
+          "start_rank": 121
+        },
+        {
+          "word": "déserte",
+          "slug": "deserte",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 16735,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "reclus",
+          "start_rank": 125
+        },
+        {
+          "word": "sournoisement",
+          "slug": "sournoisement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 41139,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "magiquement",
+          "start_rank": 125
+        }
+      ],
+      "pool_index": 61
+    },
+    {
+      "candidate_id": "b0379adb1f0cdad445a21a06caf892888bdfe15c99a976d4f3d5a93533df2c84",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/b0379adb1f0cdad445a21a06caf892888bdfe15c99a976d4f3d5a93533df2c84.json.gz",
+      "sha256": "e46e329cddfe82427e14b28f71686b2b47ba448a308bbea1ed6f6f006a01e620",
+      "sentence": "la pâte devait lever lentement près du fourneau",
+      "targets": [
+        {
+          "word": "pâte",
+          "slug": "pate",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 1983,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "vermicelle",
+          "start_rank": 109
+        },
+        {
+          "word": "lever",
+          "slug": "lever",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 3569,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "volter",
+          "start_rank": 134
+        },
+        {
+          "word": "lentement",
+          "slug": "lentement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 5463,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "hardiment",
+          "start_rank": 104
+        }
+      ],
+      "pool_index": 62
+    },
+    {
+      "candidate_id": "b14d2d32a11d5f4de11994c67a917e575cf1135f3c5c37e9b63dd479f28ff3e3",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/b14d2d32a11d5f4de11994c67a917e575cf1135f3c5c37e9b63dd479f28ff3e3.json.gz",
+      "sha256": "134f9c5ffa07be06d35f77e037d7ed338a1c7eff9f358389dbdbb4bfc61d8c16",
+      "sentence": "la colline enneigée brillait étrangement au crépuscule",
+      "targets": [
+        {
+          "word": "colline",
+          "slug": "colline",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 4774,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "longeant",
+          "start_rank": 121
+        },
+        {
+          "word": "enneigée",
+          "slug": "enneigee",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 33452,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "grelottante",
+          "start_rank": 134
+        },
+        {
+          "word": "étrangement",
+          "slug": "etrangement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 13710,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "rarement",
+          "start_rank": 132
+        }
+      ],
+      "pool_index": 63
+    },
+    {
+      "candidate_id": "b22849b8c6419a36928b3f4cac1e87cef6834eca9950ef817c1dd0fea291814e",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/b22849b8c6419a36928b3f4cac1e87cef6834eca9950ef817c1dd0fea291814e.json.gz",
+      "sha256": "456782e929a3c86fb0a058b56a9ff2710f37ab83100a2f972e52b3a1f4c5da2f",
+      "sentence": "le berger regardait le troupeau dévaler bruyamment la pente",
+      "targets": [
+        {
+          "word": "troupeau",
+          "slug": "troupeau",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 10834,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "broutée",
+          "start_rank": 134
+        },
+        {
+          "word": "dévaler",
+          "slug": "devaler",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 41543,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "accoucher",
+          "start_rank": 113
+        },
+        {
+          "word": "bruyamment",
+          "slug": "bruyamment",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 29955,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "amèrement",
+          "start_rank": 103
+        }
+      ],
+      "pool_index": 64
+    },
+    {
+      "candidate_id": "b2370e04c580bdee7a71b9db039346a435020d6558896499d01d08b5f81e2940",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/b2370e04c580bdee7a71b9db039346a435020d6558896499d01d08b5f81e2940.json.gz",
+      "sha256": "0f3e3958372cc19ff242b9c6751eff9c0d47fe3fdf011d25ec1b16ad596f461e",
+      "sentence": "la couturière myope devait recoudre délicatement la doublure",
+      "targets": [
+        {
+          "word": "myope",
+          "slug": "myope",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 38244,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "monomaniaque",
+          "start_rank": 107
+        },
+        {
+          "word": "recoudre",
+          "slug": "recoudre",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 51810,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "recousait",
+          "start_rank": 128
+        },
+        {
+          "word": "délicatement",
+          "slug": "delicatement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 9698,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "caressantes",
+          "start_rank": 141
+        }
+      ],
+      "pool_index": 65
+    },
+    {
+      "candidate_id": "b2dd22ad5b7fa3693eee6b448194a2cc66def30827fdb71287cf7fa230caca9d",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/b2dd22ad5b7fa3693eee6b448194a2cc66def30827fdb71287cf7fa230caca9d.json.gz",
+      "sha256": "fa14f162f7abebf83fcfe4b893384c42e6fbae221b74d38bc5a99f7f912c4adf",
+      "sentence": "une averse soudaine fit déborder le ruisseau du vallon",
+      "targets": [
+        {
+          "word": "averse",
+          "slug": "averse",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 28463,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "brouillard",
+          "start_rank": 111
+        },
+        {
+          "word": "soudaine",
+          "slug": "soudaine",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 14778,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "venue",
+          "start_rank": 132
+        },
+        {
+          "word": "déborder",
+          "slug": "deborder",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 19920,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "débordée",
+          "start_rank": 140
+        }
+      ],
+      "pool_index": 66
+    },
+    {
+      "candidate_id": "b2ee34be27f1d03833d57bfa1b85e001756be4c700cd8dd3488a2ec14bfafa27",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/b2ee34be27f1d03833d57bfa1b85e001756be4c700cd8dd3488a2ec14bfafa27.json.gz",
+      "sha256": "fccb5a701c07a0fe03a11238f8808f20132d716dc8c854a1c6f55ec963e6630d",
+      "sentence": "une allégresse bruyante semblait soulever le cortège",
+      "targets": [
+        {
+          "word": "allégresse",
+          "slug": "allegresse",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 27007,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "paillardise",
+          "start_rank": 146
+        },
+        {
+          "word": "bruyante",
+          "slug": "bruyante",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 19598,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "perturbée",
+          "start_rank": 148
+        },
+        {
+          "word": "soulever",
+          "slug": "soulever",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 11550,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "traiter",
+          "start_rank": 101
+        }
+      ],
+      "pool_index": 67
+    },
+    {
+      "candidate_id": "ba81699acae2075682e78baa9a17b7f2aeb15f864723a3ca1055da969bf5161c",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/ba81699acae2075682e78baa9a17b7f2aeb15f864723a3ca1055da969bf5161c.json.gz",
+      "sha256": "7ee2a40478c9a4b5e209addec9599960c65fc3f787c5ea19fb6299373d7986a4",
+      "sentence": "une hirondelle vint frôler vivement la surface du lavoir",
+      "targets": [
+        {
+          "word": "hirondelle",
+          "slug": "hirondelle",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 28053,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "araignée-crabe",
+          "start_rank": 117
+        },
+        {
+          "word": "frôler",
+          "slug": "froler",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 37031,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "débouler",
+          "start_rank": 117
+        },
+        {
+          "word": "vivement",
+          "slug": "vivement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 2385,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "féliciterais",
+          "start_rank": 126
+        }
+      ],
+      "pool_index": 68
+    },
+    {
+      "candidate_id": "bc5f13176787de46f9cab48d7a048e2147c30270b4fadfe6183e824289b9d84e",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/bc5f13176787de46f9cab48d7a048e2147c30270b4fadfe6183e824289b9d84e.json.gz",
+      "sha256": "594f7cd624a2de45a8c508f3d19a698d409216d72034bf0b22e129fd12147836",
+      "sentence": "le sacristain venait balayer machinalement le parvis",
+      "targets": [
+        {
+          "word": "balayer",
+          "slug": "balayer",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 21589,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "effleurer",
+          "start_rank": 112
+        },
+        {
+          "word": "machinalement",
+          "slug": "machinalement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 42512,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "entrouvris",
+          "start_rank": 108
+        },
+        {
+          "word": "parvis",
+          "slug": "parvis",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 15414,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "défilé",
+          "start_rank": 109
+        }
+      ],
+      "pool_index": 69
+    },
+    {
+      "candidate_id": "bce5ee6e1e4f8a2c8974ad4f945a48ecfec9a438c27616c35d0f845515a66a3d",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/bce5ee6e1e4f8a2c8974ad4f945a48ecfec9a438c27616c35d0f845515a66a3d.json.gz",
+      "sha256": "573546ca834966ced21c295bb972656d3a4565a335e4487ca50e0135ef33aed6",
+      "sentence": "la langueur d'août pesait lourdement sur le marché couvert",
+      "targets": [
+        {
+          "word": "langueur",
+          "slug": "langueur",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 41219,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "exubérance",
+          "start_rank": 112
+        },
+        {
+          "word": "lourdement",
+          "slug": "lourdement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 11395,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "énormément",
+          "start_rank": 135
+        },
+        {
+          "word": "couvert",
+          "slug": "couvert",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 3410,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "gazonné",
+          "start_rank": 104
+        }
+      ],
+      "pool_index": 70
+    },
+    {
+      "candidate_id": "be19a57f1695fb9d0a3ede2677b54e2de16183ba437463c124e2312227b50d06",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/be19a57f1695fb9d0a3ede2677b54e2de16183ba437463c124e2312227b50d06.json.gz",
+      "sha256": "262e239b5c8f2bc3c5077a429f710b9e52824f97c636bf04d81aadb09386c4bc",
+      "sentence": "un soupçon vague pesait désormais sur la vendange",
+      "targets": [
+        {
+          "word": "soupçon",
+          "slug": "soupcon",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 12406,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "complaisance",
+          "start_rank": 109
+        },
+        {
+          "word": "vague",
+          "slug": "vague",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 3413,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "lancinante",
+          "start_rank": 134
+        },
+        {
+          "word": "vendange",
+          "slug": "vendange",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 28406,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "bouteilles",
+          "start_rank": 139
+        }
+      ],
+      "pool_index": 71
+    },
+    {
+      "candidate_id": "c04315d1c0f1adb77b77802fe012dcc761555b85f1138aef6f19f5777a5f4b07",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/c04315d1c0f1adb77b77802fe012dcc761555b85f1138aef6f19f5777a5f4b07.json.gz",
+      "sha256": "c7dcb4fade7b07ae71af53c85979b8c6c945aa8027d7c5cc7d4c34f96b22142a",
+      "sentence": "sa candeur illuminait fréquemment son visage rond",
+      "targets": [
+        {
+          "word": "candeur",
+          "slug": "candeur",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 31518,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "pruderie",
+          "start_rank": 100
+        },
+        {
+          "word": "fréquemment",
+          "slug": "frequemment",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 4156,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "implicitement",
+          "start_rank": 113
+        },
+        {
+          "word": "rond",
+          "slug": "rond",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 4237,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "festonné",
+          "start_rank": 140
+        }
+      ],
+      "pool_index": 72
+    },
+    {
+      "candidate_id": "c070f4c21208d4301403d266e59394bbe9f17126d452b138e83f35897929a88f",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/c070f4c21208d4301403d266e59394bbe9f17126d452b138e83f35897929a88f.json.gz",
+      "sha256": "dc3c939c3564267969e87dc1979af5d79dc42bece9c2483db348a563cd1f0d0b",
+      "sentence": "une brume tenace venait estomper la ligne des collines",
+      "targets": [
+        {
+          "word": "brume",
+          "slug": "brume",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 13518,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "enténébrée",
+          "start_rank": 123
+        },
+        {
+          "word": "tenace",
+          "slug": "tenace",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 19740,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "rétif",
+          "start_rank": 114
+        },
+        {
+          "word": "estomper",
+          "slug": "estomper",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 29058,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "déformer",
+          "start_rank": 149
+        }
+      ],
+      "pool_index": 73
+    },
+    {
+      "candidate_id": "c1762a4a593a548ab3c05335d5ca9163bf5e98df3cfafec57bc6488b28f6c080",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/c1762a4a593a548ab3c05335d5ca9163bf5e98df3cfafec57bc6488b28f6c080.json.gz",
+      "sha256": "6645569daf23dec4f43e8d1decf49e1b259f477bf43d3d01c5f80cbff030b186",
+      "sentence": "la charpente noueuse semblait défier les hivers",
+      "targets": [
+        {
+          "word": "charpente",
+          "slug": "charpente",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 10186,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "enchevêtrure",
+          "start_rank": 147
+        },
+        {
+          "word": "noueuse",
+          "slug": "noueuse",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 76497,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "excoriée",
+          "start_rank": 101
+        },
+        {
+          "word": "défier",
+          "slug": "defier",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 16647,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "aventurer",
+          "start_rank": 117
+        }
+      ],
+      "pool_index": 74
+    },
+    {
+      "candidate_id": "c3d4c7e5005a263e50765eb75c05d10c04bf53e5f074fd81b39448906d39b123",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/c3d4c7e5005a263e50765eb75c05d10c04bf53e5f074fd81b39448906d39b123.json.gz",
+      "sha256": "728d7c58fdce79598e2d889f8e74ac19eee54414a53990c28dedb26f0be89dac",
+      "sentence": "elle continuait de coudre patiemment l'ourlet défait",
+      "targets": [
+        {
+          "word": "coudre",
+          "slug": "coudre",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 8228,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "jacquard",
+          "start_rank": 143
+        },
+        {
+          "word": "patiemment",
+          "slug": "patiemment",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 18451,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "quelques",
+          "start_rank": 141
+        },
+        {
+          "word": "ourlet",
+          "slug": "ourlet",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 24545,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "pressionnée",
+          "start_rank": 116
+        }
+      ],
+      "pool_index": 75
+    },
+    {
+      "candidate_id": "cb82739bc02d9fbc454f1fab2b0343b3723d929135958d3c61671d1568e704d8",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/cb82739bc02d9fbc454f1fab2b0343b3723d929135958d3c61671d1568e704d8.json.gz",
+      "sha256": "0d26b4b657c714fa81fa82ac37b1007419bb2ea15e39449e43331b74bf10b97f",
+      "sentence": "le campeur trempé tentait de rallumer nerveusement le réchaud",
+      "targets": [
+        {
+          "word": "trempé",
+          "slug": "trempe",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 13444,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "alu",
+          "start_rank": 129
+        },
+        {
+          "word": "rallumer",
+          "slug": "rallumer",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 33494,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "contre-feu",
+          "start_rank": 126
+        },
+        {
+          "word": "nerveusement",
+          "slug": "nerveusement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 42270,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "crispait",
+          "start_rank": 112
+        }
+      ],
+      "pool_index": 76
+    },
+    {
+      "candidate_id": "cff367087dd3f9d2745f54c9881686c81ac37ae027a1ad7972127709aaf2ed67",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/cff367087dd3f9d2745f54c9881686c81ac37ae027a1ad7972127709aaf2ed67.json.gz",
+      "sha256": "3ff08717f1cf6cfd2c5fb3ea3485a48186d1881aa85cf64a5f88bb6889377573",
+      "sentence": "les pèlerins devaient franchir prudemment le gué",
+      "targets": [
+        {
+          "word": "franchir",
+          "slug": "franchir",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 6698,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "fracasser",
+          "start_rank": 114
+        },
+        {
+          "word": "prudemment",
+          "slug": "prudemment",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 25410,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "bien",
+          "start_rank": 108
+        },
+        {
+          "word": "gué",
+          "slug": "gue",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 20340,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "drailles",
+          "start_rank": 109
+        }
+      ],
+      "pool_index": 77
+    },
+    {
+      "candidate_id": "d07701b7780d108a7ed872e5d021329fd3b5e1149806a5746ad0dd59289e4767",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/d07701b7780d108a7ed872e5d021329fd3b5e1149806a5746ad0dd59289e4767.json.gz",
+      "sha256": "a6fd69a2df66489ea96d8d85e366a9ac81c2b8f8b2967bd828a467abe6ce90d0",
+      "sentence": "le velours cuivré luisait faiblement sous la lampe",
+      "targets": [
+        {
+          "word": "velours",
+          "slug": "velours",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 9777,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "jacquard",
+          "start_rank": 114
+        },
+        {
+          "word": "cuivré",
+          "slug": "cuivre",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 32384,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "acidulé",
+          "start_rank": 103
+        },
+        {
+          "word": "faiblement",
+          "slug": "faiblement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 13793,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "subtilement",
+          "start_rank": 139
+        }
+      ],
+      "pool_index": 78
+    },
+    {
+      "candidate_id": "d32ad2a0ee10ee7010d70d602d5bbe39fda5d7e7eef4a7310016b84f6a7ebad6",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/d32ad2a0ee10ee7010d70d602d5bbe39fda5d7e7eef4a7310016b84f6a7ebad6.json.gz",
+      "sha256": "170d5c9acc87a072354ccf6d2f55b9cc7d14e8cb8494738b4fce9b08b295290c",
+      "sentence": "le blessé essayait de marcher courageusement vers la ferme",
+      "targets": [
+        {
+          "word": "blessé",
+          "slug": "blesse",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 3611,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "démobilisé",
+          "start_rank": 108
+        },
+        {
+          "word": "marcher",
+          "slug": "marcher",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 4305,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "débrouiller",
+          "start_rank": 114
+        },
+        {
+          "word": "courageusement",
+          "slug": "courageusement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 27421,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "diligemment",
+          "start_rank": 117
+        }
+      ],
+      "pool_index": 79
+    },
+    {
+      "candidate_id": "d8c2aae7f9e0dac416553b7ff1092db98db3aaf7372d2d0a31b0cf887fd5161e",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/d8c2aae7f9e0dac416553b7ff1092db98db3aaf7372d2d0a31b0cf887fd5161e.json.gz",
+      "sha256": "0360c895559b70c11b2ee3edd3f2291bcc68abe4e33c3d3ebc59e000cb3ac6b9",
+      "sentence": "le linge humide devait sécher dedans près du feu",
+      "targets": [
+        {
+          "word": "humide",
+          "slug": "humide",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 5360,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "transpirante",
+          "start_rank": 139
+        },
+        {
+          "word": "sécher",
+          "slug": "secher",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 10132,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "séchés",
+          "start_rank": 143
+        },
+        {
+          "word": "dedans",
+          "slug": "dedans",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 3952,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "trifouille",
+          "start_rank": 103
+        }
+      ],
+      "pool_index": 80
+    },
+    {
+      "candidate_id": "e01cc257063c3b8788df4e624b2a55c75af5df853179227c646b6f7d768819b0",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/e01cc257063c3b8788df4e624b2a55c75af5df853179227c646b6f7d768819b0.json.gz",
+      "sha256": "21fcdbb9d38fd87dc85372fa272c8c89a6e12eff840d43ba6036666665444f1f",
+      "sentence": "le jardinier prévoyant voulait pailler tôt les semis fragiles",
+      "targets": [
+        {
+          "word": "prévoyant",
+          "slug": "prevoyant",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 13616,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "disposant",
+          "start_rank": 127
+        },
+        {
+          "word": "pailler",
+          "slug": "pailler",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 73986,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "criblure",
+          "start_rank": 105
+        },
+        {
+          "word": "tôt",
+          "slug": "tot",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 1629,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "prématurée",
+          "start_rank": 139
+        }
+      ],
+      "pool_index": 81
+    },
+    {
+      "candidate_id": "e0681b17d9d455c3ce326262de95cb75406f22b713d19d25d9edcd7cd9b6e8c2",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/e0681b17d9d455c3ce326262de95cb75406f22b713d19d25d9edcd7cd9b6e8c2.json.gz",
+      "sha256": "4b42d707f2cad1a7a85ec7d006e1b015af5f800626a4267ff21520f83d54cd7a",
+      "sentence": "le verrou tordu résistait obstinément aux secousses",
+      "targets": [
+        {
+          "word": "verrou",
+          "slug": "verrou",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 18118,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "réarmement",
+          "start_rank": 115
+        },
+        {
+          "word": "tordu",
+          "slug": "tordu",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 20877,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "traviole",
+          "start_rank": 131
+        },
+        {
+          "word": "obstinément",
+          "slug": "obstinement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 30750,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "encore",
+          "start_rank": 139
+        }
+      ],
+      "pool_index": 82
+    },
+    {
+      "candidate_id": "e3c8e1199a202f2417a3daf5df2a1815edacd4c8f6c87cd94bc8b13b02b9cb23",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/e3c8e1199a202f2417a3daf5df2a1815edacd4c8f6c87cd94bc8b13b02b9cb23.json.gz",
+      "sha256": "8062f9917133b9b3e9d98ac32c300ead39de39bdfdd2d167f3fdef192e4695c9",
+      "sentence": "fatigué, il voulait dormir longuement dans la chambre fraîche",
+      "targets": [
+        {
+          "word": "fatigué",
+          "slug": "fatigue",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 10592,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "débordé",
+          "start_rank": 144
+        },
+        {
+          "word": "dormir",
+          "slug": "dormir",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 4056,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "cavaler",
+          "start_rank": 133
+        },
+        {
+          "word": "longuement",
+          "slug": "longuement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 8399,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "généreusement",
+          "start_rank": 120
+        }
+      ],
+      "pool_index": 83
+    },
+    {
+      "candidate_id": "e63faf3846ff4630de228adc452411972ce02fef833d74e1d03580ad1cb99a5d",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/e63faf3846ff4630de228adc452411972ce02fef833d74e1d03580ad1cb99a5d.json.gz",
+      "sha256": "6e225b68535343234106f8fa33e8847a665a8b2726bf7e748da8721f759581ab",
+      "sentence": "une flamme continuait de clignoter tristement dans la lanterne",
+      "targets": [
+        {
+          "word": "flamme",
+          "slug": "flamme",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 7690,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "bombe",
+          "start_rank": 116
+        },
+        {
+          "word": "clignoter",
+          "slug": "clignoter",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 40928,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "pointiller",
+          "start_rank": 123
+        },
+        {
+          "word": "tristement",
+          "slug": "tristement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 19871,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "vilainement",
+          "start_rank": 109
+        }
+      ],
+      "pool_index": 84
+    },
+    {
+      "candidate_id": "e7a6ac31ca4e50d126675fd958bec351e25b412fdd2b4b050cbb374e186bf5fc",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/e7a6ac31ca4e50d126675fd958bec351e25b412fdd2b4b050cbb374e186bf5fc.json.gz",
+      "sha256": "5ba06f867507209c8f20834926e6351edefcd690f7c125953df7af1da79ae6ac",
+      "sentence": "le facteur essoufflé devait grimper bravement la côte pavée",
+      "targets": [
+        {
+          "word": "essoufflé",
+          "slug": "essouffle",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 46671,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "déçu",
+          "start_rank": 118
+        },
+        {
+          "word": "grimper",
+          "slug": "grimper",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 9962,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "dominer",
+          "start_rank": 133
+        },
+        {
+          "word": "bravement",
+          "slug": "bravement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 51980,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "lamentablement",
+          "start_rank": 149
+        }
+      ],
+      "pool_index": 85
+    },
+    {
+      "candidate_id": "e9e299a1d90a82b176e246d6a1b0bdc060b2e9c7ca8cc88746f412aa4a36575d",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/e9e299a1d90a82b176e246d6a1b0bdc060b2e9c7ca8cc88746f412aa4a36575d.json.gz",
+      "sha256": "304e20048d8f65a675750dc836e7881ece37a94c81d6758b7f7056ee1e2ef1aa",
+      "sentence": "son aveu sincère fit trembler sa voix",
+      "targets": [
+        {
+          "word": "aveu",
+          "slug": "aveu",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 13857,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "culpabilité",
+          "start_rank": 116
+        },
+        {
+          "word": "sincère",
+          "slug": "sincere",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 9726,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "malhonnête",
+          "start_rank": 135
+        },
+        {
+          "word": "trembler",
+          "slug": "trembler",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 16683,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "tourbillonner",
+          "start_rank": 110
+        }
+      ],
+      "pool_index": 86
+    },
+    {
+      "candidate_id": "ea11c0d927e1a5e1424b8cfad30d48d7599212fed522aa6d5ca2676699946545",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/ea11c0d927e1a5e1424b8cfad30d48d7599212fed522aa6d5ca2676699946545.json.gz",
+      "sha256": "f98d49b1c37241360eb9a0e8ad001984c9be27f5287a1ca90731aef77cddb3ee",
+      "sentence": "la sève amère recommençait à circuler dans le noyer",
+      "targets": [
+        {
+          "word": "sève",
+          "slug": "seve",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 19474,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "mancenillier",
+          "start_rank": 102
+        },
+        {
+          "word": "amère",
+          "slug": "amere",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 17536,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "révoltante",
+          "start_rank": 121
+        },
+        {
+          "word": "circuler",
+          "slug": "circuler",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 8284,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "abreuver",
+          "start_rank": 149
+        }
+      ],
+      "pool_index": 87
+    },
+    {
+      "candidate_id": "eb60e59fd96b4935fa829f346879cf84ee49f05147cace0172f831c84357d8f4",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/eb60e59fd96b4935fa829f346879cf84ee49f05147cace0172f831c84357d8f4.json.gz",
+      "sha256": "0e713bf994aa02ceb3a0491dce2b92549f695408181467225168a37b65c48ee1",
+      "sentence": "l'enclume massive sonnait allègrement dans la forge",
+      "targets": [
+        {
+          "word": "enclume",
+          "slug": "enclume",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 30875,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "battée",
+          "start_rank": 106
+        },
+        {
+          "word": "massive",
+          "slug": "massive",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 6370,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "foudroyante",
+          "start_rank": 107
+        },
+        {
+          "word": "allègrement",
+          "slug": "allegrement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 20080,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "classiquement",
+          "start_rank": 103
+        }
+      ],
+      "pool_index": 88
+    },
+    {
+      "candidate_id": "efcb37e3f921d0e3b02710bdeac23aae88c386b2288a5720dab9b58cccb6c7e2",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/efcb37e3f921d0e3b02710bdeac23aae88c386b2288a5720dab9b58cccb6c7e2.json.gz",
+      "sha256": "c23f731319f8a727317f14572414edc16a852e925a7560ac15f026ce1cb99ce6",
+      "sentence": "l'écorce rugueuse s'effritait insensiblement sous les doigts",
+      "targets": [
+        {
+          "word": "écorce",
+          "slug": "ecorce",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 12450,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "feuillaison",
+          "start_rank": 145
+        },
+        {
+          "word": "rugueuse",
+          "slug": "rugueuse",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 34252,
+          "frequency_band": "difficult",
+          "semantic_class": "tangible",
+          "start": "floconneuse",
+          "start_rank": 105
+        },
+        {
+          "word": "insensiblement",
+          "slug": "insensiblement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 46279,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "étourdiment",
+          "start_rank": 134
+        }
+      ],
+      "pool_index": 89
+    },
+    {
+      "candidate_id": "f058f57f917c698c40b61b09e9c96175e1e5e187a59be9f63fe0d2b853885e5d",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/f058f57f917c698c40b61b09e9c96175e1e5e187a59be9f63fe0d2b853885e5d.json.gz",
+      "sha256": "d5c8b83b55e3b2b32aec4749eab481ae0fa05a4acc8c3a6ddea919c926e13368",
+      "sentence": "la vieille horloge refusait de sonner l'heure exacte",
+      "targets": [
+        {
+          "word": "horloge",
+          "slug": "horloge",
+          "pos": "noun",
+          "gender": "f",
+          "frequency_rank": 7227,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "puce",
+          "start_rank": 134
+        },
+        {
+          "word": "sonner",
+          "slug": "sonner",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 15561,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "résonnait",
+          "start_rank": 115
+        },
+        {
+          "word": "exacte",
+          "slug": "exacte",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 6071,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "essentielle",
+          "start_rank": 110
+        }
+      ],
+      "pool_index": 90
+    },
+    {
+      "candidate_id": "fdd15e8a5c4e3b27402bb176623bbb50b1c460515ba4c2fc63b7da36564b43a7",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/fdd15e8a5c4e3b27402bb176623bbb50b1c460515ba4c2fc63b7da36564b43a7.json.gz",
+      "sha256": "a57b985d4ea3ff07901587c52c4f9139c8cc4f8c96590ecbbb7b42f448aedf69",
+      "sentence": "la chorale débutante voulait chanter joyeusement malgré le trac",
+      "targets": [
+        {
+          "word": "débutante",
+          "slug": "debutante",
+          "pos": "adjective",
+          "gender": "f",
+          "frequency_rank": 19207,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "invétérée",
+          "start_rank": 144
+        },
+        {
+          "word": "chanter",
+          "slug": "chanter",
+          "pos": "verb",
+          "gender": null,
+          "frequency_rank": 5221,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "endiabler",
+          "start_rank": 124
+        },
+        {
+          "word": "joyeusement",
+          "slug": "joyeusement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 21247,
+          "frequency_band": "difficult",
+          "semantic_class": "abstract",
+          "start": "tapageusement",
+          "start_rank": 119
+        }
+      ],
+      "pool_index": 91
+    },
+    {
+      "candidate_id": "ff07892b06d7a5303ddcfc3d5d9c6a2711a2853346dfbdbcf181cd65ab201f4a",
+      "split": "calibration_candidate",
+      "path": "puzzles/candidates/ff07892b06d7a5303ddcfc3d5d9c6a2711a2853346dfbdbcf181cd65ab201f4a.json.gz",
+      "sha256": "30dd548c18d27bff0f17a586be3b87ef379ec9f43f3d0fe4cbb33bffce8c015c",
+      "sentence": "son regard fuyant trahissait involontairement son embarras",
+      "targets": [
+        {
+          "word": "regard",
+          "slug": "regard",
+          "pos": "noun",
+          "gender": "m",
+          "frequency_rank": 1269,
+          "frequency_band": "common",
+          "semantic_class": "tangible",
+          "start": "darda",
+          "start_rank": 101
+        },
+        {
+          "word": "fuyant",
+          "slug": "fuyant",
+          "pos": "adjective",
+          "gender": "m",
+          "frequency_rank": 15919,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "émigrent",
+          "start_rank": 143
+        },
+        {
+          "word": "involontairement",
+          "slug": "involontairement",
+          "pos": "adverb",
+          "gender": null,
+          "frequency_rank": 19770,
+          "frequency_band": "common",
+          "semantic_class": "abstract",
+          "start": "immédiatement",
+          "start_rank": 101
+        }
+      ],
+      "pool_index": 92
+    }
+  ],
+  "generated_at": "2026-07-15T19:41:00.482847+00:00",
+  "candidate_pool_content_sha256": "e35456edbb879dc6f6ae0471ad8a795921e7dc7f5e03bd03223924218e8d9669"
+}

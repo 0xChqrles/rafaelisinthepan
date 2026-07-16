@@ -1,8 +1,10 @@
-"""Deterministic, curriculum-only evidence packets for strategy distillation.
+"""Deterministic, training-only evidence packets for strategy distillation.
 
 The packet is deliberately smaller than the raw ~10k-neighbor maps while keeping
 the closest region exact and representing the remaining rank range with fixed,
-evenly-spaced samples.  It is model-independent and never opens holdout files.
+evenly-spaced samples.  Legacy packet v1 is model-independent; #86 packet v2
+adds only the selected model's own training-run evidence.  Test files are never
+opened.
 """
 
 from __future__ import annotations
@@ -13,10 +15,16 @@ import json
 from pathlib import Path
 from typing import Any, Callable
 
-from curriculum_io import load_json, write_deterministic_gzip
+from curriculum_io import (
+    load_json,
+    read_data_bytes,
+    sha256_bytes,
+    write_deterministic_gzip,
+)
 
 
-PACKET_SCHEMA_VERSION = 1
+LEGACY_PACKET_SCHEMA_VERSION = 1
+PACKET_SCHEMA_VERSION = 2
 EXACT_MAX_RANK = 250
 SAMPLES_PER_BAND = 20
 SAMPLE_BANDS: tuple[tuple[int, int], ...] = (
@@ -152,10 +160,84 @@ def _packet_puzzle(record: dict[str, Any], puzzle: dict[str, Any]) -> dict[str, 
     }
 
 
+def _model_calibration_evidence(
+    manifest: dict[str, Any],
+    dataset_dir: Path,
+    *,
+    model_id: str,
+    records: list[dict[str, Any]],
+) -> dict[str, Any]:
+    identity = manifest["strategy_evidence"]
+    roster = identity.get("calibration_roster_model_ids")
+    evidence = identity.get("model_run_evidence")
+    if (
+        not isinstance(roster, list)
+        or len(roster) != len(set(roster))
+        or not all(isinstance(value, str) and value for value in roster)
+        or not isinstance(evidence, dict)
+        or set(evidence) != set(roster)
+    ):
+        raise ValueError("strategy_evidence calibration roster is malformed")
+    if model_id not in roster:
+        return {
+            "source": "none_for_non_roster_model",
+            "model_id": model_id,
+            "puzzle_count": 0,
+            "run_count": 0,
+            "puzzles": [],
+        }
+
+    reference = evidence[model_id]
+    if not isinstance(reference, dict):
+        raise ValueError("model calibration evidence reference is malformed")
+    path = dataset_dir / str(reference.get("path", ""))
+    content = read_data_bytes(path)
+    if sha256_bytes(content) != reference.get("sha256"):
+        raise ValueError("model calibration evidence does not match its sha256")
+    try:
+        document = json.loads(content.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("model calibration evidence is not valid JSON") from exc
+    if not isinstance(document, dict):
+        raise ValueError("model calibration evidence must be an object")
+    expected_ids = [record["calibration"]["candidate_id"] for record in records]
+    puzzles = document.get("puzzles")
+    if (
+        document.get("schema_version") != 1
+        or document.get("model_id") != model_id
+        or document.get("training_selection_sha256")
+        != identity.get("training_selection_sha256")
+        or not isinstance(puzzles, list)
+        or [puzzle.get("candidate_id") for puzzle in puzzles] != expected_ids
+        or document.get("puzzle_count") != len(puzzles)
+        or document.get("run_count")
+        != sum(len(puzzle.get("runs", [])) for puzzle in puzzles)
+        or reference.get("puzzle_count") != document.get("puzzle_count")
+        or reference.get("run_count") != document.get("run_count")
+    ):
+        raise ValueError("model calibration evidence identity is malformed")
+    for record, puzzle in zip(records, puzzles):
+        if puzzle.get("source_sha256") != record["sha256"]:
+            raise ValueError("model calibration evidence puzzle identity changed")
+        runs = puzzle.get("runs")
+        if not isinstance(runs, list) or not runs:
+            raise ValueError("model calibration evidence has no runs")
+        if not all(
+            isinstance(run, dict)
+            and isinstance(run.get("conversation"), list)
+            and isinstance(run.get("tried_words"), list)
+            and isinstance(run.get("metrics"), dict)
+            for run in runs
+        ):
+            raise ValueError("model calibration evidence run is malformed")
+    return document
+
+
 def build_evidence_packet(
     manifest: dict[str, Any],
     dataset_dir: Path,
     *,
+    model_id: str | None = None,
     puzzle_loader: PuzzleLoader = load_json,
 ) -> EvidencePacket:
     """Build one canonical packet, loading only manifest curriculum records."""
@@ -170,12 +252,17 @@ def build_evidence_packet(
 
     frozen_identity = manifest.get("strategy_evidence")
     if frozen_identity is None:
+        packet_schema_version = LEGACY_PACKET_SCHEMA_VERSION
         evidence_dataset_id = manifest["dataset_id"]
         evidence_dataset_sha256 = manifest["dataset_content_sha256"]
     else:
         if not isinstance(frozen_identity, dict):
             raise ValueError("strategy_evidence must be an object")
-        if frozen_identity.get("schema_version") != PACKET_SCHEMA_VERSION:
+        packet_schema_version = frozen_identity.get("schema_version")
+        if packet_schema_version not in {
+            LEGACY_PACKET_SCHEMA_VERSION,
+            PACKET_SCHEMA_VERSION,
+        }:
             raise ValueError("strategy_evidence has an unsupported packet schema")
         evidence_dataset_id = frozen_identity.get("dataset_id")
         evidence_dataset_sha256 = frozen_identity.get("dataset_content_sha256")
@@ -186,6 +273,21 @@ def build_evidence_packet(
             or len(evidence_dataset_sha256) != 64
         ):
             raise ValueError("strategy_evidence dataset content hash is malformed")
+
+    model_calibration_evidence: dict[str, Any] | None = None
+    if packet_schema_version == PACKET_SCHEMA_VERSION:
+        if manifest.get("manifest_kind") != "calibration_training_split":
+            raise ValueError(
+                "model-specific strategy evidence can be built only from the training view"
+            )
+        if not isinstance(model_id, str) or not model_id:
+            raise ValueError("model-specific strategy evidence requires model_id")
+        model_calibration_evidence = _model_calibration_evidence(
+            manifest,
+            dataset_dir,
+            model_id=model_id,
+            records=records,
+        )
 
     content = {
         "dataset_id": evidence_dataset_id,
@@ -206,10 +308,17 @@ def build_evidence_packet(
             for record in records
         ],
     }
+    if packet_schema_version == PACKET_SCHEMA_VERSION:
+        content.update(
+            {
+                "model_id": model_id,
+                "model_calibration_evidence": model_calibration_evidence,
+            }
+        )
     content_bytes = canonical_json_bytes(content)
     content_sha = hashlib.sha256(content_bytes).hexdigest()
     document = {
-        "schema_version": PACKET_SCHEMA_VERSION,
+        "schema_version": packet_schema_version,
         "content_sha256": content_sha,
         "content_byte_count": len(content_bytes),
         "content": content,
