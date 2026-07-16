@@ -1485,6 +1485,39 @@ def _pending_units(
     return pending
 
 
+def _resolve_execution_model_id(model_selector: str | None) -> str | None:
+    """Resolve an optional scheduling filter without changing the frozen roster."""
+    if model_selector is None:
+        return None
+    valid = ", ".join(ROSTER_SELECTORS)
+    exact = ", ".join(ROSTER_MODEL_IDS)
+    try:
+        config = select_model(model_selector)
+    except ValueError as exc:
+        raise CalibrationError(
+            f"--model must select the fixed calibration roster: {valid}; "
+            f"exact model IDs: {exact}"
+        ) from exc
+    model_id = config["model_id"]
+    if model_id not in ROSTER_MODEL_IDS:
+        raise CalibrationError(
+            f"--model must select the fixed calibration roster: {valid}; "
+            f"exact model IDs: {exact}"
+        )
+    return model_id
+
+
+def _filter_pending_units(
+    pending: list[tuple[dict[str, Any], dict[str, Any], int]],
+    execution_model_id: str | None,
+) -> list[tuple[dict[str, Any], dict[str, Any], int]]:
+    if execution_model_id is None:
+        return pending
+    return [
+        unit for unit in pending if unit[1]["model_id"] == execution_model_id
+    ]
+
+
 def _expected_candidate_core(record: dict[str, Any]) -> dict[str, Any]:
     return {
         "candidate_id": record["candidate_id"],
@@ -1816,10 +1849,18 @@ def _validate_completed_runs(
 
 
 def calibration_plan(
-    state: dict[str, Any], *, maximum_units: int | None
+    state: dict[str, Any],
+    *,
+    maximum_units: int | None,
+    execution_model_id: str | None = None,
 ) -> dict[str, Any]:
     pending = _pending_units(state)
-    planned = pending if maximum_units is None else pending[:maximum_units]
+    filtered_pending = _filter_pending_units(pending, execution_model_id)
+    planned = (
+        filtered_pending
+        if maximum_units is None
+        else filtered_pending[:maximum_units]
+    )
     candidate_count = state["candidate_pool"]["candidate_count"]
     declared_extension_units = sum(
         max(0, model["required_runs"] - INITIAL_RUNS)
@@ -1862,6 +1903,8 @@ def calibration_plan(
         "completed_prefix_count": state["checkpoint"]["completed_prefix_count"],
         "next_candidate": next_candidate,
         "pending_paid_units": len(pending),
+        "execution_model_filter": execution_model_id,
+        "filtered_pending_paid_units": len(filtered_pending),
         "maximum_remaining_paid_units": maximum_remaining,
         "planned_paid_units": [
             {
@@ -1890,6 +1933,7 @@ def run_calibration(
     resume: Path | None = None,
     artifact_path: Path | None = None,
     maximum_units: int | None = 1,
+    model_selector: str | None = None,
     dry_run: bool = False,
     verbose: bool = False,
     provider_factory: Callable[..., Any] = provider_reply,
@@ -1897,13 +1941,18 @@ def run_calibration(
     output_root: Path = OUTPUT_ROOT,
     raise_on_shortfall: bool = True,
 ) -> Path | dict[str, Any]:
-    """Plan or execute fixed neutral calibration, checkpointing every paid run."""
+    """Plan or execute fixed neutral calibration, checkpointing every paid run.
+
+    ``model_selector`` filters execution only. It never changes the persisted fixed
+    roster, and pending work remains confined to the first incomplete candidate.
+    """
     if maximum_units is not None and (
         not isinstance(maximum_units, int)
         or isinstance(maximum_units, bool)
         or maximum_units <= 0
     ):
         raise CalibrationError("maximum_units must be a positive integer or None")
+    execution_model_id = _resolve_execution_model_id(model_selector)
     manifest_path = manifest_path.resolve()
     manifest, content_sha, manifest_sha = load_candidate_pool(manifest_path)
     expected_config = _run_config(manifest, content_sha, manifest_sha, auth=auth)
@@ -1935,7 +1984,11 @@ def run_calibration(
         )
 
     if dry_run:
-        return calibration_plan(state, maximum_units=maximum_units)
+        return calibration_plan(
+            state,
+            maximum_units=maximum_units,
+            execution_model_id=execution_model_id,
+        )
 
     pending = _pending_units(state)
     vocab: set[str] | None = None
@@ -1946,6 +1999,16 @@ def run_calibration(
         if state["selection"].get("status") == "shortfall" and raise_on_shortfall:
             raise CalibrationShortfallError(state["selection"])
         return destination
+
+    filtered_pending = _filter_pending_units(pending, execution_model_id)
+    if not filtered_pending:
+        candidate = pending[0][0]
+        pending_models = sorted({model["model_id"] for _, model, _ in pending})
+        raise CalibrationError(
+            f"no pending calibration units for {execution_model_id} on current "
+            f"candidate {candidate['pool_index']}; pending model(s): "
+            f"{', '.join(pending_models)}"
+        )
 
     if vocab is None:
         vocab = vocab_loader(manifest["lang"])
@@ -1968,9 +2031,10 @@ def run_calibration(
     executed = 0
     while executed < budget:
         pending = _pending_units(state)
-        if not pending:
+        filtered_pending = _filter_pending_units(pending, execution_model_id)
+        if not filtered_pending:
             break
-        candidate, model, run_number = pending[0]
+        candidate, model, run_number = filtered_pending[0]
         config = select_model(model["model_id"])
         if verbose:
             print(
@@ -3044,6 +3108,13 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument("--auth", choices=("api", "subscription"), default="api")
     run_parser.add_argument("--resume", type=Path)
     run_parser.add_argument("--artifact", type=Path)
+    run_parser.add_argument(
+        "--model",
+        help=(
+            "schedule only SONNET or GPT-SOL pending units for the current "
+            "candidate without changing the fixed roster"
+        ),
+    )
     units = run_parser.add_mutually_exclusive_group()
     units.add_argument("--max-units", type=int, default=1)
     units.add_argument("--all", action="store_true")
@@ -3081,6 +3152,7 @@ def main(argv: list[str] | None = None) -> int:
                     else None
                 ),
                 maximum_units=maximum_units,
+                model_selector=args.model,
                 dry_run=args.dry_run,
                 verbose=args.verbose,
             )

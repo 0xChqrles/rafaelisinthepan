@@ -738,9 +738,61 @@ def test_dry_run_plans_fixed_roster_and_makes_no_provider_or_vocab_calls(tmp_pat
     assert plan["completed_prefix_count"] == 0
     assert plan["next_candidate"]["pool_index"] == 1
     assert plan["pending_paid_units"] == 2 * 3
+    assert plan["execution_model_filter"] is None
+    assert plan["filtered_pending_paid_units"] == 2 * 3
     assert plan["maximum_remaining_paid_units"] == 45 * 2 * 3
     assert len(plan["planned_paid_units"]) == 1
     assert not (tmp_path / "never-written.json").exists()
+
+
+def test_model_filter_dry_run_keeps_roster_but_plans_only_current_gpt_units(
+    tmp_path,
+):
+    manifest_path, _words, _vocab = _runner_pool(tmp_path)
+
+    def explode(*_args, **_kwargs):
+        raise AssertionError("filtered dry-run made an external call")
+
+    plan = cal.run_calibration(
+        manifest_path,
+        artifact_path=tmp_path / "never-written.json",
+        maximum_units=10,
+        model_selector="GPT-SOL",
+        dry_run=True,
+        provider_factory=explode,
+        vocab_loader=explode,
+    )
+
+    assert [row["model_id"] for row in plan["config"]["roster"]] == list(
+        cal.ROSTER_MODEL_IDS
+    )
+    assert plan["pending_paid_units"] == 6
+    assert plan["execution_model_filter"] == "gpt-5.6-sol"
+    assert plan["filtered_pending_paid_units"] == 3
+    assert [
+        (unit["model_id"], unit["run_number"])
+        for unit in plan["planned_paid_units"]
+    ] == [("gpt-5.6-sol", 1), ("gpt-5.6-sol", 2), ("gpt-5.6-sol", 3)]
+    assert not (tmp_path / "never-written.json").exists()
+
+
+@pytest.mark.parametrize("selector", ["OPUS", "gpt-unknown"])
+def test_model_filter_rejects_non_roster_or_unknown_selectors_before_writes(
+    tmp_path, selector
+):
+    manifest_path, _words, _vocab = _runner_pool(tmp_path)
+    artifact = tmp_path / "never-written.json"
+
+    with pytest.raises(cal.CalibrationError, match="fixed calibration roster"):
+        cal.run_calibration(
+            manifest_path,
+            artifact_path=artifact,
+            maximum_units=1,
+            model_selector=selector,
+            dry_run=True,
+        )
+
+    assert not artifact.exists()
 
 
 def test_frozen_pool_index_order_drives_processing_even_if_manifest_rows_are_shuffled(
@@ -959,6 +1011,7 @@ def test_main_resolves_package_relative_artifact_destination(
     def fake_run_calibration(manifest_path, **kwargs):
         captured["manifest_path"] = manifest_path
         captured["artifact_path"] = kwargs["artifact_path"]
+        captured["model_selector"] = kwargs["model_selector"]
         return {"dry_run": True}
 
     monkeypatch.setattr(cal, "run_calibration", fake_run_calibration)
@@ -971,6 +1024,8 @@ def test_main_resolves_package_relative_artifact_destination(
                 str(candidate_manifest),
                 "--artifact",
                 "output/calibration/planned.json",
+                "--model",
+                "GPT-SOL",
                 "--dry-run",
             ]
         )
@@ -981,6 +1036,7 @@ def test_main_resolves_package_relative_artifact_destination(
         "artifact_path": (
             cal.BENCHMARK_DIR / "output/calibration/planned.json"
         ).resolve(),
+        "model_selector": "GPT-SOL",
     }
     assert json.loads(capsys.readouterr().out) == {"dry_run": True}
 
@@ -1180,6 +1236,82 @@ def test_checkpointed_resume_repeats_no_completed_paid_run(tmp_path, monkeypatch
     assert runs[1]["effort"] == "medium"
     assert runs[1]["turn_token_usage"]
     assert runs[1]["wall_duration"] >= 0
+
+
+def test_model_filter_runs_gpt_first_then_sonnet_catches_up_same_artifact(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-test")
+    manifest_path, words, vocab = _runner_pool(tmp_path)
+    artifact = tmp_path / "calibration.json"
+
+    gpt_provider = ScriptedProvider(words)
+    cal.run_calibration(
+        manifest_path,
+        artifact_path=artifact,
+        maximum_units=10,
+        model_selector="GPT-SOL",
+        provider_factory=gpt_provider,
+        vocab_loader=lambda _lang: vocab,
+    )
+    gpt_state = json.loads(artifact.read_text())
+    candidate = gpt_state["candidates"][0]
+    sonnet, gpt = candidate["models"]
+
+    assert [row["model_id"] for row in gpt_state["config"]["roster"]] == list(
+        cal.ROSTER_MODEL_IDS
+    )
+    assert sonnet["runs"] == []
+    assert [run["number"] for run in gpt["runs"]] == [1, 2, 3]
+    assert [run["checkpoint"] for run in gpt["runs"]] == [1, 2, 3]
+    assert gpt_state["checkpoint"]["completed_prefix_count"] == 0
+    assert gpt_state["selection"]["status"] == "pending"
+    assert {
+        row["model_id"] for row in gpt_state["auth_verifications"][-1]["models"]
+    } == set(cal.ROSTER_MODEL_IDS)
+    assert {
+        construction["model_id"] for construction in gpt_provider.constructions
+    } == {"gpt-5.6-sol"}
+
+    before_noop = artifact.read_bytes()
+    with pytest.raises(
+        cal.CalibrationError,
+        match="no pending calibration units for gpt-5.6-sol on current candidate 1",
+    ):
+        cal.run_calibration(
+            manifest_path,
+            resume=artifact,
+            maximum_units=1,
+            model_selector="GPT-SOL",
+            provider_factory=lambda *_args, **_kwargs: pytest.fail(
+                "no-pending model filter reached provider setup"
+            ),
+            vocab_loader=lambda _lang: vocab,
+        )
+    assert artifact.read_bytes() == before_noop
+
+    sonnet_provider = ScriptedProvider(words)
+    cal.run_calibration(
+        manifest_path,
+        resume=artifact,
+        maximum_units=3,
+        model_selector="SONNET",
+        provider_factory=sonnet_provider,
+        vocab_loader=lambda _lang: vocab,
+    )
+    completed = json.loads(artifact.read_text())
+    sonnet, completed_gpt = completed["candidates"][0]["models"]
+
+    assert [run["number"] for run in sonnet["runs"]] == [1, 2, 3]
+    assert [run["checkpoint"] for run in sonnet["runs"]] == [4, 5, 6]
+    assert completed_gpt["runs"] == gpt["runs"]
+    assert completed["checkpoint"]["completed_paid_units"] == 6
+    assert completed["checkpoint"]["completed_prefix_count"] == 1
+    assert {
+        construction["model_id"] for construction in sonnet_provider.constructions
+    } == {"claude-sonnet-5"}
+    cal._validate_completed_runs(completed, manifest_path, vocab)
 
 
 def test_extension_is_offline_auditable_and_adds_exactly_two_pending_runs(

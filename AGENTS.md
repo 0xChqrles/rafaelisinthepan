@@ -457,7 +457,10 @@ pnpm bench:curriculum:evaluate <artifact-or-profile.json>
 #    completes both models (plus any declared 3->5 extension) for the current candidate,
 #    checks the completed prefix, and stops at the first jointly feasible allocation of
 #    15 training + 15 test puzzles (5/5/5 each). The frozen manifest `pool_index` order is
-#    authoritative; the suffix remains unrun. Before finalization, `extend` may reopen only
+#    authoritative; the suffix remains unrun. Optional `run --model SONNET|GPT-SOL` is an
+#    execution-only quota/availability filter: it leaves the frozen roster unchanged, runs
+#    only that model's pending units on the first incomplete candidate, and cannot advance
+#    past a candidate while its peer is incomplete. Before finalization, `extend` may reopen only
 #    the selected stopping candidate and pins the superseded selection identity. Training
 #    allows spread >20, while test requires spread <=20. `finalize` closes that window with
 #    a seal, writes separate training/test manifests, compact model-isolated trajectory
@@ -468,7 +471,7 @@ pnpm bench:curriculum:evaluate <artifact-or-profile.json>
 #    552-run initial maximum for the current 92-candidate pool, completed prefix, next
 #    candidate, declared extensions, and the currently schedulable unit plan.
 pnpm bench:curriculum:generate --from-output <larger-generator-output.json> --seed 86 --calibration-pool --curriculum-manifest <frozen-manifest.json> --dataset-id <dataset-id> [--dry-run]
-pnpm bench:curriculum:calibrate run <candidate-manifest.json> [--auth api|subscription] [--resume ARTIFACT] [--max-units N] [--all] [--dry-run] [-v|--verbose]
+pnpm bench:curriculum:calibrate run <candidate-manifest.json> [--auth api|subscription] [--resume ARTIFACT] [--model SONNET|GPT-SOL] [--max-units N] [--all] [--dry-run] [-v|--verbose]
 pnpm bench:curriculum:calibrate extend <artifact.json> --candidate ID --model <SONNET-or-GPT-SOL> --reason <unstable-or-tier_boundary>
 pnpm bench:curriculum:calibrate finalize <candidate-manifest.json> <artifact.json> [--training-out training-manifest.json] [--test-out test-manifest.json] [--certified-artifact-out finalized.json]
 
@@ -654,7 +657,10 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   candidate at a time with neutral prompt v21, Claude Sonnet 5 + GPT-5.6 Sol, medium effort,
   fresh stateless word-play turns, cap 75, and three runs per model. An explicitly recorded
   `unstable`/`tier_boundary` extension adds exactly two runs for one model. Both models and any
-  declared extension finish before the completed-prefix stopping check.
+  declared extension finish before the completed-prefix stopping check. Optional `run --model`
+  filters only which fixed-roster model executes pending units for the first incomplete candidate;
+  it is not persisted as a roster/config change, cannot skip that candidate, and lets one model
+  catch up later in the same artifact when subscription availability differs.
   Difficulty is the maximum DNF-aware model median: easy 5–15, medium 16–30, difficult 31–50.
   Training eligibility requires every run solved at <=75 and both medians in 5–50, with no spread
   ceiling. Test eligibility adds median spread <=20. The deterministic selector jointly assigns
@@ -674,7 +680,8 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   `cap_stress`; unprocessed candidates are `unrun`, while malformed/incomplete certification data
   is an error. Dry-run makes zero external calls and reports the 180 initial-run theoretical
   minimum, 552 initial-run 92-pool maximum, declared extensions, prefix, next candidate, and the
-  current candidate's exact schedulable units without predicting the stopping point.
+  current candidate's exact schedulable units (including any execution-model filter) without
+  predicting the stopping point.
   Finalization replays every completed transcript/metric/identity, then writes deterministic
   schema-v4 `training-manifest.json` and `test-manifest.json`, per-model deterministic training
   evidence sidecars, a finalization seal, and a certified full-lab artifact pinning both manifest
