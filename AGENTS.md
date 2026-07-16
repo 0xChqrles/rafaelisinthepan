@@ -459,9 +459,12 @@ pnpm bench:curriculum:evaluate <artifact-or-profile.json>
 #    15 training + 15 test puzzles (5/5/5 each). The frozen manifest `pool_index` order is
 #    authoritative; the suffix remains unrun. Optional `run --model SONNET|GPT-SOL` is an
 #    execution-only quota/availability filter: it leaves the frozen roster unchanged, runs
-#    only that model's pending units on the first incomplete candidate, and cannot advance
-#    past a candidate while its peer is incomplete. Before finalization, `extend` may reopen only
-#    the selected stopping candidate and pins the superseded selection identity. Training
+#    only that model's pending units in pool order through the guaranteed-needed prefix. The
+#    first 30 candidates are unconditional because the allocation needs 30 distinct puzzles;
+#    after an infeasible completed prefix, only its next candidate opens. It never crosses a
+#    possible stopping prefix, and the unavailable peer can catch up later in the same artifact.
+#    Before finalization, `extend` may reopen only the selected stopping candidate and pins the
+#    superseded selection identity. Training
 #    allows spread >20, while test requires spread <=20. `finalize` closes that window with
 #    a seal, writes separate training/test manifests, compact model-isolated trajectory
 #    evidence, and a certified full-lab artifact; it makes no provider call. Distil separately
@@ -657,10 +660,14 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   candidate at a time with neutral prompt v21, Claude Sonnet 5 + GPT-5.6 Sol, medium effort,
   fresh stateless word-play turns, cap 75, and three runs per model. An explicitly recorded
   `unstable`/`tier_boundary` extension adds exactly two runs for one model. Both models and any
-  declared extension finish before the completed-prefix stopping check. Optional `run --model`
-  filters only which fixed-roster model executes pending units for the first incomplete candidate;
-  it is not persisted as a roster/config change, cannot skip that candidate, and lets one model
-  catch up later in the same artifact when subscription availability differs.
+  declared extension finish before a candidate enters the completed-prefix stopping check.
+  Optional `run --model` is an execution-only fixed-roster filter. It schedules that model's
+  missing runs in frozen pool order through the guaranteed-needed frontier: candidates 1–30 are
+  unconditional because every allocation needs 30 distinct puzzles, then an infeasible completed
+  prefix opens exactly its next candidate. It is not persisted as a roster/config change, never
+  permits paid work beyond a possible stopping prefix, and lets the other model catch up later in
+  the same artifact when subscription availability differs. Without `--model`, execution remains
+  strictly sequential on the first incomplete candidate.
   Difficulty is the maximum DNF-aware model median: easy 5–15, medium 16–30, difficult 31–50.
   Training eligibility requires every run solved at <=75 and both medians in 5–50, with no spread
   ceiling. Test eligibility adds median spread <=20. The deterministic selector jointly assigns
@@ -680,8 +687,8 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   `cap_stress`; unprocessed candidates are `unrun`, while malformed/incomplete certification data
   is an error. Dry-run makes zero external calls and reports the 180 initial-run theoretical
   minimum, 552 initial-run 92-pool maximum, declared extensions, prefix, next candidate, and the
-  current candidate's exact schedulable units (including any execution-model filter) without
-  predicting the stopping point.
+  exact schedulable units plus the guaranteed prefetch frontier for an execution-model filter,
+  without predicting the stopping point.
   Finalization replays every completed transcript/metric/identity, then writes deterministic
   schema-v4 `training-manifest.json` and `test-manifest.json`, per-model deterministic training
   evidence sidecars, a finalization seal, and a certified full-lab artifact pinning both manifest

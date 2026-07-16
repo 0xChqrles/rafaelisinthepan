@@ -739,13 +739,14 @@ def test_dry_run_plans_fixed_roster_and_makes_no_provider_or_vocab_calls(tmp_pat
     assert plan["next_candidate"]["pool_index"] == 1
     assert plan["pending_paid_units"] == 2 * 3
     assert plan["execution_model_filter"] is None
+    assert plan["execution_prefetch_through_pool_index"] is None
     assert plan["filtered_pending_paid_units"] == 2 * 3
     assert plan["maximum_remaining_paid_units"] == 45 * 2 * 3
     assert len(plan["planned_paid_units"]) == 1
     assert not (tmp_path / "never-written.json").exists()
 
 
-def test_model_filter_dry_run_keeps_roster_but_plans_only_current_gpt_units(
+def test_model_filter_dry_run_prefetches_only_the_guaranteed_gpt_prefix(
     tmp_path,
 ):
     manifest_path, _words, _vocab = _runner_pool(tmp_path)
@@ -768,11 +769,27 @@ def test_model_filter_dry_run_keeps_roster_but_plans_only_current_gpt_units(
     )
     assert plan["pending_paid_units"] == 6
     assert plan["execution_model_filter"] == "gpt-5.6-sol"
-    assert plan["filtered_pending_paid_units"] == 3
+    assert plan["execution_prefetch_through_pool_index"] == cal.SELECTED_TOTAL
+    assert plan["filtered_pending_paid_units"] == cal.SELECTED_TOTAL * 3
     assert [
-        (unit["model_id"], unit["run_number"])
+        (unit["pool_index"], unit["model_id"], unit["run_number"])
         for unit in plan["planned_paid_units"]
-    ] == [("gpt-5.6-sol", 1), ("gpt-5.6-sol", 2), ("gpt-5.6-sol", 3)]
+    ] == [
+        (1, "gpt-5.6-sol", 1),
+        (1, "gpt-5.6-sol", 2),
+        (1, "gpt-5.6-sol", 3),
+        (2, "gpt-5.6-sol", 1),
+        (2, "gpt-5.6-sol", 2),
+        (2, "gpt-5.6-sol", 3),
+        (3, "gpt-5.6-sol", 1),
+        (3, "gpt-5.6-sol", 2),
+        (3, "gpt-5.6-sol", 3),
+        (4, "gpt-5.6-sol", 1),
+    ]
+    assert all(
+        unit["pool_index"] <= cal.SELECTED_TOTAL
+        for unit in plan["planned_paid_units"]
+    )
     assert not (tmp_path / "never-written.json").exists()
 
 
@@ -905,6 +922,56 @@ def test_completed_prefix_advances_only_after_both_models_finish():
     cal._refresh_derived(state)
     assert state["checkpoint"]["completed_prefix_count"] == 1
     assert state["selection"]["status"] == "shortfall"
+
+
+def test_prefetched_work_is_allowed_only_inside_the_guaranteed_minimum_prefix(
+    tmp_path,
+):
+    manifest_path, _words, _vocab = _runner_pool(tmp_path)
+    manifest, content_sha, manifest_sha = cal.load_candidate_pool(manifest_path)
+    state = cal.new_artifact_state(
+        manifest_path.resolve(), manifest, content_sha, manifest_sha, auth="api"
+    )
+
+    state["candidates"][cal.SELECTED_TOTAL - 1]["models"][1]["runs"] = _runs(10)
+    cal._refresh_derived(state)
+    assert state["checkpoint"]["completed_prefix_count"] == 0
+    assert (
+        state["candidates"][cal.SELECTED_TOTAL - 1]["summary"]["status"]
+        == "pending"
+    )
+
+    state["candidates"][cal.SELECTED_TOTAL]["models"][1]["runs"] = _runs(10)
+    with pytest.raises(
+        cal.CalibrationError,
+        match=(
+            "paid work beyond guaranteed prefetch frontier 30; candidate 31 "
+            "is not yet guaranteed to be needed"
+        ),
+    ):
+        cal._refresh_derived(state)
+
+    state["candidates"][cal.SELECTED_TOTAL]["models"][1]["runs"] = []
+    for candidate in state["candidates"][: cal.SELECTED_TOTAL]:
+        for model in candidate["models"]:
+            model["runs"] = _runs(10, 10, 10)
+    cal._refresh_derived(state)
+    assert state["checkpoint"]["completed_prefix_count"] == cal.SELECTED_TOTAL
+    assert state["selection"]["status"] == "pending"
+
+    state["candidates"][cal.SELECTED_TOTAL]["models"][1]["runs"] = _runs(10)
+    cal._refresh_derived(state)
+    assert state["candidates"][cal.SELECTED_TOTAL]["summary"]["status"] == "pending"
+
+    state["candidates"][cal.SELECTED_TOTAL + 1]["models"][1]["runs"] = _runs(10)
+    with pytest.raises(
+        cal.CalibrationError,
+        match=(
+            "paid work beyond guaranteed prefetch frontier 31; candidate 32 "
+            "is not yet guaranteed to be needed"
+        ),
+    ):
+        cal._refresh_derived(state)
 
 
 def test_first_feasible_prefix_stops_every_suffix_call_and_marks_it_unrun(
@@ -1238,7 +1305,7 @@ def test_checkpointed_resume_repeats_no_completed_paid_run(tmp_path, monkeypatch
     assert runs[1]["wall_duration"] >= 0
 
 
-def test_model_filter_runs_gpt_first_then_sonnet_catches_up_same_artifact(
+def test_model_filter_prefetches_next_gpt_then_sonnet_catches_up_same_artifact(
     tmp_path, monkeypatch
 ):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-test")
@@ -1250,7 +1317,7 @@ def test_model_filter_runs_gpt_first_then_sonnet_catches_up_same_artifact(
     cal.run_calibration(
         manifest_path,
         artifact_path=artifact,
-        maximum_units=10,
+        maximum_units=3,
         model_selector="GPT-SOL",
         provider_factory=gpt_provider,
         vocab_loader=lambda _lang: vocab,
@@ -1274,22 +1341,38 @@ def test_model_filter_runs_gpt_first_then_sonnet_catches_up_same_artifact(
         construction["model_id"] for construction in gpt_provider.constructions
     } == {"gpt-5.6-sol"}
 
-    before_noop = artifact.read_bytes()
-    with pytest.raises(
-        cal.CalibrationError,
-        match="no pending calibration units for gpt-5.6-sol on current candidate 1",
-    ):
-        cal.run_calibration(
-            manifest_path,
-            resume=artifact,
-            maximum_units=1,
-            model_selector="GPT-SOL",
-            provider_factory=lambda *_args, **_kwargs: pytest.fail(
-                "no-pending model filter reached provider setup"
-            ),
-            vocab_loader=lambda _lang: vocab,
-        )
-    assert artifact.read_bytes() == before_noop
+    pool = json.loads(manifest_path.read_text())
+    second_record = next(
+        record
+        for record in pool["puzzles"]
+        if record.get("split") == cd.CALIBRATION_CANDIDATE_SPLIT
+        and record["pool_index"] == 2
+    )
+    second_puzzle = json.loads(
+        read_data_bytes(manifest_path.parent / second_record["path"])
+    )
+    second_words = [hole["secret"]["word"] for hole in second_puzzle["holes"]]
+    next_gpt_provider = ScriptedProvider(second_words)
+    cal.run_calibration(
+        manifest_path,
+        resume=artifact,
+        maximum_units=3,
+        model_selector="GPT-SOL",
+        provider_factory=next_gpt_provider,
+        vocab_loader=lambda _lang: vocab,
+    )
+    prefetched = json.loads(artifact.read_text())
+    second_sonnet, second_gpt = prefetched["candidates"][1]["models"]
+
+    assert second_sonnet["runs"] == []
+    assert [run["number"] for run in second_gpt["runs"]] == [1, 2, 3]
+    assert [run["checkpoint"] for run in second_gpt["runs"]] == [4, 5, 6]
+    assert prefetched["checkpoint"]["completed_prefix_count"] == 0
+    assert prefetched["candidates"][1]["summary"]["status"] == "pending"
+    assert {
+        construction["model_id"]
+        for construction in next_gpt_provider.constructions
+    } == {"gpt-5.6-sol"}
 
     sonnet_provider = ScriptedProvider(words)
     cal.run_calibration(
@@ -1304,9 +1387,10 @@ def test_model_filter_runs_gpt_first_then_sonnet_catches_up_same_artifact(
     sonnet, completed_gpt = completed["candidates"][0]["models"]
 
     assert [run["number"] for run in sonnet["runs"]] == [1, 2, 3]
-    assert [run["checkpoint"] for run in sonnet["runs"]] == [4, 5, 6]
+    assert [run["checkpoint"] for run in sonnet["runs"]] == [7, 8, 9]
     assert completed_gpt["runs"] == gpt["runs"]
-    assert completed["checkpoint"]["completed_paid_units"] == 6
+    assert completed["candidates"][1]["models"][1]["runs"] == second_gpt["runs"]
+    assert completed["checkpoint"]["completed_paid_units"] == 9
     assert completed["checkpoint"]["completed_prefix_count"] == 1
     assert {
         construction["model_id"] for construction in sonnet_provider.constructions

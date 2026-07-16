@@ -1353,9 +1353,10 @@ def _earliest_prefix_feasibility(
 def _refresh_derived(state: dict[str, Any]) -> None:
     candidates = state["candidates"]
     completed_prefix: list[dict[str, Any]] = []
-    incomplete_index: int | None = None
+    in_completed_prefix = True
+    derived_rows: list[tuple[dict[str, Any], bool]] = []
 
-    for index, candidate in enumerate(candidates):
+    for candidate in candidates:
         derived = summarize_candidate(candidate)
         has_work = any(
             model.get("runs")
@@ -1363,21 +1364,29 @@ def _refresh_derived(state: dict[str, Any]) -> None:
             or model.get("required_runs") != INITIAL_RUNS
             for model in candidate["models"]
         )
-        if incomplete_index is None and derived["status"] != "pending":
+        derived_rows.append((derived, has_work))
+        if in_completed_prefix and derived["status"] != "pending":
             candidate["summary"] = derived
             completed_prefix.append(candidate)
             continue
-        if incomplete_index is None:
-            incomplete_index = index
+        if in_completed_prefix:
+            in_completed_prefix = False
             candidate["summary"] = derived if has_work else {"status": "unrun"}
             continue
-        if has_work:
-            raise CalibrationError(
-                "calibration contains paid work beyond the first incomplete candidate"
-            )
-        candidate["summary"] = {"status": "unrun"}
 
     prefix_count = len(completed_prefix)
+    prefetch_count = min(len(candidates), max(SELECTED_TOTAL, prefix_count + 1))
+    for index in range(prefix_count, len(candidates)):
+        candidate = candidates[index]
+        derived, has_work = derived_rows[index]
+        if has_work and index >= prefetch_count:
+            raise CalibrationError(
+                "calibration contains paid work beyond guaranteed prefetch frontier "
+                f"{candidates[prefetch_count - 1]['pool_index']}; candidate "
+                f"{candidate['pool_index']} is not yet guaranteed to be needed"
+            )
+        candidate["summary"] = derived if has_work else {"status": "unrun"}
+
     next_candidate = candidates[prefix_count] if prefix_count < len(candidates) else None
     state["checkpoint"].update(
         {
@@ -1507,15 +1516,42 @@ def _resolve_execution_model_id(model_selector: str | None) -> str | None:
     return model_id
 
 
-def _filter_pending_units(
-    pending: list[tuple[dict[str, Any], dict[str, Any], int]],
-    execution_model_id: str | None,
+def _guaranteed_prefetch_count(state: dict[str, Any]) -> int:
+    """Return the prefix whose candidates are certain to be needed.
+
+    A valid allocation needs ``SELECTED_TOTAL`` distinct candidates, so the first
+    30 are unconditional. After that minimum prefix has been completed and shown
+    infeasible, exactly the next candidate becomes unconditional.
+    """
+    prefix_count = state.get("checkpoint", {}).get("completed_prefix_count", 0)
+    if not isinstance(prefix_count, int) or isinstance(prefix_count, bool):
+        return 0
+    return min(len(state["candidates"]), max(SELECTED_TOTAL, prefix_count + 1))
+
+
+def _model_prefetch_units(
+    state: dict[str, Any], execution_model_id: str
+) -> list[tuple[dict[str, Any], dict[str, Any], int]]:
+    if state.get("selection", {}).get("status") in {"selected", "shortfall"}:
+        return []
+    pending = []
+    for candidate in state["candidates"][: _guaranteed_prefetch_count(state)]:
+        model = next(
+            row
+            for row in candidate["models"]
+            if row["model_id"] == execution_model_id
+        )
+        for number in range(len(model["runs"]) + 1, model["required_runs"] + 1):
+            pending.append((candidate, model, number))
+    return pending
+
+
+def _schedulable_units(
+    state: dict[str, Any], execution_model_id: str | None
 ) -> list[tuple[dict[str, Any], dict[str, Any], int]]:
     if execution_model_id is None:
-        return pending
-    return [
-        unit for unit in pending if unit[1]["model_id"] == execution_model_id
-    ]
+        return _pending_units(state)
+    return _model_prefetch_units(state, execution_model_id)
 
 
 def _expected_candidate_core(record: dict[str, Any]) -> dict[str, Any]:
@@ -1855,7 +1891,13 @@ def calibration_plan(
     execution_model_id: str | None = None,
 ) -> dict[str, Any]:
     pending = _pending_units(state)
-    filtered_pending = _filter_pending_units(pending, execution_model_id)
+    filtered_pending = _schedulable_units(state, execution_model_id)
+    prefetch_count = (
+        _guaranteed_prefetch_count(state)
+        if execution_model_id is not None
+        and state["selection"]["status"] not in {"selected", "shortfall"}
+        else 0
+    )
     planned = (
         filtered_pending
         if maximum_units is None
@@ -1904,6 +1946,11 @@ def calibration_plan(
         "next_candidate": next_candidate,
         "pending_paid_units": len(pending),
         "execution_model_filter": execution_model_id,
+        "execution_prefetch_through_pool_index": (
+            state["candidates"][prefetch_count - 1]["pool_index"]
+            if prefetch_count > 0
+            else None
+        ),
         "filtered_pending_paid_units": len(filtered_pending),
         "maximum_remaining_paid_units": maximum_remaining,
         "planned_paid_units": [
@@ -1944,7 +1991,8 @@ def run_calibration(
     """Plan or execute fixed neutral calibration, checkpointing every paid run.
 
     ``model_selector`` filters execution only. It never changes the persisted fixed
-    roster, and pending work remains confined to the first incomplete candidate.
+    roster. Filtered execution may prefetch only candidates in the prefix that is
+    already guaranteed to be needed; unfiltered execution remains candidate-sequential.
     """
     if maximum_units is not None and (
         not isinstance(maximum_units, int)
@@ -2000,14 +2048,14 @@ def run_calibration(
             raise CalibrationShortfallError(state["selection"])
         return destination
 
-    filtered_pending = _filter_pending_units(pending, execution_model_id)
+    filtered_pending = _schedulable_units(state, execution_model_id)
     if not filtered_pending:
-        candidate = pending[0][0]
-        pending_models = sorted({model["model_id"] for _, model, _ in pending})
+        frontier = _guaranteed_prefetch_count(state)
+        frontier_pool_index = state["candidates"][frontier - 1]["pool_index"]
         raise CalibrationError(
-            f"no pending calibration units for {execution_model_id} on current "
-            f"candidate {candidate['pool_index']}; pending model(s): "
-            f"{', '.join(pending_models)}"
+            f"no pending calibration units for {execution_model_id} through "
+            f"guaranteed prefetch frontier {frontier_pool_index}; peer work must "
+            "complete before a later candidate can become eligible"
         )
 
     if vocab is None:
@@ -2030,8 +2078,7 @@ def run_calibration(
     budget = math.inf if maximum_units is None else maximum_units
     executed = 0
     while executed < budget:
-        pending = _pending_units(state)
-        filtered_pending = _filter_pending_units(pending, execution_model_id)
+        filtered_pending = _schedulable_units(state, execution_model_id)
         if not filtered_pending:
             break
         candidate, model, run_number = filtered_pending[0]
@@ -3111,8 +3158,8 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument(
         "--model",
         help=(
-            "schedule only SONNET or GPT-SOL pending units for the current "
-            "candidate without changing the fixed roster"
+            "schedule only SONNET or GPT-SOL pending units inside the "
+            "guaranteed-needed prefix without changing the fixed roster"
         ),
     )
     units = run_parser.add_mutually_exclusive_group()
