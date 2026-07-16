@@ -94,7 +94,7 @@ DISPLAY_MODEL_COUNT = 3
 
 # Bump whenever the opening rules or turn-feedback scaffold changes materially. Results
 # are attributable to a model id plus this prompt version and the CLI's printed effort.
-PROMPT_VERSION = "18"
+PROMPT_VERSION = "19"
 
 DEFAULT_CAP = 300
 DEFAULT_RUNS = 7
@@ -744,15 +744,16 @@ def _reply_contract_lines(referee: PuzzleReferee, language: str) -> list[str]:
         )
     return [
         (
-            f"Reply with exactly one bare {language} game-vocabulary word and nothing "
-            f"else. Use one or more permitted letters ({alphabet}), optionally followed "
-            "by groups of one ordinary ASCII hyphen (-) and more permitted letters. "
-            "The hyphen cannot lead, trail, double, or be another dash character."
+            "You may reason privately as much as needed; your entire visible reply "
+            f"must be exactly one bare {language} game-vocabulary word. Use "
+            f"permitted letters ({alphabet}) with "
+            "optional ordinary ASCII hyphens (-); they cannot lead, trail, double, or "
+            "be another dash character."
         ),
         (
-            "No uppercase, spaces, straight/curly apostrophes, punctuation, quotes, "
-            "Markdown, digits, underscores, labels, reasoning, or explanations; a "
-            "multiword expression is not one reply."
+            "The visible reply must contain no uppercase, spaces, straight/curly "
+            "apostrophes, punctuation, quotes, Markdown, digits, underscores, labels, "
+            "prose, or explanations; a multiword expression is not one reply."
         ),
         clitic_rule,
         (
@@ -916,7 +917,7 @@ def opening_message(
             ),
             strategy,
         ]
-    # Prompt v18 has one strategy-neutral rules scaffold for every caller. The flag is
+    # Prompt v19 has one strategy-neutral rules scaffold for every caller. The flag is
     # retained for API compatibility with frozen calibration/curriculum call sites; only
     # an explicitly supplied strategy can add solving guidance.
     _ = rules_only
@@ -963,7 +964,7 @@ def feedback_message(
         *_state_snapshot_lines(referee),
         f"Tries: {feedback.tries} (your score — lower is better)",
     ]
-    # Prompt v18 never adds generic solving advice during play. Keep the keyword for
+    # Prompt v19 never adds generic solving advice during play. Keep the keyword for
     # caller compatibility; explicit learned/v7 guidance lives only in the opening.
     _ = rules_only
     lines.append(_reply_reminder(referee))

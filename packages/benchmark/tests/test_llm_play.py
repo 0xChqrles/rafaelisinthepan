@@ -1953,12 +1953,24 @@ def test_every_unconditioned_caller_gets_the_same_strategy_neutral_rules():
     assert "Decide for yourself how to adapt" not in opening
 
 
+def test_stateless_reply_contract_permits_private_thinking_but_binds_visible_output():
+    model = ScriptedModel(["forest", "ocean"])
+    play_puzzle(puzzle(), VOCAB, model)
+
+    for messages in model.calls:
+        prompt = _stateless_word_prompt(messages)
+        assert "You may reason privately as much as needed" in prompt
+        assert "your entire visible reply must be exactly one bare English" in prompt
+        assert "The visible reply must contain no uppercase" in prompt
+        assert "labels, reasoning, or explanations" not in prompt
+
+
 def test_opening_prompt_explains_rules_without_prescribing_a_solving_plan():
     model = ScriptedModel(["forest", "ocean"])
     play_puzzle(puzzle(), VOCAB, model, cap=75)
 
     opening = model.calls[0][0]["content"]
-    assert PROMPT_VERSION == "18"
+    assert PROMPT_VERSION == "19"
     for header in (
         "OBJECTIVE AND SCORE",
         "MANDATORY REPLY CONTRACT",

@@ -534,12 +534,15 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   ignore user config/rules with
   read-only sandboxing and apps/shell/multi-agent/web disabled; the unavoidable Codex bootstrap
   remains. The GPT-5.6 Codex-plan models support `low|medium|high|xhigh|max`, not `none`.
-  Prompt version 18 uses a test-enforced compact rules scaffold (at most 650 words for the
-  representative opening) and requires the provider's entire visible reply to be one bare lowercase word in the
+  Prompt version 19 uses a test-enforced compact rules scaffold (at most 650 words for the
+  representative opening), explicitly permits as much private reasoning as needed, and requires
+  the provider's entire visible reply to be one bare lowercase word in the
   advertised language-letter grammar, with optional internal ASCII hyphens only: no spaces,
   straight/curly apostrophes, other dash characters, punctuation, quotes/Markdown, digits,
-  underscores, labels, prose, or reasoning. French clitics/prefixes shown beside `[WORD N]`
-  are fixed sentence context, so the model submits only the hidden lexical core. Parsing uses
+  underscores, labels, prose, or explanations. The private/visible distinction keeps adaptive
+  thinking available without allowing reasoning text onto the parsed reply surface. French
+  clitics/prefixes shown beside `[WORD N]` are fixed sentence context, so the model submits only
+  the hidden lexical core. Parsing uses
   that exact full-reply grammar instead of extracting one token from formatting/prose. The prompt
   also states that folded membership in the fixed vocabulary is required, case/accent variants
   are duplicates, malformed/out-of-vocab/duplicate replies yield no ranks, five consecutive
@@ -638,7 +641,7 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   rank to the referenced puzzle and its rank map before any provider setup.
   The committed `strategy-fr-v2/` pool pins 92 candidates in `pool_index` order; strategy-fr-v1
   and all pilot artifacts remain immutable. `calibration_run.py` processes that order one
-  candidate at a time with neutral prompt v18, Claude Sonnet 5 + GPT-5.6 Sol, medium effort,
+  candidate at a time with neutral prompt v19, Claude Sonnet 5 + GPT-5.6 Sol, medium effort,
   fresh stateless word-play turns, cap 75, and three runs per model. An explicitly recorded
   `unstable`/`tier_boundary` extension adds exactly two runs for one model. Both models and any
   declared extension finish before the completed-prefix stopping check.
