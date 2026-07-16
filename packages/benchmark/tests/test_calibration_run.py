@@ -1571,6 +1571,40 @@ def test_finalization_path_plan_resolves_and_rejects_every_role_collision(tmp_pa
         )
 
 
+@pytest.mark.parametrize(
+    ("training_name", "test_name"),
+    [
+        ("SPLIT-MANIFEST.json", "split-manifest.json"),
+        ("caf\u00e9-manifest.json", "cafe\u0301-manifest.json"),
+    ],
+)
+def test_finalization_path_plan_rejects_fresh_portable_filename_aliases(
+    tmp_path, training_name, test_name
+):
+    pool_path = tmp_path / "candidate-manifest.json"
+    artifact_path = tmp_path / "paid-artifact.json"
+    generator_path = tmp_path / "generator-output.json"
+    puzzle_path = tmp_path / "candidate.json.gz"
+    for path in (pool_path, artifact_path, generator_path, puzzle_path):
+        path.write_bytes(path.name.encode())
+    manifest = {
+        "generator_output": {"path": generator_path.name},
+        "puzzles": [{"path": puzzle_path.name}],
+    }
+
+    assert not (tmp_path / training_name).exists()
+    assert not (tmp_path / test_name).exists()
+    with pytest.raises(cal.CalibrationError, match="finalization path collision"):
+        cal._resolve_finalization_paths(
+            pool_path,
+            artifact_path,
+            manifest,
+            training_out=Path(training_name),
+            test_out=Path(test_name),
+            certified_artifact_out=None,
+        )
+
+
 def test_finalization_collision_preflight_preserves_every_input_and_writes_nothing(
     tmp_path,
 ):
@@ -1635,6 +1669,56 @@ def test_output_transaction_rolls_back_after_mid_publication_failure(
         "first.json",
         "second.json",
     ]
+
+
+def test_output_transaction_rejects_portable_aliases_before_staging(tmp_path):
+    upper = tmp_path / "SPLIT-MANIFEST.json"
+    lower = tmp_path / "split-manifest.json"
+
+    with pytest.raises(cal.CalibrationError, match="duplicate paths"):
+        cal._publish_output_transaction([(upper, b"training"), (lower, b"test")])
+
+    assert _tree_bytes(tmp_path) == {}
+
+
+@pytest.mark.parametrize(
+    ("input_name", "error"),
+    [
+        (
+            "candidate manifest",
+            "candidate pool manifest exact identity changed during finalization",
+        ),
+        ("generator output", "candidate-pool generator output identity changed"),
+    ],
+)
+def test_finalization_revalidates_the_complete_pool_before_publication(
+    tmp_path, input_name, error
+):
+    pool_path, artifact, _selected_canary, vocab = _large_complete_pool(tmp_path)
+    bytes_after_mutation = {}
+
+    def mutate_input_during_vocab_load(_lang):
+        if input_name == "candidate manifest":
+            # Whitespace preserves the semantic pool identity while changing the
+            # exact frozen-manifest identity.
+            pool_path.write_bytes(pool_path.read_bytes() + b"\n")
+        else:
+            manifest = json.loads(pool_path.read_text())
+            generator_path = pool_path.parent / manifest["generator_output"]["path"]
+            generator_path.write_bytes(b'{"generator":"mutated"}\n')
+        bytes_after_mutation.update(_tree_bytes(tmp_path))
+        return vocab
+
+    with pytest.raises(cal.CalibrationError, match=error):
+        cal.finalize_manifests(
+            pool_path,
+            artifact,
+            vocab_loader=mutate_input_during_vocab_load,
+        )
+
+    # Staging may create empty parent directories, but no destination may be
+    # published and no preexisting input/output byte may change again.
+    assert _tree_bytes(tmp_path) == bytes_after_mutation
 
 
 def test_finalization_rejects_replayable_work_after_earliest_feasible_prefix(

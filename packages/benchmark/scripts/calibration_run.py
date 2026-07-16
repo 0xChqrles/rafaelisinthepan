@@ -26,6 +26,7 @@ import sys
 from pathlib import Path
 import shutil
 import tempfile
+import unicodedata
 from typing import Any, Callable, Iterable, Iterator
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -2261,8 +2262,10 @@ def _publish_output_transaction(
     """Stage every output, then publish atomically per file with rollback on error."""
     normalized = [(path.resolve(), content) for path, content in outputs]
     destinations = [path for path, _content in normalized]
-    if len(destinations) != len(set(destinations)):
-        raise CalibrationError("finalization output transaction has duplicate paths")
+    for index, left in enumerate(destinations):
+        remaining = destinations[index + 1 :]
+        if any(_paths_collide(left, right) for right in remaining):
+            raise CalibrationError("finalization output transaction has duplicate paths")
 
     staged: dict[Path, Path] = {}
     backups: dict[Path, Path] = {}
@@ -2554,8 +2557,26 @@ def _resolve_split_destination(
     return destination
 
 
+def _portable_filename_key(path: Path) -> str:
+    """Return the case-insensitive, canonically normalized sibling name."""
+    normalized = unicodedata.normalize("NFC", path.name)
+    return unicodedata.normalize("NFC", normalized.casefold())
+
+
 def _paths_collide(left: Path, right: Path) -> bool:
+    left = left.resolve()
+    right = right.resolve()
     if left == right:
+        return True
+    try:
+        same_parent = left.parent == right.parent or (
+            left.parent.exists()
+            and right.parent.exists()
+            and left.parent.samefile(right.parent)
+        )
+    except OSError:
+        same_parent = False
+    if same_parent and _portable_filename_key(left) == _portable_filename_key(right):
         return True
     try:
         return left.exists() and right.exists() and left.samefile(right)
@@ -2655,7 +2676,7 @@ def finalize_manifests(
     artifact_bytes = artifact_path.read_bytes()
     state = json.loads(artifact_bytes.decode("utf-8"))
     artifact_file_sha256 = hashlib.sha256(artifact_bytes).hexdigest()
-    _inputs, finalization_paths = _resolve_finalization_paths(
+    finalization_inputs, finalization_paths = _resolve_finalization_paths(
         pool_manifest_path,
         artifact_path,
         manifest,
@@ -2919,6 +2940,38 @@ def finalize_manifests(
     certified_bytes = _json_file_bytes(certified_state)
 
     def revalidate_inputs_before_commit() -> None:
+        current_manifest, current_content_sha, current_manifest_sha = (
+            load_candidate_pool(pool_manifest_path)
+        )
+        exact_changed = current_manifest_sha != manifest_sha
+        content_changed = current_content_sha != content_sha
+        if exact_changed or content_changed:
+            changed_identity = (
+                "exact and content identities"
+                if exact_changed and content_changed
+                else "exact identity"
+                if exact_changed
+                else "content identity"
+            )
+            raise CalibrationError(
+                f"candidate pool manifest {changed_identity} changed during finalization"
+            )
+        current_inputs, current_paths = _resolve_finalization_paths(
+            pool_manifest_path,
+            artifact_path,
+            current_manifest,
+            training_out=training_out,
+            test_out=test_out,
+            certified_artifact_out=certified_artifact_out,
+        )
+        if current_inputs != finalization_inputs:
+            raise CalibrationError(
+                "candidate pool resolved input graph changed during finalization"
+            )
+        if current_paths != finalization_paths:
+            raise CalibrationError(
+                "finalization resolved output graph changed during staging"
+            )
         try:
             current_artifact_sha256 = hashlib.sha256(
                 artifact_path.read_bytes()
