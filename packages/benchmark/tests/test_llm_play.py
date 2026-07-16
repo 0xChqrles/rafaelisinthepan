@@ -101,6 +101,34 @@ def test_playbook_profile_loader_accepts_only_hash_verified_final_for_selected_m
         load_playbook_profile(path, MODELS[1])
 
 
+@pytest.mark.parametrize(
+    ("selector", "filename", "expected_sha256"),
+    [
+        (
+            "GPT-SOL",
+            "gpt-5.6-sol.playbook.json",
+            "e2cc898fdacca01d9856bbf02afe6fd542d22cbebd6ab63c60ac2defa692bb55",
+        ),
+        (
+            "SONNET",
+            "claude-sonnet-5.playbook.json",
+            "80b8802f0048e2837dbd7c8aa06fc9b62e401503246cbcba4438b38025cc6395",
+        ),
+    ],
+)
+def test_versioned_playbooks_are_exact_final_critic_profiles(
+    selector, filename, expected_sha256
+):
+    path = Path(__file__).resolve().parents[1] / "playbooks" / filename
+    data = json.loads(path.read_text(encoding="utf-8"))
+    playbook, digest = load_playbook_profile(path, select_model(selector))
+
+    assert digest == expected_sha256
+    assert playbook == data["final_playbook"]
+    assert "analyst" not in data
+    assert "critic" not in data
+
+
 def puzzle():
     return {
         "lang": "en",

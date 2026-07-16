@@ -63,6 +63,7 @@ packages/
     scripts/llm_play.py       LLM player/referee; reads generation output + web vocab
     scripts/playbook_distill.py  92-puzzle ultra analyst -> critic playbook distiller (#88)
     datasets/strategy-fr-92/  frozen static distillation corpus (92 gzipped puzzles)
+    playbooks/                versioned final critic-only model playbook profiles
     tests/test_llm_play.py    provider-adapter + game-rules parity tests
     output/                   full local benchmark/distillation records (gitignored)
     pyproject.toml, uv.lock   isolated Anthropic/OpenAI Python dependencies (uv)
@@ -427,8 +428,8 @@ pnpm bench:puzzle <puzzle.json> --model MODEL [--playbook <model>.playbook.json]
 #    run makes exactly two resumable paid calls: unrestricted analyst, then independent
 #    critic/rewrite. Workflow-level ultra maps to Sonnet adaptive+max, Codex-plan GPT
 #    literal ultra, or GPT API max+Pro. --dry-run validates all inputs and reports exact
-#    identities/call count without auth checks, writes, or provider calls. Outputs are
-#    gitignored; only the generated *.playbook.json is accepted by bench:puzzle.
+#    identities/call count without auth checks, writes, or provider calls. Raw outputs
+#    are gitignored; selected final-only profiles are versioned under benchmark/playbooks/.
 pnpm bench:playbook:distill --model SONNET --auth subscription [--dry-run]
 pnpm bench:playbook:distill --model GPT-SOL --auth subscription [--dry-run]
 
@@ -490,7 +491,11 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   + `max`, Codex-plan GPT literal `ultra`, or GPT API `max` + Pro reasoning. There is no old
   eight-item/2,000-character playbook cap. Both raw stages remain only in the gitignored audit
   artifact; the separate hash-pinned profile contains the critic's final playbook, and ONLY
-  that final text can enter `llm_play`. `--dry-run` performs zero auth checks, writes, or calls.
+  that final text can enter `llm_play`. The accepted Sonnet/GPT critic profiles are versioned
+  in `benchmark/playbooks/`; raw analyst and continuation transcripts remain local. Claude
+  Code max-output recovery can emit one logical answer across several assistant messages, so
+  the adapter assembles every ordered text block and removes an exact repeated seam before
+  hashing the stage. `--dry-run` performs zero auth checks, writes, or calls.
 - **`gen_phrase` is fully interactive on a TTY (#5).** Anything not passed as a flag is
   prompted: the **sentence** (positional, now optional), **`--lang`**, and the optional
   **source metadata** — `--kind` (offers `KNOWN_KINDS` numbered, but free text is

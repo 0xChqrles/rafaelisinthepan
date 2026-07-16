@@ -51,6 +51,8 @@ pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--
 
 # LLM benchmark (packages/benchmark — Python via its own uv project)
 pnpm bench:puzzle <puzzle.json> --model OPUS
+pnpm bench:puzzle <puzzle.json> --model GPT-SOL --auth subscription --effort max --playbook packages/benchmark/playbooks/gpt-5.6-sol.playbook.json --runs 1
+pnpm bench:puzzle <puzzle.json> --model SONNET --auth subscription --effort max --playbook packages/benchmark/playbooks/claude-sonnet-5.playbook.json --runs 1
 ```
 
 Generation splits its two outputs by purpose: **puzzles** land in
