@@ -96,7 +96,7 @@ DISPLAY_MODEL_COUNT = 3
 # Bump whenever the opening rules or turn-feedback scaffold changes materially. Results
 # are attributable to a model id plus this prompt version and the CLI's printed effort.
 PROMPT_VERSION = "21"
-V14_BASELINE_PROMPT = "14-parity"
+V14_BASELINE_PROMPT = "14-persistent"
 
 DEFAULT_CAP = 300
 DEFAULT_RUNS = 7
@@ -129,6 +129,7 @@ DEEP_REASONING_MAX_TOKENS = 64_000
 DECISION_OUTPUT_MAX_TOKENS = 512
 PROSE_OUTPUT_MAX_TOKENS = 8_192
 OutputMode = Literal["word", "decision", "prose"]
+WordSessionMode = Literal["stateless", "persistent"]
 
 AuthMode = Literal["api", "subscription"]
 AUTH_MODES: tuple[AuthMode, ...] = ("api", "subscription")
@@ -737,6 +738,18 @@ def parse_single_word(reply: str, *, lang: str | None = None) -> str | None:
     return candidate if candidate and pattern.fullmatch(candidate) else None
 
 
+# Prompt v14 predated the strict bare-word surface. Its referee accepted harmless
+# surrounding Markdown, quotes, or punctuation when the response still contained
+# exactly one lexical word. Keep that historical parser inside the experiment instead
+# of changing prompt v21's deliberately narrower contract.
+_V14_LEXICAL_WORD = re.compile(r"[^\W\d_]+(?:-[^\W\d_]+)*", re.UNICODE)
+
+
+def _parse_v14_single_word(reply: str) -> str | None:
+    matches = _V14_LEXICAL_WORD.findall(reply)
+    return matches[0] if len(matches) == 1 else None
+
+
 def _reply_contract_lines(referee: PuzzleReferee, language: str) -> list[str]:
     if referee.lang == "fr":
         alphabet = (
@@ -834,6 +847,34 @@ def _state_snapshot_lines(referee: PuzzleReferee) -> list[str]:
     ]
 
 
+def _v14_state_snapshot_lines(referee: PuzzleReferee) -> list[str]:
+    """Render the exact state surface recorded in historical prompt-v14 runs."""
+    tried = ", ".join(sorted(referee.tried_words, key=slug)) or "none"
+    if referee.tries == 0:
+        trend = "NO-IMPROVEMENT STREAK: 0. No counted guesses yet."
+    elif referee.stalled_tries == 0:
+        trend = (
+            "NO-IMPROVEMENT STREAK: 0. The latest counted guess improved at "
+            "least one word."
+        )
+    else:
+        guess_unit = "guess" if referee.stalled_tries == 1 else "guesses"
+        trend = (
+            f"NO-IMPROVEMENT STREAK: {referee.stalled_tries}. The last "
+            f"{referee.stalled_tries} counted {guess_unit} improved no word; all "
+            "current best ranks stayed unchanged."
+        )
+    return [
+        "CURRENT STATE",
+        f"CLOZE: {referee.cloze()}",
+        "CURRENT BEST RANKED CLUE PER UNSOLVED WORD — SEMANTIC EVIDENCE, "
+        "NOT SENTENCE TEXT:",
+        *referee.best_clue_lines(),
+        trend,
+        f"EXCLUDED AS ALREADY TRIED (unordered; do not repeat): {tried}",
+    ]
+
+
 _V14_JUDGMENT = (
     "JUDGMENT: Choose your own method and update it from the evidence. Treat each "
     "counted guess as a costly hypothesis: improvement supports continuing a "
@@ -843,17 +884,12 @@ _V14_JUDGMENT = (
 
 
 def _v14_word_reply_line(referee: PuzzleReferee) -> str:
-    language = LANGUAGE_NAMES.get(referee.lang, referee.lang)
-    return f"Reply with exactly one {language} word."
+    _ = referee
+    return "Reply with exactly one word."
 
 
 def _v14_opening_message(referee: PuzzleReferee) -> str:
-    """Reproduce prompt v14's policy while retaining the strict reply grammar.
-
-    This is an explicit experiment, not the production prompt identity. Both providers
-    receive the same stateless public record; the only free turn is the model-authored
-    method that made v14 distinctive.
-    """
+    """Reproduce the opening recorded verbatim in historical prompt-v14 artifacts."""
     language = LANGUAGE_NAMES.get(referee.lang, referee.lang)
     return "\n".join(
         [
@@ -884,9 +920,6 @@ def _v14_opening_message(referee: PuzzleReferee) -> str:
                 "Answers are exact inflected forms, not lemmas: number, gender, "
                 "agreement, and conjugation can distinguish words."
             ),
-            "",
-            "REPLY CONTRACT AFTER THE METHOD TURN",
-            *_reply_contract_lines(referee, language),
             "",
             "EVIDENCE",
             (
@@ -932,13 +965,11 @@ def _v14_opening_message(referee: PuzzleReferee) -> str:
                 "After each guess you receive its result and an authoritative current "
                 "snapshot. It shows the CLOZE, only the current best ranked clue for "
                 "each unsolved word, the consecutive no-improvement count, and all "
-                "already-tried or rejected words as unordered exclusion sets. The "
-                "complete public turn record is also retained so no provider receives "
-                "hidden session evidence."
+                "already-tried words as an unordered exclusion set. Earlier outcomes "
+                "are not replayed as a word sequence."
             ),
             "",
-            "CURRENT STATE",
-            *_state_snapshot_lines(referee)[1:],
+            *_v14_state_snapshot_lines(referee),
             "Tries: 0 (your score — lower is better)",
             _V14_JUDGMENT,
             (
@@ -956,7 +987,7 @@ def _v14_method_noted_message(referee: PuzzleReferee) -> str:
                 "Method noted. It is your own commitment: play by it, and revise it "
                 "yourself when the evidence stops supporting it. The game starts now."
             ),
-            *_state_snapshot_lines(referee),
+            *_v14_state_snapshot_lines(referee),
             "Tries: 0 (your score — lower is better)",
             _V14_JUDGMENT,
             _v14_word_reply_line(referee),
@@ -977,10 +1008,21 @@ def _v14_feedback_message(
     return "\n".join(
         [
             lead,
-            *_state_snapshot_lines(referee),
+            *_v14_state_snapshot_lines(referee),
             f"Tries: {feedback.tries} (your score — lower is better)",
             _V14_JUDGMENT,
             _v14_word_reply_line(referee),
+        ]
+    )
+
+
+def _v14_unparseable_message(referee: PuzzleReferee) -> str:
+    return "\n".join(
+        [
+            "I could not parse a word — this did not count. Reply with exactly one word.",
+            *_v14_state_snapshot_lines(referee),
+            f"Tries: {referee.tries} (your score — lower is better)",
+            _V14_JUDGMENT,
         ]
     )
 
@@ -1197,8 +1239,9 @@ def play_puzzle(
 
     `strategy` is optional model-authored playbook guidance injected into the opening
     as advice under the fixed rules. Production prompt v21 has no pre-game planning
-    turn. The explicit `v14_baseline` experiment instead restores v14's one free method
-    turn while keeping the same stateless public history for every provider.
+    turn. The explicit `v14_baseline` experiment restores v14's recorded prompt,
+    permissive one-word parser, and one free method turn. The CLI binds that experiment
+    to fresh provider-native persistent sessions for both subscription transports.
     """
     if not _is_int(cap) or cap <= 0:
         raise ValueError("cap must be a positive integer")
@@ -1242,7 +1285,7 @@ def play_puzzle(
             [
                 {
                     "role": "assistant",
-                    "content": raw_method.strip() or "[empty method]",
+                    "content": raw_method.strip() or "[empty response]",
                 },
                 {
                     "role": "user",
@@ -1262,7 +1305,11 @@ def play_puzzle(
         assistant_content = raw_reply.strip() or "[empty response]"
         messages.append({"role": "assistant", "content": assistant_content})
 
-        guess = parse_single_word(raw_reply, lang=referee.lang)
+        guess = (
+            _parse_v14_single_word(raw_reply)
+            if v14_baseline
+            else parse_single_word(raw_reply, lang=referee.lang)
+        )
         if guess is None:
             consecutive_unparseable += 1
             if consecutive_unparseable >= MAX_CONSECUTIVE_UNPARSEABLE:
@@ -1281,10 +1328,14 @@ def play_puzzle(
             messages.append(
                 {
                     "role": "user",
-                    "content": unparseable_message(
-                        referee,
-                        raw_reply,
-                        rules_only=rules_only,
+                    "content": (
+                        _v14_unparseable_message(referee)
+                        if v14_baseline
+                        else unparseable_message(
+                            referee,
+                            raw_reply,
+                            rules_only=rules_only,
+                        )
                     ),
                 }
             )
@@ -1624,10 +1675,16 @@ class AnthropicSubscriptionReply:
         model_id: str,
         effort: ReasoningEffort,
         output: OutputMode = "word",
+        word_session: WordSessionMode = "stateless",
     ):
+        if word_session not in ("stateless", "persistent"):
+            raise ValueError(f"unsupported word session mode: {word_session}")
+        if output != "word" and word_session != "stateless":
+            raise ValueError("persistent word sessions require word output mode")
         self.model_id = model_id
         self.effort = effort
         self.output = output
+        self.word_session = word_session
         self.session_id: str | None = None
         self._message_count = 0
         self._workspace = tempfile.TemporaryDirectory(prefix="whippin-agent-sdk-")
@@ -1653,12 +1710,18 @@ class AnthropicSubscriptionReply:
                 "Agent SDK conversation diverged from the append-only referee transcript"
             )
 
-        # Word play uses a fresh provider turn containing the same fixed rules and
-        # complete chronological public record as every other transport. Other output
-        # modes retain their existing resumable-session behavior.
+        persistent = self.output != "word" or self.word_session == "persistent"
+        if persistent and len(messages) > 1 and self.session_id is None:
+            raise RuntimeError(
+                "Agent SDK conversation cannot resume before its opening turn"
+            )
+
+        # Ordinary v21 word play remains fresh and stateless. The isolated v14 control
+        # instead sends only the newest referee message into the same resumed session,
+        # exactly as the historical Claude transport did.
         prompt = messages[-1]["content"]
         resume = self.session_id
-        if self.output == "word":
+        if not persistent:
             prompt = _stateless_word_prompt(messages)
             resume = None
 
@@ -1672,7 +1735,7 @@ class AnthropicSubscriptionReply:
                     resume=resume,
                 )
             )
-        self.session_id = session_id if self.output != "word" else None
+        self.session_id = session_id if persistent else None
         self._message_count = len(messages)
         self.last_token_usage = usage
         return text
@@ -1727,9 +1790,10 @@ def _codex_snapshot_prompt(
 
 def _codex_final_message(
     stdout: str, model_id: str
-) -> tuple[str, dict[str, Any] | None]:
+) -> tuple[str, dict[str, Any] | None, str | None]:
     final_message: str | None = None
     token_usage: dict[str, Any] | None = None
+    thread_id: str | None = None
     for line_number, line in enumerate(stdout.splitlines(), start=1):
         if not line.strip():
             continue
@@ -1745,6 +1809,18 @@ def _codex_final_message(
         if event_type in {"error", "turn.failed"}:
             detail = event.get("message") or event.get("error") or "unknown error"
             raise RuntimeError(f"{model_id} Codex CLI turn failed: {detail}")
+        if event_type == "thread.started":
+            candidate = event.get("thread_id")
+            if not isinstance(candidate, str) or not candidate:
+                raise RuntimeError(
+                    f"{model_id} Codex CLI returned a malformed thread id"
+                )
+            if thread_id is not None and candidate != thread_id:
+                raise RuntimeError(
+                    f"{model_id} Codex CLI returned conflicting thread ids"
+                )
+            thread_id = candidate
+            continue
         if event_type == "turn.completed":
             token_usage = _json_token_usage(event.get("usage"))
             continue
@@ -1767,14 +1843,18 @@ def _codex_final_message(
             final_message = text
     if final_message is None:
         raise RuntimeError(f"{model_id} Codex CLI returned no final agent message")
-    return final_message, token_usage
+    return final_message, token_usage, thread_id
 
 
 class OpenAISubscriptionReply:
-    """Fresh, isolated Codex CLI turns backed by saved ChatGPT plan auth."""
+    """Isolated Codex CLI turns backed by saved ChatGPT plan auth."""
 
     def __init__(
-        self, model_id: str, effort: ReasoningEffort, output: OutputMode = "word"
+        self,
+        model_id: str,
+        effort: ReasoningEffort,
+        output: OutputMode = "word",
+        word_session: WordSessionMode = "stateless",
     ):
         if effort not in CODEX_SUBSCRIPTION_EFFORTS:
             supported = "|".join(CODEX_SUBSCRIPTION_EFFORTS)
@@ -1782,6 +1862,10 @@ class OpenAISubscriptionReply:
                 "OpenAI subscription auth does not support reasoning effort "
                 f"{effort!r}; use {supported}"
             )
+        if word_session not in ("stateless", "persistent"):
+            raise ValueError(f"unsupported word session mode: {word_session}")
+        if output != "word" and word_session != "stateless":
+            raise ValueError("persistent word sessions require word output mode")
         cli = shutil.which("codex")
         if cli is None:
             raise RuntimeError("Codex CLI is not installed")
@@ -1789,6 +1873,8 @@ class OpenAISubscriptionReply:
         self.model_id = model_id
         self.effort = effort
         self.output = output
+        self.word_session = word_session
+        self.session_id: str | None = None
         self.timeout_seconds = (
             CODEX_PROSE_TIMEOUT_SECONDS
             if output == "prose"
@@ -1805,7 +1891,10 @@ class OpenAISubscriptionReply:
         self._instructions_path = Path(self._workspace.name) / "instructions.md"
         self._instructions_path.write_text(instructions + "\n", encoding="utf-8")
 
-    def _command(self) -> list[str]:
+    def _command(self, resume: str | None = None) -> list[str]:
+        persistent = self.word_session == "persistent"
+        if resume is not None and not persistent:
+            raise RuntimeError("a stateless Codex turn cannot resume a session")
         config = [
             f"approval_policy={json.dumps('never')}",
             f"model_reasoning_effort={json.dumps(self.effort)}",
@@ -1814,28 +1903,41 @@ class OpenAISubscriptionReply:
             "features.shell_tool=false",
             "features.multi_agent=false",
             f"web_search={json.dumps('disabled')}",
-            f"history.persistence={json.dumps('none')}",
+            f"history.persistence={json.dumps('save-all' if persistent else 'none')}",
             "feedback.enabled=false",
             "analytics.enabled=false",
         ]
-        command = [
-            self.cli,
-            "exec",
-            "--ephemeral",
-            "--ignore-user-config",
-            "--ignore-rules",
-            "--skip-git-repo-check",
-            "--strict-config",
-            "--json",
-            "--sandbox",
-            "read-only",
-            "--cd",
-            self._workspace.name,
-            "--model",
-            self.model_id,
-        ]
+        command = [self.cli, "exec"]
+        if resume is not None:
+            command.append("resume")
+        if not persistent:
+            command.append("--ephemeral")
+        command.extend(
+            [
+                "--ignore-user-config",
+                "--ignore-rules",
+                "--skip-git-repo-check",
+                "--strict-config",
+                "--json",
+                "--model",
+                self.model_id,
+            ]
+        )
+        # `codex exec resume` continues the original thread's cwd and sandbox and does
+        # not accept the initial command's --cd/--sandbox flags. The subprocess still
+        # runs from the same live temporary workspace.
+        if resume is None:
+            model_index = command.index("--model")
+            command[model_index:model_index] = [
+                "--sandbox",
+                "read-only",
+                "--cd",
+                self._workspace.name,
+            ]
         for value in config:
             command.extend(("--config", value))
+        if resume is not None:
+            command.append(resume)
         command.append("-")
         return command
 
@@ -1844,6 +1946,7 @@ class OpenAISubscriptionReply:
             raise ValueError("Codex CLI reply requires a final user message")
 
         if len(messages) == 1:
+            self.session_id = None
             self._message_count = 0
         expected_count = 1 if self._message_count == 0 else self._message_count + 2
         if len(messages) != expected_count:
@@ -1851,16 +1954,28 @@ class OpenAISubscriptionReply:
                 "Codex CLI conversation diverged from the append-only referee transcript"
             )
 
+        persistent = self.word_session == "persistent"
+        if persistent and len(messages) > 1 and self.session_id is None:
+            raise RuntimeError(
+                "Codex CLI conversation cannot resume before its opening turn"
+            )
+        resume = self.session_id if persistent else None
+        prompt = (
+            messages[-1]["content"]
+            if persistent
+            else _codex_snapshot_prompt(messages, self.output)
+        )
+
         try:
             completed = subprocess.run(
-                self._command(),
+                self._command(resume),
                 check=False,
                 capture_output=True,
                 text=True,
                 timeout=self.timeout_seconds,
                 cwd=self._workspace.name,
                 env=_environment_without(OPENAI_SUBSCRIPTION_CONFLICT_ENV),
-                input=_codex_snapshot_prompt(messages, self.output),
+                input=prompt,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise RuntimeError(f"{self.model_id} Codex CLI turn failed: {exc}") from exc
@@ -1872,7 +1987,22 @@ class OpenAISubscriptionReply:
                 f"{self.model_id} Codex CLI exited {completed.returncode}: "
                 f"{detail[-1000:]}"
             )
-        result, usage = _codex_final_message(completed.stdout, self.model_id)
+        result, usage, thread_id = _codex_final_message(
+            completed.stdout, self.model_id
+        )
+        if persistent:
+            if thread_id is None:
+                raise RuntimeError(
+                    f"{self.model_id} Codex CLI session returned no thread id"
+                )
+            if resume is not None and thread_id != resume:
+                raise RuntimeError(
+                    f"{self.model_id} Codex CLI resumed the wrong thread "
+                    f"({thread_id!r} != {resume!r})"
+                )
+            self.session_id = thread_id
+        else:
+            self.session_id = None
         self._message_count = len(messages)
         self.last_token_usage = usage
         return result
@@ -1889,14 +2019,22 @@ def provider_reply(
     auth: AuthMode = DEFAULT_AUTH,
     output: OutputMode = "word",
     reasoning_mode: ReasoningMode = "standard",
+    word_session: WordSessionMode = "stateless",
 ) -> ModelReply:
     """Build one provider adapter. Paid SDK imports stay lazy for offline tests.
 
     `output` fixes the adapter's response mode at construction: "word" for the
     ordinary benchmark, "decision" for structured controllers, and "prose" for
     long-form analysis. OpenAI API callers can additionally request documented Pro
-    reasoning with max effort; other transports reject that wire-only option.
+    reasoning with max effort; other transports reject that wire-only option. The
+    persistent word-session mode is reserved for the subscription-only v14 control.
     """
+    if word_session not in ("stateless", "persistent"):
+        raise ValueError(f"unsupported word session mode: {word_session}")
+    if word_session == "persistent" and (output != "word" or auth != "subscription"):
+        raise ValueError(
+            "persistent word sessions require word output with subscription auth"
+        )
     provider = config["provider"]
     model_id = config["model_id"]
     _validate_provider_effort(provider, auth, effort)
@@ -1904,7 +2042,9 @@ def provider_reply(
 
     if provider == "anthropic":
         if auth == "subscription":
-            return AnthropicSubscriptionReply(model_id, effort, output)
+            return AnthropicSubscriptionReply(
+                model_id, effort, output, word_session=word_session
+            )
         if not api_key:
             raise ValueError("Anthropic API auth requires ANTHROPIC_API_KEY")
         import anthropic
@@ -1972,7 +2112,9 @@ def provider_reply(
 
     if provider == "openai":
         if auth == "subscription":
-            return OpenAISubscriptionReply(model_id, effort, output)
+            return OpenAISubscriptionReply(
+                model_id, effort, output, word_session=word_session
+            )
         if not api_key:
             raise ValueError("OpenAI auth requires OPENAI_API_KEY")
         from openai import OpenAI
@@ -2611,8 +2753,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--v14-baseline",
         action="store_true",
         help=(
-            "experimental provider-neutral reproduction of prompt v14's free "
-            "pre-game method turn; cannot be persisted or combined with --playbook"
+            "experimental historical prompt-v14 reproduction with one fresh native "
+            "persistent conversation per run for both providers; requires subscription "
+            "auth at medium effort and cannot use --in-place or --playbook"
         ),
     )
     parser.add_argument(
@@ -2628,6 +2771,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         parser.error("--v14-baseline cannot be combined with --playbook")
     if args.v14_baseline and args.in_place:
         parser.error("--v14-baseline is an experiment and cannot use --in-place")
+    if args.v14_baseline and args.auth != "subscription":
+        parser.error("--v14-baseline requires --auth subscription")
+    if args.v14_baseline and args.effort != "medium":
+        parser.error("--v14-baseline requires --effort medium")
     try:
         args.model_config = select_model(args.model)
     except ValueError as exc:
@@ -2723,6 +2870,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 api_key,
                 effort=args.effort,
                 auth=args.auth,
+                word_session=(
+                    "persistent" if args.v14_baseline else "stateless"
+                ),
             ),
             cap=args.cap,
             runs=args.runs,

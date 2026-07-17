@@ -592,6 +592,69 @@ def test_anthropic_subscription_word_adapter_uses_fresh_stateless_agent_sdk_turn
     assert not workspace.exists()
 
 
+def test_anthropic_persistent_word_adapter_resumes_only_within_one_run(monkeypatch):
+    calls = []
+
+    class FakeOptions:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    class FakeResultMessage:
+        def __init__(self, *, session_id):
+            self.result = "forest"
+            self.session_id = session_id
+            self.is_error = False
+            self.stop_reason = "end_turn"
+            self.subtype = "success"
+            self.usage = {"input_tokens": 12, "output_tokens": 1}
+
+    async def fake_query(*, prompt, options):
+        calls.append((prompt, options))
+        session_id = options.resume or f"session-{len(calls)}"
+        yield FakeResultMessage(session_id=session_id)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "claude_agent_sdk",
+        SimpleNamespace(
+            ClaudeAgentOptions=FakeOptions,
+            ResultMessage=FakeResultMessage,
+            query=fake_query,
+        ),
+    )
+    reply = provider_reply(
+        MODELS[1],
+        None,
+        effort="medium",
+        auth="subscription",
+        word_session="persistent",
+    )
+    opening = [{"role": "user", "content": "historical v14 opening"}]
+    continued = opening + [
+        {"role": "assistant", "content": "my method"},
+        {"role": "user", "content": "method noted"},
+    ]
+
+    assert reply(opening) == "forest"
+    assert reply(continued) == "forest"
+    # A one-message transcript is a new benchmark run and must not inherit the old
+    # provider session even though the adapter object is reused across median runs.
+    assert reply([{"role": "user", "content": "next run opening"}]) == "forest"
+
+    assert [prompt for prompt, _options in calls] == [
+        "historical v14 opening",
+        "method noted",
+        "next run opening",
+    ]
+    assert [options.resume for _prompt, options in calls] == [
+        None,
+        "session-1",
+        None,
+    ]
+    assert reply.session_id == "session-3"
+    reply.close()
+
+
 def test_anthropic_subscription_assembles_max_output_recovery_chunks(monkeypatch):
     class FakeOptions:
         def __init__(self, **kwargs):
@@ -865,6 +928,143 @@ def test_openai_subscription_adapter_isolates_fresh_codex_exec(
     assert not workspace.exists()
 
 
+def test_openai_persistent_word_adapter_resumes_only_within_one_run(monkeypatch):
+    calls = []
+    initial_threads = 0
+
+    def fake_run(command, **kwargs):
+        nonlocal initial_threads
+        calls.append((command, kwargs))
+        if command[2] == "resume":
+            thread_id = command[-2]
+        else:
+            initial_threads += 1
+            thread_id = f"thread-{initial_threads}"
+        return SimpleNamespace(
+            returncode=0,
+            stdout="\n".join(
+                [
+                    json.dumps(
+                        {"type": "thread.started", "thread_id": thread_id}
+                    ),
+                    json.dumps(
+                        {
+                            "type": "item.completed",
+                            "item": {"type": "agent_message", "text": "forest"},
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "type": "turn.completed",
+                            "usage": {"input_tokens": 20, "output_tokens": 2},
+                        }
+                    ),
+                ]
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr("llm_play.shutil.which", lambda _command: "/usr/bin/codex")
+    monkeypatch.setattr("llm_play.subprocess.run", fake_run)
+    reply = provider_reply(
+        MODELS[2],
+        None,
+        effort="medium",
+        auth="subscription",
+        word_session="persistent",
+    )
+    opening = [{"role": "user", "content": "historical v14 opening"}]
+    continued = opening + [
+        {"role": "assistant", "content": "my method"},
+        {"role": "user", "content": "method noted"},
+    ]
+
+    assert reply(opening) == "forest"
+    assert reply(continued) == "forest"
+    assert reply([{"role": "user", "content": "next run opening"}]) == "forest"
+
+    first_command, first_kwargs = calls[0]
+    resumed_command, resumed_kwargs = calls[1]
+    next_run_command, next_run_kwargs = calls[2]
+    assert first_command[:2] == ["/usr/bin/codex", "exec"]
+    assert first_command[2] != "resume"
+    assert resumed_command[:3] == ["/usr/bin/codex", "exec", "resume"]
+    assert resumed_command[-2:] == ["thread-1", "-"]
+    assert next_run_command[:2] == ["/usr/bin/codex", "exec"]
+    assert next_run_command[2] != "resume"
+    for command in (first_command, resumed_command, next_run_command):
+        assert "--ephemeral" not in command
+        configs = [
+            command[index + 1]
+            for index, value in enumerate(command)
+            if value == "--config"
+        ]
+        assert 'history.persistence="save-all"' in configs
+    assert "--sandbox" in first_command
+    assert "--cd" in first_command
+    assert "--sandbox" not in resumed_command
+    assert "--cd" not in resumed_command
+    assert [
+        first_kwargs["input"],
+        resumed_kwargs["input"],
+        next_run_kwargs["input"],
+    ] == ["historical v14 opening", "method noted", "next run opening"]
+    assert first_kwargs["cwd"] == resumed_kwargs["cwd"] == next_run_kwargs["cwd"]
+    assert reply.session_id == "thread-2"
+
+    workspace = Path(first_kwargs["cwd"])
+    assert workspace.is_dir()
+    reply.close()
+    assert not workspace.exists()
+
+
+def test_openai_persistent_word_adapter_rejects_a_changed_resume_thread(monkeypatch):
+    calls = 0
+
+    def fake_run(_command, **_kwargs):
+        nonlocal calls
+        calls += 1
+        thread_id = "thread-1" if calls == 1 else "wrong-thread"
+        return SimpleNamespace(
+            returncode=0,
+            stdout="\n".join(
+                [
+                    json.dumps(
+                        {"type": "thread.started", "thread_id": thread_id}
+                    ),
+                    json.dumps(
+                        {
+                            "type": "item.completed",
+                            "item": {"type": "agent_message", "text": "forest"},
+                        }
+                    ),
+                ]
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr("llm_play.shutil.which", lambda _command: "/usr/bin/codex")
+    monkeypatch.setattr("llm_play.subprocess.run", fake_run)
+    reply = provider_reply(
+        MODELS[2],
+        None,
+        effort="medium",
+        auth="subscription",
+        word_session="persistent",
+    )
+    opening = [{"role": "user", "content": "opening"}]
+    assert reply(opening) == "forest"
+    with pytest.raises(RuntimeError, match="resumed the wrong thread"):
+        reply(
+            opening
+            + [
+                {"role": "assistant", "content": "method"},
+                {"role": "user", "content": "method noted"},
+            ]
+        )
+    reply.close()
+
+
 def test_openai_subscription_prose_payload_has_no_one_word_directive(monkeypatch):
     calls = []
 
@@ -979,6 +1179,28 @@ def test_openai_subscription_rejects_codex_tool_activity(monkeypatch):
     with pytest.raises(RuntimeError, match="forbidden tool activity"):
         reply([{"role": "user", "content": "opening"}])
     reply.close()
+
+
+def test_persistent_word_session_is_subscription_word_only(monkeypatch):
+    monkeypatch.setattr("llm_play.shutil.which", lambda _command: "/usr/bin/codex")
+
+    with pytest.raises(ValueError, match="subscription auth"):
+        provider_reply(
+            MODELS[2],
+            "secret",
+            effort="medium",
+            auth="api",
+            word_session="persistent",
+        )
+    with pytest.raises(ValueError, match="word output"):
+        provider_reply(
+            MODELS[2],
+            None,
+            effort="medium",
+            auth="subscription",
+            output="prose",
+            word_session="persistent",
+        )
 
 
 def test_openai_subscription_auth_preflight_strips_api_credentials(monkeypatch):
@@ -2121,6 +2343,54 @@ def test_cli_openai_subscription_uses_plan_without_api_key(
     assert "OPENAI_API_KEY is not set" not in output.err
 
 
+def test_v14_cli_binds_the_persistent_session_mode_before_paid_play(
+    monkeypatch, tmp_path, capsys
+):
+    path = tmp_path / "puzzle.json"
+    path.write_text(json.dumps(puzzle()), encoding="utf-8")
+    method = "I will use sentence completions and abandon flat hypotheses."
+    model = ScriptedModel([method, "forest", "ocean"])
+    provider_kwargs = []
+
+    monkeypatch.setattr("llm_play.load_vocab", lambda _lang: VOCAB)
+    monkeypatch.setattr(
+        "llm_play.validate_openai_subscription_auth", lambda: "ChatGPT"
+    )
+
+    def fake_provider(_config, _api_key, **kwargs):
+        provider_kwargs.append(kwargs)
+        return model
+
+    monkeypatch.setattr("llm_play.provider_reply", fake_provider)
+
+    assert (
+        main(
+            [
+                str(path),
+                "--model",
+                "GPT-SOL",
+                "--effort",
+                "medium",
+                "--auth",
+                "subscription",
+                "--runs",
+                "1",
+                "--v14-baseline",
+            ]
+        )
+        == 0
+    )
+
+    assert provider_kwargs == [
+        {
+            "effort": "medium",
+            "auth": "subscription",
+            "word_session": "persistent",
+        }
+    ]
+    assert "prompt=14-persistent" in capsys.readouterr().out
+
+
 def test_cli_anthropic_subscription_preflights_only_the_selected_provider(
     monkeypatch, tmp_path
 ):
@@ -2223,12 +2493,12 @@ def test_opening_injects_learned_strategy_as_guidance_and_first_reply_is_a_guess
     assert "fixed game rules above always take precedence" in opening
 
 
-def test_v14_baseline_forces_one_free_method_turn_for_every_stateless_provider():
+def test_v14_baseline_restores_the_historical_method_turn_prompt_and_parser():
     method = (
         "I will complete every blank from the sentence first, compare those "
         "candidates with the ranks, and abandon a direction after flat feedback."
     )
-    model = ScriptedModel([method, "forest", "ocean"])
+    model = ScriptedModel([method, "**forest**", "ocean"])
 
     result = play_puzzle(puzzle(), VOCAB, model, v14_baseline=True)
 
@@ -2242,19 +2512,29 @@ def test_v14_baseline_forces_one_free_method_turn_for_every_stateless_provider()
     assert "state the method you commit to" in opening
     assert "First reply: your method, in free text — no guess yet" in opening
     assert "every counted guess is expensive" in opening
+    # These absences distinguish the recorded historical v14 surface from the prior
+    # branch's v21/stateless hybrid.
+    assert "REPLY CONTRACT AFTER THE METHOD TURN" not in opening
+    assert "REJECTED OUTSIDE VOCABULARY" not in opening
+    assert "complete public turn record" not in opening
+    assert "Earlier outcomes are not replayed as a word sequence." in opening
 
-    first_guess_prompt = _stateless_word_prompt(model.calls[1])
-    assert f"PLAYER REPLY 1\n{method}" in first_guess_prompt
-    assert "REFEREE FEEDBACK 1\nMethod noted." in first_guess_prompt
-    assert "CLOZE: the ([WORD 1], meets [WORD 2]" in first_guess_prompt
+    first_guess_feedback = model.calls[1][-1]["content"]
+    assert first_guess_feedback.startswith("Method noted.")
+    assert first_guess_feedback.endswith("Reply with exactly one word.")
+    assert "REJECTED OUTSIDE VOCABULARY" not in first_guess_feedback
 
-    second_guess_prompt = _stateless_word_prompt(model.calls[2])
-    assert f"PLAYER REPLY 1\n{method}" in second_guess_prompt
-    assert "PLAYER REPLY 2\nforest" in second_guess_prompt
-    assert 'REFEREE FEEDBACK 2\nRESULT FOR "forest":' in second_guess_prompt
+    second_guess_feedback = model.calls[2][-1]["content"]
+    assert second_guess_feedback.startswith('RESULT FOR "forest":')
+    assert second_guess_feedback.endswith("Reply with exactly one word.")
+    # Historical v14 accepted harmless formatting around exactly one lexical word.
+    assert result.conversation[3] == {
+        "role": "assistant",
+        "content": "**forest**",
+    }
 
 
-def test_v14_baseline_rejects_playbooks_and_persistence():
+def test_v14_baseline_rejects_playbooks_output_writes_and_noncontrol_config():
     with pytest.raises(SystemExit):
         parse_args(
             [
@@ -2276,6 +2556,43 @@ def test_v14_baseline_rejects_playbooks_and_persistence():
                 "--in-place",
             ]
         )
+    with pytest.raises(SystemExit):
+        parse_args(
+            [
+                "puzzle.json",
+                "--model",
+                "SONNET",
+                "--v14-baseline",
+                "--effort",
+                "medium",
+            ]
+        )
+    with pytest.raises(SystemExit):
+        parse_args(
+            [
+                "puzzle.json",
+                "--model",
+                "SONNET",
+                "--v14-baseline",
+                "--auth",
+                "subscription",
+                "--effort",
+                "high",
+            ]
+        )
+    accepted = parse_args(
+        [
+            "puzzle.json",
+            "--model",
+            "SONNET",
+            "--v14-baseline",
+            "--auth",
+            "subscription",
+            "--effort",
+            "medium",
+        ]
+    )
+    assert accepted.v14_baseline is True
 
 
 def test_every_unconditioned_caller_gets_the_same_strategy_neutral_rules():
