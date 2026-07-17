@@ -2223,6 +2223,61 @@ def test_opening_injects_learned_strategy_as_guidance_and_first_reply_is_a_guess
     assert "fixed game rules above always take precedence" in opening
 
 
+def test_v14_baseline_forces_one_free_method_turn_for_every_stateless_provider():
+    method = (
+        "I will complete every blank from the sentence first, compare those "
+        "candidates with the ranks, and abandon a direction after flat feedback."
+    )
+    model = ScriptedModel([method, "forest", "ocean"])
+
+    result = play_puzzle(puzzle(), VOCAB, model, v14_baseline=True)
+
+    assert result.tries == 2
+    assert result.turns == 3
+    assert result.tried_words == ("forest", "ocean")
+    assert result.conversation[1] == {"role": "assistant", "content": method}
+
+    opening = model.calls[0][0]["content"]
+    assert "YOUR METHOD" in opening
+    assert "state the method you commit to" in opening
+    assert "First reply: your method, in free text — no guess yet" in opening
+    assert "every counted guess is expensive" in opening
+
+    first_guess_prompt = _stateless_word_prompt(model.calls[1])
+    assert f"PLAYER REPLY 1\n{method}" in first_guess_prompt
+    assert "REFEREE FEEDBACK 1\nMethod noted." in first_guess_prompt
+    assert "CLOZE: the ([WORD 1], meets [WORD 2]" in first_guess_prompt
+
+    second_guess_prompt = _stateless_word_prompt(model.calls[2])
+    assert f"PLAYER REPLY 1\n{method}" in second_guess_prompt
+    assert "PLAYER REPLY 2\nforest" in second_guess_prompt
+    assert 'REFEREE FEEDBACK 2\nRESULT FOR "forest":' in second_guess_prompt
+
+
+def test_v14_baseline_rejects_playbooks_and_persistence():
+    with pytest.raises(SystemExit):
+        parse_args(
+            [
+                "puzzle.json",
+                "--model",
+                "SONNET",
+                "--v14-baseline",
+                "--playbook",
+                "strategy.json",
+            ]
+        )
+    with pytest.raises(SystemExit):
+        parse_args(
+            [
+                "puzzle.json",
+                "--model",
+                "GPT-SOL",
+                "--v14-baseline",
+                "--in-place",
+            ]
+        )
+
+
 def test_every_unconditioned_caller_gets_the_same_strategy_neutral_rules():
     ordinary = ScriptedModel(["forest", "ocean"])
     play_puzzle(puzzle(), VOCAB, ordinary)
