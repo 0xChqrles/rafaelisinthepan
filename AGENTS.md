@@ -416,15 +416,17 @@ pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--
 #    (default) uses the selected provider's API key; --auth subscription uses authenticated
 #    Claude.ai / saved ChatGPT Codex-plan access. GPT API runs allow the documented
 #    none|low|medium|high|xhigh|max; ordinary Codex-plan play supports
-#    low|medium|high|xhigh|max. --playbook accepts only a hash-verified final profile for
-#    the selected model; no analyst/critic audit text enters the game prompt.
+#    low|medium|high|xhigh|max. The frozen shared gameplay baseline is prompt v21 at
+#    medium effort with NO --playbook. --playbook remains an experimental loader only;
+#    the static-corpus playbooks are paused and must not be used for benchmark scores.
 #    --runs must be odd (default 7) so one actual median run can be selected. Puzzle paths
 #    may be repo-root-relative (packages/generation/output/...) or generation-package-
 #    relative (output/...). --in-place appends the full local lab artifact and embeds the
 #    lean display trio once all 3 current-prompt display models have results.
 pnpm bench:puzzle <puzzle.json> --model MODEL [--playbook <model>.playbook.json] [--effort LEVEL] [--auth api|subscription] [--cap N] [--runs N] [--in-place]
 
-# 5. Bootstrap one model's playbook from all 92 static French puzzles (#88). Each real
+# 5. PAUSED EXPERIMENT: bootstrap one model's playbook from all 92 static French puzzles
+#    (#88). Do not run this for normal benchmark production. Each real
 #    run makes exactly two resumable paid calls: unrestricted analyst, then independent
 #    critic/rewrite. Workflow-level ultra maps to Sonnet adaptive+max, Codex-plan GPT
 #    literal ultra, or GPT API max+Pro. --dry-run validates all inputs and reports exact
@@ -478,7 +480,14 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   before any write. `--in-place` records full local transcripts/token usage and publishes
   only a complete replay-valid display trio; local benchmark output is gitignored and paid
   provider calls never run in tests/CI.
-- **Bootstrap playbook distillation (#88, decided 2026-07-16).** The rigorous calibrated
+- **Frozen neutral gameplay baseline (decided 2026-07-17).** Use prompt v21 at `medium`
+  effort, without `--playbook`, for both Sonnet and GPT. A direct same-puzzle smoke found
+  neutral v21 at 11 tries for Sonnet and 13 for GPT, versus 21 and still unsolved after
+  30 tries for the provider-neutral v14-method reproduction. The static-corpus
+  Sonnet/GPT playbooks also regressed play and are paused; keep them as audit artifacts,
+  not production guidance.
+- **Paused bootstrap playbook distillation (#88, decided 2026-07-16; paused
+  2026-07-17).** The rigorous calibrated
   neutral-play curriculum from #84/#86 is postponed, not discarded: its exact combined tip
   is preserved remotely at `archive/rigorous-calibration-curriculum-2026-07-16` (`5d727aa`).
   The active branch instead commits `benchmark/datasets/strategy-fr-92`: exactly 92 French
