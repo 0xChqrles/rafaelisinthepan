@@ -97,6 +97,7 @@ DISPLAY_MODEL_COUNT = 3
 # are attributable to a model id plus this prompt version and the CLI's printed effort.
 PROMPT_VERSION = "21"
 V14_BASELINE_PROMPT = "14-persistent"
+V21_PERSISTENT_PROMPT = "21-persistent"
 
 DEFAULT_CAP = 300
 DEFAULT_RUNS = 7
@@ -1033,7 +1034,38 @@ def _rules_opening(
     strategy_section: list[str],
     *,
     cap: int,
+    persistent_session: bool = False,
 ) -> str:
+    if persistent_session:
+        history_contract = [
+            (
+                "One persistent conversation carries the complete chronological game "
+                "record. This opening provides the fixed rules, initial state, and "
+                "starting clues; each later referee message appends the latest exact "
+                "feedback after the model's preceding reply."
+            ),
+            (
+                "No earlier player reply or referee outcome is deleted; the latest "
+                "referee message is current. Every model receives the same public "
+                "user/assistant turn sequence. Provider-native conversation state "
+                "retains that sequence and supplies no puzzle evidence beyond it."
+            ),
+        ]
+        record_heading = "CHRONOLOGICAL GAME CONVERSATION"
+    else:
+        history_contract = [
+            (
+                "Each turn includes rules, initial state and starting clues, then "
+                "every prior PLAYER REPLY and exact REFEREE FEEDBACK in order. "
+                "Snapshots never erase earlier rank/MISS evidence; the last feedback is "
+                "current."
+            ),
+            (
+                "Every model receives the identical record; hidden session "
+                "memory supplies no evidence."
+            ),
+        ]
+        record_heading = "COMPLETE CHRONOLOGICAL GAME RECORD"
     return "\n".join(
         [
             f"WHIPPIN AI — {language.upper()} WORD GAME",
@@ -1090,23 +1122,14 @@ def _rules_opening(
             ),
             "",
             "AUTHORITATIVE STATE",
-            (
-                "Each turn includes rules, initial state and starting clues, then "
-                "every prior PLAYER REPLY and exact REFEREE FEEDBACK in order. "
-                "Snapshots never erase earlier rank/MISS evidence; the last feedback is "
-                "current."
-            ),
-            (
-                "Every model receives the identical record; hidden session "
-                "memory supplies no evidence."
-            ),
+            *history_contract,
             (
                 "Any strict improvement resets the streak; non-counting leaves it "
                 "unchanged."
             ),
             *strategy_section,
             "",
-            "COMPLETE CHRONOLOGICAL GAME RECORD",
+            record_heading,
             *_state_snapshot_lines(referee),
             "Tries: 0 (your score — lower is better)",
             _reply_reminder(referee),
@@ -1120,6 +1143,7 @@ def opening_message(
     *,
     rules_only: bool = False,
     cap: int = DEFAULT_CAP,
+    persistent_session: bool = False,
 ) -> str:
     language = LANGUAGE_NAMES.get(referee.lang, referee.lang)
     strategy_section: list[str] = []
@@ -1142,6 +1166,7 @@ def opening_message(
         language,
         strategy_section,
         cap=cap,
+        persistent_session=persistent_session,
     )
 
 
@@ -1234,6 +1259,7 @@ def play_puzzle(
     strategy: str | None = None,
     rules_only: bool = False,
     v14_baseline: bool = False,
+    v21_persistent: bool = False,
 ) -> RunResult:
     """Run one append-only model conversation through the real puzzle rules.
 
@@ -1242,6 +1268,8 @@ def play_puzzle(
     turn. The explicit `v14_baseline` experiment restores v14's recorded prompt,
     permissive one-word parser, and one free method turn. The CLI binds that experiment
     to fresh provider-native persistent sessions for both subscription transports.
+    `v21_persistent` keeps v21's neutral gameplay policy and first-guess opening while
+    changing only its history transport from flattened snapshots to the same sessions.
     """
     if not _is_int(cap) or cap <= 0:
         raise ValueError("cap must be a positive integer")
@@ -1251,6 +1279,10 @@ def play_puzzle(
 
     if v14_baseline and strategy is not None:
         raise ValueError("the v14 baseline cannot be combined with a playbook")
+    if v21_persistent and strategy is not None:
+        raise ValueError("the v21 persistent control cannot be combined with a playbook")
+    if v14_baseline and v21_persistent:
+        raise ValueError("the v14 and v21 persistent controls are mutually exclusive")
 
     messages: list[Message] = [
         {
@@ -1263,6 +1295,7 @@ def play_puzzle(
                     strategy,
                     rules_only=rules_only,
                     cap=cap,
+                    persistent_session=v21_persistent,
                 )
             ),
         }
@@ -1716,9 +1749,9 @@ class AnthropicSubscriptionReply:
                 "Agent SDK conversation cannot resume before its opening turn"
             )
 
-        # Ordinary v21 word play remains fresh and stateless. The isolated v14 control
-        # instead sends only the newest referee message into the same resumed session,
-        # exactly as the historical Claude transport did.
+        # Ordinary v21 word play remains fresh and stateless. The isolated persistent
+        # controls instead send only the newest referee message into the same resumed
+        # session, matching the historical Claude transport architecture.
         prompt = messages[-1]["content"]
         resume = self.session_id
         if not persistent:
@@ -2027,7 +2060,8 @@ def provider_reply(
     ordinary benchmark, "decision" for structured controllers, and "prose" for
     long-form analysis. OpenAI API callers can additionally request documented Pro
     reasoning with max effort; other transports reject that wire-only option. The
-    persistent word-session mode is reserved for the subscription-only v14 control.
+    Persistent word-session mode is reserved for the subscription-only v14 and v21
+    controls.
     """
     if word_session not in ("stateless", "persistent"):
         raise ValueError(f"unsupported word session mode: {word_session}")
@@ -2179,6 +2213,7 @@ def benchmark_model(
     on_try: ModelTryReporter | None = None,
     playbook: str | None = None,
     v14_baseline: bool = False,
+    v21_persistent: bool = False,
 ) -> ModelSummary:
     if not _is_int(runs) or runs <= 0:
         raise ValueError("runs must be a positive integer")
@@ -2204,6 +2239,7 @@ def benchmark_model(
                     on_try=reporter,
                     strategy=playbook,
                     v14_baseline=v14_baseline,
+                    v21_persistent=v21_persistent,
                 )
             )
     finally:
@@ -2759,6 +2795,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--v21-persistent",
+        action="store_true",
+        help=(
+            "experimental prompt-v21 neutral policy over one fresh native persistent "
+            "conversation per run for both providers; requires subscription auth at "
+            "medium effort and cannot use --in-place or --playbook"
+        ),
+    )
+    parser.add_argument(
         "--in-place",
         action="store_true",
         help=(
@@ -2775,6 +2820,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         parser.error("--v14-baseline requires --auth subscription")
     if args.v14_baseline and args.effort != "medium":
         parser.error("--v14-baseline requires --effort medium")
+    if args.v21_persistent and args.v14_baseline:
+        parser.error("--v21-persistent cannot be combined with --v14-baseline")
+    if args.v21_persistent and args.playbook is not None:
+        parser.error("--v21-persistent cannot be combined with --playbook")
+    if args.v21_persistent and args.in_place:
+        parser.error("--v21-persistent is an experiment and cannot use --in-place")
+    if args.v21_persistent and args.auth != "subscription":
+        parser.error("--v21-persistent requires --auth subscription")
+    if args.v21_persistent and args.effort != "medium":
+        parser.error("--v21-persistent requires --effort medium")
     try:
         args.model_config = select_model(args.model)
     except ValueError as exc:
@@ -2831,7 +2886,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"error: {exc}", file=sys.stderr)
             return 2
 
-    prompt_identity = V14_BASELINE_PROMPT if args.v14_baseline else PROMPT_VERSION
+    if args.v14_baseline:
+        prompt_identity = V14_BASELINE_PROMPT
+    elif args.v21_persistent:
+        prompt_identity = V21_PERSISTENT_PROMPT
+    else:
+        prompt_identity = PROMPT_VERSION
     print(
         f"Whippin benchmark prompt={prompt_identity} effort={args.effort} "
         f"auth={args.auth} cap={args.cap} runs={args.runs} "
@@ -2871,7 +2931,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 effort=args.effort,
                 auth=args.auth,
                 word_session=(
-                    "persistent" if args.v14_baseline else "stateless"
+                    "persistent"
+                    if args.v14_baseline or args.v21_persistent
+                    else "stateless"
                 ),
             ),
             cap=args.cap,
@@ -2879,6 +2941,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             on_try=print_try,
             playbook=playbook,
             v14_baseline=args.v14_baseline,
+            v21_persistent=args.v21_persistent,
         )
     except Exception as exc:
         print(

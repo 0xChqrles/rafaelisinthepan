@@ -2391,6 +2391,55 @@ def test_v14_cli_binds_the_persistent_session_mode_before_paid_play(
     assert "prompt=14-persistent" in capsys.readouterr().out
 
 
+def test_v21_cli_binds_the_persistent_session_mode_before_paid_play(
+    monkeypatch, tmp_path, capsys
+):
+    path = tmp_path / "puzzle.json"
+    path.write_text(json.dumps(puzzle()), encoding="utf-8")
+    model = ScriptedModel(["forest", "ocean"])
+    provider_kwargs = []
+
+    monkeypatch.setattr("llm_play.load_vocab", lambda _lang: VOCAB)
+    monkeypatch.setattr(
+        "llm_play.validate_openai_subscription_auth", lambda: "ChatGPT"
+    )
+
+    def fake_provider(_config, _api_key, **kwargs):
+        provider_kwargs.append(kwargs)
+        return model
+
+    monkeypatch.setattr("llm_play.provider_reply", fake_provider)
+
+    assert (
+        main(
+            [
+                str(path),
+                "--model",
+                "GPT-SOL",
+                "--effort",
+                "medium",
+                "--auth",
+                "subscription",
+                "--runs",
+                "1",
+                "--v21-persistent",
+            ]
+        )
+        == 0
+    )
+
+    assert provider_kwargs == [
+        {
+            "effort": "medium",
+            "auth": "subscription",
+            "word_session": "persistent",
+        }
+    ]
+    output = capsys.readouterr().out
+    assert "prompt=21-persistent" in output
+    assert 'GPT      try=1 word="forest" progress=50.00%' in output
+
+
 def test_cli_anthropic_subscription_preflights_only_the_selected_provider(
     monkeypatch, tmp_path
 ):
@@ -2593,6 +2642,106 @@ def test_v14_baseline_rejects_playbooks_output_writes_and_noncontrol_config():
         ]
     )
     assert accepted.v14_baseline is True
+
+
+def test_v21_persistent_rejects_other_treatments_writes_and_noncontrol_config():
+    invalid_arguments = [
+        ["puzzle.json", "--model", "SONNET", "--v21-persistent"],
+        [
+            "puzzle.json",
+            "--model",
+            "SONNET",
+            "--v21-persistent",
+            "--auth",
+            "subscription",
+            "--effort",
+            "high",
+        ],
+        [
+            "puzzle.json",
+            "--model",
+            "SONNET",
+            "--v21-persistent",
+            "--playbook",
+            "strategy.json",
+        ],
+        [
+            "puzzle.json",
+            "--model",
+            "GPT-SOL",
+            "--v21-persistent",
+            "--in-place",
+        ],
+        [
+            "puzzle.json",
+            "--model",
+            "GPT-SOL",
+            "--v21-persistent",
+            "--v14-baseline",
+        ],
+    ]
+    for arguments in invalid_arguments:
+        with pytest.raises(SystemExit):
+            parse_args(arguments)
+
+    accepted = parse_args(
+        [
+            "puzzle.json",
+            "--model",
+            "SONNET",
+            "--v21-persistent",
+            "--auth",
+            "subscription",
+            "--effort",
+            "medium",
+        ]
+    )
+    assert accepted.v21_persistent is True
+
+
+def test_v21_persistent_keeps_neutral_first_guess_and_only_changes_history_contract():
+    ordinary = ScriptedModel(["forest", "ocean"])
+    play_puzzle(puzzle(), VOCAB, ordinary)
+
+    persistent = ScriptedModel(["forest", "ocean"])
+    result = play_puzzle(puzzle(), VOCAB, persistent, v21_persistent=True)
+
+    assert result.tries == 2
+    assert result.turns == 2
+    assert result.tried_words == ("forest", "ocean")
+    assert result.conversation[1] == {"role": "assistant", "content": "forest"}
+
+    ordinary_opening = ordinary.calls[0][0]["content"]
+    persistent_opening = persistent.calls[0][0]["content"]
+    expected = ordinary_opening.replace(
+        (
+            "Each turn includes rules, initial state and starting clues, then every "
+            "prior PLAYER REPLY and exact REFEREE FEEDBACK in order. Snapshots never "
+            "erase earlier rank/MISS evidence; the last feedback is current."
+        ),
+        (
+            "One persistent conversation carries the complete chronological game "
+            "record. This opening provides the fixed rules, initial state, and "
+            "starting clues; each later referee message appends the latest exact "
+            "feedback after the model's preceding reply."
+        ),
+    ).replace(
+        "Every model receives the identical record; hidden session memory supplies no evidence.",
+        (
+            "No earlier player reply or referee outcome is deleted; the latest referee "
+            "message is current. Every model receives the same public user/assistant "
+            "turn sequence. Provider-native conversation state retains that sequence "
+            "and supplies no puzzle evidence beyond it."
+        ),
+    ).replace(
+        "COMPLETE CHRONOLOGICAL GAME RECORD",
+        "CHRONOLOGICAL GAME CONVERSATION",
+    )
+    assert persistent_opening == expected
+    assert "first reply is the first guess, not a plan" in persistent_opening
+    assert "YOUR METHOD" not in persistent_opening
+    assert "YOUR STRATEGY" not in persistent_opening
+    assert persistent.calls[1][-1]["content"].startswith('RESULT FOR "forest":')
 
 
 def test_every_unconditioned_caller_gets_the_same_strategy_neutral_rules():
