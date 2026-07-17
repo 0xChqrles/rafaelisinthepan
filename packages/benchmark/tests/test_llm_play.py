@@ -31,6 +31,9 @@ from llm_play import (
     DIRECT_OUTPUT_MAX_TOKENS,
     DISPLAY_MODEL_COUNT,
     EFFORT_LEVELS,
+    FAIR_V7_LIKE_PROMPT,
+    FAIR_V7_LIKE_STRATEGY,
+    FAIR_V7_LIKE_STRATEGY_LINES,
     MAX_CONSECUTIVE_UNPARSEABLE,
     MAX_NONCOUNTING_REPLIES,
     MODELS,
@@ -1189,6 +1192,59 @@ def test_cli_defaults_to_api_and_accepts_shared_effort_and_auth_levels():
         if auth == "subscription":
             arguments.extend(("--effort", "medium"))
         assert parse_args(arguments).auth == auth
+
+
+def test_fair_v7_like_cli_pins_one_shared_medium_subscription_treatment(capsys):
+    for model in ("SONNET", "GPT-SOL"):
+        args = parse_args(
+            [
+                "puzzle.json",
+                "--model",
+                model,
+                "--auth",
+                "subscription",
+                "--effort",
+                "medium",
+                "--runs",
+                "7",
+                "--fair-v7-like",
+            ]
+        )
+        assert args.fair_v7_like is True
+        assert args.runs == 7
+    assert FAIR_V7_LIKE_PROMPT == "21-shared-compact-v1"
+
+    incompatible = (
+        ["--auth", "api", "--effort", "medium"],
+        ["--auth", "subscription", "--effort", "high"],
+        [
+            "--auth",
+            "subscription",
+            "--effort",
+            "medium",
+            "--playbook",
+            "profile.json",
+        ],
+        ["--auth", "subscription", "--effort", "medium", "--in-place"],
+    )
+    for extra in incompatible:
+        with pytest.raises(SystemExit):
+            parse_args(
+                [
+                    "puzzle.json",
+                    "--model",
+                    "GPT-SOL",
+                    "--runs",
+                    "1",
+                    "--fair-v7-like",
+                    *extra,
+                ]
+            )
+    error = capsys.readouterr().err
+    assert "requires --auth subscription" in error
+    assert "requires --effort medium" in error
+    assert "cannot be combined with --playbook" in error
+    assert "cannot be combined with --in-place" in error
 
 
 def test_cli_requires_odd_median_runs_but_best_accepts_any_positive_count(capsys):
@@ -2358,6 +2414,44 @@ def test_cli_openai_subscription_uses_plan_without_api_key(
     assert "OPENAI_API_KEY is not set" not in output.err
 
 
+def test_cli_labels_and_forwards_the_shared_compact_treatment(
+    monkeypatch, tmp_path, capsys
+):
+    path = tmp_path / "puzzle.json"
+    path.write_text(json.dumps(puzzle()), encoding="utf-8")
+    model = ScriptedModel(["forest", "ocean"])
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr("llm_play.load_vocab", lambda _lang: VOCAB)
+    monkeypatch.setattr("llm_play.validate_openai_subscription_auth", lambda: "ChatGPT")
+    monkeypatch.setattr("llm_play.provider_reply", lambda *_args, **_kwargs: model)
+
+    assert (
+        main(
+            [
+                str(path),
+                "--model",
+                "GPT-SOL",
+                "--auth",
+                "subscription",
+                "--effort",
+                "medium",
+                "--runs",
+                "1",
+                "--fair-v7-like",
+            ]
+        )
+        == 0
+    )
+
+    output = capsys.readouterr().out
+    assert f"prompt={FAIR_V7_LIKE_PROMPT}" in output
+    assert "playbook=none shared_strategy=v1" in output
+    assert "2 tries" in output
+    assert "SHARED COMPACT STRATEGY" in model.calls[0][0]["content"]
+    assert FAIR_V7_LIKE_STRATEGY in model.calls[0][0]["content"]
+
+
 def test_cli_anthropic_subscription_preflights_only_the_selected_provider(
     monkeypatch, tmp_path
 ):
@@ -2403,6 +2497,69 @@ def test_cli_anthropic_subscription_preflights_only_the_selected_provider(
 
     assert preflights == ["anthropic"]
     assert provider_calls == [("OPUS", None, "subscription")]
+
+
+def test_shared_compact_strategy_is_five_short_generic_directives():
+    assert len(FAIR_V7_LIKE_STRATEGY_LINES) == 5
+    assert len(FAIR_V7_LIKE_STRATEGY) <= 600
+    assert FAIR_V7_LIKE_STRATEGY.splitlines() == [
+        f"{index}. {directive}"
+        for index, directive in enumerate(FAIR_V7_LIKE_STRATEGY_LINES, start=1)
+    ]
+    lowered = FAIR_V7_LIKE_STRATEGY.lower()
+    for puzzle_specific_word in (
+        "main",
+        "lieu",
+        "réalité",
+        "cravache",
+        "sanctuaire",
+        "distorsion",
+        "souffrance",
+        "fouet",
+        "refuge",
+    ):
+        assert puzzle_specific_word not in lowered
+
+
+def test_fair_v7_like_is_identical_for_callers_and_keeps_full_stateless_history():
+    first = ScriptedModel(["shared", "forest", "ocean"])
+    second = ScriptedModel(["shared", "forest", "ocean"])
+
+    first_result = play_puzzle(puzzle(), VOCAB, first, fair_v7_like=True)
+    second_result = play_puzzle(puzzle(), VOCAB, second, fair_v7_like=True)
+
+    assert first_result.tries == second_result.tries == 3
+    assert first.calls == second.calls
+    opening = first.calls[0][0]["content"]
+    assert "SHARED COMPACT STRATEGY" in opening
+    assert FAIR_V7_LIKE_STRATEGY in opening
+    assert "These five directives are identical for every model" in opening
+    assert "strategy advice, not game rules" in opening
+    assert "YOUR STRATEGY" not in opening
+    assert "Reason privately as needed" in opening
+
+    final_prompt = _stateless_word_prompt(first.calls[-1])
+    assert final_prompt.count(FAIR_V7_LIKE_STRATEGY) == 1
+    assert "PLAYER REPLY 1\nshared" in final_prompt
+    assert 'REFEREE FEEDBACK 1\nRESULT FOR "shared":' in final_prompt
+    assert "PLAYER REPLY 2\nforest" in final_prompt
+    assert 'REFEREE FEEDBACK 2\nRESULT FOR "forest":' in final_prompt
+
+    neutral = ScriptedModel(["forest", "ocean"])
+    play_puzzle(puzzle(), VOCAB, neutral)
+    assert "SHARED COMPACT STRATEGY" not in neutral.calls[0][0]["content"]
+    assert FAIR_V7_LIKE_STRATEGY not in neutral.calls[0][0]["content"]
+
+
+def test_shared_compact_strategy_cannot_stack_with_a_model_playbook():
+    with pytest.raises(ValueError, match="cannot be combined with a model playbook"):
+        play_puzzle(
+            puzzle(),
+            VOCAB,
+            ScriptedModel([]),
+            strategy="Use a model-specific policy.",
+            fair_v7_like=True,
+        )
 
 
 def test_opening_cloze_keeps_affixes_but_never_inserts_ranked_guesses():

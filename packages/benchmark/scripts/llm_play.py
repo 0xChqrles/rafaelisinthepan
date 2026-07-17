@@ -96,6 +96,32 @@ DISPLAY_MODEL_COUNT = 3
 # Bump whenever the opening rules or turn-feedback scaffold changes materially. Results
 # are attributable to a model id plus this prompt version and the CLI's printed effort.
 PROMPT_VERSION = "21"
+# Shared, opt-in treatment: prompt v21's rules/history plus one compact strategy that
+# is byte-identical for every model. It is deliberately not a model playbook.
+FAIR_V7_LIKE_PROMPT = "21-shared-compact-v1"
+FAIR_V7_LIKE_STRATEGY_LINES = (
+    (
+        "Before each guess, infer the most idiomatic common exact completion for "
+        "every unsolved blank from sentence grammar."
+    ),
+    (
+        "Ranked clues are semantic evidence only, never sentence text; do not start "
+        "by listing their synonyms."
+    ),
+    (
+        "Consider every unsolved blank and prefer the strongest direct completion; "
+        "probe only when none is plausible."
+    ),
+    (
+        "After three non-improving counted guesses, abandon that word family: switch "
+        "blank or relation, never list variants or synonyms."
+    ),
+    "After any solve, reread the complete sentence and reprioritize.",
+)
+FAIR_V7_LIKE_STRATEGY = "\n".join(
+    f"{index}. {directive}"
+    for index, directive in enumerate(FAIR_V7_LIKE_STRATEGY_LINES, start=1)
+)
 
 DEFAULT_CAP = 300
 DEFAULT_RUNS = 7
@@ -933,10 +959,26 @@ def opening_message(
     *,
     rules_only: bool = False,
     cap: int = DEFAULT_CAP,
+    fair_v7_like: bool = False,
 ) -> str:
     language = LANGUAGE_NAMES.get(referee.lang, referee.lang)
     strategy_section: list[str] = []
-    if strategy:
+    if fair_v7_like and strategy:
+        raise ValueError(
+            "the shared compact strategy cannot be combined with a model playbook"
+        )
+    if fair_v7_like:
+        strategy_section = [
+            "",
+            "SHARED COMPACT STRATEGY",
+            (
+                "These five directives are identical for every model. They are "
+                "strategy advice, not game rules; the fixed rules above always "
+                "take precedence."
+            ),
+            FAIR_V7_LIKE_STRATEGY,
+        ]
+    elif strategy:
         strategy_section = [
             "",
             "YOUR STRATEGY",
@@ -946,9 +988,9 @@ def opening_message(
             ),
             strategy,
         ]
-    # Prompt v21 has one strategy-neutral rules scaffold for every caller. The flag is
-    # retained for API compatibility with callers that request neutral rules; only
-    # an explicitly supplied strategy can add solving guidance.
+    # Prompt v21 has one rules scaffold for every caller. The flag is retained for API
+    # compatibility with callers that request neutral rules; only an explicit model
+    # playbook or the explicit shared treatment can add solving guidance.
     _ = rules_only
     return _rules_opening(
         referee,
@@ -1047,12 +1089,14 @@ def play_puzzle(
     strategy: str | None = None,
     rules_only: bool = False,
     best_score_to_beat: int | None = None,
+    fair_v7_like: bool = False,
 ) -> RunResult:
     """Run one append-only model conversation through the real puzzle rules.
 
     `strategy` is optional model-authored playbook guidance injected into the opening
-    as advice under the fixed rules. There is no
-    pre-game planning turn: the first reply is the first guess.
+    as advice under the fixed rules. `fair_v7_like` instead injects the one shared
+    compact treatment. There is no pre-game planning turn: the first reply is the first
+    guess.
     """
     if not _is_int(cap) or cap <= 0:
         raise ValueError("cap must be a positive integer")
@@ -1063,6 +1107,10 @@ def play_puzzle(
     referee = PuzzleReferee(puzzle, vocab)
     if referee.solved:
         raise ValueError("puzzle starts solved; no benchmark can be played")
+    if fair_v7_like and strategy is not None:
+        raise ValueError(
+            "the shared compact strategy cannot be combined with a model playbook"
+        )
 
     messages: list[Message] = [
         {
@@ -1072,6 +1120,7 @@ def play_puzzle(
                 strategy,
                 rules_only=rules_only,
                 cap=cap,
+                fair_v7_like=fair_v7_like,
             ),
         }
     ]
@@ -1898,6 +1947,7 @@ def benchmark_model(
     on_try: ModelTryReporter | None = None,
     playbook: str | None = None,
     selection: SelectionMode = DEFAULT_SELECTION,
+    fair_v7_like: bool = False,
 ) -> ModelSummary:
     if not _is_int(runs) or runs <= 0:
         raise ValueError("runs must be a positive integer")
@@ -1937,6 +1987,7 @@ def benchmark_model(
                         if selection == "best"
                         else None
                     ),
+                    fair_v7_like=fair_v7_like,
                 )
             )
     finally:
@@ -2507,6 +2558,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--fair-v7-like",
+        action="store_true",
+        help=(
+            "experimental prompt v21 treatment with one identical five-directive "
+            "compact strategy for every model"
+        ),
+    )
+    parser.add_argument(
         "--in-place",
         action="store_true",
         help=(
@@ -2525,6 +2584,17 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         _validate_provider_effort(args.model_config["provider"], args.auth, args.effort)
     except ValueError as exc:
         parser.error(str(exc))
+    if args.fair_v7_like:
+        if args.auth != "subscription":
+            parser.error("--fair-v7-like requires --auth subscription")
+        if args.effort != "medium":
+            parser.error("--fair-v7-like requires --effort medium")
+        if args.playbook is not None:
+            parser.error("--fair-v7-like cannot be combined with --playbook")
+        if args.in_place:
+            parser.error(
+                "--fair-v7-like is experimental and cannot be combined with --in-place"
+            )
     return args
 
 
@@ -2573,11 +2643,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"error: {exc}", file=sys.stderr)
             return 2
 
+    prompt_version = FAIR_V7_LIKE_PROMPT if args.fair_v7_like else PROMPT_VERSION
     print(
-        f"Whippin benchmark prompt={PROMPT_VERSION} effort={args.effort} "
+        f"Whippin benchmark prompt={prompt_version} effort={args.effort} "
         f"auth={args.auth} cap={args.cap} runs={args.runs} "
         f"selection={args.selection} "
-        f"playbook={playbook_sha256 or 'none'}",
+        f"playbook={playbook_sha256 or 'none'} "
+        f"shared_strategy={'v1' if args.fair_v7_like else 'none'}",
         flush=True,
     )
     subscription_auth = args.auth == "subscription"
@@ -2618,6 +2690,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             on_try=print_try,
             playbook=playbook,
             selection=args.selection,
+            fair_v7_like=args.fair_v7_like,
         )
     except Exception as exc:
         print(
