@@ -26,6 +26,7 @@ from llm_play import (
     DEFAULT_AUTH,
     DEFAULT_EFFORT,
     DEFAULT_RUNS,
+    DEFAULT_SELECTION,
     DECISION_OUTPUT_MAX_TOKENS,
     DIRECT_OUTPUT_MAX_TOKENS,
     DISPLAY_MODEL_COUNT,
@@ -39,6 +40,7 @@ from llm_play import (
     PROVIDER_ENV,
     PROSE_OUTPUT_MAX_TOKENS,
     REASONING_MAX_TOKENS,
+    SELECTION_MODES,
     ModelSummary,
     NoProgressReplyError,
     PuzzleReferee,
@@ -55,6 +57,7 @@ from llm_play import (
     play_puzzle,
     provider_reply,
     resolve_puzzle_path,
+    select_best_run,
     select_median_run,
     select_model,
     validate_anthropic_subscription_auth,
@@ -1175,6 +1178,7 @@ def test_cli_defaults_to_api_and_accepts_shared_effort_and_auth_levels():
     assert defaults.effort == DEFAULT_EFFORT
     assert defaults.auth == DEFAULT_AUTH
     assert defaults.runs == DEFAULT_RUNS == 7
+    assert defaults.selection == DEFAULT_SELECTION == "median"
     for effort in EFFORT_LEVELS:
         assert (
             parse_args(["puzzle.json", "--model", "OPUS", "--effort", effort]).effort
@@ -1187,7 +1191,7 @@ def test_cli_defaults_to_api_and_accepts_shared_effort_and_auth_levels():
         assert parse_args(arguments).auth == auth
 
 
-def test_cli_requires_an_odd_run_count_so_the_median_is_a_real_run(capsys):
+def test_cli_requires_odd_median_runs_but_best_accepts_any_positive_count(capsys):
     for runs in (0, 2, 8):
         with pytest.raises(SystemExit):
             parse_args(
@@ -1195,6 +1199,34 @@ def test_cli_requires_an_odd_run_count_so_the_median_is_a_real_run(capsys):
             )
     error = capsys.readouterr().err
     assert "must be odd so the median is an actual run" in error
+
+    for runs in (1, 2, 8):
+        args = parse_args(
+            [
+                "puzzle.json",
+                "--model",
+                "OPUS",
+                "--selection",
+                "best",
+                "--runs",
+                str(runs),
+            ]
+        )
+        assert args.selection == "best"
+        assert args.runs == runs
+    with pytest.raises(SystemExit):
+        parse_args(
+            [
+                "puzzle.json",
+                "--model",
+                "OPUS",
+                "--selection",
+                "best",
+                "--runs",
+                "0",
+            ]
+        )
+    assert SELECTION_MODES == ("median", "best")
 
 
 @pytest.mark.parametrize("legacy_flag", ["--anthropic-auth", "--openai-auth"])
@@ -1272,6 +1304,7 @@ def test_cli_model_flag_without_value_lists_every_valid_model(capsys):
     [
         ("--effort", EFFORT_LEVELS),
         ("--auth", AUTH_MODES),
+        ("--selection", SELECTION_MODES),
     ],
 )
 def test_cli_choice_flag_without_value_lists_every_valid_value(
@@ -1368,6 +1401,7 @@ def make_run(
     words=(),
     duration=1.0,
     token_usage=(),
+    termination=None,
 ):
     return RunResult(
         tries=tries,
@@ -1377,6 +1411,11 @@ def make_run(
         tried_words=tuple(words),
         conversation=({"role": "user", "content": "opening"},),
         turn_token_usage=tuple(token_usage),
+        termination=(
+            termination
+            if termination is not None
+            else "solved" if tries is not None else "cap"
+        ),
     )
 
 
@@ -1411,6 +1450,34 @@ def test_median_selection_returns_an_actual_run_with_dnf_last_and_stable_ties():
 
     with pytest.raises(ValueError, match="odd"):
         select_median_run(score_order[:2])
+
+
+def test_best_selection_returns_the_lowest_success_with_stable_ties():
+    score_order = [
+        make_run(10, turns=4),
+        make_run(None, turns=1),
+        make_run(20, turns=6),
+    ]
+    assert select_best_run(score_order) == 0
+
+    fewer_turns_breaks_score_ties = [
+        make_run(10, turns=4),
+        make_run(10, turns=3),
+        make_run(20, turns=1),
+    ]
+    assert select_best_run(fewer_turns_breaks_score_ties) == 1
+
+    earlier_index_breaks_full_ties = [
+        make_run(10, turns=3),
+        make_run(10, turns=3),
+    ]
+    assert select_best_run(earlier_index_breaks_full_ties) == 0
+
+    all_dnf = [make_run(None, turns=5), make_run(None, turns=3)]
+    assert select_best_run(all_dnf) == 1
+
+    with pytest.raises(ValueError, match="zero"):
+        select_best_run([])
 
 
 class ScriptedModel:
@@ -1471,7 +1538,8 @@ def test_benchmark_model_persists_the_selected_median_runs_counted_display_forms
         MODELS[0], puzzle(), VOCAB, model, cap=300, runs=3
     )
 
-    assert summary.median_run_index == 1
+    assert summary.selection == "median"
+    assert summary.selected_run_index == 1
     assert summary.tries == 3
     assert summary.benchmark_entry() == {
         "model": "claude-opus-4-8",
@@ -1485,6 +1553,96 @@ def test_benchmark_model_persists_the_selected_median_runs_counted_display_forms
         benchmark_model(
             MODELS[0], puzzle(), VOCAB, ScriptedModel([]), cap=300, runs=2
         )
+
+
+def test_best_mode_prunes_only_after_a_run_cannot_beat_the_incumbent():
+    model = ScriptedModel(
+        [
+            # Run 1 establishes a best score of 3.
+            "shared",
+            "forest",
+            "ocean",
+            # Run 2 is unsolved at 3 and stops before consuming another reply.
+            "cold",
+            "other",
+            "shared",
+            # Run 3 improves the incumbent to 2.
+            "forest",
+            "ocean",
+            # Run 4 is unsolved at 2 and stops there.
+            "cold",
+            "other",
+        ]
+    )
+
+    summary = benchmark_model(
+        MODELS[0],
+        puzzle(),
+        VOCAB,
+        model,
+        cap=300,
+        runs=4,
+        selection="best",
+    )
+
+    assert summary.selection == "best"
+    assert summary.selected_run_index == 2
+    assert summary.tries == 2
+    assert [result.counted_tries for result in summary.results] == [3, 3, 2, 2]
+    assert [result.termination for result in summary.results] == [
+        "solved",
+        "cannot_beat_best",
+        "solved",
+        "cannot_beat_best",
+    ]
+    assert len(model.calls) == 10
+    assert summary.benchmark_entry()["run"] == ["forest", "ocean"]
+
+
+def test_best_pruning_preserves_a_solve_on_the_incumbent_number():
+    tied_model = ScriptedModel(["forest", "ocean"])
+    tied = play_puzzle(
+        puzzle(),
+        VOCAB,
+        tied_model,
+        best_score_to_beat=2,
+    )
+    ordinary_model = ScriptedModel(["forest", "ocean"])
+    play_puzzle(puzzle(), VOCAB, ordinary_model)
+    pruned = play_puzzle(
+        puzzle(),
+        VOCAB,
+        ScriptedModel(["cold", "other", "forest"]),
+        best_score_to_beat=2,
+    )
+
+    assert tied.tries == 2
+    assert tied.termination == "solved"
+    # Selection is orchestration only: it does not change the model's game prompt.
+    assert tied_model.calls[0] == ordinary_model.calls[0]
+    assert pruned.tries is None
+    assert pruned.counted_tries == 2
+    assert pruned.tried_words == ("cold", "other")
+    assert pruned.termination == "cannot_beat_best"
+
+
+def test_best_mode_runs_to_the_real_cap_until_a_successful_incumbent_exists():
+    model = ScriptedModel(["cold", "other", "cold", "other"])
+
+    summary = benchmark_model(
+        MODELS[0],
+        puzzle(),
+        VOCAB,
+        model,
+        cap=2,
+        runs=2,
+        selection="best",
+    )
+
+    assert summary.tries is None
+    assert len(model.calls) == 4
+    assert [result.counted_tries for result in summary.results] == [2, 2]
+    assert [result.termination for result in summary.results] == ["cap", "cap"]
 
 
 def test_embed_consistency_replays_score_and_solved_or_dnf_state():
@@ -1540,7 +1698,8 @@ def test_raw_lab_artifact_keeps_all_runs_transcripts_transport_and_token_usage(
             ),
             make_run(4, turns=4, words=("cold", "other", "forest", "ocean")),
         ),
-        median_run_index=1,
+        selection="median",
+        selected_run_index=1,
     )
 
     artifact_path, artifact = write_lab_artifact(
@@ -1562,12 +1721,15 @@ def test_raw_lab_artifact_keeps_all_runs_transcripts_transport_and_token_usage(
     assert session["provider"] == "anthropic"
     assert session["transport"] == "agent_sdk"
     assert session["effort"] == "medium"
+    assert session["selection"] == "median"
+    assert session["selected_run"] == 2
     assert session["median_run"] == 2
     assert len(session["runs"]) == 3
     assert [run["selected"] for run in session["runs"]] == [False, True, False]
     selected = session["runs"][1]
     assert selected["guesses"] == ["shared", "forest", "ocean"]
     assert selected["tries"] == 3
+    assert selected["termination"] == "solved"
     assert selected["turns"] == 3
     assert selected["duration"] == 2.0
     assert selected["transcript"] == [
@@ -1585,7 +1747,8 @@ def test_raw_lab_artifact_keeps_all_runs_transcripts_transport_and_token_usage(
         summary = ModelSummary(
             config=config,
             results=(make_run(2 + index, turns=2, words=("forest", "ocean")),),
-            median_run_index=0,
+            selection="median",
+            selected_run_index=0,
         )
         _, artifact = write_lab_artifact(
             puzzle_path,
@@ -1609,7 +1772,8 @@ def test_raw_lab_artifact_keeps_all_runs_transcripts_transport_and_token_usage(
     lab_only = ModelSummary(
         config=MODELS[3],
         results=(make_run(9, turns=9, words=("other",)),),
-        median_run_index=0,
+        selection="median",
+        selected_run_index=0,
     )
     _, artifact = write_lab_artifact(
         puzzle_path,
@@ -1622,6 +1786,43 @@ def test_raw_lab_artifact_keeps_all_runs_transcripts_transport_and_token_usage(
     )
     assert artifact["sessions"][-1]["display"] is False
     assert len(display_benchmark_entries(artifact)) == DISPLAY_MODEL_COUNT
+
+
+def test_lab_and_display_selection_keep_best_and_median_cohorts_separate(tmp_path):
+    output_dir = tmp_path / "lab"
+    puzzle_path = tmp_path / "forest_ocean.json"
+
+    for selection, score in (("median", 3), ("best", 2)):
+        for config in MODELS[:3]:
+            words = (
+                ("shared", "forest", "ocean")
+                if score == 3
+                else ("forest", "ocean")
+            )
+            summary = ModelSummary(
+                config=config,
+                results=(make_run(score, turns=score, words=words),),
+                selection=selection,
+                selected_run_index=0,
+            )
+            _, artifact = write_lab_artifact(
+                puzzle_path,
+                summary,
+                cap=300,
+                effort="medium",
+                auth="api",
+                output_dir=output_dir,
+                timestamp=f"2026-07-17T12:00:0{score}Z",
+            )
+
+    median_entries = display_benchmark_entries(artifact, selection="median")
+    best_entries = display_benchmark_entries(artifact, selection="best")
+    assert [entry["tries"] for entry in median_entries] == [3, 3, 3]
+    assert [entry["tries"] for entry in best_entries] == [2, 2, 2]
+    assert artifact["sessions"][-1]["selection"] == "best"
+    assert artifact["sessions"][-1]["selected_run"] == 1
+    assert artifact["sessions"][-1]["best_run"] == 1
+    assert "median_run" not in artifact["sessions"][-1]
 
 
 def test_in_place_cli_accumulates_lab_runs_then_embeds_only_the_complete_trio(
@@ -2028,6 +2229,7 @@ def test_cap_after_counted_tries_is_a_dnf():
     assert result.counted_tries == 2
     assert result.turns == 2
     assert result.tried_words == ("cold", "other")
+    assert result.termination == "cap"
 
 
 def test_final_score_matches_front_unique_try_semantics_for_same_sequence():
@@ -2064,6 +2266,8 @@ def test_cli_prints_counted_words_in_order_for_each_run(monkeypatch, tmp_path, c
     assert main([str(path), "--model", "OPUS", "--runs", "3"]) == 0
 
     output = capsys.readouterr().out
+    assert "selection=median" in output
+    assert "median_run=2" in output
     assert 'OPUS     run=1 try=1 word="forest" progress=50.00%' in output
     assert 'OPUS     run=1 try=2 word="ocean" progress=100.00%' in output
     assert 'OPUS     run=2 try=3 word="ocean" progress=100.00%' in output
@@ -2071,6 +2275,39 @@ def test_cli_prints_counted_words_in_order_for_each_run(monkeypatch, tmp_path, c
     assert 'OPUS     run=1 tried=["forest", "ocean"]' in output
     assert 'OPUS     run=2 tried=["shared", "forest", "ocean"]' in output
     assert 'OPUS     run=3 tried=["cold", "forest", "ocean"]' in output
+
+
+def test_cli_best_selection_prunes_a_dominated_run_and_reports_the_best(
+    monkeypatch, tmp_path, capsys
+):
+    path = tmp_path / "puzzle.json"
+    path.write_text(json.dumps(puzzle()), encoding="utf-8")
+    model = ScriptedModel(["forest", "ocean", "cold", "other", "forest"])
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr("llm_play.load_vocab", lambda _lang: VOCAB)
+    monkeypatch.setattr("llm_play.provider_reply", lambda *_args, **_kwargs: model)
+
+    assert (
+        main(
+            [
+                str(path),
+                "--model",
+                "OPUS",
+                "--runs",
+                "2",
+                "--selection",
+                "best",
+            ]
+        )
+        == 0
+    )
+
+    output = capsys.readouterr().out
+    assert "selection=best" in output
+    assert "2 tries  best_run=1" in output
+    assert 'OPUS     run=1 tried=["forest", "ocean"]' in output
+    assert 'OPUS     run=2 tried=["cold", "other"]' in output
+    assert len(model.calls) == 4
 
 
 def test_cli_openai_subscription_uses_plan_without_api_key(

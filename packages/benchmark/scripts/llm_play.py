@@ -99,6 +99,9 @@ PROMPT_VERSION = "21"
 
 DEFAULT_CAP = 300
 DEFAULT_RUNS = 7
+SelectionMode = Literal["median", "best"]
+SELECTION_MODES: tuple[SelectionMode, ...] = ("median", "best")
+DEFAULT_SELECTION: SelectionMode = "median"
 MAX_CONSECUTIVE_UNPARSEABLE = 5
 MAX_NONCOUNTING_REPLIES = 5
 
@@ -128,6 +131,7 @@ DEEP_REASONING_MAX_TOKENS = 64_000
 DECISION_OUTPUT_MAX_TOKENS = 512
 PROSE_OUTPUT_MAX_TOKENS = 8_192
 OutputMode = Literal["word", "decision", "prose"]
+RunTermination = Literal["solved", "cap", "cannot_beat_best", "reply_error"]
 
 AuthMode = Literal["api", "subscription"]
 AUTH_MODES: tuple[AuthMode, ...] = ("api", "subscription")
@@ -281,7 +285,8 @@ class TryProgress:
 
 @dataclass(frozen=True)
 class RunResult:
-    # None is the persisted DNF value; counted_tries still records where the cap landed.
+    # None is never embedded for a pruned run: best selection always has an incumbent
+    # solved run. `termination` distinguishes those censored attempts from cap DNFs.
     tries: int | None
     counted_tries: int
     turns: int
@@ -289,21 +294,23 @@ class RunResult:
     tried_words: tuple[str, ...]
     conversation: tuple[Message, ...]
     turn_token_usage: tuple[dict[str, Any], ...]
+    termination: RunTermination
 
 
 @dataclass(frozen=True)
 class ModelSummary:
     config: ModelConfig
     results: tuple[RunResult, ...]
-    median_run_index: int
+    selection: SelectionMode
+    selected_run_index: int
 
     @property
-    def median_run(self) -> RunResult:
-        return self.results[self.median_run_index]
+    def selected_run(self) -> RunResult:
+        return self.results[self.selected_run_index]
 
     @property
     def tries(self) -> int | None:
-        return self.median_run.tries
+        return self.selected_run.tries
 
     @property
     def turns(self) -> int:
@@ -327,7 +334,7 @@ class ModelSummary:
             "label": self.config["label"],
             "tag": self.config["tag"],
             "tries": self.tries,
-            "run": list(self.median_run.tried_words),
+            "run": list(self.selected_run.tried_words),
         }
 
 
@@ -1039,6 +1046,7 @@ def play_puzzle(
     on_try: TryReporter | None = None,
     strategy: str | None = None,
     rules_only: bool = False,
+    best_score_to_beat: int | None = None,
 ) -> RunResult:
     """Run one append-only model conversation through the real puzzle rules.
 
@@ -1048,6 +1056,10 @@ def play_puzzle(
     """
     if not _is_int(cap) or cap <= 0:
         raise ValueError("cap must be a positive integer")
+    if best_score_to_beat is not None and (
+        not _is_int(best_score_to_beat) or best_score_to_beat <= 0
+    ):
+        raise ValueError("best score to beat must be a positive integer")
     referee = PuzzleReferee(puzzle, vocab)
     if referee.solved:
         raise ValueError("puzzle starts solved; no benchmark can be played")
@@ -1094,6 +1106,7 @@ def play_puzzle(
                         tried_words=tuple(referee.tried_words),
                         conversation=tuple(message.copy() for message in messages),
                         turn_token_usage=tuple(turn_token_usage),
+                        termination="reply_error",
                     ),
                 )
             messages.append(
@@ -1146,6 +1159,7 @@ def play_puzzle(
                         tried_words=tuple(referee.tried_words),
                         conversation=tuple(message.copy() for message in messages),
                         turn_token_usage=tuple(turn_token_usage),
+                        termination="reply_error",
                     ),
                 )
 
@@ -1160,6 +1174,24 @@ def play_puzzle(
                 tried_words=tuple(referee.tried_words),
                 conversation=tuple(message.copy() for message in messages),
                 turn_token_usage=tuple(turn_token_usage),
+                termination="solved",
+            )
+        # In best mode a run that is still unsolved at the incumbent score cannot tie
+        # or beat it: solving now was checked above, and another counted guess would be
+        # strictly worse. Preserve the paid prefix as a censored lab run and stop.
+        if (
+            best_score_to_beat is not None
+            and feedback.tries >= best_score_to_beat
+        ):
+            return RunResult(
+                tries=None,
+                counted_tries=feedback.tries,
+                turns=turns,
+                duration=time.monotonic() - started,
+                tried_words=tuple(referee.tried_words),
+                conversation=tuple(message.copy() for message in messages),
+                turn_token_usage=tuple(turn_token_usage),
+                termination="cannot_beat_best",
             )
         if feedback.tries >= cap:
             return RunResult(
@@ -1170,6 +1202,7 @@ def play_puzzle(
                 tried_words=tuple(referee.tried_words),
                 conversation=tuple(message.copy() for message in messages),
                 turn_token_usage=tuple(turn_token_usage),
+                termination="cap",
             )
 
 
@@ -1840,6 +1873,20 @@ def select_median_run(results: Sequence[RunResult]) -> int:
     return ordered[(len(results) - 1) // 2][0]
 
 
+def select_best_run(results: Sequence[RunResult]) -> int:
+    """Return the lowest success, or a stable full-cap DNF when none succeeded."""
+    if not results:
+        raise ValueError("cannot select the best of zero runs")
+    return min(
+        enumerate(results),
+        key=lambda item: (
+            math.inf if item[1].tries is None else item[1].tries,
+            item[1].turns,
+            item[0],
+        ),
+    )[0]
+
+
 def benchmark_model(
     config: ModelConfig,
     puzzle: dict[str, Any],
@@ -1850,14 +1897,25 @@ def benchmark_model(
     runs: int,
     on_try: ModelTryReporter | None = None,
     playbook: str | None = None,
+    selection: SelectionMode = DEFAULT_SELECTION,
 ) -> ModelSummary:
     if not _is_int(runs) or runs <= 0:
         raise ValueError("runs must be a positive integer")
-    if runs % 2 == 0:
+    if selection not in SELECTION_MODES:
+        raise ValueError(f"unsupported run selection mode: {selection}")
+    if selection == "median" and runs % 2 == 0:
         raise ValueError("runs must be odd so the median is an actual run")
     try:
         results: list[RunResult] = []
         for run_number in range(1, runs + 1):
+            incumbent_best = min(
+                (
+                    result.tries
+                    for result in results
+                    if result.tries is not None
+                ),
+                default=None,
+            )
             reporter = None
             if on_try is not None:
 
@@ -1874,6 +1932,11 @@ def benchmark_model(
                     cap=cap,
                     on_try=reporter,
                     strategy=playbook,
+                    best_score_to_beat=(
+                        incumbent_best
+                        if selection == "best"
+                        else None
+                    ),
                 )
             )
     finally:
@@ -1883,7 +1946,12 @@ def benchmark_model(
     return ModelSummary(
         config=config,
         results=tuple(results),
-        median_run_index=select_median_run(results),
+        selection=selection,
+        selected_run_index=(
+            select_median_run(results)
+            if selection == "median"
+            else select_best_run(results)
+        ),
     )
 
 
@@ -2127,12 +2195,13 @@ def _lab_session(
     for index, result in enumerate(summary.results, start=1):
         run: dict[str, Any] = {
             "index": index,
-            "selected": index - 1 == summary.median_run_index,
+            "selected": index - 1 == summary.selected_run_index,
             "guesses": list(result.tried_words),
             "tries": result.tries,
             "counted_tries": result.counted_tries,
             "turns": result.turns,
             "duration": result.duration,
+            "termination": result.termination,
             "transcript": [message.copy() for message in result.conversation],
         }
         token_usage = _aggregate_token_usage(result.turn_token_usage)
@@ -2155,10 +2224,12 @@ def _lab_session(
         "label": config["label"],
         "tag": config["tag"],
         "display": config["display"],
-        "median_run": summary.median_run_index + 1,
+        "selection": summary.selection,
+        "selected_run": summary.selected_run_index + 1,
         "benchmark_entry": summary.benchmark_entry(),
         "runs": runs,
     }
+    session[f"{summary.selection}_run"] = summary.selected_run_index + 1
     if playbook_sha256 is not None:
         session["playbook_sha256"] = playbook_sha256
     return session
@@ -2212,8 +2283,14 @@ def write_lab_artifact(
     return path, artifact
 
 
-def display_benchmark_sessions(artifact: Mapping[str, Any]) -> list[dict[str, Any]]:
-    """Take the latest current-prompt lab session for each configured display model."""
+def display_benchmark_sessions(
+    artifact: Mapping[str, Any],
+    *,
+    selection: SelectionMode = DEFAULT_SELECTION,
+) -> list[dict[str, Any]]:
+    """Take the latest same-selection current-prompt session per display model."""
+    if selection not in SELECTION_MODES:
+        raise ValueError(f"unsupported run selection mode: {selection}")
     sessions = artifact.get("sessions")
     if not isinstance(sessions, list):
         raise ValueError("malformed benchmark artifact: sessions must be an array")
@@ -2222,6 +2299,10 @@ def display_benchmark_sessions(artifact: Mapping[str, Any]) -> list[dict[str, An
     display_ids = {config["model_id"] for config in display_configs}
     for raw in reversed(sessions):
         if not isinstance(raw, dict) or raw.get("prompt_version") != PROMPT_VERSION:
+            continue
+        # Sessions written before selection modes existed were all median sessions.
+        session_selection = raw.get("selection", "median")
+        if session_selection != selection:
             continue
         model_id = raw.get("model_id")
         entry = raw.get("benchmark_entry")
@@ -2239,10 +2320,14 @@ def display_benchmark_sessions(artifact: Mapping[str, Any]) -> list[dict[str, An
     ]
 
 
-def display_benchmark_entries(artifact: Mapping[str, Any]) -> list[dict[str, Any]]:
+def display_benchmark_entries(
+    artifact: Mapping[str, Any],
+    *,
+    selection: SelectionMode = DEFAULT_SELECTION,
+) -> list[dict[str, Any]]:
     return [
         dict(session["benchmark_entry"])
-        for session in display_benchmark_sessions(artifact)
+        for session in display_benchmark_sessions(artifact, selection=selection)
     ]
 
 
@@ -2336,15 +2421,6 @@ def _positive_int(value: str) -> int:
     return parsed
 
 
-def _odd_positive_int(value: str) -> int:
-    parsed = _positive_int(value)
-    if parsed % 2 == 0:
-        raise argparse.ArgumentTypeError(
-            "must be odd so the median is an actual run"
-        )
-    return parsed
-
-
 class _BenchmarkArgumentParser(argparse.ArgumentParser):
     def __init__(
         self,
@@ -2371,6 +2447,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "--model": _model_selector_guidance(configs),
             "--effort": f"Valid values: {', '.join(EFFORT_LEVELS)}.",
             "--auth": f"Valid values: {', '.join(AUTH_MODES)}.",
+            "--selection": f"Valid values: {', '.join(SELECTION_MODES)}.",
         },
         description="Make one configured LLM play a Whippin puzzle offline and report its score.",
     )
@@ -2386,11 +2463,21 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--runs",
-        type=_odd_positive_int,
+        type=_positive_int,
         default=DEFAULT_RUNS,
         help=(
-            "odd run count for the selected model; persist the actual median run "
+            "run count for the selected model; median selection requires an odd count "
             f"(default: {DEFAULT_RUNS})"
+        ),
+    )
+    parser.add_argument(
+        "--selection",
+        choices=SELECTION_MODES,
+        default=DEFAULT_SELECTION,
+        help=(
+            "saved representative run: actual median, or lowest successful best; "
+            "best prunes later attempts once they cannot beat the incumbent "
+            f"(default: {DEFAULT_SELECTION})"
         ),
     )
     parser.add_argument(
@@ -2428,6 +2515,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     args = parser.parse_args(argv)
+    if args.selection == "median" and args.runs % 2 == 0:
+        parser.error("--runs must be odd so the median is an actual run")
     try:
         args.model_config = select_model(args.model)
     except ValueError as exc:
@@ -2487,6 +2576,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(
         f"Whippin benchmark prompt={PROMPT_VERSION} effort={args.effort} "
         f"auth={args.auth} cap={args.cap} runs={args.runs} "
+        f"selection={args.selection} "
         f"playbook={playbook_sha256 or 'none'}",
         flush=True,
     )
@@ -2527,6 +2617,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             runs=args.runs,
             on_try=print_try,
             playbook=playbook,
+            selection=args.selection,
         )
     except Exception as exc:
         print(
@@ -2535,8 +2626,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 1
     score = "DNF" if summary.tries is None else f"{summary.tries} tries"
+    selected_label = f"{summary.selection}_run"
     print(
-        f"{config['tag']:<8} {score:>9}  median_run={summary.median_run_index + 1}  "
+        f"{config['tag']:<8} {score:>9}  "
+        f"{selected_label}={summary.selected_run_index + 1}  "
         f"turns={summary.turns}  duration={summary.duration:.1f}s  model={config['model_id']}"
     )
     for run_number, tried_words in enumerate(summary.run_tried_words, start=1):
@@ -2563,7 +2656,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Wrote lab artifact -> {artifact_path}")
 
             if config["display"]:
-                display_sessions = display_benchmark_sessions(artifact)
+                display_sessions = display_benchmark_sessions(
+                    artifact, selection=args.selection
+                )
                 entries = [
                     dict(session["benchmark_entry"])
                     for session in display_sessions

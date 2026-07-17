@@ -221,11 +221,14 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   (`CLAUDE OPUS`, `CLAUDE SONNET`, `GPT-5.6` — never ambiguous `CLAUDE`), an uppercase
   pixel-friendly `tag` of at most 6 characters (`OPUS`/`SONNET`/`GPT`), `tries` as a
   positive integer or `null` (DNF at the counted-try cap), and `run` as the **selected
-  median run's counted display-form guesses in submission order**. Run words retain
-  accents exactly as typed/validated and are folded only when replayed; a DNF keeps its
-  full run. The client can replay this list against the puzzle rank maps; play scoring
-  and share output stay unchanged. This model-score anchor superseded #57's proposed
-  `par` before `par` was implemented — there is no `par` schema field.
+  run's counted display-form guesses in submission order**. `--selection median`
+  (default) selects the actual median; `--selection best` selects the lowest successful
+  score. Run words retain accents exactly as typed/validated and are folded only when
+  replayed; a selected DNF keeps its full cap-length run. A best-mode attempt stopped
+  because it can no longer beat an incumbent is lab-only and can never be embedded as a
+  DNF. The client can replay this list against the puzzle rank maps; play scoring and
+  share output stay unchanged. This model-score anchor superseded #57's proposed `par`
+  before `par` was implemented — there is no `par` schema field.
 - `ranks` is keyed by **secret slug**; the inner map is keyed by **input slug** →
   `{word, rank}`. The value carries the **accented** word so the front can show the
   accented form of what was typed.
@@ -419,11 +422,13 @@ pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--
 #    low|medium|high|xhigh|max. The frozen shared gameplay baseline is prompt v21 at
 #    medium effort with NO --playbook. --playbook remains an experimental loader only;
 #    the static-corpus playbooks are paused and must not be used for benchmark scores.
-#    --runs must be odd (default 7) so one actual median run can be selected. Puzzle paths
-#    may be repo-root-relative (packages/generation/output/...) or generation-package-
-#    relative (output/...). --in-place appends the full local lab artifact and embeds the
-#    lean display trio once all 3 current-prompt display models have results.
-pnpm bench:puzzle <puzzle.json> --model MODEL [--playbook <model>.playbook.json] [--effort LEVEL] [--auth api|subscription] [--cap N] [--runs N] [--in-place]
+#    --selection median|best chooses the saved representative (default median). Median
+#    requires odd --runs; best accepts any positive count and stops an unsolved later run
+#    once its tries equal the incumbent best score. Puzzle paths may be repo-root-relative
+#    (packages/generation/output/...) or generation-package-relative (output/...).
+#    --in-place appends the full local lab artifact and embeds the lean display trio once
+#    all 3 current-prompt display models have same-selection results.
+pnpm bench:puzzle <puzzle.json> --model MODEL [--playbook <model>.playbook.json] [--effort LEVEL] [--auth api|subscription] [--cap N] [--runs N] [--selection median|best] [--in-place]
 
 # 5. PAUSED EXPERIMENT: bootstrap one model's playbook from all 92 static French puzzles
 #    (#88). Do not run this for normal benchmark production. Each real
@@ -476,16 +481,18 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   prompt affirmatively requires private multi-step deduction; malformed prose is rejected,
   never truncated into a guess. `--playbook` accepts only a model/provider/prompt-matched,
   hash-verified `whippin_model_playbook` profile and injects its `final_playbook` under the
-  fixed rules as advice. `--runs` stays odd (default 7); the actual median run is replayed
-  before any write. `--in-place` records full local transcripts/token usage and publishes
-  only a complete replay-valid display trio; local benchmark output is gitignored and paid
+  fixed rules as advice. `--selection median|best` defaults to median: median requires odd
+  `--runs` (default 7), while best selects the lowest successful score and cost-prunes a
+  later unsolved run when it reaches that incumbent score. Lab sessions record the mode,
+  selected run, and each run's termination; only same-selection model sessions can form a
+  display trio. `--in-place` records full local transcripts/token usage and publishes only
+  a complete replay-valid display trio; local benchmark output is gitignored and paid
   provider calls never run in tests/CI.
 - **Frozen neutral gameplay baseline (decided 2026-07-17).** Use prompt v21 at `medium`
-  effort, without `--playbook`, for both Sonnet and GPT. A direct same-puzzle smoke found
-  neutral v21 at 11 tries for Sonnet and 13 for GPT, versus 21 and still unsolved after
-  30 tries for the provider-neutral v14-method reproduction. The static-corpus
-  Sonnet/GPT playbooks also regressed play and are paused; keep them as audit artifacts,
-  not production guidance.
+  effort, without `--playbook`, for both Sonnet and GPT. Two direct same-puzzle stateless
+  v21 smokes produced 11 then 6 tries for Sonnet, and 13 then DNF-at-30 for GPT, exposing
+  substantial GPT reliability variance. The static-corpus Sonnet/GPT playbooks regressed
+  play and are paused; keep them as audit artifacts, not production guidance.
 - **Paused bootstrap playbook distillation (#88, decided 2026-07-16; paused
   2026-07-17).** The rigorous calibrated
   neutral-play curriculum from #84/#86 is postponed, not discarded: its exact combined tip
