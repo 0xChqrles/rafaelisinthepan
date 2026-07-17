@@ -96,6 +96,11 @@ DISPLAY_MODEL_COUNT = 3
 # Bump whenever the opening rules or turn-feedback scaffold changes materially. Results
 # are attributable to a model id plus this prompt version and the CLI's printed effort.
 PROMPT_VERSION = "21"
+# Prompt v7 was exercised from an uncommitted working tree, but its exact logical
+# transcript and the Codex full-transcript wrapper survive in the local audit artifact
+# and prompt-v4 parent commit. Keep the reconstruction explicitly named: it restores
+# that recorded game surface while giving both providers the same fresh stateless turn.
+V7_RECONSTRUCTION_PROMPT = "7-reconstructed-stateless-transcript"
 
 DEFAULT_CAP = 300
 DEFAULT_RUNS = 7
@@ -840,6 +845,179 @@ def _state_snapshot_lines(referee: PuzzleReferee) -> list[str]:
     ]
 
 
+def _v7_board(referee: PuzzleReferee) -> str:
+    """Render the clue-in-sentence board recorded in historical prompt-v7 runs."""
+    rendered = list(referee.words)
+    for hole in referee.holes:
+        rendered[hole.pos] = (
+            f"{hole.prefix}{hole.word}(-{hole.rank}){hole.suffix}"
+        )
+    return " ".join(rendered)
+
+
+def _v7_opening_message(referee: PuzzleReferee) -> str:
+    """Reconstruct the exact prompt-v7 opening preserved in the audit artifact."""
+    language = LANGUAGE_NAMES.get(referee.lang, referee.lang)
+    return "\n".join(
+        [
+            f"Play Whippin AI in {language}. Reply with exactly one {language} word per turn.",
+            "Each hidden word reports a closeness rank: lower is closer, 0 is found, and MISS is too far to rank.",
+            "Invalid words and repeated words do not count. One guess is tested against every unsolved hidden word.",
+            (
+                "Ranks come from word-embedding similarity: they measure contextual "
+                "relatedness, not synonymy. Opposites, contrasting concepts, and words "
+                "sharing a root often rank very close, while rare synonyms may rank far."
+            ),
+            (
+                "Calibrate on rank magnitude: each hidden word has about ten thousand "
+                "ranked neighbors, so a best rank in the thousands is barely warm and "
+                "one in the hundreds is still far. Until a hidden word's best rank is "
+                "below about 100, treat its neighborhood as not found: probe unrelated "
+                "common domains instead of mining synonyms of the current best word."
+            ),
+            (
+                "Feedback transfers to similar words: a MISS rules out that word's "
+                "whole close family, and near-synonyms of a non-improving guess will "
+                "not improve either. Never spend guesses inside a ruled-out family."
+            ),
+            (
+                "The board is a sentence: treat each word(-rank) as a replaceable clue "
+                "and infer the hidden word's grammar from the fixed context. Before "
+                "probing, complete the sentence as a native speaker would: the most "
+                "idiomatic completion is often the answer, and ranks then discriminate "
+                "between your candidates."
+            ),
+            (
+                "Hidden words are common, everyday words that make the sentence "
+                "natural. Prefer frequent words over rare or literary ones, as "
+                "candidates and as probes."
+            ),
+            (
+                "Guesses are exact inflected forms, not lemmas: singular/plural and "
+                "masculine/feminine forms are distinct guesses."
+            ),
+            (
+                "Do not work strictly left-to-right or exhaust one hidden word before "
+                "considering the others. Before committing many tries to one, sample "
+                "candidates or probes motivated by every unsolved position; this may "
+                "expose a surprisingly easy target."
+            ),
+            (
+                "Compare rank signals and pursue whichever position or direction looks "
+                "easiest, regardless of order. After any solve, reread the board and "
+                "reprioritize: the revealed word gives new context for the rest."
+            ),
+            (
+                "If 3 consecutive guesses improve no rank, the current cluster is "
+                "exhausted: stop listing its synonyms and change relation. The cheapest "
+                "pivots are the direct opposite of the warmest concept and the bare base "
+                "word inside any warm prefixed or derived form — each costs one guess "
+                "and is often the answer."
+            ),
+            (
+                "Use ranks to search, not only to check possible final answers. A valid "
+                "exploratory probe does not need to fit the sentence: its ranks can "
+                "reveal semantic directions and provide intermediate hints."
+            ),
+            (
+                "Balance direct candidates with probes. To triangulate when needed, "
+                "test broader categories, contrasts, related objects or actions, and "
+                "neighbors of the warmest clues; compare ranks and follow lower ones."
+            ),
+            (
+                "Once a candidate looks promising, promptly try the form required by "
+                "the sentence's number, gender, agreement, or conjugation before "
+                "listing more direct synonyms. An inflection variant of a non-improving "
+                "guess is rarely better: spend inflections on your best candidate."
+            ),
+            f"Board: {_v7_board(referee)}",
+            "Tries: 0",
+        ]
+    )
+
+
+def _v7_outcome_text(outcome: HoleOutcome) -> str:
+    if outcome.rank is None:
+        return f"word {outcome.number}: MISS"
+    if outcome.solved:
+        return f"word {outcome.number}: 0 solved!"
+    if outcome.improved:
+        return f"word {outcome.number}: {outcome.rank} closer!"
+    return f"word {outcome.number}: {outcome.rank} (not closer)"
+
+
+def _v7_feedback_message(
+    feedback: GuessFeedback, referee: PuzzleReferee
+) -> str:
+    if feedback.kind == "counted":
+        lines = [_v7_outcome_text(outcome) for outcome in feedback.outcomes]
+        if referee.stalled_tries >= 3:
+            lines.append(
+                f"No rank has improved for {referee.stalled_tries} tries — your "
+                "current cluster is exhausted. Change semantic direction now: try a "
+                "direct opposite, a bare base word, a broader category, or another "
+                "hidden word."
+            )
+    elif feedback.kind == "invalid":
+        lines = [f'"{feedback.guess}" is not a word — this did not count.']
+    else:
+        lines = [f'"{feedback.guess}" was already tried — this did not count.']
+    lines.extend(
+        [
+            f"Board: {_v7_board(referee)}",
+            f"Tries: {feedback.tries}",
+            "Reply with exactly one word.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _v7_unparseable_message(referee: PuzzleReferee) -> str:
+    return "\n".join(
+        [
+            "I could not parse a word — this did not count. Reply with exactly one word.",
+            f"Board: {_v7_board(referee)}",
+            f"Tries: {referee.tries}",
+        ]
+    )
+
+
+# Prompt v7 used the original permissive surface parser: harmless surrounding
+# punctuation/Markdown was accepted only when the response still contained exactly one
+# lexical word. Isolate that historical rule from prompt v21's strict bare-word parser.
+_V7_LEXICAL_WORD = re.compile(r"[^\W\d_]+(?:-[^\W\d_]+)*", re.UNICODE)
+
+
+def _parse_v7_single_word(reply: str) -> str | None:
+    matches = _V7_LEXICAL_WORD.findall(reply)
+    return matches[0] if len(matches) == 1 else None
+
+
+def _v7_transcript_prompt(messages: list[Message]) -> str:
+    """Reproduce the old Codex complete-transcript wrapper for both providers."""
+    if not messages or messages[0].get("role") != "user":
+        raise ValueError("v7 reconstruction requires an opening user message")
+    if messages[-1].get("role") != "user":
+        raise ValueError("v7 reconstruction requires a final user message")
+    for index, message in enumerate(messages):
+        expected_role = "user" if index % 2 == 0 else "assistant"
+        if message.get("role") != expected_role:
+            raise ValueError(
+                "v7 reconstruction requires an alternating user/assistant transcript"
+            )
+        if not isinstance(message.get("content"), str):
+            raise ValueError("v7 reconstruction message content must be text")
+    transcript = json.dumps(messages, ensure_ascii=False, separators=(",", ":"))
+    return "\n".join(
+        [
+            "Continue the word-game conversation encoded as JSON below.",
+            "It is the complete append-only transcript; answer its final user message.",
+            "Return exactly one word and nothing else.",
+            transcript,
+        ]
+    )
+
+
 def _rules_opening(
     referee: PuzzleReferee,
     language: str,
@@ -1047,12 +1225,14 @@ def play_puzzle(
     strategy: str | None = None,
     rules_only: bool = False,
     best_score_to_beat: int | None = None,
+    v7_reconstruction: bool = False,
 ) -> RunResult:
     """Run one append-only model conversation through the real puzzle rules.
 
-    `strategy` is optional model-authored playbook guidance injected into the opening
-    as advice under the fixed rules. There is no
-    pre-game planning turn: the first reply is the first guess.
+    `strategy` is optional model-authored playbook guidance injected into the prompt-v21
+    opening as advice under the fixed rules. There is no pre-game planning turn: the
+    first reply is the first guess. The explicit v7 reconstruction restores the recorded
+    v7 game surface and old complete-transcript wrapper, identically for both providers.
     """
     if not _is_int(cap) or cap <= 0:
         raise ValueError("cap must be a positive integer")
@@ -1063,15 +1243,21 @@ def play_puzzle(
     referee = PuzzleReferee(puzzle, vocab)
     if referee.solved:
         raise ValueError("puzzle starts solved; no benchmark can be played")
+    if v7_reconstruction and strategy is not None:
+        raise ValueError("the v7 reconstruction cannot be combined with a playbook")
 
     messages: list[Message] = [
         {
             "role": "user",
-            "content": opening_message(
-                referee,
-                strategy,
-                rules_only=rules_only,
-                cap=cap,
+            "content": (
+                _v7_opening_message(referee)
+                if v7_reconstruction
+                else opening_message(
+                    referee,
+                    strategy,
+                    rules_only=rules_only,
+                    cap=cap,
+                )
             ),
         }
     ]
@@ -1082,7 +1268,18 @@ def play_puzzle(
     turn_token_usage: list[dict[str, Any]] = []
 
     while True:
-        raw_reply = model_reply([message.copy() for message in messages])
+        audit_messages = [message.copy() for message in messages]
+        provider_messages = (
+            [
+                {
+                    "role": "user",
+                    "content": _v7_transcript_prompt(audit_messages),
+                }
+            ]
+            if v7_reconstruction
+            else audit_messages
+        )
+        raw_reply = model_reply(provider_messages)
         usage = _last_token_usage(model_reply)
         if usage is not None:
             turn_token_usage.append(usage)
@@ -1092,7 +1289,11 @@ def play_puzzle(
         assistant_content = raw_reply.strip() or "[empty response]"
         messages.append({"role": "assistant", "content": assistant_content})
 
-        guess = parse_single_word(raw_reply, lang=referee.lang)
+        guess = (
+            _parse_v7_single_word(raw_reply)
+            if v7_reconstruction
+            else parse_single_word(raw_reply, lang=referee.lang)
+        )
         if guess is None:
             consecutive_unparseable += 1
             if consecutive_unparseable >= MAX_CONSECUTIVE_UNPARSEABLE:
@@ -1112,10 +1313,14 @@ def play_puzzle(
             messages.append(
                 {
                     "role": "user",
-                    "content": unparseable_message(
-                        referee,
-                        raw_reply,
-                        rules_only=rules_only,
+                    "content": (
+                        _v7_unparseable_message(referee)
+                        if v7_reconstruction
+                        else unparseable_message(
+                            referee,
+                            raw_reply,
+                            rules_only=rules_only,
+                        )
                     ),
                 }
             )
@@ -1126,8 +1331,12 @@ def play_puzzle(
         messages.append(
             {
                 "role": "user",
-                "content": feedback_message(
-                    feedback, referee, rules_only=rules_only
+                "content": (
+                    _v7_feedback_message(feedback, referee)
+                    if v7_reconstruction
+                    else feedback_message(
+                        feedback, referee, rules_only=rules_only
+                    )
                 ),
             }
         )
@@ -1898,6 +2107,7 @@ def benchmark_model(
     on_try: ModelTryReporter | None = None,
     playbook: str | None = None,
     selection: SelectionMode = DEFAULT_SELECTION,
+    v7_reconstruction: bool = False,
 ) -> ModelSummary:
     if not _is_int(runs) or runs <= 0:
         raise ValueError("runs must be a positive integer")
@@ -1937,6 +2147,7 @@ def benchmark_model(
                         if selection == "best"
                         else None
                     ),
+                    v7_reconstruction=v7_reconstruction,
                 )
             )
     finally:
@@ -2507,6 +2718,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--v7-reconstruction",
+        action="store_true",
+        help=(
+            "experimental reconstruction of prompt v7 with its recorded full-transcript "
+            "wrapper, identically stateless for both providers"
+        ),
+    )
+    parser.add_argument(
         "--in-place",
         action="store_true",
         help=(
@@ -2525,6 +2744,17 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         _validate_provider_effort(args.model_config["provider"], args.auth, args.effort)
     except ValueError as exc:
         parser.error(str(exc))
+    if args.v7_reconstruction:
+        if args.auth != "subscription":
+            parser.error("--v7-reconstruction requires --auth subscription")
+        if args.effort != "medium":
+            parser.error("--v7-reconstruction requires --effort medium")
+        if args.playbook is not None:
+            parser.error("--v7-reconstruction cannot be combined with --playbook")
+        if args.in_place:
+            parser.error(
+                "--v7-reconstruction is lab-only and cannot be combined with --in-place"
+            )
     return args
 
 
@@ -2573,8 +2803,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"error: {exc}", file=sys.stderr)
             return 2
 
+    prompt_version = (
+        V7_RECONSTRUCTION_PROMPT
+        if args.v7_reconstruction
+        else PROMPT_VERSION
+    )
     print(
-        f"Whippin benchmark prompt={PROMPT_VERSION} effort={args.effort} "
+        f"Whippin benchmark prompt={prompt_version} effort={args.effort} "
         f"auth={args.auth} cap={args.cap} runs={args.runs} "
         f"selection={args.selection} "
         f"playbook={playbook_sha256 or 'none'}",
@@ -2618,6 +2853,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             on_try=print_try,
             playbook=playbook,
             selection=args.selection,
+            v7_reconstruction=args.v7_reconstruction,
         )
     except Exception as exc:
         print(

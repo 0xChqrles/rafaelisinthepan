@@ -41,6 +41,7 @@ from llm_play import (
     PROSE_OUTPUT_MAX_TOKENS,
     REASONING_MAX_TOKENS,
     SELECTION_MODES,
+    V7_RECONSTRUCTION_PROMPT,
     ModelSummary,
     NoProgressReplyError,
     PuzzleReferee,
@@ -1189,6 +1190,60 @@ def test_cli_defaults_to_api_and_accepts_shared_effort_and_auth_levels():
         if auth == "subscription":
             arguments.extend(("--effort", "medium"))
         assert parse_args(arguments).auth == auth
+
+
+def test_v7_reconstruction_cli_pins_the_fair_historical_control(capsys):
+    args = parse_args(
+        [
+            "puzzle.json",
+            "--model",
+            "GPT-SOL",
+            "--auth",
+            "subscription",
+            "--effort",
+            "medium",
+            "--runs",
+            "2",
+            "--selection",
+            "best",
+            "--v7-reconstruction",
+        ]
+    )
+    assert args.v7_reconstruction is True
+    assert args.selection == "best"
+    assert V7_RECONSTRUCTION_PROMPT == "7-reconstructed-stateless-transcript"
+
+    incompatible = (
+        ["--auth", "api", "--effort", "medium"],
+        ["--auth", "subscription", "--effort", "high"],
+        [
+            "--auth",
+            "subscription",
+            "--effort",
+            "medium",
+            "--playbook",
+            "profile.json",
+        ],
+        ["--auth", "subscription", "--effort", "medium", "--in-place"],
+    )
+    for extra in incompatible:
+        with pytest.raises(SystemExit):
+            parse_args(
+                [
+                    "puzzle.json",
+                    "--model",
+                    "GPT-SOL",
+                    "--runs",
+                    "1",
+                    "--v7-reconstruction",
+                    *extra,
+                ]
+            )
+    error = capsys.readouterr().err
+    assert "requires --auth subscription" in error
+    assert "requires --effort medium" in error
+    assert "cannot be combined with --playbook" in error
+    assert "cannot be combined with --in-place" in error
 
 
 def test_cli_requires_odd_median_runs_but_best_accepts_any_positive_count(capsys):
@@ -2358,6 +2413,48 @@ def test_cli_openai_subscription_uses_plan_without_api_key(
     assert "OPENAI_API_KEY is not set" not in output.err
 
 
+def test_cli_runs_the_v7_reconstruction_without_publishing_it(
+    monkeypatch, tmp_path, capsys
+):
+    path = tmp_path / "puzzle.json"
+    path.write_text(json.dumps(puzzle()), encoding="utf-8")
+    model = ScriptedModel(["forest", "ocean"])
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr("llm_play.load_vocab", lambda _lang: VOCAB)
+    monkeypatch.setattr("llm_play.validate_openai_subscription_auth", lambda: "ChatGPT")
+    monkeypatch.setattr(
+        "llm_play.provider_reply", lambda *_args, **_kwargs: model
+    )
+
+    assert (
+        main(
+            [
+                str(path),
+                "--model",
+                "GPT-SOL",
+                "--auth",
+                "subscription",
+                "--effort",
+                "medium",
+                "--runs",
+                "1",
+                "--v7-reconstruction",
+            ]
+        )
+        == 0
+    )
+
+    output = capsys.readouterr().out
+    assert f"prompt={V7_RECONSTRUCTION_PROMPT}" in output
+    assert "2 tries" in output
+    assert len(model.calls) == 2
+    assert all(len(call) == 1 and call[0]["role"] == "user" for call in model.calls)
+    assert model.calls[0][0]["content"].startswith(
+        "Continue the word-game conversation encoded as JSON below.\n"
+    )
+
+
 def test_cli_anthropic_subscription_preflights_only_the_selected_provider(
     monkeypatch, tmp_path
 ):
@@ -2403,6 +2500,113 @@ def test_cli_anthropic_subscription_preflights_only_the_selected_provider(
 
     assert preflights == ["anthropic"]
     assert provider_calls == [("OPUS", None, "subscription")]
+
+
+def test_v7_reconstruction_restores_recorded_rules_board_feedback_and_full_history():
+    stocked = puzzle()
+    vocab = VOCAB | {"third"}
+    model = ScriptedModel(
+        ["shared", "cold", "other", "third", "forest", "ocean"]
+    )
+
+    result = play_puzzle(
+        stocked,
+        vocab,
+        model,
+        v7_reconstruction=True,
+    )
+
+    assert result.tries == 6
+    assert result.tried_words == (
+        "shared",
+        "cold",
+        "other",
+        "third",
+        "forest",
+        "ocean",
+    )
+    assert all(len(call) == 1 and call[0]["role"] == "user" for call in model.calls)
+
+    first_prompt = model.calls[0][0]["content"]
+    wrapper, encoded = first_prompt.rsplit("\n", 1)
+    assert wrapper == "\n".join(
+        [
+            "Continue the word-game conversation encoded as JSON below.",
+            "It is the complete append-only transcript; answer its final user message.",
+            "Return exactly one word and nothing else.",
+        ]
+    )
+    first_transcript = json.loads(encoded)
+    assert len(first_transcript) == 1
+    opening = first_transcript[0]["content"]
+    assert opening == result.conversation[0]["content"]
+    assert opening.startswith(
+        "Play Whippin AI in English. Reply with exactly one English word per turn."
+    )
+    assert "Calibrate on rank magnitude" in opening
+    assert "Feedback transfers to similar words" in opening
+    assert "Before probing, complete the sentence as a native speaker would" in opening
+    assert "If 3 consecutive guesses improve no rank" in opening
+    assert "Balance direct candidates with probes" in opening
+    assert "Board: the (tree(-50), meets lake(-40)" in opening
+    assert opening.endswith("Tries: 0")
+    assert "CLOZE:" not in opening
+    assert "Reason privately as needed" not in opening
+
+    after_shared = json.loads(model.calls[1][0]["content"].rsplit("\n", 1)[1])
+    assert after_shared[1] == {"role": "assistant", "content": "shared"}
+    assert after_shared[2]["content"] == "\n".join(
+        [
+            "word 1: 10 closer!",
+            "word 2: 5 closer!",
+            "Board: the (shared(-10), meets shared(-5)",
+            "Tries: 1",
+            "Reply with exactly one word.",
+        ]
+    )
+
+    before_third = json.loads(model.calls[3][0]["content"].rsplit("\n", 1)[1])
+    assert "No rank has improved for" not in before_third[-1]["content"]
+    after_third = json.loads(model.calls[4][0]["content"].rsplit("\n", 1)[1])
+    assert (
+        "No rank has improved for 3 tries — your current cluster is exhausted. "
+        "Change semantic direction now" in after_third[-1]["content"]
+    )
+
+    # The final provider call contains every earlier player reply and exact referee
+    # message, while the returned audit conversation additionally includes the solve.
+    final_provider_transcript = json.loads(
+        model.calls[-1][0]["content"].rsplit("\n", 1)[1]
+    )
+    assert [
+        message["content"]
+        for message in final_provider_transcript
+        if message["role"] == "assistant"
+    ] == ["shared", "cold", "other", "third", "forest"]
+    assert len(result.conversation) == 13
+    assert result.conversation[-2] == {"role": "assistant", "content": "ocean"}
+    assert "word 2: 0 solved!" in result.conversation[-1]["content"]
+
+
+def test_v7_reconstruction_keeps_its_historical_single_lexical_word_parser():
+    model = ScriptedModel(['**"forest".**', "ocean"])
+
+    result = play_puzzle(puzzle(), VOCAB, model, v7_reconstruction=True)
+
+    assert result.tries == 2
+    assert result.tried_words == ("forest", "ocean")
+    assert result.conversation[1]["content"] == '**"forest".**'
+
+
+def test_v7_reconstruction_rejects_a_playbook_treatment():
+    with pytest.raises(ValueError, match="cannot be combined with a playbook"):
+        play_puzzle(
+            puzzle(),
+            VOCAB,
+            ScriptedModel([]),
+            strategy="Use a learned strategy.",
+            v7_reconstruction=True,
+        )
 
 
 def test_opening_cloze_keeps_affixes_but_never_inserts_ranked_guesses():
