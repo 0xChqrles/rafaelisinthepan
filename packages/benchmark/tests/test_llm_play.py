@@ -31,6 +31,9 @@ from llm_play import (
     DIRECT_OUTPUT_MAX_TOKENS,
     DISPLAY_MODEL_COUNT,
     EFFORT_LEVELS,
+    KIMI_CODE_BASE_URL,
+    KIMI_EFFORT_MAP,
+    KIMI_SUBPROCESS_CONFLICT_ENV,
     MAX_CONSECUTIVE_UNPARSEABLE,
     MAX_NONCOUNTING_REPLIES,
     MODELS,
@@ -61,9 +64,11 @@ from llm_play import (
     select_median_run,
     select_model,
     validate_anthropic_subscription_auth,
+    validate_kimi_subscription_auth,
     validate_openai_subscription_auth,
     write_benchmark,
     write_lab_artifact,
+    _effective_provider_effort,
     _stateless_word_prompt,
 )
 
@@ -190,9 +195,10 @@ VOCAB = {"shared", "forest", "ocean", "cold", "other"}
 
 ANTHROPIC_MODELS = [config for config in MODELS if config["provider"] == "anthropic"]
 OPENAI_MODELS = [config for config in MODELS if config["provider"] == "openai"]
+KIMI_MODELS = [config for config in MODELS if config["provider"] == "kimi"]
 
 
-def test_supported_model_roster_has_claude_and_all_gpt_56_variants():
+def test_supported_model_roster_keeps_display_trio_and_adds_lab_only_kimi_k3():
     assert MODELS == [
         {
             "provider": "anthropic",
@@ -236,11 +242,20 @@ def test_supported_model_roster_has_claude_and_all_gpt_56_variants():
             "tag": "FABLE",
             "display": False,
         },
+        {
+            "provider": "kimi",
+            "model_id": "k3",
+            "label": "KIMI K3",
+            "tag": "KIMI",
+            "display": False,
+        },
     ]
     assert sum(config["display"] for config in MODELS) == DISPLAY_MODEL_COUNT == 3
+    assert KIMI_MODELS == [MODELS[6]]
     assert PROVIDER_ENV == {
         "anthropic": "ANTHROPIC_API_KEY",
         "openai": "OPENAI_API_KEY",
+        "kimi": "KIMI_CODE_API_KEY",
     }
 
 
@@ -519,6 +534,7 @@ def test_anthropic_subscription_word_adapter_uses_fresh_stateless_agent_sdk_turn
 
     async def fake_query(*, prompt, options):
         assert "ANTHROPIC_API_KEY" not in os.environ
+        assert "KIMI_CODE_API_KEY" not in os.environ
         calls.append((prompt, options))
         session_id = options.resume or f"session-{len(calls)}"
         yield FakeResultMessage(result="forest", session_id=session_id)
@@ -533,6 +549,7 @@ def test_anthropic_subscription_word_adapter_uses_fresh_stateless_agent_sdk_turn
         ),
     )
     monkeypatch.setenv("ANTHROPIC_API_KEY", "must-not-be-used")
+    monkeypatch.setenv("KIMI_CODE_API_KEY", "must-not-enter-claude")
     reply = provider_reply(MODELS[0], None, effort=effort, auth="subscription")
 
     opening = [
@@ -554,6 +571,7 @@ def test_anthropic_subscription_word_adapter_uses_fresh_stateless_agent_sdk_turn
     # A new one-message transcript is a new median run, never a resumed attempt.
     assert reply([{"role": "user", "content": "opening again"}]) == "forest"
     assert os.environ["ANTHROPIC_API_KEY"] == "must-not-be-used"
+    assert os.environ["KIMI_CODE_API_KEY"] == "must-not-enter-claude"
     assert reply.last_token_usage == {"input_tokens": 12, "output_tokens": 1}
 
     first_options = calls[0][1]
@@ -690,10 +708,321 @@ def test_anthropic_subscription_surfaces_provider_status_and_sdk_errors(monkeypa
         reply.close()
 
 
+@pytest.mark.parametrize(
+    ("requested", "effective"),
+    [
+        ("low", "low"),
+        ("medium", "high"),
+        ("high", "high"),
+        ("xhigh", "max"),
+        ("max", "max"),
+        ("ultra", "max"),
+    ],
+)
+def test_kimi_effort_mapping_is_explicit_and_never_disables_thinking(
+    monkeypatch, requested, effective
+):
+    assert KIMI_EFFORT_MAP[requested] == effective
+    assert _effective_provider_effort("kimi", requested) == effective
+
+    calls = []
+
+    async def fake_turn(prompt, **kwargs):
+        calls.append((prompt, kwargs))
+        return "forest", "kimi-session", None
+
+    monkeypatch.setattr(
+        sys.modules["llm_play"], "_agent_sdk_turn", fake_turn
+    )
+    reply = provider_reply(
+        MODELS[6], "kimi-secret", effort=requested, auth="subscription"
+    )
+    try:
+        assert reply([{"role": "user", "content": "board"}]) == "forest"
+    finally:
+        reply.close()
+    assert calls[0][1]["effort"] == effective
+
+    with pytest.raises(ValueError, match="does not allow.*none"):
+        _effective_provider_effort("kimi", "none")
+
+
+def test_kimi_subscription_adapter_pins_endpoint_and_zero_tool_sdk_options(
+    monkeypatch,
+):
+    calls = []
+
+    class FakeOptions:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    class FakeResultMessage:
+        def __init__(self, result, session_id):
+            self.result = result
+            self.session_id = session_id
+            self.is_error = False
+            self.stop_reason = "end_turn"
+            self.subtype = "success"
+            self.usage = {"input_tokens": 21, "output_tokens": 3}
+
+    async def fake_query(*, prompt, options):
+        assert not (set(KIMI_SUBPROCESS_CONFLICT_ENV) & os.environ.keys())
+        calls.append((prompt, options))
+        yield FakeResultMessage("forest", f"kimi-{len(calls)}")
+
+    monkeypatch.setitem(
+        sys.modules,
+        "claude_agent_sdk",
+        SimpleNamespace(
+            ClaudeAgentOptions=FakeOptions,
+            ResultMessage=FakeResultMessage,
+            query=fake_query,
+        ),
+    )
+    inherited = {
+        name: f"parent-{index}"
+        for index, name in enumerate(KIMI_SUBPROCESS_CONFLICT_ENV)
+    }
+    for name, value in inherited.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com/")
+    inherited["ANTHROPIC_BASE_URL"] = "https://api.anthropic.com/"
+
+    reply = provider_reply(
+        MODELS[6], "kimi-secret", effort="medium", auth="subscription"
+    )
+    opening = [
+        {
+            "role": "user",
+            "content": "opening rules\nCURRENT STATE\ninitial state",
+        }
+    ]
+    continued = opening + [
+        {"role": "assistant", "content": "forest"},
+        {"role": "user", "content": "latest state"},
+    ]
+
+    assert reply(opening) == "forest"
+    assert reply(continued) == "forest"
+    assert reply.last_token_usage == {"input_tokens": 21, "output_tokens": 3}
+    assert {name: os.environ[name] for name in inherited} == inherited
+
+    first_options = calls[0][1]
+    assert [call[0] for call in calls] == [
+        _stateless_word_prompt(opening),
+        _stateless_word_prompt(continued),
+    ]
+    assert first_options.model == "k3"
+    assert first_options.system_prompt is None
+    assert first_options.tools == []
+    assert first_options.allowed_tools == []
+    assert first_options.mcp_servers == {}
+    assert first_options.strict_mcp_config is True
+    assert first_options.permission_mode == "dontAsk"
+    assert first_options.setting_sources == []
+    assert first_options.skills == []
+    assert first_options.agents == {}
+    assert first_options.plugins == []
+    assert first_options.settings is None
+    assert first_options.fallback_model is None
+    assert first_options.max_turns == 1
+    assert first_options.thinking == {"type": "adaptive"}
+    assert first_options.effort == "high"
+    assert first_options.resume is None
+    assert first_options.extra_args == {
+        "safe-mode": None,
+        "disable-slash-commands": None,
+        "bare": None,
+        "no-session-persistence": None,
+    }
+    assert first_options.env["ANTHROPIC_API_KEY"] == "kimi-secret"
+    assert first_options.env["ANTHROPIC_BASE_URL"] == KIMI_CODE_BASE_URL
+    assert "KIMI_CODE_API_KEY" not in first_options.env
+    config_dir = Path(first_options.env["CLAUDE_CONFIG_DIR"])
+    workspace = Path(first_options.cwd)
+    assert config_dir.parent == workspace
+    assert config_dir.is_dir()
+    assert workspace.is_dir()
+
+    reply.close()
+    assert not workspace.exists()
+
+
+def test_kimi_subscription_restores_environment_and_explains_entitlement_failure(
+    monkeypatch,
+):
+    class FakeOptions:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    class FakeResultMessage:
+        result = "K3 is not available on this plan"
+        session_id = "failed-kimi"
+        is_error = True
+        stop_reason = None
+        subtype = "error_during_execution"
+        usage = None
+        errors = ["model entitlement denied for kimi-secret"]
+        api_error_status = 401
+
+    async def fake_query(*, prompt, options):
+        assert prompt == "board"
+        assert options.env["ANTHROPIC_BASE_URL"] == KIMI_CODE_BASE_URL
+        assert not (set(KIMI_SUBPROCESS_CONFLICT_ENV) & os.environ.keys())
+        yield FakeResultMessage()
+
+    monkeypatch.setitem(
+        sys.modules,
+        "claude_agent_sdk",
+        SimpleNamespace(
+            ClaudeAgentOptions=FakeOptions,
+            ResultMessage=FakeResultMessage,
+            query=fake_query,
+        ),
+    )
+    monkeypatch.setenv("KIMI_CODE_API_KEY", "parent-kimi-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "parent-anthropic-key")
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com/")
+    before = {
+        name: os.environ.get(name) for name in KIMI_SUBPROCESS_CONFLICT_ENV
+    }
+
+    reply = provider_reply(
+        MODELS[6], "kimi-secret", effort="high", auth="subscription"
+    )
+    try:
+        with pytest.raises(
+            RuntimeError,
+            match=r"Kimi Code authentication or K3 plan/model entitlement.*Moderato",
+        ) as raised:
+            reply([{"role": "user", "content": "board"}])
+        assert "kimi-secret" not in str(raised.value)
+        assert "[redacted]" in str(raised.value)
+    finally:
+        reply.close()
+
+    assert {
+        name: os.environ.get(name) for name in KIMI_SUBPROCESS_CONFLICT_ENV
+    } == before
+
+
+def test_kimi_auth_preflight_requires_dedicated_key_and_supported_agent_sdk(
+    monkeypatch,
+):
+    with pytest.raises(RuntimeError, match="KIMI_CODE_API_KEY"):
+        validate_kimi_subscription_auth(None)
+
+    def missing_module(_name):
+        raise ModuleNotFoundError("claude_agent_sdk")
+
+    monkeypatch.setattr("llm_play.importlib.import_module", missing_module)
+    with pytest.raises(RuntimeError, match="requires claude-agent-sdk"):
+        validate_kimi_subscription_auth("kimi-secret")
+
+
+def test_kimi_auth_preflight_rejects_sdk_without_isolation_options(monkeypatch):
+    class OldOptions:
+        def __init__(self, model=None):
+            self.model = model
+
+    fake_sdk = SimpleNamespace(
+        ClaudeAgentOptions=OldOptions,
+        ResultMessage=object,
+        query=lambda **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "llm_play.importlib.import_module", lambda _name: fake_sdk
+    )
+
+    with pytest.raises(RuntimeError, match="too old.*missing options"):
+        validate_kimi_subscription_auth("kimi-secret")
+
+
+def test_kimi_auth_preflight_verifies_zero_tool_cli_capabilities_without_key_leak(
+    monkeypatch,
+):
+    llm_play_module = sys.modules["llm_play"]
+
+    class FakeOptions:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    fake_sdk = SimpleNamespace(
+        ClaudeAgentOptions=FakeOptions,
+        ResultMessage=object,
+        query=lambda **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        llm_play_module.importlib, "import_module", lambda _name: fake_sdk
+    )
+    monkeypatch.setattr(
+        llm_play_module.shutil, "which", lambda _name: "/usr/bin/claude"
+    )
+    monkeypatch.setenv("KIMI_CODE_API_KEY", "must-not-enter-cli-preflight")
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com/")
+
+    def fake_run(command, **kwargs):
+        assert command == ["/usr/bin/claude", "--help"]
+        assert not (set(KIMI_SUBPROCESS_CONFLICT_ENV) & kwargs["env"].keys())
+        return SimpleNamespace(
+            returncode=0,
+            stdout=" ".join(
+                [
+                    "--bare",
+                    "--disable-slash-commands",
+                    "--effort",
+                    "--no-session-persistence",
+                    "--setting-sources",
+                    "--strict-mcp-config",
+                    "--tools",
+                ]
+            ),
+        )
+
+    monkeypatch.setattr(llm_play_module.subprocess, "run", fake_run)
+
+    assert validate_kimi_subscription_auth("kimi-secret") == "Kimi Code"
+
+
+def test_kimi_auth_preflight_rejects_cli_without_bare_isolation(monkeypatch):
+    llm_play_module = sys.modules["llm_play"]
+
+    class FakeOptions:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    fake_sdk = SimpleNamespace(
+        ClaudeAgentOptions=FakeOptions,
+        ResultMessage=object,
+        query=lambda **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        llm_play_module.importlib, "import_module", lambda _name: fake_sdk
+    )
+    monkeypatch.setattr(
+        llm_play_module.shutil, "which", lambda _name: "/usr/bin/claude"
+    )
+    monkeypatch.setattr(
+        llm_play_module.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0,
+            stdout=(
+                "--disable-slash-commands --effort --no-session-persistence "
+                "--setting-sources --strict-mcp-config --tools"
+            ),
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match=r"unsupported.*missing flags: --bare"):
+        validate_kimi_subscription_auth("kimi-secret")
+
+
 def test_subscription_auth_preflight_strips_api_credentials(monkeypatch):
     def fake_run(command, **kwargs):
         assert command == ["/usr/local/bin/claude", "auth", "status", "--json"]
         assert "ANTHROPIC_API_KEY" not in kwargs["env"]
+        assert "KIMI_CODE_API_KEY" not in kwargs["env"]
         return SimpleNamespace(
             returncode=0,
             stdout=json.dumps(
@@ -706,6 +1035,7 @@ def test_subscription_auth_preflight_strips_api_credentials(monkeypatch):
         )
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "must-not-be-used")
+    monkeypatch.setenv("KIMI_CODE_API_KEY", "must-not-enter-claude")
     monkeypatch.setattr(
         "llm_play.shutil.which", lambda _command: "/usr/local/bin/claude"
     )
@@ -1244,6 +1574,37 @@ def test_cli_rejects_none_effort_before_an_openai_subscription_call():
     )
 
 
+def test_cli_requires_kimi_subscription_auth_and_rejects_none_before_a_request(
+    capsys,
+):
+    for selector in ("KIMI", "k3"):
+        args = parse_args(
+            [
+                "puzzle.json",
+                "--model",
+                selector,
+                "--auth",
+                "subscription",
+                "--effort",
+                "medium",
+            ]
+        )
+        assert args.model_config == MODELS[6]
+        assert args.effort == "medium"
+
+    with pytest.raises(SystemExit):
+        parse_args(
+            ["puzzle.json", "--model", "KIMI", "--auth", "subscription"]
+        )
+    assert "disabling thinking routes the request to K2.6" in capsys.readouterr().err
+
+    with pytest.raises(SystemExit):
+        parse_args(
+            ["puzzle.json", "--model", "KIMI", "--effort", "medium"]
+        )
+    assert "requires --auth subscription" in capsys.readouterr().err
+
+
 def test_regular_cli_accepts_openai_api_max_but_reserves_ultra_for_distillation():
     assert (
         parse_args(["puzzle.json", "--model", "GPT-SOL", "--effort", "max"]).effort
@@ -1262,6 +1623,7 @@ def test_regular_cli_accepts_openai_api_max_but_reserves_ultra_for_distillation(
         ("GPT-TERRA", MODELS[3]),
         ("GPT-LUNA", MODELS[4]),
         ("FABLE", MODELS[5]),
+        ("KIMI", MODELS[6]),
         *[(config["model_id"], config) for config in MODELS],
     ],
 )
@@ -1283,7 +1645,10 @@ def test_cli_unknown_model_lists_every_valid_alias_and_exact_model_id(capsys):
 
     error = capsys.readouterr().err
     assert "unknown model selector 'WRONG'" in error
-    assert "Valid values: OPUS, SONNET, GPT-SOL, GPT-TERRA, GPT-LUNA" in error
+    assert (
+        "Valid values: OPUS, SONNET, GPT-SOL, GPT-TERRA, GPT-LUNA, FABLE, KIMI"
+        in error
+    )
     for config in MODELS:
         assert config["model_id"] in error
 
@@ -1294,7 +1659,10 @@ def test_cli_model_flag_without_value_lists_every_valid_model(capsys):
 
     error = capsys.readouterr().err
     assert "argument --model: expected one argument" in error
-    assert "Valid values: OPUS, SONNET, GPT-SOL, GPT-TERRA, GPT-LUNA" in error
+    assert (
+        "Valid values: OPUS, SONNET, GPT-SOL, GPT-TERRA, GPT-LUNA, FABLE, KIMI"
+        in error
+    )
     for config in MODELS:
         assert config["model_id"] in error
 
@@ -1720,10 +2088,18 @@ def test_raw_lab_artifact_keeps_all_runs_transcripts_transport_and_token_usage(
     assert session["model_id"] == "claude-opus-4-8"
     assert session["provider"] == "anthropic"
     assert session["transport"] == "agent_sdk"
+    assert session["auth"] == "subscription"
     assert session["effort"] == "medium"
+    assert session["requested_effort"] == "medium"
+    assert session["effective_provider_effort"] == "medium"
     assert session["selection"] == "median"
     assert session["selected_run"] == 2
     assert session["median_run"] == 2
+    assert session["duration"] == 4.0
+    assert session["token_usage"] == {
+        "input_tokens": 15,
+        "output_tokens": 3,
+    }
     assert len(session["runs"]) == 3
     assert [run["selected"] for run in session["runs"]] == [False, True, False]
     selected = session["runs"][1]
@@ -1760,6 +2136,46 @@ def test_raw_lab_artifact_keeps_all_runs_transcripts_transport_and_token_usage(
             timestamp=f"2026-07-12T15:0{index}:00Z",
         )
         assert artifact["sessions"][-1]["transport"] == expected_transport
+
+    kimi_summary = ModelSummary(
+        config=MODELS[6],
+        results=(
+            make_run(
+                2,
+                turns=2,
+                words=("forest", "ocean"),
+                duration=3.5,
+                token_usage=({"input_tokens": 31, "output_tokens": 4},),
+            ),
+        ),
+        selection="median",
+        selected_run_index=0,
+    )
+    _, artifact = write_lab_artifact(
+        puzzle_path,
+        kimi_summary,
+        cap=300,
+        effort="medium",
+        auth="subscription",
+        output_dir=output_dir,
+        timestamp="2026-07-18T14:00:00Z",
+    )
+    kimi_session = artifact["sessions"][-1]
+    assert kimi_session["provider"] == "kimi"
+    assert kimi_session["model_id"] == "k3"
+    assert kimi_session["transport"] == "kimi_code_agent_sdk"
+    assert kimi_session["auth"] == "subscription"
+    assert kimi_session["requested_effort"] == "medium"
+    assert kimi_session["effective_provider_effort"] == "high"
+    assert kimi_session["prompt_version"] == PROMPT_VERSION
+    assert kimi_session["cap"] == 300
+    assert kimi_session["selection"] == "median"
+    assert kimi_session["duration"] == 3.5
+    assert kimi_session["token_usage"] == {
+        "input_tokens": 31,
+        "output_tokens": 4,
+    }
+    assert kimi_session["display"] is False
 
     entries = display_benchmark_entries(artifact)
     assert [entry["model"] for entry in entries] == [
@@ -2356,6 +2772,101 @@ def test_cli_openai_subscription_uses_plan_without_api_key(
     assert "auth=subscription" in output.out
     assert 'GPT      try=1 word="forest" progress=50.00%' in output.out
     assert "OPENAI_API_KEY is not set" not in output.err
+
+
+def test_cli_kimi_subscription_uses_dedicated_key_and_reports_effective_effort(
+    monkeypatch, tmp_path, capsys
+):
+    path = tmp_path / "puzzle.json"
+    path.write_text(json.dumps(puzzle()), encoding="utf-8")
+    model = UsageScriptedModel(
+        ["forest", "ocean"],
+        [
+            {"input_tokens": 12, "output_tokens": 2},
+            {"input_tokens": 18, "output_tokens": 3},
+        ],
+    )
+    preflights = []
+    secret = "kimi-key-must-not-be-printed"
+
+    monkeypatch.setenv("KIMI_CODE_API_KEY", secret)
+    monkeypatch.setattr("llm_play.load_vocab", lambda _lang: VOCAB)
+    monkeypatch.setattr(
+        "llm_play.validate_kimi_subscription_auth",
+        lambda api_key: preflights.append(api_key) or "Kimi Code",
+    )
+
+    def fake_provider(config, api_key, **kwargs):
+        assert config == MODELS[6]
+        assert api_key == secret
+        assert kwargs["effort"] == "medium"
+        assert kwargs["auth"] == "subscription"
+        return model
+
+    monkeypatch.setattr("llm_play.provider_reply", fake_provider)
+
+    assert (
+        main(
+            [
+                str(path),
+                "--model",
+                "KIMI",
+                "--auth",
+                "subscription",
+                "--effort",
+                "medium",
+                "--runs",
+                "1",
+            ]
+        )
+        == 0
+    )
+
+    output = capsys.readouterr()
+    assert preflights == [secret]
+    assert "provider=kimi" in output.out
+    assert "model=k3" in output.out
+    assert "transport=kimi_code_agent_sdk" in output.out
+    assert "auth=subscription" in output.out
+    assert "requested_effort=medium" in output.out
+    assert "effective_provider_effort=high" in output.out
+    assert 'token_usage={"input_tokens":30,"output_tokens":5}' in output.out
+    assert secret not in output.out
+    assert secret not in output.err
+
+
+def test_cli_kimi_missing_key_fails_preflight_without_building_a_provider(
+    monkeypatch, tmp_path, capsys
+):
+    path = tmp_path / "puzzle.json"
+    path.write_text(json.dumps(puzzle()), encoding="utf-8")
+    monkeypatch.delenv("KIMI_CODE_API_KEY", raising=False)
+    monkeypatch.setattr("llm_play.load_vocab", lambda _lang: VOCAB)
+
+    provider_calls = []
+    monkeypatch.setattr(
+        "llm_play.provider_reply",
+        lambda *_args, **_kwargs: provider_calls.append("called"),
+    )
+
+    assert (
+        main(
+            [
+                str(path),
+                "--model",
+                "k3",
+                "--auth",
+                "subscription",
+                "--effort",
+                "medium",
+                "--runs",
+                "1",
+            ]
+        )
+        == 2
+    )
+    assert provider_calls == []
+    assert "KIMI_CODE_API_KEY" in capsys.readouterr().err
 
 
 def test_cli_anthropic_subscription_preflights_only_the_selected_provider(
