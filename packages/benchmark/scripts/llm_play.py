@@ -17,6 +17,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
+import importlib
+import inspect
 import json
 import math
 import os
@@ -90,15 +92,23 @@ MODELS = [
         "tag": "FABLE",
         "display": False,
     },
+    {
+        "provider": "kimi",
+        "model_id": "k3",
+        "label": "KIMI K3",
+        "tag": "KIMI",
+        "display": False,
+    },
 ]
 DISPLAY_MODEL_COUNT = 3
 
 # Bump whenever the opening rules or turn-feedback scaffold changes materially. Results
 # are attributable to a model id plus this prompt version and the CLI's printed effort.
-PROMPT_VERSION = "21"
+PROMPT_VERSION = "22"
 
 DEFAULT_CAP = 300
 DEFAULT_RUNS = 7
+DEFAULT_KIMI_RUNS = 1
 SelectionMode = Literal["median", "best"]
 SELECTION_MODES: tuple[SelectionMode, ...] = ("median", "best")
 DEFAULT_SELECTION: SelectionMode = "median"
@@ -108,7 +118,7 @@ MAX_NONCOUNTING_REPLIES = 5
 # One cross-provider reasoning control. `none` preserves the original cheap one-word
 # requests; the other levels enable provider-native reasoning with enough output room for
 # hidden thinking plus the visible guess. OpenAI recommends starting with 25k tokens for
-# reasoning workloads, while both providers recommend more headroom at xhigh/max.
+# reasoning workloads, while providers recommend more headroom at xhigh/max.
 ReasoningEffort = Literal[
     "none", "low", "medium", "high", "xhigh", "max", "ultra"
 ]
@@ -162,6 +172,22 @@ ANTHROPIC_EFFORTS: tuple[ReasoningEffort, ...] = (
     "xhigh",
     "max",
 )
+KIMI_EFFORTS: tuple[ReasoningEffort, ...] = (
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+    "ultra",
+)
+KIMI_EFFORT_MAP: dict[ReasoningEffort, ReasoningEffort] = {
+    "low": "low",
+    "medium": "high",
+    "high": "high",
+    "xhigh": "max",
+    "max": "max",
+    "ultra": "max",
+}
 ReasoningMode = Literal["standard", "pro"]
 
 # A subscription run must never inherit a developer-platform credential or cloud
@@ -172,16 +198,64 @@ SUBSCRIPTION_CONFLICT_ENV = (
     "ANTHROPIC_API_KEY",
     "ANTHROPIC_AUTH_TOKEN",
     "ANTHROPIC_BASE_URL",
+    "KIMI_CODE_API_KEY",
     "CLAUDE_CODE_USE_BEDROCK",
     "CLAUDE_CODE_USE_VERTEX",
     "CLAUDE_CODE_USE_FOUNDRY",
 )
 
+KIMI_CODE_BASE_URL = "https://api.kimi.com/coding/"
+# Kimi runs use the Claude Agent SDK transport, but they must inherit neither the
+# user's Claude.ai credentials/config nor a parent model/endpoint override. The
+# dedicated Kimi key is captured first, removed while the SDK builds its child
+# environment, and injected into that child only under the Anthropic-compatible names.
+KIMI_SUBPROCESS_CONFLICT_ENV = (
+    *SUBSCRIPTION_CONFLICT_ENV,
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    "CLAUDE_CONFIG_DIR",
+    "ANTHROPIC_MODEL",
+    "ANTHROPIC_SMALL_FAST_MODEL",
+    "ANTHROPIC_DEFAULT_FABLE_MODEL",
+    "ANTHROPIC_DEFAULT_FABLE_MODEL_NAME",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL_NAME",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL_NAME",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME",
+    "CLAUDE_CODE_SUBAGENT_MODEL",
+)
+KIMI_AGENT_SDK_REQUIRED_OPTIONS = frozenset(
+    {
+        "model",
+        "system_prompt",
+        "tools",
+        "allowed_tools",
+        "mcp_servers",
+        "strict_mcp_config",
+        "permission_mode",
+        "setting_sources",
+        "skills",
+        "agents",
+        "plugins",
+        "settings",
+        "fallback_model",
+        "cwd",
+        "env",
+        "resume",
+        "max_turns",
+        "thinking",
+        "effort",
+        "extra_args",
+    }
+)
+
 # `CODEX_API_KEY` overrides saved CLI auth for one `codex exec` invocation. Strip it,
-# every other OpenAI/Azure API route, and the parent Codex thread metadata so a plan run
-# can only use the separately persisted ChatGPT login in CODEX_HOME.
+# the dedicated Kimi key, every other OpenAI/Azure API route, and the parent Codex thread
+# metadata so a plan run can only use the separately persisted ChatGPT login in CODEX_HOME.
 OPENAI_SUBSCRIPTION_CONFLICT_ENV = (
     "OPENAI_API_KEY",
+    "KIMI_CODE_API_KEY",
     "CODEX_API_KEY",
     "CODEX_ACCESS_TOKEN",
     "OPENAI_BASE_URL",
@@ -224,6 +298,7 @@ CODEX_TOOL_ITEM_TYPES = {
 PROVIDER_ENV = {
     "anthropic": "ANTHROPIC_API_KEY",
     "openai": "OPENAI_API_KEY",
+    "kimi": "KIMI_CODE_API_KEY",
 }
 
 MODEL_LABEL_RE = re.compile(r"^[A-Z0-9][A-Z0-9 .-]*$")
@@ -281,6 +356,7 @@ class TryProgress:
     number: int
     word: str
     progress: float
+    token_usage: dict[str, Any] | None
 
 
 @dataclass(frozen=True)
@@ -359,16 +435,19 @@ ModelTryReporter = Callable[[int, TryProgress], None]
 
 
 @contextmanager
-def _subscription_environment():
-    """Hide pay-as-you-go credentials while Claude Code uses Claude.ai OAuth."""
+def _temporary_environment_without(names: Iterable[str]):
+    """Remove selected inherited variables and restore their exact prior state."""
+    blocked = tuple(names)
     saved = {
         name: os.environ.pop(name)
-        for name in SUBSCRIPTION_CONFLICT_ENV
+        for name in blocked
         if name in os.environ
     }
     try:
         yield
     finally:
+        for name in blocked:
+            os.environ.pop(name, None)
         os.environ.update(saved)
 
 
@@ -459,6 +538,110 @@ def validate_openai_subscription_auth() -> str:
             "then `codex login` and choose ChatGPT"
         )
     return "ChatGPT"
+
+
+def _load_kimi_agent_sdk() -> Any:
+    try:
+        sdk = importlib.import_module("claude_agent_sdk")
+    except (ImportError, ModuleNotFoundError) as exc:
+        raise RuntimeError(
+            "Kimi Code transport requires claude-agent-sdk; sync the benchmark "
+            "workspace dependencies before retrying"
+        ) from exc
+
+    options_type = getattr(sdk, "ClaudeAgentOptions", None)
+    query = getattr(sdk, "query", None)
+    result_type = getattr(sdk, "ResultMessage", None)
+    if options_type is None or not callable(query) or result_type is None:
+        raise RuntimeError(
+            "installed claude-agent-sdk does not expose the Agent SDK transport "
+            "required for isolated Kimi Code runs"
+        )
+    try:
+        parameters = inspect.signature(options_type).parameters
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "could not verify claude-agent-sdk isolation capabilities for Kimi Code"
+        ) from exc
+    accepts_kwargs = any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    )
+    missing = (
+        set()
+        if accepts_kwargs
+        else KIMI_AGENT_SDK_REQUIRED_OPTIONS.difference(parameters)
+    )
+    if missing:
+        names = ", ".join(sorted(missing))
+        raise RuntimeError(
+            "installed claude-agent-sdk is too old for an isolated Kimi Code "
+            f"transport (missing options: {names})"
+        )
+
+    module_file = getattr(sdk, "__file__", None)
+    bundled_cli = None
+    if isinstance(module_file, str):
+        bundled_dir = Path(module_file).resolve().parent / "_bundled"
+        bundled_cli = next(
+            (
+                path
+                for path in (bundled_dir / "claude", bundled_dir / "claude.exe")
+                if path.is_file()
+            ),
+            None,
+        )
+    cli = str(bundled_cli) if bundled_cli is not None else shutil.which("claude")
+    if cli is None:
+        raise RuntimeError(
+            "Kimi Code transport requires the Claude Code CLI bundled with "
+            "claude-agent-sdk (or an installed compatible `claude` executable)"
+        )
+    try:
+        completed = subprocess.run(
+            [cli, "--help"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            env=_environment_without(KIMI_SUBPROCESS_CONFLICT_ENV),
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(
+            f"could not verify the Claude Code CLI used by the Kimi transport: {exc}"
+        ) from exc
+    required_flags = {
+        "--bare",
+        "--disable-slash-commands",
+        "--effort",
+        "--no-session-persistence",
+        "--setting-sources",
+        "--strict-mcp-config",
+        "--tools",
+    }
+    missing_flags = required_flags.difference(completed.stdout.split())
+    if completed.returncode != 0 or missing_flags:
+        suffix = (
+            f" (missing flags: {', '.join(sorted(missing_flags))})"
+            if missing_flags
+            else ""
+        )
+        raise RuntimeError(
+            "installed Claude Code CLI is unsupported for isolated Kimi Code runs"
+            f"{suffix}"
+        )
+    return sdk
+
+
+def validate_kimi_subscription_auth(api_key: str | None) -> str:
+    """Validate Kimi's dedicated credential and zero-tool Agent SDK dependency."""
+    if not isinstance(api_key, str) or not api_key.strip():
+        raise RuntimeError(
+            "Kimi K3 subscription auth requires KIMI_CODE_API_KEY from the "
+            "Kimi Code Console"
+        )
+    _load_kimi_agent_sdk()
+    return "Kimi Code"
 
 
 def _is_int(value: object) -> bool:
@@ -831,7 +1014,7 @@ def _state_snapshot_lines(referee: PuzzleReferee) -> list[str]:
         "CURRENT STATE",
         f"CLOZE: {referee.cloze()}",
         "CURRENT BEST RANKED CLUE PER UNSOLVED WORD — SEMANTIC EVIDENCE, "
-        "NOT SENTENCE TEXT:",
+        "NOT SENTENCE TEXT; ITS SHOWN RANK IS ALREADY KNOWN:",
         *referee.best_clue_lines(),
         trend,
         f"EXCLUDED AS ALREADY TRIED (unordered; do not repeat): {tried}",
@@ -854,13 +1037,12 @@ def _rules_opening(
             "OBJECTIVE AND SCORE",
             (
                 "Solve every hidden word in as few counted tries as possible. "
-                "Your score is the total number of unique valid guesses; every "
-                "counted guess is expensive."
+                "Score counts unique valid guesses; every counted guess is expensive."
             ),
             (
-                f"The run has a limit of {cap} counted tries. Solving every word on "
-                f"counted try {cap} succeeds; if any word remains unsolved after that "
-                "try, the run is DNF. The first reply is the first guess, not a plan."
+                f"The limit is {cap} counted tries. Counted try {cap} succeeds if it "
+                "solves every word; otherwise the run is DNF. The first reply is the "
+                "first guess, not a plan."
             ),
             "",
             "MANDATORY REPLY CONTRACT",
@@ -868,7 +1050,7 @@ def _rules_opening(
             "",
             "CLOZE AND EXACT ANSWERS",
             (
-                "The CLOZE is a fixed real sentence. Each [WORD N] hides exactly one "
+                "The CLOZE is a real sentence. Each [WORD N] hides exactly one "
                 "lexical core. Visible words, clitics, apostrophes, and punctuation are "
                 "fixed context, not reply text; solved cores appear in place."
             ),
@@ -897,6 +1079,11 @@ def _rules_opening(
                 "Rank 0 solves and locks the word."
             ),
             (
+                "A displayed clue's rank is already known. Re-submitting it cannot "
+                "improve that same WORD at an equal rank. Do not re-test it unless you "
+                "expect it to improve a different unsolved WORD."
+            ),
+            (
                 "Embedding ranks measure distributional contextual relatedness, not "
                 "guaranteed synonymy, grammar, or implication. Only rank 0 certifies "
                 "the exact word."
@@ -904,14 +1091,10 @@ def _rules_opening(
             "",
             "AUTHORITATIVE STATE",
             (
-                "Each turn includes rules, initial state and starting clues, then "
-                "every prior PLAYER REPLY and exact REFEREE FEEDBACK in order. "
-                "Snapshots never erase earlier rank/MISS evidence; the last feedback is "
-                "current."
-            ),
-            (
-                "Every model receives the identical record; hidden session "
-                "memory supplies no evidence."
+                "Each turn gives every model identical rules, initial clues, every prior "
+                "PLAYER REPLY and exact REFEREE outcome, and the latest state. Ordered "
+                "outcomes preserve omitted historical snapshots; hidden session memory "
+                "supplies no evidence."
             ),
             (
                 "Any strict improvement resets the streak; non-counting leaves it "
@@ -946,7 +1129,7 @@ def opening_message(
             ),
             strategy,
         ]
-    # Prompt v21 has one strategy-neutral rules scaffold for every caller. The flag is
+    # Prompt v22 has one strategy-neutral rules scaffold for every caller. The flag is
     # retained for API compatibility with callers that request neutral rules; only
     # an explicitly supplied strategy can add solving guidance.
     _ = rules_only
@@ -993,7 +1176,7 @@ def feedback_message(
         *_state_snapshot_lines(referee),
         f"Tries: {feedback.tries} (your score — lower is better)",
     ]
-    # Prompt v21 never adds generic solving advice during play. Keep the keyword for
+    # Prompt v22 never adds generic solving advice during play. Keep the keyword for
     # caller compatibility; explicit learned/v7 guidance lives only in the opening.
     _ = rules_only
     lines.append(_reply_reminder(referee))
@@ -1140,6 +1323,7 @@ def play_puzzle(
                         number=feedback.tries,
                         word=guess,
                         progress=referee.progress,
+                        token_usage=usage,
                     )
                 )
         else:
@@ -1241,6 +1425,8 @@ def _output_token_budget(effort: ReasoningEffort, output: OutputMode) -> int:
 
 
 def _supported_efforts(provider: str, auth: AuthMode) -> tuple[ReasoningEffort, ...]:
+    if provider == "kimi":
+        return KIMI_EFFORTS if auth == "subscription" else ()
     if provider == "openai" and auth == "api":
         return OPENAI_API_EFFORTS
     if provider == "openai" and auth == "subscription":
@@ -1255,6 +1441,16 @@ def _validate_provider_effort(
         raise ValueError(f"unsupported reasoning effort: {effort}")
     if auth not in AUTH_MODES:
         raise ValueError(f"unsupported auth mode: {auth}")
+    if provider == "kimi" and auth != "subscription":
+        raise ValueError(
+            "Kimi K3 benchmark requires --auth subscription with "
+            "KIMI_CODE_API_KEY"
+        )
+    if provider == "kimi" and effort == "none":
+        raise ValueError(
+            "Kimi K3 does not allow reasoning effort 'none' because disabling "
+            "thinking routes the request to K2.6; use low|medium|high|xhigh|max"
+        )
     supported = _supported_efforts(provider, auth)
     if effort not in supported:
         levels = "|".join(supported)
@@ -1264,6 +1460,20 @@ def _validate_provider_effort(
             f"{provider_name} {auth_name} benchmark does not allow reasoning effort "
             f"{effort!r}; use {levels}"
         )
+
+
+def _effective_provider_effort(
+    provider: str, effort: ReasoningEffort
+) -> ReasoningEffort:
+    if provider == "kimi":
+        try:
+            return KIMI_EFFORT_MAP[effort]
+        except KeyError as exc:
+            raise ValueError(
+                "Kimi K3 keeps thinking enabled and does not allow reasoning "
+                "effort 'none'; use low|medium|high|xhigh|max"
+            ) from exc
+    return effort
 
 
 def _validate_reasoning_mode(
@@ -1280,6 +1490,12 @@ def _validate_reasoning_mode(
         raise ValueError("Pro reasoning mode is available only through the OpenAI API")
     if effort != "max":
         raise ValueError("Pro reasoning mode requires OpenAI API effort 'max'")
+
+
+def _historical_feedback(content: str) -> str:
+    """Keep an exact turn outcome without replaying its superseded snapshot."""
+    outcome, marker, _snapshot = content.partition("\nCURRENT STATE\n")
+    return outcome.rstrip() if marker else content
 
 
 def _stateless_word_parts(messages: list[Message]) -> tuple[str, str]:
@@ -1311,7 +1527,7 @@ def _stateless_word_parts(messages: list[Message]) -> tuple[str, str]:
             "COMPLETE CHRONOLOGICAL GAME RECORD\n"
         )
     else:
-        # Defensive compatibility for direct adapter callers. Production v21 game
+        # Defensive compatibility for direct adapter callers. Production v22 game
         # openings carry the complete-record marker; older fixtures may expose only
         # CURRENT STATE, and arbitrary one-message calls remain byte-preserving.
         opening_rules, state_marker, state_tail = opening.partition(
@@ -1327,14 +1543,15 @@ def _stateless_word_parts(messages: list[Message]) -> tuple[str, str]:
             initial_state = opening
 
     record = [initial_state]
+    turn_count = (len(messages) - 1) // 2
     for turn_index, message_index in enumerate(range(1, len(messages), 2), start=1):
+        feedback = messages[message_index + 1]["content"]
+        if turn_index < turn_count:
+            feedback = _historical_feedback(feedback)
         record.extend(
             [
                 f"PLAYER REPLY {turn_index}\n{messages[message_index]['content']}",
-                (
-                    f"REFEREE FEEDBACK {turn_index}\n"
-                    f"{messages[message_index + 1]['content']}"
-                ),
+                f"REFEREE FEEDBACK {turn_index}\n{feedback}",
             ]
         )
     return stable, "\n\n".join(record)
@@ -1344,9 +1561,10 @@ def _stateless_word_prompt(messages: list[Message]) -> str:
     """Return one fresh prompt containing the complete chronological public record.
 
     Every real word-play transport sees this identical user prompt. All prior replies,
-    exact referee outcomes, and the initial starting clues are explicit, so neither
-    provider-specific session memory nor a lossy current-best snapshot becomes an
-    experimental treatment.
+    exact referee outcomes, the initial starting clues, and the latest authoritative
+    snapshot are explicit, so neither provider-specific session memory nor a lossy
+    current-best-only treatment becomes an experimental variable. Superseded snapshots
+    are omitted because their evidence is preserved by the exact ordered outcomes.
     """
     stable, volatile = _stateless_word_parts(messages)
     return f"{stable}{volatile}"
@@ -1386,8 +1604,10 @@ async def _agent_sdk_turn(
     effort: ReasoningEffort,
     cwd: str,
     resume: str | None,
+    subprocess_env: Mapping[str, str] | None = None,
+    extra_args: Mapping[str, str | None] | None = None,
 ) -> tuple[str, str, dict[str, Any] | None]:
-    """Run one isolated Claude.ai-subscription turn and return text, session, usage."""
+    """Run one isolated Agent SDK turn and return text, session id, and usage."""
     import claude_agent_sdk
 
     ClaudeAgentOptions = claude_agent_sdk.ClaudeAgentOptions
@@ -1404,6 +1624,11 @@ async def _agent_sdk_turn(
         thinking = {"type": "adaptive"}
         sdk_effort = effort
 
+    cli_extra_args: dict[str, str | None] = {
+        "safe-mode": None,
+        "disable-slash-commands": None,
+    }
+    cli_extra_args.update(extra_args or {})
     options = ClaudeAgentOptions(
         model=model_id,
         # None is intentionally serialized by the SDK as an empty replacement system
@@ -1418,23 +1643,32 @@ async def _agent_sdk_turn(
         skills=[],
         agents={},
         plugins=[],
+        settings=None,
+        fallback_model=None,
         cwd=cwd,
+        env=dict(subprocess_env or {}),
         resume=resume,
         max_turns=1,
         thinking=thinking,
         effort=sdk_effort,
-        extra_args={"safe-mode": None, "disable-slash-commands": None},
+        extra_args=cli_extra_args,
     )
     result_message = None
+    trailing_error: Exception | None = None
     assistant_text = ""
-    async for message in query(prompt=prompt, options=options):
-        if AssistantMessage is not None and isinstance(message, AssistantMessage):
-            assistant_text = _merge_agent_text_continuation(
-                assistant_text,
-                _text_content(message.content),
-            )
-        if isinstance(message, ResultMessage):
-            result_message = message
+    try:
+        async for message in query(prompt=prompt, options=options):
+            if AssistantMessage is not None and isinstance(message, AssistantMessage):
+                assistant_text = _merge_agent_text_continuation(
+                    assistant_text,
+                    _text_content(message.content),
+                )
+            if isinstance(message, ResultMessage):
+                result_message = message
+    except Exception as exc:
+        if result_message is None or not result_message.is_error:
+            raise
+        trailing_error = exc
     if result_message is None:
         raise RuntimeError(f"{model_id} Agent SDK session returned no final result")
     if result_message.is_error:
@@ -1445,15 +1679,31 @@ async def _agent_sdk_turn(
         api_status = getattr(result_message, "api_error_status", None)
         if isinstance(api_status, int):
             details.append(f"provider HTTP status {api_status}")
-        for candidate in (
-            result_message.result,
-            result_message.stop_reason,
-            result_message.subtype,
-        ):
-            if isinstance(candidate, str) and candidate and candidate not in details:
+        for candidate in (result_message.result, result_message.stop_reason):
+            if (
+                isinstance(candidate, str)
+                and candidate
+                and candidate != "Claude Code returned an error result: success"
+                and candidate not in details
+            ):
                 details.append(candidate)
-        detail = "; ".join(details) or "unknown error"
-        raise RuntimeError(f"{model_id} Agent SDK session failed: {detail}")
+        subtype = result_message.subtype
+        if (
+            isinstance(subtype, str)
+            and subtype
+            and subtype != "success"
+            and subtype not in details
+        ):
+            details.append(subtype)
+        if not details and trailing_error is not None:
+            trailing_detail = str(trailing_error)
+            if trailing_detail != "Claude Code returned an error result: success":
+                details.append(trailing_detail)
+        detail = "; ".join(details) or "provider request failed without diagnostics"
+        error = RuntimeError(f"{model_id} Agent SDK session failed: {detail}")
+        if trailing_error is not None:
+            raise error from trailing_error
+        raise error
     if not result_message.session_id:
         raise RuntimeError(f"{model_id} Agent SDK session returned no session id")
     return (
@@ -1471,13 +1721,21 @@ class AnthropicSubscriptionReply:
         model_id: str,
         effort: ReasoningEffort,
         output: OutputMode = "word",
+        *,
+        subprocess_env: Mapping[str, str] | None = None,
+        conflict_env: Iterable[str] = SUBSCRIPTION_CONFLICT_ENV,
+        workspace_prefix: str = "whippin-agent-sdk-",
+        agent_extra_args: Mapping[str, str | None] | None = None,
     ):
         self.model_id = model_id
         self.effort = effort
         self.output = output
+        self._subprocess_env = dict(subprocess_env or {})
+        self._conflict_env = tuple(conflict_env)
+        self._agent_extra_args = dict(agent_extra_args or {})
         self.session_id: str | None = None
         self._message_count = 0
-        self._workspace = tempfile.TemporaryDirectory(prefix="whippin-agent-sdk-")
+        self._workspace = tempfile.TemporaryDirectory(prefix=workspace_prefix)
         self.last_token_usage: dict[str, Any] | None = None
 
     def __call__(self, messages: list[Message]) -> str:
@@ -1509,7 +1767,7 @@ class AnthropicSubscriptionReply:
             prompt = _stateless_word_prompt(messages)
             resume = None
 
-        with _subscription_environment():
+        with _temporary_environment_without(self._conflict_env):
             text, session_id, usage = asyncio.run(
                 _agent_sdk_turn(
                     prompt,
@@ -1517,6 +1775,8 @@ class AnthropicSubscriptionReply:
                     effort=self.effort,
                     cwd=self._workspace.name,
                     resume=resume,
+                    subprocess_env=self._subprocess_env,
+                    extra_args=self._agent_extra_args,
                 )
             )
         self.session_id = session_id if self.output != "word" else None
@@ -1526,6 +1786,116 @@ class AnthropicSubscriptionReply:
 
     def close(self) -> None:
         self._workspace.cleanup()
+
+
+def _kimi_transport_error(
+    exc: Exception, *, api_key: str | None = None
+) -> RuntimeError:
+    detail = str(exc) or exc.__class__.__name__
+    if api_key:
+        detail = detail.replace(api_key, "[redacted]")
+    lowered = detail.lower()
+    if "api.anthropic.com" in lowered or "claude.ai" in lowered:
+        return RuntimeError(
+            "Kimi routing safety check failed: the Agent SDK attempted a Claude.ai/"
+            "Anthropic route instead of the pinned Kimi Code endpoint"
+        )
+    rate_limit_markers = (
+        "provider http status 429",
+        "rate limit",
+        "usage limit",
+        "quota",
+        "engine is currently overloaded",
+        "too many requests",
+    )
+    if re.search(r"\b429\b", lowered) or any(
+        marker in lowered for marker in rate_limit_markers
+    ):
+        return RuntimeError(
+            "Kimi Code rate limit, quota, or temporary overload stopped the K3 run; "
+            f"check the Kimi Console reset time or retry later ({detail})"
+        )
+    entitlement_markers = (
+        "provider http status 401",
+        "provider http status 403",
+        "provider http status 404",
+        "unauthorized",
+        "forbidden",
+        "invalid api key",
+        "entitlement",
+        "model not found",
+        "unknown model",
+    )
+    if re.search(r"\b(?:401|403|404)\b", lowered) or any(
+        marker in lowered for marker in entitlement_markers
+    ):
+        return RuntimeError(
+            "Kimi Code authentication or K3 plan/model entitlement failed at the "
+            f"official endpoint {KIMI_CODE_BASE_URL}; verify KIMI_CODE_API_KEY and "
+            f"Moderato-or-higher K3 access ({detail})"
+        )
+    dependency_markers = (
+        "claude code not found",
+        "cli not found",
+        "failed to start claude code",
+        "agent sdk transport requires",
+    )
+    if any(marker in lowered for marker in dependency_markers):
+        return RuntimeError(
+            "Kimi Code Agent SDK transport dependency failed; sync the benchmark "
+            f"workspace and verify its bundled Claude Code CLI ({detail})"
+        )
+    return RuntimeError(
+        f"Kimi K3 request through {KIMI_CODE_BASE_URL} failed: {detail}"
+    )
+
+
+class KimiSubscriptionReply(AnthropicSubscriptionReply):
+    """K3 over Kimi Code's pinned Anthropic-compatible subscription endpoint."""
+
+    def __init__(
+        self,
+        model_id: str,
+        api_key: str,
+        requested_effort: ReasoningEffort,
+        output: OutputMode = "word",
+    ):
+        effective_effort = _effective_provider_effort("kimi", requested_effort)
+        super().__init__(
+            model_id,
+            effective_effort,
+            output,
+            conflict_env=KIMI_SUBPROCESS_CONFLICT_ENV,
+            workspace_prefix="whippin-kimi-agent-sdk-",
+            agent_extra_args={
+                "bare": None,
+                **({"no-session-persistence": None} if output == "word" else {}),
+            },
+        )
+        config_dir = Path(self._workspace.name) / "claude-config"
+        config_dir.mkdir()
+        self.requested_effort = requested_effort
+        self.effective_effort = effective_effort
+        # ClaudeAgentOptions.env is merged into the spawned CLI only. The surrounding
+        # conflict guard removes inherited routes first, so these are the child's sole
+        # Anthropic-compatible credential/endpoint values and never replace os.environ.
+        self._subprocess_env = {
+            "ANTHROPIC_API_KEY": api_key,
+            "ANTHROPIC_BASE_URL": KIMI_CODE_BASE_URL,
+            "CLAUDE_CONFIG_DIR": str(config_dir),
+        }
+
+    def __call__(self, messages: list[Message]) -> str:
+        try:
+            return super().__call__(messages)
+        except Exception as exc:
+            raise _kimi_transport_error(
+                exc, api_key=self._subprocess_env.get("ANTHROPIC_API_KEY")
+            ) from exc
+
+    def close(self) -> None:
+        self._subprocess_env.clear()
+        super().close()
 
 
 def _codex_snapshot_prompt(
@@ -1748,6 +2118,13 @@ def provider_reply(
     model_id = config["model_id"]
     _validate_provider_effort(provider, auth, effort)
     _validate_reasoning_mode(provider, auth, effort, reasoning_mode)
+
+    if provider == "kimi":
+        if not api_key:
+            raise ValueError(
+                "Kimi K3 subscription auth requires KIMI_CODE_API_KEY"
+            )
+        return KimiSubscriptionReply(model_id, api_key, effort, output)
 
     if provider == "anthropic":
         if auth == "subscription":
@@ -2166,6 +2543,8 @@ def _write_json_atomic(path: Path, data: object, *, indent: int | None = None) -
 
 
 def _transport_name(config: ModelConfig, auth: AuthMode) -> str:
+    if config["provider"] == "kimi":
+        return "kimi_code_agent_sdk"
     if auth == "api":
         return "api"
     return "agent_sdk" if config["provider"] == "anthropic" else "codex_cli"
@@ -2213,6 +2592,7 @@ def _lab_session(
         runs.append(run)
 
     config = summary.config
+    effective_effort = _effective_provider_effort(config["provider"], effort)
     session: dict[str, Any] = {
         "timestamp": timestamp,
         "prompt_version": PROMPT_VERSION,
@@ -2220,15 +2600,28 @@ def _lab_session(
         "model_id": config["model_id"],
         "provider": config["provider"],
         "transport": _transport_name(config, auth),
+        "auth": auth,
         "effort": effort,
+        "requested_effort": effort,
+        "effective_provider_effort": effective_effort,
         "label": config["label"],
         "tag": config["tag"],
         "display": config["display"],
         "selection": summary.selection,
         "selected_run": summary.selected_run_index + 1,
+        "duration": summary.duration,
         "benchmark_entry": summary.benchmark_entry(),
         "runs": runs,
     }
+    total_usage = _aggregate_token_usage(
+        [
+            usage
+            for result in summary.results
+            for usage in result.turn_token_usage
+        ]
+    )
+    if total_usage is not None:
+        session["token_usage"] = total_usage
     session[f"{summary.selection}_run"] = summary.selected_run_index + 1
     if playbook_sha256 is not None:
         session["playbook_sha256"] = playbook_sha256
@@ -2456,7 +2849,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--model",
         required=True,
         metavar="MODEL",
-        help=("OPUS, SONNET, GPT-SOL, GPT-TERRA, GPT-LUNA, or an exact model id"),
+        help=(
+            "configured friendly selector or exact model id. "
+            f"{_model_selector_guidance(configs)}"
+        ),
     )
     parser.add_argument(
         "--cap", type=_positive_int, default=DEFAULT_CAP, help="counted-try DNF cap"
@@ -2464,10 +2860,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--runs",
         type=_positive_int,
-        default=DEFAULT_RUNS,
+        default=None,
         help=(
             "run count for the selected model; median selection requires an odd count "
-            f"(default: {DEFAULT_RUNS})"
+            f"(default: {DEFAULT_RUNS}; Kimi: {DEFAULT_KIMI_RUNS})"
         ),
     )
     parser.add_argument(
@@ -2495,7 +2891,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=DEFAULT_AUTH,
         help=(
             "transport for the selected model's provider: API-key billing or isolated "
-            f"Claude.ai/ChatGPT plan access (default: {DEFAULT_AUTH})"
+            f"Claude.ai/ChatGPT/Kimi Code subscription access (default: {DEFAULT_AUTH})"
         ),
     )
     parser.add_argument(
@@ -2515,12 +2911,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     args = parser.parse_args(argv)
-    if args.selection == "median" and args.runs % 2 == 0:
-        parser.error("--runs must be odd so the median is an actual run")
     try:
         args.model_config = select_model(args.model)
     except ValueError as exc:
         parser.error(str(exc))
+    if args.runs is None:
+        args.runs = (
+            DEFAULT_KIMI_RUNS
+            if args.model_config["provider"] == "kimi"
+            else DEFAULT_RUNS
+        )
+    if args.selection == "median" and args.runs % 2 == 0:
+        parser.error("--runs must be odd so the median is an actual run")
     try:
         _validate_provider_effort(args.model_config["provider"], args.auth, args.effort)
     except ValueError as exc:
@@ -2553,6 +2955,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         except ValueError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
+    api_key: str | None = None
+    kimi_subscription_selected = config["provider"] == "kimi"
+    if kimi_subscription_selected:
+        api_key = os.environ.get(PROVIDER_ENV["kimi"])
+        try:
+            validate_kimi_subscription_auth(api_key)
+        except RuntimeError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+
     anthropic_subscription_selected = (
         args.auth == "subscription" and config["provider"] == "anthropic"
     )
@@ -2573,16 +2985,26 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"error: {exc}", file=sys.stderr)
             return 2
 
+    effective_effort = _effective_provider_effort(config["provider"], args.effort)
     print(
-        f"Whippin benchmark prompt={PROMPT_VERSION} effort={args.effort} "
-        f"auth={args.auth} cap={args.cap} runs={args.runs} "
+        f"Whippin benchmark prompt={PROMPT_VERSION} provider={config['provider']} "
+        f"model={config['model_id']} transport={_transport_name(config, args.auth)} "
+        f"auth={args.auth} requested_effort={args.effort} "
+        f"effective_provider_effort={effective_effort} cap={args.cap} runs={args.runs} "
         f"selection={args.selection} "
         f"playbook={playbook_sha256 or 'none'}",
         flush=True,
     )
-    subscription_auth = args.auth == "subscription"
-    api_key = None
-    if not subscription_auth:
+    if config["provider"] == "kimi":
+        print(
+            "KIMI cost notice: low effort still uses adaptive thinking; "
+            f"this configuration schedules {args.runs} "
+            f"run{'s' if args.runs != 1 else ''} with up to {args.cap} counted "
+            "guesses each. Every fresh turn is a paid request, and malformed or "
+            "non-counting replies can add requests.",
+            flush=True,
+        )
+    if args.auth != "subscription":
         env_name = PROVIDER_ENV[config["provider"]]
         api_key = os.environ.get(env_name)
         if not api_key:
@@ -2597,9 +3019,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         def print_try(run_number: int, update: TryProgress) -> None:
             run_label = f"run={run_number} " if args.runs > 1 else ""
             word_json = json.dumps(update.word, ensure_ascii=False)
+            usage = (
+                " token_usage="
+                + json.dumps(
+                    update.token_usage,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+                if update.token_usage is not None
+                else ""
+            )
             print(
                 f"{config['tag']:<8} {run_label}try={update.number} "
-                f"word={word_json} progress={update.progress:.2f}%",
+                f"word={word_json} progress={update.progress:.2f}%{usage}",
                 flush=True,
             )
 
@@ -2627,10 +3059,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
     score = "DNF" if summary.tries is None else f"{summary.tries} tries"
     selected_label = f"{summary.selection}_run"
+    total_usage = _aggregate_token_usage(
+        [
+            usage
+            for result in summary.results
+            for usage in result.turn_token_usage
+        ]
+    )
+    usage_text = (
+        json.dumps(total_usage, ensure_ascii=False, separators=(",", ":"))
+        if total_usage is not None
+        else "unreported"
+    )
     print(
         f"{config['tag']:<8} {score:>9}  "
         f"{selected_label}={summary.selected_run_index + 1}  "
-        f"turns={summary.turns}  duration={summary.duration:.1f}s  model={config['model_id']}"
+        f"turns={summary.turns}  duration={summary.duration:.1f}s  "
+        f"token_usage={usage_text}  model={config['model_id']}"
     )
     for run_number, tried_words in enumerate(summary.run_tried_words, start=1):
         run_label = f"run={run_number} " if summary.runs > 1 else ""

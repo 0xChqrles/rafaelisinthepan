@@ -53,6 +53,7 @@ pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--
 pnpm bench:puzzle <puzzle.json> --model OPUS
 pnpm bench:puzzle <puzzle.json> --model GPT-SOL --auth subscription --effort medium --runs 1
 pnpm bench:puzzle <puzzle.json> --model SONNET --auth subscription --effort medium --runs 1
+KIMI_CODE_API_KEY=... pnpm bench:puzzle <puzzle.json> --model KIMI --auth subscription --effort medium --runs 1
 pnpm bench:puzzle <puzzle.json> --model SONNET --auth subscription --effort medium --runs 7 --selection best
 ```
 
