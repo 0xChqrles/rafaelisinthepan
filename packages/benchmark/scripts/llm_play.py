@@ -117,6 +117,7 @@ SELECTION_MODES: tuple[SelectionMode, ...] = ("median", "best")
 DEFAULT_SELECTION: SelectionMode = "median"
 MAX_CONSECUTIVE_UNPARSEABLE = 5
 MAX_NONCOUNTING_REPLIES = 5
+TOKEN_USAGE_SCHEMA_VERSION = 1
 
 # One cross-provider reasoning control. `none` preserves the original cheap one-word
 # requests; the other levels enable provider-native reasoning with enough output room for
@@ -320,6 +321,21 @@ class ModelConfig(TypedDict):
     display: bool
 
 
+class TokenUsage(TypedDict):
+    """Provider-neutral accounting for exactly one model request or an aggregate."""
+
+    # Input includes cached reads and cache writes. The two cache fields are subsets,
+    # matching OpenAI/Codex semantics while Anthropic/Kimi are converted at the edge.
+    input_tokens: int
+    cached_input_tokens: int
+    cache_write_input_tokens: int
+    # Output includes reasoning. A provider that does not expose the reasoning
+    # breakdown reports null rather than falsely claiming zero reasoning tokens.
+    output_tokens: int
+    reasoning_output_tokens: int | None
+    total_tokens: int
+
+
 Message = dict[str, str]
 ModelReply = Callable[[list[Message]], str]
 
@@ -361,7 +377,7 @@ class TryProgress:
     number: int
     word: str
     progress: float
-    token_usage: dict[str, Any] | None
+    token_usage: TokenUsage | None
 
 
 @dataclass(frozen=True)
@@ -374,8 +390,11 @@ class RunResult:
     duration: float
     tried_words: tuple[str, ...]
     conversation: tuple[Message, ...]
-    turn_token_usage: tuple[dict[str, Any], ...]
+    turn_token_usage: tuple[TokenUsage, ...]
     termination: RunTermination
+    # Raw payloads remain local audit evidence. In particular, persistent Codex CLI
+    # payloads are cumulative thread snapshots, not per-turn values.
+    raw_provider_token_usage: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -689,8 +708,231 @@ def _json_token_usage(value: object) -> dict[str, Any] | None:
     return normalized if isinstance(normalized, dict) and normalized else None
 
 
-def _last_token_usage(model_reply: ModelReply) -> dict[str, Any] | None:
-    return _json_token_usage(getattr(model_reply, "last_token_usage", None))
+def _token_count(
+    usage: Mapping[str, Any], key: str, *, default: int = 0
+) -> int:
+    value = usage.get(key)
+    if value is None:
+        return default
+    if not _is_int(value) or value < 0:
+        raise ValueError(
+            f"malformed token usage: {key!r} must be a non-negative integer"
+        )
+    return value
+
+
+def _nested_token_count(
+    usage: Mapping[str, Any], parent: str, key: str
+) -> int | None:
+    details = usage.get(parent)
+    if details is None:
+        return None
+    if not isinstance(details, Mapping):
+        raise ValueError(
+            f"malformed token usage: {parent!r} must be an object"
+        )
+    if details.get(key) is None:
+        return None
+    return _token_count(details, key)
+
+
+def _canonical_token_usage(
+    *,
+    input_tokens: int,
+    cached_input_tokens: int = 0,
+    cache_write_input_tokens: int = 0,
+    output_tokens: int,
+    reasoning_output_tokens: int | None = None,
+) -> TokenUsage:
+    counts = {
+        "input_tokens": input_tokens,
+        "cached_input_tokens": cached_input_tokens,
+        "cache_write_input_tokens": cache_write_input_tokens,
+        "output_tokens": output_tokens,
+    }
+    for key, value in counts.items():
+        if not _is_int(value) or value < 0:
+            raise ValueError(
+                f"malformed token usage: {key!r} must be a non-negative integer"
+            )
+    if reasoning_output_tokens is not None and (
+        not _is_int(reasoning_output_tokens) or reasoning_output_tokens < 0
+    ):
+        raise ValueError(
+            "malformed token usage: 'reasoning_output_tokens' must be null or "
+            "a non-negative integer"
+        )
+    if cached_input_tokens > input_tokens:
+        raise ValueError(
+            "malformed token usage: cached input exceeds total input"
+        )
+    if cache_write_input_tokens > input_tokens:
+        raise ValueError(
+            "malformed token usage: cache-write input exceeds total input"
+        )
+    if (
+        reasoning_output_tokens is not None
+        and reasoning_output_tokens > output_tokens
+    ):
+        raise ValueError(
+            "malformed token usage: reasoning output exceeds total output"
+        )
+    return {
+        "input_tokens": input_tokens,
+        "cached_input_tokens": cached_input_tokens,
+        "cache_write_input_tokens": cache_write_input_tokens,
+        "output_tokens": output_tokens,
+        "reasoning_output_tokens": reasoning_output_tokens,
+        "total_tokens": input_tokens + output_tokens,
+    }
+
+
+def _standard_token_usage(value: object) -> TokenUsage | None:
+    """Validate/fill the fixed schema already emitted by a provider adapter."""
+    usage = _json_token_usage(value)
+    if usage is None or not any(
+        key in usage for key in ("input_tokens", "output_tokens")
+    ):
+        return None
+    reasoning = usage.get("reasoning_output_tokens")
+    if reasoning is not None and (not _is_int(reasoning) or reasoning < 0):
+        raise ValueError(
+            "malformed token usage: 'reasoning_output_tokens' must be null or "
+            "a non-negative integer"
+        )
+    return _canonical_token_usage(
+        input_tokens=_token_count(usage, "input_tokens"),
+        cached_input_tokens=_token_count(usage, "cached_input_tokens"),
+        cache_write_input_tokens=_token_count(
+            usage, "cache_write_input_tokens"
+        ),
+        output_tokens=_token_count(usage, "output_tokens"),
+        reasoning_output_tokens=reasoning,
+    )
+
+
+def _normalize_anthropic_token_usage(value: object) -> TokenUsage | None:
+    """Convert Anthropic/Agent-SDK cache categories into inclusive input totals."""
+    usage = _json_token_usage(value)
+    if usage is None or not any(
+        key in usage
+        for key in (
+            "input_tokens",
+            "cache_creation_input_tokens",
+            "cache_read_input_tokens",
+            "output_tokens",
+        )
+    ):
+        return None
+    fresh_input = _token_count(usage, "input_tokens")
+    cached_input = _token_count(usage, "cache_read_input_tokens")
+    cache_write_input = _token_count(
+        usage, "cache_creation_input_tokens"
+    )
+    reasoning = _nested_token_count(
+        usage, "output_tokens_details", "thinking_tokens"
+    )
+    return _canonical_token_usage(
+        input_tokens=fresh_input + cached_input + cache_write_input,
+        cached_input_tokens=cached_input,
+        cache_write_input_tokens=cache_write_input,
+        output_tokens=_token_count(usage, "output_tokens"),
+        reasoning_output_tokens=reasoning,
+    )
+
+
+def _normalize_openai_token_usage(value: object) -> TokenUsage | None:
+    """Convert Responses/Codex usage, whose input count already includes cache."""
+    usage = _json_token_usage(value)
+    if usage is None or not any(
+        key in usage for key in ("input_tokens", "output_tokens")
+    ):
+        return None
+    cached_input = (
+        _token_count(usage, "cached_input_tokens")
+        if usage.get("cached_input_tokens") is not None
+        else _nested_token_count(
+            usage, "input_tokens_details", "cached_tokens"
+        )
+        or 0
+    )
+    cache_write_input = (
+        _token_count(usage, "cache_write_input_tokens")
+        if usage.get("cache_write_input_tokens") is not None
+        else _nested_token_count(
+            usage, "input_tokens_details", "cache_write_tokens"
+        )
+        or 0
+    )
+    if usage.get("reasoning_output_tokens") is not None:
+        reasoning: int | None = _token_count(
+            usage, "reasoning_output_tokens"
+        )
+    else:
+        reasoning = _nested_token_count(
+            usage, "output_tokens_details", "reasoning_tokens"
+        )
+    return _canonical_token_usage(
+        input_tokens=_token_count(usage, "input_tokens"),
+        cached_input_tokens=cached_input,
+        cache_write_input_tokens=cache_write_input,
+        output_tokens=_token_count(usage, "output_tokens"),
+        reasoning_output_tokens=reasoning,
+    )
+
+
+def _cumulative_token_usage_delta(
+    current: TokenUsage, previous: TokenUsage | None
+) -> TokenUsage:
+    """Turn a persistent Codex cumulative snapshot into exactly one turn's usage."""
+    if previous is None:
+        return current
+
+    def delta(key: str) -> int:
+        current_value = current[key]
+        previous_value = previous[key]
+        if not _is_int(current_value) or not _is_int(previous_value):
+            raise ValueError(
+                f"malformed cumulative token usage counter: {key}"
+            )
+        difference = current_value - previous_value
+        if difference < 0:
+            raise RuntimeError(
+                "Codex CLI cumulative token usage decreased within one saved "
+                f"thread ({key}: {current_value} < {previous_value})"
+            )
+        return difference
+
+    current_reasoning = current["reasoning_output_tokens"]
+    previous_reasoning = previous["reasoning_output_tokens"]
+    if current_reasoning is None or previous_reasoning is None:
+        reasoning: int | None = None
+    else:
+        reasoning = current_reasoning - previous_reasoning
+        if reasoning < 0:
+            raise RuntimeError(
+                "Codex CLI cumulative token usage decreased within one saved "
+                "thread (reasoning_output_tokens)"
+            )
+    return _canonical_token_usage(
+        input_tokens=delta("input_tokens"),
+        cached_input_tokens=delta("cached_input_tokens"),
+        cache_write_input_tokens=delta("cache_write_input_tokens"),
+        output_tokens=delta("output_tokens"),
+        reasoning_output_tokens=reasoning,
+    )
+
+
+def _last_token_usage(model_reply: ModelReply) -> TokenUsage | None:
+    return _standard_token_usage(
+        getattr(model_reply, "last_token_usage", None)
+    )
+
+
+def _last_raw_token_usage(model_reply: ModelReply) -> dict[str, Any] | None:
+    return _json_token_usage(
+        getattr(model_reply, "last_raw_token_usage", None)
+    )
 
 
 class PuzzleReferee:
@@ -1267,13 +1509,17 @@ def play_puzzle(
     consecutive_unparseable = 0
     noncounting_replies = 0
     started = time.monotonic()
-    turn_token_usage: list[dict[str, Any]] = []
+    turn_token_usage: list[TokenUsage] = []
+    raw_provider_token_usage: list[dict[str, Any]] = []
 
     while True:
         raw_reply = model_reply([message.copy() for message in messages])
         usage = _last_token_usage(model_reply)
+        raw_usage = _last_raw_token_usage(model_reply)
         if usage is not None:
             turn_token_usage.append(usage)
+        if raw_usage is not None:
+            raw_provider_token_usage.append(raw_usage)
         turns += 1
         if not isinstance(raw_reply, str):
             raw_reply = ""
@@ -1295,6 +1541,9 @@ def play_puzzle(
                         conversation=tuple(message.copy() for message in messages),
                         turn_token_usage=tuple(turn_token_usage),
                         termination="reply_error",
+                        raw_provider_token_usage=tuple(
+                            raw_provider_token_usage
+                        ),
                     ),
                 )
             messages.append(
@@ -1349,6 +1598,9 @@ def play_puzzle(
                         conversation=tuple(message.copy() for message in messages),
                         turn_token_usage=tuple(turn_token_usage),
                         termination="reply_error",
+                        raw_provider_token_usage=tuple(
+                            raw_provider_token_usage
+                        ),
                     ),
                 )
 
@@ -1364,6 +1616,7 @@ def play_puzzle(
                 conversation=tuple(message.copy() for message in messages),
                 turn_token_usage=tuple(turn_token_usage),
                 termination="solved",
+                raw_provider_token_usage=tuple(raw_provider_token_usage),
             )
         # In best mode a run that is still unsolved at the incumbent score cannot tie
         # or beat it: solving now was checked above, and another counted guess would be
@@ -1381,6 +1634,7 @@ def play_puzzle(
                 conversation=tuple(message.copy() for message in messages),
                 turn_token_usage=tuple(turn_token_usage),
                 termination="cannot_beat_best",
+                raw_provider_token_usage=tuple(raw_provider_token_usage),
             )
         if feedback.tries >= cap:
             return RunResult(
@@ -1392,6 +1646,7 @@ def play_puzzle(
                 conversation=tuple(message.copy() for message in messages),
                 turn_token_usage=tuple(turn_token_usage),
                 termination="cap",
+                raw_provider_token_usage=tuple(raw_provider_token_usage),
             )
 
 
@@ -1744,9 +1999,12 @@ class AnthropicSubscriptionReply:
         self.session_id: str | None = None
         self._message_count = 0
         self._workspace = tempfile.TemporaryDirectory(prefix=workspace_prefix)
-        self.last_token_usage: dict[str, Any] | None = None
+        self.last_token_usage: TokenUsage | None = None
+        self.last_raw_token_usage: dict[str, Any] | None = None
 
     def __call__(self, messages: list[Message]) -> str:
+        self.last_token_usage = None
+        self.last_raw_token_usage = None
         if not messages or messages[-1].get("role") != "user":
             raise ValueError("Agent SDK reply requires a final user message")
 
@@ -1805,7 +2063,8 @@ class AnthropicSubscriptionReply:
             )
         self.session_id = session_id if persistent else None
         self._message_count = len(messages) if persistent else 0
-        self.last_token_usage = usage
+        self.last_raw_token_usage = usage
+        self.last_token_usage = _normalize_anthropic_token_usage(usage)
         return text
 
     def close(self) -> None:
@@ -2064,7 +2323,9 @@ class OpenAISubscriptionReply:
         )
         self._message_count = 0
         self._workspace = tempfile.TemporaryDirectory(prefix="whippin-codex-")
-        self.last_token_usage: dict[str, Any] | None = None
+        self.last_token_usage: TokenUsage | None = None
+        self.last_raw_token_usage: dict[str, Any] | None = None
+        self._cumulative_token_usage: TokenUsage | None = None
         instructions = {
             "word": CODEX_BENCHMARK_INSTRUCTIONS,
             "decision": CODEX_DECISION_INSTRUCTIONS,
@@ -2123,6 +2384,8 @@ class OpenAISubscriptionReply:
         return command
 
     def __call__(self, messages: list[Message]) -> str:
+        self.last_token_usage = None
+        self.last_raw_token_usage = None
         if not messages or messages[-1].get("role") != "user":
             raise ValueError("Codex CLI reply requires a final user message")
 
@@ -2131,6 +2394,7 @@ class OpenAISubscriptionReply:
             if len(messages) == 1:
                 self.session_id = None
                 self._message_count = 0
+                self._cumulative_token_usage = None
             expected_count = (
                 1 if self._message_count == 0 else self._message_count + 2
             )
@@ -2142,6 +2406,7 @@ class OpenAISubscriptionReply:
         else:
             self.session_id = None
             self._message_count = 0
+            self._cumulative_token_usage = None
         if persistent and len(messages) > 1 and self.session_id is None:
             raise RuntimeError(
                 "Codex CLI conversation cannot resume before its opening turn"
@@ -2191,7 +2456,15 @@ class OpenAISubscriptionReply:
         else:
             self.session_id = None
         self._message_count = len(messages) if persistent else 0
-        self.last_token_usage = usage
+        self.last_raw_token_usage = usage
+        normalized_usage = _normalize_openai_token_usage(usage)
+        if normalized_usage is not None and persistent:
+            current_cumulative = normalized_usage
+            normalized_usage = _cumulative_token_usage_delta(
+                current_cumulative, self._cumulative_token_usage
+            )
+            self._cumulative_token_usage = current_cumulative
+        self.last_token_usage = normalized_usage
         return result
 
     def close(self) -> None:
@@ -2245,6 +2518,7 @@ def provider_reply(
         def reply(messages: list[Message]) -> str:
             nonlocal provider_history, message_count
             setattr(reply, "last_token_usage", None)
+            setattr(reply, "last_raw_token_usage", None)
             if not messages or messages[-1].get("role") != "user":
                 raise ValueError("Anthropic API reply requires a final user message")
             persistent = output == "word" and session == "persistent"
@@ -2313,10 +2587,12 @@ def provider_reply(
                 raise RuntimeError(
                     f"{model_id} exhausted its {budget}-token output budget"
                 )
+            raw_usage = _json_token_usage(getattr(response, "usage", None))
+            setattr(reply, "last_raw_token_usage", raw_usage)
             setattr(
                 reply,
                 "last_token_usage",
-                _json_token_usage(getattr(response, "usage", None)),
+                _normalize_anthropic_token_usage(raw_usage),
             )
             if persistent:
                 provider_history = [
@@ -2327,6 +2603,7 @@ def provider_reply(
             return _text_content(response.content)
 
         setattr(reply, "last_token_usage", None)
+        setattr(reply, "last_raw_token_usage", None)
         return reply
 
     if provider == "openai":
@@ -2343,6 +2620,7 @@ def provider_reply(
         def reply(messages: list[Message]) -> str:
             nonlocal previous_response_id, message_count
             setattr(reply, "last_token_usage", None)
+            setattr(reply, "last_raw_token_usage", None)
             if not messages or messages[-1].get("role") != "user":
                 raise ValueError("OpenAI API reply requires a final user message")
             persistent = output == "word" and session == "persistent"
@@ -2380,10 +2658,12 @@ def provider_reply(
                 raise RuntimeError(
                     f"{model_id} returned an incomplete response: {reason}"
                 )
+            raw_usage = _json_token_usage(getattr(response, "usage", None))
+            setattr(reply, "last_raw_token_usage", raw_usage)
             setattr(
                 reply,
                 "last_token_usage",
-                _json_token_usage(getattr(response, "usage", None)),
+                _normalize_openai_token_usage(raw_usage),
             )
             if persistent:
                 response_id = getattr(response, "id", None)
@@ -2396,6 +2676,7 @@ def provider_reply(
             return response.output_text
 
         setattr(reply, "last_token_usage", None)
+        setattr(reply, "last_raw_token_usage", None)
         return reply
 
     raise ValueError(f"unsupported provider: {provider}")
@@ -2720,13 +3001,33 @@ def _transport_name(config: ModelConfig, auth: AuthMode) -> str:
 
 def _aggregate_token_usage(
     turn_token_usage: Sequence[Mapping[str, Any]],
-) -> dict[str, int] | None:
-    totals: dict[str, int] = {}
-    for usage in turn_token_usage:
-        for key, value in usage.items():
-            if "token" in key.lower() and _is_int(value):
-                totals[key] = totals.get(key, 0) + value
-    return totals or None
+) -> TokenUsage | None:
+    normalized = [
+        usage
+        for raw_usage in turn_token_usage
+        if (usage := _standard_token_usage(raw_usage)) is not None
+    ]
+    if not normalized:
+        return None
+    reasoning_values = [
+        usage["reasoning_output_tokens"] for usage in normalized
+    ]
+    reasoning = (
+        sum(value for value in reasoning_values if value is not None)
+        if all(value is not None for value in reasoning_values)
+        else None
+    )
+    return _canonical_token_usage(
+        input_tokens=sum(usage["input_tokens"] for usage in normalized),
+        cached_input_tokens=sum(
+            usage["cached_input_tokens"] for usage in normalized
+        ),
+        cache_write_input_tokens=sum(
+            usage["cache_write_input_tokens"] for usage in normalized
+        ),
+        output_tokens=sum(usage["output_tokens"] for usage in normalized),
+        reasoning_output_tokens=reasoning,
+    )
 
 
 def _lab_session(
@@ -2752,11 +3053,18 @@ def _lab_session(
             "termination": result.termination,
             "transcript": [message.copy() for message in result.conversation],
         }
-        token_usage = _aggregate_token_usage(result.turn_token_usage)
+        canonical_turn_usage = [
+            usage
+            for raw_usage in result.turn_token_usage
+            if (usage := _standard_token_usage(raw_usage)) is not None
+        ]
+        token_usage = _aggregate_token_usage(canonical_turn_usage)
         if token_usage is not None:
             run["token_usage"] = token_usage
-            run["turn_token_usage"] = [
-                dict(usage) for usage in result.turn_token_usage
+            run["turn_token_usage"] = canonical_turn_usage
+        if result.raw_provider_token_usage:
+            run["raw_provider_token_usage"] = [
+                dict(usage) for usage in result.raw_provider_token_usage
             ]
         runs.append(run)
 
@@ -2771,6 +3079,7 @@ def _lab_session(
         "transport": _transport_name(config, auth),
         "auth": auth,
         "session": session,
+        "token_usage_schema_version": TOKEN_USAGE_SCHEMA_VERSION,
         "effort": effort,
         "requested_effort": effort,
         "effective_provider_effort": effective_effort,
@@ -3180,7 +3489,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"model={config['model_id']} transport={_transport_name(config, args.auth)} "
         f"auth={args.auth} session={args.session} requested_effort={args.effort} "
         f"effective_provider_effort={effective_effort} cap={args.cap} runs={args.runs} "
-        f"selection={args.selection} "
+        f"selection={args.selection} token_usage_schema={TOKEN_USAGE_SCHEMA_VERSION} "
         f"playbook={playbook_sha256 or 'none'}",
         flush=True,
     )

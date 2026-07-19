@@ -492,8 +492,16 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   settings, skills, agents, plugins, or slash commands; inherited Claude credentials,
   config, and endpoint/model overrides are removed for the subprocess and restored on
   success or failure. Console output and raw lab sessions record requested + effective
-  effort, provider/model/transport/auth/session, prompt/cap/selection, duration, and reported
-  tokens; token-aware transports also print each counted turn's usage immediately. Prompt
+  effort, provider/model/transport/auth/session, prompt/cap/selection, duration, and
+  **canonical token-usage schema v1** (decided 2026-07-19); token-aware transports also
+  print each counted turn's canonical usage immediately. Its fixed fields are inclusive
+  `input_tokens`, the `cached_input_tokens` and `cache_write_input_tokens` subsets,
+  inclusive `output_tokens`,
+  nullable `reasoning_output_tokens` (null when the provider has no breakdown), and
+  `total_tokens = input_tokens + output_tokens`. Provider-native payloads remain alongside
+  the canonical values as local raw audit data. Persistent Codex CLI's cumulative thread
+  snapshots are differenced within each run before per-turn display or aggregation, and
+  the baseline resets for every run. Prompt
   v23 defaults `--session persistent`: each run opens one fresh native provider conversation,
   then sends only the newest referee message. Agent SDK transports resume their session id;
   Codex CLI resumes its saved thread; Anthropic API retains the complete assistant content,
