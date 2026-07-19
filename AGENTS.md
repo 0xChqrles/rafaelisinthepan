@@ -13,7 +13,8 @@ through `pnpm`). Two languages: **en** (Stanford GloVe `glove.6B.300d`) and **fr
 
 A **pnpm-workspaces monorepo** (`pnpm-workspace.yaml`; pnpm pinned via the root
 `packageManager` field): `packages/web` (the front + served `public/`),
-`packages/generation` (the Python scripts + `embedding/` data), and
+`packages/generation` (the Python generation scripts + `embedding/` data),
+`packages/benchmark` (the offline LLM benchmark harness), and
 `packages/shared` (cross-cutting TS: the slug/fold contract + schema types).
 Generation writes **puzzles** into its own `packages/generation/output/` (then published
 to the store), and the **vocab** existence set into `packages/web/public/` (a web asset).
@@ -58,6 +59,14 @@ packages/
     wordlist/<lang>.txt.gz    versioned hors-dico reference wordlist (#38); .cache/ gitignored
     output/word/<lang>/<s1>_<s2>_<s3>.json   generated puzzles (gitignored; publish to store/S3)
     pyproject.toml, uv.lock   Python project (uv)
+  benchmark/                  offline LLM puzzle benchmark (pkg @whippin/benchmark, #68)
+    scripts/llm_play.py       LLM player/referee; reads generation output + web vocab
+    scripts/playbook_distill.py  92-puzzle ultra analyst -> critic playbook distiller (#88)
+    datasets/strategy-fr-92/  frozen static distillation corpus (92 gzipped puzzles)
+    playbooks/                versioned final critic-only model playbook profiles
+    tests/test_llm_play.py    provider-adapter + game-rules parity tests
+    output/                   full local benchmark/distillation records (gitignored)
+    pyproject.toml, uv.lock   isolated Anthropic/OpenAI Python dependencies (uv)
   backend/                    daily-puzzle backend (pkg @whippin/backend, #2)
     src/
       handler.ts              createHandler() — the ONE day/404/CORS/Puzzle logic (Lambda + local)
@@ -174,7 +183,15 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
     "kind": "book",                             //   book | movie | music | quote | poem | … (open set)
     "author": "Victor Hugo",
     "work": "Les Misérables"
-  }
+  },
+  "benchmark": [                                // OPTIONAL exact display trio (#68/#80)
+    { "model": "claude-opus-4-8", "label": "CLAUDE OPUS", "tag": "OPUS",
+      "tries": 3, "run": ["bois", "arbre", "forêt"] },
+    { "model": "claude-sonnet-5", "label": "CLAUDE SONNET", "tag": "SONNET",
+      "tries": 4, "run": ["nature", "bois", "arbre", "forêt"] },
+    { "model": "gpt-5.6-sol", "label": "GPT-5.6", "tag": "GPT",
+      "tries": null, "run": ["bois", "arbre", /* …full run through cap… */ "nature"] }
+  ]                                              // null tries = DNF; its full run is kept
 }
 ```
 
@@ -196,6 +213,22 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   metadata is valid and a puzzle without `source` stays byte-compatible. Values are
   **display forms** (accents kept, never slugged); `kind` is an **open** union (known
   values documented, but a new kind is allowed). Consumed by the solved screen (#8).
+- **`benchmark` is fully OPTIONAL (#68, decided 2026-07-07; schema v2 decided
+  2026-07-12 on #68):** absent stays byte-compatible with every existing puzzle. When
+  present, it contains **exactly 3** results — the one player-facing trio everywhere:
+  Claude Opus, Claude Sonnet, and GPT-5.6 Sol; wider roster entries stay lab-only. Every
+  entry requires the exact non-empty `model` id, an honest uppercase full-family `label`
+  (`CLAUDE OPUS`, `CLAUDE SONNET`, `GPT-5.6` — never ambiguous `CLAUDE`), an uppercase
+  pixel-friendly `tag` of at most 6 characters (`OPUS`/`SONNET`/`GPT`), `tries` as a
+  positive integer or `null` (DNF at the counted-try cap), and `run` as the **selected
+  run's counted display-form guesses in submission order**. `--selection median`
+  (default) selects the actual median; `--selection best` selects the lowest successful
+  score. Run words retain accents exactly as typed/validated and are folded only when
+  replayed; a selected DNF keeps its full cap-length run. A best-mode attempt stopped
+  because it can no longer beat an incumbent is lab-only and can never be embedded as a
+  DNF. The client can replay this list against the puzzle rank maps; play scoring and
+  share output stay unchanged. This model-score anchor superseded #57's proposed `par`
+  before `par` was implemented — there is no `par` schema field.
 - `ranks` is keyed by **secret slug**; the inner map is keyed by **input slug** →
   `{word, rank}`. The value carries the **accented** word so the front can show the
   accented form of what was typed.
@@ -295,7 +328,8 @@ language.
 - **A failing invariant test is a real regression — fix the CODE, never weaken the test**
   to make it pass.
 - **Run `pnpm test` before a contract-touching task is done.** It runs Vitest (TS:
-  `packages/shared`, `packages/web`) and pytest (`packages/generation`). The slug/fold
+  `packages/shared`, `packages/web`) and pytest (`packages/generation`,
+  `packages/benchmark`). The slug/fold
   case table is **one shared fixture** (`packages/shared/fixtures/slug-cases.json`)
   consumed by BOTH languages — add a case there, never on one side only.
 
@@ -347,13 +381,14 @@ When asked to work/implement/do/resolve issue #N:
 Uses **pnpm** (workspaces in `pnpm-workspace.yaml`, version pinned via the root
 `packageManager` field). Each root script runs from the repo **root** (it delegates
 to the right workspace via `pnpm --filter`) or from inside the package directly. The
-generation scripts are scoped to `@whippin/generation`; reduce/gen paths below are
-relative to `packages/generation/`. Unlike `npm`, **pnpm forwards args straight to
+generation scripts are scoped to `@whippin/generation`, while the LLM harness is scoped
+to `@whippin/benchmark`; reduce/gen paths below are relative to `packages/generation/`.
+Unlike `npm`, **pnpm forwards args straight to
 the script — do NOT add a `--` separator** (a literal `--` is passed through and
 breaks `gen_phrase.py`'s arg parsing).
 
 ```bash
-pnpm install                    # installs all workspaces (web + shared)
+pnpm install                    # installs all workspaces
 
 # 0. (Re)build the hors-dico reference wordlist ONCE per language (offline, #38). The
 #    committed wordlist/<lang>.txt.gz is already versioned — only rerun to refresh sources.
@@ -378,6 +413,33 @@ pnpm vocab:fr         # -> packages/web/public/vocab/fr.json
 #    NOTE: gen:phrase ALSO rewrites web/public/vocab/<lang>.json as a side effect.
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--`)
 
+# 4. Optionally benchmark the generated puzzle offline before publish. --model is required
+#    and runs exactly one model. Missing provider keys skip with a warning; --effort applies
+#    one reasoning level (none|low|medium|high|xhigh|max; default none). --auth api
+#    (default) uses the selected provider's API key; --auth subscription uses authenticated
+#    Claude.ai / saved ChatGPT Codex-plan access. GPT API runs allow the documented
+#    none|low|medium|high|xhigh|max; ordinary Codex-plan play supports
+#    low|medium|high|xhigh|max. The frozen shared gameplay baseline is prompt v21 at
+#    medium effort with NO --playbook. --playbook remains an experimental loader only;
+#    the static-corpus playbooks are paused and must not be used for benchmark scores.
+#    --selection median|best chooses the saved representative (default median). Median
+#    requires odd --runs; best accepts any positive count and stops an unsolved later run
+#    once its tries equal the incumbent best score. Puzzle paths may be repo-root-relative
+#    (packages/generation/output/...) or generation-package-relative (output/...).
+#    --in-place appends the full local lab artifact and embeds the lean display trio once
+#    all 3 current-prompt display models have same-selection results.
+pnpm bench:puzzle <puzzle.json> --model MODEL [--playbook <model>.playbook.json] [--effort LEVEL] [--auth api|subscription] [--cap N] [--runs N] [--selection median|best] [--in-place]
+
+# 5. PAUSED EXPERIMENT: bootstrap one model's playbook from all 92 static French puzzles
+#    (#88). Do not run this for normal benchmark production. Each real
+#    run makes exactly two resumable paid calls: unrestricted analyst, then independent
+#    critic/rewrite. Workflow-level ultra maps to Sonnet adaptive+max, Codex-plan GPT
+#    literal ultra, or GPT API max+Pro. --dry-run validates all inputs and reports exact
+#    identities/call count without auth checks, writes, or provider calls. Raw outputs
+#    are gitignored; selected final-only profiles are versioned under benchmark/playbooks/.
+pnpm bench:playbook:distill --model SONNET --auth subscription [--dry-run]
+pnpm bench:playbook:distill --model GPT-SOL --auth subscription [--dry-run]
+
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
 pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output)
 pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--ci]  # publish-buffer coverage (#61); reports + exits 0 by default, --ci exits 1 on any (day,lang) gap for cron/CI
@@ -387,7 +449,7 @@ pnpm backend:dev                # local server (GET /?lang=, /today) on :8787 ov
 pnpm dev                        # dev server (set VITE_API_BASE_URL=http://localhost:8787 for the local backend)
 pnpm build                      # production build -> packages/web/dist
 pnpm typecheck                  # tsc --noEmit
-pnpm test                       # invariant tests: Vitest (web + shared + backend) + pytest (generation)
+pnpm test                       # invariant tests: Vitest (web + shared + backend) + pytest (generation + benchmark)
 ```
 
 `gen_phrase.py` requires **exactly 3** `--words`; they must appear in the sentence
@@ -402,6 +464,54 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
 
 - All paths below are under `packages/`. **Tunables:** `TOP_N = 400000` (reduce),
   `TOP_K = 10000` (gen), start-rank band `50–150` (`start_word.py`).
+- **Offline LLM benchmark harness (#68).** The dedicated `benchmark` workspace owns
+  `benchmark/scripts/llm_play.py`, its tests, and its Anthropic/OpenAI dependencies. It
+  imports generation's canonical `scripts/slug.py`, reads the same web vocab as the SPA,
+  and replays folded-vocab existence, unique-try scoring, broadcast rank/MISS feedback,
+  strict improvement, solved locks, and the counted-try cap. The singular `--model`
+  accepts the six-model roster's friendly selector (`OPUS`, `SONNET`, `FABLE`, `GPT-SOL`,
+  `GPT-TERRA`, `GPT-LUNA`) or exact id; each invocation runs exactly one model. Ordinary
+  play exposes `none|low|medium|high|xhigh|max`: GPT-5.6 API supports the full scale;
+  Codex-plan GPT supports `low` through `max`; Anthropic supports `none` through `max`.
+  Prompt v21 gives EVERY provider the same fresh, stateless single-user-message prompt:
+  fixed rules, the initial clues, then every prior player reply and exact referee feedback
+  in chronological order. No provider session memory or lossy current-best-only snapshot is
+  an experimental treatment. Anthropic receives the byte-identical prompt as a cacheable
+  fixed-rules block plus the growing record. The visible reply must be one word, while the
+  prompt affirmatively requires private multi-step deduction; malformed prose is rejected,
+  never truncated into a guess. `--playbook` accepts only a model/provider/prompt-matched,
+  hash-verified `whippin_model_playbook` profile and injects its `final_playbook` under the
+  fixed rules as advice. `--selection median|best` defaults to median: median requires odd
+  `--runs` (default 7), while best selects the lowest successful score and cost-prunes a
+  later unsolved run when it reaches that incumbent score. Lab sessions record the mode,
+  selected run, and each run's termination; only same-selection model sessions can form a
+  display trio. `--in-place` records full local transcripts/token usage and publishes only
+  a complete replay-valid display trio; local benchmark output is gitignored and paid
+  provider calls never run in tests/CI.
+- **Frozen neutral gameplay baseline (decided 2026-07-17).** Use prompt v21 at `medium`
+  effort, without `--playbook`, for both Sonnet and GPT. Two direct same-puzzle stateless
+  v21 smokes produced 11 then 6 tries for Sonnet, and 13 then DNF-at-30 for GPT, exposing
+  substantial GPT reliability variance. The static-corpus Sonnet/GPT playbooks regressed
+  play and are paused; keep them as audit artifacts, not production guidance.
+- **Paused bootstrap playbook distillation (#88, decided 2026-07-16; paused
+  2026-07-17).** The rigorous calibrated
+  neutral-play curriculum from #84/#86 is postponed, not discarded: its exact combined tip
+  is preserved remotely at `archive/rigorous-calibration-curriculum-2026-07-16` (`5d727aa`).
+  The active branch instead commits `benchmark/datasets/strategy-fr-92`: exactly 92 French
+  static puzzles / 276 targets with manifest-bound sentences, secrets, starts, ranks, and
+  hashes. `playbook_distill.py` validates the whole graph before auth or writes, then builds
+  one deterministic context packet containing every puzzle/target, all neighbors through
+  rank 50, and deterministic landmarks through rank 10,000. Each model makes exactly TWO
+  resumable long-form calls: an unrestricted analyst pass, then a second critic/rewrite pass
+  over the same evidence plus the draft. Workflow `ultra` maps to Anthropic adaptive thinking
+  + `max`, Codex-plan GPT literal `ultra`, or GPT API `max` + Pro reasoning. There is no old
+  eight-item/2,000-character playbook cap. Both raw stages remain only in the gitignored audit
+  artifact; the separate hash-pinned profile contains the critic's final playbook, and ONLY
+  that final text can enter `llm_play`. The accepted Sonnet/GPT critic profiles are versioned
+  in `benchmark/playbooks/`; raw analyst and continuation transcripts remain local. Claude
+  Code max-output recovery can emit one logical answer across several assistant messages, so
+  the adapter assembles every ordered text block and removes an exact repeated seam before
+  hashing the stage. `--dry-run` performs zero auth checks, writes, or calls.
 - **`gen_phrase` is fully interactive on a TTY (#5).** Anything not passed as a flag is
   prompted: the **sentence** (positional, now optional), **`--lang`**, and the optional
   **source metadata** — `--kind` (offers `KNOWN_KINDS` numbered, but free text is

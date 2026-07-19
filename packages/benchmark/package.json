@@ -1,0 +1,10 @@
+{
+  "name": "@whippin/benchmark",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "bench:puzzle": "uv run scripts/llm_play.py",
+    "bench:playbook:distill": "uv run scripts/playbook_distill.py",
+    "test": "uv run --no-project --with pytest pytest -q tests"
+  }
+}

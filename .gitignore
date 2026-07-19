@@ -33,6 +33,11 @@ packages/backend/.local-store
 # is a web asset and stays under packages/web/public/vocab.)
 packages/generation/output
 
+# ── Offline benchmark lab output (issue #80) ─────────────────
+# Full paid-run records (transcripts, transport, timing, token usage) stay local;
+# only the distilled display trio is embedded in a puzzle before publish.
+packages/benchmark/output
+
 # ── Embeddings (all excluded — too large for GitHub) ─────────
 # Raw sources are multi-GB; even the *_reduced files are 400-500 MB each,
 # over GitHub's 100 MB hard limit. Regenerate locally with
