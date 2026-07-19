@@ -301,13 +301,17 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
 
 ### Progress (`game/scoring.ts`)
 
-For each hole, with `N = number of keys in ranks[secret]`:
+For each unique secret slug, with `N = number of keys in ranks[secret]`:
 
 ```
 s(rank)   = 1 - ln(rank + 1) / ln(N + 1)              // s(0) = 1 (solved)
 p_hole    = (s(rank) - s(start_rank)) / (1 - s(start_rank))   // 0 at start, 1 solved
-progress% = 100 * average(p_hole over holes)
+progress% = 100 * average(p_hole over unique secret slugs)
 ```
+
+Rendered occurrences of the same secret slug share one logical progress target. They
+remain separate runtime holes for positions, feedback, animation, and solved rendering,
+but duplicate occurrences do not receive extra weight in the frontend percentage.
 
 ### Score
 
