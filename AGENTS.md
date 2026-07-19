@@ -421,18 +421,20 @@ pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--
 #    GPT API runs allow the documented
 #    none|low|medium|high|xhigh|max; ordinary Codex-plan play supports
 #    low|medium|high|xhigh|max. Kimi K3 is lab-only, requires subscription auth, rejects
-#    none, and maps medium/high -> high plus xhigh/max -> max. The historical frozen shared
-#    gameplay baseline is prompt v21 at medium effort with NO --playbook.
-#    The current corrected harness is prompt v22; do not mix its results into v21
-#    comparisons. --playbook remains an experimental loader only;
+#    none, and maps medium/high -> high plus xhigh/max -> max. --session
+#    persistent|stateless defaults to persistent: one native provider conversation per
+#    run is the primary product benchmark; stateless reconstructs the complete public
+#    record in fresh turns for diagnostics. The historical frozen shared gameplay baseline
+#    is prompt v21 at medium effort with NO --playbook. The current harness is prompt v23;
+#    do not mix its results into v21 comparisons. --playbook remains an experimental loader only;
 #    the static-corpus playbooks are paused and must not be used for benchmark scores.
 #    --selection median|best chooses the saved representative (default median). Median
 #    requires odd --runs; best accepts any positive count and stops an unsolved later run
 #    once its tries equal the incumbent best score. Puzzle paths may be repo-root-relative
 #    (packages/generation/output/...) or generation-package-relative (output/...).
 #    --in-place appends the full local lab artifact and embeds the lean display trio once
-#    all 3 current-prompt display models have same-selection results.
-pnpm bench:puzzle <puzzle.json> --model MODEL [--playbook <model>.playbook.json] [--effort LEVEL] [--auth api|subscription] [--cap N] [--runs N] [--selection median|best] [--in-place]
+#    all 3 current-prompt display models have same-selection and same-session results.
+pnpm bench:puzzle <puzzle.json> --model MODEL [--playbook <model>.playbook.json] [--effort LEVEL] [--auth api|subscription] [--session persistent|stateless] [--cap N] [--runs N] [--selection median|best] [--in-place]
 KIMI_CODE_API_KEY=... pnpm bench:puzzle <puzzle.json> --model KIMI --auth subscription --effort medium --runs 1
 
 # 5. PAUSED EXPERIMENT: bootstrap one model's playbook from all 92 static French puzzles
@@ -472,7 +474,8 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
 
 - All paths below are under `packages/`. **Tunables:** `TOP_N = 400000` (reduce),
   `TOP_K = 10000` (gen), start-rank band `50–150` (`start_word.py`).
-- **Offline LLM benchmark harness (#68, Kimi provider #91, decided 2026-07-18).** The
+- **Offline LLM benchmark harness (#68, Kimi provider #91, native sessions #93,
+  decided 2026-07-19).** The
   dedicated `benchmark` workspace owns `benchmark/scripts/llm_play.py`, its tests, and
   its provider dependencies.
   It imports generation's canonical `scripts/slug.py`, reads the same web vocab as the SPA,
@@ -487,20 +490,32 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   `none` (which would route away from K3), and maps `low→low`, `medium|high→high`, and
   `xhigh|max|ultra→max` (`ultra` is internal, not an ordinary CLI choice). Its distinct
   `kimi_code_agent_sdk` transport pins
-  `https://api.kimi.com/coding/`, uses a fresh temp workspace/config, the same stateless
-  full-record prompt, and an Agent SDK invocation with no system prompt, tools, MCP,
+  `https://api.kimi.com/coding/`, uses a fresh temp workspace/config, and an Agent SDK
+  invocation with no system prompt, tools, MCP,
   settings, skills, agents, plugins, or slash commands; inherited Claude credentials,
   config, and endpoint/model overrides are removed for the subprocess and restored on
   success or failure. Console output and raw lab sessions record requested + effective
-  effort, provider/model/transport/auth, prompt/cap/selection, duration, and reported tokens;
-  token-aware transports also print each counted turn's usage immediately. Prompt v22 gives
-  EVERY provider the same fresh, stateless single-user-message prompt: fixed rules, the
-  initial clues, every prior player reply and exact ordered outcome, plus the latest
-  authoritative snapshot. Superseded full snapshots are omitted because their evidence is
-  retained by the exact outcomes; no provider session memory or lossy current-best-only
-  snapshot is an experimental treatment. The rules explicitly say a displayed ranked clue's
-  distance is already known and cannot improve its own word at an equal rank. Anthropic
-  receives the byte-identical prompt as a cacheable fixed-rules block plus the growing record.
+  effort, provider/model/transport/auth/session, prompt/cap/selection, duration, and
+  **canonical token-usage schema v1** (decided 2026-07-19); token-aware transports also
+  print each counted turn's canonical usage immediately. Its fixed fields are inclusive
+  `input_tokens`, the `cached_input_tokens` and `cache_write_input_tokens` subsets,
+  inclusive `output_tokens`,
+  nullable `reasoning_output_tokens` (null when the provider has no breakdown), and
+  `total_tokens = input_tokens + output_tokens`. Provider-native payloads remain alongside
+  the canonical values as local raw audit data. Persistent Codex CLI's cumulative thread
+  snapshots are differenced within each run before per-turn display or aggregation, and
+  the baseline resets for every run. Prompt
+  v23 defaults `--session persistent`: each run opens one fresh native provider conversation,
+  then sends only the newest referee message. Agent SDK transports resume their session id;
+  Codex CLI resumes its saved thread; Anthropic API retains the complete assistant content,
+  including signed thinking blocks; OpenAI Responses chains `previous_response_id`.
+  `--session stateless` is the controlled diagnostic: every turn is fresh and reconstructs
+  the fixed rules, initial clues, every prior player reply and exact ordered outcome, plus the
+  latest authoritative snapshot. Both modes expose the same public puzzle evidence; neither
+  adds hidden puzzle data. The rules explicitly say a displayed ranked clue's
+  distance is already known and cannot improve its own word at an equal rank. In stateless
+  mode, Anthropic receives the byte-identical prompt as a cacheable fixed-rules block plus the
+  growing record.
   The visible reply must be one word, while the prompt affirmatively requires private
   multi-step deduction; malformed prose is rejected, never truncated into a guess.
   `--playbook` accepts only a model/provider/prompt-matched,
@@ -509,8 +524,8 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   `--runs` (default 7, but Kimi defaults to 1), while best selects the lowest successful score
   and cost-prunes a later unsolved run when it reaches that incumbent score. Kimi prints its
   counted-guess exposure and warns that non-counting turns add paid requests; `low` still uses
-  adaptive thinking. Lab sessions record the mode, selected run, and each run's termination;
-  only same-selection model
+  adaptive thinking. Lab sessions record the session mode, selected run, and each run's
+  termination; only same-selection and same-session model
   sessions can form a display trio. `--in-place` records full local transcripts/token usage
   and publishes only a complete replay-valid display trio; local benchmark output is gitignored
   and paid provider calls never run in tests/CI.

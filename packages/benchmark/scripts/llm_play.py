@@ -104,16 +104,20 @@ DISPLAY_MODEL_COUNT = 3
 
 # Bump whenever the opening rules or turn-feedback scaffold changes materially. Results
 # are attributable to a model id plus this prompt version and the CLI's printed effort.
-PROMPT_VERSION = "22"
+PROMPT_VERSION = "23"
 
 DEFAULT_CAP = 300
 DEFAULT_RUNS = 7
 DEFAULT_KIMI_RUNS = 1
+SessionMode = Literal["persistent", "stateless"]
+SESSION_MODES: tuple[SessionMode, ...] = ("persistent", "stateless")
+DEFAULT_SESSION: SessionMode = "persistent"
 SelectionMode = Literal["median", "best"]
 SELECTION_MODES: tuple[SelectionMode, ...] = ("median", "best")
 DEFAULT_SELECTION: SelectionMode = "median"
 MAX_CONSECUTIVE_UNPARSEABLE = 5
 MAX_NONCOUNTING_REPLIES = 5
+TOKEN_USAGE_SCHEMA_VERSION = 1
 
 # One cross-provider reasoning control. `none` preserves the original cheap one-word
 # requests; the other levels enable provider-native reasoning with enough output room for
@@ -288,12 +292,14 @@ CODEX_DECISION_INSTRUCTIONS = (
     "files, use tools, search, or modify anything. Reply to the final user message "
     "with only the exact JSON decision object it requests."
 )
-CODEX_TOOL_ITEM_TYPES = {
-    "command_execution",
-    "file_change",
-    "mcp_tool_call",
-    "web_search",
-}
+# Fail-closed request-surface guard (#93 isolation contract): the only legitimate
+# stream items are the model's private reasoning and its final visible message. Every
+# other item type — a tool call, a plan update (`update_plan`), a user-input request
+# (`request_user_input`), an image view (`view_image`), a plugin action, or any
+# capability a future CLI adds — is rejected, so a persistent thread cannot silently
+# accrue hidden state that leaks across guesses and contaminates the benchmark. An
+# allowlist stays safe as the CLI grows new item types; a denylist would not.
+CODEX_ALLOWED_ITEM_TYPES = {"agent_message", "reasoning"}
 
 PROVIDER_ENV = {
     "anthropic": "ANTHROPIC_API_KEY",
@@ -313,6 +319,21 @@ class ModelConfig(TypedDict):
     label: str
     tag: str
     display: bool
+
+
+class TokenUsage(TypedDict):
+    """Provider-neutral accounting for exactly one model request or an aggregate."""
+
+    # Input includes cached reads and cache writes. The two cache fields are subsets,
+    # matching OpenAI/Codex semantics while Anthropic/Kimi are converted at the edge.
+    input_tokens: int
+    cached_input_tokens: int
+    cache_write_input_tokens: int
+    # Output includes reasoning. A provider that does not expose the reasoning
+    # breakdown reports null rather than falsely claiming zero reasoning tokens.
+    output_tokens: int
+    reasoning_output_tokens: int | None
+    total_tokens: int
 
 
 Message = dict[str, str]
@@ -356,7 +377,7 @@ class TryProgress:
     number: int
     word: str
     progress: float
-    token_usage: dict[str, Any] | None
+    token_usage: TokenUsage | None
 
 
 @dataclass(frozen=True)
@@ -369,8 +390,11 @@ class RunResult:
     duration: float
     tried_words: tuple[str, ...]
     conversation: tuple[Message, ...]
-    turn_token_usage: tuple[dict[str, Any], ...]
+    turn_token_usage: tuple[TokenUsage, ...]
     termination: RunTermination
+    # Raw payloads remain local audit evidence. In particular, persistent Codex CLI
+    # payloads are cumulative thread snapshots, not per-turn values.
+    raw_provider_token_usage: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -684,8 +708,231 @@ def _json_token_usage(value: object) -> dict[str, Any] | None:
     return normalized if isinstance(normalized, dict) and normalized else None
 
 
-def _last_token_usage(model_reply: ModelReply) -> dict[str, Any] | None:
-    return _json_token_usage(getattr(model_reply, "last_token_usage", None))
+def _token_count(
+    usage: Mapping[str, Any], key: str, *, default: int = 0
+) -> int:
+    value = usage.get(key)
+    if value is None:
+        return default
+    if not _is_int(value) or value < 0:
+        raise ValueError(
+            f"malformed token usage: {key!r} must be a non-negative integer"
+        )
+    return value
+
+
+def _nested_token_count(
+    usage: Mapping[str, Any], parent: str, key: str
+) -> int | None:
+    details = usage.get(parent)
+    if details is None:
+        return None
+    if not isinstance(details, Mapping):
+        raise ValueError(
+            f"malformed token usage: {parent!r} must be an object"
+        )
+    if details.get(key) is None:
+        return None
+    return _token_count(details, key)
+
+
+def _canonical_token_usage(
+    *,
+    input_tokens: int,
+    cached_input_tokens: int = 0,
+    cache_write_input_tokens: int = 0,
+    output_tokens: int,
+    reasoning_output_tokens: int | None = None,
+) -> TokenUsage:
+    counts = {
+        "input_tokens": input_tokens,
+        "cached_input_tokens": cached_input_tokens,
+        "cache_write_input_tokens": cache_write_input_tokens,
+        "output_tokens": output_tokens,
+    }
+    for key, value in counts.items():
+        if not _is_int(value) or value < 0:
+            raise ValueError(
+                f"malformed token usage: {key!r} must be a non-negative integer"
+            )
+    if reasoning_output_tokens is not None and (
+        not _is_int(reasoning_output_tokens) or reasoning_output_tokens < 0
+    ):
+        raise ValueError(
+            "malformed token usage: 'reasoning_output_tokens' must be null or "
+            "a non-negative integer"
+        )
+    if cached_input_tokens > input_tokens:
+        raise ValueError(
+            "malformed token usage: cached input exceeds total input"
+        )
+    if cache_write_input_tokens > input_tokens:
+        raise ValueError(
+            "malformed token usage: cache-write input exceeds total input"
+        )
+    if (
+        reasoning_output_tokens is not None
+        and reasoning_output_tokens > output_tokens
+    ):
+        raise ValueError(
+            "malformed token usage: reasoning output exceeds total output"
+        )
+    return {
+        "input_tokens": input_tokens,
+        "cached_input_tokens": cached_input_tokens,
+        "cache_write_input_tokens": cache_write_input_tokens,
+        "output_tokens": output_tokens,
+        "reasoning_output_tokens": reasoning_output_tokens,
+        "total_tokens": input_tokens + output_tokens,
+    }
+
+
+def _standard_token_usage(value: object) -> TokenUsage | None:
+    """Validate/fill the fixed schema already emitted by a provider adapter."""
+    usage = _json_token_usage(value)
+    if usage is None or not any(
+        key in usage for key in ("input_tokens", "output_tokens")
+    ):
+        return None
+    reasoning = usage.get("reasoning_output_tokens")
+    if reasoning is not None and (not _is_int(reasoning) or reasoning < 0):
+        raise ValueError(
+            "malformed token usage: 'reasoning_output_tokens' must be null or "
+            "a non-negative integer"
+        )
+    return _canonical_token_usage(
+        input_tokens=_token_count(usage, "input_tokens"),
+        cached_input_tokens=_token_count(usage, "cached_input_tokens"),
+        cache_write_input_tokens=_token_count(
+            usage, "cache_write_input_tokens"
+        ),
+        output_tokens=_token_count(usage, "output_tokens"),
+        reasoning_output_tokens=reasoning,
+    )
+
+
+def _normalize_anthropic_token_usage(value: object) -> TokenUsage | None:
+    """Convert Anthropic/Agent-SDK cache categories into inclusive input totals."""
+    usage = _json_token_usage(value)
+    if usage is None or not any(
+        key in usage
+        for key in (
+            "input_tokens",
+            "cache_creation_input_tokens",
+            "cache_read_input_tokens",
+            "output_tokens",
+        )
+    ):
+        return None
+    fresh_input = _token_count(usage, "input_tokens")
+    cached_input = _token_count(usage, "cache_read_input_tokens")
+    cache_write_input = _token_count(
+        usage, "cache_creation_input_tokens"
+    )
+    reasoning = _nested_token_count(
+        usage, "output_tokens_details", "thinking_tokens"
+    )
+    return _canonical_token_usage(
+        input_tokens=fresh_input + cached_input + cache_write_input,
+        cached_input_tokens=cached_input,
+        cache_write_input_tokens=cache_write_input,
+        output_tokens=_token_count(usage, "output_tokens"),
+        reasoning_output_tokens=reasoning,
+    )
+
+
+def _normalize_openai_token_usage(value: object) -> TokenUsage | None:
+    """Convert Responses/Codex usage, whose input count already includes cache."""
+    usage = _json_token_usage(value)
+    if usage is None or not any(
+        key in usage for key in ("input_tokens", "output_tokens")
+    ):
+        return None
+    cached_input = (
+        _token_count(usage, "cached_input_tokens")
+        if usage.get("cached_input_tokens") is not None
+        else _nested_token_count(
+            usage, "input_tokens_details", "cached_tokens"
+        )
+        or 0
+    )
+    cache_write_input = (
+        _token_count(usage, "cache_write_input_tokens")
+        if usage.get("cache_write_input_tokens") is not None
+        else _nested_token_count(
+            usage, "input_tokens_details", "cache_write_tokens"
+        )
+        or 0
+    )
+    if usage.get("reasoning_output_tokens") is not None:
+        reasoning: int | None = _token_count(
+            usage, "reasoning_output_tokens"
+        )
+    else:
+        reasoning = _nested_token_count(
+            usage, "output_tokens_details", "reasoning_tokens"
+        )
+    return _canonical_token_usage(
+        input_tokens=_token_count(usage, "input_tokens"),
+        cached_input_tokens=cached_input,
+        cache_write_input_tokens=cache_write_input,
+        output_tokens=_token_count(usage, "output_tokens"),
+        reasoning_output_tokens=reasoning,
+    )
+
+
+def _cumulative_token_usage_delta(
+    current: TokenUsage, previous: TokenUsage | None
+) -> TokenUsage:
+    """Turn a persistent Codex cumulative snapshot into exactly one turn's usage."""
+    if previous is None:
+        return current
+
+    def delta(key: str) -> int:
+        current_value = current[key]
+        previous_value = previous[key]
+        if not _is_int(current_value) or not _is_int(previous_value):
+            raise ValueError(
+                f"malformed cumulative token usage counter: {key}"
+            )
+        difference = current_value - previous_value
+        if difference < 0:
+            raise RuntimeError(
+                "Codex CLI cumulative token usage decreased within one saved "
+                f"thread ({key}: {current_value} < {previous_value})"
+            )
+        return difference
+
+    current_reasoning = current["reasoning_output_tokens"]
+    previous_reasoning = previous["reasoning_output_tokens"]
+    if current_reasoning is None or previous_reasoning is None:
+        reasoning: int | None = None
+    else:
+        reasoning = current_reasoning - previous_reasoning
+        if reasoning < 0:
+            raise RuntimeError(
+                "Codex CLI cumulative token usage decreased within one saved "
+                "thread (reasoning_output_tokens)"
+            )
+    return _canonical_token_usage(
+        input_tokens=delta("input_tokens"),
+        cached_input_tokens=delta("cached_input_tokens"),
+        cache_write_input_tokens=delta("cache_write_input_tokens"),
+        output_tokens=delta("output_tokens"),
+        reasoning_output_tokens=reasoning,
+    )
+
+
+def _last_token_usage(model_reply: ModelReply) -> TokenUsage | None:
+    return _standard_token_usage(
+        getattr(model_reply, "last_token_usage", None)
+    )
+
+
+def _last_raw_token_usage(model_reply: ModelReply) -> dict[str, Any] | None:
+    return _json_token_usage(
+        getattr(model_reply, "last_raw_token_usage", None)
+    )
 
 
 class PuzzleReferee:
@@ -714,8 +961,8 @@ class PuzzleReferee:
         self.tried: set[str] = set()
         self.tried_words: list[str] = []
         # Parsed words outside the fixed vocabulary do not count, but keeping their
-        # folded forms in the authoritative snapshot prevents a stateless transport
-        # from paying repeatedly for the same rejected answer.
+        # folded forms in the authoritative snapshot prevents any transport from paying
+        # repeatedly for the same rejected answer.
         self.rejected_words: dict[str, str] = {}
         self.holes: list[RuntimeHole] = []
         # Consecutive counted tries that improved no hole's rank (MISS or warm-but-not-
@@ -1091,10 +1338,10 @@ def _rules_opening(
             "",
             "AUTHORITATIVE STATE",
             (
-                "Each turn gives every model identical rules, initial clues, every prior "
-                "PLAYER REPLY and exact REFEREE outcome, and the latest state. Ordered "
-                "outcomes preserve omitted historical snapshots; hidden session memory "
-                "supplies no evidence."
+                "Every turn uses identical public evidence: rules, initial clues, every "
+                "prior PLAYER REPLY and exact REFEREE outcome, and latest state. "
+                "Transports may retain the conversation or reconstruct its record; "
+                "neither adds hidden evidence."
             ),
             (
                 "Any strict improvement resets the streak; non-counting leaves it "
@@ -1129,7 +1376,7 @@ def opening_message(
             ),
             strategy,
         ]
-    # Prompt v22 has one strategy-neutral rules scaffold for every caller. The flag is
+    # Prompt v23 has one strategy-neutral rules scaffold for every caller. The flag is
     # retained for API compatibility with callers that request neutral rules; only
     # an explicitly supplied strategy can add solving guidance.
     _ = rules_only
@@ -1176,7 +1423,7 @@ def feedback_message(
         *_state_snapshot_lines(referee),
         f"Tries: {feedback.tries} (your score — lower is better)",
     ]
-    # Prompt v22 never adds generic solving advice during play. Keep the keyword for
+    # Prompt v23 never adds generic solving advice during play. Keep the keyword for
     # caller compatibility; explicit learned/v7 guidance lives only in the opening.
     _ = rules_only
     lines.append(_reply_reminder(referee))
@@ -1262,13 +1509,17 @@ def play_puzzle(
     consecutive_unparseable = 0
     noncounting_replies = 0
     started = time.monotonic()
-    turn_token_usage: list[dict[str, Any]] = []
+    turn_token_usage: list[TokenUsage] = []
+    raw_provider_token_usage: list[dict[str, Any]] = []
 
     while True:
         raw_reply = model_reply([message.copy() for message in messages])
         usage = _last_token_usage(model_reply)
+        raw_usage = _last_raw_token_usage(model_reply)
         if usage is not None:
             turn_token_usage.append(usage)
+        if raw_usage is not None:
+            raw_provider_token_usage.append(raw_usage)
         turns += 1
         if not isinstance(raw_reply, str):
             raw_reply = ""
@@ -1290,6 +1541,9 @@ def play_puzzle(
                         conversation=tuple(message.copy() for message in messages),
                         turn_token_usage=tuple(turn_token_usage),
                         termination="reply_error",
+                        raw_provider_token_usage=tuple(
+                            raw_provider_token_usage
+                        ),
                     ),
                 )
             messages.append(
@@ -1344,6 +1598,9 @@ def play_puzzle(
                         conversation=tuple(message.copy() for message in messages),
                         turn_token_usage=tuple(turn_token_usage),
                         termination="reply_error",
+                        raw_provider_token_usage=tuple(
+                            raw_provider_token_usage
+                        ),
                     ),
                 )
 
@@ -1359,6 +1616,7 @@ def play_puzzle(
                 conversation=tuple(message.copy() for message in messages),
                 turn_token_usage=tuple(turn_token_usage),
                 termination="solved",
+                raw_provider_token_usage=tuple(raw_provider_token_usage),
             )
         # In best mode a run that is still unsolved at the incumbent score cannot tie
         # or beat it: solving now was checked above, and another counted guess would be
@@ -1376,6 +1634,7 @@ def play_puzzle(
                 conversation=tuple(message.copy() for message in messages),
                 turn_token_usage=tuple(turn_token_usage),
                 termination="cannot_beat_best",
+                raw_provider_token_usage=tuple(raw_provider_token_usage),
             )
         if feedback.tries >= cap:
             return RunResult(
@@ -1387,6 +1646,7 @@ def play_puzzle(
                 conversation=tuple(message.copy() for message in messages),
                 turn_token_usage=tuple(turn_token_usage),
                 termination="cap",
+                raw_provider_token_usage=tuple(raw_provider_token_usage),
             )
 
 
@@ -1527,7 +1787,7 @@ def _stateless_word_parts(messages: list[Message]) -> tuple[str, str]:
             "COMPLETE CHRONOLOGICAL GAME RECORD\n"
         )
     else:
-        # Defensive compatibility for direct adapter callers. Production v22 game
+        # Defensive compatibility for direct adapter callers. Production v23 game
         # openings carry the complete-record marker; older fixtures may expose only
         # CURRENT STATE, and arbitrary one-message calls remain byte-preserving.
         opening_rules, state_marker, state_tail = opening.partition(
@@ -1560,11 +1820,10 @@ def _stateless_word_parts(messages: list[Message]) -> tuple[str, str]:
 def _stateless_word_prompt(messages: list[Message]) -> str:
     """Return one fresh prompt containing the complete chronological public record.
 
-    Every real word-play transport sees this identical user prompt. All prior replies,
-    exact referee outcomes, the initial starting clues, and the latest authoritative
-    snapshot are explicit, so neither provider-specific session memory nor a lossy
-    current-best-only treatment becomes an experimental variable. Superseded snapshots
-    are omitted because their evidence is preserved by the exact ordered outcomes.
+    Every transport sees this identical user prompt in the explicit stateless diagnostic.
+    All prior replies, exact referee outcomes, initial clues, and the latest authoritative
+    snapshot are explicit. Superseded snapshots are omitted because the exact ordered
+    outcomes preserve their evidence.
     """
     stable, volatile = _stateless_word_parts(messages)
     return f"{stable}{volatile}"
@@ -1714,13 +1973,14 @@ async def _agent_sdk_turn(
 
 
 class AnthropicSubscriptionReply:
-    """Synchronous referee adapter over isolated Agent SDK turns."""
+    """Synchronous referee adapter over isolated Agent SDK sessions."""
 
     def __init__(
         self,
         model_id: str,
         effort: ReasoningEffort,
         output: OutputMode = "word",
+        session: SessionMode = DEFAULT_SESSION,
         *,
         subprocess_env: Mapping[str, str] | None = None,
         conflict_env: Iterable[str] = SUBSCRIPTION_CONFLICT_ENV,
@@ -1730,40 +1990,57 @@ class AnthropicSubscriptionReply:
         self.model_id = model_id
         self.effort = effort
         self.output = output
+        if session not in SESSION_MODES:
+            raise ValueError(f"unsupported session mode: {session}")
+        self.session = session
         self._subprocess_env = dict(subprocess_env or {})
         self._conflict_env = tuple(conflict_env)
         self._agent_extra_args = dict(agent_extra_args or {})
         self.session_id: str | None = None
         self._message_count = 0
         self._workspace = tempfile.TemporaryDirectory(prefix=workspace_prefix)
-        self.last_token_usage: dict[str, Any] | None = None
+        self.last_token_usage: TokenUsage | None = None
+        self.last_raw_token_usage: dict[str, Any] | None = None
 
     def __call__(self, messages: list[Message]) -> str:
+        self.last_token_usage = None
+        self.last_raw_token_usage = None
         if not messages or messages[-1].get("role") != "user":
             raise ValueError("Agent SDK reply requires a final user message")
 
-        # `benchmark_model` reuses one adapter across median runs. A one-message
-        # transcript always starts a fresh attempt.
-        if len(messages) == 1:
+        persistent = self.output != "word" or self.session == "persistent"
+        if persistent:
+            # `benchmark_model` reuses one adapter across runs. A one-message
+            # transcript always starts a fresh attempt.
+            if len(messages) == 1:
+                self.session_id = None
+                self._message_count = 0
+            elif self._message_count == 0:
+                raise RuntimeError(
+                    "Agent SDK conversation cannot continue before its opening turn"
+                )
+            expected_count = (
+                1 if self._message_count == 0 else self._message_count + 2
+            )
+            if len(messages) != expected_count:
+                raise RuntimeError(
+                    "Agent SDK conversation diverged from the append-only referee "
+                    "transcript"
+                )
+        else:
             self.session_id = None
             self._message_count = 0
-        elif self._message_count == 0:
+        if persistent and len(messages) > 1 and self.session_id is None:
             raise RuntimeError(
-                "Agent SDK conversation cannot continue before its opening turn"
+                "Agent SDK conversation cannot resume before its opening turn"
             )
 
-        expected_count = 1 if self._message_count == 0 else self._message_count + 2
-        if len(messages) != expected_count:
-            raise RuntimeError(
-                "Agent SDK conversation diverged from the append-only referee transcript"
-            )
-
-        # Word play uses a fresh provider turn containing the same fixed rules and
-        # complete chronological public record as every other transport. Other output
-        # modes retain their existing resumable-session behavior.
+        # Product play sends only the newest referee message into the native session.
+        # The explicit stateless diagnostic reconstructs the same complete public record
+        # in a fresh provider turn. Non-word workflows keep their existing sessions.
         prompt = messages[-1]["content"]
         resume = self.session_id
-        if self.output == "word":
+        if not persistent:
             prompt = _stateless_word_prompt(messages)
             resume = None
 
@@ -1779,9 +2056,15 @@ class AnthropicSubscriptionReply:
                     extra_args=self._agent_extra_args,
                 )
             )
-        self.session_id = session_id if self.output != "word" else None
-        self._message_count = len(messages)
-        self.last_token_usage = usage
+        if resume is not None and session_id != resume:
+            raise RuntimeError(
+                f"{self.model_id} Agent SDK resumed the wrong session "
+                f"({session_id!r} != {resume!r})"
+            )
+        self.session_id = session_id if persistent else None
+        self._message_count = len(messages) if persistent else 0
+        self.last_raw_token_usage = usage
+        self.last_token_usage = _normalize_anthropic_token_usage(usage)
         return text
 
     def close(self) -> None:
@@ -1859,17 +2142,23 @@ class KimiSubscriptionReply(AnthropicSubscriptionReply):
         api_key: str,
         requested_effort: ReasoningEffort,
         output: OutputMode = "word",
+        session: SessionMode = DEFAULT_SESSION,
     ):
         effective_effort = _effective_provider_effort("kimi", requested_effort)
         super().__init__(
             model_id,
             effective_effort,
             output,
+            session,
             conflict_env=KIMI_SUBPROCESS_CONFLICT_ENV,
             workspace_prefix="whippin-kimi-agent-sdk-",
             agent_extra_args={
                 "bare": None,
-                **({"no-session-persistence": None} if output == "word" else {}),
+                **(
+                    {"no-session-persistence": None}
+                    if output == "word" and session == "stateless"
+                    else {}
+                ),
             },
         )
         config_dir = Path(self._workspace.name) / "claude-config"
@@ -1944,9 +2233,10 @@ def _codex_snapshot_prompt(
 
 def _codex_final_message(
     stdout: str, model_id: str
-) -> tuple[str, dict[str, Any] | None]:
+) -> tuple[str, dict[str, Any] | None, str | None]:
     final_message: str | None = None
     token_usage: dict[str, Any] | None = None
+    thread_id: str | None = None
     for line_number, line in enumerate(stdout.splitlines(), start=1):
         if not line.strip():
             continue
@@ -1962,6 +2252,18 @@ def _codex_final_message(
         if event_type in {"error", "turn.failed"}:
             detail = event.get("message") or event.get("error") or "unknown error"
             raise RuntimeError(f"{model_id} Codex CLI turn failed: {detail}")
+        if event_type == "thread.started":
+            candidate = event.get("thread_id")
+            if not isinstance(candidate, str) or not candidate:
+                raise RuntimeError(
+                    f"{model_id} Codex CLI returned a malformed thread id"
+                )
+            if thread_id is not None and candidate != thread_id:
+                raise RuntimeError(
+                    f"{model_id} Codex CLI returned conflicting thread ids"
+                )
+            thread_id = candidate
+            continue
         if event_type == "turn.completed":
             token_usage = _json_token_usage(event.get("usage"))
             continue
@@ -1971,7 +2273,7 @@ def _codex_final_message(
         if not isinstance(item, dict):
             raise RuntimeError(f"{model_id} Codex CLI returned a malformed item event")
         item_type = item.get("type")
-        if item_type in CODEX_TOOL_ITEM_TYPES:
+        if item_type not in CODEX_ALLOWED_ITEM_TYPES:
             raise RuntimeError(
                 f"{model_id} Codex CLI attempted forbidden tool activity: {item_type}"
             )
@@ -1984,14 +2286,18 @@ def _codex_final_message(
             final_message = text
     if final_message is None:
         raise RuntimeError(f"{model_id} Codex CLI returned no final agent message")
-    return final_message, token_usage
+    return final_message, token_usage, thread_id
 
 
 class OpenAISubscriptionReply:
-    """Fresh, isolated Codex CLI turns backed by saved ChatGPT plan auth."""
+    """Isolated Codex CLI sessions backed by saved ChatGPT plan auth."""
 
     def __init__(
-        self, model_id: str, effort: ReasoningEffort, output: OutputMode = "word"
+        self,
+        model_id: str,
+        effort: ReasoningEffort,
+        output: OutputMode = "word",
+        session: SessionMode = DEFAULT_SESSION,
     ):
         if effort not in CODEX_SUBSCRIPTION_EFFORTS:
             supported = "|".join(CODEX_SUBSCRIPTION_EFFORTS)
@@ -1999,6 +2305,8 @@ class OpenAISubscriptionReply:
                 "OpenAI subscription auth does not support reasoning effort "
                 f"{effort!r}; use {supported}"
             )
+        if session not in SESSION_MODES:
+            raise ValueError(f"unsupported session mode: {session}")
         cli = shutil.which("codex")
         if cli is None:
             raise RuntimeError("Codex CLI is not installed")
@@ -2006,6 +2314,8 @@ class OpenAISubscriptionReply:
         self.model_id = model_id
         self.effort = effort
         self.output = output
+        self.session = session
+        self.session_id: str | None = None
         self.timeout_seconds = (
             CODEX_PROSE_TIMEOUT_SECONDS
             if output == "prose"
@@ -2013,7 +2323,9 @@ class OpenAISubscriptionReply:
         )
         self._message_count = 0
         self._workspace = tempfile.TemporaryDirectory(prefix="whippin-codex-")
-        self.last_token_usage: dict[str, Any] | None = None
+        self.last_token_usage: TokenUsage | None = None
+        self.last_raw_token_usage: dict[str, Any] | None = None
+        self._cumulative_token_usage: TokenUsage | None = None
         instructions = {
             "word": CODEX_BENCHMARK_INSTRUCTIONS,
             "decision": CODEX_DECISION_INSTRUCTIONS,
@@ -2022,7 +2334,10 @@ class OpenAISubscriptionReply:
         self._instructions_path = Path(self._workspace.name) / "instructions.md"
         self._instructions_path.write_text(instructions + "\n", encoding="utf-8")
 
-    def _command(self) -> list[str]:
+    def _command(self, resume: str | None = None) -> list[str]:
+        persistent = self.output == "word" and self.session == "persistent"
+        if resume is not None and not persistent:
+            raise RuntimeError("a stateless Codex turn cannot resume a session")
         config = [
             f"approval_policy={json.dumps('never')}",
             f"model_reasoning_effort={json.dumps(self.effort)}",
@@ -2031,53 +2346,88 @@ class OpenAISubscriptionReply:
             "features.shell_tool=false",
             "features.multi_agent=false",
             f"web_search={json.dumps('disabled')}",
-            f"history.persistence={json.dumps('none')}",
+            f"history.persistence={json.dumps('save-all' if persistent else 'none')}",
             "feedback.enabled=false",
             "analytics.enabled=false",
         ]
-        command = [
-            self.cli,
-            "exec",
-            "--ephemeral",
-            "--ignore-user-config",
-            "--ignore-rules",
-            "--skip-git-repo-check",
-            "--strict-config",
-            "--json",
-            "--sandbox",
-            "read-only",
-            "--cd",
-            self._workspace.name,
-            "--model",
-            self.model_id,
-        ]
+        command = [self.cli, "exec"]
+        if resume is not None:
+            command.append("resume")
+        if not persistent:
+            command.append("--ephemeral")
+        command.extend(
+            [
+                "--ignore-user-config",
+                "--ignore-rules",
+                "--skip-git-repo-check",
+                "--strict-config",
+                "--json",
+                "--model",
+                self.model_id,
+            ]
+        )
+        # A resumed thread retains its original cwd and sandbox; those flags are valid
+        # only when creating the first turn.
+        if resume is None:
+            model_index = command.index("--model")
+            command[model_index:model_index] = [
+                "--sandbox",
+                "read-only",
+                "--cd",
+                self._workspace.name,
+            ]
         for value in config:
             command.extend(("--config", value))
+        if resume is not None:
+            command.append(resume)
         command.append("-")
         return command
 
     def __call__(self, messages: list[Message]) -> str:
+        self.last_token_usage = None
+        self.last_raw_token_usage = None
         if not messages or messages[-1].get("role") != "user":
             raise ValueError("Codex CLI reply requires a final user message")
 
-        if len(messages) == 1:
-            self._message_count = 0
-        expected_count = 1 if self._message_count == 0 else self._message_count + 2
-        if len(messages) != expected_count:
-            raise RuntimeError(
-                "Codex CLI conversation diverged from the append-only referee transcript"
+        persistent = self.output == "word" and self.session == "persistent"
+        if persistent:
+            if len(messages) == 1:
+                self.session_id = None
+                self._message_count = 0
+                self._cumulative_token_usage = None
+            expected_count = (
+                1 if self._message_count == 0 else self._message_count + 2
             )
+            if len(messages) != expected_count:
+                raise RuntimeError(
+                    "Codex CLI conversation diverged from the append-only referee "
+                    "transcript"
+                )
+        else:
+            self.session_id = None
+            self._message_count = 0
+            self._cumulative_token_usage = None
+        if persistent and len(messages) > 1 and self.session_id is None:
+            raise RuntimeError(
+                "Codex CLI conversation cannot resume before its opening turn"
+            )
+        resume = self.session_id if persistent else None
+        prompt = (
+            messages[-1]["content"]
+            if persistent
+            else _codex_snapshot_prompt(messages, self.output)
+        )
 
         try:
             completed = subprocess.run(
-                self._command(),
+                self._command(resume),
                 check=False,
                 capture_output=True,
                 text=True,
                 timeout=self.timeout_seconds,
                 cwd=self._workspace.name,
                 env=_environment_without(OPENAI_SUBSCRIPTION_CONFLICT_ENV),
-                input=_codex_snapshot_prompt(messages, self.output),
+                input=prompt,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise RuntimeError(f"{self.model_id} Codex CLI turn failed: {exc}") from exc
@@ -2089,9 +2439,32 @@ class OpenAISubscriptionReply:
                 f"{self.model_id} Codex CLI exited {completed.returncode}: "
                 f"{detail[-1000:]}"
             )
-        result, usage = _codex_final_message(completed.stdout, self.model_id)
-        self._message_count = len(messages)
-        self.last_token_usage = usage
+        result, usage, thread_id = _codex_final_message(
+            completed.stdout, self.model_id
+        )
+        if persistent:
+            if thread_id is None:
+                raise RuntimeError(
+                    f"{self.model_id} Codex CLI session returned no thread id"
+                )
+            if resume is not None and thread_id != resume:
+                raise RuntimeError(
+                    f"{self.model_id} Codex CLI resumed the wrong thread "
+                    f"({thread_id!r} != {resume!r})"
+                )
+            self.session_id = thread_id
+        else:
+            self.session_id = None
+        self._message_count = len(messages) if persistent else 0
+        self.last_raw_token_usage = usage
+        normalized_usage = _normalize_openai_token_usage(usage)
+        if normalized_usage is not None and persistent:
+            current_cumulative = normalized_usage
+            normalized_usage = _cumulative_token_usage_delta(
+                current_cumulative, self._cumulative_token_usage
+            )
+            self._cumulative_token_usage = current_cumulative
+        self.last_token_usage = normalized_usage
         return result
 
     def close(self) -> None:
@@ -2106,46 +2479,76 @@ def provider_reply(
     auth: AuthMode = DEFAULT_AUTH,
     output: OutputMode = "word",
     reasoning_mode: ReasoningMode = "standard",
+    session: SessionMode = DEFAULT_SESSION,
 ) -> ModelReply:
     """Build one provider adapter. Paid SDK imports stay lazy for offline tests.
 
     `output` fixes the adapter's response mode at construction: "word" for the
     ordinary benchmark, "decision" for structured controllers, and "prose" for
     long-form analysis. OpenAI API callers can additionally request documented Pro
-    reasoning with max effort; other transports reject that wire-only option.
+    reasoning with max effort; other transports reject that wire-only option. Ordinary
+    word play defaults to one provider-native persistent session per run; stateless mode
+    remains an explicit complete-record diagnostic.
     """
     provider = config["provider"]
     model_id = config["model_id"]
     _validate_provider_effort(provider, auth, effort)
     _validate_reasoning_mode(provider, auth, effort, reasoning_mode)
+    if session not in SESSION_MODES:
+        raise ValueError(f"unsupported session mode: {session}")
 
     if provider == "kimi":
         if not api_key:
             raise ValueError(
                 "Kimi K3 subscription auth requires KIMI_CODE_API_KEY"
             )
-        return KimiSubscriptionReply(model_id, api_key, effort, output)
+        return KimiSubscriptionReply(model_id, api_key, effort, output, session)
 
     if provider == "anthropic":
         if auth == "subscription":
-            return AnthropicSubscriptionReply(model_id, effort, output)
+            return AnthropicSubscriptionReply(model_id, effort, output, session)
         if not api_key:
             raise ValueError("Anthropic API auth requires ANTHROPIC_API_KEY")
         import anthropic
 
         client = anthropic.Anthropic(api_key=api_key)
+        provider_history: list[dict[str, Any]] = []
+        message_count = 0
 
         def reply(messages: list[Message]) -> str:
+            nonlocal provider_history, message_count
             setattr(reply, "last_token_usage", None)
+            setattr(reply, "last_raw_token_usage", None)
+            if not messages or messages[-1].get("role") != "user":
+                raise ValueError("Anthropic API reply requires a final user message")
+            persistent = output == "word" and session == "persistent"
+            if persistent:
+                if len(messages) == 1:
+                    provider_history = []
+                    message_count = 0
+                expected_count = 1 if message_count == 0 else message_count + 2
+                if len(messages) != expected_count:
+                    raise RuntimeError(
+                        "Anthropic API conversation diverged from the append-only "
+                        "referee transcript"
+                    )
             budget = _output_token_budget(effort, output)
             request: dict[str, Any] = {
                 "model": model_id,
                 "max_tokens": budget,
             }
             stable_rules = ""
-            if output == "word":
+            if output == "word" and not persistent:
                 stable_rules, volatile_state = _stateless_word_parts(messages)
-            if stable_rules:
+            if persistent:
+                request["messages"] = [
+                    *provider_history,
+                    {"role": "user", "content": messages[-1]["content"]},
+                ]
+                # Automatic moving cache breakpoints retain the append-only native
+                # conversation, including signed hidden-thinking blocks.
+                request["cache_control"] = {"type": "ephemeral"}
+            elif stable_rules:
                 # Word turns are one user message whose tail (the complete public
                 # record) changes every turn. A breakpoint placed after the whole
                 # message therefore never produces a cache read; pinning it on the
@@ -2184,50 +2587,96 @@ def provider_reply(
                 raise RuntimeError(
                     f"{model_id} exhausted its {budget}-token output budget"
                 )
+            raw_usage = _json_token_usage(getattr(response, "usage", None))
+            setattr(reply, "last_raw_token_usage", raw_usage)
             setattr(
                 reply,
                 "last_token_usage",
-                _json_token_usage(getattr(response, "usage", None)),
+                _normalize_anthropic_token_usage(raw_usage),
             )
+            if persistent:
+                provider_history = [
+                    *request["messages"],
+                    {"role": "assistant", "content": list(response.content)},
+                ]
+            message_count = len(messages) if persistent else 0
             return _text_content(response.content)
 
         setattr(reply, "last_token_usage", None)
+        setattr(reply, "last_raw_token_usage", None)
         return reply
 
     if provider == "openai":
         if auth == "subscription":
-            return OpenAISubscriptionReply(model_id, effort, output)
+            return OpenAISubscriptionReply(model_id, effort, output, session)
         if not api_key:
             raise ValueError("OpenAI auth requires OPENAI_API_KEY")
         from openai import OpenAI
 
         client = OpenAI(api_key=api_key)
+        previous_response_id: str | None = None
+        message_count = 0
 
         def reply(messages: list[Message]) -> str:
+            nonlocal previous_response_id, message_count
             setattr(reply, "last_token_usage", None)
+            setattr(reply, "last_raw_token_usage", None)
+            if not messages or messages[-1].get("role") != "user":
+                raise ValueError("OpenAI API reply requires a final user message")
+            persistent = output == "word" and session == "persistent"
+            if persistent:
+                if len(messages) == 1:
+                    previous_response_id = None
+                    message_count = 0
+                expected_count = 1 if message_count == 0 else message_count + 2
+                if len(messages) != expected_count:
+                    raise RuntimeError(
+                        "OpenAI API conversation diverged from the append-only referee "
+                        "transcript"
+                    )
             reasoning: dict[str, str] = {"effort": effort}
             if reasoning_mode == "pro":
                 reasoning["mode"] = "pro"
-            response = client.responses.create(
-                model=model_id,
-                input=_provider_messages(messages, output),
-                reasoning=reasoning,
-                max_output_tokens=_output_token_budget(effort, output),
-            )
+            request: dict[str, Any] = {
+                "model": model_id,
+                "input": (
+                    [{"role": "user", "content": messages[-1]["content"]}]
+                    if persistent
+                    else _provider_messages(messages, output)
+                ),
+                "reasoning": reasoning,
+                "max_output_tokens": _output_token_budget(effort, output),
+            }
+            if persistent:
+                request["store"] = True
+                if previous_response_id is not None:
+                    request["previous_response_id"] = previous_response_id
+            response = client.responses.create(**request)
             if getattr(response, "status", None) == "incomplete":
                 details = getattr(response, "incomplete_details", None)
                 reason = getattr(details, "reason", None) or "unknown reason"
                 raise RuntimeError(
                     f"{model_id} returned an incomplete response: {reason}"
                 )
+            raw_usage = _json_token_usage(getattr(response, "usage", None))
+            setattr(reply, "last_raw_token_usage", raw_usage)
             setattr(
                 reply,
                 "last_token_usage",
-                _json_token_usage(getattr(response, "usage", None)),
+                _normalize_openai_token_usage(raw_usage),
             )
+            if persistent:
+                response_id = getattr(response, "id", None)
+                if not isinstance(response_id, str) or not response_id:
+                    raise RuntimeError(
+                        f"{model_id} Responses API session returned no response id"
+                    )
+                previous_response_id = response_id
+            message_count = len(messages) if persistent else 0
             return response.output_text
 
         setattr(reply, "last_token_usage", None)
+        setattr(reply, "last_raw_token_usage", None)
         return reply
 
     raise ValueError(f"unsupported provider: {provider}")
@@ -2552,13 +3001,33 @@ def _transport_name(config: ModelConfig, auth: AuthMode) -> str:
 
 def _aggregate_token_usage(
     turn_token_usage: Sequence[Mapping[str, Any]],
-) -> dict[str, int] | None:
-    totals: dict[str, int] = {}
-    for usage in turn_token_usage:
-        for key, value in usage.items():
-            if "token" in key.lower() and _is_int(value):
-                totals[key] = totals.get(key, 0) + value
-    return totals or None
+) -> TokenUsage | None:
+    normalized = [
+        usage
+        for raw_usage in turn_token_usage
+        if (usage := _standard_token_usage(raw_usage)) is not None
+    ]
+    if not normalized:
+        return None
+    reasoning_values = [
+        usage["reasoning_output_tokens"] for usage in normalized
+    ]
+    reasoning = (
+        sum(value for value in reasoning_values if value is not None)
+        if all(value is not None for value in reasoning_values)
+        else None
+    )
+    return _canonical_token_usage(
+        input_tokens=sum(usage["input_tokens"] for usage in normalized),
+        cached_input_tokens=sum(
+            usage["cached_input_tokens"] for usage in normalized
+        ),
+        cache_write_input_tokens=sum(
+            usage["cache_write_input_tokens"] for usage in normalized
+        ),
+        output_tokens=sum(usage["output_tokens"] for usage in normalized),
+        reasoning_output_tokens=reasoning,
+    )
 
 
 def _lab_session(
@@ -2567,6 +3036,7 @@ def _lab_session(
     cap: int,
     effort: ReasoningEffort,
     auth: AuthMode,
+    session: SessionMode,
     timestamp: str,
     playbook_sha256: str | None = None,
 ) -> dict[str, Any]:
@@ -2583,17 +3053,24 @@ def _lab_session(
             "termination": result.termination,
             "transcript": [message.copy() for message in result.conversation],
         }
-        token_usage = _aggregate_token_usage(result.turn_token_usage)
+        canonical_turn_usage = [
+            usage
+            for raw_usage in result.turn_token_usage
+            if (usage := _standard_token_usage(raw_usage)) is not None
+        ]
+        token_usage = _aggregate_token_usage(canonical_turn_usage)
         if token_usage is not None:
             run["token_usage"] = token_usage
-            run["turn_token_usage"] = [
-                dict(usage) for usage in result.turn_token_usage
+            run["turn_token_usage"] = canonical_turn_usage
+        if result.raw_provider_token_usage:
+            run["raw_provider_token_usage"] = [
+                dict(usage) for usage in result.raw_provider_token_usage
             ]
         runs.append(run)
 
     config = summary.config
     effective_effort = _effective_provider_effort(config["provider"], effort)
-    session: dict[str, Any] = {
+    record: dict[str, Any] = {
         "timestamp": timestamp,
         "prompt_version": PROMPT_VERSION,
         "cap": cap,
@@ -2601,6 +3078,8 @@ def _lab_session(
         "provider": config["provider"],
         "transport": _transport_name(config, auth),
         "auth": auth,
+        "session": session,
+        "token_usage_schema_version": TOKEN_USAGE_SCHEMA_VERSION,
         "effort": effort,
         "requested_effort": effort,
         "effective_provider_effort": effective_effort,
@@ -2621,11 +3100,11 @@ def _lab_session(
         ]
     )
     if total_usage is not None:
-        session["token_usage"] = total_usage
-    session[f"{summary.selection}_run"] = summary.selected_run_index + 1
+        record["token_usage"] = total_usage
+    record[f"{summary.selection}_run"] = summary.selected_run_index + 1
     if playbook_sha256 is not None:
-        session["playbook_sha256"] = playbook_sha256
-    return session
+        record["playbook_sha256"] = playbook_sha256
+    return record
 
 
 def write_lab_artifact(
@@ -2635,6 +3114,7 @@ def write_lab_artifact(
     cap: int,
     effort: ReasoningEffort,
     auth: AuthMode,
+    session: SessionMode = DEFAULT_SESSION,
     output_dir: Path | None = None,
     timestamp: str | None = None,
     playbook_sha256: str | None = None,
@@ -2668,6 +3148,7 @@ def write_lab_artifact(
             cap=cap,
             effort=effort,
             auth=auth,
+            session=session,
             timestamp=recorded_at,
             playbook_sha256=playbook_sha256,
         )
@@ -2680,10 +3161,13 @@ def display_benchmark_sessions(
     artifact: Mapping[str, Any],
     *,
     selection: SelectionMode = DEFAULT_SELECTION,
+    session: SessionMode = DEFAULT_SESSION,
 ) -> list[dict[str, Any]]:
-    """Take the latest same-selection current-prompt session per display model."""
+    """Take the latest same-selection/session current-prompt run per display model."""
     if selection not in SELECTION_MODES:
         raise ValueError(f"unsupported run selection mode: {selection}")
+    if session not in SESSION_MODES:
+        raise ValueError(f"unsupported session mode: {session}")
     sessions = artifact.get("sessions")
     if not isinstance(sessions, list):
         raise ValueError("malformed benchmark artifact: sessions must be an array")
@@ -2695,7 +3179,7 @@ def display_benchmark_sessions(
             continue
         # Sessions written before selection modes existed were all median sessions.
         session_selection = raw.get("selection", "median")
-        if session_selection != selection:
+        if session_selection != selection or raw.get("session") != session:
             continue
         model_id = raw.get("model_id")
         entry = raw.get("benchmark_entry")
@@ -2717,10 +3201,13 @@ def display_benchmark_entries(
     artifact: Mapping[str, Any],
     *,
     selection: SelectionMode = DEFAULT_SELECTION,
+    session: SessionMode = DEFAULT_SESSION,
 ) -> list[dict[str, Any]]:
     return [
-        dict(session["benchmark_entry"])
-        for session in display_benchmark_sessions(artifact, selection=selection)
+        dict(record["benchmark_entry"])
+        for record in display_benchmark_sessions(
+            artifact, selection=selection, session=session
+        )
     ]
 
 
@@ -2840,6 +3327,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "--model": _model_selector_guidance(configs),
             "--effort": f"Valid values: {', '.join(EFFORT_LEVELS)}.",
             "--auth": f"Valid values: {', '.join(AUTH_MODES)}.",
+            "--session": f"Valid values: {', '.join(SESSION_MODES)}.",
             "--selection": f"Valid values: {', '.join(SELECTION_MODES)}.",
         },
         description="Make one configured LLM play a Whippin puzzle offline and report its score.",
@@ -2892,6 +3380,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help=(
             "transport for the selected model's provider: API-key billing or isolated "
             f"Claude.ai/ChatGPT/Kimi Code subscription access (default: {DEFAULT_AUTH})"
+        ),
+    )
+    parser.add_argument(
+        "--session",
+        choices=SESSION_MODES,
+        default=DEFAULT_SESSION,
+        help=(
+            "word-play history transport: one native provider session per run, or "
+            "fresh complete-record turns for controlled diagnostics "
+            f"(default: {DEFAULT_SESSION})"
         ),
     )
     parser.add_argument(
@@ -2989,9 +3487,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(
         f"Whippin benchmark prompt={PROMPT_VERSION} provider={config['provider']} "
         f"model={config['model_id']} transport={_transport_name(config, args.auth)} "
-        f"auth={args.auth} requested_effort={args.effort} "
+        f"auth={args.auth} session={args.session} requested_effort={args.effort} "
         f"effective_provider_effort={effective_effort} cap={args.cap} runs={args.runs} "
-        f"selection={args.selection} "
+        f"selection={args.selection} token_usage_schema={TOKEN_USAGE_SCHEMA_VERSION} "
         f"playbook={playbook_sha256 or 'none'}",
         flush=True,
     )
@@ -3000,8 +3498,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "KIMI cost notice: low effort still uses adaptive thinking; "
             f"this configuration schedules {args.runs} "
             f"run{'s' if args.runs != 1 else ''} with up to {args.cap} counted "
-            "guesses each. Every fresh turn is a paid request, and malformed or "
-            "non-counting replies can add requests.",
+            f"guesses each in {args.session} mode. Every turn is a paid request, and "
+            "malformed or non-counting replies can add requests.",
             flush=True,
         )
     if args.auth != "subscription":
@@ -3044,6 +3542,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 api_key,
                 effort=args.effort,
                 auth=args.auth,
+                session=args.session,
             ),
             cap=args.cap,
             runs=args.runs,
@@ -3096,13 +3595,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 cap=args.cap,
                 effort=args.effort,
                 auth=args.auth,
+                session=args.session,
                 playbook_sha256=playbook_sha256,
             )
             print(f"Wrote lab artifact -> {artifact_path}")
 
             if config["display"]:
                 display_sessions = display_benchmark_sessions(
-                    artifact, selection=args.selection
+                    artifact,
+                    selection=args.selection,
+                    session=args.session,
                 )
                 entries = [
                     dict(session["benchmark_entry"])
