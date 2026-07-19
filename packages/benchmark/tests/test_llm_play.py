@@ -1613,6 +1613,77 @@ def test_openai_subscription_rejects_codex_tool_activity(monkeypatch):
     reply.close()
 
 
+@pytest.mark.parametrize(
+    "item_type",
+    [
+        # The classic tool items the denylist already covered.
+        "command_execution",
+        "file_change",
+        "mcp_tool_call",
+        "web_search",
+        # The request-surface leaks the denylist silently let through (#93): plan
+        # updates, user-input prompts, image views, plugins, and any future capability.
+        "update_plan",
+        "request_user_input",
+        "view_image",
+        "plugin_call",
+        "some_future_capability",
+    ],
+)
+def test_openai_subscription_rejects_every_non_reasoning_item(monkeypatch, item_type):
+    monkeypatch.setattr("llm_play.shutil.which", lambda _command: "/usr/bin/codex")
+    monkeypatch.setattr(
+        "llm_play.subprocess.run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(
+                {"type": "item.completed", "item": {"type": item_type}}
+            ),
+            stderr="",
+        ),
+    )
+    reply = provider_reply(MODELS[2], None, effort="medium", auth="subscription")
+
+    with pytest.raises(RuntimeError, match="forbidden tool activity"):
+        reply([{"role": "user", "content": "opening"}])
+    reply.close()
+
+
+def test_openai_subscription_allows_private_reasoning_before_the_message(monkeypatch):
+    # The allowlist must not over-tighten: a real reasoning-effort run streams private
+    # `reasoning` items ahead of the final `agent_message`, and those must pass.
+    monkeypatch.setattr("llm_play.shutil.which", lambda _command: "/usr/bin/codex")
+    monkeypatch.setattr(
+        "llm_play.subprocess.run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="\n".join(
+                [
+                    json.dumps({"type": "thread.started", "thread_id": "thread-1"}),
+                    json.dumps(
+                        {
+                            "type": "item.completed",
+                            "item": {"type": "reasoning", "text": "weigh the clues"},
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "type": "item.completed",
+                            "item": {"type": "agent_message", "text": "forest"},
+                        }
+                    ),
+                    json.dumps({"type": "turn.completed", "usage": {}}),
+                ]
+            ),
+            stderr="",
+        ),
+    )
+    reply = provider_reply(MODELS[2], None, effort="medium", auth="subscription")
+
+    assert reply([{"role": "user", "content": "opening"}]) == "forest"
+    reply.close()
+
+
 def test_openai_subscription_auth_preflight_strips_api_credentials(monkeypatch):
     def fake_run(command, **kwargs):
         assert command == ["/usr/local/bin/codex", "login", "status"]
