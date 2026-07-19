@@ -291,12 +291,14 @@ CODEX_DECISION_INSTRUCTIONS = (
     "files, use tools, search, or modify anything. Reply to the final user message "
     "with only the exact JSON decision object it requests."
 )
-CODEX_TOOL_ITEM_TYPES = {
-    "command_execution",
-    "file_change",
-    "mcp_tool_call",
-    "web_search",
-}
+# Fail-closed request-surface guard (#93 isolation contract): the only legitimate
+# stream items are the model's private reasoning and its final visible message. Every
+# other item type — a tool call, a plan update (`update_plan`), a user-input request
+# (`request_user_input`), an image view (`view_image`), a plugin action, or any
+# capability a future CLI adds — is rejected, so a persistent thread cannot silently
+# accrue hidden state that leaks across guesses and contaminates the benchmark. An
+# allowlist stays safe as the CLI grows new item types; a denylist would not.
+CODEX_ALLOWED_ITEM_TYPES = {"agent_message", "reasoning"}
 
 PROVIDER_ENV = {
     "anthropic": "ANTHROPIC_API_KEY",
@@ -2012,7 +2014,7 @@ def _codex_final_message(
         if not isinstance(item, dict):
             raise RuntimeError(f"{model_id} Codex CLI returned a malformed item event")
         item_type = item.get("type")
-        if item_type in CODEX_TOOL_ITEM_TYPES:
+        if item_type not in CODEX_ALLOWED_ITEM_TYPES:
             raise RuntimeError(
                 f"{model_id} Codex CLI attempted forbidden tool activity: {item_type}"
             )
