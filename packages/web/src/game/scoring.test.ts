@@ -2,13 +2,13 @@
 // against the SPEC in AGENTS.md ("### Progress"):
 //   s(rank)   = 1 - ln(rank+1)/ln(N+1)          // s(0) = 1 (solved = perfect)
 //   p_hole    = (s(rank) - s(start_rank)) / (1 - s(start_rank))   // 0 at start, 1 solved
-//   progress% = 100 * average(p_hole)
+//   progress% = 100 * average(p_hole over UNIQUE secret slugs)
 //
 // NOTE (discrepancy, see the agent's report): the /goal brief described a DIFFERENT
 // scoring model — per-guess "contribution", a "perfect" baseline, and
 // finalScore = round(rawScore/perfect*SCALE) with strict convexity (one jump > two
 // jumps). That model is NOT in this repo or AGENTS.md. The real model is
-// path-INDEPENDENT (progress depends only on each hole's CURRENT rank), so we lock
+// path-INDEPENDENT (progress depends only on each logical target's CURRENT rank), so we lock
 // that actual contract here. "Collateral neutralization" is tested as the real
 // model expresses it: a collateral nudge then a later solve equals the single merged
 // solve EXACTLY — fragments never double-count.
@@ -92,5 +92,18 @@ describe('computeProgress(holes, ranks) — averaged, 0..100, path-independent',
     const ranks: RankMap = { a: mk(1000), b: mk(1000) };
     const half: RuntimeHole[] = [hole('a', 0, 300), hole('b', 300, 300)];
     expect(computeProgress(half, ranks)).toBeCloseTo(50, 9);
+  });
+
+  it('counts repeated occurrences as one logical target in the progress average', () => {
+    const ranks: RankMap = { chat: mk(1000), garden: mk(1000) };
+    const holes: RuntimeHole[] = [
+      { pos: 1, secret: 'chat', word: 'chat', rank: 0, startRank: 300 },
+      { pos: 4, secret: 'chat', word: 'chat', rank: 0, startRank: 300 },
+      { pos: 7, secret: 'garden', word: 'park', rank: 300, startRank: 300 },
+    ];
+
+    // The solved repeated chat occurrence contributes once, so one of the two logical
+    // targets is complete: 50%, not 66.67% (or 33.33% if occurrences were weighted).
+    expect(computeProgress(holes, ranks)).toBeCloseTo(50, 9);
   });
 });

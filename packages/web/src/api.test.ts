@@ -1,11 +1,10 @@
 // CONTRACT: date->puzzle routing (issue #6). The CLIENT computes the active 22:00-ET
 // game day (shared day.ts) and requests the DATE-addressed puzzle URL in one fetch;
 // the server validates the date against its clock-skew window and serves exactly that
-// day. The ?puzzle= test override is kept (load a file directly). A 404 from the
-// backend is the graceful "no puzzle today" state, not an error.
+// day. A 404 from the backend is the graceful "no puzzle today" state, not an error.
 
 import { describe, it, expect } from 'vitest';
-import { apiBase, puzzleUrl, resolveOverride, puzzleOutcome, parsePuzzle } from './api';
+import { apiBase, puzzleUrl, puzzleOutcome, parsePuzzle } from './api';
 
 describe('apiBase', () => {
   it('reads VITE_API_BASE_URL and trims trailing slashes', () => {
@@ -39,31 +38,6 @@ describe('backend routing URLs', () => {
   });
 });
 
-describe('resolveOverride (?puzzle= kept, ?date= dropped)', () => {
-  it('returns null with no override -> normal play hits the backend', () => {
-    expect(resolveOverride('', '/')).toBeNull();
-    expect(resolveOverride('?lang=fr', '/')).toBeNull();
-  });
-
-  it('ignores ?date= entirely (no longer routes)', () => {
-    expect(resolveOverride('?date=2026-06-28', '/')).toBeNull();
-  });
-
-  it('resolves a relative ?puzzle path against BASE_URL', () => {
-    expect(resolveOverride('?puzzle=word/fr/a_b_c.json', '/')).toBe('/word/fr/a_b_c.json');
-    // Honors a non-root deploy base and strips leading slashes off the path.
-    expect(resolveOverride('?puzzle=/word/fr/a_b_c.json', '/game/')).toBe(
-      '/game/word/fr/a_b_c.json',
-    );
-  });
-
-  it('uses an absolute http(s) ?puzzle URL verbatim', () => {
-    expect(resolveOverride('?puzzle=https://cdn.example/p.json', '/')).toBe(
-      'https://cdn.example/p.json',
-    );
-  });
-});
-
 describe('puzzleOutcome (graceful 404)', () => {
   it('200/2xx -> a puzzle to load', () => {
     expect(puzzleOutcome(200)).toBe('puzzle');
@@ -81,7 +55,7 @@ describe('puzzleOutcome (graceful 404)', () => {
 });
 
 // CONTRACT: the per-puzzle JSON schema (issue #14). A fetched puzzle of the wrong
-// shape (truncated body, wrong file behind ?puzzle=, store/CDN mishap) must surface as
+// shape (truncated body, store/CDN mishap) must surface as
 // an ERROR — parsePuzzle throws — rather than crash Game mid-render. Assert against the
 // schema in AGENTS.md, not the implementation: lang, words[], each hole's {secret,start}
 // {word,slug} + start_rank, a ranks map with an entry for every secret slug, and the
@@ -131,6 +105,17 @@ describe('parsePuzzle (shape validation)', () => {
   it('accepts and returns a well-formed puzzle unchanged', () => {
     const p = valid();
     expect(parsePuzzle(p)).toEqual(p);
+  });
+
+  it('accepts repeated hole occurrences that share one secret rank map', () => {
+    const p = valid();
+    p.words = ['la', 'forêt,', 'traverse', 'la', 'forêt'];
+    p.holes.push({ ...p.holes[0], pos: 4 });
+    Object.assign(p.holes[0], { pos: 1, suffix: ',' });
+
+    expect(parsePuzzle(p)).toEqual(p);
+    expect(parsePuzzle(p).holes).toHaveLength(2);
+    expect(Object.keys(parsePuzzle(p).ranks)).toEqual(['foret']);
   });
 
   // Optional source metadata (#5): not load-bearing, so a puzzle is valid WITH or

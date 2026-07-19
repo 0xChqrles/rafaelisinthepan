@@ -75,7 +75,7 @@ const AnimatedSpan = animated.span as unknown as ComponentType<AnimatedIntrinsic
 
 // A fresh daily solve changes player-level progression, so that moment gets a full-screen
 // temporal sequence instead of competing with the sentence result. Game controls when this
-// mounts: active-day transition only, never archive, tutorial, override, or rehydration.
+// mounts: active-day transition only, never archive, tutorial, or rehydration.
 export interface StreakDialogProps {
   lang: string;
   solvedDay: number;
