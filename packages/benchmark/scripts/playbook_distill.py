@@ -28,7 +28,10 @@ from llm_play import (
     BENCHMARK_OUTPUT_DIR,
     PROVIDER_ENV,
     PROMPT_VERSION,
+    TOKEN_USAGE_SCHEMA_VERSION,
     ModelConfig,
+    _last_raw_token_usage,
+    _last_token_usage,
     _write_json_atomic,
     provider_reply,
     select_model,
@@ -623,9 +626,13 @@ def _stage_call(
     stage["response_sha256"] = _sha256_text(response)
     stage["duration_seconds"] = time.monotonic() - started
     stage["completed_at"] = _utc_now()
-    usage = getattr(reply, "last_token_usage", None)
-    if isinstance(usage, Mapping):
-        stage["token_usage"] = dict(usage)
+    usage = _last_token_usage(reply)
+    if usage is not None:
+        stage["token_usage_schema_version"] = TOKEN_USAGE_SCHEMA_VERSION
+        stage["token_usage"] = usage
+    raw_usage = _last_raw_token_usage(reply)
+    if raw_usage is not None:
+        stage["raw_provider_token_usage"] = raw_usage
     _write_json_atomic(artifact_path, artifact, indent=2)
     print(
         f"{stage_name}: complete ({len(response.encode('utf-8'))} response bytes)",
