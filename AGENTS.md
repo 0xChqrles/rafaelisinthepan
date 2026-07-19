@@ -225,9 +225,10 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   (default) keeps odd `N` runs sequential/cache-warm and reports the same actual median
   score as full median-of-N (#95). With `k = (N + 1) / 2`, once `k` runs have solved, a
   later run still unsolved at the k-th-smallest solved score stops as lab-only
-  `termination="upper_half"`; once `N - k + 1` runs are genuine cap DNFs, remaining runs
-  make no provider calls and record lab-only `termination="dnf_majority"`. `N = 1` never
-  prunes. `--selection best` selects the lowest successful score. Run words retain accents
+  `termination="upper_half"`, unless that score is the real cap — then it remains a genuine
+  `termination="cap"` DNF; once `N - k + 1` runs are genuine cap DNFs, remaining runs make
+  no provider calls and record lab-only `termination="dnf_majority"`. `N = 1` never prunes.
+  `--selection best` selects the lowest successful score. Run words retain accents
   exactly as typed/validated and are folded only when replayed; a selected DNF keeps its
   full cap-length run. Cost-pruned attempts (`upper_half`, `dnf_majority`, or best-mode
   `cannot_beat_best`) can never be embedded as DNFs or scores; the selected representative

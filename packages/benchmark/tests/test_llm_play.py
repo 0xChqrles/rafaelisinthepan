@@ -2656,6 +2656,39 @@ def test_median_mode_prunes_a_later_provable_upper_half_run(tmp_path):
     assert pruned_run["termination"] == "upper_half"
 
 
+def test_median_mode_preserves_a_bound_equal_to_cap_as_a_real_dnf():
+    model = ScriptedModel(
+        [
+            # Three solves establish a median bound equal to cap=2.
+            "forest",
+            "ocean",
+            "forest",
+            "ocean",
+            "forest",
+            "ocean",
+            # These runs receive no early pruning and must remain genuine cap DNFs.
+            "cold",
+            "other",
+            "cold",
+            "other",
+        ]
+    )
+
+    summary = benchmark_model(
+        MODELS[0], puzzle(), VOCAB, model, cap=2, runs=5
+    )
+
+    assert [result.counted_tries for result in summary.results] == [2, 2, 2, 2, 2]
+    assert [result.termination for result in summary.results] == [
+        "solved",
+        "solved",
+        "solved",
+        "cap",
+        "cap",
+    ]
+    assert len(model.calls) == 10
+
+
 def test_median_mode_dnf_majority_skips_every_remaining_provider_call():
     model = ScriptedModel(["cold", "other", "cold", "other"])
 

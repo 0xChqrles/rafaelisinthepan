@@ -1663,6 +1663,21 @@ def play_puzzle(
                 termination="solved",
                 raw_provider_token_usage=tuple(raw_provider_token_usage),
             )
+        # A median upper-half bound equal to the cap saves no calls. Preserve this
+        # genuine cap DNF for audit rather than mislabeling it as censored. Best-mode
+        # ordering remains unchanged: its incumbent stop is a separate contract.
+        if median_prune is not None and feedback.tries >= cap:
+            return RunResult(
+                tries=None,
+                counted_tries=feedback.tries,
+                turns=turns,
+                duration=time.monotonic() - started,
+                tried_words=tuple(referee.tried_words),
+                conversation=tuple(message.copy() for message in messages),
+                turn_token_usage=tuple(turn_token_usage),
+                termination="cap",
+                raw_provider_token_usage=tuple(raw_provider_token_usage),
+            )
         median_prune_reason_now = current_median_prune_reason(
             feedback.tries
         )
