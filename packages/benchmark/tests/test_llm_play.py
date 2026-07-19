@@ -47,6 +47,7 @@ from llm_play import (
     REASONING_MAX_TOKENS,
     SELECTION_MODES,
     SESSION_MODES,
+    TOKEN_USAGE_SCHEMA_VERSION,
     ModelSummary,
     NoProgressReplyError,
     PuzzleReferee,
@@ -72,8 +73,96 @@ from llm_play import (
     write_benchmark,
     write_lab_artifact,
     _effective_provider_effort,
+    _aggregate_token_usage,
+    _normalize_anthropic_token_usage,
+    _normalize_openai_token_usage,
     _stateless_word_prompt,
 )
+
+
+def standardized_usage(
+    input_tokens,
+    output_tokens,
+    *,
+    cached_input_tokens=0,
+    cache_write_input_tokens=0,
+    reasoning_output_tokens=None,
+):
+    """Expected public v1 token shape; input/output are inclusive totals."""
+    return {
+        "input_tokens": input_tokens,
+        "cached_input_tokens": cached_input_tokens,
+        "cache_write_input_tokens": cache_write_input_tokens,
+        "output_tokens": output_tokens,
+        "reasoning_output_tokens": reasoning_output_tokens,
+        "total_tokens": input_tokens + output_tokens,
+    }
+
+
+def test_provider_usage_normalizes_to_one_inclusive_cross_model_schema():
+    expected = standardized_usage(
+        200,
+        30,
+        cached_input_tokens=80,
+        cache_write_input_tokens=20,
+        reasoning_output_tokens=22,
+    )
+
+    assert _normalize_anthropic_token_usage(
+        {
+            "input_tokens": 100,
+            "cache_read_input_tokens": 80,
+            "cache_creation_input_tokens": 20,
+            "output_tokens": 30,
+            "output_tokens_details": {"thinking_tokens": 22},
+            "service_tier": "standard",
+        }
+    ) == expected
+    assert _normalize_openai_token_usage(
+        {
+            "input_tokens": 200,
+            "input_tokens_details": {
+                "cached_tokens": 80,
+                "cache_write_tokens": 20,
+            },
+            "output_tokens": 30,
+            "output_tokens_details": {"reasoning_tokens": 22},
+            "total_tokens": 230,
+        }
+    ) == expected
+    assert _normalize_openai_token_usage(
+        {
+            "input_tokens": 200,
+            "cached_input_tokens": 80,
+            "cache_write_input_tokens": 20,
+            "output_tokens": 30,
+            "reasoning_output_tokens": 22,
+        }
+    ) == expected
+
+
+def test_standard_usage_aggregation_keeps_unknown_reasoning_explicit():
+    assert _aggregate_token_usage(
+        [
+            standardized_usage(
+                20,
+                5,
+                cached_input_tokens=8,
+                cache_write_input_tokens=2,
+            ),
+            standardized_usage(
+                30,
+                7,
+                cached_input_tokens=12,
+                cache_write_input_tokens=3,
+            ),
+        ]
+    ) == standardized_usage(
+        50,
+        12,
+        cached_input_tokens=20,
+        cache_write_input_tokens=5,
+    )
 
 
 def test_playbook_profile_loader_accepts_only_hash_verified_final_for_selected_model(
@@ -290,7 +379,11 @@ def test_anthropic_adapter_none_disables_thinking_caches_and_omits_sampling(
     reply = provider_reply(config, "secret", effort="none")
 
     assert reply([{"role": "user", "content": "board"}]) == "forest"
-    assert reply.last_token_usage == {"input_tokens": 11, "output_tokens": 1}
+    assert reply.last_token_usage == standardized_usage(11, 1)
+    assert reply.last_raw_token_usage == {
+        "input_tokens": 11,
+        "output_tokens": 1,
+    }
     assert calls == [
         {
             "model": config["model_id"],
@@ -639,7 +732,7 @@ def test_anthropic_subscription_word_adapter_resumes_one_native_session_per_run(
     assert reply([{"role": "user", "content": "opening again"}]) == "forest"
     assert os.environ["ANTHROPIC_API_KEY"] == "must-not-be-used"
     assert os.environ["KIMI_CODE_API_KEY"] == "must-not-enter-claude"
-    assert reply.last_token_usage == {"input_tokens": 12, "output_tokens": 1}
+    assert reply.last_token_usage == standardized_usage(12, 1)
 
     first_options = calls[0][1]
     assert [call[0] for call in calls] == [
@@ -757,10 +850,7 @@ def test_anthropic_subscription_assembles_max_output_recovery_chunks(monkeypatch
             "# Full report\nTreat metadata as priors, not as facts available during "
             "play.\n\n## 11. Continue"
         )
-        assert reply.last_token_usage == {
-            "input_tokens": 10,
-            "output_tokens": 132_844,
-        }
+        assert reply.last_token_usage == standardized_usage(10, 132_844)
     finally:
         reply.close()
 
@@ -950,7 +1040,7 @@ def test_kimi_subscription_adapter_pins_endpoint_and_zero_tool_sdk_options(
 
     assert reply(opening) == "forest"
     assert reply(continued) == "forest"
-    assert reply.last_token_usage == {"input_tokens": 21, "output_tokens": 3}
+    assert reply.last_token_usage == standardized_usage(21, 3)
     assert {name: os.environ[name] for name in inherited} == inherited
 
     first_options = calls[0][1]
@@ -1366,7 +1456,7 @@ def test_openai_subscription_adapter_isolates_fresh_codex_exec(
     assert reply(continued) == "forest"
     assert reply(latest) == "forest"
     assert reply([{"role": "user", "content": "opening again"}]) == "forest"
-    assert reply.last_token_usage == {"input_tokens": 20, "output_tokens": 2}
+    assert reply.last_token_usage == standardized_usage(20, 2)
 
     assert len(calls) == 4
     command, kwargs = calls[0]
@@ -1434,6 +1524,29 @@ def test_openai_subscription_default_resumes_one_saved_codex_thread_per_run(
     monkeypatch,
 ):
     calls = []
+    cumulative_usage = [
+        {
+            "input_tokens": 100,
+            "cached_input_tokens": 20,
+            "cache_write_input_tokens": 5,
+            "output_tokens": 10,
+            "reasoning_output_tokens": 6,
+        },
+        {
+            "input_tokens": 250,
+            "cached_input_tokens": 100,
+            "cache_write_input_tokens": 15,
+            "output_tokens": 25,
+            "reasoning_output_tokens": 15,
+        },
+        {
+            "input_tokens": 90,
+            "cached_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 8,
+            "reasoning_output_tokens": 5,
+        },
+    ]
 
     def fake_run(command, **kwargs):
         calls.append((command, kwargs))
@@ -1454,7 +1567,12 @@ def test_openai_subscription_default_resumes_one_saved_codex_thread_per_run(
                             "item": {"type": "agent_message", "text": "forest"},
                         }
                     ),
-                    json.dumps({"type": "turn.completed", "usage": {}}),
+                    json.dumps(
+                        {
+                            "type": "turn.completed",
+                            "usage": cumulative_usage[len(calls) - 1],
+                        }
+                    ),
                 ]
             ),
             stderr="",
@@ -1472,10 +1590,46 @@ def test_openai_subscription_default_resumes_one_saved_codex_thread_per_run(
     ]
     try:
         assert reply(opening) == "forest"
+        first_usage = reply.last_token_usage
         assert reply(continued) == "forest"
+        resumed_usage = reply.last_token_usage
         assert reply([{"role": "user", "content": "opening again"}]) == "forest"
+        next_run_usage = reply.last_token_usage
+        next_run_raw_usage = reply.last_raw_token_usage
     finally:
         reply.close()
+
+    assert first_usage == standardized_usage(
+        100,
+        10,
+        cached_input_tokens=20,
+        cache_write_input_tokens=5,
+        reasoning_output_tokens=6,
+    )
+    # Codex emits cumulative saved-thread totals; the benchmark exposes only this
+    # turn's delta so the generic aggregator cannot triangularly double-count it.
+    assert resumed_usage == standardized_usage(
+        150,
+        15,
+        cached_input_tokens=80,
+        cache_write_input_tokens=10,
+        reasoning_output_tokens=9,
+    )
+    assert next_run_usage == standardized_usage(
+        90,
+        8,
+        reasoning_output_tokens=5,
+    )
+    assert next_run_raw_usage == cumulative_usage[2]
+    assert _aggregate_token_usage([first_usage, resumed_usage]) == (
+        standardized_usage(
+            250,
+            25,
+            cached_input_tokens=100,
+            cache_write_input_tokens=15,
+            reasoning_output_tokens=15,
+        )
+    )
 
     first_command, first_kwargs = calls[0]
     resumed_command, resumed_kwargs = calls[1]
@@ -1784,7 +1938,8 @@ def test_openai_adapter_uses_responses_with_explicit_none_effort(monkeypatch, co
     )
 
     assert reply([{"role": "user", "content": "board"}]) == "ocean"
-    assert reply.last_token_usage == {
+    assert reply.last_token_usage == standardized_usage(9, 1)
+    assert reply.last_raw_token_usage == {
         "input_tokens": 9,
         "output_tokens": 1,
         "total_tokens": 10,
@@ -2207,6 +2362,7 @@ def make_run(
     words=(),
     duration=1.0,
     token_usage=(),
+    raw_token_usage=(),
     termination=None,
 ):
     return RunResult(
@@ -2222,6 +2378,7 @@ def make_run(
             if termination is not None
             else "solved" if tries is not None else "cap"
         ),
+        raw_provider_token_usage=tuple(raw_token_usage),
     )
 
 
@@ -2308,7 +2465,7 @@ class UsageScriptedModel(ScriptedModel):
         return reply
 
 
-def test_run_result_collects_each_transport_reported_turn_usage():
+def test_run_result_collects_each_normalized_turn_usage():
     model = UsageScriptedModel(
         ["forest", "ocean"],
         [
@@ -2320,8 +2477,8 @@ def test_run_result_collects_each_transport_reported_turn_usage():
     result = play_puzzle(puzzle(), VOCAB, model)
 
     assert result.turn_token_usage == (
-        {"input_tokens": 10, "output_tokens": 1},
-        {"input_tokens": 20, "output_tokens": 1},
+        standardized_usage(10, 1),
+        standardized_usage(20, 1),
     )
 
 
@@ -2484,10 +2641,15 @@ def test_raw_lab_artifact_keeps_all_runs_transcripts_transport_and_token_usage(
     output_dir = tmp_path / "lab"
     puzzle_path = tmp_path / "forest_ocean.json"
     usage = (
+        standardized_usage(10, 1, cached_input_tokens=2),
+        standardized_usage(5, 2),
+    )
+    raw_usage = (
         {
-            "input_tokens": 10,
+            "input_tokens": 8,
+            "cache_read_input_tokens": 2,
+            "cache_creation_input_tokens": 0,
             "output_tokens": 1,
-            "input_tokens_details": {"cached_tokens": 2},
         },
         {"input_tokens": 5, "output_tokens": 2},
     )
@@ -2501,6 +2663,7 @@ def test_raw_lab_artifact_keeps_all_runs_transcripts_transport_and_token_usage(
                 words=("shared", "forest", "ocean"),
                 duration=2.0,
                 token_usage=usage,
+                raw_token_usage=raw_usage,
             ),
             make_run(4, turns=4, words=("cold", "other", "forest", "ocean")),
         ),
@@ -2528,6 +2691,7 @@ def test_raw_lab_artifact_keeps_all_runs_transcripts_transport_and_token_usage(
     assert session["transport"] == "agent_sdk"
     assert session["auth"] == "subscription"
     assert session["session"] == "persistent"
+    assert session["token_usage_schema_version"] == TOKEN_USAGE_SCHEMA_VERSION
     assert session["effort"] == "medium"
     assert session["requested_effort"] == "medium"
     assert session["effective_provider_effort"] == "medium"
@@ -2535,10 +2699,9 @@ def test_raw_lab_artifact_keeps_all_runs_transcripts_transport_and_token_usage(
     assert session["selected_run"] == 2
     assert session["median_run"] == 2
     assert session["duration"] == 4.0
-    assert session["token_usage"] == {
-        "input_tokens": 15,
-        "output_tokens": 3,
-    }
+    assert session["token_usage"] == standardized_usage(
+        15, 3, cached_input_tokens=2
+    )
     assert len(session["runs"]) == 3
     assert [run["selected"] for run in session["runs"]] == [False, True, False]
     selected = session["runs"][1]
@@ -2550,11 +2713,11 @@ def test_raw_lab_artifact_keeps_all_runs_transcripts_transport_and_token_usage(
     assert selected["transcript"] == [
         {"role": "user", "content": "opening"}
     ]
-    assert selected["token_usage"] == {
-        "input_tokens": 15,
-        "output_tokens": 3,
-    }
+    assert selected["token_usage"] == standardized_usage(
+        15, 3, cached_input_tokens=2
+    )
     assert selected["turn_token_usage"] == list(usage)
+    assert selected["raw_provider_token_usage"] == list(raw_usage)
     assert session["benchmark_entry"]["run"] == ["shared", "forest", "ocean"]
 
     transports = [(MODELS[1], "api", "api"), (MODELS[2], "subscription", "codex_cli")]
@@ -2610,10 +2773,7 @@ def test_raw_lab_artifact_keeps_all_runs_transcripts_transport_and_token_usage(
     assert kimi_session["cap"] == 300
     assert kimi_session["selection"] == "median"
     assert kimi_session["duration"] == 3.5
-    assert kimi_session["token_usage"] == {
-        "input_tokens": 31,
-        "output_tokens": 4,
-    }
+    assert kimi_session["token_usage"] == standardized_usage(31, 4)
     assert kimi_session["display"] is False
 
     entries = display_benchmark_entries(artifact)
@@ -3309,6 +3469,7 @@ def test_cli_kimi_subscription_uses_dedicated_key_and_reports_effective_effort(
     assert "transport=kimi_code_agent_sdk" in output.out
     assert "auth=subscription" in output.out
     assert "session=persistent" in output.out
+    assert f"token_usage_schema={TOKEN_USAGE_SCHEMA_VERSION}" in output.out
     assert "requested_effort=medium" in output.out
     assert "effective_provider_effort=high" in output.out
     assert "KIMI cost notice: low effort still uses adaptive thinking" in output.out
@@ -3319,9 +3480,15 @@ def test_cli_kimi_subscription_uses_dedicated_key_and_reports_effective_effort(
     assert "malformed or non-counting replies can add requests" in output.out
     assert (
         'try=1 word="forest" progress=50.00% '
-        'token_usage={"input_tokens":12,"output_tokens":2}' in output.out
+        'token_usage={"input_tokens":12,"cached_input_tokens":0,'
+        '"cache_write_input_tokens":0,"output_tokens":2,'
+        '"reasoning_output_tokens":null,"total_tokens":14}' in output.out
     )
-    assert 'token_usage={"input_tokens":30,"output_tokens":5}' in output.out
+    assert (
+        'token_usage={"input_tokens":30,"cached_input_tokens":0,'
+        '"cache_write_input_tokens":0,"output_tokens":5,'
+        '"reasoning_output_tokens":null,"total_tokens":35}' in output.out
+    )
     assert secret not in output.out
     assert secret not in output.err
 
