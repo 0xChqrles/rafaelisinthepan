@@ -144,6 +144,19 @@ describe('progressTrajectory — replay the ordered guesses', () => {
     const t = progressTrajectory(holes, two, ['w0']);
     expect(t[0]).toBeCloseTo(100, 9);
   });
+
+  it('replays a shared secret across duplicate positions and solves both instances', () => {
+    const ranks: RankMap = { chat: mk(1000) };
+    const holes: RuntimeHole[] = [
+      { pos: 1, secret: 'chat', word: 'animal', rank: 300, startRank: 300 },
+      { pos: 4, secret: 'chat', word: 'bête', rank: 300, startRank: 300 },
+    ];
+
+    const trajectory = progressTrajectory(holes, ranks, ['w200', 'w0']);
+    expect(trajectory).toHaveLength(2);
+    expect(trajectory[0]).toBeGreaterThan(0);
+    expect(trajectory[1]).toBeCloseTo(100, 9);
+  });
 });
 
 describe('emojiRow — one heat emoji per square (plain-text fallback for the card)', () => {

@@ -287,6 +287,46 @@ def french_clitic_puzzle():
     }
 
 
+def repeated_secret_puzzle():
+    return {
+        "lang": "fr",
+        "words": ["le", "chat,", "poursuit", "le", "chat", "dans", "le", "jardin."],
+        "holes": [
+            {
+                "pos": 1,
+                "secret": {"word": "chat", "slug": "chat"},
+                "start": {"word": "animal", "slug": "animal"},
+                "start_rank": 50,
+                "suffix": ",",
+            },
+            {
+                "pos": 4,
+                "secret": {"word": "chat", "slug": "chat"},
+                "start": {"word": "bête", "slug": "bete"},
+                "start_rank": 50,
+            },
+            {
+                "pos": 7,
+                "secret": {"word": "jardin", "slug": "jardin"},
+                "start": {"word": "parc", "slug": "parc"},
+                "start_rank": 40,
+                "suffix": ".",
+            },
+        ],
+        "ranks": {
+            "chat": {
+                "animal": {"word": "animal", "rank": 30},
+                "bete": {"word": "bête", "rank": 50},
+                "chat": {"word": "chat", "rank": 0},
+            },
+            "jardin": {
+                "parc": {"word": "parc", "rank": 40},
+                "jardin": {"word": "jardin", "rank": 0},
+            },
+        },
+    }
+
+
 VOCAB = {"shared", "forest", "ocean", "cold", "other"}
 
 ANTHROPIC_MODELS = [config for config in MODELS if config["provider"] == "anthropic"]
@@ -3448,6 +3488,33 @@ def test_one_guess_advances_two_holes_but_counts_as_one_try():
     assert feedback.tries == 1
     assert [hole.rank for hole in referee.holes] == [10, 5]
     assert all(outcome.improved for outcome in feedback.outcomes)
+
+
+def test_referee_broadcasts_shared_secret_to_duplicate_occurrences():
+    referee = PuzzleReferee(repeated_secret_puzzle(), {"animal", "chat", "jardin"})
+
+    first = referee.submit("animal")
+    assert [(outcome.number, outcome.rank) for outcome in first.outcomes] == [
+        (1, 30),
+        (2, 30),
+        (3, None),
+    ]
+    assert referee.tries == 1
+    assert [hole.rank for hole in referee.holes] == [30, 30, 40]
+
+    solved = referee.submit("chat")
+    assert [(outcome.number, outcome.rank, outcome.solved) for outcome in solved.outcomes] == [
+        (1, 0, True),
+        (2, 0, True),
+        (3, None, False),
+    ]
+    assert referee.tries == 2
+    assert [hole.rank for hole in referee.holes] == [0, 0, 40]
+
+    final = referee.submit("jardin")
+    assert final.solved is True
+    assert referee.tries == 3
+    assert referee.cloze() == "le chat, poursuit le chat dans le jardin."
 
 
 def test_referee_progress_matches_the_web_logarithmic_formula():

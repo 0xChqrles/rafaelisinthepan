@@ -1,7 +1,7 @@
 // CONTRACT: the day-keyed round store (packages/web/src/state/gameStore.ts). Rounds are
 // held in a MAP keyed by roundKey = (dayNumber, language), so:
 //   - day rounds are KEPT across days so the archive can rehydrate a past day's progress
-//     (#54); only ?puzzle= override rounds are pruned, and the map is bounded by the
+//     (#54); any legacy non-day round is dropped, and the map is bounded by the
 //     MAX_DAY_ROUNDS most-recent cap (oldest day rounds evicted beyond it);
 //   - switching LANGUAGE keeps BOTH rounds — coming back restores the in-progress one
 //     (drives the language selector's per-language status + no-confirmation switching);
@@ -14,7 +14,7 @@
 //   - lastLang remembers the last valid language (seeds the `/` redirect).
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useGameStore, roundKeyForDay, migratePersisted } from './gameStore';
+import { useGameStore, roundKeyForDay, migratePersisted, holesMatchPuzzle } from './gameStore';
 import type { RuntimeHole } from '@whippin/shared';
 
 const initial = useGameStore.getState();
@@ -24,6 +24,14 @@ function freshHoles(): RuntimeHole[] {
   return [
     { pos: 1, secret: 'foret', word: 'bois', rank: 87, startRank: 87 },
     { pos: 2, secret: 'ancienne', word: 'vieille', rank: 40, startRank: 40 },
+  ];
+}
+
+function repeatedSecretHoles(): RuntimeHole[] {
+  return [
+    { pos: 1, secret: 'chat', word: 'animal', rank: 60, startRank: 60 },
+    { pos: 3, secret: 'chat', word: 'bête', rank: 60, startRank: 60 },
+    { pos: 5, secret: 'jardin', word: 'parc', rank: 40, startRank: 40 },
   ];
 }
 
@@ -136,37 +144,21 @@ describe('ensureRound — day/language keying', () => {
     expect(after?.progress).toBe(42);
   });
 
-  it('an override (non-day) round never wipes the day rounds', () => {
+  it('drops a legacy non-day round from storage while keeping the day rounds', () => {
     const { ensureRound, recordGuess } = useGameStore.getState();
+    // Simulate an older persisted blob that still carries a retired ?puzzle= override
+    // round ("o:<nonce>:<lang>") alongside a real day round.
     ensureRound('d:5:fr', freshHoles());
     recordGuess('bois');
+    useGameStore.setState((s) => ({
+      rounds: { ...s.rounds, 'o:legacy:fr': { holes: freshHoles(), guessCount: 3, tried: ['x', 'y', 'z'], progress: 10 } },
+    }));
 
-    // Loading a ?puzzle= test file must not destroy the real day's progress.
-    ensureRound('o:nonce:fr', freshHoles());
-    let s = useGameStore.getState();
-    expect(s.activeKey).toBe('o:nonce:fr');
-    expect(s.rounds['d:5:fr']?.guessCount).toBe(1); // day progress intact
-
-    // Coming back to a day key prunes the stale override round, keeps the day's.
-    ensureRound('d:5:en', freshHoles());
-    s = useGameStore.getState();
-    expect(s.rounds['o:nonce:fr']).toBeUndefined();
-    expect(s.rounds['d:5:fr']?.guessCount).toBe(1);
-  });
-
-  it('a new override key prunes the previous override but keeps the day rounds', () => {
-    const { ensureRound, recordGuess } = useGameStore.getState();
-    ensureRound('d:5:fr', freshHoles());
-    recordGuess('bois');
-    ensureRound('o:one:fr', freshHoles()); // first ?puzzle= load
-
-    // A second override load replaces the first among override rounds, but the real day
-    // round stays untouched.
-    ensureRound('o:two:fr', freshHoles());
+    // The next reconcile to any day key purges the legacy round and preserves day history.
+    ensureRound('d:6:en', freshHoles());
     const s = useGameStore.getState();
-    expect(s.activeKey).toBe('o:two:fr');
-    expect(s.rounds['o:one:fr']).toBeUndefined(); // previous override pruned
-    expect(s.rounds['o:two:fr']).toBeDefined();
+    expect(s.activeKey).toBe('d:6:en');
+    expect(s.rounds['o:legacy:fr']).toBeUndefined(); // legacy round dropped
     expect(s.rounds['d:5:fr']?.guessCount).toBe(1); // day round intact
   });
 
@@ -184,6 +176,26 @@ describe('ensureRound — day/language keying', () => {
     ];
     ensureRound('d:5:fr', newHoles);
     expect(activeRound()).toEqual({ holes: newHoles, guessCount: 0, tried: [], progress: 0 });
+  });
+
+  it('matches duplicate secret slugs by position without collapsing hole instances', () => {
+    const repeated = repeatedSecretHoles();
+    expect(holesMatchPuzzle(repeated, repeated.map((hole) => ({ ...hole })))).toBe(true);
+    expect(
+      holesMatchPuzzle(repeated, [
+        repeated[0],
+        { ...repeated[1], pos: 4 },
+        repeated[2],
+      ]),
+    ).toBe(false);
+
+    useGameStore.getState().ensureRound('d:5:fr', repeated);
+    useGameStore.getState().improveHole(0, 'chat', 0);
+    useGameStore.getState().ensureRound('d:5:fr', repeated);
+
+    expect(activeRound()?.holes).toHaveLength(3);
+    expect(activeRound()?.holes.map((hole) => hole.pos)).toEqual([1, 3, 5]);
+    expect(activeRound()?.holes.map((hole) => hole.rank)).toEqual([0, 60, 40]);
   });
 });
 
@@ -204,6 +216,20 @@ describe('recordGuess — score = unique valid tries (on the active round)', () 
     recordGuess('bois');
     expect(activeRound()?.guessCount).toBe(1);
     expect(activeRound()?.tried).toEqual(['bois']);
+  });
+
+  it('counts one shared-secret solve once even when it resolves repeated holes', () => {
+    useGameStore.getState().ensureRound('d:5:fr', repeatedSecretHoles());
+    const { recordGuess, improveHole } = useGameStore.getState();
+
+    recordGuess('chat');
+    recordGuess('chat');
+    improveHole(0, 'chat', 0);
+    improveHole(1, 'chat', 0);
+
+    expect(activeRound()?.guessCount).toBe(1);
+    expect(activeRound()?.tried).toEqual(['chat']);
+    expect(activeRound()?.holes.slice(0, 2).map((hole) => hole.rank)).toEqual([0, 0]);
   });
 });
 

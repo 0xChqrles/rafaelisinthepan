@@ -41,7 +41,7 @@ export default function SolvedScreen({
   // startAnimation acting as the source/streak gate while this component stays mounted.
   animate?: boolean;
   // A live active-day solve holds this at false while StreakDialog is open. No-dialog
-  // paths (archive, tutorial, override, and rehydration) use the immediate default.
+  // paths (archive, tutorial, and rehydration) use the immediate default.
   startAnimation?: boolean;
 }) {
   // Collapse the per-guess trajectory into a bounded row (3..18), each square colored by
@@ -119,7 +119,8 @@ export default function SolvedScreen({
   useEffect(() => () => window.clearTimeout(copiedTimer.current), []);
 
   const onShare = useCallback(async () => {
-    // A ?puzzle= override has no real day to encode, so its share button is not rendered.
+    // The tutorial reuses this component with no real day (dayNumber null) and the PLAY
+    // action instead of SHARE, so the share button is never rendered there.
     if (dayNumber == null) return;
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
     const url = shareUrl(origin, { lang, dayNumber, score: guessCount, squares });
