@@ -421,9 +421,10 @@ pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--
 #    GPT API runs allow the documented
 #    none|low|medium|high|xhigh|max; ordinary Codex-plan play supports
 #    low|medium|high|xhigh|max. Kimi K3 is lab-only, requires subscription auth, rejects
-#    none, and maps medium/high -> high plus xhigh/max -> max. The frozen shared gameplay
-#    baseline is prompt v21 at medium effort with NO --playbook. --playbook remains an
-#    experimental loader only;
+#    none, and maps medium/high -> high plus xhigh/max -> max. The historical frozen shared
+#    gameplay baseline is prompt v21 at medium effort with NO --playbook.
+#    The current corrected harness is prompt v22; do not mix its results into v21
+#    comparisons. --playbook remains an experimental loader only;
 #    the static-corpus playbooks are paused and must not be used for benchmark scores.
 #    --selection median|best chooses the saved representative (default median). Median
 #    requires odd --runs; best accepts any positive count and stops an unsolved later run
@@ -488,22 +489,28 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   settings, skills, agents, plugins, or slash commands; inherited Claude credentials,
   config, and endpoint/model overrides are removed for the subprocess and restored on
   success or failure. Console output and raw lab sessions record requested + effective
-  effort, provider/model/transport/auth, prompt/cap/selection, duration, and reported tokens.
-  Prompt v21 gives EVERY provider the same fresh, stateless single-user-message prompt:
-  fixed rules, the initial clues, then every prior player reply and exact referee feedback
-  in chronological order. No provider session memory or lossy current-best-only snapshot is
-  an experimental treatment. Anthropic receives the byte-identical prompt as a cacheable
-  fixed-rules block plus the growing record. The visible reply must be one word, while the
-  prompt affirmatively requires private multi-step deduction; malformed prose is rejected,
-  never truncated into a guess. `--playbook` accepts only a model/provider/prompt-matched,
+  effort, provider/model/transport/auth, prompt/cap/selection, duration, and reported tokens;
+  token-aware transports also print each counted turn's usage immediately. Prompt v22 gives
+  EVERY provider the same fresh, stateless single-user-message prompt: fixed rules, the
+  initial clues, every prior player reply and exact ordered outcome, plus the latest
+  authoritative snapshot. Superseded full snapshots are omitted because their evidence is
+  retained by the exact outcomes; no provider session memory or lossy current-best-only
+  snapshot is an experimental treatment. The rules explicitly say a displayed ranked clue's
+  distance is already known and cannot improve its own word at an equal rank. Anthropic
+  receives the byte-identical prompt as a cacheable fixed-rules block plus the growing record.
+  The visible reply must be one word, while the prompt affirmatively requires private
+  multi-step deduction; malformed prose is rejected, never truncated into a guess.
+  `--playbook` accepts only a model/provider/prompt-matched,
   hash-verified `whippin_model_playbook` profile and injects its `final_playbook` under the
   fixed rules as advice. `--selection median|best` defaults to median: median requires odd
-  `--runs` (default 7), while best selects the lowest successful score and cost-prunes a
-  later unsolved run when it reaches that incumbent score. Lab sessions record the mode,
-  selected run, and each run's termination; only same-selection model sessions can form a
-  display trio. `--in-place` records full local transcripts/token usage and publishes only
-  a complete replay-valid display trio; local benchmark output is gitignored and paid
-  provider calls never run in tests/CI.
+  `--runs` (default 7, but Kimi defaults to 1), while best selects the lowest successful score
+  and cost-prunes a later unsolved run when it reaches that incumbent score. Kimi prints its
+  counted-guess exposure and warns that non-counting turns add paid requests; `low` still uses
+  adaptive thinking. Lab sessions record the mode, selected run, and each run's termination;
+  only same-selection model
+  sessions can form a display trio. `--in-place` records full local transcripts/token usage
+  and publishes only a complete replay-valid display trio; local benchmark output is gitignored
+  and paid provider calls never run in tests/CI.
 - **Frozen neutral gameplay baseline (decided 2026-07-17).** Use prompt v21 at `medium`
   effort, without `--playbook`, for both Sonnet and GPT. Two direct same-puzzle stateless
   v21 smokes produced 11 then 6 tries for Sonnet, and 13 then DNF-at-30 for GPT, exposing

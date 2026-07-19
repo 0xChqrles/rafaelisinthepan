@@ -104,10 +104,11 @@ DISPLAY_MODEL_COUNT = 3
 
 # Bump whenever the opening rules or turn-feedback scaffold changes materially. Results
 # are attributable to a model id plus this prompt version and the CLI's printed effort.
-PROMPT_VERSION = "21"
+PROMPT_VERSION = "22"
 
 DEFAULT_CAP = 300
 DEFAULT_RUNS = 7
+DEFAULT_KIMI_RUNS = 1
 SelectionMode = Literal["median", "best"]
 SELECTION_MODES: tuple[SelectionMode, ...] = ("median", "best")
 DEFAULT_SELECTION: SelectionMode = "median"
@@ -355,6 +356,7 @@ class TryProgress:
     number: int
     word: str
     progress: float
+    token_usage: dict[str, Any] | None
 
 
 @dataclass(frozen=True)
@@ -1012,7 +1014,7 @@ def _state_snapshot_lines(referee: PuzzleReferee) -> list[str]:
         "CURRENT STATE",
         f"CLOZE: {referee.cloze()}",
         "CURRENT BEST RANKED CLUE PER UNSOLVED WORD — SEMANTIC EVIDENCE, "
-        "NOT SENTENCE TEXT:",
+        "NOT SENTENCE TEXT; ITS SHOWN RANK IS ALREADY KNOWN:",
         *referee.best_clue_lines(),
         trend,
         f"EXCLUDED AS ALREADY TRIED (unordered; do not repeat): {tried}",
@@ -1035,13 +1037,12 @@ def _rules_opening(
             "OBJECTIVE AND SCORE",
             (
                 "Solve every hidden word in as few counted tries as possible. "
-                "Your score is the total number of unique valid guesses; every "
-                "counted guess is expensive."
+                "Score counts unique valid guesses; every counted guess is expensive."
             ),
             (
-                f"The run has a limit of {cap} counted tries. Solving every word on "
-                f"counted try {cap} succeeds; if any word remains unsolved after that "
-                "try, the run is DNF. The first reply is the first guess, not a plan."
+                f"The limit is {cap} counted tries. Counted try {cap} succeeds if it "
+                "solves every word; otherwise the run is DNF. The first reply is the "
+                "first guess, not a plan."
             ),
             "",
             "MANDATORY REPLY CONTRACT",
@@ -1049,7 +1050,7 @@ def _rules_opening(
             "",
             "CLOZE AND EXACT ANSWERS",
             (
-                "The CLOZE is a fixed real sentence. Each [WORD N] hides exactly one "
+                "The CLOZE is a real sentence. Each [WORD N] hides exactly one "
                 "lexical core. Visible words, clitics, apostrophes, and punctuation are "
                 "fixed context, not reply text; solved cores appear in place."
             ),
@@ -1078,6 +1079,11 @@ def _rules_opening(
                 "Rank 0 solves and locks the word."
             ),
             (
+                "A displayed clue's rank is already known. Re-submitting it cannot "
+                "improve that same WORD at an equal rank. Do not re-test it unless you "
+                "expect it to improve a different unsolved WORD."
+            ),
+            (
                 "Embedding ranks measure distributional contextual relatedness, not "
                 "guaranteed synonymy, grammar, or implication. Only rank 0 certifies "
                 "the exact word."
@@ -1085,14 +1091,10 @@ def _rules_opening(
             "",
             "AUTHORITATIVE STATE",
             (
-                "Each turn includes rules, initial state and starting clues, then "
-                "every prior PLAYER REPLY and exact REFEREE FEEDBACK in order. "
-                "Snapshots never erase earlier rank/MISS evidence; the last feedback is "
-                "current."
-            ),
-            (
-                "Every model receives the identical record; hidden session "
-                "memory supplies no evidence."
+                "Each turn gives every model identical rules, initial clues, every prior "
+                "PLAYER REPLY and exact REFEREE outcome, and the latest state. Ordered "
+                "outcomes preserve omitted historical snapshots; hidden session memory "
+                "supplies no evidence."
             ),
             (
                 "Any strict improvement resets the streak; non-counting leaves it "
@@ -1127,7 +1129,7 @@ def opening_message(
             ),
             strategy,
         ]
-    # Prompt v21 has one strategy-neutral rules scaffold for every caller. The flag is
+    # Prompt v22 has one strategy-neutral rules scaffold for every caller. The flag is
     # retained for API compatibility with callers that request neutral rules; only
     # an explicitly supplied strategy can add solving guidance.
     _ = rules_only
@@ -1174,7 +1176,7 @@ def feedback_message(
         *_state_snapshot_lines(referee),
         f"Tries: {feedback.tries} (your score — lower is better)",
     ]
-    # Prompt v21 never adds generic solving advice during play. Keep the keyword for
+    # Prompt v22 never adds generic solving advice during play. Keep the keyword for
     # caller compatibility; explicit learned/v7 guidance lives only in the opening.
     _ = rules_only
     lines.append(_reply_reminder(referee))
@@ -1321,6 +1323,7 @@ def play_puzzle(
                         number=feedback.tries,
                         word=guess,
                         progress=referee.progress,
+                        token_usage=usage,
                     )
                 )
         else:
@@ -1489,6 +1492,12 @@ def _validate_reasoning_mode(
         raise ValueError("Pro reasoning mode requires OpenAI API effort 'max'")
 
 
+def _historical_feedback(content: str) -> str:
+    """Keep an exact turn outcome without replaying its superseded snapshot."""
+    outcome, marker, _snapshot = content.partition("\nCURRENT STATE\n")
+    return outcome.rstrip() if marker else content
+
+
 def _stateless_word_parts(messages: list[Message]) -> tuple[str, str]:
     """Split a fresh-turn prompt into fixed rules and its complete public record.
 
@@ -1518,7 +1527,7 @@ def _stateless_word_parts(messages: list[Message]) -> tuple[str, str]:
             "COMPLETE CHRONOLOGICAL GAME RECORD\n"
         )
     else:
-        # Defensive compatibility for direct adapter callers. Production v21 game
+        # Defensive compatibility for direct adapter callers. Production v22 game
         # openings carry the complete-record marker; older fixtures may expose only
         # CURRENT STATE, and arbitrary one-message calls remain byte-preserving.
         opening_rules, state_marker, state_tail = opening.partition(
@@ -1534,14 +1543,15 @@ def _stateless_word_parts(messages: list[Message]) -> tuple[str, str]:
             initial_state = opening
 
     record = [initial_state]
+    turn_count = (len(messages) - 1) // 2
     for turn_index, message_index in enumerate(range(1, len(messages), 2), start=1):
+        feedback = messages[message_index + 1]["content"]
+        if turn_index < turn_count:
+            feedback = _historical_feedback(feedback)
         record.extend(
             [
                 f"PLAYER REPLY {turn_index}\n{messages[message_index]['content']}",
-                (
-                    f"REFEREE FEEDBACK {turn_index}\n"
-                    f"{messages[message_index + 1]['content']}"
-                ),
+                f"REFEREE FEEDBACK {turn_index}\n{feedback}",
             ]
         )
     return stable, "\n\n".join(record)
@@ -1551,9 +1561,10 @@ def _stateless_word_prompt(messages: list[Message]) -> str:
     """Return one fresh prompt containing the complete chronological public record.
 
     Every real word-play transport sees this identical user prompt. All prior replies,
-    exact referee outcomes, and the initial starting clues are explicit, so neither
-    provider-specific session memory nor a lossy current-best snapshot becomes an
-    experimental treatment.
+    exact referee outcomes, the initial starting clues, and the latest authoritative
+    snapshot are explicit, so neither provider-specific session memory nor a lossy
+    current-best-only treatment becomes an experimental variable. Superseded snapshots
+    are omitted because their evidence is preserved by the exact ordered outcomes.
     """
     stable, volatile = _stateless_word_parts(messages)
     return f"{stable}{volatile}"
@@ -1643,15 +1654,21 @@ async def _agent_sdk_turn(
         extra_args=cli_extra_args,
     )
     result_message = None
+    trailing_error: Exception | None = None
     assistant_text = ""
-    async for message in query(prompt=prompt, options=options):
-        if AssistantMessage is not None and isinstance(message, AssistantMessage):
-            assistant_text = _merge_agent_text_continuation(
-                assistant_text,
-                _text_content(message.content),
-            )
-        if isinstance(message, ResultMessage):
-            result_message = message
+    try:
+        async for message in query(prompt=prompt, options=options):
+            if AssistantMessage is not None and isinstance(message, AssistantMessage):
+                assistant_text = _merge_agent_text_continuation(
+                    assistant_text,
+                    _text_content(message.content),
+                )
+            if isinstance(message, ResultMessage):
+                result_message = message
+    except Exception as exc:
+        if result_message is None or not result_message.is_error:
+            raise
+        trailing_error = exc
     if result_message is None:
         raise RuntimeError(f"{model_id} Agent SDK session returned no final result")
     if result_message.is_error:
@@ -1662,15 +1679,31 @@ async def _agent_sdk_turn(
         api_status = getattr(result_message, "api_error_status", None)
         if isinstance(api_status, int):
             details.append(f"provider HTTP status {api_status}")
-        for candidate in (
-            result_message.result,
-            result_message.stop_reason,
-            result_message.subtype,
-        ):
-            if isinstance(candidate, str) and candidate and candidate not in details:
+        for candidate in (result_message.result, result_message.stop_reason):
+            if (
+                isinstance(candidate, str)
+                and candidate
+                and candidate != "Claude Code returned an error result: success"
+                and candidate not in details
+            ):
                 details.append(candidate)
-        detail = "; ".join(details) or "unknown error"
-        raise RuntimeError(f"{model_id} Agent SDK session failed: {detail}")
+        subtype = result_message.subtype
+        if (
+            isinstance(subtype, str)
+            and subtype
+            and subtype != "success"
+            and subtype not in details
+        ):
+            details.append(subtype)
+        if not details and trailing_error is not None:
+            trailing_detail = str(trailing_error)
+            if trailing_detail != "Claude Code returned an error result: success":
+                details.append(trailing_detail)
+        detail = "; ".join(details) or "provider request failed without diagnostics"
+        error = RuntimeError(f"{model_id} Agent SDK session failed: {detail}")
+        if trailing_error is not None:
+            raise error from trailing_error
+        raise error
     if not result_message.session_id:
         raise RuntimeError(f"{model_id} Agent SDK session returned no session id")
     return (
@@ -1766,6 +1799,21 @@ def _kimi_transport_error(
         return RuntimeError(
             "Kimi routing safety check failed: the Agent SDK attempted a Claude.ai/"
             "Anthropic route instead of the pinned Kimi Code endpoint"
+        )
+    rate_limit_markers = (
+        "provider http status 429",
+        "rate limit",
+        "usage limit",
+        "quota",
+        "engine is currently overloaded",
+        "too many requests",
+    )
+    if re.search(r"\b429\b", lowered) or any(
+        marker in lowered for marker in rate_limit_markers
+    ):
+        return RuntimeError(
+            "Kimi Code rate limit, quota, or temporary overload stopped the K3 run; "
+            f"check the Kimi Console reset time or retry later ({detail})"
         )
     entitlement_markers = (
         "provider http status 401",
@@ -2812,10 +2860,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--runs",
         type=_positive_int,
-        default=DEFAULT_RUNS,
+        default=None,
         help=(
             "run count for the selected model; median selection requires an odd count "
-            f"(default: {DEFAULT_RUNS})"
+            f"(default: {DEFAULT_RUNS}; Kimi: {DEFAULT_KIMI_RUNS})"
         ),
     )
     parser.add_argument(
@@ -2863,12 +2911,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     args = parser.parse_args(argv)
-    if args.selection == "median" and args.runs % 2 == 0:
-        parser.error("--runs must be odd so the median is an actual run")
     try:
         args.model_config = select_model(args.model)
     except ValueError as exc:
         parser.error(str(exc))
+    if args.runs is None:
+        args.runs = (
+            DEFAULT_KIMI_RUNS
+            if args.model_config["provider"] == "kimi"
+            else DEFAULT_RUNS
+        )
+    if args.selection == "median" and args.runs % 2 == 0:
+        parser.error("--runs must be odd so the median is an actual run")
     try:
         _validate_provider_effort(args.model_config["provider"], args.auth, args.effort)
     except ValueError as exc:
@@ -2941,6 +2995,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"playbook={playbook_sha256 or 'none'}",
         flush=True,
     )
+    if config["provider"] == "kimi":
+        print(
+            "KIMI cost notice: low effort still uses adaptive thinking; "
+            f"this configuration schedules {args.runs} "
+            f"run{'s' if args.runs != 1 else ''} with up to {args.cap} counted "
+            "guesses each. Every fresh turn is a paid request, and malformed or "
+            "non-counting replies can add requests.",
+            flush=True,
+        )
     if args.auth != "subscription":
         env_name = PROVIDER_ENV[config["provider"]]
         api_key = os.environ.get(env_name)
@@ -2956,9 +3019,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         def print_try(run_number: int, update: TryProgress) -> None:
             run_label = f"run={run_number} " if args.runs > 1 else ""
             word_json = json.dumps(update.word, ensure_ascii=False)
+            usage = (
+                " token_usage="
+                + json.dumps(
+                    update.token_usage,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+                if update.token_usage is not None
+                else ""
+            )
             print(
                 f"{config['tag']:<8} {run_label}try={update.number} "
-                f"word={word_json} progress={update.progress:.2f}%",
+                f"word={word_json} progress={update.progress:.2f}%{usage}",
                 flush=True,
             )
 

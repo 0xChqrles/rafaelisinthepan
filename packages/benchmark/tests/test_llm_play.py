@@ -25,6 +25,7 @@ from llm_play import (
     DEEP_REASONING_MAX_TOKENS,
     DEFAULT_AUTH,
     DEFAULT_EFFORT,
+    DEFAULT_KIMI_RUNS,
     DEFAULT_RUNS,
     DEFAULT_SELECTION,
     DECISION_OUTPUT_MAX_TOKENS,
@@ -124,17 +125,20 @@ def test_playbook_profile_loader_accepts_only_hash_verified_final_for_selected_m
         ),
     ],
 )
-def test_versioned_playbooks_are_exact_final_critic_profiles(
+def test_versioned_v21_playbooks_remain_exact_frozen_critic_profiles(
     selector, filename, expected_sha256
 ):
     path = Path(__file__).resolve().parents[1] / "playbooks" / filename
     data = json.loads(path.read_text(encoding="utf-8"))
-    playbook, digest = load_playbook_profile(path, select_model(selector))
+    playbook = data["final_playbook"]
+    digest = hashlib.sha256(playbook.encode("utf-8")).hexdigest()
 
+    assert data["gameplay_prompt_version"] == "21"
     assert digest == expected_sha256
-    assert playbook == data["final_playbook"]
     assert "analyst" not in data
     assert "critic" not in data
+    with pytest.raises(ValueError, match="different gameplay prompt version"):
+        load_playbook_profile(path, select_model(selector))
 
 
 def puzzle():
@@ -439,10 +443,12 @@ def test_api_word_adapters_receive_the_same_stateless_authoritative_prompt(
         "fixed rules\n\nCOMPLETE CHRONOLOGICAL GAME RECORD\n"
         "CURRENT STATE\ninitial state\n\n"
         "PLAYER REPLY 1\nfirst model reply\n\n"
-        "REFEREE FEEDBACK 1\nFIRST RESULT\nCURRENT STATE\nafter first\n\n"
+        "REFEREE FEEDBACK 1\nFIRST RESULT\n\n"
         "PLAYER REPLY 2\nsecond model reply\n\n"
         "REFEREE FEEDBACK 2\nSECOND RESULT\nCURRENT STATE\nlatest state"
     )
+    assert expected[0]["content"].count("CURRENT STATE") == 2
+    assert "after first" not in expected[0]["content"]
 
 
 def test_stateless_word_prompt_preserves_initial_clues_and_every_exact_result():
@@ -453,7 +459,8 @@ def test_stateless_word_prompt_preserves_initial_clues_and_every_exact_result():
     assert _stateless_word_prompt(model.calls[0]) == model.calls[0][0]["content"]
     # Before the third guess, the current-best snapshot has replaced both starting
     # clues with "shared". The provider prompt must nevertheless retain the initial
-    # clues plus both guesses and their exact, ordered per-hole outcomes.
+    # clues plus both guesses and their exact, ordered per-hole outcomes. Superseded
+    # full snapshots are omitted; only the initial and latest authoritative states remain.
     prompt = _stateless_word_prompt(model.calls[2])
     assert "WORD 1: tree (rank 50)" in prompt
     assert "WORD 2: lake (rank 40)" in prompt
@@ -469,6 +476,7 @@ def test_stateless_word_prompt_preserves_initial_clues_and_every_exact_result():
     assert positions == sorted(positions)
     assert "word 1: 10 closer! New best rank 10." in prompt
     assert "word 2: MISS (current best remains rank 5)" in prompt
+    assert prompt.count("CURRENT STATE") == 2
 
 
 def test_codex_bootstrap_does_not_define_provider_specific_game_rules():
@@ -685,6 +693,7 @@ def test_anthropic_subscription_surfaces_provider_status_and_sdk_errors(monkeypa
         assert prompt == "analyze"
         assert options.effort == "max"
         yield FakeResultMessage()
+        raise Exception("Claude Code returned an error result: success")
 
     monkeypatch.setitem(
         sys.modules,
@@ -702,8 +711,50 @@ def test_anthropic_subscription_surfaces_provider_status_and_sdk_errors(monkeypa
         with pytest.raises(
             RuntimeError,
             match=r"session limit.*provider HTTP status 429",
-        ):
+        ) as raised:
             reply([{"role": "user", "content": "analyze"}])
+        assert "error result: success" not in str(raised.value)
+    finally:
+        reply.close()
+
+
+def test_agent_sdk_trailing_error_never_reports_success_without_diagnostics(monkeypatch):
+    class FakeOptions:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    class FakeResultMessage:
+        result = None
+        session_id = "failed-session"
+        is_error = True
+        stop_reason = None
+        subtype = "success"
+        usage = None
+        errors = None
+        api_error_status = None
+
+    async def fake_query(**_kwargs):
+        yield FakeResultMessage()
+        raise Exception("Claude Code returned an error result: success")
+
+    monkeypatch.setitem(
+        sys.modules,
+        "claude_agent_sdk",
+        SimpleNamespace(
+            ClaudeAgentOptions=FakeOptions,
+            ResultMessage=FakeResultMessage,
+            query=fake_query,
+        ),
+    )
+    reply = provider_reply(
+        MODELS[1], None, effort="medium", auth="subscription", output="prose"
+    )
+    try:
+        with pytest.raises(
+            RuntimeError, match="provider request failed without diagnostics"
+        ) as raised:
+            reply([{"role": "user", "content": "analyze"}])
+        assert "error result: success" not in str(raised.value)
     finally:
         reply.close()
 
@@ -747,8 +798,12 @@ def test_kimi_effort_mapping_is_explicit_and_never_disables_thinking(
         _effective_provider_effort("kimi", "none")
 
 
+@pytest.mark.parametrize(
+    ("requested_effort", "effective_effort"),
+    [("low", "low"), ("medium", "high")],
+)
 def test_kimi_subscription_adapter_pins_endpoint_and_zero_tool_sdk_options(
-    monkeypatch,
+    monkeypatch, requested_effort, effective_effort
 ):
     calls = []
 
@@ -789,7 +844,7 @@ def test_kimi_subscription_adapter_pins_endpoint_and_zero_tool_sdk_options(
     inherited["ANTHROPIC_BASE_URL"] = "https://api.anthropic.com/"
 
     reply = provider_reply(
-        MODELS[6], "kimi-secret", effort="medium", auth="subscription"
+        MODELS[6], "kimi-secret", effort=requested_effort, auth="subscription"
     )
     opening = [
         {
@@ -827,7 +882,7 @@ def test_kimi_subscription_adapter_pins_endpoint_and_zero_tool_sdk_options(
     assert first_options.fallback_model is None
     assert first_options.max_turns == 1
     assert first_options.thinking == {"type": "adaptive"}
-    assert first_options.effort == "high"
+    assert first_options.effort == effective_effort
     assert first_options.resume is None
     assert first_options.extra_args == {
         "safe-mode": None,
@@ -904,6 +959,51 @@ def test_kimi_subscription_restores_environment_and_explains_entitlement_failure
     assert {
         name: os.environ.get(name) for name in KIMI_SUBPROCESS_CONFLICT_ENV
     } == before
+
+
+def test_kimi_subscription_preserves_rate_limit_after_sdk_trailing_error(monkeypatch):
+    class FakeOptions:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    class FakeResultMessage:
+        result = None
+        session_id = "rate-limited-kimi"
+        is_error = True
+        stop_reason = None
+        subtype = "success"
+        usage = None
+        errors = ["The engine is currently overloaded, please try again later"]
+        api_error_status = 429
+
+    async def fake_query(*, prompt, options):
+        assert prompt == "board"
+        assert options.env["ANTHROPIC_BASE_URL"] == KIMI_CODE_BASE_URL
+        yield FakeResultMessage()
+        raise Exception("Claude Code returned an error result: success")
+
+    monkeypatch.setitem(
+        sys.modules,
+        "claude_agent_sdk",
+        SimpleNamespace(
+            ClaudeAgentOptions=FakeOptions,
+            ResultMessage=FakeResultMessage,
+            query=fake_query,
+        ),
+    )
+
+    reply = provider_reply(
+        MODELS[6], "kimi-secret", effort="medium", auth="subscription"
+    )
+    try:
+        with pytest.raises(
+            RuntimeError,
+            match=r"rate limit, quota, or temporary overload.*provider HTTP status 429",
+        ) as raised:
+            reply([{"role": "user", "content": "board"}])
+        assert "error result: success" not in str(raised.value)
+    finally:
+        reply.close()
 
 
 def test_kimi_auth_preflight_requires_dedicated_key_and_supported_agent_sdk(
@@ -1519,6 +1619,19 @@ def test_cli_defaults_to_api_and_accepts_shared_effort_and_auth_levels():
         if auth == "subscription":
             arguments.extend(("--effort", "medium"))
         assert parse_args(arguments).auth == auth
+
+    kimi = parse_args(
+        [
+            "puzzle.json",
+            "--model",
+            "KIMI",
+            "--auth",
+            "subscription",
+            "--effort",
+            "low",
+        ]
+    )
+    assert kimi.runs == DEFAULT_KIMI_RUNS == 1
 
 
 def test_cli_requires_odd_median_runs_but_best_accepts_any_positive_count(capsys):
@@ -2815,8 +2928,6 @@ def test_cli_kimi_subscription_uses_dedicated_key_and_reports_effective_effort(
                 "subscription",
                 "--effort",
                 "medium",
-                "--runs",
-                "1",
             ]
         )
         == 0
@@ -2830,6 +2941,13 @@ def test_cli_kimi_subscription_uses_dedicated_key_and_reports_effective_effort(
     assert "auth=subscription" in output.out
     assert "requested_effort=medium" in output.out
     assert "effective_provider_effort=high" in output.out
+    assert "KIMI cost notice: low effort still uses adaptive thinking" in output.out
+    assert "schedules 1 run with up to 300 counted guesses each" in output.out
+    assert "malformed or non-counting replies can add requests" in output.out
+    assert (
+        'try=1 word="forest" progress=50.00% '
+        'token_usage={"input_tokens":12,"output_tokens":2}' in output.out
+    )
     assert 'token_usage={"input_tokens":30,"output_tokens":5}' in output.out
     assert secret not in output.out
     assert secret not in output.err
@@ -3009,7 +3127,7 @@ def test_opening_prompt_explains_rules_without_prescribing_a_solving_plan():
     play_puzzle(puzzle(), VOCAB, model, cap=75)
 
     opening = model.calls[0][0]["content"]
-    assert PROMPT_VERSION == "21"
+    assert PROMPT_VERSION == "22"
     for header in (
         "OBJECTIVE AND SCORE",
         "MANDATORY REPLY CONTRACT",
@@ -3020,8 +3138,8 @@ def test_opening_prompt_explains_rules_without_prescribing_a_solving_plan():
     ):
         assert header in opening
     assert len(opening.split()) <= 650
-    assert "limit of 75 counted tries" in opening
-    assert "counted try 75 succeeds" in opening
+    assert "limit is 75 counted tries" in opening
+    assert "Counted try 75 succeeds" in opening
     assert "first reply is the first guess, not a plan" in opening
     assert "Singular/plural, masculine/feminine" in opening
     assert "person, tense, mood, and conjugation" in opening
@@ -3098,6 +3216,10 @@ def test_opening_prompt_explains_rank_evidence_without_smuggling_in_a_method():
     assert "improve or solve several words" in opening
     assert "Starting and later ranked clues" in opening
     assert "starting clue is uncounted" in opening
+    assert "ITS SHOWN RANK IS ALREADY KNOWN" in opening
+    assert "cannot improve that same WORD" in opening
+    assert "Do not re-test it" in opening
+    assert "improve a different unsolved WORD" in opening
     assert "strict improvement resets the streak" in opening
     assert "non-counting leaves it unchanged" in opening
     for strategy_like_text in (
@@ -3135,7 +3257,7 @@ def test_prompt_states_the_minimize_tries_objective_everywhere():
     opening = model.calls[0][0]["content"]
     # The objective is explicit: the try count IS the score and guesses cost.
     assert "as few counted tries as possible" in opening
-    assert "Your score is the total number of unique valid guesses" in opening
+    assert "Score counts unique valid guesses" in opening
     assert "every counted guess is expensive" in opening
     # Every turn restates the score framing next to the count, opening included.
     assert "Tries: 0 (your score — lower is better)" in opening
