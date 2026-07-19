@@ -141,3 +141,16 @@ export function srHoleResult(lang: string, n: number, rank: number | null): stri
   if (rank === 0) return `word ${n}: solved!`;
   return `word ${n}: ${rank} away`;
 }
+
+// Screen-reader mirror of the standings lineup's meaningful events (#81) — the visual
+// lineup is decorative. Full model labels, never the compact tags. `srModelLead` is the
+// crown transfer (the best model catches the player); `srModelAhead` a later pass.
+export function srModelLead(lang: string, label: string, tries: number): string {
+  if (uiLang(lang) === 'fr') return `${label} prend la tête à ${tries}`;
+  return `${label} takes the lead at ${tries}`;
+}
+
+export function srModelAhead(lang: string, label: string, tries: number): string {
+  if (uiLang(lang) === 'fr') return `${label} devant à ${tries}`;
+  return `${label} ahead at ${tries}`;
+}

@@ -11,10 +11,12 @@ import ProgressCounter from '../components/ProgressCounter';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import SolvedScreen, { RESULTS_IN_MS } from '../components/SolvedScreen';
+import StandingsLineup from '../components/StandingsLineup';
 import LazyStreakDialog, { preloadStreakDialog } from '../components/LazyStreakDialog';
 import SolvedCaption from '../components/SolvedCaption';
 import LoadError from '../components/LoadError';
-import { t, srHoleResult } from '../i18n';
+import { t, srHoleResult, srModelAhead, srModelLead } from '../i18n';
+import { lineupModel, lineupEvents } from '../game/benchmark';
 import { track } from '../analytics';
 import { fold } from '@whippin/shared';
 import type {
@@ -462,10 +464,24 @@ function Round({
 
       // Announce the guess's outcome to assistive tech — the audible twin of the
       // floating numbers below. One sentence covering every impacted hole (1-based, in
-      // sentence order), plus the solved fanfare when this guess finishes the round.
+      // sentence order), plus the visible standings lineup's meaningful events (#81 —
+      // the lineup itself is decorative): each opponent this counted try lets ahead,
+      // by full label. The solved fanfare stays last when this guess finishes the round.
       const parts = impacted.map(({ index, entry }) =>
         srHoleResult(lang, index + 1, entry ? entry.rank : null),
       );
+      if (benchmark && !history.includes(typed)) {
+        const before = lineupModel(benchmark, guessCount, t(lang, 'you'));
+        const after = lineupModel(benchmark, guessCount + 1, t(lang, 'you'));
+        const { passedBy, lostLead } = lineupEvents(before, after);
+        parts.push(
+          ...passedBy.map((e) =>
+            lostLead && e.key === after.entrants[0].key
+              ? srModelLead(lang, e.label, e.tries as number)
+              : srModelAhead(lang, e.label, e.tries as number),
+          ),
+        );
+      }
       say(solvesAll ? [...parts, t(lang, 'srSolvedAll')].join(', ') : parts.join(', '));
 
       // Every impacted hole shows a floating indicator: the distance number when
@@ -503,7 +519,20 @@ function Round({
         pendingTimers.current.push(timer);
       });
     },
-    [holes, ranks, solved, promptExiting, vocabSet, recordGuess, improveHole, lang, say],
+    [
+      holes,
+      ranks,
+      solved,
+      promptExiting,
+      vocabSet,
+      recordGuess,
+      improveHole,
+      lang,
+      say,
+      benchmark,
+      history,
+      guessCount,
+    ],
   );
 
   return (
@@ -580,6 +609,20 @@ function Round({
           </div>
         )}
       </div>
+
+      {/* Standings lineup (#81): the player + the 3 benchmark opponents sorted by tries,
+          crown on the leader, between the input area and the keyboard. Height comes out
+          of .play's flexible space, never the keyboard's. It persists for the whole round
+          (a scoreboard, not a chase); on the solving try the crown flips gold and the
+          lineup freezes, leaving with the keyboard when the results take the tray. */}
+      {benchmark && !showResults && (
+        <StandingsLineup
+          benchmark={benchmark}
+          guessCount={guessCount}
+          solved={solved}
+          lang={lang}
+        />
+      )}
 
       {/* Bottom zone (fixed keyboard-height footprint): the on-screen keyboard while
           playing, the solved results in the SAME space once they reveal — so the keyboard
