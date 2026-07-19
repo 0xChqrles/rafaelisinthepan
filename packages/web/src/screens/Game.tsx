@@ -44,10 +44,6 @@ export const FLOATING_HIT_INTRO_MS = 320;
 export const WORD_BLINK_MS = 600; // .word-replace-blink in index.css (0.2s steps(1) 3)
 const STREAK_AFTER_WORDS_MS = 300;
 
-// Per page-load token isolating a ?puzzle= override round (no server day to key on),
-// so testing a static file always starts fresh and never rehydrates another file.
-const OVERRIDE_NONCE = Math.random().toString(36).slice(2);
-
 // Wrapper: drives the single puzzle. Loads the language's fixed vocabulary
 // (existence set + keyboard prefix set) before playing — existence is decided by it,
 // not by ranks. The header lives ABOVE this (GameRoute), so Game renders only the game
@@ -59,7 +55,7 @@ export default function Game({
   deferResultsAnimation = false,
 }: {
   puzzle: Puzzle;
-  dayNumber: number | null;
+  dayNumber: number;
   // Whether this is the client's active day (false when replaying an archive day, #55):
   // gates the fresh-solve streak celebration and tags solve analytics as archive/live.
   isActiveDay?: boolean;
@@ -114,7 +110,7 @@ function Round({
   vocabSet: Set<string>;
   prefixSet: Set<string>;
   lang: string;
-  dayNumber: number | null;
+  dayNumber: number;
   isActiveDay: boolean;
   deferResultsAnimation: boolean;
 }) {
@@ -132,12 +128,8 @@ function Round({
     [puzzleHoles],
   );
 
-  // Identity of this round: the server day + language. A ?puzzle= override has no
-  // server day, so a per-load nonce keeps it ephemeral (fresh every load).
-  const roundKey = useMemo(
-    () => (dayNumber != null ? roundKeyForDay(dayNumber, lang) : `o:${OVERRIDE_NONCE}:${lang}`),
-    [dayNumber, lang],
-  );
+  // Identity of this round: the server day + language.
+  const roundKey = useMemo(() => roundKeyForDay(dayNumber, lang), [dayNumber, lang]);
 
   const ensureRound = useGameStore((s) => s.ensureRound);
   const recordGuess = useGameStore((s) => s.recordGuess);
@@ -234,7 +226,7 @@ function Round({
   // just-solved transition below starts the same preload immediately. Both scheduling paths
   // are cleaned up with the round, and a speculative load failure remains retryable.
   useEffect(() => {
-    if (solved || dayNumber == null || !isActiveDay) return undefined;
+    if (solved || !isActiveDay) return undefined;
     if (typeof window.requestIdleCallback === 'function') {
       const id = window.requestIdleCallback(() => preloadStreakDialog(), { timeout: 4_000 });
       return () => window.cancelIdleCallback(id);
@@ -308,21 +300,17 @@ function Round({
       return undefined;
     }
     // The one analytics beat for "did the player finish a puzzle": fired ONLY on the
-    // play-solve transition (never on the rehydration branch above). A ?puzzle= override
-    // has no real day, so it isn't a countable solve — skip it. `archive` distinguishes a
-    // replayed past day ('yes', #55) from the live daily puzzle ('no').
-    let didAdvanceStreak = false;
-    if (dayNumber != null) {
-      track('solve', { lang, tries: guessCount, day: dayNumber, archive: isActiveDay ? 'no' : 'yes' });
-      // Streak (#56): only an ACTIVE-DAY solve counts — archive replays must not touch the
-      // streak. The gate lives HERE, not in the store: recordSolve's activeDay-1 tolerance
-      // (the genuine flip-edge — an undated tab finished just past 22:00) is
-      // INDISTINGUISHABLE from deliberately opening /<lang>/<yesterday>, since both have
-      // solvedDay === activeDay - 1. Only the caller knows which route this is — the undated
-      // active route keeps isActiveDay true across the flip, a dated past route is false —
-      // so the flip-edge still records while an archive-yesterday solve does not.
-      if (isActiveDay) didAdvanceStreak = recordSolve(lang, dayNumber, todayDayNumber);
-    }
+    // play-solve transition (never on the rehydration branch above). `archive`
+    // distinguishes a replayed past day ('yes', #55) from the live daily puzzle ('no').
+    track('solve', { lang, tries: guessCount, day: dayNumber, archive: isActiveDay ? 'no' : 'yes' });
+    // Streak (#56): only an ACTIVE-DAY solve counts — archive replays must not touch the
+    // streak. The gate lives HERE, not in the store: recordSolve's activeDay-1 tolerance
+    // (the genuine flip-edge — an undated tab finished just past 22:00) is
+    // INDISTINGUISHABLE from deliberately opening /<lang>/<yesterday>, since both have
+    // solvedDay === activeDay - 1. Only the caller knows which route this is — the undated
+    // active route keeps isActiveDay true across the flip, a dated past route is false —
+    // so the flip-edge still records while an archive-yesterday solve does not.
+    const didAdvanceStreak = isActiveDay && recordSolve(lang, dayNumber, todayDayNumber);
     setAnimateResults(true);
     setStreakAdvanced(didAdvanceStreak);
     if (didAdvanceStreak) preloadStreakDialog();
@@ -334,12 +322,12 @@ function Round({
 
   useEffect(() => {
     if (!awaitingWordAnimations || !allWordsResolved) return;
-    // The archive, tutorial (?puzzle= has no day), and rehydration branches never open
-    // this dialog. recordSolve has already updated the solved-day set synchronously —
-    // and its freshness tolerance is mirrored here (solvedDay >= activeDay - 1), so a
-    // tab left open 2+ days can't celebrate a solve the store just refused to record.
+    // The archive and rehydration branches never open this dialog. recordSolve has
+    // already updated the solved-day set synchronously — and its freshness tolerance is
+    // mirrored here (solvedDay >= activeDay - 1), so a tab left open 2+ days can't
+    // celebrate a solve the store just refused to record.
     const willShowStreak =
-      streakAdvanced && dayNumber != null && isActiveDay && dayNumber >= todayDayNumber - 1;
+      streakAdvanced && isActiveDay && dayNumber >= todayDayNumber - 1;
     if (!willShowStreak) {
       setShowResults(true);
       setShowStreakDialog(false);
@@ -623,7 +611,7 @@ function Round({
         )}
       </div>
 
-      {showStreakDialog && dayNumber != null && (
+      {showStreakDialog && (
         <LazyStreakDialog lang={lang} solvedDay={dayNumber} onDismiss={dismissStreakDialog} />
       )}
     </div>
