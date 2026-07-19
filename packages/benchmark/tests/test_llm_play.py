@@ -59,6 +59,7 @@ from llm_play import (
     feedback_message,
     load_playbook_profile,
     main,
+    median_prune_reason,
     parse_args,
     parse_single_word,
     play_puzzle,
@@ -2422,6 +2423,78 @@ def make_run(
     )
 
 
+def test_median_prune_has_no_upper_bound_before_k_runs_solve():
+    finalized = [
+        make_run(4, turns=4),
+        make_run(9, turns=9),
+        make_run(None, turns=20, termination="cap"),
+    ]
+
+    assert (
+        median_prune_reason(finalized, 300, total_runs=5) is None
+    )
+
+
+def test_median_prune_stops_at_the_kth_smallest_solved_score():
+    finalized = [
+        make_run(11, turns=11),
+        make_run(5, turns=5),
+        make_run(8, turns=8),
+    ]
+
+    assert median_prune_reason(finalized, 10, total_runs=5) is None
+    assert (
+        median_prune_reason(finalized, 11, total_runs=5)
+        == "upper_half"
+    )
+
+
+def test_median_prune_bound_tightens_when_more_runs_solve():
+    first_three_solves = [
+        make_run(15, turns=15),
+        make_run(4, turns=4),
+        make_run(9, turns=9),
+    ]
+    with_later_solve = [*first_three_solves, make_run(6, turns=6)]
+
+    assert (
+        median_prune_reason(first_three_solves, 9, total_runs=5) is None
+    )
+    assert (
+        median_prune_reason(with_later_solve, 9, total_runs=5)
+        == "upper_half"
+    )
+
+
+def test_median_prune_short_circuits_only_after_a_cap_dnf_majority():
+    two_dnfs = [
+        make_run(None, turns=20, termination="cap"),
+        make_run(None, turns=21, termination="cap"),
+    ]
+    three_dnfs = [
+        *two_dnfs,
+        make_run(None, turns=22, termination="cap"),
+    ]
+
+    assert median_prune_reason(two_dnfs, 0, total_runs=5) is None
+    assert (
+        median_prune_reason(three_dnfs, 0, total_runs=5)
+        == "dnf_majority"
+    )
+
+
+def test_single_median_run_never_prunes():
+    assert median_prune_reason([], 300, total_runs=1) is None
+    assert (
+        median_prune_reason(
+            [make_run(None, turns=300, termination="cap")],
+            300,
+            total_runs=1,
+        )
+        is None
+    )
+
+
 def test_median_selection_returns_an_actual_run_with_dnf_last_and_stable_ties():
     score_order = [
         make_run(10, turns=4),
@@ -2453,6 +2526,24 @@ def test_median_selection_returns_an_actual_run_with_dnf_last_and_stable_ties():
 
     with pytest.raises(ValueError, match="odd"):
         select_median_run(score_order[:2])
+
+
+def test_upper_half_pruning_preserves_the_fully_run_median():
+    fully_run = [
+        make_run(6, turns=6),
+        make_run(14, turns=14),
+        make_run(9, turns=9),
+        make_run(25, turns=25),
+        make_run(18, turns=18),
+    ]
+    cost_pruned = [
+        *fully_run[:3],
+        make_run(None, turns=14, termination="upper_half"),
+        make_run(None, turns=14, termination="upper_half"),
+    ]
+
+    assert select_median_run(fully_run) == 1
+    assert select_median_run(cost_pruned) == 1
 
 
 def test_best_selection_returns_the_lowest_success_with_stable_ties():
@@ -2556,6 +2647,128 @@ def test_benchmark_model_persists_the_selected_median_runs_counted_display_forms
         benchmark_model(
             MODELS[0], puzzle(), VOCAB, ScriptedModel([]), cap=300, runs=2
         )
+
+
+def test_median_mode_prunes_a_later_provable_upper_half_run(tmp_path):
+    model = ScriptedModel(
+        [
+            # The first two sequential runs establish median upper bound 3.
+            "forest",
+            "ocean",
+            "shared",
+            "forest",
+            "ocean",
+            # The last run is still unsolved at 3 and makes no fourth call.
+            "cold",
+            "other",
+            "forest",
+        ]
+    )
+
+    summary = benchmark_model(
+        MODELS[0], puzzle(), VOCAB, model, cap=300, runs=3
+    )
+
+    assert summary.selected_run_index == 1
+    assert summary.tries == 3
+    assert [result.counted_tries for result in summary.results] == [2, 3, 3]
+    assert [result.termination for result in summary.results] == [
+        "solved",
+        "solved",
+        "upper_half",
+    ]
+    assert summary.results[2].tries is None
+    assert summary.results[2].tried_words == ("cold", "other", "forest")
+    assert len(model.calls) == 8
+    assert summary.benchmark_entry()["run"] == ["shared", "forest", "ocean"]
+
+    _, artifact = write_lab_artifact(
+        tmp_path / "forest_ocean.json",
+        summary,
+        cap=300,
+        effort="medium",
+        auth="api",
+        output_dir=tmp_path / "lab",
+    )
+    pruned_run = artifact["sessions"][0]["runs"][2]
+    assert pruned_run["tries"] is None
+    assert pruned_run["counted_tries"] == 3
+    assert pruned_run["termination"] == "upper_half"
+
+
+def test_median_mode_preserves_a_bound_equal_to_cap_as_a_real_dnf():
+    model = ScriptedModel(
+        [
+            # Three solves establish a median bound equal to cap=2.
+            "forest",
+            "ocean",
+            "forest",
+            "ocean",
+            "forest",
+            "ocean",
+            # These runs receive no early pruning and must remain genuine cap DNFs.
+            "cold",
+            "other",
+            "cold",
+            "other",
+        ]
+    )
+
+    summary = benchmark_model(
+        MODELS[0], puzzle(), VOCAB, model, cap=2, runs=5
+    )
+
+    assert [result.counted_tries for result in summary.results] == [2, 2, 2, 2, 2]
+    assert [result.termination for result in summary.results] == [
+        "solved",
+        "solved",
+        "solved",
+        "cap",
+        "cap",
+    ]
+    assert len(model.calls) == 10
+
+
+def test_median_mode_dnf_majority_skips_every_remaining_provider_call():
+    model = ScriptedModel(["cold", "other", "cold", "other"])
+
+    summary = benchmark_model(
+        MODELS[0], puzzle(), VOCAB, model, cap=2, runs=3
+    )
+
+    assert summary.tries is None
+    assert [result.counted_tries for result in summary.results] == [2, 2, 0]
+    assert [result.termination for result in summary.results] == [
+        "cap",
+        "cap",
+        "dnf_majority",
+    ]
+    assert summary.results[2].conversation == ()
+    assert len(model.calls) == 4
+    # The censored placeholder stays lab-only; the representative is a genuine,
+    # complete cap DNF whose run can still be replayed and embedded.
+    assert summary.selected_run.termination == "cap"
+    assert summary.benchmark_entry()["run"] == ["cold", "other"]
+
+
+@pytest.mark.parametrize("termination", ["cannot_beat_best", "upper_half", "dnf_majority"])
+def test_cost_pruned_run_can_never_be_embedded(termination):
+    summary = ModelSummary(
+        config=MODELS[0],
+        results=(
+            make_run(
+                None,
+                turns=2,
+                words=("cold", "other"),
+                termination=termination,
+            ),
+        ),
+        selection="median",
+        selected_run_index=0,
+    )
+
+    with pytest.raises(ValueError, match="cost-pruned"):
+        summary.benchmark_entry()
 
 
 def test_best_mode_prunes_only_after_a_run_cannot_beat_the_incumbent():
@@ -3395,6 +3608,39 @@ def test_cli_prints_counted_words_in_order_for_each_run(monkeypatch, tmp_path, c
     assert 'OPUS     run=1 tried=["forest", "ocean"]' in output
     assert 'OPUS     run=2 tried=["shared", "forest", "ocean"]' in output
     assert 'OPUS     run=3 tried=["cold", "forest", "ocean"]' in output
+
+
+def test_cli_labels_a_median_cost_prune_separately_from_a_real_dnf(
+    monkeypatch, tmp_path, capsys
+):
+    path = tmp_path / "puzzle.json"
+    path.write_text(json.dumps(puzzle()), encoding="utf-8")
+    model = ScriptedModel(
+        [
+            "forest",
+            "ocean",
+            "shared",
+            "forest",
+            "ocean",
+            "cold",
+            "other",
+            "forest",
+        ]
+    )
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr("llm_play.load_vocab", lambda _lang: VOCAB)
+    monkeypatch.setattr("llm_play.provider_reply", lambda *_args, **_kwargs: model)
+
+    assert main([str(path), "--model", "OPUS", "--runs", "3"]) == 0
+
+    output = capsys.readouterr().out
+    assert "3 tries  median_run=2" in output
+    assert (
+        'run=3 tried=["cold", "other", "forest"] '
+        "termination=upper_half cost_pruned=true stopped_at=3 score>3"
+        in output
+    )
+    assert len(model.calls) == 8
 
 
 def test_cli_best_selection_prunes_a_dominated_run_and_reports_the_best(

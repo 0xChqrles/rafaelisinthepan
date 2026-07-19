@@ -145,7 +145,19 @@ DEEP_REASONING_MAX_TOKENS = 64_000
 DECISION_OUTPUT_MAX_TOKENS = 512
 PROSE_OUTPUT_MAX_TOKENS = 8_192
 OutputMode = Literal["word", "decision", "prose"]
-RunTermination = Literal["solved", "cap", "cannot_beat_best", "reply_error"]
+MedianPruneReason = Literal["upper_half", "dnf_majority"]
+MEDIAN_PRUNE_REASONS: tuple[MedianPruneReason, ...] = (
+    "upper_half",
+    "dnf_majority",
+)
+RunTermination = Literal[
+    "solved",
+    "cap",
+    "cannot_beat_best",
+    "upper_half",
+    "dnf_majority",
+    "reply_error",
+]
 
 AuthMode = Literal["api", "subscription"]
 AUTH_MODES: tuple[AuthMode, ...] = ("api", "subscription")
@@ -382,8 +394,8 @@ class TryProgress:
 
 @dataclass(frozen=True)
 class RunResult:
-    # None is never embedded for a pruned run: best selection always has an incumbent
-    # solved run. `termination` distinguishes those censored attempts from cap DNFs.
+    # None is never embedded for a cost-pruned run. `termination` distinguishes those
+    # censored attempts from genuine cap DNFs.
     tries: int | None
     counted_tries: int
     turns: int
@@ -395,6 +407,9 @@ class RunResult:
     # Raw payloads remain local audit evidence. In particular, persistent Codex CLI
     # payloads are cumulative thread snapshots, not per-turn values.
     raw_provider_token_usage: tuple[dict[str, Any], ...] = ()
+
+
+MedianPrunePredicate = Callable[[int], MedianPruneReason | None]
 
 
 @dataclass(frozen=True)
@@ -429,6 +444,10 @@ class ModelSummary:
         return tuple(result.tried_words for result in self.results)
 
     def benchmark_entry(self) -> dict[str, Any]:
+        if self.selected_run.termination not in ("solved", "cap"):
+            raise ValueError(
+                "an incomplete or cost-pruned run cannot be embedded"
+            )
         return {
             "model": self.config["model_id"],
             "label": self.config["label"],
@@ -1477,6 +1496,7 @@ def play_puzzle(
     strategy: str | None = None,
     rules_only: bool = False,
     best_score_to_beat: int | None = None,
+    median_prune: MedianPrunePredicate | None = None,
 ) -> RunResult:
     """Run one append-only model conversation through the real puzzle rules.
 
@@ -1490,9 +1510,34 @@ def play_puzzle(
         not _is_int(best_score_to_beat) or best_score_to_beat <= 0
     ):
         raise ValueError("best score to beat must be a positive integer")
+    if best_score_to_beat is not None and median_prune is not None:
+        raise ValueError("best and median pruning cannot be combined")
     referee = PuzzleReferee(puzzle, vocab)
     if referee.solved:
         raise ValueError("puzzle starts solved; no benchmark can be played")
+
+    def current_median_prune_reason(
+        live_tries: int,
+    ) -> MedianPruneReason | None:
+        if median_prune is None:
+            return None
+        reason = median_prune(live_tries)
+        if reason is not None and reason not in MEDIAN_PRUNE_REASONS:
+            raise ValueError(f"unsupported median prune reason: {reason}")
+        return reason
+
+    initial_prune = current_median_prune_reason(0)
+    if initial_prune is not None:
+        return RunResult(
+            tries=None,
+            counted_tries=0,
+            turns=0,
+            duration=0.0,
+            tried_words=(),
+            conversation=(),
+            turn_token_usage=(),
+            termination=initial_prune,
+        )
 
     messages: list[Message] = [
         {
@@ -1616,6 +1661,36 @@ def play_puzzle(
                 conversation=tuple(message.copy() for message in messages),
                 turn_token_usage=tuple(turn_token_usage),
                 termination="solved",
+                raw_provider_token_usage=tuple(raw_provider_token_usage),
+            )
+        # A median upper-half bound equal to the cap saves no calls. Preserve this
+        # genuine cap DNF for audit rather than mislabeling it as censored. Best-mode
+        # ordering remains unchanged: its incumbent stop is a separate contract.
+        if median_prune is not None and feedback.tries >= cap:
+            return RunResult(
+                tries=None,
+                counted_tries=feedback.tries,
+                turns=turns,
+                duration=time.monotonic() - started,
+                tried_words=tuple(referee.tried_words),
+                conversation=tuple(message.copy() for message in messages),
+                turn_token_usage=tuple(turn_token_usage),
+                termination="cap",
+                raw_provider_token_usage=tuple(raw_provider_token_usage),
+            )
+        median_prune_reason_now = current_median_prune_reason(
+            feedback.tries
+        )
+        if median_prune_reason_now is not None:
+            return RunResult(
+                tries=None,
+                counted_tries=feedback.tries,
+                turns=turns,
+                duration=time.monotonic() - started,
+                tried_words=tuple(referee.tried_words),
+                conversation=tuple(message.copy() for message in messages),
+                turn_token_usage=tuple(turn_token_usage),
+                termination=median_prune_reason_now,
                 raw_provider_token_usage=tuple(raw_provider_token_usage),
             )
         # In best mode a run that is still unsolved at the incumbent score cannot tie
@@ -2682,20 +2757,66 @@ def provider_reply(
     raise ValueError(f"unsupported provider: {provider}")
 
 
+def median_prune_reason(
+    finalized_results: Sequence[RunResult],
+    live_tries: int,
+    *,
+    total_runs: int,
+) -> MedianPruneReason | None:
+    """Return a safe median-only stop reason for the current sequential run.
+
+    A solved-score bound can stop only the live run, after its solve check. A cap-DNF
+    majority fixes the median at DNF and lets every not-yet-started run stop at zero.
+    Cost-pruned results never count as genuine cap DNFs.
+    """
+    if not _is_int(total_runs) or total_runs <= 0 or total_runs % 2 == 0:
+        raise ValueError("total median runs must be a positive odd integer")
+    if not _is_int(live_tries) or live_tries < 0:
+        raise ValueError("live tries must be a non-negative integer")
+    if len(finalized_results) > total_runs:
+        raise ValueError("finalized runs cannot exceed total runs")
+    if total_runs == 1 or len(finalized_results) == total_runs:
+        return None
+
+    median_count = (total_runs + 1) // 2
+    dnf_count = sum(
+        result.termination == "cap" for result in finalized_results
+    )
+    if dnf_count >= total_runs - median_count + 1:
+        return "dnf_majority"
+
+    solved_scores = sorted(
+        result.tries
+        for result in finalized_results
+        if result.tries is not None
+    )
+    if (
+        len(solved_scores) >= median_count
+        and live_tries >= solved_scores[median_count - 1]
+    ):
+        return "upper_half"
+    return None
+
+
+def _selection_order(
+    item: tuple[int, RunResult],
+) -> tuple[float, int, int, int]:
+    index, result = item
+    return (
+        math.inf if result.tries is None else result.tries,
+        0 if result.termination in ("solved", "cap") else 1,
+        result.turns,
+        index,
+    )
+
+
 def select_median_run(results: Sequence[RunResult]) -> int:
     """Return the actual median run's original index under the contract ordering."""
     if not results:
         raise ValueError("cannot select the median of zero runs")
     if len(results) % 2 == 0:
         raise ValueError("run count must be odd so the median is an actual run")
-    ordered = sorted(
-        enumerate(results),
-        key=lambda item: (
-            math.inf if item[1].tries is None else item[1].tries,
-            item[1].turns,
-            item[0],
-        ),
-    )
+    ordered = sorted(enumerate(results), key=_selection_order)
     return ordered[(len(results) - 1) // 2][0]
 
 
@@ -2750,6 +2871,21 @@ def benchmark_model(
                 ) -> None:
                     on_try(current_run, update)
 
+            median_pruner: MedianPrunePredicate | None = None
+            if selection == "median":
+                finalized_results = tuple(results)
+
+                def should_prune_median(
+                    live_tries: int,
+                ) -> MedianPruneReason | None:
+                    return median_prune_reason(
+                        finalized_results,
+                        live_tries,
+                        total_runs=runs,
+                    )
+
+                median_pruner = should_prune_median
+
             results.append(
                 play_puzzle(
                     puzzle,
@@ -2763,6 +2899,7 @@ def benchmark_model(
                         if selection == "best"
                         else None
                     ),
+                    median_prune=median_pruner,
                 )
             )
     finally:
@@ -3360,7 +3497,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=DEFAULT_SELECTION,
         help=(
             "saved representative run: actual median, or lowest successful best; "
-            "best prunes later attempts once they cannot beat the incumbent "
+            "sequential median runs prune only provable upper-half tails or after a "
+            "cap-DNF majority; best prunes later attempts once they cannot beat the incumbent "
             f"(default: {DEFAULT_SELECTION})"
         ),
     )
@@ -3576,10 +3714,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"turns={summary.turns}  duration={summary.duration:.1f}s  "
         f"token_usage={usage_text}  model={config['model_id']}"
     )
-    for run_number, tried_words in enumerate(summary.run_tried_words, start=1):
+    for run_number, result in enumerate(summary.results, start=1):
         run_label = f"run={run_number} " if summary.runs > 1 else ""
-        words_json = json.dumps(tried_words, ensure_ascii=False)
-        print(f"{config['tag']:<8} {run_label}tried={words_json}")
+        words_json = json.dumps(result.tried_words, ensure_ascii=False)
+        prune_note = ""
+        if result.termination == "upper_half":
+            prune_note = (
+                " termination=upper_half cost_pruned=true "
+                f"stopped_at={result.counted_tries} score>{result.counted_tries}"
+            )
+        elif result.termination == "dnf_majority":
+            prune_note = (
+                " termination=dnf_majority cost_pruned=true median=DNF"
+            )
+        print(
+            f"{config['tag']:<8} {run_label}tried={words_json}{prune_note}"
+        )
 
     if args.in_place:
         try:
