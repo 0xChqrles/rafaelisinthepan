@@ -171,6 +171,11 @@ def test_two_pass_resume_never_repeats_a_completed_stage_and_profile_is_final_on
 
     class ScriptedReply:
         last_token_usage = {"input_tokens": 10, "output_tokens": 5}
+        last_raw_token_usage = {
+            "input_tokens": 10,
+            "output_tokens": 5,
+            "service_tier": "test",
+        }
 
         def __call__(self, messages):
             calls.append(messages)
@@ -201,6 +206,21 @@ def test_two_pass_resume_never_repeats_a_completed_stage_and_profile_is_final_on
     audit = json.loads(artifact.read_text(encoding="utf-8"))
     assert audit["stages"]["analyst"]["response"] == "PRIVATE ANALYST REPORT"
     assert audit["stages"]["critic"]["response"] == "FINAL OPERATIONAL PLAYBOOK"
+    for stage in audit["stages"].values():
+        assert stage["token_usage_schema_version"] == 1
+        assert stage["token_usage"] == {
+            "input_tokens": 10,
+            "cached_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 5,
+            "reasoning_output_tokens": None,
+            "total_tokens": 15,
+        }
+        assert stage["raw_provider_token_usage"] == {
+            "input_tokens": 10,
+            "output_tokens": 5,
+            "service_tier": "test",
+        }
     frozen = json.loads(profile.read_text(encoding="utf-8"))
     assert frozen["final_playbook"] == "FINAL OPERATIONAL PLAYBOOK"
     assert "PRIVATE ANALYST REPORT" not in json.dumps(frozen)

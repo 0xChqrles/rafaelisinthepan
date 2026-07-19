@@ -28,6 +28,7 @@ from llm_play import (
     DEFAULT_KIMI_RUNS,
     DEFAULT_RUNS,
     DEFAULT_SELECTION,
+    DEFAULT_SESSION,
     DECISION_OUTPUT_MAX_TOKENS,
     DIRECT_OUTPUT_MAX_TOKENS,
     DISPLAY_MODEL_COUNT,
@@ -45,6 +46,8 @@ from llm_play import (
     PROSE_OUTPUT_MAX_TOKENS,
     REASONING_MAX_TOKENS,
     SELECTION_MODES,
+    SESSION_MODES,
+    TOKEN_USAGE_SCHEMA_VERSION,
     ModelSummary,
     NoProgressReplyError,
     PuzzleReferee,
@@ -70,8 +73,96 @@ from llm_play import (
     write_benchmark,
     write_lab_artifact,
     _effective_provider_effort,
+    _aggregate_token_usage,
+    _normalize_anthropic_token_usage,
+    _normalize_openai_token_usage,
     _stateless_word_prompt,
 )
+
+
+def standardized_usage(
+    input_tokens,
+    output_tokens,
+    *,
+    cached_input_tokens=0,
+    cache_write_input_tokens=0,
+    reasoning_output_tokens=None,
+):
+    """Expected public v1 token shape; input/output are inclusive totals."""
+    return {
+        "input_tokens": input_tokens,
+        "cached_input_tokens": cached_input_tokens,
+        "cache_write_input_tokens": cache_write_input_tokens,
+        "output_tokens": output_tokens,
+        "reasoning_output_tokens": reasoning_output_tokens,
+        "total_tokens": input_tokens + output_tokens,
+    }
+
+
+def test_provider_usage_normalizes_to_one_inclusive_cross_model_schema():
+    expected = standardized_usage(
+        200,
+        30,
+        cached_input_tokens=80,
+        cache_write_input_tokens=20,
+        reasoning_output_tokens=22,
+    )
+
+    assert _normalize_anthropic_token_usage(
+        {
+            "input_tokens": 100,
+            "cache_read_input_tokens": 80,
+            "cache_creation_input_tokens": 20,
+            "output_tokens": 30,
+            "output_tokens_details": {"thinking_tokens": 22},
+            "service_tier": "standard",
+        }
+    ) == expected
+    assert _normalize_openai_token_usage(
+        {
+            "input_tokens": 200,
+            "input_tokens_details": {
+                "cached_tokens": 80,
+                "cache_write_tokens": 20,
+            },
+            "output_tokens": 30,
+            "output_tokens_details": {"reasoning_tokens": 22},
+            "total_tokens": 230,
+        }
+    ) == expected
+    assert _normalize_openai_token_usage(
+        {
+            "input_tokens": 200,
+            "cached_input_tokens": 80,
+            "cache_write_input_tokens": 20,
+            "output_tokens": 30,
+            "reasoning_output_tokens": 22,
+        }
+    ) == expected
+
+
+def test_standard_usage_aggregation_keeps_unknown_reasoning_explicit():
+    assert _aggregate_token_usage(
+        [
+            standardized_usage(
+                20,
+                5,
+                cached_input_tokens=8,
+                cache_write_input_tokens=2,
+            ),
+            standardized_usage(
+                30,
+                7,
+                cached_input_tokens=12,
+                cache_write_input_tokens=3,
+            ),
+        ]
+    ) == standardized_usage(
+        50,
+        12,
+        cached_input_tokens=20,
+        cache_write_input_tokens=5,
+    )
 
 
 def test_playbook_profile_loader_accepts_only_hash_verified_final_for_selected_model(
@@ -288,7 +379,11 @@ def test_anthropic_adapter_none_disables_thinking_caches_and_omits_sampling(
     reply = provider_reply(config, "secret", effort="none")
 
     assert reply([{"role": "user", "content": "board"}]) == "forest"
-    assert reply.last_token_usage == {"input_tokens": 11, "output_tokens": 1}
+    assert reply.last_token_usage == standardized_usage(11, 1)
+    assert reply.last_raw_token_usage == {
+        "input_tokens": 11,
+        "output_tokens": 1,
+    }
     assert calls == [
         {
             "model": config["model_id"],
@@ -421,8 +516,12 @@ def test_api_word_adapters_receive_the_same_stateless_authoritative_prompt(
         {"role": "user", "content": _stateless_word_prompt(messages)}
     ]
 
-    anthropic = provider_reply(MODELS[0], "secret", effort="none")
-    openai = provider_reply(MODELS[2], "secret", effort="none")
+    anthropic = provider_reply(
+        MODELS[0], "secret", effort="none", session="stateless"
+    )
+    openai = provider_reply(
+        MODELS[2], "secret", effort="none", session="stateless"
+    )
     assert anthropic(messages) == openai(messages) == "forest"
     assert openai_calls[0]["input"] == expected
     # Anthropic splits the identical prompt into a cached fixed-rules block plus the
@@ -449,6 +548,59 @@ def test_api_word_adapters_receive_the_same_stateless_authoritative_prompt(
     )
     assert expected[0]["content"].count("CURRENT STATE") == 2
     assert "after first" not in expected[0]["content"]
+
+
+def test_anthropic_api_default_keeps_native_history_and_signed_thinking_blocks(
+    monkeypatch,
+):
+    calls = []
+    thinking = SimpleNamespace(
+        type="thinking", thinking="private deduction", signature="signed"
+    )
+    first_text = SimpleNamespace(type="text", text="forest")
+    second_text = SimpleNamespace(type="text", text="ocean")
+    responses = iter(
+        [
+            SimpleNamespace(
+                content=[thinking, first_text], stop_reason="end_turn"
+            ),
+            SimpleNamespace(content=[second_text], stop_reason="end_turn"),
+            SimpleNamespace(content=[first_text], stop_reason="end_turn"),
+        ]
+    )
+
+    class FakeAnthropic:
+        def __init__(self, *, api_key):
+            assert api_key == "secret"
+            self.messages = SimpleNamespace(create=self.create)
+
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            return next(responses)
+
+    monkeypatch.setitem(
+        sys.modules, "anthropic", SimpleNamespace(Anthropic=FakeAnthropic)
+    )
+    reply = provider_reply(MODELS[0], "secret", effort="medium")
+    opening = [{"role": "user", "content": "opening rules"}]
+    continued = opening + [
+        {"role": "assistant", "content": "forest"},
+        {"role": "user", "content": "latest referee feedback"},
+    ]
+
+    assert reply(opening) == "forest"
+    assert reply(continued) == "ocean"
+    assert reply([{"role": "user", "content": "opening again"}]) == "forest"
+
+    assert calls[0]["messages"] == opening
+    assert calls[1]["messages"][0] == opening[0]
+    assert calls[1]["messages"][1]["role"] == "assistant"
+    assert calls[1]["messages"][1]["content"] == [thinking, first_text]
+    assert calls[1]["messages"][2] == continued[-1]
+    assert calls[2]["messages"] == [
+        {"role": "user", "content": "opening again"}
+    ]
+    assert all(call["cache_control"] == {"type": "ephemeral"} for call in calls)
 
 
 def test_stateless_word_prompt_preserves_initial_clues_and_every_exact_result():
@@ -522,7 +674,7 @@ def test_reply_parser_enforces_the_advertised_language_word_shape(
 
 
 @pytest.mark.parametrize("effort", EFFORT_LEVELS)
-def test_anthropic_subscription_word_adapter_uses_fresh_stateless_agent_sdk_turns(
+def test_anthropic_subscription_word_adapter_resumes_one_native_session_per_run(
     monkeypatch, effort
 ):
     calls = []
@@ -580,18 +732,15 @@ def test_anthropic_subscription_word_adapter_uses_fresh_stateless_agent_sdk_turn
     assert reply([{"role": "user", "content": "opening again"}]) == "forest"
     assert os.environ["ANTHROPIC_API_KEY"] == "must-not-be-used"
     assert os.environ["KIMI_CODE_API_KEY"] == "must-not-enter-claude"
-    assert reply.last_token_usage == {"input_tokens": 12, "output_tokens": 1}
+    assert reply.last_token_usage == standardized_usage(12, 1)
 
     first_options = calls[0][1]
     assert [call[0] for call in calls] == [
-        _stateless_word_prompt(opening),
-        _stateless_word_prompt(continued),
+        opening[0]["content"],
+        "latest state",
         "opening again",
     ]
-    assert "CURRENT STATE\ninitial state" in calls[1][0]
-    assert "PLAYER REPLY 1\nforest" in calls[1][0]
-    assert "REFEREE FEEDBACK 1\nlatest state" in calls[1][0]
-    assert [call[1].resume for call in calls] == [None, None, None]
+    assert [call[1].resume for call in calls] == [None, "session-1", None]
     assert first_options.model == "claude-opus-4-8"
     assert first_options.system_prompt is None
     assert first_options.tools == []
@@ -619,6 +768,41 @@ def test_anthropic_subscription_word_adapter_uses_fresh_stateless_agent_sdk_turn
     assert workspace.is_dir()
     reply.close()
     assert not workspace.exists()
+
+
+def test_anthropic_subscription_stateless_mode_reconstructs_each_public_record(
+    monkeypatch,
+):
+    calls = []
+
+    async def fake_turn(prompt, **kwargs):
+        calls.append((prompt, kwargs))
+        return "forest", f"fresh-{len(calls)}", None
+
+    monkeypatch.setattr(sys.modules["llm_play"], "_agent_sdk_turn", fake_turn)
+    reply = provider_reply(
+        MODELS[0],
+        None,
+        effort="medium",
+        auth="subscription",
+        session="stateless",
+    )
+    opening = [{"role": "user", "content": "opening\nCURRENT STATE\ninitial"}]
+    continued = opening + [
+        {"role": "assistant", "content": "forest"},
+        {"role": "user", "content": "latest"},
+    ]
+    try:
+        assert reply(opening) == "forest"
+        assert reply(continued) == "forest"
+    finally:
+        reply.close()
+
+    assert [call[0] for call in calls] == [
+        _stateless_word_prompt(opening),
+        _stateless_word_prompt(continued),
+    ]
+    assert [call[1]["resume"] for call in calls] == [None, None]
 
 
 def test_anthropic_subscription_assembles_max_output_recovery_chunks(monkeypatch):
@@ -666,10 +850,7 @@ def test_anthropic_subscription_assembles_max_output_recovery_chunks(monkeypatch
             "# Full report\nTreat metadata as priors, not as facts available during "
             "play.\n\n## 11. Continue"
         )
-        assert reply.last_token_usage == {
-            "input_tokens": 10,
-            "output_tokens": 132_844,
-        }
+        assert reply.last_token_usage == standardized_usage(10, 132_844)
     finally:
         reply.close()
 
@@ -823,7 +1004,7 @@ def test_kimi_subscription_adapter_pins_endpoint_and_zero_tool_sdk_options(
     async def fake_query(*, prompt, options):
         assert not (set(KIMI_SUBPROCESS_CONFLICT_ENV) & os.environ.keys())
         calls.append((prompt, options))
-        yield FakeResultMessage("forest", f"kimi-{len(calls)}")
+        yield FakeResultMessage("forest", options.resume or "kimi-session")
 
     monkeypatch.setitem(
         sys.modules,
@@ -859,13 +1040,13 @@ def test_kimi_subscription_adapter_pins_endpoint_and_zero_tool_sdk_options(
 
     assert reply(opening) == "forest"
     assert reply(continued) == "forest"
-    assert reply.last_token_usage == {"input_tokens": 21, "output_tokens": 3}
+    assert reply.last_token_usage == standardized_usage(21, 3)
     assert {name: os.environ[name] for name in inherited} == inherited
 
     first_options = calls[0][1]
     assert [call[0] for call in calls] == [
-        _stateless_word_prompt(opening),
-        _stateless_word_prompt(continued),
+        opening[0]["content"],
+        "latest state",
     ]
     assert first_options.model == "k3"
     assert first_options.system_prompt is None
@@ -883,12 +1064,11 @@ def test_kimi_subscription_adapter_pins_endpoint_and_zero_tool_sdk_options(
     assert first_options.max_turns == 1
     assert first_options.thinking == {"type": "adaptive"}
     assert first_options.effort == effective_effort
-    assert first_options.resume is None
+    assert [call[1].resume for call in calls] == [None, "kimi-session"]
     assert first_options.extra_args == {
         "safe-mode": None,
         "disable-slash-commands": None,
         "bare": None,
-        "no-session-persistence": None,
     }
     assert first_options.env["ANTHROPIC_API_KEY"] == "kimi-secret"
     assert first_options.env["ANTHROPIC_BASE_URL"] == KIMI_CODE_BASE_URL
@@ -901,6 +1081,42 @@ def test_kimi_subscription_adapter_pins_endpoint_and_zero_tool_sdk_options(
 
     reply.close()
     assert not workspace.exists()
+
+
+def test_kimi_subscription_stateless_mode_disables_provider_session_persistence(
+    monkeypatch,
+):
+    calls = []
+
+    async def fake_turn(prompt, **kwargs):
+        calls.append((prompt, kwargs))
+        return "forest", f"fresh-{len(calls)}", None
+
+    monkeypatch.setattr(sys.modules["llm_play"], "_agent_sdk_turn", fake_turn)
+    reply = provider_reply(
+        MODELS[6],
+        "kimi-secret",
+        effort="low",
+        auth="subscription",
+        session="stateless",
+    )
+    opening = [{"role": "user", "content": "opening\nCURRENT STATE\ninitial"}]
+    continued = opening + [
+        {"role": "assistant", "content": "forest"},
+        {"role": "user", "content": "latest"},
+    ]
+    try:
+        assert reply(opening) == "forest"
+        assert reply(continued) == "forest"
+    finally:
+        reply.close()
+
+    assert [call[0] for call in calls] == [
+        _stateless_word_prompt(opening),
+        _stateless_word_prompt(continued),
+    ]
+    assert [call[1]["resume"] for call in calls] == [None, None]
+    assert calls[0][1]["extra_args"]["no-session-persistence"] is None
 
 
 def test_kimi_subscription_restores_environment_and_explains_entitlement_failure(
@@ -1214,7 +1430,13 @@ def test_openai_subscription_adapter_isolates_fresh_codex_exec(
     for name in OPENAI_SUBSCRIPTION_CONFLICT_ENV:
         monkeypatch.setenv(name, "must-not-be-used")
 
-    reply = provider_reply(config, None, effort=effort, auth="subscription")
+    reply = provider_reply(
+        config,
+        None,
+        effort=effort,
+        auth="subscription",
+        session="stateless",
+    )
     opening = [
         {
             "role": "user",
@@ -1234,7 +1456,7 @@ def test_openai_subscription_adapter_isolates_fresh_codex_exec(
     assert reply(continued) == "forest"
     assert reply(latest) == "forest"
     assert reply([{"role": "user", "content": "opening again"}]) == "forest"
-    assert reply.last_token_usage == {"input_tokens": 20, "output_tokens": 2}
+    assert reply.last_token_usage == standardized_usage(20, 2)
 
     assert len(calls) == 4
     command, kwargs = calls[0]
@@ -1296,6 +1518,137 @@ def test_openai_subscription_adapter_isolates_fresh_codex_exec(
 
     reply.close()
     assert not workspace.exists()
+
+
+def test_openai_subscription_default_resumes_one_saved_codex_thread_per_run(
+    monkeypatch,
+):
+    calls = []
+    cumulative_usage = [
+        {
+            "input_tokens": 100,
+            "cached_input_tokens": 20,
+            "cache_write_input_tokens": 5,
+            "output_tokens": 10,
+            "reasoning_output_tokens": 6,
+        },
+        {
+            "input_tokens": 250,
+            "cached_input_tokens": 100,
+            "cache_write_input_tokens": 15,
+            "output_tokens": 25,
+            "reasoning_output_tokens": 15,
+        },
+        {
+            "input_tokens": 90,
+            "cached_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 8,
+            "reasoning_output_tokens": 5,
+        },
+    ]
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        if "resume" in command:
+            thread_id = command[-2]
+        else:
+            thread_id = f"thread-{len(calls)}"
+        return SimpleNamespace(
+            returncode=0,
+            stdout="\n".join(
+                [
+                    json.dumps(
+                        {"type": "thread.started", "thread_id": thread_id}
+                    ),
+                    json.dumps(
+                        {
+                            "type": "item.completed",
+                            "item": {"type": "agent_message", "text": "forest"},
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "type": "turn.completed",
+                            "usage": cumulative_usage[len(calls) - 1],
+                        }
+                    ),
+                ]
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr("llm_play.shutil.which", lambda _command: "/usr/bin/codex")
+    monkeypatch.setattr("llm_play.subprocess.run", fake_run)
+    reply = provider_reply(
+        MODELS[2], None, effort="medium", auth="subscription"
+    )
+    opening = [{"role": "user", "content": "opening rules"}]
+    continued = opening + [
+        {"role": "assistant", "content": "forest"},
+        {"role": "user", "content": "latest referee feedback"},
+    ]
+    try:
+        assert reply(opening) == "forest"
+        first_usage = reply.last_token_usage
+        assert reply(continued) == "forest"
+        resumed_usage = reply.last_token_usage
+        assert reply([{"role": "user", "content": "opening again"}]) == "forest"
+        next_run_usage = reply.last_token_usage
+        next_run_raw_usage = reply.last_raw_token_usage
+    finally:
+        reply.close()
+
+    assert first_usage == standardized_usage(
+        100,
+        10,
+        cached_input_tokens=20,
+        cache_write_input_tokens=5,
+        reasoning_output_tokens=6,
+    )
+    # Codex emits cumulative saved-thread totals; the benchmark exposes only this
+    # turn's delta so the generic aggregator cannot triangularly double-count it.
+    assert resumed_usage == standardized_usage(
+        150,
+        15,
+        cached_input_tokens=80,
+        cache_write_input_tokens=10,
+        reasoning_output_tokens=9,
+    )
+    assert next_run_usage == standardized_usage(
+        90,
+        8,
+        reasoning_output_tokens=5,
+    )
+    assert next_run_raw_usage == cumulative_usage[2]
+    assert _aggregate_token_usage([first_usage, resumed_usage]) == (
+        standardized_usage(
+            250,
+            25,
+            cached_input_tokens=100,
+            cache_write_input_tokens=15,
+            reasoning_output_tokens=15,
+        )
+    )
+
+    first_command, first_kwargs = calls[0]
+    resumed_command, resumed_kwargs = calls[1]
+    next_run_command, next_run_kwargs = calls[2]
+    assert first_command[:2] == ["/usr/bin/codex", "exec"]
+    assert "--ephemeral" not in first_command
+    assert "--cd" in first_command and "--sandbox" in first_command
+    assert 'history.persistence="save-all"' in first_command
+    assert resumed_command[:3] == ["/usr/bin/codex", "exec", "resume"]
+    assert resumed_command[-2] == "thread-1"
+    assert "--cd" not in resumed_command and "--sandbox" not in resumed_command
+    assert "--ephemeral" not in resumed_command
+    assert next_run_command[:2] == ["/usr/bin/codex", "exec"]
+    assert "resume" not in next_run_command
+    assert [first_kwargs["input"], resumed_kwargs["input"], next_run_kwargs["input"]] == [
+        "opening rules",
+        "latest referee feedback",
+        "opening again",
+    ]
 
 
 def test_openai_subscription_prose_payload_has_no_one_word_directive(monkeypatch):
@@ -1414,6 +1767,77 @@ def test_openai_subscription_rejects_codex_tool_activity(monkeypatch):
     reply.close()
 
 
+@pytest.mark.parametrize(
+    "item_type",
+    [
+        # The classic tool items the denylist already covered.
+        "command_execution",
+        "file_change",
+        "mcp_tool_call",
+        "web_search",
+        # The request-surface leaks the denylist silently let through (#93): plan
+        # updates, user-input prompts, image views, plugins, and any future capability.
+        "update_plan",
+        "request_user_input",
+        "view_image",
+        "plugin_call",
+        "some_future_capability",
+    ],
+)
+def test_openai_subscription_rejects_every_non_reasoning_item(monkeypatch, item_type):
+    monkeypatch.setattr("llm_play.shutil.which", lambda _command: "/usr/bin/codex")
+    monkeypatch.setattr(
+        "llm_play.subprocess.run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(
+                {"type": "item.completed", "item": {"type": item_type}}
+            ),
+            stderr="",
+        ),
+    )
+    reply = provider_reply(MODELS[2], None, effort="medium", auth="subscription")
+
+    with pytest.raises(RuntimeError, match="forbidden tool activity"):
+        reply([{"role": "user", "content": "opening"}])
+    reply.close()
+
+
+def test_openai_subscription_allows_private_reasoning_before_the_message(monkeypatch):
+    # The allowlist must not over-tighten: a real reasoning-effort run streams private
+    # `reasoning` items ahead of the final `agent_message`, and those must pass.
+    monkeypatch.setattr("llm_play.shutil.which", lambda _command: "/usr/bin/codex")
+    monkeypatch.setattr(
+        "llm_play.subprocess.run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="\n".join(
+                [
+                    json.dumps({"type": "thread.started", "thread_id": "thread-1"}),
+                    json.dumps(
+                        {
+                            "type": "item.completed",
+                            "item": {"type": "reasoning", "text": "weigh the clues"},
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "type": "item.completed",
+                            "item": {"type": "agent_message", "text": "forest"},
+                        }
+                    ),
+                    json.dumps({"type": "turn.completed", "usage": {}}),
+                ]
+            ),
+            stderr="",
+        ),
+    )
+    reply = provider_reply(MODELS[2], None, effort="medium", auth="subscription")
+
+    assert reply([{"role": "user", "content": "opening"}]) == "forest"
+    reply.close()
+
+
 def test_openai_subscription_auth_preflight_strips_api_credentials(monkeypatch):
     def fake_run(command, **kwargs):
         assert command == ["/usr/local/bin/codex", "login", "status"]
@@ -1449,6 +1873,48 @@ def test_openai_subscription_auth_preflight_rejects_api_login(monkeypatch):
         validate_openai_subscription_auth()
 
 
+def test_openai_api_default_chains_responses_and_resets_between_runs(monkeypatch):
+    calls = []
+    responses = iter(
+        [
+            SimpleNamespace(id="response-1", output_text="forest", status="completed"),
+            SimpleNamespace(id="response-2", output_text="ocean", status="completed"),
+            SimpleNamespace(id="response-3", output_text="forest", status="completed"),
+        ]
+    )
+
+    class FakeOpenAI:
+        def __init__(self, *, api_key):
+            assert api_key == "secret"
+            self.responses = SimpleNamespace(create=self.create)
+
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            return next(responses)
+
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=FakeOpenAI))
+    reply = provider_reply(MODELS[2], "secret", effort="medium")
+    opening = [{"role": "user", "content": "opening rules"}]
+    continued = opening + [
+        {"role": "assistant", "content": "forest"},
+        {"role": "user", "content": "latest referee feedback"},
+    ]
+
+    assert reply(opening) == "forest"
+    assert reply(continued) == "ocean"
+    assert reply([{"role": "user", "content": "opening again"}]) == "forest"
+
+    assert [call["input"] for call in calls] == [
+        [{"role": "user", "content": "opening rules"}],
+        [{"role": "user", "content": "latest referee feedback"}],
+        [{"role": "user", "content": "opening again"}],
+    ]
+    assert [call["store"] for call in calls] == [True, True, True]
+    assert "previous_response_id" not in calls[0]
+    assert calls[1]["previous_response_id"] == "response-1"
+    assert "previous_response_id" not in calls[2]
+
+
 @pytest.mark.parametrize("config", OPENAI_MODELS, ids=lambda config: config["label"])
 def test_openai_adapter_uses_responses_with_explicit_none_effort(monkeypatch, config):
     calls = []
@@ -1467,10 +1933,13 @@ def test_openai_adapter_uses_responses_with_explicit_none_effort(monkeypatch, co
             )
 
     monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=FakeOpenAI))
-    reply = provider_reply(config, "secret", effort="none")
+    reply = provider_reply(
+        config, "secret", effort="none", session="stateless"
+    )
 
     assert reply([{"role": "user", "content": "board"}]) == "ocean"
-    assert reply.last_token_usage == {
+    assert reply.last_token_usage == standardized_usage(9, 1)
+    assert reply.last_raw_token_usage == {
         "input_tokens": 9,
         "output_tokens": 1,
         "total_tokens": 10,
@@ -1518,7 +1987,9 @@ def test_openai_adapter_applies_requested_reasoning_effort(
             return SimpleNamespace(output_text="ocean", status="completed")
 
     monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=FakeOpenAI))
-    reply = provider_reply(config, "secret", effort=effort)
+    reply = provider_reply(
+        config, "secret", effort=effort, session="stateless"
+    )
 
     assert reply([{"role": "user", "content": "board"}]) == "ocean"
     assert calls == [
@@ -1607,6 +2078,7 @@ def test_cli_defaults_to_api_and_accepts_shared_effort_and_auth_levels():
     defaults = parse_args(["puzzle.json", "--model", "OPUS"])
     assert defaults.effort == DEFAULT_EFFORT
     assert defaults.auth == DEFAULT_AUTH
+    assert defaults.session == DEFAULT_SESSION == "persistent"
     assert defaults.runs == DEFAULT_RUNS == 7
     assert defaults.selection == DEFAULT_SELECTION == "median"
     for effort in EFFORT_LEVELS:
@@ -1619,6 +2091,13 @@ def test_cli_defaults_to_api_and_accepts_shared_effort_and_auth_levels():
         if auth == "subscription":
             arguments.extend(("--effort", "medium"))
         assert parse_args(arguments).auth == auth
+    for session in SESSION_MODES:
+        assert (
+            parse_args(
+                ["puzzle.json", "--model", "OPUS", "--session", session]
+            ).session
+            == session
+        )
 
     kimi = parse_args(
         [
@@ -1785,6 +2264,7 @@ def test_cli_model_flag_without_value_lists_every_valid_model(capsys):
     [
         ("--effort", EFFORT_LEVELS),
         ("--auth", AUTH_MODES),
+        ("--session", SESSION_MODES),
         ("--selection", SELECTION_MODES),
     ],
 )
@@ -1882,6 +2362,7 @@ def make_run(
     words=(),
     duration=1.0,
     token_usage=(),
+    raw_token_usage=(),
     termination=None,
 ):
     return RunResult(
@@ -1897,6 +2378,7 @@ def make_run(
             if termination is not None
             else "solved" if tries is not None else "cap"
         ),
+        raw_provider_token_usage=tuple(raw_token_usage),
     )
 
 
@@ -1983,7 +2465,7 @@ class UsageScriptedModel(ScriptedModel):
         return reply
 
 
-def test_run_result_collects_each_transport_reported_turn_usage():
+def test_run_result_collects_each_normalized_turn_usage():
     model = UsageScriptedModel(
         ["forest", "ocean"],
         [
@@ -1995,8 +2477,8 @@ def test_run_result_collects_each_transport_reported_turn_usage():
     result = play_puzzle(puzzle(), VOCAB, model)
 
     assert result.turn_token_usage == (
-        {"input_tokens": 10, "output_tokens": 1},
-        {"input_tokens": 20, "output_tokens": 1},
+        standardized_usage(10, 1),
+        standardized_usage(20, 1),
     )
 
 
@@ -2159,10 +2641,15 @@ def test_raw_lab_artifact_keeps_all_runs_transcripts_transport_and_token_usage(
     output_dir = tmp_path / "lab"
     puzzle_path = tmp_path / "forest_ocean.json"
     usage = (
+        standardized_usage(10, 1, cached_input_tokens=2),
+        standardized_usage(5, 2),
+    )
+    raw_usage = (
         {
-            "input_tokens": 10,
+            "input_tokens": 8,
+            "cache_read_input_tokens": 2,
+            "cache_creation_input_tokens": 0,
             "output_tokens": 1,
-            "input_tokens_details": {"cached_tokens": 2},
         },
         {"input_tokens": 5, "output_tokens": 2},
     )
@@ -2176,6 +2663,7 @@ def test_raw_lab_artifact_keeps_all_runs_transcripts_transport_and_token_usage(
                 words=("shared", "forest", "ocean"),
                 duration=2.0,
                 token_usage=usage,
+                raw_token_usage=raw_usage,
             ),
             make_run(4, turns=4, words=("cold", "other", "forest", "ocean")),
         ),
@@ -2202,6 +2690,8 @@ def test_raw_lab_artifact_keeps_all_runs_transcripts_transport_and_token_usage(
     assert session["provider"] == "anthropic"
     assert session["transport"] == "agent_sdk"
     assert session["auth"] == "subscription"
+    assert session["session"] == "persistent"
+    assert session["token_usage_schema_version"] == TOKEN_USAGE_SCHEMA_VERSION
     assert session["effort"] == "medium"
     assert session["requested_effort"] == "medium"
     assert session["effective_provider_effort"] == "medium"
@@ -2209,10 +2699,9 @@ def test_raw_lab_artifact_keeps_all_runs_transcripts_transport_and_token_usage(
     assert session["selected_run"] == 2
     assert session["median_run"] == 2
     assert session["duration"] == 4.0
-    assert session["token_usage"] == {
-        "input_tokens": 15,
-        "output_tokens": 3,
-    }
+    assert session["token_usage"] == standardized_usage(
+        15, 3, cached_input_tokens=2
+    )
     assert len(session["runs"]) == 3
     assert [run["selected"] for run in session["runs"]] == [False, True, False]
     selected = session["runs"][1]
@@ -2224,11 +2713,11 @@ def test_raw_lab_artifact_keeps_all_runs_transcripts_transport_and_token_usage(
     assert selected["transcript"] == [
         {"role": "user", "content": "opening"}
     ]
-    assert selected["token_usage"] == {
-        "input_tokens": 15,
-        "output_tokens": 3,
-    }
+    assert selected["token_usage"] == standardized_usage(
+        15, 3, cached_input_tokens=2
+    )
     assert selected["turn_token_usage"] == list(usage)
+    assert selected["raw_provider_token_usage"] == list(raw_usage)
     assert session["benchmark_entry"]["run"] == ["shared", "forest", "ocean"]
 
     transports = [(MODELS[1], "api", "api"), (MODELS[2], "subscription", "codex_cli")]
@@ -2284,10 +2773,7 @@ def test_raw_lab_artifact_keeps_all_runs_transcripts_transport_and_token_usage(
     assert kimi_session["cap"] == 300
     assert kimi_session["selection"] == "median"
     assert kimi_session["duration"] == 3.5
-    assert kimi_session["token_usage"] == {
-        "input_tokens": 31,
-        "output_tokens": 4,
-    }
+    assert kimi_session["token_usage"] == standardized_usage(31, 4)
     assert kimi_session["display"] is False
 
     entries = display_benchmark_entries(artifact)
@@ -2352,6 +2838,44 @@ def test_lab_and_display_selection_keep_best_and_median_cohorts_separate(tmp_pat
     assert artifact["sessions"][-1]["selected_run"] == 1
     assert artifact["sessions"][-1]["best_run"] == 1
     assert "median_run" not in artifact["sessions"][-1]
+
+
+def test_lab_and_display_selection_keep_persistent_and_stateless_cohorts_separate(
+    tmp_path,
+):
+    output_dir = tmp_path / "lab"
+    puzzle_path = tmp_path / "forest_ocean.json"
+
+    for session_mode, score in (("persistent", 2), ("stateless", 3)):
+        for config in MODELS[:3]:
+            words = (
+                ("forest", "ocean")
+                if score == 2
+                else ("shared", "forest", "ocean")
+            )
+            summary = ModelSummary(
+                config=config,
+                results=(make_run(score, turns=score, words=words),),
+                selection="median",
+                selected_run_index=0,
+            )
+            _, artifact = write_lab_artifact(
+                puzzle_path,
+                summary,
+                cap=300,
+                effort="medium",
+                auth="api",
+                session=session_mode,
+                output_dir=output_dir,
+                timestamp=f"2026-07-19T12:00:0{score}Z",
+            )
+
+    persistent_entries = display_benchmark_entries(
+        artifact, session="persistent"
+    )
+    stateless_entries = display_benchmark_entries(artifact, session="stateless")
+    assert [entry["tries"] for entry in persistent_entries] == [2, 2, 2]
+    assert [entry["tries"] for entry in stateless_entries] == [3, 3, 3]
 
 
 def test_in_place_cli_accumulates_lab_runs_then_embeds_only_the_complete_trio(
@@ -2859,6 +3383,7 @@ def test_cli_openai_subscription_uses_plan_without_api_key(
         assert api_key is None
         assert kwargs["effort"] == "medium"
         assert kwargs["auth"] == "subscription"
+        assert kwargs["session"] == "stateless"
         return model
 
     monkeypatch.setattr("llm_play.provider_reply", fake_provider)
@@ -2873,6 +3398,8 @@ def test_cli_openai_subscription_uses_plan_without_api_key(
                 "medium",
                 "--auth",
                 "subscription",
+                "--session",
+                "stateless",
                 "--runs",
                 "1",
             ]
@@ -2883,6 +3410,7 @@ def test_cli_openai_subscription_uses_plan_without_api_key(
     output = capsys.readouterr()
     assert preflights == ["ChatGPT"]
     assert "auth=subscription" in output.out
+    assert "session=stateless" in output.out
     assert 'GPT      try=1 word="forest" progress=50.00%' in output.out
     assert "OPENAI_API_KEY is not set" not in output.err
 
@@ -2914,6 +3442,7 @@ def test_cli_kimi_subscription_uses_dedicated_key_and_reports_effective_effort(
         assert api_key == secret
         assert kwargs["effort"] == "medium"
         assert kwargs["auth"] == "subscription"
+        assert kwargs["session"] == "persistent"
         return model
 
     monkeypatch.setattr("llm_play.provider_reply", fake_provider)
@@ -2939,16 +3468,27 @@ def test_cli_kimi_subscription_uses_dedicated_key_and_reports_effective_effort(
     assert "model=k3" in output.out
     assert "transport=kimi_code_agent_sdk" in output.out
     assert "auth=subscription" in output.out
+    assert "session=persistent" in output.out
+    assert f"token_usage_schema={TOKEN_USAGE_SCHEMA_VERSION}" in output.out
     assert "requested_effort=medium" in output.out
     assert "effective_provider_effort=high" in output.out
     assert "KIMI cost notice: low effort still uses adaptive thinking" in output.out
-    assert "schedules 1 run with up to 300 counted guesses each" in output.out
+    assert (
+        "schedules 1 run with up to 300 counted guesses each in persistent mode"
+        in output.out
+    )
     assert "malformed or non-counting replies can add requests" in output.out
     assert (
         'try=1 word="forest" progress=50.00% '
-        'token_usage={"input_tokens":12,"output_tokens":2}' in output.out
+        'token_usage={"input_tokens":12,"cached_input_tokens":0,'
+        '"cache_write_input_tokens":0,"output_tokens":2,'
+        '"reasoning_output_tokens":null,"total_tokens":14}' in output.out
     )
-    assert 'token_usage={"input_tokens":30,"output_tokens":5}' in output.out
+    assert (
+        'token_usage={"input_tokens":30,"cached_input_tokens":0,'
+        '"cache_write_input_tokens":0,"output_tokens":5,'
+        '"reasoning_output_tokens":null,"total_tokens":35}' in output.out
+    )
     assert secret not in output.out
     assert secret not in output.err
 
@@ -3127,7 +3667,7 @@ def test_opening_prompt_explains_rules_without_prescribing_a_solving_plan():
     play_puzzle(puzzle(), VOCAB, model, cap=75)
 
     opening = model.calls[0][0]["content"]
-    assert PROMPT_VERSION == "22"
+    assert PROMPT_VERSION == "23"
     for header in (
         "OBJECTIVE AND SCORE",
         "MANDATORY REPLY CONTRACT",

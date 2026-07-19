@@ -50,6 +50,8 @@ pnpm reduce:en         # embedding/en/glove.6B.300d.txt  -> glove.6B.300d_reduce
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--`)
 
 # LLM benchmark (packages/benchmark — Python via its own uv project)
+# Native persistent sessions are the product default; use --session stateless only
+# for fresh-turn complete-record diagnostics.
 pnpm bench:puzzle <puzzle.json> --model OPUS
 pnpm bench:puzzle <puzzle.json> --model GPT-SOL --auth subscription --effort medium --runs 1
 pnpm bench:puzzle <puzzle.json> --model SONNET --auth subscription --effort medium --runs 1
