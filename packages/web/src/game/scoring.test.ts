@@ -93,4 +93,16 @@ describe('computeProgress(holes, ranks) — averaged, 0..100, path-independent',
     const half: RuntimeHole[] = [hole('a', 0, 300), hole('b', 300, 300)];
     expect(computeProgress(half, ranks)).toBeCloseTo(50, 9);
   });
+
+  it('averages repeated occurrences independently even when they share one rank map', () => {
+    const ranks: RankMap = { chat: mk(1000) };
+    const oneSolved: RuntimeHole[] = [
+      { pos: 1, secret: 'chat', word: 'chat', rank: 0, startRank: 300 },
+      { pos: 4, secret: 'chat', word: 'animal', rank: 300, startRank: 300 },
+    ];
+    expect(computeProgress(oneSolved, ranks)).toBeCloseTo(50, 9);
+
+    const bothSolved = oneSolved.map((current) => ({ ...current, rank: 0, word: 'chat' }));
+    expect(computeProgress(bothSolved, ranks)).toBeCloseTo(100, 9);
+  });
 });

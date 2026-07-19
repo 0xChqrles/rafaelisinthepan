@@ -14,7 +14,7 @@
 //   - lastLang remembers the last valid language (seeds the `/` redirect).
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useGameStore, roundKeyForDay, migratePersisted } from './gameStore';
+import { useGameStore, roundKeyForDay, migratePersisted, holesMatchPuzzle } from './gameStore';
 import type { RuntimeHole } from '@whippin/shared';
 
 const initial = useGameStore.getState();
@@ -24,6 +24,14 @@ function freshHoles(): RuntimeHole[] {
   return [
     { pos: 1, secret: 'foret', word: 'bois', rank: 87, startRank: 87 },
     { pos: 2, secret: 'ancienne', word: 'vieille', rank: 40, startRank: 40 },
+  ];
+}
+
+function repeatedSecretHoles(): RuntimeHole[] {
+  return [
+    { pos: 1, secret: 'chat', word: 'animal', rank: 60, startRank: 60 },
+    { pos: 3, secret: 'chat', word: 'bête', rank: 60, startRank: 60 },
+    { pos: 5, secret: 'jardin', word: 'parc', rank: 40, startRank: 40 },
   ];
 }
 
@@ -169,6 +177,26 @@ describe('ensureRound — day/language keying', () => {
     ensureRound('d:5:fr', newHoles);
     expect(activeRound()).toEqual({ holes: newHoles, guessCount: 0, tried: [], progress: 0 });
   });
+
+  it('matches duplicate secret slugs by position without collapsing hole instances', () => {
+    const repeated = repeatedSecretHoles();
+    expect(holesMatchPuzzle(repeated, repeated.map((hole) => ({ ...hole })))).toBe(true);
+    expect(
+      holesMatchPuzzle(repeated, [
+        repeated[0],
+        { ...repeated[1], pos: 4 },
+        repeated[2],
+      ]),
+    ).toBe(false);
+
+    useGameStore.getState().ensureRound('d:5:fr', repeated);
+    useGameStore.getState().improveHole(0, 'chat', 0);
+    useGameStore.getState().ensureRound('d:5:fr', repeated);
+
+    expect(activeRound()?.holes).toHaveLength(3);
+    expect(activeRound()?.holes.map((hole) => hole.pos)).toEqual([1, 3, 5]);
+    expect(activeRound()?.holes.map((hole) => hole.rank)).toEqual([0, 60, 40]);
+  });
 });
 
 describe('recordGuess — score = unique valid tries (on the active round)', () => {
@@ -188,6 +216,20 @@ describe('recordGuess — score = unique valid tries (on the active round)', () 
     recordGuess('bois');
     expect(activeRound()?.guessCount).toBe(1);
     expect(activeRound()?.tried).toEqual(['bois']);
+  });
+
+  it('counts one shared-secret solve once even when it resolves repeated holes', () => {
+    useGameStore.getState().ensureRound('d:5:fr', repeatedSecretHoles());
+    const { recordGuess, improveHole } = useGameStore.getState();
+
+    recordGuess('chat');
+    recordGuess('chat');
+    improveHole(0, 'chat', 0);
+    improveHole(1, 'chat', 0);
+
+    expect(activeRound()?.guessCount).toBe(1);
+    expect(activeRound()?.tried).toEqual(['chat']);
+    expect(activeRound()?.holes.slice(0, 2).map((hole) => hole.rank)).toEqual([0, 0]);
   });
 });
 

@@ -107,6 +107,17 @@ describe('parsePuzzle (shape validation)', () => {
     expect(parsePuzzle(p)).toEqual(p);
   });
 
+  it('accepts repeated hole occurrences that share one secret rank map', () => {
+    const p = valid();
+    p.words = ['la', 'forêt,', 'traverse', 'la', 'forêt'];
+    p.holes.push({ ...p.holes[0], pos: 4 });
+    Object.assign(p.holes[0], { pos: 1, suffix: ',' });
+
+    expect(parsePuzzle(p)).toEqual(p);
+    expect(parsePuzzle(p).holes).toHaveLength(2);
+    expect(Object.keys(parsePuzzle(p).ranks)).toEqual(['foret']);
+  });
+
   // Optional source metadata (#5): not load-bearing, so a puzzle is valid WITH or
   // WITHOUT it, and when present it must survive to the front (consumed by the solved
   // screen, #8) rather than being stripped.

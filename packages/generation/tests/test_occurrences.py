@@ -1,0 +1,158 @@
+"""CONTRACT: three distinct selected slugs expand to every sentence occurrence.
+
+The authoring contract counts distinct folded secret identities, while the emitted puzzle
+contains one independently positioned hole for every selected occurrence. Rank maps and
+start hints are shared per secret slug; display affixes remain occurrence-specific.
+"""
+
+import json
+
+import pytest
+
+import gen_phrase  # noqa: E402
+
+
+FR = gen_phrase.CONFIG["fr"]
+
+
+def _sentence_words():
+    return [
+        gen_phrase.display_token(token)
+        for token in "Le chat, poursuit le chat dans le jardin.".split()
+    ]
+
+
+def _run_repeated_generation(monkeypatch):
+    calls = []
+
+    def closest(secret, _kv, _vocab, _matrix, *, n):
+        calls.append((secret, n))
+        return [("indice", 86, 0.9), ("proche", 9, 0.8)]
+
+    monkeypatch.setattr(FR["module"], "closest", closest, raising=False)
+    monkeypatch.setattr(
+        gen_phrase,
+        "choose_start",
+        lambda _secret, _ranking, _rank_map, _rank_by_display: "indice",
+    )
+    vocab = ["chat", "poursuit", "jardin", "indice", "proche"]
+    holes, ranks = gen_phrase.holes_from_words(
+        ["jardin", "chat", "poursuit"],
+        _sentence_words(),
+        FR,
+        "fr",
+        kv=object(),
+        V=vocab,
+        M=object(),
+        Vset=set(vocab),
+    )
+    return holes, ranks, calls
+
+
+def test_words_expand_a_repeated_secret_to_all_positions_and_share_rank_start(monkeypatch):
+    holes, ranks, calls = _run_repeated_generation(monkeypatch)
+
+    assert [hole["pos"] for hole in holes] == [1, 2, 4, 7]
+    assert [hole["secret"]["slug"] for hole in holes] == [
+        "chat",
+        "poursuit",
+        "chat",
+        "jardin",
+    ]
+    assert [hole["start"]["word"] for hole in holes] == ["indice"] * 4
+    assert [hole["start_rank"] for hole in holes] == [87] * 4
+
+    # The two chat occurrences keep their own token punctuation, while the shared
+    # secret/start data stays identical.
+    assert holes[0]["suffix"] == ","
+    assert "suffix" not in holes[2]
+    assert holes[3]["suffix"] == "."
+    assert set(ranks) == {"chat", "poursuit", "jardin"}
+    assert calls == [("jardin", gen_phrase.TOP_K), ("chat", gen_phrase.TOP_K),
+                     ("poursuit", gen_phrase.TOP_K)]
+
+
+def test_filename_dedupes_repeated_slugs_but_keeps_sentence_order(monkeypatch):
+    holes, _ranks, _calls = _run_repeated_generation(monkeypatch)
+
+    assert gen_phrase.filename_slugs_from_holes(holes) == ["chat", "poursuit", "jardin"]
+    assert gen_phrase.filename_slugs_from_holes(list(reversed(holes))) == [
+        "chat",
+        "poursuit",
+        "jardin",
+    ]
+
+
+def test_main_writes_one_three_slug_filename_for_repeated_holes(monkeypatch, tmp_path):
+    vocab = ["chat", "poursuit", "jardin", "indice", "proche"]
+
+    monkeypatch.setattr(FR["module"], "load_vectors", lambda: object(), raising=False)
+    monkeypatch.setattr(FR["module"], "build_vocab", lambda _kv: vocab, raising=False)
+    monkeypatch.setattr(FR["module"], "build_matrix", lambda _kv, _v: object(), raising=False)
+    monkeypatch.setattr(
+        FR["module"],
+        "closest",
+        lambda _secret, _kv, _v, _m, *, n: [("indice", 86, 0.9)],
+        raising=False,
+    )
+    monkeypatch.setattr(gen_phrase, "write_vocab", lambda _v, _lang: None)
+    monkeypatch.setattr(
+        gen_phrase,
+        "choose_start",
+        lambda _secret, _ranking, _rank_map, _rank_by_display: "indice",
+    )
+    monkeypatch.setattr(
+        gen_phrase.sys,
+        "argv",
+        [
+            "gen_phrase.py",
+            "Le chat, poursuit le chat dans le jardin.",
+            "--lang",
+            "fr",
+            "--words",
+            "jardin",
+            "chat",
+            "poursuit",
+            "--out-dir",
+            str(tmp_path),
+        ],
+    )
+
+    gen_phrase.main()
+
+    output = tmp_path / "fr" / "chat_poursuit_jardin.json"
+    assert output.is_file()
+    data = json.loads(output.read_text(encoding="utf-8"))
+    assert len(data["holes"]) == 4
+    assert set(data["ranks"]) == {"chat", "poursuit", "jardin"}
+
+
+def test_duplicate_words_selectors_are_rejected_after_slug_normalization(capsys):
+    with pytest.raises(SystemExit):
+        gen_phrase.holes_from_words(
+            ["chat", "CHAT", "jardin"],
+            [],
+            FR,
+            "fr",
+            kv=None,
+            V=[],
+            M=None,
+            Vset=set(),
+        )
+
+    assert "exactement 3 mots distincts" in capsys.readouterr().err
+
+
+def test_interactive_group_contains_every_repeated_occurrence():
+    candidates = gen_phrase.extract_candidates(
+        _sentence_words(),
+        FR,
+        {"chat", "poursuit", "jardin"},
+    )
+
+    chat_group = gen_phrase.candidates_for_slug(candidates, "chat")
+    assert [(candidate["pos"], candidate["secret"]) for candidate in chat_group] == [
+        (1, "chat"),
+        (4, "chat"),
+    ]
+    assert len({gen_phrase.slug(candidate["secret"]) for candidate in candidates}) == 3

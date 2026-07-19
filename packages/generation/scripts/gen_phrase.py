@@ -19,18 +19,21 @@ Two per-language concerns drive the rest:
     display a slug. Output filenames are ASCII slugs; JSON content keeps accents.
 
 The phrase is written to packages/generation/output/word/<lang>/<slug1>_<slug2>_<slug3>.json
-(slugs in sentence order); rerunning with the same three words overwrites it. A puzzle is
-a generation artifact, NOT a web asset: publish it to the backend store (local FS or S3)
-with `pnpm puzzle:publish` — the front gets the day's puzzle from the backend (#6).
+(the three distinct selected slugs in sentence order); rerunning with the same three words
+overwrites it. A repeated selected word produces one hole per sentence occurrence, but one
+rank map and one start hint for that secret. A puzzle is a generation artifact, NOT a web
+asset: publish it to the backend store (local FS or S3) with `pnpm puzzle:publish` — the
+front gets the day's puzzle from the backend (#6).
 
 On a terminal the script is fully interactive (#5): the phrase, language, and the
 optional source metadata (kind / author / work) are asked when not supplied as flags.
 The source metadata flags are not re-prompted when given; the phrase is always shown in
 an editable prompt (pre-loaded with the flag value, if any) so it can be tweaked with
-the arrow keys before Enter. WITHOUT --words, the three holes are then chosen with a
+the arrow keys before Enter. WITHOUT --words, three distinct secret groups are then chosen
+with a
 small full-screen selector (select_holes_interactive): arrow-navigate the sentence's
 content words, and for each hovered word its start-word candidates are previewed; Enter
-picks the word, a number picks its start (Esc cancels). WITH --words (or off a TTY) that
+picks that word's repeated-word group, a number picks its shared start (Esc cancels). WITH --words (or off a TTY) that
 selector is skipped and the words resolve as before. Non-interactive (piped / batch) runs
 keep working with flags only — no prompt ever blocks them.
 
@@ -155,19 +158,25 @@ def display_token(tok):
     return tok.lower()
 
 
-def locate_core(token, target_slug, cfg):
-    """Find the word-core inside a display token whose slug == target_slug.
+def locate_cores(token, target_slug, cfg):
+    """Find every matching word-core in one display token.
 
-    Returns (secret_display, prefix, suffix) — the matched core (accents kept, no
-    punctuation) plus the display text before/after it (a leading clitic like "t'" /
-    opening punctuation, and trailing punctuation). Returns None when no core in the
-    token matches, so a secret can be located inside "t'attends" / "rien," while the
-    token stays intact for display. The core is a pure word, so slug/fold are unchanged
-    and the player still types only letters."""
+    Each result is ``(secret_display, prefix, suffix)``: the matched core (accents
+    kept, no punctuation) plus the display text before/after it. Apostrophes and
+    punctuation are separators, so a secret can be located inside ``t'attends`` /
+    ``rien,`` while the token stays intact for display.
+    """
+    matches = []
     for m in cfg["core_re"].finditer(token):
         if slug(m.group()) == target_slug:
-            return m.group(), token[:m.start()], token[m.end():]
-    return None
+            matches.append((m.group(), token[:m.start()], token[m.end():]))
+    return matches
+
+
+def locate_core(token, target_slug, cfg):
+    """Find the first matching word-core in a display token, or ``None``."""
+    matches = locate_cores(token, target_slug, cfg)
+    return matches[0] if matches else None
 
 
 def ws(display):
@@ -272,10 +281,12 @@ def choose_start(secret, ranking, rank_map, rank_by_display):
 
 
 # --- Interactive hole selector (raw-mode TUI) ----------------------------------
-# When the phrase is entered on a TTY WITHOUT --words, the three holes are chosen with a
-# small full-screen selector instead of typing words: the arrow keys move between the
-# sentence's content words and each one's start-word candidates are previewed live; Enter
-# picks the hovered word, then a number picks its start word (Esc cancels). It runs ONLY
+# When the phrase is entered on a TTY WITHOUT --words, three distinct secret groups are
+# chosen with a small full-screen selector instead of typing words: the arrow keys move
+# between the sentence's content words and each one's start-word candidates are previewed
+# live; Enter
+# picks the hovered group's occurrences, then a number picks its shared start word
+# (Esc cancels). It runs ONLY
 # on a terminal — --words stays the non-interactive / batch path (holes_from_words), so
 # piped / CI runs are unchanged. termios/tty are imported lazily inside the selector
 # because they are Unix-only and this path is never reached off a TTY.
@@ -289,16 +300,17 @@ def _sgr(codes, text):
 
 
 def extract_candidates(words, cfg, Vset):
-    """The selectable holes in a sentence: for each token, its first word-core whose
-    DISPLAY form is in Vset (i.e. survived reduction). Returns [{pos, secret, prefix,
-    suffix}] — one entry per holeable token position.
+    """The selectable occurrences in a sentence: for each token, its first word-core
+    whose DISPLAY form is in Vset (i.e. survived reduction). Returns [{pos, secret,
+    prefix, suffix}] — one entry per holeable token position.
 
     Apostrophes / punctuation are core separators (core_re), so "l'animal" yields cores
     "l" then "animal" and only "animal" is selectable: "l" is a single letter the
     reduction dropped, so it is absent from Vset. Because the reduction already strips
     stopwords, single letters and non-dictionary tokens from V, "core in Vset" IS the
     content-word filter — no separate stopword list is needed. Keeping only the first
-    in-vocab core per token means each pick consumes exactly one position."""
+    in-vocab core per token means each occurrence has one position; the selector groups
+    repeated occurrences by slug so one pick consumes one distinct secret."""
     cands = []
     for pos, token in enumerate(words):
         for m in cfg["core_re"].finditer(token):
@@ -308,6 +320,16 @@ def extract_candidates(words, cfg, Vset):
                               "prefix": token[:m.start()], "suffix": token[m.end():]})
                 break
     return cands
+
+
+def candidates_for_slug(cands, target_slug):
+    """Return every selectable occurrence belonging to one secret slug.
+
+    Interactive selection is by distinct secret identity, not by token position: picking
+    one occurrence of a repeated word commits the complete group. Keeping this grouping
+    helper separate makes the selection rule explicit and contract-testable.
+    """
+    return [c for c in cands if slug(c["secret"]) == target_slug]
 
 
 def _read_key(fd):
@@ -333,48 +355,58 @@ def _read_key(fd):
 
 
 def select_holes_interactive(words, cfg, lang, kv, V, M, Vset):
-    """Pick the three holes interactively on a TTY; returns (holes sorted by pos, ranks).
+    """Pick three distinct secret groups on a TTY; return holes sorted by position.
 
     Full-screen loop: ←/→ move between the sentence's selectable content words (see
     extract_candidates) and the hovered word's start-word band is previewed live (its
-    neighbor ranking is computed once per word and cached). Enter commits the hovered
-    word; its start word is then chosen by number (Enter validates, Esc cancels and
-    returns to navigation). Three commits end the loop; Ctrl-C aborts cleanly. The holes /
-    ranks produced are identical in shape to the --words path (build_rank_map + _make_hole
-    are shared), so nothing downstream needs to know which path chose the holes."""
+    neighbor ranking is computed once per secret slug and cached). Enter commits the
+    hovered word's whole repeated-word group; its shared start word is then chosen by
+    number (Enter validates, Esc cancels and returns to navigation). Three distinct
+    commits end the loop; Ctrl-C aborts cleanly. The holes / ranks produced are identical
+    in shape to the --words path (build_rank_map + _make_hole are shared), so nothing
+    downstream needs to know which path chose the holes."""
     import shutil
     import termios
     import tty
 
     cands = extract_candidates(words, cfg, Vset)
-    if len(cands) < 3:
-        die(f"la phrase n'a que {len(cands)} mot(s) sélectionnable(s) ; il en faut 3 "
-            f"(mots présents dans le vocabulaire réduit '{lang}', hors mots-outils).")
+    distinct_slugs = {slug(c["secret"]) for c in cands}
+    if len(distinct_slugs) < 3:
+        die(f"la phrase n'a que {len(distinct_slugs)} mot(s) sélectionnable(s) distinct(s) ; "
+            f"il en faut 3 (mots présents dans le vocabulaire réduit '{lang}', hors "
+            "mots-outils). Les occurrences répétées ne consomment qu'une sélection.")
 
-    # Per-word neighbor data, computed lazily on first hover and cached: the full ranking
-    # (for the eventual rank map), the start-word band, and display->rank (0 = secret).
+    # Per-secret neighbor data, computed lazily on first hover and cached: the full
+    # ranking (for the eventual rank map), the start-word band, and display->rank
+    # (0 = secret).
     cache = {}
 
     def prep(secret):
-        if secret not in cache:
+        secret_slug = slug(secret)
+        if secret_slug not in cache:
             ranking = cfg["module"].closest(secret, kv, V, M, n=TOP_K)
             rbd = {secret: 0}
             for w, r, _ in ranking:
                 rbd[w] = r + 1
-            cache[secret] = (ranking, start_band(secret, ranking), rbd)
-        return cache[secret]
+            cache[secret_slug] = (
+                secret,
+                ranking,
+                start_band(secret, ranking),
+                rbd,
+            )
+        return cache[secret_slug]
 
     holes = []
     ranks = {}
-    used_pos = set()
+    used_slugs = set()
 
     def available():
-        return [i for i, c in enumerate(cands) if c["pos"] not in used_pos]
+        return [i for i, c in enumerate(cands) if slug(c["secret"]) not in used_slugs]
 
     def frame(cursor, band, rbd, secret, mode, numbuf, error):
         cols = shutil.get_terminal_size((80, 24)).columns
         cand_pos = {c["pos"]: c for c in cands}
-        out = [_sgr("1", f"  Trou {len(holes) + 1}/3"),
+        out = [_sgr("1", f"  Trou {len(used_slugs) + 1}/3"),
                _sgr("2", "  ← →  mot   ·   Entrée  choisir   ·   Échap  annuler   ·   Ctrl-C  quitter"),
                ""]
         # the sentence: hovered core = reverse, taken = struck, other content words = underline.
@@ -385,7 +417,7 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset):
                 rendered.append(_sgr("2", token))
                 continue
             pre, core, suf = c["prefix"], c["secret"], c["suffix"]
-            if pos in used_pos:
+            if slug(c["secret"]) in used_slugs:
                 rendered.append(pre + _sgr("2;9", core) + suf)
             elif pos == cands[cursor]["pos"]:
                 rendered.append(pre + _sgr("7;1", core) + suf)
@@ -416,9 +448,9 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset):
     aborted = False
     try:
         tty.setcbreak(fd)
-        while len(holes) < 3:
+        while len(used_slugs) < 3:
             c = cands[cursor]
-            ranking, band, rbd = prep(c["secret"])
+            canonical_secret, ranking, band, rbd = prep(c["secret"])
             sys.stdout.write(frame(cursor, band, rbd, c["secret"], mode, numbuf, error))
             sys.stdout.flush()
             error = ""
@@ -440,12 +472,17 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset):
                 elif key == "ENTER":
                     if numbuf.isdigit() and 1 <= int(numbuf) <= len(band):
                         start = band[int(numbuf) - 1][0]
-                        ranks[slug(c["secret"])] = build_rank_map(c["secret"], ranking)
-                        holes.append(_make_hole(c["secret"], c["prefix"], c["suffix"],
-                                                c["pos"], start, rbd[start]))
-                        used_pos.add(c["pos"])
+                        secret_slug = slug(c["secret"])
+                        ranks[secret_slug] = build_rank_map(canonical_secret, ranking)
+                        for occurrence in candidates_for_slug(cands, secret_slug):
+                            holes.append(_make_hole(
+                                occurrence["secret"], occurrence["prefix"],
+                                occurrence["suffix"], occurrence["pos"], start,
+                                rbd[start],
+                            ))
+                        used_slugs.add(secret_slug)
                         mode, numbuf = "nav", ""
-                        if len(holes) < 3:
+                        if len(used_slugs) < 3:
                             cursor = available()[0]
                     else:
                         error = f"Numéro invalide (1–{len(band)})."
@@ -465,64 +502,91 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset):
     return holes, ranks
 
 
-def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset):
-    """Resolve the three --words into (holes sorted by pos, ranks): the non-interactive /
-    batch path, kept behaviour-identical to before.
+def _resolve_word_selectors(words_arg, cfg, lang):
+    """Normalize exactly three ``--words`` selectors and reject slug duplicates."""
+    if len(words_arg) != 3:
+        die(f"--words doit contenir exactement 3 sélecteurs distincts (reçu : {len(words_arg)}).")
+    selectors = []
+    seen = {}
+    for raw in words_arg:
+        target = normalize(raw, cfg)
+        target_slug = slug(target)
+        if not target_slug:
+            die(f"'{raw}' ne contient aucune lettre valide pour la langue '{lang}'.")
+        if target_slug in seen:
+            die(
+                "--words doit contenir exactement 3 mots distincts après normalisation "
+                f"(doublon : '{raw}' et '{seen[target_slug]}', slug '{target_slug}')."
+            )
+        seen[target_slug] = raw
+        selectors.append((raw, target_slug))
+    return selectors
 
-    Each word is matched by slug to a free token's core, must have survived reduction, and
-    gets a start word via choose_start (interactive on a TTY, random otherwise)."""
+
+def filename_slugs_from_holes(holes):
+    """Return distinct secret slugs in first-occurrence sentence order."""
+    seen = set()
+    ordered = []
+    for hole in sorted(holes, key=lambda h: h["pos"]):
+        secret_slug = hole["secret"]["slug"]
+        if secret_slug in seen:
+            continue
+        seen.add(secret_slug)
+        ordered.append(secret_slug)
+    return ordered
+
+
+def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset):
+    """Resolve three distinct ``--words`` selectors into all matching holes.
+
+    Matching is slug-based. Each selected slug gets one ranking and one start hint, then
+    that start is applied to every matching sentence occurrence. Holes are returned in
+    sentence order; the ranks map has one entry per selected slug.
+    """
+    selectors = _resolve_word_selectors(words_arg, cfg, lang)
     holes = []
     ranks = {}
-    used_pos = set()
-    for raw in words_arg:
-        tgt = normalize(raw, cfg)
-        tslug = slug(tgt)
-        if not tslug:
-            die(f"'{raw}' ne contient aucune lettre valide pour la langue '{lang}'.")
-
-        # 1) the word must appear in the sentence, matched by SLUG against a word-CORE of
-        # some free token (so "attends" is found inside "t'attends"). The token is split
-        # into the secret core + display prefix/suffix (clitic + punctuation).
-        pos = decomposed = None
-        for i, w in enumerate(words):
-            if i in used_pos:
-                continue
-            d = locate_core(w, tslug, cfg)
-            if d is not None:
-                pos, decomposed = i, d
-                break
-        if pos is None:
-            if any(locate_core(w, tslug, cfg) for w in words):
-                die(f"'{raw}' apparaît mais toutes ses positions sont déjà prises "
-                    f"(mot en double dans --words ?).")
+    for raw, target_slug in selectors:
+        # Resolve every occurrence by slug. A repeated selected word is one authoring
+        # selection but produces one hole per matching sentence token.
+        occurrences = []
+        for pos, word in enumerate(words):
+            decomposed = locate_core(word, target_slug, cfg)
+            if decomposed is not None:
+                occurrences.append((pos, decomposed))
+        if not occurrences:
             die(f"'{raw}' n'apparaît pas dans la phrase : {' '.join(words)}")
 
-        # secret = the pure word core (accents kept, no punctuation); prefix/suffix = the
-        # display text around it. The secret is what the player types / we rank.
-        secret, prefix, suffix = decomposed
-
-        # 2) the word must be in the reduced vocabulary V (= in the vectors). If not, it
-        # did not survive reduction and cannot be used here.
-        if secret not in Vset:
+        # Use the first occurrence that survived reduction as the canonical vector target
+        # for this shared slug. Every occurrence still keeps its own display form and
+        # affixes in the emitted hole object.
+        canonical = next(
+            (decomposed for _pos, decomposed in occurrences if decomposed[0] in Vset),
+            None,
+        )
+        if canonical is None:
+            secret = occurrences[0][1][0]
             die(f"'{raw}' (→ '{secret}') n'a pas survécu à la réduction : absent du "
                 f"vocabulaire réduit '{lang}'. Choisis un autre mot cible, ou "
                 f"ajuste puis relance la réduction (scripts/reduce_embedding.py).")
+        canonical_secret = canonical[0]
 
-        used_pos.add(pos)
-
-        # Top-K ranking of V against the secret; closest neighbor = rank 1.
-        ranking = cfg["module"].closest(secret, kv, V, M, n=TOP_K)
-        rank_by_display = {secret: 0}
+        # Top-K ranking and start selection happen ONCE per distinct secret slug.
+        ranking = cfg["module"].closest(canonical_secret, kv, V, M, n=TOP_K)
+        rank_by_display = {canonical_secret: 0}
         for w, r, _ in ranking:
             rank_by_display[w] = r + 1
 
-        rank_map = build_rank_map(secret, ranking)
-        ranks[slug(secret)] = rank_map
+        rank_map = build_rank_map(canonical_secret, ranking)
+        ranks[target_slug] = rank_map
+        start = choose_start(canonical_secret, ranking, rank_map, rank_by_display)
+        start_rank = rank_map[slug(start)]["rank"]
 
-        start = choose_start(secret, ranking, rank_map, rank_by_display)
-        holes.append(_make_hole(secret, prefix, suffix, pos, start, rank_by_display[start]))
+        for pos, (secret, prefix, suffix) in occurrences:
+            holes.append(_make_hole(secret, prefix, suffix, pos, start, start_rank))
 
-    # Holes (and therefore the filename slugs) follow sentence order, not --words.
+    # Holes follow sentence order, not --words order. Filename construction dedupes the
+    # repeated occurrence slugs separately via filename_slugs_from_holes().
     holes.sort(key=lambda h: h["pos"])
     return holes, ranks
 
@@ -641,8 +705,9 @@ def parse_args():
     p.add_argument("--lang", choices=("en", "fr"), default=None,
                    help="langue en/fr (défaut : en en mode non interactif)")
     p.add_argument("--words", nargs=3, metavar=("W1", "W2", "W3"),
-                   help="exactement 3 mots de la phrase à transformer en trous "
-                        "(sinon choisis via le sélecteur interactif sur un terminal)")
+                   help="exactement 3 mots distincts de la phrase ; chaque occurrence "
+                        "d'un mot sélectionné devient un trou (sinon choisis via le "
+                        "sélecteur interactif sur un terminal)")
     # Optional source metadata (#5); any flag given here is NOT re-prompted on a TTY.
     p.add_argument("--kind", help="type d'œuvre (book, movie, music, quote, poem, …)")
     p.add_argument("--author", help="auteur / autrice")
@@ -675,10 +740,15 @@ def main():
     # (below). Off a TTY, --words stays required — the batch / piped contract is unchanged.
     words_arg = args.words
     if words_arg is None and not interactive:
-        die("--words est requis hors mode interactif (exactement 3 mots).")
+        die("--words est requis hors mode interactif (exactement 3 mots distincts).")
 
     cfg = CONFIG[lang]
     random.seed(0)  # reproducible start words
+
+    # Reject malformed/duplicate authoring selectors before the expensive vector load, so
+    # a repeated --words slug fails immediately with the clear contract error.
+    if words_arg is not None:
+        _resolve_word_selectors(words_arg, cfg, lang)
 
     kv = cfg["module"].load_vectors()
     V = build_lang_vocab(kv, cfg)
@@ -691,16 +761,17 @@ def main():
 
     # V == kv == the whole reduced vocabulary, so there is no target to inject: a
     # target either survived reduction (it is in V) or it cannot be used. The
-    # per-word loop below errors clearly in the latter case.
+    # per-secret loop below errors clearly in the latter case.
     M = cfg["module"].build_matrix(kv, V)
     Vset = set(V)
 
     # Existence set for the front: the whole (slugged) reduced vocabulary V.
     write_vocab(V, lang)
 
-    # Two paths to the same (holes, ranks): --words is the explicit / batch path (kept
-    # unchanged, choose_start handles its start words); with no --words on a TTY the holes
-    # are chosen with the interactive selector, which also picks each start word inline.
+    # Two paths to the same (holes, ranks): --words is the explicit / batch path (each
+    # distinct selector expands to all matching occurrences); with no --words on a TTY
+    # the groups are chosen with the interactive selector, which also picks each shared
+    # start word inline.
     if words_arg is not None:
         holes, ranks = holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset)
     else:
@@ -734,7 +805,7 @@ def main():
     # --- Write one self-contained file ----------------------------------------
     out_dir = os.path.join(args.out_dir, lang)
     os.makedirs(out_dir, exist_ok=True)
-    fname = "_".join(h["secret"]["slug"] for h in holes) + ".json"
+    fname = "_".join(filename_slugs_from_holes(holes)) + ".json"
     out_path = os.path.join(out_dir, fname)
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(phrase, f, ensure_ascii=False)
