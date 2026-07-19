@@ -34,6 +34,44 @@ const puzzle: Puzzle = {
   },
 };
 
+const repeatedPuzzle: Puzzle = {
+  lang: 'fr',
+  words: ['le', 'chat,', 'poursuit', 'le', 'chat', 'dans', 'le', 'jardin.'],
+  holes: [
+    {
+      pos: 1,
+      secret: { word: 'chat', slug: 'chat' },
+      start: { word: 'animal', slug: 'animal' },
+      start_rank: 50,
+      suffix: ',',
+    },
+    {
+      pos: 4,
+      secret: { word: 'chat', slug: 'chat' },
+      start: { word: 'bête', slug: 'bete' },
+      start_rank: 50,
+    },
+    {
+      pos: 7,
+      secret: { word: 'jardin', slug: 'jardin' },
+      start: { word: 'parc', slug: 'parc' },
+      start_rank: 40,
+      suffix: '.',
+    },
+  ],
+  ranks: {
+    chat: {
+      animal: { word: 'animal', rank: 30 },
+      bete: { word: 'bête', rank: 50 },
+      chat: { word: 'chat', rank: 0 },
+    },
+    jardin: {
+      parc: { word: 'parc', rank: 40 },
+      jardin: { word: 'jardin', rank: 0 },
+    },
+  },
+};
+
 describe('replayRun — benchmark referee/client parity', () => {
   it('replays display forms, all-hole improvements, MISS tries, and the final score', () => {
     const entry: BenchmarkEntry = {
@@ -83,5 +121,26 @@ describe('replayRun — benchmark referee/client parity', () => {
     expect(replay.steps.every((step) => step.outcomes.every((outcome) => outcome.rank === null))).toBe(
       true,
     );
+  });
+
+  it('broadcasts one shared-secret guess to every duplicate occurrence and counts it once', () => {
+    const replay = replayRun(repeatedPuzzle, ['animal', 'chat', 'jardin']);
+
+    expect(replay.tries).toBe(3);
+    expect(replay.solved).toBe(true);
+    expect(replay.holes.map((hole) => hole.pos)).toEqual([1, 4, 7]);
+    expect(replay.holes.map((hole) => hole.rank)).toEqual([0, 0, 0]);
+    expect(replay.steps[0].outcomes.map(({ holeIndex, rank }) => [holeIndex, rank])).toEqual([
+      [0, 30],
+      [1, 30],
+      [2, null],
+    ]);
+    expect(replay.steps[1].outcomes.map(({ holeIndex, rank, solved }) => [holeIndex, rank, solved])).toEqual([
+      [0, 0, true],
+      [1, 0, true],
+      [2, null, false],
+    ]);
+    expect(replay.steps[2].outcomes).toHaveLength(1);
+    expect(replay.steps[2].outcomes[0].holeIndex).toBe(2);
   });
 });

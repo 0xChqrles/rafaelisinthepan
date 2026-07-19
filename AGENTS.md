@@ -168,7 +168,7 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
 {
   "lang": "fr",
   "words": ["tu", "t'attends", "rien,"],       // full sentence tokens, ACCENTS + PUNCTUATION KEPT
-  "holes": [                                    // sorted by pos ascending
+  "holes": [                                    // one entry per occurrence, sorted by pos
     { "pos": 1,
       "secret": { "word": "attends", "slug": "attends" },  // the pure word only
       "start":  { "word": "...",   "slug": "..." },
@@ -200,6 +200,11 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   sentence. Generation locates each secret **inside** its token by slug on the token's
   word-cores (apostrophes/punctuation are separators; `arc-en-ciel` is one core), and
   splits it into the pure `secret` word plus the display text around it.
+- Authoring selects exactly **3 distinct secret slugs**. If a selected slug appears more
+  than once in the sentence, generation emits one complete hole per occurrence while
+  keeping one shared rank map and one shared start hint for that slug. Therefore `holes`
+  may contain more than three entries, but `ranks` still has exactly three selected-secret
+  keys; each occurrence keeps its own `pos`, display form, `prefix`, and `suffix`.
 - **`prefix` / `suffix` are OPTIONAL, display-only hole affixes** (a leading clitic like
   `t'` / `l'` or opening punctuation, and trailing punctuation). They keep the blanked
   word's surroundings on screen **without** touching the secret: the player still types
@@ -296,13 +301,17 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
 
 ### Progress (`game/scoring.ts`)
 
-For each hole, with `N = number of keys in ranks[secret]`:
+For each unique secret slug, with `N = number of keys in ranks[secret]`:
 
 ```
 s(rank)   = 1 - ln(rank + 1) / ln(N + 1)              // s(0) = 1 (solved)
 p_hole    = (s(rank) - s(start_rank)) / (1 - s(start_rank))   // 0 at start, 1 solved
-progress% = 100 * average(p_hole over holes)
+progress% = 100 * average(p_hole over unique secret slugs)
 ```
+
+Rendered occurrences of the same secret slug share one logical progress target. They
+remain separate runtime holes for positions, feedback, animation, and solved rendering,
+but duplicate occurrences do not receive extra weight in the frontend percentage.
 
 ### Score
 
@@ -411,7 +420,7 @@ pnpm vocab:fr         # -> packages/web/public/vocab/fr.json
 # 3. Generate a puzzle per game (fast; first run for a language builds the .kv cache).
 #    Puzzle -> packages/generation/output/word/<lang>/ (then `pnpm puzzle:publish` it).
 #    NOTE: gen:phrase ALSO rewrites web/public/vocab/<lang>.json as a side effect.
-pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--`)
+pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 distinct words; all occurrences hole (no `--`)
 
 # 4. Optionally benchmark the generated puzzle offline before publish. --model is required
 #    and runs exactly one model. Missing API-provider keys skip with a warning; --effort applies
@@ -459,8 +468,10 @@ pnpm typecheck                  # tsc --noEmit
 pnpm test                       # invariant tests: Vitest (web + shared + backend) + pytest (generation + benchmark)
 ```
 
-`gen_phrase.py` requires **exactly 3** `--words`; they must appear in the sentence
-(matched by slug) and must have survived reduction. Front-end dev harnesses:
+`gen_phrase.py` requires **exactly 3 distinct** `--words` selectors after slug
+normalization; each must appear in the sentence (matched by slug) and must have survived
+reduction. Every matching sentence occurrence becomes a hole, while the output filename
+contains the three distinct secret slugs in sentence order. Front-end dev harnesses:
 `?tutorial=1` forces the tutorial, `?streak=N` previews the streak celebration
 (dev only). There is **no `?puzzle=` file override** — the front always loads the day's
 puzzle from the backend (test a specific puzzle by publishing it to the local store, see
@@ -563,20 +574,23 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   error, and `--lang` still defaults to `en`). Source metadata is asked **after** the holes
   are chosen, so a bad word errors before any metadata is entered; blank answers are
   dropped (`build_source`) so no empty `source` key is written.
-- **Interactive hole selector (decided 2026-07-05, `select_holes_interactive`).** WITHOUT
-  `--words` on a TTY, the three holes are chosen with a small raw-mode (`termios`/`tty`
-  cbreak) full-screen selector instead of typing words. `extract_candidates` lists the
-  selectable words — each token's first word-core whose **display form is in `Vset`**;
+- **Interactive hole selector (decided 2026-07-05, expanded by #100).** WITHOUT
+  `--words` on a TTY, three distinct secret groups are chosen with a small raw-mode
+  (`termios`/`tty` cbreak) full-screen selector instead of typing words. `extract_candidates`
+  lists the selectable occurrences — each token's first word-core whose **display form is
+  in `Vset`**;
   because reduction already strips stopwords / single letters / non-dictionary tokens,
   "in `V`" **is** the content-word filter (no separate stopword list), so `l'animal` offers
   only `animal` and punctuation/stopwords are non-selectable. ←/→ navigate the content
   words; the hovered word's **full start-word band** (`start_band`, ranks 50–150) is
-  previewed live (its neighbor ranking computed once per word and **cached**). **Enter**
-  commits the hovered word, then a **number + Enter** picks its start word (**Esc** cancels
-  back to navigation, **Ctrl-C** aborts). Three commits end it. The produced `holes`/`ranks`
-  are **identical in shape** to the `--words` path (`build_rank_map` + `_make_hole` are
-  shared). `--words` (or off-TTY) **skips** the selector entirely (`holes_from_words`,
-  behaviour unchanged), so batch/CI is unaffected. `< 3` selectable words → clear error.
+  previewed live (its neighbor ranking computed once per secret slug and **cached**).
+  **Enter** commits the hovered occurrence's whole repeated-word group, then a **number +
+  Enter** picks its shared start word (**Esc** cancels back to navigation, **Ctrl-C**
+  aborts). Three distinct commits end it. The produced `holes`/`ranks` are **identical in
+  shape** to the `--words` path (`build_rank_map` + `_make_hole` are shared), with one hole
+  per group occurrence. `--words` (or off-TTY) **skips** the selector entirely
+  (`holes_from_words`), so batch/CI is unaffected. Fewer than 3 distinct selectable words
+  → clear error.
 - **Editable phrase prompt (decided 2026-07-05).** `gen_phrase` `import`s `readline`, so
   on a TTY every prompt is a line editor (arrow keys move within the line). The **sentence**
   is the exception to "flags aren't re-prompted": in interactive mode it is **always** shown

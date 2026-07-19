@@ -106,8 +106,9 @@ def test_stopwords_and_punctuation_are_not_selectable():
 
 
 def test_one_candidate_per_token_position():
-    # Even if a token had several in-vocab cores, only its first is offered, so each pick
-    # consumes exactly one position (here a plain sentence: one core each).
+    # Even if a token had several in-vocab cores, only its first is offered. Repeated
+    # positions across the sentence are still separate candidates and are grouped by
+    # secret slug when the interactive selector commits a selection.
     out = cands("le chat noir", {"chat", "noir"})
     assert [(c["pos"], c["secret"]) for c in out] == [(1, "chat"), (2, "noir")]
 

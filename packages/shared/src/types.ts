@@ -63,7 +63,7 @@ export type BenchmarkResults = [BenchmarkEntry, BenchmarkEntry, BenchmarkEntry];
 export interface Puzzle {
   lang: string;
   words: string[]; // full sentence, accents kept
-  holes: Hole[]; // sorted by pos ascending
+  holes: Hole[]; // one per selected occurrence, sorted by pos ascending
   ranks: RankMap; // keyed by secret slug, then input slug
   source?: Source; // optional origin metadata (#5), shown on the solved screen (#8)
   benchmark?: BenchmarkResults; // optional player-facing model trio (#68/#80)
