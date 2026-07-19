@@ -222,13 +222,18 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   pixel-friendly `tag` of at most 6 characters (`OPUS`/`SONNET`/`GPT`), `tries` as a
   positive integer or `null` (DNF at the counted-try cap), and `run` as the **selected
   run's counted display-form guesses in submission order**. `--selection median`
-  (default) selects the actual median; `--selection best` selects the lowest successful
-  score. Run words retain accents exactly as typed/validated and are folded only when
-  replayed; a selected DNF keeps its full cap-length run. A best-mode attempt stopped
-  because it can no longer beat an incumbent is lab-only and can never be embedded as a
-  DNF. The client can replay this list against the puzzle rank maps; play scoring and
-  share output stay unchanged. This model-score anchor superseded #57's proposed `par`
-  before `par` was implemented — there is no `par` schema field.
+  (default) keeps odd `N` runs sequential/cache-warm and reports the same actual median
+  score as full median-of-N (#95). With `k = (N + 1) / 2`, once `k` runs have solved, a
+  later run still unsolved at the k-th-smallest solved score stops as lab-only
+  `termination="upper_half"`; once `N - k + 1` runs are genuine cap DNFs, remaining runs
+  make no provider calls and record lab-only `termination="dnf_majority"`. `N = 1` never
+  prunes. `--selection best` selects the lowest successful score. Run words retain accents
+  exactly as typed/validated and are folded only when replayed; a selected DNF keeps its
+  full cap-length run. Cost-pruned attempts (`upper_half`, `dnf_majority`, or best-mode
+  `cannot_beat_best`) can never be embedded as DNFs or scores; the selected representative
+  remains a genuine solved/cap run. The client can replay this list against the puzzle rank
+  maps; play scoring and share output stay unchanged. This model-score anchor superseded
+  #57's proposed `par` before `par` was implemented — there is no `par` schema field.
 - `ranks` is keyed by **secret slug**; the inner map is keyed by **input slug** →
   `{word, rank}`. The value carries the **accented** word so the front can show the
   accented form of what was typed.
@@ -429,9 +434,11 @@ pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--
 #    do not mix its results into v21 comparisons. --playbook remains an experimental loader only;
 #    the static-corpus playbooks are paused and must not be used for benchmark scores.
 #    --selection median|best chooses the saved representative (default median). Median
-#    requires odd --runs; best accepts any positive count and stops an unsolved later run
-#    once its tries equal the incumbent best score. Puzzle paths may be repo-root-relative
-#    (packages/generation/output/...) or generation-package-relative (output/...).
+#    requires odd sequential --runs and cost-prunes only provable upper-half tails or after
+#    a cap-DNF majority (one run never prunes); best accepts any positive count and stops an
+#    unsolved later run once its tries equal the incumbent best score. Puzzle paths may be
+#    repo-root-relative (packages/generation/output/...) or generation-package-relative
+#    (output/...).
 #    --in-place appends the full local lab artifact and embeds the lean display trio once
 #    all 3 current-prompt display models have same-selection and same-session results.
 pnpm bench:puzzle <puzzle.json> --model MODEL [--playbook <model>.playbook.json] [--effort LEVEL] [--auth api|subscription] [--session persistent|stateless] [--cap N] [--runs N] [--selection median|best] [--in-place]
@@ -518,14 +525,15 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   `--playbook` accepts only a model/provider/prompt-matched,
   hash-verified `whippin_model_playbook` profile and injects its `final_playbook` under the
   fixed rules as advice. `--selection median|best` defaults to median: median requires odd
-  `--runs` (default 7, but Kimi defaults to 1), while best selects the lowest successful score
-  and cost-prunes a later unsolved run when it reaches that incumbent score. Kimi prints its
-  counted-guess exposure and warns that non-counting turns add paid requests; `low` still uses
-  adaptive thinking. Lab sessions record the session mode, selected run, and each run's
-  termination; only same-selection and same-session model
-  sessions can form a display trio. `--in-place` records full local transcripts/token usage
-  and publishes only a complete replay-valid display trio; local benchmark output is gitignored
-  and paid provider calls never run in tests/CI.
+  sequential `--runs` (default 7, but Kimi defaults to 1), cost-prunes a later provable
+  upper-half run at the running median bound, and skips remaining calls after a cap-DNF
+  majority; best selects the lowest successful score and cost-prunes a later unsolved run
+  when it reaches that incumbent score. Kimi prints its counted-guess exposure and warns that
+  non-counting turns add paid requests; `low` still uses adaptive thinking. Lab sessions
+  record the session mode, selected run, and each run's termination; only same-selection and
+  same-session model sessions can form a display trio. `--in-place` records full local
+  transcripts/token usage and publishes only a complete replay-valid display trio; local
+  benchmark output is gitignored and paid provider calls never run in tests/CI.
 - **Frozen neutral gameplay baseline (decided 2026-07-17).** Use prompt v21 at `medium`
   effort, without `--playbook`, for both Sonnet and GPT. Two direct same-puzzle stateless
   v21 smokes produced 11 then 6 tries for Sonnet, and 13 then DNF-at-30 for GPT, exposing
