@@ -60,7 +60,7 @@ pnpm puzzle:publish packages/generation/output/word/fr/a_b_c.json --s3 --bucket 
 # 3. Serve it (GET /?lang=<xx>, GET /today) with no AWS creds
 pnpm backend:dev          # http://localhost:8787
 
-# 4. Point the front at it and play end-to-end (no ?puzzle= needed)
+# 4. Point the front at it and play end-to-end (the front always loads from the backend)
 #    packages/web/.env(.local):  VITE_API_BASE_URL=http://localhost:8787
 pnpm dev
 ```

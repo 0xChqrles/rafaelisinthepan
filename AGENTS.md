@@ -92,8 +92,8 @@ packages/
   web/                        React + Vite + TS front (pkg @whippin/web)
     src/
       hooks/useVocab.ts       fetch+cache the per-language existence Set (once per session)
-      hooks/usePuzzle.ts      fetch the client-computed day's puzzle (+ ?puzzle= file override)
-      api.ts                  backend client: puzzleUrl/todayUrl, ?puzzle= override, 404->NO PUZZLE
+      hooks/usePuzzle.ts      fetch the client-computed day's puzzle from the backend
+      api.ts                  backend client: puzzleUrl/todayUrl, 404->NO PUZZLE
       i18n.ts                 UI chrome strings (en+fr), t(lang, key); parity type-enforced
       tutorial/               onboarding (#51): Tutorial.tsx + data scripts/<lang>.ts
       screens/Game.tsx        the guess loop, hole state (imports fold from @whippin/shared)
@@ -458,8 +458,11 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
 ```
 
 `gen_phrase.py` requires **exactly 3** `--words`; they must appear in the sentence
-(matched by slug) and must have survived reduction. Test overrides:
-`?puzzle=<path>` forces a file, `?date=YYYY-MM-DD` overrides "today".
+(matched by slug) and must have survived reduction. Front-end dev harnesses:
+`?tutorial=1` forces the tutorial, `?streak=N` previews the streak celebration
+(dev only). There is **no `?puzzle=` file override** — the front always loads the day's
+puzzle from the backend (test a specific puzzle by publishing it to the local store, see
+`pnpm puzzle:publish`).
 
 ---
 
@@ -608,12 +611,17 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   `/today` remains as a **diagnostic** (server's date/dayNumber/reset info, `no-store`);
   the client no longer reads it — `useToday` computes the day locally with no fetch, and
   the `PuzzleStore.version()` / S3 `HeadObject` plumbing was removed. A backend **404 →
-  `noPuzzle`** (NO PUZZLE TODAY), any other failure → `error`. Test overrides:
-  `?puzzle=<path|url>` loads a static file directly (kept, but the app still requires a
-  configured backend base). `VITE_API_BASE_URL` (see `web/.env.example`) configures the
-  backend base and is required for `pnpm dev` / `pnpm build`; the frontend must not
-  silently use its own origin as the backend. `usePuzzle` exposes `dayNumber` for
-  persist (#7) / already-solved (#9).
+  `noPuzzle`** (NO PUZZLE TODAY), any other failure → `error`. **The `?puzzle=` file
+  override was REMOVED (decided 2026-07-19):** the front ALWAYS loads the day's puzzle
+  from the backend — there is no client-side file/URL override. To test a specific puzzle
+  locally, publish it into the local store (`pnpm puzzle:publish`) and point the front at
+  the local backend. Consequently `usePuzzle`'s `dayNumber` is **always a real number**
+  (never `null`), which is why `Game`/`App` no longer carry override/null-day branches
+  (`SolvedScreen` still accepts a null `dayNumber` — that null is the TUTORIAL's, which
+  reuses it with the PLAY action instead of SHARE). `VITE_API_BASE_URL` (see
+  `web/.env.example`) configures the backend base and is required for `pnpm dev` /
+  `pnpm build`; the frontend must not silently use its own origin as the backend.
+  `usePuzzle` exposes `dayNumber` for persist (#7) / already-solved (#9).
 - **Archive routing (#55, decided 2026-07-07):** the client now also fetches **explicit
   past dates** — pairing with #53's server-side "serve any past day". `parseRoute`
   (`web/src/langs.ts`) grew two language-scoped routes beyond `/<lang>`:
@@ -677,7 +685,7 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   sends the prior completed-day scale pulse nearest-first across the week at 65ms intervals
   → the ending hint. Unchanged streak digits never move, and the previous value stays
   horizontally centered when the new streak adds a digit. It
-  never opens for archive solves, `?puzzle=` overrides, the tutorial, a reload, or an
+  never opens for archive solves, the tutorial, a reload, or an
   already-solved revisit. **Dismissal (decided 2026-07-10, replacing the CONTINUE button):**
   the ending beat is a pulsing arcade-style hint — pure "what to do", never a why (the
   game is done; CONTINUE/CLOSE would beg "continue to what?") — reading TAP ANYWHERE on
@@ -735,8 +743,8 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   Gated steps use synthetic vocab/prefix sets (the keyboard's existing contract);
   free steps use the real sets. The tutorial writes NOTHING to `rounds`; the store
   `migrate` (v2) grandfathers any blob with prior play state so veterans never see it
-  uninvited. Replay via the header `?`; `?tutorial=1` forces it; a `?puzzle=`
-  override suppresses the first-visit invitation.
+  uninvited. Replay via the header `?`; `?tutorial=1` forces it; the dev-only `?streak=`
+  preview suppresses the first-visit invitation.
 - **App header (decided 2026-07-06; game day-id removal confirmed 2026-07-11):** a fixed
   **topbar** (`components/TopBar.tsx`) — flag (language) plus the optional live streak left,
   an optional centered title, and a right-hand control — full-bleed with a
@@ -949,7 +957,7 @@ pnpm test                       # invariant tests: Vitest (web + shared + backen
   in `connect-src` for the tracker endpoint; `script-src` stays `'self'` because the
   tracker is bundled. **Exactly three events** (low-cardinality props only — **NEVER** a typed
   word/guess): `solve {lang, tries, day, archive}` — the play-solve transition in
-  `Game.tsx` (NOT rehydration; skipped on a `?puzzle=` override; `archive` is `'yes'`
+  `Game.tsx` (NOT rehydration; `archive` is `'yes'`
   when replaying a past archive day (#55), `'no'` for the live daily puzzle);
   `share {method:'native'|'clipboard'}` — `SolvedScreen`
   success paths; `tutorial {action:'start'|'finish'|'skip'}` — invite accept / PLAY

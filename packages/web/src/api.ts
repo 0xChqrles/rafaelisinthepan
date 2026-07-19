@@ -9,15 +9,15 @@ import type { Puzzle, Word } from '@whippin/shared';
 
 // Base URL of the backend, configured at build time via VITE_API_BASE_URL.
 // Trailing slashes are trimmed so callers can append paths cleanly. Empty when
-// unset (e.g. local dev with no backend) — normal play then can't resolve a
-// puzzle, and the ?puzzle= override is the way to load a file directly.
+// unset (e.g. a misconfigured build) — normal play then can't resolve a puzzle,
+// which surfaces as a loud error rather than a silent same-origin fetch.
 export function apiBase(env: ImportMetaEnv = import.meta.env): string {
   return (env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
 }
 
 function requireApiBase(base: string): string {
   if (!base) {
-    throw new Error('VITE_API_BASE_URL is not set. Set it, or use ?puzzle=<path> for a file override.');
+    throw new Error('VITE_API_BASE_URL is not set.');
   }
   return base;
 }
@@ -29,19 +29,6 @@ function requireApiBase(base: string): string {
 // A request without `date` is a protocol violation the backend rejects with 400.
 export function puzzleUrl(lang: string, date: string, base: string = apiBase()): string {
   return `${requireApiBase(base)}/?lang=${encodeURIComponent(lang)}&date=${encodeURIComponent(date)}`;
-}
-
-// A ?puzzle= test override resolves a puzzle FILE directly, bypassing the backend
-// (for local dev / preview without a deployed endpoint). An absolute http(s) URL is
-// used verbatim; a relative path is resolved against BASE_URL like the other static
-// assets. No override -> null (normal play goes to the backend). The old ?date=
-// override is intentionally dropped: the server now owns the date, and the deployed
-// endpoint accepts no date parameter, so a client-side date would be meaningless.
-export function resolveOverride(search: string, baseUrl: string): string | null {
-  const override = new URLSearchParams(search).get('puzzle');
-  if (override == null) return null;
-  if (/^https?:\/\//.test(override)) return override;
-  return `${baseUrl}${override.replace(/^\/+/, '')}`;
 }
 
 // Routing outcome of the backend puzzle fetch, by HTTP status:
@@ -64,9 +51,9 @@ function isWord(v: unknown): v is Word {
 }
 
 // Runtime shape check for a fetched puzzle (issue #14). The backend/store normally
-// returns a well-formed Puzzle, but a truncated body, the wrong file behind ?puzzle=,
-// or a store/CDN mishap can yield valid JSON of the WRONG shape — which would then
-// crash Game mid-render (a blank screen), not surface as an error. So validate the
+// returns a well-formed Puzzle, but a truncated body or a store/CDN mishap can yield
+// valid JSON of the WRONG shape — which would then crash Game mid-render (a blank
+// screen), not surface as an error. So validate the
 // load-bearing fields the game actually reads here: on success return a typed Puzzle;
 // on a bad shape throw a descriptive Error the fetch hook turns into the error state.
 // Not exhaustive — it asserts the structure Game depends on (lang, words, each hole's

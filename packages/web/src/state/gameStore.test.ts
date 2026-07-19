@@ -1,7 +1,7 @@
 // CONTRACT: the day-keyed round store (packages/web/src/state/gameStore.ts). Rounds are
 // held in a MAP keyed by roundKey = (dayNumber, language), so:
 //   - day rounds are KEPT across days so the archive can rehydrate a past day's progress
-//     (#54); only ?puzzle= override rounds are pruned, and the map is bounded by the
+//     (#54); any legacy non-day round is dropped, and the map is bounded by the
 //     MAX_DAY_ROUNDS most-recent cap (oldest day rounds evicted beyond it);
 //   - switching LANGUAGE keeps BOTH rounds — coming back restores the in-progress one
 //     (drives the language selector's per-language status + no-confirmation switching);
@@ -136,37 +136,21 @@ describe('ensureRound — day/language keying', () => {
     expect(after?.progress).toBe(42);
   });
 
-  it('an override (non-day) round never wipes the day rounds', () => {
+  it('drops a legacy non-day round from storage while keeping the day rounds', () => {
     const { ensureRound, recordGuess } = useGameStore.getState();
+    // Simulate an older persisted blob that still carries a retired ?puzzle= override
+    // round ("o:<nonce>:<lang>") alongside a real day round.
     ensureRound('d:5:fr', freshHoles());
     recordGuess('bois');
+    useGameStore.setState((s) => ({
+      rounds: { ...s.rounds, 'o:legacy:fr': { holes: freshHoles(), guessCount: 3, tried: ['x', 'y', 'z'], progress: 10 } },
+    }));
 
-    // Loading a ?puzzle= test file must not destroy the real day's progress.
-    ensureRound('o:nonce:fr', freshHoles());
-    let s = useGameStore.getState();
-    expect(s.activeKey).toBe('o:nonce:fr');
-    expect(s.rounds['d:5:fr']?.guessCount).toBe(1); // day progress intact
-
-    // Coming back to a day key prunes the stale override round, keeps the day's.
-    ensureRound('d:5:en', freshHoles());
-    s = useGameStore.getState();
-    expect(s.rounds['o:nonce:fr']).toBeUndefined();
-    expect(s.rounds['d:5:fr']?.guessCount).toBe(1);
-  });
-
-  it('a new override key prunes the previous override but keeps the day rounds', () => {
-    const { ensureRound, recordGuess } = useGameStore.getState();
-    ensureRound('d:5:fr', freshHoles());
-    recordGuess('bois');
-    ensureRound('o:one:fr', freshHoles()); // first ?puzzle= load
-
-    // A second override load replaces the first among override rounds, but the real day
-    // round stays untouched.
-    ensureRound('o:two:fr', freshHoles());
+    // The next reconcile to any day key purges the legacy round and preserves day history.
+    ensureRound('d:6:en', freshHoles());
     const s = useGameStore.getState();
-    expect(s.activeKey).toBe('o:two:fr');
-    expect(s.rounds['o:one:fr']).toBeUndefined(); // previous override pruned
-    expect(s.rounds['o:two:fr']).toBeDefined();
+    expect(s.activeKey).toBe('d:6:en');
+    expect(s.rounds['o:legacy:fr']).toBeUndefined(); // legacy round dropped
     expect(s.rounds['d:5:fr']?.guessCount).toBe(1); // day round intact
   });
 

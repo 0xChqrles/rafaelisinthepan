@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { activeDate, dayNumber as dayNumberOf } from '@whippin/shared';
+import { activeDate } from '@whippin/shared';
 import usePuzzle from './hooks/usePuzzle';
 import LanguageSelect from './screens/LanguageSelect';
 import Archive from './screens/Archive';
@@ -88,12 +88,11 @@ function GameRoute({ lang, date }: { lang: LangCode; date?: string }) {
   // The open-tutorial state lives in the STORE (transient) so the tutorial's flag can
   // round-trip through the /select screen — this route unmounts, and picking a
   // language re-mounts it with the tutorial still open, now in that language.
-  // `?tutorial=1` forces it (dev/testing); the `?puzzle=` and dev-only `?streak=`
-  // harnesses both win over the first-visit invite. URL params are read once per load.
-  const [forced, hasOverride] = useMemo(() => {
-    const params = new URLSearchParams(window.location.search);
-    return [params.get('tutorial') === '1', params.has('puzzle')] as const;
-  }, []);
+  // `?tutorial=1` forces it (dev/testing). URL params are read once per load.
+  const forced = useMemo(
+    () => new URLSearchParams(window.location.search).get('tutorial') === '1',
+    [],
+  );
   // Dev-only animation harness: the value is the PREVIOUS streak, so ?streak=9 previews
   // 9 -> 10 immediately without mutating persisted rounds or solved-day history.
   const [streakPreview, setStreakPreview] = useState<number | null>(() =>
@@ -120,7 +119,7 @@ function GameRoute({ lang, date }: { lang: LangCode; date?: string }) {
   if (tutorialOpen) {
     return <Tutorial key={lang} lang={lang} onDone={closeTutorial} />;
   }
-  if (!onboarded && !hasOverride && streakPreview == null) {
+  if (!onboarded && streakPreview == null) {
     return (
       <Invite
         lang={lang}
@@ -183,7 +182,7 @@ function GameRoute({ lang, date }: { lang: LangCode; date?: string }) {
       {streakPreview != null && (
         <LazyStreakDialog
           lang={lang}
-          solvedDay={dayNumber ?? dayNumberOf(activeDate(new Date()))}
+          solvedDay={dayNumber}
           previewPreviousStreak={streakPreview}
           onDismiss={dismissStreakPreview}
         />

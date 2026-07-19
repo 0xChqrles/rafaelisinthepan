@@ -8,10 +8,10 @@ import { useEffect, useState } from 'react';
 type Listener = () => void;
 const listeners = new Set<Listener>();
 
-// Navigate to `path`, preserving the current query string (so a ?puzzle= override
-// survives route changes). `replace` swaps the current history entry instead of
-// pushing — used for the `/` -> /<lang> redirect so `/` never sits in history and
-// back from the game exits rather than bouncing through the redirect.
+// Navigate to `path`, preserving the current query string (so dev harnesses like
+// ?tutorial=1 / ?streak= survive route changes). `replace` swaps the current history
+// entry instead of pushing — used for the `/` -> /<lang> redirect so `/` never sits in
+// history and back from the game exits rather than bouncing through the redirect.
 export function navigate(path: string, opts: { replace?: boolean } = {}): void {
   const url = path + window.location.search;
   if (opts.replace) window.history.replaceState(null, '', url);

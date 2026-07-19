@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { activeDate, dayNumber as dayNumberOf, type Puzzle } from '@whippin/shared';
-import { puzzleUrl, resolveOverride, puzzleOutcome, parsePuzzle } from '../api';
+import { puzzleUrl, puzzleOutcome, parsePuzzle } from '../api';
 
 // Loads a day's puzzle for the selected language. Normal play (no `date`) fetches the
 // client-computed active 22:00-ET game day (shared day.ts) — the served puzzle is BY
 // CONSTRUCTION the day it is persisted under. The archive (#55) passes an explicit past
 // `date` to replay it: same one fetch, same 404 -> noPuzzle path, only the requested day
-// changes. The ?puzzle=<path|url> override loads a static file directly for local dev /
-// testing. Idle (no fetch) until a language is chosen.
+// changes. Idle (no fetch) until a language is chosen.
 export default function usePuzzle(lang: string | null, date?: string) {
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
   const [error, setError] = useState<unknown | null>(null);
@@ -17,12 +16,6 @@ export default function usePuzzle(lang: string | null, date?: string) {
   const [reloadTick, setReloadTick] = useState(0);
   const retry = useCallback(() => setReloadTick((t) => t + 1), []);
 
-  // The ?puzzle= override is fixed for the page load.
-  const override = useMemo(
-    () => resolveOverride(window.location.search, import.meta.env.BASE_URL),
-    [],
-  );
-
   // The requested game day, CAPTURED ONCE per `date` (NOT re-read on every render): the
   // archive's explicit past `date`, else the active 22:00-ET day sampled at mount. The
   // fetch below AND every consumer (header id, round key, share) read this SAME value, so
@@ -30,13 +23,10 @@ export default function usePuzzle(lang: string | null, date?: string) {
   // showing the FETCHED day, not the newly-active one (the loaded puzzle does not silently
   // swap; a real navigation/reload is what moves to the new day).
   const requestedDate = useMemo(() => date ?? activeDate(new Date()), [date]);
-  // Stable day id of the requested/loaded puzzle — null under a ?puzzle= override (no real
-  // day). Derived synchronously, so the header shows the right id even while loading, and
-  // it always matches the fetched puzzle. The round keys on this for persist (#7) / #9.
-  const dayNumber = useMemo(
-    () => (override ? null : dayNumberOf(requestedDate)),
-    [override, requestedDate],
-  );
+  // Stable day id of the requested/loaded puzzle. Derived synchronously, so the header
+  // shows the right id even while loading, and it always matches the fetched puzzle. The
+  // round keys on this for persist (#7) / #9.
+  const dayNumber = useMemo(() => dayNumberOf(requestedDate), [requestedDate]);
 
   useEffect(() => {
     setPuzzle(null);
@@ -47,16 +37,6 @@ export default function usePuzzle(lang: string | null, date?: string) {
     let cancelled = false;
     (async () => {
       try {
-        // Explicit override: a static puzzle file, no backend / no day number.
-        if (override) {
-          const r = await fetch(override);
-          if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          // parsePuzzle also throws on malformed JSON shape (not just bad JSON syntax).
-          const json = parsePuzzle(await r.json());
-          if (!cancelled) setPuzzle(json);
-          return;
-        }
-
         // ONE fetch for the requested day (captured above). The date names the puzzle, so
         // the response can never belong to a different day than `dayNumber` — the old
         // /today->puzzle pair and its 22:00-flip race are gone. A 404 covers both "no
@@ -81,7 +61,7 @@ export default function usePuzzle(lang: string | null, date?: string) {
     return () => {
       cancelled = true;
     };
-  }, [lang, requestedDate, override, reloadTick]);
+  }, [lang, requestedDate, reloadTick]);
 
   // Language chosen but the puzzle hasn't resolved to a puzzle / error / no-puzzle yet.
   const loading = lang != null && puzzle == null && error == null && !noPuzzle;

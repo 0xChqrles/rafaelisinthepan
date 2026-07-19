@@ -7,8 +7,9 @@ import { isLang } from '../langs';
 // MAP of rounds keyed by this string so progress in one language survives switching to
 // another and back (the selector reads each language's status out of this map). The
 // SAME key rehydrates its stored progress untouched. Day rounds are KEPT across days so
-// the archive can rehydrate a past day's progress (#54); only ?puzzle= override rounds
-// are pruned, and the map is bounded by a most-recent cap (MAX_DAY_ROUNDS).
+// the archive can rehydrate a past day's progress (#54); the map is bounded by a
+// most-recent cap (MAX_DAY_ROUNDS). Every key is a day key — any legacy non-day round
+// left in an older persisted blob is dropped on the next ensureRound.
 export interface RoundProgress {
   holes: RuntimeHole[];
   // Score = number of unique valid tries.
@@ -28,15 +29,8 @@ export function roundKeyForDay(dayNumber: number, lang: string): string {
   return `d:${dayNumber}:${lang}`;
 }
 
-// The day-part prefix of a round key ("d:5:"), or null for a non-day key (the ?puzzle=
-// override's "o:<nonce>:<lang>"). Distinguishes archivable day rounds from override rounds.
-function dayPrefixOf(key: string): string | null {
-  const m = /^(d:\d+:)/.exec(key);
-  return m ? m[1] : null;
-}
-
-// The dayNumber a day-keyed round belongs to, or null for an override key. Orders day
-// rounds newest-first for the retention cap.
+// The dayNumber a day-keyed round belongs to, or null for a legacy non-day key. Orders
+// day rounds newest-first for the retention cap, and marks legacy rounds for dropping.
 function dayNumberOf(key: string): number | null {
   const m = /^d:(\d+):/.exec(key);
   return m ? Number(m[1]) : null;
@@ -64,14 +58,14 @@ function capAllSolvedDays(solvedDays: Record<string, number[]>): Record<string, 
   return out;
 }
 
-// Enforce the cap: with more than MAX_DAY_ROUNDS day rounds, drop the oldest (lowest
-// dayNumber), always keeping the active key and every override round (exempt — at most
-// one survives ensureRound's prune).
+// Enforce the cap: with more than MAX_DAY_ROUNDS rounds, drop the oldest (lowest
+// dayNumber), always keeping the active key. ensureRound has already filtered the map to
+// day keys, so every entry here is a day round.
 function capDayRounds(
   rounds: Record<string, RoundProgress>,
   activeKey: string,
 ): Record<string, RoundProgress> {
-  const dayKeys = Object.keys(rounds).filter((k) => dayNumberOf(k) !== null);
+  const dayKeys = Object.keys(rounds);
   if (dayKeys.length <= MAX_DAY_ROUNDS) return rounds;
   const survivors = new Set(
     dayKeys.sort((a, b) => dayNumberOf(b)! - dayNumberOf(a)!).slice(0, MAX_DAY_ROUNDS),
@@ -79,7 +73,7 @@ function capDayRounds(
   survivors.add(activeKey);
   const out: Record<string, RoundProgress> = {};
   for (const [k, v] of Object.entries(rounds)) {
-    if (dayNumberOf(k) === null || survivors.has(k)) out[k] = v;
+    if (survivors.has(k)) out[k] = v;
   }
   return out;
 }
@@ -98,7 +92,7 @@ export function holesMatchPuzzle(stored: RuntimeHole[], puzzle: RuntimeHole[]): 
 
 interface PersistedState {
   // All rounds keyed by roundKey. Day rounds accumulate across days (archive history),
-  // bounded to the MAX_DAY_ROUNDS most recent by ensureRound; override rounds are pruned.
+  // bounded to the MAX_DAY_ROUNDS most recent by ensureRound.
   rounds: Record<string, RoundProgress>;
   // Last-played language: seeds the `/` redirect so a return visit lands where you
   // last played (falls back to the browser language, then English).
@@ -150,7 +144,7 @@ interface GameState extends PersistedState {
   // Reconcile the persisted rounds to `key`. A matching key with matching holes
   // rehydrates its stored progress; a brand-new key — or the same key whose puzzle was
   // re-published with a different sentence — starts fresh from `initialHoles`. Keeps
-  // every day round (the archive needs history) and prunes only override rounds, then
+  // every day round (the archive needs history), drops any legacy non-day round, then
   // bounds the map with the MAX_DAY_ROUNDS most-recent cap.
   ensureRound: (key: string, initialHoles: RuntimeHole[]) => void;
 
@@ -246,14 +240,11 @@ export const useGameStore = create<GameState>()(
       ensureRound: (key, initialHoles) =>
         set((s) => {
           // Retention: keep EVERY day round regardless of its day — the archive rehydrates
-          // a past day's progress, so a new day must not wipe yesterday's (#54). Override
-          // (?puzzle=) rounds are transient: an override key keeps only itself among them
-          // (a test load never wipes real day rounds), and a day key drops all overrides.
-          const isOverride = dayPrefixOf(key) === null;
+          // a past day's progress, so a new day must not wipe yesterday's (#54). Any legacy
+          // non-day round (an old ?puzzle= override left in persisted storage) is dropped.
           const kept: Record<string, RoundProgress> = {};
           for (const [k, v] of Object.entries(s.rounds)) {
-            if (dayPrefixOf(k) !== null) kept[k] = v; // day round — always retained
-            else if (isOverride && k === key) kept[k] = v; // this override round only
+            if (dayNumberOf(k) !== null) kept[k] = v; // day round — always retained
           }
           // Same key + matching holes -> rehydrate untouched; a brand-new key OR a
           // re-published sentence under the same (day, lang) key (holes no longer match)
