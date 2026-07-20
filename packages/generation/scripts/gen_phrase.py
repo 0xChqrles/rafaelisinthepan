@@ -288,18 +288,25 @@ def expand_aliases(rmap, groups, forms_by_lemma, Vset):
     group's lemma(s) points at that group's canonical {word, rank}.
 
     Covers forms that never appeared in the walk ("privait" hits "privé"'s rank even
-    when it is not among the fetched neighbors). Groups arrive ascending by rank and
-    an existing entry is never overwritten (first-seen wins, like the slug-collision
-    rule), so an ambiguous form aliases to its closest group and a canonical entry is
-    never clobbered. Filtering by Vset keeps the map aligned with the existence set:
-    a key the front can never look up is never emitted."""
+    when it is not among the fetched neighbors). On a slug collision the SMALLEST rank
+    wins, exactly like build_rank_map: an existing entry is only replaced by a
+    strictly closer alias — so an ambiguous form aliases to its closest group, a
+    canonical entry never loses to an equal-or-farther alias, and a closer group's
+    alias ("côtés" of a "côté" secret) is never shadowed by a farther canonical that
+    happens to share its slug ("cotes"). Groups arrive ascending by rank, so
+    alias-vs-alias collisions also resolve closest-first. Filtering by Vset keeps the
+    map aligned with the existence set: a key the front can never look up is never
+    emitted."""
     for canonical, rank, lemmas in groups:
         for lemma in lemmas:
             for form in forms_by_lemma.get(lemma, ()):
                 if form not in Vset:
                     continue
                 s = slug(form)
-                if s and s not in rmap:
+                if not s:
+                    continue
+                existing = rmap.get(s)
+                if existing is None or rank < existing["rank"]:
                     rmap[s] = {"word": canonical, "rank": rank}
     return rmap
 
@@ -434,6 +441,32 @@ def extract_candidates(words, cfg, Vset):
     return cands
 
 
+def max_selectable_groups(cands, lemma_table, need=3):
+    """The largest number (capped at `need`) of pairwise lemma-disjoint distinct-slug
+    candidates — CAN three holes be committed, in SOME order?
+
+    A greedy sentence-order count is wrong here: a multi-lemma form encountered first
+    ("portes" → porte + porter) would claim BOTH lemmas and hide that committing
+    "porte" and "porter" separately still works. Sentences hold few distinct words, so
+    an exact search over combinations is exhaustive and instant."""
+    from itertools import combinations
+
+    by_slug = {}
+    for c in cands:  # one representative per distinct slug (first occurrence)
+        by_slug.setdefault(slug(c["secret"]), set(lemmas_of(c["secret"], lemma_table)))
+    lemma_sets = list(by_slug.values())
+    for size in range(min(need, len(lemma_sets)), 0, -1):
+        for combo in combinations(lemma_sets, size):
+            union = set()
+            for ls in combo:
+                if union & ls:
+                    break
+                union |= ls
+            else:
+                return size
+    return 0
+
+
 def candidates_for_slug(cands, target_slug):
     """Return every selectable occurrence belonging to one secret slug.
 
@@ -484,24 +517,10 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
 
     cands = extract_candidates(words, cfg, Vset)
 
-    # Selectable DISTINCT GROUPS (#104): committing a word blocks every other form of
-    # its lemma group, so feasibility is counted greedily in sentence order — the same
-    # first-committed-wins rule the selection loop itself enforces.
-    def count_selectable_groups():
-        taken, seen, n = set(), set(), 0
-        for c in cands:
-            s = slug(c["secret"])
-            lemmas = set(lemmas_of(c["secret"], lemma_table))
-            if s in seen or lemmas & taken:
-                continue
-            seen.add(s)
-            taken |= lemmas
-            n += 1
-        return n
-
-    if count_selectable_groups() < 3:
-        die(f"la phrase n'a que {count_selectable_groups()} mot(s) sélectionnable(s) "
-            f"distinct(s) ; il en faut 3 (mots présents dans le vocabulaire réduit "
+    selectable = max_selectable_groups(cands, lemma_table)
+    if selectable < 3:
+        die(f"la phrase n'offre que {selectable} mot(s) sélectionnable(s) "
+            f"compatible(s) ; il en faut 3 (mots présents dans le vocabulaire réduit "
             f"'{lang}', hors mots-outils). Les occurrences répétées et les formes d'un "
             "même mot (lemme commun) ne consomment qu'une sélection.")
 

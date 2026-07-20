@@ -95,6 +95,40 @@ def test_expand_aliases_covers_vocab_forms_absent_from_walk_and_respects_vset():
     assert "prives" not in rmap
 
 
+def test_closer_alias_wins_slug_collision_against_farther_canonical():
+    # The secret "côté" has the inflection "côtés", whose slug ("cotes") collides with
+    # the DISTINCT canonical word "cotes" at rank 1. Smallest rank wins, exactly like
+    # build_rank_map's collision rule: typing côtés/cotes must SOLVE (rank 0), never
+    # land on the farther word that happens to share the slug.
+    table = {
+        "côté": ("côté",), "côtés": ("côté",),
+        "cote": ("cote",), "cotes": ("cote",),
+    }
+    forms = gen_phrase.invert_lemmas(table)
+    ranking = [("cotes", 0, .9)]
+    _merged, rmap = gen_phrase.build_merged_rank_map(
+        "côté", ranking, table, forms, {"côté", "côtés", "cote", "cotes"})
+
+    assert rmap["cotes"] == {"word": "côté", "rank": 0}
+    # An equal-or-farther alias still never clobbers an existing entry.
+    assert rmap["cote"] == {"word": "côté", "rank": 0}  # secret's own slug, rank 0
+
+
+def test_max_selectable_groups_is_exact_not_greedy():
+    # Sentence order offers the ambiguous "portes" FIRST (lemmas porte + porter). A
+    # greedy walk would let it claim both lemmas and count only 2 groups; committing
+    # "porte", "porter" and "chien" separately is still a valid trio.
+    def cand(word, pos):
+        return {"pos": pos, "secret": word, "prefix": "", "suffix": ""}
+
+    cands = [cand("portes", 0), cand("porte", 1), cand("porter", 2), cand("chien", 3)]
+    assert gen_phrase.max_selectable_groups(cands, TABLE) == 3
+
+    # Without the third independent word, no conflict-free trio exists.
+    cands = [cand("portes", 0), cand("porte", 1), cand("porter", 2)]
+    assert gen_phrase.max_selectable_groups(cands, TABLE) == 2
+
+
 def test_empty_table_reproduces_pre_104_rank_map():
     ranking = [("chien", 0, .9), ("félin", 1, .8), ("côté", 2, .7), ("coté", 3, .6)]
     merged, rmap = gen_phrase.build_merged_rank_map("chat", ranking, {}, {}, set())
