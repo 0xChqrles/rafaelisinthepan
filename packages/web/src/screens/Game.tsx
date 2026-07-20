@@ -39,9 +39,6 @@ type Feedback = { text: string };
 export const STAGGER_MS = 200;
 export const FLOATING_HIT_INTRO_MS = 320;
 
-// Shared with the tutorial's scripted timing. The real game no longer guesses when this
-// finishes: each Hole reports its actual resolved animation completion to Round.
-export const WORD_BLINK_MS = 600; // .word-replace-blink in index.css (0.2s steps(1) 3)
 const STREAK_AFTER_WORDS_MS = 300;
 
 // Wrapper: drives the single puzzle. Loads the language's fixed vocabulary

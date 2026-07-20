@@ -1,13 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { rankHeatColor } from '../components/Hole';
+import { SCRAMBLE_MS, prefersReducedMotion, useScramble } from '../hooks/useScramble';
 import type { RankEntry } from '@whippin/shared';
+
+// Re-exported so the Tutorial can schedule the mix stop's explanation against the same
+// scramble duration the widget uses.
+export { SCRAMBLE_MS };
 
 // The mix demo's word (#51, stage 1). Tutorial owns WHICH ladder entry is showing;
 // this renders it with the real hole's markup, classes and heat ramp, so it is
-// visually indistinguishable from the game. It cannot BE <Hole>: the game has no
-// walk-away-from-the-secret mechanic, and the scramble must show raw glyph churn,
-// which Hole's blink choreography deliberately prevents.
+// visually indistinguishable from the game. It shares the game's slot-machine scramble
+// (useScramble) but cannot BE <Hole>: the game has no walk-away-from-the-secret
+// mechanic, and this widget reserves the landing rank's width in monospace ch units,
+// which the game's width-tracking swap must NOT do.
 //
 // EVERY press MIXES the word the same way (the slot-machine scramble): its letters
 // cycle through random glyphs and settle left-to-right into the new word. The
@@ -20,17 +26,7 @@ import type { RankEntry } from '@whippin/shared';
 //   - its slot always reserves the LANDING rank's width (monospace font, ch units),
 //     so neither the ticking digits nor the entrance ever shift the centered word.
 
-// Exported so Tutorial can schedule the stop's explanation after the mix resolves.
-export const SCRAMBLE_MS = 650;
-const SCRAMBLE_TICK_MS = 40;
 const EXPONENT_DELAY_MS = 200; // beat between the letters settling and the rank pop
-const GLYPHS = 'abcdefghijklmnopqrstuvwxyz';
-
-function randomGlyphs(n: number): string {
-  let out = '';
-  for (let i = 0; i < n; i += 1) out += GLYPHS[Math.floor(Math.random() * GLYPHS.length)];
-  return out;
-}
 
 export default function MixWord({
   secret,
@@ -43,10 +39,11 @@ export default function MixWord({
   startRank: number; // heat scale (the ladder's final landing rank)
   ladder: RankEntry[]; // real neighbors, rank ascending — the exponent's tick path
 }) {
-  // In-flight state: the letter jumble (null = settled), the rank the exponent is
-  // ticking through (null = show the landing rank), whether the exponent has had its
-  // first entrance yet, and a nonce that replays the pop on each landing.
-  const [jumble, setJumble] = useState<string | null>(null);
+  // In-flight state: the shared scramble owns the letter jumble (null = settled); the
+  // rank the exponent is ticking through (null = show the landing rank), whether the
+  // exponent has had its first entrance yet, and a nonce that replays the pop on each
+  // landing are MixWord's own.
+  const { jumble, start } = useScramble();
   const [tickRank, setTickRank] = useState<number | null>(null);
   const [supIn, setSupIn] = useState(false);
   const [pop, setPop] = useState(0);
@@ -64,42 +61,29 @@ export default function MixWord({
     timers.current.forEach(clearTimeout);
     timers.current = [];
 
-    const reduced =
-      typeof window !== 'undefined' &&
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reduced) {
-      setJumble(null);
-      setTickRank(null);
-      setSupIn(true);
-      return;
-    }
+    const reduced = prefersReducedMotion();
 
-    // Letters: the scramble, settling left to right over SCRAMBLE_MS.
-    const target = entry.word;
-    const started = Date.now();
-    setJumble(randomGlyphs(target.length));
-    const scrambleId = window.setInterval(() => {
-      const p = (Date.now() - started) / SCRAMBLE_MS;
-      if (p >= 1) {
-        window.clearInterval(scrambleId);
-        setJumble(null); // letters settled…
-        later(() => {
-          setSupIn(true); // (no-op after the first mix)
-          setPop((n) => n + 1); // …the exponent pops a beat later
-        }, EXPONENT_DELAY_MS);
+    // Letters: the shared slot-machine scramble (instant under reduced motion). The mix
+    // demo always churns from the target's own length — it replaces a same-length word.
+    start(entry.word, entry.word.length, () => {
+      if (reduced) {
+        // No churn happened: land the exponent at once, no pop beat.
+        setSupIn(true);
+        setTickRank(null);
         return;
       }
-      const settled = Math.floor(p * target.length);
-      setJumble(target.slice(0, settled) + randomGlyphs(target.length - settled));
-    }, SCRAMBLE_TICK_MS);
-    timers.current.push(scrambleId);
+      later(() => {
+        setSupIn(true); // (no-op after the first mix)
+        setPop((n) => n + 1); // …the exponent pops a beat after the letters settle
+      }, EXPONENT_DELAY_MS);
+    });
 
     // Exponent: from the second mix on, tick through the REAL intermediate ladder
     // ranks, evenly across the scramble, landing with the letters. Holding the
     // PREVIOUS rank until the first tick is what keeps the landing a reveal — the
-    // sup must never flash the destination at press time.
-    if (prev) {
+    // sup must never flash the destination at press time. (Skipped under reduced
+    // motion: the landing rank shows at once above.)
+    if (!reduced && prev) {
       setTickRank(prev.rank);
       const path = ladder
         .map((e) => e.rank)
@@ -109,7 +93,7 @@ export default function MixWord({
       });
       later(() => setTickRank(null), SCRAMBLE_MS); // hand back to the landing rank
     }
-  }, [entry, ladder]);
+  }, [entry, ladder, start]);
 
   // The exponent's slot: rendered whenever there IS an entry, hidden (not
   // unrendered) until its first entrance, and always as wide as the LANDING rank

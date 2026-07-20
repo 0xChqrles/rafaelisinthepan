@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react';
 import FloatingHit, { HIT_FADE_MS } from './FloatingHit';
 import { heatColor } from '@whippin/shared';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
+import { useScramble } from '../hooks/useScramble';
 import type { HitState, RuntimeHole } from '@whippin/shared';
 
 // The floating number ("hit") does not improve any hole: cap its heat at 150 so
@@ -42,19 +43,29 @@ export default function Hole({
   const showRank = shownRank > 0;
 
   // Word replacement choreography. The improved word + rank arrive together (when
-  // the hit starts fading). We keep the OLD word on screen through the exponent
-  // drop, THEN blink it 3× and swap to the new word (see `.word-replace-blink`).
+  // the hit starts fading). We keep the OLD word on screen through the exponent drop,
+  // THEN scramble it letter-by-letter into the new word (the tutorial's slot machine,
+  // #102). Its length interpolates from the old word to the new across the animation,
+  // so the sentence reflows gradually rather than snapping — which is what lets the
+  // phrase wrap as natural prose (no forced <br/> per hole).
+  const { jumble, start } = useScramble();
   const [displayWord, setDisplayWord] = useState<string>(hole.word);
-  const [replacing, setReplacing] = useState<boolean>(false);
   useEffect(() => {
     if (hole.word === displayWord) return undefined;
-    // Hold the old word through the exponent drop / hit fade, then blink it.
-    const t = window.setTimeout(() => setReplacing(true), HIT_FADE_MS);
+    // Hold the old word through the exponent drop / hit fade, then scramble from the OLD
+    // length into the new word. displayWord flips to the target only when it settles,
+    // which is also what marks the hole resolved (see `resolved` below).
+    const target = hole.word;
+    const fromLen = displayWord.length;
+    const t = window.setTimeout(
+      () => start(target, fromLen, () => setDisplayWord(target)),
+      HIT_FADE_MS,
+    );
     return () => window.clearTimeout(t);
-  }, [hole.word, displayWord]);
+  }, [hole.word, displayWord, start]);
 
   // Accent ("resolved") styling only once the FINAL secret word is on screen —
-  // not during the exponent drop / blink that precedes the swap.
+  // not during the exponent drop / scramble that precedes the swap.
   const resolved = hole.rank === 0 && displayWord === hole.word;
   useEffect(() => {
     if (resolved) onResolved?.(holeIndex);
@@ -92,15 +103,10 @@ export default function Hole({
             changing it restarts the shake even on two consecutive hits. */}
         <span
           key={hit ? `word-${hit.id}` : 'word'}
-          className={`hole-word${hit ? ' hit-shake' : ''}${replacing ? ' word-replace-blink' : ''}`}
+          className={`hole-word${hit ? ' hit-shake' : ''}`}
           style={hitStyle}
-          onAnimationEnd={(e) => {
-            if (e.animationName !== 'word-replace-blink') return;
-            setDisplayWord(hole.word); // blink finished -> reveal the improved word
-            setReplacing(false);
-          }}
         >
-          {displayWord}
+          {jumble ?? displayWord}
         </span>
         {/* Floating "damage"-style indicator: a distance number colored by the
             heatmap (capped heat), or "MISS" at the coldest color when too far. */}
