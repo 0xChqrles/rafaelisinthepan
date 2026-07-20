@@ -1,4 +1,30 @@
-import type { BenchmarkResults } from '@whippin/shared';
+import type { BenchmarkEntry, BenchmarkResults } from '@whippin/shared';
+
+// The player-facing display trio, in fixed left-to-right order. A puzzle's benchmark array
+// records EVERY tested model (variable length) and may carry any SUBSET of these three plus
+// lab-only models; the front end renders only these, and each keeps a stable sprite (its
+// placeholder character) by its position here regardless of which others are present.
+export const DISPLAY_MODEL_IDS = ['claude-fable-5', 'k3', 'gpt-5.6-sol'] as const;
+
+export interface DisplayEntry {
+  entry: BenchmarkEntry;
+  sprite: number; // 0..2 canonical index — which placeholder character it wears
+}
+
+// Filter a puzzle's recorded models down to the present display models, in canonical order
+// with a stable sprite each. Model ids are unique per the schema, so at most one per slot.
+export function displayEntries(entries: BenchmarkResults): DisplayEntry[] {
+  return DISPLAY_MODEL_IDS.flatMap((model, sprite) => {
+    const entry = entries.find((e) => e.model === model);
+    return entry ? [{ entry, sprite }] : [];
+  });
+}
+
+// Whether a puzzle carries any RENDERABLE opponent — a benchmark array full of only
+// lab-only models shows no lineup, exactly like a puzzle with no benchmark at all.
+export function hasDisplayEntries(entries: BenchmarkResults | undefined): boolean {
+  return entries !== undefined && displayEntries(entries).length > 0;
+}
 
 export interface BenchmarkRankingEntry {
   label: string;
@@ -23,7 +49,11 @@ export function benchmarkRanking(
   playerLabel: string,
 ): BenchmarkRankingEntry[] {
   return [
-    ...entries.map(({ label, tries }) => ({ label, tries, player: false })),
+    ...displayEntries(entries).map(({ entry: { label, tries } }) => ({
+      label,
+      tries,
+      player: false,
+    })),
     { label: playerLabel, tries: playerTries, player: true },
   ].sort(byTries);
 }
@@ -57,7 +87,7 @@ export function lineupModel(
   playerLabel: string,
 ): LineupModel {
   const entrants = [
-    ...entries.map(({ model, tag, label, tries }, sprite) => ({
+    ...displayEntries(entries).map(({ entry: { model, tag, label, tries }, sprite }) => ({
       key: model,
       tag,
       label,

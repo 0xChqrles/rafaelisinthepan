@@ -16,7 +16,7 @@ import LazyStreakDialog, { preloadStreakDialog } from '../components/LazyStreakD
 import SolvedCaption from '../components/SolvedCaption';
 import LoadError from '../components/LoadError';
 import { t, srHoleResult, srModelAhead, srModelLead } from '../i18n';
-import { lineupModel, lineupEvents } from '../game/benchmark';
+import { lineupModel, lineupEvents, hasDisplayEntries } from '../game/benchmark';
 import { track } from '../analytics';
 import { fold } from '@whippin/shared';
 import type {
@@ -470,7 +470,7 @@ function Round({
       const parts = impacted.map(({ index, entry }) =>
         srHoleResult(lang, index + 1, entry ? entry.rank : null),
       );
-      if (benchmark && !history.includes(typed)) {
+      if (benchmark && hasDisplayEntries(benchmark) && !history.includes(typed)) {
         const before = lineupModel(benchmark, guessCount, t(lang, 'you'));
         const after = lineupModel(benchmark, guessCount + 1, t(lang, 'you'));
         const { passedBy, lostLead } = lineupEvents(before, after);
@@ -610,12 +610,12 @@ function Round({
         )}
       </div>
 
-      {/* Standings lineup (#81): the player + the 3 benchmark opponents sorted by tries,
+      {/* Standings lineup (#81): the player + the present display opponents sorted by tries,
           crown on the leader, between the input area and the keyboard. Height comes out
           of .play's flexible space, never the keyboard's. It persists for the whole round
           (a scoreboard, not a chase); on the solving try the crown flips gold and the
           lineup freezes, leaving with the keyboard when the results take the tray. */}
-      {benchmark && !showResults && (
+      {benchmark && hasDisplayEntries(benchmark) && !showResults && (
         <StandingsLineup
           benchmark={benchmark}
           guessCount={guessCount}

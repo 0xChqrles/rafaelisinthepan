@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react';
 import { heatColor } from '@whippin/shared';
 import type { BenchmarkResults } from '@whippin/shared';
 import { bucketMeans, shareText, shareUrl } from '../game/share';
-import { benchmarkRanking } from '../game/benchmark';
+import { benchmarkRanking, hasDisplayEntries } from '../game/benchmark';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import { track } from '../analytics';
 import { t } from '../i18n';
@@ -49,9 +49,9 @@ export default function SolvedScreen({
   const squares = useMemo(() => bucketMeans(trajectory), [trajectory]);
   const ranking = useMemo(
     () =>
-      benchmark === undefined
-        ? null
-        : benchmarkRanking(benchmark, guessCount, t(lang, 'you')),
+      hasDisplayEntries(benchmark)
+        ? benchmarkRanking(benchmark as BenchmarkResults, guessCount, t(lang, 'you'))
+        : null,
     [benchmark, guessCount, lang],
   );
   const n = squares.length;
