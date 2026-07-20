@@ -980,7 +980,14 @@ class PuzzleReferee:
         # CLI loading already returns a set; reuse that immutable existence view across
         # every provider/run instead of copying hundreds of thousands of slugs each time.
         self.vocab = vocab if isinstance(vocab, set) else set(vocab)
+        # Kept whole (insertion order preserved) for the canonical guess identity
+        # (#104): _guess_key walks the secrets in JSON key order like the front.
+        self.ranks = ranks_record
         self.tried: set[str] = set()
+        # Canonical identities of counted tries: inflections of one word alias to one
+        # rank entry, so they share one identity and count ONCE (parity with the
+        # front's guessKey dedup).
+        self.tried_keys: set[str] = set()
         self.tried_words: list[str] = []
         # Parsed words outside the fixed vocabulary do not count, but keeping their
         # folded forms in the authoritative snapshot prevents any transport from paying
@@ -1051,13 +1058,34 @@ class PuzzleReferee:
     def solved(self) -> bool:
         return all(hole.rank == 0 for hole in self.holes)
 
+    def _guess_key(self, folded: str) -> str:
+        """Canonical dedup identity of a valid folded guess (#104) — the parity twin
+        of the front's guessKey. Inflections of one word alias to one rank entry, so
+        the first secret (JSON key order) whose map knows the guess anchors the
+        identity; aliasing is consistent across maps, so every variant of a word
+        resolves to the same (secret, rank) pair. A guess found in no map (a cold
+        miss everywhere) keeps its folded slug as its identity."""
+        for secret_slug, rank_map in self.ranks.items():
+            if isinstance(rank_map, Mapping):
+                entry = rank_map.get(folded)
+                if isinstance(entry, Mapping):
+                    return f"{secret_slug}:{entry.get('rank')}"
+        return folded
+
     @property
     def progress(self) -> float:
         if not self.holes:
             return 0.0
         total = 0.0
         for hole in self.holes:
-            vocab_size = len(hole.rank_map)
+            # N = ranked GROUPS: distinct rank values, the front's rankCount (#104).
+            # Alias keys share their group's rank; on an alias-free puzzle every key
+            # has its own rank, so this equals the old key count.
+            vocab_size = len({
+                entry.get("rank")
+                for entry in hole.rank_map.values()
+                if isinstance(entry, Mapping)
+            })
             scale = math.log(vocab_size + 1)
             start_score = 1 - math.log(hole.start_rank + 1) / scale
             denominator = 1 - start_score
@@ -1109,14 +1137,22 @@ class PuzzleReferee:
                 tries=self.tries,
                 solved=self.solved,
             )
-        if folded in self.tried:
+        guess_key = self._guess_key(folded)
+        if folded in self.tried or guess_key in self.tried_keys:
+            # Same folded form, or an inflection of an already-counted word (#104):
+            # both resolve to an identity that has already been counted.
+            reason = (
+                "has the same folded lookup form as an already tried word"
+                if folded in self.tried
+                else "is an inflected form of an already tried word"
+            )
             return GuessFeedback(
                 kind="duplicate",
                 guess=guess,
                 folded=folded,
                 message=(
-                    f'"{guess}" has the same folded lookup form as an already tried '
-                    "word — this did not count and produced no rank feedback."
+                    f'"{guess}" {reason} — this did not count and produced no rank '
+                    "feedback."
                 ),
                 outcomes=(),
                 tries=self.tries,
@@ -1124,6 +1160,7 @@ class PuzzleReferee:
             )
 
         self.tried.add(folded)
+        self.tried_keys.add(guess_key)
         self.tried_words.append(guess)
         outcomes: list[HoleOutcome] = []
         for hole in self.holes:

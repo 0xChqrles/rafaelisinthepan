@@ -14,7 +14,7 @@
 // solve EXACTLY — fragments never double-count.
 
 import { describe, it, expect } from 'vitest';
-import { s, holeProgress, computeProgress } from './scoring';
+import { s, holeProgress, computeProgress, rankCount, guessKey } from './scoring';
 import type { RankMap, RuntimeHole } from '@whippin/shared';
 
 // A rank map for one secret with exactly N entries -> N = number of keys.
@@ -94,6 +94,18 @@ describe('computeProgress(holes, ranks) — averaged, 0..100, path-independent',
     expect(computeProgress(half, ranks)).toBeCloseTo(50, 9);
   });
 
+  it('N counts ranked GROUPS, so alias keys (#104) do not distort the curve', () => {
+    // Same 500 groups; the aliased map adds inflection keys pointing at existing
+    // ranks. Progress must be identical — alias keys are lookup sugar, not vocabulary.
+    const plain = mk(500);
+    const aliased: RankMap[string] = { ...plain };
+    for (let i = 0; i < 500; i += 5) aliased[`w${i}s`] = { word: `w${i}`, rank: i };
+
+    expect(rankCount(aliased)).toBe(rankCount(plain));
+    const at = (ranks: RankMap[string]) => computeProgress([hole('b', 30, 80)], { b: ranks });
+    expect(at(aliased)).toBe(at(plain));
+  });
+
   it('counts repeated occurrences as one logical target in the progress average', () => {
     const ranks: RankMap = { chat: mk(1000), garden: mk(1000) };
     const holes: RuntimeHole[] = [
@@ -105,5 +117,42 @@ describe('computeProgress(holes, ranks) — averaged, 0..100, path-independent',
     // The solved repeated chat occurrence contributes once, so one of the two logical
     // targets is complete: 50%, not 66.67% (or 33.33% if occurrences were weighted).
     expect(computeProgress(holes, ranks)).toBeCloseTo(50, 9);
+  });
+});
+
+describe('guessKey(ranks, typed) — canonical try identity (#104)', () => {
+  // "privée"/"prive" alias to the privé entry (rank 2) in secret a's map; secret b
+  // knows neither. "portes" is an alias of a DIFFERENT group (porte, rank 5).
+  const ranks: RankMap = {
+    a: {
+      prive: { word: 'privé', rank: 2 },
+      privee: { word: 'privé', rank: 2 },
+      porte: { word: 'porte', rank: 5 },
+      portes: { word: 'porte', rank: 5 },
+    },
+    b: {
+      prive: { word: 'privé', rank: 90 },
+      privee: { word: 'privé', rank: 90 },
+    },
+  };
+
+  it('two inflections of one word share one identity', () => {
+    expect(guessKey(ranks, 'privee')).toBe(guessKey(ranks, 'prive'));
+  });
+
+  it('different words (even aliased ones) keep distinct identities', () => {
+    expect(guessKey(ranks, 'porte')).not.toBe(guessKey(ranks, 'prive'));
+    expect(guessKey(ranks, 'portes')).toBe(guessKey(ranks, 'porte'));
+  });
+
+  it('anchors on the FIRST map that knows the guess, consistently across variants', () => {
+    // Both variants exist in a and b: the identity comes from a (JSON key order), so
+    // the differing rank in b never splits them.
+    expect(guessKey(ranks, 'privee')).toBe('a:2');
+  });
+
+  it('a guess in no map (cold miss) keeps its folded slug as identity', () => {
+    expect(guessKey(ranks, 'ailleurs')).toBe('ailleurs');
+    expect(guessKey(ranks, 'ailleurs')).not.toBe(guessKey(ranks, 'autre'));
   });
 });

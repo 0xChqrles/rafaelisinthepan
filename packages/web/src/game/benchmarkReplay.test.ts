@@ -105,6 +105,20 @@ describe('replayRun — benchmark referee/client parity', () => {
     expect(replay.steps[2].outcomes[0].holeIndex).toBe(1);
   });
 
+  it('dedupes an inflected alias of an already-counted word, like guessKey and the referee (#104)', () => {
+    // "partages" aliases the partagé entry in BOTH maps; replaying it after
+    // "partagé" must not count a second try (parity with the Python referee).
+    const aliased: Puzzle = structuredClone(puzzle);
+    aliased.ranks.foret.partages = { word: 'partagé', rank: 10 };
+    aliased.ranks.ocean.partages = { word: 'partagé', rank: 5 };
+
+    const replay = replayRun(aliased, ['partagé', 'partages', 'forêt', 'océan']);
+
+    expect(replay.tries).toBe(3);
+    expect(replay.steps.map((step) => step.word)).toEqual(['partagé', 'forêt', 'océan']);
+    expect(replay.solved).toBe(true);
+  });
+
   it('reports a DNF run as unsolved while still counting cold valid guesses', () => {
     const entry: BenchmarkEntry = {
       model: 'gpt-5.6-sol',
