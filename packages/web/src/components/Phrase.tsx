@@ -36,6 +36,12 @@ export default function Phrase({
           // Prefix (leading clitic) and suffix (trailing punctuation) are sentence
           // context and always show. They live with the blank in a nowrap group so
           // they can never break onto a different line from it.
+          // The sentence wraps as natural prose (issue #102). A hole's word is
+          // replaced many times per round (start word -> ever-closer words, arbitrary
+          // widths), but each swap plays the slot-machine scramble that grows/shrinks
+          // its length one letter at a time (see Hole), so the surrounding text
+          // reflows gradually instead of snapping — the old forced <br/> per hole is
+          // no longer needed.
           return (
             <Fragment key={i}>
               {space}
@@ -50,14 +56,6 @@ export default function Phrase({
                 />
                 {suffix ? <span className="word">{suffix}</span> : null}
               </span>
-              {/* DELIBERATE line break after each hole — do not swap for natural
-                  wrapping. A hole's word is replaced many times during a round
-                  (start word -> ever-closer words, arbitrary widths); if the
-                  sentence wrapped as prose, every swap would rewrap the whole
-                  paragraph and the text the player is reading would jump around.
-                  Ending the line at the hole pins every word to its line for the
-                  entire round; of the layouts tried, this read best. */}
-              <br />
             </Fragment>
           );
         }

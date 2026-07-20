@@ -51,6 +51,13 @@ body {
   background: var(--bg);
   color: var(--fg);
   font-family: var(--vt);
+  /* Press Start 2P ships fi/fl (and other) ligatures that render NARROWER than two
+     cells, so the font is not truly fixed-width by default. That breaks every monospace
+     assumption in the app — most visibly the slot-machine scramble (its churning random
+     glyphs never form those pairs, so the width jitters as the target's ligatures resolve)
+     and MixWord's ch-based exponent-width reservation. Disabling ligatures (inherited by
+     the whole tree) makes every glyph exactly one cell. */
+  font-variant-ligatures: none;
   overflow: hidden;
   text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45);
 }
@@ -711,8 +718,8 @@ button * {
   color: var(--rank-color);
   vertical-align: super;
 }
-/* Improvement: the exponent rolls toward its new value (see useAnimatedNumber)
-   and does a small hop to emphasize the change. */
+/* Rank decrease: the exponent rolls toward its new value (see useAnimatedNumber)
+   and uses the same quick scale/unscale hop as the tutorial. */
 .hole-rank.rank-pop {
   animation: rank-pop 0.4s ease-out;
 }
@@ -760,22 +767,11 @@ button * {
   }
 }
 
-/* Word replacement: after the exponent has dropped, the OLD word blinks 3× then
-   is swapped for the improved word (the swap fires on animation end, in Hole).
-   Hard on/off blink (steps) to match the retro cursor. `forwards` + a HIDDEN final
-   keyframe park the word at opacity 0 once the blinks end, so it stays invisible
-   through the frame between `animationend` and React committing the swap. Without
-   that hold the word snaps back to full opacity for one frame, flashing the OLD
-   word just before the new one appears. */
-.hole-word.word-replace-blink {
-  animation: word-replace-blink 0.2s steps(1) 3 forwards;
-}
-@keyframes word-replace-blink {
-  50%,
-  100% {
-    opacity: 0;
-  }
-}
+/* Word replacement (issue #102): after the exponent has dropped, the OLD word churns
+   through the slot-machine scramble and settles into the improved word (driven in JS by
+   useScramble, in Hole — no CSS animation). Its length interpolates old -> new across the
+   scramble, so the sentence reflows gradually instead of snapping, which is what lets the
+   phrase wrap as natural prose with no forced <br/> per hole. */
 
 /* --- floating number ("hit"): the distance (or "MISS") that pops over a hole on a
    guess. Anchored on the word's center (left/top 50% + translate -50%,-50%);
@@ -1688,12 +1684,13 @@ button * {
 
 /* ===================== reduced motion ===================== */
 /* Honor the OS "reduce motion" preference. Durations collapse to near-zero instead of
-   `animation: none` because several state machines advance on `animationend` — the
-   improved-word swap fires when word-replace-blink ends — so the events must still
-   fire. Delays are KEPT on purpose: the floating distance numbers carry real game
-   information and their show/hold/clear rhythm is delay-driven, so with zero durations
-   they still appear (statically), hold, and leave on schedule — no motion, no lost
-   information. */
+   `animation: none` because several state machines advance on `animationend` — e.g. the
+   on-screen keyboard and input reset their invalid-key shake when it ends, and a hole
+   clears its rank-pop — so the events must still fire. (The improved-word swap is JS-
+   driven via useScramble, which honors reduce-motion itself by settling instantly.)
+   Delays are KEPT on purpose: the floating distance numbers carry real game information
+   and their show/hold/clear rhythm is delay-driven, so with zero durations they still
+   appear (statically), hold, and leave on schedule — no motion, no lost information. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
