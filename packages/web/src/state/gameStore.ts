@@ -148,9 +148,12 @@ interface GameState extends PersistedState {
   // bounds the map with the MAX_DAY_ROUNDS most-recent cap.
   ensureRound: (key: string, initialHoles: RuntimeHole[]) => void;
 
-  // Count a valid guess on the active round. Deduped by folded slug: a repeat neither
-  // re-counts nor re-appends. `typed` is already folded by the caller.
-  recordGuess: (typed: string) => void;
+  // Count a valid guess on the active round. Deduped by the caller-supplied canonical
+  // identity (#104: inflections of one word are ONE try — Game passes guessKey over the
+  // puzzle's ranks; defaults to the folded slug itself): a repeat neither re-counts nor
+  // re-appends. `typed` is already folded by the caller. Identity is recomputed from the
+  // persisted `tried` slugs, so the stored shape is unchanged and old rounds just work.
+  recordGuess: (typed: string, keyOf?: (typed: string) => string) => void;
 
   // A warm hit improved a hole on the active round: swap in its closer (accented)
   // word + lower rank.
@@ -258,12 +261,16 @@ export const useGameStore = create<GameState>()(
           return { activeKey: key, rounds: capDayRounds(kept, key) };
         }),
 
-      recordGuess: (typed) =>
+      recordGuess: (typed, keyOf = (t) => t) =>
         set((s) => {
           const key = s.activeKey;
           if (!key) return {};
           const round = s.rounds[key];
-          if (!round || round.tried.includes(typed)) return {}; // dedupe: unique tries only
+          if (!round) return {};
+          // Dedupe: unique tries only, compared by canonical identity so an inflection
+          // of an already-tried word never counts (nor enters the recall history).
+          const guessId = keyOf(typed);
+          if (round.tried.some((t) => keyOf(t) === guessId)) return {};
           return {
             rounds: {
               ...s.rounds,

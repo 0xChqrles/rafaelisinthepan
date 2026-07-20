@@ -4,13 +4,36 @@
 //   p_hole   = (s(rank) - s(start_rank)) / (1 - s(start_rank))   // 0 at start, 1 solved
 //   progress% = 100 * average(p_hole over UNIQUE secret slugs)
 //
-// N = number of keys in ranks[secret]. Duplicate rendered occurrences of one secret
-// slug share one logical progress target.
+// N = number of RANKED GROUPS in ranks[secret]: the count of distinct rank values.
+// Inflected forms alias to their group's entry (#104), so the raw key count would
+// over-count; on an alias-free (pre-#104) puzzle every key has its own rank and the
+// two counts are identical. Duplicate rendered occurrences of one secret slug share
+// one logical progress target.
 
-import type { RankMap, RuntimeHole } from '@whippin/shared';
+import type { RankEntry, RankMap, RuntimeHole } from '@whippin/shared';
 
 export function s(rank: number, N: number) {
   return 1 - Math.log(rank + 1) / Math.log(N + 1);
+}
+
+// N for one secret: how many distinct rank values its map holds (see header comment).
+export function rankCount(rankMap: Record<string, RankEntry>): number {
+  const seen = new Set<number>();
+  for (const key in rankMap) seen.add(rankMap[key].rank);
+  return seen.size;
+}
+
+// Canonical dedup identity of a valid folded guess (#104): inflections of one word are
+// aliases of one rank entry, so they are ONE counted try. The first secret (JSON key
+// order) whose map knows the guess anchors the identity — aliasing is consistent across
+// maps, so every variant of a word resolves to the same (secret, rank) pair. A guess
+// found in no map (a cold miss everywhere) keeps its folded slug as its identity.
+export function guessKey(ranks: RankMap, typed: string): string {
+  for (const secret of Object.keys(ranks)) {
+    const entry = ranks[secret][typed];
+    if (entry) return `${secret}:${entry.rank}`;
+  }
+  return typed;
 }
 
 export function holeProgress(rank: number, startRank: number, N: number) {
@@ -37,7 +60,7 @@ export function computeProgress(holes: RuntimeHole[], ranks: RankMap) {
   if (!uniqueHoles.length) return 0;
   let sum = 0;
   for (const h of uniqueHoles) {
-    const N = Object.keys(ranks[h.secret]).length;
+    const N = rankCount(ranks[h.secret]);
     sum += holeProgress(h.rank, h.startRank, N);
   }
   return (100 * sum) / uniqueHoles.length;

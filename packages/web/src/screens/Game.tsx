@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { computeProgress } from '../game/scoring';
+import { computeProgress, guessKey } from '../game/scoring';
 import { progressTrajectory } from '../game/share';
 import { canExtend } from '../game/keyboard';
 import useVocab from '../hooks/useVocab';
@@ -445,9 +445,9 @@ function Round({
       setFeedback(null);
       if (solvesAll) setPromptExiting(true);
       // Counted guess: a unique valid word (misses included). The store dedupes by
-      // folded slug, so repeats and the non-existent words returned above never
-      // increase the score.
-      recordGuess(typed);
+      // canonical identity (guessKey): repeats, inflections of an already-tried word
+      // (#104), and the non-existent words returned above never increase the score.
+      recordGuess(typed, (t) => guessKey(ranks, t));
 
       // EVERY unsolved hole reacts to a valid guess (solved holes are locked out).
       // A hole is WARM when `typed` is in its top-K rank map (`entry` set) and TOO

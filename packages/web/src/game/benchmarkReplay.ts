@@ -1,6 +1,6 @@
 import { fold } from '@whippin/shared';
 import type { Puzzle, RuntimeHole } from '@whippin/shared';
-import { computeProgress } from './scoring';
+import { computeProgress, guessKey } from './scoring';
 
 export interface BenchmarkReplayOutcome {
   holeIndex: number;
@@ -26,9 +26,10 @@ export interface BenchmarkReplayResult {
 }
 
 // Replay a benchmark's already-vocabulary-validated counted guesses through the same
-// folded-dedupe, per-unsolved-hole lookup, and strict-improvement rules as Game. Rank-map
+// canonical-identity dedupe (guessKey — an inflection of an already-counted word never
+// counts, #104), per-unsolved-hole lookup, and strict-improvement rules as Game. Rank-map
 // membership cannot decide validity because a real vocabulary word may MISS every hole;
-// therefore every non-empty unique folded run item counts, including all-cold guesses.
+// therefore every non-empty unique run item counts, including all-cold guesses.
 export function replayRun(
   puzzle: Pick<Puzzle, 'holes' | 'ranks'>,
   run: readonly string[],
@@ -40,13 +41,15 @@ export function replayRun(
     rank: hole.start_rank,
     startRank: hole.start_rank,
   }));
-  const tried = new Set<string>();
+  const triedKeys = new Set<string>();
   const steps: BenchmarkReplayStep[] = [];
 
   for (const word of run) {
     const typed = fold(word);
-    if (!typed || tried.has(typed)) continue;
-    tried.add(typed);
+    if (!typed) continue;
+    const key = guessKey(puzzle.ranks, typed);
+    if (triedKeys.has(key)) continue;
+    triedKeys.add(key);
 
     const outcomes: BenchmarkReplayOutcome[] = [];
     holes = holes.map((hole, holeIndex) => {
@@ -78,14 +81,14 @@ export function replayRun(
     steps.push({
       word,
       slug: typed,
-      tryNumber: tried.size,
+      tryNumber: triedKeys.size,
       outcomes,
       progress: computeProgress(holes, puzzle.ranks),
     });
   }
 
   return {
-    tries: tried.size,
+    tries: triedKeys.size,
     solved: holes.every((hole) => hole.rank === 0),
     holes,
     steps,
