@@ -83,8 +83,10 @@ export function parsePuzzle(data: unknown): Puzzle {
     }
   }
   if (benchmark !== undefined) {
-    if (!Array.isArray(benchmark) || benchmark.length !== 3) {
-      throw new Error('malformed puzzle: "benchmark" must contain exactly 3 entries');
+    // Every tested model is recorded (variable length); the front end filters the display
+    // trio. Validate shape + uniqueness only, not membership in the display set.
+    if (!Array.isArray(benchmark) || benchmark.length === 0) {
+      throw new Error('malformed puzzle: "benchmark" must be a non-empty array');
     }
     const benchmarkModels = new Set<string>();
     const benchmarkTags = new Set<string>();
@@ -123,7 +125,7 @@ export function parsePuzzle(data: unknown): Puzzle {
       benchmarkModels.add(entry.model);
       benchmarkTags.add(entry.tag);
     }
-    if (benchmarkModels.size !== 3 || benchmarkTags.size !== 3) {
+    if (benchmarkModels.size !== benchmark.length || benchmarkTags.size !== benchmark.length) {
       throw new Error('malformed puzzle: "benchmark" model and tag entries must be unique');
     }
   }

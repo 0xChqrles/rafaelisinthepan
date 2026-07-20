@@ -54,8 +54,8 @@ from llm_play import (
     RunResult,
     UnparseableReplyError,
     assert_benchmark_entry_consistent,
+    benchmark_entry_replays,
     benchmark_model,
-    display_benchmark_entries,
     feedback_message,
     load_playbook_profile,
     main,
@@ -68,6 +68,7 @@ from llm_play import (
     select_best_run,
     select_median_run,
     select_model,
+    upsert_benchmark_entry,
     validate_anthropic_subscription_auth,
     validate_kimi_subscription_auth,
     validate_openai_subscription_auth,
@@ -334,21 +335,21 @@ OPENAI_MODELS = [config for config in MODELS if config["provider"] == "openai"]
 KIMI_MODELS = [config for config in MODELS if config["provider"] == "kimi"]
 
 
-def test_supported_model_roster_keeps_display_trio_and_adds_lab_only_kimi_k3():
+def test_supported_model_roster_marks_fable_kimi_gpt_as_the_display_trio():
     assert MODELS == [
         {
             "provider": "anthropic",
             "model_id": "claude-opus-4-8",
             "label": "CLAUDE OPUS",
             "tag": "OPUS",
-            "display": True,
+            "display": False,
         },
         {
             "provider": "anthropic",
             "model_id": "claude-sonnet-5",
             "label": "CLAUDE SONNET",
             "tag": "SONNET",
-            "display": True,
+            "display": False,
         },
         {
             "provider": "openai",
@@ -376,16 +377,23 @@ def test_supported_model_roster_keeps_display_trio_and_adds_lab_only_kimi_k3():
             "model_id": "claude-fable-5",
             "label": "CLAUDE FABLE",
             "tag": "FABLE",
-            "display": False,
+            "display": True,
         },
         {
             "provider": "kimi",
             "model_id": "k3",
             "label": "KIMI K3",
             "tag": "KIMI",
-            "display": False,
+            "display": True,
         },
     ]
+    # The front end shows exactly these three; every other roster model is recorded too
+    # (`--in-place` embeds any model) but stays hidden by the client-side filter.
+    assert {config["model_id"] for config in MODELS if config["display"]} == {
+        "claude-fable-5",
+        "k3",
+        "gpt-5.6-sol",
+    }
     assert sum(config["display"] for config in MODELS) == DISPLAY_MODEL_COUNT == 3
     assert KIMI_MODELS == [MODELS[6]]
     assert PROVIDER_ENV == {
@@ -2120,7 +2128,7 @@ def test_cli_defaults_to_api_and_accepts_shared_effort_and_auth_levels():
     assert defaults.effort == DEFAULT_EFFORT
     assert defaults.auth == DEFAULT_AUTH
     assert defaults.session == DEFAULT_SESSION == "persistent"
-    assert defaults.runs == DEFAULT_RUNS == 7
+    assert defaults.runs == DEFAULT_RUNS == 5
     assert defaults.selection == DEFAULT_SELECTION == "median"
     for effort in EFFORT_LEVELS:
         assert (
@@ -2352,7 +2360,7 @@ def test_puzzle_path_accepts_repo_and_generation_relative_forms(monkeypatch, tmp
     assert resolve_puzzle_path(Path("output/word/fr/puzzle.json")) == puzzle_path
 
 
-def test_in_place_output_writes_only_an_exact_trio_and_preserves_file_mode(tmp_path):
+def test_write_benchmark_embeds_a_variable_length_array_and_preserves_file_mode(tmp_path):
     path = tmp_path / "puzzle.json"
     source = puzzle()
     source["source"] = {"work": "L'été"}
@@ -2362,13 +2370,6 @@ def test_in_place_output_writes_only_an_exact_trio_and_preserves_file_mode(tmp_p
             "label": "CLAUDE OPUS",
             "tag": "OPUS",
             "tries": 12,
-            "run": ["forest"],
-        },
-        {
-            "model": "claude-sonnet-5",
-            "label": "CLAUDE SONNET",
-            "tag": "SONNET",
-            "tries": 20,
             "run": ["forest"],
         },
         {
@@ -2382,15 +2383,23 @@ def test_in_place_output_writes_only_an_exact_trio_and_preserves_file_mode(tmp_p
     path.write_text(json.dumps(source, ensure_ascii=False), encoding="utf-8")
     os.chmod(path, 0o640)
 
+    # Any number of tested models embed (the front end owns the display filter), not a
+    # fixed trio; two here.
     write_benchmark(path, source, entries)
-
     written = json.loads(path.read_text(encoding="utf-8"))
     assert written["benchmark"] == entries
     assert written["source"]["work"] == "L'été"
     assert os.stat(path).st_mode & 0o777 == 0o640
 
-    with pytest.raises(ValueError, match="exactly 3"):
-        write_benchmark(path, source, entries[:2])
+    # A single-model array is valid; an empty array is not.
+    write_benchmark(path, source, entries[:1])
+    assert json.loads(path.read_text(encoding="utf-8"))["benchmark"] == entries[:1]
+    with pytest.raises(ValueError, match="at least one entry"):
+        write_benchmark(path, source, [])
+
+    # Duplicate model / tag entries are still rejected.
+    with pytest.raises(ValueError, match="model entries must be unique"):
+        write_benchmark(path, source, [entries[0], entries[0]])
 
     write_benchmark(path, source, None)
     assert "benchmark" not in json.loads(path.read_text(encoding="utf-8"))
@@ -3027,15 +3036,7 @@ def test_raw_lab_artifact_keeps_all_runs_transcripts_transport_and_token_usage(
     assert kimi_session["selection"] == "median"
     assert kimi_session["duration"] == 3.5
     assert kimi_session["token_usage"] == standardized_usage(31, 4)
-    assert kimi_session["display"] is False
-
-    entries = display_benchmark_entries(artifact)
-    assert [entry["model"] for entry in entries] == [
-        "claude-opus-4-8",
-        "claude-sonnet-5",
-        "gpt-5.6-sol",
-    ]
-    assert [entry["tag"] for entry in entries] == ["OPUS", "SONNET", "GPT"]
+    assert kimi_session["display"] is True
 
     lab_only = ModelSummary(
         config=MODELS[3],
@@ -3052,269 +3053,137 @@ def test_raw_lab_artifact_keeps_all_runs_transcripts_transport_and_token_usage(
         output_dir=output_dir,
         timestamp="2026-07-12T16:00:00Z",
     )
+    # The lab record annotates each session with its display flag (a lab-only model here);
+    # the front end, not this artifact, decides what actually ships.
     assert artifact["sessions"][-1]["display"] is False
-    assert len(display_benchmark_entries(artifact)) == DISPLAY_MODEL_COUNT
+    assert artifact["sessions"][-1]["model_id"] == "gpt-5.6-terra"
 
 
-def test_lab_and_display_selection_keep_best_and_median_cohorts_separate(tmp_path):
-    output_dir = tmp_path / "lab"
-    puzzle_path = tmp_path / "forest_ocean.json"
+def test_upsert_benchmark_entry_records_any_model_and_prunes_stale_entries():
+    source = puzzle()
+    # A previously embedded entry that still replays, plus one that is well-shaped but no
+    # longer solves this puzzle (its run never reaches the secrets). The upsert keeps the
+    # first and prunes the second rather than shipping a broken run.
+    good = {
+        "model": "claude-fable-5",
+        "label": "CLAUDE FABLE",
+        "tag": "FABLE",
+        "tries": 2,
+        "run": ["forest", "ocean"],
+    }
+    stale = {
+        "model": "claude-sonnet-5",
+        "label": "CLAUDE SONNET",
+        "tag": "SONNET",
+        "tries": 2,
+        "run": ["cold", "other"],
+    }
+    source["benchmark"] = [good, stale]
 
-    for selection, score in (("median", 3), ("best", 2)):
-        for config in MODELS[:3]:
-            words = (
-                ("shared", "forest", "ocean")
-                if score == 3
-                else ("forest", "ocean")
-            )
-            summary = ModelSummary(
-                config=config,
-                results=(make_run(score, turns=score, words=words),),
-                selection=selection,
-                selected_run_index=0,
-            )
-            _, artifact = write_lab_artifact(
-                puzzle_path,
-                summary,
-                cap=300,
-                effort="medium",
-                auth="api",
-                output_dir=output_dir,
-                timestamp=f"2026-07-17T12:00:0{score}Z",
-            )
+    fresh = {
+        "model": "gpt-5.6-sol",
+        "label": "GPT-5.6",
+        "tag": "GPT",
+        "tries": 3,
+        "run": ["shared", "forest", "ocean"],
+    }
+    entries, dropped = upsert_benchmark_entry(source, VOCAB, fresh)
 
-    median_entries = display_benchmark_entries(artifact, selection="median")
-    best_entries = display_benchmark_entries(artifact, selection="best")
-    assert [entry["tries"] for entry in median_entries] == [3, 3, 3]
-    assert [entry["tries"] for entry in best_entries] == [2, 2, 2]
-    assert artifact["sessions"][-1]["selection"] == "best"
-    assert artifact["sessions"][-1]["selected_run"] == 1
-    assert artifact["sessions"][-1]["best_run"] == 1
-    assert "median_run" not in artifact["sessions"][-1]
+    assert dropped == ["claude-sonnet-5"]
+    # Roster order (gpt-sol=2 before fable=5) makes the on-disk array deterministic.
+    assert [entry["model"] for entry in entries] == ["gpt-5.6-sol", "claude-fable-5"]
+    assert good in entries and fresh in entries
+    assert not benchmark_entry_replays(source, VOCAB, stale)
+
+    # Re-running an already-recorded model replaces its entry instead of duplicating it.
+    source["benchmark"] = entries
+    replaced = {**fresh, "tries": 4, "run": ["cold", "shared", "forest", "ocean"]}
+    entries2, dropped2 = upsert_benchmark_entry(source, VOCAB, replaced)
+    assert dropped2 == []
+    assert sum(entry["model"] == "gpt-5.6-sol" for entry in entries2) == 1
+    assert next(e for e in entries2 if e["model"] == "gpt-5.6-sol")["tries"] == 4
 
 
-def test_lab_and_display_selection_keep_persistent_and_stateless_cohorts_separate(
-    tmp_path,
+def test_in_place_requires_median_persistent_and_the_default_run_count(capsys):
+    ok = parse_args(["puzzle.json", "--model", "OPUS", "--in-place"])
+    assert ok.in_place is True
+    assert ok.runs == DEFAULT_RUNS == 5
+
+    with pytest.raises(SystemExit):
+        parse_args(
+            ["puzzle.json", "--model", "OPUS", "--selection", "best",
+             "--runs", "5", "--in-place"]
+        )
+    assert "--in-place requires --selection median" in capsys.readouterr().err
+
+    with pytest.raises(SystemExit):
+        parse_args(
+            ["puzzle.json", "--model", "OPUS", "--session", "stateless", "--in-place"]
+        )
+    assert "--in-place requires --session persistent" in capsys.readouterr().err
+
+    with pytest.raises(SystemExit):
+        parse_args(["puzzle.json", "--model", "OPUS", "--runs", "3", "--in-place"])
+    assert "--in-place requires exactly 5 runs" in capsys.readouterr().err
+
+
+def test_in_place_cli_embeds_every_tested_model_and_prunes_stale_entries(
+    monkeypatch, tmp_path, capsys
 ):
-    output_dir = tmp_path / "lab"
-    puzzle_path = tmp_path / "forest_ocean.json"
-
-    for session_mode, score in (("persistent", 2), ("stateless", 3)):
-        for config in MODELS[:3]:
-            words = (
-                ("forest", "ocean")
-                if score == 2
-                else ("shared", "forest", "ocean")
-            )
-            summary = ModelSummary(
-                config=config,
-                results=(make_run(score, turns=score, words=words),),
-                selection="median",
-                selected_run_index=0,
-            )
-            _, artifact = write_lab_artifact(
-                puzzle_path,
-                summary,
-                cap=300,
-                effort="medium",
-                auth="api",
-                session=session_mode,
-                output_dir=output_dir,
-                timestamp=f"2026-07-19T12:00:0{score}Z",
-            )
-
-    persistent_entries = display_benchmark_entries(
-        artifact, session="persistent"
-    )
-    stateless_entries = display_benchmark_entries(artifact, session="stateless")
-    assert [entry["tries"] for entry in persistent_entries] == [2, 2, 2]
-    assert [entry["tries"] for entry in stateless_entries] == [3, 3, 3]
-
-
-def test_in_place_cli_accumulates_lab_runs_then_embeds_only_the_complete_trio(
-    monkeypatch, tmp_path
-):
+    # A legacy/malformed entry for a model we will NOT re-run first: the first upsert must
+    # prune it (it can no longer replay) rather than ship it.
     puzzle_path = tmp_path / "puzzle.json"
     source = puzzle()
-    source["benchmark"] = [
-        {"model": "claude-opus-4-8", "label": "OPUS", "tries": 4}
-    ]
+    source["benchmark"] = [{"model": "claude-opus-4-8", "label": "OPUS", "tries": 4}]
     puzzle_path.write_text(json.dumps(source), encoding="utf-8")
     lab_dir = tmp_path / "lab"
     monkeypatch.setattr("llm_play.BENCHMARK_OUTPUT_DIR", lab_dir)
     monkeypatch.setattr("llm_play.load_vocab", lambda _lang: VOCAB)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    # benchmark_model reuses one reply model across all runs of a call, so supply enough
+    # scripted replies for the default 5 solving runs (forest, ocean each).
     monkeypatch.setattr(
         "llm_play.provider_reply",
-        lambda *_args, **_kwargs: ScriptedModel(["forest", "ocean"]),
+        lambda *_args, **_kwargs: ScriptedModel(["forest", "ocean"] * 5),
     )
 
-    for selector in ("OPUS", "SONNET"):
-        assert (
-            main(
-                [
-                    str(puzzle_path),
-                    "--model",
-                    selector,
-                    "--runs",
-                    "1",
-                    "--in-place",
-                ]
-            )
-            == 0
-        )
-        assert "benchmark" not in json.loads(
-            puzzle_path.read_text(encoding="utf-8")
-        )
+    def run(selector):
+        # No --runs: exercises the default (5) that --in-place requires.
+        assert main([str(puzzle_path), "--model", selector, "--in-place"]) == 0
+        return json.loads(puzzle_path.read_text(encoding="utf-8"))["benchmark"]
 
-    assert (
-        main(
-            [
-                str(puzzle_path),
-                "--model",
-                "GPT-SOL",
-                "--runs",
-                "1",
-                "--in-place",
-            ]
-        )
-        == 0
-    )
-    embedded = json.loads(puzzle_path.read_text(encoding="utf-8"))["benchmark"]
+    # SONNET is a lab-only model, yet it is recorded immediately; the malformed opus entry
+    # that no longer replays is pruned in the same write.
+    after_sonnet = run("SONNET")
+    assert [entry["model"] for entry in after_sonnet] == ["claude-sonnet-5"]
+    assert "Dropped stale benchmark entry (claude-opus-4-8)" in capsys.readouterr().out
+
+    # Display and lab-only models accumulate side by side, roster-ordered.
+    run("GPT-SOL")  # display
+    run("FABLE")  # display
+    embedded = run("GPT-TERRA")  # lab-only, still recorded
     assert [entry["model"] for entry in embedded] == [
-        "claude-opus-4-8",
         "claude-sonnet-5",
         "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "claude-fable-5",
     ]
     assert all(entry["tries"] == 2 for entry in embedded)
     assert all(entry["run"] == ["forest", "ocean"] for entry in embedded)
 
-    before_lab_only = deepcopy(embedded)
-    assert (
-        main(
-            [
-                str(puzzle_path),
-                "--model",
-                "GPT-TERRA",
-                "--runs",
-                "1",
-                "--in-place",
-            ]
-        )
-        == 0
-    )
-    assert json.loads(puzzle_path.read_text(encoding="utf-8"))["benchmark"] == (
-        before_lab_only
-    )
-    artifact = json.loads(
-        (lab_dir / "puzzle.bench.json").read_text(encoding="utf-8")
-    )
-    assert len(artifact["sessions"]) == 4
-    assert artifact["sessions"][-1]["model_id"] == "gpt-5.6-terra"
-
-
-def test_prompt_bump_keeps_the_existing_trio_until_atomic_replacement(
-    monkeypatch, tmp_path, capsys
-):
-    old_entries = [
-        {
-            "model": "claude-opus-4-8",
-            "label": "CLAUDE OPUS",
-            "tag": "OPUS",
-            "tries": 4,
-            "run": ["cold", "other", "forest", "ocean"],
-        },
-        {
-            "model": "claude-sonnet-5",
-            "label": "CLAUDE SONNET",
-            "tag": "SONNET",
-            "tries": 4,
-            "run": ["shared", "cold", "forest", "ocean"],
-        },
-        {
-            "model": "gpt-5.6-sol",
-            "label": "GPT-5.6",
-            "tag": "GPT",
-            "tries": 3,
-            "run": ["other", "forest", "ocean"],
-        },
-    ]
-    source = puzzle()
-    source["benchmark"] = deepcopy(old_entries)
-    puzzle_path = tmp_path / "puzzle.json"
-    puzzle_path.write_text(json.dumps(source), encoding="utf-8")
-
-    lab_dir = tmp_path / "lab"
-    lab_dir.mkdir()
-    old_sessions = [
-        {
-            "prompt_version": "3",
-            "model_id": entry["model"],
-            "benchmark_entry": entry,
-        }
-        for entry in old_entries
-    ]
-    (lab_dir / "puzzle.bench.json").write_text(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "puzzle": "puzzle.json",
-                "sessions": old_sessions,
-            }
-        ),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr("llm_play.BENCHMARK_OUTPUT_DIR", lab_dir)
-    monkeypatch.setattr("llm_play.load_vocab", lambda _lang: VOCAB)
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-    monkeypatch.setattr(
-        "llm_play.provider_reply",
-        lambda *_args, **_kwargs: ScriptedModel(["forest", "ocean"]),
-    )
-
-    for selector in ("OPUS", "SONNET"):
-        assert (
-            main(
-                [
-                    str(puzzle_path),
-                    "--model",
-                    selector,
-                    "--runs",
-                    "1",
-                    "--in-place",
-                ]
-            )
-            == 0
-        )
-        assert json.loads(puzzle_path.read_text(encoding="utf-8"))[
-            "benchmark"
-        ] == old_entries
-
-    assert "kept existing benchmark" in capsys.readouterr().out
-
-    assert (
-        main(
-            [
-                str(puzzle_path),
-                "--model",
-                "GPT-SOL",
-                "--runs",
-                "1",
-                "--in-place",
-            ]
-        )
-        == 0
-    )
-    replacement = json.loads(puzzle_path.read_text(encoding="utf-8"))["benchmark"]
-    assert [entry["model"] for entry in replacement] == [
-        "claude-opus-4-8",
+    # Re-running an already-recorded model replaces its entry instead of duplicating it.
+    re_embedded = run("GPT-SOL")
+    assert [entry["model"] for entry in re_embedded] == [
         "claude-sonnet-5",
         "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "claude-fable-5",
     ]
-    assert all(entry["tries"] == 2 for entry in replacement)
-    assert all(entry["run"] == ["forest", "ocean"] for entry in replacement)
+
+    artifact = json.loads((lab_dir / "puzzle.bench.json").read_text(encoding="utf-8"))
+    assert len(artifact["sessions"]) == 5
+    assert artifact["sessions"][-1]["model_id"] == "gpt-5.6-sol"
 
 
 def test_verbose_reply_is_reprompted_without_scoring_its_first_word():

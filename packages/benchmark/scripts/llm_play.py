@@ -46,23 +46,26 @@ sys.path.insert(0, str(GENERATION_SCRIPTS_DIR))
 from slug import slug  # noqa: E402
 
 
-# Curator-editable benchmark roster. Exactly three `display` entries ship in the puzzle;
-# the rest remain available for unpublished lab comparisons. Full labels are honest model
-# family names for the solved screen, while tags are compact pixel-friendly strip forms.
+# Curator-editable benchmark roster. `--in-place` records EVERY tested model into the
+# puzzle's `benchmark` array; the front end owns the display filter and shows only the three
+# `display` models (FABLE, KIMI K3, GPT-5.6). The flag here is kept in sync as documentation
+# and a roster invariant, but no longer gates what `--in-place` writes. Full labels are
+# honest model family names for the solved screen, while tags are compact pixel-friendly
+# strip forms.
 MODELS = [
     {
         "provider": "anthropic",
         "model_id": "claude-opus-4-8",
         "label": "CLAUDE OPUS",
         "tag": "OPUS",
-        "display": True,
+        "display": False,
     },
     {
         "provider": "anthropic",
         "model_id": "claude-sonnet-5",
         "label": "CLAUDE SONNET",
         "tag": "SONNET",
-        "display": True,
+        "display": False,
     },
     {
         "provider": "openai",
@@ -90,14 +93,14 @@ MODELS = [
         "model_id": "claude-fable-5",
         "label": "CLAUDE FABLE",
         "tag": "FABLE",
-        "display": False,
+        "display": True,
     },
     {
         "provider": "kimi",
         "model_id": "k3",
         "label": "KIMI K3",
         "tag": "KIMI",
-        "display": False,
+        "display": True,
     },
 ]
 DISPLAY_MODEL_COUNT = 3
@@ -107,7 +110,7 @@ DISPLAY_MODEL_COUNT = 3
 PROMPT_VERSION = "23"
 
 DEFAULT_CAP = 300
-DEFAULT_RUNS = 7
+DEFAULT_RUNS = 5
 DEFAULT_KIMI_RUNS = 1
 SessionMode = Literal["persistent", "stateless"]
 SESSION_MODES: tuple[SessionMode, ...] = ("persistent", "stateless")
@@ -3294,117 +3297,98 @@ def write_lab_artifact(
     return path, artifact
 
 
-def display_benchmark_sessions(
-    artifact: Mapping[str, Any],
-    *,
-    selection: SelectionMode = DEFAULT_SELECTION,
-    session: SessionMode = DEFAULT_SESSION,
+def _model_roster_index(model_id: Any) -> int:
+    """Stable roster position for deterministic on-disk ordering; unknown ids sort last."""
+    for index, config in enumerate(_configured_models()):
+        if config["model_id"] == model_id:
+            return index
+    return len(MODELS)
+
+
+def _sort_benchmark_entries(
+    entries: Iterable[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Take the latest same-selection/session current-prompt run per display model."""
-    if selection not in SELECTION_MODES:
-        raise ValueError(f"unsupported run selection mode: {selection}")
-    if session not in SESSION_MODES:
-        raise ValueError(f"unsupported session mode: {session}")
-    sessions = artifact.get("sessions")
-    if not isinstance(sessions, list):
-        raise ValueError("malformed benchmark artifact: sessions must be an array")
-    latest: dict[str, dict[str, Any]] = {}
-    display_configs = [config for config in _configured_models() if config["display"]]
-    display_ids = {config["model_id"] for config in display_configs}
-    for raw in reversed(sessions):
-        if not isinstance(raw, dict) or raw.get("prompt_version") != PROMPT_VERSION:
-            continue
-        # Sessions written before selection modes existed were all median sessions.
-        session_selection = raw.get("selection", "median")
-        if session_selection != selection or raw.get("session") != session:
-            continue
-        model_id = raw.get("model_id")
-        entry = raw.get("benchmark_entry")
-        if (
-            model_id in display_ids
-            and model_id not in latest
-            and isinstance(entry, dict)
-            and entry.get("model") == model_id
-        ):
-            latest[model_id] = raw
-    return [
-        latest[config["model_id"]]
-        for config in display_configs
-        if config["model_id"] in latest
-    ]
+    """Roster order keeps the embedded array deterministic across per-model upserts."""
+    return sorted(
+        (dict(entry) for entry in entries),
+        key=lambda entry: (
+            _model_roster_index(entry.get("model")),
+            str(entry.get("model")),
+        ),
+    )
 
 
-def display_benchmark_entries(
-    artifact: Mapping[str, Any],
-    *,
-    selection: SelectionMode = DEFAULT_SELECTION,
-    session: SessionMode = DEFAULT_SESSION,
-) -> list[dict[str, Any]]:
-    return [
-        dict(record["benchmark_entry"])
-        for record in display_benchmark_sessions(
-            artifact, selection=selection, session=session
-        )
-    ]
+def benchmark_entry_replays(
+    puzzle: Mapping[str, Any], vocab: Iterable[str], raw_entry: Any
+) -> bool:
+    """True when a lean display entry is well-shaped AND still replays this puzzle.
 
-
-def validated_existing_benchmark_entries(
-    puzzle: dict[str, Any], vocab: Iterable[str]
-) -> list[dict[str, Any]] | None:
-    """Return an existing schema-v2 trio only when every run still replays cleanly."""
-    raw_entries = puzzle.get("benchmark")
-    if not isinstance(raw_entries, list) or len(raw_entries) != DISPLAY_MODEL_COUNT:
-        return None
-
-    entries: list[dict[str, Any]] = []
-    model_ids: set[str] = set()
-    tags: set[str] = set()
+    Used to keep only the previously embedded entries that survive a sentence/ranks edit
+    when a new model is upserted; a stale entry is dropped rather than shipped broken.
+    """
+    if not isinstance(raw_entry, dict):
+        return False
     required = {"model", "label", "tag", "tries", "run"}
-    for raw_entry in raw_entries:
-        if not isinstance(raw_entry, dict) or not required.issubset(raw_entry):
-            return None
-        entry = dict(raw_entry)
-        model_id = entry["model"]
-        label = entry["label"]
-        tag = entry["tag"]
-        tries = entry["tries"]
-        run = entry["run"]
-        if (
-            not isinstance(model_id, str)
-            or not model_id
-            or model_id != model_id.strip()
-            or not isinstance(label, str)
-            or label != label.strip()
-            or not MODEL_LABEL_RE.fullmatch(label)
-            or not isinstance(tag, str)
-            or tag != tag.strip()
-            or not MODEL_TAG_RE.fullmatch(tag)
-            or (tries is not None and (not _is_int(tries) or tries <= 0))
-            or not isinstance(run, list)
-            or not run
-            or not all(
-                isinstance(word, str) and word and word == word.strip()
-                for word in run
-            )
-            or (tries is not None and len(run) != tries)
-        ):
-            return None
-        model_ids.add(model_id)
-        tags.add(tag)
-        try:
-            # A DNF's complete run ends exactly at its original cap, so its length is
-            # sufficient to reconstruct that cap even though the lean payload omits it.
-            replay_cap = len(run) if tries is None else DEFAULT_CAP
-            assert_benchmark_entry_consistent(
-                puzzle, vocab, entry, cap=replay_cap
-            )
-        except ValueError:
-            return None
-        entries.append(entry)
+    if not required.issubset(raw_entry):
+        return False
+    model_id = raw_entry["model"]
+    label = raw_entry["label"]
+    tag = raw_entry["tag"]
+    tries = raw_entry["tries"]
+    run = raw_entry["run"]
+    if (
+        not isinstance(model_id, str)
+        or not model_id
+        or model_id != model_id.strip()
+        or not isinstance(label, str)
+        or label != label.strip()
+        or not MODEL_LABEL_RE.fullmatch(label)
+        or not isinstance(tag, str)
+        or tag != tag.strip()
+        or not MODEL_TAG_RE.fullmatch(tag)
+        or (tries is not None and (not _is_int(tries) or tries <= 0))
+        or not isinstance(run, list)
+        or not run
+        or not all(
+            isinstance(word, str) and word and word == word.strip() for word in run
+        )
+        or (tries is not None and len(run) != tries)
+    ):
+        return False
+    try:
+        # A DNF's complete run ends exactly at its original cap, so its length is
+        # sufficient to reconstruct that cap even though the lean payload omits it.
+        replay_cap = len(run) if tries is None else DEFAULT_CAP
+        assert_benchmark_entry_consistent(puzzle, vocab, raw_entry, cap=replay_cap)
+    except ValueError:
+        return False
+    return True
 
-    if len(model_ids) != DISPLAY_MODEL_COUNT or len(tags) != DISPLAY_MODEL_COUNT:
-        return None
-    return entries
+
+def upsert_benchmark_entry(
+    puzzle: Mapping[str, Any],
+    vocab: Iterable[str],
+    entry: Mapping[str, Any],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Return (new roster-ordered benchmark list, dropped-stale model ids) for `entry`.
+
+    Any existing entry for the same model is replaced by the fresh run; every OTHER existing
+    entry is kept only if it still replays the current puzzle, so a sentence/ranks edit
+    silently prunes what it invalidated instead of shipping a broken run.
+    """
+    existing = puzzle.get("benchmark")
+    kept: list[dict[str, Any]] = []
+    dropped: list[str] = []
+    if isinstance(existing, list):
+        for raw in existing:
+            if isinstance(raw, dict) and raw.get("model") == entry["model"]:
+                continue  # replaced by the fresh run
+            if benchmark_entry_replays(puzzle, vocab, raw):
+                kept.append(dict(raw))
+            else:
+                model_id = raw.get("model") if isinstance(raw, dict) else None
+                dropped.append(model_id if isinstance(model_id, str) else "<malformed>")
+    return _sort_benchmark_entries([*kept, dict(entry)]), dropped
 
 
 def write_benchmark(
@@ -3412,20 +3396,22 @@ def write_benchmark(
     puzzle: dict[str, Any],
     entries: Sequence[Mapping[str, Any]] | None,
 ) -> None:
-    """Write only a complete unique display trio; an incomplete refresh stays absent."""
+    """Embed a variable-length benchmark array (unique model + tag) or drop the field.
+
+    The array holds EVERY tested model; the front end owns the display filter. `None`
+    removes the field entirely (byte-compatible with a puzzle that never had one).
+    """
     if entries is None:
         puzzle.pop("benchmark", None)
     else:
-        if len(entries) != DISPLAY_MODEL_COUNT:
-            raise ValueError(
-                f"benchmark payload needs exactly {DISPLAY_MODEL_COUNT} entries"
-            )
+        if not entries:
+            raise ValueError("benchmark payload must contain at least one entry")
         copied = [dict(entry) for entry in entries]
         model_ids = {entry.get("model") for entry in copied}
-        if len(model_ids) != DISPLAY_MODEL_COUNT or None in model_ids:
+        if len(model_ids) != len(copied) or None in model_ids:
             raise ValueError("benchmark payload model entries must be unique")
         tags = {entry.get("tag") for entry in copied}
-        if len(tags) != DISPLAY_MODEL_COUNT or None in tags:
+        if len(tags) != len(copied) or None in tags:
             raise ValueError("benchmark payload tag entries must be unique")
         puzzle["benchmark"] = copied
     _write_json_atomic(path, puzzle)
@@ -3542,8 +3528,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--in-place",
         action="store_true",
         help=(
-            "append the full lab artifact and refresh the puzzle's optional "
-            "display trio when complete"
+            "append the full lab artifact and upsert this model's result into the "
+            f"puzzle's optional benchmark array (requires median selection, persistent "
+            f"session and exactly {DEFAULT_RUNS} runs at the current prompt)"
         ),
     )
     args = parser.parse_args(argv)
@@ -3559,6 +3546,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         )
     if args.selection == "median" and args.runs % 2 == 0:
         parser.error("--runs must be odd so the median is an actual run")
+    # `--in-place` writes the shipped, replay-valid record, so it accepts only the canonical
+    # benchmark configuration: the actual-median representative over the default run count,
+    # from one native session per run. (The run is always at the current prompt version.)
+    if args.in_place:
+        if args.selection != "median":
+            parser.error("--in-place requires --selection median")
+        if args.session != "persistent":
+            parser.error("--in-place requires --session persistent")
+        if args.runs != DEFAULT_RUNS:
+            parser.error(f"--in-place requires exactly {DEFAULT_RUNS} runs")
     try:
         _validate_provider_effort(args.model_config["provider"], args.auth, args.effort)
     except ValueError as exc:
@@ -3737,9 +3734,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             # This assertion intentionally precedes BOTH output writes: a replay mismatch
             # must never reach the lean puzzle payload or the durable lab record.
             assert_benchmark_entry_consistent(puzzle, vocab, entry, cap=args.cap)
-            existing_entries = validated_existing_benchmark_entries(puzzle, vocab)
-            had_existing_benchmark = "benchmark" in puzzle
-            artifact_path, artifact = write_lab_artifact(
+            artifact_path, _artifact = write_lab_artifact(
                 args.puzzle,
                 summary,
                 cap=args.cap,
@@ -3750,57 +3745,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             print(f"Wrote lab artifact -> {artifact_path}")
 
-            if config["display"]:
-                display_sessions = display_benchmark_sessions(
-                    artifact,
-                    selection=args.selection,
-                    session=args.session,
-                )
-                entries = [
-                    dict(session["benchmark_entry"])
-                    for session in display_sessions
-                ]
-                if len(entries) == DISPLAY_MODEL_COUNT:
-                    # Recheck every accumulated model against the puzzle as it exists at
-                    # embed time. The sentence/ranks may have changed between paid runs.
-                    for session, display_entry in zip(
-                        display_sessions, entries, strict=True
-                    ):
-                        session_cap = session.get("cap")
-                        if not _is_int(session_cap) or session_cap <= 0:
-                            raise ValueError(
-                                "benchmark artifact session has an invalid cap"
-                            )
-                        assert_benchmark_entry_consistent(
-                            puzzle, vocab, display_entry, cap=session_cap
-                        )
-                    write_benchmark(args.puzzle, puzzle, entries)
-                    print(f"Wrote benchmark trio -> {args.puzzle}")
-                else:
-                    # Never replace a valid published trio with a partial refresh.
-                    # A legacy/malformed field is still removed because the v2 client
-                    # would reject it; an absent field can remain absent without a rewrite.
-                    if existing_entries is not None:
-                        print(
-                            "Benchmark trio pending "
-                            f"({len(entries)}/{DISPLAY_MODEL_COUNT}); "
-                            f"kept existing benchmark -> {args.puzzle}"
-                        )
-                    elif had_existing_benchmark:
-                        write_benchmark(args.puzzle, puzzle, None)
-                        print(
-                            "Benchmark trio pending "
-                            f"({len(entries)}/{DISPLAY_MODEL_COUNT}); "
-                            f'omitted legacy/malformed "benchmark" -> {args.puzzle}'
-                        )
-                    else:
-                        print(
-                            "Benchmark trio pending "
-                            f"({len(entries)}/{DISPLAY_MODEL_COUNT}); "
-                            f'"benchmark" remains absent -> {args.puzzle}'
-                        )
-            else:
-                print("Lab-only model; puzzle benchmark unchanged")
+            # Record EVERY tested model in the puzzle; the front end owns the display
+            # filter. Upsert this run over any prior entry for the same model, and prune any
+            # previously embedded entry that no longer replays the current puzzle. The
+            # median/persistent/current-prompt/5-run gate is enforced up front in parse_args.
+            entries, dropped = upsert_benchmark_entry(puzzle, vocab, entry)
+            for stale in dropped:
+                print(f"Dropped stale benchmark entry ({stale}); it no longer replays")
+            write_benchmark(args.puzzle, puzzle, entries)
+            noun = "model" if len(entries) == 1 else "models"
+            print(
+                f"Wrote {config['tag']} benchmark ({len(entries)} {noun}) -> {args.puzzle}"
+            )
         except Exception as exc:
             print(
                 f"error: could not persist {config['tag']} benchmark: {exc}",

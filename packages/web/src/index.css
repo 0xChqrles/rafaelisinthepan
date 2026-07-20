@@ -450,7 +450,9 @@ button * {
   position: absolute;
   top: 24px; /* below the crown zone */
   left: 0;
-  width: 25%;
+  /* Divide the track by the entrant count (--n, set on .lineup-track): the row stays
+     edge-to-edge whether the player faces one opponent or the full display trio. */
+  width: calc(100% / var(--n, 4));
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -505,7 +507,7 @@ button * {
   position: absolute;
   top: 0;
   left: 0;
-  width: 25%;
+  width: calc(100% / var(--n, 4)); /* track over the leftmost (first-place) slot */
   display: flex;
   justify-content: center;
   color: var(--hole);

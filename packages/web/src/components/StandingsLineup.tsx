@@ -5,8 +5,9 @@ import { lineupModel, lineupEvents } from '../game/benchmark';
 import { t } from '../i18n';
 import Crown from '../assets/crown.svg?react';
 
-// Mid-game standings lineup (#81): the player and the three benchmark opponents standing
-// side by side above the keyboard, sorted by tries ascending (best far left), name + score
+// Mid-game standings lineup (#81): the player and the present display opponents (1..3 of
+// FABLE / KIMI K3 / GPT-5.6) standing side by side above the keyboard, sorted by tries
+// ascending (best far left), name + score
 // under each, and the crown floating above the leader. Purely derived UI: everything is a
 // function of (guessCount, benchmark), so a reloaded round reconstructs it with no state.
 //
@@ -44,7 +45,12 @@ export default function StandingsLineup({
 
   return (
     <div className="lineup" aria-hidden="true">
-      <div className="lineup-track">
+      {/* --n = total entrants (player + present display opponents, 2..4): slot and crown
+          widths divide the track by it, so the row stays edge-to-edge for any subset. */}
+      <div
+        className="lineup-track"
+        style={{ '--n': model.entrants.length } as CSSProperties}
+      >
         {/* The crown never moves: it floats above the LEFTMOST slot (first place) and the
             characters exchange beneath it. Grey (grayscale of the gold asset) during play,
             gold once the round ends — derived, so the two states can never drift. */}
