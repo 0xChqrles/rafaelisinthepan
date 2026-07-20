@@ -2,13 +2,24 @@ import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import FloatingHit, { HIT_FADE_MS } from './FloatingHit';
 import { heatColor } from '@whippin/shared';
-import useAnimatedNumber from '../hooks/useAnimatedNumber';
+import useAnimatedNumber, { linearEasing } from '../hooks/useAnimatedNumber';
 import { useScramble } from '../hooks/useScramble';
 import type { HitState, RuntimeHole } from '@whippin/shared';
 
 // The floating number ("hit") does not improve any hole: cap its heat at 150 so
 // the gradient stays meaningful. Above that, everything stays at the coldest color.
 const HIT_HEAT_CAP = 150;
+
+// Keep the existing 520ms beat for a ten-rank transition below the cap, while making
+// every individual rank step take the same 52ms. Large transitions stay responsive.
+export const RANK_STEP_MS = HIT_FADE_MS / 10;
+export const RANK_MAX_MS = 500;
+export function rankTransitionDuration(fromRank: number, toRank: number): number {
+  return Math.min(
+    RANK_MAX_MS,
+    Math.abs(Math.round(fromRank) - Math.round(toRank)) * RANK_STEP_MS,
+  );
+}
 
 // Hole heat: current rank -> [0 cold .. 1 hot] (rank 0 = solved = hot).
 // Logarithmic scale: color changes quickly near the goal (low ranks) and slowly
@@ -35,34 +46,67 @@ export default function Hole({
   onHitDone: (id: number) => void;
   onResolved?: (index: number) => void;
 }) {
-  // Exponent rolls toward the current rank over the SAME time the hit takes to
-  // fade out: on an improvement the number drops as the floating hit disappears,
-  // and reaches zero when a hole is solved (then the exponent is removed).
-  const animatedRank = useAnimatedNumber(hole.rank, HIT_FADE_MS);
+  // Exponent rolls toward the current rank one rank step at a time. A solved hole
+  // visibly reaches 0, then removes the exponent on the next frame so the decrease
+  // reads as -N -> ... -> 0 -> nothing.
+  const animatedRank = useAnimatedNumber(hole.rank, rankTransitionDuration, linearEasing);
   const shownRank = Math.round(animatedRank);
-  const showRank = shownRank > 0;
+  const [displayWord, setDisplayWord] = useState<string>(hole.word);
+  // Match the tutorial's rank-pop choreography: a nonce remounts the exact same
+  // `.rank-pop` animation for each rank decrease.
+  const [rankPop, setRankPop] = useState(0);
+  const [rankPopActive, setRankPopActive] = useState(false);
+  const previousRank = useRef(hole.rank);
+  const [rankVisible, setRankVisible] = useState<boolean>(hole.rank > 0);
+  const showRank = hole.rank > 0 || rankVisible;
 
-  // Word replacement choreography. The improved word + rank arrive together (when
-  // the hit starts fading). We keep the OLD word on screen through the exponent drop,
-  // THEN scramble it letter-by-letter into the new word (the tutorial's slot machine,
-  // #102). Its length interpolates from the old word to the new across the animation,
-  // so the sentence reflows gradually rather than snapping — which is what lets the
+  useEffect(() => {
+    const improved = hole.rank < previousRank.current;
+    previousRank.current = hole.rank;
+    if (!improved) return undefined;
+    setRankPopActive(false);
+    const frame = requestAnimationFrame(() => {
+      setRankPopActive(true);
+      setRankPop((n) => n + 1);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [hole.rank]);
+
+  useEffect(() => {
+    if (hole.rank > 0) {
+      setRankVisible(true);
+      return undefined;
+    }
+    if (!rankVisible || animatedRank !== hole.rank || rankPopActive) return undefined;
+    const frame = requestAnimationFrame(() => setRankVisible(false));
+    return () => cancelAnimationFrame(frame);
+  }, [animatedRank, hole.rank, rankPopActive, rankVisible]);
+
+  // Word replacement choreography. The improved word + rank arrive together (when the
+  // hit starts fading), and the rank decrease + slot-machine scramble launch in the same
+  // effect cycle. The word first mixes IN PLACE for RANK_MAX_MS — the exponent tween's
+  // length — so the number finishes dropping before the letters settle; only THEN does
+  // the word fix its letters and interpolate its length old -> new. So the sentence never
+  // reflows while the exponent is still moving, and that gradual reflow is what lets the
   // phrase wrap as natural prose (no forced <br/> per hole).
   const { jumble, start } = useScramble();
-  const [displayWord, setDisplayWord] = useState<string>(hole.word);
   useEffect(() => {
     if (hole.word === displayWord) return undefined;
-    // Hold the old word through the exponent drop / hit fade, then scramble from the OLD
-    // length into the new word. displayWord flips to the target only when it settles,
-    // which is also what marks the hole resolved (see `resolved` below).
+    // Mix in place through the numeric tween (RANK_MAX_MS), then settle. displayWord flips
+    // to the target only when the scramble settles, which is also what marks the hole
+    // resolved (see `resolved` below).
     const target = hole.word;
     const fromLen = displayWord.length;
-    const t = window.setTimeout(
-      () => start(target, fromLen, () => setDisplayWord(target)),
-      HIT_FADE_MS,
+    start(
+      target,
+      fromLen,
+      () => {
+        setDisplayWord(target);
+      },
+      RANK_MAX_MS,
     );
-    return () => window.clearTimeout(t);
-  }, [hole.word, displayWord, start]);
+    return undefined;
+  }, [displayWord, hole.word, start]);
 
   // Accent ("resolved") styling only once the FINAL secret word is on screen —
   // not during the exponent drop / scramble that precedes the swap.
@@ -70,19 +114,6 @@ export default function Hole({
   useEffect(() => {
     if (resolved) onResolved?.(holeIndex);
   }, [holeIndex, onResolved, resolved]);
-
-  // Small "pop" on each improvement (rank decreases). Double-toggle through rAF
-  // to replay the animation even on two consecutive improvements.
-  const [popping, setPopping] = useState<boolean>(false);
-  const prevRank = useRef<number>(hole.rank);
-  useEffect(() => {
-    const improved = hole.rank < prevRank.current;
-    prevRank.current = hole.rank;
-    if (!improved) return undefined;
-    setPopping(false);
-    const id = requestAnimationFrame(() => setPopping(true));
-    return () => cancelAnimationFrame(id);
-  }, [hole.rank]);
 
   // The exponent sizes to its own content (no reserved width), so a following suffix
   // sits right after the number instead of after a gap left for the widest rank.
@@ -125,11 +156,14 @@ export default function Hole({
       </span>
       {showRank && (
         <sup
-          className={`hole-rank${popping ? ' rank-pop' : ''}`}
+          // Remount per rank decrease so the tutorial's exact rank-pop animation replays
+          // even when two consecutive improvements happen close together.
+          key={rankPop}
+          className={`hole-rank${rankPopActive ? ' rank-pop' : ''}`}
           style={rankStyle}
-          onAnimationEnd={() => setPopping(false)}
+          onAnimationEnd={() => setRankPopActive(false)}
         >
-          -{shownRank}
+          {shownRank === 0 ? '0' : `-${shownRank}`}
         </sup>
       )}
     </span>

@@ -51,6 +51,13 @@ body {
   background: var(--bg);
   color: var(--fg);
   font-family: var(--vt);
+  /* Press Start 2P ships fi/fl (and other) ligatures that render NARROWER than two
+     cells, so the font is not truly fixed-width by default. That breaks every monospace
+     assumption in the app — most visibly the slot-machine scramble (its churning random
+     glyphs never form those pairs, so the width jitters as the target's ligatures resolve)
+     and MixWord's ch-based exponent-width reservation. Disabling ligatures (inherited by
+     the whole tree) makes every glyph exactly one cell. */
+  font-variant-ligatures: none;
   overflow: hidden;
   text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45);
 }
@@ -711,8 +718,8 @@ button * {
   color: var(--rank-color);
   vertical-align: super;
 }
-/* Improvement: the exponent rolls toward its new value (see useAnimatedNumber)
-   and does a small hop to emphasize the change. */
+/* Rank decrease: the exponent rolls toward its new value (see useAnimatedNumber)
+   and uses the same quick scale/unscale hop as the tutorial. */
 .hole-rank.rank-pop {
   animation: rank-pop 0.4s ease-out;
 }

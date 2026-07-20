@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { rankHeatColor } from '../components/Hole';
+import { rankHeatColor, rankTransitionDuration } from '../components/Hole';
 import { SCRAMBLE_MS, prefersReducedMotion, useScramble } from '../hooks/useScramble';
 import type { RankEntry } from '@whippin/shared';
 
@@ -79,8 +79,9 @@ export default function MixWord({
     });
 
     // Exponent: from the second mix on, tick through the REAL intermediate ladder
-    // ranks, evenly across the scramble, landing with the letters. Holding the
-    // PREVIOUS rank until the first tick is what keeps the landing a reveal — the
+    // ranks over the rank transition's own duration. The word scramble remains a
+    // separate fixed SCRAMBLE_MS animation, even when this finishes sooner. Holding
+    // the PREVIOUS rank until the first tick is what keeps the landing a reveal — the
     // sup must never flash the destination at press time. (Skipped under reduced
     // motion: the landing rank shows at once above.)
     if (!reduced && prev) {
@@ -88,10 +89,11 @@ export default function MixWord({
       const path = ladder
         .map((e) => e.rank)
         .filter((r) => r > prev.rank && r <= entry.rank);
+      const rankDurationMs = rankTransitionDuration(prev.rank, entry.rank);
       path.forEach((rank, i) => {
-        later(() => setTickRank(rank), (SCRAMBLE_MS * (i + 1)) / path.length);
+        later(() => setTickRank(rank), (rankDurationMs * (i + 1)) / path.length);
       });
-      later(() => setTickRank(null), SCRAMBLE_MS); // hand back to the landing rank
+      later(() => setTickRank(null), rankDurationMs); // hand back to the landing rank
     }
   }, [entry, ladder, start]);
 

@@ -3,12 +3,17 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 // The "slot-machine" scramble shared by the game's word swap (Hole) and the tutorial's
 // mix demo (MixWord, #51): a word's letters churn through random glyphs and settle
 // left-to-right into the target over SCRAMBLE_MS. When the target is a different length
-// than the word it replaces, the visible length interpolates across the animation —
+// than the word it replaces, the visible length interpolates across the settle —
 // letters are added/removed one at a time as it churns — so the word, and the sentence
 // wrapping around it, grows or shrinks gradually instead of snapping (issue #102).
+//
+// An optional `holdMs` churns the OLD length in place FIRST, without settling any letter
+// or touching the length, then runs the settle. The game passes RANK_MAX_MS so the
+// exponent/rank tween has finished before the word starts fixing letters and reflowing —
+// the length change never competes with the number dropping (#102).
 
-// Exported: the tutorial schedules the mix stage's exponent tick + its stop explanation
-// against this duration (see MixWord / Tutorial).
+// Keep this duration fixed: the settle is independent of the exponent/rank tween.
+// The tutorial uses it only to schedule its own mix-stage timing (see MixWord / Tutorial).
 export const SCRAMBLE_MS = 650;
 const SCRAMBLE_TICK_MS = 40;
 const GLYPHS = 'abcdefghijklmnopqrstuvwxyz';
@@ -44,13 +49,14 @@ export function scrambleFrame(target: string, fromLen: number, p: number): strin
 
 // Drives one scramble at a time. `jumble` is the churning string while a scramble is in
 // flight, or null when idle/settled (the caller then renders the resolved word itself).
-// Call `start(target, fromLen, onDone?)` to churn `fromLen` glyphs into `target`; `onDone`
-// fires once the target is fully settled. Honors prefers-reduced-motion by settling
-// instantly (jumble goes null, `onDone` fires synchronously — no churn). The interval is
-// torn down on a restart and on unmount.
+// Call `start(target, fromLen, onDone?, holdMs?)` to (optionally) churn `fromLen` glyphs
+// in place for `holdMs` first, then settle them into `target`; `onDone` fires once the
+// target is fully settled. Honors prefers-reduced-motion by settling instantly (jumble
+// goes null, `onDone` fires synchronously — no churn/hold). The interval is torn down on
+// a restart and on unmount.
 export function useScramble(): {
   jumble: string | null;
-  start: (target: string, fromLen: number, onDone?: () => void) => void;
+  start: (target: string, fromLen: number, onDone?: () => void, holdMs?: number) => void;
 } {
   const [jumble, setJumble] = useState<string | null>(null);
   const intervalRef = useRef<number | undefined>(undefined);
@@ -65,7 +71,7 @@ export function useScramble(): {
   useEffect(() => stop, [stop]);
 
   const start = useCallback(
-    (target: string, fromLen: number, onDone?: () => void) => {
+    (target: string, fromLen: number, onDone?: () => void, holdMs = 0) => {
       stop();
       if (prefersReducedMotion()) {
         setJumble(null);
@@ -75,7 +81,14 @@ export function useScramble(): {
       const started = Date.now();
       setJumble(randomGlyphs(fromLen));
       intervalRef.current = window.setInterval(() => {
-        const p = (Date.now() - started) / SCRAMBLE_MS;
+        const elapsed = Date.now() - started;
+        // Hold phase: keep churning the OLD length in place — no letter fixed, no length
+        // change — so the caller's exponent tween can finish before the settle begins.
+        if (elapsed < holdMs) {
+          setJumble(randomGlyphs(fromLen));
+          return;
+        }
+        const p = (elapsed - holdMs) / SCRAMBLE_MS;
         if (p >= 1) {
           stop();
           setJumble(null);
