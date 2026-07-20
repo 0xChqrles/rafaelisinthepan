@@ -41,9 +41,6 @@ type Feedback = { text: string };
 export const STAGGER_MS = 200;
 export const FLOATING_HIT_INTRO_MS = 320;
 
-// Shared with the tutorial's scripted timing. The real game no longer guesses when this
-// finishes: each Hole reports its actual resolved animation completion to Round.
-export const WORD_BLINK_MS = 600; // .word-replace-blink in index.css (0.2s steps(1) 3)
 const STREAK_AFTER_WORDS_MS = 300;
 
 // Wrapper: drives the single puzzle. Loads the language's fixed vocabulary
@@ -190,14 +187,14 @@ function Round({
   const [promptExiting, setPromptExiting] = useState(false);
   // One transient floating indicator per impacted hole: a distance number when
   // warm, or "MISS" when too far. An improving hole shows the distance too; its
-  // exponent drops as the number fades, then the old word blinks out and the
+  // exponent drops as the number fades, then the old word scrambles out and the
   // closer word takes its place (the staging lives in Hole). Each carries a unique
   // id so it animates and clears independently. These are ephemeral UI, not persisted.
   const [hits, setHits] = useState<HitState[]>([]);
   const [invalidAt, setInvalidAt] = useState<number>(0); // timestamp signal -> input shake
   const [feedback, setFeedback] = useState<Feedback | null>(null); // message under the input
   const hitId = useRef<number>(0); // monotonic id source for floating hits
-  const pendingTimers = useRef<number[]>([]); // deferred word/rank swaps (fire as the hit fades)
+  const pendingTimers = useRef<number[]>([]); // deferred rank/word updates (fire as the hit fades)
   const resultFocusTimer = useRef<number | undefined>(undefined);
 
   // Screen-reader mirror of the visual guess feedback (floating numbers / "MISS" /
@@ -490,8 +487,8 @@ function Round({
       // warm, or "MISS" when too far. They start in sentence-order sequence
       // (STAGGER_MS apart) and fade out together as one batch. A hole the guess
       // IMPROVES shows the distance too; the entry's closer word + lower rank are
-      // handed over as its number begins to fade, and Hole stages the rest (drop
-      // the exponent during the fade, then blink out the old word and reveal the
+      // handed over as its number begins to fade, and Hole stages the rest (decrease
+      // the exponent one rank at a time, then scramble out the old word and reveal the
       // new one).
       const fadeDelayMs = Math.max(0, impacted.length - 1) * STAGGER_MS + FLOATING_HIT_INTRO_MS;
       impacted.forEach(({ index, entry }, step) => {
@@ -510,9 +507,9 @@ function Round({
         if (!improves || entry == null) return;
 
         // IMPROVEMENT: hand the entry's DISPLAY form (accents kept) and lower rank
-        // to the hole as its floating hit starts fading out — Hole drops the
-        // exponent during the fade, then blinks the old word out and reveals this
-        // new one.
+        // to the hole as its floating hit starts fading out — Hole decreases the
+        // exponent one rank at a time, then scrambles the old word out and reveals
+        // this new one.
         const { word, rank } = entry;
         const timer = window.setTimeout(() => {
           pendingTimers.current = pendingTimers.current.filter((t) => t !== timer);

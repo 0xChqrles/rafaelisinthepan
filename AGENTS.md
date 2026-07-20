@@ -724,7 +724,7 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   the share card/text), then SHARE. **Fresh-solve sequence (decided 2026-07-10):** the
   solving submit immediately sends the prompt left while fading it out, in the same render
   that launches the final hole-hit feedback. The next stage waits until EVERY `Hole` reports
-  its final secret rendered after the real `word-replace-blink` `animationend` — never a
+  its final secret rendered after its final settle animation completes — never a
   guessed timeout — so multi-word or throttled animation cannot be covered mid-resolution.
   A fresh active-day solve then holds the fully resolved sentence for 300ms before mounting
   the streak modal. Once that modal has completely dismissed (including its exit fade), the

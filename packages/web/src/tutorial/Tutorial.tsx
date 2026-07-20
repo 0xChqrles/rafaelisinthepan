@@ -7,8 +7,9 @@ import LoadError from '../components/LoadError';
 import SolvedScreen from '../components/SolvedScreen';
 import TopBar from '../components/TopBar';
 import { HIT_FADE_MS } from '../components/FloatingHit';
+import { RANK_MAX_MS, rankTransitionDuration } from '../components/Hole';
 import SkipIcon from '../assets/icons/skip.svg?react';
-import { STAGGER_MS, FLOATING_HIT_INTRO_MS, WORD_BLINK_MS } from '../screens/Game';
+import { STAGGER_MS, FLOATING_HIT_INTRO_MS } from '../screens/Game';
 import MixWord, { SCRAMBLE_MS } from './MixWord';
 import CoachText, { richToPlain } from './CoachText';
 import { computeProgress } from '../game/scoring';
@@ -203,6 +204,7 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
       });
       const fadeDelayMs = Math.max(0, impacted.length - 1) * STAGGER_MS + FLOATING_HIT_INTRO_MS;
       let anyImprove = false;
+      let maxRankTransitionMs = 0;
       impacted.forEach(({ index, entry }, i) => {
         const id = (hitId.current += 1);
         setHits((prev) => [
@@ -213,6 +215,10 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
         ]);
         if (entry == null || entry.rank >= holes[index].rank) return;
         anyImprove = true;
+        maxRankTransitionMs = Math.max(
+          maxRankTransitionMs,
+          rankTransitionDuration(holes[index].rank, entry.rank),
+        );
         const { word, rank } = entry;
         later(
           () =>
@@ -231,7 +237,13 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
       );
       say(solvesAll ? [...parts, t(lang, 'srSolvedAll')].join(', ') : parts.join(', '));
 
-      const settleMs = fadeDelayMs + HIT_FADE_MS + (anyImprove ? WORD_BLINK_MS : 0) + 250;
+      // A swapped Hole holds its exponent tween (RANK_MAX_MS) then settles the letters
+      // over SCRAMBLE_MS (see Hole/useScramble), so its word finishes last. Wait for the
+      // slower of that, the rank tween, and the floating hit's fade before advancing.
+      const settleMs =
+        fadeDelayMs +
+        Math.max(HIT_FADE_MS, maxRankTransitionMs, anyImprove ? RANK_MAX_MS + SCRAMBLE_MS : 0) +
+        250;
       if (lock) {
         // The feedback taught the lesson — straight to the next prompt.
         setPhase('feedback');
