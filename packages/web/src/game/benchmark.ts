@@ -3,12 +3,12 @@ import type { BenchmarkEntry, BenchmarkResults } from '@whippin/shared';
 // The player-facing display trio, in fixed left-to-right order. A puzzle's benchmark array
 // records EVERY tested model (variable length) and may carry any SUBSET of these three plus
 // lab-only models; the front end renders only these, and each keeps a stable sprite (its
-// placeholder character) by its position here regardless of which others are present.
+// pixel character) by its position here regardless of which others are present.
 export const DISPLAY_MODEL_IDS = ['claude-fable-5', 'k3', 'gpt-5.6-sol'] as const;
 
 export interface DisplayEntry {
   entry: BenchmarkEntry;
-  sprite: number; // 0..2 canonical index — which placeholder character it wears
+  sprite: number; // 0..2 canonical index — which pixel character it wears
 }
 
 // Filter a puzzle's recorded models down to the present display models, in canonical order
@@ -60,7 +60,7 @@ export function benchmarkRanking(
 
 // One entrant standing in the mid-game lineup (#81). `key` is a stable render identity
 // (the model id, or "player") so a reorder moves the same element instead of remounting
-// it; `sprite` is the opponent's fixed puzzle-order index (0..2) driving which placeholder
+// it; `sprite` is the opponent's fixed puzzle-order index (0..2) driving which pixel
 // character it wears, independent of its current standing.
 export interface LineupEntrant {
   key: string;
