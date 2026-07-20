@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react';
 import FloatingHit, { HIT_FADE_MS } from './FloatingHit';
 import { heatColor } from '@whippin/shared';
 import useAnimatedNumber, { linearEasing } from '../hooks/useAnimatedNumber';
-import { useScramble } from '../hooks/useScramble';
+import { prefersReducedMotion, useScramble } from '../hooks/useScramble';
 import type { HitState, RuntimeHole } from '@whippin/shared';
 
 // The floating number ("hit") does not improve any hole: cap its heat at 150 so
@@ -19,6 +19,15 @@ export function rankTransitionDuration(fromRank: number, toRank: number): number
     RANK_MAX_MS,
     Math.abs(Math.round(fromRank) - Math.round(toRank)) * RANK_STEP_MS,
   );
+}
+
+// The exponent tween honors prefers-reduced-motion by SNAPPING (duration 0, so
+// useAnimatedNumber jumps straight to the value). Otherwise the number would keep
+// rolling for up to RANK_MAX_MS while the reduced-motion word swap has already settled
+// instantly (useScramble) — leaving the two out of step. rankTransitionDuration itself
+// stays pure: MixWord/Tutorial schedule their own timing against it.
+function rankTweenDuration(fromRank: number, toRank: number): number {
+  return prefersReducedMotion() ? 0 : rankTransitionDuration(fromRank, toRank);
 }
 
 // Hole heat: current rank -> [0 cold .. 1 hot] (rank 0 = solved = hot).
@@ -46,10 +55,10 @@ export default function Hole({
   onHitDone: (id: number) => void;
   onResolved?: (index: number) => void;
 }) {
-  // Exponent rolls toward the current rank one rank step at a time. A solved hole
-  // visibly reaches 0, then removes the exponent on the next frame so the decrease
-  // reads as -N -> ... -> 0 -> nothing.
-  const animatedRank = useAnimatedNumber(hole.rank, rankTransitionDuration, linearEasing);
+  // Exponent rolls toward the current rank one rank step at a time (or snaps under
+  // reduced motion, see rankTweenDuration). A solved hole visibly reaches 0, then removes
+  // the exponent on the next frame so the decrease reads as -N -> ... -> 0 -> nothing.
+  const animatedRank = useAnimatedNumber(hole.rank, rankTweenDuration, linearEasing);
   const shownRank = Math.round(animatedRank);
   const [displayWord, setDisplayWord] = useState<string>(hole.word);
   // Match the tutorial's rank-pop choreography: a nonce remounts the exact same
