@@ -81,6 +81,7 @@ GEN_OUTPUT = os.path.join(ROOT, "output")
 
 import french_neighbors as frn
 import glove_neighbors as gn
+from build_lemmas import lemmas_path, load_lemmas  # stdlib-only form→lemma table (#104)
 from slug import slug, write_vocab  # shared stdlib slug/fold contract + vocab writer
 from start_word import pick_start, start_band
 
@@ -89,10 +90,11 @@ from start_word import pick_start, start_band
 # filtered it, so V is identical from one run to the next and ranks stay comparable
 # between sentences — there are no size/scan knobs to tune here anymore.
 
-# Generation-only knob: cap each secret's rank map to its K nearest words (the
-# secret itself is always kept at rank 0). The front treats "absent from this
-# map" as cold, so K bounds how far a guess can still register as "warm". Easy to
-# change here; the front never sees K and stays K-agnostic.
+# Generation-only knob: cap each secret's rank map to its K nearest DISTINCT LEMMA
+# GROUPS (the secret itself is always kept at rank 0). Inflected forms of one word
+# collapse into a single ranked group (#104) BEFORE the cap counts — filter-then-cap,
+# like the reduction — so K bounds how many distinct words can register as "warm".
+# Easy to change here; the front never sees K and stays K-agnostic.
 TOP_K = 10_000
 
 # Known "kind of piece" values offered by the interactive prompt (#5). Stored as
@@ -204,6 +206,116 @@ def build_rank_map(secret_display, ranking):
             continue
         rmap[s] = {"word": display, "rank": rank}
     return rmap
+
+
+# --- Lemma grouping (#104) ------------------------------------------------------
+# Inflected forms of one word ("privé"/"privée"/"privés", "vermine"/"vermines") are
+# ONE ranked group in a rank map. The committed form→lemma table (build_lemmas.py)
+# says which forms belong together; merging itself happens HERE, at generation time,
+# on the closest-first walk — a generalization of the slug-collision rule with a
+# coarser key. Embeddings, the reduction and the vocab existence set are untouched.
+
+def load_lemma_table(lang, disabled=False):
+    """Load the committed form→lemma table for a language.
+
+    Missing table -> hard error (like the hors-dico wordlist): silently generating
+    without merging would ship near-duplicate ranks. --no-lemmas opts out explicitly
+    and returns an empty table, under which every word is its own singleton group —
+    byte-identical to pre-#104 output."""
+    if disabled:
+        return {}
+    path = lemmas_path(lang)
+    if not os.path.exists(path):
+        die(f"table forme→lemme introuvable : {path}\n"
+            f"         construis-la avec scripts/build_lemmas.py (pnpm lemmas:{lang}), "
+            f"ou passe --no-lemmas pour t'en passer.")
+    return load_lemmas(path)
+
+
+def lemmas_of(word, lemma_table):
+    """The lemma group key(s) of a word. Absent from the table = its own singleton
+    group; two forms merge ONLY when the table says so (strict grouping)."""
+    return lemma_table.get(word, (word,))
+
+
+def invert_lemmas(lemma_table):
+    """Inverse index lemma -> [forms], in the table's deterministic (sorted) order.
+    Used by expand_aliases to enumerate every inflected form of a surviving group."""
+    inv = {}
+    for form, lemmas in lemma_table.items():
+        for lemma in lemmas:
+            inv.setdefault(lemma, []).append(form)
+    return inv
+
+
+def merge_ranking(secret_display, ranking, lemma_table, top_k=TOP_K):
+    """Collapse a raw closest-first ranking into TOP_K distinct lemma groups.
+
+    Walk closest-first. A word sharing ANY lemma with an earlier (closer) group is an
+    alias of that group: it consumes NO rank (its slug keys are added later by
+    expand_aliases). A word opening a new group is a survivor: it gets the next
+    compacted rank and claims ALL of its lemmas — so a later ambiguous form
+    ("portes" -> porte/porter) attaches to whichever of its groups ranked closest.
+    The secret itself is group 0, so its own inflections alias to rank 0 (they SOLVE
+    the hole — decided in #104). Filter-then-cap: the walk stops once top_k groups
+    have PASSED, not after top_k raw neighbors.
+
+    Returns (merged, groups):
+      merged: [(word, rank_index, sim)] — the survivors, same shape as `ranking`
+              but with COMPACTED rank indices, so start_band / pick_start / the
+              interactive band preview all operate on merged ranks unchanged;
+      groups: [(canonical_display, rank, lemmas)] — every group INCLUDING the
+              secret at rank 0, ascending by rank (expand_aliases' input).
+    """
+    secret_lemmas = lemmas_of(secret_display, lemma_table)
+    taken = set(secret_lemmas)
+    groups = [(secret_display, 0, secret_lemmas)]
+    merged = []
+    for w, _r, sim in ranking:
+        lemmas = lemmas_of(w, lemma_table)
+        if any(lemma in taken for lemma in lemmas):
+            continue  # alias of a closer group: no rank consumed.
+        merged.append((w, len(merged), sim))
+        groups.append((w, len(merged), lemmas))
+        taken.update(lemmas)
+        if len(merged) >= top_k:
+            break
+    return merged, groups
+
+
+def expand_aliases(rmap, groups, forms_by_lemma, Vset):
+    """Add alias keys to a rank map: every REDUCED-VOCAB form of each surviving
+    group's lemma(s) points at that group's canonical {word, rank}.
+
+    Covers forms that never appeared in the walk ("privait" hits "privé"'s rank even
+    when it is not among the fetched neighbors). Groups arrive ascending by rank and
+    an existing entry is never overwritten (first-seen wins, like the slug-collision
+    rule), so an ambiguous form aliases to its closest group and a canonical entry is
+    never clobbered. Filtering by Vset keeps the map aligned with the existence set:
+    a key the front can never look up is never emitted."""
+    for canonical, rank, lemmas in groups:
+        for lemma in lemmas:
+            for form in forms_by_lemma.get(lemma, ()):
+                if form not in Vset:
+                    continue
+                s = slug(form)
+                if s and s not in rmap:
+                    rmap[s] = {"word": canonical, "rank": rank}
+    return rmap
+
+
+def build_merged_rank_map(secret_display, ranking, lemma_table, forms_by_lemma, Vset,
+                          top_k=TOP_K):
+    """One secret's complete rank map under lemma grouping, plus its merged ranking.
+
+    merge_ranking compacts the raw walk into distinct groups, build_rank_map keys the
+    survivors (slug-collision rule unchanged), expand_aliases adds every vocab form
+    of each group. With an empty lemma_table the output is byte-identical to the
+    pre-#104 rank map capped at top_k."""
+    merged, groups = merge_ranking(secret_display, ranking, lemma_table, top_k)
+    rmap = build_rank_map(secret_display, merged)
+    expand_aliases(rmap, groups, forms_by_lemma, Vset)
+    return merged, rmap
 
 
 def _make_hole(secret, prefix, suffix, pos, start_display, start_rank):
@@ -354,7 +466,8 @@ def _read_key(fd):
     return b.decode("utf-8", "ignore") or "OTHER"
 
 
-def select_holes_interactive(words, cfg, lang, kv, V, M, Vset):
+def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
+                             lemma_table, forms_by_lemma):
     """Pick three distinct secret groups on a TTY; return holes sorted by position.
 
     Full-screen loop: ←/→ move between the sentence's selectable content words (see
@@ -370,28 +483,46 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset):
     import tty
 
     cands = extract_candidates(words, cfg, Vset)
-    distinct_slugs = {slug(c["secret"]) for c in cands}
-    if len(distinct_slugs) < 3:
-        die(f"la phrase n'a que {len(distinct_slugs)} mot(s) sélectionnable(s) distinct(s) ; "
-            f"il en faut 3 (mots présents dans le vocabulaire réduit '{lang}', hors "
-            "mots-outils). Les occurrences répétées ne consomment qu'une sélection.")
 
-    # Per-secret neighbor data, computed lazily on first hover and cached: the full
-    # ranking (for the eventual rank map), the start-word band, and display->rank
-    # (0 = secret).
+    # Selectable DISTINCT GROUPS (#104): committing a word blocks every other form of
+    # its lemma group, so feasibility is counted greedily in sentence order — the same
+    # first-committed-wins rule the selection loop itself enforces.
+    def count_selectable_groups():
+        taken, seen, n = set(), set(), 0
+        for c in cands:
+            s = slug(c["secret"])
+            lemmas = set(lemmas_of(c["secret"], lemma_table))
+            if s in seen or lemmas & taken:
+                continue
+            seen.add(s)
+            taken |= lemmas
+            n += 1
+        return n
+
+    if count_selectable_groups() < 3:
+        die(f"la phrase n'a que {count_selectable_groups()} mot(s) sélectionnable(s) "
+            f"distinct(s) ; il en faut 3 (mots présents dans le vocabulaire réduit "
+            f"'{lang}', hors mots-outils). Les occurrences répétées et les formes d'un "
+            "même mot (lemme commun) ne consomment qu'une sélection.")
+
+    # Per-secret neighbor data, computed lazily on first hover and cached: the merged
+    # rank map (lemma groups collapsed, aliases expanded), the start-word band on the
+    # MERGED ranks, and display->merged-rank (0 = secret).
     cache = {}
 
     def prep(secret):
         secret_slug = slug(secret)
         if secret_slug not in cache:
-            ranking = cfg["module"].closest(secret, kv, V, M, n=TOP_K)
+            ranking = cfg["module"].closest(secret, kv, V, M, n=None)
+            merged, rank_map = build_merged_rank_map(
+                secret, ranking, lemma_table, forms_by_lemma, Vset)
             rbd = {secret: 0}
-            for w, r, _ in ranking:
+            for w, r, _ in merged:
                 rbd[w] = r + 1
             cache[secret_slug] = (
                 secret,
-                ranking,
-                start_band(secret, ranking),
+                rank_map,
+                start_band(secret, merged),
                 rbd,
             )
         return cache[secret_slug]
@@ -399,9 +530,16 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset):
     holes = []
     ranks = {}
     used_slugs = set()
+    used_lemmas = set()  # lemmas claimed by committed groups: their forms block too
+
+    def taken_word(c):
+        """A candidate is spent when its slug is committed OR it is another form of a
+        committed group — one word, one hole set (#104)."""
+        return (slug(c["secret"]) in used_slugs
+                or any(lemma in used_lemmas for lemma in lemmas_of(c["secret"], lemma_table)))
 
     def available():
-        return [i for i, c in enumerate(cands) if slug(c["secret"]) not in used_slugs]
+        return [i for i, c in enumerate(cands) if not taken_word(c)]
 
     def frame(cursor, band, rbd, secret, mode, numbuf, error):
         cols = shutil.get_terminal_size((80, 24)).columns
@@ -417,7 +555,7 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset):
                 rendered.append(_sgr("2", token))
                 continue
             pre, core, suf = c["prefix"], c["secret"], c["suffix"]
-            if slug(c["secret"]) in used_slugs:
+            if taken_word(c):
                 rendered.append(pre + _sgr("2;9", core) + suf)
             elif pos == cands[cursor]["pos"]:
                 rendered.append(pre + _sgr("7;1", core) + suf)
@@ -450,7 +588,7 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset):
         tty.setcbreak(fd)
         while len(used_slugs) < 3:
             c = cands[cursor]
-            canonical_secret, ranking, band, rbd = prep(c["secret"])
+            canonical_secret, rank_map, band, rbd = prep(c["secret"])
             sys.stdout.write(frame(cursor, band, rbd, c["secret"], mode, numbuf, error))
             sys.stdout.flush()
             error = ""
@@ -473,7 +611,7 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset):
                     if numbuf.isdigit() and 1 <= int(numbuf) <= len(band):
                         start = band[int(numbuf) - 1][0]
                         secret_slug = slug(c["secret"])
-                        ranks[secret_slug] = build_rank_map(canonical_secret, ranking)
+                        ranks[secret_slug] = rank_map
                         for occurrence in candidates_for_slug(cands, secret_slug):
                             holes.append(_make_hole(
                                 occurrence["secret"], occurrence["prefix"],
@@ -481,9 +619,14 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset):
                                 rbd[start],
                             ))
                         used_slugs.add(secret_slug)
+                        used_lemmas.update(lemmas_of(canonical_secret, lemma_table))
                         mode, numbuf = "nav", ""
                         if len(used_slugs) < 3:
-                            cursor = available()[0]
+                            remaining = available()
+                            if not remaining:
+                                die("plus aucun mot sélectionnable : les mots restants "
+                                    "sont des formes des mots déjà choisis.")
+                            cursor = remaining[0]
                     else:
                         error = f"Numéro invalide (1–{len(band)})."
                 elif key.isdigit():
@@ -536,16 +679,20 @@ def filename_slugs_from_holes(holes):
     return ordered
 
 
-def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset):
+def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
+                     lemma_table, forms_by_lemma):
     """Resolve three distinct ``--words`` selectors into all matching holes.
 
     Matching is slug-based. Each selected slug gets one ranking and one start hint, then
     that start is applied to every matching sentence occurrence. Holes are returned in
-    sentence order; the ranks map has one entry per selected slug.
+    sentence order; the ranks map has one entry per selected slug. Under lemma grouping
+    (#104) the 3-distinct-secrets contract means 3 distinct GROUPS: two selectors whose
+    secrets share a lemma are "the same word" and rejected.
     """
     selectors = _resolve_word_selectors(words_arg, cfg, lang)
     holes = []
     ranks = {}
+    used_lemmas = {}  # lemma -> the earlier selector that claimed it
     for raw, target_slug in selectors:
         # Resolve every occurrence by slug. A repeated selected word is one authoring
         # selection but produces one hole per matching sentence token.
@@ -571,15 +718,26 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset):
                 f"ajuste puis relance la réduction (scripts/reduce_embedding.py).")
         canonical_secret = canonical[0]
 
-        # Top-K ranking and start selection happen ONCE per distinct secret slug.
-        ranking = cfg["module"].closest(canonical_secret, kv, V, M, n=TOP_K)
+        # Two selected secrets in one lemma group would be one word holed twice.
+        for lemma in lemmas_of(canonical_secret, lemma_table):
+            if lemma in used_lemmas:
+                die(f"'{raw}' et '{used_lemmas[lemma]}' sont des formes du même mot "
+                    f"(lemme commun « {lemma} ») : choisis 3 mots distincts.")
+        for lemma in lemmas_of(canonical_secret, lemma_table):
+            used_lemmas[lemma] = raw
+
+        # Ranking, lemma merging and start selection happen ONCE per distinct secret
+        # slug. The walk needs the FULL raw ranking: merging collapses inflections,
+        # so reaching TOP_K distinct groups can consume well over TOP_K raw neighbors.
+        ranking = cfg["module"].closest(canonical_secret, kv, V, M, n=None)
+        merged, rank_map = build_merged_rank_map(
+            canonical_secret, ranking, lemma_table, forms_by_lemma, Vset)
         rank_by_display = {canonical_secret: 0}
-        for w, r, _ in ranking:
+        for w, r, _ in merged:
             rank_by_display[w] = r + 1
 
-        rank_map = build_rank_map(canonical_secret, ranking)
         ranks[target_slug] = rank_map
-        start = choose_start(canonical_secret, ranking, rank_map, rank_by_display)
+        start = choose_start(canonical_secret, merged, rank_map, rank_by_display)
         start_rank = rank_map[slug(start)]["rank"]
 
         for pos, (secret, prefix, suffix) in occurrences:
@@ -709,6 +867,9 @@ def parse_args():
                         "d'un mot sélectionné devient un trou (sinon choisis via le "
                         "sélecteur interactif sur un terminal)")
     # Optional source metadata (#5); any flag given here is NOT re-prompted on a TTY.
+    p.add_argument("--no-lemmas", action="store_true",
+                   help="désactive le regroupement par lemme (#104) — chaque forme "
+                        "fléchie garde son propre rang")
     p.add_argument("--kind", help="type d'œuvre (book, movie, music, quote, poem, …)")
     p.add_argument("--author", help="auteur / autrice")
     p.add_argument("--work", help="titre de l'œuvre")
@@ -750,6 +911,11 @@ def main():
     if words_arg is not None:
         _resolve_word_selectors(words_arg, cfg, lang)
 
+    # Lemma table (#104), loaded before the vectors so a missing table fails fast.
+    # An empty table (--no-lemmas) reproduces the pre-#104 behaviour exactly.
+    lemma_table = load_lemma_table(lang, disabled=args.no_lemmas)
+    forms_by_lemma = invert_lemmas(lemma_table)
+
     kv = cfg["module"].load_vectors()
     V = build_lang_vocab(kv, cfg)
 
@@ -773,9 +939,11 @@ def main():
     # the groups are chosen with the interactive selector, which also picks each shared
     # start word inline.
     if words_arg is not None:
-        holes, ranks = holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset)
+        holes, ranks = holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
+                                        lemma_table, forms_by_lemma)
     else:
-        holes, ranks = select_holes_interactive(words, cfg, lang, kv, V, M, Vset)
+        holes, ranks = select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
+                                                lemma_table, forms_by_lemma)
 
     # --- Optional source metadata (#5) ----------------------------------------
     # Flags win; otherwise ask on a TTY (any flag already given is not re-prompted);

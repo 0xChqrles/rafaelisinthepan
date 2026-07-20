@@ -218,6 +218,20 @@ describe('recordGuess — score = unique valid tries (on the active round)', () 
     expect(activeRound()?.tried).toEqual(['bois']);
   });
 
+  it('dedupes by the caller-supplied canonical identity: an inflection of an already-tried word never counts (#104)', () => {
+    const { recordGuess } = useGameStore.getState();
+    // The Game passes guessKey over the puzzle ranks; the store only sees the mapping.
+    const keyOf = (t: string) => (t === 'privee' || t === 'prive' ? 'a:2' : t);
+
+    recordGuess('prive', keyOf);
+    recordGuess('privee', keyOf); // same word, different inflection -> ONE try
+    recordGuess('bois', keyOf);
+
+    expect(activeRound()?.guessCount).toBe(2);
+    // The uncounted variant does not enter the recall history either.
+    expect(activeRound()?.tried).toEqual(['prive', 'bois']);
+  });
+
   it('counts one shared-secret solve once even when it resolves repeated holes', () => {
     useGameStore.getState().ensureRound('d:5:fr', repeatedSecretHoles());
     const { recordGuess, improveHole } = useGameStore.getState();

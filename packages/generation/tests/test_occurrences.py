@@ -27,7 +27,7 @@ def _run_repeated_generation(monkeypatch):
 
     def closest(secret, _kv, _vocab, _matrix, *, n):
         calls.append((secret, n))
-        return [("indice", 86, 0.9), ("proche", 9, 0.8)]
+        return [("indice", 0, 0.9), ("proche", 1, 0.8)]
 
     monkeypatch.setattr(FR["module"], "closest", closest, raising=False)
     monkeypatch.setattr(
@@ -45,6 +45,8 @@ def _run_repeated_generation(monkeypatch):
         V=vocab,
         M=object(),
         Vset=set(vocab),
+        lemma_table={},
+        forms_by_lemma={},
     )
     return holes, ranks, calls
 
@@ -60,7 +62,7 @@ def test_words_expand_a_repeated_secret_to_all_positions_and_share_rank_start(mo
         "jardin",
     ]
     assert [hole["start"]["word"] for hole in holes] == ["indice"] * 4
-    assert [hole["start_rank"] for hole in holes] == [87] * 4
+    assert [hole["start_rank"] for hole in holes] == [1] * 4
 
     # The two chat occurrences keep their own token punctuation, while the shared
     # secret/start data stays identical.
@@ -68,8 +70,9 @@ def test_words_expand_a_repeated_secret_to_all_positions_and_share_rank_start(mo
     assert "suffix" not in holes[2]
     assert holes[3]["suffix"] == "."
     assert set(ranks) == {"chat", "poursuit", "jardin"}
-    assert calls == [("jardin", gen_phrase.TOP_K), ("chat", gen_phrase.TOP_K),
-                     ("poursuit", gen_phrase.TOP_K)]
+    # The walk needs the FULL raw ranking (#104): merging collapses inflections, so
+    # reaching TOP_K distinct groups can consume well over TOP_K raw neighbors.
+    assert calls == [("jardin", None), ("chat", None), ("poursuit", None)]
 
 
 def test_filename_dedupes_repeated_slugs_but_keeps_sentence_order(monkeypatch):
@@ -138,6 +141,8 @@ def test_duplicate_words_selectors_are_rejected_after_slug_normalization(capsys)
             V=[],
             M=None,
             Vset=set(),
+            lemma_table={},
+            forms_by_lemma={},
         )
 
     assert "exactement 3 mots distincts" in capsys.readouterr().err

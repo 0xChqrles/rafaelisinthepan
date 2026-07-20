@@ -3360,6 +3360,56 @@ def test_invalid_and_folded_duplicate_do_not_count_and_are_reprompted():
     assert updates[-1].progress == pytest.approx(100)
 
 
+def _aliased_puzzle():
+    # An alias-carrying puzzle (#104): "shareds" is an inflection of "shared", pointing
+    # at the SAME entry in every map that knows the word, and "forests" is an
+    # inflection of the forest secret (rank 0 — it solves).
+    stocked = puzzle()
+    stocked["ranks"]["forest"]["shareds"] = {"word": "shared", "rank": 10}
+    stocked["ranks"]["ocean"]["shareds"] = {"word": "shared", "rank": 5}
+    stocked["ranks"]["forest"]["forests"] = {"word": "forest", "rank": 0}
+    return stocked
+
+
+def test_inflected_form_of_a_counted_try_is_deduped_like_the_front():
+    # Parity with the web store's guessKey dedup (#104): an inflection of an
+    # already-counted word resolves to the same rank entry and is ONE try.
+    referee = PuzzleReferee(_aliased_puzzle(), VOCAB | {"shareds", "forests"})
+
+    assert referee.submit("shared").kind == "counted"
+    variant = referee.submit("shareds")
+    assert variant.kind == "duplicate"
+    assert "inflected form of an already tried word" in variant.message
+    assert referee.tries == 1
+
+    # A genuinely different word still counts.
+    assert referee.submit("cold").kind == "counted"
+    assert referee.tries == 2
+
+
+def test_secret_inflection_solves_the_hole_at_rank_zero():
+    referee = PuzzleReferee(_aliased_puzzle(), VOCAB | {"shareds", "forests"})
+
+    feedback = referee.submit("forests")
+
+    assert feedback.kind == "counted"
+    assert referee.holes[0].rank == 0
+    # The hole displays the canonical (secret) form, not the typed inflection.
+    assert referee.holes[0].word == "forest"
+
+
+def test_alias_keys_do_not_change_the_progress_scale():
+    # N is the number of ranked GROUPS (distinct rank values): alias keys are lookup
+    # sugar and must not distort the progress denominator.
+    plain = PuzzleReferee(puzzle(), VOCAB)
+    aliased = PuzzleReferee(_aliased_puzzle(), VOCAB | {"shareds", "forests"})
+
+    plain.submit("shared")
+    aliased.submit("shared")
+
+    assert aliased.progress == pytest.approx(plain.progress)
+
+
 def test_rejected_vocabulary_words_persist_by_folded_form_without_counting():
     referee = PuzzleReferee(puzzle(), VOCAB)
 

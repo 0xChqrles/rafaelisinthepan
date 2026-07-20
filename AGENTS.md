@@ -48,6 +48,7 @@ packages/
     scripts/
       reduce_embedding.py     raw .vec/.txt -> *_reduced file (the ONLY filter+cap stage) + vocab
       build_wordlist.py       offline builder: sources -> wordlist/<lang>.txt.gz (hors-dico ref, #38)
+      build_lemmas.py         offline builder: Lexique/AGID -> wordlist/<lang>.lemmas.tsv.gz (form→lemma, #104)
       build_vocab.py          reduced vectors -> web/public/vocab/<lang>.json (escape hatch; no re-reduce)
       slug.py                 stdlib-only: slug() contract + write_vocab (shared by reduce + gen_phrase)
       embedding_neighbors.py  shared load/vocab/matrix/cosine-rank logic
@@ -57,6 +58,7 @@ packages/
       gen_phrase.py           one sentence -> one self-contained puzzle JSON
     embedding/<lang>/...      raw + *_reduced vectors + derived .kv caches
     wordlist/<lang>.txt.gz    versioned hors-dico reference wordlist (#38); .cache/ gitignored
+    wordlist/<lang>.lemmas.tsv.gz  versioned form→lemma table (lemma grouping, #104)
     output/word/<lang>/<s1>_<s2>_<s3>.json   generated puzzles (gitignored; publish to store/S3)
     pyproject.toml, uv.lock   Python project (uv)
   benchmark/                  offline LLM puzzle benchmark (pkg @whippin/benchmark, #68)
@@ -241,10 +243,21 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   maps; play scoring and share output stay unchanged. This model-score anchor superseded
   #57's proposed `par` before `par` was implemented — there is no `par` schema field.
 - `ranks` is keyed by **secret slug**; the inner map is keyed by **input slug** →
-  `{word, rank}`. The value carries the **accented** word so the front can show the
-  accented form of what was typed.
-- **Rank semantics:** secret = `rank 0` (perfect); nearest neighbor = `1`; larger =
-  farther.
+  `{word, rank}`. The value carries the **canonical accented form** of its group (see
+  below), which the front displays — not necessarily the typed form.
+- **Inflected forms of one word are ONE ranked group (#104, decided 2026-07-20):** on
+  the closest-first walk, a word sharing a lemma with a closer word consumes NO rank;
+  the closest form is the group's canonical entry, and every other reduced-vocab form
+  of the group's lemma(s) is an extra **alias key** pointing at the same
+  `{word, rank}` (typing `privées` finds — and displays — `privé`). The secret is
+  group 0, so **an inflection of the secret solves the hole** (`vermines` solves
+  `vermine`). Grouping is **strict** (the committed Lexique/AGID form→lemma tables;
+  no transitive merge across groups that share a form); an ambiguous form (`portes` →
+  porte/porter) aliases to whichever of its groups ranked **closest**. Merging is
+  filter-then-cap: `TOP_K` counts **distinct groups**, so ranks stay compacted. Two
+  selected secrets in one lemma group are rejected at generation.
+- **Rank semantics:** secret = `rank 0` (perfect); nearest lemma group = `1`; larger =
+  farther. Alias keys share their group's rank.
 - **Slug collisions** (`côté`/`coté` → `cote`): keep the **smallest-rank** entry
   (built closest-first) and display its `word`. Resolved **silently** — generation
   prints no collision output.
@@ -269,8 +282,9 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
     existing reduced file without re-reducing. All three go through the one shared
     `slug.write_vocab`, so the output is identical.
 - **`TOP_K = 10000` is a generation-only cap:** each secret's rank map = the secret at
-  rank 0 plus its `K` nearest. The front is **K-agnostic** — it tests membership in
-  the map, never hardcodes 2000.
+  rank 0 plus its `K` nearest **distinct lemma groups** (#104), each with its alias
+  forms. The front is **K-agnostic** — it tests membership in the map, never
+  hardcodes 2000.
 
 ### Front game loop
 
@@ -307,7 +321,9 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
 
 ### Progress (`game/scoring.ts`)
 
-For each unique secret slug, with `N = number of keys in ranks[secret]`:
+For each unique secret slug, with `N = number of ranked GROUPS in ranks[secret]` —
+the count of **distinct rank values** (alias keys share their group's rank, #104;
+on an alias-free puzzle this equals the key count):
 
 ```
 s(rank)   = 1 - ln(rank + 1) / ln(N + 1)              // s(0) = 1 (solved)
@@ -323,9 +339,13 @@ but duplicate occurrences do not receive extra weight in the frontend percentage
 
 The score is simply the **number of unique tries**. A try is a submitted word that
 exists in the per-language vocabulary set, including cold misses and non-improving
-warm hits. Repeated guesses are deduped by folded slug (`fold(raw)`), so accent
-variants that compare equal count once. Invalid non-words are rejected before
-counting. The score is displayed as the large background number during the round and
+warm hits. Repeated guesses are deduped by **canonical identity** (`guessKey`,
+#104): a guess found in some rank map is identified by its resolved entry — the
+first secret (JSON key order) whose map knows it, plus that entry's rank — so accent
+variants AND inflections of an already-tried word count once; a guess in no map (a
+cold miss everywhere) falls back to its folded slug (`fold(raw)`). The uncounted
+variant plays its feedback but never enters the persisted `tried` history. Invalid
+non-words are rejected before counting. The score is displayed as the large background number during the round and
 as `<tries> TRIES` at game end (the unit is NAMED — on the solved screen, the share
 card, and the share text — because "SCORE" alone reads as points to maximize when
 lower is better; singular `TRY` at 1). Like the rest of the UI chrome the label is
@@ -386,6 +406,10 @@ When asked to work/implement/do/resolve issue #N:
   attribution stays clean.
 - **Don't silently skip a missing hors-dico wordlist** — error out (use `--no-dico` to
   opt out explicitly); and don't re-filter against the wordlist anywhere downstream.
+- **Don't lemma-merge anywhere except `gen_phrase`'s merge walk (#104)** — the front
+  and the benchmark harness only LOOK UP alias keys, never re-group; and **don't
+  silently skip a missing lemma table** — error out (`--no-lemmas` to opt out
+  explicitly).
 - **Don't skip the cache mtime check** in `load_vectors`.
 - **Don't inject a missing target word** into the vocab in `gen_phrase` — error out.
 
@@ -412,6 +436,11 @@ pnpm install                    # installs all workspaces
 pnpm wordlist:fr      # Lexique ∪ Hunspell fr  -> wordlist/fr.txt.gz
 pnpm wordlist:en      # SCOWL   ∪ Hunspell en  -> wordlist/en.txt.gz
 
+# 0bis. (Re)build the form→lemma table ONCE per language (offline, #104). The committed
+#    wordlist/<lang>.lemmas.tsv.gz is already versioned — only rerun to refresh sources.
+pnpm lemmas:fr        # Lexique ortho→lemme -> wordlist/fr.lemmas.tsv.gz
+pnpm lemmas:en        # AGID infl.txt (inverted) -> wordlist/en.lemmas.tsv.gz
+
 # 1. Reduce ONCE per language (slow, offline). Build the *_reduced source of truth AND,
 #    in the same pass, web/public/vocab/<lang>.json (the front's existence set — commit it).
 #    Reads wordlist/<lang>.txt.gz for the hors-dico rule (--no-dico to skip; --no-vocab
@@ -426,6 +455,8 @@ pnpm vocab:fr         # -> packages/web/public/vocab/fr.json
 # 3. Generate a puzzle per game (fast; first run for a language builds the .kv cache).
 #    Puzzle -> packages/generation/output/word/<lang>/ (then `pnpm puzzle:publish` it).
 #    NOTE: gen:phrase ALSO rewrites web/public/vocab/<lang>.json as a side effect.
+#    Reads wordlist/<lang>.lemmas.tsv.gz for lemma grouping (#104; missing table = hard
+#    error, --no-lemmas to skip).
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 distinct words; all occurrences hole (no `--`)
 
 # 4. Optionally benchmark the generated puzzle offline before publish. --model is required
@@ -623,6 +654,13 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
 - **Data present:** `generation/embedding/fr/cc.fr.300_reduced.vec` (+ `.kv` cache
   built), `generation/embedding/en/glove.6B.300d_reduced.txt` (+ `.kv` cache built).
   `web/public/vocab/{en,fr}.json` exist.
+- **Lemma tables (#104):** `generation/wordlist/{fr,en}.lemmas.tsv.gz` are committed —
+  fr = Lexique `ortho`→`lemme` (~138k pairs), en = AGID `infl.txt` inverted (~260k
+  pairs), both filtered by the language token rule, every lemma registered as a form of
+  itself. Built by `build_lemmas.py` (downloads cache in `wordlist/.cache/`);
+  `gen_phrase` reads them at startup (hard error when missing; `--no-lemmas` opts out
+  and reproduces pre-#104 output). Alias expansion roughly triples a fr puzzle's rank
+  keys (~332 KB → ~762 KB gzipped for a real puzzle).
 - **Hors-dico wordlists (#38):** `generation/wordlist/{fr,en}.txt.gz` are committed —
   `fr` = Lexique ∪ Hunspell fr (~169k forms), `en` = SCOWL(≤60,US) ∪ Hunspell en_US
   (~91k). Built by `build_wordlist.py`; source downloads cache in `wordlist/.cache/`
