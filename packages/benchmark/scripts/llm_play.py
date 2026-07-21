@@ -3775,14 +3775,27 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             print(f"Wrote lab artifact -> {artifact_path}")
 
+            # Re-read the puzzle from disk RIGHT BEFORE upserting. `puzzle` was loaded once
+            # at process start, but a concurrent (or long-overlapping earlier) in-place run
+            # for ANOTHER model may have embedded its entry since then — benchmark runs take
+            # minutes, so two models started close together each load the file before the
+            # other writes. Upserting onto the stale start-of-run copy would silently clobber
+            # the sibling, leaving only the last writer. The lab artifact already re-reads
+            # before appending (which is why it keeps every model); the puzzle benchmark must
+            # do the same so overlapping runs accumulate instead of racing to overwrite.
+            latest = load_puzzle(args.puzzle)
+            # Guard the re-read: if the file was regenerated to a different puzzle mid-run,
+            # our entry will not replay it — fail loudly rather than overwrite the new puzzle.
+            assert_benchmark_entry_consistent(latest, vocab, entry, cap=args.cap)
+
             # Record EVERY tested model in the puzzle; the front end owns the display
             # filter. Upsert this run over any prior entry for the same model, and prune any
             # previously embedded entry that no longer replays the current puzzle. The
             # median/persistent/current-prompt/5-run gate is enforced up front in parse_args.
-            entries, dropped = upsert_benchmark_entry(puzzle, vocab, entry)
+            entries, dropped = upsert_benchmark_entry(latest, vocab, entry)
             for stale in dropped:
                 print(f"Dropped stale benchmark entry ({stale}); it no longer replays")
-            write_benchmark(args.puzzle, puzzle, entries)
+            write_benchmark(args.puzzle, latest, entries)
             noun = "model" if len(entries) == 1 else "models"
             print(
                 f"Wrote {config['tag']} benchmark ({len(entries)} {noun}) -> {args.puzzle}"
