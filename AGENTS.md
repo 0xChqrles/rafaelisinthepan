@@ -239,8 +239,9 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   submission order**. **`--in-place` upserts one model at a time** (a re-run replaces that
   model's entry; a previously embedded entry that no longer replays the current
   sentence/ranks is pruned) and accepts **only** the canonical config: **median selection,
-  persistent session, the current prompt version, and exactly `DEFAULT_RUNS` (5) runs**.
-  `--selection median`
+  persistent session, the current prompt version, and exactly `DEFAULT_RUNS` (5) runs** (an
+  omitted `--runs` defaults to 5 under `--in-place` for every model, overriding Kimi's
+  ordinary default-1). `--selection median`
   (default) keeps odd `N` runs sequential/cache-warm and reports the same actual median
   score as full median-of-N (#95). With `k = (N + 1) / 2`, once `k` runs have solved, a
   later run still unsolved at the k-th-smallest solved score stops as lab-only
@@ -496,9 +497,10 @@ pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 distinct word
 #    entry into the puzzle's variable-length benchmark array (any model — the front end
 #    filters the FABLE/KIMI/GPT-SOL display trio; a re-run replaces that model, a now-stale
 #    entry is pruned). It accepts only the canonical config: median + persistent + current
-#    prompt + exactly 5 runs (so Kimi in-place needs --runs 5, not its default 1).
+#    prompt + exactly 5 runs. An omitted --runs defaults to 5 under --in-place for EVERY
+#    model (Kimi's ordinary default-1 is overridden), so Kimi needs no explicit --runs 5.
 pnpm bench:puzzle <puzzle.json> --model MODEL [--playbook <model>.playbook.json] [--effort LEVEL] [--auth api|subscription] [--session persistent|stateless] [--cap N] [--runs N] [--selection median|best] [--in-place]
-KIMI_CODE_API_KEY=... pnpm bench:puzzle <puzzle.json> --model KIMI --auth subscription --effort medium --runs 5 --in-place
+KIMI_CODE_API_KEY=... pnpm bench:puzzle <puzzle.json> --model KIMI --auth subscription --effort medium --in-place
 
 # 5. PAUSED EXPERIMENT: bootstrap one model's playbook from all 92 static French puzzles
 #    (#88). Do not run this for normal benchmark production. Each real
@@ -599,7 +601,9 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   into the puzzle's variable-length benchmark array (any model; a re-run replaces that model,
   a now-stale sibling entry is pruned). It accepts only the canonical config — **median +
   persistent + current prompt + exactly `DEFAULT_RUNS` (5) runs** — so results stay
-  comparable; the front end, not the harness, filters the display trio. Local benchmark
+  comparable; under `--in-place` an omitted `--runs` defaults to 5 for every model (Kimi's
+  ordinary default-1 is overridden). The front end, not the harness, filters the display
+  trio. Local benchmark
   output is gitignored and paid provider calls never run in tests/CI.
 - **Frozen neutral gameplay baseline (decided 2026-07-17).** Use prompt v21 at `medium`
   effort, without `--playbook`, for both Sonnet and GPT. Two direct same-puzzle stateless

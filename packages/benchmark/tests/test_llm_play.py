@@ -3109,6 +3109,15 @@ def test_in_place_requires_median_persistent_and_the_default_run_count(capsys):
     assert ok.in_place is True
     assert ok.runs == DEFAULT_RUNS == 5
 
+    # Kimi's ordinary default is DEFAULT_KIMI_RUNS (1), but `--in-place` always writes the
+    # canonical DEFAULT_RUNS record, so an omitted --runs defaults to 5 for it too — no
+    # explicit `--runs 5` required, matching every other model's in-place ergonomics.
+    kimi_in_place = parse_args(
+        ["puzzle.json", "--model", "KIMI", "--auth", "subscription",
+         "--effort", "low", "--in-place"]
+    )
+    assert kimi_in_place.runs == DEFAULT_RUNS == 5
+
     with pytest.raises(SystemExit):
         parse_args(
             ["puzzle.json", "--model", "OPUS", "--selection", "best",
@@ -3184,6 +3193,52 @@ def test_in_place_cli_embeds_every_tested_model_and_prunes_stale_entries(
     artifact = json.loads((lab_dir / "puzzle.bench.json").read_text(encoding="utf-8"))
     assert len(artifact["sessions"]) == 5
     assert artifact["sessions"][-1]["model_id"] == "gpt-5.6-sol"
+
+
+def test_in_place_reload_merges_a_concurrent_sibling_write(
+    monkeypatch, tmp_path, capsys
+):
+    # Regression: two in-place runs that overlap in wall-clock. Each benchmark run takes
+    # minutes, so a sibling model's run can finish — writing its entry to the puzzle — AFTER
+    # this run loaded the file but BEFORE it writes. The embed must merge against the LATEST
+    # on-disk benchmark (like the lab artifact does), not clobber the sibling with only the
+    # last writer's entry. Here the sibling write is injected mid-run via provider_reply.
+    puzzle_path = tmp_path / "puzzle.json"
+    puzzle_path.write_text(json.dumps(puzzle()), encoding="utf-8")  # no benchmark yet
+    monkeypatch.setattr("llm_play.BENCHMARK_OUTPUT_DIR", tmp_path / "lab")
+    monkeypatch.setattr("llm_play.load_vocab", lambda _lang: VOCAB)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+
+    sibling = {
+        "model": "claude-sonnet-5",
+        "label": "CLAUDE SONNET",
+        "tag": "SONNET",
+        "tries": 2,
+        "run": ["forest", "ocean"],
+    }
+
+    # provider_reply is called once per run; on the first call, simulate the concurrent
+    # sibling run landing its entry on disk after our load, then return the play model.
+    injected = {"done": False}
+
+    def reply_with_concurrent_write(*_args, **_kwargs):
+        if not injected["done"]:
+            current = json.loads(puzzle_path.read_text(encoding="utf-8"))
+            current["benchmark"] = [sibling]
+            puzzle_path.write_text(json.dumps(current), encoding="utf-8")
+            injected["done"] = True
+        return ScriptedModel(["forest", "ocean"] * 5)
+
+    monkeypatch.setattr("llm_play.provider_reply", reply_with_concurrent_write)
+
+    assert main([str(puzzle_path), "--model", "FABLE", "--in-place"]) == 0
+    embedded = json.loads(puzzle_path.read_text(encoding="utf-8"))["benchmark"]
+    # The stale start-of-run copy had no benchmark; only a fresh re-read preserves the
+    # sibling. Roster order puts sonnet before fable.
+    assert [entry["model"] for entry in embedded] == [
+        "claude-sonnet-5",
+        "claude-fable-5",
+    ]
 
 
 def test_verbose_reply_is_reprompted_without_scoring_its_first_word():
