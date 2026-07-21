@@ -519,7 +519,7 @@ button * {
 }
 .lineup-track {
   position: relative;
-  height: 82px;
+  height: 136px;
 }
 .lineup-slot {
   position: absolute;
@@ -531,38 +531,26 @@ button * {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   transform: translateX(calc(var(--i) * 100%));
   transition: transform 0.35s ease-in-out;
 }
-/* Pixel characters (8x10 SVGs under assets/lineup/): 3x on desktop, 2x on phones —
-   like the kb control glyphs, these carry NO width/height in the SVG because they
-   resize responsively; the wrapping span owns the size and the art fills it. Each
-   character idles with a 1px two-frame bob, phase-shifted per slot (negative delay
-   keyed on --i) so the row breathes instead of marching in sync. */
+/* Pixel characters (hand-drawn PNG drafts under assets/characters/; the sheets VARY in
+   size per model): each img renders at an exact INTEGER 2x of its OWN grid (zoom on the
+   natural size — a shared fixed box + object-fit would scale a smaller sheet
+   fractionally and blur it). The box stays a fixed 64px (the tallest 2x sprite) with
+   the art BOTTOM-aligned, so every character stands on the same baseline while the
+   name row above keeps its alignment. No CSS idle animation — any character motion is
+   drawn INTO the art (frame-based), not synthesized here. */
 .lineup-sprite {
-  width: 24px;
-  height: 30px;
+  height: 64px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
 }
-.lineup-sprite > svg {
-  width: 100%;
-  height: 100%;
-  animation: sprite-idle 1.2s steps(1) infinite;
-  animation-delay: calc(var(--i, 0) * -0.3s);
-}
-@keyframes sprite-idle {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-1px);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .lineup-sprite > svg {
-    animation: none;
-  }
+.lineup-sprite > img {
+  zoom: 2;
+  image-rendering: pixelated;
 }
 /* Losing the lead lands like a hit: the same shake vocabulary as a struck hole word.
    The shake rides the span while the idle bob stays on the inner svg, so the two
@@ -570,21 +558,36 @@ button * {
 .lineup-sprite.hit {
   animation: word-shake 0.4s ease-in-out;
 }
+/* Caption split around the character (mobile-first: a slot is a QUARTER of the row —
+   at 320px that's ~73px — so the name and the number each get their own line rather
+   than fighting for width side by side): the name sits ABOVE the sprite wearing the
+   character's identity color (--slot-color, set per slot by StandingsLineup; it matches
+   the outline drawn into the sprite art), the brighter number below carries the live
+   distance. */
 .lineup-tag {
-  font-family: var(--press);
-  font-size: 8px;
+  font-size: 12px;
   letter-spacing: 1px;
-  color: var(--muted);
-  text-shadow: none;
-}
-.lineup-tag.player {
-  color: var(--fg);
-}
-.lineup-score {
+  color: var(--slot-color, var(--muted));
   font-family: var(--press);
-  font-size: 10px;
-  color: var(--fg);
   text-shadow: none;
+}
+/* A changed try count LANDS (the floating hit numbers' vocabulary, not a silent swap):
+   the span is keyed by its value, so each change remounts it and replays the pop. */
+.lineup-score {
+  font-size: 18px;
+  color: var(--fg);
+  font-family: var(--press);
+  text-shadow: none;
+  margin-top: 6px; /* extra breath between the character's feet and its count */
+  animation: score-pop 0.25s ease-out;
+}
+@keyframes score-pop {
+  from {
+    transform: scale(1.6);
+  }
+  to {
+    transform: scale(1);
+  }
 }
 /* A DNF opponent is out of the race: its "score" recedes to the muted tag color so the
    live numbers keep the contrast. */
@@ -1782,23 +1785,15 @@ button * {
     margin-bottom: -24px;
   }
 
-  /* Standings lineup (#81): slightly compacted — mobile vertical space is tight, and
-     the height it uses comes out of .play's flexible gap. Characters and crown drop
-     to 2x (16x20 / 20x12) so the pixel grid stays integer-scaled. */
+  /* Standings lineup (#81): the SAME 2x characters as desktop (they fit a quarter-row
+     even at 320px), just a tighter crown zone and column gap to reclaim a little
+     vertical space; the height comes out of .play's flexible gap. */
   .lineup-track {
-    height: 64px;
+    height: 128px;
   }
   .lineup-slot {
     top: 18px;
-    gap: 4px;
-  }
-  .lineup-sprite {
-    width: 16px;
-    height: 20px;
-  }
-  .lineup-crown .pixel-icon {
-    width: 20px;
-    height: 12px;
+    gap: 5px;
   }
 
   /* Archive: the centering column carries over from the base rule; just clear the

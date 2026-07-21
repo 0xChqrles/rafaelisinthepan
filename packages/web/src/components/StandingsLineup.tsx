@@ -4,14 +4,25 @@ import type { BenchmarkResults } from '@whippin/shared';
 import { lineupModel, lineupEvents } from '../game/benchmark';
 import { t } from '../i18n';
 import Crown from '../assets/crown.svg?react';
-import PlayerSprite from '../assets/lineup/player.svg?react';
-import FableSprite from '../assets/lineup/bot-fable.svg?react';
-import KimiSprite from '../assets/lineup/bot-kimi.svg?react';
-import GptSprite from '../assets/lineup/bot-gpt.svg?react';
+import playerSprite from '../assets/characters/player.png';
+import fableSprite from '../assets/characters/fable.png';
+import kimiSprite from '../assets/characters/kimi.png';
+import gptSprite from '../assets/characters/gpt.png';
 
-// One pixel character per canonical display slot (see DISPLAY_MODEL_IDS): an opponent
-// wears the sprite of its position in that fixed order, whatever subset is present.
-const BOT_SPRITES = [FableSprite, KimiSprite, GptSprite] as const;
+// One pixel character per canonical display slot (same order as DISPLAY_MODEL_IDS): an
+// opponent wears the sprite of its position in that fixed order, whatever subset is present.
+// TEMPORARY art (assets/characters/*.png) — hand-drawn 22x32 drafts.
+const BOT_SPRITES = [fableSprite, kimiSprite, gptSprite] as const;
+
+// Identity colors, one per display slot (same order as BOT_SPRITES). The name under a
+// character wears its color, echoing the colored accents drawn INTO that sprite's art
+// (currently the eyes; the outlines are white) — keep these hexes in sync with the art's
+// accent pixels when the sprites change. SATURATED like the rest of the palette (electric
+// accent/danger/gold/heat ramp), each offset from the semantic hues (heat crimson/orange/
+// violet/cyan, hole gold, accent blue) so a name can't be misread as feedback. The player
+// wears the game's accent blue (the prompt/progress "blue = you").
+const BOT_COLORS = ['#ff6b3d', '#9a5bff', '#00e08f'] as const;
+const PLAYER_COLOR = 'var(--accent)';
 
 // Mid-game standings lineup (#81): the player and the present display opponents (1..3 of
 // FABLE / KIMI K3 / GPT-5.6) standing side by side above the keyboard, sorted by tries
@@ -69,23 +80,38 @@ export default function StandingsLineup({
           <Crown className="pixel-icon" aria-hidden />
         </span>
         {model.entrants.map((entrant, index) => {
-          const Sprite = entrant.player ? PlayerSprite : BOT_SPRITES[entrant.sprite];
+          const spriteSrc = entrant.player ? playerSprite : BOT_SPRITES[entrant.sprite];
           return (
             <div
               key={entrant.key}
               className="lineup-slot"
-              style={{ '--i': index } as CSSProperties}
+              style={
+                {
+                  '--i': index,
+                  // The slot's identity color: the name below wears it, matching the
+                  // outline baked into the character's hand-drawn art.
+                  '--slot-color': entrant.player ? PLAYER_COLOR : BOT_COLORS[entrant.sprite],
+                } as CSSProperties
+              }
             >
+              {/* Identity-colored name ABOVE the character (just under the crown zone);
+                  the live try count keeps its own line below the sprite (mobile-first: a
+                  slot is only a quarter of the row, so they never fight for width). */}
+              <span className="lineup-tag">{entrant.tag}</span>
               <span
                 key={entrant.player ? `sprite-${lossBeat}` : 'sprite'}
                 className={`lineup-sprite${
                   entrant.player && lossBeat > 0 && !solved ? ' hit' : ''
                 }`}
               >
-                <Sprite className="pixel-icon" aria-hidden />
+                <img src={spriteSrc} alt="" aria-hidden />
               </span>
-              <span className={`lineup-tag${entrant.player ? ' player' : ''}`}>{entrant.tag}</span>
-              <span className={`lineup-score${entrant.tries === null ? ' dnf' : ''}`}>
+              {/* Keyed by value: a changed count (the player's, on each counted try)
+                  remounts the span and replays the landing pop. */}
+              <span
+                key={`score-${entrant.tries}`}
+                className={`lineup-score${entrant.tries === null ? ' dnf' : ''}`}
+              >
                 {entrant.tries ?? t(lang, 'dnf')}
               </span>
             </div>
