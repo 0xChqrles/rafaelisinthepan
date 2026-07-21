@@ -34,6 +34,11 @@
 
   --cap-shift: 0;
   --text-shift: 0;
+
+  /* The ONE graph-paper cell size: the body grid below, BackgroundWaves and CellDigits
+     all read it (the canvases via cellSize()), so changing it here re-tunes every cell
+     renderer together. Smaller on narrow viewports (see the mobile media query). */
+  --cell: 24px;
 }
 
 * {
@@ -48,7 +53,17 @@ body,
 }
 
 body {
-  background: var(--bg);
+  /* App-wide backdrop: the base color under a VERY subtle pixel grid (1px lines on a
+     --cell square, ~2.5% fg) — barely-there texture that reads as graph paper behind the
+     pixel art without competing with content (panels/keys paint over it). */
+  background:
+    linear-gradient(to bottom, rgba(244, 244, 242, 0.025) 1px, transparent 1px),
+    linear-gradient(to right, rgba(244, 244, 242, 0.025) 1px, transparent 1px),
+    var(--bg);
+  background-size:
+    var(--cell) var(--cell),
+    var(--cell) var(--cell),
+    auto;
   color: var(--fg);
   font-family: var(--vt);
   /* Press Start 2P ships fi/fl (and other) ligatures that render NARROWER than two
@@ -65,6 +80,17 @@ body {
 button,
 button * {
   text-shadow: none;
+}
+
+/* The animated backdrop (BackgroundWaves): faint Perlin waves lighting the SAME 24px
+   cells the graph-paper grid above outlines. Fixed at z-index -1 in the ROOT stacking
+   context, so it sits behind every screen — the score watermarks stay above it because
+   their z-index:-1 is scoped by their anchors' `isolation`. */
+.bg-waves {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
 }
 
 .app {
@@ -180,10 +206,11 @@ button * {
   filter: brightness(1.35);
 }
 
+/* 16x16 pixel-art flag at an exact 2x (32px) — integer scale keeps the grid crisp. */
 .lang-card-flag {
   display: block;
-  height: 30px;
-  width: auto;
+  width: 32px;
+  height: 32px;
   image-rendering: pixelated;
 }
 
@@ -220,6 +247,32 @@ button * {
   flex-direction: column;
   justify-content: center;
   padding-top: 56px;
+}
+
+/* The streak hero (moved here from the header, 2026-07-21): flame + count centered
+   above the calendar the streak is made of. A stat headline — the flame IS the label
+   (no copy), 4x pixel scale of the 8x10 source, the count the page's biggest figure. */
+.archive-streak {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 28px;
+  font-family: var(--press);
+  color: var(--fg);
+}
+.archive-streak-flame {
+  display: block;
+  width: 32px; /* 4 × the 8x10 source */
+  height: 40px;
+  image-rendering: pixelated;
+}
+.archive-streak-count {
+  font-size: 28px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  /* Optical correction: the flame's visual mass sits low, the pixel glyphs high. */
+  transform: translateY(4px);
 }
 
 /* Month navigation, clamped to [first puzzle month, current month] — the ‹ › ends dim
@@ -393,10 +446,14 @@ button * {
   flex-direction: column;
   align-items: start;
   gap: clamp(16px, 3vh, 32px);
+  /* The keyboard sits at the tray's bottom; .app's 24px all-round padding then leaves an
+     even 24px gap to the screen bottom, matching the page's side inset (the keyboard is
+     centered/narrow on desktop, so the frame inset is the meaningful margin). Mobile
+     overrides this to match the keyboard's own 4px side gap there. */
   min-height: calc(100dvh - 48px);
-  /* Reserve the fixed header + progress-bar band at the top so the play area centers
-     between them and the tray, not between the viewport top and the tray. */
-  padding-top: 128px;
+  /* Reserve only the floating corner-chip row (56px optical) + a breath — the old
+     opaque header + progress-bar band is gone; its ~52px went back to the play area. */
+  padding-top: 76px;
   /* The on-screen keyboard's exact height (3 key rows + 2 gaps). The solved results
      reserve this SAME height (.tray min-height), so swapping the keyboard for the results
      never reflows the layout nor leaves an empty hole. Mirrors .kb-key / .keyboard. */
@@ -404,11 +461,9 @@ button * {
 }
 
 /* The centered play region between the fixed HUD and the keyboard. It grows to fill
-   that space (flex:1) and centers its content (sentence + prompt). It also anchors the
-   score watermark: `relative` sizes the absolutely-positioned .progress-background to
-   THIS region, and `isolation` gives it a stacking context so the watermark's z-index:-1
-   stays behind the play content but above the page — so the big try count centers on the
-   sentence, not the full-height .game. */
+   that space (flex:1) and centers its content (sentence + prompt). `relative` +
+   `isolation` keep it a valid watermark anchor for the TUTORIAL's .progress-background
+   (the game's own watermark anchors tighter, to .phrase-anchor below). */
 .play {
   position: relative;
   isolation: isolate;
@@ -421,6 +476,16 @@ button * {
   gap: clamp(24px, 5vh, 48px);
 }
 
+/* The game's watermark anchor: a full-width relative wrapper around ONLY the sentence,
+   so the big try count centers on the sentence itself — not on sentence + prompt (which
+   read as "centered on neither"). `isolation` scopes the watermark's z-index:-1 behind
+   the phrase text but above the page grid. */
+.phrase-anchor {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+}
+
 /* Bottom zone: the keyboard while playing, the solved results once solved. min-height is
    pinned to the keyboard's height so the bottom edge (and everything above) stays put when
    the keyboard is replaced by the results — no reflow, no empty gap. */
@@ -431,12 +496,19 @@ button * {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  /* On a notched phone, add the home-indicator inset on top of the bottom gap so the
+     last key row is never occluded (0 everywhere else). */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-/* --- App header (topbar): flag + streak left, puzzle id centered, help right — separated
-   from the app by a thin bottom border. Full-bleed with an opaque background so
-   scrolling content passes UNDER it on mobile; the extension point for future
-   chrome (streaks, stats, …). --- */
+/* --- Floating app header (redesigned 2026-07-21): NO band, NO border — the old opaque
+   56px bar + its full-width progress row read as heavy chrome against the fine pixel
+   art, so the header is now two floating corner groups over the playfield, arcade-HUD
+   style: the game's progress counter top-left (own .hud element), streak + flag +
+   contextual controls top-right (here). Each group sits on a translucent SQUARED chip
+   (backdrop blur) so content scrolling under it on mobile stays legible without
+   resurrecting a band. The layer itself must not eat clicks: pointer-events pass
+   through everywhere except the actual controls. --- */
 .topbar {
   --hud-height: clamp(38px, 5vh, 46px);
   position: fixed;
@@ -444,9 +516,8 @@ button * {
   left: 0;
   right: 0;
   z-index: 60;
-  background: var(--bg);
-  border-bottom: 2px solid var(--surface);
   font-family: var(--press);
+  pointer-events: none;
 }
 .topbar-inner {
   position: relative;
@@ -455,47 +526,21 @@ button * {
   height: 56px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  /* Left chip (when present) sits left; .topbar-right's margin-left:auto hugs the
+     right edge either way. */
 }
+/* The header's two corner groups and the game's progress-counter .hud sit DIRECTLY on
+   the backdrop — no chip background/blur (removed 2026-07-21: boxes read as floating
+   rectangles over the animated waves); the glyphs' own text-shadow keeps them legible. */
+/* The left status chip: a screen's title (ARCHIVE / TUTORIAL — top-left like the
+   game's percentage), optionally joined by an inline stat (the tutorial's counter). */
 .topbar-left {
-  flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 8px; /* flame box and flag box both carry their own padding; a small gap suffices */
-}
-/* The live streak stat: the count is the datum, the flame its icon. The flame sits in a
-   square hud-height box like every other header glyph; the count's 4px offset below is an
-   optical correction for the flame's shape and the pixel font's naturally high glyphs. */
-.topbar-streak {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  color: var(--fg);
-  font-size: 22px; /* the header's most prominent figure now the day id is gone */
-  line-height: 1;
-  letter-spacing: 0;
-  font-variant-numeric: tabular-nums;
-}
-/* The flame's square box — same var(--hud-height) footprint as the flag/help/archive
-   glyphs, centering the fixed-size sprite within it. */
-.topbar-streak-flame-box {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--hud-height);
+  gap: 14px;
   height: var(--hud-height);
-}
-.topbar-streak-flame {
-  display: block;
-  flex: none;
-  width: 24px; /* 3 × the source's 8px width */
-  height: 30px; /* 3 × the source's 10px height */
-  image-rendering: pixelated;
-}
-.topbar-streak-count {
-  transform: translateY(4px);
+  padding: 0 12px;
+  pointer-events: auto;
 }
 /* The header's right controls: the game's "?" help (replays the tutorial) and the
    tutorial's fast-forward (skip) — both inline pixel-art icons. Buttons don't inherit
@@ -521,13 +566,18 @@ button * {
   shape-rendering: crispEdges;
 }
 
-/* The game header's right group: the archive calendar entry + the "?" help, side by
-   side in the single right slot. A small gap — enough that the two glyphs don't read as
-   one control, while the pair still groups against the wide center. */
+/* The header's single action group, floating top-right: streak stat, language flag,
+   then the screen's contextual controls (archive + "?", or skip, or close). A small
+   gap — enough that glyphs don't read as one control, while the group still coheres.
+   Re-enables pointer events under the click-through .topbar layer. */
 .topbar-right {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  padding: 0 4px;
+  /* Always hugs the right edge, whether or not a left chip is present. */
+  margin-left: auto;
+  pointer-events: auto;
 }
 /* The game header's archive entry + the archive's back-to-today control: currentColor
    glyphs, muted -> fg on hover/focus like the "?" and skip. */
@@ -542,38 +592,35 @@ button * {
   color: var(--fg);
 }
 
-/* The header's centered title — the day's id (#N) in the game, "TUTORIAL" in the
-   tutorial. ABSOLUTELY centered so it never drifts with the side controls' widths
-   (decorative; the share text carries the real id). */
+/* The screen title ("ARCHIVE", "TUTORIAL") — lives in the top-LEFT status chip, the
+   same corner the game gives its percentage (decided 2026-07-21; formerly absolutely
+   centered). */
 .topbar-title {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
   font-size: clamp(12px, 1.8vh, 14px);
   letter-spacing: 1px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
-  padding-top: var(--cap-shift);
+  /* Optical correction: Press Start glyphs sit high in their em box (empty descender
+     row), so flex-centering reads shifted UP next to the right chip's icons — nudge
+     down ~0.15em (the same correction the streak counts carry). */
+  transform: translateY(0.15em);
 }
 
-/* --- HUD: the progress bar's own full-width row, just below the header. --- */
+/* --- HUD: the game's floating progress counter, top-LEFT corner (the arcade "SCORE"
+   spot) — the status twin of the header's top-right action chip. Vertically centered
+   on the same 56px optical row; left edge aligned with the header column's. --- */
 .hud {
   --hud-height: clamp(38px, 5vh, 46px);
   position: fixed;
-  top: 70px; /* header (56px) + a breath */
-  left: 50%;
-  transform: translateX(-50%);
+  top: calc((56px - var(--hud-height)) / 2);
+  left: max(24px, calc((100vw - 900px) / 2));
   z-index: 50;
-  width: min(900px, calc(100vw - 48px));
+  height: var(--hud-height);
   display: flex;
   align-items: center;
-  gap: 24px;
+  padding: 0 12px;
   font-family: var(--press);
-}
-/* The tutorial shares the header, so its progress-bar row sits just below it too. */
-.tutorial .hud {
-  top: 64px;
+  pointer-events: none;
 }
 
 /* Logo doubles as the home button, sitting at the left of the HUD beside the bar.
@@ -598,79 +645,52 @@ button * {
   opacity: 1;
   filter: brightness(1.2);
 }
-/* The current puzzle's language flag, sized small for the header (the picker uses
-   the larger .lang-card-flag). */
+/* The current puzzle's language flag in the header: the 16x16 pixel art at an exact
+   2x (32px), centered in the square .home-btn box by its flex — an integer scale, never
+   stretched to the box (a fractional fill would blur the grid). */
 .hud-flag {
   display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
+  width: 32px;
+  height: 32px;
   image-rendering: pixelated;
 }
 
-.progress-wrap {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-.progress {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-  height: var(--hud-height);
-  background: var(--surface);
-  overflow: hidden;
-}
-.progress-fill {
-  height: 100%;
-  transition: width 0.5s ease-out, background-color 0.25s linear;
-}
-/* The percentage sits centered ON the bar as two aligned copies of the same number:
-   the base is painted in the fill color and shows over the empty track; the overlay is
-   painted in the track (background) color and clipped to the filled region, so the number
-   reads as the fill color on the empty part and the background color on the filled part,
-   flipping exactly at the fill edge. clip-path (not a blend mode) keeps both colors exact
-   and has broad, stable browser support. */
-.progress-label {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: clamp(15px, 2.6vh, 20px);
+/* The counter itself: pixel-font percentage, painted in the live progressColor(pct)
+   ramp value (inline style) — the number carries the amount, its color carries the
+   feel, together everything the old bar said. */
+.progress-counter {
+  font-size: 26px;
+  line-height: 1;
   letter-spacing: 1px;
   font-variant-numeric: tabular-nums;
-  text-shadow: none;
-  pointer-events: none;
+  /* Same optical downshift as .topbar-title: the pixel glyphs sit high in the em box. */
+  transform: translateY(0.15em);
+  transition: color 0.25s linear;
 }
-.progress-label-on-fill {
-  color: var(--bg);
-  /* Follow the fill edge in sync with .progress-fill's width transition. */
-  transition: clip-path 0.5s ease-out;
-}
-
 /* --- giant score watermark, always behind the play content --- */
 .progress-background {
-  /* absolute (not fixed) so it is anchored to .play (position: relative), not the
-     viewport: the score stays centered BEHIND the sentence + prompt on every layout
-     — matching the vertically-centered play area between the HUD and keyboard —
-     instead of drifting into the empty space of a viewport-centered watermark. */
+  /* absolute (not fixed) so it is anchored to its relative wrapper — .phrase-anchor in
+     the game (centered on the SENTENCE), .play in the tutorial — never the viewport:
+     the score scrolls with the content instead of drifting into empty space. The number
+     itself is a CellDigits canvas: digits printed on the page's 24px grid cells, sized
+     and grid-snapped by the component (it centers on this box and overflows it
+     symmetrically above and below, which is exactly "behind the sentence"). The
+     watermark opacity is baked into the canvas paint (CellDigits INK_ALPHA), NOT set
+     here: the ink cells are opaque underneath so they occlude the BackgroundWaves
+     field instead of letting crests wash through the number. */
   position: absolute;
   inset: 0;
   z-index: -1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  /* Huge: bounded by width to stay legible on screen. */
-  font-size: min(62vh, 34vw);
-  line-height: 1;
-  /* Color driven by JS from the heatmap (see heat.js). */
-  opacity: 0.07;
   pointer-events: none;
   user-select: none;
-  font-variant-numeric: tabular-nums;
+}
+/* The digit canvas: left/top/size are set by CellDigits so its cells land on the same
+   --cell grid the body outlines and BackgroundWaves lights; it paints in currentColor —
+   the accent blue, faded to watermark level by the canvas itself (INK_ALPHA), never by
+   element opacity (which would re-translucify the wave-occluding base). */
+.cell-digits {
+  position: absolute;
+  color: var(--muted);
 }
 
 /* --- sentence --- */
@@ -1514,6 +1534,12 @@ button * {
    tall play area (sentence + holes + on-screen keyboard, #36) is never clipped. The
    fixed HUD + watermark stay pinned to the viewport while the content scrolls under. */
 @media (max-width: 640px) {
+  /* Finer graph paper: 24px cells read chunky on a phone; every cell renderer (body
+     grid, BackgroundWaves, CellDigits) follows this one value. */
+  :root {
+    --cell: 18px;
+  }
+
   /* Let the play area grow past the viewport and scroll instead of clipping, so
      nothing (sentence, holes, input, keyboard) can end up hidden. */
   body {
@@ -1543,12 +1569,13 @@ button * {
     max-width: 100%;
   }
 
-  /* The play area still centers between the fixed header+bar and the keyboard;
-     padding-top clears both. `stretch` makes the sentence + input fill the width so
+  /* The play area still centers between the floating corner chips and the keyboard;
+     padding-top clears only the 48px chip row + a breath — the old header+bar band's
+     ~52px is reclaimed for play. `stretch` makes the sentence + input fill the width so
      their lines wrap inside the viewport rather than growing to the longest line
      and overflowing. */
   .game {
-    padding-top: 112px;
+    padding-top: 60px;
     gap: 16px;
     align-items: stretch;
     min-height: calc(100dvh - 44px);
@@ -1564,27 +1591,18 @@ button * {
     min-height: 72px;
     align-items: stretch;
   }
-  .progress-background {
-    font-size: min(72vh, 54vw);
-    opacity: 0.15;
-  }
-
-  /* Compact header + a full-width progress bar right under it. */
+  /* Compact floating corners: the chip row tightens to 48px optical height, the
+     counter chip hugs the same 12px inset as the header column. */
   .topbar-inner {
     width: calc(100vw - 24px);
     height: 48px;
   }
   .hud {
-    top: 58px;
-    width: calc(100vw - 24px);
-    gap: 12px;
+    top: calc((48px - var(--hud-height)) / 2);
+    left: 12px;
   }
-  .tutorial .hud {
-    top: 54px; /* below the compact mobile header */
-    width: calc(100vw - 24px);
-  }
-  .progress-label {
-    font-size: clamp(16px, 4.2vw, 20px);
+  .progress-counter {
+    font-size: 20px;
   }
 
   /* Sentence + mirrored input: a touch smaller so a hole + its exponent near the
@@ -1619,14 +1637,25 @@ button * {
     width: calc(100% + 20px);
     max-width: calc(100% + 20px);
     margin-inline: -10px;
-    gap: 5px;
-  }
-  .kb-row {
-    gap: 5px;
+    /* Tighten via the VARIABLE, never the raw `gap`: the key-width formula divides by
+       --kb-gap, so a desynced literal would compute rows ~9px too narrow — they then
+       center inside the keyboard box and paint a phantom ~5px side inset (the
+       side/bottom gap mismatch fixed 2026-07-21). */
+    --kb-gap: 5px;
   }
   .kb-key {
     height: clamp(44px, 6.8vh, 52px);
     border-width: 2px;
+  }
+
+  /* Keyboard 4px above the screen bottom to match its 4px SIDE gap (it extends 10px past
+     the 14px page inset), so the same thin frame surrounds it on the left, right, and
+     bottom. The negative margin lets .game reach into .app's 28px bottom padding, leaving
+     the 4px; 16px top pad + (100dvh - 20px) game + (-24px) margin + 28px pad = 100dvh, so
+     nothing scrolls. */
+  .game {
+    min-height: calc(100dvh - 20px);
+    margin-bottom: -24px;
   }
 
   /* Archive: the centering column carries over from the base rule; just clear the
@@ -1647,10 +1676,20 @@ button * {
     padding: 16px 18px;
     gap: 16px;
   }
-  .lang-card-flag {
-    height: 26px;
-  }
+}
 
+/* Very short viewports (older/smaller phones ≤600px tall, e.g. 320x568): the 3x lineup
+   (96px characters) + keyboard + 2-line sentence don't all fit that height, so tighten the
+   game's vertical rhythm — the flex gaps between the HUD, play area, lineup, and keyboard —
+   to keep the keyboard on-screen WITHOUT downgrading the pixel art. Height-based so a tall
+   narrow phone (which fits 3x fine) is untouched. */
+@media (max-height: 600px) {
+  .game {
+    gap: 8px;
+  }
+  .play {
+    gap: 14px;
+  }
 }
 
 /* On the narrowest phones, compress only the header GAPS — never the hud-height flame box
@@ -1659,12 +1698,6 @@ button * {
 @media (max-width: 340px) {
   .topbar-inner {
     width: calc(100vw - 16px);
-  }
-  .topbar-left {
-    gap: 2px;
-  }
-  .topbar-streak {
-    gap: 0;
   }
 }
 
@@ -1712,16 +1745,10 @@ button * {
    HUD (progress bar) shrinks with it. */
 .tutorial {
   max-width: 680px;
-  /* Sentence stage: clear the fixed header + progress bar + coach box, so the
-     centered sentence never rides under them. (The word stage, with no bar, clears
-     less — below.) */
-  padding-top: 248px;
-}
-.tutorial--word {
-  padding-top: 200px; /* header + coach, no bar */
-}
-.tutorial .hud {
-  width: min(680px, calc(100vw - 48px));
+  /* Clear the floating chip row + coach box, so the centered sentence never rides
+     under them (the counter now floats top-left beside the coach, not above it, so
+     both stages clear the same height). */
+  padding-top: 200px;
 }
 
 /* The concept stage is CLEAN: explanation on top, ONE big centered word in the
@@ -1741,7 +1768,7 @@ button * {
    line. On the sentence stage it sits below the HUD's progress bar. */
 .coach {
   position: fixed;
-  top: 64px; /* word stage: below the header */
+  top: 64px; /* below the floating chip row (both stages — no bar row anymore) */
   left: 50%;
   transform: translateX(-50%);
   z-index: 120;
@@ -1749,10 +1776,6 @@ button * {
   background: var(--bg);
   border: 3px solid var(--surface);
   padding: 16px 18px;
-}
-/* Sentence stage: below the header AND the progress-bar row. */
-.tutorial:not(.tutorial--word) .coach {
-  top: 120px;
 }
 .coach-text {
   margin: 0;
@@ -1811,19 +1834,13 @@ button * {
 @media (max-width: 640px) {
   .coach {
     padding: 12px 14px;
-    top: 56px; /* word stage: below the compact mobile header */
-  }
-  .tutorial:not(.tutorial--word) .coach {
-    top: 108px; /* sentence stage: below the header + bar */
+    top: 56px; /* below the compact floating chip row (both stages) */
   }
   .coach-text {
     font-size: 12px; /* 3-line height scales with it (6em) */
   }
-  /* Clear the compact header + coach (+ bar on the sentence stage). */
+  /* Clear the compact chip row + coach (same for both stages — no bar row). */
   .tutorial {
-    padding-top: 216px;
-  }
-  .tutorial--word {
     padding-top: 172px;
   }
 }

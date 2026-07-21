@@ -5,6 +5,7 @@ import LanguageSelect from './screens/LanguageSelect';
 import Archive from './screens/Archive';
 import Game from './screens/Game';
 import TopBar from './components/TopBar';
+import BackgroundWaves from './components/BackgroundWaves';
 import LazyStreakDialog from './components/LazyStreakDialog';
 import LoadError from './components/LoadError';
 import NoPuzzle from './components/NoPuzzle';
@@ -52,6 +53,8 @@ export default function App() {
 
   return (
     <div className="app">
+      {/* The living backdrop — every screen (game, archive, select, tutorial) sits on it. */}
+      <BackgroundWaves />
       {route.view === 'select' && <LanguageSelect />}
       {route.view === 'archive' && <Archive lang={route.lang} />}
       {route.view === 'game' && <GameRoute lang={route.lang} date={route.date} />}
@@ -137,16 +140,18 @@ function GameRoute({ lang, date }: { lang: LangCode; date?: string }) {
 
   return (
     <>
-      {/* One persistent header for the whole route: flag (language screen) + live streak on
-          the left, the archive + help controls on the right, no center title. It renders in
-          EVERY state below — loading, error, the missing-puzzle screen, and the loaded game —
-          so navigating into a game never blinks the header away; only the body under it
-          refreshes. (`dayNumber` is still usePuzzle's STABLE, once-at-fetch value — it just
-          no longer surfaces in the header; it keys the round + share below.) */}
+      {/* One persistent floating header for the whole route: the top-right action group
+          (streak + flag from TopBar itself, then the archive + help controls passed
+          here), no center title — the top-LEFT corner belongs to the game's floating
+          progress counter. It renders in EVERY state below — loading, error, the
+          missing-puzzle screen, and the loaded game — so navigating into a game never
+          blinks the header away; only the body under it refreshes. (`dayNumber` is
+          still usePuzzle's STABLE, once-at-fetch value — it just no longer surfaces in
+          the header; it keys the round + share below.) */}
       <TopBar
         lang={lang}
         right={
-          <div className="topbar-right">
+          <>
             {/* Into the archive calendar (#55) — past days, one tap from the game. */}
             <button
               type="button"
@@ -165,7 +170,7 @@ function GameRoute({ lang, date }: { lang: LangCode; date?: string }) {
             >
               <QuestionIcon className="pixel-icon" aria-hidden />
             </button>
-          </div>
+          </>
         }
       />
       {loading && <p className="status">{t(lang, 'loading')}</p>}

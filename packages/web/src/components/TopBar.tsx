@@ -1,50 +1,30 @@
 import type { ReactNode } from 'react';
 import FlagButton from './FlagButton';
-import streakSmall from '../assets/streak-small.png';
-import useToday from '../hooks/useToday';
-import { currentStreak } from '../game/streak';
-import { useGameStore } from '../state/gameStore';
-import { t } from '../i18n';
 
-const NO_SOLVED_DAYS: number[] = [];
-
-// The app header: language flag + live streak on the left, a centered title, and a
-// right-hand control — separated from the app by a thin bottom border. Shared by the
-// game, archive, and tutorial, so the player-level streak stays in one consistent place.
-// The center title is ABSOLUTELY centered (out of flex flow) so it never drifts with the
-// side controls' widths.
+// The floating app header (redesigned 2026-07-21: no band, no border — corner chips
+// over the playfield, arcade-HUD style). The LEFT corner is the status spot: a screen
+// passes its title (and any inline stat, e.g. the tutorial's progress counter) via
+// `left`; the game passes nothing and floats its own progress counter there (.hud).
+// The RIGHT corner is the one action group: the language flag, then the screen's
+// contextual controls (archive/help, skip, close). The streak stat lives on the
+// ARCHIVE page (moved back 2026-07-21 — it is the player-history screen), not here.
 export default function TopBar({
   lang,
-  center,
+  left,
   right,
 }: {
   lang: string;
-  center?: ReactNode;
+  left?: ReactNode;
   right?: ReactNode;
 }) {
-  const activeDay = useToday();
-  const solvedDays = useGameStore((state) => state.solvedDays[lang] ?? NO_SOLVED_DAYS);
-  const streak = currentStreak(solvedDays, activeDay);
-
   return (
     <header className="topbar">
       <div className="topbar-inner">
-        <div className="topbar-left">
+        {left && <div className="topbar-left">{left}</div>}
+        <div className="topbar-right">
           <FlagButton lang={lang} />
-          {streak > 0 && (
-            <span className="topbar-streak">
-              {/* The flame sits in a hud-height square box, like the flag and the right-hand
-                  icons — so all header glyphs share one footprint. */}
-              <span className="topbar-streak-flame-box" aria-hidden>
-                <img src={streakSmall} className="topbar-streak-flame" alt="" />
-              </span>
-              <span className="sr-only">{t(lang, 'streak')} </span>
-              <span className="topbar-streak-count">{streak}</span>
-            </span>
-          )}
+          {right}
         </div>
-        {center}
-        {right}
       </div>
     </header>
   );
