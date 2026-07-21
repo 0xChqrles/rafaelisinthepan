@@ -7,6 +7,9 @@ import { pathForLang, pathForDay, type LangCode } from '../langs';
 import { FIRST_PUZZLE_DATE } from '../config';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
 import { statusOf, srStatus, type Status } from '../state/status';
+import { currentStreak } from '../game/streak';
+import useToday from '../hooks/useToday';
+import streakSmall from '../assets/streak-small.png';
 import { t } from '../i18n';
 import {
   yearMonthOf,
@@ -41,8 +44,16 @@ function firstDayOfWeek(lang: string): number {
 // flat key that navigates to that day's game (/<lang>/<date>); days before the first
 // puzzle or after the client's active day are disabled. Per-cell status (solved / in
 // progress / not started) is read from the persisted rounds — device-local, as intended.
+const NO_SOLVED_DAYS: number[] = [];
+
 export default function Archive({ lang }: { lang: LangCode }) {
   const rounds = useGameStore((s) => s.rounds);
+
+  // The live streak — displayed HERE (the player-history screen), above the calendar
+  // it is derived from (moved from the header, decided 2026-07-21). Hidden at zero.
+  const activeDay = useToday();
+  const solvedDays = useGameStore((s) => s.solvedDays[lang] ?? NO_SOLVED_DAYS);
+  const streak = currentStreak(solvedDays, activeDay);
 
   // The window of playable days: [FIRST_PUZZLE_DATE, the client's active game day]. Both
   // are ISO labels, so cells compare against them by string order (offset-free).
@@ -89,7 +100,7 @@ export default function Archive({ lang }: { lang: LangCode }) {
     <div className="archive">
       <TopBar
         lang={lang}
-        center={<span className="topbar-title">{t(lang, 'archive')}</span>}
+        left={<span className="topbar-title">{t(lang, 'archive')}</span>}
         right={
           <button
             type="button"
@@ -101,6 +112,16 @@ export default function Archive({ lang }: { lang: LangCode }) {
           </button>
         }
       />
+
+      {/* The streak hero: flame + count above the calendar the streak is made of —
+          a stat headline, no label (the flame IS the label). Hidden when zero. */}
+      {streak > 0 && (
+        <div className="archive-streak">
+          <img src={streakSmall} className="archive-streak-flame" alt="" />
+          <span className="sr-only">{t(lang, 'streak')} </span>
+          <span className="archive-streak-count">{streak}</span>
+        </div>
+      )}
 
       <div className="cal">
         {/* Month navigation, clamped to [first puzzle month, current month]. */}

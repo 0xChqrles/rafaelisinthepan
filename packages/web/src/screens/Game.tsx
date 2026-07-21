@@ -6,7 +6,8 @@ import useVocab from '../hooks/useVocab';
 import useToday from '../hooks/useToday';
 import { useGameStore, roundKeyForDay, holesMatchPuzzle } from '../state/gameStore';
 import Phrase from '../components/Phrase';
-import ProgressBar from '../components/ProgressBar';
+import CellDigits from '../components/CellDigits';
+import ProgressCounter from '../components/ProgressCounter';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import SolvedScreen, { RESULTS_IN_MS } from '../components/SolvedScreen';
@@ -514,12 +515,12 @@ function Round({
         {announce}
       </div>
 
-      {/* The header (flag / day id / archive + help) is rendered by GameRoute ABOVE this,
-          so it stays put across the route's states. The progress bar gets its own
-          FULL-WIDTH row just below that fixed header — nothing squeezes it on mobile.
-          Bar WIDTH = the reconstruction value; COLOR follows progress. */}
+      {/* The floating header (streak/flag/archive/help, top-right) is rendered by
+          GameRoute ABOVE this, so it stays put across the route's states. The game owns
+          the matching top-LEFT corner: the reconstruction % as a floating arcade
+          counter — VALUE carries the length, ramp COLOR carries the feel. */}
       <div className="hud">
-        <ProgressBar value={progress} />
+        <ProgressCounter value={progress} />
       </div>
 
       {/* The play area fills the space between the fixed HUD (top) and the keyboard
@@ -527,23 +528,26 @@ function Round({
           It also anchors the score watermark, so the big try count stays centered
           behind THIS content rather than the full-height .game. */}
       <div className="play">
-        {/* Score: big faint try count behind the play area. z-index:-1 within .play's
-            isolated stacking context sits behind the content but above the page. */}
-        <div className="progress-background" aria-hidden="true">
-          {guessCount}
-        </div>
-
         {/* The reconstructed sentence stays visible in BOTH states: while playing (with
             the live holes/hits) and once solved (every hole resolved to its accented
-            secret) — it is the "full reconstructed sentence" of the solved screen. */}
-        <Phrase
-          words={words}
-          holes={holes}
-          puzzleHoles={puzzleHoles}
-          hits={hits}
-          onHitDone={removeHit}
-          onHoleResolved={markHoleResolved}
-        />
+            secret) — it is the "full reconstructed sentence" of the solved screen.
+            The wrapper anchors the score watermark to the SENTENCE (not sentence +
+            prompt): the big faint try count centers behind the phrase, z-index:-1 in
+            the wrapper's isolated stacking context, printed on the background's 24px
+            cells (CellDigits) so it reads as part of the grid, not a font over it. */}
+        <div className="phrase-anchor">
+          <div className="progress-background" aria-hidden="true">
+            <CellDigits value={guessCount} />
+          </div>
+          <Phrase
+            words={words}
+            holes={holes}
+            puzzleHoles={puzzleHoles}
+            hits={hits}
+            onHitDone={removeHit}
+            onHoleResolved={markHoleResolved}
+          />
+        </div>
 
         {/* Below the sentence: the prompt exits on the solving submit; after every final
             word settles (and, on the active day, after the streak closes), the source is

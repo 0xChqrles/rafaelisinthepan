@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Phrase from '../components/Phrase';
-import ProgressBar from '../components/ProgressBar';
+import CellDigits from '../components/CellDigits';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import LoadError from '../components/LoadError';
@@ -12,7 +12,6 @@ import SkipIcon from '../assets/icons/skip.svg?react';
 import { STAGGER_MS, FLOATING_HIT_INTRO_MS } from '../screens/Game';
 import MixWord, { SCRAMBLE_MS } from './MixWord';
 import CoachText, { richToPlain } from './CoachText';
-import { computeProgress } from '../game/scoring';
 import { progressTrajectory } from '../game/share';
 import { buildPrefixSet, canExtend } from '../game/keyboard';
 import useVocab from '../hooks/useVocab';
@@ -130,8 +129,6 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
     announceFlip.current = !announceFlip.current;
     setAnnounce(text + (announceFlip.current ? '' : '​'));
   }, []);
-
-  const progress = useMemo(() => computeProgress(holes, puzzle.ranks), [holes, puzzle]);
 
   // Advance to the next step, next stage, or hand over to the real game.
   const advance = useCallback(() => {
@@ -350,11 +347,12 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
         {announce}
       </div>
 
-      {/* The header stays in place: flag (language screen, round-trips back here) /
-          "TUTORIAL" / a fast-forward that SKIPS the tutorial. */}
+      {/* The floating header: "TUTORIAL" in the top-left status chip — no progress
+          counter here, the tutorial keeps its chrome minimal — and flag + a
+          fast-forward that SKIPS the tutorial on the right. */}
       <TopBar
         lang={lang}
-        center={<span className="topbar-title">{t(lang, 'inviteTutorial')}</span>}
+        left={<span className="topbar-title">{t(lang, 'inviteTutorial')}</span>}
         right={
           <button
             type="button"
@@ -370,13 +368,6 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
         }
       />
 
-      {/* The progress bar's own row (sentence stage only), below the header. */}
-      {liveStage && (
-        <div className="hud">
-          <ProgressBar value={progress} />
-        </div>
-      )}
-
       {/* The top box: the current explanation, typewritten. Same background as the
           app, surface border — a dialog, not a modal. */}
       {coachCopy && (
@@ -388,7 +379,7 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
       <div className="play">
         {liveStage && (
           <div className="progress-background" aria-hidden="true">
-            {tries}
+            <CellDigits value={tries} />
           </div>
         )}
         {step.kind === 'mix' ? (
