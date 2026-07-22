@@ -25,7 +25,6 @@ from llm_play import (
     DEEP_REASONING_MAX_TOKENS,
     DEFAULT_AUTH,
     DEFAULT_EFFORT,
-    DEFAULT_KIMI_RUNS,
     DEFAULT_RUNS,
     DEFAULT_SELECTION,
     DEFAULT_SESSION,
@@ -330,25 +329,26 @@ def repeated_secret_puzzle():
 VOCAB = {"shared", "forest", "ocean", "cold", "other"}
 
 ANTHROPIC_MODELS = [config for config in MODELS if config["provider"] == "anthropic"]
+DISPLAY_MODELS = [config for config in MODELS if config["display"]]
 OPENAI_MODELS = [config for config in MODELS if config["provider"] == "openai"]
 KIMI_MODELS = [config for config in MODELS if config["provider"] == "kimi"]
 
 
-def test_supported_model_roster_keeps_display_trio_and_adds_lab_only_kimi_k3():
+def test_supported_model_roster_ships_the_gpt_fable_kimi_display_trio():
     assert MODELS == [
         {
             "provider": "anthropic",
             "model_id": "claude-opus-4-8",
             "label": "CLAUDE OPUS",
             "tag": "OPUS",
-            "display": True,
+            "display": False,
         },
         {
             "provider": "anthropic",
             "model_id": "claude-sonnet-5",
             "label": "CLAUDE SONNET",
             "tag": "SONNET",
-            "display": True,
+            "display": False,
         },
         {
             "provider": "openai",
@@ -376,14 +376,14 @@ def test_supported_model_roster_keeps_display_trio_and_adds_lab_only_kimi_k3():
             "model_id": "claude-fable-5",
             "label": "CLAUDE FABLE",
             "tag": "FABLE",
-            "display": False,
+            "display": True,
         },
         {
             "provider": "kimi",
             "model_id": "k3",
             "label": "KIMI K3",
             "tag": "KIMI",
-            "display": False,
+            "display": True,
         },
     ]
     assert sum(config["display"] for config in MODELS) == DISPLAY_MODEL_COUNT == 3
@@ -2120,7 +2120,7 @@ def test_cli_defaults_to_api_and_accepts_shared_effort_and_auth_levels():
     assert defaults.effort == DEFAULT_EFFORT
     assert defaults.auth == DEFAULT_AUTH
     assert defaults.session == DEFAULT_SESSION == "persistent"
-    assert defaults.runs == DEFAULT_RUNS == 7
+    assert defaults.runs == DEFAULT_RUNS == 5
     assert defaults.selection == DEFAULT_SELECTION == "median"
     for effort in EFFORT_LEVELS:
         assert (
@@ -2151,7 +2151,8 @@ def test_cli_defaults_to_api_and_accepts_shared_effort_and_auth_levels():
             "low",
         ]
     )
-    assert kimi.runs == DEFAULT_KIMI_RUNS == 1
+    # Kimi shares the ONE uniform run default — no per-provider divergence.
+    assert kimi.runs == DEFAULT_RUNS == 5
 
 
 def test_cli_requires_odd_median_runs_but_best_accepts_any_positive_count(capsys):
@@ -3027,15 +3028,34 @@ def test_raw_lab_artifact_keeps_all_runs_transcripts_transport_and_token_usage(
     assert kimi_session["selection"] == "median"
     assert kimi_session["duration"] == 3.5
     assert kimi_session["token_usage"] == standardized_usage(31, 4)
-    assert kimi_session["display"] is False
+    assert kimi_session["display"] is True
+
+    # Opus/Sonnet sessions above are now lab-only; the trio completes with Fable.
+    fable_summary = ModelSummary(
+        config=MODELS[5],
+        results=(
+            make_run(2, turns=2, words=("forest", "ocean")),
+        ),
+        selection="median",
+        selected_run_index=0,
+    )
+    _, artifact = write_lab_artifact(
+        puzzle_path,
+        fable_summary,
+        cap=300,
+        effort="medium",
+        auth="api",
+        output_dir=output_dir,
+        timestamp="2026-07-18T15:00:00Z",
+    )
 
     entries = display_benchmark_entries(artifact)
     assert [entry["model"] for entry in entries] == [
-        "claude-opus-4-8",
-        "claude-sonnet-5",
         "gpt-5.6-sol",
+        "claude-fable-5",
+        "k3",
     ]
-    assert [entry["tag"] for entry in entries] == ["OPUS", "SONNET", "GPT"]
+    assert [entry["tag"] for entry in entries] == ["GPT", "FABLE", "KIMI"]
 
     lab_only = ModelSummary(
         config=MODELS[3],
@@ -3061,7 +3081,7 @@ def test_lab_and_display_selection_keep_best_and_median_cohorts_separate(tmp_pat
     puzzle_path = tmp_path / "forest_ocean.json"
 
     for selection, score in (("median", 3), ("best", 2)):
-        for config in MODELS[:3]:
+        for config in DISPLAY_MODELS:
             words = (
                 ("shared", "forest", "ocean")
                 if score == 3
@@ -3100,7 +3120,7 @@ def test_lab_and_display_selection_keep_persistent_and_stateless_cohorts_separat
     puzzle_path = tmp_path / "forest_ocean.json"
 
     for session_mode, score in (("persistent", 2), ("stateless", 3)):
-        for config in MODELS[:3]:
+        for config in DISPLAY_MODELS:
             words = (
                 ("forest", "ocean")
                 if score == 2
@@ -3145,65 +3165,47 @@ def test_in_place_cli_accumulates_lab_runs_then_embeds_only_the_complete_trio(
     monkeypatch.setattr("llm_play.load_vocab", lambda _lang: VOCAB)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("KIMI_CODE_API_KEY", "test-key")
+    monkeypatch.setattr(
+        "llm_play.validate_kimi_subscription_auth", lambda _api_key: "Kimi Code"
+    )
     monkeypatch.setattr(
         "llm_play.provider_reply",
         lambda *_args, **_kwargs: ScriptedModel(["forest", "ocean"]),
     )
 
-    for selector in ("OPUS", "SONNET"):
-        assert (
-            main(
-                [
-                    str(puzzle_path),
-                    "--model",
-                    selector,
-                    "--runs",
-                    "1",
-                    "--in-place",
-                ]
-            )
-            == 0
-        )
+    def in_place_args(selector):
+        arguments = [
+            str(puzzle_path),
+            "--model",
+            selector,
+            "--runs",
+            "1",
+            "--in-place",
+        ]
+        if selector == "KIMI":
+            arguments += ["--auth", "subscription", "--effort", "low"]
+        return arguments
+
+    for selector in ("FABLE", "KIMI"):
+        assert main(in_place_args(selector)) == 0
         assert "benchmark" not in json.loads(
             puzzle_path.read_text(encoding="utf-8")
         )
 
-    assert (
-        main(
-            [
-                str(puzzle_path),
-                "--model",
-                "GPT-SOL",
-                "--runs",
-                "1",
-                "--in-place",
-            ]
-        )
-        == 0
-    )
+    assert main(in_place_args("GPT-SOL")) == 0
     embedded = json.loads(puzzle_path.read_text(encoding="utf-8"))["benchmark"]
     assert [entry["model"] for entry in embedded] == [
-        "claude-opus-4-8",
-        "claude-sonnet-5",
         "gpt-5.6-sol",
+        "claude-fable-5",
+        "k3",
     ]
     assert all(entry["tries"] == 2 for entry in embedded)
     assert all(entry["run"] == ["forest", "ocean"] for entry in embedded)
 
+    # A retired display model is now lab-only and must not disturb the trio.
     before_lab_only = deepcopy(embedded)
-    assert (
-        main(
-            [
-                str(puzzle_path),
-                "--model",
-                "GPT-TERRA",
-                "--runs",
-                "1",
-                "--in-place",
-            ]
-        )
-        == 0
-    )
+    assert main(in_place_args("OPUS")) == 0
     assert json.loads(puzzle_path.read_text(encoding="utf-8"))["benchmark"] == (
         before_lab_only
     )
@@ -3211,7 +3213,7 @@ def test_in_place_cli_accumulates_lab_runs_then_embeds_only_the_complete_trio(
         (lab_dir / "puzzle.bench.json").read_text(encoding="utf-8")
     )
     assert len(artifact["sessions"]) == 4
-    assert artifact["sessions"][-1]["model_id"] == "gpt-5.6-terra"
+    assert artifact["sessions"][-1]["model_id"] == "claude-opus-4-8"
 
 
 def test_prompt_bump_keeps_the_existing_trio_until_atomic_replacement(
@@ -3269,49 +3271,42 @@ def test_prompt_bump_keeps_the_existing_trio_until_atomic_replacement(
     monkeypatch.setattr("llm_play.load_vocab", lambda _lang: VOCAB)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("KIMI_CODE_API_KEY", "test-key")
+    monkeypatch.setattr(
+        "llm_play.validate_kimi_subscription_auth", lambda _api_key: "Kimi Code"
+    )
     monkeypatch.setattr(
         "llm_play.provider_reply",
         lambda *_args, **_kwargs: ScriptedModel(["forest", "ocean"]),
     )
 
-    for selector in ("OPUS", "SONNET"):
-        assert (
-            main(
-                [
-                    str(puzzle_path),
-                    "--model",
-                    selector,
-                    "--runs",
-                    "1",
-                    "--in-place",
-                ]
-            )
-            == 0
-        )
+    def in_place_args(selector):
+        arguments = [
+            str(puzzle_path),
+            "--model",
+            selector,
+            "--runs",
+            "1",
+            "--in-place",
+        ]
+        if selector == "KIMI":
+            arguments += ["--auth", "subscription", "--effort", "low"]
+        return arguments
+
+    for selector in ("FABLE", "KIMI"):
+        assert main(in_place_args(selector)) == 0
         assert json.loads(puzzle_path.read_text(encoding="utf-8"))[
             "benchmark"
         ] == old_entries
 
     assert "kept existing benchmark" in capsys.readouterr().out
 
-    assert (
-        main(
-            [
-                str(puzzle_path),
-                "--model",
-                "GPT-SOL",
-                "--runs",
-                "1",
-                "--in-place",
-            ]
-        )
-        == 0
-    )
+    assert main(in_place_args("GPT-SOL")) == 0
     replacement = json.loads(puzzle_path.read_text(encoding="utf-8"))["benchmark"]
     assert [entry["model"] for entry in replacement] == [
-        "claude-opus-4-8",
-        "claude-sonnet-5",
         "gpt-5.6-sol",
+        "claude-fable-5",
+        "k3",
     ]
     assert all(entry["tries"] == 2 for entry in replacement)
     assert all(entry["run"] == ["forest", "ocean"] for entry in replacement)
@@ -3820,6 +3815,8 @@ def test_cli_kimi_subscription_uses_dedicated_key_and_reports_effective_effort(
                 "subscription",
                 "--effort",
                 "medium",
+                "--runs",
+                "1",
             ]
         )
         == 0

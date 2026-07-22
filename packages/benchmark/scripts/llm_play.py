@@ -55,14 +55,14 @@ MODELS = [
         "model_id": "claude-opus-4-8",
         "label": "CLAUDE OPUS",
         "tag": "OPUS",
-        "display": True,
+        "display": False,
     },
     {
         "provider": "anthropic",
         "model_id": "claude-sonnet-5",
         "label": "CLAUDE SONNET",
         "tag": "SONNET",
-        "display": True,
+        "display": False,
     },
     {
         "provider": "openai",
@@ -90,14 +90,14 @@ MODELS = [
         "model_id": "claude-fable-5",
         "label": "CLAUDE FABLE",
         "tag": "FABLE",
-        "display": False,
+        "display": True,
     },
     {
         "provider": "kimi",
         "model_id": "k3",
         "label": "KIMI K3",
         "tag": "KIMI",
-        "display": False,
+        "display": True,
     },
 ]
 DISPLAY_MODEL_COUNT = 3
@@ -107,8 +107,7 @@ DISPLAY_MODEL_COUNT = 3
 PROMPT_VERSION = "23"
 
 DEFAULT_CAP = 300
-DEFAULT_RUNS = 7
-DEFAULT_KIMI_RUNS = 1
+DEFAULT_RUNS = 5
 SessionMode = Literal["persistent", "stateless"]
 SESSION_MODES: tuple[SessionMode, ...] = ("persistent", "stateless")
 DEFAULT_SESSION: SessionMode = "persistent"
@@ -3522,10 +3521,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--runs",
         type=_positive_int,
-        default=None,
+        default=DEFAULT_RUNS,
         help=(
             "run count for the selected model; median selection requires an odd count "
-            f"(default: {DEFAULT_RUNS}; Kimi: {DEFAULT_KIMI_RUNS})"
+            f"(default: {DEFAULT_RUNS})"
         ),
     )
     parser.add_argument(
@@ -3588,12 +3587,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         args.model_config = select_model(args.model)
     except ValueError as exc:
         parser.error(str(exc))
-    if args.runs is None:
-        args.runs = (
-            DEFAULT_KIMI_RUNS
-            if args.model_config["provider"] == "kimi"
-            else DEFAULT_RUNS
-        )
     if args.selection == "median" and args.runs % 2 == 0:
         parser.error("--runs must be odd so the median is an actual run")
     try:

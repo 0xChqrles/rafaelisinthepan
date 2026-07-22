@@ -187,11 +187,11 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
     "work": "Les Misérables"
   },
   "benchmark": [                                // OPTIONAL exact display trio (#68/#80)
-    { "model": "claude-opus-4-8", "label": "CLAUDE OPUS", "tag": "OPUS",
-      "tries": 3, "run": ["bois", "arbre", "forêt"] },
-    { "model": "claude-sonnet-5", "label": "CLAUDE SONNET", "tag": "SONNET",
-      "tries": 4, "run": ["nature", "bois", "arbre", "forêt"] },
     { "model": "gpt-5.6-sol", "label": "GPT-5.6", "tag": "GPT",
+      "tries": 3, "run": ["bois", "arbre", "forêt"] },
+    { "model": "claude-fable-5", "label": "CLAUDE FABLE", "tag": "FABLE",
+      "tries": 4, "run": ["nature", "bois", "arbre", "forêt"] },
+    { "model": "k3", "label": "KIMI K3", "tag": "KIMI",
       "tries": null, "run": ["bois", "arbre", /* …full run through cap… */ "nature"] }
   ]                                              // null tries = DNF; its full run is kept
 }
@@ -223,10 +223,11 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
 - **`benchmark` is fully OPTIONAL (#68, decided 2026-07-07; schema v2 decided
   2026-07-12 on #68):** absent stays byte-compatible with every existing puzzle. When
   present, it contains **exactly 3** results — the one player-facing trio everywhere:
-  Claude Opus, Claude Sonnet, and GPT-5.6 Sol; wider roster entries stay lab-only. Every
+  GPT-5.6 Sol, Claude Fable, and Kimi K3 (decided 2026-07-22, superseding the original
+  Opus/Sonnet/GPT trio); wider roster entries stay lab-only. Every
   entry requires the exact non-empty `model` id, an honest uppercase full-family `label`
-  (`CLAUDE OPUS`, `CLAUDE SONNET`, `GPT-5.6` — never ambiguous `CLAUDE`), an uppercase
-  pixel-friendly `tag` of at most 6 characters (`OPUS`/`SONNET`/`GPT`), `tries` as a
+  (`GPT-5.6`, `CLAUDE FABLE`, `KIMI K3` — never ambiguous `CLAUDE`), an uppercase
+  pixel-friendly `tag` of at most 6 characters (`GPT`/`FABLE`/`KIMI`), `tries` as a
   positive integer or `null` (DNF at the counted-try cap), and `run` as the **selected
   run's counted display-form guesses in submission order**. `--selection median`
   (default) keeps odd `N` runs sequential/cache-warm and reports the same actual median
@@ -532,9 +533,10 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   and replays folded-vocab existence, unique-try scoring, broadcast rank/MISS feedback,
   strict improvement, solved locks, and the counted-try cap. The singular `--model`
   accepts the seven-model roster's friendly selector (`OPUS`, `SONNET`, `FABLE`, `GPT-SOL`,
-  `GPT-TERRA`, `GPT-LUNA`, `KIMI`) or exact id; each invocation runs exactly one model. Kimi
-  K3 (`k3`) is lab-only (`display: false`) and therefore never changes the shipped display
-  trio. Ordinary play exposes `none|low|medium|high|xhigh|max`: GPT-5.6 API supports the full scale;
+  `GPT-TERRA`, `GPT-LUNA`, `KIMI`) or exact id; each invocation runs exactly one model. The
+  shipped display trio is GPT-5.6 Sol, Claude Fable, and Kimi K3 (decided 2026-07-22);
+  Opus, Sonnet, Terra, and Luna are lab-only (`display: false`) and never change it.
+  Ordinary play exposes `none|low|medium|high|xhigh|max`: GPT-5.6 API supports the full scale;
   Codex-plan GPT supports `low` through `max`; Anthropic supports `none` through `max`.
   Kimi requires `--auth subscription` with the dedicated `KIMI_CODE_API_KEY`, rejects
   `none` (which would route away from K3), and maps `low→low`, `medium|high→high`, and
@@ -571,7 +573,8 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   `--playbook` accepts only a model/provider/prompt-matched,
   hash-verified `whippin_model_playbook` profile and injects its `final_playbook` under the
   fixed rules as advice. `--selection median|best` defaults to median: median requires odd
-  sequential `--runs` (default 7, but Kimi defaults to 1), cost-prunes a later provable
+  sequential `--runs` (default 5 for EVERY model, Kimi included — decided 2026-07-22; no
+  per-provider run-count divergence), cost-prunes a later provable
   upper-half run at the running median bound, and skips remaining calls after a cap-DNF
   majority; best selects the lowest successful score and cost-prunes a later unsolved run
   when it reaches that incumbent score. Kimi prints its counted-guess exposure and warns that
