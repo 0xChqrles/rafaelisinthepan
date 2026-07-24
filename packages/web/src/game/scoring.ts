@@ -17,9 +17,17 @@ export function s(rank: number, N: number) {
 }
 
 // N for one secret: how many distinct rank values its map holds (see header comment).
+// Cached per map object: a puzzle's rank maps are immutable and alias-expanded to tens
+// of thousands of keys (#104), and this runs inside progressTrajectory's per-guess
+// replay — uncached, every counted try walked every key once per PRIOR try, a linear
+// per-submit stall that froze the page for hundreds of ms by mid-round.
+const rankCountCache = new WeakMap<Record<string, RankEntry>, number>();
 export function rankCount(rankMap: Record<string, RankEntry>): number {
+  const cached = rankCountCache.get(rankMap);
+  if (cached !== undefined) return cached;
   const seen = new Set<number>();
   for (const key in rankMap) seen.add(rankMap[key].rank);
+  rankCountCache.set(rankMap, seen.size);
   return seen.size;
 }
 

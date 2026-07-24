@@ -89,6 +89,12 @@ button * {
 .bg-waves {
   position: fixed;
   inset: 0;
+  /* A canvas is a REPLACED element: `inset: 0` alone does not stretch it — its display
+     size stays the intrinsic (dpr-scaled) backing-store size, rendering the field zoomed
+     by devicePixelRatio (3x3-cell blocks on a dpr-3 phone). Pin the display size to the
+     viewport so the drawn field lands on the --cell grid at every dpr. */
+  width: 100%;
+  height: 100%;
   z-index: -1;
   pointer-events: none;
 }
@@ -505,9 +511,8 @@ button * {
    side between the input area and the keyboard, sorted by tries ascending (best far
    left). Position encodes ORDER only — uniform 25% slots; the numbers below carry the
    distances. Slots are absolutely positioned and slid by transform, so a standings
-   change is a slide exchange between live elements (React keys keep node identity);
-   the crown never moves — it floats above the LEFTMOST slot and the characters
-   exchange beneath it. Its height comes out of .play's flexible space, never the
+   change is a slide exchange between live elements (React keys keep node identity).
+   Its height comes out of .play's flexible space, never the
    keyboard's. Decorative (aria-hidden); Round mirrors its events into the live
    region. --- */
 .lineup {
@@ -519,11 +524,11 @@ button * {
 }
 .lineup-track {
   position: relative;
-  height: 136px;
+  height: 112px;
 }
 .lineup-slot {
   position: absolute;
-  top: 24px; /* below the crown zone */
+  top: 0;
   left: 0;
   /* Divide the track by the entrant count (--n, set on .lineup-track): the row stays
      edge-to-edge whether the player faces one opponent or the full display trio. */
@@ -558,6 +563,27 @@ button * {
 .lineup-sprite.hit {
   animation: word-shake 0.4s ease-in-out;
 }
+/* Teleport swap: the exchange is VISIBLE — at the end of the dissolve, the characters
+   collapsed into spheres, the slots take their new positions and this FAST transition
+   slides them across during the shared flash (--swap-ms, set by StandingsLineup to the
+   flash's exact duration), so the two orbs are seen quickly trading places before they
+   materialize. (StandingsLineup sets the class for the whole teleport.) */
+.lineup-teleporting .lineup-slot {
+  transition: transform var(--swap-ms, 0.18s) ease-in-out;
+}
+/* One 42x51 teleport strip cell (JS steps backgroundPositionX per tick), at the idle
+   sprites' 2x zoom and standing on the same flex-end baseline. Taller than the 64px
+   sprite box on purpose — the beam rises above the character and overflows upward;
+   flex: none keeps the 84px rendered width from being squeezed on quarter-row phone
+   slots (~80px), where it just overflows 2 transparent px per side. */
+.lineup-effect {
+  width: 42px;
+  height: 51px;
+  flex: none;
+  zoom: 2;
+  image-rendering: pixelated;
+  background-repeat: no-repeat;
+}
 /* Caption split around the character (mobile-first: a slot is a QUARTER of the row —
    at 320px that's ~73px — so the name and the number each get their own line rather
    than fighting for width side by side): the name sits ABOVE the sprite wearing the
@@ -570,6 +596,11 @@ button * {
   color: var(--slot-color, var(--muted));
   font-family: var(--press);
   text-shadow: none;
+}
+/* A teleporting character travels nameless: the tag vanishes for the whole trip and
+   snaps back when it ends — visibility, not display, so the column never reflows. */
+.lineup-tag.teleporting {
+  visibility: hidden;
 }
 /* A changed try count LANDS (the floating hit numbers' vocabulary, not a silent swap):
    the span is keyed by its value, so each change remounts it and replays the pop. */
@@ -593,39 +624,6 @@ button * {
    live numbers keep the contrast. */
 .lineup-score.dnf {
   color: var(--muted);
-}
-/* The crown: ONE gold asset (a currentColor pixel SVG tinted with the solved-word
-   gold); the in-play disabled state is DERIVED at render time (grayscale at full
-   opacity), so the two states can never drift. */
-.lineup-crown {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: calc(100% / var(--n, 4)); /* track over the leftmost (first-place) slot */
-  display: flex;
-  justify-content: center;
-  color: var(--hole);
-  filter: grayscale(1);
-  transition: filter 0.2s linear;
-}
-.lineup-crown.gold {
-  filter: none;
-}
-/* The crown transfer is the mid-game loss beat: a hop over the exchanging characters,
-   on the floating hits' springy pop curve. */
-.lineup-crown.hop {
-  animation: crown-hop 0.45s cubic-bezier(0.22, 1.4, 0.4, 1);
-}
-@keyframes crown-hop {
-  0% {
-    transform: translateY(0);
-  }
-  45% {
-    transform: translateY(-9px) rotate(-6deg);
-  }
-  100% {
-    transform: translateY(0) rotate(0deg);
-  }
 }
 
 /* --- Floating app header (redesigned 2026-07-21): NO band, NO border — the old opaque
@@ -1786,13 +1784,12 @@ button * {
   }
 
   /* Standings lineup (#81): the SAME 2x characters as desktop (they fit a quarter-row
-     even at 320px), just a tighter crown zone and column gap to reclaim a little
+     even at 320px), just a tighter column gap to reclaim a little
      vertical space; the height comes out of .play's flexible gap. */
   .lineup-track {
-    height: 128px;
+    height: 110px;
   }
   .lineup-slot {
-    top: 18px;
     gap: 5px;
   }
 

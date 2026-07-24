@@ -4,8 +4,8 @@ import { cellSize } from './cellSize';
 // The app-wide animated backdrop: the ocean seen from above, rendered on the SAME
 // --cell squares the body's graph-paper grid outlines (cellSize()). A single fixed
 // canvas behind everything (see .bg-waves) varies ONLY the fill opacity of whole
-// cells — full squares, no inset, no borders — so the grid lines just show through
-// the translucent fill.
+// cell blocks — full squares, no inset, no borders — so the grid lines just show
+// through the translucent fill.
 //
 // The look comes from RIDGED Perlin noise: brightness peaks along the ZERO-CROSSINGS of
 // a multi-octave field (r = 1 - |n|, sharpened), which draws thin connected crest lines
@@ -46,6 +46,13 @@ const MAX_ALPHA = 0.055;
 const SKIP_ALPHA = 0.005;
 // The drift is slow enough that 30fps steps are invisible; no reason to burn 60.
 const FRAME_MS = 33;
+// Field granularity: how many grid cells share ONE noise sample (an NxN grid-aligned
+// block fills uniformly). A wide screen holds many cells, so a coarser field reads
+// better; a phone fits only a few cells, so per-cell samples keep enough detail for
+// the animation to read. Follows the same 640px breakpoint that shrinks --cell.
+const MOBILE_QUERY = '(max-width: 640px)';
+const BLOCK_MOBILE = 1;
+const BLOCK_DESKTOP = 2;
 
 // Classic improved-Perlin 2D noise (fade curve + 8 corner gradients), inlined so the
 // backdrop needs no dependency. Output roughly in [-1, 1].
@@ -122,14 +129,19 @@ export default function BackgroundWaves() {
     let w = 0;
     let h = 0;
     let cell = 24;
+    let block = BLOCK_DESKTOP;
     let lastT = 0;
 
     const draw = (t: number) => {
       lastT = t;
       ctx.clearRect(0, 0, w, h);
       ctx.fillStyle = fg;
-      const cols = Math.ceil(w / cell);
-      const rows = Math.ceil(h / cell);
+      // One noise sample per block×block cells: cx/cy are BLOCK indices, so the
+      // noise-space scales/drifts read per block and the desktop field is simply the
+      // mobile field zoomed ×2, grid-aligned.
+      const step = cell * block;
+      const cols = Math.ceil(w / step);
+      const rows = Math.ceil(h / step);
       for (let cy = 0; cy < rows; cy++) {
         for (let cx = 0; cx < cols; cx++) {
           const n =
@@ -145,7 +157,7 @@ export default function BackgroundWaves() {
           const alpha = r * r * r * MAX_ALPHA;
           if (alpha < SKIP_ALPHA) continue;
           ctx.globalAlpha = alpha;
-          ctx.fillRect(cx * cell, cy * cell, cell, cell);
+          ctx.fillRect(cx * step, cy * step, step, step);
         }
       }
       ctx.globalAlpha = 1;
@@ -156,6 +168,7 @@ export default function BackgroundWaves() {
       // The page's --cell (index.css): re-read here so crossing the mobile breakpoint
       // (which shrinks the graph paper) re-tunes the wave field in the same resize.
       cell = cellSize();
+      block = window.matchMedia(MOBILE_QUERY).matches ? BLOCK_MOBILE : BLOCK_DESKTOP;
       w = window.innerWidth;
       h = window.innerHeight;
       canvas.width = Math.round(w * dpr);

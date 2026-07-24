@@ -1,13 +1,23 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { BenchmarkResults } from '@whippin/shared';
+import type { LineupModel } from '../game/benchmark';
 import { lineupModel, lineupEvents } from '../game/benchmark';
 import { t } from '../i18n';
-import Crown from '../assets/crown.svg?react';
 import playerSprite from '../assets/characters/player.png';
 import fableSprite from '../assets/characters/fable.png';
 import kimiSprite from '../assets/characters/kimi.png';
 import gptSprite from '../assets/characters/gpt.png';
+import {
+  BOT_KEYS,
+  CHARACTER_PALETTES,
+  TELEPORT_FRAMES,
+  TELEPORT_FRAME_W,
+  preloadTeleportStrips,
+  teleportSharedUrl,
+  teleportStrip,
+} from './teleportStrips';
+import type { CharacterKey } from './teleportStrips';
 
 // One pixel character per canonical display slot (same order as DISPLAY_MODEL_IDS): an
 // opponent wears the sprite of its position in that fixed order, whatever subset is present.
@@ -16,18 +26,58 @@ const BOT_SPRITES = [fableSprite, kimiSprite, gptSprite] as const;
 
 // Identity colors, one per display slot (same order as BOT_SPRITES). The name under a
 // character wears its color, echoing the colored accents drawn INTO that sprite's art
-// (currently the eyes; the outlines are white) — keep these hexes in sync with the art's
-// accent pixels when the sprites change. SATURATED like the rest of the palette (electric
-// accent/danger/gold/heat ramp), each offset from the semantic hues (heat crimson/orange/
-// violet/cyan, hole gold, accent blue) so a name can't be misread as feedback. The player
-// wears the game's accent blue (the prompt/progress "blue = you").
-const BOT_COLORS = ['#ff6b3d', '#9a5bff', '#00e08f'] as const;
+// (currently the eyes; the outlines are white) — the hexes live in CHARACTER_PALETTES
+// (teleportStrips.ts, the base tones), the ONE palette source shared with the teleport
+// recolor; keep THAT in sync with the art's accent pixels when the sprites change.
+// SATURATED like the rest of the palette (electric accent/danger/gold/heat ramp), each
+// offset from the semantic hues (heat crimson/orange/violet/cyan, hole gold, accent
+// blue) so a name can't be misread as feedback. The player wears the game's accent blue
+// (the prompt/progress "blue = you"; the CSS var equals the palette's player base).
+const BOT_COLORS = BOT_KEYS.map((k) => CHARACTER_PALETTES[k].base);
 const PLAYER_COLOR = 'var(--accent)';
+
+// Teleport swap choreography (frames in teleportStrips.ts): one shared tick clock walks
+// out (5) -> shared flash (2) -> in (2) at FRAME_MS per frame. The standings SWAP is
+// VISIBLE (decided 2026-07-24): at the end of the dissolve — the characters collapsed
+// into spheres — every slot takes its new position and slides across in exactly the
+// shared-flash beat (SWAP_MS, fed to the CSS transition), so the exchange reads as the
+// two orbs quickly trading places before they materialize.
+const FRAME_MS = 90;
+const SWAP_TICK = TELEPORT_FRAMES.out;
+const SWAP_MS = TELEPORT_FRAMES.shared * FRAME_MS;
+const IN_TICK = SWAP_TICK + TELEPORT_FRAMES.shared;
+const TOTAL_TICKS = IN_TICK + TELEPORT_FRAMES.in;
+
+interface TeleportState {
+  tick: number;
+  heldOrder: Map<string, number>; // pre-swap slot index per entrant key, until commit
+  heldTries: Map<string, number | null>; // pre-swap counts, shown until the teleport ends
+  moved: Set<string>; // the entrant keys that change position (they play the frames)
+}
+
+const characterKey = (entrant: { player: boolean; sprite: number }): CharacterKey =>
+  entrant.player ? 'player' : BOT_KEYS[entrant.sprite];
+
+const prefersReducedMotion = () =>
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// A teleport only starts with every mover's recolored strips in hand (they preload on
+// mount, so this only fails in the first instants or after a load error) — otherwise
+// the swap keeps the plain slide.
+function canTeleport(model: LineupModel, moved: Set<string>): boolean {
+  return model.entrants.every(
+    (e) =>
+      !moved.has(e.key) ||
+      (teleportStrip(characterKey(e), 'out') !== null &&
+        teleportStrip(characterKey(e), 'in') !== null),
+  );
+}
 
 // Mid-game standings lineup (#81): the player and the present display opponents (1..3 of
 // FABLE / KIMI K3 / GPT-5.6) standing side by side above the keyboard, sorted by tries
 // ascending (best far left), name + score
-// under each, and the crown floating above the leader. Purely derived UI: everything is a
+// under each. Purely derived UI: everything is a
 // function of (guessCount, benchmark), so a reloaded round reconstructs it with no state.
 //
 // DOM order is stable (React keys move the same nodes on a reorder), and each slot's
@@ -50,69 +100,145 @@ export default function StandingsLineup({
     [benchmark, guessCount, lang],
   );
 
-  // The mid-game loss beat: when the crown leaves the player, hop it and shake the player
-  // sprite (the game's existing hit vocabulary). Detected by diffing consecutive lineup
-  // states; the counter keys the animated nodes so the animation replays on each beat
-  // (the crown can only transfer once per round, but a dev-tools time traveler is safe).
-  const prevModel = useRef(model);
+  // The mid-game loss beat: when the player loses first place, shake the player sprite
+  // (the game's existing hit vocabulary). Detected by diffing consecutive lineup
+  // states; the counter keys the animated node so the animation replays on each beat
+  // (the lead can only be lost once per round, but a dev-tools time traveler is safe).
   const [lossBeat, setLossBeat] = useState(0);
+  const [teleport, setTeleport] = useState<TeleportState | null>(null);
+  const [prevModel, setPrevModel] = useState(model);
   useEffect(() => {
-    const events = lineupEvents(prevModel.current, model);
-    prevModel.current = model;
-    if (events.lostLead) setLossBeat((n) => n + 1);
-  }, [model]);
+    preloadTeleportStrips();
+  }, []);
+  // Diffed DURING render (React's derived-state pattern), NOT in an effect: setState
+  // here makes React re-render before committing, so the reordered positions NEVER
+  // reach the DOM pre-teleport. Any effect — even a layout one — runs after the commit,
+  // and a style recalc forced between the two commits (the submit path measures layout)
+  // would seed the slot transition from the NEW order and visibly slide it back.
+  if (model !== prevModel) {
+    setPrevModel(model);
+    const events = lineupEvents(prevModel, model);
+    // A standings change teleports the movers instead of sliding them. Reduced motion
+    // (or missing strips) skips it — the slide plays, itself collapsed to an instant
+    // jump by the global reduced-motion rule. A reorder landing mid-teleport restarts
+    // the clock from the newest committed order (rare: it takes two counted tries
+    // within ~a second).
+    const prevIndex = new Map(prevModel.entrants.map((e, i) => [e.key, i]));
+    const moved = new Set(
+      model.entrants
+        .filter((e, i) => prevIndex.has(e.key) && prevIndex.get(e.key) !== i)
+        .map((e) => e.key),
+    );
+    const teleports =
+      moved.size > 0 && !prefersReducedMotion() && canTeleport(model, moved);
+    if (teleports) {
+      setTeleport({
+        tick: 0,
+        heldOrder: prevIndex,
+        heldTries: new Map(prevModel.entrants.map((e) => [e.key, e.tries])),
+        moved,
+      });
+    }
+    // The loss-beat shake only plays on the slide FALLBACK — a teleport IS the beat,
+    // and shaking a dematerializing character would fight its frames.
+    if (events.lostLead && !teleports) setLossBeat(lossBeat + 1);
+  }
+  // The tick clock: one timeout chain, FRAME_MS per frame, cleared on unmount/restart.
+  useEffect(() => {
+    if (!teleport) return;
+    const id = setTimeout(
+      () =>
+        setTeleport((cur) =>
+          cur && cur.tick + 1 < TOTAL_TICKS ? { ...cur, tick: cur.tick + 1 } : null,
+        ),
+      FRAME_MS,
+    );
+    return () => clearTimeout(id);
+  }, [teleport]);
 
   return (
     <div className="lineup" aria-hidden="true">
-      {/* --n = total entrants (player + present display opponents, 2..4): slot and crown
-          widths divide the track by it, so the row stays edge-to-edge for any subset. */}
+      {/* --n = total entrants (player + present display opponents, 2..4): slot widths
+          divide the track by it, so the row stays edge-to-edge for any subset. */}
       <div
-        className="lineup-track"
-        style={{ '--n': model.entrants.length } as CSSProperties}
+        className={`lineup-track${teleport ? ' lineup-teleporting' : ''}`}
+        style={
+          { '--n': model.entrants.length, '--swap-ms': `${SWAP_MS}ms` } as CSSProperties
+        }
       >
-        {/* The crown never moves: it floats above the LEFTMOST slot (first place) and the
-            characters exchange beneath it. Grey (grayscale of the gold asset) during play,
-            gold once the round ends — derived, so the two states can never drift. */}
-        <span
-          key={`crown-${lossBeat}`}
-          className={`lineup-crown${solved ? ' gold' : ''}${lossBeat > 0 && !solved ? ' hop' : ''}`}
-        >
-          <Crown className="pixel-icon" aria-hidden />
-        </span>
         {model.entrants.map((entrant, index) => {
           const spriteSrc = entrant.player ? playerSprite : BOT_SPRITES[entrant.sprite];
+          // Until the swap tick, a mid-teleport lineup keeps rendering the PRE-swap
+          // positions; at the swap every slot takes its new index and the fast
+          // teleporting transition (SWAP_MS) slides it across during the shared flash.
+          const slotIndex =
+            teleport && teleport.tick < SWAP_TICK
+              ? (teleport.heldOrder.get(entrant.key) ?? index)
+              : index;
+          // A moving entrant swaps its idle sprite for the strip frame of the current
+          // tick: its own recolored out/in frames around the neutral shared flash.
+          let effect: { src: string | null; frame: number } | null = null;
+          if (teleport?.moved.has(entrant.key)) {
+            const { tick } = teleport;
+            effect =
+              tick < SWAP_TICK
+                ? { src: teleportStrip(characterKey(entrant), 'out'), frame: tick }
+                : tick < IN_TICK
+                  ? { src: teleportSharedUrl, frame: tick - SWAP_TICK }
+                  : { src: teleportStrip(characterKey(entrant), 'in'), frame: tick - IN_TICK };
+          }
+          // The count that triggered the teleport lands only AFTER it: every slot keeps
+          // its pre-swap tries for the whole animation, and the release replays the
+          // score pop (the span is keyed by value) as the landing beat.
+          const shownTries = teleport
+            ? (teleport.heldTries.get(entrant.key) ?? entrant.tries)
+            : entrant.tries;
           return (
             <div
               key={entrant.key}
               className="lineup-slot"
               style={
                 {
-                  '--i': index,
+                  '--i': slotIndex,
                   // The slot's identity color: the name below wears it, matching the
                   // outline baked into the character's hand-drawn art.
                   '--slot-color': entrant.player ? PLAYER_COLOR : BOT_COLORS[entrant.sprite],
                 } as CSSProperties
               }
             >
-              {/* Identity-colored name ABOVE the character (just under the crown zone);
+              {/* Identity-colored name ABOVE the character;
                   the live try count keeps its own line below the sprite (mobile-first: a
-                  slot is only a quarter of the row, so they never fight for width). */}
-              <span className="lineup-tag">{entrant.tag}</span>
+                  slot is only a quarter of the row, so they never fight for width). A
+                  teleporting character travels NAMELESS: its tag vanishes with the first
+                  dissolve frame and snaps back — no animation — when the trip ends. */}
+              <span className={`lineup-tag${effect ? ' teleporting' : ''}`}>
+                {entrant.tag}
+              </span>
               <span
                 key={entrant.player ? `sprite-${lossBeat}` : 'sprite'}
                 className={`lineup-sprite${
                   entrant.player && lossBeat > 0 && !solved ? ' hit' : ''
                 }`}
               >
-                <img src={spriteSrc} alt="" aria-hidden />
+                {effect ? (
+                  <span
+                    className="lineup-effect"
+                    style={{
+                      backgroundImage: `url(${effect.src})`,
+                      backgroundPositionX: `${-effect.frame * TELEPORT_FRAME_W}px`,
+                    }}
+                  />
+                ) : (
+                  <img src={spriteSrc} alt="" aria-hidden />
+                )}
               </span>
               {/* Keyed by value: a changed count (the player's, on each counted try)
                   remounts the span and replays the landing pop. */}
               <span
-                key={`score-${entrant.tries}`}
-                className={`lineup-score${entrant.tries === null ? ' dnf' : ''}`}
+                key={`score-${shownTries}`}
+                className={`lineup-score${shownTries === null ? ' dnf' : ''}`}
               >
-                {entrant.tries ?? t(lang, 'dnf')}
+                {shownTries ?? t(lang, 'dnf')}
               </span>
             </div>
           );

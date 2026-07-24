@@ -610,11 +610,11 @@ function Round({
         )}
       </div>
 
-      {/* Standings lineup (#81): the player + the present display opponents sorted by tries,
-          crown on the leader, between the input area and the keyboard. Height comes out
-          of .play's flexible space, never the keyboard's. It persists for the whole round
-          (a scoreboard, not a chase); on the solving try the crown flips gold and the
-          lineup freezes, leaving with the keyboard when the results take the tray. */}
+      {/* Standings lineup (#81): the player + the present display opponents sorted by
+          tries (leader far left), between the input area and the keyboard. Height comes
+          out of .play's flexible space, never the keyboard's. It persists for the whole
+          round (a scoreboard, not a chase); on the solving try the lineup freezes,
+          leaving with the keyboard when the results take the tray. */}
       {benchmark && hasDisplayEntries(benchmark) && !showResults && (
         <StandingsLineup
           benchmark={benchmark}

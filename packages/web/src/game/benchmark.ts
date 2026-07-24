@@ -76,11 +76,12 @@ export interface LineupModel {
   playerIndex: number;
 }
 
-// Map (live counted tries, benchmark entries) -> the standings lineup. Same ordering
-// contract as benchmarkRanking (stable sort, player inserted last): position encodes
-// ORDER only, ties keep the curator's model order with the player to the RIGHT of an
-// opponent it just caught, and DNF models stand at the far right. The crown always
-// belongs to entrants[0].
+// Map (live counted tries, benchmark entries) -> the standings lineup. Position encodes
+// ORDER only, ties among models keep the curator's puzzle order, and DNF models stand at
+// the far right. UNLIKE benchmarkRanking, a mid-game tie keeps the PLAYER ahead: an
+// opponent only moves in front once the live count strictly EXCEEDS its score (decided
+// 2026-07-24) — reaching an opponent's count is not yet losing to it while the round is
+// still running. entrants[0] is the leader.
 export function lineupModel(
   entries: BenchmarkResults,
   playerTries: number,
@@ -96,14 +97,14 @@ export function lineupModel(
       sprite,
     })),
     { key: 'player', tag: playerLabel, label: playerLabel, tries: playerTries, player: true, sprite: -1 },
-  ].sort(byTries);
+  ].sort((a, b) => byTries(a, b) || Number(b.player) - Number(a.player));
   return { entrants, playerIndex: entrants.findIndex((e) => e.player) };
 }
 
 // What changed for the player between two lineup states. Opponent scores are static and
 // the live count only grows, so the player only ever moves RIGHT: `passedBy` lists the
 // opponents newly ahead of the player, and `lostLead` fires (at most once per round) when
-// the crown leaves the player — the new leader is then among `passedBy`.
+// the player loses first place — the new leader is then among `passedBy`.
 export interface LineupEvents {
   passedBy: LineupEntrant[];
   lostLead: boolean;
