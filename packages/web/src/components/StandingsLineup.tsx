@@ -94,11 +94,19 @@ export default function StandingsLineup({
   guessCount,
   solved,
   lang,
+  dropping = false,
+  landed = false,
+  onDropEnd,
 }: {
   benchmark: BenchmarkResults;
   guessCount: number;
   solved: boolean;
   lang: string;
+  // The solved drop choreography (#110), owned by Game: `dropping` plays the ride down
+  // to the screen bottom, `landed` commits the post-solve layout slot (below the tray).
+  dropping?: boolean;
+  landed?: boolean;
+  onDropEnd?: () => void;
 }) {
   const model = useMemo(
     () => lineupModel(benchmark, guessCount, t(lang, 'you')),
@@ -162,7 +170,22 @@ export default function StandingsLineup({
   }, [teleport]);
 
   return (
-    <div className="lineup" aria-hidden="true">
+    <div
+      className={`lineup${dropping ? ' dropping' : ''}${landed ? ' landed' : ''}`}
+      aria-hidden="true"
+      // The drop's own transform transition ending is what releases the results into the
+      // tray. Slot slides/teleports transition transform too and bubble up here — only
+      // the root's transition counts.
+      onTransitionEnd={
+        dropping
+          ? (e) => {
+              if (e.target === e.currentTarget && e.propertyName === 'transform') {
+                onDropEnd?.();
+              }
+            }
+          : undefined
+      }
+    >
       {/* --n = total entrants (player + present display opponents, 2..4): slot widths
           divide the track by it, so the row stays edge-to-edge for any subset. */}
       <div

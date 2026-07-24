@@ -220,6 +220,9 @@ function Round({
 
   const solved = holes.every((h) => h.rank === 0); // sentence discovered -> round over
   const allWordsResolved = solved && resolvedHoleIndices.size === holes.length;
+  // Whether a lineup is on screen at all — a puzzle with no renderable opponents must
+  // not leave the solved swap waiting on a lineup drop that will never end (#110).
+  const hasLineup = benchmark !== undefined && hasDisplayEntries(benchmark);
 
   // The celebration is deliberately code-split out of startup. Warm its chunk only while
   // an eligible unsolved daily round is idle; if a player solves before idle fires, the
@@ -269,11 +272,21 @@ function Round({
   // frozen until the source typewriter explicitly reports that it has finished.
   const [sourceRevealStarted, setSourceRevealStarted] = useState(solved);
   const [sourceRevealComplete, setSourceRevealComplete] = useState(solved);
-  // Keyboard exit beat (#110): a LIVE solve doesn't swap the tray instantly — the
-  // keyboard first slides down out of it (kb-drop), and only its animationend mounts the
-  // results in the same fixed-height space. Rehydrated solves never set this: they mount
-  // the results directly, as before.
+  // Solved exit choreography (#110): a LIVE solve doesn't swap the tray instantly — the
+  // keyboard slides down out of it (kb-drop) while the lineup rides down after it,
+  // landing at the screen bottom (its post-solve home, below the tray). Only when both
+  // have finished do the results rise into the vacated tray, ABOVE the landed lineup.
+  // Rehydrated solves never set these: they mount the final layout directly.
   const [keyboardLeaving, setKeyboardLeaving] = useState(false);
+  const [lineupDropping, setLineupDropping] = useState(false);
+  const finishLineupDrop = useCallback(() => setLineupDropping(false), []);
+  // Safety net: a browser can skip transitionend (e.g. the tab is hidden mid-drop);
+  // never leave the tray stuck waiting on it.
+  useEffect(() => {
+    if (!lineupDropping) return undefined;
+    const id = window.setTimeout(() => setLineupDropping(false), 700);
+    return () => window.clearTimeout(id);
+  }, [lineupDropping]);
   const focusResultAfterSource = useRef(false);
   const prevSolved = useRef<boolean>(solved);
   useEffect(() => {
@@ -286,6 +299,7 @@ function Round({
       setStreakAdvanced(false);
       setAwaitingWordAnimations(false);
       setKeyboardLeaving(false);
+      setLineupDropping(false);
       setPromptExiting(false);
       setSourceRevealStarted(false);
       setSourceRevealComplete(false);
@@ -337,6 +351,7 @@ function Round({
     if (!willShowStreak) {
       setShowResults(true);
       setKeyboardLeaving(true);
+      setLineupDropping(hasLineup);
       setShowStreakDialog(false);
       setSourceRevealStarted(true);
       setAwaitingWordAnimations(false);
@@ -349,6 +364,7 @@ function Round({
     const timer = window.setTimeout(() => {
       setShowResults(true);
       setKeyboardLeaving(true);
+      setLineupDropping(hasLineup);
       setShowStreakDialog(true);
       setAwaitingWordAnimations(false);
     }, STREAK_AFTER_WORDS_MS);
@@ -357,6 +373,7 @@ function Round({
     allWordsResolved,
     awaitingWordAnimations,
     dayNumber,
+    hasLineup,
     isActiveDay,
     streakAdvanced,
     todayDayNumber,
@@ -621,14 +638,18 @@ function Round({
       {/* Standings lineup (#81/#110): the player + the present display opponents sorted
           by tries (leader far left), between the input area and the keyboard. Height comes
           out of .play's flexible space, never the keyboard's. It persists past the solve
-          as the final standings podium (a rehydrated solved round mounts it directly in
-          that frozen end state) — only the keyboard leaves with the results swap. */}
-      {benchmark && hasDisplayEntries(benchmark) && (
+          as the final standings podium: it rides down after the leaving keyboard
+          (`dropping`) and lands at the screen bottom (`landed` — below the tray the
+          results rise into). A rehydrated solved round mounts it landed directly. */}
+      {hasLineup && (
         <StandingsLineup
-          benchmark={benchmark}
+          benchmark={benchmark as BenchmarkResults}
           guessCount={guessCount}
           solved={solved}
           lang={lang}
+          dropping={lineupDropping}
+          landed={showResults && !lineupDropping}
+          onDropEnd={finishLineupDrop}
         />
       )}
 
@@ -636,9 +657,10 @@ function Round({
           playing, the solved results in the SAME space once they reveal — so the keyboard
           leaving neither reflows the layout nor leaves an empty hole. The keyboard lingers
           (inert; submit is guarded) through the last hole's animation, then slides down out
-          of the tray (#110) and the results take its place and rise in. */}
+          of the tray (#110) with the lineup dropping after it; once both are done the
+          landed lineup sits BELOW this tray and the results rise in above it. */}
       <div className={`tray${keyboardLeaving ? ' kb-leaving' : ''}`}>
-        {showResults && !keyboardLeaving ? (
+        {showResults && !keyboardLeaving && !lineupDropping ? (
           <SolvedScreen
             guessCount={guessCount}
             trajectory={trajectory}
