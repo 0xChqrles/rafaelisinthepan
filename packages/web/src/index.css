@@ -651,17 +651,14 @@ button * {
 .lineup-score.dnf {
   color: var(--muted);
 }
-/* Podium end state (#110): a solved round adds .lineup-finished to the track and
-   winner / loser to each slot. The results headline is gone when opponents display
-   (decided 2026-07-24) — the podium OWNS the final count — so the standings numbers
-   take the stage: larger, the champion's in the solved-word gold. The winner/loser
-   SPRITE hooks stay unstyled ON PURPOSE — the art pass hangs the looping
-   celebrate/sulk frames on them; the draft sprites stand still until then. */
-.lineup-finished .lineup-score {
-  font-size: clamp(20px, 6.4vw, 26px);
-}
-.lineup-finished .lineup-slot.winner .lineup-score {
-  color: var(--hole);
+/* Solved exit (#110, decided 2026-07-24): once the keyboard has dropped, the characters
+   teleport OUT one tick apart, left to right. A departing slot travels nameless AND
+   scoreless — its tag and count vanish with its first dissolve frame (visibility, not
+   display, so nothing reflows); past its last flash frame the slot renders empty until
+   the whole lineup unmounts and the leaderboard table takes the standings story. */
+.lineup-slot.exiting .lineup-tag,
+.lineup-slot.exiting .lineup-score {
+  visibility: hidden;
 }
 
 /* --- Floating app header (redesigned 2026-07-21): NO band, NO border — the old opaque
@@ -1210,6 +1207,42 @@ button * {
 }
 .heat-grid.colorized .heat-cell {
   background-color: var(--cell-color);
+}
+/* Leaderboard table (#110, decided 2026-07-24): the solved centerpiece when opponents
+   display — one row per entrant sorted by score, its lineup identity color on the tag,
+   its own replayed run as heat squares, its count on the right (DNF muted). One grid,
+   three shared columns, so tags, squares, and counts each align down the table. */
+.leaderboard {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  column-gap: clamp(10px, 2.4vw, 18px);
+  row-gap: clamp(9px, 1.8vh, 16px);
+  align-items: center;
+  width: 100%;
+  max-width: 460px;
+}
+.lb-tag {
+  font-family: var(--press);
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-shadow: none;
+}
+/* Rows share the heat-grid cell language at a smaller pitch; a row's squares hug the
+   left edge of the shared column (max-width per --n), so short runs read short. */
+.lb-squares {
+  gap: 4px;
+  max-width: calc(var(--n) * 16px + (var(--n) - 1) * 4px);
+}
+.lb-score {
+  font-family: var(--press);
+  font-size: 14px;
+  color: var(--fg);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  text-shadow: none;
+}
+.lb-score.dnf {
+  color: var(--muted);
 }
 /* Result action: the same flat key language as the keyboard it replaces. */
 .result-action {

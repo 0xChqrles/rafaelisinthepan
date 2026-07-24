@@ -364,10 +364,10 @@ as `<tries> TRIES` at game end (the unit is NAMED — on the solved screen, the 
 card, and the share text — because "SCORE" alone reads as points to maximize when
 lower is better; singular `TRY` at 1). Like the rest of the UI chrome the label is
 localized (fr: `ESSAIS`/`ESSAI`, decided 2026-07-06); the unit stays named in every
-language. **Podium exception (decided 2026-07-24, #110):** on a solved screen WITH
-displayed benchmark opponents, the persisted standings podium under YOU carries the
-final count and the `<tries> TRIES` headline is omitted (the headline directly under
-the podium repeated the same number). Podium-less solved surfaces — the tutorial and
+language. **Leaderboard exception (decided 2026-07-24, #110):** on a solved screen WITH
+displayed benchmark opponents, the leaderboard table's player row carries the final
+count and the `<tries> TRIES` headline is omitted (a headline next to the table
+repeated the same number). Opponent-less solved surfaces — the tutorial and
 benchmark-less puzzles — keep the named headline, and the share card/text always name
 the unit.
 
@@ -768,13 +768,18 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   not bare `/<lang>` — so a shared archive result opens that archived date, not today (the
   card/title were already `#dayNumber`-correct). The archive **must not touch streaks**
   (separate issue).
-- **Solved-result hierarchy (decided 2026-07-10; podium variant 2026-07-24, #110):** the
-  solved tray is sentence-specific: one centered stack at every breakpoint with the named
-  `<tries> TRIES` headline (podium-less surfaces ONLY — with displayed benchmark opponents
-  the persisted standings podium carries the count instead: enlarged scores, the winner's
-  in gold; see the Score section's podium exception), the
-  restored 3–18 cold-to-hot trajectory squares (`bucketMeans` — the SAME values used by
-  the share card/text), then SHARE. **Fresh-solve sequence (decided 2026-07-10):** the
+- **Solved-result hierarchy (decided 2026-07-10; leaderboard variant 2026-07-24, #110):**
+  the solved tray is sentence-specific: one centered stack at every breakpoint. WITHOUT
+  displayed benchmark opponents it is the named `<tries> TRIES` headline, the restored
+  3–18 cold-to-hot trajectory squares (`bucketMeans` — the SAME values used by the share
+  card/text), then SHARE. WITH opponents the headline and the standalone squares row are
+  replaced by the **leaderboard table**: one row per entrant sorted by score (player
+  ahead on a tie, DNF last, `lineupModel` order), each row an identity-colored tag, the
+  entrant's own run replayed into bucketed heat squares (the player's ARE the share-card
+  squares), and its count (DNF muted); SHARE below. The lineup does NOT persist past the
+  solve: after the keyboard drops, its characters teleport OUT one tick apart (their
+  dissolve + shared-flash strips), and only once the last is gone does the table rise
+  into the tray (reduced motion or missing strips skip straight there). **Fresh-solve sequence (decided 2026-07-10):** the
   solving submit immediately sends the prompt left while fading it out, in the same render
   that launches the final hole-hit feedback. The next stage waits until EVERY `Hole` reports
   its final secret rendered after its final settle animation completes — never a
