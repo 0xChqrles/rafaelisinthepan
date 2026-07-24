@@ -364,7 +364,12 @@ as `<tries> TRIES` at game end (the unit is NAMED — on the solved screen, the 
 card, and the share text — because "SCORE" alone reads as points to maximize when
 lower is better; singular `TRY` at 1). Like the rest of the UI chrome the label is
 localized (fr: `ESSAIS`/`ESSAI`, decided 2026-07-06); the unit stays named in every
-language.
+language. **Leaderboard exception (decided 2026-07-24, #110):** on a solved screen WITH
+displayed benchmark opponents, the leaderboard table's player row carries the final
+count and the `<tries> TRIES` headline is omitted (a headline next to the table
+repeated the same number). Opponent-less solved surfaces — the tutorial and
+benchmark-less puzzles — keep the named headline, and the share card/text always name
+the unit.
 
 ### Testing
 
@@ -763,21 +768,51 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   not bare `/<lang>` — so a shared archive result opens that archived date, not today (the
   card/title were already `#dayNumber`-correct). The archive **must not touch streaks**
   (separate issue).
-- **Solved-result hierarchy (decided 2026-07-10):** the solved tray is sentence-specific:
-  one centered stack at every breakpoint with the named `<tries> TRIES` headline, the
-  restored 3–18 cold-to-hot trajectory squares (`bucketMeans` — the SAME values used by
-  the share card/text), then SHARE. **Fresh-solve sequence (decided 2026-07-10):** the
+- **Solved-result hierarchy (decided 2026-07-10; leaderboard variant 2026-07-24, #110):**
+  the solved tray is sentence-specific: one centered stack at every breakpoint. WITHOUT
+  displayed benchmark opponents it is the named `<tries> TRIES` headline, the restored
+  3–18 cold-to-hot trajectory squares (`bucketMeans` — the SAME values used by the share
+  card/text), then SHARE. WITH opponents the headline and the standalone squares row are
+  replaced by the **leaderboard table**: one row per entrant sorted by score (player
+  ahead on a tie, DNF last, `lineupModel` order), each row an identity-colored tag, the
+  entrant's own run replayed into bucketed heat squares (the player's ARE the share-card
+  squares), and its count (DNF muted); SHARE below. **The table is MONOCHROME except the
+  heat squares** (decided 2026-07-24): tags are muted (the player's alone in fg), counts
+  neutral — identity colors belong to the characters, and the squares are the single
+  color voice. **The PLAYER's tag alone is the solved-word gold** (decided 2026-07-24,
+  replacing a tried-and-dropped accent row border), and it reads **"YOU" in EVERY
+  language** — the `you` i18n key is deliberately untranslated (fr included; decided
+  2026-07-24), one universal tag across lineup + leaderboard. Rows are **NOT
+  interactive** — an inline tap-to-unfold run viewer was tried and removed (too noisy);
+  the run viewer will be a MODAL opened from a row, tracked in #82. The table is
+  decorative (aria-hidden) with an sr-only ranking line carrying the accessible result. The lineup does NOT persist past the
+  solve: after the keyboard drops, its characters teleport OUT one tick apart (their
+  dissolve + shared-flash strips), and only once the last is gone does the table rise
+  into the tray (reduced motion or missing strips skip straight there). On a streak
+  solve these exit beats do NOT play hidden behind the celebration — keyboard and lineup
+  hold still under the modal and the drop + teleport-out start at its dismissal; the
+  source types only after the leaderboard has risen (decided 2026-07-24). **The sentence
+  must NOT move between the solved beats (decided 2026-07-24):** the lineup renders
+  inside a `.lineup-zone` band that keeps its height for the whole round — through the
+  exit and on rehydrated solves — and the tray's height is FIXED to the keyboard's
+  (taller solved content overflows into the empty band, never grows the tray), so
+  .play's centering never shifts the phrase. **Fresh-solve sequence (decided 2026-07-10):** the
   solving submit immediately sends the prompt left while fading it out, in the same render
   that launches the final hole-hit feedback. The next stage waits until EVERY `Hole` reports
   its final secret rendered after its final settle animation completes — never a
   guessed timeout — so multi-word or throttled animation cannot be covered mid-resolution.
   A fresh active-day solve then holds the fully resolved sentence for 300ms before mounting
-  the streak modal. Once that modal has completely dismissed (including its exit fade), the
-  optional sentence source types quickly, letter by letter, with a trailing `_`; archive /
-  no-streak play starts this source beat immediately after the final holes settle. Only when
-  source typing finishes do the tries rise/tally, trajectory-square, and SHARE animations
-  begin (no metadata skips the typewriter); rehydrated solves render the full source/results
-  immediately without replaying the sequence. Player progression is separate:
+  the streak modal. **The solved beats run STREAK → keyboard-drop + teleport-out →
+  LEADERBOARD/results rise → SOURCE (decided 2026-07-24, #110 — reversing the 2026-07-10
+  source-before-results order):** once the modal has completely dismissed (including its
+  exit fade) — or immediately after the final holes settle on archive / no-streak play —
+  the exit beats play, the results rise into the tray, and only once the risen stack
+  reports itself in place does the optional sentence source type quickly, letter by
+  letter, with a trailing `_` (tally/colorize choreography continues beneath it; no
+  metadata skips the typewriter); as the exits begin, the background try-count DISSOLVES
+  into the wave field cell-by-cell (CellDigits `dissolve`, deterministic per-cell
+  thresholds; instant under reduced motion); rehydrated solves render the full
+  source/results immediately — count already gone — without replaying the sequence. Player progression is separate:
   `StreakDialog` is a
   **borderless full-screen** native modal, opened only by a FRESH active-day
   unsolved→solved transition. Its staged animation uses `@react-spring/web` (v9 for React

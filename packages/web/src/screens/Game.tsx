@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { computeProgress, guessKey } from '../game/scoring';
-import { progressTrajectory } from '../game/share';
+import { progressTrajectory, bucketMeans } from '../game/share';
 import { canExtend } from '../game/keyboard';
 import useVocab from '../hooks/useVocab';
 import useToday from '../hooks/useToday';
@@ -16,7 +16,7 @@ import LazyStreakDialog, { preloadStreakDialog } from '../components/LazyStreakD
 import SolvedCaption from '../components/SolvedCaption';
 import LoadError from '../components/LoadError';
 import { t, srHoleResult, srModelAhead, srModelLead } from '../i18n';
-import { lineupModel, lineupEvents, hasDisplayEntries } from '../game/benchmark';
+import { lineupModel, lineupEvents, hasDisplayEntries, displayEntries } from '../game/benchmark';
 import { track } from '../analytics';
 import { fold } from '@whippin/shared';
 import type {
@@ -220,6 +220,9 @@ function Round({
 
   const solved = holes.every((h) => h.rank === 0); // sentence discovered -> round over
   const allWordsResolved = solved && resolvedHoleIndices.size === holes.length;
+  // Whether a lineup is on screen at all — a puzzle with no renderable opponents must
+  // not leave the solved swap waiting on a teleport-out that will never play (#110).
+  const hasLineup = benchmark !== undefined && hasDisplayEntries(benchmark);
 
   // The celebration is deliberately code-split out of startup. Warm its chunk only while
   // an eligible unsolved daily round is idle; if a player solves before idle fires, the
@@ -247,6 +250,27 @@ function Round({
     [freshHoles, ranks, history],
   );
 
+  // Each display opponent's run, replayed into the same bucketed heat squares as the
+  // player's trajectory (#110): the leaderboard table shows every entrant's whole run as
+  // a row of squares. Run words are stored as typed (accents kept) — fold before lookup.
+  const runSquares = useMemo<Map<string, number[]> | undefined>(
+    () =>
+      benchmark &&
+      new Map(
+        displayEntries(benchmark).map(({ entry }) => [
+          entry.model,
+          bucketMeans(
+            progressTrajectory(
+              freshHoles,
+              ranks,
+              entry.run.map((w) => fold(w)),
+            ),
+          ),
+        ]),
+      ),
+    [benchmark, freshHoles, ranks],
+  );
+
   // Gate the solved presentation on every Hole reporting its final displayed secret. The
   // playing UI stays up through the real animationend events, so slow/throttled frames and
   // a multi-hole final guess cannot let the streak cover words that are still resolving.
@@ -269,6 +293,18 @@ function Round({
   // frozen until the source typewriter explicitly reports that it has finished.
   const [sourceRevealStarted, setSourceRevealStarted] = useState(solved);
   const [sourceRevealComplete, setSourceRevealComplete] = useState(solved);
+  // Solved exit choreography (#110, decided 2026-07-24): a LIVE solve doesn't swap the
+  // tray instantly — the keyboard slides down out of it (kb-drop) while the lineup
+  // characters teleport OUT one after another; only when the last is gone does the
+  // leaderboard table rise into the tray. Rehydrated solves never set these: they mount
+  // the final results directly, lineup already gone.
+  const [keyboardLeaving, setKeyboardLeaving] = useState(false);
+  const [lineupExiting, setLineupExiting] = useState(false);
+  const [lineupGone, setLineupGone] = useState<boolean>(solved);
+  const handleLineupExited = useCallback(() => {
+    setLineupExiting(false);
+    setLineupGone(true);
+  }, []);
   const focusResultAfterSource = useRef(false);
   const prevSolved = useRef<boolean>(solved);
   useEffect(() => {
@@ -280,6 +316,9 @@ function Round({
       setShowStreakDialog(false);
       setStreakAdvanced(false);
       setAwaitingWordAnimations(false);
+      setKeyboardLeaving(false);
+      setLineupExiting(false);
+      setLineupGone(false);
       setPromptExiting(false);
       setSourceRevealStarted(false);
       setSourceRevealComplete(false);
@@ -293,6 +332,8 @@ function Round({
       setShowStreakDialog(false);
       setStreakAdvanced(false);
       setAwaitingWordAnimations(false);
+      setLineupExiting(false);
+      setLineupGone(true);
       setPromptExiting(false);
       setSourceRevealStarted(true);
       setSourceRevealComplete(true);
@@ -330,15 +371,19 @@ function Round({
       streakAdvanced && isActiveDay && dayNumber >= todayDayNumber - 1;
     if (!willShowStreak) {
       setShowResults(true);
+      setKeyboardLeaving(true);
+      if (hasLineup) setLineupExiting(true);
+      else setLineupGone(true);
       setShowStreakDialog(false);
-      setSourceRevealStarted(true);
       setAwaitingWordAnimations(false);
       return;
     }
 
     // Let the player see the fully resolved sentence for one clean beat before the
-    // full-screen progression celebration begins. Mount results and the modal together so
-    // the tries/squares choreography remains paused behind the streak until dismissal.
+    // full-screen progression celebration begins. The keyboard and the lineup stay put
+    // underneath the modal — their exit beats (kb-drop + teleport-out) are VISIBLE
+    // choreography, so they wait for the celebration's dismissal (decided 2026-07-24)
+    // instead of playing covered.
     const timer = window.setTimeout(() => {
       setShowResults(true);
       setShowStreakDialog(true);
@@ -349,17 +394,30 @@ function Round({
     allWordsResolved,
     awaitingWordAnimations,
     dayNumber,
+    hasLineup,
     isActiveDay,
     streakAdvanced,
     todayDayNumber,
   ]);
 
   const dismissStreakDialog = useCallback(() => {
-    // StreakDialog calls this only AFTER its 200ms exit fade. That callback is the source
-    // typewriter's start line, so the citation can never appear underneath the fading
-    // progression screen.
+    // StreakDialog calls this only AFTER its 200ms exit fade. On a streak solve it is
+    // the exit choreography's start line (decided 2026-07-24): the keyboard drop and
+    // the lineup teleport-out held still behind the modal so they play in view now.
+    // The source typewriter does NOT start here — the sequence is STREAK -> exits ->
+    // LEADERBOARD -> SOURCE, so the citation waits for the risen result stack
+    // (handleResultsRisen below).
     setShowStreakDialog(false);
+    setKeyboardLeaving(true);
+    if (hasLineup) setLineupExiting(true);
+    else setLineupGone(true);
     focusResultAfterSource.current = true;
+  }, [hasLineup]);
+
+  // The results' rise reporting done (SolvedScreen onRisen) is the source typewriter's
+  // start line: SOURCE is the LAST beat of the solved sequence (decided 2026-07-24),
+  // typing above a leaderboard already in place while its squares colorize beneath.
+  const handleResultsRisen = useCallback(() => {
     setSourceRevealStarted(true);
   }, []);
 
@@ -562,11 +620,21 @@ function Round({
             secret) — it is the "full reconstructed sentence" of the solved screen.
             The wrapper anchors the score watermark to the SENTENCE (not sentence +
             prompt): the big faint try count centers behind the phrase, z-index:-1 in
-            the wrapper's isolated stacking context, printed on the background's 24px
+            .play's isolated stacking context (the wrapper itself is deliberately NOT
+            isolated, so the watermark paints behind the citation and prompt too, #110),
+            printed on the background's 24px
             cells (CellDigits) so it reads as part of the grid, not a font over it. */}
         <div className="phrase-anchor">
           <div className="progress-background" aria-hidden="true">
-            <CellDigits value={guessCount} />
+            {/* The count dissolves into the wave field once the solved exits begin
+                (#110) — the same beat the keyboard drops and the characters beam out
+                (after the streak celebration when there is one). This flag is exactly
+                "have the exits started": true from the kb-drop/teleport trigger onward
+                (lineupGone latches it) and from mount on a rehydrated solve. */}
+            <CellDigits
+              value={guessCount}
+              dissolve={keyboardLeaving || lineupExiting || lineupGone}
+            />
           </div>
           <Phrase
             words={words}
@@ -610,48 +678,75 @@ function Round({
         )}
       </div>
 
-      {/* Standings lineup (#81): the player + the present display opponents sorted by
-          tries (leader far left), between the input area and the keyboard. Height comes
-          out of .play's flexible space, never the keyboard's. It persists for the whole
-          round (a scoreboard, not a chase); on the solving try the lineup freezes,
-          leaving with the keyboard when the results take the tray. */}
-      {benchmark && hasDisplayEntries(benchmark) && !showResults && (
-        <StandingsLineup
-          benchmark={benchmark}
-          guessCount={guessCount}
-          solved={solved}
-          lang={lang}
-        />
+      {/* Standings lineup (#81/#110): the player + the present display opponents sorted
+          by tries (leader far left), between the input area and the keyboard. On solve
+          the characters do NOT persist: as the keyboard drops they teleport out one by
+          one (`exiting`), and once the last is gone the lineup unmounts — the
+          leaderboard table in the results takes over the standings story. Its ZONE
+          stays for the whole round though (empty after the exit, on rehydrated solves
+          too): the reserved band keeps .play's centering fixed, so the sentence never
+          shifts between the solved beats. */}
+      {hasLineup && (
+        <div className="lineup-zone">
+          {!lineupGone && (
+            <StandingsLineup
+              benchmark={benchmark as BenchmarkResults}
+              guessCount={guessCount}
+              solved={solved}
+              lang={lang}
+              exiting={lineupExiting}
+              onExited={handleLineupExited}
+            />
+          )}
+        </div>
       )}
 
       {/* Bottom zone (fixed keyboard-height footprint): the on-screen keyboard while
           playing, the solved results in the SAME space once they reveal — so the keyboard
           leaving neither reflows the layout nor leaves an empty hole. The keyboard lingers
-          (inert; submit is guarded) through the last hole's animation, then the results
-          take its place and animate in. */}
-      <div className="tray">
-        {showResults ? (
-          <SolvedScreen
-            guessCount={guessCount}
-            trajectory={trajectory}
-            dayNumber={dayNumber}
-            lang={lang}
-            benchmark={benchmark}
-            animate={animateResults}
-            startAnimation={
-              sourceRevealComplete && !showStreakDialog && !deferResultsAnimation
-            }
-          />
+          (inert; submit is guarded) through the last hole's animation, then slides down out
+          of the tray (#110); the results wait out the lineup's teleport-out (the tray
+          holds its footprint empty for that beat) and rise in only once it is gone. */}
+      <div
+        className={`tray${keyboardLeaving ? ' kb-leaving' : ''}${
+          showResults && !keyboardLeaving && !showStreakDialog && lineupGone
+            ? ' tray-results'
+            : ''
+        }`}
+      >
+        {showResults && !keyboardLeaving && !showStreakDialog ? (
+          lineupGone ? (
+            <SolvedScreen
+              guessCount={guessCount}
+              trajectory={trajectory}
+              dayNumber={dayNumber}
+              lang={lang}
+              benchmark={benchmark}
+              runSquares={runSquares}
+              animate={animateResults}
+              startAnimation={!showStreakDialog && !deferResultsAnimation}
+              onRisen={handleResultsRisen}
+            />
+          ) : null
         ) : (
-          <Keyboard
-            input={input}
-            prefixSet={prefixSet}
-            vocabSet={vocabSet}
-            lang={lang}
-            onType={appendChar}
-            onBackspace={deleteChar}
-            onSubmit={submit}
-          />
+          <div
+            className={`kb-exit${keyboardLeaving ? ' leaving' : ''}`}
+            onAnimationEnd={(e) => {
+              // Child animations (key shakes) bubble here too: only the wrapper's own
+              // kb-drop end releases the tray to the results.
+              if (keyboardLeaving && e.target === e.currentTarget) setKeyboardLeaving(false);
+            }}
+          >
+            <Keyboard
+              input={input}
+              prefixSet={prefixSet}
+              vocabSet={vocabSet}
+              lang={lang}
+              onType={appendChar}
+              onBackspace={deleteChar}
+              onSubmit={submit}
+            />
+          </div>
         )}
       </div>
 

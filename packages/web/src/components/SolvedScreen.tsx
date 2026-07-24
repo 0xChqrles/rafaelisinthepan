@@ -3,23 +3,28 @@ import type { CSSProperties } from 'react';
 import { heatColor } from '@whippin/shared';
 import type { BenchmarkResults } from '@whippin/shared';
 import { bucketMeans, shareText, shareUrl } from '../game/share';
-import { benchmarkRanking, hasDisplayEntries } from '../game/benchmark';
+import { lineupModel, hasDisplayEntries } from '../game/benchmark';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import { track } from '../analytics';
 import { t } from '../i18n';
 
 // Reveal choreography (this component mounts after the last hole has settled): the result
-// stack rises in, the score tallies, then the neutral trajectory squares colorize in order.
+// stack rises in, the score tallies (when the headline renders), then the neutral
+// trajectory squares colorize in order.
 const SQUARE_STAGGER_MS = 55;
 const GRID_MAX_SPAN_MS = 1400;
-export const RESULTS_IN_MS = 350;
+export const RESULTS_IN_MS = 250; // mirrors .solved-results' transition duration in CSS
 const SCORE_COUNT_MS = 800;
-const SQUARES_START_MS = RESULTS_IN_MS + SCORE_COUNT_MS;
 const NEUTRAL_HOLD_MS = SQUARE_STAGGER_MS;
 
-// Sentence-specific results only: tries, the solve's progress trajectory, and its share
-// action. Player-level progression lives in StreakDialog, outside this layout. Keeping the
-// stack identical at every breakpoint gives the three result elements one stable hierarchy.
+// Sentence-specific results only. With displayed opponents (decided 2026-07-24, #110)
+// the centerpiece is the LEADERBOARD TABLE — one row per entrant sorted by score
+// (player ahead on a tie), each row an identity-colored tag, the run's bucketed heat
+// squares (the opponent runs replayed by Game into `runSquares`), and the count (DNF
+// muted) — it replaces BOTH the tries headline and the standalone squares row. Surfaces
+// without opponents — the tutorial and benchmark-less puzzles — keep the classic stack:
+// the named `<tries> TRIES` headline (their ONLY end-of-round count) and the single
+// squares row. Player-level progression lives in StreakDialog, outside this layout.
 // The tutorial reuses it with PLAY in SHARE's slot.
 export default function SolvedScreen({
   guessCount,
@@ -27,15 +32,18 @@ export default function SolvedScreen({
   dayNumber,
   lang,
   benchmark,
+  runSquares,
   action,
   animate = true,
   startAnimation = true,
+  onRisen,
 }: {
   guessCount: number;
   trajectory: number[]; // reconstruction % after each counted guess (one per try)
   dayNumber: number | null;
   lang: string; // packed into the share token (drives the link's click-through target)
   benchmark?: BenchmarkResults; // offline opponents; shown only on this solved surface
+  runSquares?: Map<string, number[]>; // model id -> its replayed run's bucketed squares
   action?: { label: string; onClick: () => void }; // replaces SHARE in the tutorial
   // Rehydrated solves render their final result immediately. Fresh solves animate, with
   // startAnimation acting as the source/streak gate while this component stays mounted.
@@ -43,19 +51,40 @@ export default function SolvedScreen({
   // A live active-day solve holds this at false while StreakDialog is open. No-dialog
   // paths (archive, tutorial, and rehydration) use the immediate default.
   startAnimation?: boolean;
+  // Fires once when the animated rise-in has finished — the solved sequence's cue for
+  // the SOURCE typewriter, its LAST beat (decided 2026-07-24). Never fires when
+  // animate is false (rehydrated solves set their source states directly).
+  onRisen?: () => void;
 }) {
   // Collapse the per-guess trajectory into a bounded row (3..18), each square colored by
   // its bucket's mean progress. This exact array also drives the share card and emoji row.
   const squares = useMemo(() => bucketMeans(trajectory), [trajectory]);
-  const ranking = useMemo(
-    () =>
-      hasDisplayEntries(benchmark)
-        ? benchmarkRanking(benchmark as BenchmarkResults, guessCount, t(lang, 'you'))
-        : null,
-    [benchmark, guessCount, lang],
-  );
+  // Leaderboard rows (#110): every entrant sorted by score (lineupModel's order — the
+  // player ahead on a tie, DNF last), wearing its lineup identity color, with its own
+  // run's squares (the player's are the share-card squares; opponents' come replayed
+  // from Game). null when no opponent displays.
+  const rows = useMemo(() => {
+    if (!hasDisplayEntries(benchmark)) return null;
+    return lineupModel(benchmark as BenchmarkResults, guessCount, t(lang, 'you')).entrants.map(
+      (e) => ({
+        key: e.key,
+        tag: e.tag,
+        label: e.label,
+        tries: e.tries,
+        player: e.player,
+        squares: e.player ? squares : (runSquares?.get(e.key) ?? []),
+      }),
+    );
+  }, [benchmark, guessCount, lang, runSquares, squares]);
+  // The leaderboard owns the count when opponents display; the headline renders without it.
+  const showScore = rows === null;
   const n = squares.length;
-  const stagger = n > 1 ? Math.min(SQUARE_STAGGER_MS, GRID_MAX_SPAN_MS / (n - 1)) : 0;
+  // The colorize wave walks square COLUMNS (shared delays per index), so on the
+  // leaderboard it sweeps every row at once; span from the longest row present.
+  const maxN = rows ? Math.max(...rows.map((r) => r.squares.length), 1) : n;
+  const stagger = maxN > 1 ? Math.min(SQUARE_STAGGER_MS, GRID_MAX_SPAN_MS / (maxN - 1)) : 0;
+  // No headline -> no tally beat: the squares start right after the stack has risen.
+  const squaresStartMs = showScore ? RESULTS_IN_MS + SCORE_COUNT_MS : RESULTS_IN_MS;
   const reduceMotion =
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -73,6 +102,22 @@ export default function SolvedScreen({
     return () => cancelAnimationFrame(raf);
   }, [animate, startAnimation]);
 
+  // Report the rise done exactly once per mount, RESULTS_IN_MS after it starts (at once
+  // under reduced motion — the transition is collapsed but the beat still advances).
+  const onRisenRef = useRef(onRisen);
+  useEffect(() => {
+    onRisenRef.current = onRisen;
+  });
+  useEffect(() => {
+    if (!animate || !resultsIn) return undefined;
+    if (reduceMotion) {
+      onRisenRef.current?.();
+      return undefined;
+    }
+    const id = window.setTimeout(() => onRisenRef.current?.(), RESULTS_IN_MS);
+    return () => window.clearTimeout(id);
+  }, [animate, resultsIn, reduceMotion]);
+
   const [countTarget, setCountTarget] = useState(() => (animate ? 0 : guessCount));
   useEffect(() => {
     if (!animate) {
@@ -87,7 +132,7 @@ export default function SolvedScreen({
 
   // After the score lands, reveal the neutral tiles and then color them cold-to-hot. The
   // row always reserves its final footprint, so neither animation moves the share action.
-  const gridSpanMs = Math.max(0, n - 1) * stagger;
+  const gridSpanMs = Math.max(0, maxN - 1) * stagger;
   const [gridShown, setGridShown] = useState(() => !animate);
   const [gridColorized, setGridColorized] = useState(() => !animate);
   useEffect(() => {
@@ -102,16 +147,16 @@ export default function SolvedScreen({
       setGridColorized(true);
       return undefined;
     }
-    const show = window.setTimeout(() => setGridShown(true), SQUARES_START_MS);
+    const show = window.setTimeout(() => setGridShown(true), squaresStartMs);
     const color = window.setTimeout(
       () => setGridColorized(true),
-      SQUARES_START_MS + gridSpanMs + NEUTRAL_HOLD_MS,
+      squaresStartMs + gridSpanMs + NEUTRAL_HOLD_MS,
     );
     return () => {
       window.clearTimeout(show);
       window.clearTimeout(color);
     };
-  }, [animate, gridSpanMs, reduceMotion, resultsIn]);
+  }, [animate, gridSpanMs, reduceMotion, resultsIn, squaresStartMs]);
 
   // "COPIED" confirmation after a clipboard fallback (the native share sheet needs none).
   const [copied, setCopied] = useState(false);
@@ -155,43 +200,82 @@ export default function SolvedScreen({
   }, [lang, dayNumber, guessCount, squares]);
 
   return (
-    <div
-      className={`solved-results${ranking ? ' benchmarked' : ''}${resultsIn ? ' in' : ''}`}
-    >
-      {/* The primary sentence metric. The hidden final value reserves the count's width so
-          its tally never moves the centered label or the content below it. */}
-      <span className="solved-score">
-        <span className="solved-score-num">
-          <span className="solved-score-ghost" aria-hidden="true">
-            {guessCount}
+    <div className={`solved-results${resultsIn ? ' in' : ''}`}>
+      {/* The primary sentence metric — podium-less surfaces only (#110): with displayed
+          opponents the standings podium above carries the count. The hidden final value
+          reserves the count's width so its tally never moves the content below it. */}
+      {showScore && (
+        <span className="solved-score">
+          <span className="solved-score-num">
+            <span className="solved-score-ghost" aria-hidden="true">
+              {guessCount}
+            </span>
+            <span className="solved-score-live">{Math.round(shownScore)}</span>
           </span>
-          <span className="solved-score-live">{Math.round(shownScore)}</span>
+          <span className="solved-score-unit">{t(lang, guessCount === 1 ? 'try' : 'tries')}</span>
         </span>
-        <span className="solved-score-unit">{t(lang, guessCount === 1 ? 'try' : 'tries')}</span>
-      </span>
+      )}
 
-      {/* Decorative visual history of this sentence. The named try count and share text carry
-          the accessible result; the same bucket values are encoded into the share card. */}
-      <div
-        className={`heat-grid${gridShown ? ' shown' : ''}${gridColorized ? ' colorized' : ''}`}
-        aria-hidden="true"
-        style={{ '--n': n } as CSSProperties}
-      >
-        {squares.map((pct, i) => (
-          <span
-            // eslint-disable-next-line react/no-array-index-key
-            key={i}
-            className="heat-cell"
-            style={
-              {
-                '--cell-color': heatColor(pct / 100),
-                '--show-delay': `${Math.round(i * stagger)}ms`,
-                '--color-delay': `${Math.round(i * stagger)}ms`,
-              } as CSSProperties & Record<'--cell-color' | '--show-delay' | '--color-delay', string>
-            }
-          />
-        ))}
-      </div>
+      {/* Decorative leaderboard table when opponents display (one row per entrant: tag,
+          its run's squares, its count; the player's row carries the accent border). The
+          single squares row renders otherwise. The player's bucket values are the SAME
+          array encoded into the share card either way. Rows are NOT interactive for now
+          (decided 2026-07-24): the run viewer returns as a MODAL (#82). */}
+      {rows ? (
+        <div className="leaderboard" aria-hidden="true">
+          {rows.map((row) => (
+            <div key={row.key} className="lb-row">
+              <span className={`lb-tag${row.player ? ' player' : ''}`}>{row.tag}</span>
+              <div
+                className={`heat-grid lb-squares${gridShown ? ' shown' : ''}${
+                  gridColorized ? ' colorized' : ''
+                }`}
+                style={{ '--n': row.squares.length } as CSSProperties}
+              >
+                {row.squares.map((pct, i) => (
+                  <span
+                    // eslint-disable-next-line react/no-array-index-key
+                    key={i}
+                    className="heat-cell"
+                    style={
+                      {
+                        '--cell-color': heatColor(pct / 100),
+                        '--show-delay': `${Math.round(i * stagger)}ms`,
+                        '--color-delay': `${Math.round(i * stagger)}ms`,
+                      } as CSSProperties &
+                        Record<'--cell-color' | '--show-delay' | '--color-delay', string>
+                    }
+                  />
+                ))}
+              </div>
+              <span className={`lb-score${row.tries === null ? ' dnf' : ''}`}>
+                {row.tries ?? t(lang, 'dnf')}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div
+          className={`heat-grid${gridShown ? ' shown' : ''}${gridColorized ? ' colorized' : ''}`}
+          aria-hidden="true"
+          style={{ '--n': n } as CSSProperties}
+        >
+          {squares.map((pct, i) => (
+            <span
+              // eslint-disable-next-line react/no-array-index-key
+              key={i}
+              className="heat-cell"
+              style={
+                {
+                  '--cell-color': heatColor(pct / 100),
+                  '--show-delay': `${Math.round(i * stagger)}ms`,
+                  '--color-delay': `${Math.round(i * stagger)}ms`,
+                } as CSSProperties & Record<'--cell-color' | '--show-delay' | '--color-delay', string>
+              }
+            />
+          ))}
+        </div>
+      )}
 
       {action ? (
         <button type="button" className="result-action" onClick={action.onClick}>
@@ -209,16 +293,11 @@ export default function SolvedScreen({
         )
       )}
 
-      {ranking && (
-        <p className="benchmark-ranking">
-          {ranking.map((entry, index) => (
-            <span key={`${entry.player ? 'player' : 'model'}-${entry.label}-${index}`}>
-              {index > 0 && <span className="benchmark-separator"> · </span>}
-              <span className={entry.player ? 'benchmark-player' : 'benchmark-model'}>
-                {entry.label} {entry.tries ?? t(lang, 'dnf')}
-              </span>
-            </span>
-          ))}
+      {/* The leaderboard table is decorative (aria-hidden) — this line keeps the
+          ranking accessible. */}
+      {rows && (
+        <p className="sr-only">
+          {rows.map((row) => `${row.label} ${row.tries ?? t(lang, 'dnf')}`).join(' · ')}
         </p>
       )}
     </div>

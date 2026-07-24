@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { BenchmarkResults } from '@whippin/shared';
 import type { LineupModel } from '../game/benchmark';
 import { lineupModel, lineupEvents } from '../game/benchmark';
 import { t } from '../i18n';
-import playerSprite from '../assets/characters/player.png';
+import playerIdleSheet from '../assets/characters/player-idle.png';
+import gptIdleSheet from '../assets/characters/gpt-idle.png';
 import fableSprite from '../assets/characters/fable.png';
 import kimiSprite from '../assets/characters/kimi.png';
 import gptSprite from '../assets/characters/gpt.png';
@@ -58,6 +59,15 @@ interface TeleportState {
 const characterKey = (entrant: { player: boolean; sprite: number }): CharacterKey =>
   entrant.player ? 'player' : BOT_KEYS[entrant.sprite];
 
+// Idle spritesheets, per character: drawn frames CSS-stepped at 100ms each. The sheet
+// URL lives here; the frame geometry/count lives in the matching `.lineup-idle.<key>`
+// CSS class (player: 8 x 22x31; gpt: 4 x 32x32) — keep the two in sync when a sheet
+// changes. A character without a sheet stands as its static <img> draft.
+const IDLE_SHEETS: Partial<Record<CharacterKey, string>> = {
+  player: playerIdleSheet,
+  gpt: gptIdleSheet,
+};
+
 const prefersReducedMotion = () =>
   typeof window.matchMedia === 'function' &&
   window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -74,11 +84,20 @@ function canTeleport(model: LineupModel, moved: Set<string>): boolean {
   );
 }
 
-// Mid-game standings lineup (#81): the player and the present display opponents (1..3 of
+// Frames of one slot's EXIT (#110): its own recolored dissolve, then the neutral flash —
+// and nothing materializes after it. Slot i starts one tick after slot i-1 (left to
+// right), so the finished field beams out as a quick wave, keyboard already gone below.
+const EXIT_FRAMES = TELEPORT_FRAMES.out + TELEPORT_FRAMES.shared;
+
+// Standings lineup (#81/#110): the player and the present display opponents (1..3 of
 // FABLE / KIMI K3 / GPT-5.6) standing side by side above the keyboard, sorted by tries
 // ascending (best far left), name + score
 // under each. Purely derived UI: everything is a
 // function of (guessCount, benchmark), so a reloaded round reconstructs it with no state.
+// On solve the lineup does NOT persist (#110, decided 2026-07-24): once the keyboard has
+// dropped, `exiting` beams every character out (a one-tick stagger apart), `onExited`
+// fires, and Game replaces the whole thing with the leaderboard table in the results.
+// A tie shows as a human win: lineupModel stands the player ahead of an equal-score model.
 //
 // DOM order is stable (React keys move the same nodes on a reorder), and each slot's
 // position is its sorted index driving a translateX — so a standings change is a slide
@@ -89,11 +108,18 @@ export default function StandingsLineup({
   guessCount,
   solved,
   lang,
+  exiting = false,
+  onExited,
 }: {
   benchmark: BenchmarkResults;
   guessCount: number;
   solved: boolean;
   lang: string;
+  // The solved exit (#110), owned by Game: `exiting` starts the staggered teleport-out;
+  // onExited reports the last character gone (immediately under reduced motion or with
+  // strips missing), after which Game unmounts the lineup for good.
+  exiting?: boolean;
+  onExited?: () => void;
 }) {
   const model = useMemo(
     () => lineupModel(benchmark, guessCount, t(lang, 'you')),
@@ -156,6 +182,45 @@ export default function StandingsLineup({
     return () => clearTimeout(id);
   }, [teleport]);
 
+  // ---- Solved exit (#110): one shared tick clock, slot i entering the wave at tick i.
+  const [exitTick, setExitTick] = useState<number | null>(null);
+  const onExitedRef = useRef(onExited);
+  useEffect(() => {
+    onExitedRef.current = onExited;
+  });
+  const exitTotalTicks = model.entrants.length - 1 + EXIT_FRAMES;
+  useEffect(() => {
+    if (!exiting) {
+      setExitTick(null);
+      return;
+    }
+    // No motion (or a strip missing): the characters simply go with the unmount.
+    if (
+      prefersReducedMotion() ||
+      !model.entrants.every((e) => teleportStrip(characterKey(e), 'out') !== null)
+    ) {
+      onExitedRef.current?.();
+      return;
+    }
+    setTeleport(null); // the exit preempts any in-flight swap clock
+    setExitTick(0);
+    // model is frozen once solved (the exit only starts after the final reorder), so
+    // `exiting` alone drives this effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exiting]);
+  useEffect(() => {
+    if (exitTick === null) return undefined;
+    if (exitTick >= exitTotalTicks) {
+      onExitedRef.current?.();
+      return undefined;
+    }
+    const id = setTimeout(
+      () => setExitTick((cur) => (cur === null ? null : cur + 1)),
+      FRAME_MS,
+    );
+    return () => clearTimeout(id);
+  }, [exitTick, exitTotalTicks]);
+
   return (
     <div className="lineup" aria-hidden="true">
       {/* --n = total entrants (player + present display opponents, 2..4): slot widths
@@ -167,7 +232,9 @@ export default function StandingsLineup({
         }
       >
         {model.entrants.map((entrant, index) => {
-          const spriteSrc = entrant.player ? playerSprite : BOT_SPRITES[entrant.sprite];
+          // A character with an idle sheet stands ANIMATED (CSS-stepped frames); the
+          // others keep their static draft <img>s until their own sheets exist.
+          const idleSheet = IDLE_SHEETS[characterKey(entrant)];
           // Until the swap tick, a mid-teleport lineup keeps rendering the PRE-swap
           // positions; at the swap every slot takes its new index and the fast
           // teleporting transition (SWAP_MS) slides it across during the shared flash.
@@ -175,10 +242,22 @@ export default function StandingsLineup({
             teleport && teleport.tick < SWAP_TICK
               ? (teleport.heldOrder.get(entrant.key) ?? index)
               : index;
+          // Solved exit (#110): this slot's position in the departure wave. Before its
+          // turn it stands idle; through EXIT_FRAMES it dissolves + flashes; past them
+          // it is gone (nothing renders, tag and score hidden via the slot class).
+          const exitLocal = exitTick === null ? null : exitTick - index;
+          const exitStarted = exitLocal !== null && exitLocal >= 0;
+          const exitDone = exitLocal !== null && exitLocal >= EXIT_FRAMES;
           // A moving entrant swaps its idle sprite for the strip frame of the current
-          // tick: its own recolored out/in frames around the neutral shared flash.
+          // tick: its own recolored out/in frames around the neutral shared flash. An
+          // exit in progress owns the frames instead (its start cleared the swap clock).
           let effect: { src: string | null; frame: number } | null = null;
-          if (teleport?.moved.has(entrant.key)) {
+          if (exitStarted && !exitDone) {
+            effect =
+              exitLocal < TELEPORT_FRAMES.out
+                ? { src: teleportStrip(characterKey(entrant), 'out'), frame: exitLocal }
+                : { src: teleportSharedUrl, frame: exitLocal - TELEPORT_FRAMES.out };
+          } else if (!exitStarted && teleport?.moved.has(entrant.key)) {
             const { tick } = teleport;
             effect =
               tick < SWAP_TICK
@@ -196,7 +275,7 @@ export default function StandingsLineup({
           return (
             <div
               key={entrant.key}
-              className="lineup-slot"
+              className={`lineup-slot${exitStarted ? ' exiting' : ''}`}
               style={
                 {
                   '--i': slotIndex,
@@ -228,8 +307,13 @@ export default function StandingsLineup({
                       backgroundPositionX: `${-effect.frame * TELEPORT_FRAME_W}px`,
                     }}
                   />
+                ) : exitDone ? null : idleSheet ? (
+                  <span
+                    className={`lineup-idle ${characterKey(entrant)}`}
+                    style={{ backgroundImage: `url(${idleSheet})` }}
+                  />
                 ) : (
-                  <img src={spriteSrc} alt="" aria-hidden />
+                  <img src={BOT_SPRITES[entrant.sprite]} alt="" aria-hidden />
                 )}
               </span>
               {/* Keyed by value: a changed count (the player's, on each counted try)
