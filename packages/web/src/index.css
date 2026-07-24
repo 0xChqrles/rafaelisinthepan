@@ -588,13 +588,14 @@ button * {
   transform: translateX(calc(var(--i) * 100%));
   transition: transform 0.35s ease-in-out;
 }
-/* Pixel characters (hand-drawn PNG drafts under assets/characters/; the sheets VARY in
-   size per model): each img renders at an exact INTEGER 2x of its OWN grid (zoom on the
-   natural size — a shared fixed box + object-fit would scale a smaller sheet
-   fractionally and blur it). The box stays a fixed 64px (the tallest 2x sprite) with
-   the art BOTTOM-aligned, so every character stands on the same baseline while the
-   name row above keeps its alignment. No CSS idle animation — any character motion is
-   drawn INTO the art (frame-based), not synthesized here. */
+/* Pixel characters (hand-drawn PNGs under assets/characters/; the sheets VARY in size
+   per model): each renders at an exact INTEGER 2x of its OWN grid (zoom on the natural
+   size — a shared fixed box + object-fit would scale a smaller sheet fractionally and
+   blur it). The box stays a fixed 64px (the tallest 2x sprite) with the art
+   BOTTOM-aligned, so every character stands on the same baseline while the name row
+   above keeps its alignment. Character motion is always DRAWN frames (spritesheets CSS-
+   stepped, like .lineup-idle below), never synthesized transforms; bots still stand as
+   static single-frame <img> drafts until their sheets exist. */
 .lineup-sprite {
   height: 64px;
   display: flex;
@@ -631,6 +632,32 @@ button * {
   zoom: 2;
   image-rendering: pixelated;
   background-repeat: no-repeat;
+}
+/* The player's idle: an 8-frame 22x31 sheet (player-idle.png, 176x31) played the
+   .cal-ripple way — background-size fits ONE frame (800% x 100%) and steps(8) walks
+   background-position-x (end value 100% x 8/7 so frame 7 lands on 100% and the loop
+   wraps cleanly), at the idle sprites' 2x zoom on the same flex-end baseline. A
+   standalone infinite decoration, so reduced motion disables it outright (frame 0
+   stands still) rather than letting the global rule collapse it. */
+.lineup-idle {
+  width: 22px;
+  height: 31px;
+  flex: none;
+  zoom: 2;
+  image-rendering: pixelated;
+  background-repeat: no-repeat;
+  background-size: 800% 100%;
+  animation: player-idle 1.28s steps(8) infinite;
+}
+@keyframes player-idle {
+  to {
+    background-position-x: calc(100% * 8 / 7);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lineup-idle {
+    animation: none;
+  }
 }
 /* Caption split around the character (mobile-first: a slot is a QUARTER of the row —
    at 320px that's ~73px — so the name and the number each get their own line rather

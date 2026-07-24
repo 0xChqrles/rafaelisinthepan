@@ -4,7 +4,7 @@ import type { BenchmarkResults } from '@whippin/shared';
 import type { LineupModel } from '../game/benchmark';
 import { lineupModel, lineupEvents } from '../game/benchmark';
 import { t } from '../i18n';
-import playerSprite from '../assets/characters/player.png';
+import playerIdleSheet from '../assets/characters/player-idle.png';
 import fableSprite from '../assets/characters/fable.png';
 import kimiSprite from '../assets/characters/kimi.png';
 import gptSprite from '../assets/characters/gpt.png';
@@ -222,7 +222,9 @@ export default function StandingsLineup({
         }
       >
         {model.entrants.map((entrant, index) => {
-          const spriteSrc = entrant.player ? playerSprite : BOT_SPRITES[entrant.sprite];
+          // The player stands ANIMATED (its 8-frame idle sheet, CSS-stepped); the bots
+          // keep their static draft <img>s until their own sheets exist.
+          const spriteSrc = entrant.player ? null : BOT_SPRITES[entrant.sprite];
           // Until the swap tick, a mid-teleport lineup keeps rendering the PRE-swap
           // positions; at the swap every slot takes its new index and the fast
           // teleporting transition (SWAP_MS) slides it across during the shared flash.
@@ -295,8 +297,13 @@ export default function StandingsLineup({
                       backgroundPositionX: `${-effect.frame * TELEPORT_FRAME_W}px`,
                     }}
                   />
-                ) : exitDone ? null : (
+                ) : exitDone ? null : spriteSrc ? (
                   <img src={spriteSrc} alt="" aria-hidden />
+                ) : (
+                  <span
+                    className="lineup-idle"
+                    style={{ backgroundImage: `url(${playerIdleSheet})` }}
+                  />
                 )}
               </span>
               {/* Keyed by value: a changed count (the player's, on each counted try)
