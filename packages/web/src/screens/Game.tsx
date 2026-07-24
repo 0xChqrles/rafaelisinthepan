@@ -669,20 +669,26 @@ function Round({
       </div>
 
       {/* Standings lineup (#81/#110): the player + the present display opponents sorted
-          by tries (leader far left), between the input area and the keyboard. Height comes
-          out of .play's flexible space, never the keyboard's. On solve it does NOT
-          persist: as the keyboard drops, the characters teleport out one by one
-          (`exiting`), and once the last is gone the lineup unmounts for good — the
-          leaderboard table in the results takes over the standings story. */}
-      {hasLineup && !lineupGone && (
-        <StandingsLineup
-          benchmark={benchmark as BenchmarkResults}
-          guessCount={guessCount}
-          solved={solved}
-          lang={lang}
-          exiting={lineupExiting}
-          onExited={handleLineupExited}
-        />
+          by tries (leader far left), between the input area and the keyboard. On solve
+          the characters do NOT persist: as the keyboard drops they teleport out one by
+          one (`exiting`), and once the last is gone the lineup unmounts — the
+          leaderboard table in the results takes over the standings story. Its ZONE
+          stays for the whole round though (empty after the exit, on rehydrated solves
+          too): the reserved band keeps .play's centering fixed, so the sentence never
+          shifts between the solved beats. */}
+      {hasLineup && (
+        <div className="lineup-zone">
+          {!lineupGone && (
+            <StandingsLineup
+              benchmark={benchmark as BenchmarkResults}
+              guessCount={guessCount}
+              solved={solved}
+              lang={lang}
+              exiting={lineupExiting}
+              onExited={handleLineupExited}
+            />
+          )}
+        </div>
       )}
 
       {/* Bottom zone (fixed keyboard-height footprint): the on-screen keyboard while

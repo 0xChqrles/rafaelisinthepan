@@ -782,7 +782,12 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   into the tray (reduced motion or missing strips skip straight there). On a streak
   solve these exit beats do NOT play hidden behind the celebration — keyboard and lineup
   hold still under the modal and the drop + teleport-out start at its dismissal; the
-  source types only after the leaderboard has risen (decided 2026-07-24). **Fresh-solve sequence (decided 2026-07-10):** the
+  source types only after the leaderboard has risen (decided 2026-07-24). **The sentence
+  must NOT move between the solved beats (decided 2026-07-24):** the lineup renders
+  inside a `.lineup-zone` band that keeps its height for the whole round — through the
+  exit and on rehydrated solves — and the tray's height is FIXED to the keyboard's
+  (taller solved content overflows into the empty band, never grows the tray), so
+  .play's centering never shifts the phrase. **Fresh-solve sequence (decided 2026-07-10):** the
   solving submit immediately sends the prompt left while fading it out, in the same render
   that launches the final hole-hit feedback. The next stage waits until EVERY `Hole` reports
   its final secret rendered after its final settle animation completes — never a

@@ -464,6 +464,9 @@ button * {
      reserve this SAME height (.tray min-height), so swapping the keyboard for the results
      never reflows the layout nor leaves an empty hole. Mirrors .kb-key / .keyboard. */
   --kb-h: calc(3 * clamp(42px, 6.4vh, 54px) + 2 * 6px);
+  /* The lineup band's height, shared by .lineup-track and its reserving .lineup-zone —
+     the zone outlives the characters (#110), so the sentence above never shifts. */
+  --lineup-h: 112px;
 }
 
 /* The centered play region between the fixed HUD and the keyboard. It grows to fill
@@ -492,12 +495,14 @@ button * {
   width: 100%;
 }
 
-/* Bottom zone: the keyboard while playing, the solved results once solved. min-height is
-   pinned to the keyboard's height so the bottom edge (and everything above) stays put when
-   the keyboard is replaced by the results — no reflow, no empty gap. */
+/* Bottom zone: the keyboard while playing, the solved results once solved. The height is
+   FIXED to the keyboard's (#110: fixed, not a min — solved content a few px taller must
+   overflow into the empty lineup band above, NEVER grow the tray, or .play's centering
+   moves the sentence between the solved beats), so the bottom edge and everything above
+   stay put when the keyboard is replaced by the results — no reflow, no empty gap. */
 .tray {
   width: 100%;
-  min-height: var(--kb-h);
+  height: calc(var(--kb-h) + env(safe-area-inset-bottom, 0px));
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -541,8 +546,17 @@ button * {
    Its height comes out of .play's flexible space, never the
    keyboard's. Decorative (aria-hidden); Round mirrors its events into the live
    region. --- */
+/* The lineup's LAYOUT SLOT, rendered for the whole round on a benchmarked puzzle —
+   including the solved state and rehydrated solves, where the characters are gone
+   (#110, decided 2026-07-24): the band keeps its height when the lineup inside
+   unmounts, so .play's flexible centering never moves the sentence mid-sequence. */
+.lineup-zone {
+  width: 100%;
+  height: var(--lineup-h);
+  display: flex;
+  justify-content: center;
+}
 .lineup {
-  align-self: center;
   width: 100%;
   max-width: 680px; /* match the keyboard it stands above */
   user-select: none;
@@ -550,7 +564,7 @@ button * {
 }
 .lineup-track {
   position: relative;
-  height: 112px;
+  height: var(--lineup-h);
 }
 .lineup-slot {
   position: absolute;
@@ -1835,9 +1849,10 @@ button * {
 
   /* Standings lineup (#81): the SAME 2x characters as desktop (they fit a quarter-row
      even at 320px), just a tighter column gap to reclaim a little
-     vertical space; the height comes out of .play's flexible gap. */
-  .lineup-track {
-    height: 110px;
+     vertical space; the height comes out of .play's flexible gap. The band var keeps
+     the reserving .lineup-zone in lockstep with the track. */
+  .game {
+    --lineup-h: 110px;
   }
   .lineup-slot {
     gap: 5px;
