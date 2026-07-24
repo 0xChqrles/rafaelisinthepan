@@ -487,11 +487,13 @@ button * {
 
 /* The game's watermark anchor: a full-width relative wrapper around ONLY the sentence,
    so the big try count centers on the sentence itself — not on sentence + prompt (which
-   read as "centered on neither"). `isolation` scopes the watermark's z-index:-1 behind
-   the phrase text but above the page grid. */
+   read as "centered on neither"). Deliberately NOT isolated (#110): the watermark's
+   z-index:-1 must escape into .play's isolated context so it paints behind ALL play
+   content — the source citation and the prompt included, not just the phrase (an
+   isolated anchor is a stacking context, which paints the whole subtree, watermark
+   included, ABOVE its siblings' plain in-flow text). */
 .phrase-anchor {
   position: relative;
-  isolation: isolate;
   width: 100%;
 }
 
@@ -510,6 +512,12 @@ button * {
   /* On a notched phone, add the home-indicator inset on top of the bottom gap so the
      last key row is never occluded (0 everywhere else). */
   padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+/* Results in the tray (#110): anchored to the BOTTOM, so solved content taller than the
+   keyboard rises INTO the empty lineup band above (with justify-content: center the
+   overflow would split and push the share action under the screen edge instead). */
+.tray.tray-results {
+  justify-content: flex-end;
 }
 /* Keyboard exit (#110): on a live solve the keyboard SLIDES DOWN out of the tray before
    the results rise into the same fixed-height space (no reflow either way — .tray keeps
@@ -1225,31 +1233,34 @@ button * {
 /* Leaderboard table (#110, decided 2026-07-24): the solved centerpiece when opponents
    display — one row per entrant sorted by score, its lineup identity color on the tag,
    its own replayed run as heat squares, its count on the right (DNF muted). One grid,
-   three shared columns, so tags, squares, and counts each align down the table. */
+   three shared columns, so tags, squares, and counts each align down the table. Sized
+   GENEROUSLY: the tray is bottom-anchored (.tray-results) and the lineup band above is
+   empty by the time it rises, so tall rows spill into that reclaimed space instead of
+   squeezing under keyboard height. */
 .leaderboard {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr) max-content;
-  column-gap: clamp(10px, 2.4vw, 18px);
-  row-gap: clamp(9px, 1.8vh, 16px);
+  column-gap: clamp(12px, 3vw, 22px);
+  row-gap: clamp(12px, 2.6vh, 22px);
   align-items: center;
   width: 100%;
-  max-width: 460px;
+  max-width: 520px;
 }
 .lb-tag {
   font-family: var(--press);
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 1px;
   text-shadow: none;
 }
-/* Rows share the heat-grid cell language at a smaller pitch; a row's squares hug the
-   left edge of the shared column (max-width per --n), so short runs read short. */
+/* Rows share the heat-grid cell language at the share row's full pitch; a row's squares
+   hug the left edge of the shared column (max-width per --n), so short runs read short. */
 .lb-squares {
-  gap: 4px;
-  max-width: calc(var(--n) * 16px + (var(--n) - 1) * 4px);
+  gap: 5px;
+  max-width: calc(var(--n) * 22px + (var(--n) - 1) * 5px);
 }
 .lb-score {
   font-family: var(--press);
-  font-size: 14px;
+  font-size: 18px;
   color: var(--fg);
   text-align: right;
   font-variant-numeric: tabular-nums;

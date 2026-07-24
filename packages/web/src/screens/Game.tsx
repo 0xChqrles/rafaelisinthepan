@@ -620,7 +620,9 @@ function Round({
             secret) — it is the "full reconstructed sentence" of the solved screen.
             The wrapper anchors the score watermark to the SENTENCE (not sentence +
             prompt): the big faint try count centers behind the phrase, z-index:-1 in
-            the wrapper's isolated stacking context, printed on the background's 24px
+            .play's isolated stacking context (the wrapper itself is deliberately NOT
+            isolated, so the watermark paints behind the citation and prompt too, #110),
+            printed on the background's 24px
             cells (CellDigits) so it reads as part of the grid, not a font over it. */}
         <div className="phrase-anchor">
           <div className="progress-background" aria-hidden="true">
@@ -697,7 +699,13 @@ function Round({
           (inert; submit is guarded) through the last hole's animation, then slides down out
           of the tray (#110); the results wait out the lineup's teleport-out (the tray
           holds its footprint empty for that beat) and rise in only once it is gone. */}
-      <div className={`tray${keyboardLeaving ? ' kb-leaving' : ''}`}>
+      <div
+        className={`tray${keyboardLeaving ? ' kb-leaving' : ''}${
+          showResults && !keyboardLeaving && !showStreakDialog && lineupGone
+            ? ' tray-results'
+            : ''
+        }`}
+      >
         {showResults && !keyboardLeaving && !showStreakDialog ? (
           lineupGone ? (
             <SolvedScreen
