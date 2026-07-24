@@ -809,8 +809,10 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   the exit beats play, the results rise into the tray, and only once the risen stack
   reports itself in place does the optional sentence source type quickly, letter by
   letter, with a trailing `_` (tally/colorize choreography continues beneath it; no
-  metadata skips the typewriter); rehydrated solves render the full source/results
-  immediately without replaying the sequence. Player progression is separate:
+  metadata skips the typewriter); as the exits begin, the background try-count DISSOLVES
+  into the wave field cell-by-cell (CellDigits `dissolve`, deterministic per-cell
+  thresholds; instant under reduced motion); rehydrated solves render the full
+  source/results immediately — count already gone — without replaying the sequence. Player progression is separate:
   `StreakDialog` is a
   **borderless full-screen** native modal, opened only by a FRESH active-day
   unsolved→solved transition. Its staged animation uses `@react-spring/web` (v9 for React

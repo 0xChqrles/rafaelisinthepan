@@ -626,7 +626,15 @@ function Round({
             cells (CellDigits) so it reads as part of the grid, not a font over it. */}
         <div className="phrase-anchor">
           <div className="progress-background" aria-hidden="true">
-            <CellDigits value={guessCount} />
+            {/* The count dissolves into the wave field once the solved exits begin
+                (#110) — the same beat the keyboard drops and the characters beam out
+                (after the streak celebration when there is one). This flag is exactly
+                "have the exits started": true from the kb-drop/teleport trigger onward
+                (lineupGone latches it) and from mount on a rehydrated solve. */}
+            <CellDigits
+              value={guessCount}
+              dissolve={keyboardLeaving || lineupExiting || lineupGone}
+            />
           </div>
           <Phrase
             words={words}
