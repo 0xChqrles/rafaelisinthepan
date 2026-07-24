@@ -186,13 +186,15 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
     "author": "Victor Hugo",
     "work": "Les Misérables"
   },
-  "benchmark": [                                // OPTIONAL exact display trio (#68/#80)
-    { "model": "gpt-5.6-sol", "label": "GPT-5.6", "tag": "GPT",
-      "tries": 3, "run": ["bois", "arbre", "forêt"] },
+  "benchmark": [                                // OPTIONAL recorded models (#68/#80/#81);
+                                                 //   VARIABLE length; front end filters display
     { "model": "claude-fable-5", "label": "CLAUDE FABLE", "tag": "FABLE",
-      "tries": 4, "run": ["nature", "bois", "arbre", "forêt"] },
+      "tries": 3, "run": ["bois", "arbre", "forêt"] },
     { "model": "k3", "label": "KIMI K3", "tag": "KIMI",
+      "tries": 4, "run": ["nature", "bois", "arbre", "forêt"] },
+    { "model": "gpt-5.6-sol", "label": "GPT-5.6", "tag": "GPT",
       "tries": null, "run": ["bois", "arbre", /* …full run through cap… */ "nature"] }
+    // may also carry lab-only models (OPUS/SONNET/TERRA/…); the client renders only display
   ]                                              // null tries = DNF; its full run is kept
 }
 ```
@@ -221,15 +223,26 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   **display forms** (accents kept, never slugged); `kind` is an **open** union (known
   values documented, but a new kind is allowed). Consumed by the solved screen (#8).
 - **`benchmark` is fully OPTIONAL (#68, decided 2026-07-07; schema v2 decided
-  2026-07-12 on #68):** absent stays byte-compatible with every existing puzzle. When
-  present, it contains **exactly 3** results — the one player-facing trio everywhere:
-  GPT-5.6 Sol, Claude Fable, and Kimi K3 (decided 2026-07-22, superseding the original
-  Opus/Sonnet/GPT trio); wider roster entries stay lab-only. Every
-  entry requires the exact non-empty `model` id, an honest uppercase full-family `label`
-  (`GPT-5.6`, `CLAUDE FABLE`, `KIMI K3` — never ambiguous `CLAUDE`), an uppercase
-  pixel-friendly `tag` of at most 6 characters (`GPT`/`FABLE`/`KIMI`), `tries` as a
-  positive integer or `null` (DNF at the counted-try cap), and `run` as the **selected
-  run's counted display-form guesses in submission order**. `--selection median`
+  2026-07-12 on #68; VARIABLE-LENGTH recorded-set + client-side display filter decided
+  2026-07-20 on #81):** absent stays byte-compatible with every existing puzzle. When
+  present, it is a **variable-length array of EVERY model tested with `--in-place`** (not a
+  fixed trio) — **unique `model` id and unique `tag` per entry**, and at least one entry.
+  **The display filter lives in the FRONT END, not the schema:** the client renders only its
+  fixed display trio — **FABLE (`claude-fable-5`), KIMI K3 (`k3`), and GPT-5.6 Sol
+  (`gpt-5.6-sol`)** (decided 2026-07-22, superseding the original Opus/Sonnet/GPT trio) —
+  and silently ignores any other recorded (lab-only) model, showing
+  whichever **subset** of the three is present (see the `web/src/game/benchmark.ts`
+  `DISPLAY_MODEL_IDS` canonical order → stable sprite). Every entry requires the exact
+  non-empty `model` id, an honest uppercase full-family `label` (`CLAUDE FABLE`, `KIMI K3`,
+  `GPT-5.6` — never ambiguous `CLAUDE`), an uppercase pixel-friendly `tag` of at most 6
+  characters (`FABLE`/`KIMI`/`GPT`), `tries` as a positive integer or `null` (DNF at the
+  counted-try cap), and `run` as the **selected run's counted display-form guesses in
+  submission order**. **`--in-place` upserts one model at a time** (a re-run replaces that
+  model's entry; a previously embedded entry that no longer replays the current
+  sentence/ranks is pruned) and accepts **only** the canonical config: **median selection,
+  persistent session, the current prompt version, and exactly `DEFAULT_RUNS` (5) runs** (an
+  omitted `--runs` defaults to 5 under `--in-place` for every model, overriding Kimi's
+  ordinary default-1). `--selection median`
   (default) keeps odd `N` runs sequential/cache-warm and reports the same actual median
   score as full median-of-N (#95). With `k = (N + 1) / 2`, once `k` runs have solved, a
   later run still unsolved at the k-th-smallest solved score stops as lab-only
@@ -467,8 +480,8 @@ pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 distinct word
 #    Claude.ai / saved ChatGPT Codex-plan access, or Kimi Code with KIMI_CODE_API_KEY.
 #    GPT API runs allow the documented
 #    none|low|medium|high|xhigh|max; ordinary Codex-plan play supports
-#    low|medium|high|xhigh|max. Kimi K3 is lab-only, requires subscription auth, rejects
-#    none, and maps medium/high -> high plus xhigh/max -> max. --session
+#    low|medium|high|xhigh|max. Kimi K3 is a display model, requires subscription auth,
+#    rejects none, and maps medium/high -> high plus xhigh/max -> max. --session
 #    persistent|stateless defaults to persistent: one native provider conversation per
 #    run is the primary product benchmark; stateless reconstructs the complete public
 #    record in fresh turns for diagnostics. The historical frozen shared gameplay baseline
@@ -481,10 +494,14 @@ pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 distinct word
 #    unsolved later run once its tries equal the incumbent best score. Puzzle paths may be
 #    repo-root-relative (packages/generation/output/...) or generation-package-relative
 #    (output/...).
-#    --in-place appends the full local lab artifact and embeds the lean display trio once
-#    all 3 current-prompt display models have same-selection and same-session results.
+#    --in-place appends the full local lab artifact AND upserts the tested model's lean
+#    entry into the puzzle's variable-length benchmark array (any model — the front end
+#    filters the FABLE/KIMI/GPT-SOL display trio; a re-run replaces that model, a now-stale
+#    entry is pruned). It accepts only the canonical config: median + persistent + current
+#    prompt + exactly 5 runs. An omitted --runs defaults to 5 under --in-place for EVERY
+#    model (Kimi's ordinary default-1 is overridden), so Kimi needs no explicit --runs 5.
 pnpm bench:puzzle <puzzle.json> --model MODEL [--playbook <model>.playbook.json] [--effort LEVEL] [--auth api|subscription] [--session persistent|stateless] [--cap N] [--runs N] [--selection median|best] [--in-place]
-KIMI_CODE_API_KEY=... pnpm bench:puzzle <puzzle.json> --model KIMI --auth subscription --effort medium --runs 1
+KIMI_CODE_API_KEY=... pnpm bench:puzzle <puzzle.json> --model KIMI --auth subscription --effort medium --in-place
 
 # 5. PAUSED EXPERIMENT: bootstrap one model's playbook from all 92 static French puzzles
 #    (#88). Do not run this for normal benchmark production. Each real
@@ -534,9 +551,12 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   strict improvement, solved locks, and the counted-try cap. The singular `--model`
   accepts the seven-model roster's friendly selector (`OPUS`, `SONNET`, `FABLE`, `GPT-SOL`,
   `GPT-TERRA`, `GPT-LUNA`, `KIMI`) or exact id; each invocation runs exactly one model. The
-  shipped display trio is GPT-5.6 Sol, Claude Fable, and Kimi K3 (decided 2026-07-22);
-  Opus, Sonnet, Terra, and Luna are lab-only (`display: false`) and never change it.
-  Ordinary play exposes `none|low|medium|high|xhigh|max`: GPT-5.6 API supports the full scale;
+  **display trio** (`display: true`) is **FABLE (`claude-fable-5`), KIMI K3 (`k3`), and
+  GPT-5.6 Sol (`gpt-5.6-sol`)** (decided 2026-07-20 on #81, confirmed 2026-07-22); Opus,
+  Sonnet, Terra, and Luna are lab-only.
+  The `display` flag is now documentation + a roster invariant only — `--in-place` records
+  EVERY tested model and the **front end** owns the display filter, so a lab-only model still
+  gets embedded (just not rendered). Ordinary play exposes `none|low|medium|high|xhigh|max`: GPT-5.6 API supports the full scale;
   Codex-plan GPT supports `low` through `max`; Anthropic supports `none` through `max`.
   Kimi requires `--auth subscription` with the dedicated `KIMI_CODE_API_KEY`, rejects
   `none` (which would route away from K3), and maps `low→low`, `medium|high→high`, and
@@ -579,10 +599,15 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   majority; best selects the lowest successful score and cost-prunes a later unsolved run
   when it reaches that incumbent score. Kimi prints its counted-guess exposure and warns that
   non-counting turns add paid requests; `low` still uses adaptive thinking. Lab sessions
-  record the session mode, selected run, and each run's termination; only same-selection and
-  same-session model sessions can form a display trio. `--in-place` records full local
-  transcripts/token usage and publishes only a complete replay-valid display trio; local
-  benchmark output is gitignored and paid provider calls never run in tests/CI.
+  record the session mode, selected run, and each run's termination. `--in-place` records the
+  full local transcript/token usage AND upserts the tested model's replay-valid lean entry
+  into the puzzle's variable-length benchmark array (any model; a re-run replaces that model,
+  a now-stale sibling entry is pruned). It accepts only the canonical config — **median +
+  persistent + current prompt + exactly `DEFAULT_RUNS` (5) runs** — so results stay
+  comparable; under `--in-place` an omitted `--runs` defaults to 5 for every model (Kimi's
+  ordinary default-1 is overridden). The front end, not the harness, filters the display
+  trio. Local benchmark
+  output is gitignored and paid provider calls never run in tests/CI.
 - **Frozen neutral gameplay baseline (decided 2026-07-17).** Use prompt v21 at `medium`
   effort, without `--playbook`, for both Sonnet and GPT. Two direct same-puzzle stateless
   v21 smokes produced 11 then 6 tries for Sonnet, and 13 then DNF-at-30 for GPT, exposing

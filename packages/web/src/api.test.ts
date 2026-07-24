@@ -141,24 +141,31 @@ describe('parsePuzzle (shape validation)', () => {
     expect(parsePuzzle(p)).toEqual(p);
   });
 
-  it('accepts the exact display trio, median runs, and a null DNF', () => {
-    const p = {
-      ...valid(),
-      benchmark: validBenchmark(),
-    };
+  it('accepts a recorded model set of any size, median runs, and a null DNF', () => {
+    const p = { ...valid(), benchmark: validBenchmark() };
     expect(parsePuzzle(p).benchmark).toEqual(p.benchmark);
+    // Variable length: every tested model is recorded, the front end filters the display
+    // trio, so one entry or four distinct entries are equally valid.
+    const one = { ...valid(), benchmark: validBenchmark().slice(0, 1) };
+    expect(parsePuzzle(one).benchmark).toEqual(one.benchmark);
+    const four = {
+      ...valid(),
+      benchmark: [
+        ...validBenchmark(),
+        { model: 'k3', label: 'KIMI K3', tag: 'KIMI', tries: 4, run: ['a', 'b', 'c', 'd'] },
+      ],
+    };
+    expect(parsePuzzle(four).benchmark).toEqual(four.benchmark);
   });
 
   it('rejects malformed benchmark containers and entries', () => {
     const notArray = { ...valid(), benchmark: {} };
     expect(() => parsePuzzle(notArray)).toThrow(/benchmark/);
     expect(() => parsePuzzle({ ...valid(), benchmark: [] })).toThrow(/benchmark/);
-    expect(() => parsePuzzle({ ...valid(), benchmark: validBenchmark().slice(0, 2) })).toThrow(
-      /exactly 3/,
-    );
+    // A repeated entry (duplicate model + tag) is rejected regardless of array length.
     expect(() =>
       parsePuzzle({ ...valid(), benchmark: [...validBenchmark(), validBenchmark()[0]] }),
-    ).toThrow(/exactly 3/);
+    ).toThrow(/unique/);
 
     const malformed = [
       { model: '', label: 'GPT-5.6', tag: 'GPT', tries: 12, run: ['forêt'] },
@@ -197,13 +204,13 @@ describe('parsePuzzle (shape validation)', () => {
     }
   });
 
-  it('rejects duplicate model identities in the display trio', () => {
+  it('rejects duplicate model identities among recorded entries', () => {
     const benchmark = validBenchmark();
     benchmark[2] = { ...benchmark[2], model: benchmark[0].model };
     expect(() => parsePuzzle({ ...valid(), benchmark })).toThrow(/unique/);
   });
 
-  it('rejects duplicate compact tags in the display trio', () => {
+  it('rejects duplicate compact tags among recorded entries', () => {
     const benchmark = validBenchmark();
     benchmark[2] = { ...benchmark[2], tag: benchmark[0].tag };
     expect(() => parsePuzzle({ ...valid(), benchmark })).toThrow(/unique/);
