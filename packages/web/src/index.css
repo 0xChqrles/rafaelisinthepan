@@ -635,8 +635,8 @@ button * {
 }
 /* Idle spritesheets, played the .cal-ripple way — background-size fits ONE frame
    (frames x 100%) and steps(N) walks background-position-x (end value 100% x N/(N-1)
-   so the last frame lands on 100% and the loop wraps cleanly) at 100ms per frame, 2x
-   zoom on the shared flex-end baseline. One sizing class per character (the sheets
+   so the last frame lands on 100% and the loop wraps cleanly) at each character's own
+   frame pace, 2x zoom on the shared flex-end baseline. One sizing class per character (the sheets
    vary in frame geometry AND count — the URL registry is IDLE_SHEETS in
    StandingsLineup; keep both in sync). Standalone infinite decorations, so reduced
    motion disables them outright (frame 0 stands still) rather than letting the global
@@ -654,12 +654,12 @@ button * {
   background-size: 800% 100%;
   animation: idle-8 0.8s steps(8) infinite;
 }
-/* gpt-idle.png: 128x32 = 4 frames of 32x32. */
+/* gpt-idle.png: 128x32 = 4 frames of 32x32, at a slower 200ms per frame. */
 .lineup-idle.gpt {
   width: 32px;
   height: 32px;
   background-size: 400% 100%;
-  animation: idle-4 0.4s steps(4) infinite;
+  animation: idle-4 0.8s steps(4) infinite;
 }
 @keyframes idle-8 {
   to {
