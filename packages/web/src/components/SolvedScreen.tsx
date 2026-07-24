@@ -1,10 +1,9 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { heatColor } from '@whippin/shared';
 import type { BenchmarkResults } from '@whippin/shared';
 import { bucketMeans, shareText, shareUrl } from '../game/share';
 import { lineupModel, hasDisplayEntries } from '../game/benchmark';
-import type { RunWord } from '../game/benchmarkReplay';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import { track } from '../analytics';
 import { t } from '../i18n';
@@ -34,7 +33,6 @@ export default function SolvedScreen({
   lang,
   benchmark,
   runSquares,
-  runs,
   action,
   animate = true,
   startAnimation = true,
@@ -46,7 +44,6 @@ export default function SolvedScreen({
   lang: string; // packed into the share token (drives the link's click-through target)
   benchmark?: BenchmarkResults; // offline opponents; shown only on this solved surface
   runSquares?: Map<string, number[]>; // model id -> its replayed run's bucketed squares
-  runs?: Map<string, RunWord[]>; // run viewer (#82): heat-colored words per entrant ('player' = the player)
   action?: { label: string; onClick: () => void }; // replaces SHARE in the tutorial
   // Rehydrated solves render their final result immediately. Fresh solves animate, with
   // startAnimation acting as the source/streak gate while this component stays mounted.
@@ -76,14 +73,9 @@ export default function SolvedScreen({
         tries: e.tries,
         player: e.player,
         squares: e.player ? squares : (runSquares?.get(e.key) ?? []),
-        run: runs?.get(e.player ? 'player' : e.key) ?? [],
       }),
     );
-  }, [benchmark, guessCount, lang, runSquares, runs, squares]);
-  // Run viewer (#82): one row's run unfolds at a time. The WINNER's run starts open —
-  // the reclaimed lineup band gets content immediately, and the tap-to-unfold gesture is
-  // demonstrated rather than explained (show, don't tell).
-  const [openRun, setOpenRun] = useState<string | null>(() => rows?.[0]?.key ?? null);
+  }, [benchmark, guessCount, lang, runSquares, squares]);
   // The leaderboard owns the count when opponents display; the headline renders without it.
   const showScore = rows === null;
   const n = squares.length;
@@ -224,74 +216,42 @@ export default function SolvedScreen({
         </span>
       )}
 
-      {/* The leaderboard table when opponents display (one row per entrant: identity
-          tag, its run's squares, its count) — each row a real BUTTON unfolding that
-          entrant's replayed run as heat-colored words (#82), the winner's open by
-          default. The single squares row renders otherwise. The player's bucket values
-          are the SAME array encoded into the share card either way. */}
+      {/* Decorative leaderboard table when opponents display (one row per entrant: tag,
+          its run's squares, its count; the player's row carries the accent border). The
+          single squares row renders otherwise. The player's bucket values are the SAME
+          array encoded into the share card either way. Rows are NOT interactive for now
+          (decided 2026-07-24): the run viewer returns as a MODAL (#82). */}
       {rows ? (
-        <div className="leaderboard">
+        <div className="leaderboard" aria-hidden="true">
           {rows.map((row) => (
-            <Fragment key={row.key}>
-              <button
-                type="button"
-                className="lb-row"
-                aria-expanded={openRun === row.key}
-                aria-label={`${row.label} — ${row.tries ?? t(lang, 'dnf')}`}
-                onClick={() => setOpenRun(openRun === row.key ? null : row.key)}
+            <div key={row.key} className={`lb-row${row.player ? ' player' : ''}`}>
+              <span className={`lb-tag${row.player ? ' player' : ''}`}>{row.tag}</span>
+              <div
+                className={`heat-grid lb-squares${gridShown ? ' shown' : ''}${
+                  gridColorized ? ' colorized' : ''
+                }`}
+                style={{ '--n': row.squares.length } as CSSProperties}
               >
-                <span className={`lb-tag${row.player ? ' player' : ''}`}>{row.tag}</span>
-                <div
-                  className={`heat-grid lb-squares${gridShown ? ' shown' : ''}${
-                    gridColorized ? ' colorized' : ''
-                  }`}
-                  aria-hidden="true"
-                  style={{ '--n': row.squares.length } as CSSProperties}
-                >
-                  {row.squares.map((pct, i) => (
-                    <span
-                      // eslint-disable-next-line react/no-array-index-key
-                      key={i}
-                      className="heat-cell"
-                      style={
-                        {
-                          '--cell-color': heatColor(pct / 100),
-                          '--show-delay': `${Math.round(i * stagger)}ms`,
-                          '--color-delay': `${Math.round(i * stagger)}ms`,
-                        } as CSSProperties &
-                          Record<'--cell-color' | '--show-delay' | '--color-delay', string>
-                      }
-                    />
-                  ))}
-                </div>
-                <span className={`lb-score${row.tries === null ? ' dnf' : ''}`}>
-                  {row.tries ?? t(lang, 'dnf')}
-                </span>
-              </button>
-              {/* The run, unfolding under its row (grid-rows 0fr -> 1fr) as a horizontal
-                  TIMELINE: one heat square per counted guess with its word in neutral
-                  text beneath — the squares' color language expanded to the full run,
-                  reading cold -> hot left to right. Long runs scroll sideways (a
-                  half-cut column at the edge is the scroll affordance) instead of
-                  piling into a text wall. */}
-              <div className={`lb-run${openRun === row.key ? ' open' : ''}`}>
-                <div className="lb-run-inner">
-                  <div className="lb-run-strip">
-                    {row.run.map((w, i) => (
-                      // eslint-disable-next-line react/no-array-index-key
-                      <span key={i} className="lb-run-step">
-                        <span
-                          className="lb-run-heat"
-                          aria-hidden="true"
-                          style={{ backgroundColor: w.color }}
-                        />
-                        <span className="lb-run-word">{w.text}</span>
-                      </span>
-                    ))}
-                  </div>
-                </div>
+                {row.squares.map((pct, i) => (
+                  <span
+                    // eslint-disable-next-line react/no-array-index-key
+                    key={i}
+                    className="heat-cell"
+                    style={
+                      {
+                        '--cell-color': heatColor(pct / 100),
+                        '--show-delay': `${Math.round(i * stagger)}ms`,
+                        '--color-delay': `${Math.round(i * stagger)}ms`,
+                      } as CSSProperties &
+                        Record<'--cell-color' | '--show-delay' | '--color-delay', string>
+                    }
+                  />
+                ))}
               </div>
-            </Fragment>
+              <span className={`lb-score${row.tries === null ? ' dnf' : ''}`}>
+                {row.tries ?? t(lang, 'dnf')}
+              </span>
+            </div>
           ))}
         </div>
       ) : (
@@ -333,8 +293,13 @@ export default function SolvedScreen({
         )
       )}
 
-      {/* No sr-only ranking line anymore: the leaderboard rows are real labeled buttons
-          ("<label> — <tries>", in ranking order), so the table IS the accessible result. */}
+      {/* The leaderboard table is decorative (aria-hidden) — this line keeps the
+          ranking accessible. */}
+      {rows && (
+        <p className="sr-only">
+          {rows.map((row) => `${row.label} ${row.tries ?? t(lang, 'dnf')}`).join(' · ')}
+        </p>
+      )}
     </div>
   );
 }

@@ -779,15 +779,11 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   squares), and its count (DNF muted); SHARE below. **The table is MONOCHROME except the
   heat squares** (decided 2026-07-24): tags are muted (the player's alone in fg), counts
   neutral — identity colors belong to the characters, and the squares are the single
-  color voice. **Each row is a real labeled BUTTON — the run VIEWER (#82, decided
-  2026-07-24):** tapping unfolds that entrant's counted guesses as a one-line horizontal
-  TIMELINE — per guess, a heat square (its best outcome that step, on the ramp only: MISS
-  crimson to hot; no gold, no identity colors) over the word in neutral text; long runs
-  scroll sideways (hidden scrollbar; the half-cut edge column is the affordance) instead
-  of wrapping into a wall. The player's own row replays their persisted tried list; one
-  row open at a time; the WINNER's run opens by default (show-don't-tell). The rows being
-  labeled buttons in ranking order IS the accessible result — there is no separate
-  sr-only ranking line. The lineup does NOT persist past the
+  color voice. **The PLAYER's row alone is accented** (decided 2026-07-24): an overlay
+  accent-blue border (::before, so the subgrid columns never shift). Rows are **NOT
+  interactive** — an inline tap-to-unfold run viewer was tried and removed (too noisy);
+  the run viewer will be a MODAL opened from a row, tracked in #82. The table is
+  decorative (aria-hidden) with an sr-only ranking line carrying the accessible result. The lineup does NOT persist past the
   solve: after the keyboard drops, its characters teleport OUT one tick apart (their
   dissolve + shared-flash strips), and only once the last is gone does the table rise
   into the tray (reduced motion or missing strips skip straight there). On a streak

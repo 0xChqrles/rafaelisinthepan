@@ -1247,29 +1247,28 @@ button * {
   width: 100%;
   max-width: 520px;
 }
-/* One entrant row = one BUTTON (#82): tapping unfolds that run below. Subgrid keeps its
-   three cells on the table's shared columns; the block padding gives the table its row
-   rhythm AND a finger-sized target. Same flat hover/press language as the app's keys. */
+/* One entrant row. Subgrid keeps its three cells on the table's shared columns; the
+   block padding gives the table its row rhythm. NOT interactive for now (decided
+   2026-07-24) — the run viewer returns as a MODAL (#82). */
 .lb-row {
   grid-column: 1 / -1;
   display: grid;
   grid-template-columns: subgrid;
   align-items: center;
   padding: clamp(6px, 1.2vh, 10px) 0;
-  background: none;
-  border: 0;
-  font: inherit;
-  color: inherit;
-  text-align: inherit;
-  cursor: pointer;
-  transition: filter 0.08s linear;
 }
-.lb-row:hover,
-.lb-row:focus-visible {
-  filter: brightness(1.35);
+/* YOUR row is the accented one (decided 2026-07-24): an overlay accent border — drawn
+   by a ::before so it never touches layout (padding/margin on a subgrid would shift its
+   tracks off the shared columns), bleeding a little past the columns on each side. */
+.lb-row.player {
+  position: relative;
 }
-.lb-row:active {
-  filter: brightness(1.5);
+.lb-row.player::before {
+  content: '';
+  position: absolute;
+  inset: 0 -10px;
+  border: 1px solid var(--accent);
+  pointer-events: none;
 }
 /* The table is MONOCHROME except the heat squares (decided 2026-07-24): identity colors
    belong to the characters, and with them gone the tags + counts stay neutral so the
@@ -1300,55 +1299,6 @@ button * {
 }
 .lb-score.dnf {
   color: var(--muted);
-}
-/* The run viewer panel (#82): a full-width grid row unfolding under its entrant
-   (grid-template-rows 0fr -> 1fr, the height-auto-safe accordion; reduced motion
-   collapses the transition to an instant swap via the global rule). */
-.lb-run {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 0.25s ease-out;
-}
-.lb-run.open {
-  grid-template-rows: 1fr;
-}
-.lb-run-inner {
-  overflow: hidden;
-  min-height: 0;
-}
-/* The replayed guesses as a one-line TIMELINE: per counted guess, a heat square (its
-   best outcome that step, the ramp only — cold MISS crimson to hot) over the word in
-   neutral text. Long runs scroll horizontally (scrollbar hidden; the half-cut column at
-   the edge says "more"), so a 30-guess DNF stays one quiet line instead of a wall. */
-.lb-run-strip {
-  display: flex;
-  gap: 12px;
-  padding: 4px 0 12px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.lb-run-strip::-webkit-scrollbar {
-  display: none;
-}
-.lb-run-step {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-}
-.lb-run-heat {
-  width: 14px;
-  height: 14px;
-  image-rendering: pixelated;
-}
-.lb-run-word {
-  font-family: var(--press);
-  font-size: 9px;
-  letter-spacing: 1px;
-  color: var(--fg);
-  text-shadow: none;
 }
 /* Result action: the same flat key language as the keyboard it replaces. */
 .result-action {
