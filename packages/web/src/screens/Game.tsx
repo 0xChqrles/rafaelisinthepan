@@ -381,13 +381,12 @@ function Round({
     }
 
     // Let the player see the fully resolved sentence for one clean beat before the
-    // full-screen progression celebration begins. Mount results and the modal together so
-    // the tries/squares choreography remains paused behind the streak until dismissal.
+    // full-screen progression celebration begins. The keyboard and the lineup stay put
+    // underneath the modal — their exit beats (kb-drop + teleport-out) are VISIBLE
+    // choreography, so they wait for the celebration's dismissal (decided 2026-07-24)
+    // instead of playing covered.
     const timer = window.setTimeout(() => {
       setShowResults(true);
-      setKeyboardLeaving(true);
-      if (hasLineup) setLineupExiting(true);
-      else setLineupGone(true);
       setShowStreakDialog(true);
       setAwaitingWordAnimations(false);
     }, STREAK_AFTER_WORDS_MS);
@@ -405,11 +404,16 @@ function Round({
   const dismissStreakDialog = useCallback(() => {
     // StreakDialog calls this only AFTER its 200ms exit fade. That callback is the source
     // typewriter's start line, so the citation can never appear underneath the fading
-    // progression screen.
+    // progression screen. It is also the exit choreography's start line on a streak
+    // solve (decided 2026-07-24): the keyboard drop and the lineup teleport-out held
+    // still behind the modal so they play in view now, while the source types above.
     setShowStreakDialog(false);
+    setKeyboardLeaving(true);
+    if (hasLineup) setLineupExiting(true);
+    else setLineupGone(true);
     focusResultAfterSource.current = true;
     setSourceRevealStarted(true);
-  }, []);
+  }, [hasLineup]);
 
   const finishSourceReveal = useCallback(() => {
     setSourceRevealComplete(true);
@@ -682,7 +686,7 @@ function Round({
           of the tray (#110); the results wait out the lineup's teleport-out (the tray
           holds its footprint empty for that beat) and rise in only once it is gone. */}
       <div className={`tray${keyboardLeaving ? ' kb-leaving' : ''}`}>
-        {showResults && !keyboardLeaving ? (
+        {showResults && !keyboardLeaving && !showStreakDialog ? (
           lineupGone ? (
             <SolvedScreen
               guessCount={guessCount}

@@ -779,7 +779,10 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   squares), and its count (DNF muted); SHARE below. The lineup does NOT persist past the
   solve: after the keyboard drops, its characters teleport OUT one tick apart (their
   dissolve + shared-flash strips), and only once the last is gone does the table rise
-  into the tray (reduced motion or missing strips skip straight there). **Fresh-solve sequence (decided 2026-07-10):** the
+  into the tray (reduced motion or missing strips skip straight there). On a streak
+  solve these exit beats do NOT play hidden behind the celebration — keyboard and lineup
+  hold still under the modal and the drop + teleport-out start at its dismissal, beside
+  the source typewriter (decided 2026-07-24). **Fresh-solve sequence (decided 2026-07-10):** the
   solving submit immediately sends the prompt left while fading it out, in the same render
   that launches the final hole-hit feedback. The next stage waits until EVERY `Hole` reports
   its final secret rendered after its final settle animation completes — never a
