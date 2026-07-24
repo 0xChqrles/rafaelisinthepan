@@ -37,6 +37,7 @@ export default function SolvedScreen({
   action,
   animate = true,
   startAnimation = true,
+  onRisen,
 }: {
   guessCount: number;
   trajectory: number[]; // reconstruction % after each counted guess (one per try)
@@ -51,6 +52,10 @@ export default function SolvedScreen({
   // A live active-day solve holds this at false while StreakDialog is open. No-dialog
   // paths (archive, tutorial, and rehydration) use the immediate default.
   startAnimation?: boolean;
+  // Fires once when the animated rise-in has finished — the solved sequence's cue for
+  // the SOURCE typewriter, its LAST beat (decided 2026-07-24). Never fires when
+  // animate is false (rehydrated solves set their source states directly).
+  onRisen?: () => void;
 }) {
   // Collapse the per-guess trajectory into a bounded row (3..18), each square colored by
   // its bucket's mean progress. This exact array also drives the share card and emoji row.
@@ -98,6 +103,22 @@ export default function SolvedScreen({
     const raf = requestAnimationFrame(() => setResultsIn(true));
     return () => cancelAnimationFrame(raf);
   }, [animate, startAnimation]);
+
+  // Report the rise done exactly once per mount, RESULTS_IN_MS after it starts (at once
+  // under reduced motion — the transition is collapsed but the beat still advances).
+  const onRisenRef = useRef(onRisen);
+  useEffect(() => {
+    onRisenRef.current = onRisen;
+  });
+  useEffect(() => {
+    if (!animate || !resultsIn) return undefined;
+    if (reduceMotion) {
+      onRisenRef.current?.();
+      return undefined;
+    }
+    const id = window.setTimeout(() => onRisenRef.current?.(), RESULTS_IN_MS);
+    return () => window.clearTimeout(id);
+  }, [animate, resultsIn, reduceMotion]);
 
   const [countTarget, setCountTarget] = useState(() => (animate ? 0 : guessCount));
   useEffect(() => {

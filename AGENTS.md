@@ -781,19 +781,21 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   dissolve + shared-flash strips), and only once the last is gone does the table rise
   into the tray (reduced motion or missing strips skip straight there). On a streak
   solve these exit beats do NOT play hidden behind the celebration — keyboard and lineup
-  hold still under the modal and the drop + teleport-out start at its dismissal, beside
-  the source typewriter (decided 2026-07-24). **Fresh-solve sequence (decided 2026-07-10):** the
+  hold still under the modal and the drop + teleport-out start at its dismissal; the
+  source types only after the leaderboard has risen (decided 2026-07-24). **Fresh-solve sequence (decided 2026-07-10):** the
   solving submit immediately sends the prompt left while fading it out, in the same render
   that launches the final hole-hit feedback. The next stage waits until EVERY `Hole` reports
   its final secret rendered after its final settle animation completes — never a
   guessed timeout — so multi-word or throttled animation cannot be covered mid-resolution.
   A fresh active-day solve then holds the fully resolved sentence for 300ms before mounting
-  the streak modal. Once that modal has completely dismissed (including its exit fade), the
-  optional sentence source types quickly, letter by letter, with a trailing `_`; archive /
-  no-streak play starts this source beat immediately after the final holes settle. Only when
-  source typing finishes do the tries rise/tally (when the headline renders, #110),
-  trajectory-square, and SHARE animations
-  begin (no metadata skips the typewriter); rehydrated solves render the full source/results
+  the streak modal. **The solved beats run STREAK → keyboard-drop + teleport-out →
+  LEADERBOARD/results rise → SOURCE (decided 2026-07-24, #110 — reversing the 2026-07-10
+  source-before-results order):** once the modal has completely dismissed (including its
+  exit fade) — or immediately after the final holes settle on archive / no-streak play —
+  the exit beats play, the results rise into the tray, and only once the risen stack
+  reports itself in place does the optional sentence source type quickly, letter by
+  letter, with a trailing `_` (tally/colorize choreography continues beneath it; no
+  metadata skips the typewriter); rehydrated solves render the full source/results
   immediately without replaying the sequence. Player progression is separate:
   `StreakDialog` is a
   **borderless full-screen** native modal, opened only by a FRESH active-day

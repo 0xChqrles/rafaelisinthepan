@@ -375,7 +375,6 @@ function Round({
       if (hasLineup) setLineupExiting(true);
       else setLineupGone(true);
       setShowStreakDialog(false);
-      setSourceRevealStarted(true);
       setAwaitingWordAnimations(false);
       return;
     }
@@ -402,18 +401,25 @@ function Round({
   ]);
 
   const dismissStreakDialog = useCallback(() => {
-    // StreakDialog calls this only AFTER its 200ms exit fade. That callback is the source
-    // typewriter's start line, so the citation can never appear underneath the fading
-    // progression screen. It is also the exit choreography's start line on a streak
-    // solve (decided 2026-07-24): the keyboard drop and the lineup teleport-out held
-    // still behind the modal so they play in view now, while the source types above.
+    // StreakDialog calls this only AFTER its 200ms exit fade. On a streak solve it is
+    // the exit choreography's start line (decided 2026-07-24): the keyboard drop and
+    // the lineup teleport-out held still behind the modal so they play in view now.
+    // The source typewriter does NOT start here — the sequence is STREAK -> exits ->
+    // LEADERBOARD -> SOURCE, so the citation waits for the risen result stack
+    // (handleResultsRisen below).
     setShowStreakDialog(false);
     setKeyboardLeaving(true);
     if (hasLineup) setLineupExiting(true);
     else setLineupGone(true);
     focusResultAfterSource.current = true;
-    setSourceRevealStarted(true);
   }, [hasLineup]);
+
+  // The results' rise reporting done (SolvedScreen onRisen) is the source typewriter's
+  // start line: SOURCE is the LAST beat of the solved sequence (decided 2026-07-24),
+  // typing above a leaderboard already in place while its squares colorize beneath.
+  const handleResultsRisen = useCallback(() => {
+    setSourceRevealStarted(true);
+  }, []);
 
   const finishSourceReveal = useCallback(() => {
     setSourceRevealComplete(true);
@@ -696,9 +702,8 @@ function Round({
               benchmark={benchmark}
               runSquares={runSquares}
               animate={animateResults}
-              startAnimation={
-                sourceRevealComplete && !showStreakDialog && !deferResultsAnimation
-              }
+              startAnimation={!showStreakDialog && !deferResultsAnimation}
+              onRisen={handleResultsRisen}
             />
           ) : null
         ) : (
