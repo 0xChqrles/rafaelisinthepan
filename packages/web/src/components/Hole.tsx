@@ -8,7 +8,9 @@ import type { HitState, RuntimeHole } from '@whippin/shared';
 
 // The floating number ("hit") does not improve any hole: cap its heat at 150 so
 // the gradient stays meaningful. Above that, everything stays at the coldest color.
-const HIT_HEAT_CAP = 150;
+// Exported (#82): the solved leaderboard's run viewer colors each replayed guess with
+// the same cap the live floating hits use, so a run reads exactly like it played.
+export const HIT_HEAT_CAP = 150;
 
 // Keep the existing 520ms beat for a ten-rank transition below the cap, while making
 // every individual rank step take the same 52ms. Large transitions stay responsive.

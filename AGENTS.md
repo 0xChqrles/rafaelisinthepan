@@ -776,7 +776,14 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   replaced by the **leaderboard table**: one row per entrant sorted by score (player
   ahead on a tie, DNF last, `lineupModel` order), each row an identity-colored tag, the
   entrant's own run replayed into bucketed heat squares (the player's ARE the share-card
-  squares), and its count (DNF muted); SHARE below. The lineup does NOT persist past the
+  squares), and its count (DNF muted); SHARE below. **Each row is a real labeled BUTTON —
+  the run VIEWER (#82, decided 2026-07-24):** tapping unfolds that entrant's counted
+  guesses in submission order as heat-colored words (the live floating-hit color rule:
+  MISS crimson, warm hits on the rank ramp, the solving hit in solved-word gold; the
+  player's own row replays their persisted tried list), one row open at a time, the
+  WINNER's run open by default (show-don't-tell), long runs scrolling in a bounded
+  panel. The rows being labeled buttons in ranking order IS the accessible result —
+  there is no separate sr-only ranking line. The lineup does NOT persist past the
   solve: after the keyboard drops, its characters teleport OUT one tick apart (their
   dissolve + shared-flash strips), and only once the last is gone does the table rise
   into the tray (reduced motion or missing strips skip straight there). On a streak

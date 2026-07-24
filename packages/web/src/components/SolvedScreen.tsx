@@ -4,6 +4,7 @@ import { heatColor } from '@whippin/shared';
 import type { BenchmarkResults } from '@whippin/shared';
 import { bucketMeans, shareText, shareUrl } from '../game/share';
 import { lineupModel, hasDisplayEntries } from '../game/benchmark';
+import type { RunWord } from '../game/benchmarkReplay';
 import { BOT_KEYS, CHARACTER_PALETTES } from './teleportStrips';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import { track } from '../analytics';
@@ -34,6 +35,7 @@ export default function SolvedScreen({
   lang,
   benchmark,
   runSquares,
+  runs,
   action,
   animate = true,
   startAnimation = true,
@@ -45,6 +47,7 @@ export default function SolvedScreen({
   lang: string; // packed into the share token (drives the link's click-through target)
   benchmark?: BenchmarkResults; // offline opponents; shown only on this solved surface
   runSquares?: Map<string, number[]>; // model id -> its replayed run's bucketed squares
+  runs?: Map<string, RunWord[]>; // run viewer (#82): heat-colored words per entrant ('player' = the player)
   action?: { label: string; onClick: () => void }; // replaces SHARE in the tutorial
   // Rehydrated solves render their final result immediately. Fresh solves animate, with
   // startAnimation acting as the source/streak gate while this component stays mounted.
@@ -75,9 +78,14 @@ export default function SolvedScreen({
         player: e.player,
         color: e.player ? 'var(--accent)' : CHARACTER_PALETTES[BOT_KEYS[e.sprite]].base,
         squares: e.player ? squares : (runSquares?.get(e.key) ?? []),
+        run: runs?.get(e.player ? 'player' : e.key) ?? [],
       }),
     );
-  }, [benchmark, guessCount, lang, runSquares, squares]);
+  }, [benchmark, guessCount, lang, runSquares, runs, squares]);
+  // Run viewer (#82): one row's run unfolds at a time. The WINNER's run starts open —
+  // the reclaimed lineup band gets content immediately, and the tap-to-unfold gesture is
+  // demonstrated rather than explained (show, don't tell).
+  const [openRun, setOpenRun] = useState<string | null>(() => rows?.[0]?.key ?? null);
   // The leaderboard owns the count when opponents display; the headline renders without it.
   const showScore = rows === null;
   const n = squares.length;
@@ -218,43 +226,70 @@ export default function SolvedScreen({
         </span>
       )}
 
-      {/* Decorative visual history of this sentence — the leaderboard table when
-          opponents display (one row per entrant: identity tag, its run's squares, its
-          count), the single squares row otherwise. The sr line below and the share text
-          carry the accessible result; the player's bucket values are the SAME array
-          encoded into the share card either way. */}
+      {/* The leaderboard table when opponents display (one row per entrant: identity
+          tag, its run's squares, its count) — each row a real BUTTON unfolding that
+          entrant's replayed run as heat-colored words (#82), the winner's open by
+          default. The single squares row renders otherwise. The player's bucket values
+          are the SAME array encoded into the share card either way. */}
       {rows ? (
-        <div className="leaderboard" aria-hidden="true">
+        <div className="leaderboard">
           {rows.map((row) => (
             <Fragment key={row.key}>
-              <span className="lb-tag" style={{ color: row.color }}>
-                {row.tag}
-              </span>
-              <div
-                className={`heat-grid lb-squares${gridShown ? ' shown' : ''}${
-                  gridColorized ? ' colorized' : ''
-                }`}
-                style={{ '--n': row.squares.length } as CSSProperties}
+              <button
+                type="button"
+                className="lb-row"
+                aria-expanded={openRun === row.key}
+                aria-label={`${row.label} — ${row.tries ?? t(lang, 'dnf')}`}
+                onClick={() => setOpenRun(openRun === row.key ? null : row.key)}
               >
-                {row.squares.map((pct, i) => (
-                  <span
-                    // eslint-disable-next-line react/no-array-index-key
-                    key={i}
-                    className="heat-cell"
-                    style={
-                      {
-                        '--cell-color': heatColor(pct / 100),
-                        '--show-delay': `${Math.round(i * stagger)}ms`,
-                        '--color-delay': `${Math.round(i * stagger)}ms`,
-                      } as CSSProperties &
-                        Record<'--cell-color' | '--show-delay' | '--color-delay', string>
-                    }
-                  />
-                ))}
+                <span className="lb-tag" style={{ color: row.color }}>
+                  {row.tag}
+                </span>
+                <div
+                  className={`heat-grid lb-squares${gridShown ? ' shown' : ''}${
+                    gridColorized ? ' colorized' : ''
+                  }`}
+                  aria-hidden="true"
+                  style={{ '--n': row.squares.length } as CSSProperties}
+                >
+                  {row.squares.map((pct, i) => (
+                    <span
+                      // eslint-disable-next-line react/no-array-index-key
+                      key={i}
+                      className="heat-cell"
+                      style={
+                        {
+                          '--cell-color': heatColor(pct / 100),
+                          '--show-delay': `${Math.round(i * stagger)}ms`,
+                          '--color-delay': `${Math.round(i * stagger)}ms`,
+                        } as CSSProperties &
+                          Record<'--cell-color' | '--show-delay' | '--color-delay', string>
+                      }
+                    />
+                  ))}
+                </div>
+                <span className={`lb-score${row.tries === null ? ' dnf' : ''}`}>
+                  {row.tries ?? t(lang, 'dnf')}
+                </span>
+              </button>
+              {/* The run, unfolding under its row (grid-rows 0fr -> 1fr): the counted
+                  guesses in submission order, each in the heat of its best outcome that
+                  step — the run reads cold -> warm -> gold exactly as it played. */}
+              <div className={`lb-run${openRun === row.key ? ' open' : ''}`}>
+                <div className="lb-run-inner">
+                  <p className="lb-run-words">
+                    {row.run.map((w, i) => (
+                      // eslint-disable-next-line react/no-array-index-key
+                      <Fragment key={i}>
+                        {i > 0 && ' '}
+                        <span className="lb-run-word" style={{ color: w.color }}>
+                          {w.text}
+                        </span>
+                      </Fragment>
+                    ))}
+                  </p>
+                </div>
               </div>
-              <span className={`lb-score${row.tries === null ? ' dnf' : ''}`}>
-                {row.tries ?? t(lang, 'dnf')}
-              </span>
             </Fragment>
           ))}
         </div>
@@ -297,13 +332,8 @@ export default function SolvedScreen({
         )
       )}
 
-      {/* The leaderboard table (#110) is the VISUAL final standings, but it is
-          decorative (aria-hidden) — this line keeps the ranking accessible. */}
-      {rows && (
-        <p className="sr-only">
-          {rows.map((row) => `${row.label} ${row.tries ?? t(lang, 'dnf')}`).join(' · ')}
-        </p>
-      )}
+      {/* No sr-only ranking line anymore: the leaderboard rows are real labeled buttons
+          ("<label> — <tries>", in ranking order), so the table IS the accessible result. */}
     </div>
   );
 }

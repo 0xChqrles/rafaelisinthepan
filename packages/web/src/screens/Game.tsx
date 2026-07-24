@@ -17,8 +17,11 @@ import SolvedCaption from '../components/SolvedCaption';
 import LoadError from '../components/LoadError';
 import { t, srHoleResult, srModelAhead, srModelLead } from '../i18n';
 import { lineupModel, lineupEvents, hasDisplayEntries, displayEntries } from '../game/benchmark';
+import { replayRun } from '../game/benchmarkReplay';
+import type { RunWord } from '../game/benchmarkReplay';
+import { rankHeatColor, HIT_HEAT_CAP } from '../components/Hole';
 import { track } from '../analytics';
-import { fold } from '@whippin/shared';
+import { fold, heatColor } from '@whippin/shared';
 import type {
   BenchmarkResults,
   HitState,
@@ -43,6 +46,30 @@ export const STAGGER_MS = 200;
 export const FLOATING_HIT_INTRO_MS = 320;
 
 const STREAK_AFTER_WORDS_MS = 300;
+
+// One replayed run as heat-colored words (#82): each word in the heat of its best
+// outcome that step — the SAME color rule as the live floating hits (miss = the
+// cold MISS crimson, a solving hit = the solved-word gold).
+function runWords(
+  puzzle: { holes: Hole[]; ranks: RankMap },
+  run: readonly string[],
+): RunWord[] {
+  return replayRun(puzzle, run).steps.map((step) => {
+    const hit = step.outcomes
+      .map((o) => o.rank)
+      .filter((r): r is number => r !== null);
+    const best = hit.length ? Math.min(...hit) : null;
+    return {
+      text: step.word,
+      color:
+        best === null
+          ? heatColor(0)
+          : best === 0
+            ? 'var(--hole)'
+            : rankHeatColor(best, HIT_HEAT_CAP),
+    };
+  });
+}
 
 // Wrapper: drives the single puzzle. Loads the language's fixed vocabulary
 // (existence set + keyboard prefix set) before playing — existence is decided by it,
@@ -270,6 +297,22 @@ function Round({
       ),
     [benchmark, freshHoles, ranks],
   );
+
+  // The run VIEWER's data (#82): every entrant's counted guesses as heat-colored words —
+  // the models' recorded runs plus the player's own persisted tried list, all replayed
+  // through the same rank maps. Keyed by model id; the player under the 'player' key.
+  const runs = useMemo<Map<string, RunWord[]> | undefined>(() => {
+    if (!benchmark || !hasDisplayEntries(benchmark)) return undefined;
+    const puzzle = { holes: puzzleHoles, ranks };
+    const map = new Map(
+      displayEntries(benchmark).map(({ entry }) => [
+        entry.model,
+        runWords(puzzle, entry.run),
+      ]),
+    );
+    map.set('player', runWords(puzzle, history));
+    return map;
+  }, [benchmark, puzzleHoles, ranks, history]);
 
   // Gate the solved presentation on every Hole reporting its final displayed secret. The
   // playing UI stays up through the real animationend events, so slow/throttled frames and
@@ -715,6 +758,7 @@ function Round({
               lang={lang}
               benchmark={benchmark}
               runSquares={runSquares}
+              runs={runs}
               animate={animateResults}
               startAnimation={!showStreakDialog && !deferResultsAnimation}
               onRisen={handleResultsRisen}

@@ -1241,10 +1241,35 @@ button * {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr) max-content;
   column-gap: clamp(12px, 3vw, 22px);
-  row-gap: clamp(12px, 2.6vh, 22px);
+  /* Row rhythm comes from .lb-row's block padding, NOT row-gap: the collapsed run
+     panels are zero-height grid rows, and a row-gap would still surround them. */
   align-items: center;
   width: 100%;
   max-width: 520px;
+}
+/* One entrant row = one BUTTON (#82): tapping unfolds that run below. Subgrid keeps its
+   three cells on the table's shared columns; the block padding gives the table its row
+   rhythm AND a finger-sized target. Same flat hover/press language as the app's keys. */
+.lb-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: center;
+  padding: clamp(6px, 1.2vh, 10px) 0;
+  background: none;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  cursor: pointer;
+  transition: filter 0.08s linear;
+}
+.lb-row:hover,
+.lb-row:focus-visible {
+  filter: brightness(1.35);
+}
+.lb-row:active {
+  filter: brightness(1.5);
 }
 .lb-tag {
   font-family: var(--press);
@@ -1268,6 +1293,41 @@ button * {
 }
 .lb-score.dnf {
   color: var(--muted);
+}
+/* The run viewer panel (#82): a full-width grid row unfolding under its entrant
+   (grid-template-rows 0fr -> 1fr, the height-auto-safe accordion; reduced motion
+   collapses the transition to an instant swap via the global rule). */
+.lb-run {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.25s ease-out;
+}
+.lb-run.open {
+  grid-template-rows: 1fr;
+}
+.lb-run-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+/* The replayed guesses, flowing and wrapping like a sentence: each word wears the heat
+   of its best outcome that step (cold crimson misses -> warm hits -> the solving word
+   in gold), so a run reads exactly like it played. A marathon run (a long player run,
+   a 30-guess DNF) scrolls inside its own bounded panel rather than swallowing the
+   screen. */
+.lb-run-words {
+  margin: 0;
+  padding: 2px 0 10px;
+  font-family: var(--press);
+  font-size: 10px;
+  line-height: 2.2;
+  letter-spacing: 1px;
+  overflow-wrap: anywhere;
+  max-height: 140px;
+  overflow-y: auto;
+}
+.lb-run-word {
+  text-shadow: none;
 }
 /* Result action: the same flat key language as the keyboard it replaces. */
 .result-action {

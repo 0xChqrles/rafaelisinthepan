@@ -25,6 +25,13 @@ export interface BenchmarkReplayResult {
   steps: BenchmarkReplayStep[];
 }
 
+// One replayed guess as the run VIEWER shows it (#82): the word as typed, in the heat
+// color of its best outcome that step (Game builds these with the live hit color rule).
+export interface RunWord {
+  text: string;
+  color: string;
+}
+
 // Replay a benchmark's already-vocabulary-validated counted guesses through the same
 // canonical-identity dedupe (guessKey — an inflection of an already-counted word never
 // counts, #104), per-unsolved-hole lookup, and strict-improvement rules as Game. Rank-map
