@@ -1877,6 +1877,13 @@ button * {
     min-height: calc(100dvh - 20px);
     margin-bottom: -24px;
   }
+  /* The solved results DON'T hug the 4px keyboard gap: unlike the keyboard they sit on
+     the 14px page inset, so their bottom gap matches the leaderboard's side margin —
+     the same thin frame on all three sides (decided 2026-07-24). +10px over the
+     keyboard's 4px = 14px. */
+  .tray.tray-results {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  }
 
   /* Standings lineup (#81): the SAME 2x characters as desktop (they fit a quarter-row
      even at 320px), just a tighter column gap to reclaim a little
