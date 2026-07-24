@@ -1271,11 +1271,18 @@ button * {
 .lb-row:active {
   filter: brightness(1.5);
 }
+/* The table is MONOCHROME except the heat squares (decided 2026-07-24): identity colors
+   belong to the characters, and with them gone the tags + counts stay neutral so the
+   squares are the single color voice. The player's tag alone brightens to fg. */
 .lb-tag {
   font-family: var(--press);
   font-size: 12px;
   letter-spacing: 1px;
+  color: var(--muted);
   text-shadow: none;
+}
+.lb-tag.player {
+  color: var(--fg);
 }
 /* Rows share the heat-grid cell language at the share row's full pitch; a row's squares
    hug the left edge of the shared column (max-width per --n), so short runs read short. */
@@ -1310,23 +1317,37 @@ button * {
   overflow: hidden;
   min-height: 0;
 }
-/* The replayed guesses, flowing and wrapping like a sentence: each word wears the heat
-   of its best outcome that step (cold crimson misses -> warm hits -> the solving word
-   in gold), so a run reads exactly like it played. A marathon run (a long player run,
-   a 30-guess DNF) scrolls inside its own bounded panel rather than swallowing the
-   screen. */
-.lb-run-words {
-  margin: 0;
-  padding: 2px 0 10px;
-  font-family: var(--press);
-  font-size: 10px;
-  line-height: 2.2;
-  letter-spacing: 1px;
-  overflow-wrap: anywhere;
-  max-height: 140px;
-  overflow-y: auto;
+/* The replayed guesses as a one-line TIMELINE: per counted guess, a heat square (its
+   best outcome that step, the ramp only — cold MISS crimson to hot) over the word in
+   neutral text. Long runs scroll horizontally (scrollbar hidden; the half-cut column at
+   the edge says "more"), so a 30-guess DNF stays one quiet line instead of a wall. */
+.lb-run-strip {
+  display: flex;
+  gap: 12px;
+  padding: 4px 0 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.lb-run-strip::-webkit-scrollbar {
+  display: none;
+}
+.lb-run-step {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.lb-run-heat {
+  width: 14px;
+  height: 14px;
+  image-rendering: pixelated;
 }
 .lb-run-word {
+  font-family: var(--press);
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--fg);
   text-shadow: none;
 }
 /* Result action: the same flat key language as the keyboard it replaces. */

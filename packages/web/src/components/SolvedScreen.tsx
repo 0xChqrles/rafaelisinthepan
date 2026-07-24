@@ -5,7 +5,6 @@ import type { BenchmarkResults } from '@whippin/shared';
 import { bucketMeans, shareText, shareUrl } from '../game/share';
 import { lineupModel, hasDisplayEntries } from '../game/benchmark';
 import type { RunWord } from '../game/benchmarkReplay';
-import { BOT_KEYS, CHARACTER_PALETTES } from './teleportStrips';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import { track } from '../analytics';
 import { t } from '../i18n';
@@ -76,7 +75,6 @@ export default function SolvedScreen({
         label: e.label,
         tries: e.tries,
         player: e.player,
-        color: e.player ? 'var(--accent)' : CHARACTER_PALETTES[BOT_KEYS[e.sprite]].base,
         squares: e.player ? squares : (runSquares?.get(e.key) ?? []),
         run: runs?.get(e.player ? 'player' : e.key) ?? [],
       }),
@@ -242,9 +240,7 @@ export default function SolvedScreen({
                 aria-label={`${row.label} — ${row.tries ?? t(lang, 'dnf')}`}
                 onClick={() => setOpenRun(openRun === row.key ? null : row.key)}
               >
-                <span className="lb-tag" style={{ color: row.color }}>
-                  {row.tag}
-                </span>
+                <span className={`lb-tag${row.player ? ' player' : ''}`}>{row.tag}</span>
                 <div
                   className={`heat-grid lb-squares${gridShown ? ' shown' : ''}${
                     gridColorized ? ' colorized' : ''
@@ -272,22 +268,27 @@ export default function SolvedScreen({
                   {row.tries ?? t(lang, 'dnf')}
                 </span>
               </button>
-              {/* The run, unfolding under its row (grid-rows 0fr -> 1fr): the counted
-                  guesses in submission order, each in the heat of its best outcome that
-                  step — the run reads cold -> warm -> gold exactly as it played. */}
+              {/* The run, unfolding under its row (grid-rows 0fr -> 1fr) as a horizontal
+                  TIMELINE: one heat square per counted guess with its word in neutral
+                  text beneath — the squares' color language expanded to the full run,
+                  reading cold -> hot left to right. Long runs scroll sideways (a
+                  half-cut column at the edge is the scroll affordance) instead of
+                  piling into a text wall. */}
               <div className={`lb-run${openRun === row.key ? ' open' : ''}`}>
                 <div className="lb-run-inner">
-                  <p className="lb-run-words">
+                  <div className="lb-run-strip">
                     {row.run.map((w, i) => (
                       // eslint-disable-next-line react/no-array-index-key
-                      <Fragment key={i}>
-                        {i > 0 && ' '}
-                        <span className="lb-run-word" style={{ color: w.color }}>
-                          {w.text}
-                        </span>
-                      </Fragment>
+                      <span key={i} className="lb-run-step">
+                        <span
+                          className="lb-run-heat"
+                          aria-hidden="true"
+                          style={{ backgroundColor: w.color }}
+                        />
+                        <span className="lb-run-word">{w.text}</span>
+                      </span>
                     ))}
-                  </p>
+                  </div>
                 </div>
               </div>
             </Fragment>

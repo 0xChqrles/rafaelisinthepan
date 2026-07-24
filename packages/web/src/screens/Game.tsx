@@ -47,9 +47,11 @@ export const FLOATING_HIT_INTRO_MS = 320;
 
 const STREAK_AFTER_WORDS_MS = 300;
 
-// One replayed run as heat-colored words (#82): each word in the heat of its best
-// outcome that step — the SAME color rule as the live floating hits (miss = the
-// cold MISS crimson, a solving hit = the solved-word gold).
+// One replayed run as heat-per-step data (#82): each counted guess carries the heat of
+// its best outcome that step, on the SAME ramp as the live floating hits (a miss is the
+// cold MISS crimson; rank 0 is the ramp's hot end — the run strip speaks ONLY the heat
+// squares' color language, deliberately no identity colors and no gold, decided
+// 2026-07-24).
 function runWords(
   puzzle: { holes: Hole[]; ranks: RankMap },
   run: readonly string[],
@@ -61,12 +63,7 @@ function runWords(
     const best = hit.length ? Math.min(...hit) : null;
     return {
       text: step.word,
-      color:
-        best === null
-          ? heatColor(0)
-          : best === 0
-            ? 'var(--hole)'
-            : rankHeatColor(best, HIT_HEAT_CAP),
+      color: best === null ? heatColor(0) : rankHeatColor(best, HIT_HEAT_CAP),
     };
   });
 }
