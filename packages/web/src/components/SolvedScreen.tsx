@@ -9,18 +9,21 @@ import { track } from '../analytics';
 import { t } from '../i18n';
 
 // Reveal choreography (this component mounts after the last hole has settled): the result
-// stack rises in, the score tallies, then the neutral trajectory squares colorize in order.
+// stack rises in, the score tallies (when the headline renders), then the neutral
+// trajectory squares colorize in order.
 const SQUARE_STAGGER_MS = 55;
 const GRID_MAX_SPAN_MS = 1400;
 export const RESULTS_IN_MS = 250; // mirrors .solved-results' transition duration in CSS
 const SCORE_COUNT_MS = 800;
-const SQUARES_START_MS = RESULTS_IN_MS + SCORE_COUNT_MS;
 const NEUTRAL_HOLD_MS = SQUARE_STAGGER_MS;
 
-// Sentence-specific results only: tries, the solve's progress trajectory, and its share
-// action. Player-level progression lives in StreakDialog, outside this layout. Keeping the
-// stack identical at every breakpoint gives the three result elements one stable hierarchy.
-// The tutorial reuses it with PLAY in SHARE's slot.
+// Sentence-specific results only: the solve's progress trajectory and its share action —
+// plus the tries headline, but ONLY on a surface with no standings podium (decided
+// 2026-07-24, #110): with displayed opponents the persisted lineup ALREADY shows the
+// count under YOU, and repeating it directly below read as clutter. The headline (and
+// its named TRIES unit) stays on podium-less surfaces — the tutorial and benchmark-less
+// puzzles — where it is the ONLY end-of-round count. Player-level progression lives in
+// StreakDialog, outside this layout. The tutorial reuses it with PLAY in SHARE's slot.
 export default function SolvedScreen({
   guessCount,
   trajectory,
@@ -54,8 +57,12 @@ export default function SolvedScreen({
         : null,
     [benchmark, guessCount, lang],
   );
+  // The podium owns the count when opponents display; the headline renders without one.
+  const showScore = ranking === null;
   const n = squares.length;
   const stagger = n > 1 ? Math.min(SQUARE_STAGGER_MS, GRID_MAX_SPAN_MS / (n - 1)) : 0;
+  // No headline -> no tally beat: the squares start right after the stack has risen.
+  const squaresStartMs = showScore ? RESULTS_IN_MS + SCORE_COUNT_MS : RESULTS_IN_MS;
   const reduceMotion =
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -102,16 +109,16 @@ export default function SolvedScreen({
       setGridColorized(true);
       return undefined;
     }
-    const show = window.setTimeout(() => setGridShown(true), SQUARES_START_MS);
+    const show = window.setTimeout(() => setGridShown(true), squaresStartMs);
     const color = window.setTimeout(
       () => setGridColorized(true),
-      SQUARES_START_MS + gridSpanMs + NEUTRAL_HOLD_MS,
+      squaresStartMs + gridSpanMs + NEUTRAL_HOLD_MS,
     );
     return () => {
       window.clearTimeout(show);
       window.clearTimeout(color);
     };
-  }, [animate, gridSpanMs, reduceMotion, resultsIn]);
+  }, [animate, gridSpanMs, reduceMotion, resultsIn, squaresStartMs]);
 
   // "COPIED" confirmation after a clipboard fallback (the native share sheet needs none).
   const [copied, setCopied] = useState(false);
@@ -156,17 +163,20 @@ export default function SolvedScreen({
 
   return (
     <div className={`solved-results${resultsIn ? ' in' : ''}`}>
-      {/* The primary sentence metric. The hidden final value reserves the count's width so
-          its tally never moves the centered label or the content below it. */}
-      <span className="solved-score">
-        <span className="solved-score-num">
-          <span className="solved-score-ghost" aria-hidden="true">
-            {guessCount}
+      {/* The primary sentence metric — podium-less surfaces only (#110): with displayed
+          opponents the standings podium above carries the count. The hidden final value
+          reserves the count's width so its tally never moves the content below it. */}
+      {showScore && (
+        <span className="solved-score">
+          <span className="solved-score-num">
+            <span className="solved-score-ghost" aria-hidden="true">
+              {guessCount}
+            </span>
+            <span className="solved-score-live">{Math.round(shownScore)}</span>
           </span>
-          <span className="solved-score-live">{Math.round(shownScore)}</span>
+          <span className="solved-score-unit">{t(lang, guessCount === 1 ? 'try' : 'tries')}</span>
         </span>
-        <span className="solved-score-unit">{t(lang, guessCount === 1 ? 'try' : 'tries')}</span>
-      </span>
+      )}
 
       {/* Decorative visual history of this sentence. The named try count and share text carry
           the accessible result; the same bucket values are encoded into the share card. */}

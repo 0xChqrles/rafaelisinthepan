@@ -364,7 +364,12 @@ as `<tries> TRIES` at game end (the unit is NAMED — on the solved screen, the 
 card, and the share text — because "SCORE" alone reads as points to maximize when
 lower is better; singular `TRY` at 1). Like the rest of the UI chrome the label is
 localized (fr: `ESSAIS`/`ESSAI`, decided 2026-07-06); the unit stays named in every
-language.
+language. **Podium exception (decided 2026-07-24, #110):** on a solved screen WITH
+displayed benchmark opponents, the persisted standings podium under YOU carries the
+final count and the `<tries> TRIES` headline is omitted (the headline directly under
+the podium repeated the same number). Podium-less solved surfaces — the tutorial and
+benchmark-less puzzles — keep the named headline, and the share card/text always name
+the unit.
 
 ### Testing
 
@@ -763,8 +768,11 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   not bare `/<lang>` — so a shared archive result opens that archived date, not today (the
   card/title were already `#dayNumber`-correct). The archive **must not touch streaks**
   (separate issue).
-- **Solved-result hierarchy (decided 2026-07-10):** the solved tray is sentence-specific:
-  one centered stack at every breakpoint with the named `<tries> TRIES` headline, the
+- **Solved-result hierarchy (decided 2026-07-10; podium variant 2026-07-24, #110):** the
+  solved tray is sentence-specific: one centered stack at every breakpoint with the named
+  `<tries> TRIES` headline (podium-less surfaces ONLY — with displayed benchmark opponents
+  the persisted standings podium carries the count instead: enlarged scores, the winner's
+  in gold; see the Score section's podium exception), the
   restored 3–18 cold-to-hot trajectory squares (`bucketMeans` — the SAME values used by
   the share card/text), then SHARE. **Fresh-solve sequence (decided 2026-07-10):** the
   solving submit immediately sends the prompt left while fading it out, in the same render
@@ -775,7 +783,8 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   the streak modal. Once that modal has completely dismissed (including its exit fade), the
   optional sentence source types quickly, letter by letter, with a trailing `_`; archive /
   no-streak play starts this source beat immediately after the final holes settle. Only when
-  source typing finishes do the tries rise/tally, trajectory-square, and SHARE animations
+  source typing finishes do the tries rise/tally (when the headline renders, #110),
+  trajectory-square, and SHARE animations
   begin (no metadata skips the typewriter); rehydrated solves render the full source/results
   immediately without replaying the sequence. Player progression is separate:
   `StreakDialog` is a

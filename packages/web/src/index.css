@@ -451,10 +451,7 @@ button * {
   display: flex;
   flex-direction: column;
   align-items: start;
-  /* The column gap lives in a var: the lineup's solved drop distance (#110) is
-     kb-height + THIS gap, so the two must come from one source at every breakpoint. */
-  --game-gap: clamp(16px, 3vh, 32px);
-  gap: var(--game-gap);
+  gap: clamp(16px, 3vh, 32px);
   /* The keyboard sits at the tray's bottom; .app's 24px all-round padding then leaves an
      even 24px gap to the screen bottom, matching the page's side inset (the keyboard is
      centered/narrow on desktop, so the frame inset is the meaningful margin). Mobile
@@ -550,24 +547,6 @@ button * {
   max-width: 680px; /* match the keyboard it stands above */
   user-select: none;
   pointer-events: none;
-}
-/* Solved drop (#110): the lineup rides down after the leaving keyboard and LANDS at the
-   screen bottom, below the tray the results then rise into. Two-phase FLIP: `dropping`
-   translates it by exactly the tray's height (kb-h + its safe-area pad) + the column
-   gap — the distance to its post-reorder slot — then `landed` commits the real layout
-   (flex order below the tray, transform gone) in the same frame, so the swap is
-   pixel-invisible. The transition lives ONLY on `dropping`: the landing commit must
-   snap, not animate the transform's removal. */
-.lineup.dropping {
-  transform: translateY(
-    calc(var(--kb-h) + env(safe-area-inset-bottom, 0px) + var(--game-gap))
-  );
-  transition: transform 0.3s ease-in-out;
-}
-.lineup.landed {
-  order: 1;
-  /* Now the bottom-most element: it takes over the keyboard's home-indicator inset. */
-  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 .lineup-track {
   position: relative;
@@ -673,9 +652,17 @@ button * {
   color: var(--muted);
 }
 /* Podium end state (#110): a solved round adds .lineup-finished to the track and
-   winner / loser to each slot. No rules behind them yet ON PURPOSE — they are the hooks
-   the art pass will hang the looping celebrate/sulk frames on; the draft sprites stand
-   still until then. */
+   winner / loser to each slot. The results headline is gone when opponents display
+   (decided 2026-07-24) — the podium OWNS the final count — so the standings numbers
+   take the stage: larger, the champion's in the solved-word gold. The winner/loser
+   SPRITE hooks stay unstyled ON PURPOSE — the art pass hangs the looping
+   celebrate/sulk frames on them; the draft sprites stand still until then. */
+.lineup-finished .lineup-score {
+  font-size: clamp(20px, 6.4vw, 26px);
+}
+.lineup-finished .lineup-slot.winner .lineup-score {
+  color: var(--hole);
+}
 
 /* --- Floating app header (redesigned 2026-07-21): NO band, NO border — the old opaque
    56px bar + its full-width progress row read as heavy chrome against the fine pixel
@@ -1731,7 +1718,7 @@ button * {
      and overflowing. */
   .game {
     padding-top: 60px;
-    --game-gap: 16px;
+    gap: 16px;
     align-items: stretch;
     min-height: calc(100dvh - 44px);
     /* Mobile keyboard height (see .kb-key below): 3 rows of clamp(44,6.8vh,52) + gaps. */
@@ -1850,7 +1837,7 @@ button * {
    narrow phone (which fits 3x fine) is untouched. */
 @media (max-height: 600px) {
   .game {
-    --game-gap: 8px;
+    gap: 8px;
   }
   .play {
     gap: 14px;
