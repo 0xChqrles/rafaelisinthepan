@@ -647,7 +647,7 @@ button * {
   image-rendering: pixelated;
   background-repeat: no-repeat;
   background-size: 800% 100%;
-  animation: player-idle 1.28s steps(8) infinite;
+  animation: player-idle 0.8s steps(8) infinite; /* 100ms per frame */
 }
 @keyframes player-idle {
   to {
