@@ -12,7 +12,7 @@ import { t } from '../i18n';
 // stack rises in, the score tallies, then the neutral trajectory squares colorize in order.
 const SQUARE_STAGGER_MS = 55;
 const GRID_MAX_SPAN_MS = 1400;
-export const RESULTS_IN_MS = 350;
+export const RESULTS_IN_MS = 250; // mirrors .solved-results' transition duration in CSS
 const SCORE_COUNT_MS = 800;
 const SQUARES_START_MS = RESULTS_IN_MS + SCORE_COUNT_MS;
 const NEUTRAL_HOLD_MS = SQUARE_STAGGER_MS;

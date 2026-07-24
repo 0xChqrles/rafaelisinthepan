@@ -520,7 +520,7 @@ button * {
   align-items: center;
 }
 .kb-exit.leaving {
-  animation: kb-drop 0.3s ease-in forwards;
+  animation: kb-drop 0.2s ease-in forwards;
   pointer-events: none;
 }
 .tray.kb-leaving {
@@ -1137,7 +1137,8 @@ button * {
      slide, not the old 8px settle. The stack fades in from 0 opacity, so the displaced
      start position never paints outside the tray — no clipping needed here. */
   transform: translateY(clamp(24px, 5vh, 44px));
-  transition: opacity 0.35s ease-out, transform 0.35s ease-out;
+  /* Duration mirrored by RESULTS_IN_MS (SolvedScreen) — keep the two in sync. */
+  transition: opacity 0.25s ease-out, transform 0.25s ease-out;
 }
 .solved-results.in {
   opacity: 1;
