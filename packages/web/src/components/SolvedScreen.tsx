@@ -155,9 +155,7 @@ export default function SolvedScreen({
   }, [lang, dayNumber, guessCount, squares]);
 
   return (
-    <div
-      className={`solved-results${ranking ? ' benchmarked' : ''}${resultsIn ? ' in' : ''}`}
-    >
+    <div className={`solved-results${resultsIn ? ' in' : ''}`}>
       {/* The primary sentence metric. The hidden final value reserves the count's width so
           its tally never moves the centered label or the content below it. */}
       <span className="solved-score">
@@ -209,16 +207,13 @@ export default function SolvedScreen({
         )
       )}
 
+      {/* The persisted lineup podium (#110) is the VISUAL final standings, but it is
+          decorative (aria-hidden) — this line keeps the ranking accessible. */}
       {ranking && (
-        <p className="benchmark-ranking">
-          {ranking.map((entry, index) => (
-            <span key={`${entry.player ? 'player' : 'model'}-${entry.label}-${index}`}>
-              {index > 0 && <span className="benchmark-separator"> · </span>}
-              <span className={entry.player ? 'benchmark-player' : 'benchmark-model'}>
-                {entry.label} {entry.tries ?? t(lang, 'dnf')}
-              </span>
-            </span>
-          ))}
+        <p className="sr-only">
+          {ranking
+            .map((entry) => `${entry.label} ${entry.tries ?? t(lang, 'dnf')}`)
+            .join(' · ')}
         </p>
       )}
     </div>

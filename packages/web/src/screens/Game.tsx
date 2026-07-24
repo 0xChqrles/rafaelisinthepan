@@ -269,6 +269,11 @@ function Round({
   // frozen until the source typewriter explicitly reports that it has finished.
   const [sourceRevealStarted, setSourceRevealStarted] = useState(solved);
   const [sourceRevealComplete, setSourceRevealComplete] = useState(solved);
+  // Keyboard exit beat (#110): a LIVE solve doesn't swap the tray instantly — the
+  // keyboard first slides down out of it (kb-drop), and only its animationend mounts the
+  // results in the same fixed-height space. Rehydrated solves never set this: they mount
+  // the results directly, as before.
+  const [keyboardLeaving, setKeyboardLeaving] = useState(false);
   const focusResultAfterSource = useRef(false);
   const prevSolved = useRef<boolean>(solved);
   useEffect(() => {
@@ -280,6 +285,7 @@ function Round({
       setShowStreakDialog(false);
       setStreakAdvanced(false);
       setAwaitingWordAnimations(false);
+      setKeyboardLeaving(false);
       setPromptExiting(false);
       setSourceRevealStarted(false);
       setSourceRevealComplete(false);
@@ -330,6 +336,7 @@ function Round({
       streakAdvanced && isActiveDay && dayNumber >= todayDayNumber - 1;
     if (!willShowStreak) {
       setShowResults(true);
+      setKeyboardLeaving(true);
       setShowStreakDialog(false);
       setSourceRevealStarted(true);
       setAwaitingWordAnimations(false);
@@ -341,6 +348,7 @@ function Round({
     // the tries/squares choreography remains paused behind the streak until dismissal.
     const timer = window.setTimeout(() => {
       setShowResults(true);
+      setKeyboardLeaving(true);
       setShowStreakDialog(true);
       setAwaitingWordAnimations(false);
     }, STREAK_AFTER_WORDS_MS);
@@ -610,12 +618,12 @@ function Round({
         )}
       </div>
 
-      {/* Standings lineup (#81): the player + the present display opponents sorted by
-          tries (leader far left), between the input area and the keyboard. Height comes
-          out of .play's flexible space, never the keyboard's. It persists for the whole
-          round (a scoreboard, not a chase); on the solving try the lineup freezes,
-          leaving with the keyboard when the results take the tray. */}
-      {benchmark && hasDisplayEntries(benchmark) && !showResults && (
+      {/* Standings lineup (#81/#110): the player + the present display opponents sorted
+          by tries (leader far left), between the input area and the keyboard. Height comes
+          out of .play's flexible space, never the keyboard's. It persists past the solve
+          as the final standings podium (a rehydrated solved round mounts it directly in
+          that frozen end state) — only the keyboard leaves with the results swap. */}
+      {benchmark && hasDisplayEntries(benchmark) && (
         <StandingsLineup
           benchmark={benchmark}
           guessCount={guessCount}
@@ -627,10 +635,10 @@ function Round({
       {/* Bottom zone (fixed keyboard-height footprint): the on-screen keyboard while
           playing, the solved results in the SAME space once they reveal — so the keyboard
           leaving neither reflows the layout nor leaves an empty hole. The keyboard lingers
-          (inert; submit is guarded) through the last hole's animation, then the results
-          take its place and animate in. */}
-      <div className="tray">
-        {showResults ? (
+          (inert; submit is guarded) through the last hole's animation, then slides down out
+          of the tray (#110) and the results take its place and rise in. */}
+      <div className={`tray${keyboardLeaving ? ' kb-leaving' : ''}`}>
+        {showResults && !keyboardLeaving ? (
           <SolvedScreen
             guessCount={guessCount}
             trajectory={trajectory}
@@ -643,15 +651,24 @@ function Round({
             }
           />
         ) : (
-          <Keyboard
-            input={input}
-            prefixSet={prefixSet}
-            vocabSet={vocabSet}
-            lang={lang}
-            onType={appendChar}
-            onBackspace={deleteChar}
-            onSubmit={submit}
-          />
+          <div
+            className={`kb-exit${keyboardLeaving ? ' leaving' : ''}`}
+            onAnimationEnd={(e) => {
+              // Child animations (key shakes) bubble here too: only the wrapper's own
+              // kb-drop end releases the tray to the results.
+              if (keyboardLeaving && e.target === e.currentTarget) setKeyboardLeaving(false);
+            }}
+          >
+            <Keyboard
+              input={input}
+              prefixSet={prefixSet}
+              vocabSet={vocabSet}
+              lang={lang}
+              onType={appendChar}
+              onBackspace={deleteChar}
+              onSubmit={submit}
+            />
+          </div>
         )}
       </div>
 

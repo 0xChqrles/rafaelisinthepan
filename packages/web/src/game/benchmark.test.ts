@@ -45,12 +45,26 @@ describe('benchmarkRanking', () => {
       { label: 'GPT-5.6', tries: null, player: false },
     ]);
   });
+
+  // Tie = human win (decided 2026-07-24, #110): the solved ranking and the frozen
+  // lineup podium share one tie rule, so the same screen can never show two orders.
+  it('places the player AHEAD of a model with an equal score', () => {
+    const ranking = benchmarkRanking(
+      [{ model: 'k3', label: 'KIMI K3', tag: 'KIMI', tries: 7, run: ['a'] }],
+      7,
+      'YOU',
+    );
+    expect(ranking).toEqual([
+      { label: 'YOU', tries: 7, player: true },
+      { label: 'KIMI K3', tries: 7, player: false },
+    ]);
+  });
 });
 
 // The mid-game standings lineup (#81): ascending tries, model ties in canonical display
-// order, DNF far right. UNLIKE the solved-screen ranking, a tie with the still-playing
-// player keeps the PLAYER ahead — an opponent passes only when the live count strictly
-// EXCEEDS its score (decided 2026-07-24). Sprites are the canonical DISPLAY_MODEL_IDS
+// order, DNF far right. A tie with the player keeps the PLAYER ahead — an opponent
+// passes only when the live count strictly EXCEEDS its score (decided 2026-07-24; the
+// solved-screen ranking shares this rule, #110). Sprites are the canonical DISPLAY_MODEL_IDS
 // index (FABLE=0, KIMI=1, GPT=2), stable across reorders AND regardless of which of the
 // three are present. Recorded in a non-canonical order to prove the filter re-orders by
 // the canonical trio.

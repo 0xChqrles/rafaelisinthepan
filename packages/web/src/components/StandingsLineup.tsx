@@ -74,11 +74,16 @@ function canTeleport(model: LineupModel, moved: Set<string>): boolean {
   );
 }
 
-// Mid-game standings lineup (#81): the player and the present display opponents (1..3 of
+// Standings lineup (#81/#110): the player and the present display opponents (1..3 of
 // FABLE / KIMI K3 / GPT-5.6) standing side by side above the keyboard, sorted by tries
 // ascending (best far left), name + score
 // under each. Purely derived UI: everything is a
 // function of (guessCount, benchmark), so a reloaded round reconstructs it with no state.
+// On solve it persists as the final standings PODIUM (#110): the track gains
+// `lineup-finished` and each slot `winner`/`loser` — the hooks the art pass hangs the
+// looping celebrate/sulk frames on (no CSS behind them yet; today's drafts stand still).
+// A tie shows as a human win for now: lineupModel's tie rule already stands the player
+// ahead of an equal-score model, and the frozen podium keeps that order.
 //
 // DOM order is stable (React keys move the same nodes on a reorder), and each slot's
 // position is its sorted index driving a translateX — so a standings change is a slide
@@ -161,7 +166,9 @@ export default function StandingsLineup({
       {/* --n = total entrants (player + present display opponents, 2..4): slot widths
           divide the track by it, so the row stays edge-to-edge for any subset. */}
       <div
-        className={`lineup-track${teleport ? ' lineup-teleporting' : ''}`}
+        className={`lineup-track${teleport ? ' lineup-teleporting' : ''}${
+          solved ? ' lineup-finished' : ''
+        }`}
         style={
           { '--n': model.entrants.length, '--swap-ms': `${SWAP_MS}ms` } as CSSProperties
         }
@@ -196,7 +203,11 @@ export default function StandingsLineup({
           return (
             <div
               key={entrant.key}
-              className="lineup-slot"
+              // The podium roles land with the solve: entrants[0] (the leftmost stander,
+              // player ahead on a tie) is the winner, everyone else a loser.
+              className={`lineup-slot${
+                solved ? (index === 0 ? ' winner' : ' loser') : ''
+              }`}
               style={
                 {
                   '--i': slotIndex,

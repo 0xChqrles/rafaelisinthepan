@@ -32,17 +32,17 @@ export interface BenchmarkRankingEntry {
   player: boolean;
 }
 
-// Ascending by tries with DNF (null) last. Used with a stable sort and the player
-// appended AFTER the models, so an equal count leaves the finished model AHEAD of the
-// still-counting player — a tie reads as the opponent already done at N.
+// Ascending by tries with DNF (null) last.
 function byTries(a: { tries: number | null }, b: { tries: number | null }): number {
   if (a.tries === null) return b.tries === null ? 0 : 1;
   if (b.tries === null) return -1;
   return a.tries - b.tries;
 }
 
-// Build the solved-screen race result. Modern JS sort is stable, so equal-scoring models
-// retain the curator's puzzle order and the player (inserted last) follows tied models.
+// Build the solved-screen race result. A tie displays as a HUMAN WIN (decided 2026-07-24,
+// #110): the player precedes an equal-score model, the same rule the standings lineup
+// froze into its podium — the two surfaces must never disagree on the same screen.
+// Modern JS sort is stable, so equal-scoring models keep the curator's puzzle order.
 export function benchmarkRanking(
   entries: BenchmarkResults,
   playerTries: number,
@@ -55,7 +55,7 @@ export function benchmarkRanking(
       player: false,
     })),
     { label: playerLabel, tries: playerTries, player: true },
-  ].sort(byTries);
+  ].sort((a, b) => byTries(a, b) || Number(b.player) - Number(a.player));
 }
 
 // One entrant standing in the mid-game lineup (#81). `key` is a stable render identity
