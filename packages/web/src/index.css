@@ -1257,22 +1257,11 @@ button * {
   align-items: center;
   padding: clamp(6px, 1.2vh, 10px) 0;
 }
-/* YOUR row is the accented one (decided 2026-07-24): an overlay accent border — drawn
-   by a ::before so it never touches layout (padding/margin on a subgrid would shift its
-   tracks off the shared columns), bleeding a little past the columns on each side. */
-.lb-row.player {
-  position: relative;
-}
-.lb-row.player::before {
-  content: '';
-  position: absolute;
-  inset: 0 -10px;
-  border: 1px solid var(--accent);
-  pointer-events: none;
-}
 /* The table is MONOCHROME except the heat squares (decided 2026-07-24): identity colors
    belong to the characters, and with them gone the tags + counts stay neutral so the
-   squares are the single color voice. The player's tag alone brightens to fg. */
+   squares are the single color voice. The ONE exception is the player's YOU tag in the
+   solved-word gold (decided 2026-07-24, replacing a tried-and-dropped row border) —
+   your row is found by the word, not by a frame. */
 .lb-tag {
   font-family: var(--press);
   font-size: 12px;
@@ -1281,7 +1270,7 @@ button * {
   text-shadow: none;
 }
 .lb-tag.player {
-  color: var(--fg);
+  color: var(--hole);
 }
 /* Rows share the heat-grid cell language at the share row's full pitch; a row's squares
    hug the left edge of the shared column (max-width per --n), so short runs read short. */

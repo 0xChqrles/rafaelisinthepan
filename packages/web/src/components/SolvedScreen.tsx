@@ -224,7 +224,7 @@ export default function SolvedScreen({
       {rows ? (
         <div className="leaderboard" aria-hidden="true">
           {rows.map((row) => (
-            <div key={row.key} className={`lb-row${row.player ? ' player' : ''}`}>
+            <div key={row.key} className="lb-row">
               <span className={`lb-tag${row.player ? ' player' : ''}`}>{row.tag}</span>
               <div
                 className={`heat-grid lb-squares${gridShown ? ' shown' : ''}${

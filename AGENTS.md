@@ -779,8 +779,10 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   squares), and its count (DNF muted); SHARE below. **The table is MONOCHROME except the
   heat squares** (decided 2026-07-24): tags are muted (the player's alone in fg), counts
   neutral — identity colors belong to the characters, and the squares are the single
-  color voice. **The PLAYER's row alone is accented** (decided 2026-07-24): an overlay
-  accent-blue border (::before, so the subgrid columns never shift). Rows are **NOT
+  color voice. **The PLAYER's tag alone is the solved-word gold** (decided 2026-07-24,
+  replacing a tried-and-dropped accent row border), and it reads **"YOU" in EVERY
+  language** — the `you` i18n key is deliberately untranslated (fr included; decided
+  2026-07-24), one universal tag across lineup + leaderboard. Rows are **NOT
   interactive** — an inline tap-to-unfold run viewer was tried and removed (too noisy);
   the run viewer will be a MODAL opened from a row, tracked in #82. The table is
   decorative (aria-hidden) with an sr-only ranking line carrying the accessible result. The lineup does NOT persist past the

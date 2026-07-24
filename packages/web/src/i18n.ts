@@ -31,7 +31,9 @@ const STRINGS = {
   // share card); the share text lowercases these.
   try: { en: 'TRY', fr: 'ESSAI' },
   tries: { en: 'TRIES', fr: 'ESSAIS' },
-  you: { en: 'YOU', fr: 'TOI' },
+  // Deliberately NOT translated (decided 2026-07-24): "YOU" is universal enough, and one
+  // label keeps the player's tag identical across languages (lineup + leaderboard).
+  you: { en: 'YOU', fr: 'YOU' },
   dnf: { en: 'DNF', fr: 'DNF' },
   share: { en: 'SHARE', fr: 'PARTAGER' },
   copied: { en: 'COPIED', fr: 'COPIÉ' },
