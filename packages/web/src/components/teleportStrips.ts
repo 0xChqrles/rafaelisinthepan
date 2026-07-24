@@ -9,7 +9,8 @@ import teleportInUrl from '../assets/characters/teleport-in.png';
 // the animation can never drift between characters and a future character is a palette
 // entry, not new art. The shared middle strip is neutral (white) and used as-is.
 //
-// Asset contract (assets/characters/teleport-*.png): horizontal strips of 42x51 cells,
+// Asset contract (assets/characters/teleport-*.png): horizontal strips of 42x53 cells
+// (.lineup-effect mirrors the cell height — keep the two in sync),
 // art bottom-anchored (same baseline as the idle sprites), 1x pixel scale. Placeholder
 // mapping: #ff0000 -> base, #0000ff -> shadow, #00ff00 -> light; black/white pass
 // through untouched. The swap is an EXACT RGB match — the strips are hard-edged pixel

@@ -5,6 +5,7 @@ import type { LineupModel } from '../game/benchmark';
 import { lineupModel, lineupEvents } from '../game/benchmark';
 import { t } from '../i18n';
 import playerIdleSheet from '../assets/characters/player-idle.png';
+import gptIdleSheet from '../assets/characters/gpt-idle.png';
 import fableSprite from '../assets/characters/fable.png';
 import kimiSprite from '../assets/characters/kimi.png';
 import gptSprite from '../assets/characters/gpt.png';
@@ -57,6 +58,15 @@ interface TeleportState {
 
 const characterKey = (entrant: { player: boolean; sprite: number }): CharacterKey =>
   entrant.player ? 'player' : BOT_KEYS[entrant.sprite];
+
+// Idle spritesheets, per character: drawn frames CSS-stepped at 100ms each. The sheet
+// URL lives here; the frame geometry/count lives in the matching `.lineup-idle.<key>`
+// CSS class (player: 8 x 22x31; gpt: 4 x 32x32) — keep the two in sync when a sheet
+// changes. A character without a sheet stands as its static <img> draft.
+const IDLE_SHEETS: Partial<Record<CharacterKey, string>> = {
+  player: playerIdleSheet,
+  gpt: gptIdleSheet,
+};
 
 const prefersReducedMotion = () =>
   typeof window.matchMedia === 'function' &&
@@ -222,9 +232,9 @@ export default function StandingsLineup({
         }
       >
         {model.entrants.map((entrant, index) => {
-          // The player stands ANIMATED (its 8-frame idle sheet, CSS-stepped); the bots
-          // keep their static draft <img>s until their own sheets exist.
-          const spriteSrc = entrant.player ? null : BOT_SPRITES[entrant.sprite];
+          // A character with an idle sheet stands ANIMATED (CSS-stepped frames); the
+          // others keep their static draft <img>s until their own sheets exist.
+          const idleSheet = IDLE_SHEETS[characterKey(entrant)];
           // Until the swap tick, a mid-teleport lineup keeps rendering the PRE-swap
           // positions; at the swap every slot takes its new index and the fast
           // teleporting transition (SWAP_MS) slides it across during the shared flash.
@@ -297,13 +307,13 @@ export default function StandingsLineup({
                       backgroundPositionX: `${-effect.frame * TELEPORT_FRAME_W}px`,
                     }}
                   />
-                ) : exitDone ? null : spriteSrc ? (
-                  <img src={spriteSrc} alt="" aria-hidden />
-                ) : (
+                ) : exitDone ? null : idleSheet ? (
                   <span
-                    className="lineup-idle"
-                    style={{ backgroundImage: `url(${playerIdleSheet})` }}
+                    className={`lineup-idle ${characterKey(entrant)}`}
+                    style={{ backgroundImage: `url(${idleSheet})` }}
                   />
+                ) : (
+                  <img src={BOT_SPRITES[entrant.sprite]} alt="" aria-hidden />
                 )}
               </span>
               {/* Keyed by value: a changed count (the player's, on each counted try)
