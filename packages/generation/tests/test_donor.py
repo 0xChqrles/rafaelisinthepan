@@ -18,6 +18,18 @@ same-lemma form's vector, under these rules:
     error even when donors exist — the player could never type it;
   - suggestions are ordered by accent-aware edit distance, then by frequency; the
     ordering is a convenience, the choice is the human's.
+
+Addendum — the START word has the mirror problem. The rank band can only offer a form
+that HAS a vector, but the sentence's grammar may demand one it lacks (« tu t'___ » must
+read "amuses" while only "amuse" has a vector), and the hint is shown to the player:
+
+  - wherever a start word is chosen interactively, its DISPLAY form can be overridden;
+    Enter keeps the band word, and off a TTY nothing is asked (batch is unchanged);
+  - the override is validated like a donor pair: a form of the same word, and typable;
+  - start_rank and the geometry stay the band word's — only the displayed form moves;
+  - the display slug is registered as an alias at that same rank, so typing the word
+    printed in the hole reads its distance instead of a MISS; an existing CLOSER entry
+    keeps the key (the smallest-rank collision rule, unchanged).
 """
 
 import json
@@ -43,13 +55,21 @@ TABLE = {
     "doucement": ("doucement",),
     "jardin": ("jardin",),
     "vermine": ("vermine",),
+    # the start-word family (addendum): "amuses" is a real form the embedding lacks,
+    # "amusions" one nothing in the vocabulary folds to.
+    "amuse": ("amuser",),
+    "amuses": ("amuser",),
+    "amuser": ("amuser",),
+    "amusions": ("amuser",),
 }
 FORMS = gen_phrase.invert_lemmas(TABLE)
 
 # The reduced vocabulary, in the reduced file's FREQUENCY order. "accoutumes" and
 # "chanter" are the vector-less forms; "accoutumés" folds to the former's slug.
+# "amusés" carries the "amuses" slug into the existence set without being a form the
+# table knows — exactly what makes "amuses" typable but unranked.
 VOCAB = ["jardin", "doucement", "vermine", "accoutumé", "accoutumés", "accoutume",
-         "accoutumer", "chante"]
+         "accoutumer", "chante", "amuse", "amuser", "amusés"]
 VSET = set(VOCAB)
 
 SENTENCE = "tu t'accoutumes doucement au jardin."
@@ -273,6 +293,8 @@ def test_selector_asks_for_the_donor_before_ranking(monkeypatch, capsys):
                  "ENTER", "1", "ENTER",
                  "ENTER", "1", "ENTER"])
     monkeypatch.setattr(gen_phrase, "_read_key", lambda _fd: next(keys))
+    # each commit ends on the display-form question; Entrée keeps the band word.
+    monkeypatch.setattr("builtins.input", lambda _p="": "")
 
     donors = _resolver(interactive=True)
     try:
@@ -328,6 +350,7 @@ def test_selector_reports_no_substitution_for_a_word_it_never_holed(monkeypatch)
     # the cursor lands on "accoutumes" first every time: step over it, hole the rest.
     keys = iter(["RIGHT", "ENTER", "1", "ENTER"] * 3)
     monkeypatch.setattr(gen_phrase, "_read_key", lambda _fd: next(keys))
+    monkeypatch.setattr("builtins.input", lambda _p="": "")
 
     donors = _resolver(explicit={"accoutumes": "accoutume"}, interactive=True)
     try:
@@ -383,6 +406,7 @@ def test_selector_will_not_hole_a_donors_lemma_twice(monkeypatch):
     # must NOT be "accoutumes" — otherwise these keys would hole it as the second word.
     keys = iter(["ENTER", "1", "ENTER"] * 3)
     monkeypatch.setattr(gen_phrase, "_read_key", lambda _fd: next(keys))
+    monkeypatch.setattr("builtins.input", lambda _p="": "")
 
     words = _words("il accoutume et tu t'accoutumes doucement au jardin.")
     donors = _resolver(interactive=True)
@@ -427,3 +451,137 @@ def test_main_writes_the_puzzle_and_names_the_substitution(monkeypatch, tmp_path
     # the borrow is surfaced, never silent.
     out = capsys.readouterr().out
     assert "secret « accoutumes » : rangs calculés depuis le donneur « accoutume »" in out
+
+
+# --- Start-word display override (addendum) -------------------------------------
+# The band can only offer a form that HAS a vector; the sentence may demand one it
+# lacks. Only the DISPLAYED form moves — the rank and the geometry stay the band word's.
+
+START_SENTENCE = "il chante doucement au jardin sans vermine."
+START_SELECTORS = ("doucement", "jardin", "vermine")
+# every secret's walk reaches the band word "amuse" at rank 1 (its family aliases there).
+START_RANKING = [("amuse", 0, 0.9), ("amuser", 1, 0.85), ("jardin", 2, 0.8)]
+
+
+def _start_run(monkeypatch, answers, selectors=START_SELECTORS,
+               sentence=START_SENTENCE, start="amuse"):
+    """Generate through the --words path on a TTY, scripting the display prompt."""
+    monkeypatch.setattr(FR["module"], "closest",
+                        lambda _w, _kv, _v, _m, *, n: START_RANKING, raising=False)
+    monkeypatch.setattr(gen_phrase, "choose_start",
+                        lambda _secret, _ranking, _rank_map, _rank_by_display: start)
+    monkeypatch.setattr(gen_phrase.sys.stdin, "isatty", lambda: True, raising=False)
+    replies = iter(answers)
+    monkeypatch.setattr("builtins.input", lambda _p="": next(replies))
+    return gen_phrase.holes_from_words(
+        list(selectors), _words(sentence), FR, "fr",
+        kv=object(), V=VOCAB, M=object(), Vset=VSET,
+        lemma_table=TABLE, forms_by_lemma=FORMS, donors=_resolver(interactive=True),
+    )
+
+
+def test_start_display_override_moves_the_form_not_the_rank(monkeypatch):
+    holes, ranks = _start_run(monkeypatch, ["amuses", "", ""])
+
+    hole = next(h for h in holes if h["secret"]["slug"] == "doucement")
+    # the hint reads as the sentence demands...
+    assert hole["start"] == {"word": "amuses", "slug": "amuses"}
+    # ...at the band word's own rank: the geometry did not move.
+    assert hole["start_rank"] == 1
+    # typing the word printed in the hole reads its distance, not a MISS, and the front
+    # displays the form the player was shown.
+    assert ranks["doucement"]["amuses"] == {"word": "amuses", "rank": 1}
+    # the band word keeps its own key, untouched.
+    assert ranks["doucement"]["amuse"] == {"word": "amuse", "rank": 1}
+    # Entrée kept the band word for the two holes that did not need an override.
+    assert [h["start"]["word"] for h in holes
+            if h["secret"]["slug"] != "doucement"] == ["amuse", "amuse"]
+    assert "amuses" not in ranks["jardin"]
+
+
+def test_start_display_override_must_be_a_form_of_the_start_word(monkeypatch, capsys):
+    # "jardin" is a real, typable word — but not a form of "amuse": accepting it would
+    # print one word at another word's rank.
+    assert "aucun lemme commun" in _resolver().start_display_error("amuse", "jardin")
+
+    holes, _ranks = _start_run(monkeypatch, ["jardin", "amuses", "", ""])
+    assert "aucun lemme commun" in capsys.readouterr().out
+    # refused, reprompted, and the next answer stands: the start word itself was already
+    # chosen, so there is nothing to unwind.
+    hole = next(h for h in holes if h["secret"]["slug"] == "doucement")
+    assert hole["start"]["word"] == "amuses"
+
+
+def test_start_display_override_must_be_typable(monkeypatch, capsys):
+    # "amusions" IS a form of "amuse" in the table, but no reduced word folds to its
+    # slug: the hole would display a hint the player could never type back.
+    assert "jamais taper" in _resolver().start_display_error("amuse", "amusions")
+
+    holes, ranks = _start_run(monkeypatch, ["amusions", "", "", ""])
+    assert "jamais taper" in capsys.readouterr().out
+    hole = next(h for h in holes if h["secret"]["slug"] == "doucement")
+    assert hole["start"] == {"word": "amuse", "slug": "amuse"}
+    assert "amusions" not in ranks["doucement"]
+
+
+def test_start_display_alias_obeys_the_smallest_rank_collision_rule():
+    rmap = {"amuse": {"word": "amuse", "rank": 40},
+            "amuses": {"word": "amusés", "rank": 12}}
+    gen_phrase.alias_start_display(rmap, "amuse", "amuses", 40)
+    # a closer entry keeps the key — typing the hint reads its true distance, still not
+    # a MISS, which is all the alias exists for.
+    assert rmap["amuses"] == {"word": "amusés", "rank": 12}
+    # an accent-only override shares the band word's slug: the entry is already there.
+    gen_phrase.alias_start_display(rmap, "amuse", "amusé", 40)
+    assert rmap["amuse"] == {"word": "amuse", "rank": 40}
+    # a farther entry loses it.
+    gen_phrase.alias_start_display(rmap, "amuse", "amuser", 40)
+    assert rmap["amuser"] == {"word": "amuser", "rank": 40}
+
+
+def test_off_tty_is_never_asked_for_a_display_form(monkeypatch):
+    # batch runs keep the silent random start with its own form (unchanged contract),
+    # and so does any path with no lemma knowledge to validate an override against.
+    monkeypatch.setattr(gen_phrase.sys.stdin, "isatty", lambda: False, raising=False)
+    assert gen_phrase.choose_start_display("amuse", 87, _resolver()) == "amuse"
+    monkeypatch.setattr(gen_phrase.sys.stdin, "isatty", lambda: True, raising=False)
+    assert gen_phrase.choose_start_display("amuse", 87, None) == "amuse"
+
+
+def test_selector_asks_for_the_display_form_too(monkeypatch):
+    """Both selection paths must offer the override — the selector drops out of raw
+    mode for it, so the one free-text answer gets accents and line editing."""
+    import os
+    import termios
+    import tty
+
+    monkeypatch.setattr(FR["module"], "closest",
+                        lambda _w, _kv, _v, _m, *, n: START_RANKING, raising=False)
+    monkeypatch.setattr(gen_phrase, "start_band", lambda _secret, _ranking: [("amuse", 1)])
+
+    fd = os.open(os.devnull, os.O_RDONLY)
+    monkeypatch.setattr(gen_phrase.sys, "stdin",
+                        type("Stdin", (), {"fileno": lambda self: fd,
+                                           "isatty": lambda self: True})())
+    monkeypatch.setattr(termios, "tcgetattr", lambda _fd: None)
+    monkeypatch.setattr(termios, "tcsetattr", lambda *_a: None)
+    monkeypatch.setattr(tty, "setcbreak", lambda _fd: None)
+    keys = iter(["ENTER", "1", "ENTER"] * 3)
+    monkeypatch.setattr(gen_phrase, "_read_key", lambda _fd: next(keys))
+    replies = iter(["amuses", "", ""])
+    monkeypatch.setattr("builtins.input", lambda _p="": next(replies))
+
+    try:
+        holes, ranks = gen_phrase.select_holes_interactive(
+            _words(START_SENTENCE), FR, "fr", kv=object(), V=VOCAB, M=object(),
+            Vset=VSET, lemma_table=TABLE, forms_by_lemma=FORMS,
+            donors=_resolver(interactive=True))
+    finally:
+        os.close(fd)
+
+    first = holes[0]
+    assert first["start"] == {"word": "amuses", "slug": "amuses"}
+    assert first["start_rank"] == 1
+    assert ranks[first["secret"]["slug"]]["amuses"] == {"word": "amuses", "rank": 1}
+    # and the raw-mode loop carried on normally after the detour.
+    assert [h["start"]["word"] for h in holes[1:]] == ["amuse", "amuse"]

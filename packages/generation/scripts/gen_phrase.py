@@ -40,6 +40,9 @@ keep working with flags only — no prompt ever blocks them.
 A secret whose surface form has no vector in the reduced embedding can borrow one from a
 form of the same lemma (#119) — explicitly: a numbered question on a TTY, --donor
 MANQUANT=DONNEUR off one. Nothing is injected into the vocabulary and nothing is guessed.
+Mirroring it, an interactively chosen start word can be DISPLAYED under another form of
+the same word (« tu t'___ » must read "amuses" while only "amuse" has a vector); the
+rank and the geometry stay the chosen band word's.
 
 Usage :
     uv run scripts/gen_phrase.py                       # fully interactive
@@ -552,6 +555,26 @@ class DonorResolver:
             die(f"--donor : « {donor} » ne partage aucun lemme avec « {word} » ; "
                 f"donneurs valides : {', '.join(self.candidates(word)) or 'aucun'}.")
 
+    def start_display_error(self, start, display):
+        """Why `display` cannot stand in for the start word `start` — None when it can.
+
+        The MIRROR of a donor pair (#119 addendum): a borrowed secret keeps the
+        sentence's form over the donor's vector, and an overridden start keeps the
+        sentence's form over the band word's rank. Both ask the same two questions of
+        the substitute, so both answer them the same way — a form of the SAME word
+        (lemma table, bridged through slug siblings for a form the table does not know),
+        and typable, i.e. its slug is in the existence set. Showing the player a hint
+        they could never type would break the game's own rule that a displayed clue's
+        distance is already known."""
+        if not set(self.lemmas_for(display)) & set(self.lemmas_for(start)):
+            return (f"« {display} » n'est pas une forme de « {start} » "
+                    f"(aucun lemme commun).")
+        if not self.typable(display):
+            return (f"« {display} » ne se trouve dans aucun mot du vocabulaire réduit "
+                    f"'{self.lang}' (slug '{slug(display)}') : le joueur ne pourrait "
+                    f"jamais taper l'indice affiché.")
+        return None
+
     def resolved(self, word):
         """The donor already KNOWN for `word` — itself when it has a vector, an
         earlier choice, or a validated --donor pair — else None. Never prompts, so
@@ -707,6 +730,59 @@ def choose_start(secret, ranking, rank_map, rank_by_display):
         print(f"  « {raw} » n'est ni un numéro ni un mot du vocabulaire de ce trou.")
 
 
+# --- Start-word display override (#119 addendum) --------------------------------
+# The MIRROR of the borrowed secret. The rank band can only offer a word that HAS a
+# vector, but the sentence's grammar may demand an inflection the embedding lacks: in
+# « tu t'___ » the hint has to read "amuses", and only "amuse" has a vector. The hint is
+# shown to the player, so it must be grammatically right in context — the DISPLAY form is
+# therefore overridable, and nothing else is: start_rank and the whole geometry stay
+# those of the chosen band word, exactly as if no question had been asked.
+
+def choose_start_display(start, start_rank, donors):
+    """Ask which FORM of the chosen start word the hole displays (TTY only).
+
+    Enter keeps the band word — zero friction, and the only possible answer off a TTY.
+    Any other answer is validated like a donor pair (start_display_error): a form of the
+    same word, and typable. A rejected answer prints why and asks again rather than
+    dying: the start word is already chosen, so there is nothing to unwind.
+
+    Without a resolver (no lemma knowledge to validate against) or off a terminal the
+    band word stands — batch runs keep their silent random start, unchanged."""
+    if donors is None or not sys.stdin.isatty():
+        return start
+    while True:
+        try:
+            raw = input(f"Mot de départ : {start} (rang {start_rank}). "
+                        f"Forme affichée [{start}] > ").strip().lower()
+        except EOFError:  # stdin closed mid-prompt: keep the band word.
+            return start
+        if not raw or raw == start:
+            return start
+        problem = donors.start_display_error(start, raw)
+        if problem is None:
+            return raw
+        print("  " + problem)
+
+
+def alias_start_display(rank_map, start, display, start_rank):
+    """Make an OVERRIDDEN start form typable at its own slug, at the band word's rank.
+
+    The hole shows `display` while the map is keyed on the band word, so without this
+    key typing the very word printed in the hole could read MISS — which contradicts the
+    rule that a displayed clue's distance is already known. Same slug as the band word
+    (an accent-only override): the entry is already there, nothing to add. Otherwise the
+    smallest-rank collision rule of build_rank_map / expand_aliases applies unchanged —
+    an existing closer entry keeps the key, and typing the hint still reads its true
+    (closer) distance rather than a MISS."""
+    s = slug(display)
+    if s == slug(start):
+        return rank_map
+    existing = rank_map.get(s)
+    if existing is None or start_rank < existing["rank"]:
+        rank_map[s] = {"word": display, "rank": start_rank}
+    return rank_map
+
+
 # --- Interactive hole selector (raw-mode TUI) ----------------------------------
 # When the phrase is entered on a TTY WITHOUT --words, three distinct secret groups are
 # chosen with a small full-screen selector instead of typing words: the arrow keys move
@@ -830,7 +906,9 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
     A word with no vector (#119) is offered when a same-lemma form can lend it one:
     committing it opens ONE extra step — the same numbered grammar, on the donor list —
     before the start-word step, and the answer is cached per secret slug so the question
-    is asked once. Nothing is ranked until a donor is known, so no hover can crash."""
+    is asked once. Nothing is ranked until a donor is known, so no hover can crash. The
+    picked start word then gets the same display-form question as the --words path (the
+    addendum to that issue), asked as a line prompt outside raw mode."""
     import shutil
     import termios
     import tty
@@ -928,6 +1006,20 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
 
     fd = sys.stdin.fileno()
     saved = termios.tcgetattr(fd)
+
+    def ask_display(start, start_rank):
+        """Leave raw mode for the one free-text question of the flow (#119 addendum).
+
+        Every other step is a number, so the loop can read it a keypress at a time; a
+        display form is a WORD — accented, worth editing with the arrow keys — which is
+        precisely what canonical mode and readline already give the line prompts. The
+        next frame clears the screen, so the detour leaves nothing behind."""
+        termios.tcsetattr(fd, termios.TCSADRAIN, saved)
+        try:
+            return choose_start_display(start, start_rank, donors)
+        finally:
+            tty.setcbreak(fd)
+
     cursor = available()[0]
     mode, numbuf, error = "nav", "", ""
     aborted = False
@@ -992,13 +1084,18 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                 elif key == "ENTER":
                     if numbuf.isdigit() and 1 <= int(numbuf) <= len(band):
                         start = band[int(numbuf) - 1][0]
+                        start_rank = rbd[start]
+                        # Same last question as the --words path: which form of that
+                        # start word the hole shows (#119 addendum). Display only.
+                        display = ask_display(start, start_rank)
+                        alias_start_display(rank_map, start, display, start_rank)
                         secret_slug = slug(secret)
                         ranks[secret_slug] = rank_map
                         for occurrence in candidates_for_slug(cands, secret_slug):
                             holes.append(_make_hole(
                                 occurrence["secret"], occurrence["prefix"],
-                                occurrence["suffix"], occurrence["pos"], start,
-                                rbd[start],
+                                occurrence["suffix"], occurrence["pos"], display,
+                                start_rank,
                             ))
                         used_slugs.add(secret_slug)
                         used_lemmas.update(group_lemmas(secret, donor, lemma_table))
@@ -1139,9 +1236,14 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
         ranks[target_slug] = rank_map
         start = choose_start(canonical_secret, merged, rank_map, rank_by_display)
         start_rank = rank_map[slug(start)]["rank"]
+        # The band only offers forms that HAVE a vector; the sentence may demand one it
+        # lacks. The override is DISPLAY only (#119 addendum) — start_rank is untouched.
+        start_display = choose_start_display(start, start_rank, donors)
+        alias_start_display(rank_map, start, start_display, start_rank)
 
         for pos, (secret, prefix, suffix) in occurrences:
-            holes.append(_make_hole(secret, prefix, suffix, pos, start, start_rank))
+            holes.append(_make_hole(secret, prefix, suffix, pos, start_display,
+                                    start_rank))
 
     # Holes follow sentence order, not --words order. Filename construction dedupes the
     # repeated occurrence slugs separately via filename_slugs_from_holes().
