@@ -827,9 +827,19 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   cold→hot. **The LAST cell is PINNED to the solving try**, never its bucket's mean: that
   tail average is what made a 61-try grind plateauing at 70 and solving on its last guess
   close on 🟥 — a finished game reading as unfinished — and it is the one cell that means
-  something exact ("this is where you ended"). The ticks are the other thing the row drops:
-  a single line has nowhere to put a mark BETWEEN two cells, and no second line to number
-  it on. In the DIALOG's table:
+  something exact ("this is where you ended") — though on a SOLVED run the last cell is a
+  keycap, so the pin is what a row WITHOUT solve moments ends on. **The row carries the
+  ruler's TICKS as KEYCAPS (decided 2026-07-25, superseding "the ticks are the one thing the
+  row drops"):** a cell holding a try that dropped a secret renders as that hole's
+  sentence-position keycap (`1️⃣`/`2️⃣`/`3️⃣`) INSTEAD of its ramp color, so the row shows the
+  ORDER the sentence was cracked — `🟦🟩1️⃣🟧🟧🟧🟧🟧🟧2️⃣3️⃣`. The bar puts a mark between two
+  cells and numbers it underneath; a single line has neither, so the number takes the cell.
+  Three consequences, all accepted: the solve cells lose their color; several secrets falling
+  inside ONE cell show every keycap (in sentence order — the same order the ruler stacks them
+  under a shared tick), so the row can reach `MAX_ROW_CELLS + 2`; and since the final try
+  always solves, a finished run ALWAYS ends on a keycap (a 3-try perfect game is exactly
+  `1️⃣2️⃣3️⃣`, no color at all). `solvedAt` is optional — without it the row is the plain ramp.
+  In the DIALOG's table:
   one row per entrant sorted by score (player ahead on a tie, DNF last, `lineupModel`
   order) — medal, tag, the entrant's run replayed into its ruler, count (DNF muted).
   **Leaderboard rulers share ONE scale (decided 2026-07-25):** each bar's width is
