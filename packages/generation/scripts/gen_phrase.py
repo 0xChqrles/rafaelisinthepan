@@ -527,9 +527,19 @@ class DonorResolver:
         return bool(self.candidates(word)) and self.typable(word)
 
     # -- resolution --------------------------------------------------------------
-    def record(self, word, donor):
+    def choose(self, word, donor):
+        """Remember the donor settled on for `word`, so the question — asked or read
+        off --donor — is settled once per secret slug. Answering it is NOT using it:
+        availability checks resolve donors for words that may never be holed."""
         self._chosen[slug(word)] = donor
-        self.used[slug(word)] = (word, donor)
+        return donor
+
+    def note_used(self, word, donor):
+        """Record a substitution that actually made it into the puzzle. `used` is what
+        the run reports, so a --donor pair (or an answered question) for a word nobody
+        holed is never announced. A no-op when the secret is its own vector."""
+        if donor != word:
+            self.used[slug(word)] = (word, donor)
         return donor
 
     def _validate(self, word, donor):
@@ -555,7 +565,7 @@ class DonorResolver:
         if donor is None:
             return None
         self._validate(word, donor)
-        return self.record(word, donor)
+        return self.choose(word, donor)
 
     def donor_lines(self, word, cands):
         """The numbered donor listing, shared by the prompt and the selector."""
@@ -598,7 +608,8 @@ class DonorResolver:
     def donor_for(self, word):
         """The vector source for `word`, resolving the question if it is still open.
 
-        Dies rather than guess: no candidate, an untypable secret, or a batch run
+        Called where the hole is about to be built, so the answer is also marked as
+        USED. Dies rather than guess: no candidate, an untypable secret, or a batch run
         without --donor are all hard errors. Callers holding richer context (the
         --words path knows the raw selector) may pre-empt the no-candidate case."""
         if word in self.Vset:
@@ -613,9 +624,9 @@ class DonorResolver:
                 f"replie, le joueur ne pourrait jamais taper ce secret.")
         donor = self.resolved(word)
         if donor is not None:
-            return donor
+            return self.note_used(word, donor)
         if self.interactive:
-            return self.record(word, self.choose_donor(word, cands))
+            return self.note_used(word, self.choose(word, self.choose_donor(word, cands)))
         die(f"« {word} » n'a pas de vecteur dans l'embedding réduit '{self.lang}'.\n"
             f"         Formes du même lemme disponibles : {', '.join(cands)}\n"
             f"         Hors mode interactif le donneur doit être explicite : "
@@ -964,10 +975,10 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                     numbuf = numbuf[:-1]
                 elif key == "ENTER":
                     if not numbuf:  # Entrée = the suggestion, as in the line prompt
-                        donors.record(secret, dcands[0])
+                        donors.choose(secret, dcands[0])
                         mode, numbuf = "start", ""
                     elif numbuf.isdigit() and 1 <= int(numbuf) <= len(dcands):
-                        donors.record(secret, dcands[int(numbuf) - 1])
+                        donors.choose(secret, dcands[int(numbuf) - 1])
                         mode, numbuf = "start", ""
                     else:
                         error = f"Numéro invalide (1–{len(dcands)})."
@@ -991,6 +1002,8 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                             ))
                         used_slugs.add(secret_slug)
                         used_lemmas.update(group_lemmas(secret, donor, lemma_table))
+                        if donors is not None:  # the hole exists now: the borrow is real
+                            donors.note_used(secret, donor)
                         mode, numbuf = "nav", ""
                         if len(used_slugs) < 3:
                             remaining = available()

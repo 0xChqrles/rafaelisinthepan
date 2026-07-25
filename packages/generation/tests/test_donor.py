@@ -292,6 +292,56 @@ def test_selector_asks_for_the_donor_before_ranking(monkeypatch, capsys):
     assert ranks["accoutumes"]["accoutume"]["rank"] == 0
 
 
+def test_answering_the_donor_question_is_not_using_the_donor():
+    # Availability checks resolve donors for words that may never be holed; only a
+    # borrow that reached the puzzle may be reported.
+    donors = _resolver(explicit={"accoutumes": "accoutume"})
+    assert donors.resolved("accoutumes") == "accoutume"
+    assert not gen_phrase.spent_candidate("accoutumes", set(), set(), TABLE, donors)
+    assert donors.used == {}
+
+    assert donors.note_used("accoutumes", "accoutume") == "accoutume"
+    assert donors.used == {"accoutumes": ("accoutumes", "accoutume")}
+    # a secret that is its own vector is never a substitution
+    donors.note_used("jardin", "jardin")
+    assert "jardin" not in donors.used
+
+
+def test_selector_reports_no_substitution_for_a_word_it_never_holed(monkeypatch):
+    """An interactive run may carry a --donor pair for a word the author ends up not
+    selecting. The final preview must stay silent about it."""
+    import os
+    import termios
+    import tty
+
+    _stub_closest(monkeypatch)
+    monkeypatch.setattr(gen_phrase, "start_band",
+                        lambda _s, merged: [(w, r + 1) for w, r, _ in merged][:1])
+
+    fd = os.open(os.devnull, os.O_RDONLY)
+    monkeypatch.setattr(gen_phrase.sys, "stdin",
+                        type("Stdin", (), {"fileno": lambda self: fd,
+                                           "isatty": lambda self: True})())
+    monkeypatch.setattr(termios, "tcgetattr", lambda _fd: None)
+    monkeypatch.setattr(termios, "tcsetattr", lambda *_a: None)
+    monkeypatch.setattr(tty, "setcbreak", lambda _fd: None)
+    # the cursor lands on "accoutumes" first every time: step over it, hole the rest.
+    keys = iter(["RIGHT", "ENTER", "1", "ENTER"] * 3)
+    monkeypatch.setattr(gen_phrase, "_read_key", lambda _fd: next(keys))
+
+    donors = _resolver(explicit={"accoutumes": "accoutume"}, interactive=True)
+    try:
+        holes, _ranks = gen_phrase.select_holes_interactive(
+            _words("tu t'accoutumes doucement au jardin sans vermine."),
+            FR, "fr", kv=object(), V=VOCAB, M=object(), Vset=VSET,
+            lemma_table=TABLE, forms_by_lemma=FORMS, donors=donors)
+    finally:
+        os.close(fd)
+
+    assert [h["secret"]["word"] for h in holes] == ["doucement", "jardin", "vermine"]
+    assert donors.used == {}
+
+
 def test_a_committed_lemma_spends_every_donor_of_a_vector_less_word():
     # Holing "accoutume" claims the accoutumer group. "accoutumes" has no lemma of its
     # own in the table — a singleton that clashes with nothing — but every donor it
