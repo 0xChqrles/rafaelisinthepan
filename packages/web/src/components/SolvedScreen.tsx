@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { BenchmarkResults } from '@whippin/shared';
-import { bucketMeans, shareText, shareUrl } from '../game/share';
+import { shareText, shareUrl } from '../game/share';
 import { lineupModel, hasDisplayEntries } from '../game/benchmark';
 import RunRuler, { rulerStagger, type RunReplay } from './RunRuler';
 import LeaderboardDialog, { type LeaderboardRow } from './LeaderboardDialog';
@@ -53,10 +53,6 @@ export default function SolvedScreen({
   // animate is false (rehydrated solves set their source states directly).
   onRisen?: () => void;
 }) {
-  // The share TEXT keeps the BOUNDED bucketed row (3..18, mean progress per bucket) — emoji
-  // can't draw a per-try ruler, let alone its ticks. The share CARD gets the raw run instead
-  // (v2 token, decided 2026-07-25), so the unfurled image is this same ruler.
-  const squares = useMemo(() => bucketMeans(trajectory), [trajectory]);
   // Leaderboard rows for the dialog (#110/#82): every entrant sorted by score
   // (lineupModel's order — the player ahead on a tie, DNF last), with its own replayed
   // run (opponents' come replayed from Game). null when no opponent displays.
@@ -178,7 +174,9 @@ export default function SolvedScreen({
     });
     const unit = t(lang, guessCount === 1 ? 'try' : 'tries').toLowerCase();
     const headline = `Whippin #${dayNumber} — ${guessCount} ${unit}`;
-    const text = shareText(headline, squares, url);
+    // Both the card (via the token) and the plain-text row are the run itself — the same
+    // trajectory, one cell per try — so the link and its fallback can't disagree.
+    const text = shareText(headline, trajectory, url);
 
     // Touch devices get their native share sheet; desktop copies the result directly.
     const isTouch =
@@ -204,7 +202,7 @@ export default function SolvedScreen({
     } catch {
       // Clipboard blocked (insecure context / denied): there is no further browser fallback.
     }
-  }, [lang, dayNumber, guessCount, squares, trajectory, solvedAt]);
+  }, [lang, dayNumber, guessCount, trajectory, solvedAt]);
 
   return (
     <div className={`solved-results${resultsIn ? ' in' : ''}`}>

@@ -10,9 +10,9 @@
 // **v2 (decided 2026-07-25)** carries the RAW run instead of the bucketed squares, so the
 // card draws the same ruler the solved screen does: one cell per counted try, plus a tick
 // where each secret dropped. v1 tokens (bucketed squares) decode to `null` — the payloads
-// are incompatible, and an old link is better 404'd than mis-drawn. The plain-text emoji
-// fallback still buckets (see SQUARE_BREAKPOINTS below) on the same progress ramp; only the
-// CARD went raw.
+// are incompatible, and an old link is better 404'd than mis-drawn. The share text's emoji
+// row went raw with it (one emoji per try, same ramp), so the bounded 3..18 bucketed row and
+// its whole square-count curve are gone from the codebase.
 //
 // The payload is BIT-packed (not byte-aligned), then base64url'd, to keep the URL short:
 //   version 4b | lang 2b | day 15b | scoreLen 4b | score <scoreLen>b
@@ -24,25 +24,6 @@
 // A perfect game packs to ~11 chars, a typical dozen-try game to ~15.
 
 const SHARE_VERSION = 2;
-
-// --- how many EMOJI squares (the SQUARE_BREAKPOINTS lookup) ------------------------------
-// The share TEXT's emoji row still collapses the run into a BOUNDED row — emoji can't draw
-// a 40-cell ruler, let alone its ticks — so the breakpoint curve lives on here for the web's
-// bucketMeans/emojiRow. The CODEC no longer uses it (v2 stores the raw run). Minimum 3
-// (there are always 3 holes needing 3 distinct words), up to MAX_SQUARES. Half-open:
-// `tries >= t`.
-export const SQUARE_BREAKPOINTS = [4, 6, 10, 15, 22, 33, 48, 70, 100, 120, 150, 180, 215, 255, 300];
-export const MIN_SQUARES = 3;
-export const MAX_SQUARES = MIN_SQUARES + SQUARE_BREAKPOINTS.length; // 18
-
-export function squareCount(tries: number): number {
-  let m = MIN_SQUARES;
-  for (const t of SQUARE_BREAKPOINTS) {
-    if (tries >= t) m += 1;
-    else break; // breakpoints ascend, so the first miss ends it
-  }
-  return m;
-}
 
 // --- field widths ------------------------------------------------------------------------
 const VERSION_BITS = 4;

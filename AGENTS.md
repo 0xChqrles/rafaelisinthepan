@@ -799,9 +799,15 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   `<75 🟥`, `>=75 🟪` (magenta→violet→indigo), each band the emoji nearest the stop(s)
   it covers, cut at their midpoints. The indigo tail deliberately stays 🟪 rather than
   the nearer-in-RGB 🟦: the ramp closes near its own start, and a row that returns to
-  its opening color would read backwards. The row still BUCKETS into the bounded 3–18
-  `bucketMeans` squares and drops the ticks (plain text has nowhere to put them), so
-  `squareCount`/`SQUARE_BREAKPOINTS` now serve that row alone. In the DIALOG's table:
+  its opening color would read backwards. **The row is the ruler CELL FOR CELL** — one
+  emoji per counted try, straight off the trajectory, **no bucketing, no mean, no fixed
+  square count** (decided 2026-07-25, retiring the bounded 3–18 row): a long run makes a
+  long row exactly as it makes a long bar, and the last emoji IS the solving try (the
+  bucketed tail used to average a grind's plateau and could end mid-ramp). `bucketMeans`,
+  `squareCount`, `SQUARE_BREAKPOINTS`, `MIN_SQUARES` and `MAX_SQUARES` are therefore
+  DELETED — nothing in the codebase buckets a trajectory any more. The ticks are the one
+  thing the row drops: a single line has nowhere to put a mark BETWEEN two cells, and no
+  second line to number it on. In the DIALOG's table:
   one row per entrant sorted by score (player ahead on a tie, DNF last, `lineupModel`
   order) — medal, tag, the entrant's run replayed into its ruler, count (DNF muted).
   **Leaderboard rulers share ONE scale (decided 2026-07-25):** each bar's width is
