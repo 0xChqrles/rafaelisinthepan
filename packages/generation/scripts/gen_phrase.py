@@ -843,7 +843,11 @@ def load_form_table(lang, disabled=False):
     # Loaded eagerly, before the vectors, so a missing or corrupt table fails fast.
     # Deferring the parse would buy nothing: deciding whether a secret is even a verb
     # reads the table, so every fr run consults it on its first hole anyway.
-    return load_forms(path)
+    try:
+        return load_forms(path)
+    except ValueError as exc:  # a truncated artifact is a startup failure like any other
+        die(f"table lemme+trait→forme illisible : {exc}\n"
+            f"         reconstruis-la avec scripts/build_forms.py (pnpm forms:{lang}).")
 
 
 class FormResolver:
@@ -1797,10 +1801,16 @@ def main():
               f"au trait {feature}")
     # A --form that named a word no hole used is nearly always a typo in the WORD.
     # Say so now: after publishing, the puzzle just quietly lacks its agreement.
-    if args.no_inflect and explicit_forms:
-        print("  attention : --form est ignoré sous --no-inflect.", file=sys.stderr)
-    for key in sorted(set(explicit_forms) - forms.answered):
-        print(f"  attention : --form « {key} » n'a servi à aucun trou.", file=sys.stderr)
+    if explicit_forms:
+        if args.no_inflect:
+            print("  attention : --form est ignoré sous --no-inflect.", file=sys.stderr)
+        elif lang not in FORM_LANGS:
+            print(f"  attention : --form est ignoré : pas de table de formes pour "
+                  f"'{lang}'.", file=sys.stderr)
+        else:
+            for key in sorted(set(explicit_forms) - forms.answered):
+                print(f"  attention : --form « {key} » n'a servi à aucun trou.",
+                      file=sys.stderr)
     if source:
         print("  source : " + ", ".join(f"{k}={v}" for k, v in source.items()))
 

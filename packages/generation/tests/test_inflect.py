@@ -23,6 +23,7 @@ sentence: « tu t'___ » must read "t'distrais", never "t'distraire". The rules:
     dominantly the adjective, so it is never read — nor written — as a verb.
 """
 
+import functools
 import os
 
 import pytest
@@ -38,7 +39,7 @@ TABLE = load_forms(os.path.join(FIXTURES, "forms.fr.tsv"))
 VOCAB = ["jardin", "amuse", "amuses", "amusé", "amusait", "distraire", "marchait",
          "marches",
          "lasses", "lassés", "compris", "pensé", "évident", "évidé", "noyé", "noies",
-         "accoutume", "accoutumer", "accoutumés"]
+         "accoutume", "accoutumer", "accoutumés", "noyait"]
 VSET = set(VOCAB)
 
 # The #104 table the donor bridge walks: "accoutumes" has no row of its own (as in the
@@ -243,7 +244,11 @@ def test_a_rewritten_hole_is_reported():
 # cannot catch that: it only holds rows someone wrote by hand. These anchors read the
 # real committed table, which is what ships.
 
-COMMITTED = load_forms(forms_path("fr"))
+@functools.lru_cache(maxsize=1)
+def committed():
+    """The real shipped table, loaded once — as a function so a missing or corrupt
+    artifact fails the tests that read it rather than collecting the whole module."""
+    return load_forms(forms_path("fr"))
 
 
 @pytest.mark.parametrize("lemma,feature,expected", [
@@ -268,15 +273,15 @@ COMMITTED = load_forms(forms_path("fr"))
     ("avilir", "ind:pre:2s", "avilis"),
 ])
 def test_committed_table_realizes_the_real_form(lemma, feature, expected):
-    assert COMMITTED.realize.get((lemma, feature)) == expected
+    assert committed().realize.get((lemma, feature)) == expected
 
 
 def test_committed_table_never_confuses_an_infinitive_with_a_finite_form():
     # The two invariants behind those anchors, over the WHOLE table rather than samples:
     # a verb's lemma IS its infinitive, and no infinitive is also a finite form.
-    assert [(l, f) for (l, ft), f in COMMITTED.realize.items()
+    assert [(l, f) for (l, ft), f in committed().realize.items()
             if ft == "inf" and f != l] == []
-    assert [(l, ft) for (l, ft), f in COMMITTED.realize.items()
+    assert [(l, ft) for (l, ft), f in committed().realize.items()
             if ft != "inf" and f == l] == []
 
 
@@ -342,3 +347,25 @@ def test_a_truncated_table_fails_loudly(tmp_path):
 def test_form_flag_is_case_insensitive_on_both_sides():
     assert gen_phrase.parse_form_args(["Marchait=IND:IMP:3S"]) == {
         "marchait": "ind:imp:3s"}
+
+
+def test_a_reclaimed_key_is_not_dragged_along_by_its_old_group():
+    """The other half of the finding-4 fix: a group can have one of its keys reclaimed
+    by a CLOSER group and still rewrite legitimately. Writing its new form over every
+    key it used to hold would hand the closer group this group's word."""
+    # Secret "marchait" (ind:imp:3s). Rank 5 holds two keys — "noies" its canonical and
+    # "amusait" an alias. Rank 2 agrees to "amusait" and takes that slug; rank 5 then
+    # agrees to the still-free "noyait", so BOTH groups rewrite and one of rank 5's keys
+    # is no longer its own.
+    rmap = _map(("marchait", "marchait", 0), ("amuse", "amuse", 2),
+                ("noies", "noies", 5), ("amusait", "noies", 5))
+    changed = _resolver().apply(rmap, 9, "marchait", _donors())
+
+    assert changed == {2: ("amuse", "amusait"), 5: ("noies", "noyait")}
+    # the reclaimed key belongs to the closer group now, and kept ITS form — without
+    # the rank check it would have been overwritten with rank 5's "noyait".
+    assert rmap["amusait"] == {"word": "amusait", "rank": 2}
+    assert rmap["amuse"] == {"word": "amusait", "rank": 2}
+    # ...while the group that lost it still agreed, on the keys it still owns
+    assert rmap["noies"] == {"word": "noyait", "rank": 5}
+    assert rmap["noyait"] == {"word": "noyait", "rank": 5}
