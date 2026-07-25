@@ -292,6 +292,65 @@ def test_selector_asks_for_the_donor_before_ranking(monkeypatch, capsys):
     assert ranks["accoutumes"]["accoutume"]["rank"] == 0
 
 
+def test_a_committed_lemma_spends_every_donor_of_a_vector_less_word():
+    # Holing "accoutume" claims the accoutumer group. "accoutumes" has no lemma of its
+    # own in the table — a singleton that clashes with nothing — but every donor it
+    # could borrow belongs to that spent group, so it must stop being selectable.
+    donors = _resolver()
+    fresh, spent = set(), set(gen_phrase.group_lemmas("accoutume", "accoutume", TABLE))
+    assert spent == {"accoutumer"}
+
+    assert gen_phrase.free_donors("accoutumes", fresh, TABLE, donors)
+    assert not gen_phrase.spent_candidate("accoutumes", set(), fresh, TABLE, donors)
+
+    assert gen_phrase.free_donors("accoutumes", spent, TABLE, donors) == []
+    assert gen_phrase.spent_candidate("accoutumes", set(), spent, TABLE, donors)
+    # and the ordinary rule is untouched: a form of the spent group is spent too.
+    assert gen_phrase.spent_candidate("accoutumer", set(), spent, TABLE, donors)
+    assert not gen_phrase.spent_candidate("jardin", set(), spent, TABLE, donors)
+
+
+def test_selector_will_not_hole_a_donors_lemma_twice(monkeypatch):
+    """Committing "accoutume" spends the accoutumer group, so the vector-less
+    "accoutumes" — whose every donor belongs to that same group — must stop being
+    selectable. Its own lemmas cannot say so: the table does not know the form, so it
+    is a singleton that clashes with nothing."""
+    import os
+    import termios
+    import tty
+
+    _stub_closest(monkeypatch)
+    monkeypatch.setattr(gen_phrase, "start_band", lambda _secret, _ranking: [("vermine", 1)])
+
+    fd = os.open(os.devnull, os.O_RDONLY)
+    monkeypatch.setattr(gen_phrase.sys, "stdin",
+                        type("Stdin", (), {"fileno": lambda self: fd,
+                                           "isatty": lambda self: True})())
+    monkeypatch.setattr(termios, "tcgetattr", lambda _fd: None)
+    monkeypatch.setattr(termios, "tcsetattr", lambda *_a: None)
+    monkeypatch.setattr(tty, "setcbreak", lambda _fd: None)
+    # three plain commits: whatever the cursor lands on after "accoutume" is committed
+    # must NOT be "accoutumes" — otherwise these keys would hole it as the second word.
+    keys = iter(["ENTER", "1", "ENTER"] * 3)
+    monkeypatch.setattr(gen_phrase, "_read_key", lambda _fd: next(keys))
+
+    words = _words("il accoutume et tu t'accoutumes doucement au jardin.")
+    donors = _resolver(interactive=True)
+    assert [c["secret"] for c in gen_phrase.extract_candidates(words, FR, VSET, donors)] == [
+        "accoutume", "accoutumes", "doucement", "jardin",
+    ]
+    try:
+        holes, ranks = gen_phrase.select_holes_interactive(
+            words, FR, "fr", kv=object(), V=VOCAB, M=object(), Vset=VSET,
+            lemma_table=TABLE, forms_by_lemma=FORMS, donors=donors)
+    finally:
+        os.close(fd)
+
+    assert [h["secret"]["word"] for h in holes] == ["accoutume", "doucement", "jardin"]
+    assert set(ranks) == {"accoutume", "doucement", "jardin"}
+    assert donors.used == {}  # no substitution was needed, none was invented
+
+
 def test_main_writes_the_puzzle_and_names_the_substitution(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(FR["module"], "load_vectors", lambda: object(), raising=False)
     monkeypatch.setattr(FR["module"], "build_vocab", lambda _kv: VOCAB, raising=False)

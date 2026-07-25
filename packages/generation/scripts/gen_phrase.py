@@ -402,6 +402,32 @@ def donor_candidates(lemmas, word, forms_by_lemma, Vset, freq_index):
                                         freq_index.get(f, len(freq_index)), f))
 
 
+def free_donors(secret, used_lemmas, lemma_table, donors):
+    """The donor candidates that would NOT merge `secret` into an already committed
+    group. A borrowed vector makes the secret's group claim the donor's lemmas (see
+    group_lemmas), so a donor whose lemma is spent would hole one word twice."""
+    return [d for d in donors.candidates(secret)
+            if not (set(group_lemmas(secret, d, lemma_table)) & used_lemmas)]
+
+
+def spent_candidate(secret, used_slugs, used_lemmas, lemma_table, donors=None):
+    """Is this selectable occurrence already consumed by an earlier hole?
+
+    Its slug is committed, or its group's lemmas are already claimed — one word, one
+    hole set (#104). The group is decided by the DONOR when there is one (#119), never
+    by the secret's own lemmas: a form the table does not know is a singleton that
+    clashes with nothing, so asking it would leave "accoutumes" selectable after
+    "accoutume" and hole the accoutumer group twice. While its donor is still open the
+    word has no group yet, so it is spent only once NO donor is left that would keep it
+    independent."""
+    if slug(secret) in used_slugs:
+        return True
+    donor = secret if donors is None else donors.resolved(secret)
+    if donor is None:
+        return not free_donors(secret, used_lemmas, lemma_table, donors)
+    return bool(set(group_lemmas(secret, donor, lemma_table)) & used_lemmas)
+
+
 def group_lemmas(secret, donor, lemma_table):
     """The lemma set the secret's group claims in the merge walk.
 
@@ -800,6 +826,10 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
 
     cands = extract_candidates(words, cfg, Vset, donors)
 
+    # Feasibility pre-check, on the table's own groups. A word still waiting for a donor
+    # counts as its own group here — its group is only decided by that choice (#119) —
+    # so this can be optimistic; taken_word below is the exact rule, and running out of
+    # words mid-selection has its own error. It never refuses a workable sentence.
     selectable = max_selectable_groups(cands, lemma_table)
     if selectable < 3:
         die(f"la phrase n'offre que {selectable} mot(s) sélectionnable(s) "
@@ -844,10 +874,8 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
     used_lemmas = set()  # lemmas claimed by committed groups: their forms block too
 
     def taken_word(c):
-        """A candidate is spent when its slug is committed OR it is another form of a
-        committed group — one word, one hole set (#104)."""
-        return (slug(c["secret"]) in used_slugs
-                or any(lemma in used_lemmas for lemma in lemmas_of(c["secret"], lemma_table)))
+        """A candidate is spent when its group is already holed (see spent_candidate)."""
+        return spent_candidate(c["secret"], used_slugs, used_lemmas, lemma_table, donors)
 
     def available():
         return [i for i, c in enumerate(cands) if not taken_word(c)]
@@ -901,8 +929,9 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
             numero = ("   numéro : " + _sgr("1;7", f" {numbuf or ' '} "))
             if donor is None:
                 # #119: no vector for this word — the donor is chosen FIRST, with the
-                # same numbered grammar. Nothing is ranked until it is known.
-                dcands = donors.candidates(secret)
+                # same numbered grammar. Only the donors that keep this word its own
+                # group are offered, so no choice can hole a committed lemma twice.
+                dcands = free_donors(secret, used_lemmas, lemma_table, donors)
                 rank_map, band, rbd = None, [], {}
                 title = f"  « {secret} » n'a pas de vecteur — formes du même lemme"
                 if mode == "donor":
