@@ -15,16 +15,6 @@ import { cellSize } from './cellSize';
 // Ink level over the opaque base. The hue comes from CSS (.cell-digits color) — vivid
 // accent blue rather than the old faint fg — so this alpha reads as color saturation.
 const INK_ALPHA = 0.3;
-// Solved dissolve (#110, decided 2026-07-24): once the round is over the count melts
-// back into the wave field, one grid CELL at a time — each cell drops out when the
-// progress passes its own deterministic threshold (a coordinate hash, stable across
-// redraws), so the number pixelates away into the water's own cell language. Reduced
-// motion skips straight to gone.
-const DISSOLVE_MS = 1200;
-const cellThreshold = (gx: number, gy: number) => {
-  const s = Math.sin(gx * 127.1 + gy * 311.7) * 43758.5453;
-  return s - Math.floor(s);
-};
 // MUST mirror the body graph-paper gradient (index.css): a 1px line at ~2.5% fg on the
 // top and left edge of every cell, redrawn inside the opaque ink cells.
 const GRID_LINE = 'rgba(244, 244, 242, 0.025)';
@@ -90,21 +80,9 @@ function loadMasks(): Promise<Mask[]> {
   return masksPromise;
 }
 
-export default function CellDigits({
-  value,
-  dissolve = false,
-}: {
-  value: number;
-  // True once the solved exits begin: animates the count away cell-by-cell (a mount
-  // with dissolve already true — a rehydrated solve — renders nothing, no replay).
-  dissolve?: boolean;
-}) {
+export default function CellDigits({ value }: { value: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [masks, setMasks] = useState<Mask[] | null>(null);
-  // Dissolve progress in [0 intact .. 1 gone], read by every draw. A ref, not state:
-  // the rAF loop below repaints imperatively at animation rate.
-  const progressRef = useRef(dissolve ? 1 : 0);
-  const drawRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -115,36 +93,6 @@ export default function CellDigits({
       alive = false;
     };
   }, []);
-
-  const prevDissolve = useRef(dissolve);
-  useEffect(() => {
-    const was = prevDissolve.current;
-    prevDissolve.current = dissolve;
-    if (!dissolve) {
-      // New round: the count is back (value resets alongside).
-      progressRef.current = 0;
-      drawRef.current?.();
-      return undefined;
-    }
-    if (was) return undefined; // mounted already-gone (rehydrated) — nothing to play
-    if (
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    ) {
-      progressRef.current = 1;
-      drawRef.current?.();
-      return undefined;
-    }
-    const start = performance.now();
-    let raf = 0;
-    const tick = (now: number) => {
-      progressRef.current = Math.min(1, (now - start) / DISSOLVE_MS);
-      drawRef.current?.();
-      if (progressRef.current < 1) raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [dissolve]);
 
   useEffect(() => {
     const canvas = ref.current;
@@ -198,8 +146,7 @@ export default function CellDigits({
       const visW = visRight - visLeft;
       if (visW <= 0) return;
       const color = getComputedStyle(canvas).color;
-      const p = progressRef.current;
-      const next = [cell, left, top, docLeft, docTop, bw, bh, visLeft, visW, value, color, p].join();
+      const next = [cell, left, top, docLeft, docTop, bw, bh, visLeft, visW, value, color].join();
       if (next === signature) return;
       signature = next;
 
@@ -215,45 +162,32 @@ export default function CellDigits({
       ctx.translate(left - visLeft, 0);
       const bg =
         getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#0a0b12';
-      // The surviving grid CELLS of every ink block (a block is k x k cells): during a
-      // dissolve, a cell is gone once the progress passes its coordinate-hash
-      // threshold — deterministic, so an unrelated redraw never reshuffles the decay.
-      const cells: Array<[number, number]> = [];
+      const blocks: Array<[number, number]> = [];
       let cx = 0;
       for (const mask of digits) {
         for (let y = 0; y < GLYPH_ROWS; y++)
           for (let x = 0; x < mask.w; x++)
-            if (mask.rows[y * mask.w + x]) {
-              const bx = cx + x * px;
-              const by = y * px;
-              for (let j = 0; j < k; j++)
-                for (let i = 0; i < k; i++) {
-                  const ox = bx + i * cell;
-                  const oy = by + j * cell;
-                  if (p > 0 && cellThreshold((left + ox) / cell, (top + oy) / cell) < p)
-                    continue;
-                  cells.push([ox, oy]);
-                }
-            }
+            if (mask.rows[y * mask.w + x]) blocks.push([cx + x * px, y * px]);
         cx += (mask.w + GAP) * px;
       }
-      // Opaque base: punch the waves out under every surviving cell.
+      // Opaque base: punch the waves out under every ink block.
       ctx.fillStyle = bg;
-      for (const [ox, oy] of cells) ctx.fillRect(ox, oy, cell, cell);
+      for (const [bx, by] of blocks) ctx.fillRect(bx, by, px, px);
       // Re-draw the graph paper the base just covered — the canvas origin is
       // grid-snapped, so cell edges land on multiples of the cell in canvas space.
       ctx.fillStyle = GRID_LINE;
-      for (const [ox, oy] of cells) {
-        ctx.fillRect(ox, oy, 1, cell);
-        ctx.fillRect(ox, oy, cell, 1);
+      for (const [bx, by] of blocks) {
+        for (let o = 0; o < px; o += cell) {
+          ctx.fillRect(bx + o, by, 1, px);
+          ctx.fillRect(bx, by + o, px, 1);
+        }
       }
       // The ink itself, at the watermark level the element opacity used to provide.
       ctx.fillStyle = color;
       ctx.globalAlpha = INK_ALPHA;
-      for (const [ox, oy] of cells) ctx.fillRect(ox, oy, cell, cell);
+      for (const [bx, by] of blocks) ctx.fillRect(bx, by, px, px);
       ctx.globalAlpha = 1;
     };
-    drawRef.current = draw;
 
     draw();
     const ro = new ResizeObserver(draw);
@@ -261,7 +195,6 @@ export default function CellDigits({
     window.addEventListener('resize', draw);
     const interval = window.setInterval(draw, 500);
     return () => {
-      drawRef.current = null;
       ro.disconnect();
       window.removeEventListener('resize', draw);
       window.clearInterval(interval);

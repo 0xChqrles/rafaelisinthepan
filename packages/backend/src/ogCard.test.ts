@@ -17,10 +17,15 @@ const get = (rawPath: string, headers: Record<string, string> = {}): FnUrlEvent 
   headers,
 });
 
-// A real dayNumber (days since 1970) and a score whose squareCount matches the 9 squares.
-const squares = [8, 20, 35, 50, 65, 78, 90, 100, 100];
-const token = encodeResult({ lang: 'fr', dayNumber: 20638, score: 42, squares });
-const enToken = encodeResult({ lang: 'en', dayNumber: 20638, score: 42, squares });
+// A real dayNumber (days since 1970) and a run whose length matches the score, with the
+// three secrets dropped on tries 4, 9 and 12 (the v2 token's ruler payload).
+const run = {
+  score: 12,
+  trajectory: [0, 0, 18, 41, 41, 41, 55, 55, 72, 72, 72, 100],
+  solvedAt: [4, 12, 9],
+};
+const token = encodeResult({ lang: 'fr', dayNumber: 20638, ...run });
+const enToken = encodeResult({ lang: 'en', dayNumber: 20638, ...run });
 
 describe('GET /og/<token>.png', () => {
   it('returns a base64 PNG (real image bytes), cached immutable', async () => {
@@ -45,7 +50,7 @@ describe('GET /s/<token>', () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers['Content-Type']).toContain('text/html');
     expect(res.body).toContain(`content="https://whippin.ai/og/${token}.png"`);
-    expect(res.body).toContain('42 essais'); // fr unit named — lower is better
+    expect(res.body).toContain('12 essais'); // fr unit named — lower is better
     expect(res.body).toContain('#20638');
     expect(res.body).toContain('<html lang="fr">');
     expect(res.body).toContain('Jouer à Whippin AI'); // no-JS body link (fr)
@@ -56,7 +61,7 @@ describe('GET /s/<token>', () => {
   it('keeps English for an en token: try/tries, <html lang="en">, English link', async () => {
     const res = await handler(get(`/s/${enToken}`, { host: 'whippin.ai', 'x-forwarded-proto': 'https' }));
     expect(res.statusCode).toBe(200);
-    expect(res.body).toContain('42 tries');
+    expect(res.body).toContain('12 tries');
     expect(res.body).toContain('<html lang="en">');
     expect(res.body).toContain('Play Whippin AI');
     expect(res.body).toContain(`https://whippin.ai/en/${dateForDayNumber(20638)}`);
@@ -67,7 +72,7 @@ describe('GET /s/<token>', () => {
     // must point at /<lang>/<that date>, never the bare /<lang> (which would be today).
     const day = 20500;
     const date = dateForDayNumber(day); // e.g. 2026-02-...
-    const tok = encodeResult({ lang: 'en', dayNumber: day, score: 42, squares });
+    const tok = encodeResult({ lang: 'en', dayNumber: day, ...run });
     const res = await handler(get(`/s/${tok}`, { host: 'whippin.ai', 'x-forwarded-proto': 'https' }));
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain(`location.replace("https://whippin.ai/en/${date}")`); // JS redirect

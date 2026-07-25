@@ -3,22 +3,34 @@
 // `…/s/<token>`; the backend decodes it to render the OG image + meta. Cross-runtime (pure
 // JS), so the SAME function runs in the browser and the Lambda.
 //
-// The card shows the puzzle's dayNumber (its stable ID), the score, and the row of colored
-// squares — NEVER a local date: the backend owns the day (22:00-ET flip), so a calendar date
+// The card shows the puzzle's dayNumber (its stable ID), the score, and the player's RUN
+// RULER — NEVER a local date: the backend owns the day (22:00-ET flip), so a calendar date
 // would be wrong across timezones.
 //
+// **v2 (decided 2026-07-25)** carries the RAW run instead of the bucketed squares, so the
+// card draws the same ruler the solved screen does: one cell per counted try, plus a tick
+// where each secret dropped. v1 tokens (bucketed squares) decode to `null` — the payloads
+// are incompatible, and an old link is better 404'd than mis-drawn. The plain-text emoji
+// fallback still buckets (see SQUARE_BREAKPOINTS below) on the same progress ramp; only the
+// CARD went raw.
+//
 // The payload is BIT-packed (not byte-aligned), then base64url'd, to keep the URL short:
-//   version  4b | lang 2b | day 15b | scoreLen 4b | score <scoreLen>b | squares n×5b
-// where n = squareCount(score) is DERIVED (not stored), and each square is the bucket's mean
-// progress quantized to 5 bits (32 heat levels — visually identical to the on-screen grid).
-// A perfect game packs to ~7 chars, an 18-square game to ~21.
+//   version 4b | lang 2b | day 15b | scoreLen 4b | score <scoreLen>b
+//   run    score × ( 1b: 1 = same % as the previous try | 0 = +5b quantized % )
+//   ticks  3b count, then count × ( 1b: 1 = +<bits(score)>b solving try | 0 = never solved )
+// The run's cell count is DERIVED from the score (they are the same number), and the repeat
+// bit is what keeps a long game's link short: reconstruction only moves on an IMPROVING
+// guess, and a long game is long precisely because most of its guesses don't improve.
+// A perfect game packs to ~11 chars, a typical dozen-try game to ~15.
 
-const SHARE_VERSION = 1;
+const SHARE_VERSION = 2;
 
-// --- how many squares (the SQUARE_BREAKPOINTS lookup) ------------------------------------
-// Moved here from the web so the DECODER can derive the square count from the score (they
-// are one and the same: squares.length === squareCount(score)). Minimum 3 (there are always
-// 3 holes needing 3 distinct words), up to MAX_SQUARES. Half-open: `tries >= t`.
+// --- how many EMOJI squares (the SQUARE_BREAKPOINTS lookup) ------------------------------
+// The share TEXT's emoji row still collapses the run into a BOUNDED row — emoji can't draw
+// a 40-cell ruler, let alone its ticks — so the breakpoint curve lives on here for the web's
+// bucketMeans/emojiRow. The CODEC no longer uses it (v2 stores the raw run). Minimum 3
+// (there are always 3 holes needing 3 distinct words), up to MAX_SQUARES. Half-open:
+// `tries >= t`.
 export const SQUARE_BREAKPOINTS = [4, 6, 10, 15, 22, 33, 48, 70, 100, 120, 150, 180, 215, 255, 300];
 export const MIN_SQUARES = 3;
 export const MAX_SQUARES = MIN_SQUARES + SQUARE_BREAKPOINTS.length; // 18
@@ -38,8 +50,10 @@ const LANG_BITS = 2; // room for 4 languages before a version bump
 const DAY_BITS = 15; // days since ID_EPOCH -> ~89 years of headroom
 const SCORE_LEN_BITS = 4; // holds the bit-length of the score (0..15)
 const SCORE_MAX = 0x7fff; // 15-bit scores (32767) — far above any real game
-const SQUARE_BITS = 5;
-const QUANT_MAX = (1 << SQUARE_BITS) - 1; // 31 heat levels
+const CELL_BITS = 5;
+const QUANT_MAX = (1 << CELL_BITS) - 1; // 31 reconstruction levels
+const TICK_COUNT_BITS = 3; // a puzzle has 3 distinct secrets; 0..7 leaves headroom
+const MAX_TICKS = (1 << TICK_COUNT_BITS) - 1;
 
 // Store `dayNumber - ID_EPOCH` so the field stays small. ID_EPOCH is a fixed day index
 // (days since 1970) BELOW the game's launch; day.ts's dayNumber is always >= this.
@@ -51,8 +65,11 @@ export const SHARE_LANGS = ['en', 'fr'];
 export interface ShareResult {
   lang: string; // 2-letter code; drives the click-through redirect, not shown on the card
   dayNumber: number; // the puzzle's stable ID (server-owned day), shown as "#<dayNumber>"
-  score: number; // unique tries
-  squares: number[]; // per-square mean progress % (0..100) -> the colored rects
+  score: number; // unique tries — ALSO the ruler's cell count (one cell per counted try)
+  trajectory: number[]; // reconstruction % (0..100) after each counted try -> the bar's cells
+  // Per DISTINCT secret, in sentence order (so the index IS the number under the tick): the
+  // 1-based try that dropped it, or null when the run never did (an unfinished run).
+  solvedAt: (number | null)[];
 }
 
 const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
@@ -134,6 +151,10 @@ function b64urlToBytes(s: string): Uint8Array | null {
 // bit length of a non-negative integer (0 -> 0).
 const bitLength = (x: number) => (x <= 0 ? 0 : 32 - Math.clz32(x));
 
+// A reconstruction % (0..100) <-> its 5-bit level.
+const quant = (pct: number) => Math.round((clamp(pct, 0, 100) / 100) * QUANT_MAX);
+const dequant = (level: number) => (level / QUANT_MAX) * 100;
+
 export function encodeResult(r: ShareResult): string {
   const w = new BitWriter();
   w.write(SHARE_VERSION, VERSION_BITS);
@@ -145,19 +166,43 @@ export function encodeResult(r: ShareResult): string {
   w.write(scoreLen, SCORE_LEN_BITS);
   w.write(score, scoreLen);
 
-  // The square COUNT is derived from the score, so we emit exactly that many, quantizing
-  // each mean progress % to 5 bits (0..31). (r.squares should already be this length.)
-  const n = squareCount(score);
-  for (let i = 0; i < n; i += 1) {
-    const pct = clamp(Math.round(r.squares[i] ?? 0), 0, 100);
-    w.write(Math.round((pct / 100) * QUANT_MAX), SQUARE_BITS);
+  // The RUN: exactly `score` cells (the count is derived from the score, not stored), each
+  // the reconstruction % after that try quantized to 5 bits (0..31). A try that did not move
+  // the reconstruction costs ONE bit — which is what keeps a long game's link short.
+  // (r.trajectory should already have `score` entries; a short one holds its last value.)
+  let prev = 0; // quantized reconstruction before any guess — a fresh board sits at 0
+  for (let i = 0; i < score; i += 1) {
+    const q = i < r.trajectory.length ? quant(r.trajectory[i]) : prev;
+    if (q === prev) {
+      w.write(1, 1);
+    } else {
+      w.write(0, 1);
+      w.write(q, CELL_BITS);
+      prev = q;
+    }
+  }
+
+  // The TICKS: one entry per distinct secret, in sentence order (so its index IS the number
+  // the card stacks under the tick). A tick's try is 1..score, which fits the score's own
+  // bit length.
+  const ticks = r.solvedAt.slice(0, MAX_TICKS);
+  const idxBits = bitLength(Math.max(1, score));
+  w.write(ticks.length, TICK_COUNT_BITS);
+  for (const at of ticks) {
+    if (at == null) {
+      w.write(0, 1);
+    } else {
+      w.write(1, 1);
+      w.write(clamp(Math.round(at), 1, Math.max(1, score)), idxBits);
+    }
   }
   return bytesToB64url(w.toBytes());
 }
 
 // Decode + validate. Returns null on ANY malformation (bad chars, wrong version, overrun,
-// leftover bytes) so a hand-crafted token can never make the renderer emit anything but
-// numbers + colors from the fixed template.
+// leftover bytes, an out-of-range tick) so a hand-crafted token can never make the renderer
+// emit anything but numbers + colors from the fixed template. A v1 token fails the version
+// check like any other stranger — its bucketed squares can't feed a per-try ruler.
 export function decodeResult(token: string): ShareResult | null {
   const bytes = b64urlToBytes(token);
   if (!bytes) return null;
@@ -170,14 +215,32 @@ export function decodeResult(token: string): ShareResult | null {
     const scoreLen = rd.read(SCORE_LEN_BITS);
     const score = scoreLen === 0 ? 0 : rd.read(scoreLen);
 
-    const n = squareCount(score);
-    const squares: number[] = [];
-    for (let i = 0; i < n; i += 1) squares.push((rd.read(SQUARE_BITS) / QUANT_MAX) * 100);
+    // One cell per counted try, each carrying the previous level forward unless the try
+    // improved it. A forged long score simply overruns the bits and returns null below.
+    const trajectory: number[] = [];
+    let level = 0;
+    for (let i = 0; i < score; i += 1) {
+      if (rd.read(1) === 0) level = rd.read(CELL_BITS);
+      trajectory.push(dequant(level));
+    }
+
+    const idxBits = bitLength(Math.max(1, score));
+    const tickCount = rd.read(TICK_COUNT_BITS);
+    const solvedAt: (number | null)[] = [];
+    for (let i = 0; i < tickCount; i += 1) {
+      if (rd.read(1) === 0) {
+        solvedAt.push(null);
+        continue;
+      }
+      const at = rd.read(idxBits);
+      if (at < 1 || at > score) return null; // a tick must land on a real try
+      solvedAt.push(at);
+    }
 
     // Only the final byte's padding bits (0..7) may remain; a whole extra byte means the
     // token was tampered/extended.
     if (rd.remainingBits >= 8) return null;
-    return { lang, dayNumber, score, squares };
+    return { lang, dayNumber, score, trajectory, solvedAt };
   } catch {
     return null; // bit overrun (truncated token)
   }

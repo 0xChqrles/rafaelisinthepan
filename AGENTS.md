@@ -88,8 +88,8 @@ packages/
     src/slug.ts               fold() — the slug/fold contract (byte-identical to slug())
     src/day.ts                the ONE 22:00-ET DST-correct game-day logic (client + server + publish)
     src/types.ts              per-puzzle schema types (Puzzle, Hole, RankMap, …)
-    src/heat.ts               heatColor() — heat ramp (rank exponents, share card)
-    src/progressColor.ts      progressColor() — progress ramp (progress bar, selector badge); shares ramp.ts
+    src/heat.ts               heatColor() — heat ramp (rank exponents + floating hits ONLY)
+    src/progressColor.ts      progressColor() + progressEmoji() — progress ramp (progress bar, selector badge, run rulers incl. the card, share-text emoji row); shares ramp.ts
     src/index.ts              re-exports
   web/                        React + Vite + TS front (pkg @whippin/web)
     src/
@@ -364,12 +364,10 @@ as `<tries> TRIES` at game end (the unit is NAMED — on the solved screen, the 
 card, and the share text — because "SCORE" alone reads as points to maximize when
 lower is better; singular `TRY` at 1). Like the rest of the UI chrome the label is
 localized (fr: `ESSAIS`/`ESSAI`, decided 2026-07-06); the unit stays named in every
-language. **Leaderboard exception (decided 2026-07-24, #110):** on a solved screen WITH
-displayed benchmark opponents, the leaderboard table's player row carries the final
-count and the `<tries> TRIES` headline is omitted (a headline next to the table
-repeated the same number). Opponent-less solved surfaces — the tutorial and
-benchmark-less puzzles — keep the named headline, and the share card/text always name
-the unit.
+language. The solved tray shows the named `<tries> TRIES` headline on EVERY surface
+(decided 2026-07-25, superseding #110's headline-omitted-next-to-the-table exception:
+the leaderboard moved behind SEE MORE into its own full-screen dialog, whose player row
+also carries the count). The share card/text always name the unit.
 
 ### Testing
 
@@ -768,26 +766,65 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   not bare `/<lang>` — so a shared archive result opens that archived date, not today (the
   card/title were already `#dayNumber`-correct). The archive **must not touch streaks**
   (separate issue).
-- **Solved-result hierarchy (decided 2026-07-10; leaderboard variant 2026-07-24, #110):**
-  the solved tray is sentence-specific: one centered stack at every breakpoint. WITHOUT
-  displayed benchmark opponents it is the named `<tries> TRIES` headline, the restored
-  3–18 cold-to-hot trajectory squares (`bucketMeans` — the SAME values used by the share
-  card/text), then SHARE. WITH opponents the headline and the standalone squares row are
-  replaced by the **leaderboard table**: one row per entrant sorted by score (player
-  ahead on a tie, DNF last, `lineupModel` order), each row an identity-colored tag, the
-  entrant's own run replayed into bucketed heat squares (the player's ARE the share-card
-  squares), and its count (DNF muted); SHARE below. **The table is MONOCHROME except the
-  heat squares** (decided 2026-07-24): tags are muted (the player's alone in fg), counts
-  neutral — identity colors belong to the characters, and the squares are the single
-  color voice. **The PLAYER's tag alone is the solved-word gold** (decided 2026-07-24,
-  replacing a tried-and-dropped accent row border), and it reads **"YOU" in EVERY
-  language** — the `you` i18n key is deliberately untranslated (fr included; decided
-  2026-07-24), one universal tag across lineup + leaderboard. Rows are **NOT
-  interactive** — an inline tap-to-unfold run viewer was tried and removed (too noisy);
-  the run viewer will be a MODAL opened from a row, tracked in #82. The table is
-  decorative (aria-hidden) with an sr-only ranking line carrying the accessible result. The lineup does NOT persist past the
+- **Solved-result hierarchy (decided 2026-07-10; leaderboard variant 2026-07-24, #110;
+  SEE-MORE dialog 2026-07-25):** the solved tray is sentence-specific and the SAME
+  compact stack at every breakpoint and on every surface: the named `<tries> TRIES`
+  headline, the PLAYER's full-width **run ruler**, then the actions — SHARE plus, when
+  displayed opponents exist, **SEE MORE** (i18n `seeMore`, fr `VOIR PLUS`). **The
+  leaderboard no longer renders inline in the tray (decided 2026-07-25, superseding
+  #110's inline table — too much information in the tray on mobile):** SEE MORE opens
+  `LeaderboardDialog`, a borderless full-screen native dialog on the SOLID app
+  background (the animated noise never plays under it) with generous row rhythm,
+  closed via its X (`ariaClose`), Escape, or a backdrop click; focus returns to SEE
+  MORE. This dialog is the planned home of the deeper result views (#82): per-row
+  runs, tested words, per-hole word lists. **The run RULER replaced the bucketed
+  trajectory squares (decided 2026-07-25):** one continuous bar per run on the
+  PROGRESS ramp (`components/RunRuler.tsx`), one cell per counted try colored
+  `progressColor` at that try's reconstruction % — the RAW `progressTrajectory`, no
+  on-screen bucketing — with a white tick at each try that solved a secret and the
+  hole's sentence index (1..3) under it; one guess dropping several secrets stacks its
+  indices under ONE shared tick (`solveTicks` in `web/src/game/share.ts` replays the
+  moments with the same rules as the trajectory). **The SHARE CARD draws the SAME
+  ruler (decided 2026-07-25, superseding the bucketed-squares card):** the share token
+  was bumped to **v2**, carrying the RAW per-try trajectory plus the solve moments
+  instead of the `bucketMeans` squares, so `renderCardSvg` renders the on-screen ruler
+  scaled to the OG image — same `progressColor` cells, same ticks, same sentence
+  indices. v1 tokens (bucketed squares) no longer decode: `decodeResult` rejects them
+  on the version check, so a pre-bump link 404s rather than mis-draws. Cell count is
+  still DERIVED from the score (one cell per counted try, never stored), and a try that
+  did not improve costs ONE bit, which is what keeps a long game's link short. **The
+  plain-text EMOJI row moved onto the PROGRESS ramp too (decided 2026-07-25):**
+  `progressEmoji` lives with the ramp stops in `shared/src/progressColor.ts` so the row
+  and the ruler can't drift — `<35 🟦` (blue→cyan), `<45 🟩`, `<55 🟨`, `<65 🟧`,
+  `<75 🟥`, `>=75 🟪` (magenta→violet→indigo), each band the emoji nearest the stop(s)
+  it covers, cut at their midpoints. The indigo tail deliberately stays 🟪 rather than
+  the nearer-in-RGB 🟦: the ramp closes near its own start, and a row that returns to
+  its opening color would read backwards. The row still BUCKETS into the bounded 3–18
+  `bucketMeans` squares and drops the ticks (plain text has nowhere to put them), so
+  `squareCount`/`SQUARE_BREAKPOINTS` now serve that row alone. In the DIALOG's table:
+  one row per entrant sorted by score (player ahead on a tie, DNF last, `lineupModel`
+  order) — medal, tag, the entrant's run replayed into its ruler, count (DNF muted).
+  **Leaderboard rulers share ONE scale (decided 2026-07-25):** each bar's width is
+  proportional to its tries over the longest run on the table, so lengths and solve
+  moments compare straight down the column. **On mobile the tag stacks ABOVE its bar's
+  left edge (decided 2026-07-25)** — `.lb-main`, `display: contents` on desktop — so
+  the table tightens to medal | tag-over-ruler | count and the bars get the width.
+  **The table is MONOCHROME except the run rulers** (decided 2026-07-24): tags are
+  muted (the player's alone in fg), counts neutral — identity colors belong to the
+  characters, and the rulers are the single color voice — **plus the placement-medal
+  column (decided 2026-07-25):** each row leads with its 15×15 pixel-art medal sprite
+  (`assets/medals/1-4.png`, rendered at an exact 2×), drawn on the HEAT ramp's four
+  anchor stops — 1 hot cyan → 4 cold crimson — not classic podium metals. **The
+  PLAYER's tag alone is the solved-word gold** (decided 2026-07-24, replacing a
+  tried-and-dropped accent row border), and it reads **"YOU" in EVERY language** — the
+  `you` i18n key is deliberately untranslated (fr included; decided 2026-07-24), one
+  universal tag across lineup + leaderboard. Rows are **NOT interactive** — an inline
+  tap-to-unfold run viewer was tried and removed (too noisy); the run viewer arrives
+  with #82, on this dialog. The table is decorative (aria-hidden) with an sr-only
+  ranking line carrying the accessible result (also present in the tray, so the
+  ranking needs no modal). The lineup does NOT persist past the
   solve: after the keyboard drops, its characters teleport OUT one tick apart (their
-  dissolve + shared-flash strips), and only once the last is gone does the table rise
+  dissolve + shared-flash strips), and only once the last is gone do the results rise
   into the tray (reduced motion or missing strips skip straight there). On a streak
   solve these exit beats do NOT play hidden behind the celebration — keyboard and lineup
   hold still under the modal and the drop + teleport-out start at its dismissal; the
@@ -803,16 +840,14 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   guessed timeout — so multi-word or throttled animation cannot be covered mid-resolution.
   A fresh active-day solve then holds the fully resolved sentence for 300ms before mounting
   the streak modal. **The solved beats run STREAK → keyboard-drop + teleport-out →
-  LEADERBOARD/results rise → SOURCE (decided 2026-07-24, #110 — reversing the 2026-07-10
+  results rise → SOURCE (decided 2026-07-24, #110 — reversing the 2026-07-10
   source-before-results order):** once the modal has completely dismissed (including its
   exit fade) — or immediately after the final holes settle on archive / no-streak play —
   the exit beats play, the results rise into the tray, and only once the risen stack
   reports itself in place does the optional sentence source type quickly, letter by
   letter, with a trailing `_` (tally/colorize choreography continues beneath it; no
-  metadata skips the typewriter); as the exits begin, the background try-count DISSOLVES
-  into the wave field cell-by-cell (CellDigits `dissolve`, deterministic per-cell
-  thresholds; instant under reduced motion); rehydrated solves render the full
-  source/results immediately — count already gone — without replaying the sequence. Player progression is separate:
+  metadata skips the typewriter); rehydrated solves render the full source/results
+  immediately without replaying the sequence. Player progression is separate:
   `StreakDialog` is a
   **borderless full-screen** native modal, opened only by a FRESH active-day
   unsolved→solved transition. Its staged animation uses `@react-spring/web` (v9 for React

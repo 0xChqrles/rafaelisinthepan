@@ -588,27 +588,23 @@ button * {
   transform: translateX(calc(var(--i) * 100%));
   transition: transform 0.35s ease-in-out;
 }
-/* Pixel characters (hand-drawn PNGs under assets/characters/; the sheets VARY in size
-   per model): each renders at an exact INTEGER 2x of its OWN grid (zoom on the natural
-   size — a shared fixed box + object-fit would scale a smaller sheet fractionally and
-   blur it). The box stays a fixed 64px (the tallest 2x sprite) with the art
-   BOTTOM-aligned, so every character stands on the same baseline while the name row
-   above keeps its alignment. Character motion is always DRAWN frames (spritesheets CSS-
-   stepped, like .lineup-idle below), never synthesized transforms; bots still stand as
-   static single-frame <img> drafts until their sheets exist. */
+/* Pixel characters (hand-drawn spritesheets under assets/characters/; the sheets VARY
+   in size per model): each renders at an exact INTEGER 2x of its OWN grid (zoom on the
+   natural size — a shared fixed box + object-fit would scale a smaller sheet
+   fractionally and blur it). The box stays a fixed 64px with the art BOTTOM-aligned,
+   so every character stands on the same baseline while the name row above keeps its
+   alignment (a taller 2x sheet, like fable's 70px, overflows upward into the tag gap
+   rather than growing the row). Character motion is always DRAWN frames (spritesheets
+   CSS-stepped, .lineup-idle below), never synthesized transforms. */
 .lineup-sprite {
   height: 64px;
   display: flex;
   align-items: flex-end;
   justify-content: center;
 }
-.lineup-sprite > img {
-  zoom: 2;
-  image-rendering: pixelated;
-}
 /* Losing the lead lands like a hit: the same shake vocabulary as a struck hole word.
-   The shake rides the span while the idle bob stays on the inner svg, so the two
-   transforms never fight. */
+   The shake rides the outer span while the idle frames play on the inner one, so the
+   two never fight. */
 .lineup-sprite.hit {
   animation: word-shake 0.4s ease-in-out;
 }
@@ -653,6 +649,20 @@ button * {
   height: 31px;
   background-size: 800% 100%;
   animation: idle-8 0.8s steps(8) infinite;
+}
+/* fable-idle.png: 128x35 = 4 frames of 32x35, at 200ms per frame. */
+.lineup-idle.fable {
+  width: 32px;
+  height: 35px;
+  background-size: 400% 100%;
+  animation: idle-4 0.8s steps(4) infinite;
+}
+/* kimi-idle.png: 112x31 = 4 frames of 28x31, at 200ms per frame. */
+.lineup-idle.kimi {
+  width: 28px;
+  height: 31px;
+  background-size: 400% 100%;
+  animation: idle-4 0.8s steps(4) infinite;
 }
 /* gpt-idle.png: 128x32 = 4 frames of 32x32, at a slower 200ms per frame. */
 .lineup-idle.gpt {
@@ -1063,6 +1073,31 @@ button * {
   }
 }
 
+/* --- prompt zone: input area ⇄ solved caption, no reserved heights ---
+   The two occupants of the row under the sentence overlay in ONE grid cell, both
+   mounted for the whole round (the retired/pending one visibility-hidden). The cell
+   sizes to the taller NATURAL height — the caption lays out its full text from frame
+   one — so the prompt→citation swap cannot move the centered sentence and no
+   hand-synced min-height pair is needed (the old 90px/72px trick, removed 2026-07-25). */
+.prompt-zone {
+  width: 100%;
+  display: grid;
+}
+.prompt-zone > * {
+  grid-area: 1 / 1;
+}
+.input-area.retired,
+.caption-slot.pending {
+  visibility: hidden;
+}
+/* The caption centers vertically in whatever height the zone settles on (usually the
+   input row's, the taller of the two). */
+.caption-slot {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
 /* --- input area --- */
 .input-area {
   position: relative;
@@ -1070,7 +1105,6 @@ button * {
   flex-direction: column;
   align-items: start;
   gap: 20px;
-  min-height: 90px;
   opacity: 1;
   transform: translateX(0);
   transition: opacity 220ms ease-out, transform 220ms ease-out;
@@ -1153,14 +1187,13 @@ button * {
 */
 
 /* Caption: a quote-style citation under the reconstructed sentence, left-aligned to it.
-   Holds the input row's height (input-area min-height) so the sentence never jumps. */
+   Its height is natural — the .prompt-zone overlay (not a reserved min-height) is what
+   keeps the sentence still through the input→citation swap. */
 .solved-caption {
   width: 100%;
-  min-height: 90px;
   display: flex;
   flex-direction: column;
   align-items: start;
-  justify-content: center;
   gap: 10px;
 }
 .solved-kind {
@@ -1249,18 +1282,33 @@ button * {
   line-height: 1;
   color: var(--muted);
 }
-/* One flat pixel square per bounded trajectory bucket. The row stays centered and on one
-   line; cells shrink together on narrow screens instead of producing a ragged wrap. */
-.heat-grid {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  width: 100%;
-  max-width: calc(var(--n) * 22px + (var(--n) - 1) * 5px);
+/* Run ruler (decided 2026-07-24, replacing the bucketed squares): one continuous bar on
+   the PROGRESS ramp, one flat cell per counted try (the raw trajectory — each cell is
+   progressColor at that try's reconstruction %, no bucketing on screen), with
+   a white tick at each solving try and the dropped hole's sentence index under it. Width
+   is RELATIVE — calc'd from --n over --max-n (the longest run on the surface) — so on
+   the leaderboard every bar shares one scale and solve moments align down the table.
+   The padding-bottom reserves the tick-number lane so rows keep their rhythm. */
+.run-ruler {
+  width: calc(min(var(--n) / var(--max-n), 1) * 100%);
+  /* Symmetric block padding: the bottom lane holds the tick numbers, the matching top
+     keeps the BAR (not the box) on the row's center line next to its tag and count. */
+  padding: 15px 0;
 }
-.heat-cell {
+.run-ruler.solo {
+  width: 100%;
+}
+.run-ruler-frame {
+  width: 100%;
+  max-width: 340px;
+}
+.run-bar {
+  position: relative;
+  display: flex;
+  height: 16px;
+}
+.run-cell {
   flex: 1 1 0;
-  aspect-ratio: 1;
   image-rendering: pixelated;
   opacity: 0;
   background-color: var(--surface-hover);
@@ -1268,22 +1316,52 @@ button * {
     opacity 1ms linear var(--show-delay, 0ms),
     background-color 1ms linear var(--color-delay, 0ms);
 }
-.heat-grid.shown .heat-cell {
+.run-ruler.shown .run-cell {
   opacity: 1;
 }
-.heat-grid.colorized .heat-cell {
+.run-ruler.colorized .run-cell {
   background-color: var(--cell-color);
 }
-/* Leaderboard table (#110, decided 2026-07-24): the solved centerpiece when opponents
-   display — one row per entrant sorted by score, its lineup identity color on the tag,
-   its own replayed run as heat squares, its count on the right (DNF muted). One grid,
-   three shared columns, so tags, squares, and counts each align down the table. Sized
-   GENEROUSLY: the tray is bottom-anchored (.tray-results) and the lineup band above is
-   empty by the time it rises, so tall rows spill into that reclaimed space instead of
-   squeezing under keyboard height. */
+/* A solve moment: the tick sits on the RIGHT edge of the solving try's cell (the state
+   after that guess), overhanging the bar like a ruler mark; it fades in when the
+   colorize wave reaches its column. Several secrets dropped by one guess stack their
+   indices vertically under the single shared tick. */
+.run-tick {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  left: calc(var(--at) / var(--n) * 100%);
+  width: 2px;
+  transform: translateX(-50%);
+  background-color: var(--fg);
+  opacity: 0;
+  transition: opacity 1ms linear var(--tick-delay, 0ms);
+}
+.run-ruler.colorized .run-tick {
+  opacity: 1;
+}
+.run-tick-nums {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-family: var(--press);
+  font-size: 10px;
+  line-height: 1;
+  color: var(--fg);
+}
+/* Leaderboard table (#110; moved into the full-screen LeaderboardDialog behind the
+   tray's SEE MORE, decided 2026-07-25): one row per entrant sorted by score, its medal,
+   tag, its own replayed run as a ruler, its count on the right (DNF muted). One grid,
+   shared columns, so medals, tags, rulers, and counts each align down the table. Sized
+   GENEROUSLY — it owns a whole quiet screen now. */
 .leaderboard {
   display: grid;
-  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  grid-template-columns: max-content max-content minmax(0, 1fr) max-content;
   column-gap: clamp(12px, 3vw, 22px);
   /* Row rhythm comes from .lb-row's block padding, NOT row-gap: the collapsed run
      panels are zero-height grid rows, and a row-gap would still surround them. */
@@ -1291,21 +1369,34 @@ button * {
   width: 100%;
   max-width: 520px;
 }
-/* One entrant row. Subgrid keeps its three cells on the table's shared columns; the
-   block padding gives the table its row rhythm. NOT interactive for now (decided
-   2026-07-24) — the run viewer returns as a MODAL (#82). */
+/* One entrant row. Subgrid keeps its cells on the table's shared columns; the block
+   padding gives the table its row rhythm. NOT interactive for now — the run viewer
+   arrives with #82, on this dialog. */
 .lb-row {
   grid-column: 1 / -1;
   display: grid;
   grid-template-columns: subgrid;
   align-items: center;
-  padding: clamp(6px, 1.2vh, 10px) 0;
+  padding: clamp(8px, 1.8vh, 16px) 0;
 }
 /* The table is MONOCHROME except the heat squares (decided 2026-07-24): identity colors
    belong to the characters, and with them gone the tags + counts stay neutral so the
    squares are the single color voice. The ONE exception is the player's YOU tag in the
    solved-word gold (decided 2026-07-24, replacing a tried-and-dropped row border) —
    your row is found by the word, not by a frame. */
+/* Placement medal, first column: 15×15 pixel-art sprites (assets/medals/1-4.png) drawn
+   on the heat ramp's four anchor stops (1 hot cyan → 4 cold crimson), at an exact 2×. */
+.lb-medal {
+  display: block;
+  width: 30px;
+  height: 30px;
+  image-rendering: pixelated;
+}
+/* Tag + ruler wrapper: transparent to the desktop subgrid (its children keep their own
+   columns); the mobile block restyles it into a stacked tag-above-bar column. */
+.lb-main {
+  display: contents;
+}
 .lb-tag {
   font-family: var(--press);
   font-size: 12px;
@@ -1315,12 +1406,6 @@ button * {
 }
 .lb-tag.player {
   color: var(--hole);
-}
-/* Rows share the heat-grid cell language at the share row's full pitch; a row's squares
-   hug the left edge of the shared column (max-width per --n), so short runs read short. */
-.lb-squares {
-  gap: 5px;
-  max-width: calc(var(--n) * 22px + (var(--n) - 1) * 5px);
 }
 .lb-score {
   font-family: var(--press);
@@ -1333,6 +1418,61 @@ button * {
 .lb-score.dnf {
   color: var(--muted);
 }
+/* Actions row: SHARE (primary, first) beside SEE MORE when opponents exist; wraps on
+   the narrowest screens instead of overflowing. */
+.result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+}
+/* The full leaderboard behind SEE MORE (decided 2026-07-25): the native dialog IS the
+   borderless full-screen surface, on the SOLID app background — the animated noise
+   never plays underneath — so the table finally has room and quiet. */
+.lb-dialog[open] {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  padding: 24px 20px;
+  border: 0;
+  outline: 0;
+  background: var(--bg);
+  color: var(--fg);
+  display: flex;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.lb-dialog::backdrop {
+  background: transparent;
+}
+/* Auto margins center the frame but collapse on short viewports so nothing clips. */
+.lb-dialog-frame {
+  width: min(520px, 100%);
+  margin: auto;
+}
+.lb-dialog-close {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.lb-dialog-close:hover {
+  color: var(--fg);
+}
+
 /* Result action: the same flat key language as the keyboard it replaces. */
 .result-action {
   min-width: 164px;
@@ -1850,9 +1990,7 @@ button * {
     align-items: stretch;
     gap: clamp(16px, 4vh, 28px);
   }
-  /* Match the mobile input row's reserved height so the sentence never shifts on solve. */
   .solved-caption {
-    min-height: 72px;
     align-items: stretch;
   }
   /* Compact floating corners: the chip row tightens to 48px optical height, the
@@ -1888,7 +2026,6 @@ button * {
 
   .input-area {
     gap: 14px;
-    min-height: 72px;
   }
   .hint {
     font-size: 16px;
@@ -1927,6 +2064,25 @@ button * {
      keyboard's 4px = 14px. */
   .tray.tray-results {
     padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  }
+
+  /* Leaderboard on a phone: four side-by-side columns don't fit, and the tag column is
+     the worst waste — it moves ABOVE the bar's left edge (.lb-main stacks), so the
+     table tightens to medal | tag-over-ruler | count and the bar gets the freed width. */
+  .leaderboard {
+    grid-template-columns: max-content minmax(0, 1fr) max-content;
+  }
+  .lb-main {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: 0;
+    width: 100%;
+  }
+  .lb-main .run-ruler {
+    /* Stacked under its tag the bar needs no centering top lane — just room for the
+       tick overhang. */
+    padding-top: 4px;
   }
 
   /* Standings lineup (#81): the SAME 2x characters as desktop (they fit a quarter-row

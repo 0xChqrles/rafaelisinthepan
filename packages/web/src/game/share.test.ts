@@ -1,14 +1,18 @@
 // CONTRACT: the solved-screen share (issue #8, packages/web/src/game/share.ts), asserted
 // against the agreed design:
-//   - the per-guess progress trajectory is replayed from the ordered guesses;
-//   - it is collapsed into a BOUNDED number of squares (3..18) on a hardcoded breakpoint
-//     curve (more tries -> more squares), each square = the MEAN progress of its bucket;
+//   - the per-guess progress trajectory (and the solve moments behind the ruler's ticks) are
+//     replayed from the ordered guesses;
+//   - for the plain-text emoji row it is collapsed into a BOUNDED number of squares (3..18)
+//     on a hardcoded breakpoint curve (more tries -> more squares), each square = the MEAN
+//     progress of its bucket;
 //   - the result is shared as a link `<origin>/s/<token>` that the backend unfurls into the
-//     card image (the codec itself is contract-tested in @whippin/shared).
+//     card image — the RAW run since the v2 token, so the card draws the same ruler as the
+//     solved screen (the codec itself is contract-tested in @whippin/shared).
 
 import { describe, it, expect } from 'vitest';
 import {
   progressTrajectory,
+  solveTicks,
   squareCount,
   bucketMeans,
   emojiRow,
@@ -19,7 +23,7 @@ import {
   MAX_SQUARES,
 } from './share';
 import { computeProgress } from './scoring';
-import { decodeResult, type RankMap, type RuntimeHole } from '@whippin/shared';
+import { decodeResult, progressEmoji, type RankMap, type RuntimeHole } from '@whippin/shared';
 
 // A rank map for one secret with N entries -> N keys, `wI` at rank I (so `w0` == solved).
 function mk(N: number): RankMap[string] {
@@ -159,22 +163,50 @@ describe('progressTrajectory — replay the ordered guesses', () => {
   });
 });
 
-describe('emojiRow — one heat emoji per square (plain-text fallback for the card)', () => {
-  it('buckets on the heat ramp arc: <20 red, <40 orange, <60 yellow, <80 green, >=80 blue', () => {
-    // One value squarely inside each band.
-    expect(emojiRow([10, 30, 50, 70, 90])).toBe('🟥🟧🟨🟩🟦');
+describe('solveTicks — solve moments per distinct secret, in sentence order', () => {
+  it('records the 1-based try that solved each secret, in first-occurrence order', () => {
+    // b's map only knows 'bb' (its secret): try 1 misses everything, try 2 solves b,
+    // try 4 solves a — so the sentence-order result is [4, 2], not guess order.
+    const ranks: RankMap = { a: mk(1000), b: { bb: { word: 'bb', rank: 0 } } };
+    const holes: RuntimeHole[] = [hole('a', 300), { ...hole('b', 200), pos: 3 }];
+    expect(solveTicks(holes, ranks, ['zzz', 'bb', 'w50', 'w0'])).toEqual([4, 2]);
   });
 
-  it('is half-open at each boundary (20/40/60/80 fall into the HIGHER band)', () => {
-    expect(emojiRow([19, 20])).toBe('🟥🟧'); // 19 red, 20 orange
-    expect(emojiRow([39, 40])).toBe('🟧🟨');
-    expect(emojiRow([59, 60])).toBe('🟨🟩');
-    expect(emojiRow([79, 80])).toBe('🟩🟦');
+  it('one guess dropping several secrets gives each the SAME try (one shared tick)', () => {
+    const ranks: RankMap = { a: mk(1000), b: mk(1000) };
+    const holes: RuntimeHole[] = [hole('a', 300), { ...hole('b', 300), pos: 2 }];
+    expect(solveTicks(holes, ranks, ['w200', 'w0'])).toEqual([2, 2]);
   });
 
-  it('covers the extremes: 0 -> red, 100 -> blue', () => {
-    expect(emojiRow([0])).toBe('🟥');
-    expect(emojiRow([100])).toBe('🟦');
+  it('a run that never solves a secret leaves null for it (DNF opponents)', () => {
+    const ranks: RankMap = { a: mk(1000), b: mk(1000) };
+    const holes: RuntimeHole[] = [hole('a', 300), { ...hole('b', 300), pos: 2 }];
+    expect(solveTicks(holes, ranks, ['w200', 'w100'])).toEqual([null, null]);
+  });
+
+  it('a repeated secret is ONE entry: all its occurrences solve on the same guess', () => {
+    const ranks: RankMap = { chat: mk(1000) };
+    const holes: RuntimeHole[] = [
+      { pos: 1, secret: 'chat', word: 'animal', rank: 300, startRank: 300 },
+      { pos: 4, secret: 'chat', word: 'bête', rank: 300, startRank: 300 },
+    ];
+    expect(solveTicks(holes, ranks, ['w200', 'w0'])).toEqual([2]);
+  });
+});
+
+describe('emojiRow — the RULER in plain text (fallback where no card image renders)', () => {
+  it('walks the same PROGRESS ramp as the ruler, not a second palette', () => {
+    // One value squarely inside each band; the bands themselves are contract-tested
+    // against the ramp in @whippin/shared (progressColor.test.ts).
+    expect(emojiRow([10, 40, 50, 60, 70, 90])).toBe('🟦🟩🟨🟧🟥🟪');
+    expect(emojiRow([10, 40, 50, 60, 70, 90])).toBe(
+      [10, 40, 50, 60, 70, 90].map(progressEmoji).join(''),
+    );
+  });
+
+  it('ends a solved run on the ramp top, distinct from an untouched start', () => {
+    expect(emojiRow([100])).toBe('🟪');
+    expect(emojiRow([0])).toBe('🟦');
   });
 
   it('emits exactly one emoji per input square (row length = input length)', () => {
@@ -188,7 +220,7 @@ describe('emojiRow — one heat emoji per square (plain-text fallback for the ca
 describe('shareText — headline, emoji row, blank line, URL in order', () => {
   it('composes the four parts on the agreed lines', () => {
     const text = shareText('Whippin #12 — 45 tries', [10, 50, 90], 'https://whippin.ai/s/tok');
-    expect(text).toBe('Whippin #12 — 45 tries\n🟥🟨🟦\n\nhttps://whippin.ai/s/tok');
+    expect(text).toBe('Whippin #12 — 45 tries\n🟦🟨🟪\n\nhttps://whippin.ai/s/tok');
   });
 
   it('keeps the row attached to the headline and a blank line before the (unfurling) URL', () => {
@@ -204,8 +236,15 @@ describe('shareText — headline, emoji row, blank line, URL in order', () => {
 });
 
 describe('shareUrl — result packed into a /s/<token> link', () => {
-  // A real dayNumber (days since 1970 ≈ 20638 today) and a 3-try perfect game (3 squares).
-  const result = { lang: 'fr', dayNumber: 20638, score: 3, squares: [40, 70, 100] };
+  // A real dayNumber (days since 1970 ≈ 20638 today) and a 3-try perfect game: the token
+  // carries the RAW run + its solve moments, so the card draws the same ruler as the screen.
+  const result = {
+    lang: 'fr',
+    dayNumber: 20638,
+    score: 3,
+    trajectory: [40, 70, 100],
+    solvedAt: [1, 2, 3],
+  };
 
   it('builds <origin>/s/<token> and the token round-trips the result', () => {
     const url = shareUrl('https://whippin.ai', result);
@@ -214,7 +253,8 @@ describe('shareUrl — result packed into a /s/<token> link', () => {
     expect(decoded?.lang).toBe('fr');
     expect(decoded?.dayNumber).toBe(20638);
     expect(decoded?.score).toBe(3);
-    expect(decoded?.squares).toHaveLength(3);
+    expect(decoded?.trajectory).toHaveLength(3); // one ruler cell per counted try
+    expect(decoded?.solvedAt).toEqual([1, 2, 3]); // one ruler tick per secret
   });
 
   it('carries no spoilers — the sentence/words never appear in the link', () => {

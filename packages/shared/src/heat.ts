@@ -1,8 +1,8 @@
-// The "heatmap" gradient: cold (crimson) -> hot (cyan). Colors the rank exponents +
-// floating hits (web) and the share card's heat squares (backend-rendered) — cross-cutting
-// because the card must match the game's own ramp exactly. The progress
-// bar and the selector badge use the OTHER ramp (progressColor.ts): a single ramp was
-// tried and reverted — heat reads better on the exponents/squares (decided 2026-07-05).
+// The "heatmap" gradient: cold (crimson) -> hot (cyan). Colors the rank exponents + floating
+// hits — that is now ALL it colors. The progress bar, the selector badge, the run rulers (on
+// screen AND on the share card) and the share text's emoji row use the OTHER ramp
+// (progressColor.ts): a single ramp was tried and reverted — heat reads better on the
+// exponents (decided 2026-07-05).
 // heat in [0,1]: 0 = cold, 1 = hot (near the goal / solved).
 import { rampColor, type RampStop } from './ramp';
 

@@ -5,10 +5,9 @@ import type { LineupModel } from '../game/benchmark';
 import { lineupModel, lineupEvents } from '../game/benchmark';
 import { t } from '../i18n';
 import playerIdleSheet from '../assets/characters/player-idle.png';
+import fableIdleSheet from '../assets/characters/fable-idle.png';
+import kimiIdleSheet from '../assets/characters/kimi-idle.png';
 import gptIdleSheet from '../assets/characters/gpt-idle.png';
-import fableSprite from '../assets/characters/fable.png';
-import kimiSprite from '../assets/characters/kimi.png';
-import gptSprite from '../assets/characters/gpt.png';
 import {
   BOT_KEYS,
   CHARACTER_PALETTES,
@@ -20,12 +19,7 @@ import {
 } from './teleportStrips';
 import type { CharacterKey } from './teleportStrips';
 
-// One pixel character per canonical display slot (same order as DISPLAY_MODEL_IDS): an
-// opponent wears the sprite of its position in that fixed order, whatever subset is present.
-// TEMPORARY art (assets/characters/*.png) — hand-drawn 22x32 drafts.
-const BOT_SPRITES = [fableSprite, kimiSprite, gptSprite] as const;
-
-// Identity colors, one per display slot (same order as BOT_SPRITES). The name under a
+// Identity colors, one per display slot (same order as BOT_KEYS). The name under a
 // character wears its color, echoing the colored accents drawn INTO that sprite's art
 // (currently the eyes; the outlines are white) — the hexes live in CHARACTER_PALETTES
 // (teleportStrips.ts, the base tones), the ONE palette source shared with the teleport
@@ -59,12 +53,14 @@ interface TeleportState {
 const characterKey = (entrant: { player: boolean; sprite: number }): CharacterKey =>
   entrant.player ? 'player' : BOT_KEYS[entrant.sprite];
 
-// Idle spritesheets, per character: drawn frames CSS-stepped at 100ms each. The sheet
-// URL lives here; the frame geometry/count lives in the matching `.lineup-idle.<key>`
-// CSS class (player: 8 x 22x31; gpt: 4 x 32x32) — keep the two in sync when a sheet
-// changes. A character without a sheet stands as its static <img> draft.
-const IDLE_SHEETS: Partial<Record<CharacterKey, string>> = {
+// Idle spritesheets, one per character: drawn frames CSS-stepped. The sheet URL lives
+// here; the frame geometry/count/pacing lives in the matching `.lineup-idle.<key>`
+// CSS class (player: 8 x 22x31; fable: 4 x 32x35; kimi: 4 x 28x31; gpt: 4 x 32x32) —
+// keep the two in sync when a sheet changes.
+const IDLE_SHEETS: Record<CharacterKey, string> = {
   player: playerIdleSheet,
+  fable: fableIdleSheet,
+  kimi: kimiIdleSheet,
   gpt: gptIdleSheet,
 };
 
@@ -232,9 +228,7 @@ export default function StandingsLineup({
         }
       >
         {model.entrants.map((entrant, index) => {
-          // A character with an idle sheet stands ANIMATED (CSS-stepped frames); the
-          // others keep their static draft <img>s until their own sheets exist.
-          const idleSheet = IDLE_SHEETS[characterKey(entrant)];
+          const character = characterKey(entrant);
           // Until the swap tick, a mid-teleport lineup keeps rendering the PRE-swap
           // positions; at the swap every slot takes its new index and the fast
           // teleporting transition (SWAP_MS) slides it across during the shared flash.
@@ -255,16 +249,16 @@ export default function StandingsLineup({
           if (exitStarted && !exitDone) {
             effect =
               exitLocal < TELEPORT_FRAMES.out
-                ? { src: teleportStrip(characterKey(entrant), 'out'), frame: exitLocal }
+                ? { src: teleportStrip(character, 'out'), frame: exitLocal }
                 : { src: teleportSharedUrl, frame: exitLocal - TELEPORT_FRAMES.out };
           } else if (!exitStarted && teleport?.moved.has(entrant.key)) {
             const { tick } = teleport;
             effect =
               tick < SWAP_TICK
-                ? { src: teleportStrip(characterKey(entrant), 'out'), frame: tick }
+                ? { src: teleportStrip(character, 'out'), frame: tick }
                 : tick < IN_TICK
                   ? { src: teleportSharedUrl, frame: tick - SWAP_TICK }
-                  : { src: teleportStrip(characterKey(entrant), 'in'), frame: tick - IN_TICK };
+                  : { src: teleportStrip(character, 'in'), frame: tick - IN_TICK };
           }
           // The count that triggered the teleport lands only AFTER it: every slot keeps
           // its pre-swap tries for the whole animation, and the release replays the
@@ -307,13 +301,11 @@ export default function StandingsLineup({
                       backgroundPositionX: `${-effect.frame * TELEPORT_FRAME_W}px`,
                     }}
                   />
-                ) : exitDone ? null : idleSheet ? (
+                ) : exitDone ? null : (
                   <span
-                    className={`lineup-idle ${characterKey(entrant)}`}
-                    style={{ backgroundImage: `url(${idleSheet})` }}
+                    className={`lineup-idle ${character}`}
+                    style={{ backgroundImage: `url(${IDLE_SHEETS[character]})` }}
                   />
-                ) : (
-                  <img src={BOT_SPRITES[entrant.sprite]} alt="" aria-hidden />
                 )}
               </span>
               {/* Keyed by value: a changed count (the player's, on each counted try)

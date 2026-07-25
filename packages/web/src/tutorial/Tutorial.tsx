@@ -12,7 +12,7 @@ import SkipIcon from '../assets/icons/skip.svg?react';
 import { STAGGER_MS, FLOATING_HIT_INTRO_MS } from '../screens/Game';
 import MixWord, { SCRAMBLE_MS } from './MixWord';
 import CoachText, { richToPlain } from './CoachText';
-import { progressTrajectory } from '../game/share';
+import { progressTrajectory, solveTicks } from '../game/share';
 import { buildPrefixSet, canExtend } from '../game/keyboard';
 import useVocab from '../hooks/useVocab';
 import { fold } from '@whippin/shared';
@@ -47,6 +47,7 @@ import { isPadWord, type TutorialStage } from './script';
 
 // Gated-empty sets: every letter greys out, Enter greys out.
 const NO_WORDS = new Set<string>();
+const noop = () => {};
 
 // Consecutive MISSes in the find step before the prompt swaps to the reminder.
 const NUDGE_AFTER_MISSES = 3;
@@ -390,9 +391,22 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
               startRank={puzzle.holes[0].start_rank}
               ladder={ladder}
             />
-            {/* Empty input slot: reserves the row so the prompt appearing on the
-                next step never shifts the word. */}
-            <div className="input-area" aria-hidden="true" />
+            {/* Hidden input slot: the REAL prompt structure, invisible and inert,
+                reserves its natural height so the prompt appearing on the next step
+                never shifts the word (no hardcoded min-height, 2026-07-25). */}
+            <div className="input-area retired" aria-hidden="true">
+              <WordInput
+                value=""
+                history={[]}
+                onType={noop}
+                onBackspace={noop}
+                onSubmit={noop}
+                onReplace={noop}
+                invalidSignal={0}
+                active={false}
+              />
+              <p className="hint"> </p>
+            </div>
           </>
         ) : (
           <>
@@ -428,6 +442,7 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
           <SolvedScreen
             guessCount={tries}
             trajectory={progressTrajectory(freshHoles(stage), puzzle.ranks, [...triedRef.current])}
+            solvedAt={solveTicks(freshHoles(stage), puzzle.ranks, [...triedRef.current])}
             dayNumber={null}
             lang={lang}
             action={{
