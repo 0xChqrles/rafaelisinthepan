@@ -815,7 +815,7 @@ def parse_form_args(pairs):
     mapping = {}
     for raw in pairs or ():
         word, sep, feature = raw.partition("=")
-        word, feature = word.strip().lower(), feature.strip()
+        word, feature = word.strip().lower(), feature.strip().lower()
         if not sep or not word or not feature:
             die(f"--form attend 'MOT=TRAIT' (reçu : '{raw}').")
         key = slug(word)
@@ -840,6 +840,9 @@ def load_form_table(lang, disabled=False):
         die(f"table lemme+trait→forme introuvable : {path}\n"
             f"         construis-la avec scripts/build_forms.py (pnpm forms:{lang}), "
             f"ou passe --no-inflect pour t'en passer.")
+    # Loaded eagerly, before the vectors, so a missing or corrupt table fails fast.
+    # Deferring the parse would buy nothing: deciding whether a secret is even a verb
+    # reads the table, so every fr run consults it on its first hole anyway.
     return load_forms(path)
 
 
@@ -855,8 +858,15 @@ class FormResolver:
         self.explicit = explicit or {}
         self.interactive = interactive
         self.used = {}     # secret slug -> (secret, feature, rewrite count)
+        # every secret slug the run settled a form for — --form keys outside it named
+        # a word no hole used, which is nearly always a typo worth surfacing.
         self._chosen = {}  # secret slug -> feature or None
         self._verb_lemmas = None
+
+    @property
+    def answered(self):
+        """The secret slugs this run actually settled a form for."""
+        return frozenset(self._chosen)
 
     @property
     def verb_lemmas(self):
@@ -889,16 +899,23 @@ class FormResolver:
         return tuple(sorted({feat for _lemma, feat in self.table.entries.get(word, ())}))
 
     def realize(self, word, feature):
-        """`word` re-inflected to `feature`, or None when its paradigm has no such form.
-        Only a POS-admitted form is a candidate, and its own lemmas are tried in table
-        order so the answer is deterministic."""
+        """`word` re-inflected to `feature`, or None when nothing can be said safely.
+
+        Two refusals, both silent and both deliberate. A form the POS gate does not
+        admit is not read as a verb at all. And a form carrying SEVERAL verb lemmas is
+        declined outright rather than arbitrated: "durent" is the present of durer AND
+        the past historic of devoir, Lexique is right about both, and the embedding
+        vector means the first — so realizing devoir's paradigm would print "dois" for
+        a word the geometry placed as "durer". Choosing the more frequent paradigm only
+        makes that failure quieter; there is no evidence here to choose WITH. 61 forms
+        of 64,834 lose their agreement this way and simply keep the dictionary form."""
         if self.table is None or word not in self.table.dominant:
             return None
-        for lemma, _feat in self.table.entries.get(word, ()):
-            form = self.table.realize.get((lemma, feature))
-            if form is not None:
-                return form
-        return None
+        entries = self.table.entries.get(word, ())
+        lemmas = {lemma for lemma, _feat in entries}
+        if len(lemmas) != 1:
+            return None
+        return self.table.realize.get((next(iter(lemmas)), feature))
 
     def _prompt(self, secret, cands):
         """Ask which form the sentence puts this secret in (TTY only).
@@ -941,10 +958,12 @@ class FormResolver:
         """The form this hole's displayed words must agree with, or None for no pass.
 
         The secret decides it: its own Lexique row IS the answer whenever that row is
-        unambiguous, so the ordinary sentence asks nothing. --form settles it off a
-        TTY; without either, a batch run applies NO agreement, which is what keeps its
-        output byte-identical to before. A secret that could not be a verb at all is
-        never asked about (see could_be_a_verb) — most secrets are nouns."""
+        unambiguous, and it decides EVERYWHERE — a batch run agrees too, which is the
+        whole point of reading the form off the secret rather than asking for it. Only
+        an ambiguous or unknown secret needs a human: --form off a TTY, the prompt on
+        one, and no agreement at all when neither answers. --no-inflect is what
+        reproduces the pre-addendum output byte for byte. A secret that could not be a
+        verb is never asked about (see could_be_a_verb) — most secrets are nouns."""
         if self.table is None:
             return None
         key = slug(secret)
@@ -952,7 +971,8 @@ class FormResolver:
             return self._chosen[key]
         feature = self.explicit.get(key)
         if feature is not None and feature not in self.table.features:
-            die(f"--form : « {feature} » n'est pas un trait connu de la table '{key}'.")
+            die(f"--form : « {feature} » n'est pas un trait connu de la table des "
+                f"formes (« {secret} »).")
         if feature is None:
             cands = self.features_of(secret)
             if len(cands) == 1:
@@ -973,18 +993,28 @@ class FormResolver:
         exponent N while typing it read M < N, a clue contradicting its own distance.
 
         Rewriting a group means rewriting every entry that carries it, aliases included,
-        so typing any form of the group displays the agreed one."""
+        so typing any form of the group displays the agreed one.
+
+        Taking a slug from a FARTHER group is allowed (closest-first, as expand_aliases
+        already resolves collisions) but it is not purely additive: if that key was the
+        farther group's only one, the group leaves the map entirely and N — the count of
+        distinct ranks the progress formula divides by — drops by one. Numerically
+        negligible against TOP_K, worth knowing it happens."""
         feature = self.feature_for(secret, donors)
         if feature is None or donors is None:
             return {}
-        by_rank = {}
+        # Snapshot both the keys and each group's canonical BEFORE rewriting anything:
+        # a closer group may reclaim one of these keys on an earlier pass, and reading
+        # the word back out of the map would then hand this group the other one's form.
+        by_rank, canonicals = {}, {}
         for key, entry in rank_map.items():
             by_rank.setdefault(entry["rank"], []).append(key)
+            canonicals.setdefault(entry["rank"], entry["word"])
         changed = {}
         for rank, keys in sorted(by_rank.items()):
             if rank == 0 or rank > start_rank:
                 continue
-            canonical = rank_map[keys[0]]["word"]
+            canonical = canonicals[rank]
             form = self.realize(canonical, feature)
             if form is None or form == canonical:
                 continue
@@ -995,7 +1025,8 @@ class FormResolver:
             if owner is not None and owner["rank"] < rank:
                 continue  # a closer group owns that slug: decline rather than contradict it
             for key in keys:
-                rank_map[key]["word"] = form
+                if rank_map[key]["rank"] == rank:  # a reclaimed key belongs elsewhere now
+                    rank_map[key]["word"] = form
             rank_map[s] = {"word": form, "rank": rank}
             changed[rank] = (canonical, form)
         if changed:
@@ -1241,10 +1272,11 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
         dictionary forms — nothing is agreed until there is a hole to agree with."""
         termios.tcsetattr(fd, termios.TCSADRAIN, saved)
         try:
-            if forms is not None:
-                forms.apply(rank_map, start_rank, secret, donors)
-            return choose_start_display(start, start_rank, donors,
-                                        default=rank_map[slug(start)]["word"])
+            agreed = forms.apply(rank_map, start_rank, secret, donors) \
+                if forms is not None else {}
+            return choose_start_display(
+                start, start_rank, donors,
+                default=agreed.get(start_rank, (start, start))[1])
         finally:
             tty.setcbreak(fd)
 
@@ -1468,13 +1500,15 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
         start_rank = rank_map[slug(start)]["rank"]
         # Agree every word this hole can ever display with the sentence (addendum 2),
         # the start word included — it is just the rank == start_rank group.
-        if forms is not None:
-            forms.apply(rank_map, start_rank, canonical_secret, donors)
+        agreed = forms.apply(rank_map, start_rank, canonical_secret, donors) \
+            if forms is not None else {}
         # The band only offers forms that HAVE a vector; the sentence may demand one it
         # lacks. The override is DISPLAY only (#119 addendum) — start_rank is untouched,
-        # and it defaults to whatever the agreement pass just made of the band word.
-        start_display = choose_start_display(start, start_rank, donors,
-                                             default=rank_map[slug(start)]["word"])
+        # and it defaults to what the pass made of the band word. Read from `agreed`,
+        # NOT from rank_map[slug(start)]: a closer group's rewrite may have reclaimed
+        # that slug, and its word at ITS rank is not this hole's hint.
+        start_display = choose_start_display(
+            start, start_rank, donors, default=agreed.get(start_rank, (start, start))[1])
         alias_start_display(rank_map, start, start_display, start_rank)
 
         for pos, (secret, prefix, suffix) in occurrences:
@@ -1761,6 +1795,12 @@ def main():
     for secret_word, feature, count in forms.used.values():
         print(f"  secret « {secret_word} » : {count} mot(s) affiché(s) accordé(s) "
               f"au trait {feature}")
+    # A --form that named a word no hole used is nearly always a typo in the WORD.
+    # Say so now: after publishing, the puzzle just quietly lacks its agreement.
+    if args.no_inflect and explicit_forms:
+        print("  attention : --form est ignoré sous --no-inflect.", file=sys.stderr)
+    for key in sorted(set(explicit_forms) - forms.answered):
+        print(f"  attention : --form « {key} » n'a servi à aucun trou.", file=sys.stderr)
     if source:
         print("  source : " + ", ".join(f"{k}={v}" for k, v in source.items()))
 
