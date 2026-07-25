@@ -56,6 +56,7 @@ packages/
       glove_neighbors.py      en paths + derived .kv cache (thin wrapper over the above)
       french_neighbors.py     fr paths + derived .kv cache (thin wrapper)
       start_word.py           start/hint-word selection (rank band 50-150)
+      distances.py            stdlib-only: dq quantization + road clustering (#115)
       gen_phrase.py           one sentence -> one self-contained puzzle JSON
     embedding/<lang>/...      raw + *_reduced vectors + derived .kv caches
     wordlist/<lang>.txt.gz    versioned hors-dico reference wordlist (#38); .cache/ gitignored
@@ -182,7 +183,9 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
       "suffix": "" }                            // OPTIONAL display text after the blank
   ],
   "ranks": {                                    // keyed by SECRET slug
-    "foret": { "<input-slug>": { "word": "<accented>", "rank": 12 }, ... }
+    "foret": {                                  //   dq/road: OPTIONAL to consumers (#115)
+      "<input-slug>": { "word": "<accented>", "rank": 12, "dq": 231, "road": 1 }, ...
+    }
   },
   "source": {                                   // OPTIONAL origin metadata (#5); ACCENTS KEPT
     "kind": "book",                             //   book | movie | music | quote | poem | … (open set)
@@ -278,6 +281,32 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   selected secrets in one lemma group are rejected at generation.
 - **Rank semantics:** secret = `rank 0` (perfect); nearest lemma group = `1`; larger =
   farther. Alias keys share their group's rank.
+- **Every ranked group also carries its real geometry (`dq`, `road`) — #115, decided
+  2026-07-25.** Ranks are dense and uniformly spaced by construction, so they erase the
+  neighborhood's clumps and cliffs; cosine distance is only available at GENERATION time
+  (the client never sees vectors), so generation ships it:
+  - **`dq` — the quantized distance to the secret, one byte, per hole.** With `s1` = the
+    rank-1 group's similarity and `smin` = the LAST kept group's,
+    `dq = round(255 * (s − smin) / (s1 − smin))` → **rank 1 = 255, the farthest kept
+    group = 0**, non-increasing in between. The **per-hole affine normalization is
+    lossless for consumers**: what they compute are RATIOS of similarity DIFFERENCES,
+    which an affine map preserves exactly, so the journey ratio is
+    `(dq − dq_start) / (255 − dq_start)` with no floats shipped. Present on **every rank
+    ≥ 1 entry** of a newly generated puzzle; **the secret's own entry (rank 0) carries
+    NONE** — the terminus is off-scale by nature. A flat span (`s1 == smin`) is a **hard
+    error**, never silent all-zero `dq`.
+  - **`road` — which cluster of the NEAR neighborhood the group sits in.** The **top-150
+    groups only** (the zone where the routes fork; beyond it the far field is one
+    undifferentiated trunk, so no `road` there). Deterministic average-linkage
+    agglomerative clustering over cosine distance, best `k ∈ {2,3,4}` by mean silhouette,
+    **falling back to ONE road (all `road: 0`) below `ROAD_MIN_SILHOUETTE`** — mandatory,
+    because some neighborhoods genuinely have a single facet. Roads are numbered by their
+    **closest member's rank**, so the road holding rank 1 is `road: 0`. `--no-roads`
+    skips them; **`dq` has no opt-out** — it is part of the schema.
+  - Both are **GROUP properties**, like `word`/`rank`: every alias key of a lemma group
+    carries its group's values, and slug-collision resolution keeps the winning (closest)
+    group's. Both are **OPTIONAL to every consumer** — no puzzle published before #115
+    carries them, and they must keep working untouched.
 - **Slug collisions** (`côté`/`coté` → `cote`): keep the **smallest-rank** entry
   (built closest-first) and display its `word`. Resolved **silently** — generation
   prints no collision output.
@@ -533,7 +562,9 @@ pnpm vocab:fr         # -> packages/web/public/vocab/fr.json
 #    Puzzle -> packages/generation/output/word/<lang>/ (then `pnpm puzzle:publish` it).
 #    NOTE: gen:phrase ALSO rewrites web/public/vocab/<lang>.json as a side effect.
 #    Reads wordlist/<lang>.lemmas.tsv.gz for lemma grouping (#104; missing table = hard
-#    error, --no-lemmas to skip).
+#    error, --no-lemmas to skip). Every ranked group is annotated with its dq distance
+#    and (top-150 groups) its road cluster (#115); --no-roads drops the road fields,
+#    dq has no opt-out.
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 distinct words; all occurrences hole (no `--`)
 
 # 4. Optionally benchmark the generated puzzle offline before publish. --model is required
@@ -605,7 +636,23 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
 *(Safe to update without touching the invariants above.)*
 
 - All paths below are under `packages/`. **Tunables:** `TOP_N = 400000` (reduce),
-  `TOP_K = 10000` (gen), start-rank band `50–150` (`start_word.py`).
+  `TOP_K = 10000` (gen), start-rank band `50–150` (`start_word.py`),
+  `ROAD_TOP = 150` / `ROAD_KS = (2,3,4)` / `ROAD_MIN_SILHOUETTE = 0.05` (`distances.py`).
+- **Distance annotations (#115):** `distances.py` is stdlib-only (pure arithmetic over
+  float sequences), so the contract tests keep running without numpy/gensim and the
+  150-point clustering costs a fraction of a second per secret. `gen_phrase`'s
+  `build_puzzle_rank_map` is the ONE entry point both authoring paths use — it wraps the
+  structural `build_merged_rank_map` (#104) and stamps `dq`/`road` onto every entry by
+  its rank, which is what makes "aliases share their group's values" true by
+  construction. **Previously published days keep legacy (annotation-free) behavior until
+  they are regenerated and republished** — a curator's call, not part of #115. Measured
+  on a real fr puzzle (`amer` / `plissés` / `grincement`, ~39k keys per secret):
+  **802 KB → 828 KB gzipped (+3.2%)**, raw 5.9 MB → 7.1 MB, and the map is otherwise
+  byte-identical. On that puzzle two secrets split into genuinely meaningful facets
+  (`amer` → figurative vs taste; `plissés` → participles vs garment nouns) while
+  `grincement` scored its BEST silhouette (0.19) on a degenerate 149/1 split — the
+  metric rewards isolating an outlier, so a minimum road size is worth considering when
+  Part 3 (#115's route modal) puts roads on screen.
 - **Offline LLM benchmark harness (#68, Kimi provider #91, native sessions #93,
   decided 2026-07-19).** The
   dedicated `benchmark` workspace owns `benchmark/scripts/llm_play.py`, its tests, and

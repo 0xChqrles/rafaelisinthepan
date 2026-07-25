@@ -216,6 +216,39 @@ describe('parsePuzzle (shape validation)', () => {
     expect(() => parsePuzzle({ ...valid(), benchmark })).toThrow(/unique/);
   });
 
+  // Optional distance annotations (#115): dq/road are group properties generation adds
+  // to every ranked entry. Every puzzle published before them lacks them, so ABSENT
+  // stays valid; a PRESENT one must be a well-formed number.
+  it('accepts rank entries with and without dq/road (legacy puzzles stay valid)', () => {
+    const p = valid();
+    expect('dq' in p.ranks.foret.bois).toBe(false);
+    expect(parsePuzzle(p)).toEqual(p);
+
+    const annotated = valid();
+    annotated.ranks = {
+      foret: {
+        bois: { word: 'bois', rank: 87, dq: 231, road: 1 },
+        arbre: { word: 'arbre', rank: 3, dq: 250 }, // beyond the roads, dq alone
+        foret: { word: 'forêt', rank: 0 }, // the secret: terminus, no annotations
+      },
+    } as typeof annotated.ranks;
+    expect(parsePuzzle(annotated)).toEqual(annotated);
+  });
+
+  it('rejects an out-of-range or non-numeric dq, and a negative road', () => {
+    const bad = (entry: Record<string, unknown>) => ({
+      ...valid(),
+      ranks: { foret: { bois: { word: 'bois', rank: 87, ...entry } } },
+    });
+    expect(() => parsePuzzle(bad({ dq: 300 }))).toThrow(/dq/);
+    expect(() => parsePuzzle(bad({ dq: -1 }))).toThrow(/dq/);
+    expect(() => parsePuzzle(bad({ dq: 12.5 }))).toThrow(/dq/);
+    expect(() => parsePuzzle(bad({ dq: 'x' }))).toThrow(/dq/);
+    expect(() => parsePuzzle(bad({ road: -1 }))).toThrow(/road/);
+    expect(() => parsePuzzle(bad({ road: 1.5 }))).toThrow(/road/);
+    expect(() => parsePuzzle(bad({ road: '0' }))).toThrow(/road/);
+  });
+
   // Optional hole affixes: display-only text around the blank (leading clitic /
   // punctuation). Not load-bearing, so a hole is valid with or without them, and when
   // present they must survive to the front (Phrase renders them around the blank).

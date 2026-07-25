@@ -24,6 +24,16 @@ export interface Hole {
 export interface RankEntry {
   word: string;
   rank: number;
+  // Real geometry the uniform ranks erase (#115), computed at generation time from the
+  // vectors the client never sees. Both are GROUP properties: every alias key of a
+  // lemma group carries its group's values, exactly like `word`/`rank`. Both are
+  // OPTIONAL — every puzzle published before #115 lacks them and must keep working.
+  // Quantized distance to the secret, per hole: 255 at rank 1, 0 at the farthest kept
+  // group. Absent on the secret's own entry (rank 0) — the terminus is off-scale.
+  dq?: number;
+  // Which cluster of the near neighborhood the group sits in (0 = the road holding
+  // rank 1). Top-150 groups only; beyond them the far field is one trunk.
+  road?: number;
 }
 
 // ranks[secretSlug][inputSlug] -> { word, rank }

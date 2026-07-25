@@ -71,12 +71,19 @@ FORMS = gen_phrase.invert_lemmas(TABLE)
 VOCAB = ["jardin", "doucement", "vermine", "accoutumé", "accoutumés", "accoutume",
          "accoutumer", "chante", "amuse", "amuser", "amusés"]
 VSET = set(VOCAB)
+# The walk is stubbed, but the road clustering (#115) reads the neighbors' vectors, so
+# the fake embedding has to be subscriptable. The coordinates are arbitrary: what the
+# donor contract cares about is WHICH word the walk started from, not where it landed.
+KV = {w: [float(i + 1), 1.0, 0.0] for i, w in enumerate(VOCAB)}
 
 SENTENCE = "tu t'accoutumes doucement au jardin."
+# Every stub walk must leave at least TWO groups once the secret's own is dropped, with
+# distinct similarities: a one-group neighborhood has no distance span to quantize, and
+# #115 makes that a hard error rather than shipping all-zero dq.
 RANKINGS = {
     "accoutume": [("accoutumés", 0, 0.99), ("vermine", 1, 0.8), ("jardin", 2, 0.7)],
 }
-DEFAULT_RANKING = [("vermine", 0, 0.9), ("jardin", 1, 0.8)]
+DEFAULT_RANKING = [("vermine", 0, 0.9), ("jardin", 1, 0.8), ("chante", 2, 0.7)]
 
 
 def _words(sentence=SENTENCE):
@@ -111,7 +118,7 @@ def _generate(monkeypatch, selectors=("accoutumes", "doucement", "jardin"),
     calls = _stub_closest(monkeypatch)
     holes, ranks = gen_phrase.holes_from_words(
         list(selectors), _words(sentence), FR, "fr",
-        kv=object(), V=VOCAB, M=object(), Vset=VSET,
+        kv=KV, V=VOCAB, M=object(), Vset=VSET,
         lemma_table=TABLE, forms_by_lemma=FORMS,
         donors=_resolver(explicit),
     )
@@ -145,12 +152,13 @@ def test_borrowed_ranks_are_the_donors_own_ranks(monkeypatch):
 
     # Everything past the secret's own group is exactly what a map built directly on
     # the donor would hold: the substitution moves the walk's origin, nothing else.
-    _merged, donor_map = gen_phrase.build_merged_rank_map(
-        "accoutume", RANKINGS["accoutume"], TABLE, FORMS, VSET)
+    _merged, donor_map = gen_phrase.build_puzzle_rank_map(
+        "accoutume", RANKINGS["accoutume"], TABLE, FORMS, VSET, kv=KV)
     far = {k: v for k, v in ranks["accoutumes"].items() if v["rank"] > 0}
+    # identical entry for entry — the borrowed geometry (#115 dq/road) included.
     assert far == {k: v for k, v in donor_map.items() if v["rank"] > 0}
-    assert far == {"vermine": {"word": "vermine", "rank": 1},
-                   "jardin": {"word": "jardin", "rank": 2}}
+    assert {k: (v["word"], v["rank"]) for k, v in far.items()} == {
+        "vermine": ("vermine", 1), "jardin": ("jardin", 2)}
 
 
 def test_missing_form_without_any_candidate_keeps_the_reduction_error(monkeypatch, capsys):
@@ -159,7 +167,7 @@ def test_missing_form_without_any_candidate_keeps_the_reduction_error(monkeypatc
         gen_phrase.holes_from_words(
             ["zorglub", "doucement", "jardin"],
             _words("tu zorglub doucement au jardin."), FR, "fr",
-            kv=object(), V=VOCAB, M=object(), Vset=VSET,
+            kv=KV, V=VOCAB, M=object(), Vset=VSET,
             lemma_table=TABLE, forms_by_lemma=FORMS, donors=_resolver(),
         )
     assert "n'a pas survécu à la réduction" in capsys.readouterr().err
@@ -299,7 +307,7 @@ def test_selector_asks_for_the_donor_before_ranking(monkeypatch, capsys):
     donors = _resolver(interactive=True)
     try:
         holes, ranks = gen_phrase.select_holes_interactive(
-            _words(), FR, "fr", kv=object(), V=VOCAB, M=object(), Vset=VSET,
+            _words(), FR, "fr", kv=KV, V=VOCAB, M=object(), Vset=VSET,
             lemma_table=TABLE, forms_by_lemma=FORMS, donors=donors)
     finally:
         os.close(fd)
@@ -356,7 +364,7 @@ def test_selector_reports_no_substitution_for_a_word_it_never_holed(monkeypatch)
     try:
         holes, _ranks = gen_phrase.select_holes_interactive(
             _words("tu t'accoutumes doucement au jardin sans vermine."),
-            FR, "fr", kv=object(), V=VOCAB, M=object(), Vset=VSET,
+            FR, "fr", kv=KV, V=VOCAB, M=object(), Vset=VSET,
             lemma_table=TABLE, forms_by_lemma=FORMS, donors=donors)
     finally:
         os.close(fd)
@@ -415,7 +423,7 @@ def test_selector_will_not_hole_a_donors_lemma_twice(monkeypatch):
     ]
     try:
         holes, ranks = gen_phrase.select_holes_interactive(
-            words, FR, "fr", kv=object(), V=VOCAB, M=object(), Vset=VSET,
+            words, FR, "fr", kv=KV, V=VOCAB, M=object(), Vset=VSET,
             lemma_table=TABLE, forms_by_lemma=FORMS, donors=donors)
     finally:
         os.close(fd)
@@ -426,7 +434,7 @@ def test_selector_will_not_hole_a_donors_lemma_twice(monkeypatch):
 
 
 def test_main_writes_the_puzzle_and_names_the_substitution(monkeypatch, tmp_path, capsys):
-    monkeypatch.setattr(FR["module"], "load_vectors", lambda: object(), raising=False)
+    monkeypatch.setattr(FR["module"], "load_vectors", lambda: KV, raising=False)
     monkeypatch.setattr(FR["module"], "build_vocab", lambda _kv: VOCAB, raising=False)
     monkeypatch.setattr(FR["module"], "build_matrix", lambda _kv, _v: object(), raising=False)
     _stub_closest(monkeypatch)
@@ -460,7 +468,8 @@ def test_main_writes_the_puzzle_and_names_the_substitution(monkeypatch, tmp_path
 START_SENTENCE = "il chante doucement au jardin sans vermine."
 START_SELECTORS = ("doucement", "jardin", "vermine")
 # every secret's walk reaches the band word "amuse" at rank 1 (its family aliases there).
-START_RANKING = [("amuse", 0, 0.9), ("amuser", 1, 0.85), ("jardin", 2, 0.8)]
+START_RANKING = [("amuse", 0, 0.9), ("amuser", 1, 0.85), ("jardin", 2, 0.8),
+                 ("vermine", 3, 0.75), ("doucement", 4, 0.7)]
 
 
 def _start_run(monkeypatch, answers, selectors=START_SELECTORS,
@@ -475,7 +484,7 @@ def _start_run(monkeypatch, answers, selectors=START_SELECTORS,
     monkeypatch.setattr("builtins.input", lambda _p="": next(replies))
     return gen_phrase.holes_from_words(
         list(selectors), _words(sentence), FR, "fr",
-        kv=object(), V=VOCAB, M=object(), Vset=VSET,
+        kv=KV, V=VOCAB, M=object(), Vset=VSET,
         lemma_table=TABLE, forms_by_lemma=FORMS, donors=_resolver(interactive=True),
     )
 
@@ -488,11 +497,13 @@ def test_start_display_override_moves_the_form_not_the_rank(monkeypatch):
     assert hole["start"] == {"word": "amuses", "slug": "amuses"}
     # ...at the band word's own rank: the geometry did not move.
     assert hole["start_rank"] == 1
-    # typing the word printed in the hole reads its distance, not a MISS, and the front
-    # displays the form the player was shown.
-    assert ranks["doucement"]["amuses"] == {"word": "amuses", "rank": 1}
-    # the band word keeps its own key, untouched.
-    assert ranks["doucement"]["amuse"] == {"word": "amuse", "rank": 1}
+    # the band word keeps its own key, untouched...
+    band = ranks["doucement"]["amuse"]
+    assert band["word"] == "amuse" and band["rank"] == 1
+    # ...and typing the word printed in the hole reads its distance, not a MISS: the
+    # alias is the same GROUP, so it carries the band word's rank AND its geometry
+    # (#115 dq/road) — only the displayed form moves.
+    assert ranks["doucement"]["amuses"] == {**band, "word": "amuses"}
     # Entrée kept the band word for the two holes that did not need an override.
     assert [h["start"]["word"] for h in holes
             if h["secret"]["slug"] != "doucement"] == ["amuse", "amuse"]
@@ -573,7 +584,7 @@ def test_selector_asks_for_the_display_form_too(monkeypatch):
 
     try:
         holes, ranks = gen_phrase.select_holes_interactive(
-            _words(START_SENTENCE), FR, "fr", kv=object(), V=VOCAB, M=object(),
+            _words(START_SENTENCE), FR, "fr", kv=KV, V=VOCAB, M=object(),
             Vset=VSET, lemma_table=TABLE, forms_by_lemma=FORMS,
             donors=_resolver(interactive=True))
     finally:
@@ -582,6 +593,7 @@ def test_selector_asks_for_the_display_form_too(monkeypatch):
     first = holes[0]
     assert first["start"] == {"word": "amuses", "slug": "amuses"}
     assert first["start_rank"] == 1
-    assert ranks[first["secret"]["slug"]]["amuses"] == {"word": "amuses", "rank": 1}
+    rmap = ranks[first["secret"]["slug"]]
+    assert rmap["amuses"] == {**rmap["amuse"], "word": "amuses"}
     # and the raw-mode loop carried on normally after the detour.
     assert [h["start"]["word"] for h in holes[1:]] == ["amuse", "amuse"]
