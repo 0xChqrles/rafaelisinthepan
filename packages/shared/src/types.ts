@@ -56,9 +56,10 @@ export interface BenchmarkEntry {
   run: string[];
 }
 
-// The player-facing model set is one fixed trio. Wider benchmark rosters remain in the
-// unpublished lab artifact and never enter the puzzle payload.
-export type BenchmarkResults = [BenchmarkEntry, BenchmarkEntry, BenchmarkEntry];
+// Every model tested with `--in-place` is recorded here (variable length, unique model +
+// tag). The front end owns the display filter and shows only its display trio (FABLE,
+// KIMI K3, GPT-5.6); the rest ride along for the archive/lab without being rendered.
+export type BenchmarkResults = BenchmarkEntry[];
 
 export interface Puzzle {
   lang: string;
@@ -66,7 +67,7 @@ export interface Puzzle {
   holes: Hole[]; // one per selected occurrence, sorted by pos ascending
   ranks: RankMap; // keyed by secret slug, then input slug
   source?: Source; // optional origin metadata (#5), shown on the solved screen (#8)
-  benchmark?: BenchmarkResults; // optional player-facing model trio (#68/#80)
+  benchmark?: BenchmarkResults; // optional tested-model results; front end filters display (#68/#80/#81)
 }
 
 export interface RuntimeHole {

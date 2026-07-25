@@ -31,10 +31,15 @@ const STRINGS = {
   // share card); the share text lowercases these.
   try: { en: 'TRY', fr: 'ESSAI' },
   tries: { en: 'TRIES', fr: 'ESSAIS' },
-  you: { en: 'YOU', fr: 'TOI' },
+  // Deliberately NOT translated (decided 2026-07-24): "YOU" is universal enough, and one
+  // label keeps the player's tag identical across languages (lineup + leaderboard).
+  you: { en: 'YOU', fr: 'YOU' },
   dnf: { en: 'DNF', fr: 'DNF' },
   share: { en: 'SHARE', fr: 'PARTAGER' },
   copied: { en: 'COPIED', fr: 'COPIÉ' },
+  // Solved tray → the full leaderboard dialog (decided 2026-07-25).
+  seeMore: { en: 'SEE MORE', fr: 'VOIR PLUS' },
+  ariaClose: { en: 'close', fr: 'fermer' },
   // The streak celebration's ending hint: pure "what to do" — the whole screen dismisses,
   // so naming a "why" (continue/close — continue to WHAT? the game is done) would only
   // raise a question it can't answer. Pointer-aware: coarse pointers read TAP.
@@ -140,4 +145,17 @@ export function srHoleResult(lang: string, n: number, rank: number | null): stri
   if (rank == null) return `word ${n}: miss`;
   if (rank === 0) return `word ${n}: solved!`;
   return `word ${n}: ${rank} away`;
+}
+
+// Screen-reader mirror of the standings lineup's meaningful events (#81) — the visual
+// lineup is decorative. Full model labels, never the compact tags. `srModelLead` is the
+// lead loss (the best model catches the player); `srModelAhead` a later pass.
+export function srModelLead(lang: string, label: string, tries: number): string {
+  if (uiLang(lang) === 'fr') return `${label} prend la tête à ${tries}`;
+  return `${label} takes the lead at ${tries}`;
+}
+
+export function srModelAhead(lang: string, label: string, tries: number): string {
+  if (uiLang(lang) === 'fr') return `${label} devant à ${tries}`;
+  return `${label} ahead at ${tries}`;
 }

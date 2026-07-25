@@ -62,6 +62,15 @@ export function html(statusCode: number, body: string, headers: Record<string, s
   return { statusCode, headers: { 'Content-Type': 'text/html; charset=utf-8', ...headers }, body };
 }
 
+// A permanent redirect (a superseded share token pointing at the day it named).
+export function redirect(
+  statusCode: number,
+  location: string,
+  headers: Record<string, string> = {},
+): FnUrlResult {
+  return { statusCode, headers: { Location: location, ...headers }, body: '' };
+}
+
 // A binary PNG (the share-card OG image), base64-encoded for the Function URL / adapter.
 export function png(statusCode: number, buffer: Buffer, headers: Record<string, string> = {}): FnUrlResult {
   return {

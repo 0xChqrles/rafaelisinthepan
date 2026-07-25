@@ -88,8 +88,8 @@ packages/
     src/slug.ts               fold() — the slug/fold contract (byte-identical to slug())
     src/day.ts                the ONE 22:00-ET DST-correct game-day logic (client + server + publish)
     src/types.ts              per-puzzle schema types (Puzzle, Hole, RankMap, …)
-    src/heat.ts               heatColor() — heat ramp (rank exponents, share card)
-    src/progressColor.ts      progressColor() — progress ramp (progress bar, selector badge); shares ramp.ts
+    src/heat.ts               heatColor() — heat ramp (rank exponents + floating hits ONLY)
+    src/progressColor.ts      progressColor() + progressEmoji() — progress ramp (progress bar, selector badge, run rulers incl. the card, share-text emoji row); shares ramp.ts
     src/index.ts              re-exports
   web/                        React + Vite + TS front (pkg @whippin/web)
     src/
@@ -186,13 +186,15 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
     "author": "Victor Hugo",
     "work": "Les Misérables"
   },
-  "benchmark": [                                // OPTIONAL exact display trio (#68/#80)
-    { "model": "gpt-5.6-sol", "label": "GPT-5.6", "tag": "GPT",
-      "tries": 3, "run": ["bois", "arbre", "forêt"] },
+  "benchmark": [                                // OPTIONAL recorded models (#68/#80/#81);
+                                                 //   VARIABLE length; front end filters display
     { "model": "claude-fable-5", "label": "CLAUDE FABLE", "tag": "FABLE",
-      "tries": 4, "run": ["nature", "bois", "arbre", "forêt"] },
+      "tries": 3, "run": ["bois", "arbre", "forêt"] },
     { "model": "k3", "label": "KIMI K3", "tag": "KIMI",
+      "tries": 4, "run": ["nature", "bois", "arbre", "forêt"] },
+    { "model": "gpt-5.6-sol", "label": "GPT-5.6", "tag": "GPT",
       "tries": null, "run": ["bois", "arbre", /* …full run through cap… */ "nature"] }
+    // may also carry lab-only models (OPUS/SONNET/TERRA/…); the client renders only display
   ]                                              // null tries = DNF; its full run is kept
 }
 ```
@@ -221,15 +223,29 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   **display forms** (accents kept, never slugged); `kind` is an **open** union (known
   values documented, but a new kind is allowed). Consumed by the solved screen (#8).
 - **`benchmark` is fully OPTIONAL (#68, decided 2026-07-07; schema v2 decided
-  2026-07-12 on #68):** absent stays byte-compatible with every existing puzzle. When
-  present, it contains **exactly 3** results — the one player-facing trio everywhere:
-  GPT-5.6 Sol, Claude Fable, and Kimi K3 (decided 2026-07-22, superseding the original
-  Opus/Sonnet/GPT trio); wider roster entries stay lab-only. Every
-  entry requires the exact non-empty `model` id, an honest uppercase full-family `label`
-  (`GPT-5.6`, `CLAUDE FABLE`, `KIMI K3` — never ambiguous `CLAUDE`), an uppercase
-  pixel-friendly `tag` of at most 6 characters (`GPT`/`FABLE`/`KIMI`), `tries` as a
-  positive integer or `null` (DNF at the counted-try cap), and `run` as the **selected
-  run's counted display-form guesses in submission order**. `--selection median`
+  2026-07-12 on #68; VARIABLE-LENGTH recorded-set + client-side display filter decided
+  2026-07-20 on #81):** absent stays byte-compatible with every existing puzzle. When
+  present, it is a **variable-length array of EVERY model tested with `--in-place`** (not a
+  fixed trio) — **unique `model` id and unique `tag` per entry**, and at least one entry.
+  **The display filter lives in the FRONT END, not the schema:** the client renders only its
+  fixed display trio — **FABLE (`claude-fable-5`), KIMI K3 (`k3`), and GPT-5.6 Sol
+  (`gpt-5.6-sol`)** (decided 2026-07-22, superseding the original Opus/Sonnet/GPT trio) —
+  and silently ignores any other recorded (lab-only) model, showing
+  whichever **subset** of the three is present (see the `web/src/game/benchmark.ts`
+  `DISPLAY_MODEL_IDS` canonical order → stable sprite). Every entry requires the exact
+  non-empty `model` id, an honest uppercase full-family `label` (`CLAUDE FABLE`, `KIMI K3`,
+  `GPT-5.6` — never ambiguous `CLAUDE`), an uppercase pixel-friendly `tag` of at most 6
+  characters (`FABLE`/`KIMI`/`GPT`), `tries` as a positive integer or `null` (DNF at the
+  counted-try cap), and `run` as the **selected run's counted display-form guesses in
+  submission order**. **`--in-place` upserts one model at a time** (a re-run replaces that
+  model's entry; a previously embedded entry that no longer replays the current
+  sentence/ranks is pruned) and accepts **only** the canonical config: **median selection,
+  persistent session, the current prompt version, and exactly `DEFAULT_RUNS` (5) runs**
+  (`--runs` has ONE uniform default of 5 for every model, so omitting it already satisfies
+  the gate — Kimi included; there is no per-provider run-count default). Both `--in-place`
+  writes — the lab artifact and the puzzle's benchmark array — take an **exclusive advisory
+  lock around the whole read-modify-write cycle**, so two overlapping runs accumulate
+  instead of the second silently dropping the first's record. `--selection median`
   (default) keeps odd `N` runs sequential/cache-warm and reports the same actual median
   score as full median-of-N (#95). With `k = (N + 1) / 2`, once `k` runs have solved, a
   later run still unsolved at the k-th-smallest solved score stops as lab-only
@@ -351,7 +367,10 @@ as `<tries> TRIES` at game end (the unit is NAMED — on the solved screen, the 
 card, and the share text — because "SCORE" alone reads as points to maximize when
 lower is better; singular `TRY` at 1). Like the rest of the UI chrome the label is
 localized (fr: `ESSAIS`/`ESSAI`, decided 2026-07-06); the unit stays named in every
-language.
+language. The solved tray shows the named `<tries> TRIES` headline on EVERY surface
+(decided 2026-07-25, superseding #110's headline-omitted-next-to-the-table exception:
+the leaderboard moved behind SEE MORE into its own full-screen dialog, whose player row
+also carries the count). The share card/text always name the unit.
 
 ### Testing
 
@@ -467,8 +486,8 @@ pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 distinct word
 #    Claude.ai / saved ChatGPT Codex-plan access, or Kimi Code with KIMI_CODE_API_KEY.
 #    GPT API runs allow the documented
 #    none|low|medium|high|xhigh|max; ordinary Codex-plan play supports
-#    low|medium|high|xhigh|max. Kimi K3 is lab-only, requires subscription auth, rejects
-#    none, and maps medium/high -> high plus xhigh/max -> max. --session
+#    low|medium|high|xhigh|max. Kimi K3 is a display model, requires subscription auth,
+#    rejects none, and maps medium/high -> high plus xhigh/max -> max. --session
 #    persistent|stateless defaults to persistent: one native provider conversation per
 #    run is the primary product benchmark; stateless reconstructs the complete public
 #    record in fresh turns for diagnostics. The historical frozen shared gameplay baseline
@@ -481,10 +500,15 @@ pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 distinct word
 #    unsolved later run once its tries equal the incumbent best score. Puzzle paths may be
 #    repo-root-relative (packages/generation/output/...) or generation-package-relative
 #    (output/...).
-#    --in-place appends the full local lab artifact and embeds the lean display trio once
-#    all 3 current-prompt display models have same-selection and same-session results.
+#    --in-place appends the full local lab artifact AND upserts the tested model's lean
+#    entry into the puzzle's variable-length benchmark array (any model — the front end
+#    filters the FABLE/KIMI/GPT-SOL display trio; a re-run replaces that model, a now-stale
+#    entry is pruned). It accepts only the canonical config: median + persistent + current
+#    prompt + exactly 5 runs — and --runs already defaults to 5 for EVERY model, so no
+#    selector (Kimi included) needs an explicit --runs 5. Both writes are file-locked, so
+#    overlapping runs for different models accumulate instead of clobbering each other.
 pnpm bench:puzzle <puzzle.json> --model MODEL [--playbook <model>.playbook.json] [--effort LEVEL] [--auth api|subscription] [--session persistent|stateless] [--cap N] [--runs N] [--selection median|best] [--in-place]
-KIMI_CODE_API_KEY=... pnpm bench:puzzle <puzzle.json> --model KIMI --auth subscription --effort medium --runs 1
+KIMI_CODE_API_KEY=... pnpm bench:puzzle <puzzle.json> --model KIMI --auth subscription --effort medium --in-place
 
 # 5. PAUSED EXPERIMENT: bootstrap one model's playbook from all 92 static French puzzles
 #    (#88). Do not run this for normal benchmark production. Each real
@@ -534,9 +558,12 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   strict improvement, solved locks, and the counted-try cap. The singular `--model`
   accepts the seven-model roster's friendly selector (`OPUS`, `SONNET`, `FABLE`, `GPT-SOL`,
   `GPT-TERRA`, `GPT-LUNA`, `KIMI`) or exact id; each invocation runs exactly one model. The
-  shipped display trio is GPT-5.6 Sol, Claude Fable, and Kimi K3 (decided 2026-07-22);
-  Opus, Sonnet, Terra, and Luna are lab-only (`display: false`) and never change it.
-  Ordinary play exposes `none|low|medium|high|xhigh|max`: GPT-5.6 API supports the full scale;
+  **display trio** (`display: true`) is **FABLE (`claude-fable-5`), KIMI K3 (`k3`), and
+  GPT-5.6 Sol (`gpt-5.6-sol`)** (decided 2026-07-20 on #81, confirmed 2026-07-22); Opus,
+  Sonnet, Terra, and Luna are lab-only.
+  The `display` flag is now documentation + a roster invariant only — `--in-place` records
+  EVERY tested model and the **front end** owns the display filter, so a lab-only model still
+  gets embedded (just not rendered). Ordinary play exposes `none|low|medium|high|xhigh|max`: GPT-5.6 API supports the full scale;
   Codex-plan GPT supports `low` through `max`; Anthropic supports `none` through `max`.
   Kimi requires `--auth subscription` with the dedicated `KIMI_CODE_API_KEY`, rejects
   `none` (which would route away from K3), and maps `low→low`, `medium|high→high`, and
@@ -579,10 +606,18 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   majority; best selects the lowest successful score and cost-prunes a later unsolved run
   when it reaches that incumbent score. Kimi prints its counted-guess exposure and warns that
   non-counting turns add paid requests; `low` still uses adaptive thinking. Lab sessions
-  record the session mode, selected run, and each run's termination; only same-selection and
-  same-session model sessions can form a display trio. `--in-place` records full local
-  transcripts/token usage and publishes only a complete replay-valid display trio; local
-  benchmark output is gitignored and paid provider calls never run in tests/CI.
+  record the session mode, selected run, and each run's termination. `--in-place` records the
+  full local transcript/token usage AND upserts the tested model's replay-valid lean entry
+  into the puzzle's variable-length benchmark array (any model; a re-run replaces that model,
+  a now-stale sibling entry is pruned). It accepts only the canonical config — **median +
+  persistent + current prompt + exactly `DEFAULT_RUNS` (5) runs** — so results stay
+  comparable; the uniform `--runs` default already satisfies that gate for every model.
+  **Both `--in-place` writes are guarded by `_exclusive_file_lock`** (an advisory `flock`
+  on a sidecar `.<name>.lock`) spanning the read AND the write: the atomic replace alone
+  only makes the final swap indivisible, so without the lock two overlapping runs both
+  edit the same snapshot and the second drops the first's record. The front end, not the
+  harness, filters the display trio. Local benchmark
+  output is gitignored and paid provider calls never run in tests/CI.
 - **Frozen neutral gameplay baseline (decided 2026-07-17).** Use prompt v21 at `medium`
   effort, without `--playbook`, for both Sonnet and GPT. Two direct same-puzzle stateless
   v21 smokes produced 11 then 6 tries for Sonnet, and 13 then DNF-at-30 for GPT, exposing
@@ -738,21 +773,126 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   not bare `/<lang>` — so a shared archive result opens that archived date, not today (the
   card/title were already `#dayNumber`-correct). The archive **must not touch streaks**
   (separate issue).
-- **Solved-result hierarchy (decided 2026-07-10):** the solved tray is sentence-specific:
-  one centered stack at every breakpoint with the named `<tries> TRIES` headline, the
-  restored 3–18 cold-to-hot trajectory squares (`bucketMeans` — the SAME values used by
-  the share card/text), then SHARE. **Fresh-solve sequence (decided 2026-07-10):** the
+- **Solved-result hierarchy (decided 2026-07-10; leaderboard variant 2026-07-24, #110;
+  SEE-MORE dialog 2026-07-25):** the solved tray is sentence-specific and the SAME
+  compact stack at every breakpoint and on every surface: the named `<tries> TRIES`
+  headline, the PLAYER's full-width **run ruler**, then the actions — SHARE plus, when
+  displayed opponents exist, **SEE MORE** (i18n `seeMore`, fr `VOIR PLUS`). **The
+  leaderboard no longer renders inline in the tray (decided 2026-07-25, superseding
+  #110's inline table — too much information in the tray on mobile):** SEE MORE opens
+  `LeaderboardDialog`, a borderless full-screen native dialog on the SOLID app
+  background (the animated noise never plays under it) with generous row rhythm,
+  closed via its X (`ariaClose`), Escape, or a backdrop click; focus returns to SEE
+  MORE. This dialog is the planned home of the deeper result views (#82): per-row
+  runs, tested words, per-hole word lists. **The run RULER replaced the bucketed
+  trajectory squares (decided 2026-07-25):** one continuous bar per run on the
+  PROGRESS ramp (`components/RunRuler.tsx`), one cell per counted try colored
+  `progressColor` at that try's reconstruction % — the RAW `progressTrajectory`, no
+  on-screen bucketing — with a white tick at each try that solved a secret and the
+  hole's sentence index (1..3) under it; one guess dropping several secrets stacks its
+  indices under ONE shared tick (`solveTicks` in `web/src/game/share.ts` replays the
+  moments with the same rules as the trajectory). **The SHARE CARD draws the SAME
+  ruler (decided 2026-07-25, superseding the bucketed-squares card):** the share token
+  was bumped to **v2**, carrying the RAW per-try trajectory plus the solve moments
+  instead of the `bucketMeans` squares, so `renderCardSvg` renders the on-screen ruler
+  scaled to the OG image — same `progressColor` cells, same ticks, same sentence
+  indices. v1 tokens (bucketed squares) no longer decode: `decodeResult` rejects them
+  on the version check, so a pre-bump link can never mis-draw. It is not a dead end
+  though — **every version shares the opening header** (`version | lang | day | scoreLen
+  | score`), so `decodeLegacyShareTarget` recovers a SUPERSEDED token's lang + day and
+  `/s/<v1token>` **301s to `/<lang>/<date>`**, the archived day it named. That fallback is
+  deliberately restricted to versions **strictly older** than the current one: a
+  corrupted or hand-crafted CURRENT-version token still gets the flat 404, so a forgery
+  can never earn a redirect. `/og/<v1token>.png` stays a 404 (there is no ruler to
+  draw). Cell count is
+  still DERIVED from the score (one cell per counted try, never stored), and a try that
+  did not improve costs ONE bit, which is what keeps a long game's link short. The card
+  itself draws at most ONE rect per pixel column: the score field is 15 bits, so a
+  hand-built token can declare ~32k tries, and below a pixel per cell the extras only
+  stack — collapsing them bounds the rasterizer's work by the CARD instead of by the token.
+  **The plain-text EMOJI row moved onto the PROGRESS ramp too (decided 2026-07-25):**
+  `progressEmoji` lives with the ramp stops in `shared/src/progressColor.ts` so the row
+  and the ruler can't drift — `<35 🟦` (blue→cyan), `<45 🟩`, `<55 🟨`, `<65 🟧`,
+  `<75 🟥`, `>=75 🟪` (magenta→violet→indigo), each band the emoji nearest the stop(s)
+  it covers, cut at their midpoints. The indigo tail deliberately stays 🟪 rather than
+  the nearer-in-RGB 🟦: the ramp closes near its own start, and a row that returns to
+  its opening color would read backwards. **The row is the ruler CELL FOR CELL** — one
+  emoji per counted try, straight off the trajectory, **no bucketing, no mean, no fixed
+  square count** (decided 2026-07-25, retiring the bounded 3–18 row): a long run makes a
+  long row exactly as it makes a long bar, and the last emoji IS the solving try (the
+  bucketed tail used to average a grind's plateau and could end mid-ramp). `bucketMeans`,
+  `squareCount`, `SQUARE_BREAKPOINTS`, `MIN_SQUARES` and `MAX_SQUARES` are therefore
+  DELETED — nothing in the codebase buckets a trajectory any more. The ticks are the one
+  thing the row drops: a single line has nowhere to put a mark BETWEEN two cells, and no
+  second line to number it on. In the DIALOG's table:
+  one row per entrant sorted by score (player ahead on a tie, DNF last, `lineupModel`
+  order) — medal, tag, the entrant's run replayed into its ruler, count (DNF muted).
+  **Leaderboard rulers share ONE scale (decided 2026-07-25):** each bar's width is
+  proportional to its tries over the longest **SOLVED** run on the table, so lengths and
+  solve moments compare straight down the column. Solved, not longest: a DNF's run is not
+  a score — it ends at the harness's counted-try cap (`DEFAULT_CAP` 300) — so scaling to it
+  would squeeze every real bar, the player's included, into a few pixels. A DNF simply
+  overflows the scale and the ruler's own `min(…, 1)` fills its row, which reads right: it
+  ran the longest and still didn't finish. The colorize wave is paced separately, by the
+  longest run of ALL, since it has to sweep every cell ON SCREEN within its span: its
+  per-cell delay comes from
+  `rulerStagger(maxN, reduceMotion)`, which returns **0 under reduced motion** — the
+  global CSS rule collapses animation/transition DURATIONS but not DELAYS, so the ramp
+  would otherwise still crawl across the bar for over a second for someone who asked for
+  no motion. **On mobile the tag stacks ABOVE its bar's
+  left edge (decided 2026-07-25)** — `.lb-main`, `display: contents` on desktop — so
+  the table tightens to medal | tag-over-ruler | count and the bars get the width.
+  **The table is MONOCHROME except the run rulers** (decided 2026-07-24): tags are
+  muted (the player's alone in fg), counts neutral — identity colors belong to the
+  characters, and the rulers are the single color voice — **plus the placement-medal
+  column (decided 2026-07-25):** each row leads with its 15×15 pixel-art medal sprite
+  (`assets/medals/1-4.png`, rendered at an exact 2×), drawn on the HEAT ramp's four
+  anchor stops — 1 hot cyan → 4 cold crimson — not classic podium metals. **The
+  PLAYER's tag alone is the solved-word gold** (decided 2026-07-24, replacing a
+  tried-and-dropped accent row border), and it reads **"YOU" in EVERY language** — the
+  `you` i18n key is deliberately untranslated (fr included; decided 2026-07-24), one
+  universal tag across lineup + leaderboard. Rows are **NOT interactive** — an inline
+  tap-to-unfold run viewer was tried and removed (too noisy); the run viewer arrives
+  with #82, on this dialog. The table is decorative (aria-hidden) with an sr-only
+  ranking line carrying the accessible result (also present in the tray, so the
+  ranking needs no modal). The lineup does NOT persist past the
+  solve: after the keyboard drops, its characters teleport OUT one tick apart (their
+  dissolve + shared-flash strips), and only once the last is gone do the results rise
+  into the tray (reduced motion or missing strips skip straight there). Both exit beats
+  hand the tray back through a signal the DOM has to produce (the keyboard's own
+  `animationend`, the lineup's tick clock), and the tray renders NOTHING until they
+  arrive — so each carries a **deadline** (`KB_EXIT_FALLBACK_MS` / `LINEUP_EXIT_FALLBACK_MS`
+  in `Game.tsx`), a generous multiple of the real duration, cancelled by the genuine
+  signal. A lost signal must never be able to strand the player on an empty tray. On a
+  streak solve these exit beats do NOT play hidden behind the celebration — keyboard and lineup
+  hold still under the modal and the drop + teleport-out start at its dismissal; the
+  source types only after the leaderboard has risen (decided 2026-07-24). **The sentence
+  must NOT move between the solved beats (decided 2026-07-24):** the lineup renders
+  inside a `.lineup-zone` band that keeps its height for the whole round — through the
+  exit and on rehydrated solves — and the tray's height is FIXED to the keyboard's
+  (taller solved content overflows into the empty band, never grows the tray), so
+  .play's centering never shifts the phrase. **Fresh-solve sequence (decided 2026-07-10):** the
   solving submit immediately sends the prompt left while fading it out, in the same render
   that launches the final hole-hit feedback. The next stage waits until EVERY `Hole` reports
   its final secret rendered after its final settle animation completes — never a
   guessed timeout — so multi-word or throttled animation cannot be covered mid-resolution.
   A fresh active-day solve then holds the fully resolved sentence for 300ms before mounting
-  the streak modal. Once that modal has completely dismissed (including its exit fade), the
-  optional sentence source types quickly, letter by letter, with a trailing `_`; archive /
-  no-streak play starts this source beat immediately after the final holes settle. Only when
-  source typing finishes do the tries rise/tally, trajectory-square, and SHARE animations
-  begin (no metadata skips the typewriter); rehydrated solves render the full source/results
-  immediately without replaying the sequence. Player progression is separate:
+  the streak modal. **The solved beats run STREAK → keyboard-drop + teleport-out →
+  results rise → SOURCE (decided 2026-07-24, #110 — reversing the 2026-07-10
+  source-before-results order):** once the modal has completely dismissed (including its
+  exit fade) — or immediately after the final holes settle on archive / no-streak play —
+  the exit beats play, the results rise into the tray, and only once the risen stack
+  reports itself in place does the optional sentence source type quickly, letter by
+  letter, with a trailing `_` (tally/colorize choreography continues beneath it; no
+  metadata skips the typewriter). **The citation is MOUNTED for the whole round but
+  MASKED until that beat:** the prompt and the caption overlay in one `.prompt-zone` grid
+  cell and the zone sizes to the taller of the two, so the caption has to lay its full
+  citation out from frame one — but the sentence's author/work is a HINT, and rendering it
+  for real would leave it readable in an unsolved round's DOM. `SolvedCaption`'s `masked`
+  replaces every non-space glyph (the pixel font is monospace and the spaces — its only
+  wrap opportunities — are kept, so the mask occupies exactly the real box) and empties the
+  sr-only mirror. Rehydrated solves render the full source/results immediately without
+  replaying the sequence. Player progression is separate:
   `StreakDialog` is a
   **borderless full-screen** native modal, opened only by a FRESH active-day
   unsolved→solved transition. Its staged animation uses `@react-spring/web` (v9 for React

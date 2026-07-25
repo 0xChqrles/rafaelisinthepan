@@ -126,11 +126,15 @@ export default function CellDigits({ value }: { value: number }) {
       const bw = bits * px;
       const bh = GLYPH_ROWS * px;
       // Center on the anchor, then snap to the page grid in DOCUMENT coordinates —
-      // the body's grid scrolls with the content, and so does this anchor.
+      // the body's grid scrolls with the content, and so does this anchor. The vertical
+      // snap CEILS instead of rounding: nearest-rounding could seat the number up to
+      // half a cell ABOVE its ideal center, which on the mobile grid read as the count
+      // sitting a square too high (reported 2026-07-24); erring only downward keeps the
+      // residual on the side of the empty prompt gap, never crowding the HUD.
       const docLeft = rect.left + window.scrollX;
       const docTop = rect.top + window.scrollY;
       const left = Math.round((docLeft + (rect.width - bw) / 2) / cell) * cell;
-      const top = Math.round((docTop + (rect.height - bh) / 2) / cell) * cell;
+      const top = Math.ceil((docTop + (rect.height - bh) / 2) / cell) * cell;
       // Hard clamp against scroll: at k = 1 the glyphs cannot shrink further, so a wide
       // count (3 digits on a narrow phone) would extend past the document's right edge
       // and create scrollable overflow. Instead the CANVAS spans only the visible,
