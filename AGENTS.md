@@ -816,15 +816,30 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   `<75 🟥`, `>=75 🟪` (magenta→violet→indigo), each band the emoji nearest the stop(s)
   it covers, cut at their midpoints. The indigo tail deliberately stays 🟪 rather than
   the nearer-in-RGB 🟦: the ramp closes near its own start, and a row that returns to
-  its opening color would read backwards. **The row is the ruler CELL FOR CELL** — one
-  emoji per counted try, straight off the trajectory, **no bucketing, no mean, no fixed
-  square count** (decided 2026-07-25, retiring the bounded 3–18 row): a long run makes a
-  long row exactly as it makes a long bar, and the last emoji IS the solving try (the
-  bucketed tail used to average a grind's plateau and could end mid-ramp). `bucketMeans`,
-  `squareCount`, `SQUARE_BREAKPOINTS`, `MIN_SQUARES` and `MAX_SQUARES` are therefore
-  DELETED — nothing in the codebase buckets a trajectory any more. The ticks are the one
-  thing the row drops: a single line has nowhere to put a mark BETWEEN two cells, and no
-  second line to number it on. In the DIALOG's table:
+  its opening color would read backwards. **The row is BOUNDED to 3–18 cells (decided
+  2026-07-25, superseding the cell-for-cell row taken earlier the same day):** pasting 62
+  emoji into a message is a wall, not a result, so the row is a SUMMARY of the bar where
+  the ruler and the card draw every try. It restores the pre-#113 curve — `ROW_BREAKPOINTS`
+  / `MIN_ROW_CELLS` 3 / `MAX_ROW_CELLS` 18 / `rowCellCount` / `rowMeans`, now in
+  `web/src/game/share.ts` and NOT in the codec (the v2 token carries the raw run, so the
+  decoder no longer derives a count) — with each cell the MEAN progress of its contiguous
+  bucket; progress is monotonic and the buckets are contiguous, so the row still reads
+  cold→hot. **The LAST cell is PINNED to the solving try**, never its bucket's mean: that
+  tail average is what made a 61-try grind plateauing at 70 and solving on its last guess
+  close on 🟥 — a finished game reading as unfinished — and it is the one cell that means
+  something exact ("this is where you ended") — though on a SOLVED run the last cell is a
+  keycap, so the pin is what a row WITHOUT solve moments ends on. **The row carries the
+  ruler's TICKS as KEYCAPS (decided 2026-07-25, superseding "the ticks are the one thing the
+  row drops"):** a cell holding a try that dropped a secret renders as that hole's
+  sentence-position keycap (`1️⃣`/`2️⃣`/`3️⃣`) INSTEAD of its ramp color, so the row shows the
+  ORDER the sentence was cracked — `🟦🟩1️⃣🟧🟧🟧🟧🟧🟧2️⃣3️⃣`. The bar puts a mark between two
+  cells and numbers it underneath; a single line has neither, so the number takes the cell.
+  Three consequences, all accepted: the solve cells lose their color; several secrets falling
+  inside ONE cell show every keycap (in sentence order — the same order the ruler stacks them
+  under a shared tick), so the row can reach `MAX_ROW_CELLS + 2`; and since the final try
+  always solves, a finished run ALWAYS ends on a keycap (a 3-try perfect game is exactly
+  `1️⃣2️⃣3️⃣`, no color at all). `solvedAt` is optional — without it the row is the plain ramp.
+  In the DIALOG's table:
   one row per entrant sorted by score (player ahead on a tie, DNF last, `lineupModel`
   order) — medal, tag, the entrant's run replayed into its ruler, count (DNF muted).
   **Leaderboard rulers share ONE scale (decided 2026-07-25):** each bar's width is

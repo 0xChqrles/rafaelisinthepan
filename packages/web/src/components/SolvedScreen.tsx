@@ -174,9 +174,10 @@ export default function SolvedScreen({
     });
     const unit = t(lang, guessCount === 1 ? 'try' : 'tries').toLowerCase();
     const headline = `Whippin #${dayNumber} — ${guessCount} ${unit}`;
-    // Both the card (via the token) and the plain-text row are the run itself — the same
-    // trajectory, one cell per try — so the link and its fallback can't disagree.
-    const text = shareText(headline, trajectory, url);
+    // The card (via the token) draws the run in full; the plain-text row is the bounded
+    // summary of that SAME run — trajectory and solve moments both — so the link and its
+    // fallback can't disagree.
+    const text = shareText(headline, trajectory, solvedAt ?? [], url);
 
     // Touch devices get their native share sheet; desktop copies the result directly.
     const isTouch =
