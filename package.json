@@ -13,6 +13,7 @@
     "wordlist:fr": "pnpm --filter @whippin/generation wordlist:fr",
     "lemmas:en": "pnpm --filter @whippin/generation lemmas:en",
     "lemmas:fr": "pnpm --filter @whippin/generation lemmas:fr",
+    "forms:fr": "pnpm --filter @whippin/generation forms:fr",
     "reduce:en": "pnpm --filter @whippin/generation reduce:en",
     "reduce:fr": "pnpm --filter @whippin/generation reduce:fr",
     "vocab:en": "pnpm --filter @whippin/generation vocab:en",
