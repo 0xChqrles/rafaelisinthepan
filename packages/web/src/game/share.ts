@@ -1,26 +1,18 @@
 // Solved-screen share (issue #8).
 //
-// The per-guess progress trajectory is collapsed into a BOUNDED number of squares (3..18,
-// more squares = more tries, on a hardcoded curve), each colored by the MEAN progress of its
-// bucket. Those squares drive both the on-screen grid AND the shareable card: the result is
-// packed into a URL token and shared as `<origin>/s/<token>`, so pasting the link unfurls
-// into the rendered image (row of squares + SCORE + #day) instead of an emoji string.
+// The result is packed into a URL token and shared as `<origin>/s/<token>`, so pasting the
+// link unfurls into the rendered image instead of an emoji string. The CARD gets the raw
+// per-guess trajectory + solve moments (v2 token, decided 2026-07-25) and draws the RUN RULER
+// the solved screen shows. The plain-text emoji row is that same ruler, cell for cell.
 
 import { computeProgress } from './scoring';
 import {
   encodeResult,
-  squareCount,
-  MIN_SQUARES,
-  MAX_SQUARES,
-  SQUARE_BREAKPOINTS,
+  progressEmoji,
   type RankMap,
   type RuntimeHole,
   type ShareResult,
 } from '@whippin/shared';
-
-// The square-count contract lives in shared now (the decoder derives it from the score);
-// re-export it so the web's consumers/tests keep importing it from here.
-export { squareCount, MIN_SQUARES, MAX_SQUARES, SQUARE_BREAKPOINTS };
 
 // Reconstruction-% trajectory: replay the ordered valid guesses against the puzzle to
 // get the reconstruction % AFTER each guess. A guess improves a hole exactly when the
@@ -42,26 +34,29 @@ export function progressTrajectory(freshHoles: RuntimeHole[], ranks: RankMap, tr
   return out;
 }
 
-// Collapse the per-guess trajectory into EXACTLY squareCount(n) contiguous,
-// as-equal-as-possible buckets; each square's value is the MEAN progress % of its bucket.
-// Because progress is monotonic non-decreasing and the buckets are contiguous, the means
-// are too — so the row always reads cold -> hot. The count must be squareCount(n) and
-// nothing else: the decoder derives it from the score alone, so a shorter row here would
-// make the card pad phantom cold squares. n >= squareCount(n) for any normal game (>= 3
-// tries); below that (two holes sharing a secret solved by one word) buckets re-sample a
-// guess so the row still matches the decoder.
-export function bucketMeans(trajectory: number[]): number[] {
-  const n = trajectory.length;
-  if (n === 0) return [];
-  const m = squareCount(n);
-  const out: number[] = [];
-  for (let i = 0; i < m; i += 1) {
-    const start = Math.floor((i * n) / m);
-    const end = Math.max(start + 1, Math.floor(((i + 1) * n) / m));
-    let sum = 0;
-    for (let j = start; j < end; j += 1) sum += trajectory[j];
-    out.push(sum / (end - start));
-  }
+// Solve moments for the run ruler: replay the same ordered guesses with the same
+// improvement rule as progressTrajectory, and record for each DISTINCT secret (in
+// sentence order — first occurrence's pos) the 1-based try that solved it, or null when
+// the run never does (a DNF opponent). Every occurrence of a repeated secret solves on
+// the same guess (they share one rank map), so one distinct secret = one tick.
+export function solveTicks(
+  freshHoles: RuntimeHole[],
+  ranks: RankMap,
+  tried: string[],
+): (number | null)[] {
+  const holes = freshHoles.map((h) => ({ ...h }));
+  const secrets = holes.map((h) => h.secret).filter((s, i, a) => a.indexOf(s) === i);
+  const out: (number | null)[] = secrets.map(() => null);
+  tried.forEach((typed, i) => {
+    for (const h of holes) {
+      if (h.rank === 0) continue;
+      const entry = ranks[h.secret]?.[typed];
+      if (entry && entry.rank < h.rank) h.rank = entry.rank;
+    }
+    secrets.forEach((s, si) => {
+      if (out[si] === null && holes.every((h) => h.secret !== s || h.rank === 0)) out[si] = i + 1;
+    });
+  });
   return out;
 }
 
@@ -72,29 +67,25 @@ export function shareUrl(origin: string, result: ShareResult): string {
   return `${origin}/s/${encodeResult(result)}`;
 }
 
-// One emoji per share square — the SAME bucketMeans output that drives the card, so the row
-// length (squareCount, 3..18) and its colors always agree with the rendered OG image. Bucketed
-// on the heat ramp's arc (cold crimson -> hot cyan):
-//   pct < 20 🟥, < 40 🟧, < 60 🟨, < 80 🟩, >= 80 🟦
-// Emoji, NOT the heat hexes: the row must survive contexts with zero rendering support beyond
-// Unicode (SMS, forwarded/plain-text messages, preview-less clients) — the plain-text fallback
-// for the OG card, carrying the same information so the two never disagree.
-export function emojiRow(squares: number[]): string {
-  return squares
-    .map((pct) => {
-      if (pct < 20) return '🟥';
-      if (pct < 40) return '🟧';
-      if (pct < 60) return '🟨';
-      if (pct < 80) return '🟩';
-      return '🟦';
-    })
-    .join('');
+// The RULER in plain text: ONE emoji per counted try, straight off the trajectory, on the
+// SAME progress ramp (`progressEmoji` sits with the ramp stops in @whippin/shared, so the two
+// can't drift). This row is the fallback where no card image renders — SMS, forwarded or
+// plain-text messages, preview-less clients — so it is the card's bar cell for cell, not a
+// summary of it: NO bucketing, NO means, NO fixed square count (decided 2026-07-25, retiring
+// the bounded 3..18 row). A long run therefore makes a long row, exactly as it makes a long
+// bar.
+//
+// Emoji, NOT the ramp's hexes: the row has to survive contexts with zero rendering support
+// beyond Unicode. The ticks are the one thing the bar has and this doesn't — a single line has
+// nowhere to put a mark BETWEEN two cells, and no second line to number it on.
+export function emojiRow(trajectory: number[]): string {
+  return trajectory.map(progressEmoji).join('');
 }
 
-// The shared/copied plain text: the headline, then the heat-square emoji row on its own line
-// (attached to the headline block), a blank line for unfurl separation, then the (unfurling)
-// link. Pure + i18n-free (the caller localizes `headline`) so the composition is unit-testable
-// without the DOM. Same `squares` the card receives, so link and row can never disagree.
-export function shareText(headline: string, squares: number[], url: string): string {
-  return `${headline}\n${emojiRow(squares)}\n\n${url}`;
+// The shared/copied plain text: the headline, then the emoji ruler on its own line (attached
+// to the headline block), a blank line for unfurl separation, then the (unfurling) link. Pure
+// + i18n-free (the caller localizes `headline`) so the composition is unit-testable without
+// the DOM. Same trajectory the token carries, so link and row can never disagree.
+export function shareText(headline: string, trajectory: number[], url: string): string {
+  return `${headline}\n${emojiRow(trajectory)}\n\n${url}`;
 }

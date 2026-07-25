@@ -37,6 +37,9 @@ const STRINGS = {
   dnf: { en: 'DNF', fr: 'DNF' },
   share: { en: 'SHARE', fr: 'PARTAGER' },
   copied: { en: 'COPIED', fr: 'COPIÉ' },
+  // Solved tray → the full leaderboard dialog (decided 2026-07-25).
+  seeMore: { en: 'SEE MORE', fr: 'VOIR PLUS' },
+  ariaClose: { en: 'close', fr: 'fermer' },
   // The streak celebration's ending hint: pure "what to do" — the whole screen dismisses,
   // so naming a "why" (continue/close — continue to WHAT? the game is done) would only
   // raise a question it can't answer. Pointer-aware: coarse pointers read TAP.

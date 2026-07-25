@@ -21,6 +21,10 @@ interface WordInputProps {
   onSubmit: (value: string) => void; // submit the current guess
   onReplace: (value: string) => void; // set the whole value (history recall)
   invalidSignal: number;
+  // The prompt stays MOUNTED (hidden) once the round is solved so the prompt zone keeps
+  // its natural height; inactive, its window listeners ignore every event — keys flow to
+  // the solved surface (e.g. the streak screen's press-any-key) exactly as if unmounted.
+  active?: boolean;
 }
 
 // The guess prompt. It no longer owns a native <input>: on mobile that meant keeping a
@@ -29,8 +33,10 @@ interface WordInputProps {
 // mutate the same folded-slug state: the on-screen <Keyboard> (taps) and the physical
 // keyboard (this window keydown listener). With no focusable text field, the native
 // mobile keyboard never opens. The spans below stay the visible terminal-style prompt.
-export default function WordInput({ value, history, onType, onBackspace, onSubmit, onReplace, invalidSignal }: WordInputProps) {
+export default function WordInput({ value, history, onType, onBackspace, onSubmit, onReplace, invalidSignal, active = true }: WordInputProps) {
   const [shaking, setShaking] = useState<boolean>(false);
+  const activeRef = useRef(active);
+  activeRef.current = active;
 
   // Prompt history for Up/Down recall (desktop nicety). The array is the round's
   // PERSISTED guesses (passed in), mirrored into a ref so the window listener always
@@ -54,6 +60,7 @@ export default function WordInput({ value, history, onType, onBackspace, onSubmi
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (!activeRef.current) return;
       // Leave browser shortcuts (Cmd/Ctrl/Alt combos) and any real editable field
       // alone. A focused BUTTON keeps its native Enter/Space activation too — the
       // on-screen keys never take focus (pointerdown+preventDefault), so this only
@@ -128,6 +135,7 @@ export default function WordInput({ value, history, onType, onBackspace, onSubmi
     };
 
     const onPaste = (e: ClipboardEvent) => {
+      if (!activeRef.current) return;
       const text = e.clipboardData?.getData('text');
       if (!text) return;
       const chars = Array.from(text).map(slugChars).join('');

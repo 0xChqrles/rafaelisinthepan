@@ -175,8 +175,9 @@ describe('share-card /og route — lang passthrough (#59)', () => {
     const token = encodeResult({
       lang: 'fr',
       dayNumber: 20638,
-      score: 42,
-      squares: [8, 20, 35, 50, 65, 78, 90, 100, 100],
+      score: 6,
+      trajectory: [8, 8, 33, 33, 70, 100],
+      solvedAt: [3, 6, 5],
     });
     const res = await makeHandler()(event({ path: `/og/${token}.png` }));
     expect(res.statusCode).toBe(200);

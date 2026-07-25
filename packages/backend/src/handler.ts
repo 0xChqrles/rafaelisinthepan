@@ -110,7 +110,8 @@ export function createHandler(deps: HandlerDeps) {
           lang: result.lang,
           dayNumber: result.dayNumber,
           score: result.score,
-          squares: result.squares,
+          trajectory: result.trajectory,
+          solvedAt: result.solvedAt,
         });
         return png(200, buffer, { 'Cache-Control': `public, max-age=${SHARE_MAX_AGE}, immutable` });
       }

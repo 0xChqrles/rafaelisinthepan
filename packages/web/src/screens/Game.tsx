@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { computeProgress, guessKey } from '../game/scoring';
-import { progressTrajectory, bucketMeans } from '../game/share';
+import { progressTrajectory, solveTicks } from '../game/share';
 import { canExtend } from '../game/keyboard';
 import useVocab from '../hooks/useVocab';
 import useToday from '../hooks/useToday';
@@ -250,23 +250,32 @@ function Round({
     [freshHoles, ranks, history],
   );
 
-  // Each display opponent's run, replayed into the same bucketed heat squares as the
-  // player's trajectory (#110): the leaderboard table shows every entrant's whole run as
-  // a row of squares. Run words are stored as typed (accents kept) — fold before lookup.
-  const runSquares = useMemo<Map<string, number[]> | undefined>(
+  // The player's solve moments — which try dropped which secret — for the run ruler's
+  // ticks. Same replay rules as the trajectory, same persisted `tried` source.
+  const solvedAt = useMemo<(number | null)[]>(
+    () => solveTicks(freshHoles, ranks, history),
+    [freshHoles, ranks, history],
+  );
+
+  // Each display opponent's run, replayed into the same per-try trajectory + solve
+  // ticks as the player's: the leaderboard shows every entrant's whole run as a heat
+  // ruler. Run words are stored as typed (accents kept) — fold before lookup.
+  const runReplays = useMemo<
+    Map<string, { trajectory: number[]; solvedAt: (number | null)[] }> | undefined
+  >(
     () =>
       benchmark &&
       new Map(
-        displayEntries(benchmark).map(({ entry }) => [
-          entry.model,
-          bucketMeans(
-            progressTrajectory(
-              freshHoles,
-              ranks,
-              entry.run.map((w) => fold(w)),
-            ),
-          ),
-        ]),
+        displayEntries(benchmark).map(({ entry }) => {
+          const run = entry.run.map((w) => fold(w));
+          return [
+            entry.model,
+            {
+              trajectory: progressTrajectory(freshHoles, ranks, run),
+              solvedAt: solveTicks(freshHoles, ranks, run),
+            },
+          ];
+        }),
       ),
     [benchmark, freshHoles, ranks],
   );
@@ -626,15 +635,7 @@ function Round({
             cells (CellDigits) so it reads as part of the grid, not a font over it. */}
         <div className="phrase-anchor">
           <div className="progress-background" aria-hidden="true">
-            {/* The count dissolves into the wave field once the solved exits begin
-                (#110) — the same beat the keyboard drops and the characters beam out
-                (after the streak celebration when there is one). This flag is exactly
-                "have the exits started": true from the kb-drop/teleport trigger onward
-                (lineupGone latches it) and from mount on a rehydrated solve. */}
-            <CellDigits
-              value={guessCount}
-              dissolve={keyboardLeaving || lineupExiting || lineupGone}
-            />
+            <CellDigits value={guessCount} />
           </div>
           <Phrase
             words={words}
@@ -646,23 +647,19 @@ function Round({
           />
         </div>
 
-        {/* Below the sentence: the prompt exits on the solving submit; after every final
-            word settles (and, on the active day, after the streak closes), the source is
-            typed into the same reserved footprint. Nothing shifts the sentence. */}
-        {showResults ? (
-          sourceRevealStarted ? (
-            <SolvedCaption
-              source={source}
-              animate={!sourceRevealComplete}
-              onComplete={finishSourceReveal}
-            />
-          ) : (
-            <div className="solved-caption" aria-hidden="true" />
-          )
-        ) : (
+        {/* Below the sentence: the prompt and the solved source citation OVERLAY in one
+            grid cell (.prompt-zone), BOTH mounted for the whole round — the zone sizes to
+            the taller natural height (the caption lays out its full text from frame one),
+            so the prompt→citation swap cannot move the centered sentence and no reserved
+            min-height is needed (the hand-synced 90px/72px pair, removed 2026-07-25).
+            The prompt exits on the solving submit; the caption stays invisible until the
+            source reveal beat, then types in place. */}
+        <div className="prompt-zone">
           <div
-            className={`input-area${promptExiting ? ' solving' : ''}`}
-            aria-hidden={promptExiting || undefined}
+            className={`input-area${promptExiting ? ' solving' : ''}${
+              showResults ? ' retired' : ''
+            }`}
+            aria-hidden={promptExiting || showResults || undefined}
           >
             <WordInput
               value={input}
@@ -672,10 +669,21 @@ function Round({
               onSubmit={submit}
               onReplace={replaceInput}
               invalidSignal={invalidAt}
+              active={!showResults}
             />
             <p className="hint">{feedback?.text || ' '}</p>
           </div>
-        )}
+          <div
+            className={`caption-slot${showResults && sourceRevealStarted ? '' : ' pending'}`}
+            aria-hidden={!(showResults && sourceRevealStarted) || undefined}
+          >
+            <SolvedCaption
+              source={source}
+              animate={showResults && sourceRevealStarted && !sourceRevealComplete}
+              onComplete={finishSourceReveal}
+            />
+          </div>
+        </div>
       </div>
 
       {/* Standings lineup (#81/#110): the player + the present display opponents sorted
@@ -722,7 +730,8 @@ function Round({
               dayNumber={dayNumber}
               lang={lang}
               benchmark={benchmark}
-              runSquares={runSquares}
+              solvedAt={solvedAt}
+              runReplays={runReplays}
               animate={animateResults}
               startAnimation={!showStreakDialog && !deferResultsAnimation}
               onRisen={handleResultsRisen}
