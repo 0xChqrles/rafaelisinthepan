@@ -70,13 +70,17 @@ export default function WordInput({ value, history, onType, onBackspace, onSubmi
       const target = e.target as HTMLElement | null;
       if (
         target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.tagName === 'BUTTON' ||
-          target.isContentEditable)
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
       ) {
         return;
       }
+      // A focused BUTTON keeps the ONE key it natively acts on — Enter (Space never
+      // reaches the game anyway: it folds to nothing and falls through untouched). Letters
+      // still flow to the guess, because a button has no use for them and a swallowed
+      // letter reads as broken input: since #117 a hole is itself a button and keeps focus
+      // after its route map closes, so this is the difference between typing your next
+      // guess and typing into a void.
+      if (target && target.tagName === 'BUTTON' && e.key === 'Enter') return;
 
       if (e.key === 'Enter') {
         e.preventDefault();

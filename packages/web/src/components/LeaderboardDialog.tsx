@@ -98,7 +98,7 @@ export default function LeaderboardDialog({
     >
       <button
         type="button"
-        className="lb-dialog-close"
+        className="dialog-close lb-dialog-close"
         aria-label={t(lang, 'ariaClose')}
         onClick={() => dialogRef.current?.close()}
       >

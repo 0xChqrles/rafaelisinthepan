@@ -40,6 +40,11 @@ const STRINGS = {
   // Solved tray → the full leaderboard dialog (decided 2026-07-25).
   seeMore: { en: 'SEE MORE', fr: 'VOIR PLUS' },
   ariaClose: { en: 'close', fr: 'fermer' },
+  // ---- route modal (#117): a hole's neighborhood drawn as a journey. Copy stays terse —
+  // the map teaches by shape, not by explanation, so this is the ONLY visible label on it
+  // besides the title. The break below the route's cold end is where the guesses that
+  // earned no rank at all sit: literally off the map.
+  routeOffMap: { en: 'OFF THE MAP', fr: 'HORS CARTE' },
   // The streak celebration's ending hint: pure "what to do" — the whole screen dismisses,
   // so naming a "why" (continue/close — continue to WHAT? the game is done) would only
   // raise a question it can't answer. Pointer-aware: coarse pointers read TAP.
@@ -145,6 +150,43 @@ export function srHoleResult(lang: string, n: number, rank: number | null): stri
   if (rank == null) return `word ${n}: miss`;
   if (rank === 0) return `word ${n}: solved!`;
   return `word ${n}: ${rank} away`;
+}
+
+// ---- route modal (#117). Holes are numbered like the run ruler's ticks and the share
+// row's keycaps: 1-based over the sentence's DISTINCT secrets, so two occurrences of one
+// secret — which share a rank map, and so share a map — carry the same number.
+export function routeTitle(lang: string, n: number): string {
+  return uiLang(lang) === 'fr' ? `MOT ${n}` : `WORD ${n}`;
+}
+
+export function ariaExploreHole(lang: string, n: number): string {
+  return uiLang(lang) === 'fr' ? `Explorer le mot ${n}` : `Explore word ${n}`;
+}
+
+// The route drawing is decorative (aria-hidden); these carry it in words. Closest first,
+// misses last — the same order the map reads top to bottom.
+export function srRouteDestination(lang: string, word: string | null): string {
+  if (uiLang(lang) === 'fr') return `destination : ${word ?? 'cachée'}`;
+  return `destination: ${word ?? 'hidden'}`;
+}
+
+export function srRouteStop(
+  lang: string,
+  stop: { rank: number; word: string | null; road: string | null; start?: boolean; best?: boolean },
+): string {
+  const fr = uiLang(lang) === 'fr';
+  const parts = [fr ? `rang ${stop.rank}` : `rank ${stop.rank}`];
+  parts.push(stop.word ?? (fr ? 'caché' : 'hidden'));
+  // A lane titled by the very word being announced would only repeat it.
+  if (stop.road && stop.road !== stop.word) parts.push(fr ? `route ${stop.road}` : `road ${stop.road}`);
+  if (stop.start) parts.push(fr ? 'départ' : 'start');
+  if (stop.best) parts.push(fr ? 'vous êtes ici' : 'you are here');
+  return parts.join(' — ');
+}
+
+export function srRouteOffMap(lang: string, words: string[]): string {
+  const list = words.join(', ');
+  return uiLang(lang) === 'fr' ? `hors carte : ${list}` : `off the map: ${list}`;
 }
 
 // Screen-reader mirror of the standings lineup's meaningful events (#81) — the visual

@@ -956,6 +956,41 @@ button * {
   white-space: nowrap;
   color: var(--hole);
 }
+/* Since #117 a hole is a BUTTON: tapping it opens its neighborhood's route map. It wraps
+   the word + exponent without restructuring them (the floating-hit/scramble choreography
+   keys off that structure) and stays typographically invisible — the sentence reads
+   exactly as before, so the gold word is still the only thing on screen. */
+.hole-btn {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+/* The global `button *` flattening would otherwise strip the phrase's drop shadow from
+   the holes alone, leaving them lighter than every word around them. */
+.phrase .hole-btn,
+.phrase .hole-btn * {
+  text-shadow: 2px 2px 0 black;
+}
+.hole-btn[disabled] {
+  cursor: default;
+}
+/* The app's one interaction language: brighten on hover/press. */
+.hole-btn:not([disabled]):hover .hole-word,
+.hole-btn:not([disabled]):hover .hole-rank,
+.hole-btn:not([disabled]):active .hole-word,
+.hole-btn:not([disabled]):active .hole-rank {
+  filter: brightness(1.35);
+}
+.hole-btn:focus-visible {
+  outline: 3px solid var(--accent-dim);
+  outline-offset: 3px;
+}
 /* Sized to the word only (exponent is a sibling outside it): the floating hit
    centers on this box, so it lands over the word, not the word+exponent. */
 .hole-word-wrap {
@@ -1459,10 +1494,9 @@ button * {
   width: min(520px, 100%);
   margin: auto;
 }
-.lb-dialog-close {
-  position: fixed;
-  top: 14px;
-  right: 14px;
+/* A full-screen dialog's dismiss control: same 44px muted target everywhere; each dialog
+   places it (the leaderboard floats it in the corner, the route map seats it in its bar). */
+.dialog-close {
   display: grid;
   place-items: center;
   width: 44px;
@@ -1473,8 +1507,334 @@ button * {
   color: var(--muted);
   cursor: pointer;
 }
-.lb-dialog-close:hover {
+.dialog-close:hover {
   color: var(--fg);
+}
+.lb-dialog-close {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+}
+
+/* ===================== route map (issue #117) ===================== */
+/* A hole's neighborhood drawn as a JOURNEY to the word. The vertical axis is `dq` — the
+   real distance the uniform ranks erase (#115) — so the map's shape is the neighborhood's
+   own: the near groups spread over the top, the far field compresses below, because that
+   is where those words actually are. Full-screen native dialog on the SOLID app background
+   like the leaderboard, ~4 viewport heights of scroll, and NO motion of its own (nothing
+   for reduced motion to collapse). */
+.route-dialog[open] {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  padding: 0 20px 72px;
+  border: 0;
+  outline: 0;
+  background: var(--bg);
+  color: var(--fg);
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* The one line color every rail, bus and hatch is drawn in. */
+  --rail: #2c3358;
+  /* The distance axis' own length. The gap, terminus and shelf add the rest, so the whole
+     route runs a bit over four screens — tuned by eye, constant by design. */
+  --route-band-h: 340svh;
+}
+.route-dialog::backdrop {
+  background: transparent;
+}
+/* Fixed bar: the map scrolls under it, so the hole being explored stays named. */
+.route-head {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  /* Above every stop's own layer (see stopLayer) — the map scrolls UNDER the bar, and a
+     rail crossing it would read as a scroll artefact. */
+  z-index: 700;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-left: 20px;
+  background: var(--bg);
+  border-bottom: 3px solid var(--surface);
+}
+.route-title {
+  font-family: var(--press);
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: var(--muted);
+  text-shadow: none;
+}
+.route-close {
+  margin-right: 6px;
+}
+.route-frame {
+  width: min(520px, 100%);
+  margin: 0 auto;
+  padding-top: 48px; /* clear the fixed bar */
+}
+
+/* --- the destination --- */
+/* Censored while the hole is open ("?"), the accented secret in the solved-word blue once
+   it is found: the same map then reads as the post-mortem of the route taken. */
+.route-terminus {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding-top: 44px;
+}
+.route-secret {
+  font-family: var(--vt);
+  font-size: 28px;
+  line-height: 1;
+  color: var(--muted);
+}
+.route-secret.found {
+  color: var(--accent);
+}
+.route-terminus-node {
+  width: 18px;
+  height: 18px;
+  background: var(--rail);
+}
+.route-terminus-node.found {
+  background: var(--accent);
+}
+
+/* --- the identity leap, the convergence, and the road name plates --- */
+/* Between the closest measurable group and the word itself there is no step, only a jump.
+   It gets its own fixed gap and a BROKEN trace; the lanes meet on a bus below it. */
+.route-gap {
+  position: relative;
+  height: 136px;
+}
+.route-leap {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  height: 48px;
+  width: 3px;
+  transform: translateX(-50%);
+  background: repeating-linear-gradient(to bottom, var(--rail) 0 3px, transparent 3px 9px);
+}
+.route-bus {
+  position: absolute;
+  height: 3px;
+  background: var(--rail);
+}
+.route-converge {
+  top: 48px;
+}
+.route-lane-head {
+  position: absolute;
+  top: 48px;
+  bottom: 0;
+  width: 0;
+}
+.route-lane-stub {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  transform: translateX(-50%);
+  background: var(--rail);
+}
+/* A road is titled by the player's best DISCOVERED word on it — never by what is on it.
+   An unexplored lane keeps the redacted plate: how many roads there are, and how populated
+   they look, is the information the map is meant to give. The name is a title, not the
+   payload (the word itself is a stop on the lane below), so it may clip on a narrow screen
+   with four lanes rather than collide with its neighbour. */
+.route-lane-name {
+  position: absolute;
+  top: 24px;
+  left: 0;
+  transform: translateX(-50%);
+  max-width: var(--lane-max, 100%);
+  overflow: hidden;
+  padding: 5px 7px;
+  background: var(--surface);
+  font-family: var(--vt);
+  /* Sized to FIT its lane (see laneNameFont): the names share one size, shrinking together
+     until the longest fits. `max-width` stays only as the floor's safety net. */
+  font-size: var(--lane-font, 14px);
+  line-height: 1.1;
+  color: var(--fg);
+  white-space: nowrap;
+}
+.route-lane-name.censored {
+  background: none;
+  padding: 5px 0;
+}
+
+/* --- the distance axis --- */
+.route-band {
+  position: relative;
+  height: var(--route-band-h);
+}
+/* Distance contours: faint rules straight across the scale, the same graph-paper idea the
+   app's own background uses. They carry no number and name nothing — they simply make the
+   axis MEASURED space instead of blackness, so scrolling reads as covering distance, and
+   the long empty stretches read as what they are: a lot of ground between two words. They
+   stop at the band, because past its ends there is nothing left to measure. */
+.route-band::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(244, 244, 242, 0.05) 0 1px,
+    transparent 1px 64px
+  );
+  pointer-events: none;
+}
+.route-rail {
+  position: absolute;
+  width: 3px;
+  transform: translateX(-50%);
+  background: var(--rail);
+}
+/* Your current frontier, read straight across the map: how far you have come, what is
+   left above it. */
+.route-here {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--hole);
+  opacity: 0.38;
+}
+
+/* --- stops --- */
+/* One per ranked GROUP the player reached (aliases collapse, #104). The node sits ON the
+   rail at its distance; the plate hangs under it, on the app background so two stops that
+   meet stay readable. */
+.route-stop {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  transform: translate(-50%, -50%);
+}
+.route-node {
+  position: absolute;
+  inset: 1px;
+  background: var(--muted);
+}
+/* The departure: the start word the puzzle handed out, a ranked group like any other —
+   hollow, so it reads as where you were put rather than where you got. */
+.route-stop.start .route-node {
+  inset: 0;
+  background: none;
+  box-shadow: inset 0 0 0 3px var(--muted);
+}
+/* "You are here": the hole's current word, in the same gold it wears in the sentence. */
+.route-stop.here .route-node {
+  inset: 0;
+  background: var(--hole);
+}
+.route-stop.here.start .route-node {
+  background: none;
+  box-shadow: inset 0 0 0 3px var(--hole);
+}
+.route-stop.censored .route-node {
+  inset: 3px;
+  background: var(--rail);
+}
+.route-plate {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 5px;
+  background: var(--bg);
+  font-family: var(--vt);
+  font-size: clamp(11px, 3.2vw, 14px);
+  line-height: 1.1;
+  white-space: nowrap;
+}
+/* Map labels lean INWARD on the outer lanes (see labelSide): the first road's names start
+   at its rail, the last road's end at it, so a long word runs toward the middle of the map
+   instead of off its edge — where the dialog's overflow would simply cut it away. */
+.route-stop[data-side='start'] .route-plate {
+  left: 8px;
+  right: auto;
+  transform: none;
+}
+.route-stop[data-side='end'] .route-plate {
+  left: auto;
+  right: 8px;
+  transform: none;
+}
+.route-word {
+  color: var(--fg);
+}
+.route-stop.start .route-word {
+  color: var(--muted);
+}
+.route-stop.here .route-word,
+.route-stop.here.start .route-word {
+  color: var(--hole);
+}
+/* The exponent, in the heat the SAME number wore when it floated over the hole. */
+.route-rank {
+  display: inline-block;
+  font-size: 0.62em;
+  margin-left: 2px;
+  color: var(--rank-color);
+  vertical-align: super;
+}
+/* The unfound final approach, and an unexplored road's title: a position without a word.
+   FIXED width — a redaction that grew with the word would leak its length — and a flat
+   block rather than a hatch, so it recedes behind the words that ARE on the map. */
+.route-redacted {
+  display: inline-block;
+  width: 54px;
+  height: 12px;
+  vertical-align: -2px;
+  background: var(--rail);
+}
+.route-redacted.wide {
+  width: 68px;
+}
+
+/* --- off the map --- */
+/* Past the cold end of the scale, behind a torn edge: the guesses that earned no rank at
+   all. Beyond the top-K there is no distance to draw, and that IS the mechanic. */
+.route-shelf {
+  padding-top: 30px;
+}
+.route-break {
+  display: block;
+  height: 3px;
+  background: repeating-linear-gradient(90deg, var(--rail) 0 9px, transparent 9px 18px);
+}
+.route-shelf-head {
+  margin: 30px 0 14px;
+  font-family: var(--press);
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--muted);
+  text-align: center;
+  text-shadow: none;
+}
+.route-misses {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px 16px;
+  font-family: var(--vt);
+  font-size: 14px;
+  color: var(--muted);
+  opacity: 0.5;
 }
 
 /* Result action: the same flat key language as the keyboard it replaces. */

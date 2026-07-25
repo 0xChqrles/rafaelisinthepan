@@ -653,6 +653,26 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   `grincement` scored its BEST silhouette (0.19) on a degenerate 149/1 split — the
   metric rewards isolating an outlier, so a minimum road size is worth considering when
   Part 3 (#115's route modal) puts roads on screen.
+- **Route modal (#117, Part 3 of #115):** tapping a HOLE opens its neighborhood drawn as a
+  journey. `game/route.ts` is the pure model (`buildRoute`, contract-tested) and
+  `components/RouteModal.tsx` renders it; `Game` owns the open state so the guess prompt can
+  go inert behind it. **Entry point only where the geometry exists:** `hasRoute` gates on the
+  secret's rank-1 entry carrying `dq`, so every day published before #115 (and the tutorial's
+  synthetic boards) renders exactly as before — no button, no degraded list view. The hole
+  becomes a `<button>` wrapping its existing spans; it is present for the WHOLE round or not
+  at all and the solved choreography only `disabled`s it, because unwrapping mid-round would
+  remount the word while its scramble is running. **Geometry:** y is `dq`, linear, over a
+  band of `--route-band-h` (340svh, tuned by eye); lanes above the fork (the dq of the
+  farthest road-carrying group, from the DATA), one trunk below; a fixed gap and a broken
+  trace between the closest group and the terminus (the identity leap); the MISS shelf past
+  a torn break. Faint horizontal contours across the band give the axis measure — the map is
+  otherwise 4 screens of near-black. Road names are sized to FIT their lane (`laneNameFont`)
+  rather than clipped mid-word, and stop labels on the outer lanes lean inward so a long word
+  runs toward the middle instead of off the map. No motion beyond scroll (nothing for reduced
+  motion to collapse) and **no new analytics event** — the three-event invariant stands.
+  Side effect on the shared input: `WordInput`'s window listener now lets a focused BUTTON
+  keep only `Enter`, and `Game.appendChar` blurs a focused hole button, so typing a guess
+  right after closing a map is never swallowed.
 - **Offline LLM benchmark harness (#68, Kimi provider #91, native sessions #93,
   decided 2026-07-19).** The
   dedicated `benchmark` workspace owns `benchmark/scripts/llm_play.py`, its tests, and
