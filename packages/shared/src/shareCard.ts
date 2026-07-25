@@ -165,16 +165,18 @@ export function encodeResult(r: ShareResult): string {
 
   // The TICKS: one entry per distinct secret, in sentence order (so its index IS the number
   // the card stacks under the tick). A tick's try is 1..score, which fits the score's own
-  // bit length.
+  // bit length. With NO tries there is no try to point at, so every tick encodes as
+  // "never solved" — the decoder rejects a tick outside 1..score, and the codec's contract
+  // is that anything it writes it can read back.
   const ticks = r.solvedAt.slice(0, MAX_TICKS);
   const idxBits = bitLength(Math.max(1, score));
   w.write(ticks.length, TICK_COUNT_BITS);
   for (const at of ticks) {
-    if (at == null) {
+    if (at == null || score === 0) {
       w.write(0, 1);
     } else {
       w.write(1, 1);
-      w.write(clamp(Math.round(at), 1, Math.max(1, score)), idxBits);
+      w.write(clamp(Math.round(at), 1, score), idxBits);
     }
   }
   return bytesToB64url(w.toBytes());

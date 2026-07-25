@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { computeProgress, guessKey } from '../game/scoring';
-import { progressTrajectory, solveTicks } from '../game/share';
+import { replayRun, type RunReplay } from '../game/share';
 import { canExtend } from '../game/keyboard';
 import useVocab from '../hooks/useVocab';
 import useToday from '../hooks/useToday';
@@ -248,40 +248,30 @@ function Round({
   // WIDTH of the top progress bar. Distinct from the guess-count performance number.
   const progress = useMemo<number>(() => computeProgress(holes, ranks), [holes, ranks]);
 
-  // Per-guess reconstruction-% trajectory for the solved screen's share grid: replay
-  // this round's ordered valid guesses, one value per counted try. Derived from the
-  // persisted `tried` list, so it survives a reload just like the score.
-  const trajectory = useMemo<number[]>(
-    () => progressTrajectory(freshHoles, ranks, history),
+  // This round replayed: the per-guess reconstruction-% trajectory (the run ruler's cells,
+  // and what the share token carries) plus the solve moments (its ticks), from ONE walk of
+  // the ordered valid guesses. Derived from the persisted `tried` list, so it survives a
+  // reload just like the score.
+  const { trajectory, solvedAt } = useMemo<RunReplay>(
+    () => replayRun(freshHoles, ranks, history),
     [freshHoles, ranks, history],
   );
 
-  // The player's solve moments — which try dropped which secret — for the run ruler's
-  // ticks. Same replay rules as the trajectory, same persisted `tried` source.
-  const solvedAt = useMemo<(number | null)[]>(
-    () => solveTicks(freshHoles, ranks, history),
-    [freshHoles, ranks, history],
-  );
-
-  // Each display opponent's run, replayed into the same per-try trajectory + solve
-  // ticks as the player's: the leaderboard shows every entrant's whole run as a heat
-  // ruler. Run words are stored as typed (accents kept) — fold before lookup.
-  const runReplays = useMemo<
-    Map<string, { trajectory: number[]; solvedAt: (number | null)[] }> | undefined
-  >(
+  // Each display opponent's run, replayed the same way: the leaderboard shows every
+  // entrant's whole run as a ruler. Run words are stored as typed (accents kept) — fold
+  // before lookup.
+  const runReplays = useMemo<Map<string, RunReplay> | undefined>(
     () =>
       benchmark &&
       new Map(
-        displayEntries(benchmark).map(({ entry }) => {
-          const run = entry.run.map((w) => fold(w));
-          return [
-            entry.model,
-            {
-              trajectory: progressTrajectory(freshHoles, ranks, run),
-              solvedAt: solveTicks(freshHoles, ranks, run),
-            },
-          ];
-        }),
+        displayEntries(benchmark).map(({ entry }) => [
+          entry.model,
+          replayRun(
+            freshHoles,
+            ranks,
+            entry.run.map((w) => fold(w)),
+          ),
+        ]),
       ),
     [benchmark, freshHoles, ranks],
   );
@@ -680,11 +670,13 @@ function Round({
 
         {/* Below the sentence: the prompt and the solved source citation OVERLAY in one
             grid cell (.prompt-zone), BOTH mounted for the whole round — the zone sizes to
-            the taller natural height (the caption lays out its full text from frame one),
-            so the prompt→citation swap cannot move the centered sentence and no reserved
-            min-height is needed (the hand-synced 90px/72px pair, removed 2026-07-25).
-            The prompt exits on the solving submit; the caption stays invisible until the
-            source reveal beat, then types in place. */}
+            the taller natural height (the caption lays out its full citation from frame
+            one), so the prompt→citation swap cannot move the centered sentence and no
+            reserved min-height is needed (the hand-synced 90px/72px pair, removed
+            2026-07-25). The prompt exits on the solving submit; the caption stays
+            invisible until the source reveal beat, then types in place — and until that
+            beat it lays out MASKED, so reserving its height never puts the sentence's
+            author/work in the DOM of a round still being played. */}
         <div className="prompt-zone">
           <div
             className={`input-area${promptExiting ? ' solving' : ''}${
@@ -710,6 +702,7 @@ function Round({
           >
             <SolvedCaption
               source={source}
+              masked={!(showResults && sourceRevealStarted)}
               animate={showResults && sourceRevealStarted && !sourceRevealComplete}
               onComplete={finishSourceReveal}
             />

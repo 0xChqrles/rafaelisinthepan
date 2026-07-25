@@ -12,7 +12,7 @@ import SkipIcon from '../assets/icons/skip.svg?react';
 import { STAGGER_MS, FLOATING_HIT_INTRO_MS } from '../screens/Game';
 import MixWord, { SCRAMBLE_MS } from './MixWord';
 import CoachText, { richToPlain } from './CoachText';
-import { progressTrajectory, solveTicks } from '../game/share';
+import { replayRun } from '../game/share';
 import { buildPrefixSet, canExtend } from '../game/keyboard';
 import useVocab from '../hooks/useVocab';
 import { fold } from '@whippin/shared';
@@ -440,9 +440,8 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
       <div className="tray">
         {graduated ? (
           <SolvedScreen
+            {...replayRun(freshHoles(stage), puzzle.ranks, [...triedRef.current])}
             guessCount={tries}
-            trajectory={progressTrajectory(freshHoles(stage), puzzle.ranks, [...triedRef.current])}
-            solvedAt={solveTicks(freshHoles(stage), puzzle.ranks, [...triedRef.current])}
             dayNumber={null}
             lang={lang}
             action={{

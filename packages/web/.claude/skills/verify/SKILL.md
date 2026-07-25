@@ -32,7 +32,9 @@ open http://localhost:5199/en
   the client will fetch. Re-publishing the same day overwrites it.
 - A first visit shows the tutorial invitation. Skip it by pre-seeding storage in
   the browser context before load:
-  `localStorage.setItem('whippin-round', JSON.stringify({ version: 4, state: { onboarded: true, rounds: {}, solvedDays: {} } }))`.
+  `localStorage.setItem('whippin-round', JSON.stringify({ version: 3, state: { onboarded: true, rounds: {}, solvedDays: {} } }))`
+  (`version` must match the store's current one — `version: 3` in
+  `src/state/gameStore.ts`; a mismatch just runs `migratePersisted`).
 - Rounds PERSIST per day in localStorage — clear that key (or use a fresh browser
   context) to restart a round.
 - Every guess you type must exist in the committed vocab

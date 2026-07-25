@@ -62,12 +62,20 @@ export function renderCardSvg({ lang, dayNumber, score, trajectory, solvedAt }: 
   const n = Math.max(1, trajectory.length);
 
   // Integer cell boundaries so adjacent cells share an edge EXACTLY — no hairline seams
-  // under crispEdges — and clamped so the row can never spill past the bar's right edge.
+  // under crispEdges — and, because the boundaries tile [BAR_X, BAR_X + BAR_W) exactly,
+  // the row can never spill past the bar's right edge.
   const edge = (i: number) => BAR_X + Math.round((i * BAR_W) / n);
+  // ONE rect per occupied PIXEL COLUMN, not per try. Past BAR_W tries several tries land
+  // on the same column, and emitting a 1px rect for each only stacks them (the last one
+  // painted wins) while handing the rasterizer thousands of invisible rects — a hand-built
+  // token may declare a score of up to SCORE_MAX, so the count has to be bounded by the
+  // CARD, not by the token. Skipping the zero-width ones paints the identical image with
+  // at most BAR_W rects, and the survivors still tile the bar with no seams.
   const cells = trajectory
     .map((pct, i) => {
-      const x = Math.min(edge(i), BAR_X + BAR_W - 1);
-      const w = Math.max(1, edge(i + 1) - x);
+      const x = edge(i);
+      const w = edge(i + 1) - x;
+      if (w <= 0) return ''; // fully covered by a later try in the same column
       return `<rect x="${x}" y="${BAR_Y}" width="${w}" height="${BAR_H}" fill="${progressColor(pct)}"/>`;
     })
     .join('');

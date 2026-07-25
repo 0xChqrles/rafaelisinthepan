@@ -14,50 +14,59 @@ import {
   type ShareResult,
 } from '@whippin/shared';
 
-// Reconstruction-% trajectory: replay the ordered valid guesses against the puzzle to
-// get the reconstruction % AFTER each guess. A guess improves a hole exactly when the
-// typed slug is in that hole's rank map with a rank BELOW the hole's current rank — the
-// same rule as the live game loop (Game.submit). Starts from `freshHoles` (each at its
-// start_rank). Monotonic non-decreasing; the final guess (which solved the sentence)
-// lands at 100. One value per guess, so `.length === guessCount`.
-export function progressTrajectory(freshHoles: RuntimeHole[], ranks: RankMap, tried: string[]): number[] {
+// The ruler's two halves, replayed in ONE walk (they are the same walk: the same ordered
+// guesses under the same improvement rule as the live game loop, Game.submit). Keeping
+// them in one function is what stops the bar's cells and its ticks from ever disagreeing
+// about the same run — and every caller wants both, for the player and for each opponent.
+//
+//   trajectory — the reconstruction % AFTER each guess. Starts from `freshHoles` (each at
+//     its start_rank), monotonic non-decreasing, and the guess that solved the sentence
+//     lands at 100. One value per guess, so `.length === guessCount`.
+//   solvedAt — per DISTINCT secret in sentence order (first occurrence's pos), the 1-based
+//     try that dropped it, or null when the run never does (a DNF opponent). Every
+//     occurrence of a repeated secret solves on the same guess (they share one rank map),
+//     so one distinct secret = one tick.
+export interface RunReplay {
+  trajectory: number[];
+  solvedAt: (number | null)[];
+}
+
+export function replayRun(freshHoles: RuntimeHole[], ranks: RankMap, tried: string[]): RunReplay {
   const holes = freshHoles.map((h) => ({ ...h }));
-  const out: number[] = [];
-  for (const typed of tried) {
+  const secrets = holes.map((h) => h.secret).filter((s, i, a) => a.indexOf(s) === i);
+  const trajectory: number[] = [];
+  const solvedAt: (number | null)[] = secrets.map(() => null);
+  tried.forEach((typed, i) => {
     for (const h of holes) {
       if (h.rank === 0) continue; // solved holes are locked, exactly as in-game
       const entry = ranks[h.secret]?.[typed];
       if (entry && entry.rank < h.rank) h.rank = entry.rank;
     }
-    out.push(computeProgress(holes, ranks));
-  }
-  return out;
+    trajectory.push(computeProgress(holes, ranks));
+    secrets.forEach((s, si) => {
+      if (solvedAt[si] === null && holes.every((h) => h.secret !== s || h.rank === 0)) {
+        solvedAt[si] = i + 1;
+      }
+    });
+  });
+  return { trajectory, solvedAt };
 }
 
-// Solve moments for the run ruler: replay the same ordered guesses with the same
-// improvement rule as progressTrajectory, and record for each DISTINCT secret (in
-// sentence order — first occurrence's pos) the 1-based try that solved it, or null when
-// the run never does (a DNF opponent). Every occurrence of a repeated secret solves on
-// the same guess (they share one rank map), so one distinct secret = one tick.
+// The two halves on their own, for callers (and contract tests) that want just one.
+export function progressTrajectory(
+  freshHoles: RuntimeHole[],
+  ranks: RankMap,
+  tried: string[],
+): number[] {
+  return replayRun(freshHoles, ranks, tried).trajectory;
+}
+
 export function solveTicks(
   freshHoles: RuntimeHole[],
   ranks: RankMap,
   tried: string[],
 ): (number | null)[] {
-  const holes = freshHoles.map((h) => ({ ...h }));
-  const secrets = holes.map((h) => h.secret).filter((s, i, a) => a.indexOf(s) === i);
-  const out: (number | null)[] = secrets.map(() => null);
-  tried.forEach((typed, i) => {
-    for (const h of holes) {
-      if (h.rank === 0) continue;
-      const entry = ranks[h.secret]?.[typed];
-      if (entry && entry.rank < h.rank) h.rank = entry.rank;
-    }
-    secrets.forEach((s, si) => {
-      if (out[si] === null && holes.every((h) => h.secret !== s || h.rank === 0)) out[si] = i + 1;
-    });
-  });
-  return out;
+  return replayRun(freshHoles, ranks, tried).solvedAt;
 }
 
 // The shareable link: the result packed into a URL-safe token at `<origin>/s/<token>` (the

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { t } from '../i18n';
 import RunRuler, { rulerStagger } from './RunRuler';
 import CloseIcon from '../assets/icons/close.svg?react';
@@ -62,10 +63,26 @@ export default function LeaderboardDialog({
     return () => window.clearTimeout(id);
   }, [reduceMotion]);
 
-  const maxN = Math.max(...rows.map((r) => r.trajectory.length), 1);
-  const stagger = rulerStagger(maxN, reduceMotion);
+  // The shared scale comes from the longest SOLVED run, NOT the longest run on the table:
+  // a DNF's run is not a score, it simply ends at the harness's counted-try cap (300 by
+  // default), so scaling to it would squeeze every real bar — the player's included — into
+  // a few pixels. A DNF therefore overflows the scale and the ruler's own min(…, 1) clamps
+  // it to full width, which reads correctly: it ran the longest and still didn't finish.
+  // The colorize wave, though, still has to sweep every CELL on screen within its span, so
+  // its stagger is paced by the longest run of all.
+  const cellMax = Math.max(...rows.map((r) => r.trajectory.length), 1);
+  const scaleMax = Math.max(
+    ...rows.filter((r) => r.tries !== null).map((r) => r.trajectory.length),
+    1,
+  );
+  const stagger = rulerStagger(cellMax, reduceMotion);
 
-  return (
+  // PORTALLED to <body>: the trigger lives inside .solved-results, which always carries a
+  // transform (its rise-in). A transformed ancestor is a containing block for fixed
+  // positioning, and while a top-layer dialog is specified to escape that, it is exactly
+  // the kind of rule engines have disagreed on — a full-screen surface that silently
+  // becomes a 680px box is not a risk worth carrying for one import.
+  return createPortal(
     // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/click-events-have-key-events
     <dialog
       ref={dialogRef}
@@ -100,7 +117,7 @@ export default function LeaderboardDialog({
                 <RunRuler
                   trajectory={row.trajectory}
                   solvedAt={row.solvedAt}
-                  maxN={maxN}
+                  maxN={scaleMax}
                   stagger={stagger}
                   shown
                   colorized={colorized}
@@ -117,6 +134,7 @@ export default function LeaderboardDialog({
           {rows.map((row, i) => `${i + 1}. ${row.label} ${row.tries ?? t(lang, 'dnf')}`).join(' · ')}
         </p>
       </div>
-    </dialog>
+    </dialog>,
+    document.body,
   );
 }

@@ -806,8 +806,11 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   can never earn a redirect. `/og/<v1token>.png` stays a 404 (there is no ruler to
   draw). Cell count is
   still DERIVED from the score (one cell per counted try, never stored), and a try that
-  did not improve costs ONE bit, which is what keeps a long game's link short. **The
-  plain-text EMOJI row moved onto the PROGRESS ramp too (decided 2026-07-25):**
+  did not improve costs ONE bit, which is what keeps a long game's link short. The card
+  itself draws at most ONE rect per pixel column: the score field is 15 bits, so a
+  hand-built token can declare ~32k tries, and below a pixel per cell the extras only
+  stack — collapsing them bounds the rasterizer's work by the CARD instead of by the token.
+  **The plain-text EMOJI row moved onto the PROGRESS ramp too (decided 2026-07-25):**
   `progressEmoji` lives with the ramp stops in `shared/src/progressColor.ts` so the row
   and the ruler can't drift — `<35 🟦` (blue→cyan), `<45 🟩`, `<55 🟨`, `<65 🟧`,
   `<75 🟥`, `>=75 🟪` (magenta→violet→indigo), each band the emoji nearest the stop(s)
@@ -825,8 +828,14 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   one row per entrant sorted by score (player ahead on a tie, DNF last, `lineupModel`
   order) — medal, tag, the entrant's run replayed into its ruler, count (DNF muted).
   **Leaderboard rulers share ONE scale (decided 2026-07-25):** each bar's width is
-  proportional to its tries over the longest run on the table, so lengths and solve
-  moments compare straight down the column. The colorize wave's per-cell delay comes from
+  proportional to its tries over the longest **SOLVED** run on the table, so lengths and
+  solve moments compare straight down the column. Solved, not longest: a DNF's run is not
+  a score — it ends at the harness's counted-try cap (`DEFAULT_CAP` 300) — so scaling to it
+  would squeeze every real bar, the player's included, into a few pixels. A DNF simply
+  overflows the scale and the ruler's own `min(…, 1)` fills its row, which reads right: it
+  ran the longest and still didn't finish. The colorize wave is paced separately, by the
+  longest run of ALL, since it has to sweep every cell ON SCREEN within its span: its
+  per-cell delay comes from
   `rulerStagger(maxN, reduceMotion)`, which returns **0 under reduced motion** — the
   global CSS rule collapses animation/transition DURATIONS but not DELAYS, so the ramp
   would otherwise still crawl across the bar for over a second for someone who asked for
@@ -875,8 +884,15 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   the exit beats play, the results rise into the tray, and only once the risen stack
   reports itself in place does the optional sentence source type quickly, letter by
   letter, with a trailing `_` (tally/colorize choreography continues beneath it; no
-  metadata skips the typewriter); rehydrated solves render the full source/results
-  immediately without replaying the sequence. Player progression is separate:
+  metadata skips the typewriter). **The citation is MOUNTED for the whole round but
+  MASKED until that beat:** the prompt and the caption overlay in one `.prompt-zone` grid
+  cell and the zone sizes to the taller of the two, so the caption has to lay its full
+  citation out from frame one — but the sentence's author/work is a HINT, and rendering it
+  for real would leave it readable in an unsolved round's DOM. `SolvedCaption`'s `masked`
+  replaces every non-space glyph (the pixel font is monospace and the spaces — its only
+  wrap opportunities — are kept, so the mask occupies exactly the real box) and empties the
+  sr-only mirror. Rehydrated solves render the full source/results immediately without
+  replaying the sequence. Player progression is separate:
   `StreakDialog` is a
   **borderless full-screen** native modal, opened only by a FRESH active-day
   unsolved→solved transition. Its staged animation uses `@react-spring/web` (v9 for React

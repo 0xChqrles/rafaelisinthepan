@@ -32,25 +32,55 @@ function typedLine(chars: string[], shown: number, cursor: boolean) {
 // every final character is present but hidden from frame one so line wrapping is stable.
 // The underscore occupies the next character's reserved slot, then disappears before the
 // result stack starts. Rehydrated solves render the complete source immediately.
+//
+// `masked` is what lets the caption be MOUNTED for the whole round (it reserves the prompt
+// zone's height, so the input→citation swap never moves the sentence) without the citation
+// being READABLE before the solve: an unsolved round would otherwise carry "— Victor Hugo,
+// Les Misérables" in the DOM, one DevTools panel away, and the author of the sentence you
+// are reconstructing is a hint. Every non-space glyph is replaced; the citation is set in
+// the pixel font (monospace) and the spaces — its only wrap opportunities — are kept, so
+// the mask lays out to exactly the box the real text will.
+const MASK_CHAR = 'M';
+const veil = (text: string, masked: boolean) =>
+  masked ? text.replace(/\S/gu, MASK_CHAR) : text;
+
 export default function SolvedCaption({
   source,
   animate = false,
+  masked = false,
   onComplete,
 }: {
   source?: Source;
   animate?: boolean;
+  masked?: boolean;
   onComplete?: () => void;
 }) {
   const attribution = [source?.author, source?.work].filter(Boolean).join(', ');
   const attributionText = attribution ? `— ${attribution}` : '';
-  const kindChars = useMemo(() => Array.from(source?.kind ?? ''), [source?.kind]);
-  const attributionChars = useMemo(() => Array.from(attributionText), [attributionText]);
+  const kindChars = useMemo(
+    () => Array.from(veil(source?.kind ?? '', masked)),
+    [source?.kind, masked],
+  );
+  const attributionChars = useMemo(
+    () => Array.from(veil(attributionText, masked)),
+    [attributionText, masked],
+  );
   const total = kindChars.length + attributionChars.length;
   const reduceMotion =
     typeof window !== 'undefined' &&
     typeof window.matchMedia === 'function' &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const [shown, setShown] = useState(() => (animate && !reduceMotion ? 0 : total));
+
+  // Rewind DURING render, not in the effect below: `animate` turns on in the same commit
+  // that unhides the caption, and an effect runs after that commit has been painted — so
+  // the whole citation would flash complete for a frame before the typewriter took it back
+  // to zero (and its finished-typing timer would fire spuriously in between).
+  const [wasAnimating, setWasAnimating] = useState(animate);
+  if (animate !== wasAnimating) {
+    setWasAnimating(animate);
+    setShown(animate && !reduceMotion ? 0 : total);
+  }
 
   useEffect(() => {
     if (!animate) {
@@ -89,7 +119,8 @@ export default function SolvedCaption({
   const showCursor = animate && !reduceMotion && total > 0;
   const kindCursor = showCursor && (typingKind || attributionChars.length === 0);
   const attributionCursor = showCursor && !typingKind && attributionChars.length > 0;
-  const accessibleText = [source?.kind, attributionText].filter(Boolean).join('. ');
+  // Empty while masked, so the sr-only mirror can never carry the citation either.
+  const accessibleText = masked ? '' : [source?.kind, attributionText].filter(Boolean).join('. ');
 
   return (
     <div className="solved-caption">

@@ -1076,9 +1076,11 @@ button * {
 /* --- prompt zone: input area ⇄ solved caption, no reserved heights ---
    The two occupants of the row under the sentence overlay in ONE grid cell, both
    mounted for the whole round (the retired/pending one visibility-hidden). The cell
-   sizes to the taller NATURAL height — the caption lays out its full text from frame
-   one — so the prompt→citation swap cannot move the centered sentence and no
-   hand-synced min-height pair is needed (the old 90px/72px trick, removed 2026-07-25). */
+   sizes to the taller NATURAL height — the caption lays out its full citation from
+   frame one, MASKED until the reveal beat (SolvedCaption) so reserving that height
+   never leaves the attribution readable in an unsolved round's DOM — so the
+   prompt→citation swap cannot move the centered sentence and no hand-synced
+   min-height pair is needed (the old 90px/72px trick, removed 2026-07-25). */
 .prompt-zone {
   width: 100%;
   display: grid;
@@ -1286,8 +1288,10 @@ button * {
    the PROGRESS ramp, one flat cell per counted try (the raw trajectory — each cell is
    progressColor at that try's reconstruction %, no bucketing on screen), with
    a white tick at each solving try and the dropped hole's sentence index under it. Width
-   is RELATIVE — calc'd from --n over --max-n (the longest run on the surface) — so on
-   the leaderboard every bar shares one scale and solve moments align down the table.
+   is RELATIVE — calc'd from --n over --max-n (the longest SOLVED run on the surface) — so
+   on the leaderboard every bar shares one scale and solve moments align down the table.
+   The min() clamp is what a DNF rides on: its run ends at the harness's counted-try cap
+   rather than at a score, so it overflows the scale and simply fills the row.
    The padding-bottom reserves the tick-number lane so rows keep their rhythm. */
 .run-ruler {
   width: calc(min(var(--n) / var(--max-n), 1) * 100%);

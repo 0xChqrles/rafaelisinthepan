@@ -9,7 +9,7 @@
 //     bucketing and no mean (the bounded 3..18 row was retired 2026-07-25).
 
 import { describe, it, expect } from 'vitest';
-import { progressTrajectory, solveTicks, emojiRow, shareText, shareUrl } from './share';
+import { progressTrajectory, replayRun, solveTicks, emojiRow, shareText, shareUrl } from './share';
 import { computeProgress } from './scoring';
 import { decodeResult, progressEmoji, type RankMap, type RuntimeHole } from '@whippin/shared';
 
@@ -99,6 +99,30 @@ describe('solveTicks — solve moments per distinct secret, in sentence order', 
       { pos: 4, secret: 'chat', word: 'bête', rank: 300, startRank: 300 },
     ];
     expect(solveTicks(holes, ranks, ['w200', 'w0'])).toEqual([2]);
+  });
+});
+
+describe('replayRun — the cells and the ticks come out of ONE walk', () => {
+  it('puts the last tick on exactly the try whose cell reaches 100', () => {
+    // The two halves are only ever drawn together (one bar, its marks). This is the
+    // invariant a single walk buys: the guess that completes the reconstruction IS the
+    // guess that drops the last secret — they can never name different tries.
+    const ranks: RankMap = { a: mk(1000), b: mk(1000) };
+    const holes: RuntimeHole[] = [hole('a', 300), { ...hole('b', 300), pos: 2 }];
+    const { trajectory, solvedAt } = replayRun(holes, ranks, ['w200', 'w0', 'w100']);
+    const lastTick = Math.max(...solvedAt.map((at) => at ?? 0));
+    expect(trajectory[lastTick - 1]).toBe(100);
+    expect(trajectory.slice(0, lastTick - 1).every((p) => p < 100)).toBe(true);
+  });
+
+  it('is what the two single-purpose exports return', () => {
+    const ranks: RankMap = { a: mk(1000), b: mk(1000) };
+    const holes: RuntimeHole[] = [hole('a', 300), { ...hole('b', 300), pos: 2 }];
+    const tried = ['w200', 'w50', 'w0'];
+    expect(replayRun(holes, ranks, tried)).toEqual({
+      trajectory: progressTrajectory(holes, ranks, tried),
+      solvedAt: solveTicks(holes, ranks, tried),
+    });
   });
 });
 

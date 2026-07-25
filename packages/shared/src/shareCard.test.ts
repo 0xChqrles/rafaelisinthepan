@@ -91,6 +91,23 @@ describe('encodeResult / decodeResult — round-trip', () => {
     expect(d?.trajectory).toHaveLength(300);
     expect(d?.solvedAt).toEqual([120, 240, 300]);
   });
+
+  it('round-trips a scoreless result — anything it writes, it can read back', () => {
+    // No tries means no try for a tick to point at, and the decoder rejects a tick outside
+    // 1..score. The encoder must therefore not emit one — a token this codec produces can
+    // never be a token it refuses.
+    const none: ShareResult = {
+      lang: 'en',
+      dayNumber: 20638,
+      score: 0,
+      trajectory: [],
+      solvedAt: [null, null, null],
+    };
+    const d = decodeResult(encodeResult(none));
+    expect(d?.score).toBe(0);
+    expect(d?.trajectory).toEqual([]);
+    expect(d?.solvedAt).toEqual([null, null, null]);
+  });
 });
 
 describe('token shape — short + URL-safe', () => {

@@ -1,20 +1,19 @@
 import type { CSSProperties } from 'react';
 import { progressColor } from '@whippin/shared';
 
-// One entrant's replayed run for the ruler: the per-try trajectory plus the solve
-// moments (per distinct secret in sentence order, the 1-based solving try or null).
-export interface RunReplay {
-  trajectory: number[];
-  solvedAt: (number | null)[];
-}
+// One entrant's replayed run for the ruler (the per-try trajectory plus the solve
+// moments) — produced by the ONE replay in game/share, so a ruler can never be drawn
+// from a run the share token wouldn't describe the same way.
+export type { RunReplay } from '../game/share';
 
 // A run's RULER (replacing the bucketed squares, decided 2026-07-24): one fixed bar,
 // one cell per counted try colored on the PROGRESS ramp (progressColor — each try's
 // cell IS the progress bar's color at that reconstruction %), no bucketing — with
 // a white tick at each try that dropped a secret and the hole's sentence index (1..3)
 // under it. A guess that drops several secrets stacks its indices under ONE tick. On
-// the leaderboard every bar shares one scale (width ∝ tries / longest run) so solve
-// moments align down the table; the standalone (opponent-less) ruler is full width.
+// the leaderboard every bar shares one scale (width ∝ tries / longest SOLVED run, so a
+// DNF's cap-length run can't shrink every real bar to a sliver — see LeaderboardDialog);
+// the standalone (opponent-less) ruler is full width.
 export default function RunRuler({
   trajectory,
   solvedAt,

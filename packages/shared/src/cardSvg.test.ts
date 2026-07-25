@@ -88,4 +88,26 @@ describe('renderCardSvg', () => {
       expect(Number(cells[i][1])).toBe(Number(cells[i - 1][1]) + Number(cells[i - 1][2]));
     }
   });
+
+  it('bounds the rect count by the CARD, not by the token (a forged score can not blow it up)', () => {
+    // The token's score field holds 15 bits, so a hand-built one can declare ~32k tries and
+    // the decoder will hand us that many cells. Below one pixel per cell the extra rects are
+    // invisible — they only stack — so the renderer must collapse them instead of asking the
+    // rasterizer to draw 32k of them on every /og cache miss.
+    const trajectory = Array.from({ length: 32_767 }, (_, i) => (100 * (i + 1)) / 32_767);
+    const svg = renderCardSvg({ lang: 'en', dayNumber: 300, score: 32_767, trajectory, solvedAt: [1, 2, 3] });
+    const cells = [...svg.matchAll(/<rect x="([\d.]+)" y="180" width="([\d.]+)"/g)];
+    expect(cells.length).toBeLessThanOrEqual(CARD_WIDTH);
+    // Still the same bar: contiguous, every cell at least a pixel, none past the edge.
+    for (const [, x, w] of cells) {
+      expect(Number(w)).toBeGreaterThanOrEqual(1);
+      expect(Number(x) + Number(w)).toBeLessThanOrEqual(CARD_WIDTH);
+    }
+    for (let i = 1; i < cells.length; i += 1) {
+      expect(Number(cells[i][1])).toBe(Number(cells[i - 1][1]) + Number(cells[i - 1][2]));
+    }
+    // And it still spans the full bar — collapsing cells must not shorten the run.
+    const last = cells[cells.length - 1];
+    expect(Number(last[1]) + Number(last[2])).toBe(Number(cells[0][1]) + 1020);
+  });
 });
