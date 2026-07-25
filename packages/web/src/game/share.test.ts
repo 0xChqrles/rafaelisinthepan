@@ -5,11 +5,24 @@
 //   - the result is shared as a link `<origin>/s/<token>` that the backend unfurls into the
 //     card image — the RAW run since the v2 token, so the card draws the same ruler as the
 //     solved screen (the codec itself is contract-tested in @whippin/shared);
-//   - the plain-text emoji row is that ruler CELL FOR CELL: one emoji per counted try, no
-//     bucketing and no mean (the bounded 3..18 row was retired 2026-07-25).
+//   - the plain-text emoji row is a BOUNDED summary of that ruler: 3..18 cells on a hardcoded
+//     breakpoint curve (more tries -> more cells), each the MEAN progress of its bucket —
+//     except the last, pinned to the solving try so a finished run always ends where it ended.
 
 import { describe, it, expect } from 'vitest';
-import { progressTrajectory, replayRun, solveTicks, emojiRow, shareText, shareUrl } from './share';
+import {
+  progressTrajectory,
+  replayRun,
+  solveTicks,
+  emojiRow,
+  rowCellCount,
+  rowMeans,
+  shareText,
+  shareUrl,
+  MIN_ROW_CELLS,
+  MAX_ROW_CELLS,
+  ROW_BREAKPOINTS,
+} from './share';
 import { computeProgress } from './scoring';
 import { decodeResult, progressEmoji, type RankMap, type RuntimeHole } from '@whippin/shared';
 
@@ -126,38 +139,112 @@ describe('replayRun — the cells and the ticks come out of ONE walk', () => {
   });
 });
 
-describe('emojiRow — the RULER in plain text (fallback where no card image renders)', () => {
+describe('rowCellCount — the hardcoded breakpoint curve, 3..18', () => {
+  it('is the minimum 3 for a perfect game (3 secrets -> 3 distinct words)', () => {
+    expect(rowCellCount(3)).toBe(3);
+    expect(MIN_ROW_CELLS).toBe(3);
+  });
+
+  it('adds one cell at each breakpoint (half-open, tries >= t)', () => {
+    expect(rowCellCount(4)).toBe(4);
+    expect(rowCellCount(5)).toBe(4);
+    expect(rowCellCount(6)).toBe(5);
+    expect(rowCellCount(9)).toBe(5);
+    expect(rowCellCount(10)).toBe(6);
+    expect(rowCellCount(62)).toBe(10);
+    expect(rowCellCount(99)).toBe(11);
+    expect(rowCellCount(100)).toBe(12);
+    expect(rowCellCount(299)).toBe(17);
+    expect(rowCellCount(300)).toBe(18);
+  });
+
+  it('CAPS at 18 no matter how long the game runs — the whole point of the bound', () => {
+    expect(MAX_ROW_CELLS).toBe(18);
+    expect(MAX_ROW_CELLS).toBe(MIN_ROW_CELLS + ROW_BREAKPOINTS.length);
+    expect(rowCellCount(300)).toBe(MAX_ROW_CELLS);
+    expect(rowCellCount(5000)).toBe(MAX_ROW_CELLS);
+    expect(rowCellCount(Number.MAX_SAFE_INTEGER)).toBe(MAX_ROW_CELLS);
+  });
+
+  it('is monotonic non-decreasing in tries', () => {
+    for (let t = 3; t < 400; t++) expect(rowCellCount(t + 1)).toBeGreaterThanOrEqual(rowCellCount(t));
+  });
+});
+
+describe('rowMeans — the trajectory collapsed into rowCellCount buckets', () => {
+  it('returns rowCellCount(n) values, each within the data range', () => {
+    const traj = Array.from({ length: 20 }, (_, i) => (100 * (i + 1)) / 20); // 5,10,...,100
+    const cells = rowMeans(traj);
+    expect(cells).toHaveLength(rowCellCount(20)); // 7
+    for (const v of cells) {
+      expect(v).toBeGreaterThanOrEqual(traj[0]);
+      expect(v).toBeLessThanOrEqual(traj[traj.length - 1]);
+    }
+  });
+
+  it('is monotonic non-decreasing (progress is, and the buckets are contiguous)', () => {
+    const traj = Array.from({ length: 137 }, (_, i) => (100 * (i + 1)) / 137);
+    const cells = rowMeans(traj);
+    expect(cells).toHaveLength(rowCellCount(137)); // 13
+    for (let i = 1; i < cells.length; i++) expect(cells[i]).toBeGreaterThanOrEqual(cells[i - 1]);
+  });
+
+  it('averages WITHIN a bucket (it samples nothing)', () => {
+    // 6 guesses -> 5 cells: with floor(i*n/m) boundaries the last bucket holds [50,60]; its
+    // mean would be 55, but the LAST cell is pinned to the final try (60) — see below.
+    expect(rowMeans([10, 20, 30, 40, 50, 60])).toEqual([10, 20, 30, 40, 60]);
+    // A mid-row bucket really is a mean: 8 guesses -> 5 cells with boundaries 0,1,3,4,6,8,
+    // so cell 1 holds guesses 2-3 and shows their mean, while the last (guesses 7-8, mean
+    // 85) is overridden by the pin.
+    const cells = rowMeans([0, 50, 60, 60, 70, 70, 80, 90]);
+    expect(cells[1]).toBe(55);
+    expect(cells[cells.length - 1]).toBe(90);
+  });
+
+  it('PINS the last cell to the solving try, never its bucket mean', () => {
+    // The reason the bounded row was briefly retired: a 61-try grind plateaus at 70 and
+    // solves on its last guess, so the final bucket's MEAN is ~70 and the row closed on 🟥 —
+    // a finished game that reads unfinished. The pin makes the last cell the real ending.
+    const grind = [...Array(60).fill(70), 100];
+    const cells = rowMeans(grind);
+    expect(cells).toHaveLength(rowCellCount(61)); // 10
+    expect(cells[cells.length - 1]).toBe(100);
+    expect([...emojiRow(grind)].pop()).toBe('🟪');
+  });
+
+  it('handles no guesses without throwing', () => {
+    expect(rowMeans([])).toEqual([]);
+  });
+});
+
+describe('emojiRow — the bounded row in plain text (fallback where no card image renders)', () => {
   it('walks the same PROGRESS ramp as the ruler, not a second palette', () => {
-    // One value squarely inside each band; the bands themselves are contract-tested
-    // against the ramp in @whippin/shared (progressColor.test.ts).
-    expect(emojiRow([10, 40, 50, 60, 70, 90])).toBe('🟦🟩🟨🟧🟥🟪');
-    expect(emojiRow([10, 40, 50, 60, 70, 90])).toBe(
-      [10, 40, 50, 60, 70, 90].map(progressEmoji).join(''),
-    );
+    // 3 tries -> 3 cells, so this row is one emoji per try and each band shows plainly. The
+    // bands themselves are contract-tested against the ramp in @whippin/shared.
+    expect(emojiRow([10, 50, 90])).toBe('🟦🟨🟪');
+    expect(emojiRow([10, 50, 90])).toBe([10, 50, 90].map(progressEmoji).join(''));
   });
 
   it('ends a solved run on the ramp top, distinct from an untouched start', () => {
-    expect(emojiRow([100])).toBe('🟪');
-    expect(emojiRow([0])).toBe('🟦');
+    expect([...emojiRow([100])].pop()).toBe('🟪');
+    expect([...emojiRow([0])].pop()).toBe('🟦');
   });
 
-  it('is ONE emoji per counted try — never bucketed, never averaged', () => {
-    // A 137-try run gives a 137-emoji row, not a bounded summary of one. Each colored-square
-    // emoji is a single code point (2 UTF-16 units).
+  it('NEVER exceeds 18 emoji, however long the game (it has to fit a message)', () => {
+    for (const n of [19, 62, 137, 300, 1000]) {
+      const traj = Array.from({ length: n }, (_, i) => (100 * (i + 1)) / n);
+      const row = [...emojiRow(traj)]; // spread: each colored square is ONE code point
+      expect(row.length).toBeLessThanOrEqual(MAX_ROW_CELLS);
+      expect(row).toHaveLength(rowCellCount(n));
+    }
+    // A 62-try game is 10 emoji (~40 bytes), not 62.
+    const grind = Array.from({ length: 62 }, (_, i) => (i < 58 ? 61 : 100));
+    expect([...emojiRow(grind)]).toHaveLength(10);
+  });
+
+  it('emits one code point per cell (the row survives plain-text clients)', () => {
     const traj = Array.from({ length: 137 }, (_, i) => (100 * (i + 1)) / 137);
-    expect([...emojiRow(traj)]).toHaveLength(137);
-    // And each cell is ITS OWN try's value: a run that stalls repeats the emoji rather than
-    // smoothing the plateau into a mean the way the old bucketed row did.
-    expect(emojiRow([0, 0, 0, 100])).toBe('🟦🟦🟦🟪');
-  });
-
-  it('carries the run end to end — the last emoji IS the solving try', () => {
-    // The old bucketed row averaged the tail, so a long grind that solved on the last guess
-    // could end mid-ramp. One cell per try cannot: 100 is the final cell.
-    const grind = [...Array(60).fill(70), 100];
-    const row = [...emojiRow(grind)];
-    expect(row).toHaveLength(61);
-    expect(row[row.length - 1]).toBe('🟪');
+    expect([...emojiRow(traj)]).toHaveLength(rowCellCount(137));
   });
 
   it('handles no guesses without throwing', () => {
@@ -182,10 +269,13 @@ describe('shareText — headline, emoji ruler, blank line, URL in order', () => 
     expect(lines[3]).toBe(url); // link last
   });
 
-  it('the row is exactly as long as the run (the headline count and the row agree)', () => {
-    const trajectory = Array.from({ length: 9 }, (_, i) => 10 * (i + 1));
-    const lines = shareText('Whippin #7 — 9 tries', trajectory, 'https://x/y').split('\n');
-    expect([...lines[1]]).toHaveLength(9);
+  it('keeps the row short even when the headline count is large', () => {
+    // The headline carries the exact score; the row is a bounded picture of how it went, so
+    // a long game stays pasteable instead of wrapping across a phone screen.
+    const trajectory = Array.from({ length: 137 }, (_, i) => (100 * (i + 1)) / 137);
+    const lines = shareText('Whippin #7 — 137 tries', trajectory, 'https://x/y').split('\n');
+    expect([...lines[1]]).toHaveLength(rowCellCount(137));
+    expect(lines[1].length).toBeLessThanOrEqual(2 * MAX_ROW_CELLS); // UTF-16 units
   });
 });
 

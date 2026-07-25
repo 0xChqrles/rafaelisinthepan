@@ -7,9 +7,9 @@
 // to the card (decided 2026-07-25, replacing the bucketed heat squares — the v2 token carries
 // the raw run): one cell per counted try on the shared PROGRESS ramp (progressColor, so the
 // card matches the on-screen bar exactly), a tick where each secret dropped, and that hole's
-// sentence index (1..3) under it. The share TEXT's emoji row is this same bar cell for cell
-// (one emoji per try on the same ramp, via progressEmoji); the ticks are the one thing only
-// the card can draw, so it stays the richer view.
+// sentence index (1..3) under it. The share TEXT's emoji row summarises this same bar into a
+// bounded 3..18 cells on the same ramp (it has to fit a text message); the card draws every
+// try AND the ticks, so it stays the richer view.
 //
 // The only interpolated strings are numeric fields (score/day/pct/hole index — all clamped
 // ints from the decoded token) and the try-count UNIT, which is a fixed per-lang table
