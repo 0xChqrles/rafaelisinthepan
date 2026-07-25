@@ -1,65 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
-  benchmarkRanking,
   lineupModel,
   lineupEvents,
   displayEntries,
   hasDisplayEntries,
 } from './benchmark';
 import type { BenchmarkResults } from '@whippin/shared';
-
-describe('benchmarkRanking', () => {
-  it('inserts the player, sorts ascending, and leaves DNF models last', () => {
-    const ranking = benchmarkRanking(
-      [
-        {
-          model: 'claude-fable-5',
-          label: 'CLAUDE FABLE',
-          tag: 'FABLE',
-          tries: 32,
-          run: ['forest'],
-        },
-        {
-          model: 'k3',
-          label: 'KIMI K3',
-          tag: 'KIMI',
-          tries: 51,
-          run: ['forest'],
-        },
-        {
-          model: 'gpt-5.6-sol',
-          label: 'GPT-5.6',
-          tag: 'GPT',
-          tries: null,
-          run: ['forest'],
-        },
-      ],
-      45,
-      'YOU',
-    );
-
-    expect(ranking).toEqual([
-      { label: 'CLAUDE FABLE', tries: 32, player: false },
-      { label: 'YOU', tries: 45, player: true },
-      { label: 'KIMI K3', tries: 51, player: false },
-      { label: 'GPT-5.6', tries: null, player: false },
-    ]);
-  });
-
-  // Tie = human win (decided 2026-07-24, #110): the solved ranking and the frozen
-  // lineup podium share one tie rule, so the same screen can never show two orders.
-  it('places the player AHEAD of a model with an equal score', () => {
-    const ranking = benchmarkRanking(
-      [{ model: 'k3', label: 'KIMI K3', tag: 'KIMI', tries: 7, run: ['a'] }],
-      7,
-      'YOU',
-    );
-    expect(ranking).toEqual([
-      { label: 'YOU', tries: 7, player: true },
-      { label: 'KIMI K3', tries: 7, player: false },
-    ]);
-  });
-});
 
 // The mid-game standings lineup (#81): ascending tries, model ties in canonical display
 // order, DNF far right. A tie with the player keeps the PLAYER ahead — an opponent

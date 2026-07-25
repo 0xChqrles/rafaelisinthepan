@@ -434,7 +434,7 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
       </div>
 
       {/* The bottom is for INTERACTIONS: the mix button, then the keyboard, and at
-          the very end the REAL solved layout — heat squares + score reveal, with
+          the very end the REAL solved layout — run ruler + score reveal, with
           PLAY standing in SHARE's slot — so graduation looks exactly like tomorrow's
           win will. */}
       <div className="tray">

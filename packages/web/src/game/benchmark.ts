@@ -22,14 +22,11 @@ export function displayEntries(entries: BenchmarkResults): DisplayEntry[] {
 
 // Whether a puzzle carries any RENDERABLE opponent — a benchmark array full of only
 // lab-only models shows no lineup, exactly like a puzzle with no benchmark at all.
-export function hasDisplayEntries(entries: BenchmarkResults | undefined): boolean {
+// A type predicate, so callers get the narrowed array without a second `benchmark &&`.
+export function hasDisplayEntries(
+  entries: BenchmarkResults | undefined,
+): entries is BenchmarkResults {
   return entries !== undefined && displayEntries(entries).length > 0;
-}
-
-export interface BenchmarkRankingEntry {
-  label: string;
-  tries: number | null;
-  player: boolean;
 }
 
 // Ascending by tries with DNF (null) last.
@@ -37,25 +34,6 @@ function byTries(a: { tries: number | null }, b: { tries: number | null }): numb
   if (a.tries === null) return b.tries === null ? 0 : 1;
   if (b.tries === null) return -1;
   return a.tries - b.tries;
-}
-
-// Build the solved-screen race result. A tie displays as a HUMAN WIN (decided 2026-07-24,
-// #110): the player precedes an equal-score model, the same rule the standings lineup
-// froze into its podium — the two surfaces must never disagree on the same screen.
-// Modern JS sort is stable, so equal-scoring models keep the curator's puzzle order.
-export function benchmarkRanking(
-  entries: BenchmarkResults,
-  playerTries: number,
-  playerLabel: string,
-): BenchmarkRankingEntry[] {
-  return [
-    ...displayEntries(entries).map(({ entry: { label, tries } }) => ({
-      label,
-      tries,
-      player: false,
-    })),
-    { label: playerLabel, tries: playerTries, player: true },
-  ].sort((a, b) => byTries(a, b) || Number(b.player) - Number(a.player));
 }
 
 // One entrant standing in the mid-game lineup (#81). `key` is a stable render identity
@@ -76,12 +54,14 @@ export interface LineupModel {
   playerIndex: number;
 }
 
-// Map (live counted tries, benchmark entries) -> the standings lineup. Position encodes
-// ORDER only, ties among models keep the curator's puzzle order, and DNF models stand at
-// the far right. UNLIKE benchmarkRanking, a mid-game tie keeps the PLAYER ahead: an
-// opponent only moves in front once the live count strictly EXCEEDS its score (decided
-// 2026-07-24) — reaching an opponent's count is not yet losing to it while the round is
-// still running. entrants[0] is the leader.
+// Map (live counted tries, benchmark entries) -> the standings lineup, and — replayed
+// once more at the end — the solved leaderboard's row order, so the two surfaces can
+// never disagree about the same race. Position encodes ORDER only, ties among models keep
+// the curator's puzzle order, and DNF models stand at the far right. A tie keeps the
+// PLAYER ahead: an opponent only moves in front once the live count strictly EXCEEDS its
+// score (decided 2026-07-24) — reaching an opponent's count is not yet losing to it while
+// the round is still running, and a finished tie displays as a HUMAN WIN (#110).
+// entrants[0] is the leader.
 export function lineupModel(
   entries: BenchmarkResults,
   playerTries: number,

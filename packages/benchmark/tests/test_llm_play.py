@@ -11,6 +11,7 @@ import json
 import math
 import os
 from pathlib import Path
+import threading
 from types import SimpleNamespace
 import sys
 
@@ -73,6 +74,8 @@ from llm_play import (
     validate_openai_subscription_auth,
     write_benchmark,
     write_lab_artifact,
+    fcntl,
+    _exclusive_file_lock,
     _effective_provider_effort,
     _aggregate_token_usage,
     _normalize_anthropic_token_usage,
@@ -3109,9 +3112,9 @@ def test_in_place_requires_median_persistent_and_the_default_run_count(capsys):
     assert ok.in_place is True
     assert ok.runs == DEFAULT_RUNS == 5
 
-    # Kimi shares the ONE uniform run default, so an omitted --runs satisfies the
-    # canonical DEFAULT_RUNS gate for it too — no explicit `--runs 5` required,
-    # matching every other model's in-place ergonomics.
+    # Roster-wide invariant: --runs has ONE default for every model, so the canonical
+    # gate is satisfied by omitting it — including for Kimi, whose in-place ergonomics
+    # must not diverge from the rest. Guards against reintroducing a per-provider default.
     kimi_in_place = parse_args(
         ["puzzle.json", "--model", "KIMI", "--auth", "subscription",
          "--effort", "low", "--in-place"]
@@ -3239,6 +3242,48 @@ def test_in_place_reload_merges_a_concurrent_sibling_write(
         "claude-sonnet-5",
         "claude-fable-5",
     ]
+
+
+@pytest.mark.skipif(fcntl is None, reason="advisory file locks are POSIX-only")
+def test_exclusive_file_lock_serializes_whole_read_modify_write_cycles(tmp_path):
+    # Re-reading before the write narrows the clobber window but does not close it: two
+    # runs can still interleave BETWEEN the re-read and the atomic replace. The lock is
+    # what makes the cycle exclusive — a second holder must WAIT for the first to leave,
+    # never observe the file mid-cycle. flock treats independent descriptors on one file
+    # independently, so two threads exercise the same contention two processes would.
+    target = tmp_path / "puzzle.json"
+    target.write_text("{}", encoding="utf-8")
+    order: list[str] = []
+    holder_inside = threading.Event()
+    let_holder_finish = threading.Event()
+    waiter_finished = threading.Event()
+
+    def holder():
+        with _exclusive_file_lock(target):
+            order.append("holder-enter")
+            holder_inside.set()
+            let_holder_finish.wait(5)
+            order.append("holder-exit")
+
+    def waiter():
+        with _exclusive_file_lock(target):
+            order.append("waiter-enter")
+        waiter_finished.set()
+
+    first = threading.Thread(target=holder)
+    first.start()
+    assert holder_inside.wait(5)
+
+    second = threading.Thread(target=waiter)
+    second.start()
+    # Blocked, not merely slow: the waiter cannot enter while the holder is inside.
+    assert not waiter_finished.wait(0.25)
+
+    let_holder_finish.set()
+    first.join(5)
+    second.join(5)
+    assert waiter_finished.is_set()
+    assert order == ["holder-enter", "holder-exit", "waiter-enter"]
 
 
 def test_verbose_reply_is_reprompted_without_scoring_its_first_word():

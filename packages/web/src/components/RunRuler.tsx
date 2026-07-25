@@ -89,9 +89,13 @@ export default function RunRuler({
 }
 
 // The shared colorize-wave pacing (used by the solved tray and the leaderboard dialog):
-// per-try column delays, capped so the whole sweep never exceeds the max span.
+// per-try column delays, capped so the whole sweep never exceeds the max span. Under
+// reduced motion the stagger is ZERO — the global CSS rule collapses DURATIONS but not
+// transition-DELAYS, so without this the sweep would still crawl across the bar for over
+// a second for a viewer who asked for no motion.
 export const RULER_STAGGER_MS = 55;
 export const RULER_MAX_SPAN_MS = 1400;
-export function rulerStagger(maxN: number): number {
-  return maxN > 1 ? Math.min(RULER_STAGGER_MS, RULER_MAX_SPAN_MS / (maxN - 1)) : 0;
+export function rulerStagger(maxN: number, reduceMotion = false): number {
+  if (reduceMotion || maxN <= 1) return 0;
+  return Math.min(RULER_STAGGER_MS, RULER_MAX_SPAN_MS / (maxN - 1));
 }

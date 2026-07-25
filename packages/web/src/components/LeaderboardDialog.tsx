@@ -63,13 +63,16 @@ export default function LeaderboardDialog({
   }, [reduceMotion]);
 
   const maxN = Math.max(...rows.map((r) => r.trajectory.length), 1);
-  const stagger = rulerStagger(maxN);
+  const stagger = rulerStagger(maxN, reduceMotion);
 
   return (
     // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/click-events-have-key-events
     <dialog
       ref={dialogRef}
       className="lb-dialog"
+      // The table is decorative; this names the surface itself, so the dialog does not
+      // announce as an anonymous one.
+      aria-label={t(lang, 'seeMore')}
       onClose={onClose}
       onClick={(e) => {
         // A click on the dialog element itself is the backdrop area outside the frame.

@@ -240,9 +240,12 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   submission order**. **`--in-place` upserts one model at a time** (a re-run replaces that
   model's entry; a previously embedded entry that no longer replays the current
   sentence/ranks is pruned) and accepts **only** the canonical config: **median selection,
-  persistent session, the current prompt version, and exactly `DEFAULT_RUNS` (5) runs** (an
-  omitted `--runs` defaults to 5 under `--in-place` for every model, overriding Kimi's
-  ordinary default-1). `--selection median`
+  persistent session, the current prompt version, and exactly `DEFAULT_RUNS` (5) runs**
+  (`--runs` has ONE uniform default of 5 for every model, so omitting it already satisfies
+  the gate — Kimi included; there is no per-provider run-count default). Both `--in-place`
+  writes — the lab artifact and the puzzle's benchmark array — take an **exclusive advisory
+  lock around the whole read-modify-write cycle**, so two overlapping runs accumulate
+  instead of the second silently dropping the first's record. `--selection median`
   (default) keeps odd `N` runs sequential/cache-warm and reports the same actual median
   score as full median-of-N (#95). With `k = (N + 1) / 2`, once `k` runs have solved, a
   later run still unsolved at the k-th-smallest solved score stops as lab-only
@@ -501,8 +504,9 @@ pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 distinct word
 #    entry into the puzzle's variable-length benchmark array (any model — the front end
 #    filters the FABLE/KIMI/GPT-SOL display trio; a re-run replaces that model, a now-stale
 #    entry is pruned). It accepts only the canonical config: median + persistent + current
-#    prompt + exactly 5 runs. An omitted --runs defaults to 5 under --in-place for EVERY
-#    model (Kimi's ordinary default-1 is overridden), so Kimi needs no explicit --runs 5.
+#    prompt + exactly 5 runs — and --runs already defaults to 5 for EVERY model, so no
+#    selector (Kimi included) needs an explicit --runs 5. Both writes are file-locked, so
+#    overlapping runs for different models accumulate instead of clobbering each other.
 pnpm bench:puzzle <puzzle.json> --model MODEL [--playbook <model>.playbook.json] [--effort LEVEL] [--auth api|subscription] [--session persistent|stateless] [--cap N] [--runs N] [--selection median|best] [--in-place]
 KIMI_CODE_API_KEY=... pnpm bench:puzzle <puzzle.json> --model KIMI --auth subscription --effort medium --in-place
 
@@ -607,9 +611,12 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   into the puzzle's variable-length benchmark array (any model; a re-run replaces that model,
   a now-stale sibling entry is pruned). It accepts only the canonical config — **median +
   persistent + current prompt + exactly `DEFAULT_RUNS` (5) runs** — so results stay
-  comparable; under `--in-place` an omitted `--runs` defaults to 5 for every model (Kimi's
-  ordinary default-1 is overridden). The front end, not the harness, filters the display
-  trio. Local benchmark
+  comparable; the uniform `--runs` default already satisfies that gate for every model.
+  **Both `--in-place` writes are guarded by `_exclusive_file_lock`** (an advisory `flock`
+  on a sidecar `.<name>.lock`) spanning the read AND the write: the atomic replace alone
+  only makes the final swap indivisible, so without the lock two overlapping runs both
+  edit the same snapshot and the second drops the first's record. The front end, not the
+  harness, filters the display trio. Local benchmark
   output is gitignored and paid provider calls never run in tests/CI.
 - **Frozen neutral gameplay baseline (decided 2026-07-17).** Use prompt v21 at `medium`
   effort, without `--playbook`, for both Sonnet and GPT. Two direct same-puzzle stateless
@@ -790,7 +797,14 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   instead of the `bucketMeans` squares, so `renderCardSvg` renders the on-screen ruler
   scaled to the OG image — same `progressColor` cells, same ticks, same sentence
   indices. v1 tokens (bucketed squares) no longer decode: `decodeResult` rejects them
-  on the version check, so a pre-bump link 404s rather than mis-draws. Cell count is
+  on the version check, so a pre-bump link can never mis-draw. It is not a dead end
+  though — **every version shares the opening header** (`version | lang | day | scoreLen
+  | score`), so `decodeLegacyShareTarget` recovers a SUPERSEDED token's lang + day and
+  `/s/<v1token>` **301s to `/<lang>/<date>`**, the archived day it named. That fallback is
+  deliberately restricted to versions **strictly older** than the current one: a
+  corrupted or hand-crafted CURRENT-version token still gets the flat 404, so a forgery
+  can never earn a redirect. `/og/<v1token>.png` stays a 404 (there is no ruler to
+  draw). Cell count is
   still DERIVED from the score (one cell per counted try, never stored), and a try that
   did not improve costs ONE bit, which is what keeps a long game's link short. **The
   plain-text EMOJI row moved onto the PROGRESS ramp too (decided 2026-07-25):**
@@ -812,7 +826,11 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   order) — medal, tag, the entrant's run replayed into its ruler, count (DNF muted).
   **Leaderboard rulers share ONE scale (decided 2026-07-25):** each bar's width is
   proportional to its tries over the longest run on the table, so lengths and solve
-  moments compare straight down the column. **On mobile the tag stacks ABOVE its bar's
+  moments compare straight down the column. The colorize wave's per-cell delay comes from
+  `rulerStagger(maxN, reduceMotion)`, which returns **0 under reduced motion** — the
+  global CSS rule collapses animation/transition DURATIONS but not DELAYS, so the ramp
+  would otherwise still crawl across the bar for over a second for someone who asked for
+  no motion. **On mobile the tag stacks ABOVE its bar's
   left edge (decided 2026-07-25)** — `.lb-main`, `display: contents` on desktop — so
   the table tightens to medal | tag-over-ruler | count and the bars get the width.
   **The table is MONOCHROME except the run rulers** (decided 2026-07-24): tags are
@@ -831,8 +849,13 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   ranking needs no modal). The lineup does NOT persist past the
   solve: after the keyboard drops, its characters teleport OUT one tick apart (their
   dissolve + shared-flash strips), and only once the last is gone do the results rise
-  into the tray (reduced motion or missing strips skip straight there). On a streak
-  solve these exit beats do NOT play hidden behind the celebration — keyboard and lineup
+  into the tray (reduced motion or missing strips skip straight there). Both exit beats
+  hand the tray back through a signal the DOM has to produce (the keyboard's own
+  `animationend`, the lineup's tick clock), and the tray renders NOTHING until they
+  arrive — so each carries a **deadline** (`KB_EXIT_FALLBACK_MS` / `LINEUP_EXIT_FALLBACK_MS`
+  in `Game.tsx`), a generous multiple of the real duration, cancelled by the genuine
+  signal. A lost signal must never be able to strand the player on an empty tray. On a
+  streak solve these exit beats do NOT play hidden behind the celebration — keyboard and lineup
   hold still under the modal and the drop + teleport-out start at its dismissal; the
   source types only after the leaderboard has risen (decided 2026-07-24). **The sentence
   must NOT move between the solved beats (decided 2026-07-24):** the lineup renders

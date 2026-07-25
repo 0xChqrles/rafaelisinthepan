@@ -1379,9 +1379,9 @@ button * {
   align-items: center;
   padding: clamp(8px, 1.8vh, 16px) 0;
 }
-/* The table is MONOCHROME except the heat squares (decided 2026-07-24): identity colors
+/* The table is MONOCHROME except the run rulers (decided 2026-07-24): identity colors
    belong to the characters, and with them gone the tags + counts stay neutral so the
-   squares are the single color voice. The ONE exception is the player's YOU tag in the
+   rulers are the single color voice. The ONE exception is the player's YOU tag in the
    solved-word gold (decided 2026-07-24, replacing a tried-and-dropped row border) —
    your row is found by the word, not by a frame. */
 /* Placement medal, first column: 15×15 pixel-art sprites (assets/medals/1-4.png) drawn

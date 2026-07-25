@@ -44,6 +44,12 @@ export const FLOATING_HIT_INTRO_MS = 320;
 
 const STREAK_AFTER_WORDS_MS = 300;
 
+// Deadlines for the two solved-exit beats that hand the tray back (see their effects):
+// generous multiples of the real durations, so they only ever fire if the DOM signal
+// itself was lost.
+const KB_EXIT_FALLBACK_MS = 1_200;
+const LINEUP_EXIT_FALLBACK_MS = 3_000;
+
 // Wrapper: drives the single puzzle. Loads the language's fixed vocabulary
 // (existence set + keyboard prefix set) before playing — existence is decided by it,
 // not by ranks. The header lives ABOVE this (GameRoute), so Game renders only the game
@@ -222,7 +228,7 @@ function Round({
   const allWordsResolved = solved && resolvedHoleIndices.size === holes.length;
   // Whether a lineup is on screen at all — a puzzle with no renderable opponents must
   // not leave the solved swap waiting on a teleport-out that will never play (#110).
-  const hasLineup = benchmark !== undefined && hasDisplayEntries(benchmark);
+  const hasLineup = hasDisplayEntries(benchmark);
 
   // The celebration is deliberately code-split out of startup. Warm its chunk only while
   // an eligible unsolved daily round is idle; if a player solves before idle fires, the
@@ -314,6 +320,23 @@ function Round({
     setLineupExiting(false);
     setLineupGone(true);
   }, []);
+  // Both exit beats hand the tray back through a signal the DOM has to produce: the
+  // keyboard's own `animationend`, and the lineup's tick clock reporting the last
+  // character gone. Both are reliable today, but the tray renders NOTHING until they
+  // arrive — a lost signal (a dropped animation, a suspended timer chain) would strand
+  // the player on an empty tray with no way back. These deadlines make that unreachable:
+  // they fire well after the real beats (kb-drop is 200ms; the teleport wave at most
+  // ~1s) and are cancelled the moment the genuine signal lands.
+  useEffect(() => {
+    if (!keyboardLeaving) return undefined;
+    const id = window.setTimeout(() => setKeyboardLeaving(false), KB_EXIT_FALLBACK_MS);
+    return () => window.clearTimeout(id);
+  }, [keyboardLeaving]);
+  useEffect(() => {
+    if (!lineupExiting) return undefined;
+    const id = window.setTimeout(handleLineupExited, LINEUP_EXIT_FALLBACK_MS);
+    return () => window.clearTimeout(id);
+  }, [lineupExiting, handleLineupExited]);
   const focusResultAfterSource = useRef(false);
   const prevSolved = useRef<boolean>(solved);
   useEffect(() => {
@@ -425,7 +448,7 @@ function Round({
 
   // The results' rise reporting done (SolvedScreen onRisen) is the source typewriter's
   // start line: SOURCE is the LAST beat of the solved sequence (decided 2026-07-24),
-  // typing above a leaderboard already in place while its squares colorize beneath.
+  // typing above a result stack already in place while its ruler colorizes beneath.
   const handleResultsRisen = useCallback(() => {
     setSourceRevealStarted(true);
   }, []);
@@ -537,7 +560,15 @@ function Round({
       const parts = impacted.map(({ index, entry }) =>
         srHoleResult(lang, index + 1, entry ? entry.rank : null),
       );
-      if (benchmark && hasDisplayEntries(benchmark) && !history.includes(typed)) {
+      // Only a guess that actually COUNTS can move the lineup, and counting is decided by
+      // canonical identity (guessKey) — NOT by the raw slug: an inflection or accent
+      // variant of an already-tried word folds to a slug absent from `history` yet does
+      // not increase the score (#104). Comparing raw slugs here would announce an
+      // overtake the visible lineup never performs.
+      if (
+        hasDisplayEntries(benchmark) &&
+        !history.some((prev) => guessKey(ranks, prev) === guessKey(ranks, typed))
+      ) {
         const before = lineupModel(benchmark, guessCount, t(lang, 'you'));
         const after = lineupModel(benchmark, guessCount + 1, t(lang, 'you'));
         const { passedBy, lostLead } = lineupEvents(before, after);
@@ -698,7 +729,7 @@ function Round({
         <div className="lineup-zone">
           {!lineupGone && (
             <StandingsLineup
-              benchmark={benchmark as BenchmarkResults}
+              benchmark={benchmark}
               guessCount={guessCount}
               solved={solved}
               lang={lang}

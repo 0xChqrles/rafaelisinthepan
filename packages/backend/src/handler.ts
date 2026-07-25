@@ -1,6 +1,8 @@
 import {
   activeDate,
+  dateForDayNumber,
   dayNumber,
+  decodeLegacyShareTarget,
   decodeResult,
   nextResetAt,
   secondsUntilNextReset,
@@ -15,6 +17,7 @@ import {
   html,
   json,
   png,
+  redirect,
 } from './respond';
 import { renderCardPng, renderShareHtml } from './ogCard';
 import { isValidDate } from './layout';
@@ -117,13 +120,28 @@ export function createHandler(deps: HandlerDeps) {
       }
       const shareMatch = SHARE_RE.exec(rawPath);
       if (shareMatch) {
-        const result = decodeResult(shareMatch[1]);
-        if (!result) return errorResponse(404, 'not_found', 'Invalid share token.', cors);
         // Canonical apex origin for both the og:image and the game redirect (so they never
         // depend on the CloudFront-to-CloudFront Host); the request origin is the local-dev
         // fallback.
-        const body = renderShareHtml(shareMatch[1], result, deps.siteOrigin ?? requestOrigin(event));
-        return html(200, body, { 'Cache-Control': `public, max-age=${SHARE_MAX_AGE}, immutable` });
+        const base = deps.siteOrigin ?? requestOrigin(event);
+        const result = decodeResult(shareMatch[1]);
+        if (result) {
+          const body = renderShareHtml(shareMatch[1], result, base);
+          return html(200, body, {
+            'Cache-Control': `public, max-age=${SHARE_MAX_AGE}, immutable`,
+          });
+        }
+        // A SUPERSEDED token (v1's bucketed squares can't feed the v2 ruler) still names a
+        // real lang + day in the header every version shares, so send the reader to that
+        // archived day instead of a dead end. Only the card is unrecoverable, and a
+        // pre-bump link's preview has long since been cached by whatever unfurled it.
+        const legacy = decodeLegacyShareTarget(shareMatch[1]);
+        if (legacy) {
+          return redirect(301, `${base}/${legacy.lang}/${dateForDayNumber(legacy.dayNumber)}`, {
+            'Cache-Control': `public, max-age=${SHARE_MAX_AGE}, immutable`,
+          });
+        }
+        return errorResponse(404, 'not_found', 'Invalid share token.', cors);
       }
 
       const instant = now();

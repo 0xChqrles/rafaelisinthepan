@@ -180,10 +180,40 @@ export function encodeResult(r: ShareResult): string {
   return bytesToB64url(w.toBytes());
 }
 
+// Every version so far opens with the SAME header — `version | lang | day | scoreLen |
+// score` — and only the payload after it differs. That is what lets an OLD link stay
+// useful: a v1 token can't feed the v2 ruler, but its language and day are right there, so
+// `/s/<v1token>` can send the reader to the day they were shown instead of a dead end.
+//
+// STRICTLY older versions only. A CURRENT-version token that `decodeResult` rejected is
+// malformed, not legacy, and must keep 404-ing — otherwise a hand-crafted token would earn
+// a redirect instead of the flat refusal the codec promises.
+export interface LegacyShareTarget {
+  version: number;
+  lang: string;
+  dayNumber: number;
+}
+
+export function decodeLegacyShareTarget(token: string): LegacyShareTarget | null {
+  const bytes = b64urlToBytes(token);
+  if (!bytes) return null;
+  try {
+    const rd = new BitReader(bytes);
+    const version = rd.read(VERSION_BITS);
+    if (version < 1 || version >= SHARE_VERSION) return null;
+    const lang = SHARE_LANGS[rd.read(LANG_BITS)];
+    if (!lang) return null;
+    return { version, lang, dayNumber: rd.read(DAY_BITS) + ID_EPOCH };
+  } catch {
+    return null; // bit overrun (truncated token)
+  }
+}
+
 // Decode + validate. Returns null on ANY malformation (bad chars, wrong version, overrun,
 // leftover bytes, an out-of-range tick) so a hand-crafted token can never make the renderer
 // emit anything but numbers + colors from the fixed template. A v1 token fails the version
-// check like any other stranger — its bucketed squares can't feed a per-try ruler.
+// check like any other stranger — its bucketed squares can't feed a per-try ruler; the
+// backend falls back to `decodeLegacyShareTarget` to redirect it rather than 404 the reader.
 export function decodeResult(token: string): ShareResult | null {
   const bytes = b64urlToBytes(token);
   if (!bytes) return null;

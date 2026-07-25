@@ -58,7 +58,7 @@ export default function SolvedScreen({
   // run (opponents' come replayed from Game). null when no opponent displays.
   const rows = useMemo<LeaderboardRow[] | null>(() => {
     if (!hasDisplayEntries(benchmark)) return null;
-    return lineupModel(benchmark as BenchmarkResults, guessCount, t(lang, 'you')).entrants.map(
+    return lineupModel(benchmark, guessCount, t(lang, 'you')).entrants.map(
       (e) => ({
         key: e.key,
         tag: e.tag,
@@ -70,11 +70,11 @@ export default function SolvedScreen({
       }),
     );
   }, [benchmark, guessCount, lang, runReplays, trajectory, solvedAt]);
-  const n = Math.max(trajectory.length, 1);
-  const stagger = rulerStagger(n);
-  const squaresStartMs = RESULTS_IN_MS + SCORE_COUNT_MS;
   const reduceMotion =
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const n = Math.max(trajectory.length, 1);
+  const stagger = rulerStagger(n, reduceMotion);
+  const rulerStartMs = RESULTS_IN_MS + SCORE_COUNT_MS;
 
   // Bring the whole result into place first, then tally its headline number. Keeping the
   // component mounted but inert lets the streak dialog own the screen without allowing
@@ -118,34 +118,34 @@ export default function SolvedScreen({
   }, [animate, resultsIn, guessCount, reduceMotion]);
   const shownScore = useAnimatedNumber(countTarget, !animate || reduceMotion ? 1 : SCORE_COUNT_MS);
 
-  // After the score lands, reveal the neutral tiles and then color them in try order.
+  // After the score lands, reveal the neutral cells and then color them in try order.
   // The ruler always reserves its final footprint, so neither animation moves the
   // actions below it.
-  const gridSpanMs = Math.max(0, n - 1) * stagger;
-  const [gridShown, setGridShown] = useState(() => !animate);
-  const [gridColorized, setGridColorized] = useState(() => !animate);
+  const rulerSpanMs = Math.max(0, n - 1) * stagger;
+  const [rulerShown, setRulerShown] = useState(() => !animate);
+  const [rulerColorized, setRulerColorized] = useState(() => !animate);
   useEffect(() => {
     if (!animate) {
-      setGridShown(true);
-      setGridColorized(true);
+      setRulerShown(true);
+      setRulerColorized(true);
       return undefined;
     }
     if (!resultsIn) return undefined;
     if (reduceMotion) {
-      setGridShown(true);
-      setGridColorized(true);
+      setRulerShown(true);
+      setRulerColorized(true);
       return undefined;
     }
-    const show = window.setTimeout(() => setGridShown(true), squaresStartMs);
+    const show = window.setTimeout(() => setRulerShown(true), rulerStartMs);
     const color = window.setTimeout(
-      () => setGridColorized(true),
-      squaresStartMs + gridSpanMs + NEUTRAL_HOLD_MS,
+      () => setRulerColorized(true),
+      rulerStartMs + rulerSpanMs + NEUTRAL_HOLD_MS,
     );
     return () => {
       window.clearTimeout(show);
       window.clearTimeout(color);
     };
-  }, [animate, gridSpanMs, reduceMotion, resultsIn, squaresStartMs]);
+  }, [animate, rulerSpanMs, reduceMotion, resultsIn, rulerStartMs]);
 
   // The SEE MORE leaderboard modal; closing returns focus to its trigger.
   const [lbOpen, setLbOpen] = useState(false);
@@ -226,8 +226,8 @@ export default function SolvedScreen({
           solvedAt={solvedAt ?? []}
           maxN={n}
           stagger={stagger}
-          shown={gridShown}
-          colorized={gridColorized}
+          shown={rulerShown}
+          colorized={rulerColorized}
           solo
         />
       </div>

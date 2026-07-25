@@ -32,6 +32,11 @@ import tempfile
 import time
 from typing import Any, Literal, TypedDict
 
+try:  # advisory file locks (see _exclusive_file_lock); absent off POSIX
+    import fcntl
+except ImportError:  # pragma: no cover - the project runs on macOS/Linux only
+    fcntl = None  # type: ignore[assignment]
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 BENCHMARK_DIR = SCRIPT_DIR.parent
 REPO_ROOT = BENCHMARK_DIR.parent.parent
@@ -3167,6 +3172,32 @@ def _write_json_atomic(path: Path, data: object, *, indent: int | None = None) -
             os.unlink(temp_path)
 
 
+@contextmanager
+def _exclusive_file_lock(path: Path):
+    """Serialize a whole read-modify-write cycle on `path` ACROSS PROCESSES.
+
+    `_write_json_atomic` makes the final replace atomic, but every caller here first READS
+    the file, edits the parsed object, then writes it back — and a benchmark run takes
+    minutes, so two `--in-place` runs for different models routinely overlap. Without a lock
+    both read the same bytes and the second replace silently discards the first's record.
+    The lock is held on a sidecar `.<name>.lock` (never the data file itself, which
+    `os.replace` swaps out from under any descriptor), so the read and the write sit inside
+    one critical section.
+    """
+    lock_path = path.parent / f".{path.name}.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if fcntl is None:  # non-POSIX: no advisory locks, so writes stay best-effort
+        yield
+        return
+    handle = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(handle, fcntl.LOCK_UN)
+        os.close(handle)
+
+
 def _transport_name(config: ModelConfig, auth: AuthMode) -> str:
     if config["provider"] == "kimi":
         return "kimi_code_agent_sdk"
@@ -3295,41 +3326,49 @@ def write_lab_artifact(
     timestamp: str | None = None,
     playbook_sha256: str | None = None,
 ) -> tuple[Path, dict[str, Any]]:
-    """Append one complete model session to the puzzle's unpublished lab record."""
+    """Append one complete model session to the puzzle's unpublished lab record.
+
+    The read and the write are one locked critical section: overlapping `--in-place` runs
+    for different models otherwise both append to the same start-of-cycle snapshot and the
+    second replace drops the first's session.
+    """
     directory = BENCHMARK_OUTPUT_DIR if output_dir is None else output_dir
     path = directory / f"{puzzle_path.stem}.bench.json"
-    if path.exists():
-        try:
-            artifact = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise ValueError(f"could not read benchmark artifact {path}: {exc}") from exc
-        artifact = _as_record(artifact, "benchmark artifact root")
-        sessions = artifact.get("sessions")
-        if artifact.get("schema_version") != 1 or not isinstance(sessions, list):
-            raise ValueError(f"malformed benchmark artifact {path}")
-    else:
-        artifact = {
-            "schema_version": 1,
-            "puzzle": puzzle_path.name,
-            "sessions": [],
-        }
-        sessions = artifact["sessions"]
+    with _exclusive_file_lock(path):
+        if path.exists():
+            try:
+                artifact = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise ValueError(
+                    f"could not read benchmark artifact {path}: {exc}"
+                ) from exc
+            artifact = _as_record(artifact, "benchmark artifact root")
+            sessions = artifact.get("sessions")
+            if artifact.get("schema_version") != 1 or not isinstance(sessions, list):
+                raise ValueError(f"malformed benchmark artifact {path}")
+        else:
+            artifact = {
+                "schema_version": 1,
+                "puzzle": puzzle_path.name,
+                "sessions": [],
+            }
+            sessions = artifact["sessions"]
 
-    recorded_at = timestamp or datetime.now(timezone.utc).isoformat().replace(
-        "+00:00", "Z"
-    )
-    sessions.append(
-        _lab_session(
-            summary,
-            cap=cap,
-            effort=effort,
-            auth=auth,
-            session=session,
-            timestamp=recorded_at,
-            playbook_sha256=playbook_sha256,
+        recorded_at = timestamp or datetime.now(timezone.utc).isoformat().replace(
+            "+00:00", "Z"
         )
-    )
-    _write_json_atomic(path, artifact, indent=2)
+        sessions.append(
+            _lab_session(
+                summary,
+                cap=cap,
+                effort=effort,
+                auth=auth,
+                session=session,
+                timestamp=recorded_at,
+                playbook_sha256=playbook_sha256,
+            )
+        )
+        _write_json_atomic(path, artifact, indent=2)
     return path, artifact
 
 
@@ -3775,27 +3814,29 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             print(f"Wrote lab artifact -> {artifact_path}")
 
-            # Re-read the puzzle from disk RIGHT BEFORE upserting. `puzzle` was loaded once
-            # at process start, but a concurrent (or long-overlapping earlier) in-place run
-            # for ANOTHER model may have embedded its entry since then — benchmark runs take
-            # minutes, so two models started close together each load the file before the
-            # other writes. Upserting onto the stale start-of-run copy would silently clobber
-            # the sibling, leaving only the last writer. The lab artifact already re-reads
-            # before appending (which is why it keeps every model); the puzzle benchmark must
-            # do the same so overlapping runs accumulate instead of racing to overwrite.
-            latest = load_puzzle(args.puzzle)
-            # Guard the re-read: if the file was regenerated to a different puzzle mid-run,
-            # our entry will not replay it — fail loudly rather than overwrite the new puzzle.
-            assert_benchmark_entry_consistent(latest, vocab, entry, cap=args.cap)
+            # Re-read the puzzle from disk RIGHT BEFORE upserting, inside the lock that
+            # also covers the write. `puzzle` was loaded once at process start, but a
+            # concurrent in-place run for ANOTHER model may have embedded its entry since
+            # then — benchmark runs take minutes, so two models started close together each
+            # load the file before the other writes. Upserting onto the stale start-of-run
+            # copy would silently clobber the sibling, leaving only the last writer; taking
+            # the lock around read+write makes the whole cycle exclusive, so overlapping
+            # runs accumulate instead of racing.
+            with _exclusive_file_lock(args.puzzle):
+                latest = load_puzzle(args.puzzle)
+                # Guard the re-read: if the file was regenerated to a different puzzle
+                # mid-run, our entry will not replay it — fail loudly rather than
+                # overwrite the new puzzle.
+                assert_benchmark_entry_consistent(latest, vocab, entry, cap=args.cap)
 
-            # Record EVERY tested model in the puzzle; the front end owns the display
-            # filter. Upsert this run over any prior entry for the same model, and prune any
-            # previously embedded entry that no longer replays the current puzzle. The
-            # median/persistent/current-prompt/5-run gate is enforced up front in parse_args.
-            entries, dropped = upsert_benchmark_entry(latest, vocab, entry)
+                # Record EVERY tested model in the puzzle; the front end owns the display
+                # filter. Upsert this run over any prior entry for the same model, and prune
+                # any previously embedded entry that no longer replays the current puzzle.
+                # The median/persistent/current-prompt/5-run gate is enforced in parse_args.
+                entries, dropped = upsert_benchmark_entry(latest, vocab, entry)
+                write_benchmark(args.puzzle, latest, entries)
             for stale in dropped:
                 print(f"Dropped stale benchmark entry ({stale}); it no longer replays")
-            write_benchmark(args.puzzle, latest, entries)
             noun = "model" if len(entries) == 1 else "models"
             print(
                 f"Wrote {config['tag']} benchmark ({len(entries)} {noun}) -> {args.puzzle}"

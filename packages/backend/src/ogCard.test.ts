@@ -84,4 +84,20 @@ describe('GET /s/<token>', () => {
     const res = await handler(get('/s/AAAA')); // valid base64url chars, too short to decode
     expect(res.statusCode).toBe(404);
   });
+
+  // A link shared before the v2 bump can't draw its card, but it still names a real day.
+  // Sending its reader there beats a dead end; a FORGED current-version token must not
+  // earn the same courtesy.
+  it('redirects a superseded (v1) token to the day it named instead of 404ing', async () => {
+    // v1 header: version 1 | lang 1 (fr) | day 638 | scoreLen 0, then a squares payload.
+    const v1 = 'FBPwAAA';
+    const res = await handler(get(`/s/${v1}`, { host: 'whippin.ai', 'x-forwarded-proto': 'https' }));
+    expect(res.statusCode).toBe(301);
+    expect(res.headers.Location).toBe(`https://whippin.ai/fr/${dateForDayNumber(20638)}`);
+  });
+
+  it('still 404s a corrupted CURRENT-version token (no redirect for a forgery)', async () => {
+    const res = await handler(get(`/s/${token.slice(0, 4)}`));
+    expect(res.statusCode).toBe(404);
+  });
 });

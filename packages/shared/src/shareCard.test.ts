@@ -2,10 +2,16 @@
 // must round-trip a result — the RAW per-try run and its solve ticks since v2, so the card
 // can draw the same ruler the solved screen does (each cell within one quantization step) —
 // stay short + URL-safe, derive the run's length from the score, and REJECT any malformed
-// input (a v1 bucketed-squares token included).
+// input (a v1 bucketed-squares token included) — while still recovering enough of a
+// SUPERSEDED token's header to point its reader at the day it named.
 
 import { describe, it, expect } from 'vitest';
-import { encodeResult, decodeResult, type ShareResult } from './shareCard';
+import {
+  encodeResult,
+  decodeResult,
+  decodeLegacyShareTarget,
+  type ShareResult,
+} from './shareCard';
 
 // A mid-length game: 12 tries, most of which don't move the reconstruction, and three
 // secrets dropped on tries 4, 9 and 12 (the last guess always solves the sentence).
@@ -142,5 +148,55 @@ describe('decodeResult — rejects malformed tokens (returns null)', () => {
     // A hand-built v1 payload: version 1 | lang 0 | day 0 | scoreLen 0 | 3 squares × 5b.
     // (Its leading nibble is 0001, which the version check refuses.)
     expect(decodeResult('EAAAAAAA')).toBeNull();
+  });
+});
+
+// A superseded token can't draw the card, but every version shares the opening header, so
+// its lang + day survive — enough for the backend to send an old link's reader to the day
+// it named instead of a dead end.
+describe('decodeLegacyShareTarget — where an OLD link should still land', () => {
+  // v1 header: version 1 | lang 1 (fr) | day 638 | scoreLen 0 …, then whatever payload.
+  const v1 = (() => {
+    const bits = [
+      ...[0, 0, 0, 1], // version 1
+      ...[0, 1], // lang index 1 -> fr
+      ...(638).toString(2).padStart(15, '0').split('').map(Number), // day - ID_EPOCH
+      ...[0, 0, 0, 0], // scoreLen 0 -> score 0
+      ...Array(15).fill(0), // v1 square payload — never read here
+    ];
+    const bytes = new Uint8Array(Math.ceil(bits.length / 8));
+    bits.forEach((b, i) => {
+      if (b) bytes[i >> 3] |= 1 << (7 - (i & 7));
+    });
+    const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+    let out = '';
+    for (let i = 0; i < bytes.length; i += 3) {
+      const rem = bytes.length - i;
+      const [b0, b1, b2] = [bytes[i], rem > 1 ? bytes[i + 1] : 0, rem > 2 ? bytes[i + 2] : 0];
+      out += B64[b0 >> 2] + B64[((b0 & 0x03) << 4) | (b1 >> 4)];
+      if (rem > 1) out += B64[((b1 & 0x0f) << 2) | (b2 >> 6)];
+      if (rem > 2) out += B64[b2 & 0x3f];
+    }
+    return out;
+  })();
+
+  it('recovers the lang and day of a superseded (v1) token', () => {
+    expect(decodeResult(v1)).toBeNull(); // the ruler payload is genuinely unreadable
+    expect(decodeLegacyShareTarget(v1)).toEqual({ version: 1, lang: 'fr', dayNumber: 20638 });
+  });
+
+  it('refuses a CURRENT-version token, so a forged one still gets a flat refusal', () => {
+    // Truncating a real v2 token breaks decodeResult; it must NOT then look "legacy".
+    const truncated = encodeResult(sample).slice(0, 3);
+    expect(decodeResult(truncated)).toBeNull();
+    expect(decodeLegacyShareTarget(truncated)).toBeNull();
+    expect(decodeLegacyShareTarget(encodeResult(sample))).toBeNull();
+  });
+
+  it('refuses garbage and an unknown future version', () => {
+    expect(decodeLegacyShareTarget('!!!!')).toBeNull();
+    expect(decodeLegacyShareTarget('')).toBeNull();
+    // Leading nibble 0 is not a version we ever shipped.
+    expect(decodeLegacyShareTarget(`A${encodeResult(sample).slice(1)}`)).toBeNull();
   });
 });
