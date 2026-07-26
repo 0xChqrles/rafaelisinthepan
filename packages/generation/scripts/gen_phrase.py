@@ -37,11 +37,20 @@ picks that word's repeated-word group, a number picks its shared start (Esc canc
 selector is skipped and the words resolve as before. Non-interactive (piped / batch) runs
 keep working with flags only — no prompt ever blocks them.
 
+A secret whose surface form has no vector in the reduced embedding can borrow one from a
+form of the same lemma (#119) — explicitly: a numbered question on a TTY, --donor
+MANQUANT=DONNEUR off one. Nothing is injected into the vocabulary and nothing is guessed.
+Mirroring it, an interactively chosen start word can be DISPLAYED under another form of
+the same word (« tu t'___ » must read "amuses" while only "amuse" has a vector); the
+rank and the geometry stay the chosen band word's.
+
 Usage :
     uv run scripts/gen_phrase.py                       # fully interactive
     uv run scripts/gen_phrase.py "<phrase>" --lang fr --words a b c
     uv run scripts/gen_phrase.py "<phrase>" --lang fr --words a b c \
         --kind book --author "Victor Hugo" --work "Les Misérables"
+    uv run scripts/gen_phrase.py "<phrase>" --lang fr --words a b c \
+        --donor accoutumes=accoutume
     pnpm gen:phrase "<phrase>" --lang fr --words a b c
 """
 
@@ -248,7 +257,7 @@ def invert_lemmas(lemma_table):
     return inv
 
 
-def merge_ranking(secret_display, ranking, lemma_table, top_k=TOP_K):
+def merge_ranking(secret_display, ranking, lemma_table, top_k=TOP_K, secret_lemmas=None):
     """Collapse a raw closest-first ranking into TOP_K distinct lemma groups.
 
     Walk closest-first. A word sharing ANY lemma with an earlier (closer) group is an
@@ -260,6 +269,10 @@ def merge_ranking(secret_display, ranking, lemma_table, top_k=TOP_K):
     the hole — decided in #104). Filter-then-cap: the walk stops once top_k groups
     have PASSED, not after top_k raw neighbors.
 
+    `secret_lemmas` overrides what group 0 claims; it is what a borrowed vector (#119)
+    uses to carry the donor's identity too (see group_lemmas). Left None — always, on
+    the ordinary path — group 0 claims the secret's own lemmas, unchanged.
+
     Returns (merged, groups):
       merged: [(word, rank_index, sim)] — the survivors, same shape as `ranking`
               but with COMPACTED rank indices, so start_band / pick_start / the
@@ -267,7 +280,7 @@ def merge_ranking(secret_display, ranking, lemma_table, top_k=TOP_K):
       groups: [(canonical_display, rank, lemmas)] — every group INCLUDING the
               secret at rank 0, ascending by rank (expand_aliases' input).
     """
-    secret_lemmas = lemmas_of(secret_display, lemma_table)
+    secret_lemmas = secret_lemmas or lemmas_of(secret_display, lemma_table)
     taken = set(secret_lemmas)
     groups = [(secret_display, 0, secret_lemmas)]
     merged = []
@@ -312,17 +325,335 @@ def expand_aliases(rmap, groups, forms_by_lemma, Vset):
 
 
 def build_merged_rank_map(secret_display, ranking, lemma_table, forms_by_lemma, Vset,
-                          top_k=TOP_K):
+                          top_k=TOP_K, secret_lemmas=None):
     """One secret's complete rank map under lemma grouping, plus its merged ranking.
 
     merge_ranking compacts the raw walk into distinct groups, build_rank_map keys the
     survivors (slug-collision rule unchanged), expand_aliases adds every vocab form
     of each group. With an empty lemma_table the output is byte-identical to the
     pre-#104 rank map capped at top_k."""
-    merged, groups = merge_ranking(secret_display, ranking, lemma_table, top_k)
+    merged, groups = merge_ranking(secret_display, ranking, lemma_table, top_k,
+                                   secret_lemmas)
     rmap = build_rank_map(secret_display, merged)
     expand_aliases(rmap, groups, forms_by_lemma, Vset)
     return merged, rmap
+
+
+# --- Lemma-donor vector substitution (#119) -------------------------------------
+# A perfectly valid sentence form can have NO vector in the reduced embedding while its
+# SLUG is still in the vocab existence set through an accent sibling: "accoutumes" (2sg)
+# never survived reduction, but "accoutumés" did and folds to the same slug — so the
+# front would happily accept the player typing the secret, yet the neighbor walk has no
+# vector to walk from. Inflections of one lemma sit at near-identical points in these
+# spaces, so a sibling form's vector yields a rank map that is indistinguishable in
+# practice. The substitution is therefore allowed, but NEVER silent and NEVER guessed:
+# on a TTY the human picks the donor from a numbered list, off a TTY it must be spelled
+# out with --donor. Nothing is injected into the vocabulary — the donor is an EXISTING
+# vector borrowed only as the GEOMETRY source; the hole still displays the true sentence
+# form, `ranks` stays keyed by the secret's slug, and the donor is absorbed as a rank-0
+# alias by the #104 merge walk (typing it solves, like any inflection of the secret).
+
+def parse_donor_args(pairs):
+    """`--donor MANQUANT=DONNEUR` occurrences -> {slug(manquant): donneur}.
+
+    Keyed by SLUG because that is how a secret is identified everywhere else; the
+    donor keeps its display form (it must match a reduced-vocab word exactly)."""
+    mapping = {}
+    for raw in pairs or ():
+        missing, sep, donor = raw.partition("=")
+        missing, donor = missing.strip().lower(), donor.strip().lower()
+        if not sep or not missing or not donor:
+            die(f"--donor attend 'MANQUANT=DONNEUR' (reçu : '{raw}').")
+        key = slug(missing)
+        if not key:
+            die(f"--donor : '{missing}' ne contient aucune lettre exploitable.")
+        mapping[key] = donor
+    return mapping
+
+
+def edit_distance(a, b):
+    """Levenshtein distance between two DISPLAY forms (accents kept, NOT slugs).
+
+    Slug space would put an accent sibling ("accoutumés") at distance 0 from the
+    missing form and hide the genuinely closer inflection, so the comparison stays on
+    the displayed spellings where « é » ≠ « e ». Only used to ORDER the donor
+    suggestions — the choice itself is always the human's."""
+    if a == b:
+        return 0
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def donor_candidates(lemmas, word, forms_by_lemma, Vset, freq_index):
+    """The forms that may lend `word` their vector, best suggestion first.
+
+    Every form of `lemmas` that IS in the reduced vocabulary, minus `word` itself.
+    Sorted by accent-aware edit distance, then by frequency index (the reduced file's
+    order: lower = more frequent), then alphabetically so the listing is
+    deterministic."""
+    forms = set()
+    for lemma in lemmas:
+        for form in forms_by_lemma.get(lemma, ()):
+            if form != word and form in Vset:
+                forms.add(form)
+    return sorted(forms, key=lambda f: (edit_distance(word, f),
+                                        freq_index.get(f, len(freq_index)), f))
+
+
+def free_donors(secret, used_lemmas, lemma_table, donors):
+    """The donor candidates that would NOT merge `secret` into an already committed
+    group. A borrowed vector makes the secret's group claim the donor's lemmas (see
+    group_lemmas), so a donor whose lemma is spent would hole one word twice."""
+    return [d for d in donors.candidates(secret)
+            if not (set(group_lemmas(secret, d, lemma_table)) & used_lemmas)]
+
+
+def spent_candidate(secret, used_slugs, used_lemmas, lemma_table, donors=None):
+    """Is this selectable occurrence already consumed by an earlier hole?
+
+    Its slug is committed, or its group's lemmas are already claimed — one word, one
+    hole set (#104). The group is decided by the DONOR when there is one (#119), never
+    by the secret's own lemmas: a form the table does not know is a singleton that
+    clashes with nothing, so asking it would leave "accoutumes" selectable after
+    "accoutume" and hole the accoutumer group twice. While its donor is still open the
+    word has no group yet, so it is spent only once NO donor is left that would keep it
+    independent."""
+    if slug(secret) in used_slugs:
+        return True
+    donor = secret if donors is None else donors.resolved(secret)
+    if donor is None:
+        return not free_donors(secret, used_lemmas, lemma_table, donors)
+    return bool(set(group_lemmas(secret, donor, lemma_table)) & used_lemmas)
+
+
+def group_lemmas(secret, donor, lemma_table):
+    """The lemma set the secret's group claims in the merge walk.
+
+    Without a substitution: the secret's own lemmas (unchanged, #104). With one: the
+    donor's too, because the borrowed identity has to be complete — every form of the
+    donor's lemma then aliases to rank 0 and SOLVES the hole, exactly as an inflection
+    of an ordinary secret does. That is not cosmetic: a form the lemma table does not
+    know ("accoutumes" has no Lexique row) is its own singleton group, so without the
+    donor's lemmas its own family would rank as strangers around it."""
+    lemmas = list(lemmas_of(secret, lemma_table))
+    if donor != secret:
+        lemmas += [l for l in lemmas_of(donor, lemma_table) if l not in lemmas]
+    return tuple(lemmas)
+
+
+class DonorResolver:
+    """Resolve the vector source for a secret form, asking the human when needed.
+
+    A secret that survived reduction is its own source (the whole point: nothing
+    changes for the normal case). A missing form goes through the explicit path: a
+    --donor pair, or a numbered prompt on a TTY. Every question is asked at most once
+    per secret slug (`_chosen`), and every substitution is recorded in `used` so the
+    caller can surface it."""
+
+    def __init__(self, lemma_table, forms_by_lemma, V, Vset, lang,
+                 explicit=None, interactive=False):
+        self.lemma_table = lemma_table
+        self.forms_by_lemma = forms_by_lemma
+        self.V = V
+        self.Vset = Vset
+        self.lang = lang
+        self.explicit = explicit or {}
+        self.interactive = interactive
+        self.used = {}      # secret slug -> (secret display, donor display)
+        self._chosen = {}   # secret slug -> donor display
+        self._candidates = {}
+        self._freq = None
+        self._by_slug = None
+
+    # -- lazily derived indexes (a normal run never needs them) ------------------
+    @property
+    def freq_index(self):
+        """word -> position in the reduced file (frequency order), for tie-breaks."""
+        if self._freq is None:
+            self._freq = {w: i for i, w in enumerate(self.V)}
+        return self._freq
+
+    @property
+    def by_slug(self):
+        """slug -> the reduced-vocab forms that fold to it, in frequency order. Its
+        keys ARE the existence set the front will fetch."""
+        if self._by_slug is None:
+            index = {}
+            for w in self.V:
+                s = slug(w)
+                if s:
+                    index.setdefault(s, []).append(w)
+            self._by_slug = index
+        return self._by_slug
+
+    # -- eligibility -------------------------------------------------------------
+    def lemmas_for(self, word):
+        """Where to look for donors: the lemma group(s) `word` belongs to.
+
+        The committed table when it knows the form. Otherwise the table is asked about
+        the reduced-vocab forms sharing `word`'s SLUG — the very words that make the
+        secret typable. That bridge is what carries the real French case: Lexique has
+        rows for accoutume / accoutumés / accoutumer but NONE for "accoutumes", so the
+        missing form has no lemma of its own and only its accent sibling can name the
+        group. Returns () when nothing knows the word — then there is no donor."""
+        if word in self.lemma_table:
+            return tuple(self.lemma_table[word])
+        lemmas = []
+        for sibling in self.by_slug.get(slug(word), ()):
+            for lemma in lemmas_of(sibling, self.lemma_table):
+                if lemma not in lemmas:
+                    lemmas.append(lemma)
+        return tuple(lemmas)
+
+    def candidates(self, word):
+        """Donor candidates for one missing form (cached per display form)."""
+        if word not in self._candidates:
+            self._candidates[word] = donor_candidates(
+                self.lemmas_for(word), word, self.forms_by_lemma, self.Vset,
+                self.freq_index)
+        return self._candidates[word]
+
+    def typable(self, word):
+        """Could the player ever type this exact secret? Its slug must be in the
+        existence set, i.e. SOME reduced word folds to it (here: the accent sibling).
+        Without that, borrowing a vector would build a hole nobody can fill exactly."""
+        return slug(word) in self.by_slug
+
+    def eligible(self, word):
+        """Can this vector-less form be holed at all (a donor exists AND it is
+        typable)? Used by the interactive selector to decide whether to offer it."""
+        return bool(self.candidates(word)) and self.typable(word)
+
+    # -- resolution --------------------------------------------------------------
+    def choose(self, word, donor):
+        """Remember the donor settled on for `word`, so the question — asked or read
+        off --donor — is settled once per secret slug. Answering it is NOT using it:
+        availability checks resolve donors for words that may never be holed."""
+        self._chosen[slug(word)] = donor
+        return donor
+
+    def note_used(self, word, donor):
+        """Record a substitution that actually made it into the puzzle. `used` is what
+        the run reports, so a --donor pair (or an answered question) for a word nobody
+        holed is never announced. A no-op when the secret is its own vector."""
+        if donor != word:
+            self.used[slug(word)] = (word, donor)
+        return donor
+
+    def _validate(self, word, donor):
+        """A --donor pair must name a real vector AND a genuine same-lemma form."""
+        if donor not in self.Vset:
+            die(f"--donor : « {donor} » est absent du vocabulaire réduit "
+                f"'{self.lang}' (aucun vecteur à emprunter).")
+        shared = set(self.lemmas_for(word)) & set(lemmas_of(donor, self.lemma_table))
+        if not shared:
+            die(f"--donor : « {donor} » ne partage aucun lemme avec « {word} » ; "
+                f"donneurs valides : {', '.join(self.candidates(word)) or 'aucun'}.")
+
+    def start_display_error(self, start, display):
+        """Why `display` cannot stand in for the start word `start` — None when it can.
+
+        The MIRROR of a donor pair (#119 addendum): a borrowed secret keeps the
+        sentence's form over the donor's vector, and an overridden start keeps the
+        sentence's form over the band word's rank. Both ask the same two questions of
+        the substitute, so both answer them the same way — a form of the SAME word
+        (lemma table, bridged through slug siblings for a form the table does not know),
+        and typable, i.e. its slug is in the existence set. Showing the player a hint
+        they could never type would break the game's own rule that a displayed clue's
+        distance is already known."""
+        if not set(self.lemmas_for(display)) & set(self.lemmas_for(start)):
+            return (f"« {display} » n'est pas une forme de « {start} » "
+                    f"(aucun lemme commun).")
+        if not self.typable(display):
+            return (f"« {display} » ne se trouve dans aucun mot du vocabulaire réduit "
+                    f"'{self.lang}' (slug '{slug(display)}') : le joueur ne pourrait "
+                    f"jamais taper l'indice affiché.")
+        return None
+
+    def resolved(self, word):
+        """The donor already KNOWN for `word` — itself when it has a vector, an
+        earlier choice, or a validated --donor pair — else None. Never prompts, so
+        the raw-mode selector can call it on every hover."""
+        if word in self.Vset:
+            return word
+        key = slug(word)
+        if key in self._chosen:
+            return self._chosen[key]
+        donor = self.explicit.get(key)
+        if donor is None:
+            return None
+        self._validate(word, donor)
+        return self.choose(word, donor)
+
+    def donor_lines(self, word, cands):
+        """The numbered donor listing, shared by the prompt and the selector."""
+        freq = self.freq_index
+        lines = []
+        for i, form in enumerate(cands, 1):
+            place = freq.get(form)
+            place = f", fréq #{place + 1}" if place is not None else ""
+            marker = "   ← suggéré" if i == 1 else ""
+            lines.append(f"{i:>3}) {form}  (édition {edit_distance(word, form)}{place}){marker}")
+        return lines
+
+    def choose_donor(self, word, cands):
+        """Ask which same-lemma form lends its vector (TTY only, mirrors choose_start).
+
+        Enter accepts the suggestion, a number picks another candidate, an exact
+        candidate spelling is accepted too. A closed stdin falls back to the
+        suggestion, like choose_start — the substitution is printed either way."""
+        print(f"\n« {word} » n'a pas de vecteur. Formes du même lemme présentes "
+              f"dans l'embedding :")
+        for line in self.donor_lines(word, cands):
+            print("  " + line)
+        while True:
+            try:
+                raw = input(f"Donneur [{cands[0]}] > ").strip().lower()
+            except EOFError:  # stdin closed mid-prompt: keep the suggestion.
+                return cands[0]
+            if not raw:
+                return cands[0]
+            if raw.isdigit():
+                idx = int(raw)
+                if 1 <= idx <= len(cands):
+                    return cands[idx - 1]
+                print(f"  Numéro hors liste (1–{len(cands)}).")
+                continue
+            if raw in cands:
+                return raw
+            print(f"  « {raw} » n'est ni un numéro ni un donneur proposé.")
+
+    def donor_for(self, word):
+        """The vector source for `word`, resolving the question if it is still open.
+
+        Called where the hole is about to be built, so the answer is also marked as
+        USED. Dies rather than guess: no candidate, an untypable secret, or a batch run
+        without --donor are all hard errors. Callers holding richer context (the
+        --words path knows the raw selector) may pre-empt the no-candidate case."""
+        if word in self.Vset:
+            return word
+        cands = self.candidates(word)
+        if not cands:
+            die(f"« {word} » est absent du vocabulaire réduit '{self.lang}' et aucune "
+                f"forme de son lemme n'y figure : aucun vecteur à emprunter.")
+        if not self.typable(word):
+            die(f"« {word} » est absent du vocabulaire réduit '{self.lang}' et son slug "
+                f"'{slug(word)}' ne s'y trouve pas non plus : aucun mot réduit ne s'y "
+                f"replie, le joueur ne pourrait jamais taper ce secret.")
+        donor = self.resolved(word)
+        if donor is not None:
+            return self.note_used(word, donor)
+        if self.interactive:
+            return self.note_used(word, self.choose(word, self.choose_donor(word, cands)))
+        die(f"« {word} » n'a pas de vecteur dans l'embedding réduit '{self.lang}'.\n"
+            f"         Formes du même lemme disponibles : {', '.join(cands)}\n"
+            f"         Hors mode interactif le donneur doit être explicite : "
+            f"--donor {word}={cands[0]}")
 
 
 def _make_hole(secret, prefix, suffix, pos, start_display, start_rank):
@@ -399,6 +730,59 @@ def choose_start(secret, ranking, rank_map, rank_by_display):
         print(f"  « {raw} » n'est ni un numéro ni un mot du vocabulaire de ce trou.")
 
 
+# --- Start-word display override (#119 addendum) --------------------------------
+# The MIRROR of the borrowed secret. The rank band can only offer a word that HAS a
+# vector, but the sentence's grammar may demand an inflection the embedding lacks: in
+# « tu t'___ » the hint has to read "amuses", and only "amuse" has a vector. The hint is
+# shown to the player, so it must be grammatically right in context — the DISPLAY form is
+# therefore overridable, and nothing else is: start_rank and the whole geometry stay
+# those of the chosen band word, exactly as if no question had been asked.
+
+def choose_start_display(start, start_rank, donors):
+    """Ask which FORM of the chosen start word the hole displays (TTY only).
+
+    Enter keeps the band word — zero friction, and the only possible answer off a TTY.
+    Any other answer is validated like a donor pair (start_display_error): a form of the
+    same word, and typable. A rejected answer prints why and asks again rather than
+    dying: the start word is already chosen, so there is nothing to unwind.
+
+    Without a resolver (no lemma knowledge to validate against) or off a terminal the
+    band word stands — batch runs keep their silent random start, unchanged."""
+    if donors is None or not sys.stdin.isatty():
+        return start
+    while True:
+        try:
+            raw = input(f"Mot de départ : {start} (rang {start_rank}). "
+                        f"Forme affichée [{start}] > ").strip().lower()
+        except EOFError:  # stdin closed mid-prompt: keep the band word.
+            return start
+        if not raw or raw == start:
+            return start
+        problem = donors.start_display_error(start, raw)
+        if problem is None:
+            return raw
+        print("  " + problem)
+
+
+def alias_start_display(rank_map, start, display, start_rank):
+    """Make an OVERRIDDEN start form typable at its own slug, at the band word's rank.
+
+    The hole shows `display` while the map is keyed on the band word, so without this
+    key typing the very word printed in the hole could read MISS — which contradicts the
+    rule that a displayed clue's distance is already known. Same slug as the band word
+    (an accent-only override): the entry is already there, nothing to add. Otherwise the
+    smallest-rank collision rule of build_rank_map / expand_aliases applies unchanged —
+    an existing closer entry keeps the key, and typing the hint still reads its true
+    (closer) distance rather than a MISS."""
+    s = slug(display)
+    if s == slug(start):
+        return rank_map
+    existing = rank_map.get(s)
+    if existing is None or start_rank < existing["rank"]:
+        rank_map[s] = {"word": display, "rank": start_rank}
+    return rank_map
+
+
 # --- Interactive hole selector (raw-mode TUI) ----------------------------------
 # When the phrase is entered on a TTY WITHOUT --words, three distinct secret groups are
 # chosen with a small full-screen selector instead of typing words: the arrow keys move
@@ -418,7 +802,7 @@ def _sgr(codes, text):
     return f"{_ESC}[{codes}m{text}{_ESC}[0m"
 
 
-def extract_candidates(words, cfg, Vset):
+def extract_candidates(words, cfg, Vset, donors=None):
     """The selectable occurrences in a sentence: for each token, its first word-core
     whose DISPLAY form is in Vset (i.e. survived reduction). Returns [{pos, secret,
     prefix, suffix}] — one entry per holeable token position.
@@ -429,12 +813,19 @@ def extract_candidates(words, cfg, Vset):
     stopwords, single letters and non-dictionary tokens from V, "core in Vset" IS the
     content-word filter — no separate stopword list is needed. Keeping only the first
     in-vocab core per token means each occurrence has one position; the selector groups
-    repeated occurrences by slug so one pick consumes one distinct secret."""
+    repeated occurrences by slug so one pick consumes one distinct secret.
+
+    With a DonorResolver (#119) a core that has no vector is ALSO selectable when a
+    same-lemma form can lend it one and the secret stays typable; the selector then
+    asks which form before ranking it. Without one (or when nothing qualifies) such a
+    core is simply not offered, exactly as before."""
     cands = []
     for pos, token in enumerate(words):
         for m in cfg["core_re"].finditer(token):
             secret = m.group()
-            if slug(secret) and secret in Vset:
+            if not slug(secret):
+                continue
+            if secret in Vset or (donors is not None and donors.eligible(secret)):
                 cands.append({"pos": pos, "secret": secret,
                               "prefix": token[:m.start()], "suffix": token[m.end():]})
                 break
@@ -500,7 +891,7 @@ def _read_key(fd):
 
 
 def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
-                             lemma_table, forms_by_lemma):
+                             lemma_table, forms_by_lemma, donors=None):
     """Pick three distinct secret groups on a TTY; return holes sorted by position.
 
     Full-screen loop: ←/→ move between the sentence's selectable content words (see
@@ -510,13 +901,24 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
     number (Enter validates, Esc cancels and returns to navigation). Three distinct
     commits end the loop; Ctrl-C aborts cleanly. The holes / ranks produced are identical
     in shape to the --words path (build_rank_map + _make_hole are shared), so nothing
-    downstream needs to know which path chose the holes."""
+    downstream needs to know which path chose the holes.
+
+    A word with no vector (#119) is offered when a same-lemma form can lend it one:
+    committing it opens ONE extra step — the same numbered grammar, on the donor list —
+    before the start-word step, and the answer is cached per secret slug so the question
+    is asked once. Nothing is ranked until a donor is known, so no hover can crash. The
+    picked start word then gets the same display-form question as the --words path (the
+    addendum to that issue), asked as a line prompt outside raw mode."""
     import shutil
     import termios
     import tty
 
-    cands = extract_candidates(words, cfg, Vset)
+    cands = extract_candidates(words, cfg, Vset, donors)
 
+    # Feasibility pre-check, on the table's own groups. A word still waiting for a donor
+    # counts as its own group here — its group is only decided by that choice (#119) —
+    # so this can be optimistic; taken_word below is the exact rule, and running out of
+    # words mid-selection has its own error. It never refuses a workable sentence.
     selectable = max_selectable_groups(cands, lemma_table)
     if selectable < 3:
         die(f"la phrase n'offre que {selectable} mot(s) sélectionnable(s) "
@@ -529,12 +931,21 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
     # MERGED ranks, and display->merged-rank (0 = secret).
     cache = {}
 
-    def prep(secret):
+    def donor_of(secret):
+        """The vector source already known for a hovered word (itself when it has one),
+        or None while its donor question is still open (#119). Never prompts: that
+        answer is given inside the selector, in `donor` mode."""
+        return secret if donors is None else donors.resolved(secret)
+
+    def prep(secret, donor):
         secret_slug = slug(secret)
         if secret_slug not in cache:
-            ranking = cfg["module"].closest(secret, kv, V, M, n=None)
+            # The walk starts from the DONOR's vector; everything the puzzle keeps
+            # (rank-0 word, aliases, start band) stays on the true sentence form.
+            ranking = cfg["module"].closest(donor, kv, V, M, n=None)
             merged, rank_map = build_merged_rank_map(
-                secret, ranking, lemma_table, forms_by_lemma, Vset)
+                secret, ranking, lemma_table, forms_by_lemma, Vset,
+                secret_lemmas=group_lemmas(secret, donor, lemma_table))
             rbd = {secret: 0}
             for w, r, _ in merged:
                 rbd[w] = r + 1
@@ -552,15 +963,15 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
     used_lemmas = set()  # lemmas claimed by committed groups: their forms block too
 
     def taken_word(c):
-        """A candidate is spent when its slug is committed OR it is another form of a
-        committed group — one word, one hole set (#104)."""
-        return (slug(c["secret"]) in used_slugs
-                or any(lemma in used_lemmas for lemma in lemmas_of(c["secret"], lemma_table)))
+        """A candidate is spent when its group is already holed (see spent_candidate)."""
+        return spent_candidate(c["secret"], used_slugs, used_lemmas, lemma_table, donors)
 
     def available():
         return [i for i, c in enumerate(cands) if not taken_word(c)]
 
-    def frame(cursor, band, rbd, secret, mode, numbuf, error):
+    def frame(cursor, title, cells, error):
+        """One full-screen render: the sentence, then the numbered panel the current
+        step is asking about (start-word band, or donor list when one is needed)."""
         cols = shutil.get_terminal_size((80, 24)).columns
         cand_pos = {c["pos"]: c for c in cands}
         out = [_sgr("1", f"  Trou {len(used_slugs) + 1}/3"),
@@ -581,12 +992,7 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
             else:
                 rendered.append(pre + _sgr("4", core) + suf)
         out += ["  " + " ".join(rendered), ""]
-        # the hovered word's start-word band (numbered), the pick target in start mode.
-        title = f"  Mots de départ pour « {secret} »"
-        if mode == "start":
-            title += "   numéro : " + _sgr("1;7", f" {numbuf or ' '} ") + "  (Entrée valider · Échap annuler)"
         out.append(_sgr("1", title))
-        cells = [f"{i:>3}) {w} ^-{rbd[w]}" for i, (w, _r) in enumerate(band, 1)]
         if cells:
             cw = max(len(x) for x in cells) + 2
             ncols = max(1, (cols - 2) // cw)
@@ -600,6 +1006,20 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
 
     fd = sys.stdin.fileno()
     saved = termios.tcgetattr(fd)
+
+    def ask_display(start, start_rank):
+        """Leave raw mode for the one free-text question of the flow (#119 addendum).
+
+        Every other step is a number, so the loop can read it a keypress at a time; a
+        display form is a WORD — accented, worth editing with the arrow keys — which is
+        precisely what canonical mode and readline already give the line prompts. The
+        next frame clears the screen, so the detour leaves nothing behind."""
+        termios.tcsetattr(fd, termios.TCSADRAIN, saved)
+        try:
+            return choose_start_display(start, start_rank, donors)
+        finally:
+            tty.setcbreak(fd)
+
     cursor = available()[0]
     mode, numbuf, error = "nav", "", ""
     aborted = False
@@ -607,8 +1027,27 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
         tty.setcbreak(fd)
         while len(used_slugs) < 3:
             c = cands[cursor]
-            canonical_secret, rank_map, band, rbd = prep(c["secret"])
-            sys.stdout.write(frame(cursor, band, rbd, c["secret"], mode, numbuf, error))
+            secret = c["secret"]
+            donor = donor_of(secret)
+            numero = ("   numéro : " + _sgr("1;7", f" {numbuf or ' '} "))
+            if donor is None:
+                # #119: no vector for this word — the donor is chosen FIRST, with the
+                # same numbered grammar. Only the donors that keep this word its own
+                # group are offered, so no choice can hole a committed lemma twice.
+                dcands = free_donors(secret, used_lemmas, lemma_table, donors)
+                rank_map, band, rbd = None, [], {}
+                title = f"  « {secret} » n'a pas de vecteur — formes du même lemme"
+                if mode == "donor":
+                    title += numero + f"  (Entrée = {dcands[0]} · Échap annuler)"
+                cells = donors.donor_lines(secret, dcands)
+            else:
+                dcands = []
+                _canonical, rank_map, band, rbd = prep(secret, donor)
+                title = f"  Mots de départ pour « {secret} »"
+                if mode == "start":
+                    title += numero + "  (Entrée valider · Échap annuler)"
+                cells = [f"{i:>3}) {w} ^-{rbd[w]}" for i, (w, _r) in enumerate(band, 1)]
+            sys.stdout.write(frame(cursor, title, cells, error))
             sys.stdout.flush()
             error = ""
             key = _read_key(fd)
@@ -620,7 +1059,23 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                 elif key in ("RIGHT", "DOWN"):
                     cursor = avail[(ai + 1) % len(avail)]
                 elif key == "ENTER":
-                    mode, numbuf = "start", ""
+                    mode, numbuf = ("donor" if donor is None else "start"), ""
+            elif mode == "donor":  # which same-lemma form lends its vector (#119)
+                if key == "ESC":
+                    mode, numbuf = "nav", ""
+                elif key == "BACK":
+                    numbuf = numbuf[:-1]
+                elif key == "ENTER":
+                    if not numbuf:  # Entrée = the suggestion, as in the line prompt
+                        donors.choose(secret, dcands[0])
+                        mode, numbuf = "start", ""
+                    elif numbuf.isdigit() and 1 <= int(numbuf) <= len(dcands):
+                        donors.choose(secret, dcands[int(numbuf) - 1])
+                        mode, numbuf = "start", ""
+                    else:
+                        error = f"Numéro invalide (1–{len(dcands)})."
+                elif key.isdigit():
+                    numbuf += key
             else:  # start-word selection for the committed word
                 if key == "ESC":
                     mode, numbuf = "nav", ""
@@ -629,16 +1084,23 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                 elif key == "ENTER":
                     if numbuf.isdigit() and 1 <= int(numbuf) <= len(band):
                         start = band[int(numbuf) - 1][0]
-                        secret_slug = slug(c["secret"])
+                        start_rank = rbd[start]
+                        # Same last question as the --words path: which form of that
+                        # start word the hole shows (#119 addendum). Display only.
+                        display = ask_display(start, start_rank)
+                        alias_start_display(rank_map, start, display, start_rank)
+                        secret_slug = slug(secret)
                         ranks[secret_slug] = rank_map
                         for occurrence in candidates_for_slug(cands, secret_slug):
                             holes.append(_make_hole(
                                 occurrence["secret"], occurrence["prefix"],
-                                occurrence["suffix"], occurrence["pos"], start,
-                                rbd[start],
+                                occurrence["suffix"], occurrence["pos"], display,
+                                start_rank,
                             ))
                         used_slugs.add(secret_slug)
-                        used_lemmas.update(lemmas_of(canonical_secret, lemma_table))
+                        used_lemmas.update(group_lemmas(secret, donor, lemma_table))
+                        if donors is not None:  # the hole exists now: the borrow is real
+                            donors.note_used(secret, donor)
                         mode, numbuf = "nav", ""
                         if len(used_slugs) < 3:
                             remaining = available()
@@ -699,7 +1161,7 @@ def filename_slugs_from_holes(holes):
 
 
 def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
-                     lemma_table, forms_by_lemma):
+                     lemma_table, forms_by_lemma, donors=None):
     """Resolve three distinct ``--words`` selectors into all matching holes.
 
     Matching is slug-based. Each selected slug gets one ranking and one start hint, then
@@ -707,6 +1169,10 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
     sentence order; the ranks map has one entry per selected slug. Under lemma grouping
     (#104) the 3-distinct-secrets contract means 3 distinct GROUPS: two selectors whose
     secrets share a lemma are "the same word" and rejected.
+
+    `donors` (a DonorResolver, #119) is what lets a secret whose surface form has no
+    vector borrow one from a same-lemma form; without it a vector-less secret is the
+    same hard error as before.
     """
     selectors = _resolve_word_selectors(words_arg, cfg, lang)
     holes = []
@@ -731,26 +1197,38 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
             None,
         )
         if canonical is None:
-            secret = occurrences[0][1][0]
-            die(f"'{raw}' (→ '{secret}') n'a pas survécu à la réduction : absent du "
-                f"vocabulaire réduit '{lang}'. Choisis un autre mot cible, ou "
-                f"ajuste puis relance la réduction (scripts/reduce_embedding.py).")
+            # No occurrence has a vector. A same-lemma form may lend one (#119), but
+            # only explicitly: donor_for prompts on a TTY and demands --donor otherwise.
+            # With no candidate at all (or no resolver) the pre-#119 error stands.
+            canonical = occurrences[0][1]
+            secret = canonical[0]
+            if donors is None or not donors.candidates(secret):
+                die(f"'{raw}' (→ '{secret}') n'a pas survécu à la réduction : absent du "
+                    f"vocabulaire réduit '{lang}'. Choisis un autre mot cible, ou "
+                    f"ajuste puis relance la réduction (scripts/reduce_embedding.py).")
         canonical_secret = canonical[0]
+        # The GEOMETRY source: the secret itself when it has a vector, else its donor.
+        # Everything else below keeps using the true sentence form.
+        donor = donors.donor_for(canonical_secret) if donors is not None else canonical_secret
 
-        # Two selected secrets in one lemma group would be one word holed twice.
-        for lemma in lemmas_of(canonical_secret, lemma_table):
+        # Two selected secrets in one lemma group would be one word holed twice. A
+        # borrowed vector carries the donor's lemmas too, so a sibling of the donor is
+        # "the same word" as well (#119).
+        secret_lemmas = group_lemmas(canonical_secret, donor, lemma_table)
+        for lemma in secret_lemmas:
             if lemma in used_lemmas:
                 die(f"'{raw}' et '{used_lemmas[lemma]}' sont des formes du même mot "
                     f"(lemme commun « {lemma} ») : choisis 3 mots distincts.")
-        for lemma in lemmas_of(canonical_secret, lemma_table):
+        for lemma in secret_lemmas:
             used_lemmas[lemma] = raw
 
         # Ranking, lemma merging and start selection happen ONCE per distinct secret
         # slug. The walk needs the FULL raw ranking: merging collapses inflections,
         # so reaching TOP_K distinct groups can consume well over TOP_K raw neighbors.
-        ranking = cfg["module"].closest(canonical_secret, kv, V, M, n=None)
+        ranking = cfg["module"].closest(donor, kv, V, M, n=None)
         merged, rank_map = build_merged_rank_map(
-            canonical_secret, ranking, lemma_table, forms_by_lemma, Vset)
+            canonical_secret, ranking, lemma_table, forms_by_lemma, Vset,
+            secret_lemmas=secret_lemmas)
         rank_by_display = {canonical_secret: 0}
         for w, r, _ in merged:
             rank_by_display[w] = r + 1
@@ -758,9 +1236,14 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
         ranks[target_slug] = rank_map
         start = choose_start(canonical_secret, merged, rank_map, rank_by_display)
         start_rank = rank_map[slug(start)]["rank"]
+        # The band only offers forms that HAVE a vector; the sentence may demand one it
+        # lacks. The override is DISPLAY only (#119 addendum) — start_rank is untouched.
+        start_display = choose_start_display(start, start_rank, donors)
+        alias_start_display(rank_map, start, start_display, start_rank)
 
         for pos, (secret, prefix, suffix) in occurrences:
-            holes.append(_make_hole(secret, prefix, suffix, pos, start, start_rank))
+            holes.append(_make_hole(secret, prefix, suffix, pos, start_display,
+                                    start_rank))
 
     # Holes follow sentence order, not --words order. Filename construction dedupes the
     # repeated occurrence slugs separately via filename_slugs_from_holes().
@@ -889,6 +1372,10 @@ def parse_args():
     p.add_argument("--no-lemmas", action="store_true",
                    help="désactive le regroupement par lemme (#104) — chaque forme "
                         "fléchie garde son propre rang")
+    p.add_argument("--donor", action="append", metavar="MANQUANT=DONNEUR",
+                   help="emprunte le vecteur d'une forme du même lemme pour un secret "
+                        "absent de l'embedding (#119), ex. --donor accoutumes="
+                        "accoutume ; répétable, requis hors mode interactif")
     p.add_argument("--kind", help="type d'œuvre (book, movie, music, quote, poem, …)")
     p.add_argument("--author", help="auteur / autrice")
     p.add_argument("--work", help="titre de l'œuvre")
@@ -930,6 +1417,10 @@ def main():
     if words_arg is not None:
         _resolve_word_selectors(words_arg, cfg, lang)
 
+    # Same for a malformed --donor pair (#119): parse it now, validate it against the
+    # vocabulary only when a secret actually needs a substitution.
+    explicit_donors = parse_donor_args(args.donor)
+
     # Lemma table (#104), loaded before the vectors so a missing table fails fast.
     # An empty table (--no-lemmas) reproduces the pre-#104 behaviour exactly.
     lemma_table = load_lemma_table(lang, disabled=args.no_lemmas)
@@ -953,16 +1444,21 @@ def main():
     # Existence set for the front: the whole (slugged) reduced vocabulary V.
     write_vocab(V, lang)
 
+    # A secret whose surface form never survived reduction may borrow a same-lemma
+    # form's vector (#119) — explicitly: --donor off a TTY, a numbered question on one.
+    donors = DonorResolver(lemma_table, forms_by_lemma, V, Vset, lang,
+                           explicit=explicit_donors, interactive=interactive)
+
     # Two paths to the same (holes, ranks): --words is the explicit / batch path (each
     # distinct selector expands to all matching occurrences); with no --words on a TTY
     # the groups are chosen with the interactive selector, which also picks each shared
     # start word inline.
     if words_arg is not None:
         holes, ranks = holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
-                                        lemma_table, forms_by_lemma)
+                                        lemma_table, forms_by_lemma, donors)
     else:
         holes, ranks = select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
-                                                lemma_table, forms_by_lemma)
+                                                lemma_table, forms_by_lemma, donors)
 
     # --- Optional source metadata (#5) ----------------------------------------
     # Flags win; otherwise ask on a TTY (any flag already given is not re-prompted);
@@ -1001,6 +1497,11 @@ def main():
     print(f"\nPhrase ({lang}) écrite dans {out_path} :")
     for h in holes:
         print(f"  {h['start']['word']}^-{h['start_rank']} -> {h['secret']['word']}")
+    # A borrowed vector (#119) is never silent: say which form lent it, whichever path
+    # chose it (--donor, the line prompt, or the selector).
+    for secret_word, donor_word in donors.used.values():
+        print(f"  secret « {secret_word} » : rangs calculés depuis le donneur "
+              f"« {donor_word} »")
     if source:
         print("  source : " + ", ".join(f"{k}={v}" for k, v in source.items()))
 
