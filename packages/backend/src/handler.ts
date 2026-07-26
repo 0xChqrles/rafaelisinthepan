@@ -12,6 +12,7 @@ import {
 import {
   type FnUrlEvent,
   type FnUrlResult,
+  ENVELOPE_BUDGET_BYTES,
   LAMBDA_MAX_RESPONSE_BYTES,
   corsHeaders,
   envelopeBytes,
@@ -236,11 +237,24 @@ export function createHandler(deps: HandlerDeps) {
       // becomes a 413 the caller reads as a bare 502, with nothing in this handler's logs —
       // the failure mode that made a 6.5 MB puzzle look like a dead backend. Naming it keeps
       // the next oversized puzzle a five-second diagnosis.
-      if (envelopeBytes(response) > LAMBDA_MAX_RESPONSE_BYTES) {
+      const envelope = envelopeBytes(response);
+      if (envelope > ENVELOPE_BUDGET_BYTES) {
+        // LOGGED as well as returned, because returning the 500 is not enough to be seen: a
+        // handler that RETURNS an error status is still a SUCCESSFUL invocation, so Lambda's
+        // Errors metric stays 0 and the log group shows a clean request — the same blind spot
+        // the bare 502 had. This line is what actually puts the diagnosis in CloudWatch.
+        console.error(
+          `[puzzle] payload_too_large: ${requestedDate} (${lang}) serialized to ${envelope} bytes` +
+            ` as ${response.headers['Content-Encoding'] ?? 'identity'}` +
+            ` (accept-encoding: ${event.headers?.['accept-encoding'] ?? 'absent'}),` +
+            ` over the ${ENVELOPE_BUDGET_BYTES}-byte budget / ${LAMBDA_MAX_RESPONSE_BYTES}-byte runtime cap.`,
+        );
         return errorResponse(
           500,
           'payload_too_large',
-          `The puzzle for ${requestedDate} (${lang}) exceeds the ${LAMBDA_MAX_RESPONSE_BYTES}-byte response limit.`,
+          // The BUDGET, not the runtime cap: the guard deliberately fires below the cap, so
+          // citing the cap would tell the caller it exceeded a number it may not have.
+          `The puzzle for ${requestedDate} (${lang}) exceeds the ${ENVELOPE_BUDGET_BYTES}-byte response budget.`,
           cors,
         );
       }

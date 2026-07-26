@@ -11,6 +11,15 @@ import { brotliCompressSync, constants, gzipSync } from 'node:zlib';
 // the body alone would call that safe and still 502.
 export const LAMBDA_MAX_RESPONSE_BYTES = 6_291_556;
 
+// `envelopeBytes` models the runtime's payload as JSON.stringify(result), which is a close
+// FLOOR rather than the exact number — the runtime wraps it in framing this handler never
+// sees. So the guard holds a few KB back instead of comparing against the cap itself: a
+// payload landing inside that margin would pass the check and still 413, which is precisely
+// the failure the guard exists to convert into a named error. Today's compressed envelope is
+// ~942 KB against a 6.29 MB cap, so the reserve costs nothing real.
+const ENVELOPE_RESERVE_BYTES = 8_192;
+export const ENVELOPE_BUDGET_BYTES = LAMBDA_MAX_RESPONSE_BYTES - ENVELOPE_RESERVE_BYTES;
+
 // Below this, gzip's header + base64's 4/3 expansion cost more than the compression saves.
 // CloudFront uses the same 1 KB floor for its own automatic compression.
 const MIN_COMPRESS_BYTES = 1_024;
@@ -99,21 +108,32 @@ export type ContentEncoding = 'br' | 'gzip';
 // arrive as `br` alone — and a gzip-only origin would then have to answer that request
 // uncompressed, which for a puzzle means no answer at all.
 //
-// q-values are parsed so an explicit `gzip;q=0` reads as the refusal it is rather than as
-// mere presence of the token.
+// A `q=0` is honoured as the REFUSAL it is rather than read as mere presence of the token,
+// and a refusal outranks a wildcard: per RFC 9110 §12.5.3 the most specific match wins, so
+// `br;q=0, *` must not be answered in brotli. Relative q ORDERING is deliberately not
+// implemented — `gzip;q=1.0, br;q=0.1` still picks brotli. CloudFront strips q-values when
+// it normalizes the header, so ordering never survives to this origin in production; only
+// the outright refusal is worth honouring, and getting THAT wrong ships a body the client
+// cannot decode.
 export function negotiateEncoding(header: string | undefined): ContentEncoding | null {
   if (!header) return null;
   const offered = new Set<string>();
+  const refused = new Set<string>();
   for (const part of header.split(',')) {
     const [rawToken, ...params] = part.split(';');
     const token = rawToken.trim().toLowerCase();
     if (token !== 'br' && token !== 'gzip' && token !== '*') continue;
     const q = params.map((p) => p.trim().toLowerCase()).find((p) => p.startsWith('q='));
-    if (q && Number(q.slice(2)) === 0) continue;
+    if (q && Number(q.slice(2)) === 0) {
+      refused.add(token);
+      continue;
+    }
     offered.add(token);
   }
-  if (offered.has('br') || offered.has('*')) return 'br';
-  if (offered.has('gzip')) return 'gzip';
+  const acceptable = (coding: ContentEncoding) =>
+    !refused.has(coding) && (offered.has(coding) || offered.has('*'));
+  if (acceptable('br')) return 'br';
+  if (acceptable('gzip')) return 'gzip';
   return null;
 }
 
@@ -122,8 +142,9 @@ function compress(payload: string, encoding: ContentEncoding): Buffer {
   return brotliCompressSync(payload, {
     params: {
       [constants.BROTLI_PARAM_QUALITY]: BROTLI_QUALITY,
-      // Brotli picks its window from the declared size; without the hint it assumes small
-      // input and gives up compression it could have had on a multi-megabyte body.
+      // Declaring the input size is the documented way to let brotli size its heuristics.
+      // Measured on a real 5.85 MB puzzle it changes NOTHING (706,379 bytes either way, same
+      // time) — kept because it is free and correct, not because it buys anything here.
       [constants.BROTLI_PARAM_SIZE_HINT]: Buffer.byteLength(payload),
     },
   });

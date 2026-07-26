@@ -3,7 +3,7 @@
 // with a clean JSON 404 (never a 500), sends CORS headers, and exposes day metadata.
 
 import { brotliDecompressSync, gunzipSync } from 'node:zlib';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { type Puzzle, encodeResult } from '@whippin/shared';
 import { createHandler, type HandlerDeps } from './handler';
 import { renderCardPng } from './ogCard';
@@ -204,6 +204,17 @@ describe('puzzle endpoint — date-addressed (GET /?lang=&date=)', () => {
 // envelope over LAMBDA_MAX_RESPONSE_BYTES with a 413 the caller only ever sees as a 502.
 // Compression is what keeps a real puzzle answerable; these pin the negotiation.
 describe('puzzle response compression — staying under the runtime envelope cap', () => {
+  // The oversize guard writes to console.error. Capture it so the suite output stays clean
+  // and so the log line itself can be asserted.
+  const captureConsoleError = () => vi.spyOn(console, 'error').mockImplementation(() => {});
+  let logged: ReturnType<typeof captureConsoleError>;
+  beforeEach(() => {
+    logged = captureConsoleError();
+  });
+  afterEach(() => {
+    logged.mockRestore();
+  });
+
   it('prefers brotli when the client offers it — CloudFront would, so gzip-only would regress', async () => {
     const res = await oversizedHandler()(
       event({ query: PUZZLE_QUERY, headers: { 'accept-encoding': 'br, gzip, deflate' } }),
@@ -250,6 +261,28 @@ describe('puzzle response compression — staying under the runtime envelope cap
     expect(JSON.parse(res.body).error).toBe('payload_too_large');
   });
 
+  it('LOGS the oversized payload, because a returned 500 is invisible to the operator', async () => {
+    // The reason this is asserted rather than assumed: a handler that RETURNS an error
+    // status is a SUCCESSFUL invocation, so Lambda's Errors metric stays 0 and the log
+    // group shows a clean request. The console line is the ONLY thing that puts this in
+    // CloudWatch — drop it in a refactor and the next oversized puzzle is diagnosed by
+    // curling again, which is the exact failure this PR set out to end.
+    await oversizedHandler()(event({ query: PUZZLE_QUERY }));
+    expect(logged).toHaveBeenCalledTimes(1);
+    const line = logged.mock.calls[0][0] as string;
+    expect(line).toContain('payload_too_large');
+    expect(line).toContain(ACTIVE_DATE); // which day to republish
+    expect(line).toContain('fr'); // and in which language
+    expect(line).toMatch(/\d{7}/); // the size that busted the budget
+  });
+
+  it('stays silent on a response that fits', async () => {
+    await oversizedHandler()(
+      event({ query: PUZZLE_QUERY, headers: { 'accept-encoding': 'br' } }),
+    );
+    expect(logged).not.toHaveBeenCalled();
+  });
+
   it('varies on Accept-Encoding without dropping the CORS Vary: Origin', async () => {
     const res = await makeHandler()(
       event({ query: PUZZLE_QUERY, headers: { 'accept-encoding': 'gzip' } }),
@@ -275,14 +308,17 @@ describe('puzzle response compression — staying under the runtime envelope cap
     expect(res.headers['Content-Encoding']).toBe('gzip');
   });
 
-  it('leaves a sub-kilobyte puzzle uncompressed even when gzip is offered', async () => {
-    const res = await makeHandler()(
-      event({ query: PUZZLE_QUERY, headers: { 'accept-encoding': 'gzip' } }),
-    );
-    expect(res.statusCode).toBe(200);
-    expect(res.headers['Content-Encoding']).toBeUndefined();
-    expect(JSON.parse(res.body)).toEqual(PUZZLE);
-  });
+  it.each(['gzip', 'br, gzip, deflate'])(
+    'leaves a sub-kilobyte puzzle uncompressed even when the client offers %s',
+    async (acceptEncoding) => {
+      const res = await makeHandler()(
+        event({ query: PUZZLE_QUERY, headers: { 'accept-encoding': acceptEncoding } }),
+      );
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['Content-Encoding']).toBeUndefined();
+      expect(JSON.parse(res.body)).toEqual(PUZZLE);
+    },
+  );
 });
 
 describe('share-card /og route — lang passthrough (#59)', () => {
