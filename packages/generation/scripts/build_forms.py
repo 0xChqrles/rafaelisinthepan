@@ -106,6 +106,43 @@ def spurious(atom, lemma, form):
     return form == lemma
 
 
+def false_lemmas(rows, token_re):
+    """Lemmas that are really an inflected form Lexique mis-filed as its own entry.
+
+    Rule 1 lets a self-naming `inf` row through by construction — `form == lemma` is
+    exactly what it demands — so a row like "aurai / aurai / inf" survives beside the
+    true "aurai / avoir / ind:fut:1s". That invents a second paradigm for the form,
+    which then looks ambiguous (two lemmas, two features) and loses its agreement
+    entirely: no batch run would ever agree an "aurai" hole.
+
+    Two facts separate the mistake from a real verb, and BOTH are needed:
+
+      - a real verb has a PARADIGM. "aurai" as a lemma owns exactly one row, its own
+        infinitive; "allier" owns fifteen. That alone is not enough, because Lexique
+        genuinely attests rare verbs in the infinitive only ("booster", "dépolluer") —
+        those are correct entries and must stay.
+      - a real verb's infinitive is not an inflected form of a DIFFERENT verb. "booster"
+        is only ever itself; "aurai" is also the 1s future of "avoir". That alone is not
+        enough either — "allier" is a form of "aller" through one of Lexique's bogus
+        `lemme` rows, yet it is plainly a verb of its own.
+
+    Together they name exactly four entries: aurai, connais, mentez, parait."""
+    paradigm, elsewhere = {}, set()
+    for ortho, lemme, cgram, _g, _n, infover, _f in rows:
+        if not is_verb(cgram) or not infover:
+            continue
+        if not token_re.match(ortho) or not token_re.match(lemme):
+            continue
+        for atom in {a.strip() for a in infover.split(";") if a.strip()}:
+            if spurious(atom, lemme, ortho):
+                continue
+            paradigm.setdefault(lemme, set()).add((atom, ortho))
+            if lemme != ortho:
+                elsewhere.add(ortho)
+    return {lemma for lemma, rows_ in paradigm.items()
+            if rows_ == {("inf", lemma)} and lemma in elsewhere}
+
+
 def marked(atom, genre, nombre):
     """Does this atom sit on a row whose gender+number marking is not its own? Rule 3:
     a demotion, so a true form always beats it and a lone one still counts."""
@@ -195,7 +232,7 @@ def dominant_verbs(rows, token_re):
     return dominant
 
 
-def collect_rows(rows, token_re, dominant):
+def collect_rows(rows, token_re, dominant, bogus=()):
     """Normalize Lexique's verb rows into the final deterministic (sortable) set.
 
     One entry per (lemma, feature, form); `infover` repeats atoms ("par:pas;par:pas;")
@@ -208,6 +245,8 @@ def collect_rows(rows, token_re, dominant):
         if not is_verb(cgram) or not infover:
             continue
         if not token_re.match(ortho) or not token_re.match(lemme):
+            continue
+        if lemme in bogus:  # an inflected form mis-filed as its own entry
             continue
         for atom in {a.strip() for a in infover.split(";") if a.strip()}:
             if spurious(atom, lemme, ortho):
@@ -264,7 +303,8 @@ def build(lang, *, refresh):
                     os.path.join(bw.CACHE_DIR, f"{lang}.lexique.tsv"), refresh)
     token_re = red.token_pattern(lang)
     dominant = dominant_verbs(read_lexique_rows(path), token_re)
-    rows = collect_rows(read_lexique_rows(path), token_re, dominant)
+    bogus = false_lemmas(read_lexique_rows(path), token_re)
+    rows = collect_rows(read_lexique_rows(path), token_re, dominant, bogus)
     if not rows:
         print(f"Erreur : la source n'a produit aucune forme pour {lang}.", file=sys.stderr)
         sys.exit(1)

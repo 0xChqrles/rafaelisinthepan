@@ -1000,11 +1000,16 @@ class FormResolver:
         so typing any form of the group displays the agreed one.
 
         Taking an ALIAS key from a farther group is allowed (closest-first, as
-        expand_aliases already resolves collisions). Taking its CANONICAL key is not.
-        A group is still displayed through its other keys, so stealing the very slug of
-        the word it prints leaves it showing that word at exponent N while typing it
-        reads M < N — the same contradiction the closer-owner rule above refuses, only
-        reached from the other side. The start hint is where it bites hardest, because
+        expand_aliases already resolves collisions). Taking the CANONICAL key of a
+        farther group that is still DISPLAYABLE is not. Such a group is shown through
+        its other keys, so stealing the very slug of the word it prints leaves it
+        showing that word at exponent N while typing it reads M < N — the same
+        contradiction the closer-owner rule above refuses, only reached from the other
+        side. Past start_rank there is nothing to protect: a group no hole can ever
+        render prints nothing, so its canonical key is as reclaimable as any alias, and
+        guarding it would only cost live rewrites (rank 21's "déférait" is not worth
+        declining for a "déferait" sitting at 916). The start hint is where a live
+        collision bites hardest, because
         start_rank is captured BEFORE this pass runs: the hole would ship
         start.word="banque" at start_rank 5 while ranks[secret]["banque"] said 2, so the
         printed hint improves its own hole. Declining keeps map and hole in step, and
@@ -1035,8 +1040,8 @@ class FormResolver:
             if owner is not None and owner["rank"] != rank:
                 if owner["rank"] < rank:
                     continue  # a closer group owns it: decline rather than contradict it
-                if s == slug(canonicals[owner["rank"]]):
-                    continue  # a farther group PRINTS it: taking it would strand its word
+                if owner["rank"] <= start_rank and s == slug(canonicals[owner["rank"]]):
+                    continue  # a DISPLAYABLE farther group prints it: leave its word alone
             for key in keys:
                 if rank_map[key]["rank"] == rank:  # a reclaimed key belongs elsewhere now
                     rank_map[key]["word"] = form

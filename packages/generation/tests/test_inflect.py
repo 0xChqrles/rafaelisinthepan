@@ -16,8 +16,11 @@ sentence: « tu t'___ » must read "t'distrais", never "t'distraire". The rules:
     so a true form beats it while a lone one still counts;
   - a group is left alone when its canonical is not a POS-admitted verb, has no such
     form, would become a word nobody could type back, would land on a slug a CLOSER
-    group already owns, or would take the slug a FARTHER group PRINTS — whatever a hole
-    displays must type back at that hole's own exponent, never a closer one;
+    group already owns, or would take the slug a farther but still DISPLAYABLE group
+    prints — whatever a hole displays must type back at that hole's own exponent, never
+    a closer one. Past start_rank nothing is displayed, so nothing is protected;
+  - a lemma that is really an inflected form Lexique mis-filed as its own entry
+    ("aurai") is rejected: a singleton `inf` paradigm AND attested under another lemma;
   - the POS gate reads AUX as the verb category: être and avoir are verbs, and they are
     the forms that carry the tag;
   - a participle whose NUMBER column is blank is invariable in number ("pris",
@@ -34,8 +37,8 @@ import os
 import pytest
 
 import gen_phrase
-from build_forms import (collect_rows, dominant_verbs, feature_keys, forms_path,
-                         load_forms)
+from build_forms import (collect_rows, dominant_verbs, false_lemmas, feature_keys,
+                         forms_path, load_forms)
 
 FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
 TABLE = load_forms(os.path.join(FIXTURES, "forms.fr.tsv"))
@@ -315,6 +318,43 @@ def test_an_auxiliary_is_admitted_as_the_verb_it_is():
     assert resolver.realize("avais", "par:pas:m:s") == "eu"
 
 
+def test_an_inflected_form_mis_filed_as_its_own_lemma_is_rejected():
+    # Rule 1 lets a self-naming `inf` row through by construction, so Lexique's
+    # "aurai / aurai / inf" survived beside the true "aurai / avoir / ind:fut:1s" and
+    # invented a second paradigm — two lemmas, two features, so the form looked
+    # ambiguous and no batch run ever agreed an "aurai" hole.
+    table = committed()
+    resolver = gen_phrase.FormResolver(table)
+    assert table.entries["aurai"] == (("avoir", "ind:fut:1s"),)
+    assert resolver.features_of("aurai") == ("ind:fut:1s",)
+    assert resolver.feature_for("aurai") == "ind:fut:1s"
+    assert resolver.realize("avais", "ind:fut:1s") == "aurai"
+    # the other three of the class recover their real paradigm too
+    assert resolver.features_of("parait") == ("ind:imp:3s",)
+    assert all(lemma not in {l for l, _f in table.realize}
+               for lemma in ("aurai", "connais", "mentez", "parait"))
+
+
+def test_a_rare_verb_attested_only_in_the_infinitive_survives():
+    # BOTH conditions are needed. Lexique genuinely attests rare verbs in the infinitive
+    # alone ("booster"), and a real verb can be a form of another through one of the
+    # bogus `lemme` rows ("allier" is filed under "aller") — neither is the mistake.
+    rows = [("aurai", "aurai", "AUX", "", "", "inf;", 0.01),
+            ("aurai", "avoir", "AUX", "", "", "ind:fut:1s;", 48.50),
+            ("booster", "booster", "VER", "", "", "inf;", 1.20),
+            ("allier", "allier", "VER", "", "", "inf;", 3.40),
+            ("allier", "aller", "VER", "", "", "inf;", 0.10),
+            ("allie", "allier", "VER", "", "", "ind:pre:3s;", 2.00)]
+    token_re = gen_phrase.CONFIG["fr"]["token_regex"]
+    assert false_lemmas(rows, token_re) == {"aurai"}
+    built = {(r[0], r[1], r[2]) for r in
+             collect_rows(rows, token_re, set(), false_lemmas(rows, token_re))}
+    assert ("aurai", "inf", "aurai") not in built      # the mistake is gone...
+    assert ("avoir", "ind:fut:1s", "aurai") in built   # ...the true row is not
+    assert ("booster", "inf", "booster") in built
+    assert ("allier", "inf", "allier") in built
+
+
 def test_a_number_invariable_participle_secret_is_asked_about():
     # "conquis" covers m:s and m:p, so « ils sont conquis » must not silently agree its
     # neighbours to the singular. Two candidates -> the batch run declines and --form
@@ -392,6 +432,23 @@ def test_a_rewrite_never_takes_a_farther_groups_canonical_key():
     start_display = agreed.get(start_rank, ("amuse", "amuse"))[1]
     assert start_display == "amusé"
     assert rmap[gen_phrase.slug(start_display)]["rank"] == start_rank
+
+
+def test_only_a_displayable_groups_canonical_key_is_protected():
+    # The protection exists because the owner still PRINTS that word. Past start_rank no
+    # hole can ever render it, so there is nothing to strand and the slug is as
+    # reclaimable as any alias — guarding it would only cost live rewrites.
+    far = _map(("marchait", "marchait", 0), ("amuse", "amuse", 1),
+               ("amusait", "amusait", 20))          # canonical, but rank 20 > start 5
+    assert _resolver().apply(far, 5, "marchait", _donors()) == {1: ("amuse", "amusait")}
+    assert far["amusait"] == {"word": "amusait", "rank": 1}
+
+    # ...and the control: the very same collision INSIDE the displayable range declines.
+    near = _map(("marchait", "marchait", 0), ("amuse", "amuse", 1),
+                ("amusait", "amusait", 4))          # canonical at rank 4 <= start 5
+    assert _resolver().apply(near, 5, "marchait", _donors()) == {}
+    assert near["amusait"] == {"word": "amusait", "rank": 4}
+    assert near["amuse"] == {"word": "amuse", "rank": 1}
 
 
 # --- artifact integrity ------------------------------------------------------------
