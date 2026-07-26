@@ -71,9 +71,10 @@ FORMS = gen_phrase.invert_lemmas(TABLE)
 VOCAB = ["jardin", "doucement", "vermine", "accoutumé", "accoutumés", "accoutume",
          "accoutumer", "chante", "amuse", "amuser", "amusés"]
 VSET = set(VOCAB)
-# The walk is stubbed, but the road clustering (#115) reads the neighbors' vectors, so
-# the fake embedding has to be subscriptable. The coordinates are arbitrary: what the
-# donor contract cares about is WHICH word the walk started from, not where it landed.
+# The walk is stubbed, but the road clustering (#115) reads the vectors of the groups
+# ahead of the departure, so the fake embedding has to be subscriptable. The coordinates
+# are arbitrary: what the donor contract cares about is WHICH word the walk started from,
+# not where it landed.
 KV = {w: [float(i + 1), 1.0, 0.0] for i, w in enumerate(VOCAB)}
 
 SENTENCE = "tu t'accoutumes doucement au jardin."
@@ -152,8 +153,11 @@ def test_borrowed_ranks_are_the_donors_own_ranks(monkeypatch):
 
     # Everything past the secret's own group is exactly what a map built directly on
     # the donor would hold: the substitution moves the walk's origin, nothing else.
-    _merged, donor_map = gen_phrase.build_puzzle_rank_map(
-        "accoutume", RANKINGS["accoutume"], TABLE, FORMS, VSET, kv=KV)
+    merged, donor_map = gen_phrase.build_puzzle_rank_map(
+        "accoutume", RANKINGS["accoutume"], TABLE, FORMS, VSET)
+    # The stub starts every hole on "vermine", the rank-1 group, so the road zone is
+    # exactly it (#115 cuts the roads from the departure in).
+    gen_phrase.annotate_roads(donor_map, merged, KV, start_rank=1)
     far = {k: v for k, v in ranks["accoutumes"].items() if v["rank"] > 0}
     # identical entry for entry — the borrowed geometry (#115 dq/road) included.
     assert far == {k: v for k, v in donor_map.items() if v["rank"] > 0}

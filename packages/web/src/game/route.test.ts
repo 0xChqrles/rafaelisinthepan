@@ -5,8 +5,12 @@
 //   - a group is one stop however many of its aliases were typed (#104), named by its
 //     canonical accented form;
 //   - the departure (the given start word) and "you are here" (the hole's current word) are
-//     marked, the unfound final approach stays censored, roads are named only by what the
-//     player DISCOVERED on them, and a guess with no rank at all falls off the map;
+//     marked, EVERY near-field group the player has not reached stays censored (so each road
+//     shows its real length), roads are named only by what the player DISCOVERED on them, and a
+//     guess with no rank at all falls off the map;
+//   - the near field IS the road zone, and nothing here re-bounds it: generation ends the roads
+//     at the DEPARTURE (#115's road_zone), which rides one of them, so the censored stations end
+//     just inside it for free;
 //   - a puzzle published before #115 carries no dq and gets NO map (and so no entry point).
 
 import { describe, it, expect } from 'vitest';
@@ -16,6 +20,9 @@ import type { RankEntry, RuntimeHole } from '@whippin/shared';
 // A hand-built rank map with real geometry: `n` groups, dq falling linearly from 255 to 0,
 // roads on the first `roadTop` groups (round-robin over `roadCount` lanes, but always with
 // rank 1 on lane 0 so the ids stay numbered by closest member like generation's).
+//
+// `roadTop` is a generated puzzle's DEPARTURE — generation cuts the roads from the start word in
+// to the secret, that word included — so a fixture played from w100 carries roads out to rank 100.
 function mkMap(
   n: number,
   { roadTop = 0, roadCount = 1 }: { roadTop?: number; roadCount?: number } = {},
@@ -51,7 +58,7 @@ function route(
 }
 
 describe('placement — every stop keeps its group geometry', () => {
-  const map = mkMap(300, { roadTop: 150, roadCount: 3 });
+  const map = mkMap(300, { roadTop: 100, roadCount: 3 });
 
   it('carries each stop dq and lane straight from its entry, closest-first', () => {
     const model = route(map, ['w200', 'w5', 'w40'], hole(5))!;
@@ -66,9 +73,16 @@ describe('placement — every stop keeps its group geometry', () => {
     expect(model.stops.find((s) => s.rank === 200)!.road).toBeNull();
   });
 
+  it('puts the DEPARTURE on a lane — the player is put down on a road, not short of it', () => {
+    const model = route(map, [], hole(100))!;
+    expect(model.stops.find((s) => s.start)!.road).toBe(map.w100.road);
+    expect(map.w100.road).not.toBeUndefined();
+  });
+
   it('forks where the data says: the dq of the farthest group that still has a road', () => {
     const model = route(map, [], hole(100))!;
-    expect(model.forkDq).toBe(map.w150.dq);
+    // The departure is the farthest station on a lane, so the fork lands just before it.
+    expect(model.forkDq).toBe(map.w100.dq);
     expect(model.roads).toHaveLength(3);
   });
 
@@ -104,7 +118,7 @@ describe('canonical dedupe — one GROUP is one stop (#104)', () => {
 });
 
 describe('markers — departure and "you are here"', () => {
-  const map = mkMap(300, { roadTop: 150, roadCount: 2 });
+  const map = mkMap(300, { roadTop: 100, roadCount: 2 });
 
   it('always plots the given start word, marked as the departure', () => {
     const model = route(map, [], hole(100))!;
@@ -125,31 +139,85 @@ describe('markers — departure and "you are here"', () => {
   });
 });
 
-describe('the censored final approach', () => {
-  const map = mkMap(300, { roadTop: 150, roadCount: 2 });
+describe('the censored near field — every group on the roads', () => {
+  const map = mkMap(300, { roadTop: 100, roadCount: 2 });
 
-  it('hides exactly the closest groups not yet found, with their real positions', () => {
+  it('hides EVERY near-field group not yet found, with its real position and lane', () => {
     const model = route(map, ['w3'], hole(3))!;
-    expect(model.hidden.map((h) => h.rank)).toEqual([1, 2, 4, 5]);
-    expect(model.hidden).toHaveLength(APPROACH_TOP - 1);
+    // The near field runs from the DEPARTURE (w100) in, minus the ones already reached: the
+    // guess w3 and the start itself.
+    expect(model.hidden.map((h) => h.rank)).toEqual(
+      Array.from({ length: 100 }, (_, i) => i + 1).filter((r) => r !== 3 && r !== 100),
+    );
     for (const h of model.hidden) {
       expect(h.dq).toBe(map[`w${h.rank}`].dq);
       expect(h.road).toBe(map[`w${h.rank}`].road);
     }
   });
 
-  it('hides all of them before the player gets close', () => {
-    expect(route(map, ['w200'], hole(100))!.hidden.map((h) => h.rank)).toEqual([1, 2, 3, 4, 5]);
+  it('ends where the roads end — at the departure, wherever generation put it', () => {
+    // Nothing here clips the zone: the map for a hole started at rank 60 simply carries roads
+    // out to 60, and the departure is a STOP, so the farthest censored one sits just inside it.
+    for (const startRank of [60, 140]) {
+      const own = mkMap(300, { roadTop: startRank, roadCount: 2 });
+      const model = route(own, [], hole(startRank), `w${startRank}`)!;
+      expect(model.hidden.every((h) => h.rank < startRank)).toBe(true);
+      expect(model.hidden.at(-1)!.rank).toBe(startRank - 1);
+    }
+    // A guess FARTHER than the departure is still a stop — it just rides the trunk, where the
+    // departure itself is on a lane.
+    const far = mkMap(300, { roadTop: 60, roadCount: 2 });
+    const model = route(far, ['w130'], hole(60), 'w60')!;
+    expect(model.stops.map((s) => s.rank)).toEqual([60, 130]);
+    expect(model.stops.find((s) => s.rank === 130)!.road).toBeNull();
+    expect(model.stops.find((s) => s.rank === 60)!.road).toBe(far.w60.road);
+    expect(model.hidden.at(-1)!.rank).toBe(59);
   });
 
-  it('keeps hiding the ones still unfound after the solve', () => {
+  it('takes its extent from the DATA, not from a constant', () => {
+    // A road zone that stops short of the departure (a start hand-picked past ROAD_TOP) bounds
+    // the censored stations at ITS end instead — whichever comes first wins.
+    const short = mkMap(300, { roadTop: 40, roadCount: 2 });
+    expect(route(short, [], hole(100))!.hidden.at(-1)!.rank).toBe(40);
+    expect(route(map, [], hole(100))!.hidden.at(-1)!.rank).toBe(99);
+  });
+
+  it('never lists a group the player has reached', () => {
+    const model = route(map, ['w7', 'w80', 'w200'], hole(7))!;
+    const hiddenRanks = new Set(model.hidden.map((h) => h.rank));
+    for (const stop of model.stops) expect(hiddenRanks.has(stop.rank)).toBe(false);
+    // Three of the four stops are inside the near field (7, 80, the start 100); w200 is past the
+    // roads, so it is a stop on the trunk and takes nothing out of the near field.
+    expect(model.stops.map((s) => s.rank)).toEqual([7, 80, 100, 200]);
+    expect(model.hidden).toHaveLength(100 - 3);
+  });
+
+  it('withholds every censored word while the round is live', () => {
+    const model = route(map, ['w3'], hole(3))!;
+    expect(model.hidden.every((h) => h.word === null)).toBe(true);
+  });
+
+  it('reveals every censored word once the hole is solved', () => {
     const model = route(map, ['w2', 'secret'], hole(0))!;
-    expect(model.hidden.map((h) => h.rank)).toEqual([1, 3, 4, 5]);
+    expect(model.hidden.map((h) => h.rank).slice(0, 4)).toEqual([1, 3, 4, 5]);
+    // Everything from the departure in, but the guess w2 and the start w100.
+    expect(model.hidden).toHaveLength(98);
+    // Each one carries its group's canonical form, not a placeholder.
+    for (const h of model.hidden) expect(h.word).toBe(map[`w${h.rank}`].word);
+  });
+
+  it('falls back to the APPROACH_TOP floor when the map carries no roads at all', () => {
+    // --no-roads (or any pre-#115 day that still has dq): no near field to bound, so the closest
+    // few are still censored rather than the map showing none.
+    const noRoads = mkMap(300);
+    expect(route(noRoads, ['w200'], hole(100), 'w100')!.hidden.map((h) => h.rank)).toEqual(
+      Array.from({ length: APPROACH_TOP }, (_, i) => i + 1),
+    );
   });
 });
 
 describe('roads are named by DISCOVERY, never by what is on them', () => {
-  const map = mkMap(300, { roadTop: 150, roadCount: 3 });
+  const map = mkMap(300, { roadTop: 100, roadCount: 3 });
 
   it('titles a lane with the best word the player found there', () => {
     // w4 and w7 share lane 0 (ranks 1,4,7,… round-robin over 3 lanes); w4 is closer.
@@ -172,8 +240,11 @@ describe('roads are named by DISCOVERY, never by what is on them', () => {
   });
 
   it('never lets a trunk guess title a lane', () => {
-    const model = route(map, ['w200'], hole(100), 'w151')!;
-    expect(model.roads.every((r) => r.label === null)).toBe(true);
+    // w200 is past the departure, so it carries no road and names nothing. The start is the
+    // one lane station here, and it titles only its own.
+    const model = route(map, ['w200'], hole(100))!;
+    expect(model.roads.filter((r) => r.label !== null)).toHaveLength(1);
+    expect(model.roads[map.w100.road!].label).toBe('w100');
   });
 });
 
@@ -188,17 +259,17 @@ describe('the MISS shelf — off the map', () => {
 
 describe('one road ⇒ no fork', () => {
   it('collapses to a single lane when the neighborhood has no honest split', () => {
-    // Generation's mandatory fallback: every near group carries road 0.
-    const map = mkMap(300, { roadTop: 150, roadCount: 1 });
-    for (let rank = 1; rank <= 150; rank += 1) map[`w${rank}`].road = 0;
+    // Generation's mandatory fallback: every group of the zone carries road 0.
+    const map = mkMap(300, { roadTop: 100, roadCount: 1 });
+    for (let rank = 1; rank <= 100; rank += 1) map[`w${rank}`].road = 0;
     const model = route(map, ['w4', 'w200'], hole(4))!;
     expect(model.roads).toHaveLength(1);
     expect(model.roads[0].label).toBe('w4');
-    expect(model.forkDq).toBe(map.w150.dq);
+    expect(model.forkDq).toBe(map.w100.dq);
   });
 
   it('also handles a map generated with no road field at all (--no-roads)', () => {
-    const map = mkMap(300, { roadTop: 150, roadCount: 1 });
+    const map = mkMap(300, { roadTop: 100, roadCount: 1 });
     const model = route(map, ['w4', 'w200'], hole(4))!;
     expect(model.roads).toHaveLength(1);
     expect(model.stops.every((s) => s.road === null)).toBe(true);
@@ -225,7 +296,7 @@ describe('a puzzle without dq has no map at all', () => {
 
 describe('geometry is read once per rank map', () => {
   it('caches per map object (the maps are immutable for a puzzle lifetime)', () => {
-    const map = mkMap(200, { roadTop: 150, roadCount: 4 });
+    const map = mkMap(200, { roadTop: 100, roadCount: 4 });
     expect(routeGeometry(map)).toBe(routeGeometry(map));
     expect(routeGeometry(map).roadCount).toBe(4);
   });

@@ -40,10 +40,14 @@ const STRINGS = {
   // Solved tray → the full leaderboard dialog (decided 2026-07-25).
   seeMore: { en: 'SEE MORE', fr: 'VOIR PLUS' },
   ariaClose: { en: 'close', fr: 'fermer' },
-  // ---- route modal (#117): a hole's neighborhood drawn as a journey. Copy stays terse —
-  // the map teaches by shape, not by explanation, so this is the ONLY visible label on it
-  // besides the title. The break below the route's cold end is where the guesses that
-  // earned no rank at all sit: literally off the map.
+  // ---- route modal (#117): a hole's neighborhood drawn as a LINE you travel. The line
+  // teaches by SHAPE — the terminus, "you are here", the departure and the roads are all
+  // said by a node's size, colour and lane — so it carries no labels at all (the tags
+  // ARRIVAL / YOU ARE HERE / START / ROADS were removed 2026-07-26). The screen-reader
+  // mirror still names every one of them: see `srRouteStop` below, which spells them out
+  // in prose rather than depending on any of this. The ONE string left is the heading over
+  // the words above the torn break — guesses that earned no rank at all, so they have no
+  // node, no lane and no distance to be read off.
   routeOffMap: { en: 'OFF THE MAP', fr: 'HORS CARTE' },
   // The streak celebration's ending hint: pure "what to do" — the whole screen dismisses,
   // so naming a "why" (continue/close — continue to WHAT? the game is done) would only
@@ -182,6 +186,24 @@ export function srRouteStop(
   if (stop.start) parts.push(fr ? 'départ' : 'start');
   if (stop.best) parts.push(fr ? 'vous êtes ici' : 'you are here');
   return parts.join(' — ');
+}
+
+// The censored near field is now the bulk of the drawing — 150-odd stations whose only content is
+// a position and a lane (#117, 2026-07-26). Announcing them one at a time would bury the words the
+// player actually knows under a list of "rank 87, hidden", so the sr mirror states them as a
+// COUNT: what they say collectively is how long and how populated each road is, which is exactly
+// the thing the full roads were drawn to show.
+export function srRouteRoads(lang: string, perRoad: number[], found: number): string {
+  const total = perRoad.reduce((n, count) => n + count, 0);
+  const split = perRoad.join(' / ');
+  if (uiLang(lang) === 'fr') {
+    return perRoad.length > 1
+      ? `voisinage : ${total} arrêts sur ${perRoad.length} routes (${split}), ${found} trouvés`
+      : `voisinage : ${total} arrêts, ${found} trouvés`;
+  }
+  return perRoad.length > 1
+    ? `neighborhood: ${total} stops across ${perRoad.length} roads (${split}), ${found} found`
+    : `neighborhood: ${total} stops, ${found} found`;
 }
 
 export function srRouteOffMap(lang: string, words: string[]): string {

@@ -6,7 +6,8 @@ texture, and it is only available HERE: the client never sees vectors. So genera
 ships two extra group properties inside the existing per-puzzle JSON:
 
   - `dq`  — the group's distance to the secret, quantized to one byte;
-  - `road`— which semantic cluster of the near neighborhood the group belongs to.
+  - `road`— which semantic cluster of the travelled neighborhood the group belongs to
+            (from the DEPARTURE in to the secret — see road_zone).
 
 Stdlib-only, like slug.py: this module is pure arithmetic over plain float sequences
 (anything indexable works, numpy rows included), so the contract tests keep running
@@ -19,8 +20,16 @@ import math
 # kept group at 0. See quantize_dq for why the per-hole affine map is lossless.
 DQ_MAX = 255
 
-# `road` covers only the near neighborhood — the zone where the routes to the secret
-# actually fork. Beyond it the far field is undifferentiated and reads as one trunk.
+# `road` covers only the stretch the player actually travels: the departure and every
+# group closer than it. The start word is where the puzzle puts you down — on one of the
+# roads — so anything farther is behind you, and a fork out there is a fork of a route
+# nobody walks (the far field reads as one trunk anyway). The extent is therefore the
+# DEPARTURE's rank (see road_zone), not a constant.
+#
+# ROAD_TOP is only the CEILING on that zone. The start band tops out at 150
+# (start_word.START_RANK_MAX), so it never bites on a band start; it exists for the
+# author who hand-picks a start far outside the band, where it keeps the O(n^3)
+# clustering (and the shipped road fields) bounded.
 ROAD_TOP = 150
 # Candidate cluster counts, evaluated by mean silhouette; below the threshold the
 # neighborhood has no honest split and gets ONE road (some words genuinely have a
@@ -74,11 +83,21 @@ def quantize_dq(sims, dq_max=DQ_MAX):
     return out
 
 
-# --- Roads: clusters of the near neighborhood ----------------------------------
-# "Several roads lead to the word": the top-ROAD_TOP groups are clustered by cosine
-# distance so the route visualization can show the forks. Everything below is
-# deterministic — average-linkage agglomerative clustering with index-ordered tie
-# breaking, no random init — so regenerating a puzzle yields the same road ids.
+# --- Roads: clusters of the travelled neighborhood ------------------------------
+# "Several roads lead to the word": the departure and every group closer than it are
+# clustered by cosine distance so the route visualization can show the forks. Everything
+# below is deterministic — average-linkage agglomerative clustering with index-ordered
+# tie breaking, no random init — so regenerating a puzzle yields the same road ids.
+
+def road_zone(start_rank, top=ROAD_TOP):
+    """How many of the closest groups the roads cover, given the departure's rank.
+
+    Ranks 1..start_rank, the departure INCLUDED: the player is put down ON one of the
+    roads, not on the trunk short of them, so the fork happens before the first station
+    of the journey rather than after it. Never more than `top` — see ROAD_TOP.
+    """
+    return max(0, min(int(start_rank), top))
+
 
 def _unit(vec):
     """A length-1 copy of one vector (rows arrive raw from the embedding)."""

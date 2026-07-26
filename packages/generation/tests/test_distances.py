@@ -9,8 +9,9 @@ JSON schema").
   - a flat neighborhood (s1 == smin) is a HARD error, never silent all-zero dq;
   - dq/road are GROUP properties: every alias key of a lemma group carries them, and
     slug-collision resolution keeps the winning group's values;
-  - roads cluster the top-150 groups only, deterministically, numbered by their
-    closest member's rank (the road holding rank 1 is road 0);
+  - roads cluster the journey — the DEPARTURE and every group closer than it, the start
+    word included — deterministically, numbered by their closest member's rank (the road
+    holding rank 1 is road 0); ROAD_TOP is only the ceiling on that zone;
   - a neighborhood with no honest split falls back to ONE road (all zeros);
   - --no-roads emits no road field at all, dq is unaffected (scoring depends on it).
 
@@ -120,6 +121,17 @@ def _structureless(n, dim=300):  # dim = the real embedding width
     return out
 
 
+def test_the_road_zone_is_the_journey_from_the_departure_in():
+    # The roads describe the journey: ranks 1..start_rank, the DEPARTURE included — the
+    # player is put down on one of the roads, not on the trunk short of them.
+    assert distances.road_zone(60) == 60
+    assert distances.road_zone(150) == 150
+    assert distances.road_zone(1) == 1
+    # ROAD_TOP is the CEILING, for a start hand-picked far outside the 50-150 band.
+    assert distances.ROAD_TOP == 150
+    assert distances.road_zone(3000) == 150
+
+
 def test_one_road_fallback_when_no_split_is_honest():
     # No facet to name: every group shares the trunk rather than being told a lie.
     assert distances.cluster_roads(_structureless(60)) == [0] * 60
@@ -147,23 +159,37 @@ KV = {
 }
 
 
+def _long_map(n=200):
+    """A shipped rank map of `n` groups, with the vectors the roads need. Words are
+    letters-only so each one is its own slug key, and the two facets alternate so any
+    zone the clustering is handed has an honest split to find."""
+    letters = "abcdefghijklmnopqrst"
+    words = [letters[i // 10] + letters[i % 10] for i in range(n)]
+    ranking = [(w, i, 0.9 - i * 0.001) for i, w in enumerate(words)]
+    kv = {w: [1.0, 0.0, 0.0] if i % 2 else [0.0, 1.0, 0.0] for i, w in enumerate(words)}
+    merged, rmap = gen_phrase.build_puzzle_rank_map("secret", ranking, {}, {}, set(words))
+    return words, merged, rmap, kv
+
+
 def test_every_alias_key_of_a_group_carries_the_group_dq_and_road():
     ranking = [("privée", 0, 0.80), ("chien", 1, 0.40)]
-    _merged, rmap = gen_phrase.build_puzzle_rank_map(
-        "vermine", ranking, TABLE, FORMS, VSET, kv=KV)
+    merged, rmap = gen_phrase.build_puzzle_rank_map(
+        "vermine", ranking, TABLE, FORMS, VSET)
+    gen_phrase.annotate_roads(rmap, merged, KV, start_rank=2)
 
     # privée is the walked canonical, privé an alias never seen in the walk: same group,
     # so the same rank AND the same annotations.
     assert rmap["privee"]["rank"] == rmap["prive"]["rank"] == 1
     assert rmap["prive"]["dq"] == rmap["privee"]["dq"] == 255
-    assert rmap["prive"]["road"] == rmap["privee"]["road"]
+    assert rmap["prive"]["road"] == rmap["privee"]["road"] == 0
     assert rmap["chien"]["dq"] == 0
 
 
 def test_the_secret_entry_carries_no_dq_and_no_road():
     ranking = [("privée", 0, 0.80), ("chien", 1, 0.40)]
-    _merged, rmap = gen_phrase.build_puzzle_rank_map(
-        "vermine", ranking, TABLE, FORMS, VSET, kv=KV)
+    merged, rmap = gen_phrase.build_puzzle_rank_map(
+        "vermine", ranking, TABLE, FORMS, VSET)
+    gen_phrase.annotate_roads(rmap, merged, KV, start_rank=2)
 
     # the secret and its own inflections all sit at rank 0 — the terminus, off-scale.
     for key in ("vermine", "vermines"):
@@ -179,32 +205,40 @@ def test_slug_collision_keeps_the_winning_group_annotations():
     forms = gen_phrase.invert_lemmas(table)
     ranking = [("côté", 0, 0.80), ("coté", 1, 0.60), ("chien", 2, 0.40)]
     _merged, rmap = gen_phrase.build_puzzle_rank_map(
-        "vermine", ranking, table, forms, {"côté", "coté", "chien"}, kv=None)
+        "vermine", ranking, table, forms, {"côté", "coté", "chien"})
 
     assert rmap["cote"] == {"word": "côté", "rank": 1, "dq": 255}
 
 
-def test_no_road_beyond_the_top_150_groups():
-    # 200 groups; only the first ROAD_TOP get a road, dq covers all of them. Words are
-    # letters-only so each one is its own slug key.
-    letters = "abcdefghijklmnopqrst"
-    words = [letters[i // 10] + letters[i % 10] for i in range(200)]
-    ranking = [(w, i, 0.9 - i * 0.001) for i, w in enumerate(words)]
-    kv = {w: [1.0, 0.0, 0.0] if i % 2 else [0.0, 1.0, 0.0] for i, w in enumerate(words)}
-    _merged, rmap = gen_phrase.build_puzzle_rank_map(
-        "secret", ranking, {}, {}, set(words), kv=kv)
+def test_roads_stop_at_the_departure():
+    # The line is a journey: it begins where the puzzle put the player down, so the
+    # roads cover the departure and everything ahead of it, and nothing behind.
+    words, merged, rmap, kv = _long_map()
+    gen_phrase.annotate_roads(rmap, merged, kv, start_rank=60)
 
-    assert distances.ROAD_TOP == 150
     assert "road" in rmap[words[0]]  # rank 1
-    assert "road" in rmap[words[149]]  # rank 150, the last near group
-    assert "road" not in rmap[words[150]]  # rank 151: the far field is one trunk
+    assert "road" in rmap[words[59]]  # rank 60 IS the departure: it rides a road
+    assert "road" not in rmap[words[60]]  # rank 61: behind the player, one trunk
+    assert "road" not in rmap[words[149]]  # nothing out in the far field either
     assert all("dq" in rmap[w] for w in words)  # dq has no such cutoff
 
 
+def test_the_road_ceiling_still_bounds_a_start_picked_outside_the_band():
+    # choose_start accepts any word of the map, so a hand-picked far start must not
+    # hand the clustering thousands of points (nor ship a road on each).
+    words, merged, rmap, kv = _long_map()
+    gen_phrase.annotate_roads(rmap, merged, kv, start_rank=190)
+
+    assert "road" in rmap[words[149]]  # rank 150 = ROAD_TOP
+    assert "road" not in rmap[words[150]]  # rank 151
+
+
 def test_no_roads_flag_drops_roads_but_keeps_dq():
+    # --no-roads reaches annotate_roads as "no vectors to cluster with".
     ranking = [("privée", 0, 0.80), ("chien", 1, 0.40)]
-    _merged, rmap = gen_phrase.build_puzzle_rank_map(
-        "vermine", ranking, TABLE, FORMS, VSET, kv=KV, roads=False)
+    merged, rmap = gen_phrase.build_puzzle_rank_map(
+        "vermine", ranking, TABLE, FORMS, VSET)
+    gen_phrase.annotate_roads(rmap, merged, None, start_rank=2)
 
     assert all("road" not in entry for entry in rmap.values())
     assert rmap["privee"]["dq"] == 255 and rmap["chien"]["dq"] == 0
@@ -213,5 +247,5 @@ def test_no_roads_flag_drops_roads_but_keeps_dq():
 def test_a_flat_walk_aborts_generation_instead_of_shipping_zero_distances(capsys):
     ranking = [("privée", 0, 0.5), ("chien", 1, 0.5)]
     with pytest.raises(SystemExit):
-        gen_phrase.build_puzzle_rank_map("vermine", ranking, TABLE, FORMS, VSET, kv=KV)
+        gen_phrase.build_puzzle_rank_map("vermine", ranking, TABLE, FORMS, VSET)
     assert "vermine" in capsys.readouterr().err

@@ -17,9 +17,22 @@ import type { RankEntry, RuntimeHole } from '@whippin/shared';
 // which is exactly what a position on the axis is.
 export const DQ_MAX = 255;
 
-// The censored final approach: the closest groups still unfound render as redacted stops.
-// (Context, not scope: this is the natural hint surface — revealing one is a hint. Not
-// built here.)
+// The censored NEAR FIELD: every group of the neighborhood that carries a road renders as a
+// station with its word withheld until it is found — not just the handful closest to the word
+// (decided 2026-07-26, superseding the top-5 band). So each road shows its REAL length and
+// population, which is the thing a list of your own guesses can never say. No word is revealed
+// either way: a censored station is a position and a lane.
+//
+// The extent is entirely the DATA's: generation cuts the roads at the DEPARTURE (#115's
+// road_zone) because the line is a journey and it begins where the puzzle put you down — ON one
+// of the roads, so the start word carries one too and the fork lands just before it. The
+// road-carrying groups ARE the journey, and there is nothing left here to bound. (Until
+// 2026-07-26 generation ran them out to a flat top-150 and this module clipped them back to the
+// start word; the rule now has ONE owner — the side that also stops shipping the field.) The
+// player's own guesses farther out are still stops; they simply ride the trunk.
+//
+// APPROACH_TOP survives only as the FLOOR, for a map generated with `--no-roads`, which has no
+// near field to bound and would otherwise draw none at all.
 export const APPROACH_TOP = 5;
 
 // One place on the map the player has actually been: a ranked GROUP they typed (or the
@@ -34,12 +47,16 @@ export interface RouteStop {
   best: boolean; // "you are here": the hole's current closest word
 }
 
-// A group of the final approach the player has NOT found: its position is real, its word
-// is not shown, and its redacted plate is FIXED-WIDTH so the length never leaks.
+// A group of the near field the player has NOT reached: its position and lane are real, its word
+// is withheld while the round is live.
 export interface RouteHidden {
   rank: number;
   dq: number;
   road: number | null;
+  // The canonical accented form — present ONLY once the hole is solved (decided 2026-07-26): the
+  // map then becomes the post-mortem, and the whole neighborhood is public. `null` while the
+  // round is live, where a censored station is a position and a lane and nothing else.
+  word: string | null;
 }
 
 // One lane. `label` is the player's best DISCOVERED word on it — a road is named by what
@@ -61,18 +78,24 @@ export interface RouteModel {
   roads: RouteRoad[]; // always at least one; one road ⇒ no fork, a single rail
   forkDq: number; // where the lanes separate: the dq of the farthest road-carrying group
   stops: RouteStop[]; // closest-first
-  hidden: RouteHidden[]; // ranks 1..APPROACH_TOP not yet found, closest-first
+  // Every NEAR-FIELD group not yet reached, closest-first, out to the DEPARTURE's rank. Words
+  // withheld until the hole is solved.
+  hidden: RouteHidden[];
   misses: string[]; // tried words with NO entry in this map, in try order
 }
 
 // What the map needs to know about a rank map that a single guess lookup can't tell it:
-// how many roads there are, where they fork, and the final approach's positions. One pass
+// how many roads there are, where they fork, and every near-field group's position. One pass
 // over the (alias-expanded, tens of thousands of keys) map, cached per map object — the
 // maps are immutable for a puzzle's lifetime, exactly like rankCount's cache in scoring.
 interface RouteGeometry {
-  approach: Map<number, RankEntry>; // rank -> its group, for ranks 1..APPROACH_TOP
+  // rank -> its group, for every group of the NEAR FIELD (one entry per rank, aliases collapse).
+  // Bounded by the roads, so it holds the departure's rank worth of entries out of the map's
+  // tens of thousands.
+  near: Map<number, RankEntry>;
   roadCount: number; // max road id + 1 (0 when the map carries no roads at all)
   forkDq: number; // dq of the farthest group that still carries a road
+  nearTop: number; // the farthest rank of the near field — from the DATA, floored at APPROACH_TOP
   plottable: boolean; // the rank-1 group carries dq -> this map can be drawn
 }
 
@@ -81,27 +104,31 @@ const geometryCache = new WeakMap<Record<string, RankEntry>, RouteGeometry>();
 export function routeGeometry(rankMap: Record<string, RankEntry>): RouteGeometry {
   const cached = geometryCache.get(rankMap);
   if (cached) return cached;
-  const approach = new Map<number, RankEntry>();
+  const near = new Map<number, RankEntry>();
   let roadCount = 0;
   let forkRank = 0;
   let forkDq = DQ_MAX;
   for (const key in rankMap) {
     const entry = rankMap[key];
     if (entry.rank === 0) continue; // the secret is the terminus, not a group on the axis
-    // Aliases of one group carry identical values, so the first key wins with no ambiguity.
-    if (entry.rank <= APPROACH_TOP && !approach.has(entry.rank)) approach.set(entry.rank, entry);
-    if (entry.road === undefined || entry.dq === undefined) continue;
-    if (entry.road + 1 > roadCount) roadCount = entry.road + 1;
+    const onRoad = entry.road !== undefined && entry.dq !== undefined;
+    // The near field is exactly the road-carrying groups; APPROACH_TOP only keeps a map with no
+    // roads from having none at all. Aliases of one group carry identical values, so the first
+    // key wins with no ambiguity.
+    if ((onRoad || entry.rank <= APPROACH_TOP) && !near.has(entry.rank)) near.set(entry.rank, entry);
+    if (!onRoad) continue;
+    if (entry.road! + 1 > roadCount) roadCount = entry.road! + 1;
     if (entry.rank > forkRank) {
       forkRank = entry.rank;
-      forkDq = entry.dq;
+      forkDq = entry.dq!;
     }
   }
-  const rank1 = approach.get(1);
+  const rank1 = near.get(1);
   const geometry: RouteGeometry = {
-    approach,
+    near,
     roadCount,
     forkDq,
+    nearTop: Math.max(forkRank, APPROACH_TOP),
     plottable: rank1 !== undefined && rank1.dq !== undefined,
   };
   geometryCache.set(rankMap, geometry);
@@ -188,12 +215,22 @@ export function buildRoute({
     if (road && road.label === null) road.label = stop.word;
   }
 
+  // Every near-field group the player has NOT reached, so the roads show their real length and
+  // population. A group they HAVE reached is already a stop; it is never listed twice — which is
+  // what keeps the departure itself out of this list. The extent is the road zone, which
+  // generation already ends at that departure (see APPROACH_TOP).
   const hidden: RouteHidden[] = [];
-  for (let rank = 1; rank <= APPROACH_TOP; rank += 1) {
+  for (let rank = 1; rank <= geometry.nearTop; rank += 1) {
     if (byRank.has(rank)) continue;
-    const entry = geometry.approach.get(rank);
+    const entry = geometry.near.get(rank);
     if (!entry || entry.dq === undefined) continue;
-    hidden.push({ rank, dq: entry.dq, road: entry.road ?? null });
+    // Solved: the round is over, so the whole neighborhood gives up its words.
+    hidden.push({
+      rank,
+      dq: entry.dq,
+      road: entry.road ?? null,
+      word: solved ? entry.word : null,
+    });
   }
 
   return {

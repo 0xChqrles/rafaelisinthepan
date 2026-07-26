@@ -479,13 +479,22 @@ function Round({
     );
   }, [puzzleHoles, ranks]);
   const [routeHole, setRouteHole] = useState<number | null>(null);
-  // Tapping a hole is available during normal play and on the fully SETTLED solved screen
-  // (where the map becomes the post-mortem, terminus revealed) — never while the solving
-  // beats are running, which own the sentence.
-  const exploreDisabled =
-    promptExiting ||
-    (solved &&
-      !(showResults && lineupGone && !keyboardLeaving && !showStreakDialog && sourceRevealComplete));
+  // The solved sequence has played out and the sentence is the player's again — which is also
+  // the state a REHYDRATED solve mounts straight into.
+  const solvedSettled =
+    showResults && lineupGone && !keyboardLeaving && !showStreakDialog && sourceRevealComplete;
+  // Tapping a hole is available during normal play and on that settled screen, where the map
+  // becomes the post-mortem (terminus revealed, the whole neighborhood named) — never while the
+  // solving beats are running, which own the sentence.
+  //
+  // `promptExiting` is what covers the START of those beats: the prompt leaves on the solving
+  // submit while the holes are still resolving, so `solved` — which only follows the last word's
+  // settle — has not turned over yet. It is NEVER set back to false on a fresh solve (it doubles
+  // as "the input is retired", so resetting it would let typing resume), which is why it can only
+  // be read as "the beats began" and `solvedSettled` has to be what ends them. Reading it as a
+  // plain veto instead left every hole dead for the rest of the screen, and the post-mortem the
+  // reveal was built for was reachable only by reloading the page.
+  const exploreDisabled = !solvedSettled && (promptExiting || solved);
   // Stable for the round: the button wraps the hole for the WHOLE round or not at all, and
   // the gating above only disables it — unwrapping mid-round would remount the word while
   // its scramble is running.
