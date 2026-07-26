@@ -12,6 +12,7 @@ import {
 import {
   type FnUrlEvent,
   type FnUrlResult,
+  ENVELOPE_BUDGET_BYTES,
   LAMBDA_MAX_RESPONSE_BYTES,
   corsHeaders,
   envelopeBytes,
@@ -61,8 +62,9 @@ const LANG_RE = /^[a-z]{2}$/;
 // The share card (issue #8) is content-addressed by its token: a given URL's bytes are fixed
 // (the render only changes on a deploy), and messaging apps cache the preview on THEIR side
 // once unfurled — so a short origin TTL couldn't refresh an already-shared preview anyway.
-// Cache it hard; the rare render-changing deploy (a card redesign) needs a one-off CloudFront
-// invalidation — see the DistributionId stack outputs.
+// Cache it hard; a render-changing deploy (a card redesign) is covered because the backend
+// deploy job now invalidates `/*` on the API distribution — it no longer needs the by-hand
+// invalidation this comment used to call for.
 const SHARE_MAX_AGE = 31_536_000;
 const OG_PNG_RE = /^\/og\/([A-Za-z0-9_-]+)\.png$/;
 const SHARE_RE = /^\/s\/([A-Za-z0-9_-]+)$/;
@@ -236,11 +238,24 @@ export function createHandler(deps: HandlerDeps) {
       // becomes a 413 the caller reads as a bare 502, with nothing in this handler's logs —
       // the failure mode that made a 6.5 MB puzzle look like a dead backend. Naming it keeps
       // the next oversized puzzle a five-second diagnosis.
-      if (envelopeBytes(response) > LAMBDA_MAX_RESPONSE_BYTES) {
+      const envelope = envelopeBytes(response);
+      if (envelope > ENVELOPE_BUDGET_BYTES) {
+        // LOGGED as well as returned, because returning the 500 is not enough to be seen: a
+        // handler that RETURNS an error status is still a SUCCESSFUL invocation, so Lambda's
+        // Errors metric stays 0 and the log group shows a clean request — the same blind spot
+        // the bare 502 had. This line is what actually puts the diagnosis in CloudWatch.
+        console.error(
+          `[puzzle] payload_too_large: ${requestedDate} (${lang}) serialized to ${envelope} bytes` +
+            ` as ${response.headers['Content-Encoding'] ?? 'identity'}` +
+            ` (accept-encoding: ${event.headers?.['accept-encoding'] ?? 'absent'}),` +
+            ` over the ${ENVELOPE_BUDGET_BYTES}-byte budget / ${LAMBDA_MAX_RESPONSE_BYTES}-byte runtime cap.`,
+        );
         return errorResponse(
           500,
           'payload_too_large',
-          `The puzzle for ${requestedDate} (${lang}) exceeds the ${LAMBDA_MAX_RESPONSE_BYTES}-byte response limit.`,
+          // The BUDGET, not the runtime cap: the guard deliberately fires below the cap, so
+          // citing the cap would tell the caller it exceeded a number it may not have.
+          `The puzzle for ${requestedDate} (${lang}) exceeds the ${ENVELOPE_BUDGET_BYTES}-byte response budget.`,
           cors,
         );
       }

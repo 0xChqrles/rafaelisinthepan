@@ -85,6 +85,19 @@ export class DeployRoleStack extends Stack {
           actions: ['cloudformation:DescribeStacks'],
           resources: ['*'], // read-only metadata; puzzle:publish resolves the bucket output
         }),
+        // Puzzle responses carry a YEAR-long s-maxage, so the edge keeps serving a body that
+        // a code deploy may have just changed — a new Content-Encoding, new bytes, new
+        // headers. `puzzle:publish --s3` already purges after an upload for exactly this
+        // reason; deploy.yml now does the same after `cdk deploy`, and needs the permission
+        // to do it. This does NOT loosen the boundary the comment above draws: an
+        // invalidation reads nothing, mutates no infrastructure, and grants no privilege —
+        // the worst it can do is force cache misses. (The role's real power was always the
+        // bootstrap roles it may assume, not this.)
+        new iam.PolicyStatement({
+          sid: 'InvalidateApiCdn',
+          actions: ['cloudfront:CreateInvalidation'],
+          resources: [`arn:${Aws.PARTITION}:cloudfront::${Aws.ACCOUNT_ID}:distribution/*`],
+        }),
       ],
     });
 
@@ -142,7 +155,7 @@ export class DeployRoleStack extends Stack {
       {
         id: 'AwsSolutions-IAM5',
         reason:
-          'The deploy role assumes the CDK bootstrap roles by their fixed `cdk-hnb659fds-*` prefix (their full names embed account/region and are only known at deploy time) and reads stack metadata (`cloudformation:DescribeStacks` is read-only). All real infrastructure changes run through the assumed, least-privilege bootstrap roles — not this role.',
+          'The deploy role assumes the CDK bootstrap roles by their fixed `cdk-hnb659fds-*` prefix (their full names embed account/region and are only known at deploy time) and reads stack metadata (`cloudformation:DescribeStacks` is read-only). `cloudfront:CreateInvalidation` is scoped to this account\'s distributions by wildcard because the distribution id is generated at deploy time and is discovered from the stack output at run time; the action reads nothing, mutates no infrastructure, and cannot escalate privilege. All real infrastructure changes run through the assumed, least-privilege bootstrap roles — not this role.',
       },
       {
         id: 'AwsSolutions-IAM4',
