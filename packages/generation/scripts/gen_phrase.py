@@ -905,24 +905,33 @@ class FormResolver:
             return ()
         return tuple(sorted({feat for _lemma, feat in self.table.entries.get(word, ())}))
 
-    def realize(self, word, feature):
-        """`word` re-inflected to `feature`, or None when nothing can be said safely.
+    def realizations(self, word, feature):
+        """Every spelling of `word` re-inflected to `feature`, preferred first.
 
         Two refusals, both silent and both deliberate. A form the POS gate does not
         admit is not read as a verb at all. And a form carrying SEVERAL verb lemmas is
         declined outright rather than arbitrated: "durent" is the present of durer AND
         the past historic of devoir, the table is right about both, and the embedding
-        vector means the first — so realizing devoir's paradigm would print "dû" for a
-        word the geometry placed as "durer". Choosing the more frequent paradigm only
-        makes that failure quieter; there is no evidence here to choose WITH. The forms
-        that lose their agreement this way simply keep the dictionary form."""
+        vector means the first — so realizing devoir's `ind:pre:2s` would print "dois"
+        for a word the geometry placed as "durer". Choosing the more frequent paradigm
+        only makes that failure quieter; there is no evidence here to choose WITH. The
+        forms that lose their agreement this way simply keep the dictionary form.
+
+        A paradigm can spell one cell more than one way ("déblaies" / "déblayes"), so
+        this returns the list rather than the winner: the caller knows which spellings
+        a player could actually type, and this does not."""
         if self.table is None or word not in self.table.dominant:
-            return None
+            return ()
         entries = self.table.entries.get(word, ())
         lemmas = {lemma for lemma, _feat in entries}
         if len(lemmas) != 1:
-            return None
-        return self.table.realize.get((next(iter(lemmas)), feature))
+            return ()
+        return self.table.realize.get((next(iter(lemmas)), feature), ())
+
+    def realize(self, word, feature):
+        """The PREFERRED spelling of `word` at `feature`, or None. See realizations."""
+        forms = self.realizations(word, feature)
+        return forms[0] if forms else None
 
     def _prompt(self, secret, cands):
         """Ask which form the sentence puts this secret in (TTY only).
@@ -1034,10 +1043,15 @@ class FormResolver:
             if rank == 0 or rank > start_rank:
                 continue
             canonical = canonicals[rank]
-            form = self.realize(canonical, feature)
-            if form is None or form == canonical:
-                continue
-            if not donors.typable(form):
+            forms = self.realizations(canonical, feature)
+            if not forms or canonical in forms:
+                continue  # nothing to say, or the group already IS the agreed form
+            # The artifact's preference order is by corpus frequency, which knows
+            # nothing about the reduced vocabulary; take the first spelling a player
+            # could actually type rather than dropping the group when the favourite
+            # happens to be untypable ("déblaies" loses to "déblayes" here).
+            form = next((f for f in forms if donors.typable(f)), None)
+            if form is None:
                 continue
             s = slug(form)
             owner = rank_map.get(s)

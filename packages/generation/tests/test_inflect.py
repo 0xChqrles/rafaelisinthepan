@@ -103,6 +103,18 @@ def test_a_composite_lefff_tag_expands_into_every_cell_it_names():
     assert expand_tag("ST2s") == ("sub:pre:2s", "sub:imp:2s")
 
 
+def test_an_omitted_code_cannot_invent_a_cell_the_mood_does_not_have():
+    # Expanding an omitted dimension across all its values is right for the indicative,
+    # but French has three imperative cells and no others: a bare "Y" must not mint
+    # "imp:pre:3p". Only Lefff's `_error` placeholder carries a bare Y today, and the
+    # token rule drops it — that is an accident of the data, not a rule.
+    assert expand_tag("Y") == ("imp:pre:1p", "imp:pre:2s", "imp:pre:2p")
+    assert expand_tag("Y2s") == ("imp:pre:2s",)
+    assert expand_tag("Y1p") == ("imp:pre:1p",)
+    # ...while a mood that DOES have all six keeps them
+    assert len(expand_tag("P")) == 6
+
+
 def test_an_omitted_lefff_code_covers_every_value_of_its_dimension():
     # "un code non renseigné est non pertinent ou non discriminant pour la forme".
     # "Km" is how Lefff states outright what addendum 2 had to guess from a blank
@@ -149,17 +161,6 @@ def test_pos_gate_without_corpus_evidence_admits_only_an_uncontested_verb():
     # an all-zero Lexique entry is not evidence either — it falls through to case 2
     weight = lexique_weights([("accoutumes", "VER", 0.0)], token_re)
     assert dominant_verbs(weight, lefff, token_re) == {"accoutumes"}
-
-
-def test_the_two_naive_rewrites_are_refused():
-    resolver = _resolver()
-    # évident -> évidé: the POS gate refuses to read "évident" as a verb at all.
-    assert resolver.features_of("évident") == ()
-    assert resolver.realize("évident", "par:pas:m:s") is None
-    # pensé -> pensée: the gender lives in the feature, so a masculine target stays
-    # masculine. (And "pensée" is gated as a source in its own right.)
-    assert resolver.realize("pensé", "par:pas:m:s") == "pensé"
-    assert resolver.realize("pensé", "par:pas:f:s") == "pensée"
 
 
 def test_the_two_naive_rewrites_are_refused():
@@ -350,7 +351,8 @@ def committed():
     ("distraire", "ind:pre:2s", "distrais"),
 ])
 def test_committed_table_realizes_the_real_form(lemma, feature, expected):
-    assert committed().realize.get((lemma, feature)) == expected
+    # [0] is the PREFERRED spelling; a paradigm may hold more (see the fallback test).
+    assert committed().realize.get((lemma, feature), ())[:1] == (expected,)
 
 
 @pytest.mark.parametrize("form,analyses", [
@@ -377,7 +379,7 @@ def test_the_source_side_gate_still_declines_a_dominant_non_verb():
     # is never READ as a verb — while staying available as a target realization.
     assert "évident" not in table.dominant
     assert gen_phrase.FormResolver(table).features_of("évident") == ()
-    assert table.realize[("évider", "ind:pre:3p")] == "évident"
+    assert table.realize[("évider", "ind:pre:3p")] == ("évident",)
     # "pensée" likewise: gated as a source, legal as penser's f:s participle.
     assert "pensée" not in table.dominant
     # ...and the auxiliaries ARE admitted, so an être/avoir hole can agree at all.
@@ -407,17 +409,69 @@ def test_a_number_invariable_participle_secret_is_asked_about():
     assert settled.realize("amusé", "par:pas:m:p") == "amusés"
 
 
+def test_a_rewrite_falls_back_to_a_typable_spelling():
+    # A paradigm can spell one cell more than one way, and the artifact's preference
+    # order is corpus frequency — which knows nothing about the reduced vocabulary.
+    # Keeping only the favourite made the whole group decline when that spelling was
+    # untypable, even with a typable alternative sitting right behind it.
+    table = committed()
+    assert table.realize[("déblayer", "ind:pre:2s")] == ("déblaies", "déblayes")
+    resolver = gen_phrase.FormResolver(table)
+    assert resolver.realize("déblayer", "ind:pre:2s") == "déblaies"   # preferred...
+    assert resolver.realizations("déblayer", "ind:pre:2s") == ("déblaies", "déblayes")
+
+    # "déblaies" is not typable here, "déblayes" is -> the group agrees on the latter.
+    vocab = ["déblayer", "déblayes", "amuses"]
+    donors = gen_phrase.DonorResolver({}, {}, vocab, set(vocab), "fr")
+    rmap = _map(("amuses", "amuses", 0), ("deblayer", "déblayer", 1))
+    assert resolver.apply(rmap, 5, "amuses", donors) == {}   # secret has no feature
+    settled = gen_phrase.FormResolver(table, explicit={"amuses": "ind:pre:2s"})
+    rmap = _map(("amuses", "amuses", 0), ("deblayer", "déblayer", 1))
+    assert settled.apply(rmap, 5, "amuses", donors) == {1: ("déblayer", "déblayes")}
+    assert rmap["deblayer"]["word"] == "déblayes"
+
+    # ...and with NEITHER spelling typable the group is left alone, as before.
+    bare = ["déblayer", "amuses"]
+    none_typable = gen_phrase.DonorResolver({}, {}, bare, set(bare), "fr")
+    rmap = _map(("amuses", "amuses", 0), ("deblayer", "déblayer", 1))
+    assert gen_phrase.FormResolver(
+        table, explicit={"amuses": "ind:pre:2s"}).apply(
+            rmap, 5, "amuses", none_typable) == {}
+
+
+def test_a_group_already_in_the_right_cell_is_not_respelled():
+    # The mirror of the fallback: when the canonical is ANY spelling of the target cell
+    # it is already agreed, so there is nothing to fix. Matching only the PREFERRED
+    # spelling turned "asseyent" into "assoient" — same cell, different spelling, no
+    # agreement gained, and one more chance to land on an untypable word.
+    table = committed()
+    assert table.realize[("asseoir", "ind:pre:3p")] == ("assoient", "asseyent")
+    vocab = ["asseyent", "assoient", "ont"]
+    donors = gen_phrase.DonorResolver({}, {}, vocab, set(vocab), "fr")
+    rmap = _map(("ont", "ont", 0), ("asseyent", "asseyent", 1))
+    resolver = gen_phrase.FormResolver(table, explicit={"ont": "ind:pre:3p"})
+    assert resolver.apply(rmap, 5, "ont", donors) == {}
+    assert rmap["asseyent"] == {"word": "asseyent", "rank": 1}
+
+
 # --- whole-table checks required by addendum 3 ------------------------------------
 
 def test_every_feature_in_the_committed_table_is_a_known_cell():
     # Composite Lefff tags must EXPAND into the internal vocabulary. An unexpanded tag
     # would show up here as an unknown feature — and would be unreachable from --form.
+    #
+    # The allowed set is the REAL cell inventory, not the mood x person x number
+    # product: the product would wave through "imp:pre:3s", which is not a French cell
+    # and which the previous (Lexique) artifact actually contained.
     finite = {f"{m}:{p}{n}"
               for m in ("ind:pre", "ind:fut", "ind:imp", "ind:pas", "cnd:pre",
-                        "imp:pre", "sub:pre", "sub:imp")
+                        "sub:pre", "sub:imp")
               for p in "123" for n in "sp"}
+    imperative = {"imp:pre:2s", "imp:pre:1p", "imp:pre:2p"}
     participles = {f"par:pas:{g}:{n}" for g in "mf" for n in "sp"}
-    assert committed().features <= finite | participles | {"par:pre", "inf"}
+    known = finite | imperative | participles | {"par:pre", "inf"}
+    assert committed().features <= known
+    assert "imp:pre:3s" not in committed().features
 
 
 def test_the_committed_table_has_no_duplicate_row():
@@ -428,15 +482,17 @@ def test_the_committed_table_has_no_duplicate_row():
 
 
 def test_every_realization_is_deterministic():
-    # `realize` keeps the FIRST row of a (lemma, feature) pair, so the sort must be
-    # total: same inputs, same preferred spelling, every build.
+    # `realize` holds the candidates in the artifact's order, so the sort must be
+    # total: same inputs, same order, every build. And the candidate list must be
+    # exactly the spellings the table actually gives that cell — no more, no fewer.
     table = committed()
     by_pair = {}
     for form, pairs in table.entries.items():
         for lemma, feature in pairs:
             by_pair.setdefault((lemma, feature), set()).add(form)
     for pair, forms in by_pair.items():
-        assert table.realize[pair] in forms
+        assert set(table.realize[pair]) == forms
+        assert len(table.realize[pair]) == len(forms)   # ordered, deduped
     assert len(table.realize) == len(by_pair)
 
 

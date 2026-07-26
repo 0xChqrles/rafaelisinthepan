@@ -314,7 +314,12 @@ Consequences that are load-bearing:
 - **Ambiguity is described, never arbitrated.** Lefff states the cells a spelling
   genuinely shares, so more secrets are ambiguous than under a corpus tagger (`épuises`
   is `ind:pre:2s` *and* `sub:pre:2s`). Those ask on a TTY or need `--form`; nothing is
-  guessed.
+  guessed. **This has a real cost, and it lands on batch runs:** of the reduced-vocab
+  surfaces the gate admits, auto-resolution fell 84.8% → **72.3%** (7,077 → 12,974
+  ambiguous of ~46.9k), and present-tense secrets are hit systematically (`PS2s`,
+  `PS13s`). A piped `--words` run with a `tu …` verb hole therefore reproduces the #119
+  artifact (`t'distraire`) unless `--form` is passed, where the corpus tagger's
+  arbitrary pick used to agree it silently — sometimes wrongly. That trade is deliberate.
 - **#104's lemma grouping is NOT affected.** `wordlist/fr.lemmas.tsv.gz` keeps its own
   source and content: feeding Lefff's inventory into `merge_ranking` would regroup
   neighbours and change puzzle geometry even under `--no-inflect`. Replacing the
@@ -757,9 +762,13 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   `fr.forms.LICENSE`. Built by `build_forms.py` (`pnpm forms:fr`; downloads cache in
   `wordlist/.cache/`, sha256-pinned). `gen_phrase` reads it at startup for fr (hard
   error when missing or malformed; `--no-inflect` opts out and reproduces
-  pre-addendum output). Coverage against the reduced vocab is what the source swap
-  bought: 1,901 → **7,777** lemmas with an `ind:pre:2s` cell, 76k → **397k** realizable
-  `(lemma, feature)` cells. No `en` table — a decided non-goal, not a missing file.
+  pre-addendum output). What the source swap bought, in two different units — keep them
+  apart: **in the table**, 1,901 → **7,777** lemmas carry an `ind:pre:2s` cell and
+  76,337 → **396,653** `(lemma, feature)` cells are realizable; **intersected with the
+  reduced vocabulary** — the only cells a hole can ever display, since `apply` requires
+  `donors.typable` — 62,557 → **92,030** cells over 5,608 → **6,006** lemmas, i.e.
+  **+47%**, about a third of the whole-table magnitude. No `en` table — a decided
+  non-goal, not a missing file.
 - **Hors-dico wordlists (#38):** `generation/wordlist/{fr,en}.txt.gz` are committed —
   `fr` = Lexique ∪ Hunspell fr (~169k forms), `en` = SCOWL(≤60,US) ∪ Hunspell en_US
   (~91k). Built by `build_wordlist.py`; source downloads cache in `wordlist/.cache/`

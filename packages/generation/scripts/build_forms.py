@@ -56,7 +56,9 @@ paradigms is refused downstream, in FormResolver.realize.
 
 Rows are sorted by (lemma, feature, -Lexique frequency, form), so the FIRST row of a
 (lemma, feature) pair is its preferred realization: deterministic, and the reason the
-sort key is not simply the whole line. Losing spellings are KEPT, only ordered after.
+sort key is not simply the whole line. Losing spellings are KEPT, only ordered after —
+and `load_forms` hands the caller the whole ordered list, so "preferred" can fall back
+to "typable" instead of the pair going unrealized.
 
 fr ONLY. English verbs carry ~4 forms and AGID's tagging is too coarse to be worth an
 artifact, so `gen_phrase` skips the pass entirely for en (see FORM_LANGS).
@@ -69,6 +71,7 @@ Downloads are cached under wordlist/.cache/ (gitignored); --refresh re-downloads
 import argparse
 import gzip
 import hashlib
+import io
 import os
 import sys
 import tarfile
@@ -137,10 +140,20 @@ MOODS = {
     "W": "inf",       # infinitif présent
 }
 _PARTICIPLE = "par:pas"
+_IMPERATIVE = "imp:pre"
 _UNINFLECTED = ("par:pre", "inf")   # no person, gender or number to carry
 PERSONS = ("1", "2", "3")
 NUMBERS = ("s", "p")
 GENDERS = ("m", "f")
+
+# The cells a mood actually HAS. Expanding an omitted code across a whole dimension is
+# right for the indicative, but the French imperative has three cells and no others —
+# a bare "Y" must not invent "imp:pre:3p". Nothing in Lefff 3.4 carries a bare Y except
+# its `_error` placeholder, which the token rule drops anyway; relying on that would be
+# depending on an accident of the data rather than on a fact about the language.
+# A membership filter, not an order: the surrounding expansion stays person-major so
+# every mood lists its cells the same way.
+IMPERATIVE_CELLS = frozenset({("2", "s"), ("1", "p"), ("2", "p")})
 
 
 def is_verb(cgram):
@@ -176,7 +189,10 @@ def expand_tag(tag):
         elif mood == _PARTICIPLE:
             features.extend(f"{mood}:{g}:{n}" for g in genders for n in numbers)
         else:
-            features.extend(f"{mood}:{p}{n}" for p in persons for n in numbers)
+            cells = [(p, n) for p in persons for n in numbers]
+            if mood == _IMPERATIVE:
+                cells = [c for c in cells if c in IMPERATIVE_CELLS]
+            features.extend(f"{mood}:{p}{n}" for p, n in cells)
     # dedupe while keeping the deterministic order above
     return tuple(dict.fromkeys(features))
 
@@ -332,8 +348,15 @@ def load_forms(path):
 
     entries   form -> ((lemma, feature), ...)  — what a surface form IS
     dominant  {form}                            — forms the POS gate admits
-    realize   (lemma, feature) -> form          — first row wins (see the sort rule)
+    realize   (lemma, feature) -> (form, ...)   — EVERY spelling, preferred first
     features  {feature}                         — the inventory, for validating --form
+
+    `realize` keeps the whole ordered candidate list, not just the winner. The file
+    already holds the alternatives — the sort only orders them — but a loader that kept
+    the first row alone made them unreachable, and the caller's typability check then
+    dropped the rewrite entirely: `déblayer/ind:pre:2s` prefers "déblaies", which no
+    reduced word folds to, while "déblayes" sits right behind it and is typable. 32
+    cells lost an agreement the artifact could have given them.
 
     `#` lines are the provenance/licence header and are skipped; any other malformed
     line is an error, loudly, because a truncated artifact would otherwise load as a
@@ -350,12 +373,14 @@ def load_forms(path):
                                  f"{len(parts)} lus — table corrompue ?")
             lemma, feature, form, dom = parts
             entries.setdefault(form, []).append((lemma, feature))
-            realize.setdefault((lemma, feature), form)
+            realize.setdefault((lemma, feature), []).append(form)
             features.add(feature)
             if dom == "1":
                 dominant.add(form)
     return FormTable({form: tuple(rows) for form, rows in entries.items()},
-                     dominant, realize, frozenset(features))
+                     dominant,
+                     {pair: tuple(forms) for pair, forms in realize.items()},
+                     frozenset(features))
 
 
 def header_lines(lang):
@@ -420,7 +445,13 @@ def build(lang, *, refresh):
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(lic_path, "w", encoding="utf-8") as f:
         f.write(licence if licence.endswith("\n") else licence + "\n")
-    with gzip.open(out_path, "wt", encoding="utf-8") as f:
+    # mtime=0 — via GzipFile, since gzip.open does not take it: gzip stamps the clock
+    # into its header, so without this an unchanged rebuild produces a byte-different,
+    # content-identical 1.9 MB blob and dirties the working tree for nothing.
+    # (build_lemmas.py / build_wordlist.py have the same wart; fixing those rewrites
+    # their artifacts too, so it is left for a sweep.)
+    with gzip.GzipFile(out_path, "wb", mtime=0) as gz, \
+            io.TextIOWrapper(gz, encoding="utf-8") as f:
         for line in header_lines(lang):
             f.write(line + "\n")
         for lemma, feature, form, dom, _freq in rows:
