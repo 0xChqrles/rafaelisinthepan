@@ -14,6 +14,10 @@ import gen_phrase  # noqa: E402
 
 FR = gen_phrase.CONFIG["fr"]
 
+# Generation reads the neighbors' vectors to cut the roads (#115), so the fake kv must
+# answer for every word the fake walk returns.
+KV = {"indice": [1.0, 0.0, 0.0], "proche": [0.0, 1.0, 0.0]}
+
 
 def _sentence_words():
     return [
@@ -41,7 +45,7 @@ def _run_repeated_generation(monkeypatch):
         _sentence_words(),
         FR,
         "fr",
-        kv=object(),
+        kv=KV,
         V=vocab,
         M=object(),
         Vset=set(vocab),
@@ -89,13 +93,13 @@ def test_filename_dedupes_repeated_slugs_but_keeps_sentence_order(monkeypatch):
 def test_main_writes_one_three_slug_filename_for_repeated_holes(monkeypatch, tmp_path):
     vocab = ["chat", "poursuit", "jardin", "indice", "proche"]
 
-    monkeypatch.setattr(FR["module"], "load_vectors", lambda: object(), raising=False)
+    monkeypatch.setattr(FR["module"], "load_vectors", lambda: KV, raising=False)
     monkeypatch.setattr(FR["module"], "build_vocab", lambda _kv: vocab, raising=False)
     monkeypatch.setattr(FR["module"], "build_matrix", lambda _kv, _v: object(), raising=False)
     monkeypatch.setattr(
         FR["module"],
         "closest",
-        lambda _secret, _kv, _v, _m, *, n: [("indice", 86, 0.9)],
+        lambda _secret, _kv, _v, _m, *, n: [("indice", 86, 0.9), ("proche", 87, 0.5)],
         raising=False,
     )
     monkeypatch.setattr(gen_phrase, "write_vocab", lambda _v, _lang: None)

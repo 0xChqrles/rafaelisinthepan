@@ -96,6 +96,7 @@ import french_neighbors as frn
 import glove_neighbors as gn
 from build_forms import FORM_LANGS, forms_path, load_forms  # lemma+trait→forme (#119)
 from build_lemmas import lemmas_path, load_lemmas  # stdlib-only form→lemma table (#104)
+from distances import ROAD_TOP, cluster_roads, quantize_dq  # dq / road annotations (#115)
 from slug import slug, write_vocab  # shared stdlib slug/fold contract + vocab writer
 from start_word import pick_start, start_band
 
@@ -341,6 +342,65 @@ def build_merged_rank_map(secret_display, ranking, lemma_table, forms_by_lemma, 
                                    secret_lemmas)
     rmap = build_rank_map(secret_display, merged)
     expand_aliases(rmap, groups, forms_by_lemma, Vset)
+    return merged, rmap
+
+
+# --- Distance annotations (#115) ------------------------------------------------
+# Ranks are uniformly spaced by construction, so they carry no geometry. `dq` (the
+# quantized cosine distance to the secret) and `road` (which cluster of the near
+# neighborhood a group sits in) restore it. Both are GROUP properties computed from
+# the vectors already in hand at generation time — the client never sees vectors —
+# and both ride along on every key of a group, aliases included.
+
+def annotate_rank_map(rmap, merged, kv=None, roads=True, secret=""):
+    """Stamp a built rank map with each group's `dq` and (near groups only) `road`.
+
+    Runs LAST, after the merge walk and alias expansion, and keys off the entry's
+    `rank` alone — which is exactly what makes "aliases share their group's values"
+    true by construction, with no second grouping pass (the front and the benchmark
+    only ever LOOK UP these keys).
+
+    The SECRET's own entry (rank 0) is deliberately left bare: it is the terminus,
+    off-scale by nature, and scoring never needs it (solving is the atomic hop).
+    Roads need the vectors, so they are skipped without a `kv` (--no-roads, or a
+    caller that has none); `dq` has no opt-out — it is part of the schema.
+    """
+    if not merged:
+        return rmap
+    try:
+        dq_by_rank = quantize_dq([sim for _w, _r, sim in merged])
+    except ValueError as exc:
+        die(f"distances inexploitables pour « {secret} » : {exc}")
+    road_by_rank = {}
+    if roads and kv is not None:
+        vectors = [kv[w] for w, _r, _s in merged[:ROAD_TOP]]
+        road_by_rank = {r + 1: road for r, road in enumerate(cluster_roads(vectors))}
+    for entry in rmap.values():
+        rank = entry["rank"]
+        if rank == 0:
+            continue
+        entry["dq"] = dq_by_rank[rank - 1]
+        if rank in road_by_rank:
+            entry["road"] = road_by_rank[rank]
+    return rmap
+
+
+def build_puzzle_rank_map(secret_display, ranking, lemma_table, forms_by_lemma, Vset,
+                          kv=None, top_k=TOP_K, roads=True, secret_lemmas=None):
+    """One secret's rank map AS SHIPPED: lemma-merged, alias-expanded, dq/road-annotated.
+
+    The one entry point both authoring paths use, so a puzzle can never be written
+    with a structurally correct but un-annotated map. build_merged_rank_map stays the
+    purely structural builder underneath it (#104).
+
+    `ranking` may have been walked from a DONOR's vector (#119) while `secret_display`
+    stays the true sentence form: the similarities are the donor's either way, which is
+    the whole point — the donor is the geometry source, so the dq scale and the roads
+    are the ones the borrowed vector describes."""
+    merged, rmap = build_merged_rank_map(
+        secret_display, ranking, lemma_table, forms_by_lemma, Vset, top_k,
+        secret_lemmas)
+    annotate_rank_map(rmap, merged, kv=kv, roads=roads, secret=secret_display)
     return merged, rmap
 
 
@@ -782,13 +842,23 @@ def alias_start_display(rank_map, start, display, start_rank):
     (an accent-only override): the entry is already there, nothing to add. Otherwise the
     smallest-rank collision rule of build_rank_map / expand_aliases applies unchanged —
     an existing closer entry keeps the key, and typing the hint still reads its true
-    (closer) distance rather than a MISS."""
+    (closer) distance rather than a MISS.
+
+    The new key is an alias of the band word's GROUP, so it inherits that group's `dq`
+    and `road` (#115) like any other alias — without them the departure would carry a
+    rank but no position, and a consumer plotting the neighborhood would drop the one
+    stop the hole actually shows."""
     s = slug(display)
     if s == slug(start):
         return rank_map
     existing = rank_map.get(s)
     if existing is None or start_rank < existing["rank"]:
-        rank_map[s] = {"word": display, "rank": start_rank}
+        band = rank_map.get(slug(start), {})
+        entry = {"word": display, "rank": start_rank}
+        for field in ("dq", "road"):
+            if field in band:
+                entry[field] = band[field]
+        rank_map[s] = entry
     return rank_map
 
 
@@ -1178,7 +1248,8 @@ def _read_key(fd):
 
 
 def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
-                             lemma_table, forms_by_lemma, donors=None, forms=None):
+                             lemma_table, forms_by_lemma, donors=None, forms=None,
+                             roads=True):
     """Pick three distinct secret groups on a TTY; return holes sorted by position.
 
     Full-screen loop: ←/→ move between the sentence's selectable content words (see
@@ -1230,8 +1301,8 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
             # The walk starts from the DONOR's vector; everything the puzzle keeps
             # (rank-0 word, aliases, start band) stays on the true sentence form.
             ranking = cfg["module"].closest(donor, kv, V, M, n=None)
-            merged, rank_map = build_merged_rank_map(
-                secret, ranking, lemma_table, forms_by_lemma, Vset,
+            merged, rank_map = build_puzzle_rank_map(
+                secret, ranking, lemma_table, forms_by_lemma, Vset, kv=kv, roads=roads,
                 secret_lemmas=group_lemmas(secret, donor, lemma_table))
             rbd = {secret: 0}
             for w, r, _ in merged:
@@ -1458,7 +1529,8 @@ def filename_slugs_from_holes(holes):
 
 
 def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
-                     lemma_table, forms_by_lemma, donors=None, forms=None):
+                     lemma_table, forms_by_lemma, donors=None, forms=None,
+                     roads=True):
     """Resolve three distinct ``--words`` selectors into all matching holes.
 
     Matching is slug-based. Each selected slug gets one ranking and one start hint, then
@@ -1524,9 +1596,9 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
         # slug. The walk needs the FULL raw ranking: merging collapses inflections,
         # so reaching TOP_K distinct groups can consume well over TOP_K raw neighbors.
         ranking = cfg["module"].closest(donor, kv, V, M, n=None)
-        merged, rank_map = build_merged_rank_map(
+        merged, rank_map = build_puzzle_rank_map(
             canonical_secret, ranking, lemma_table, forms_by_lemma, Vset,
-            secret_lemmas=secret_lemmas)
+            kv=kv, roads=roads, secret_lemmas=secret_lemmas)
         rank_by_display = {canonical_secret: 0}
         for w, r, _ in merged:
             rank_by_display[w] = r + 1
@@ -1678,6 +1750,9 @@ def parse_args():
     p.add_argument("--no-lemmas", action="store_true",
                    help="désactive le regroupement par lemme (#104) — chaque forme "
                         "fléchie garde son propre rang")
+    p.add_argument("--no-roads", action="store_true",
+                   help="n'émet aucun champ `road` (#115) — les distances `dq` "
+                        "restent écrites (le score en dépend)")
     p.add_argument("--donor", action="append", metavar="MANQUANT=DONNEUR",
                    help="emprunte le vecteur d'une forme du même lemme pour un secret "
                         "absent de l'embedding (#119), ex. --donor accoutumes="
@@ -1779,11 +1854,12 @@ def main():
     # start word inline.
     if words_arg is not None:
         holes, ranks = holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
-                                        lemma_table, forms_by_lemma, donors, forms)
+                                        lemma_table, forms_by_lemma, donors, forms,
+                                        roads=not args.no_roads)
     else:
         holes, ranks = select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                                                 lemma_table, forms_by_lemma, donors,
-                                                forms)
+                                                forms, roads=not args.no_roads)
 
     # --- Optional source metadata (#5) ----------------------------------------
     # Flags win; otherwise ask on a TTY (any flag already given is not re-prompted);

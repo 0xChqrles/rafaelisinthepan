@@ -38,6 +38,7 @@ from llm_play import (
     KIMI_SUBPROCESS_CONFLICT_ENV,
     MAX_CONSECUTIVE_UNPARSEABLE,
     MAX_NONCOUNTING_REPLIES,
+    MIN_IN_PLACE_RUNS,
     MODELS,
     OPENAI_API_EFFORTS,
     OPENAI_SUBSCRIPTION_CONFLICT_ENV,
@@ -2130,7 +2131,7 @@ def test_cli_defaults_to_api_and_accepts_shared_effort_and_auth_levels():
     assert defaults.effort == DEFAULT_EFFORT
     assert defaults.auth == DEFAULT_AUTH
     assert defaults.session == DEFAULT_SESSION == "persistent"
-    assert defaults.runs == DEFAULT_RUNS == 5
+    assert defaults.runs == DEFAULT_RUNS == MIN_IN_PLACE_RUNS == 3
     assert defaults.selection == DEFAULT_SELECTION == "median"
     for effort in EFFORT_LEVELS:
         assert (
@@ -2162,7 +2163,7 @@ def test_cli_defaults_to_api_and_accepts_shared_effort_and_auth_levels():
         ]
     )
     # Kimi shares the ONE uniform run default — no per-provider divergence.
-    assert kimi.runs == DEFAULT_RUNS == 5
+    assert kimi.runs == DEFAULT_RUNS == MIN_IN_PLACE_RUNS == 3
 
 
 def test_cli_requires_odd_median_runs_but_best_accepts_any_positive_count(capsys):
@@ -3107,10 +3108,10 @@ def test_upsert_benchmark_entry_records_any_model_and_prunes_stale_entries():
     assert next(e for e in entries2 if e["model"] == "gpt-5.6-sol")["tries"] == 4
 
 
-def test_in_place_requires_median_persistent_and_the_default_run_count(capsys):
+def test_in_place_requires_median_persistent_and_minimum_run_count(capsys):
     ok = parse_args(["puzzle.json", "--model", "OPUS", "--in-place"])
     assert ok.in_place is True
-    assert ok.runs == DEFAULT_RUNS == 5
+    assert ok.runs == DEFAULT_RUNS == MIN_IN_PLACE_RUNS == 3
 
     # Roster-wide invariant: --runs has ONE default for every model, so the canonical
     # gate is satisfied by omitting it — including for Kimi, whose in-place ergonomics
@@ -3119,7 +3120,13 @@ def test_in_place_requires_median_persistent_and_the_default_run_count(capsys):
         ["puzzle.json", "--model", "KIMI", "--auth", "subscription",
          "--effort", "low", "--in-place"]
     )
-    assert kimi_in_place.runs == DEFAULT_RUNS == 5
+    assert kimi_in_place.runs == DEFAULT_RUNS == MIN_IN_PLACE_RUNS == 3
+
+    for runs in (3, 5, 7):
+        accepted = parse_args(
+            ["puzzle.json", "--model", "OPUS", "--runs", str(runs), "--in-place"]
+        )
+        assert accepted.runs == runs
 
     with pytest.raises(SystemExit):
         parse_args(
@@ -3135,8 +3142,8 @@ def test_in_place_requires_median_persistent_and_the_default_run_count(capsys):
     assert "--in-place requires --session persistent" in capsys.readouterr().err
 
     with pytest.raises(SystemExit):
-        parse_args(["puzzle.json", "--model", "OPUS", "--runs", "3", "--in-place"])
-    assert "--in-place requires exactly 5 runs" in capsys.readouterr().err
+        parse_args(["puzzle.json", "--model", "OPUS", "--runs", "1", "--in-place"])
+    assert "--in-place requires at least 3 runs" in capsys.readouterr().err
 
 
 def test_in_place_cli_embeds_every_tested_model_and_prunes_stale_entries(
@@ -3154,14 +3161,14 @@ def test_in_place_cli_embeds_every_tested_model_and_prunes_stale_entries(
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     # benchmark_model reuses one reply model across all runs of a call, so supply enough
-    # scripted replies for the default 5 solving runs (forest, ocean each).
+    # scripted replies for the default 3 solving runs (forest, ocean each).
     monkeypatch.setattr(
         "llm_play.provider_reply",
-        lambda *_args, **_kwargs: ScriptedModel(["forest", "ocean"] * 5),
+        lambda *_args, **_kwargs: ScriptedModel(["forest", "ocean"] * 3),
     )
 
     def run(selector):
-        # No --runs: exercises the default (5) that --in-place requires.
+        # No --runs: exercises the default (3) that --in-place requires.
         assert main([str(puzzle_path), "--model", selector, "--in-place"]) == 0
         return json.loads(puzzle_path.read_text(encoding="utf-8"))["benchmark"]
 

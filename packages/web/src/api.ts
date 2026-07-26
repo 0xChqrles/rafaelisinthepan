@@ -50,6 +50,22 @@ function isWord(v: unknown): v is Word {
   return isRecord(v) && typeof v.word === 'string' && typeof v.slug === 'string';
 }
 
+// The optional distance annotations on a rank entry (#115). They are group properties
+// generation adds — every puzzle published before them carries none, so ABSENT stays
+// valid — but a PRESENT one must be well formed: scoring and the route view read them
+// as numbers, so a string or an out-of-byte-range value would corrupt both silently.
+// `road` is only bounded below: how many roads generation may cut is its knob, and the
+// front stays as agnostic of it as it is of TOP_K.
+function checkRankAnnotations(entry: Record<string, unknown>): void {
+  const { dq, road } = entry;
+  if (dq !== undefined && (typeof dq !== 'number' || !Number.isInteger(dq) || dq < 0 || dq > 255)) {
+    throw new Error('malformed puzzle: "dq" must be an integer 0-255');
+  }
+  if (road !== undefined && (typeof road !== 'number' || !Number.isInteger(road) || road < 0)) {
+    throw new Error('malformed puzzle: "road" must be a non-negative integer');
+  }
+}
+
 // Runtime shape check for a fetched puzzle (issue #14). The backend/store normally
 // returns a well-formed Puzzle, but a truncated body or a store/CDN mishap can yield
 // valid JSON of the WRONG shape — which would then crash Game mid-render (a blank
@@ -57,8 +73,9 @@ function isWord(v: unknown): v is Word {
 // load-bearing fields the game actually reads here: on success return a typed Puzzle;
 // on a bad shape throw a descriptive Error the fetch hook turns into the error state.
 // Not exhaustive — it asserts the structure Game depends on (lang, words, each hole's
-// secret/start {word,slug} + start_rank, a ranks map for every secret, and the optional
-// player-facing benchmark contract).
+// secret/start {word,slug} + start_rank, a ranks map for every secret, the optional
+// per-entry distance annotations (#115), and the optional player-facing benchmark
+// contract).
 export function parsePuzzle(data: unknown): Puzzle {
   if (!isRecord(data)) throw new Error('malformed puzzle: not an object');
   const { lang, words, holes, ranks, benchmark } = data;
@@ -80,6 +97,13 @@ export function parsePuzzle(data: unknown): Puzzle {
     }
     if (!isRecord(ranks[h.secret.slug])) {
       throw new Error(`malformed puzzle: "ranks" missing entry for secret "${h.secret.slug}"`);
+    }
+  }
+  for (const entries of Object.values(ranks)) {
+    if (!isRecord(entries)) throw new Error('malformed puzzle: bad "ranks" entry');
+    for (const entry of Object.values(entries)) {
+      if (!isRecord(entry)) throw new Error('malformed puzzle: bad "ranks" entry');
+      checkRankAnnotations(entry);
     }
   }
   if (benchmark !== undefined) {

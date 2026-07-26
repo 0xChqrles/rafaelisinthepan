@@ -141,8 +141,12 @@ def test_empty_table_reproduces_pre_104_rank_map():
 def test_same_group_selected_secrets_rejected(monkeypatch):
     # "vermine" and "vermines" are one lemma group: holing both is one word twice.
     cfg = gen_phrase.CONFIG["fr"]
+    # Three neighbors so the walk leaves at least two distinct groups after "porte"
+    # aliases into its own secret: a one-group walk has no distance span to quantize
+    # (#115) and is rejected upstream.
     fake = types.SimpleNamespace(
-        closest=lambda secret, kv, V, M, n=None: [("porte", 0, .9), ("chien", 1, .8)],
+        closest=lambda secret, kv, V, M, n=None: [
+            ("porte", 0, .9), ("chien", 1, .8), ("jardin", 2, .5)],
     )
     monkeypatch.setitem(cfg, "module", fake)
     monkeypatch.setattr(gen_phrase, "pick_start", lambda secret, ranking: "porte")
