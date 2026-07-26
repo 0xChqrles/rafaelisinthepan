@@ -1146,6 +1146,25 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   the keyboard width exactly. The two control keys render `assets/icons/{enter,back}.svg` as
   inline SVG components (see **SVG icons** below), not text; the button `aria-label`
   (`enter` / `backspace`) is what names them.
+- **Puzzle responses are content-negotiated AT THE ORIGIN (#123/#124, decided
+  2026-07-26).** A puzzle is megabytes of rank maps (#104's alias expansion roughly tripled
+  them), and Lambda refuses a response **envelope** over ~6.29 MB with a 413 the caller only
+  ever sees as a bare 502 — the size to check is the envelope, not the body, because the body
+  is escaped into it (every `"` costs a second byte, ~18% on quote-dense JSON). So
+  `respond.ts` `jsonCompressed()` compresses the puzzle with the best coding the client
+  accepts — **brotli preferred, gzip fallback**, `q=0` honoured, a refusal outranking a `*`
+  wildcard (RFC 9110 §12.5.3), 1 KB floor. **Brotli is not optional politeness:** CloudFront
+  normalizes `Accept-Encoding` down to the br/gzip the viewer offered *and forwards it to the
+  origin*, so `br` can arrive alone; it also prefers brotli for viewers that offer it and
+  passes an already-encoded origin response straight through, so a gzip-only origin would
+  hand browsers MORE bytes than the CDN's own compression did. Two rules for anyone editing
+  this: **`Vary` must be APPENDED, not overwritten** (the CORS `Vary: Origin` has to survive
+  alongside `Accept-Encoding`), and the handler owns an **envelope-size guard** that answers
+  a still-too-large payload with a named `payload_too_large` 500 **and `console.error`s it** —
+  the log line is not decoration, it is the only thing that reaches CloudWatch, because a
+  handler that RETURNS an error status is a SUCCESSFUL invocation (Errors metric 0, clean log
+  group). The guard budgets ~8 KB below the cap since it models the runtime payload rather
+  than measuring it.
 - **Local backend harness (#17):** `pnpm backend:dev` runs the **same `createHandler`**
   as the deployed Lambda over a local filesystem store (`fsStore`), so the day/404/CORS/
   `Puzzle` behaviour is identical to prod with no AWS creds. `pnpm puzzle:publish
@@ -1235,6 +1254,17 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   via a repo variable, #60) before `cdk deploy WhippinWebStack`. `workflow_dispatch`
   `stacks` input forces
   `changed`|`web`|`backend`|`all` (default `changed`).
+  **The backend deploy INVALIDATES `/*` on the API distribution after `cdk deploy`**
+  (decided 2026-07-26): puzzle responses carry a year-long `s-maxage`, so shipping the
+  Lambda alone leaves every already-cached `(date, lang, Accept-Encoding)` entry answering
+  from the edge with the OLD body — a response-changing deploy would reach nobody who had
+  already loaded that day. This also covers `/og` and `/s`, so a card-render change no
+  longer needs the by-hand invalidation that used to be required. It needs
+  `cloudfront:CreateInvalidation` on the deploy role (`deploy-role-stack.ts`); that stack is
+  human-deployed by design, so an `AccessDenied` there means running
+  `pnpm --filter @whippin/infra deploy:auth` once and re-running the job (the Lambda has
+  already deployed at that point — only the purge is missing). Web deploys already
+  invalidate via `BucketDeployment`.
   - **Keep the pipeline in sync with the architecture.** `ci.yml` is self-maintaining
     (`pnpm -r --if-present` fans out to every workspace's `test`/`typecheck`), but
     `deploy.yml` is **hardcoded** and does NOT auto-cover changes. When you **add/rename

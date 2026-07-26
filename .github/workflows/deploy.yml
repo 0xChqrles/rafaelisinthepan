@@ -114,6 +114,35 @@ jobs:
       - name: Deploy backend stack
         run: pnpm --filter @whippin/infra exec cdk deploy WhippinBackendStack --require-approval never
 
+      # Deploying the Lambda is NOT enough to change what players receive. Puzzle responses
+      # are served with a year-long s-maxage, so every already-cached (date, lang,
+      # Accept-Encoding) entry keeps being answered from the edge with the OLD body until it
+      # is purged — a deploy that changes the response (new Content-Encoding, new bytes) would
+      # otherwise reach nobody who had already loaded that day. `puzzle:publish --s3` purges
+      # for exactly this reason after an upload; a code deploy needs the same.
+      #
+      # `/*` is ONE invalidation path (the free tier allows 1,000/month), and it also covers
+      # /og and /s, whose share tokens are cached `immutable` — so a card-render change no
+      # longer needs the by-hand invalidation that used to be required.
+      #
+      # Needs `cloudfront:CreateInvalidation` on the deploy role (deploy-role-stack.ts). That
+      # stack is deployed BY HAND by design, so if this step fails with AccessDenied, run
+      # `pnpm --filter @whippin/infra deploy:auth` and re-run the job — the Lambda above has
+      # already deployed, so the site is up; only the purge is missing.
+      - name: Invalidate the API CDN
+        run: |
+          set -euo pipefail
+          DIST=$(aws cloudformation describe-stacks \
+            --stack-name WhippinBackendStack \
+            --query "Stacks[0].Outputs[?OutputKey=='DistributionId'].OutputValue" \
+            --output text)
+          if [ -z "$DIST" ] || [ "$DIST" = "None" ]; then
+            echo "::error::Could not resolve DistributionId from WhippinBackendStack outputs"
+            exit 1
+          fi
+          echo "Invalidating /* on $DIST"
+          aws cloudfront create-invalidation --distribution-id "$DIST" --paths '/*'
+
   deploy-web:
     name: Deploy WhippinWebStack
     needs: plan
