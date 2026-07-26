@@ -115,7 +115,8 @@ DISPLAY_MODEL_COUNT = 3
 PROMPT_VERSION = "23"
 
 DEFAULT_CAP = 300
-DEFAULT_RUNS = 5
+MIN_IN_PLACE_RUNS = 3
+DEFAULT_RUNS = MIN_IN_PLACE_RUNS
 SessionMode = Literal["persistent", "stateless"]
 SESSION_MODES: tuple[SessionMode, ...] = ("persistent", "stateless")
 DEFAULT_SESSION: SessionMode = "persistent"
@@ -3605,7 +3606,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help=(
             "append the full lab artifact and upsert this model's result into the "
             f"puzzle's optional benchmark array (requires median selection, persistent "
-            f"session and exactly {DEFAULT_RUNS} runs at the current prompt)"
+            f"session and at least {MIN_IN_PLACE_RUNS} odd runs at the current prompt)"
         ),
     )
     args = parser.parse_args(argv)
@@ -3623,8 +3624,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             parser.error("--in-place requires --selection median")
         if args.session != "persistent":
             parser.error("--in-place requires --session persistent")
-        if args.runs != DEFAULT_RUNS:
-            parser.error(f"--in-place requires exactly {DEFAULT_RUNS} runs")
+        if args.runs < MIN_IN_PLACE_RUNS:
+            parser.error(f"--in-place requires at least {MIN_IN_PLACE_RUNS} runs")
     try:
         _validate_provider_effort(args.model_config["provider"], args.auth, args.effort)
     except ValueError as exc:
@@ -3832,7 +3833,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 # Record EVERY tested model in the puzzle; the front end owns the display
                 # filter. Upsert this run over any prior entry for the same model, and prune
                 # any previously embedded entry that no longer replays the current puzzle.
-                # The median/persistent/current-prompt/5-run gate is enforced in parse_args.
+                # The median/persistent/current-prompt/at-least-3-run gate is enforced in
+                # parse_args.
                 entries, dropped = upsert_benchmark_entry(latest, vocab, entry)
                 write_benchmark(args.puzzle, latest, entries)
             for stale in dropped:

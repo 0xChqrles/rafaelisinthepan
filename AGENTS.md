@@ -243,8 +243,8 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   submission order**. **`--in-place` upserts one model at a time** (a re-run replaces that
   model's entry; a previously embedded entry that no longer replays the current
   sentence/ranks is pruned) and accepts **only** the canonical config: **median selection,
-  persistent session, the current prompt version, and exactly `DEFAULT_RUNS` (5) runs**
-  (`--runs` has ONE uniform default of 5 for every model, so omitting it already satisfies
+  persistent session, the current prompt version, and at least `MIN_IN_PLACE_RUNS` (3)
+  odd runs** (`--runs` has ONE uniform default of 3 for every model, so omitting it already satisfies
   the gate — Kimi included; there is no per-provider run-count default). Both `--in-place`
   writes — the lab artifact and the puzzle's benchmark array — take an **exclusive advisory
   lock around the whole read-modify-write cycle**, so two overlapping runs accumulate
@@ -561,8 +561,8 @@ pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 distinct word
 #    entry into the puzzle's variable-length benchmark array (any model — the front end
 #    filters the FABLE/KIMI/GPT-SOL display trio; a re-run replaces that model, a now-stale
 #    entry is pruned). It accepts only the canonical config: median + persistent + current
-#    prompt + exactly 5 runs — and --runs already defaults to 5 for EVERY model, so no
-#    selector (Kimi included) needs an explicit --runs 5. Both writes are file-locked, so
+#    prompt + at least 3 odd runs — and --runs already defaults to 3 for EVERY model, so no
+#    selector (Kimi included) needs an explicit --runs 3. Both writes are file-locked, so
 #    overlapping runs for different models accumulate instead of clobbering each other.
 pnpm bench:puzzle <puzzle.json> --model MODEL [--playbook <model>.playbook.json] [--effort LEVEL] [--auth api|subscription] [--session persistent|stateless] [--cap N] [--runs N] [--selection median|best] [--in-place]
 KIMI_CODE_API_KEY=... pnpm bench:puzzle <puzzle.json> --model KIMI --auth subscription --effort medium --in-place
@@ -657,7 +657,7 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   `--playbook` accepts only a model/provider/prompt-matched,
   hash-verified `whippin_model_playbook` profile and injects its `final_playbook` under the
   fixed rules as advice. `--selection median|best` defaults to median: median requires odd
-  sequential `--runs` (default 5 for EVERY model, Kimi included — decided 2026-07-22; no
+  sequential `--runs` (default 3 for EVERY model, Kimi included — decided 2026-07-22; no
   per-provider run-count divergence), cost-prunes a later provable
   upper-half run at the running median bound, and skips remaining calls after a cap-DNF
   majority; best selects the lowest successful score and cost-prunes a later unsolved run
@@ -667,7 +667,7 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   full local transcript/token usage AND upserts the tested model's replay-valid lean entry
   into the puzzle's variable-length benchmark array (any model; a re-run replaces that model,
   a now-stale sibling entry is pruned). It accepts only the canonical config — **median +
-  persistent + current prompt + exactly `DEFAULT_RUNS` (5) runs** — so results stay
+  persistent + current prompt + at least `MIN_IN_PLACE_RUNS` (3) odd runs** — so results stay
   comparable; the uniform `--runs` default already satisfies that gate for every model.
   **Both `--in-place` writes are guarded by `_exclusive_file_lock`** (an advisory `flock`
   on a sidecar `.<name>.lock`) spanning the read AND the write: the atomic replace alone
