@@ -1,4 +1,4 @@
-"""CONTRACT: display agreement for every word a hole can show (#119 addendum 2).
+"""CONTRACT: display agreement for every word a hole can show (#119 addenda 2 and 3).
 
 A hole displays the player's current best word, so that word should agree with the
 sentence: « tu t'___ » must read "t'distrais", never "t'distraire". The rules:
@@ -11,34 +11,40 @@ sentence: « tu t'___ » must read "t'distrais", never "t'distraire". The rules:
     needs a human (--form off a TTY, a prompt on one); --no-inflect is what reproduces
     the pre-addendum output byte for byte;
   - a form carrying several verb lemmas is DECLINED, never arbitrated;
-  - Lexique's own noise is filtered structurally: `inf` can only realize as the lemma,
-    no other feature ever can, and a gender+number-marked row is DEMOTED (not dropped)
-    so a true form beats it while a lone one still counts;
   - a group is left alone when its canonical is not a POS-admitted verb, has no such
     form, would become a word nobody could type back, would land on a slug a CLOSER
     group already owns, or would take the slug a farther but still DISPLAYABLE group
     prints — whatever a hole displays must type back at that hole's own exponent, never
     a closer one. Past start_rank nothing is displayed, so nothing is protected;
-  - a lemma that is really an inflected form Lexique mis-filed as its own entry
-    ("aurai") is rejected: a singleton `inf` paradigm AND attested under another lemma;
-  - the POS gate reads AUX as the verb category: être and avoir are verbs, and they are
-    the forms that carry the tag;
-  - a participle whose NUMBER column is blank is invariable in number ("pris",
-    "conquis"), so it claims both cells rather than defaulting to the singular;
   - rewriting a group rewrites every entry carrying it (aliases included) and keys the
-    new slug at that same rank, so typing any form of the group displays the agreed one;
-  - the POS gate is by Lexique frequency: "évident" is a form of "évider" on paper but
-    dominantly the adjective, so it is never read — nor written — as a verb.
+    new slug at that same rank, so typing any form of the group displays the agreed one.
+
+Addendum 3 split the sources, and the tests below follow that split:
+
+  - LEFFF is the authority for morphology. Its composite tags name several cells at
+    once and must EXPAND into the internal feature vocabulary, never become opaque
+    features: "PS13s" is indicative and subjunctive, 1s and 3s; "Km" is a masculine
+    participle whose number does not discriminate, so both cells. Because the cells are
+    stated, none of addendum 2's Lexique repair heuristics survive.
+  - LEXIQUE is frequency/POS evidence only. The source-side gate keeps two cases: with
+    corpus evidence the verbal category must beat every rival ("évident" is dominantly
+    the adjective, so it is never read — nor written — as a verb); without evidence, the
+    surface is admitted only when Lefff gives it verb analyses and no competing
+    non-verbal one ("accoutumes"), never guessed.
+  - a gated form stays a legal TARGET: "pensée" realizes penser's par:pas:f:s.
 """
 
 import functools
+import gzip
 import os
+import tarfile
 
 import pytest
 
+import build_forms
 import gen_phrase
-from build_forms import (collect_rows, dominant_verbs, false_lemmas, feature_keys,
-                         forms_path, load_forms)
+from build_forms import (collect_rows, dominant_verbs, expand_tag, forms_path,
+                         lexique_weights, load_forms)
 
 FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
 TABLE = load_forms(os.path.join(FIXTURES, "forms.fr.tsv"))
@@ -75,39 +81,85 @@ def _map(*entries):
 
 # --- the table itself -----------------------------------------------------------
 
-def test_participles_carry_their_agreement_in_the_feature_key():
-    # A bare "par:pas" would let a masculine target realize as "pensée"; Lexique keeps
-    # the agreement in its own columns, so the key has to absorb it.
-    assert feature_keys("par:pas", "f", "p") == ("par:pas:f:p",)
-    assert feature_keys("ind:pre:2s", "", "") == ("ind:pre:2s",)
+def test_a_simple_lefff_tag_names_one_cell():
+    assert expand_tag("F1s") == ("ind:fut:1s",)
+    assert expand_tag("Y2s") == ("imp:pre:2s",)
+    assert expand_tag("Kms") == ("par:pas:m:s",)
+    assert expand_tag("Kfp") == ("par:pas:f:p",)
+    assert expand_tag("W") == ("inf",)
+    assert expand_tag("G") == ("par:pre",)
 
 
-def test_a_number_invariable_participle_claims_both_cells():
-    # A blank NUMBER is Lexique saying "both": "pris"/"conquis" are spelled the same in
-    # m:s and m:p, which is why the column is empty. Reading it as singular made those
-    # secrets look unambiguous, so « ils sont conquis » agreed to "amusé" without ever
-    # asking — and left m:p unreachable for the same lemmas.
-    assert feature_keys("par:pas", "m", "") == ("par:pas:m:s", "par:pas:m:p")
-    # A blank GENDER is a plain gap, not an invariance: the masculine default stands.
-    assert feature_keys("par:pas", "", "p") == ("par:pas:m:p",)
+def test_a_composite_lefff_tag_expands_into_every_cell_it_names():
+    # "Lorsque plusieurs codes de même nature se suivent, cela signifie que la forme est
+    # commune aux valeurs en question" — one spelling, several cells. Turning that into
+    # a single opaque feature would make the cells unreachable and the form look
+    # unambiguous when it is not.
+    assert expand_tag("P12s") == ("ind:pre:1s", "ind:pre:2s")
+    assert expand_tag("PS13s") == ("ind:pre:1s", "ind:pre:3s",
+                                   "sub:pre:1s", "sub:pre:3s")
+    assert expand_tag("PJ12s") == ("ind:pre:1s", "ind:pre:2s",
+                                   "ind:pas:1s", "ind:pas:2s")
+    assert expand_tag("ST2s") == ("sub:pre:2s", "sub:imp:2s")
 
 
-def test_pos_gate_keeps_the_dominant_category():
-    # "évident": 0.27 as a form of "évider", 20.14 as the adjective -> not a verb here.
-    # "pensé": only ever the verb -> admitted. Frequencies are summed per category.
-    rows = [("évident", "évider", "VER", "", "", "ind:pre:3p;", 0.27),
-            ("évident", "évident", "ADJ", "m", "s", "", 20.14),
-            ("pensé", "penser", "VER", "m", "s", "par:pas;", 97.57),
-            ("pensée", "penser", "VER", "f", "s", "par:pas;", 1.42),
-            ("pensée", "pensée", "NOM", "f", "s", "", 98.92)]
+def test_an_omitted_lefff_code_covers_every_value_of_its_dimension():
+    # "un code non renseigné est non pertinent ou non discriminant pour la forme".
+    # "Km" is how Lefff states outright what addendum 2 had to guess from a blank
+    # Lexique column: a masculine participle whose number does not discriminate.
+    assert expand_tag("Km") == ("par:pas:m:s", "par:pas:m:p")
+    assert expand_tag("K") == ("par:pas:m:s", "par:pas:m:p",
+                               "par:pas:f:s", "par:pas:f:p")
+    assert expand_tag("PS3") == ("ind:pre:3s", "ind:pre:3p",
+                                 "sub:pre:3s", "sub:pre:3p")
+    # a tag with no mood code is a skip, not a crash (Lefff's `_error`, `voilà`)
+    assert expand_tag("") == ()
+    assert expand_tag("ms") == ()
+
+
+def test_pos_gate_with_corpus_evidence_keeps_the_dominant_category():
+    # Case 1. "évident": 0.27 as a form of "évider", 20.14 as the adjective -> not read
+    # as a verb. "pensé": only ever the verb -> admitted. Summed per category.
     token_re = gen_phrase.CONFIG["fr"]["token_regex"]
-    dominant = dominant_verbs(rows, token_re)
+    weight = lexique_weights([("évident", "VER", 0.27), ("évident", "ADJ", 20.14),
+                              ("pensé", "VER", 97.57),
+                              ("pensée", "VER", 1.42), ("pensée", "NOM", 98.92)],
+                             token_re)
+    lefff = [("évident", "v", "évider", "PS3p"), ("évident", "adj", "évident", "ms"),
+             ("pensé", "v", "penser", "Kms"), ("pensée", "v", "penser", "Kfs"),
+             ("pensée", "nc", "pensée", "fs")]
+    dominant = dominant_verbs(weight, lefff, token_re)
     assert dominant == {"pensé"}
     # ...but a gated form still stays in the table: it can be someone else's correct
     # realization ("pensée" IS the f:s participle of "penser").
-    built = collect_rows(rows, token_re, dominant)
-    assert ("penser", "par:pas:f:s", "pensée", 0) in [r[:4] for r in built]
-    assert ("évider", "ind:pre:3p", "évident", 0) in [r[:4] for r in built]
+    built = {r[:4] for r in collect_rows(lefff, token_re, dominant, weight)}
+    assert ("penser", "par:pas:f:s", "pensée", 0) in built
+    assert ("évider", "ind:pre:3p", "évident", 0) in built
+
+
+def test_pos_gate_without_corpus_evidence_admits_only_an_uncontested_verb():
+    # Case 2. Lexique never saw "accoutumes" — which is the whole reason this feature
+    # exists — so there is no frequency to weigh. Lefff analyses it as a verb and
+    # nothing else, so it is admitted. A cross-POS homograph with no evidence either
+    # way is declined rather than guessed.
+    token_re = gen_phrase.CONFIG["fr"]["token_regex"]
+    lefff = [("accoutumes", "v", "accoutumer", "PS2s"),
+             ("litige", "v", "litiger", "PS13s"), ("litige", "nc", "litige", "ms")]
+    assert dominant_verbs({}, lefff, token_re) == {"accoutumes"}
+    # an all-zero Lexique entry is not evidence either — it falls through to case 2
+    weight = lexique_weights([("accoutumes", "VER", 0.0)], token_re)
+    assert dominant_verbs(weight, lefff, token_re) == {"accoutumes"}
+
+
+def test_the_two_naive_rewrites_are_refused():
+    resolver = _resolver()
+    # évident -> évidé: the POS gate refuses to read "évident" as a verb at all.
+    assert resolver.features_of("évident") == ()
+    assert resolver.realize("évident", "par:pas:m:s") is None
+    # pensé -> pensée: the gender lives in the feature, so a masculine target stays
+    # masculine. (And "pensée" is gated as a source in its own right.)
+    assert resolver.realize("pensé", "par:pas:m:s") == "pensé"
+    assert resolver.realize("pensé", "par:pas:f:s") == "pensée"
 
 
 def test_the_two_naive_rewrites_are_refused():
@@ -256,10 +308,8 @@ def test_a_rewritten_hole_is_reported():
 
 
 # --- the COMMITTED artifact, not just the fixture ---------------------------------
-# Lexique hangs spurious `infover` atoms on frequent spellings, and the realization
-# tiebreak is frequency — so the noise wins unless build_forms drops it. A fixture
-# cannot catch that: it only holds rows someone wrote by hand. These anchors read the
-# real committed table, which is what ships.
+# A fixture only holds rows someone wrote by hand, so it can never catch what the SOURCE
+# does or does not say. These anchors read the real committed table, which is what ships.
 
 @functools.lru_cache(maxsize=1)
 def committed():
@@ -269,98 +319,87 @@ def committed():
 
 
 @pytest.mark.parametrize("lemma,feature,expected", [
-    ("marcher", "ind:imp:3s", "marchait"),   # not "marcher" (spurious ind:imp:3s atom)
+    ("marcher", "ind:imp:3s", "marchait"),
     ("marcher", "ind:pre:2s", "marches"),
-    ("vivre", "ind:imp:3s", "vivait"),       # not "vivre"
-    ("venir", "inf", "venir"),               # not "viens" (spurious inf atom)
-    ("devoir", "inf", "devoir"),             # not "dois"
-    ("abandonner", "ind:pre:2p", "abandonnez"),  # not "abandonner"
-    ("baisser", "ind:imp:3s", "baissait"),   # not "baissée" (participle marking bleed)
-    ("désoler", "ind:imp:3s", "désolait"),
-    ("penser", "imp:pre:2s", "pense"),       # not "pensé"
-    ("penser", "par:pas:m:s", "pensé"),
+    ("vivre", "ind:imp:3s", "vivait"),
+    ("venir", "inf", "venir"),
+    ("devoir", "inf", "devoir"),
+    ("abandonner", "ind:pre:2p", "abandonnez"),
+    ("baisser", "ind:imp:3s", "baissait"),
+    ("penser", "imp:pre:2s", "pense"),
+    ("penser", "par:pas:m:s", "pensé"),      # ...and pensée below: distinct genders
     ("penser", "par:pas:f:s", "pensée"),
-    ("comprendre", "ind:pas:1s", "compris"),  # a past historic homographing its
-                                              # participle survives: g set, n empty
-    # ...and so does an -ir verb whose m:p participle and 1s/2s present share ONE
-    # gender-marked row. Demoting those rows instead of dropping them is the whole
-    # difference: dropping cost 18 correct rewrites on the issue's own sentence.
+    ("comprendre", "ind:pas:1s", "compris"),
     ("engourdir", "ind:pre:2s", "engourdis"),
-    ("adoucir", "ind:pre:2s", "adoucis"),
     ("avilir", "ind:pre:2s", "avilis"),
-    # Lexique tags être/avoir AUX, not VER. Counting that as a rival category made the
-    # two most frequent verbs in French fail their own POS gate.
-    ("avoir", "par:pas:m:s", "eu"),
+    # être/avoir are verbs, and the auxiliary is the only tag they carry
+    ("avoir", "par:pas:m:s", "eu"),          # "avais" may realize as "eu"
     ("être", "par:pas:m:s", "été"),
     ("avoir", "ind:pre:3p", "ont"),
+    ("avoir", "ind:fut:1s", "aurai"),
     # a number-invariable participle realizes BOTH cells, not just the singular
     ("prendre", "par:pas:m:p", "pris"),
     ("prendre", "par:pas:m:s", "pris"),
     ("conquérir", "par:pas:m:p", "conquis"),
+    ("conquérir", "par:pas:m:s", "conquis"),
     # ...while a participle that DOES distinguish still keeps them apart
     ("amuser", "par:pas:m:p", "amusés"),
     ("amuser", "par:pas:m:s", "amusé"),
+    # the paradigm cells Lexique's corpus never attested, which is the whole point
+    ("accoutumer", "ind:pre:2s", "accoutumes"),
+    ("distraire", "ind:pre:2s", "distrais"),
 ])
 def test_committed_table_realizes_the_real_form(lemma, feature, expected):
     assert committed().realize.get((lemma, feature)) == expected
 
 
-def test_an_auxiliary_is_admitted_as_the_verb_it_is():
-    # Being outweighed by one's own auxiliary use is not evidence of being a non-verb.
-    # Without this, feature_for("avais") was None and no être/avoir hole ever agreed.
+@pytest.mark.parametrize("form,analyses", [
+    # exactly the future 1s of avoir — no invented "aurai / inf"
+    ("aurai", (("avoir", "ind:fut:1s"),)),
+    # the cell Lexique never saw, plus the subjunctive it genuinely shares
+    ("accoutumes", (("accoutumer", "ind:pre:2s"), ("accoutumer", "sub:pre:2s"))),
+    # present 1s, present 2s and imperative 2s, one spelling (P12s + Y2s)
+    ("distrais", (("distraire", "imp:pre:2s"), ("distraire", "ind:pre:1s"),
+                  ("distraire", "ind:pre:2s"))),
+    # participle masculine singular AND plural (Km), plus the past historic (J12s)
+    ("conquis", (("conquérir", "ind:pas:1s"), ("conquérir", "ind:pas:2s"),
+                 ("conquérir", "par:pas:m:p"), ("conquérir", "par:pas:m:s"))),
+    ("pensé", (("penser", "par:pas:m:s"),)),
+    ("pensée", (("penser", "par:pas:f:s"),)),
+])
+def test_committed_table_analyses_the_form_exactly(form, analyses):
+    assert tuple(sorted(committed().entries.get(form, ()))) == analyses
+
+
+def test_the_source_side_gate_still_declines_a_dominant_non_verb():
     table = committed()
-    for form in ("avais", "ai", "ont", "avez", "étant", "été", "eu", "furent"):
+    # "évident" is a form of "évider" on paper and overwhelmingly the adjective, so it
+    # is never READ as a verb — while staying available as a target realization.
+    assert "évident" not in table.dominant
+    assert gen_phrase.FormResolver(table).features_of("évident") == ()
+    assert table.realize[("évider", "ind:pre:3p")] == "évident"
+    # "pensée" likewise: gated as a source, legal as penser's f:s participle.
+    assert "pensée" not in table.dominant
+    # ...and the auxiliaries ARE admitted, so an être/avoir hole can agree at all.
+    for form in ("avais", "ai", "ont", "avez", "étant", "été", "eu", "aurai"):
         assert form in table.dominant, form
-    # "avais" is 1s OR 2s, so it still refuses to guess — admitted is not unambiguous.
-    resolver = gen_phrase.FormResolver(table)
+
+
+def test_an_auxiliary_secret_still_refuses_to_guess_when_it_is_ambiguous():
+    # Admitted is not the same as unambiguous: "avais" is 1s or 2s and asks.
+    resolver = gen_phrase.FormResolver(committed())
     assert resolver.features_of("avais") == ("ind:imp:1s", "ind:imp:2s")
     assert resolver.feature_for("avais") is None
     assert resolver.realize("avais", "par:pas:m:s") == "eu"
 
 
-def test_an_inflected_form_mis_filed_as_its_own_lemma_is_rejected():
-    # Rule 1 lets a self-naming `inf` row through by construction, so Lexique's
-    # "aurai / aurai / inf" survived beside the true "aurai / avoir / ind:fut:1s" and
-    # invented a second paradigm — two lemmas, two features, so the form looked
-    # ambiguous and no batch run ever agreed an "aurai" hole.
-    table = committed()
-    resolver = gen_phrase.FormResolver(table)
-    assert table.entries["aurai"] == (("avoir", "ind:fut:1s"),)
-    assert resolver.features_of("aurai") == ("ind:fut:1s",)
-    assert resolver.feature_for("aurai") == "ind:fut:1s"
-    assert resolver.realize("avais", "ind:fut:1s") == "aurai"
-    # the other three of the class recover their real paradigm too
-    assert resolver.features_of("parait") == ("ind:imp:3s",)
-    assert all(lemma not in {l for l, _f in table.realize}
-               for lemma in ("aurai", "connais", "mentez", "parait"))
-
-
-def test_a_rare_verb_attested_only_in_the_infinitive_survives():
-    # BOTH conditions are needed. Lexique genuinely attests rare verbs in the infinitive
-    # alone ("booster"), and a real verb can be a form of another through one of the
-    # bogus `lemme` rows ("allier" is filed under "aller") — neither is the mistake.
-    rows = [("aurai", "aurai", "AUX", "", "", "inf;", 0.01),
-            ("aurai", "avoir", "AUX", "", "", "ind:fut:1s;", 48.50),
-            ("booster", "booster", "VER", "", "", "inf;", 1.20),
-            ("allier", "allier", "VER", "", "", "inf;", 3.40),
-            ("allier", "aller", "VER", "", "", "inf;", 0.10),
-            ("allie", "allier", "VER", "", "", "ind:pre:3s;", 2.00)]
-    token_re = gen_phrase.CONFIG["fr"]["token_regex"]
-    assert false_lemmas(rows, token_re) == {"aurai"}
-    built = {(r[0], r[1], r[2]) for r in
-             collect_rows(rows, token_re, set(), false_lemmas(rows, token_re))}
-    assert ("aurai", "inf", "aurai") not in built      # the mistake is gone...
-    assert ("avoir", "ind:fut:1s", "aurai") in built   # ...the true row is not
-    assert ("booster", "inf", "booster") in built
-    assert ("allier", "inf", "allier") in built
-
-
 def test_a_number_invariable_participle_secret_is_asked_about():
     # "conquis" covers m:s and m:p, so « ils sont conquis » must not silently agree its
-    # neighbours to the singular. Two candidates -> the batch run declines and --form
-    # settles it, exactly like any other ambiguous secret.
+    # neighbours to the singular. Several candidates -> the batch run declines and
+    # --form settles it, exactly like any other ambiguous secret.
     resolver = gen_phrase.FormResolver(committed())
-    assert resolver.features_of("conquis") == ("par:pas:m:p", "par:pas:m:s")
+    assert "par:pas:m:p" in resolver.features_of("conquis")
+    assert "par:pas:m:s" in resolver.features_of("conquis")
     assert resolver.feature_for("conquis") is None
     settled = gen_phrase.FormResolver(committed(),
                                       explicit={"conquis": "par:pas:m:p"})
@@ -368,13 +407,83 @@ def test_a_number_invariable_participle_secret_is_asked_about():
     assert settled.realize("amusé", "par:pas:m:p") == "amusés"
 
 
-def test_committed_table_never_confuses_an_infinitive_with_a_finite_form():
-    # The two invariants behind those anchors, over the WHOLE table rather than samples:
-    # a verb's lemma IS its infinitive, and no infinitive is also a finite form.
-    assert [(l, f) for (l, ft), f in committed().realize.items()
-            if ft == "inf" and f != l] == []
-    assert [(l, ft) for (l, ft), f in committed().realize.items()
-            if ft != "inf" and f == l] == []
+# --- whole-table checks required by addendum 3 ------------------------------------
+
+def test_every_feature_in_the_committed_table_is_a_known_cell():
+    # Composite Lefff tags must EXPAND into the internal vocabulary. An unexpanded tag
+    # would show up here as an unknown feature — and would be unreachable from --form.
+    finite = {f"{m}:{p}{n}"
+              for m in ("ind:pre", "ind:fut", "ind:imp", "ind:pas", "cnd:pre",
+                        "imp:pre", "sub:pre", "sub:imp")
+              for p in "123" for n in "sp"}
+    participles = {f"par:pas:{g}:{n}" for g in "mf" for n in "sp"}
+    assert committed().features <= finite | participles | {"par:pre", "inf"}
+
+
+def test_the_committed_table_has_no_duplicate_row():
+    rows = [(lemma, feature, form)
+            for form, pairs in committed().entries.items()
+            for lemma, feature in pairs]
+    assert len(rows) == len(set(rows))
+
+
+def test_every_realization_is_deterministic():
+    # `realize` keeps the FIRST row of a (lemma, feature) pair, so the sort must be
+    # total: same inputs, same preferred spelling, every build.
+    table = committed()
+    by_pair = {}
+    for form, pairs in table.entries.items():
+        for lemma, feature in pairs:
+            by_pair.setdefault((lemma, feature), set()).add(form)
+    for pair, forms in by_pair.items():
+        assert table.realize[pair] in forms
+    assert len(table.realize) == len(by_pair)
+
+
+def test_a_fresh_build_reproduces_the_committed_artifact_exactly():
+    """The committed table must be builder output, not a hand patch.
+
+    Runs the REAL deterministic core over the cached downloads and compares line for
+    line. Skipped — never silently passed — when a source is not cached, since the
+    builders are offline by design and CI has no network."""
+    lefff_archive = os.path.join(build_forms.bw.CACHE_DIR, build_forms.LEFFF_ARCHIVE)
+    lexique = os.path.join(build_forms.bw.CACHE_DIR, "fr.lexique.tsv")
+    if not (os.path.exists(lefff_archive) and os.path.exists(lexique)):
+        pytest.skip("sources not cached (offline builders); run `pnpm forms:fr` first")
+
+    with tarfile.open(lefff_archive, "r:gz") as tar:
+        mlex = tar.extractfile(build_forms.LEFFF_MEMBER).read().decode("utf-8")
+    expected = [build_forms.row_line(l, ft, fo, d)
+                for l, ft, fo, d, _freq in build_forms.build_rows("fr", mlex, lexique)]
+    with gzip.open(forms_path("fr"), "rt", encoding="utf-8") as f:
+        actual = [line.rstrip("\n") for line in f if not line.startswith("#")]
+    assert actual == expected
+
+
+def test_the_committed_artifact_carries_its_provenance_and_licence():
+    # A derived linguistic resource that names no source is not auditable, and the
+    # LGPL-LR asks for the notice to travel with the work — so it travels IN the file,
+    # and the licence text is committed beside it rather than linked.
+    with gzip.open(forms_path("fr"), "rt", encoding="utf-8") as f:
+        header = [line for line in f if line.startswith("#")]
+    blob = "".join(header)
+    assert build_forms.LEFFF_SHA256 in blob
+    assert build_forms.LEFFF_URL in blob
+    assert "LGPL-LR" in blob
+    licence = build_forms.license_path("fr")
+    assert os.path.exists(licence)
+    assert "Lesser General Public License" in open(licence, encoding="utf-8").read()
+
+
+def test_present_2sg_coverage_cannot_collapse_back_to_the_corpus_baseline():
+    # The reason for addendum 3. Lexique attested `ind:pre:2s` for 1,901 lemmas because
+    # a corpus lexicon only holds what it saw; Lefff compiles the paradigm, so the cell
+    # exists ~7,800 times. A regression to the old source would show up here first.
+    lemmas = {l for (l, ft) in committed().realize if ft == "ind:pre:2s"}
+    assert len(lemmas) > 7_000
+    # ...and the cell is not a special case: the ordinary paradigm is just as complete.
+    for feature in ("ind:imp:3s", "sub:pre:1s", "par:pas:f:p", "cnd:pre:2p"):
+        assert len({l for (l, ft) in committed().realize if ft == feature}) > 7_000
 
 
 # --- a form with several verb lemmas is declined, not arbitrated -------------------

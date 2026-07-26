@@ -805,8 +805,9 @@ def alias_start_display(rank_map, start, display, start_rank):
 #
 # The agreement target is the SECRET's own morphology (it IS the correctly inflected
 # form), so nothing has to be guessed from the sentence; the author is asked only when
-# Lexique has no row for the secret or the row is ambiguous. Realizing a neighbour into
-# that form is then a lookup in the committed table (build_forms.py).
+# the forms table has no analysis for the secret or gives it several. Realizing a
+# neighbour into that form is then a lookup in the committed table (build_forms.py,
+# Lefff-derived since #119 addendum 3).
 
 def parse_form_args(pairs):
     """`--form MOT=TRAIT` occurrences -> {slug(mot): trait}.
@@ -885,11 +886,13 @@ class FormResolver:
         """Is it worth asking the author what form this secret is in?
 
         A word the table knows answers for itself. A word it does NOT know is the
-        interesting case, and it splits in two: "accoutumes" is a real 2sg Lexique never
-        attested, while "jardin" is simply a noun. The lemma bridge tells them apart —
-        the first reaches the verb lemma "accoutumer" (through its accent sibling, the
-        same bridge #119 uses), the second reaches only itself. Without that bridge
-        every noun secret would open a meaningless "which verb form?" question."""
+        interesting case, and it splits in two: a real verb form the table happens to
+        miss, and a plain noun like "jardin". The lemma bridge tells them apart — the
+        first reaches a verb lemma (through its slug siblings, the same bridge #119
+        uses), the second reaches only itself. Without that bridge every noun secret
+        would open a meaningless "which verb form?" question. Since addendum 3 the
+        table enumerates whole paradigms rather than corpus sightings, so the miss is
+        rare — but "rare" is not "never", and guessing is still the wrong answer."""
         if self.table is None or donors is None:
             return False
         return any(lemma in self.verb_lemmas for lemma in donors.lemmas_for(word))
@@ -908,11 +911,11 @@ class FormResolver:
         Two refusals, both silent and both deliberate. A form the POS gate does not
         admit is not read as a verb at all. And a form carrying SEVERAL verb lemmas is
         declined outright rather than arbitrated: "durent" is the present of durer AND
-        the past historic of devoir, Lexique is right about both, and the embedding
-        vector means the first — so realizing devoir's paradigm would print "dois" for
-        a word the geometry placed as "durer". Choosing the more frequent paradigm only
-        makes that failure quieter; there is no evidence here to choose WITH. 61 forms
-        of 64,834 lose their agreement this way and simply keep the dictionary form."""
+        the past historic of devoir, the table is right about both, and the embedding
+        vector means the first — so realizing devoir's paradigm would print "dû" for a
+        word the geometry placed as "durer". Choosing the more frequent paradigm only
+        makes that failure quieter; there is no evidence here to choose WITH. The forms
+        that lose their agreement this way simply keep the dictionary form."""
         if self.table is None or word not in self.table.dominant:
             return None
         entries = self.table.entries.get(word, ())
@@ -924,10 +927,11 @@ class FormResolver:
     def _prompt(self, secret, cands):
         """Ask which form the sentence puts this secret in (TTY only).
 
-        Numbered when the secret's own row is merely ambiguous ("compris" is past
-        participle OR 1s/2s past historic) — the same grammar as the donor and
-        start-word questions. Free text when Lexique has no row at all (exactly the
-        #119 case: there is no row to enumerate), with '?' listing the inventory.
+        Numbered when the secret's own analysis is merely ambiguous ("compris" is a
+        masculine past participle, singular or plural, OR 1s/2s past historic) — the
+        same grammar as the donor and start-word questions. Free text when the table
+        has no analysis at all (there is no row to enumerate), with '?' listing the
+        inventory.
         Enter always SKIPS: no agreement is applied unless someone said which one."""
         if cands:
             print(f"\nForme de « {secret} » dans la phrase :")
@@ -961,8 +965,8 @@ class FormResolver:
     def feature_for(self, secret, donors=None):
         """The form this hole's displayed words must agree with, or None for no pass.
 
-        The secret decides it: its own Lexique row IS the answer whenever that row is
-        unambiguous, and it decides EVERYWHERE — a batch run agrees too, which is the
+        The secret decides it: its own analysis IS the answer whenever the table gives
+        it exactly one, and it decides EVERYWHERE — a batch run agrees too, which is the
         whole point of reading the form off the secret rather than asking for it. Only
         an ambiguous or unknown secret needs a human: --form off a TTY, the prompt on
         one, and no agreement at all when neither answers. --no-inflect is what

@@ -49,6 +49,7 @@ packages/
       reduce_embedding.py     raw .vec/.txt -> *_reduced file (the ONLY filter+cap stage) + vocab
       build_wordlist.py       offline builder: sources -> wordlist/<lang>.txt.gz (hors-dico ref, #38)
       build_lemmas.py         offline builder: Lexique/AGID -> wordlist/<lang>.lemmas.tsv.gz (form→lemma, #104)
+      build_forms.py          offline builder: Lefff 3.4 -> wordlist/fr.forms.tsv.gz (verb morphology, #119)
       build_vocab.py          reduced vectors -> web/public/vocab/<lang>.json (escape hatch; no re-reduce)
       slug.py                 stdlib-only: slug() contract + write_vocab (shared by reduce + gen_phrase)
       embedding_neighbors.py  shared load/vocab/matrix/cosine-rank logic
@@ -59,6 +60,8 @@ packages/
     embedding/<lang>/...      raw + *_reduced vectors + derived .kv caches
     wordlist/<lang>.txt.gz    versioned hors-dico reference wordlist (#38); .cache/ gitignored
     wordlist/<lang>.lemmas.tsv.gz  versioned form→lemma table (lemma grouping, #104)
+    wordlist/fr.forms.tsv.gz  versioned lemma+trait→forme table (display agreement, #119); fr only
+    wordlist/fr.forms.LICENSE the LGPL-LR text governing the Lefff data it derives from
     output/word/<lang>/<s1>_<s2>_<s3>.json   generated puzzles (gitignored; publish to store/S3)
     pyproject.toml, uv.lock   Python project (uv)
   benchmark/                  offline LLM puzzle benchmark (pkg @whippin/benchmark, #68)
@@ -279,6 +282,49 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   (built closest-first) and display its `word`. Resolved **silently** — generation
   prints no collision output.
 
+### Display agreement: one source per responsibility (#119 addendum 3, decided 2026-07-26)
+
+The words a hole can display are re-inflected to agree with the sentence. The data
+behind that has **three sources and one responsibility each** — this split is decided,
+not provisional:
+
+- **Lefff 3.4 is THE authority for verb morphology** — surface form, verb lemma, mode,
+  tense, person, number, participle gender. `build_forms.py` (`pnpm forms:fr`) reads
+  the **pinned** morphology-only `.mlex` release (exact URL + sha256, verified before
+  the archive is opened) into `wordlist/fr.forms.tsv.gz`. Its composite tags are
+  **expanded** into the internal feature vocabulary — `PS13s` is four cells, `Km` is a
+  masculine participle in both numbers — and never become opaque features. Lefff
+  compiles paradigms through inflection classes, so a cell exists because the paradigm
+  has it. **fr only.**
+- **Lexique383 is POS-frequency evidence ONLY** for this table. It decides whether a
+  homographic surface may be *read* as a verb, and which of two spellings is preferred;
+  it no longer describes a single conjugation. It stays the source of the #38 wordlist
+  and the #104 lemma table, which is a different question.
+- **The reduced vocabulary is the sole typability authority** — a rewritten display
+  form is usable only when its slug is in the existence set.
+
+Consequences that are load-bearing:
+
+- **The POS gate has two cases.** With Lexique frequency for the surface, the verbal
+  category (VER **and** AUX — an auxiliary is a verb) must beat every rival, so
+  `évident` is never read as a verb. Without frequency, admit only when Lefff gives
+  verb analyses and **no** competing non-verbal one, so `accoutumes` is admitted and a
+  cross-POS homograph is declined rather than guessed. A gated form stays a legal
+  **target**: `pensée` still realizes `penser/par:pas:f:s`.
+- **Ambiguity is described, never arbitrated.** Lefff states the cells a spelling
+  genuinely shares, so more secrets are ambiguous than under a corpus tagger (`épuises`
+  is `ind:pre:2s` *and* `sub:pre:2s`). Those ask on a TTY or need `--form`; nothing is
+  guessed.
+- **#104's lemma grouping is NOT affected.** `wordlist/fr.lemmas.tsv.gz` keeps its own
+  source and content: feeding Lefff's inventory into `merge_ranking` would regroup
+  neighbours and change puzzle geometry even under `--no-inflect`. Replacing the
+  general lemma-grouping dataset is a separate decision.
+- **Licensing travels with the artifact.** The Inria page labels Lefff CeCILL-L while
+  the downloaded 3.4 `.mlex` archive ships its own **LGPL-LR** `LICENSE`; the notice
+  accompanying the exact distribution governs it, so the derived table carries a `#`
+  provenance header (release, URL, digest, licence) and the verbatim text is committed
+  as `wordlist/fr.forms.LICENSE`. Don't distribute the table without them.
+
 ### Generation outputs
 
 - **Two outputs, two homes (by purpose):**
@@ -460,6 +506,12 @@ pnpm wordlist:en      # SCOWL   ∪ Hunspell en  -> wordlist/en.txt.gz
 #    wordlist/<lang>.lemmas.tsv.gz is already versioned — only rerun to refresh sources.
 pnpm lemmas:fr        # Lexique ortho→lemme -> wordlist/fr.lemmas.tsv.gz
 pnpm lemmas:en        # AGID infl.txt (inverted) -> wordlist/en.lemmas.tsv.gz
+
+# 0ter. (Re)build the verb lemma+trait→forme table, fr ONLY (offline, #119 addendum 3).
+#    The committed wordlist/fr.forms.tsv.gz is already versioned — only rerun to refresh
+#    sources. Morphology comes from the PINNED Lefff 3.4 .mlex release (digest-verified);
+#    Lexique is consulted for surface frequency only. Also writes wordlist/fr.forms.LICENSE.
+pnpm forms:fr         # Lefff 3.4 -> wordlist/fr.forms.tsv.gz (+ .LICENSE)
 
 # 1. Reduce ONCE per language (slow, offline). Build the *_reduced source of truth AND,
 #    in the same pass, web/public/vocab/<lang>.json (the front's existence set — commit it).
@@ -699,6 +751,15 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   `gen_phrase` reads them at startup (hard error when missing; `--no-lemmas` opts out
   and reproduces pre-#104 output). Alias expansion roughly triples a fr puzzle's rank
   keys (~332 KB → ~762 KB gzipped for a real puzzle).
+- **Verb forms table (#119, Lefff-sourced since addendum 3):**
+  `generation/wordlist/fr.forms.tsv.gz` is committed — 397k rows / 301k surfaces /
+  7,819 verb lemmas / 51 cells (~1.9 MB gzipped, ~0.5 s to load), beside
+  `fr.forms.LICENSE`. Built by `build_forms.py` (`pnpm forms:fr`; downloads cache in
+  `wordlist/.cache/`, sha256-pinned). `gen_phrase` reads it at startup for fr (hard
+  error when missing or malformed; `--no-inflect` opts out and reproduces
+  pre-addendum output). Coverage against the reduced vocab is what the source swap
+  bought: 1,901 → **7,777** lemmas with an `ind:pre:2s` cell, 76k → **397k** realizable
+  `(lemma, feature)` cells. No `en` table — a decided non-goal, not a missing file.
 - **Hors-dico wordlists (#38):** `generation/wordlist/{fr,en}.txt.gz` are committed —
   `fr` = Lexique ∪ Hunspell fr (~169k forms), `en` = SCOWL(≤60,US) ∪ Hunspell en_US
   (~91k). Built by `build_wordlist.py`; source downloads cache in `wordlist/.cache/`
