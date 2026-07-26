@@ -1,4 +1,4 @@
-import { gzipSync } from 'node:zlib';
+import { brotliCompressSync, constants, gzipSync } from 'node:zlib';
 
 // Lambda's BUFFERED response cap. The runtime posts the whole {statusCode, headers, body}
 // envelope back as JSON and refuses anything larger with a 413 ("Exceeded maximum allowed
@@ -19,6 +19,13 @@ const MIN_COMPRESS_BYTES = 1_024;
 // spends 290 ms to save another 12 KB, level 1 saves 54 ms and costs 208 KB — neither trade
 // is worth it against a request that already spends >1 s fetching and parsing from S3.
 const GZIP_LEVEL = 6;
+
+// Brotli is offered FIRST because on this payload it beats gzip in both dimensions at once:
+// 706 KB in 57 ms against gzip level 6's 837 KB in 75 ms. It is also what CloudFront picks
+// for any viewer advertising it, so a gzip-only origin would hand today's browsers MORE
+// bytes than they get from the CDN's own compression — a regression disguised as a fix.
+// Quality 5 is the knee: q9 saves a further 78 KB but costs 150 ms.
+const BROTLI_QUALITY = 5;
 
 // Minimal shape of an AWS Lambda Function URL request/response (API Gateway HTTP API
 // payload v2.0). Only the fields the handler reads/writes are modelled, so the handler
@@ -83,19 +90,43 @@ function withVary(existing: string | undefined, field: string): string {
   return [...fields, field].join(', ');
 }
 
-// Does the client accept gzip? Parses the q-value so an explicit `gzip;q=0` (a refusal) is
-// honoured rather than read as mere presence of the token.
-export function acceptsGzip(header: string | undefined): boolean {
-  if (!header) return false;
+export type ContentEncoding = 'br' | 'gzip';
+
+// Pick the best encoding the client actually accepts, or null for none.
+//
+// Both codings must be handled, not just gzip: CloudFront normalizes Accept-Encoding down to
+// the br/gzip values the viewer offered before forwarding it here, so a br-capable viewer can
+// arrive as `br` alone — and a gzip-only origin would then have to answer that request
+// uncompressed, which for a puzzle means no answer at all.
+//
+// q-values are parsed so an explicit `gzip;q=0` reads as the refusal it is rather than as
+// mere presence of the token.
+export function negotiateEncoding(header: string | undefined): ContentEncoding | null {
+  if (!header) return null;
+  const offered = new Set<string>();
   for (const part of header.split(',')) {
     const [rawToken, ...params] = part.split(';');
     const token = rawToken.trim().toLowerCase();
-    if (token !== 'gzip' && token !== '*') continue;
+    if (token !== 'br' && token !== 'gzip' && token !== '*') continue;
     const q = params.map((p) => p.trim().toLowerCase()).find((p) => p.startsWith('q='));
     if (q && Number(q.slice(2)) === 0) continue;
-    return true;
+    offered.add(token);
   }
-  return false;
+  if (offered.has('br') || offered.has('*')) return 'br';
+  if (offered.has('gzip')) return 'gzip';
+  return null;
+}
+
+function compress(payload: string, encoding: ContentEncoding): Buffer {
+  if (encoding === 'gzip') return gzipSync(payload, { level: GZIP_LEVEL });
+  return brotliCompressSync(payload, {
+    params: {
+      [constants.BROTLI_PARAM_QUALITY]: BROTLI_QUALITY,
+      // Brotli picks its window from the declared size; without the hint it assumes small
+      // input and gives up compression it could have had on a multi-megabyte body.
+      [constants.BROTLI_PARAM_SIZE_HINT]: Buffer.byteLength(payload),
+    },
+  });
 }
 
 // The serialized size of what the Lambda runtime will actually post back, so a payload can
@@ -104,13 +135,19 @@ export function envelopeBytes(result: FnUrlResult): number {
   return Buffer.byteLength(JSON.stringify(result));
 }
 
-// JSON that is gzipped when the client accepts it. The puzzle payload is megabytes of rank
-// maps (#104's alias expansion roughly tripled them), so this is what keeps it under the
-// runtime's envelope cap — and it cuts the bytes on the wire ~7x for every player besides.
+// JSON compressed with the best encoding the client accepts. The puzzle payload is megabytes
+// of rank maps (#104's alias expansion roughly tripled them), and this is what keeps it under
+// the runtime's envelope cap.
 //
-// CloudFront's cache policy sets enableAcceptEncodingGzip, so it normalizes Accept-Encoding
-// into the cache key AND forwards it here; the compressed and plain variants therefore cache
-// separately upstream, and `Vary: Accept-Encoding` keeps every cache below it honest too.
+// CloudFront already compresses these responses for viewers, so this is NOT a bandwidth win
+// for players — it moves the compression to the only place that can lift the origin's own
+// ceiling. It does remove a real future cliff though: CloudFront declines to compress any
+// object above 10 MB, so a puzzle that grew past that would have been served to phones raw.
+//
+// The cache policy sets enableAcceptEncodingGzip/Brotli, which per AWS "includes the
+// Accept-Encoding header in the cache key and in origin requests automatically" — so the
+// header does reach this handler, variants cache separately upstream, and CloudFront passes
+// an already-encoded response straight through without recompressing it.
 export function jsonCompressed(
   statusCode: number,
   body: unknown,
@@ -127,13 +164,14 @@ export function jsonCompressed(
   // client whose gzip variant differs (and vice versa).
   const merged = { ...base, Vary: withVary(base.Vary, 'Accept-Encoding') };
 
-  if (!acceptsGzip(acceptEncoding) || Buffer.byteLength(payload) < MIN_COMPRESS_BYTES) {
+  const encoding = negotiateEncoding(acceptEncoding);
+  if (encoding === null || Buffer.byteLength(payload) < MIN_COMPRESS_BYTES) {
     return { statusCode, headers: merged, body: payload };
   }
   return {
     statusCode,
-    headers: { ...merged, 'Content-Encoding': 'gzip' },
-    body: gzipSync(payload, { level: GZIP_LEVEL }).toString('base64'),
+    headers: { ...merged, 'Content-Encoding': encoding },
+    body: compress(payload, encoding).toString('base64'),
     isBase64Encoded: true,
   };
 }

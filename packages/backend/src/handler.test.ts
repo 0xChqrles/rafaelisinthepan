@@ -2,7 +2,7 @@
 // requested lang, returns it in the front's `Puzzle` shape, answers a missing puzzle
 // with a clean JSON 404 (never a 500), sends CORS headers, and exposes day metadata.
 
-import { gunzipSync } from 'node:zlib';
+import { brotliDecompressSync, gunzipSync } from 'node:zlib';
 import { describe, it, expect, vi } from 'vitest';
 import { type Puzzle, encodeResult } from '@whippin/shared';
 import { createHandler, type HandlerDeps } from './handler';
@@ -204,23 +204,41 @@ describe('puzzle endpoint — date-addressed (GET /?lang=&date=)', () => {
 // envelope over LAMBDA_MAX_RESPONSE_BYTES with a 413 the caller only ever sees as a 502.
 // Compression is what keeps a real puzzle answerable; these pin the negotiation.
 describe('puzzle response compression — staying under the runtime envelope cap', () => {
-  it('serves an oversized puzzle as gzip when the client accepts it', async () => {
+  it('prefers brotli when the client offers it — CloudFront would, so gzip-only would regress', async () => {
     const res = await oversizedHandler()(
       event({ query: PUZZLE_QUERY, headers: { 'accept-encoding': 'br, gzip, deflate' } }),
     );
     expect(res.statusCode).toBe(200);
-    expect(res.headers['Content-Encoding']).toBe('gzip');
+    expect(res.headers['Content-Encoding']).toBe('br');
     expect(res.isBase64Encoded).toBe(true);
     // The point of the exercise: what the runtime will post back now fits.
     expect(envelopeBytes(res)).toBeLessThan(LAMBDA_MAX_RESPONSE_BYTES);
+    expect(JSON.parse(brotliDecompressSync(Buffer.from(res.body, 'base64')).toString('utf8'))).toEqual(
+      oversizedPuzzle(),
+    );
   });
 
-  it('the compressed body decodes back to the exact puzzle', async () => {
+  it('serves gzip — and the body decodes back to the exact puzzle', async () => {
     const res = await oversizedHandler()(
       event({ query: PUZZLE_QUERY, headers: { 'accept-encoding': 'gzip' } }),
     );
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['Content-Encoding']).toBe('gzip');
+    expect(envelopeBytes(res)).toBeLessThan(LAMBDA_MAX_RESPONSE_BYTES);
     const decoded = JSON.parse(gunzipSync(Buffer.from(res.body, 'base64')).toString('utf8'));
     expect(decoded).toEqual(oversizedPuzzle());
+  });
+
+  it('serves a br-only client, which CloudFront can produce by normalizing the header', async () => {
+    // CloudFront strips everything but the br/gzip the viewer offered, so `br` can arrive
+    // alone. A gzip-only origin would answer this request uncompressed — which for a puzzle
+    // is not an answer at all.
+    const res = await oversizedHandler()(
+      event({ query: PUZZLE_QUERY, headers: { 'accept-encoding': 'br' } }),
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['Content-Encoding']).toBe('br');
+    expect(envelopeBytes(res)).toBeLessThan(LAMBDA_MAX_RESPONSE_BYTES);
   });
 
   it('an oversized puzzle a client cannot accept gzipped is a NAMED 500, not a silent 502', async () => {
@@ -241,12 +259,20 @@ describe('puzzle response compression — staying under the runtime envelope cap
     expect(vary).toContain('Origin');
   });
 
-  it('honours an explicit gzip;q=0 refusal', async () => {
+  it('honours explicit q=0 refusals rather than reading the token as consent', async () => {
     const res = await oversizedHandler()(
-      event({ query: PUZZLE_QUERY, headers: { 'accept-encoding': 'gzip;q=0, identity' } }),
+      event({ query: PUZZLE_QUERY, headers: { 'accept-encoding': 'br;q=0, gzip;q=0, identity' } }),
     );
     expect(res.headers['Content-Encoding']).toBeUndefined();
     expect(res.statusCode).toBe(500); // too big to send uncompressed — named, not a 502
+  });
+
+  it('falls back to gzip when brotli alone is refused', async () => {
+    const res = await oversizedHandler()(
+      event({ query: PUZZLE_QUERY, headers: { 'accept-encoding': 'br;q=0, gzip' } }),
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['Content-Encoding']).toBe('gzip');
   });
 
   it('leaves a sub-kilobyte puzzle uncompressed even when gzip is offered', async () => {
