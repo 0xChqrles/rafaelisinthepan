@@ -31,8 +31,10 @@ export interface RankEntry {
   // Quantized distance to the secret, per hole: 255 at rank 1, 0 at the farthest kept
   // group. Absent on the secret's own entry (rank 0) — the terminus is off-scale.
   dq?: number;
-  // Which cluster of the near neighborhood the group sits in (0 = the road holding
-  // rank 1). Top-150 groups only; beyond them the far field is one trunk.
+  // Which cluster of the neighborhood the group sits in (0 = the road holding rank 1).
+  // Only the groups from the hole's START WORD in to the secret carry one — the stretch
+  // the player travels, that word included, since they are put down ON a road. Behind
+  // the departure, and out in the far field, the line is one trunk.
   road?: number;
 }
 

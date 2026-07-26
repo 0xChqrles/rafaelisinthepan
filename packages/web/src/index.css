@@ -956,6 +956,41 @@ button * {
   white-space: nowrap;
   color: var(--hole);
 }
+/* Since #117 a hole is a BUTTON: tapping it opens its neighborhood's route map. It wraps
+   the word + exponent without restructuring them (the floating-hit/scramble choreography
+   keys off that structure) and stays typographically invisible — the sentence reads
+   exactly as before, so the gold word is still the only thing on screen. */
+.hole-btn {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+/* The global `button *` flattening would otherwise strip the phrase's drop shadow from
+   the holes alone, leaving them lighter than every word around them. */
+.phrase .hole-btn,
+.phrase .hole-btn * {
+  text-shadow: 2px 2px 0 black;
+}
+.hole-btn[disabled] {
+  cursor: default;
+}
+/* The app's one interaction language: brighten on hover/press. */
+.hole-btn:not([disabled]):hover .hole-word,
+.hole-btn:not([disabled]):hover .hole-rank,
+.hole-btn:not([disabled]):active .hole-word,
+.hole-btn:not([disabled]):active .hole-rank {
+  filter: brightness(1.35);
+}
+.hole-btn:focus-visible {
+  outline: 3px solid var(--accent-dim);
+  outline-offset: 3px;
+}
 /* Sized to the word only (exponent is a sibling outside it): the floating hit
    centers on this box, so it lands over the word, not the word+exponent. */
 .hole-word-wrap {
@@ -1459,10 +1494,9 @@ button * {
   width: min(520px, 100%);
   margin: auto;
 }
-.lb-dialog-close {
-  position: fixed;
-  top: 14px;
-  right: 14px;
+/* A full-screen dialog's dismiss control: same 44px muted target everywhere; each dialog
+   places it (the leaderboard floats it in the corner, the route map seats it in its bar). */
+.dialog-close {
   display: grid;
   place-items: center;
   width: 44px;
@@ -1473,8 +1507,490 @@ button * {
   color: var(--muted);
   cursor: pointer;
 }
-.lb-dialog-close:hover {
+.dialog-close:hover {
   color: var(--fg);
+}
+.lb-dialog-close {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+}
+
+/* ===================== route map (issue #117) ===================== */
+/* A hole's neighborhood drawn as a LINE you travel, DOWN the page: the cold end at the top
+   (past a break, the guesses that earned no rank at all), every station reached, farthest
+   first, and the word itself at the bottom. It opens scrolled to that bottom — the end of the
+   line is where "how close am I / what is left" lives.
+
+   Redesigned 2026-07-26: the first version mapped `dq` onto absolute positions over ~4 viewport
+   heights, which put the real shape of dq — a steep near field and a very long cold tail — on
+   screen as screens of emptiness. The distance now lives in the LENGTH OF THE CONNECTOR between
+   two stations: the same information (dq differences are all dq means), floored so neighbours
+   never collide and capped so the tail cannot push the destination off screen.
+
+   Three columns, identical on every row so the rail reads as one line: the rank in a
+   right-aligned gutter (the "time"), the rail, then the word. The rail is as wide as the
+   neighborhood has ROADS (#115) — one lane each, painted by `--lane-lines`, which RouteModal
+   builds because the lane centres and the node positions have to agree exactly. Full-screen
+   native dialog on the SOLID app background like the leaderboard, and NO motion of its own. */
+.route-dialog[open] {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: var(--bg);
+  color: var(--fg);
+  /* Header row above, scroller below — the header is IN FLOW, which is the whole reason it can
+     obey the app's no-band/no-border/no-background header policy: nothing ever passes under it,
+     so it needs nothing painted behind it. */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* The line itself: trunk, junction bus, the leap's and the tail's dashes, the torn break.
+     Deliberately the ONE unsaturated line on the map — the trunk is the stretch where no road
+     has been identified, so it reads as the far field the lanes fork out of. */
+  --rail: #48528a;
+  /* A station whose word you have NOT found, and the `???` it wears: dimmer than the line, so
+     it recedes behind the words that ARE on the map. */
+  --unfound: #3a4270;
+  /* One Press Start cell is exactly 1em, so an exponent's width is its length times this — which
+     is why RouteModal can set `--gutter` to fit the widest rank the line actually shows (a fixed
+     one sized for the theoretical "-9970" left a dead column on most rounds). This is the
+     fallback; the media query below is what makes it responsive without the component knowing. */
+  --rank-size: 10px;
+  --gutter: calc(var(--rank-size) * 5 + 10px);
+  /* Every line on the map — trunk, lane, junction, leap, tail — is this thick. Kept in one
+     place because RouteModal's `--lane-lines` gradient paints the lanes at the same width, and
+     the two must not drift. */
+  --line-w: 5px;
+  /* Set per-modal by RouteModal from the road count; these are the one-lane fallbacks. */
+  --railw: 31px;
+  --trunk-x: 15.5px;
+  /* The word column's width, so RouteModal can size a long word to FIT it (see fitWord). The
+     other two columns and the scroller's own padding are all known here, which is the only
+     reason that arithmetic is possible without measuring anything. The 18px is the one thing it
+     canNOT know: a classic (non-overlay) scrollbar takes ~15-17px off `.route-scroll`'s client
+     width and `100vw` cannot see it, so without the allowance a long word gets sized to a column
+     that turns out narrower and breaks mid-word — the one outcome fitWord exists to prevent.
+     Platforms with overlay scrollbars just get slightly smaller long words. */
+  --wordw: calc(min(430px, 100vw - 40px) - var(--gutter) - var(--railw) - 18px);
+  /* The height of a station's FIRST line — the one the rank, the node and the word share — so
+     the node sits exactly on the word's midline while the rail still runs the full height of a
+     station that also carries a tag underneath. */
+  --head: 26px;
+}
+.route-dialog::backdrop {
+  background: transparent;
+}
+/* The header. NOT a modal chrome of its own: it reuses the app's own corner-chip row wholesale
+   (`.topbar-inner` / `.topbar-left` / `.topbar-title` / `.topbar-right` / `.home-btn`, see
+   TopBar and the Archive screen), so it can never drift from it — no band, no border, no
+   background, the screen name top-left and one control top-right, directly on the backdrop.
+   All this rule adds is `--hud-height` (declared on `.topbar` and `.hud`, which this row is
+   not inside) and keeping it out of the scroller's flex growth. */
+.route-bar {
+  --hud-height: clamp(38px, 5vh, 46px);
+  flex: none;
+}
+.route-close {
+  color: var(--muted);
+}
+.route-close:hover,
+.route-close:focus-visible {
+  color: var(--fg);
+}
+
+/* --- the line --- */
+.route-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Horizontal padding ONLY: a sticky offset resolves against the scrollport's PADDING box, so
+     any vertical padding here would park the "you are here" row that far inside the real edge.
+     The line's own breathing room lives on `.route` instead, where it is just content. */
+  padding: 0 20px;
+}
+/* ONE grid for the whole line, every row a `subgrid` of it — which is what lets the rank gutter be
+   a true `max-content` FIT: the track is sized by the widest exponent actually rendered, measured
+   by the browser across every row at once. Per-row grids cannot do this (each would fit its own
+   rank and the rail would zigzag), and `--gutter` computes the same number but only under the
+   assumption that the pixel font is the one that loaded. It is still declared — as the fallback
+   template below for anything without subgrid, and because `--wordw` and the parked row's
+   backgrounds need the width as a NUMBER, which a measured track cannot hand them. */
+.route {
+  width: min(430px, 100%);
+  margin: 0 auto;
+  /* The tail below the terminus is generous on purpose: the end of the line should not sit on the
+     screen edge when the map is scrolled all the way down. */
+  padding: 4px 0 104px;
+  display: grid;
+  grid-template-columns: max-content var(--railw) 1fr;
+}
+.route-station,
+.route-link,
+.route-shelf {
+  grid-column: 1 / -1;
+}
+.route-station,
+.route-link {
+  display: grid;
+  /* Fallback first: without subgrid the row falls back to the computed gutter rather than
+     collapsing to a single column. */
+  grid-template-columns: var(--gutter) var(--railw) 1fr;
+  grid-template-columns: subgrid;
+}
+/* A connector: pure distance, no content. Its height comes from the model (LINK_SPAN px per
+   full dq scale) and its line is inset to land under the trunk. */
+.route-link::before {
+  content: '';
+  grid-column: 2;
+  justify-self: start;
+  width: var(--line-w);
+  height: 100%;
+  margin-left: calc(var(--trunk-x) - var(--line-w) / 2);
+  background: var(--rail);
+}
+/* Between two stations inside the fork, every lane runs on. */
+.route-link.lanes::before {
+  width: 100%;
+  margin-left: 0;
+  background: var(--lane-lines);
+}
+/* The identity leap (the closest measurable group to the word itself), and the cold end above
+   the first station: neither is a distance, so neither is a solid line. The unit comes from
+   RouteModal (`--dash` / `--dash-period`), which cuts both heights to a whole number of it —
+   a run that ends mid-unit leaves a stub of gap right where the trace meets the solid rail. */
+.route-link.leap::before,
+.route-link.tail::before {
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--rail) 0 var(--dash, 5px),
+    transparent var(--dash, 5px) var(--dash-period, 13px)
+  );
+}
+
+/* --- one station --- */
+/* Every cell names its column: an item with a definite ROW span but an auto column is placed
+   before the fully-auto ones, so leaving the rail/body implicit would shuffle the order. */
+.route-rank {
+  grid-column: 1;
+  height: var(--head);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 10px;
+  font-family: var(--press);
+  /* The rank IS the "time" column: one face, one size, right-aligned, so the numbers stack
+     into a ladder you can read down. In the heat the SAME number wore when it floated over
+     the hole. */
+  font-size: var(--rank-size);
+  line-height: 1;
+  color: var(--rank-color);
+  text-shadow: none;
+  white-space: nowrap;
+}
+/* The rail spans the WHOLE station (a tagged one is two lines tall) so the line never breaks;
+   the node is placed on the first line's midline, on its own lane. */
+.route-rail {
+  position: relative;
+  grid-column: 2;
+  grid-row: 1 / -1;
+}
+.route-rail::before {
+  content: '';
+  position: absolute;
+  left: var(--trunk-x);
+  transform: translateX(-50%);
+  width: var(--line-w);
+  top: var(--line-top, 0);
+  bottom: var(--line-bottom, 0);
+  background: var(--rail);
+}
+.route-rail.lanes::before {
+  left: 0;
+  transform: none;
+  width: 100%;
+  background: var(--lane-lines);
+}
+/* Every node is a FILLED square — no outline-only stops. What a stop IS comes from its size and
+   its fill: a word you found (bright), the one you were handed (muted), where you are now (gold,
+   biggest), one you have not found (its own lane's colour, small, so it swells the line instead
+   of punching a hole in it). */
+.route-node {
+  position: absolute;
+  left: var(--node-x, var(--trunk-x));
+  top: calc(var(--head) / 2);
+  width: 15px;
+  height: 15px;
+  transform: translate(-50%, -50%);
+  background: var(--fg);
+}
+.route-body {
+  grid-column: 3;
+  grid-row: 1 / -1;
+  min-width: 0;
+}
+.route-word {
+  display: flex;
+  align-items: center;
+  min-height: var(--head);
+  font-family: var(--vt);
+  /* RouteModal sets the real size inline (fitWord): a word too long for `--wordw` shrinks to
+     fit instead of breaking mid-word. This is only the fallback if that never arrives. */
+  font-size: 15px;
+  line-height: 1.3;
+  color: var(--fg);
+  /* Past fitWord's floor, breaking is still better than overflowing the dialog. */
+  overflow-wrap: anywhere;
+}
+/* A station inside the fork says its road in its own TYPE: the word is painted in its lane's
+   colour, so the road reads off the line AND off the text with nothing added. Above the fork
+   there is no road to name, so those words stay `--fg`. */
+.route-station.on-lane .route-word {
+  color: var(--lane-c);
+}
+
+/* --- the fork, and the merge into the word --- */
+/* Orthogonal only: a trunk stub, a bus across the lanes, then the lanes themselves. Reusing
+   .route-station gives it the same three columns, so the shape lands under the rail for free. */
+.route-junction .route-rail::before {
+  display: none;
+}
+.jx-trunk {
+  position: absolute;
+  left: var(--trunk-x);
+  transform: translateX(-50%);
+  width: var(--line-w);
+  top: 0;
+  height: 14px;
+  background: var(--rail);
+}
+.jx-bus {
+  position: absolute;
+  left: var(--bus-x);
+  width: var(--bus-w);
+  top: 14px;
+  height: var(--line-w);
+  background: var(--bus-grad, var(--rail));
+}
+.jx-lanes {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(14px + var(--line-w));
+  bottom: 0;
+  background: var(--lane-lines);
+}
+.route-junction.converge .jx-trunk {
+  top: auto;
+  bottom: 0;
+}
+.route-junction.converge .jx-bus {
+  top: auto;
+  bottom: 14px;
+}
+.route-junction.converge .jx-lanes {
+  top: 0;
+  bottom: calc(14px + var(--line-w));
+}
+
+/* --- the end of the line --- */
+.route-arrival {
+  --head: 40px;
+}
+/* Nothing below the terminus: its rail stops AT the node. */
+.route-arrival .route-rail {
+  --line-bottom: calc(100% - var(--head) / 2);
+}
+.route-arrival .route-node {
+  width: 23px;
+  height: 23px;
+  background: var(--rail);
+}
+.route-arrival .route-word {
+  color: var(--muted);
+}
+/* Found: the accented secret in the solved-word blue, and the terminus lights up with it —
+   the same line then reads as the post-mortem of the route taken. */
+.route-found .route-word {
+  color: var(--accent);
+}
+.route-found .route-node {
+  background: var(--accent);
+}
+
+/* --- station states --- */
+/* The departure: the start word the puzzle handed out, a ranked group like any other. Its node
+   is muted and its word slightly dimmed — the map's quietest station, because it is the one you
+   were GIVEN rather than the one you got to. */
+.route-departure .route-node {
+  background: var(--muted);
+}
+.route-departure .route-word {
+  opacity: 0.62;
+}
+/* "You are here": the hole's current stop, in the gold it wears in the sentence, and the biggest
+   node on the map.
+   It NEVER leaves the screen. The line can run several screens, and the one thing you always
+   need while reading any part of it is where you stand — so the row is sticky on BOTH edges
+   (`top` and `bottom` both 0): scroll down past it and it parks at the top, scroll back up above
+   it and it parks at the bottom, always at the edge it left by. Its containing block is `.route`,
+   i.e. the whole line, so it can travel the entire map.
+   The opaque `--bg` is what makes it legible over the rows it floats above — and it costs nothing
+   visually, because the station draws its OWN cross-section of the rail (`.route-rail::before`
+   paints every lane across its height), so the line still runs unbroken straight through it. */
+.route-you {
+  position: sticky;
+  top: var(--stick-inset, 8px);
+  bottom: var(--stick-inset, 8px);
+  z-index: 2;
+  background: var(--bg);
+}
+/* The row parks a few pixels SHORT of the edge — flush against it reads as clipped rather than
+   pinned — and this strip fills that margin on the edge side: the app background (so no sliver of
+   the rows sliding past shows through above/below it) carrying the lanes SOLID, so the line still
+   runs all the way out to the edge instead of stopping short of it. The far side is the gap, and
+   it gets the dashes; see below. */
+.route-you.stuck-top::before,
+.route-you.stuck-bottom::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: var(--stick-inset, 8px);
+  background-color: var(--bg);
+  background-image: var(--lane-lines);
+  background-repeat: no-repeat;
+  background-position: var(--gutter) 0;
+  background-size: var(--railw) 100%;
+}
+.route-you.stuck-top::before {
+  bottom: 100%;
+}
+.route-you.stuck-bottom::after {
+  top: 100%;
+}
+/* Parked, i.e. NOT where it belongs: the row is drawn hard against one it is nowhere near on the
+   line, with an unseen stretch of the neighborhood squeezed out between them. So the side facing
+   that skipped ground gets a torn separator — the same dashes the off-map break wears, since both
+   mean "the map does not continue straight through here". Down from a row parked at the top, up
+   from one parked at the bottom, and nothing at all when the row is simply where it lives (which
+   includes the view the map opens in).
+   The row is framed by ONE margin, `--stick-inset`, used on both of its sides: the same distance
+   holds it off the screen edge and off this separator, so a parked row sits centred in its own
+   clearance instead of leaning toward one side. Beyond the separator the same margin again is what
+   masks the rows really passing behind.
+   The margin on the ROW's side still carries the lanes, so the roads run out of the station and
+   into the separator rather than stopping short of it — cut short they read as a second `--bg`
+   margin and the separator looks framed on both sides instead of ending the line. The dashes' gaps
+   are `--bg`, not transparent: over scrolling content, transparent gaps would show 3px slivers of
+   whatever is underneath. */
+.route-you.stuck-top::after,
+.route-you.stuck-bottom::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: calc(var(--stick-inset, 8px) * 2 + 3px);
+  background-color: var(--bg);
+  background-image:
+    repeating-linear-gradient(90deg, var(--rail) 0 9px, var(--bg) 9px 18px),
+    var(--lane-lines);
+  background-repeat: no-repeat, no-repeat;
+  background-size:
+    100% 3px,
+    var(--railw) var(--stick-inset, 8px);
+}
+/* Below the row: the lanes run on from it, then the separator, then the masking margin. */
+.route-you.stuck-top::after {
+  top: 100%;
+  background-position:
+    0 var(--stick-inset, 8px),
+    var(--gutter) 0;
+}
+/* Above the row, mirrored: the masking margin, the separator, then the lanes running into it. */
+.route-you.stuck-bottom::before {
+  bottom: 100%;
+  background-position:
+    0 calc(100% - var(--stick-inset, 8px)),
+    var(--gutter) 100%;
+}
+.route-you .route-node {
+  width: 21px;
+  height: 21px;
+  background: var(--hole);
+}
+/* Both at once (nothing guessed yet): where you are IS where you were put, so gold wins and the
+   word stops being dimmed. */
+.route-you.route-departure .route-word {
+  opacity: 1;
+}
+/* A station of the censored final approach: a real position with its word withheld. Quiet by
+   design — it must read as "not found yet", never as one of the words that ARE on the line. The
+   node is drawn in its OWN LANE's color (`--lane-c`, set per station by RouteModal), so it
+   swells the line rather than punching a hole in it. */
+.route-unknown .route-node {
+  width: 11px;
+  height: 11px;
+  background: var(--lane-c, var(--unfound));
+}
+.route-station.route-unknown .route-word {
+  color: var(--unfound);
+}
+/* Solved: every censored station gives up its word, and the map becomes the post-mortem of the
+   whole neighborhood. The word keeps its ROAD's colour — the road is the point of showing it — but
+   dimmed, and the node stays small, so what you FOUND still reads apart from what was simply
+   there. (A `--no-roads` map has no lane colour to keep, so those stay `--unfound` above.) */
+.route-station.route-revealed.on-lane .route-word {
+  color: var(--lane-c);
+  opacity: 0.55;
+}
+
+/* --- off the map --- */
+/* ABOVE the line, behind a torn edge: the guesses that earned no rank at all. Beyond the
+   top-K there is no distance left to draw, and that IS the mechanic. */
+.route-shelf-head {
+  margin: 0 0 12px;
+  font-family: var(--press);
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--muted);
+  text-align: center;
+  text-shadow: none;
+}
+.route-misses {
+  margin: 0 0 26px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px 16px;
+  font-family: var(--vt);
+  font-size: 14px;
+  color: var(--muted);
+  opacity: 0.5;
+}
+
+/* A very narrow phone with three or four wide roads leaves the word column genuinely short, so
+   the rank ladder gives some of its width back rather than letting fitWord bottom out on its
+   floor and break a long word in half. One cell smaller is enough — and because the gutter is
+   `--rank-size` times the widest exponent, it follows on its own. */
+@media (max-width: 360px) {
+  .route-dialog[open] {
+    --rank-size: 9px;
+  }
+}
+.route-break {
+  display: block;
+  height: 3px;
+  background: repeating-linear-gradient(90deg, var(--rail) 0 9px, transparent 9px 18px);
 }
 
 /* Result action: the same flat key language as the keyboard it replaces. */

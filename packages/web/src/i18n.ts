@@ -40,6 +40,15 @@ const STRINGS = {
   // Solved tray → the full leaderboard dialog (decided 2026-07-25).
   seeMore: { en: 'SEE MORE', fr: 'VOIR PLUS' },
   ariaClose: { en: 'close', fr: 'fermer' },
+  // ---- route modal (#117): a hole's neighborhood drawn as a LINE you travel. The line
+  // teaches by SHAPE — the terminus, "you are here", the departure and the roads are all
+  // said by a node's size, colour and lane — so it carries no labels at all (the tags
+  // ARRIVAL / YOU ARE HERE / START / ROADS were removed 2026-07-26). The screen-reader
+  // mirror still names every one of them: see `srRouteStop` below, which spells them out
+  // in prose rather than depending on any of this. The ONE string left is the heading over
+  // the words above the torn break — guesses that earned no rank at all, so they have no
+  // node, no lane and no distance to be read off.
+  routeOffMap: { en: 'OFF THE MAP', fr: 'HORS CARTE' },
   // The streak celebration's ending hint: pure "what to do" — the whole screen dismisses,
   // so naming a "why" (continue/close — continue to WHAT? the game is done) would only
   // raise a question it can't answer. Pointer-aware: coarse pointers read TAP.
@@ -145,6 +154,61 @@ export function srHoleResult(lang: string, n: number, rank: number | null): stri
   if (rank == null) return `word ${n}: miss`;
   if (rank === 0) return `word ${n}: solved!`;
   return `word ${n}: ${rank} away`;
+}
+
+// ---- route modal (#117). Holes are numbered like the run ruler's ticks and the share
+// row's keycaps: 1-based over the sentence's DISTINCT secrets, so two occurrences of one
+// secret — which share a rank map, and so share a map — carry the same number.
+export function routeTitle(lang: string, n: number): string {
+  return uiLang(lang) === 'fr' ? `MOT ${n}` : `WORD ${n}`;
+}
+
+export function ariaExploreHole(lang: string, n: number): string {
+  return uiLang(lang) === 'fr' ? `Explorer le mot ${n}` : `Explore word ${n}`;
+}
+
+// The route drawing is decorative (aria-hidden); these carry it in words. Closest first,
+// misses last — the same order the map reads top to bottom.
+export function srRouteDestination(lang: string, word: string | null): string {
+  if (uiLang(lang) === 'fr') return `destination : ${word ?? 'cachée'}`;
+  return `destination: ${word ?? 'hidden'}`;
+}
+
+export function srRouteStop(
+  lang: string,
+  stop: { rank: number; word: string | null; road: string | null; start?: boolean; best?: boolean },
+): string {
+  const fr = uiLang(lang) === 'fr';
+  const parts = [fr ? `rang ${stop.rank}` : `rank ${stop.rank}`];
+  parts.push(stop.word ?? (fr ? 'caché' : 'hidden'));
+  // A lane titled by the very word being announced would only repeat it.
+  if (stop.road && stop.road !== stop.word) parts.push(fr ? `route ${stop.road}` : `road ${stop.road}`);
+  if (stop.start) parts.push(fr ? 'départ' : 'start');
+  if (stop.best) parts.push(fr ? 'vous êtes ici' : 'you are here');
+  return parts.join(' — ');
+}
+
+// The censored near field is now the bulk of the drawing — 150-odd stations whose only content is
+// a position and a lane (#117, 2026-07-26). Announcing them one at a time would bury the words the
+// player actually knows under a list of "rank 87, hidden", so the sr mirror states them as a
+// COUNT: what they say collectively is how long and how populated each road is, which is exactly
+// the thing the full roads were drawn to show.
+export function srRouteRoads(lang: string, perRoad: number[], found: number): string {
+  const total = perRoad.reduce((n, count) => n + count, 0);
+  const split = perRoad.join(' / ');
+  if (uiLang(lang) === 'fr') {
+    return perRoad.length > 1
+      ? `voisinage : ${total} arrêts sur ${perRoad.length} routes (${split}), ${found} trouvés`
+      : `voisinage : ${total} arrêts, ${found} trouvés`;
+  }
+  return perRoad.length > 1
+    ? `neighborhood: ${total} stops across ${perRoad.length} roads (${split}), ${found} found`
+    : `neighborhood: ${total} stops, ${found} found`;
+}
+
+export function srRouteOffMap(lang: string, words: string[]): string {
+  const list = words.join(', ');
+  return uiLang(lang) === 'fr' ? `hors carte : ${list}` : `off the map: ${list}`;
 }
 
 // Screen-reader mirror of the standings lineup's meaningful events (#81) — the visual
