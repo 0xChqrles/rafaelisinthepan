@@ -15,8 +15,13 @@ sentence: « tu t'___ » must read "t'distrais", never "t'distraire". The rules:
     no other feature ever can, and a gender+number-marked row is DEMOTED (not dropped)
     so a true form beats it while a lone one still counts;
   - a group is left alone when its canonical is not a POS-admitted verb, has no such
-    form, would become a word nobody could type back, or would land on a slug a CLOSER
-    group already owns — never a rewrite that contradicts the smallest-rank rule;
+    form, would become a word nobody could type back, would land on a slug a CLOSER
+    group already owns, or would take the slug a FARTHER group PRINTS — whatever a hole
+    displays must type back at that hole's own exponent, never a closer one;
+  - the POS gate reads AUX as the verb category: être and avoir are verbs, and they are
+    the forms that carry the tag;
+  - a participle whose NUMBER column is blank is invariable in number ("pris",
+    "conquis"), so it claims both cells rather than defaulting to the singular;
   - rewriting a group rewrites every entry carrying it (aliases included) and keys the
     new slug at that same rank, so typing any form of the group displays the agreed one;
   - the POS gate is by Lexique frequency: "évident" is a form of "évider" on paper but
@@ -29,7 +34,8 @@ import os
 import pytest
 
 import gen_phrase
-from build_forms import collect_rows, dominant_verbs, feature_key, forms_path, load_forms
+from build_forms import (collect_rows, dominant_verbs, feature_keys, forms_path,
+                         load_forms)
 
 FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
 TABLE = load_forms(os.path.join(FIXTURES, "forms.fr.tsv"))
@@ -69,10 +75,18 @@ def _map(*entries):
 def test_participles_carry_their_agreement_in_the_feature_key():
     # A bare "par:pas" would let a masculine target realize as "pensée"; Lexique keeps
     # the agreement in its own columns, so the key has to absorb it.
-    assert feature_key("par:pas", "f", "p") == "par:pas:f:p"
-    assert feature_key("ind:pre:2s", "", "") == "ind:pre:2s"
-    # unmarked agreement reads as masculine singular, as in French
-    assert feature_key("par:pas", "", "") == "par:pas:m:s"
+    assert feature_keys("par:pas", "f", "p") == ("par:pas:f:p",)
+    assert feature_keys("ind:pre:2s", "", "") == ("ind:pre:2s",)
+
+
+def test_a_number_invariable_participle_claims_both_cells():
+    # A blank NUMBER is Lexique saying "both": "pris"/"conquis" are spelled the same in
+    # m:s and m:p, which is why the column is empty. Reading it as singular made those
+    # secrets look unambiguous, so « ils sont conquis » agreed to "amusé" without ever
+    # asking — and left m:p unreachable for the same lemmas.
+    assert feature_keys("par:pas", "m", "") == ("par:pas:m:s", "par:pas:m:p")
+    # A blank GENDER is a plain gap, not an invariance: the masculine default stands.
+    assert feature_keys("par:pas", "", "p") == ("par:pas:m:p",)
 
 
 def test_pos_gate_keeps_the_dominant_category():
@@ -271,9 +285,47 @@ def committed():
     ("engourdir", "ind:pre:2s", "engourdis"),
     ("adoucir", "ind:pre:2s", "adoucis"),
     ("avilir", "ind:pre:2s", "avilis"),
+    # Lexique tags être/avoir AUX, not VER. Counting that as a rival category made the
+    # two most frequent verbs in French fail their own POS gate.
+    ("avoir", "par:pas:m:s", "eu"),
+    ("être", "par:pas:m:s", "été"),
+    ("avoir", "ind:pre:3p", "ont"),
+    # a number-invariable participle realizes BOTH cells, not just the singular
+    ("prendre", "par:pas:m:p", "pris"),
+    ("prendre", "par:pas:m:s", "pris"),
+    ("conquérir", "par:pas:m:p", "conquis"),
+    # ...while a participle that DOES distinguish still keeps them apart
+    ("amuser", "par:pas:m:p", "amusés"),
+    ("amuser", "par:pas:m:s", "amusé"),
 ])
 def test_committed_table_realizes_the_real_form(lemma, feature, expected):
     assert committed().realize.get((lemma, feature)) == expected
+
+
+def test_an_auxiliary_is_admitted_as_the_verb_it_is():
+    # Being outweighed by one's own auxiliary use is not evidence of being a non-verb.
+    # Without this, feature_for("avais") was None and no être/avoir hole ever agreed.
+    table = committed()
+    for form in ("avais", "ai", "ont", "avez", "étant", "été", "eu", "furent"):
+        assert form in table.dominant, form
+    # "avais" is 1s OR 2s, so it still refuses to guess — admitted is not unambiguous.
+    resolver = gen_phrase.FormResolver(table)
+    assert resolver.features_of("avais") == ("ind:imp:1s", "ind:imp:2s")
+    assert resolver.feature_for("avais") is None
+    assert resolver.realize("avais", "par:pas:m:s") == "eu"
+
+
+def test_a_number_invariable_participle_secret_is_asked_about():
+    # "conquis" covers m:s and m:p, so « ils sont conquis » must not silently agree its
+    # neighbours to the singular. Two candidates -> the batch run declines and --form
+    # settles it, exactly like any other ambiguous secret.
+    resolver = gen_phrase.FormResolver(committed())
+    assert resolver.features_of("conquis") == ("par:pas:m:p", "par:pas:m:s")
+    assert resolver.feature_for("conquis") is None
+    settled = gen_phrase.FormResolver(committed(),
+                                      explicit={"conquis": "par:pas:m:p"})
+    assert settled.feature_for("conquis") == "par:pas:m:p"
+    assert settled.realize("amusé", "par:pas:m:p") == "amusés"
 
 
 def test_committed_table_never_confuses_an_infinitive_with_a_finite_form():
@@ -313,24 +365,33 @@ def test_an_unambiguous_secret_agrees_off_a_tty_too():
     assert batch.feature_for("compris") is None
 
 
-# --- the start display must come from the pass, not from the map ------------------
+# --- a rewrite may never take the slug another group PRINTS ------------------------
 
-def test_start_display_is_read_from_what_the_pass_returned():
-    # A CLOSER group's rewrite can reclaim the start word's own slug: "amusait" at rank
-    # 2 agrees to "amusé", whose slug IS "amuse". Reading rank_map[slug(start)] back
-    # would then hand the hole the rank-2 group's word at exponent 5.
+def test_a_rewrite_never_takes_a_farther_groups_canonical_key():
+    """The hint a hole prints must type back at that hole's own exponent.
+
+    A closer group's rewrite can land on a farther group's CANONICAL key: "amusait" at
+    rank 2 agrees to "amusé", whose slug IS "amuse" — the word rank 5 prints. Taking it
+    would leave rank 5 showing "amuse" while typing "amuse" read 2. It bites hardest on
+    the start hint, whose start_rank is captured BEFORE the pass runs, so the hole would
+    ship start.word="amuse" at start_rank 5 against a map that said 2 — a printed clue
+    improving its own hole, which is exactly what the closer-owner rule refuses from the
+    other side. So the closer group declines, and the start group agrees for itself."""
     rmap = _map(("amuses", "amuses", 0), ("amusait", "amusait", 2),
                 ("amuse", "amuse", 5))
     agreed = _resolver(explicit={"amuses": "par:pas:m:s"}).apply(
         rmap, 5, "amuses", _donors())
 
-    assert agreed == {2: ("amusait", "amusé")}
-    assert rmap["amuse"] == {"word": "amusé", "rank": 2}   # the slug was reclaimed...
-    # ...so the naive read is the WRONG hint, and the one the call sites use is right.
-    assert rmap[gen_phrase.slug("amuse")]["word"] == "amusé"
-    assert agreed.get(5, ("amuse", "amuse"))[1] == "amuse"
-    # the start group itself declined: a closer group now owns its target slug.
-    assert 5 not in agreed
+    assert 2 not in agreed                      # the closer group declined...
+    assert agreed == {5: ("amuse", "amusé")}    # ...and rank 5 kept its own slug
+    assert rmap["amusait"] == {"word": "amusait", "rank": 2}
+
+    # THE invariant, stated as the call sites see it: whatever the hole ends up printing
+    # looks up at the hole's own start_rank, never at a closer one.
+    start_rank = 5
+    start_display = agreed.get(start_rank, ("amuse", "amuse"))[1]
+    assert start_display == "amusé"
+    assert rmap[gen_phrase.slug(start_display)]["rank"] == start_rank
 
 
 # --- artifact integrity ------------------------------------------------------------

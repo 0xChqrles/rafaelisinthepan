@@ -999,11 +999,17 @@ class FormResolver:
         Rewriting a group means rewriting every entry that carries it, aliases included,
         so typing any form of the group displays the agreed one.
 
-        Taking a slug from a FARTHER group is allowed (closest-first, as expand_aliases
-        already resolves collisions) but it is not purely additive: if that key was the
-        farther group's only one, the group leaves the map entirely and N — the count of
-        distinct ranks the progress formula divides by — drops by one. Numerically
-        negligible against TOP_K, worth knowing it happens."""
+        Taking an ALIAS key from a farther group is allowed (closest-first, as
+        expand_aliases already resolves collisions). Taking its CANONICAL key is not.
+        A group is still displayed through its other keys, so stealing the very slug of
+        the word it prints leaves it showing that word at exponent N while typing it
+        reads M < N — the same contradiction the closer-owner rule above refuses, only
+        reached from the other side. The start hint is where it bites hardest, because
+        start_rank is captured BEFORE this pass runs: the hole would ship
+        start.word="banque" at start_rank 5 while ranks[secret]["banque"] said 2, so the
+        printed hint improves its own hole. Declining keeps map and hole in step, and
+        `alias_start_display` could not have repaired it (the override short-circuits on
+        an unchanged slug)."""
         feature = self.feature_for(secret, donors)
         if feature is None or donors is None:
             return {}
@@ -1026,8 +1032,11 @@ class FormResolver:
                 continue
             s = slug(form)
             owner = rank_map.get(s)
-            if owner is not None and owner["rank"] < rank:
-                continue  # a closer group owns that slug: decline rather than contradict it
+            if owner is not None and owner["rank"] != rank:
+                if owner["rank"] < rank:
+                    continue  # a closer group owns it: decline rather than contradict it
+                if s == slug(canonicals[owner["rank"]]):
+                    continue  # a farther group PRINTS it: taking it would strand its word
             for key in keys:
                 if rank_map[key]["rank"] == rank:  # a reclaimed key belongs elsewhere now
                     rank_map[key]["word"] = form
@@ -1736,8 +1745,9 @@ def main():
                            explicit=explicit_donors, interactive=interactive)
 
     # Every word a hole can display agrees with the sentence (addendum 2). The secret's
-    # own morphology is the target; the author is asked only when it cannot be read off
-    # the table, and a batch run without --form simply applies no agreement.
+    # own morphology is the target and it decides everywhere, batch runs included; the
+    # author is asked only when the table cannot settle it (--form off a TTY, a prompt
+    # on one). --no-inflect is the opt-out that reproduces pre-addendum output.
     forms = FormResolver(form_table, explicit=explicit_forms, interactive=interactive)
 
     # Two paths to the same (holes, ranks): --words is the explicit / batch path (each

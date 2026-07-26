@@ -19,10 +19,12 @@ one `lemma<TAB>feature<TAB>form<TAB>dom` row per (lemma, feature, form) triple.
 
   feature  a single `infover` atom ("ind:pre:2s", "sub:imp:3s", "inf"), except past
            participles, which carry their agreement: "par:pas:m:s", "par:pas:f:p".
-           An unmarked participle is read as masculine singular, as in French.
+           A participle whose NUMBER column is blank is invariable in number ("pris",
+           "conquis"), so it emits both cells rather than defaulting to singular.
   dom      1 when the FORM's dominant part of speech (by Lexique frequency) is the
-           verb. This is the POS gate: "évident" is a form of "évider" on paper, but
-           it is overwhelmingly the adjective, so it is never rewritten to "évidé".
+           verb — AUX counts as the verb category, since être/avoir are verbs and
+           carry that tag. This is the POS gate: "évident" is a form of "évider" on
+           paper, but it is overwhelmingly the adjective, so it is never "évidé".
            Rows stay in the table with dom=0 because such a form may still be the
            right REALIZATION of someone else's paradigm ("pensée" is a legitimate
            `par:pas:f:s` of "penser" while being dominantly the noun).
@@ -64,6 +66,18 @@ FORM_LANGS = ("fr",)
 # Fold them into the feature key so "par:pas" alone can never match the wrong gender.
 _PARTICIPLE = "par:pas"
 
+# Lexique tags être/avoir as AUX, not VER — but an auxiliary IS a verb, and the two most
+# frequent verbs in French are exactly the ones that carry the tag. Reading AUX as a
+# rival category made "avais", "ont", "avez", "étant" and 24 other in-vocabulary forms
+# fail the POS gate, so the pass silently declined every one of them (and "avais -> eu"
+# was unreachable). One rule for both places that ask the question.
+_VERB_TAGS = ("VER", "AUX")
+
+
+def is_verb(cgram):
+    """Does this Lexique category denote a verb? VER and AUX both do."""
+    return cgram.startswith(_VERB_TAGS)
+
 # Lexique hangs spurious `infover` atoms on frequent spellings — "dois" claims `inf`,
 # "marcher" claims `ind:imp:3s`, "baissée" claims `ind:imp:3s`. Because the realization
 # tiebreak is frequency and those spellings ARE the frequent ones, the noise would win
@@ -103,15 +117,27 @@ def forms_path(lang):
     return os.path.join(red.WORDLIST_DIR, f"{lang}.forms.tsv.gz")
 
 
-def feature_key(atom, genre, nombre):
-    """The feature string stored for one `infover` atom.
+def feature_keys(atom, genre, nombre):
+    """The feature string(s) stored for one `infover` atom — usually exactly one.
 
     Past participles inflect for gender and number, and those live in Lexique's own
     columns, so a bare "par:pas" would let a masculine target realize as "pensée".
-    Unmarked agreement reads as masculine singular, which is what French does."""
-    if atom == _PARTICIPLE:
-        return f"{atom}:{genre or 'm'}:{nombre or 's'}"
-    return atom
+
+    A BLANK number is not a missing value, it is Lexique saying "both": a masculine
+    participle already ending in -s or -x ("pris", "conquis", "clos") is invariable in
+    number, which is precisely why the column is empty — all 37 such rows end that way.
+    Reading it as singular was wrong in both directions: "conquis" became an unambiguous
+    m:s secret, so « ils sont conquis » silently agreed its neighbours to "amusé" instead
+    of "amusés"; and m:p was unreachable for those lemmas, so a genuine plural sentence
+    got no agreement at all. Emitting BOTH cells fixes each: the secret is now ambiguous
+    and asks, and the plural cell exists to realize into.
+
+    A blank GENDER is a different animal — a plain gap (one row, "créés"), where the
+    masculine default is simply right — so it keeps defaulting rather than expanding."""
+    if atom != _PARTICIPLE:
+        return (atom,)
+    numbers = (nombre,) if nombre else ("s", "p")
+    return tuple(f"{atom}:{genre or 'm'}:{n}" for n in numbers)
 
 
 def read_lexique_rows(path):
@@ -148,12 +174,15 @@ def dominant_verbs(rows, token_re):
     verb form and a common adjective — "évident" is 0.27 as a form of "évider" and
     20.14 as the adjective. Summing frequency per category and keeping the winner is
     what stops the pass from rewriting it to "évidé". A form nothing is known about
-    stays out: the gate only ever ADMITS evidence."""
+    stays out: the gate only ever ADMITS evidence.
+
+    AUX counts as the verb category, not as a rival: an auxiliary is a verb, and being
+    outweighed by one's own auxiliary use is not evidence of being something else."""
     weight = {}
     for ortho, _lemme, cgram, _g, _n, _inf, freq in rows:
         if not token_re.match(ortho):
             continue
-        pos = "VER" if cgram.startswith("VER") else (cgram or "?")
+        pos = "VER" if is_verb(cgram) else (cgram or "?")
         weight.setdefault(ortho, {})
         weight[ortho][pos] = weight[ortho].get(pos, 0.0) + freq
     dominant = set()
@@ -170,23 +199,26 @@ def collect_rows(rows, token_re, dominant):
     """Normalize Lexique's verb rows into the final deterministic (sortable) set.
 
     One entry per (lemma, feature, form); `infover` repeats atoms ("par:pas;par:pas;")
-    so they are deduped here. Both sides must pass the language token rule, the same
-    shape the reduction keeps, so the table can never name a form the embedding could
-    not hold."""
+    so they are deduped here, and one atom may still yield several features when the row
+    covers several cells (see feature_keys). Both sides must pass the language token
+    rule, the same shape the reduction keeps, so the table can never name a form the
+    embedding could not hold."""
     best = {}
     for ortho, lemme, cgram, genre, nombre, infover, freq in rows:
-        if not cgram.startswith("VER") or not infover:
+        if not is_verb(cgram) or not infover:
             continue
         if not token_re.match(ortho) or not token_re.match(lemme):
             continue
         for atom in {a.strip() for a in infover.split(";") if a.strip()}:
             if spurious(atom, lemme, ortho):
                 continue
-            key = (lemme, feature_key(atom, genre, nombre), ortho)
             rank = marked(atom, genre, nombre)
-            prev = best.get(key)
-            # a form reachable by an UNMARKED row is never demoted by a marked one
-            best[key] = (min(prev[0], rank), max(prev[1], freq)) if prev else (rank, freq)
+            for feature in feature_keys(atom, genre, nombre):
+                key = (lemme, feature, ortho)
+                prev = best.get(key)
+                # a form reachable by an UNMARKED row is never demoted by a marked one
+                best[key] = ((min(prev[0], rank), max(prev[1], freq)) if prev
+                             else (rank, freq))
     return [(lemma, feature, form, 1 if form in dominant else 0, rank, freq)
             for (lemma, feature, form), (rank, freq) in best.items()]
 
