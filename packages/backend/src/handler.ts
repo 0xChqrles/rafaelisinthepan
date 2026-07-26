@@ -12,10 +12,13 @@ import {
 import {
   type FnUrlEvent,
   type FnUrlResult,
+  LAMBDA_MAX_RESPONSE_BYTES,
   corsHeaders,
+  envelopeBytes,
   errorResponse,
   html,
   json,
+  jsonCompressed,
   png,
   redirect,
 } from './respond';
@@ -222,10 +225,26 @@ export function createHandler(deps: HandlerDeps) {
       // The URL names the (date, lang) pair, so the CDN holds it via s-maxage until a
       // republish invalidates it (`pnpm puzzle:publish --s3`); browsers get the short
       // max-age so a corrected puzzle shows on a normal reload within minutes.
-      return json(200, puzzle, {
+      //
+      // Compressed when the client accepts it: a puzzle's rank maps run to several MB, and
+      // the runtime's envelope cap is what a plain body hits first (see respond.ts).
+      const response = jsonCompressed(200, puzzle, event.headers?.['accept-encoding'], {
         ...cors,
         'Cache-Control': `public, max-age=${PUZZLE_BROWSER_MAX_AGE}, s-maxage=${PUZZLE_CDN_MAX_AGE}`,
       });
+      // A payload the runtime would refuse is answered here instead. Left to the runtime it
+      // becomes a 413 the caller reads as a bare 502, with nothing in this handler's logs —
+      // the failure mode that made a 6.5 MB puzzle look like a dead backend. Naming it keeps
+      // the next oversized puzzle a five-second diagnosis.
+      if (envelopeBytes(response) > LAMBDA_MAX_RESPONSE_BYTES) {
+        return errorResponse(
+          500,
+          'payload_too_large',
+          `The puzzle for ${requestedDate} (${lang}) exceeds the ${LAMBDA_MAX_RESPONSE_BYTES}-byte response limit.`,
+          cors,
+        );
+      }
+      return response;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unexpected error.';
       return errorResponse(500, 'internal_error', message, cors);

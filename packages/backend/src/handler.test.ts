@@ -2,11 +2,12 @@
 // requested lang, returns it in the front's `Puzzle` shape, answers a missing puzzle
 // with a clean JSON 404 (never a 500), sends CORS headers, and exposes day metadata.
 
+import { gunzipSync } from 'node:zlib';
 import { describe, it, expect, vi } from 'vitest';
 import { type Puzzle, encodeResult } from '@whippin/shared';
 import { createHandler, type HandlerDeps } from './handler';
 import { renderCardPng } from './ogCard';
-import type { FnUrlEvent } from './respond';
+import { LAMBDA_MAX_RESPONSE_BYTES, envelopeBytes, type FnUrlEvent } from './respond';
 import type { PuzzleStore } from './store';
 
 // Spy on the card rasterizer (real PNG bytes are opaque to a lang assertion); a stub PNG
@@ -69,13 +70,42 @@ function event(opts: {
   method?: string;
   path?: string;
   query?: Record<string, string>;
+  headers?: Record<string, string>;
 }): FnUrlEvent {
   return {
     rawPath: opts.path ?? '/',
     queryStringParameters: opts.query ?? null,
     requestContext: { http: { method: opts.method ?? 'GET' } },
+    headers: opts.headers,
   };
 }
+
+// A puzzle whose PLAIN response envelope exceeds the runtime cap — the shape that took the
+// 2026-07-26 French puzzle down (6.5 MB of #104 alias keys, answered as a bare 502). It is
+// BUILT rather than checked in so it can never drift below the constant it exists to cross;
+// the "no Accept-Encoding" case below is what proves it still does.
+function oversizedPuzzle(): Puzzle {
+  const foret: Record<string, { word: string; rank: number }> = {
+    foret: { word: 'forêt', rank: 0 },
+    bois: { word: 'bois', rank: 87 },
+  };
+  // 130k alias keys ≈ a 6.8 MB body / 7.9 MB envelope — comfortably past the cap, and the
+  // same order as the real puzzle that broke (100k lands just UNDER it, so the margin here
+  // is deliberate rather than incidental).
+  for (let i = 0; i < 130_000; i += 1) {
+    foret[`voisin${i}`] = { word: `voisiné${i}`, rank: i + 1 };
+  }
+  return { ...PUZZLE, ranks: { foret } };
+}
+
+function oversizedHandler() {
+  const puzzle = oversizedPuzzle();
+  return makeHandler({
+    store: { async getPuzzle(date, lang) { return date === ACTIVE_DATE && lang === 'fr' ? puzzle : null; } },
+  });
+}
+
+const PUZZLE_QUERY = { lang: 'fr', date: ACTIVE_DATE };
 
 describe('puzzle endpoint — date-addressed (GET /?lang=&date=)', () => {
   it('returns the requested day\'s puzzle for the requested lang, unchanged', async () => {
@@ -167,6 +197,65 @@ describe('puzzle endpoint — date-addressed (GET /?lang=&date=)', () => {
     const res = await handler(event({ query: { lang: 'fr', date: ACTIVE_DATE } }));
     expect(res.statusCode).toBe(500);
     expect(JSON.parse(res.body).error).toBe('internal_error');
+  });
+});
+
+// CONTRACT: a puzzle is megabytes of rank maps, and the Lambda runtime refuses a response
+// envelope over LAMBDA_MAX_RESPONSE_BYTES with a 413 the caller only ever sees as a 502.
+// Compression is what keeps a real puzzle answerable; these pin the negotiation.
+describe('puzzle response compression — staying under the runtime envelope cap', () => {
+  it('serves an oversized puzzle as gzip when the client accepts it', async () => {
+    const res = await oversizedHandler()(
+      event({ query: PUZZLE_QUERY, headers: { 'accept-encoding': 'br, gzip, deflate' } }),
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['Content-Encoding']).toBe('gzip');
+    expect(res.isBase64Encoded).toBe(true);
+    // The point of the exercise: what the runtime will post back now fits.
+    expect(envelopeBytes(res)).toBeLessThan(LAMBDA_MAX_RESPONSE_BYTES);
+  });
+
+  it('the compressed body decodes back to the exact puzzle', async () => {
+    const res = await oversizedHandler()(
+      event({ query: PUZZLE_QUERY, headers: { 'accept-encoding': 'gzip' } }),
+    );
+    const decoded = JSON.parse(gunzipSync(Buffer.from(res.body, 'base64')).toString('utf8'));
+    expect(decoded).toEqual(oversizedPuzzle());
+  });
+
+  it('an oversized puzzle a client cannot accept gzipped is a NAMED 500, not a silent 502', async () => {
+    // No Accept-Encoding: nothing can shrink the payload, so the handler must own the
+    // failure. That this fires at all is also what proves the fixture is genuinely over
+    // the cap — the guard has no other trigger.
+    const res = await oversizedHandler()(event({ query: PUZZLE_QUERY }));
+    expect(res.statusCode).toBe(500);
+    expect(JSON.parse(res.body).error).toBe('payload_too_large');
+  });
+
+  it('varies on Accept-Encoding without dropping the CORS Vary: Origin', async () => {
+    const res = await makeHandler()(
+      event({ query: PUZZLE_QUERY, headers: { 'accept-encoding': 'gzip' } }),
+    );
+    const vary = res.headers['Vary'].split(',').map((f) => f.trim());
+    expect(vary).toContain('Accept-Encoding');
+    expect(vary).toContain('Origin');
+  });
+
+  it('honours an explicit gzip;q=0 refusal', async () => {
+    const res = await oversizedHandler()(
+      event({ query: PUZZLE_QUERY, headers: { 'accept-encoding': 'gzip;q=0, identity' } }),
+    );
+    expect(res.headers['Content-Encoding']).toBeUndefined();
+    expect(res.statusCode).toBe(500); // too big to send uncompressed — named, not a 502
+  });
+
+  it('leaves a sub-kilobyte puzzle uncompressed even when gzip is offered', async () => {
+    const res = await makeHandler()(
+      event({ query: PUZZLE_QUERY, headers: { 'accept-encoding': 'gzip' } }),
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['Content-Encoding']).toBeUndefined();
+    expect(JSON.parse(res.body)).toEqual(PUZZLE);
   });
 });
 
