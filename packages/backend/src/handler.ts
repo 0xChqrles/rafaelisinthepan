@@ -62,8 +62,9 @@ const LANG_RE = /^[a-z]{2}$/;
 // The share card (issue #8) is content-addressed by its token: a given URL's bytes are fixed
 // (the render only changes on a deploy), and messaging apps cache the preview on THEIR side
 // once unfurled — so a short origin TTL couldn't refresh an already-shared preview anyway.
-// Cache it hard; the rare render-changing deploy (a card redesign) needs a one-off CloudFront
-// invalidation — see the DistributionId stack outputs.
+// Cache it hard; a render-changing deploy (a card redesign) is covered because the backend
+// deploy job now invalidates `/*` on the API distribution — it no longer needs the by-hand
+// invalidation this comment used to call for.
 const SHARE_MAX_AGE = 31_536_000;
 const OG_PNG_RE = /^\/og\/([A-Za-z0-9_-]+)\.png$/;
 const SHARE_RE = /^\/s\/([A-Za-z0-9_-]+)$/;
