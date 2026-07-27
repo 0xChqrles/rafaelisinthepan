@@ -31,8 +31,10 @@ import CloseIcon from '../assets/icons/close.svg?react';
 // row, so the whole journey is one screen instead of four and the order it reads in is the
 // order it is drawn in. Long stretches still read as long, just bounded (LINK_MAX).
 //
-// Nothing here is persisted or animated: the whole drawing is derived from the model
-// (game/route.ts), so a guess landing while it is open just adds a station.
+// Nothing here is persisted, and the LINE is not animated — the one animation is the opening
+// zoom out of the tapped word (`route-zoom`), which is the transition INTO the map, not part of
+// the drawing. The whole drawing is derived from the model (game/route.ts), so a guess landing
+// while it is open just adds a station.
 
 // A connector carries the distance between the two stations it joins: `LINK_SPAN` px per full
 // dq scale, floored so two neighbours never collide and capped so the cold tail cannot push the
@@ -195,10 +197,14 @@ function Junction({ height, converge }: { height: number; converge?: boolean }) 
 export default function RouteModal({
   model,
   lang,
+  origin,
   onClose,
 }: {
   model: RouteModel;
   lang: string;
+  // The point the map grows out of — the tapped word's centre in viewport coordinates, which
+  // are the dialog's own (fixed, inset 0). Null falls back to the centre of the screen.
+  origin?: { x: number; y: number } | null;
   onClose: () => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -259,6 +265,9 @@ export default function RouteModal({
     // the heights count it, so both read it from here.
     '--dash': `${DASH}px`,
     '--dash-period': `${DASH_PERIOD}px`,
+    // Where the opening zoom starts. Omitted when the word could not be located, so the CSS
+    // fallback (dead centre) takes over rather than an origin of 0,0 throwing it to a corner.
+    ...(origin ? { '--zoom-x': `${origin.x}px`, '--zoom-y': `${origin.y}px` } : null),
   } as CSSProperties;
 
   // Where is the row parked, if it is parked at all? Pure arithmetic against the scroll offset —

@@ -1556,7 +1556,9 @@ button * {
    right-aligned gutter (the "time"), the rail, then the word. The rail is as wide as the
    neighborhood has ROADS (#115) — one lane each, painted by `--lane-lines`, which RouteModal
    builds because the lane centres and the node positions have to agree exactly. Full-screen
-   native dialog on the SOLID app background like the leaderboard, and NO motion of its own. */
+   native dialog on the SOLID app background like the leaderboard. The LINE has no motion of
+   its own — the only animation here is the opening zoom below, which is about the transition
+   into the map, not about the map. */
 .route-dialog[open] {
   position: fixed;
   inset: 0;
@@ -1612,6 +1614,37 @@ button * {
 }
 .route-dialog::backdrop {
   background: transparent;
+}
+/* Opening the map is a ZOOM OUT OF THE WORD you tapped, the way a desktop window opens out of
+   its icon: the screen grows from that point instead of replacing what was there, so the map
+   reads as that word opened rather than as a new screen. RouteModal supplies the word's centre
+   in viewport coordinates — which are this element's own, since it is fixed at inset 0 — so the
+   origin needs no arithmetic here; without it the fallback is dead centre.
+
+   It scales the WHOLE dialog, opaque background included, which is what sells the growth. Safe
+   for everything measured on open: the sticky row's place in the line and the opening scroll are
+   read from `offsetTop`/`clientHeight`, which a transform does not touch, and both run in layout
+   effects before this ever paints. The opacity closes early so the panel is solid for most of
+   the travel — a fade running the whole way reads as a cross-dissolve, not as an opening.
+
+   Under reduced motion the global rule collapses the duration; with no fill mode the dialog
+   lands on its natural scale and full opacity, never mid-zoom. */
+.route-dialog[open] {
+  transform-origin: var(--zoom-x, 50%) var(--zoom-y, 50%);
+  animation: route-zoom 200ms ease-out;
+}
+@keyframes route-zoom {
+  from {
+    transform: scale(0.05);
+    opacity: 0;
+  }
+  35% {
+    opacity: 1;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 /* The header. NOT a modal chrome of its own: it reuses the app's own corner-chip row wholesale
    (`.topbar-inner` / `.topbar-left` / `.topbar-title` / `.topbar-right` / `.home-btn`, see

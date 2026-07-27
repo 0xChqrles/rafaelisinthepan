@@ -497,6 +497,10 @@ function Round({
     );
   }, [puzzleHoles, ranks]);
   const [routeHole, setRouteHole] = useState<number | null>(null);
+  // The point the map zooms out of: the tapped word's centre, in viewport coordinates (the
+  // dialog is fixed and fills the viewport, so they ARE its own box's). Null only if the hole
+  // somehow isn't on screen, which falls back to a plain centre zoom.
+  const [routeOrigin, setRouteOrigin] = useState<{ x: number; y: number } | null>(null);
   // The solved sequence has played out and the sentence is the player's again — which is also
   // the state a REHYDRATED solve mounts straight into.
   const solvedSettled =
@@ -547,9 +551,21 @@ function Round({
   }, [routeHole]);
   // The ONE place a map opens — a tap, or the first-solve demonstration below — so the
   // "seen it" flag can never fall out of step with the thing it records (#129).
+  //
+  // It also takes the WORD's position on screen, which is where the map grows from: opening
+  // is a zoom out of the thing you tapped, the way a desktop window opens out of its icon, so
+  // the full screen that lands reads as that word rather than as a screen that replaced it.
+  // Measured at the click (the word is on screen, and the auto-open fires with it settled),
+  // never re-measured — the map covers the sentence anyway. `.hole-word-wrap` and not the
+  // button, so the origin is the word itself with the exponent excluded.
   const openRoute = useCallback(
     (index: number) => {
       markRouteSeen();
+      const word = document
+        .querySelector<HTMLElement>(`[data-hole-explore="${index}"]`)
+        ?.querySelector('.hole-word-wrap');
+      const box = word?.getBoundingClientRect();
+      setRouteOrigin(box ? { x: box.left + box.width / 2, y: box.top + box.height / 2 } : null);
       setRouteHole(index);
     },
     [markRouteSeen],
@@ -974,7 +990,9 @@ function Round({
 
       {/* One hole's neighborhood as a journey (#117). Fully derived from (tried, ranks,
           hole state), so a guess landing while it is open simply adds a stop. */}
-      {routeModel && <RouteModal model={routeModel} lang={lang} onClose={closeRoute} />}
+      {routeModel && (
+        <RouteModal model={routeModel} lang={lang} origin={routeOrigin} onClose={closeRoute} />
+      )}
     </div>
   );
 }

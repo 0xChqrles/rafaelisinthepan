@@ -874,8 +874,21 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   dialog) owning the overflow, no content can ever pass beneath the header, so none has to be
   hidden behind a band. The dismiss-on-backdrop click therefore tests the scroller as well as
   the dialog — the space around the line lives inside it.
-  No motion (nothing for reduced motion to collapse) and **no new analytics event** — the
-  three-event invariant stands.
+  **The LINE has no motion; the OPENING does** (decided 2026-07-27, superseding "no motion at
+  all"): the map **zooms out of the word you tapped**, the way a desktop window opens out of its
+  icon — the whole dialog, opaque background included, scales from ~0 with its
+  `transform-origin` on that word's centre (`route-zoom`, 200ms). It is the transition INTO the
+  map, not part of the drawing: the screen that lands reads as that word opened rather than as a
+  new screen that replaced it, which is also part of what makes the entry point legible (#129).
+  `Game.openRoute` measures `.hole-word-wrap` inside the hole button at open time — the word,
+  exponent excluded — and passes the viewport point, which is the fixed full-screen dialog's own
+  coordinate space, so the CSS needs no arithmetic; a missing button falls back to dead centre.
+  **A transform cannot disturb what this modal measures on open** — the sticky row's natural
+  place and the opening scroll are read from `offsetTop`/`offsetHeight`/`clientHeight` in layout
+  effects before it ever paints — and that was verified rather than assumed: on a 4.2-screen map
+  the opening view is identical with the animation on and forced off. Closing is NOT animated
+  (the dialog unmounts). Reduced motion collapses the duration and, with no fill mode, lands on
+  the natural scale. Still **no new analytics event** — the three-event invariant stands.
   **"You are here" is read off the HOLE, never off the guess log** (fixed 2026-07-27): a guess
   deduped as a canonical duplicate never enters `tried` (`gameStore.recordGuess`) and can still
   IMPROVE another hole, so the current group can be one the history does not mention. `buildRoute`
