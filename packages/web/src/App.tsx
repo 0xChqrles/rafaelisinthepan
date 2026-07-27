@@ -175,7 +175,9 @@ function GameRoute({ lang, date }: { lang: LangCode; date?: string }) {
       />
       {loading && <p className="status">{t(lang, 'loading')}</p>}
       {error !== null && <LoadError message={t(lang, 'failedPuzzle')} lang={lang} onRetry={retry} />}
-      {noPuzzle && <NoPuzzle lang={lang} />}
+      {/* `date` is the ONLY thing NoPuzzle needs to tell an unpublished archive day
+          (normal) from a missing daily publish (abnormal) — see the component. */}
+      {noPuzzle && <NoPuzzle lang={lang} date={date} />}
       {puzzle && (
         <Game
           puzzle={puzzle}

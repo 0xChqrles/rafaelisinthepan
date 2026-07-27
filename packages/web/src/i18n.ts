@@ -24,6 +24,17 @@ const STRINGS = {
     en: 'This is not supposed to happen — check back in a moment.',
     fr: "Ce n'est pas normal — revenez d'ici quelques instants.",
   },
+  // Since the archive (#55) that same screen also renders on a DATED route, where the
+  // wording above is wrong twice over: it isn't today, and a past day that was never
+  // published (a pre-launch date, a language backfilled later) is perfectly normal —
+  // nothing to apologize for and nothing to come back for. The dated variant states the
+  // fact and points back at the calendar the player came from.
+  noPuzzleDay: { en: 'NO PUZZLE FOR THIS DAY', fr: 'PAS DE PUZZLE POUR CE JOUR' },
+  noPuzzleDayNote: {
+    en: 'This day was never published.',
+    fr: "Ce jour n'a jamais été publié.",
+  },
+  backToArchive: { en: 'BACK TO ARCHIVE', fr: "RETOUR À L'ARCHIVE" },
   changeLanguage: { en: 'CHANGE LANGUAGE', fr: 'CHANGER DE LANGUE' },
   srLangSolved: { en: 'solved', fr: 'résolu' },
   notAWord: { en: 'this word does not exist', fr: "ce mot n'existe pas" },
