@@ -866,9 +866,11 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   value so the ~100-row list re-renders only on a transition. Its natural offset is re-measured
   whenever the model changes, because a guess landing while the map is open can add rows above it
   or make a different station the closest one.
-  **The header is the APP's, not a modal's** (decided 2026-07-26): it reuses
+  **The header is the APP's, not a modal's** (decided 2026-07-26) — and since 2026-07-27 it is
+  the SHARED `ModalHeader` (see the app-header bullet below), which this map's own bar was
+  extracted into when the leaderboard adopted it. It reuses
   `.topbar-inner` / `.topbar-left` / `.topbar-title` / `.topbar-right` / `.home-btn` wholesale,
-  so it cannot drift from the corner-chip policy above — no band, no border, no background, the
+  so it cannot drift from the corner-chip policy — no band, no border, no background, the
   hole's name top-left and one close control top-right. It sits **in flow** above an inner
   `.route-scroll`, which is precisely what lets it paint nothing: with the scroller (not the
   dialog) owning the overflow, no content can ever pass beneath the header, so none has to be
@@ -1421,8 +1423,21 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   screen's contextual controls — every one a `.home-btn` (a transparent `--hud-height` square)
   wrapping a `.pixel-icon` SVG, muted → `--fg` on hover/focus. The **streak stat is NOT in the
   header** (moved back to the archive page 2026-07-21). **Any full-screen surface follows this
-  same row** rather than inventing chrome — the route modal (#117) reuses these exact classes,
-  minus the flag (switching language out from under a hole's map would navigate the game away).
+  same row** rather than inventing chrome, and since 2026-07-27 there is ONE component for it:
+  **`components/ModalHeader.tsx`** — the app's row (`.topbar-inner` / `.topbar-left` /
+  `.topbar-title` / `.topbar-right` / `.home-btn`) with a title and one close chip, minus the
+  flag (switching language out from under a modal would navigate the screen away). The route
+  map (#117) and the leaderboard (#110) both wear it; the leaderboard's own X floated in the
+  corner until then, so the app had two full-screen modals with two different dismissal chromes.
+  **A modal adopting it owes it the structure that lets it paint nothing**: the header sits IN
+  FLOW above a scroller that owns the overflow (`.lb-scroll` / `.route-scroll`), so no content
+  can pass beneath it and no band is needed — the DIALOG must not scroll. Two consequences for
+  the leaderboard: its padding moved from the dialog to the scroller (padding on the dialog sits
+  outside the scroll and clips the table on a short viewport), and its backdrop-dismiss test
+  gained the scroller, which is now most of the backdrop. The dialog is named by a new i18n key
+  `leaderboard` (en LEADERBOARD / fr CLASSEMENT) rather than `seeMore`, which names the button's
+  ACTION, not the surface. The **StreakDialog deliberately does NOT take this header** — the
+  celebration has nothing focusable by decision, and a close chip would be the first thing on it.
   The game's right group holds the **archive calendar icon** and help `?` (#55); the tutorial
   puts "TUTORIAL" in the left chip and the skip fast-forward in the right group. The flag
   ALWAYS opens the language screen. The

@@ -1492,6 +1492,30 @@ button * {
 /* The full leaderboard behind SEE MORE (decided 2026-07-25): the native dialog IS the
    borderless full-screen surface, on the SOLID app background — the animated noise
    never plays underneath — so the table finally has room and quiet. */
+/* ---- the shared modal header (ModalHeader), worn by every full-screen dialog ----
+   NOT a modal chrome of its own: it reuses the app's own corner-chip row wholesale
+   (`.topbar-inner` / `.topbar-left` / `.topbar-title` / `.topbar-right` / `.home-btn`, see
+   TopBar and the Archive screen), so no modal can drift from it — no band, no border, no
+   background, the surface's name top-left and one control top-right, directly on the backdrop.
+   All these rules add is `--hud-height` (declared on `.topbar` and `.hud`, which this row is
+   not inside), keeping the row out of the scroller's flex growth, and the muted-until-touched
+   close. Extracted from the route map's own bar 2026-07-27, when the leaderboard stopped
+   floating its own X in the corner. */
+.modal-bar {
+  --hud-height: clamp(38px, 5vh, 46px);
+  flex: none;
+}
+.modal-close {
+  color: var(--muted);
+}
+.modal-close:hover,
+.modal-close:focus-visible {
+  color: var(--fg);
+}
+
+/* Header row above, scroller below — the shape every modal wearing `.modal-bar` owes it (see
+   ModalHeader): with the SCROLLER owning the overflow, nothing can pass under the header, so
+   the header needs nothing painted behind it. The dialog itself must not scroll. */
 .lb-dialog[open] {
   position: fixed;
   inset: 0;
@@ -1501,43 +1525,32 @@ button * {
   height: 100%;
   max-height: none;
   margin: 0;
-  padding: 24px 20px;
+  padding: 0;
   border: 0;
   outline: 0;
   background: var(--bg);
   color: var(--fg);
   display: flex;
-  overflow-y: auto;
-  overflow-x: hidden;
+  flex-direction: column;
+  overflow: hidden;
 }
 .lb-dialog::backdrop {
   background: transparent;
+}
+/* The scrollport, which also carries the frame's breathing room — padding on the DIALOG would
+   sit outside the scroll and clip the table on a short viewport. */
+.lb-scroll {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  padding: 8px 20px 24px;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 /* Auto margins center the frame but collapse on short viewports so nothing clips. */
 .lb-dialog-frame {
   width: min(520px, 100%);
   margin: auto;
-}
-/* A full-screen dialog's dismiss control: same 44px muted target everywhere; each dialog
-   places it (the leaderboard floats it in the corner, the route map seats it in its bar). */
-.dialog-close {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--muted);
-  cursor: pointer;
-}
-.dialog-close:hover {
-  color: var(--fg);
-}
-.lb-dialog-close {
-  position: fixed;
-  top: 14px;
-  right: 14px;
 }
 
 /* ===================== route map (issue #117) ===================== */
@@ -1683,24 +1696,6 @@ button * {
     opacity: 0;
   }
 }
-/* The header. NOT a modal chrome of its own: it reuses the app's own corner-chip row wholesale
-   (`.topbar-inner` / `.topbar-left` / `.topbar-title` / `.topbar-right` / `.home-btn`, see
-   TopBar and the Archive screen), so it can never drift from it — no band, no border, no
-   background, the screen name top-left and one control top-right, directly on the backdrop.
-   All this rule adds is `--hud-height` (declared on `.topbar` and `.hud`, which this row is
-   not inside) and keeping it out of the scroller's flex growth. */
-.route-bar {
-  --hud-height: clamp(38px, 5vh, 46px);
-  flex: none;
-}
-.route-close {
-  color: var(--muted);
-}
-.route-close:hover,
-.route-close:focus-visible {
-  color: var(--fg);
-}
-
 /* --- the line --- */
 .route-scroll {
   flex: 1;

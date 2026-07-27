@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { t } from '../i18n';
 import RunRuler, { rulerStagger } from './RunRuler';
-import CloseIcon from '../assets/icons/close.svg?react';
+import ModalHeader from './ModalHeader';
 import medal1 from '../assets/medals/1.png';
 import medal2 from '../assets/medals/2.png';
 import medal3 from '../assets/medals/3.png';
@@ -44,6 +44,7 @@ export default function LeaderboardDialog({
   onClose: () => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [colorized, setColorized] = useState(false);
   const reduceMotion =
     typeof window !== 'undefined' &&
@@ -89,50 +90,60 @@ export default function LeaderboardDialog({
       className="lb-dialog"
       // The table is decorative; this names the surface itself, so the dialog does not
       // announce as an anonymous one.
-      aria-label={t(lang, 'seeMore')}
+      aria-label={t(lang, 'leaderboard')}
       onClose={onClose}
       onClick={(e) => {
-        // A click on the dialog element itself is the backdrop area outside the frame.
-        if (e.target === dialogRef.current) dialogRef.current?.close();
+        // Everything AROUND the table dismisses. Two elements can be hit directly now that the
+        // SCROLLER (not the dialog) owns the overflow — the header has to sit in flow above
+        // something: the dialog itself, and the scroller, which is the margin around the
+        // centred frame and so most of the backdrop.
+        if (e.target === dialogRef.current || e.target === scrollRef.current) {
+          dialogRef.current?.close();
+        }
       }}
     >
-      <button
-        type="button"
-        className="dialog-close lb-dialog-close"
-        aria-label={t(lang, 'ariaClose')}
-        onClick={() => dialogRef.current?.close()}
-      >
-        <CloseIcon className="pixel-icon" aria-hidden />
-      </button>
-      <div className="lb-dialog-frame">
-        <div className="leaderboard" aria-hidden="true">
-          {rows.map((row, i) => (
-            <div key={row.key} className="lb-row">
-              <img className="lb-medal" src={MEDALS[Math.min(i, MEDALS.length - 1)]} alt="" />
-              {/* Tag + ruler wrapper: display:contents on desktop (they stay separate
-                  subgrid columns); on mobile it becomes a stacked column — the tag sits
-                  ABOVE the bar's left edge, freeing its column for the bar. */}
-              <div className="lb-main">
-                <span className={`lb-tag${row.player ? ' player' : ''}`}>{row.tag}</span>
-                <RunRuler
-                  trajectory={row.trajectory}
-                  solvedAt={row.solvedAt}
-                  maxN={scaleMax}
-                  stagger={stagger}
-                  shown
-                  colorized={colorized}
-                />
+      {/* The shared modal chrome (see ModalHeader), replacing this dialog's own X floated in
+          the corner (2026-07-27): the app had two full-screen modals wearing two different
+          dismissal chromes, and only the route map's was the app's own row. */}
+      <ModalHeader
+        lang={lang}
+        title={t(lang, 'leaderboard')}
+        onClose={() => dialogRef.current?.close()}
+      />
+
+      <div className="lb-scroll" ref={scrollRef}>
+        <div className="lb-dialog-frame">
+          <div className="leaderboard" aria-hidden="true">
+            {rows.map((row, i) => (
+              <div key={row.key} className="lb-row">
+                <img className="lb-medal" src={MEDALS[Math.min(i, MEDALS.length - 1)]} alt="" />
+                {/* Tag + ruler wrapper: display:contents on desktop (they stay separate
+                    subgrid columns); on mobile it becomes a stacked column — the tag sits
+                    ABOVE the bar's left edge, freeing its column for the bar. */}
+                <div className="lb-main">
+                  <span className={`lb-tag${row.player ? ' player' : ''}`}>{row.tag}</span>
+                  <RunRuler
+                    trajectory={row.trajectory}
+                    solvedAt={row.solvedAt}
+                    maxN={scaleMax}
+                    stagger={stagger}
+                    shown
+                    colorized={colorized}
+                  />
+                </div>
+                <span className={`lb-score${row.tries === null ? ' dnf' : ''}`}>
+                  {row.tries ?? t(lang, 'dnf')}
+                </span>
               </div>
-              <span className={`lb-score${row.tries === null ? ' dnf' : ''}`}>
-                {row.tries ?? t(lang, 'dnf')}
-              </span>
-            </div>
-          ))}
+            ))}
+          </div>
+          {/* The table is decorative — this line carries the accessible ranking. */}
+          <p className="sr-only">
+            {rows
+              .map((row, i) => `${i + 1}. ${row.label} ${row.tries ?? t(lang, 'dnf')}`)
+              .join(' · ')}
+          </p>
         </div>
-        {/* The table is decorative — this line carries the accessible ranking. */}
-        <p className="sr-only">
-          {rows.map((row, i) => `${i + 1}. ${row.label} ${row.tries ?? t(lang, 'dnf')}`).join(' · ')}
-        </p>
       </div>
     </dialog>,
     document.body,

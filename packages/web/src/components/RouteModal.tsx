@@ -11,7 +11,7 @@ import {
   srRouteRoads,
   srRouteStop,
 } from '../i18n';
-import CloseIcon from '../assets/icons/close.svg?react';
+import ModalHeader from './ModalHeader';
 
 // The route map (#117): a hole's neighborhood drawn as a LINE you travel.
 //
@@ -405,30 +405,9 @@ export default function RouteModal({
         }
       }}
     >
-      {/* The app's header, not a modal's: the SAME corner-chip row every screen uses (see
-          TopBar / Archive) — `.topbar-inner`'s column and optical row, the screen name in
-          `.topbar-title` on the left, one `.home-btn` control on the right, and NO band,
-          border or background under either. It sits IN FLOW above the scroller rather than
-          fixed over it, which is what lets it carry no background at all: nothing can pass
-          beneath it. The language flag is deliberately absent — switching language from
-          inside a hole's map would navigate the game out from under it. */}
-      <div className="route-bar">
-        <div className="topbar-inner">
-          <div className="topbar-left">
-            <span className="topbar-title">{title}</span>
-          </div>
-          <div className="topbar-right">
-            <button
-              type="button"
-              className="home-btn route-close"
-              aria-label={t(lang, 'ariaClose')}
-              onClick={beginClose}
-            >
-              <CloseIcon className="pixel-icon" aria-hidden />
-            </button>
-          </div>
-        </div>
-      </div>
+      {/* The shared modal chrome (see ModalHeader): the app's own corner-chip row, in flow
+          above the scroller — which is what lets it paint nothing. */}
+      <ModalHeader lang={lang} title={title} onClose={beginClose} />
 
       <div className="route-scroll" ref={scrollRef}>
         {/* The drawing is decorative; the sr-only list below carries the same content. */}

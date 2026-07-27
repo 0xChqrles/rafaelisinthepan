@@ -50,6 +50,9 @@ const STRINGS = {
   copied: { en: 'COPIED', fr: 'COPIÉ' },
   // Solved tray → the full leaderboard dialog (decided 2026-07-25).
   seeMore: { en: 'SEE MORE', fr: 'VOIR PLUS' },
+  // That dialog's NAME, in its shared modal header and as its aria-label (2026-07-27). The
+  // button that opens it says SEE MORE, which names an action, not the surface it lands on.
+  leaderboard: { en: 'LEADERBOARD', fr: 'CLASSEMENT' },
   ariaClose: { en: 'close', fr: 'fermer' },
   // ---- route modal (#117): a hole's neighborhood drawn as a LINE you travel. The line
   // teaches by SHAPE — the terminus, "you are here", the departure and the roads are all
