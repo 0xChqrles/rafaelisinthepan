@@ -23,7 +23,7 @@ export default function Phrase({
   hits: HitState[]; // one transient number per warm hole (multi-hit)
   onHitDone: (id: number) => void;
   onHoleResolved?: (index: number) => void;
-  // Route map (#117), by hole index: the button's aria-label, or null for a hole whose
+  // Route map (#117), by hole index: the button's exploration hint, or null for a hole whose
   // secret carries no #115 geometry (no map, so no entry point at all). Stable for the
   // round — the solved choreography gates the buttons with `exploreDisabled`, never by
   // taking them away.
@@ -33,8 +33,10 @@ export default function Phrase({
 }) {
   const holeIndexByPos = new Map<number, number>(holes.map((h, i) => [h.pos, i]));
   const puzzleHoleByPos = new Map<number, PuzzleHole>(puzzleHoles.map((h) => [h.pos, h]));
+  const hintId = (holeIndex: number) => `hole-explore-${holeIndex}`;
 
   return (
+    <>
     <p className="phrase">
       {words.map((w, i) => {
         const space = i > 0 ? ' ' : '';
@@ -67,7 +69,7 @@ export default function Phrase({
                   explore={
                     exploreLabel && onExplore
                       ? {
-                          label: exploreLabel,
+                          hintId: hintId(idx),
                           disabled: exploreDisabled,
                           onOpen: () => onExplore(idx),
                         }
@@ -87,5 +89,19 @@ export default function Phrase({
         );
       })}
     </p>
+    {/* The exploration hints, referenced by each hole button's aria-describedby. They sit
+        OUTSIDE the sentence on purpose: a hole is named by its own content (the word and its
+        exponent — the clue), so the hint has to be a description, and a description lives in
+        the DOM. Inside the <p> it would interleave "Explore word 2" into the prose a screen
+        reader reads straight through; after it, the sentence stays a sentence. */}
+    {onExplore &&
+      exploreLabels?.map((label, idx) =>
+        label === null ? null : (
+          <span key={idx} id={hintId(idx)} className="sr-only">
+            {label}
+          </span>
+        ),
+      )}
+    </>
   );
 }

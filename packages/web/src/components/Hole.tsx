@@ -60,8 +60,9 @@ export default function Hole({
   // The route map's entry point (#117): the whole hole becomes one button. Present for the
   // WHOLE round or not at all — a puzzle without the #115 geometry gets no affordance, and
   // the choreography gates it with `disabled` rather than by unwrapping, which would remount
-  // the word mid-scramble.
-  explore?: { label: string; disabled: boolean; onOpen: () => void };
+  // the word mid-scramble. `hintId` points at the sr-only "explore" note Phrase renders
+  // OUTSIDE the sentence; see the button below for why it is a description and not a label.
+  explore?: { hintId: string; disabled: boolean; onOpen: () => void };
 }) {
   // Exponent rolls toward the current rank one rank step at a time (or snaps under
   // reduced motion, see rankTweenDuration). A solved hole visibly reaches 0, then removes
@@ -194,8 +195,12 @@ export default function Hole({
         <button
           type="button"
           className="hole-btn"
-          // Named by the surrounding label; the word itself is already read from the phrase.
-          aria-label={explore.label}
+          // DESCRIBED, never labelled. An aria-label REPLACES the content it wraps, and the
+          // content here is the clue — the current word and its exponent — so labelling the
+          // button deleted it from the button AND from the sentence a screen reader reads,
+          // leaving "Explore word 2" where "attends -87" belongs. Named by its own content,
+          // the hole reads as what it shows and the exploration hint stays supplementary.
+          aria-describedby={explore.hintId}
           data-hole-explore={holeIndex}
           disabled={explore.disabled}
           onClick={explore.onOpen}

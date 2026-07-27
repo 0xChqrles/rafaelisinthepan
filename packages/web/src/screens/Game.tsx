@@ -497,7 +497,8 @@ function Round({
   const exploreDisabled = !solvedSettled && (promptExiting || solved);
   // Stable for the round: the button wraps the hole for the WHOLE round or not at all, and
   // the gating above only disables it — unwrapping mid-round would remount the word while
-  // its scramble is running.
+  // its scramble is running. These are the buttons' DESCRIPTIONS, not their names: a hole is
+  // named by the word and exponent it shows, which is the clue (see Hole/Phrase).
   const exploreLabels = useMemo<(string | null)[]>(
     () => routeNumbers.map((n) => (n === null ? null : ariaExploreHole(lang, n))),
     [routeNumbers, lang],
@@ -534,6 +535,18 @@ function Round({
   // Input mutations shared by the on-screen keyboard (taps) and the physical keyboard.
   // Every path clears the "does not exist" feedback as soon as the player edits again.
 
+  // A hole button keeps focus after its route map closes, so a keyboard user keeps their place.
+  // But the moment the input is EDITED — typed, deleted or recalled — the player is guessing,
+  // not exploring, so hand the keyboard back. WordInput deliberately leaves Enter to a focused
+  // button (that is how the tutorial's NEXT is activated), so a button still holding focus after
+  // an edit swallows the Enter that submits and re-opens the map instead. Every editing path
+  // therefore has to release it, not just typing: a letter did, Backspace and history recall did
+  // not, which made "close the map, fix a typo, press Enter" reopen the map.
+  const releaseHoleFocus = useCallback(() => {
+    const focused = document.activeElement;
+    if (focused instanceof HTMLElement && focused.classList.contains('hole-btn')) focused.blur();
+  }, []);
+
   // Append one slug char, but ONLY if it keeps the input a prefix of some real word
   // (the same rule that greys the on-screen key). A dead-end char shakes the prompt
   // instead of being silently dropped: the on-screen keys grey out and shake in place,
@@ -543,32 +556,29 @@ function Round({
   const appendChar = useCallback(
     (char: string) => {
       if (promptExiting) return;
-      // A hole button keeps focus after its route map closes, so a keyboard user keeps
-      // their place. But the moment a letter is typed the player is guessing, not
-      // exploring — hand the keyboard back, or that focused button would swallow the
-      // Enter that submits the word.
-      const focused = document.activeElement;
-      if (focused instanceof HTMLElement && focused.classList.contains('hole-btn')) focused.blur();
+      releaseHoleFocus();
       setFeedback(null);
       if (canExtend(prefixSet, input, char)) setInput(input + char);
       else setInvalidAt(Date.now());
     },
-    [prefixSet, input, promptExiting],
+    [prefixSet, input, promptExiting, releaseHoleFocus],
   );
 
   const deleteChar = useCallback(() => {
     if (promptExiting) return;
+    releaseHoleFocus();
     setFeedback(null);
     setInput((cur) => cur.slice(0, -1));
-  }, [promptExiting]);
+  }, [promptExiting, releaseHoleFocus]);
 
   // Replace the whole input (physical-keyboard history recall). Recalled values are
   // past valid words, hence valid prefixes, so no re-validation is needed.
   const replaceInput = useCallback((v: string) => {
     if (promptExiting) return;
+    releaseHoleFocus();
     setFeedback(null);
     setInput(v);
-  }, [promptExiting]);
+  }, [promptExiting, releaseHoleFocus]);
 
   const submit = useCallback(
     (raw: string) => {

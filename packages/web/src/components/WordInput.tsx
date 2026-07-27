@@ -75,11 +75,13 @@ export default function WordInput({ value, history, onType, onBackspace, onSubmi
         return;
       }
       // A focused BUTTON keeps the ONE key it natively acts on — Enter (Space never
-      // reaches the game anyway: it folds to nothing and falls through untouched). Letters
-      // still flow to the guess, because a button has no use for them and a swallowed
-      // letter reads as broken input: since #117 a hole is itself a button and keeps focus
-      // after its route map closes, so this is the difference between typing your next
-      // guess and typing into a void.
+      // reaches the game anyway: it folds to nothing and falls through untouched). Every
+      // EDITING key still flows to the guess, because a button has no use for them and a
+      // swallowed keystroke reads as broken input: since #117 a hole is itself a button and
+      // keeps focus after its route map closes, so this is the difference between typing
+      // your next guess and typing into a void. Editing then releases that focus on the
+      // Game side (`releaseHoleFocus`), which is what keeps the Enter after it a SUBMIT
+      // rather than a second trip into the map.
       if (target && target.tagName === 'BUTTON' && e.key === 'Enter') return;
 
       if (e.key === 'Enter') {

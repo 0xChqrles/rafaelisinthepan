@@ -235,7 +235,7 @@ describe('parsePuzzle (shape validation)', () => {
     expect(parsePuzzle(annotated)).toEqual(annotated);
   });
 
-  it('rejects an out-of-range or non-numeric dq, and a negative road', () => {
+  it('rejects an out-of-range or non-numeric dq or road', () => {
     const bad = (entry: Record<string, unknown>) => ({
       ...valid(),
       ranks: { foret: { bois: { word: 'bois', rank: 87, ...entry } } },
@@ -247,6 +247,13 @@ describe('parsePuzzle (shape validation)', () => {
     expect(() => parsePuzzle(bad({ road: -1 }))).toThrow(/road/);
     expect(() => parsePuzzle(bad({ road: 1.5 }))).toThrow(/road/);
     expect(() => parsePuzzle(bad({ road: '0' }))).toThrow(/road/);
+    // A road id is an INDEX the route view draws a lane for, so it is bounded above as well:
+    // `4294967295` parses as a fine non-negative integer and is a number nothing downstream
+    // can do anything sane with. The ceiling stays far above any clustering that could ship —
+    // a puzzle rejected here costs the whole day.
+    expect(() => parsePuzzle(bad({ road: 4294967295 }))).toThrow(/road/);
+    expect(() => parsePuzzle(bad({ road: 64 }))).toThrow(/road/);
+    expect(parsePuzzle(bad({ road: 63 }))).toBeTruthy();
   });
 
   // Optional hole affixes: display-only text around the blank (leading clitic /

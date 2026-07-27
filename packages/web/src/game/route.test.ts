@@ -137,6 +137,34 @@ describe('markers — departure and "you are here"', () => {
     const model = route(map, ['w12', 'secret'], hole(0))!;
     expect(model.stops.some((s) => s.best)).toBe(false);
   });
+
+  it('takes "you are here" from the HOLE, not from the guess log', () => {
+    // The log is not a complete record of how the player got here: a guess deduped as a
+    // canonical duplicate never enters `tried` (gameStore.recordGuess) yet can still improve
+    // ANOTHER hole. So the current group can be one the history never mentions — and it is
+    // still where the player stands.
+    const model = route(map, ['w200'], hole(5))!;
+    expect(model.stops.find((s) => s.best)!.rank).toBe(5);
+    expect(model.stops.filter((s) => s.best)).toHaveLength(1);
+    // It is a place they have been, so it is a STOP like any other — carrying its group's own
+    // geometry — and never a censored station: the map cannot hide the word the sentence shows.
+    const here = model.stops.find((s) => s.rank === 5)!;
+    expect(here).toMatchObject({ word: map.w5.word, dq: map.w5.dq, road: map.w5.road });
+    expect(model.hidden.some((h) => h.rank === 5)).toBe(false);
+  });
+
+  it('finds that position even with no near field to read it from (--no-roads)', () => {
+    const noRoads = mkMap(300);
+    const model = route(noRoads, [], hole(42))!;
+    expect(model.stops.find((s) => s.best)).toMatchObject({ rank: 42, dq: noRoads.w42.dq });
+  });
+
+  it('marks nothing rather than the wrong station when the position has no entry', () => {
+    // Defensive: a rank the map cannot account for is not a reason to promote the closest
+    // logged stop — that is exactly the marker landing on a word the player has moved past.
+    const model = route(map, ['w200'], hole(7000))!;
+    expect(model.stops.some((s) => s.best)).toBe(false);
+  });
 });
 
 describe('the censored near field — every group on the roads', () => {
@@ -298,6 +326,32 @@ describe('geometry is read once per rank map', () => {
   it('caches per map object (the maps are immutable for a puzzle lifetime)', () => {
     const map = mkMap(200, { roadTop: 100, roadCount: 4 });
     expect(routeGeometry(map)).toBe(routeGeometry(map));
-    expect(routeGeometry(map).roadCount).toBe(4);
+    expect(routeGeometry(map).lanes.size).toBe(4);
+  });
+});
+
+describe('lanes cost what the DATA holds, never what an id claims', () => {
+  it('allocates one lane per DISTINCT road, in ascending id order', () => {
+    // A road id is a number off the network. Sizing the lane array by `max id + 1` handed it
+    // the allocation: `road: 4294967295` is a well-formed non-negative integer and threw
+    // RangeError, while smaller hostile values just ate memory. The parse layer caps the value
+    // (api.ts MAX_ROAD); the model additionally never lets an id BE a length.
+    const map = mkMap(300, { roadTop: 100, roadCount: 2 });
+    for (let rank = 1; rank <= 100; rank += 1) map[`w${rank}`].road = rank % 2 === 1 ? 0 : 4294967295;
+    const model = route(map, ['w4'], hole(4))!;
+    expect(model.roads).toHaveLength(2);
+    // Ascending, so generation's own ordering survives: the road holding rank 1 stays lane 0.
+    expect(model.stops.find((s) => s.rank === 1 || s.rank === 3)?.road ?? 0).toBe(0);
+    expect(model.stops.find((s) => s.rank === 4)!.road).toBe(1);
+    expect(model.roads[1].label).toBe('w4');
+  });
+
+  it('leaves a generated map untouched — contiguous ids already ARE their lanes', () => {
+    const map = mkMap(300, { roadTop: 100, roadCount: 3 });
+    const model = route(map, ['w4', 'w5', 'w6'], hole(4))!;
+    for (const stop of model.stops) {
+      expect(stop.road).toBe(map[`w${stop.rank}`].road ?? null);
+    }
+    for (const h of model.hidden) expect(h.road).toBe(map[`w${h.rank}`].road);
   });
 });

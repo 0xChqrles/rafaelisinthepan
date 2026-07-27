@@ -876,9 +876,28 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   the dialog — the space around the line lives inside it.
   No motion (nothing for reduced motion to collapse) and **no new analytics event** — the
   three-event invariant stands.
-  Side effect on the shared input: `WordInput`'s window listener now lets a focused BUTTON
-  keep only `Enter`, and `Game.appendChar` blurs a focused hole button, so typing a guess
-  right after closing a map is never swallowed.
+  **"You are here" is read off the HOLE, never off the guess log** (fixed 2026-07-27): a guess
+  deduped as a canonical duplicate never enters `tried` (`gameStore.recordGuess`) and can still
+  IMPROVE another hole, so the current group can be one the history does not mention. `buildRoute`
+  therefore looks the hole's own rank up and visits it as a stop; inferring it from the log and
+  falling back to the closest logged one put the marker on a word the player had moved past — a
+  rank-5 hole reading as its rank-104 departure, its current word censored `???` on the map while
+  the sentence showed it.
+  **The hole button is DESCRIBED, not LABELLED** (fixed 2026-07-27): an `aria-label` REPLACES the
+  content it wraps, and that content — the word and its exponent — IS the clue, so labelling the
+  button deleted it from the button and from the sentence a screen reader reads. The hint moved to
+  `aria-describedby`, pointing at an sr-only note `Phrase` renders OUTSIDE the `<p>` (inside it,
+  "Explore word 2" would interleave into the prose).
+  **A road id may never BE an array length** (fixed 2026-07-27): ids come off the network, so
+  `routeGeometry` allocates one lane per DISTINCT road present (`lanes`, ascending → generation's
+  contiguous ids are unchanged) instead of sizing by `max id + 1`, where a well-formed
+  `road: 4294967295` threw `RangeError`. `api.ts` caps the value too (`MAX_ROAD` 63) — generous on
+  purpose, since a rejected puzzle costs the whole day.
+  Side effect on the shared input: `WordInput`'s window listener lets a focused BUTTON keep only
+  `Enter`, and EVERY editing path in `Game` (`appendChar`, `deleteChar`, `replaceInput`) blurs a
+  focused hole button through `releaseHoleFocus`. All three, not just typing: with Backspace and
+  history recall leaving it focused, "close the map, fix a typo, press Enter" reopened the map
+  instead of submitting (fixed 2026-07-27).
 - **Offline LLM benchmark harness (#68, Kimi provider #91, native sessions #93,
   decided 2026-07-19).** The
   dedicated `benchmark` workspace owns `benchmark/scripts/llm_play.py`, its tests, and

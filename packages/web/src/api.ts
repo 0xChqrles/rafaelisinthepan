@@ -50,19 +50,29 @@ function isWord(v: unknown): v is Word {
   return isRecord(v) && typeof v.word === 'string' && typeof v.slug === 'string';
 }
 
+// A road id is an index into the route view's lanes, and the front stays agnostic of how many
+// roads generation may cut — but not INFINITELY so, because this parse is the only thing between
+// the network and a number the drawing has to size itself by. `road: 4294967295` is a
+// well-formed non-negative integer and nothing downstream could do anything sane with it, so the
+// ceiling sits far above any clustering that could plausibly ship (ROAD_KS tops out at 4 today,
+// leaving 16× of headroom) and far below a value that could hurt. Generous on purpose: a puzzle
+// rejected here fails the whole DAY, which must never be the price of a cosmetic knob moving.
+const MAX_ROAD = 63;
+
 // The optional distance annotations on a rank entry (#115). They are group properties
 // generation adds — every puzzle published before them carries none, so ABSENT stays
 // valid — but a PRESENT one must be well formed: scoring and the route view read them
-// as numbers, so a string or an out-of-byte-range value would corrupt both silently.
-// `road` is only bounded below: how many roads generation may cut is its knob, and the
-// front stays as agnostic of it as it is of TOP_K.
+// as numbers, so a string or an out-of-range value would corrupt both silently.
 function checkRankAnnotations(entry: Record<string, unknown>): void {
   const { dq, road } = entry;
   if (dq !== undefined && (typeof dq !== 'number' || !Number.isInteger(dq) || dq < 0 || dq > 255)) {
     throw new Error('malformed puzzle: "dq" must be an integer 0-255');
   }
-  if (road !== undefined && (typeof road !== 'number' || !Number.isInteger(road) || road < 0)) {
-    throw new Error('malformed puzzle: "road" must be a non-negative integer');
+  if (
+    road !== undefined &&
+    (typeof road !== 'number' || !Number.isInteger(road) || road < 0 || road > MAX_ROAD)
+  ) {
+    throw new Error(`malformed puzzle: "road" must be an integer 0-${MAX_ROAD}`);
   }
 }
 

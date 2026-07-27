@@ -42,7 +42,11 @@ export interface RouteStop {
   rank: number; // the group's rank — also its identity on this map
   word: string; // canonical accented display form (never a slug)
   dq: number; // position on the distance axis
-  road: number | null; // its lane, or null when it sits below the fork (the trunk)
+  // Its LANE: the group's road as an index into `RouteModel.roads`, or null when it sits below
+  // the fork (the trunk). Generation numbers roads contiguously from the closest member's rank,
+  // so on a generated map the lane index IS the road id — see `RouteGeometry.lanes` for why it
+  // is looked up rather than used raw.
+  road: number | null;
   start: boolean; // the departure marker: the start word the puzzle handed out
   best: boolean; // "you are here": the hole's current closest word
 }
@@ -52,7 +56,7 @@ export interface RouteStop {
 export interface RouteHidden {
   rank: number;
   dq: number;
-  road: number | null;
+  road: number | null; // its lane, like RouteStop.road
   // The canonical accented form — present ONLY once the hole is solved (decided 2026-07-26): the
   // map then becomes the post-mortem, and the whole neighborhood is public. `null` while the
   // round is live, where a censored station is a position and a lane and nothing else.
@@ -93,7 +97,14 @@ interface RouteGeometry {
   // Bounded by the roads, so it holds the departure's rank worth of entries out of the map's
   // tens of thousands.
   near: Map<number, RankEntry>;
-  roadCount: number; // max road id + 1 (0 when the map carries no roads at all)
+  // The DISTINCT road ids this map ships, ascending, each mapped to its LANE INDEX. Generation
+  // numbers roads contiguously from the closest member's rank, so on a generated map the two are
+  // the same number and this is an identity. It exists for the map that ISN'T generated: a road
+  // id is a number off the network, and sizing the lane array by `max id + 1` handed it the
+  // allocation — a well-formed `road: 4294967295` threw RangeError, and smaller hostile values
+  // just ate memory. Lanes now cost what the DATA holds (one per road actually present, bounded
+  // by the near field) rather than what an id VALUE claims.
+  lanes: Map<number, number>;
   forkDq: number; // dq of the farthest group that still carries a road
   nearTop: number; // the farthest rank of the near field — from the DATA, floored at APPROACH_TOP
   plottable: boolean; // the rank-1 group carries dq -> this map can be drawn
@@ -105,7 +116,7 @@ export function routeGeometry(rankMap: Record<string, RankEntry>): RouteGeometry
   const cached = geometryCache.get(rankMap);
   if (cached) return cached;
   const near = new Map<number, RankEntry>();
-  let roadCount = 0;
+  const roadIds = new Set<number>();
   let forkRank = 0;
   let forkDq = DQ_MAX;
   for (const key in rankMap) {
@@ -117,16 +128,20 @@ export function routeGeometry(rankMap: Record<string, RankEntry>): RouteGeometry
     // key wins with no ambiguity.
     if ((onRoad || entry.rank <= APPROACH_TOP) && !near.has(entry.rank)) near.set(entry.rank, entry);
     if (!onRoad) continue;
-    if (entry.road! + 1 > roadCount) roadCount = entry.road! + 1;
+    roadIds.add(entry.road!);
     if (entry.rank > forkRank) {
       forkRank = entry.rank;
       forkDq = entry.dq!;
     }
   }
+  // Ascending, so the lanes keep generation's own ordering: road 0 holds rank 1, and lane 0 is
+  // the one the destination's own cluster runs on.
+  const lanes = new Map<number, number>();
+  for (const id of [...roadIds].sort((a, b) => a - b)) lanes.set(id, lanes.size);
   const rank1 = near.get(1);
   const geometry: RouteGeometry = {
     near,
-    roadCount,
+    lanes,
     forkDq,
     nearTop: Math.max(forkRank, APPROACH_TOP),
     plottable: rank1 !== undefined && rank1.dq !== undefined,
@@ -164,6 +179,11 @@ export function buildRoute({
   const byRank = new Map<number, RouteStop>();
   const misses: string[] = [];
 
+  // A group's road as a LANE index (see RouteGeometry.lanes). Null below the fork, and null for
+  // a road id the geometry pass never saw — which cannot happen for an entry of this same map.
+  const laneOf = (entry: RankEntry): number | null =>
+    entry.road === undefined ? null : geometry.lanes.get(entry.road) ?? null;
+
   // One stop per GROUP: an alias typed twice, or two different inflections of one word,
   // land on the same rank and collapse into the one canonical stop (#104).
   const visit = (entry: RankEntry, start: boolean) => {
@@ -178,10 +198,22 @@ export function buildRoute({
       rank: entry.rank,
       word: entry.word,
       dq: entry.dq,
-      road: entry.road ?? null,
+      road: laneOf(entry),
       start,
       best: false,
     });
+  };
+
+  // The entry for a rank the guess log does not cover, for the one lookup that needs it (below).
+  // The near field answers it outright on a generated map — its roads run out to the departure
+  // and a hole never sits farther than where it was put down — so the scan is the fallback for a
+  // `--no-roads` map, which has no near field to speak of. Aliases of a group carry identical
+  // values, so the first key found wins, exactly as in the geometry pass.
+  const entryAtRank = (rank: number): RankEntry | undefined => {
+    const known = geometry.near.get(rank);
+    if (known) return known;
+    for (const key in rankMap) if (rankMap[key].rank === rank) return rankMap[key];
+    return undefined;
   };
 
   const startEntry = rankMap[startSlug];
@@ -195,17 +227,27 @@ export function buildRoute({
     visit(entry, false);
   }
 
-  const stops = [...byRank.values()].sort((a, b) => a.rank - b.rank);
-  // "You are here" is the hole's own current word. A solved hole has reached the terminus,
-  // so no stop carries the marker.
+  // "You are here" is the hole's OWN position, looked up rather than inferred from the guess log:
+  // the hole is the authority on where the player stands, and the log is not a complete record of
+  // how they got there. A guess deduped as a canonical duplicate never enters `tried`
+  // (gameStore.recordGuess) and can still IMPROVE another hole, so the current group may be one
+  // the history never mentions. Reading the closest LOGGED stop instead put the marker on a word
+  // the player had already moved past — a hole sitting at rank 5 reading as its rank-104
+  // departure — and left its current word censored in the near field, `???` on the map while the
+  // sentence showed it. Visiting it here also makes it a STOP, which is what it is: a place they
+  // have been. A solved hole has reached the terminus, so nothing on the axis carries the marker.
   if (!solved) {
-    const here = byRank.get(hole.rank) ?? stops[0];
+    const entry = entryAtRank(hole.rank);
+    if (entry) visit(entry, false);
+    const here = byRank.get(hole.rank);
     if (here) here.best = true;
   }
 
+  const stops = [...byRank.values()].sort((a, b) => a.rank - b.rank);
+
   // Roads are named by DISCOVERY: stops are closest-first, so the first one on a lane is
   // the best word the player has found there. A lane nobody reached stays censored.
-  const roads: RouteRoad[] = Array.from({ length: Math.max(geometry.roadCount, 1) }, (_, id) => ({
+  const roads: RouteRoad[] = Array.from({ length: Math.max(geometry.lanes.size, 1) }, (_, id) => ({
     id,
     label: null,
   }));
@@ -228,7 +270,7 @@ export function buildRoute({
     hidden.push({
       rank,
       dq: entry.dq,
-      road: entry.road ?? null,
+      road: laneOf(entry),
       word: solved ? entry.word : null,
     });
   }
