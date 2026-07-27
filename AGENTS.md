@@ -794,7 +794,12 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   point is telling it from the next one at a glance): `LANE_COLORS` (≤ 4 — `ROAD_KS` caps roads
   there) takes four far-apart hues from the **progress ramp's own stops**
   (`shared/progressColor.ts`) rather than inventing a palette, COPIED not imported, because that
-  ramp means "progress" and these mean "identity". Pink leads, never cyan: lane A always holds
+  ramp means "progress" and these mean "identity". Copied means nothing catches drift, so
+  `laneColors.test.ts` pins each hex to the stop it was taken from — pink 70, cyan 30, violet 90,
+  green 40 (added 2026-07-27 on review; it immediately caught the violet as `#883beb` where its
+  stop is `#883ceb`). If a stop is ever retuned the guard fails, and the choice gets made again
+  on purpose rather than the map quietly speaking a stale palette.
+  Pink leads, never cyan: lane A always holds
   rank 1 and cyan is what the heat ramp paints a rank-1 number, so leading with it would imply a
   rule that isn't one. Gold is "you" and blue is solved, so no lane may borrow either — and
   `--rail` stays the ONE unsaturated line on the map, because the trunk is exactly the stretch

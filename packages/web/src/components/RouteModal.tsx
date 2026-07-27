@@ -103,7 +103,11 @@ const LANE_W = 5;
 // widest-apart hues, and pink (never cyan) leads: lane A always holds rank 1, and cyan is what
 // the heat ramp paints a rank-1 number, so leading with it would imply a rule that isn't one.
 // Gold is "you" and blue is solved, so no lane may borrow either. ROAD_KS caps roads at 4.
-const LANE_COLORS = ['#ef4f97', '#2ad2eb', '#883beb', '#23dc91'];
+// Exported for the drift guard in laneColors.test.ts, which pins each to the stop it was taken
+// from — pink 70, cyan 30, violet 90, green 40. (That guard immediately caught the violet as
+// #883beb where its stop is #883ceb: a one-off in the transcription, invisible on screen but
+// exactly the kind of thing "copied, not imported" can hide forever.)
+export const LANE_COLORS = ['#ef4f97', '#2ad2eb', '#883ceb', '#23dc91'];
 
 function laneX(road: number): number {
   return LANE_X0 + road * LANE_GAP;

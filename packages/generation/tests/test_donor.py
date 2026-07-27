@@ -601,3 +601,47 @@ def test_selector_asks_for_the_display_form_too(monkeypatch):
     assert rmap["amuses"] == {**rmap["amuse"], "word": "amuses"}
     # and the raw-mode loop carried on normally after the detour.
     assert [h["start"]["word"] for h in holes[1:]] == ["amuse", "amuse"]
+
+
+def test_selector_stamps_the_geometry_when_it_commits_a_start(monkeypatch):
+    """#115's roads cannot be stamped until the start word is known, so BOTH selection
+    paths have to do it once they have one. The --words path is covered by the geometry
+    tests (test_distances.py); this covers the selector, whose call site is otherwise
+    reachable only through the raw-mode loop — and a start committed there without the
+    call ships a road-less puzzle that draws as a single trunk with no error anywhere."""
+    import os
+    import termios
+    import tty
+
+    monkeypatch.setattr(FR["module"], "closest",
+                        lambda _w, _kv, _v, _m, *, n: START_RANKING, raising=False)
+    monkeypatch.setattr(gen_phrase, "start_band", lambda _secret, _ranking: [("amuse", 1)])
+
+    fd = os.open(os.devnull, os.O_RDONLY)
+    monkeypatch.setattr(gen_phrase.sys, "stdin",
+                        type("Stdin", (), {"fileno": lambda self: fd,
+                                           "isatty": lambda self: True})())
+    monkeypatch.setattr(termios, "tcgetattr", lambda _fd: None)
+    monkeypatch.setattr(termios, "tcsetattr", lambda *_a: None)
+    monkeypatch.setattr(tty, "setcbreak", lambda _fd: None)
+    keys = iter(["ENTER", "1", "ENTER"] * 3)
+    monkeypatch.setattr(gen_phrase, "_read_key", lambda _fd: next(keys))
+    monkeypatch.setattr("builtins.input", lambda _p="": "")
+
+    try:
+        holes, ranks = gen_phrase.select_holes_interactive(
+            _words(START_SENTENCE), FR, "fr", kv=KV, V=VOCAB, M=object(),
+            Vset=VSET, lemma_table=TABLE, forms_by_lemma=FORMS,
+            donors=_resolver(interactive=True))
+    finally:
+        os.close(fd)
+
+    for hole in holes:
+        rmap = ranks[hole["secret"]["slug"]]
+        start_rank = hole["start_rank"]
+        # dq has no opt-out: every ranked group carries it, the secret none.
+        assert all("dq" in e for e in rmap.values() if e["rank"] != 0)
+        assert "dq" not in rmap[hole["secret"]["slug"]]
+        # And the roads cover the journey — the departure included, nothing behind it.
+        assert all("road" in e for e in rmap.values() if 1 <= e["rank"] <= start_rank)
+        assert not any("road" in e for e in rmap.values() if e["rank"] > start_rank)

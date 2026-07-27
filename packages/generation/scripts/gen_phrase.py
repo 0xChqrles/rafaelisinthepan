@@ -1163,7 +1163,15 @@ class FormResolver:
             # carrying a rank but no dq would drop that group off the route map, and
             # typing the very form the hole prints would land on a station with no place.
             group = next((rank_map[k] for k in keys if rank_map[k]["rank"] == rank), None)
-            rank_map[s] = {**group, "word": form} if group else {"word": form, "rank": rank}
+            if group is None:
+                # Every key this group had has been reclaimed by a closer one on an earlier
+                # pass, so the rank is no longer in the map at all. Keying the agreed form
+                # would RESURRECT it — and with nothing to inherit from, without dq: a rank
+                # that scores a hit in the game and cannot be drawn on its own route map
+                # (route.ts skips a dq-less entry, so it is neither a stop nor a miss).
+                # `dq` has no opt-out, so the honest outcome is to leave the group gone.
+                continue
+            rank_map[s] = {**group, "word": form}
             changed[rank] = (canonical, form)
         if changed:
             self.used[slug(secret)] = (secret, feature, len(changed))

@@ -88,10 +88,11 @@ describe('placement — every stop keeps its group geometry', () => {
     expect(map.w100.road).not.toBeUndefined();
   });
 
-  it('forks where the data says: the dq of the farthest group that still has a road', () => {
+  it('forks where the data says: the departure is the farthest station on a lane', () => {
     const model = route(map, [], hole(100))!;
-    // The departure is the farthest station on a lane, so the fork lands just before it.
-    expect(model.forkDq).toBe(map.w100.dq);
+    // Which is what puts the fork just before it: the renderer places it at the first
+    // station that has a road, reading down from the cold end.
+    expect(model.stops.find((s) => s.start)?.road).not.toBeNull();
     expect(model.roads).toHaveLength(3);
   });
 
@@ -302,7 +303,6 @@ describe('one road ⇒ no fork', () => {
     const model = route(map, ['w4', 'w200'], hole(4))!;
     expect(model.roads).toHaveLength(1);
     expect(model.roads[0].label).toBe('w4');
-    expect(model.forkDq).toBe(map.w100.dq);
   });
 
   it('also handles a map generated with no road field at all (--no-roads)', () => {
@@ -328,6 +328,29 @@ describe('a puzzle without dq has no map at all', () => {
 
   it('builds nothing rather than a degraded list', () => {
     expect(route(legacy, ['w1'], hole(1), 'w40')).toBeNull();
+  });
+
+  // hasRoute answers from the rank-1 entry alone rather than building the geometry (it is
+  // asked for every hole on the first render of every round, geometry or not). Two readings
+  // of one predicate, so they are pinned to each other — including on the shapes where they
+  // could most easily disagree.
+  it('agrees with the geometry it declines to build, whichever order they are asked in', () => {
+    const cases: Record<string, RankEntry>[] = [
+      mkMap(20),
+      mkMap(300, { roadTop: 100, roadCount: 3 }),
+      legacy,
+      // rank 1 present but dq-less while FARTHER groups carry one: an early exit that took the
+      // first dq it saw, rather than the first rank-1 entry, would call this plottable.
+      { secret: { word: 's', rank: 0 }, w1: { word: 'w1', rank: 1 }, w2: { word: 'w2', rank: 2, dq: 9 } },
+      // no rank 1 at all
+      { secret: { word: 's', rank: 0 }, w2: { word: 'w2', rank: 2, dq: 9 } },
+      // aliases of the rank-1 group, which carry identical values
+      { secret: { word: 's', rank: 0 }, a: { word: 'w1', rank: 1, dq: 255 }, b: { word: 'w1', rank: 1, dq: 255 } },
+    ];
+    for (const map of cases) {
+      expect(hasRoute(map)).toBe(routeGeometry(map).plottable); // cold: no geometry cached
+      expect(hasRoute(map)).toBe(routeGeometry(map).plottable); // warm: reads the cache
+    }
   });
 });
 

@@ -80,12 +80,19 @@ export interface RouteModel {
   secret: string | null;
   solved: boolean;
   roads: RouteRoad[]; // always at least one; one road ⇒ no fork, a single rail
-  forkDq: number; // where the lanes separate: the dq of the farthest road-carrying group
   stops: RouteStop[]; // closest-first
   // Every NEAR-FIELD group not yet reached, closest-first, out to the DEPARTURE's rank. Words
   // withheld until the hole is solved.
   hidden: RouteHidden[];
-  misses: string[]; // tried words with NO entry in this map, in try order
+  // Tried words with NO entry in this map, in try order. These are the ONLY words on the map
+  // rendered from `tried` rather than from a rank entry's canonical `word` — which looks like a
+  // breach of "never display a slug", and isn't: on this game the player CANNOT type an accent.
+  // Both input paths produce folded slug characters only — the on-screen keyboard has no accent
+  // keys, and WordInput folds every physical keystroke through `slugChars` — so `foret` is
+  // literally what was typed, not a slugged `forêt`. There is no canonical form to prefer here
+  // either: a word in no rank map has none, and the vocab file is slugs. (Flagged in review
+  // 2026-07-27 and checked; if the input ever accepts accents, this becomes a real bug.)
+  misses: string[];
 }
 
 // What the map needs to know about a rank map that a single guess lookup can't tell it:
@@ -105,7 +112,6 @@ interface RouteGeometry {
   // just ate memory. Lanes now cost what the DATA holds (one per road actually present, bounded
   // by the near field) rather than what an id VALUE claims.
   lanes: Map<number, number>;
-  forkDq: number; // dq of the farthest group that still carries a road
   nearTop: number; // the farthest rank of the near field — from the DATA, floored at APPROACH_TOP
   plottable: boolean; // the rank-1 group carries dq -> this map can be drawn
 }
@@ -118,7 +124,6 @@ export function routeGeometry(rankMap: Record<string, RankEntry>): RouteGeometry
   const near = new Map<number, RankEntry>();
   const roadIds = new Set<number>();
   let forkRank = 0;
-  let forkDq = DQ_MAX;
   for (const key in rankMap) {
     const entry = rankMap[key];
     if (entry.rank === 0) continue; // the secret is the terminus, not a group on the axis
@@ -129,10 +134,7 @@ export function routeGeometry(rankMap: Record<string, RankEntry>): RouteGeometry
     if ((onRoad || entry.rank <= APPROACH_TOP) && !near.has(entry.rank)) near.set(entry.rank, entry);
     if (!onRoad) continue;
     roadIds.add(entry.road!);
-    if (entry.rank > forkRank) {
-      forkRank = entry.rank;
-      forkDq = entry.dq!;
-    }
+    if (entry.rank > forkRank) forkRank = entry.rank;
   }
   // Ascending, so the lanes keep generation's own ordering: road 0 holds rank 1, and lane 0 is
   // the one the destination's own cluster runs on.
@@ -142,7 +144,6 @@ export function routeGeometry(rankMap: Record<string, RankEntry>): RouteGeometry
   const geometry: RouteGeometry = {
     near,
     lanes,
-    forkDq,
     nearTop: Math.max(forkRank, APPROACH_TOP),
     plottable: rank1 !== undefined && rank1.dq !== undefined,
   };
@@ -152,8 +153,24 @@ export function routeGeometry(rankMap: Record<string, RankEntry>): RouteGeometry
 
 // Can this secret be mapped at all? A puzzle published before #115 carries no dq, and the
 // feature is the map or nothing: the hole then gets NO tap affordance (explicit decision).
+//
+// Asked for EVERY hole on the first render of every round, whether or not a map is ever
+// opened, so it must not pay for the geometry: `routeGeometry` walks the whole alias-expanded
+// map (~39k keys per secret on a real fr puzzle, three of them) to build a near field and a
+// lane table nobody has asked for yet. The question is only "does the rank-1 group carry dq",
+// and rank 1 is at the FRONT of a generated map — the keys are written closest-first — so
+// stopping at it answers the same question in a handful of iterations. It has to be the same
+// answer, and it is by construction: both take the FIRST key found at rank 1, and aliases of a
+// group carry identical values. A map already opened has its geometry cached, so reuse that
+// rather than scanning twice.
 export function hasRoute(rankMap: Record<string, RankEntry> | undefined): boolean {
-  return rankMap !== undefined && routeGeometry(rankMap).plottable;
+  if (rankMap === undefined) return false;
+  const cached = geometryCache.get(rankMap);
+  if (cached) return cached.plottable;
+  for (const key in rankMap) {
+    if (rankMap[key].rank === 1) return rankMap[key].dq !== undefined;
+  }
+  return false;
 }
 
 // The one-time self-demonstration (#129): the FIRST hole a player ever solves opens its own
@@ -302,7 +319,6 @@ export function buildRoute({
     secret: solved ? secretWord : null,
     solved,
     roads,
-    forkDq: geometry.forkDq,
     stops,
     hidden,
     misses,
