@@ -1650,6 +1650,39 @@ button * {
     opacity: 1;
   }
 }
+/* Closing RETRACTS into the same word: the opening run backwards, so the map goes back where it
+   came from and the sentence underneath is somewhere you RETURNED to rather than somewhere you
+   were dropped. RouteModal holds the dialog open through this and only calls `close()` when it
+   ends (see `beginClose`) — a native dialog would otherwise vanish on the spot.
+
+   Written out as its own keyframes rather than `animation-direction: reverse` on the opening
+   one: with the same `animation-name`, changing direction UPDATES the existing animation instead
+   of starting one, and the opening run has long since finished — so it would hold its end state
+   and snap rather than play. The mirror is exact — `ease-in` against `ease-out`, and the opacity
+   stop moved from 35% to 65% — so the panel stays solid for most of the travel and only thins
+   out at the end, the same way round.
+
+   `forwards` holds the final tiny frame: without it the dialog would flash back to full size for
+   the frame between the animation ending and React unmounting it. */
+.route-dialog[open].closing {
+  animation: route-zoom-out 120ms ease-in forwards;
+  /* Nothing inside is aimed at any more — and a second dismissal mid-retraction would only
+     restart a beat that is already leaving. */
+  pointer-events: none;
+}
+@keyframes route-zoom-out {
+  from {
+    transform: scale(1);
+    opacity: 1;
+  }
+  65% {
+    opacity: 1;
+  }
+  to {
+    transform: scale(0.05);
+    opacity: 0;
+  }
+}
 /* The header. NOT a modal chrome of its own: it reuses the app's own corner-chip row wholesale
    (`.topbar-inner` / `.topbar-left` / `.topbar-title` / `.topbar-right` / `.home-btn`, see
    TopBar and the Archive screen), so it can never drift from it — no band, no border, no

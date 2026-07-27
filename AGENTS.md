@@ -887,9 +887,22 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   **A transform cannot disturb what this modal measures on open** — the sticky row's natural
   place and the opening scroll are read from `offsetTop`/`offsetHeight`/`clientHeight` in layout
   effects before it ever paints — and that was verified rather than assumed: on a 4.2-screen map
-  the opening view is identical with the animation on and forced off. Closing is NOT animated
-  (the dialog unmounts). Reduced motion collapses the duration and, with no fill mode, lands on
-  the natural scale. Still **no new analytics event** — the three-event invariant stands.
+  the opening view is identical with the animation on and forced off.
+  **Closing RETRACTS into the same word** (decided 2026-07-27, superseding the unanimated close):
+  the map goes back where it came from, so the sentence underneath is somewhere you RETURNED to
+  rather than somewhere you were dropped. That means the dialog has to outlive the dismissal —
+  every route to a close (the X, the backdrop, and **Escape**, whose `cancel` event is
+  `preventDefault`ed precisely because a native dialog would otherwise vanish on the spot) only
+  STARTS the exit; the real `dialog.close()` waits on the animation's `animationend`, with a
+  deadline behind it (`ROUTE_EXIT_FALLBACK_MS`) so a lost event can never lock the player inside
+  a modal. `route-zoom-out` is written out as its OWN keyframes rather than
+  `animation-direction: reverse` on the opening one: with the same `animation-name` a direction
+  change UPDATES the running animation instead of starting one, and the opening run has long
+  since finished — it would snap to its end state rather than play. It carries `forwards`, or the
+  dialog flashes back to full size for the frame between the animation ending and React
+  unmounting it. Reduced motion collapses both durations; the opening lands on the natural scale
+  and the close still completes. Still **no new analytics event** — the three-event invariant
+  stands.
   **"You are here" is read off the HOLE, never off the guess log** (fixed 2026-07-27): a guess
   deduped as a canonical duplicate never enters `tried` (`gameStore.recordGuess`) and can still
   IMPROVE another hole, so the current group can be one the history does not mention. `buildRoute`

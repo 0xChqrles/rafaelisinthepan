@@ -31,10 +31,11 @@ import CloseIcon from '../assets/icons/close.svg?react';
 // row, so the whole journey is one screen instead of four and the order it reads in is the
 // order it is drawn in. Long stretches still read as long, just bounded (LINK_MAX).
 //
-// Nothing here is persisted, and the LINE is not animated — the one animation is the opening
-// zoom out of the tapped word (`route-zoom`), which is the transition INTO the map, not part of
-// the drawing. The whole drawing is derived from the model (game/route.ts), so a guess landing
-// while it is open just adds a station.
+// Nothing here is persisted, and the LINE is not animated — the only motion is the map arriving
+// and leaving: it zooms out of the tapped word (`route-zoom`) and retracts back into it
+// (`route-zoom-out`). That is the transition into and out of the map, not part of the drawing.
+// The whole drawing is derived from the model (game/route.ts), so a guess landing while it is
+// open just adds a station.
 
 // A connector carries the distance between the two stations it joins: `LINK_SPAN` px per full
 // dq scale, floored so two neighbours never collide and capped so the cold tail cannot push the
@@ -75,6 +76,11 @@ const STICK_INSET = 8;
 // ratio, clientHeight is rounded — and a coin toss between "where it lives" and "parked" is a
 // separator flickering into the opening view.
 const STICK_SLACK = 1;
+
+// Deadline on the closing retraction's `animationend` (see `beginClose`): a generous multiple of
+// the 120ms exit, cancelled by the genuine event. Being stranded here means being stuck inside
+// the modal, so the signal it waits on gets a backstop like every other one in this app.
+const ROUTE_EXIT_FALLBACK_MS = 800;
 
 // A word you have not found — the destination, or a station of the censored final approach.
 // FIXED width: a placeholder that grew with the word would leak its length.
@@ -345,16 +351,49 @@ export default function RouteModal({
     readStuck();
   }, [readStuck]);
 
-  const close = useCallback(() => dialogRef.current?.close(), []);
+  // Closing RETRACTS into the word, the same zoom run backwards — the map goes back where it
+  // came from, so the sentence underneath is somewhere you returned to rather than somewhere
+  // you were dropped. Which means the dialog has to outlive the dismissal: every route to a
+  // close (the X, the backdrop, Escape) only STARTS the exit here, and the real
+  // `dialog.close()` — the thing that fires `onClose` and lets Game unmount this — waits for
+  // the animation to report itself done.
+  //
+  // The origin does not need re-measuring: while the map is open the input is gated
+  // (`WordInput active`) and the keyboard is behind it, so no guess can land and the word it
+  // grew out of cannot have moved.
+  const [closing, setClosing] = useState(false);
+  const beginClose = useCallback(() => setClosing(true), []);
+  const finishClose = useCallback(() => dialogRef.current?.close(), []);
+  // The exit hands the dialog back through a signal the DOM has to produce, so it carries a
+  // deadline like the solved beats do (see Game): a generous multiple of the real duration,
+  // cancelled by the genuine `animationend`. A lost animation event must never be able to
+  // leave the player locked inside a modal.
+  useEffect(() => {
+    if (!closing) return undefined;
+    const id = window.setTimeout(finishClose, ROUTE_EXIT_FALLBACK_MS);
+    return () => window.clearTimeout(id);
+  }, [closing, finishClose]);
 
   return createPortal(
     // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/click-events-have-key-events
     <dialog
       ref={dialogRef}
-      className="route-dialog"
+      className={`route-dialog${closing ? ' closing' : ''}`}
       style={frame}
       aria-label={title}
       onClose={onClose}
+      // Escape closes a native dialog INSTANTLY, which would skip the retraction entirely.
+      // `cancel` is cancelable and fires first, so it becomes the same request as the other two.
+      onCancel={(e) => {
+        e.preventDefault();
+        beginClose();
+      }}
+      onAnimationEnd={(e) => {
+        // The dialog's OWN exit, not a descendant's animation bubbling up through it.
+        if (closing && e.target === dialogRef.current && e.animationName === 'route-zoom-out') {
+          finishClose();
+        }
+      }}
       onClick={(e) => {
         // Everything AROUND the line dismisses, like the leaderboard's backdrop. Three elements
         // can be hit directly: the dialog, the scroller (the margin beside the line's column) and
@@ -362,7 +401,7 @@ export default function RouteModal({
         // empty space, which is the tail below the terminus.
         const hit = e.target;
         if (hit === dialogRef.current || hit === scrollRef.current || hit === lineRef.current) {
-          close();
+          beginClose();
         }
       }}
     >
@@ -383,7 +422,7 @@ export default function RouteModal({
               type="button"
               className="home-btn route-close"
               aria-label={t(lang, 'ariaClose')}
-              onClick={close}
+              onClick={beginClose}
             >
               <CloseIcon className="pixel-icon" aria-hidden />
             </button>
