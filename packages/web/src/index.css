@@ -1008,10 +1008,13 @@ button * {
 .hole-letter {
   display: inline-block;
 }
-/* The wave (#129): every few seconds ONE unsolved hole ripples its letters, up then down in
-   sequence. Transform-only — the phrase must not reflow or shift width — and staggered off
-   the letter's index, with both numbers handed down from Hole so the JS that ends the wave
-   and the CSS that draws it cannot disagree. */
+/* The wave (#129): a hole ripples its letters, up then down in sequence. EVERY hole runs its
+   own clock (Hole.tsx, 3–10s re-rolled per wave), so several words can be mid-wave at once —
+   a single ripple travelling around the sentence reads as a cursor pointing somewhere, where
+   words breathing on separate rhythms read as the words being alive. Transform-only — the
+   phrase must not reflow or shift width — and staggered off the letter's index, with both
+   numbers handed down from Hole so the JS that ends the wave and the CSS that draws it
+   cannot disagree. */
 .hole-word.wave .hole-letter {
   animation: hole-wave var(--wave-dur, 300ms) ease-in-out calc(var(--i) * var(--wave-step, 40ms));
 }

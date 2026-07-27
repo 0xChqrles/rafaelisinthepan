@@ -980,8 +980,15 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   FINAL one, which belongs to the solved sequence (streak → exits → leaderboard → source) and
   must not gain a competing modal — and names the first newly solved hole in sentence order;
   `Game` filters to holes that HAVE a map before asking. It arms at submit time and waits for
-  that hole's own settle report (`resolvedHoleIndices`, the signal the solved gating uses) plus
-  350ms, never a guessed timeout. Archive replays included; the tutorial is untouched (it does
+  the holes' own settle reports (`resolvedHoleIndices`, the signal the solved gating uses) plus
+  350ms, never a guessed timeout — and from the LAST of them, not the target hole's: one guess
+  can drop two mappable holes, and a beat measured from the first would put the modal over a
+  word still scrambling. The target has settled either way, and the restart is bounded (one per
+  hole, and the set only grows). **This is the one place #129 interrupts rather than invites**
+  (weighed again on review 2026-07-28 and kept): it takes focus for a modal the player did not
+  ask for. What makes it acceptable is all three of — once per device lifetime, triggered by
+  the player's own solve, and focus returned to the hole on close. The wave deliberately does
+  none of that, which is why it stays an affordance and this stays a demonstration. Archive replays included; the tutorial is untouched (it does
   not render `Round`). No new analytics event — the three-event invariant stands.
 - **Offline LLM benchmark harness (#68, Kimi provider #91, native sessions #93,
   decided 2026-07-19).** The
@@ -1476,6 +1483,13 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
     `dialog.close()` — which fires `onClose` and lets the owner unmount — waits on the exit
     animation's `animationend`, with `EXIT_FALLBACK_MS` behind it. Escape goes through the same
     door: its `cancel` event is `preventDefault`ed, or a native dialog vanishes on the spot.
+    The exit's name is a **string contract with a real `@keyframes` rule** that nothing
+    type-checks and no test can (jsdom runs no animations), so the hook VERIFIES it instead of
+    trusting it: on `closing` it reads the computed `animation-name` and, if the expected one
+    is not there, closes immediately. Renaming a keyframe then costs the animation and nothing
+    else — where before it left `animationend` unfired and the modal INVISIBLE over an inert
+    page for the whole fallback, which reads as a freeze. Measured: 193ms to close normally,
+    53ms with the name broken, never 800.
   The hook must be the caller's FIRST hook, because it owns `showModal()` and a closed
   `<dialog>` is `display: none` — anything a modal measures on open would read a tree with no
   boxes (the route map's opening scroll is exactly that hazard).

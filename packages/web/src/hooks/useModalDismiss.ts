@@ -23,7 +23,9 @@ const EXIT_FALLBACK_MS = 800;
 //     a tap-anywhere screen by design.
 //
 // The caller spreads `dialogProps` onto its `<dialog>`, renders the `closing` class, and gives
-// CSS an exit animation named `exitAnimation` under `.closing`.
+// CSS an exit animation named `exitAnimation` under `.closing`. That name is a string contract
+// with a real `@keyframes` rule and nothing type-checks it — see the closing effect, which
+// verifies it rather than trusting it.
 export default function useModalDismiss(exitAnimation: string): {
   dialogRef: React.RefObject<HTMLDialogElement | null>;
   closing: boolean;
@@ -53,9 +55,28 @@ export default function useModalDismiss(exitAnimation: string): {
 
   useEffect(() => {
     if (!closing) return undefined;
+    // `exitAnimation` is a STRING CONTRACT with a specific `@keyframes` rule, which the caller
+    // must apply to the dialog under `.closing`. Nothing type-checks that, and no test can:
+    // jsdom runs no animations. Renaming the keyframe would leave `animationend` unfired and
+    // the close waiting on the fallback below — and that failure is NOT cosmetic, because the
+    // exit still plays: the modal ends up invisible while the page sits inert underneath it
+    // for most of a second, which reads as a freeze.
+    //
+    // So check for it instead of trusting it: the class is applied by the time this effect
+    // runs, so the computed animation-name says whether there is an exit to wait for at all.
+    // If there isn't, close NOW — a missing animation should cost the animation, never the
+    // responsiveness. (jsdom reports none, which is exactly right there too.) Reduced motion
+    // keeps the name and only collapses the duration, so it still waits for the real event.
+    const running = dialogRef.current
+      ? getComputedStyle(dialogRef.current).animationName.split(/,\s*/)
+      : [];
+    if (!running.includes(exitAnimation)) {
+      finishClose();
+      return undefined;
+    }
     const id = window.setTimeout(finishClose, EXIT_FALLBACK_MS);
     return () => window.clearTimeout(id);
-  }, [closing, finishClose]);
+  }, [closing, exitAnimation, finishClose]);
 
   return {
     dialogRef,

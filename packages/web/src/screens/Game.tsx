@@ -52,9 +52,10 @@ const STREAK_AFTER_WORDS_MS = 300;
 const KB_EXIT_FALLBACK_MS = 1_200;
 const LINEUP_EXIT_FALLBACK_MS = 3_000;
 
-// The beat between a first-ever solved word settling and its map opening itself (#129): long
-// enough for the resolved word to land as its own moment, short enough to read as its
-// consequence. The settle itself is never guessed — it waits for the hole's own report.
+// The beat between the sentence coming to rest and a first-ever solved word's map opening
+// itself (#129): long enough for the resolved word to land as its own moment, short enough to
+// read as its consequence. Never a guessed timeout — it is measured from the holes' own settle
+// reports (see the effect, which waits for the LAST of them).
 const AUTO_ROUTE_AFTER_SOLVE_MS = 350;
 
 // Wrapper: drives the single puzzle. Loads the language's fixed vocabulary
@@ -573,6 +574,13 @@ function Round({
     // Never a guessed timeout: the hole reports its own settle (the same signal that gates
     // the solved sequence), and only then does the map get its beat.
     if (!resolvedHoleIndices.has(autoRouteHole)) return undefined;
+    // And the beat is measured from the LAST settle, not this hole's — `resolvedHoleIndices`
+    // is a fresh Set per resolve and it is a dependency, so a sibling hole settling after it
+    // restarts the timer. That is deliberate, not incidental: one guess can drop two mappable
+    // holes, and 350ms after the FIRST would put the modal over a word still scrambling —
+    // exactly what waiting for a real settle exists to avoid. The target hole has settled
+    // either way (the guard above), and the restart is bounded: at most one per hole, and the
+    // set only ever grows. Don't "fix" this dependency away.
     const id = window.setTimeout(() => {
       setAutoRouteHole(null);
       openRoute(autoRouteHole);
@@ -678,16 +686,16 @@ function Round({
       // submit time, because this is where "solved by THIS guess" and "the round is over"
       // are both known — but only armed: the map waits for the word to finish resolving.
       // Restricted to holes that HAVE a map; a legacy puzzle simply never makes the offer.
-      if (!routeSeen) {
-        const target = shouldAutoOpenRoute(
-          routeSeen,
-          impacted
-            .filter(({ index, entry }) => entry?.rank === 0 && routeNumbers[index] !== null)
-            .map(({ index }) => index),
-          solvesAll,
-        );
-        if (target !== null) setAutoRouteHole(target);
-      }
+      // The `routeSeen` test lives in the helper alone (where it is part of the tested
+      // contract), not here as well — one decision, one place.
+      const autoRoute = shouldAutoOpenRoute(
+        routeSeen,
+        impacted
+          .filter(({ index, entry }) => entry?.rank === 0 && routeNumbers[index] !== null)
+          .map(({ index }) => index),
+        solvesAll,
+      );
+      if (autoRoute !== null) setAutoRouteHole(autoRoute);
 
       // Announce the guess's outcome to assistive tech — the audible twin of the
       // floating numbers below. One sentence covering every impacted hole (1-based, in
