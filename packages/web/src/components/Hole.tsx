@@ -52,6 +52,15 @@ function waveDurationMs(letters: number): number {
   return WAVE_LETTER_MS + Math.max(0, letters - 1) * WAVE_STEP_MS;
 }
 
+// How long a hole waits between its own waves. EVERY hole runs this clock independently
+// (decided 2026-07-27, replacing a single round-level scheduler that picked one hole at a
+// time): a lone ripple travelling around the sentence reads as a cursor pointing somewhere,
+// while several words stirring on their own separate rhythms read as the words being alive —
+// which is the whole claim the affordance makes. The band is wide and re-rolled per wave, so
+// the holes drift apart on their own instead of needing to be kept apart.
+const WAVE_MIN_MS = 3_000;
+const WAVE_MAX_MS = 10_000;
+
 // A hole: "displayed_word^-current_rank" (ex: sailor^-87). Rank 0 = solved.
 export default function Hole({
   hole,
@@ -60,7 +69,7 @@ export default function Hole({
   onHitDone,
   onResolved,
   explore,
-  wave = 0,
+  quiet = false,
 }: {
   hole: RuntimeHole;
   hit: HitState | null;
@@ -73,11 +82,11 @@ export default function Hole({
   // the word mid-scramble. `hintId` points at the sr-only "explore" note Phrase renders
   // OUTSIDE the sentence; see the button below for why it is a description and not a label.
   explore?: { hintId: string; disabled: boolean; onOpen: () => void };
-  // The ambient letter wave (#129): a signal id from the round's scheduler, bumped when THIS
-  // hole is the one picked to ripple. The round knows which holes are unsolved and whether the
-  // sentence is busy; only the hole knows whether its own word is mid-scramble, so the last
-  // word on playing it is here.
-  wave?: number;
+  // Is the SENTENCE quiet — no guess feedback in flight, no map over it, the round still being
+  // played? That is the one thing about the ambient wave (#129) a hole cannot see for itself,
+  // so the round supplies it and the hole owns everything else: its own clock, and whether it
+  // is personally free to ripple.
+  quiet?: boolean;
 }) {
   // Exponent rolls toward the current rank one rank step at a time (or snaps under
   // reduced motion, see rankTweenDuration). A solved hole visibly reaches 0, then removes
@@ -154,24 +163,41 @@ export default function Hole({
   // accents (`grincement`, `plissés`), and those are single code points in NFC.
   const letters = Array.from(jumble ?? displayWord);
 
-  // The wave itself. It never competes with feedback: a hole mid-choreography — a floating hit
-  // landing on it, its word churning through the slot-machine scramble, or already locked at
-  // rank 0 — simply declines its turn (the scheduler picks one hole every few seconds; a
-  // skipped turn costs nothing). A wave already in flight when a guess lands is dropped for the
-  // same reason.
+  // The wave, on this hole's OWN clock. It never competes with feedback: a hole
+  // mid-choreography — a floating hit landing on it, its word churning through the
+  // slot-machine scramble, or already locked at rank 0 — does not run the clock at all, and a
+  // wave in flight when a guess lands is cut. Nor does a hole with no map ripple: the wave is
+  // an affordance for the tap, so advertising one that does nothing is worse than none.
   const busy = hit !== null || jumble !== null || hole.rank === 0;
+  const ticking = quiet && !busy && explore !== undefined && !explore.disabled;
   const [waving, setWaving] = useState(false);
-  const lastWave = useRef(wave);
+  // Bumped by each finished wave, purely to re-arm the clock below with a fresh delay.
+  const [waveCount, setWaveCount] = useState(0);
+
   useEffect(() => {
-    if (wave === lastWave.current) return undefined;
-    lastWave.current = wave;
-    if (busy) return undefined;
-    setWaving(true);
-    const id = window.setTimeout(() => setWaving(false), waveDurationMs(letters.length));
+    if (!ticking || prefersReducedMotion()) return undefined;
+    const id = window.setTimeout(
+      () => setWaving(true),
+      WAVE_MIN_MS + Math.random() * (WAVE_MAX_MS - WAVE_MIN_MS),
+    );
     return () => window.clearTimeout(id);
-    // Deliberately keyed on the signal ALONE: `busy` and the letter count are read when it
-    // arrives, never as triggers — a re-render mid-wave must not restart or re-arm it.
-  }, [wave]);
+    // Re-rolled whenever the sentence goes quiet again, so the holes also scatter after
+    // every guess rather than settling into lockstep off a shared start.
+  }, [ticking, waveCount]);
+
+  // The wave's own length — the last letter's delay plus its animation. Ending it in JS (and
+  // not on `animationend`) keeps ONE owner of the two numbers CSS is handed above.
+  useEffect(() => {
+    if (!waving) return undefined;
+    const id = window.setTimeout(() => {
+      setWaving(false);
+      setWaveCount((n) => n + 1);
+    }, waveDurationMs(letters.length));
+    return () => window.clearTimeout(id);
+    // The letter count is read when the wave STARTS: a scramble cannot begin mid-wave (it
+    // makes the hole busy, which cuts the wave on the next line).
+  }, [waving]);
+
   useEffect(() => {
     if (busy) setWaving(false);
   }, [busy]);

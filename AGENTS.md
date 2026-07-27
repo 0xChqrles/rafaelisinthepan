@@ -914,8 +914,8 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
 - **Route discoverability (#129, decided 2026-07-27):** #117 made every hole a button and
   nothing said so. Two fixes, both in the show-don't-tell grammar — no permanent chrome, no
   tooltip, no message band (all three considered and rejected the same day).
-  **The ambient affordance is the letter WAVE and nothing else** (decided 2026-07-27): every
-  few seconds ONE hole ripples its letters (`hole-wave`), quick and transform-only. The
+  **The ambient affordance is the letter WAVE and nothing else** (decided 2026-07-27): a hole
+  ripples its letters (`hole-wave`), quick and transform-only. The
   issue's second motion — a continuous idle brightness/color pulse on every unsolved hole —
   was built, seen, and **dropped on the user's call**; don't reintroduce it. What it cost is
   worth recording, because it is why the surrounding code looks the way it does: to pulse the
@@ -926,15 +926,18 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   The wave needs per-letter boxes, which did NOT exist — the scramble renders a plain
   string — so `Hole` now splits the word ONCE (`.hole-letter`, used by the resting word and
   the scramble's frames alike; measured against plain text: same height, +0.06px over 5
-  letters, and `.hole`'s `nowrap` means the boxes add no wrap opportunity). **The scheduler is
-  the round's** (only it knows which holes are unsolved and when the sentence is busy: it
-  ripples only a hole whose map can actually be opened, and stands down while a hit is in
-  flight, while the map is open, on `promptExiting`, once solved, and entirely under reduced
-  motion) but **the hole has the last word** — it alone knows its own scramble is still
-  running, and a declined turn costs only a turn. The signal is a tick **PER HOLE**
-  (`waveTicks`), never "who is waving": a hole plays on ITS number changing, so a shared
-  signal also fired the hole picked previously, whose value fell back — two holes rippling
-  from one pick, seen in the browser before it was fixed.
+  letters, and `.hole`'s `nowrap` means the boxes add no wrap opportunity).
+  **EVERY hole owns its clock** (decided 2026-07-27, replacing a round-level scheduler that
+  picked ONE hole at a time): each waits a fresh random `WAVE_MIN_MS`–`WAVE_MAX_MS` (3–10s,
+  re-rolled per wave and whenever the sentence goes quiet again), so several words can stir at
+  once and the holes scatter on their own instead of being kept apart. A lone ripple travelling
+  around the sentence reads as a cursor pointing somewhere; several words breathing on separate
+  rhythms read as the words being alive, which is the claim the affordance makes. The round
+  contributes exactly ONE fact — `quiet`, the thing a hole cannot see for itself: no guess
+  feedback in flight, no map over the sentence, `promptExiting` false, not solved. Everything
+  else is the hole's own (`ticking`): its rank, its scramble, its hit, and whether it has a map
+  to open at all — the wave is an affordance for the TAP, so a hole with no #115 geometry never
+  ripples. Reduced motion: the clock never starts.
   **The one-time auto-open** is the guaranteed half: the first hole a player EVER solves
   opens its own finished journey — departure, every station visited, arrival — with their own
   data, explaining the feature by being it. `routeSeen` (persist **v4**, defaulted false for

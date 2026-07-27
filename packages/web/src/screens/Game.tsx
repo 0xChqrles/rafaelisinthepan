@@ -17,7 +17,6 @@ import SolvedCaption from '../components/SolvedCaption';
 import RouteModal from '../components/RouteModal';
 import LoadError from '../components/LoadError';
 import { buildRoute, hasRoute, shouldAutoOpenRoute } from '../game/route';
-import { prefersReducedMotion } from '../hooks/useScramble';
 import { t, ariaExploreHole, srHoleResult, srModelAhead, srModelLead } from '../i18n';
 import { lineupModel, lineupEvents, hasDisplayEntries, displayEntries } from '../game/benchmark';
 import { track } from '../analytics';
@@ -53,14 +52,6 @@ const STREAK_AFTER_WORDS_MS = 300;
 const KB_EXIT_FALLBACK_MS = 1_200;
 const LINEUP_EXIT_FALLBACK_MS = 3_000;
 
-// Ambient affordance (#129): the letter wave visits ONE unsolved hole at a time, this often
-// (jittered, so the sentence never ticks like a metronome). Quick and small on purpose — it
-// says "these words are alive", and anything more insistent would compete with the guess
-// feedback the same words carry. Halved from the 4–6s first tried (2026-07-27): with the
-// idle pulse dropped, the wave is the WHOLE ambient affordance, and a hole that ripples once
-// every few seconds is easy to sit through without ever noticing.
-const WAVE_EVERY_MS = 2_000;
-const WAVE_JITTER_MS = 1_000;
 // The beat between a first-ever solved word settling and its map opening itself (#129): long
 // enough for the resolved word to land as its own moment, short enough to read as its
 // consequence. The settle itself is never guessed — it waits for the hole's own report.
@@ -571,38 +562,13 @@ function Round({
     [markRouteSeen],
   );
 
-  // --- #129, part A: the ambient letter wave's scheduler ---
-  // The wave visits one hole at a time, so somebody has to pick — and the round is the only
-  // place that knows which holes are still unsolved. It also knows when the sentence is BUSY:
-  // guess feedback owns these words while it plays and the map owns the screen while it is
-  // open, so the affordance stands down for both. The hole itself has the last word (it alone
-  // knows its scramble is still running); a declined turn simply costs a turn. Reduced motion:
-  // no scheduler at all — discovery is carried by the auto-open below.
-  //
-  // A tick PER HOLE, not one shared "who is waving": a hole plays its wave when ITS OWN
-  // number changes, so passing "the picked index" is not enough — the hole picked LAST would
-  // see its signal fall back to a not-you value the moment the next one is picked, and read
-  // that change as a turn of its own. Two holes rippling together, from one pick.
-  const [waveTicks, setWaveTicks] = useState<Record<number, number>>({});
-  useEffect(() => {
-    if (prefersReducedMotion()) return undefined;
-    if (solved || promptExiting || routeHole !== null || hits.length > 0) return undefined;
-    // Only a hole whose map can actually be opened ripples: one with no #115 geometry has no
-    // map, and an affordance for a tap that does nothing is worse than none.
-    const candidates = holes.flatMap((h, i) =>
-      h.rank === 0 || routeNumbers[i] === null ? [] : [i],
-    );
-    if (candidates.length === 0) return undefined;
-    const id = window.setTimeout(
-      () => {
-        const index = candidates[Math.floor(Math.random() * candidates.length)];
-        setWaveTicks((prev) => ({ ...prev, [index]: (prev[index] ?? 0) + 1 }));
-      },
-      WAVE_EVERY_MS + Math.random() * WAVE_JITTER_MS,
-    );
-    return () => window.clearTimeout(id);
-    // `waveTicks` is a dependency on purpose: each fired turn re-arms the next one.
-  }, [holes, hits.length, promptExiting, routeHole, routeNumbers, solved, waveTicks]);
+  // --- #129, part A: the ambient letter wave ---
+  // EVERY hole runs its own clock (see Hole), so several words can stir at once and on their
+  // own rhythms. All the round contributes is the one fact a hole cannot see for itself: that
+  // the SENTENCE is quiet. Guess feedback owns these words while it plays, and the map owns
+  // the screen while it is open, so the affordance stands down for both — and once the round
+  // is over, stillness is what "done" looks like.
+  const quiet = !solved && !promptExiting && routeHole === null && hits.length === 0;
 
   // --- #129, part B: the one-time first-solve auto-open ---
   // The hole whose map is owed, waiting for its own word to finish resolving. Transient: a
@@ -863,7 +829,7 @@ function Round({
             exploreLabels={exploreLabels}
             exploreDisabled={exploreDisabled}
             onExplore={openRoute}
-            waveTicks={waveTicks}
+            quiet={quiet}
           />
         </div>
 
