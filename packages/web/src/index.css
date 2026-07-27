@@ -1627,11 +1627,15 @@ button * {
    effects before this ever paints. The opacity closes early so the panel is solid for most of
    the travel — a fade running the whole way reads as a cross-dissolve, not as an opening.
 
+   Short on purpose (120ms, down from the 200ms first tried — 2026-07-27): this is a tap
+   opening a screen, not a transition worth watching, and the map is the thing you came for.
+   Long enough to read as growth out of the word, over before it asks for patience.
+
    Under reduced motion the global rule collapses the duration; with no fill mode the dialog
    lands on its natural scale and full opacity, never mid-zoom. */
 .route-dialog[open] {
   transform-origin: var(--zoom-x, 50%) var(--zoom-y, 50%);
-  animation: route-zoom 200ms ease-out;
+  animation: route-zoom 120ms ease-out;
 }
 @keyframes route-zoom {
   from {

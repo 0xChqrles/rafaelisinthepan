@@ -877,7 +877,8 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   **The LINE has no motion; the OPENING does** (decided 2026-07-27, superseding "no motion at
   all"): the map **zooms out of the word you tapped**, the way a desktop window opens out of its
   icon — the whole dialog, opaque background included, scales from ~0 with its
-  `transform-origin` on that word's centre (`route-zoom`, 200ms). It is the transition INTO the
+  `transform-origin` on that word's centre (`route-zoom`, 120ms — a tap opening a screen, not a
+  transition worth watching; 200ms was tried first). It is the transition INTO the
   map, not part of the drawing: the screen that lands reads as that word opened rather than as a
   new screen that replaced it, which is also part of what makes the entry point legible (#129).
   `Game.openRoute` measures `.hole-word-wrap` inside the hole button at open time — the word,
