@@ -198,9 +198,13 @@ export default function Hole({
     // makes the hole busy, which cuts the wave on the next line).
   }, [waving]);
 
+  // Cut a wave already in flight the moment this hole stops being free to run one — which is
+  // `ticking`, not just its own `busy`: the round drops `quiet` when a guess lands AND when the
+  // map opens over the sentence, and a wave left running behind the modal shows its tail if the
+  // player closes quickly (both animations are ~120ms, the wave up to 460ms).
   useEffect(() => {
-    if (busy) setWaving(false);
-  }, [busy]);
+    if (!ticking) setWaving(false);
+  }, [ticking]);
 
   // The exponent sizes to its own content (no reserved width), so a following suffix
   // sits right after the number instead of after a gap left for the widest rank.

@@ -898,11 +898,12 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   **Closing RETRACTS into the same word** (decided 2026-07-27, superseding the unanimated close):
   the map goes back where it came from, so the sentence underneath is somewhere you RETURNED to
   rather than somewhere you were dropped. That means the dialog has to outlive the dismissal —
-  every route to a close (the X, the backdrop, and **Escape**, whose `cancel` event is
-  `preventDefault`ed precisely because a native dialog would otherwise vanish on the spot) only
-  STARTS the exit; the real `dialog.close()` waits on the animation's `animationend`, with a
-  deadline behind it (`ROUTE_EXIT_FALLBACK_MS`) so a lost event can never lock the player inside
-  a modal. `route-zoom-out` is written out as its OWN keyframes rather than
+  every route to a close (the X and **Escape**, whose `cancel` event is `preventDefault`ed
+  precisely because a native dialog would otherwise vanish on the spot — a backdrop tap is NOT
+  one of them since 2026-07-27, see the modal-behaviour bullet) only STARTS the exit; the real
+  `dialog.close()` waits on the animation's `animationend`, with a deadline behind it
+  (`EXIT_FALLBACK_MS`, in the shared `useModalDismiss` since both modals grew an animated
+  dismissal) so a lost event can never lock the player inside a modal. `route-zoom-out` is written out as its OWN keyframes rather than
   `animation-direction: reverse` on the opening one: with the same `animation-name` a direction
   change UPDATES the running animation instead of starting one, and the opening run has long
   since finished — it would snap to its end state rather than play. It carries `forwards`, or the
@@ -970,7 +971,10 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   feedback in flight, no map over the sentence, `promptExiting` false, not solved. Everything
   else is the hole's own (`ticking`): its rank, its scramble, its hit, and whether it has a map
   to open at all — the wave is an affordance for the TAP, so a hole with no #115 geometry never
-  ripples. Reduced motion: the clock never starts.
+  ripples. A wave already in FLIGHT is cut when `ticking` drops, not merely when the hole's own
+  `busy` does: `quiet` also falls when the map opens over the sentence, and a wave left running
+  behind it shows its tail if the player closes quickly (both modal beats are 120ms, a wave up
+  to 460ms). Reduced motion: the clock never starts.
   **The one-time auto-open** is the guaranteed half: the first hole a player EVER solves
   opens its own finished journey — departure, every station visited, arrival — with their own
   data, explaining the feature by being it. `routeSeen` (persist **v4**, defaulted false for
@@ -979,7 +983,14 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   `shouldAutoOpenRoute` (pure, in `game/route.ts`) fires only on a mid-round solve — never the
   FINAL one, which belongs to the solved sequence (streak → exits → leaderboard → source) and
   must not gain a competing modal — and names the first newly solved hole in sentence order;
-  `Game` filters to holes that HAVE a map before asking. It arms at submit time and waits for
+  `Game` filters to holes that HAVE a map before asking. Two rules the ARMED offer needs beyond
+  that, both found on review 2026-07-28 and both reproduced in a browser before fixing:
+  it is **cancelled when the round ends**, because guessing stays live through the first solved
+  word's ~1.7s of settle and a player holding the last answer can finish the sentence inside
+  that window — the map then opened *over* the solved sequence, with two dialogs on screen at
+  once and the one-time offer spent on a moment it was never meant to fire; and **the first
+  armed target wins** (`current ?? target`), or a hole solved while the first is still resolving
+  takes its place and the player is shown the map of the word they reached second. It arms at submit time and waits for
   the holes' own settle reports (`resolvedHoleIndices`, the signal the solved gating uses) plus
   350ms, never a guessed timeout — and from the LAST of them, not the target hole's: one guess
   can drop two mappable holes, and a beat measured from the first would put the modal over a

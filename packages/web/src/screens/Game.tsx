@@ -571,6 +571,18 @@ function Round({
       setAutoRouteHole(null);
       return undefined;
     }
+    // The round ENDED while the map was owed. `shouldAutoOpenRoute` refuses a final solve at
+    // arm time, but an offer armed by an EARLIER guess outlives it: guessing stays live
+    // through the first solved word's ~1.7s of settle, so a player holding the last answer
+    // can finish the sentence inside that window. The map would then open over the solved
+    // sequence (streak -> exits -> leaderboard -> source) — two dialogs stacked, and the one
+    // competing modal that sequence is not allowed to gain. Cancelling here rather than at
+    // the submit keeps the rule in ONE place, and covers the store's own solved transition
+    // as well as the prompt's exit. A later round's mid-round solve makes the offer again.
+    if (promptExiting || solved) {
+      setAutoRouteHole(null);
+      return undefined;
+    }
     // Never a guessed timeout: the hole reports its own settle (the same signal that gates
     // the solved sequence), and only then does the map get its beat.
     if (!resolvedHoleIndices.has(autoRouteHole)) return undefined;
@@ -586,7 +598,7 @@ function Round({
       openRoute(autoRouteHole);
     }, AUTO_ROUTE_AFTER_SOLVE_MS);
     return () => window.clearTimeout(id);
-  }, [autoRouteHole, openRoute, resolvedHoleIndices, routeSeen]);
+  }, [autoRouteHole, openRoute, promptExiting, resolvedHoleIndices, routeSeen, solved]);
 
   const removeHit = useCallback((id: number) => {
     setHits((prev) => prev.filter((h) => h.id !== id));
@@ -695,7 +707,11 @@ function Round({
           .map(({ index }) => index),
         solvesAll,
       );
-      if (autoRoute !== null) setAutoRouteHole(autoRoute);
+      // FIRST come, first served: it is the first hole this player ever solves that gets the
+      // demonstration. Another hole solved while that one is still resolving would otherwise
+      // replace the target and open a map they reached second. Cancellation is the effect's
+      // job alone (a final solve, or a manual tap), never this assignment's.
+      if (autoRoute !== null) setAutoRouteHole((current) => current ?? autoRoute);
 
       // Announce the guess's outcome to assistive tech — the audible twin of the
       // floating numbers below. One sentence covering every impacted hole (1-based, in
