@@ -10,7 +10,7 @@ import CellDigits from '../components/CellDigits';
 import ProgressCounter from '../components/ProgressCounter';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
-import SolvedScreen, { RESULTS_IN_MS } from '../components/SolvedScreen';
+import SolvedScreen from '../components/SolvedScreen';
 import StandingsLineup from '../components/StandingsLineup';
 import LazyStreakDialog, { preloadStreakDialog } from '../components/LazyStreakDialog';
 import SolvedCaption from '../components/SolvedCaption';
@@ -213,7 +213,6 @@ function Round({
   const [feedback, setFeedback] = useState<Feedback | null>(null); // message under the input
   const hitId = useRef<number>(0); // monotonic id source for floating hits
   const pendingTimers = useRef<number[]>([]); // deferred rank/word updates (fire as the hit fades)
-  const resultFocusTimer = useRef<number | undefined>(undefined);
 
   // Screen-reader mirror of the visual guess feedback (floating numbers / "MISS" /
   // shakes are invisible to assistive tech): each submit composes one sentence into a
@@ -230,7 +229,6 @@ function Round({
   useEffect(
     () => () => {
       pendingTimers.current.forEach(clearTimeout);
-      window.clearTimeout(resultFocusTimer.current);
     },
     [],
   );
@@ -338,7 +336,6 @@ function Round({
     const id = window.setTimeout(handleLineupExited, LINEUP_EXIT_FALLBACK_MS);
     return () => window.clearTimeout(id);
   }, [lineupExiting, handleLineupExited]);
-  const focusResultAfterSource = useRef(false);
   const prevSolved = useRef<boolean>(solved);
   useEffect(() => {
     const justSolved = solved && !prevSolved.current;
@@ -355,8 +352,6 @@ function Round({
       setPromptExiting(false);
       setSourceRevealStarted(false);
       setSourceRevealComplete(false);
-      focusResultAfterSource.current = false;
-      window.clearTimeout(resultFocusTimer.current);
       return undefined;
     }
     if (!justSolved) {
@@ -370,7 +365,6 @@ function Round({
       setPromptExiting(false);
       setSourceRevealStarted(true);
       setSourceRevealComplete(true);
-      focusResultAfterSource.current = false;
       return undefined;
     }
     // The one analytics beat for "did the player finish a puzzle": fired ONLY on the
@@ -444,7 +438,6 @@ function Round({
     setKeyboardLeaving(true);
     if (hasLineup) setLineupExiting(true);
     else setLineupGone(true);
-    focusResultAfterSource.current = true;
   }, [hasLineup]);
 
   // The results' rise reporting done (SolvedScreen onRisen) is the source typewriter's
@@ -454,18 +447,13 @@ function Round({
     setSourceRevealStarted(true);
   }, []);
 
+  // NOTHING is focused when the solved screen lands (decided 2026-07-27, dropping the focus
+  // the streak's dismissal used to hand to SHARE). The celebration has no trigger to restore
+  // focus to, so the tray was taking it by default and the share button arrived already
+  // ringed — a solved sentence is something to read, not a prompt to act. A keyboard user
+  // reaches the actions with one Tab.
   const finishSourceReveal = useCallback(() => {
     setSourceRevealComplete(true);
-    if (!focusResultAfterSource.current) return;
-    focusResultAfterSource.current = false;
-    // This dialog has no trigger to restore focus to. Wait until the now-unblocked result
-    // stack has risen in before focusing its next relevant sentence action.
-    window.clearTimeout(resultFocusTimer.current);
-    resultFocusTimer.current = window.setTimeout(
-      () =>
-        document.querySelector<HTMLButtonElement>('.result-action')?.focus({ preventScroll: true }),
-      RESULTS_IN_MS,
-    );
   }, []);
 
   // Cache the progress on the persisted round so the language selector can badge an

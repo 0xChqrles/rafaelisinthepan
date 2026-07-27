@@ -12,6 +12,7 @@ import {
   srRouteStop,
 } from '../i18n';
 import ModalHeader from './ModalHeader';
+import useModalDismiss from '../hooks/useModalDismiss';
 
 // The route map (#117): a hole's neighborhood drawn as a LINE you travel.
 //
@@ -76,11 +77,6 @@ const STICK_INSET = 8;
 // ratio, clientHeight is rounded — and a coin toss between "where it lives" and "parked" is a
 // separator flickering into the opening view.
 const STICK_SLACK = 1;
-
-// Deadline on the closing retraction's `animationend` (see `beginClose`): a generous multiple of
-// the 120ms exit, cancelled by the genuine event. Being stranded here means being stuck inside
-// the modal, so the signal it waits on gets a backstop like every other one in this app.
-const ROUTE_EXIT_FALLBACK_MS = 800;
 
 // A word you have not found — the destination, or a station of the censored final approach.
 // FIXED width: a placeholder that grew with the word would leak its length.
@@ -213,9 +209,12 @@ export default function RouteModal({
   origin?: { x: number; y: number } | null;
   onClose: () => void;
 }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
+  // FIRST hook of the component on purpose: it owns the `showModal()` layout effect, and a
+  // closed `<dialog>` is `display: none` — everything measured below would read a tree with no
+  // boxes (see the measuring effects). It also takes opening focus to the dialog rather than to
+  // the header's close chip, and turns every dismissal into the retraction beat.
+  const { dialogRef, closing, beginClose, dialogProps } = useModalDismiss('route-zoom-out');
   const scrollRef = useRef<HTMLDivElement>(null);
-  const lineRef = useRef<HTMLDivElement>(null);
   const hereRef = useRef<HTMLDivElement>(null);
   // Where the "you are here" row sits in the LINE, as opposed to where it is parked. Measured
   // rather than derived because only the DOM knows how tall every row above it came out.
@@ -292,17 +291,14 @@ export default function RouteModal({
     } else setStuck(null);
   }, []);
 
-  // Opening the dialog is its OWN effect, and the first one, because a closed `<dialog>` is
-  // `display: none`: it has no boxes at all, so everything below would measure a row whose
-  // offsetTop, offsetHeight and the scrollport's clientHeight all read 0 — which is not a small
-  // error but a total one (a natural position of 0 makes every scroll offset test as "parked at
-  // the top", so the torn separator draws under the row for the modal's whole life, and the
-  // opening scroll clamps to the top of the line). Dev hides it: StrictMode re-runs layout
-  // effects after mount, by which time the dialog is open, so it only ever showed in a build.
-  useLayoutEffect(() => {
-    const dialog = dialogRef.current;
-    if (dialog && !dialog.open) dialog.showModal();
-  }, []);
+  // Everything below MEASURES, so it all depends on the dialog already being open — which is
+  // why `useModalDismiss` is called first (a closed `<dialog>` is `display: none` and has no
+  // boxes at all, so a row's offsetTop, its offsetHeight and the scrollport's clientHeight all
+  // read 0 — not a small error but a total one: a natural position of 0 makes every scroll
+  // offset test as "parked at the top", so the torn separator draws under the row for the
+  // modal's whole life and the opening scroll clamps to the top of the line). Dev hides it:
+  // StrictMode re-runs layout effects after mount, by which time the dialog is open, so it only
+  // ever showed in a build.
 
   // The row's place IN the line, re-measured whenever the model changes — a guess landing while
   // the map is open can add rows above it, or make a different station the closest one. Suspending
@@ -353,57 +349,20 @@ export default function RouteModal({
 
   // Closing RETRACTS into the word, the same zoom run backwards — the map goes back where it
   // came from, so the sentence underneath is somewhere you returned to rather than somewhere
-  // you were dropped. Which means the dialog has to outlive the dismissal: every route to a
-  // close (the X, the backdrop, Escape) only STARTS the exit here, and the real
-  // `dialog.close()` — the thing that fires `onClose` and lets Game unmount this — waits for
-  // the animation to report itself done.
+  // you were dropped. `useModalDismiss` above owns that beat (and the fact that the ONLY way
+  // out is the header's close chip: tapping the map's own margin does nothing since
+  // 2026-07-27).
   //
   // The origin does not need re-measuring: while the map is open the input is gated
   // (`WordInput active`) and the keyboard is behind it, so no guess can land and the word it
   // grew out of cannot have moved.
-  const [closing, setClosing] = useState(false);
-  const beginClose = useCallback(() => setClosing(true), []);
-  const finishClose = useCallback(() => dialogRef.current?.close(), []);
-  // The exit hands the dialog back through a signal the DOM has to produce, so it carries a
-  // deadline like the solved beats do (see Game): a generous multiple of the real duration,
-  // cancelled by the genuine `animationend`. A lost animation event must never be able to
-  // leave the player locked inside a modal.
-  useEffect(() => {
-    if (!closing) return undefined;
-    const id = window.setTimeout(finishClose, ROUTE_EXIT_FALLBACK_MS);
-    return () => window.clearTimeout(id);
-  }, [closing, finishClose]);
-
   return createPortal(
-    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/click-events-have-key-events
     <dialog
-      ref={dialogRef}
+      {...dialogProps}
       className={`route-dialog${closing ? ' closing' : ''}`}
       style={frame}
       aria-label={title}
       onClose={onClose}
-      // Escape closes a native dialog INSTANTLY, which would skip the retraction entirely.
-      // `cancel` is cancelable and fires first, so it becomes the same request as the other two.
-      onCancel={(e) => {
-        e.preventDefault();
-        beginClose();
-      }}
-      onAnimationEnd={(e) => {
-        // The dialog's OWN exit, not a descendant's animation bubbling up through it.
-        if (closing && e.target === dialogRef.current && e.animationName === 'route-zoom-out') {
-          finishClose();
-        }
-      }}
-      onClick={(e) => {
-        // Everything AROUND the line dismisses, like the leaderboard's backdrop. Three elements
-        // can be hit directly: the dialog, the scroller (the margin beside the line's column) and
-        // `.route` itself — every row is a CHILD of it, so the only way to land on it is its own
-        // empty space, which is the tail below the terminus.
-        const hit = e.target;
-        if (hit === dialogRef.current || hit === scrollRef.current || hit === lineRef.current) {
-          beginClose();
-        }
-      }}
     >
       {/* The shared modal chrome (see ModalHeader): the app's own corner-chip row, in flow
           above the scroller — which is what lets it paint nothing. */}
@@ -411,7 +370,7 @@ export default function RouteModal({
 
       <div className="route-scroll" ref={scrollRef}>
         {/* The drawing is decorative; the sr-only list below carries the same content. */}
-        <div className="route" ref={lineRef} aria-hidden="true">
+        <div className="route" aria-hidden="true">
           {/* Before the line even starts: the guesses that earned no rank at all. Beyond the
               top-K there is no distance left to draw, and that IS the mechanic. */}
           {model.misses.length > 0 && (

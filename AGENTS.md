@@ -874,8 +874,8 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   hole's name top-left and one close control top-right. It sits **in flow** above an inner
   `.route-scroll`, which is precisely what lets it paint nothing: with the scroller (not the
   dialog) owning the overflow, no content can ever pass beneath the header, so none has to be
-  hidden behind a band. The dismiss-on-backdrop click therefore tests the scroller as well as
-  the dialog — the space around the line lives inside it.
+  hidden behind a band. Tapping the space AROUND the line does nothing since 2026-07-27 (see
+  the modal-behaviour bullet): the close chip is the way out.
   **The LINE has no motion; the OPENING does** (decided 2026-07-27, superseding "no motion at
   all"): the map **zooms out of the word you tapped**, the way a desktop window opens out of its
   icon — the whole dialog, opaque background included, scales from ~0 with its
@@ -1211,9 +1211,11 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   leaderboard no longer renders inline in the tray (decided 2026-07-25, superseding
   #110's inline table — too much information in the tray on mobile):** SEE MORE opens
   `LeaderboardDialog`, a borderless full-screen native dialog on the SOLID app
-  background (the animated noise never plays under it) with generous row rhythm,
-  closed via its X (`ariaClose`), Escape, or a backdrop click; focus returns to SEE
-  MORE. This dialog is the planned home of the deeper result views (#82): per-row
+  background (the animated noise never plays under it) with generous row rhythm. It
+  wears the shared `ModalHeader` and rises as a **SHEET** from the bottom edge
+  (`sheet-up` / `sheet-down`, 2026-07-27 — see the modal-behaviour bullet); it is
+  closed by its header X or Escape, **never by a backdrop tap**, and focus returns to
+  SEE MORE. This dialog is the planned home of the deeper result views (#82): per-row
   runs, tested words, per-hole word lists. **The run RULER replaced the bucketed
   trajectory squares (decided 2026-07-25):** one continuous bar per run on the
   PROGRESS ramp (`components/RunRuler.tsx`), one cell per counted try colored
@@ -1360,8 +1362,13 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   WHOLE modal dismisses — click/tap anywhere, ANY key (the "press any key" twin of
   tap-anywhere), or Escape — but dismissal is completely disabled until the hint's entrance
   finishes and it is fully visible. Every dismissal then fades the whole modal opacity over
-  200ms before unmounting; after source typing and the result rise, focus moves to the result
-  action. While any streak screen is open, the source and solved-result timers stay at their
+  200ms before unmounting. **The solved screen then focuses NOTHING** (decided 2026-07-27,
+  dropping the focus this dismissal used to hand to the result action): the celebration has no
+  trigger to restore focus to, so the tray was taking it by default and SHARE arrived already
+  ringed — a solved sentence is something to read, not a prompt to act, and a keyboard user is
+  one Tab away. The streak celebration also keeps its **tap-anywhere** dismissal: it is the
+  documented exception to the close-button-only rule the other modals now follow.
+  While any streak screen is open, the source and solved-result timers stay at their
   initial frame. **Dev-only preview:**
   `?streak=N` (integer `0..99999`)
   opens the sequence immediately with `N` as the PREVIOUS value (`?streak=9` → `9→10`),
@@ -1438,6 +1445,29 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   `leaderboard` (en LEADERBOARD / fr CLASSEMENT) rather than `seeMore`, which names the button's
   ACTION, not the surface. The **StreakDialog deliberately does NOT take this header** — the
   celebration has nothing focusable by decision, and a close chip would be the first thing on it.
+- **How a modal opens and closes — `hooks/useModalDismiss.ts` (decided 2026-07-27).** Three
+  rules, shared so two modals cannot drift, and the StreakDialog is the standing exception to
+  all of them (it is a tap-anywhere celebration with nothing focusable, by its own decision):
+  - **Opening focuses the DIALOG, not the first control inside it.** `showModal()` otherwise
+    focuses the first focusable descendant — which, now that every modal leads with the shared
+    header, is the close chip: the modal would appear with its dismiss button already lit.
+    Focus still lands INSIDE the dialog (the element itself, `tabIndex: -1`, `outline: 0`), so
+    the focus trap and Escape are untouched.
+  - **A backdrop tap is NOT a dismissal.** The close chip is the way out; Escape stays, being a
+    keyboard affordance rather than a mis-tap. Both modals' click handlers are gone with it.
+  - **Closing is a BEAT, not an event.** `beginClose()` only starts the exit; the real
+    `dialog.close()` — which fires `onClose` and lets the owner unmount — waits on the exit
+    animation's `animationend`, with `EXIT_FALLBACK_MS` behind it. Escape goes through the same
+    door: its `cancel` event is `preventDefault`ed, or a native dialog vanishes on the spot.
+  The hook must be the caller's FIRST hook, because it owns `showModal()` and a closed
+  `<dialog>` is `display: none` — anything a modal measures on open would read a tree with no
+  boxes (the route map's opening scroll is exactly that hazard).
+  **Which exit each wears:** the route map RETRACTS INTO ITS WORD, because it belongs to that
+  word; the leaderboard is a **SHEET** — up from the bottom edge to full screen, back down on
+  the way out — because a result screen belongs to nothing on the page. The sheet plays at
+  EVERY width, not just phones: this dialog is full-screen on the desktop too, and a
+  media-query-scoped exit would leave `animationend` unfired on desktop, where the close waits
+  on it.
   The game's right group holds the **archive calendar icon** and help `?` (#55); the tutorial
   puts "TUTORIAL" in the left chip and the skip fast-forward in the right group. The flag
   ALWAYS opens the language screen. The

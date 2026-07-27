@@ -1537,6 +1537,39 @@ button * {
 .lb-dialog::backdrop {
   background: transparent;
 }
+/* It arrives as a SHEET: up from the bottom edge, straight to full screen (decided
+   2026-07-27). The route map is the exception — it zooms out of the word you tapped, because
+   it belongs to that word; a result screen belongs to nothing on the page, so it comes from
+   the edge instead. Applied at every width rather than only on phones: this dialog is
+   full-screen on the desktop too, so one motion covers both — and a media-query-scoped exit
+   would leave `animationend` unfired on desktop, where the close waits on it.
+
+   Pure translate, no fade: an opaque sheet covering the screen has nothing to fade from. Down
+   is quicker than up, the way a dismissal should be, and carries `forwards` so the sheet holds
+   off-screen for the frame between the animation ending and React unmounting it. */
+.lb-dialog[open] {
+  animation: sheet-up 200ms cubic-bezier(0.22, 0.68, 0.36, 1);
+}
+.lb-dialog[open].closing {
+  animation: sheet-down 160ms ease-in forwards;
+  pointer-events: none;
+}
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+@keyframes sheet-down {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100%);
+  }
+}
 /* The scrollport, which also carries the frame's breathing room — padding on the DIALOG would
    sit outside the scroll and clip the table on a short viewport. */
 .lb-scroll {
