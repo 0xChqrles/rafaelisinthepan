@@ -16,7 +16,8 @@ import LazyStreakDialog, { preloadStreakDialog } from '../components/LazyStreakD
 import SolvedCaption from '../components/SolvedCaption';
 import RouteModal from '../components/RouteModal';
 import LoadError from '../components/LoadError';
-import { buildRoute, hasRoute } from '../game/route';
+import { buildRoute, hasRoute, shouldAutoOpenRoute } from '../game/route';
+import { prefersReducedMotion } from '../hooks/useScramble';
 import { t, ariaExploreHole, srHoleResult, srModelAhead, srModelLead } from '../i18n';
 import { lineupModel, lineupEvents, hasDisplayEntries, displayEntries } from '../game/benchmark';
 import { track } from '../analytics';
@@ -51,6 +52,17 @@ const STREAK_AFTER_WORDS_MS = 300;
 // itself was lost.
 const KB_EXIT_FALLBACK_MS = 1_200;
 const LINEUP_EXIT_FALLBACK_MS = 3_000;
+
+// Ambient affordance (#129): the letter wave visits ONE unsolved hole at a time, this often
+// (jittered, so the sentence never ticks like a metronome). Rare and quick on purpose — it
+// says "these words are alive", and anything more insistent would compete with the guess
+// feedback the same words carry.
+const WAVE_EVERY_MS = 4_000;
+const WAVE_JITTER_MS = 2_000;
+// The beat between a first-ever solved word settling and its map opening itself (#129): long
+// enough for the resolved word to land as its own moment, short enough to read as its
+// consequence. The settle itself is never guessed — it waits for the hole's own report.
+const AUTO_ROUTE_AFTER_SOLVE_MS = 350;
 
 // Wrapper: drives the single puzzle. Loads the language's fixed vocabulary
 // (existence set + keyboard prefix set) before playing — existence is decided by it,
@@ -144,6 +156,10 @@ function Round({
   const improveHole = useGameStore((s) => s.improveHole);
   const syncProgress = useGameStore((s) => s.syncProgress);
   const recordSolve = useGameStore((s) => s.recordSolve);
+  // Has this player ever opened a route map? Device-lifetime and global (#129) — it gates
+  // the one-time self-demonstration below.
+  const routeSeen = useGameStore((s) => s.routeSeen);
+  const markRouteSeen = useGameStore((s) => s.markRouteSeen);
 
   // The client's active game day (local, DST-correct) — the streak's reference point. May
   // be dayNumber + 1 when an in-flight round is finished just past the 22:00 flip; the
@@ -527,6 +543,71 @@ function Round({
       .querySelector<HTMLButtonElement>(`[data-hole-explore="${index}"]`)
       ?.focus({ preventScroll: true });
   }, [routeHole]);
+  // The ONE place a map opens — a tap, or the first-solve demonstration below — so the
+  // "seen it" flag can never fall out of step with the thing it records (#129).
+  const openRoute = useCallback(
+    (index: number) => {
+      markRouteSeen();
+      setRouteHole(index);
+    },
+    [markRouteSeen],
+  );
+
+  // --- #129, part A: the ambient letter wave's scheduler ---
+  // The gold pulse is CSS on every tappable hole; the wave visits one hole at a time, so
+  // somebody has to pick — and the round is the only place that knows which holes are still
+  // unsolved. It also knows when the sentence is BUSY: guess feedback owns these words while
+  // it plays and the map owns the screen while it is open, so the affordance stands down for
+  // both. The hole itself has the last word (it alone knows its scramble is still running);
+  // a declined turn simply costs a turn. Reduced motion: no scheduler at all — discovery is
+  // carried by the auto-open below.
+  //
+  // A tick PER HOLE, not one shared "who is waving": a hole plays its wave when ITS OWN
+  // number changes, so passing "the picked index" is not enough — the hole picked LAST would
+  // see its signal fall back to a not-you value the moment the next one is picked, and read
+  // that change as a turn of its own. Two holes rippling together, from one pick.
+  const [waveTicks, setWaveTicks] = useState<Record<number, number>>({});
+  useEffect(() => {
+    if (prefersReducedMotion()) return undefined;
+    if (solved || promptExiting || routeHole !== null || hits.length > 0) return undefined;
+    // Only tappable holes ripple, for the same reason only they pulse: a hole with no #115
+    // geometry has no map, and an affordance for nothing is worse than none.
+    const candidates = holes.flatMap((h, i) =>
+      h.rank === 0 || routeNumbers[i] === null ? [] : [i],
+    );
+    if (candidates.length === 0) return undefined;
+    const id = window.setTimeout(
+      () => {
+        const index = candidates[Math.floor(Math.random() * candidates.length)];
+        setWaveTicks((prev) => ({ ...prev, [index]: (prev[index] ?? 0) + 1 }));
+      },
+      WAVE_EVERY_MS + Math.random() * WAVE_JITTER_MS,
+    );
+    return () => window.clearTimeout(id);
+    // `waveTicks` is a dependency on purpose: each fired turn re-arms the next one.
+  }, [holes, hits.length, promptExiting, routeHole, routeNumbers, solved, waveTicks]);
+
+  // --- #129, part B: the one-time first-solve auto-open ---
+  // The hole whose map is owed, waiting for its own word to finish resolving. Transient: a
+  // reload during that second simply forgets it, and the next first-ever solve makes the
+  // same offer.
+  const [autoRouteHole, setAutoRouteHole] = useState<number | null>(null);
+  useEffect(() => {
+    if (autoRouteHole === null) return undefined;
+    // Found by tapping while the word was still resolving: the demonstration is moot.
+    if (routeSeen) {
+      setAutoRouteHole(null);
+      return undefined;
+    }
+    // Never a guessed timeout: the hole reports its own settle (the same signal that gates
+    // the solved sequence), and only then does the map get its beat.
+    if (!resolvedHoleIndices.has(autoRouteHole)) return undefined;
+    const id = window.setTimeout(() => {
+      setAutoRouteHole(null);
+      openRoute(autoRouteHole);
+    }, AUTO_ROUTE_AFTER_SOLVE_MS);
+    return () => window.clearTimeout(id);
+  }, [autoRouteHole, openRoute, resolvedHoleIndices, routeSeen]);
 
   const removeHit = useCallback((id: number) => {
     setHits((prev) => prev.filter((h) => h.id !== id));
@@ -622,6 +703,21 @@ function Round({
         return [{ index, entry }];
       });
 
+      // The first hole this player EVER solves shows them the map (#129). Decided here, at
+      // submit time, because this is where "solved by THIS guess" and "the round is over"
+      // are both known — but only armed: the map waits for the word to finish resolving.
+      // Restricted to holes that HAVE a map; a legacy puzzle simply never makes the offer.
+      if (!routeSeen) {
+        const target = shouldAutoOpenRoute(
+          routeSeen,
+          impacted
+            .filter(({ index, entry }) => entry?.rank === 0 && routeNumbers[index] !== null)
+            .map(({ index }) => index),
+          solvesAll,
+        );
+        if (target !== null) setAutoRouteHole(target);
+      }
+
       // Announce the guess's outcome to assistive tech — the audible twin of the
       // floating numbers below. One sentence covering every impacted hole (1-based, in
       // sentence order), plus the visible standings lineup's meaningful events (#81 —
@@ -700,6 +796,8 @@ function Round({
       benchmark,
       history,
       guessCount,
+      routeSeen,
+      routeNumbers,
     ],
   );
 
@@ -747,7 +845,8 @@ function Round({
             onHoleResolved={markHoleResolved}
             exploreLabels={exploreLabels}
             exploreDisabled={exploreDisabled}
-            onExplore={setRouteHole}
+            onExplore={openRoute}
+            waveTicks={waveTicks}
           />
         </div>
 

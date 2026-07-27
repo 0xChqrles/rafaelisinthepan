@@ -11,10 +11,19 @@
 //   - the near field IS the road zone, and nothing here re-bounds it: generation ends the roads
 //     at the DEPARTURE (#115's road_zone), which rides one of them, so the censored stations end
 //     just inside it for free;
-//   - a puzzle published before #115 carries no dq and gets NO map (and so no entry point).
+//   - a puzzle published before #115 carries no dq and gets NO map (and so no entry point);
+//   - the map demonstrates itself ONCE (#129): the first hole a player ever solves mid-round
+//     opens it, and the final solve never does.
 
 import { describe, it, expect } from 'vitest';
-import { buildRoute, hasRoute, routeGeometry, APPROACH_TOP, DQ_MAX } from './route';
+import {
+  buildRoute,
+  hasRoute,
+  routeGeometry,
+  shouldAutoOpenRoute,
+  APPROACH_TOP,
+  DQ_MAX,
+} from './route';
 import type { RankEntry, RuntimeHole } from '@whippin/shared';
 
 // A hand-built rank map with real geometry: `n` groups, dq falling linearly from 255 to 0,
@@ -353,5 +362,31 @@ describe('lanes cost what the DATA holds, never what an id claims', () => {
       expect(stop.road).toBe(map[`w${stop.rank}`].road ?? null);
     }
     for (const h of model.hidden) expect(h.road).toBe(map[`w${h.rank}`].road);
+  });
+});
+
+// #129: the one-time self-demonstration. The map is never explained in words — the first hole
+// a player ever solves opens its own finished journey instead.
+describe('shouldAutoOpenRoute — the first-solve auto-open (#129)', () => {
+  it('fires on a mid-round solve, naming the hole that was solved', () => {
+    expect(shouldAutoOpenRoute(false, [1], false)).toBe(1);
+  });
+
+  it('never fires once the map has been seen — a player who tapped is never interrupted', () => {
+    expect(shouldAutoOpenRoute(true, [1], false)).toBeNull();
+  });
+
+  it('never fires on the FINAL solve — the solved sequence owns that moment', () => {
+    expect(shouldAutoOpenRoute(false, [0, 1, 2], true)).toBeNull();
+    expect(shouldAutoOpenRoute(false, [2], true)).toBeNull();
+  });
+
+  it('never fires on a guess that solved nothing', () => {
+    expect(shouldAutoOpenRoute(false, [], false)).toBeNull();
+  });
+
+  it('takes the FIRST hole in sentence order when one guess drops several', () => {
+    expect(shouldAutoOpenRoute(false, [2, 1], false)).toBe(1);
+    expect(shouldAutoOpenRoute(false, [0, 2], false)).toBe(0);
   });
 });

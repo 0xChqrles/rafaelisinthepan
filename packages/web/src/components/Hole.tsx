@@ -43,6 +43,15 @@ export function rankHeatColor(rank: number, startRank: number) {
   return heatColor(heat);
 }
 
+// The letter wave (#129): one letter's whole up-and-down, and the delay between two
+// consecutive letters. Both are handed to CSS as custom properties rather than repeated
+// there, so the animation and the JS that ends it read the same numbers.
+const WAVE_LETTER_MS = 300;
+const WAVE_STEP_MS = 40;
+function waveDurationMs(letters: number): number {
+  return WAVE_LETTER_MS + Math.max(0, letters - 1) * WAVE_STEP_MS;
+}
+
 // A hole: "displayed_word^-current_rank" (ex: sailor^-87). Rank 0 = solved.
 export default function Hole({
   hole,
@@ -51,6 +60,7 @@ export default function Hole({
   onHitDone,
   onResolved,
   explore,
+  wave = 0,
 }: {
   hole: RuntimeHole;
   hit: HitState | null;
@@ -63,6 +73,11 @@ export default function Hole({
   // the word mid-scramble. `hintId` points at the sr-only "explore" note Phrase renders
   // OUTSIDE the sentence; see the button below for why it is a description and not a label.
   explore?: { hintId: string; disabled: boolean; onOpen: () => void };
+  // The ambient letter wave (#129): a signal id from the round's scheduler, bumped when THIS
+  // hole is the one picked to ripple. The round knows which holes are unsolved and whether the
+  // sentence is busy; only the hole knows whether its own word is mid-scramble, so the last
+  // word on playing it is here.
+  wave?: number;
 }) {
   // Exponent rolls toward the current rank one rank step at a time (or snaps under
   // reduced motion, see rankTweenDuration). A solved hole visibly reaches 0, then removes
@@ -133,14 +148,47 @@ export default function Hole({
     if (resolved) onResolved?.(holeIndex);
   }, [holeIndex, onResolved, resolved]);
 
+  // The letters the word is drawn from — ONE splitting path, used by the resting word and by
+  // the scramble's churning frames alike, so the wave has something to move without a second
+  // way of rendering a hole's word existing. Split by code point: a display form keeps its
+  // accents (`grincement`, `plissés`), and those are single code points in NFC.
+  const letters = Array.from(jumble ?? displayWord);
+
+  // The wave itself. It never competes with feedback: a hole mid-choreography — a floating hit
+  // landing on it, its word churning through the slot-machine scramble, or already locked at
+  // rank 0 — simply declines its turn (the scheduler picks one hole every few seconds; a
+  // skipped turn costs nothing). A wave already in flight when a guess lands is dropped for the
+  // same reason.
+  const busy = hit !== null || jumble !== null || hole.rank === 0;
+  const [waving, setWaving] = useState(false);
+  const lastWave = useRef(wave);
+  useEffect(() => {
+    if (wave === lastWave.current) return undefined;
+    lastWave.current = wave;
+    if (busy) return undefined;
+    setWaving(true);
+    const id = window.setTimeout(() => setWaving(false), waveDurationMs(letters.length));
+    return () => window.clearTimeout(id);
+    // Deliberately keyed on the signal ALONE: `busy` and the letter count are read when it
+    // arrives, never as triggers — a re-render mid-wave must not restart or re-arm it.
+  }, [wave]);
+  useEffect(() => {
+    if (busy) setWaving(false);
+  }, [busy]);
+
   // The exponent sizes to its own content (no reserved width), so a following suffix
   // sits right after the number instead of after a gap left for the widest rank.
   const rankStyle: CSSProperties & Record<'--rank-color', string> = {
     '--rank-color': rankHeatColor(shownRank, hole.startRank),
   };
-  const hitStyle: (CSSProperties & Record<'--hit-delay', string>) | undefined = hit
-    ? { '--hit-delay': `${hit.startDelayMs}ms` }
-    : undefined;
+  // The word carries the hit's shake delay and, while it waves, the two numbers its letters'
+  // animation is built from — so the timing lives in ONE place (above) and CSS reads it.
+  const wordStyle: CSSProperties & Record<string, string> = {};
+  if (hit) wordStyle['--hit-delay'] = `${hit.startDelayMs}ms`;
+  if (waving) {
+    wordStyle['--wave-dur'] = `${WAVE_LETTER_MS}ms`;
+    wordStyle['--wave-step'] = `${WAVE_STEP_MS}ms`;
+  }
 
   // The word + its exponent. The route button (below) wraps this whole group WITHOUT
   // touching it: the floating-hit/scramble choreography keys off this exact structure.
@@ -154,10 +202,17 @@ export default function Hole({
             changing it restarts the shake even on two consecutive hits. */}
         <span
           key={hit ? `word-${hit.id}` : 'word'}
-          className={`hole-word${hit ? ' hit-shake' : ''}`}
-          style={hitStyle}
+          className={`hole-word${hit ? ' hit-shake' : ''}${waving ? ' wave' : ''}`}
+          style={wordStyle}
         >
-          {jumble ?? displayWord}
+          {/* One span per letter — the structure the wave moves. Keyed by position, so the
+              scramble's 40ms frames replace glyphs in place instead of remounting the word
+              (which would restart any animation running on it). */}
+          {letters.map((ch, i) => (
+            <span key={i} className="hole-letter" style={{ '--i': i } as CSSProperties}>
+              {ch}
+            </span>
+          ))}
         </span>
         {/* Floating "damage"-style indicator: a distance number colored by the
             heatmap (capped heat), or "MISS" at the coldest color when too far. */}
@@ -189,8 +244,15 @@ export default function Hole({
     </>
   );
 
+  // The ambient affordance (#129): a hole whose map can be opened RIGHT NOW breathes its gold,
+  // so the sentence's interactive words look alive without a word of copy. Gated on the button
+  // being there and live — a puzzle published before #115 has no map, and advertising a tap
+  // that does nothing is worse than no affordance at all. It stops the moment the hole reaches
+  // rank 0: stillness is what "done" looks like.
+  const tappable = explore !== undefined && !explore.disabled && hole.rank > 0;
+
   return (
-    <span className={`hole${resolved ? ' resolved' : ''}`}>
+    <span className={`hole${resolved ? ' resolved' : ''}${tappable ? ' tappable' : ''}`}>
       {explore ? (
         <button
           type="button"

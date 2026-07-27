@@ -25,6 +25,7 @@
   --accent-dim: #6fa0ff;
   --danger: #ff1f54;
   --hole: #ffc400; /* vivid gold for holes */
+  --hole-lit: #ffe27a; /* the same gold lifted — the top of a tappable hole's idle pulse (#129) */
   --muted: #c4c9d8;
   --flame: #4642e8; /* streak flame indigo — the sprite's body color (#74); milestone tiers swap it */
 
@@ -997,8 +998,54 @@ button * {
   position: relative;
   display: inline-block;
 }
+/* No color of its own: it INHERITS the hole's gold (or the wrapper's pulsing gold below),
+   which is what lets the idle pulse reach the word without touching the exponent — the rank
+   color is feedback, the pulse is affordance, and they must never be read as one thing. The
+   solved override below still wins, and so does the floating hit's own inline color. */
 .hole-word {
-  color: var(--hole);
+  color: inherit;
+}
+/* The ambient affordance (#129): while a hole's map can be opened, its word slowly breathes
+   its gold — the sentence's interactive words look alive, with no copy and no chrome. It
+   rides on the WRAPPER so the exponent (which sets its own heat color) stays out of it and
+   so the word's own animation slot is left free for the hit shake. Under reduced motion the
+   global rule collapses this to a single 0.01ms pass; with no fill mode the element lands
+   back on its base color, never on a half-bright frame. */
+.hole.tappable .hole-word-wrap {
+  animation: hole-pulse 2.8s ease-in-out infinite;
+}
+@keyframes hole-pulse {
+  0%,
+  100% {
+    color: var(--hole);
+  }
+  50% {
+    color: var(--hole-lit);
+  }
+}
+/* One letter of a hole's word. The word is ALWAYS drawn letter by letter (Hole splits it
+   once, for the resting word and the scramble's frames alike) so the wave has something to
+   move; inline-block is what makes the transform apply. No margins, no padding: the glyph
+   advance is the box, so the sentence measures exactly as it did as plain text — and the
+   hole's `white-space: nowrap` means these boxes add no wrap opportunity. */
+.hole-letter {
+  display: inline-block;
+}
+/* The wave (#129): every few seconds ONE unsolved hole ripples its letters, up then down in
+   sequence. Transform-only — the phrase must not reflow or shift width — and staggered off
+   the letter's index, with both numbers handed down from Hole so the JS that ends the wave
+   and the CSS that draws it cannot disagree. */
+.hole-word.wave .hole-letter {
+  animation: hole-wave var(--wave-dur, 300ms) ease-in-out calc(var(--i) * var(--wave-step, 40ms));
+}
+@keyframes hole-wave {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
 }
 .hole-rank {
   /* inline-block (not inline) so the rank-pop transform applies; width fits the

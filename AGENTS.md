@@ -898,6 +898,43 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   focused hole button through `releaseHoleFocus`. All three, not just typing: with Backspace and
   history recall leaving it focused, "close the map, fix a typo, press Enter" reopened the map
   instead of submitting (fixed 2026-07-27).
+- **Route discoverability (#129, decided 2026-07-27):** #117 made every hole a button and
+  nothing said so. Two fixes, both in the show-don't-tell grammar — no permanent chrome, no
+  tooltip, no message band (all three considered and rejected the same day).
+  **The ambient affordance** is CSS on the hole itself, and it advertises only what is
+  actually tappable: `Hole` marks a hole `.tappable` when its explore button is present AND
+  enabled AND its rank is above 0, so a pre-#115 puzzle (no map) and a solved hole get
+  nothing — stillness is what "done" looks like, and an affordance for a tap that does
+  nothing is worse than none. Two motions: a slow gold pulse (`hole-pulse`, `--hole` →
+  `--hole-lit`) on EVERY tappable hole, and a quick letter wave (`hole-wave`) on ONE of them
+  every 4–6s. The pulse rides on `.hole-word-wrap` and animates COLOR — which is why
+  `.hole-word` had to give up its own `color` and inherit: the exponent sets its own heat
+  color and so stays out of it (the rank is feedback, the pulse is affordance, and the two
+  must never read as one thing), the hit's inline color is untouched, and the word's own
+  animation slot is left free for `hit-shake`. The wave needs per-letter boxes, which did NOT
+  exist — the scramble renders a plain string — so `Hole` now splits the word ONCE
+  (`.hole-letter`, used by the resting word and the scramble's frames alike; measured against
+  plain text: same height, +0.06px over 5 letters, and `.hole`'s `nowrap` means the boxes add
+  no wrap opportunity). Transform-only, so the phrase never reflows. **The scheduler is the
+  round's** (only it knows which holes are unsolved and when the sentence is busy: it stands
+  down while a hit is in flight, while the map is open, on `promptExiting`, once solved, and
+  entirely under reduced motion) but **the hole has the last word** — it alone knows its own
+  scramble is still running, and a declined turn costs only a turn. The signal is a tick **PER
+  HOLE** (`waveTicks`), never "who is waving": a hole plays on ITS number changing, so a
+  shared signal also fired the hole picked previously, whose value fell back — two holes
+  rippling from one pick, seen in the browser before it was fixed.
+  **The one-time auto-open** is the guaranteed half: the first hole a player EVER solves
+  opens its own finished journey — departure, every station visited, arrival — with their own
+  data, explaining the feature by being it. `routeSeen` (persist **v4**, defaulted false for
+  every older blob — nothing to grandfather, the map shipped with #117) is set by `openRoute`,
+  the ONE place a map opens, so a player who found it by tapping is never interrupted.
+  `shouldAutoOpenRoute` (pure, in `game/route.ts`) fires only on a mid-round solve — never the
+  FINAL one, which belongs to the solved sequence (streak → exits → leaderboard → source) and
+  must not gain a competing modal — and names the first newly solved hole in sentence order;
+  `Game` filters to holes that HAVE a map before asking. It arms at submit time and waits for
+  that hole's own settle report (`resolvedHoleIndices`, the signal the solved gating uses) plus
+  350ms, never a guessed timeout. Archive replays included; the tutorial is untouched (it does
+  not render `Round`). No new analytics event — the three-event invariant stands.
 - **Offline LLM benchmark harness (#68, Kimi provider #91, native sessions #93,
   decided 2026-07-19).** The
   dedicated `benchmark` workspace owns `benchmark/scripts/llm_play.py`, its tests, and

@@ -16,6 +16,7 @@ export default function Phrase({
   exploreLabels,
   exploreDisabled = false,
   onExplore,
+  waveTicks,
 }: {
   words: string[];
   holes: RuntimeHole[];
@@ -30,6 +31,10 @@ export default function Phrase({
   exploreLabels?: (string | null)[];
   exploreDisabled?: boolean;
   onExplore?: (holeIndex: number) => void;
+  // The ambient letter wave (#129), by hole index: a counter the round's scheduler bumps for
+  // the hole it picked. Per hole, never "who is waving" — a hole plays its wave on its own
+  // number CHANGING, so a shared signal would also fire the hole that was picked before.
+  waveTicks?: Record<number, number>;
 }) {
   const holeIndexByPos = new Map<number, number>(holes.map((h, i) => [h.pos, i]));
   const puzzleHoleByPos = new Map<number, PuzzleHole>(puzzleHoles.map((h) => [h.pos, h]));
@@ -66,6 +71,7 @@ export default function Phrase({
                   holeIndex={idx}
                   onHitDone={onHitDone}
                   onResolved={onHoleResolved}
+                  wave={waveTicks?.[idx] ?? 0}
                   explore={
                     exploreLabel && onExplore
                       ? {
