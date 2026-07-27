@@ -167,7 +167,7 @@ export function hasRoute(rankMap: Record<string, RankEntry> | undefined): boolea
 //     secret carries no #115 geometry — it has no map to open).
 //   - the round is NOT finished by it. The final solve belongs to the solved sequence
 //     (streak -> exits -> leaderboard -> source), which must not gain a competing modal;
-//     those players meet the map on a later round's mid-round solve, or through the pulse.
+//     those players meet the map on a later round's mid-round solve, or through the wave.
 // A guess can drop several holes at once: the FIRST in sentence order gets the map.
 export function shouldAutoOpenRoute(
   routeSeen: boolean,

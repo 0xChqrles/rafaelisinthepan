@@ -244,15 +244,8 @@ export default function Hole({
     </>
   );
 
-  // The ambient affordance (#129): a hole whose map can be opened RIGHT NOW breathes its gold,
-  // so the sentence's interactive words look alive without a word of copy. Gated on the button
-  // being there and live — a puzzle published before #115 has no map, and advertising a tap
-  // that does nothing is worse than no affordance at all. It stops the moment the hole reaches
-  // rank 0: stillness is what "done" looks like.
-  const tappable = explore !== undefined && !explore.disabled && hole.rank > 0;
-
   return (
-    <span className={`hole${resolved ? ' resolved' : ''}${tappable ? ' tappable' : ''}`}>
+    <span className={`hole${resolved ? ' resolved' : ''}`}>
       {explore ? (
         <button
           type="button"

@@ -554,13 +554,12 @@ function Round({
   );
 
   // --- #129, part A: the ambient letter wave's scheduler ---
-  // The gold pulse is CSS on every tappable hole; the wave visits one hole at a time, so
-  // somebody has to pick — and the round is the only place that knows which holes are still
-  // unsolved. It also knows when the sentence is BUSY: guess feedback owns these words while
-  // it plays and the map owns the screen while it is open, so the affordance stands down for
-  // both. The hole itself has the last word (it alone knows its scramble is still running);
-  // a declined turn simply costs a turn. Reduced motion: no scheduler at all — discovery is
-  // carried by the auto-open below.
+  // The wave visits one hole at a time, so somebody has to pick — and the round is the only
+  // place that knows which holes are still unsolved. It also knows when the sentence is BUSY:
+  // guess feedback owns these words while it plays and the map owns the screen while it is
+  // open, so the affordance stands down for both. The hole itself has the last word (it alone
+  // knows its scramble is still running); a declined turn simply costs a turn. Reduced motion:
+  // no scheduler at all — discovery is carried by the auto-open below.
   //
   // A tick PER HOLE, not one shared "who is waving": a hole plays its wave when ITS OWN
   // number changes, so passing "the picked index" is not enough — the hole picked LAST would
@@ -570,8 +569,8 @@ function Round({
   useEffect(() => {
     if (prefersReducedMotion()) return undefined;
     if (solved || promptExiting || routeHole !== null || hits.length > 0) return undefined;
-    // Only tappable holes ripple, for the same reason only they pulse: a hole with no #115
-    // geometry has no map, and an affordance for nothing is worse than none.
+    // Only a hole whose map can actually be opened ripples: one with no #115 geometry has no
+    // map, and an affordance for a tap that does nothing is worse than none.
     const candidates = holes.flatMap((h, i) =>
       h.rank === 0 || routeNumbers[i] === null ? [] : [i],
     );

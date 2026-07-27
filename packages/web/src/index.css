@@ -25,7 +25,6 @@
   --accent-dim: #6fa0ff;
   --danger: #ff1f54;
   --hole: #ffc400; /* vivid gold for holes */
-  --hole-lit: #ffe27a; /* the same gold lifted — the top of a tappable hole's idle pulse (#129) */
   --muted: #c4c9d8;
   --flame: #4642e8; /* streak flame indigo — the sprite's body color (#74); milestone tiers swap it */
 
@@ -998,30 +997,8 @@ button * {
   position: relative;
   display: inline-block;
 }
-/* No color of its own: it INHERITS the hole's gold (or the wrapper's pulsing gold below),
-   which is what lets the idle pulse reach the word without touching the exponent — the rank
-   color is feedback, the pulse is affordance, and they must never be read as one thing. The
-   solved override below still wins, and so does the floating hit's own inline color. */
 .hole-word {
-  color: inherit;
-}
-/* The ambient affordance (#129): while a hole's map can be opened, its word slowly breathes
-   its gold — the sentence's interactive words look alive, with no copy and no chrome. It
-   rides on the WRAPPER so the exponent (which sets its own heat color) stays out of it and
-   so the word's own animation slot is left free for the hit shake. Under reduced motion the
-   global rule collapses this to a single 0.01ms pass; with no fill mode the element lands
-   back on its base color, never on a half-bright frame. */
-.hole.tappable .hole-word-wrap {
-  animation: hole-pulse 2.8s ease-in-out infinite;
-}
-@keyframes hole-pulse {
-  0%,
-  100% {
-    color: var(--hole);
-  }
-  50% {
-    color: var(--hole-lit);
-  }
+  color: var(--hole);
 }
 /* One letter of a hole's word. The word is ALWAYS drawn letter by letter (Hole splits it
    once, for the resting word and the scramble's frames alike) so the wave has something to

@@ -901,28 +901,27 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
 - **Route discoverability (#129, decided 2026-07-27):** #117 made every hole a button and
   nothing said so. Two fixes, both in the show-don't-tell grammar — no permanent chrome, no
   tooltip, no message band (all three considered and rejected the same day).
-  **The ambient affordance** is CSS on the hole itself, and it advertises only what is
-  actually tappable: `Hole` marks a hole `.tappable` when its explore button is present AND
-  enabled AND its rank is above 0, so a pre-#115 puzzle (no map) and a solved hole get
-  nothing — stillness is what "done" looks like, and an affordance for a tap that does
-  nothing is worse than none. Two motions: a slow gold pulse (`hole-pulse`, `--hole` →
-  `--hole-lit`) on EVERY tappable hole, and a quick letter wave (`hole-wave`) on ONE of them
-  every 4–6s. The pulse rides on `.hole-word-wrap` and animates COLOR — which is why
-  `.hole-word` had to give up its own `color` and inherit: the exponent sets its own heat
-  color and so stays out of it (the rank is feedback, the pulse is affordance, and the two
-  must never read as one thing), the hit's inline color is untouched, and the word's own
-  animation slot is left free for `hit-shake`. The wave needs per-letter boxes, which did NOT
-  exist — the scramble renders a plain string — so `Hole` now splits the word ONCE
-  (`.hole-letter`, used by the resting word and the scramble's frames alike; measured against
-  plain text: same height, +0.06px over 5 letters, and `.hole`'s `nowrap` means the boxes add
-  no wrap opportunity). Transform-only, so the phrase never reflows. **The scheduler is the
-  round's** (only it knows which holes are unsolved and when the sentence is busy: it stands
-  down while a hit is in flight, while the map is open, on `promptExiting`, once solved, and
-  entirely under reduced motion) but **the hole has the last word** — it alone knows its own
-  scramble is still running, and a declined turn costs only a turn. The signal is a tick **PER
-  HOLE** (`waveTicks`), never "who is waving": a hole plays on ITS number changing, so a
-  shared signal also fired the hole picked previously, whose value fell back — two holes
-  rippling from one pick, seen in the browser before it was fixed.
+  **The ambient affordance is the letter WAVE and nothing else** (decided 2026-07-27): every
+  few seconds ONE hole ripples its letters (`hole-wave`), quick and transform-only. The
+  issue's second motion — a continuous idle brightness/color pulse on every unsolved hole —
+  was built, seen, and **dropped on the user's call**; don't reintroduce it. What it cost is
+  worth recording, because it is why the surrounding code looks the way it does: to pulse the
+  word WITHOUT pulsing the heat-ramp exponent the animation had to ride on
+  `.hole-word-wrap` and animate COLOR, which meant `.hole-word` giving up its own `color` for
+  `inherit` and a `.hole.tappable` class existing purely as that rule's hook. Both are gone
+  with it; `.hole-word` keeps `color: var(--hole)` as before.
+  The wave needs per-letter boxes, which did NOT exist — the scramble renders a plain
+  string — so `Hole` now splits the word ONCE (`.hole-letter`, used by the resting word and
+  the scramble's frames alike; measured against plain text: same height, +0.06px over 5
+  letters, and `.hole`'s `nowrap` means the boxes add no wrap opportunity). **The scheduler is
+  the round's** (only it knows which holes are unsolved and when the sentence is busy: it
+  ripples only a hole whose map can actually be opened, and stands down while a hit is in
+  flight, while the map is open, on `promptExiting`, once solved, and entirely under reduced
+  motion) but **the hole has the last word** — it alone knows its own scramble is still
+  running, and a declined turn costs only a turn. The signal is a tick **PER HOLE**
+  (`waveTicks`), never "who is waving": a hole plays on ITS number changing, so a shared
+  signal also fired the hole picked previously, whose value fell back — two holes rippling
+  from one pick, seen in the browser before it was fixed.
   **The one-time auto-open** is the guaranteed half: the first hole a player EVER solves
   opens its own finished journey — departure, every station visited, arrival — with their own
   data, explaining the feature by being it. `routeSeen` (persist **v4**, defaulted false for
