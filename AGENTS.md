@@ -1388,9 +1388,15 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   `.sr-only` polite live region (`srHoleResult`), animations honor
   `prefers-reduced-motion` (durations collapse to ~0 — never `animation: none`, several
   swaps advance on `animationend`; delays are kept so the floating numbers still show),
-  and every control has a visible `:focus-visible` outline. The missing-puzzle screen
-  wording owns that the state is **abnormal** (a publish that did not happen). The pixel
-  font is **self-hosted** (`web/src/assets/fonts/PressStart2P.woff2`, `@font-face` in
+  and every control has a visible `:focus-visible` outline. **The missing-puzzle screen
+  has TWO wordings, told apart by the ROUTE (#77, decided 2026-07-27)** — the backend's
+  404 is undifferentiated, and which route asked is the only signal needed: on the
+  **undated** route (today) it owns that the state is **abnormal** (a publish that did not
+  happen), unchanged; on a **dated** archive route (#55) it is usually NORMAL — a
+  pre-launch date, or a language backfilled later, simply was never published — so it says
+  that plainly (no "not supposed to happen", no "check back"), names the day, and offers
+  BACK TO ARCHIVE above the existing CHANGE LANGUAGE, both the same `secondary` weight.
+  The pixel font is **self-hosted** (`web/src/assets/fonts/PressStart2P.woff2`, `@font-face` in
   `index.css` — no Google Fonts request).
 - **SVG icons (pattern to follow):** monochrome UI icons live as `.svg` files under
   `web/src/assets/icons/` and are imported as **inline React components** via
