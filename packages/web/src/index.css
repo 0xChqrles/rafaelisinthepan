@@ -1000,6 +1000,33 @@ button * {
 .hole-word {
   color: var(--hole);
 }
+/* One letter of a hole's word. The word is ALWAYS drawn letter by letter (Hole splits it
+   once, for the resting word and the scramble's frames alike) so the wave has something to
+   move; inline-block is what makes the transform apply. No margins, no padding: the glyph
+   advance is the box, so the sentence measures exactly as it did as plain text — and the
+   hole's `white-space: nowrap` means these boxes add no wrap opportunity. */
+.hole-letter {
+  display: inline-block;
+}
+/* The wave (#129): a hole ripples its letters, up then down in sequence. EVERY hole runs its
+   own clock (Hole.tsx, 3–10s re-rolled per wave), so several words can be mid-wave at once —
+   a single ripple travelling around the sentence reads as a cursor pointing somewhere, where
+   words breathing on separate rhythms read as the words being alive. Transform-only — the
+   phrase must not reflow or shift width — and staggered off the letter's index, with both
+   numbers handed down from Hole so the JS that ends the wave and the CSS that draws it
+   cannot disagree. */
+.hole-word.wave .hole-letter {
+  animation: hole-wave var(--wave-dur, 300ms) ease-in-out calc(var(--i) * var(--wave-step, 40ms));
+}
+@keyframes hole-wave {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
 .hole-rank {
   /* inline-block (not inline) so the rank-pop transform applies; width fits the
      exponent's own content so a trailing suffix hugs the number, no reserved gap. */
@@ -1468,6 +1495,30 @@ button * {
 /* The full leaderboard behind SEE MORE (decided 2026-07-25): the native dialog IS the
    borderless full-screen surface, on the SOLID app background — the animated noise
    never plays underneath — so the table finally has room and quiet. */
+/* ---- the shared modal header (ModalHeader), worn by every full-screen dialog ----
+   NOT a modal chrome of its own: it reuses the app's own corner-chip row wholesale
+   (`.topbar-inner` / `.topbar-left` / `.topbar-title` / `.topbar-right` / `.home-btn`, see
+   TopBar and the Archive screen), so no modal can drift from it — no band, no border, no
+   background, the surface's name top-left and one control top-right, directly on the backdrop.
+   All these rules add is `--hud-height` (declared on `.topbar` and `.hud`, which this row is
+   not inside), keeping the row out of the scroller's flex growth, and the muted-until-touched
+   close. Extracted from the route map's own bar 2026-07-27, when the leaderboard stopped
+   floating its own X in the corner. */
+.modal-bar {
+  --hud-height: clamp(38px, 5vh, 46px);
+  flex: none;
+}
+.modal-close {
+  color: var(--muted);
+}
+.modal-close:hover,
+.modal-close:focus-visible {
+  color: var(--fg);
+}
+
+/* Header row above, scroller below — the shape every modal wearing `.modal-bar` owes it (see
+   ModalHeader): with the SCROLLER owning the overflow, nothing can pass under the header, so
+   the header needs nothing painted behind it. The dialog itself must not scroll. */
 .lb-dialog[open] {
   position: fixed;
   inset: 0;
@@ -1477,43 +1528,65 @@ button * {
   height: 100%;
   max-height: none;
   margin: 0;
-  padding: 24px 20px;
+  padding: 0;
   border: 0;
   outline: 0;
   background: var(--bg);
   color: var(--fg);
   display: flex;
-  overflow-y: auto;
-  overflow-x: hidden;
+  flex-direction: column;
+  overflow: hidden;
 }
 .lb-dialog::backdrop {
   background: transparent;
+}
+/* It arrives as a SHEET: up from the bottom edge, straight to full screen (decided
+   2026-07-27). The route map is the exception — it zooms out of the word you tapped, because
+   it belongs to that word; a result screen belongs to nothing on the page, so it comes from
+   the edge instead. Applied at every width rather than only on phones: this dialog is
+   full-screen on the desktop too, so one motion covers both — and a media-query-scoped exit
+   would leave `animationend` unfired on desktop, where the close waits on it.
+
+   Pure translate, no fade: an opaque sheet covering the screen has nothing to fade from. Down
+   is quicker than up, the way a dismissal should be, and carries `forwards` so the sheet holds
+   off-screen for the frame between the animation ending and React unmounting it. */
+.lb-dialog[open] {
+  animation: sheet-up 200ms cubic-bezier(0.22, 0.68, 0.36, 1);
+}
+.lb-dialog[open].closing {
+  animation: sheet-down 160ms ease-in forwards;
+  pointer-events: none;
+}
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+@keyframes sheet-down {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100%);
+  }
+}
+/* The scrollport, which also carries the frame's breathing room — padding on the DIALOG would
+   sit outside the scroll and clip the table on a short viewport. */
+.lb-scroll {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  padding: 8px 20px 24px;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 /* Auto margins center the frame but collapse on short viewports so nothing clips. */
 .lb-dialog-frame {
   width: min(520px, 100%);
   margin: auto;
-}
-/* A full-screen dialog's dismiss control: same 44px muted target everywhere; each dialog
-   places it (the leaderboard floats it in the corner, the route map seats it in its bar). */
-.dialog-close {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--muted);
-  cursor: pointer;
-}
-.dialog-close:hover {
-  color: var(--fg);
-}
-.lb-dialog-close {
-  position: fixed;
-  top: 14px;
-  right: 14px;
 }
 
 /* ===================== route map (issue #117) ===================== */
@@ -1532,7 +1605,9 @@ button * {
    right-aligned gutter (the "time"), the rail, then the word. The rail is as wide as the
    neighborhood has ROADS (#115) — one lane each, painted by `--lane-lines`, which RouteModal
    builds because the lane centres and the node positions have to agree exactly. Full-screen
-   native dialog on the SOLID app background like the leaderboard, and NO motion of its own. */
+   native dialog on the SOLID app background like the leaderboard. The LINE has no motion of
+   its own — the only animation here is the opening zoom below, which is about the transition
+   into the map, not about the map. */
 .route-dialog[open] {
   position: fixed;
   inset: 0;
@@ -1589,24 +1664,74 @@ button * {
 .route-dialog::backdrop {
   background: transparent;
 }
-/* The header. NOT a modal chrome of its own: it reuses the app's own corner-chip row wholesale
-   (`.topbar-inner` / `.topbar-left` / `.topbar-title` / `.topbar-right` / `.home-btn`, see
-   TopBar and the Archive screen), so it can never drift from it — no band, no border, no
-   background, the screen name top-left and one control top-right, directly on the backdrop.
-   All this rule adds is `--hud-height` (declared on `.topbar` and `.hud`, which this row is
-   not inside) and keeping it out of the scroller's flex growth. */
-.route-bar {
-  --hud-height: clamp(38px, 5vh, 46px);
-  flex: none;
-}
-.route-close {
-  color: var(--muted);
-}
-.route-close:hover,
-.route-close:focus-visible {
-  color: var(--fg);
-}
+/* Opening the map is a ZOOM OUT OF THE WORD you tapped, the way a desktop window opens out of
+   its icon: the screen grows from that point instead of replacing what was there, so the map
+   reads as that word opened rather than as a new screen. RouteModal supplies the word's centre
+   in viewport coordinates — which are this element's own, since it is fixed at inset 0 — so the
+   origin needs no arithmetic here; without it the fallback is dead centre.
 
+   It scales the WHOLE dialog, opaque background included, which is what sells the growth. Safe
+   for everything measured on open: the sticky row's place in the line and the opening scroll are
+   read from `offsetTop`/`clientHeight`, which a transform does not touch, and both run in layout
+   effects before this ever paints. The opacity closes early so the panel is solid for most of
+   the travel — a fade running the whole way reads as a cross-dissolve, not as an opening.
+
+   Short on purpose (120ms, down from the 200ms first tried — 2026-07-27): this is a tap
+   opening a screen, not a transition worth watching, and the map is the thing you came for.
+   Long enough to read as growth out of the word, over before it asks for patience.
+
+   Under reduced motion the global rule collapses the duration; with no fill mode the dialog
+   lands on its natural scale and full opacity, never mid-zoom. */
+.route-dialog[open] {
+  transform-origin: var(--zoom-x, 50%) var(--zoom-y, 50%);
+  animation: route-zoom 120ms ease-out;
+}
+@keyframes route-zoom {
+  from {
+    transform: scale(0.05);
+    opacity: 0;
+  }
+  35% {
+    opacity: 1;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+/* Closing RETRACTS into the same word: the opening run backwards, so the map goes back where it
+   came from and the sentence underneath is somewhere you RETURNED to rather than somewhere you
+   were dropped. RouteModal holds the dialog open through this and only calls `close()` when it
+   ends (see `beginClose`) — a native dialog would otherwise vanish on the spot.
+
+   Written out as its own keyframes rather than `animation-direction: reverse` on the opening
+   one: with the same `animation-name`, changing direction UPDATES the existing animation instead
+   of starting one, and the opening run has long since finished — so it would hold its end state
+   and snap rather than play. The mirror is exact — `ease-in` against `ease-out`, and the opacity
+   stop moved from 35% to 65% — so the panel stays solid for most of the travel and only thins
+   out at the end, the same way round.
+
+   `forwards` holds the final tiny frame: without it the dialog would flash back to full size for
+   the frame between the animation ending and React unmounting it. */
+.route-dialog[open].closing {
+  animation: route-zoom-out 120ms ease-in forwards;
+  /* Nothing inside is aimed at any more — and a second dismissal mid-retraction would only
+     restart a beat that is already leaving. */
+  pointer-events: none;
+}
+@keyframes route-zoom-out {
+  from {
+    transform: scale(1);
+    opacity: 1;
+  }
+  65% {
+    opacity: 1;
+  }
+  to {
+    transform: scale(0.05);
+    opacity: 0;
+  }
+}
 /* --- the line --- */
 .route-scroll {
   flex: 1;

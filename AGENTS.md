@@ -794,7 +794,12 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   point is telling it from the next one at a glance): `LANE_COLORS` (≤ 4 — `ROAD_KS` caps roads
   there) takes four far-apart hues from the **progress ramp's own stops**
   (`shared/progressColor.ts`) rather than inventing a palette, COPIED not imported, because that
-  ramp means "progress" and these mean "identity". Pink leads, never cyan: lane A always holds
+  ramp means "progress" and these mean "identity". Copied means nothing catches drift, so
+  `laneColors.test.ts` pins each hex to the stop it was taken from — pink 70, cyan 30, violet 90,
+  green 40 (added 2026-07-27 on review; it immediately caught the violet as `#883beb` where its
+  stop is `#883ceb`). If a stop is ever retuned the guard fails, and the choice gets made again
+  on purpose rather than the map quietly speaking a stale palette.
+  Pink leads, never cyan: lane A always holds
   rank 1 and cyan is what the heat ramp paints a rank-1 number, so leading with it would imply a
   rule that isn't one. Gold is "you" and blue is solved, so no lane may borrow either — and
   `--rail` stays the ONE unsaturated line on the map, because the trunk is exactly the stretch
@@ -866,16 +871,46 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   value so the ~100-row list re-renders only on a transition. Its natural offset is re-measured
   whenever the model changes, because a guess landing while the map is open can add rows above it
   or make a different station the closest one.
-  **The header is the APP's, not a modal's** (decided 2026-07-26): it reuses
+  **The header is the APP's, not a modal's** (decided 2026-07-26) — and since 2026-07-27 it is
+  the SHARED `ModalHeader` (see the app-header bullet below), which this map's own bar was
+  extracted into when the leaderboard adopted it. It reuses
   `.topbar-inner` / `.topbar-left` / `.topbar-title` / `.topbar-right` / `.home-btn` wholesale,
-  so it cannot drift from the corner-chip policy above — no band, no border, no background, the
+  so it cannot drift from the corner-chip policy — no band, no border, no background, the
   hole's name top-left and one close control top-right. It sits **in flow** above an inner
   `.route-scroll`, which is precisely what lets it paint nothing: with the scroller (not the
   dialog) owning the overflow, no content can ever pass beneath the header, so none has to be
-  hidden behind a band. The dismiss-on-backdrop click therefore tests the scroller as well as
-  the dialog — the space around the line lives inside it.
-  No motion (nothing for reduced motion to collapse) and **no new analytics event** — the
-  three-event invariant stands.
+  hidden behind a band. Tapping the space AROUND the line does nothing since 2026-07-27 (see
+  the modal-behaviour bullet): the close chip is the way out.
+  **The LINE has no motion; the OPENING does** (decided 2026-07-27, superseding "no motion at
+  all"): the map **zooms out of the word you tapped**, the way a desktop window opens out of its
+  icon — the whole dialog, opaque background included, scales from ~0 with its
+  `transform-origin` on that word's centre (`route-zoom`, 120ms — a tap opening a screen, not a
+  transition worth watching; 200ms was tried first). It is the transition INTO the
+  map, not part of the drawing: the screen that lands reads as that word opened rather than as a
+  new screen that replaced it, which is also part of what makes the entry point legible (#129).
+  `Game.openRoute` measures `.hole-word-wrap` inside the hole button at open time — the word,
+  exponent excluded — and passes the viewport point, which is the fixed full-screen dialog's own
+  coordinate space, so the CSS needs no arithmetic; a missing button falls back to dead centre.
+  **A transform cannot disturb what this modal measures on open** — the sticky row's natural
+  place and the opening scroll are read from `offsetTop`/`offsetHeight`/`clientHeight` in layout
+  effects before it ever paints — and that was verified rather than assumed: on a 4.2-screen map
+  the opening view is identical with the animation on and forced off.
+  **Closing RETRACTS into the same word** (decided 2026-07-27, superseding the unanimated close):
+  the map goes back where it came from, so the sentence underneath is somewhere you RETURNED to
+  rather than somewhere you were dropped. That means the dialog has to outlive the dismissal —
+  every route to a close (the X and **Escape**, whose `cancel` event is `preventDefault`ed
+  precisely because a native dialog would otherwise vanish on the spot — a backdrop tap is NOT
+  one of them since 2026-07-27, see the modal-behaviour bullet) only STARTS the exit; the real
+  `dialog.close()` waits on the animation's `animationend`, with a deadline behind it
+  (`EXIT_FALLBACK_MS`, in the shared `useModalDismiss` since both modals grew an animated
+  dismissal) so a lost event can never lock the player inside a modal. `route-zoom-out` is written out as its OWN keyframes rather than
+  `animation-direction: reverse` on the opening one: with the same `animation-name` a direction
+  change UPDATES the running animation instead of starting one, and the opening run has long
+  since finished — it would snap to its end state rather than play. It carries `forwards`, or the
+  dialog flashes back to full size for the frame between the animation ending and React
+  unmounting it. Reduced motion collapses both durations; the opening lands on the natural scale
+  and the close still completes. Still **no new analytics event** — the three-event invariant
+  stands.
   **"You are here" is read off the HOLE, never off the guess log** (fixed 2026-07-27): a guess
   deduped as a canonical duplicate never enters `tried` (`gameStore.recordGuess`) and can still
   IMPROVE another hole, so the current group can be one the history does not mention. `buildRoute`
@@ -883,6 +918,18 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   falling back to the closest logged one put the marker on a word the player had moved past — a
   rank-5 hole reading as its rank-104 departure, its current word censored `???` on the map while
   the sentence showed it.
+  **The DEPARTURE is read off its stated RANK, never off the start word's slug** (fixed
+  2026-07-28, the same shape as the note above — `buildRoute` takes `startRank`, and
+  `hole.start.slug` now has no consumer at all). A slug is not an identity: `fold` drops accents,
+  so `côté` and `coté` share the key `cote`, and a shared key belongs to the CLOSER group. When a
+  hole prints an agreed form (#119) whose slug a closer group already owns, `alias_start_display`
+  deliberately DECLINES to re-key it — typing it really is the closer distance, and that call is
+  right and stays — so the shipped `start.slug` resolves to a group the player was never put down
+  on. Looking the departure up that way drew it at that group's rank AND, because a stop renders
+  with its word, NAMED it: on a board where nothing had been guessed, the map printed a rank-4
+  word and lifted it out of the censored near field. That is the one thing the censored field
+  exists to prevent, and the sentence's own exponent was right the whole time — `start_rank` is
+  stated, unambiguous, and already what the sentence, the score and the progress all use.
   **The hole button is DESCRIBED, not LABELLED** (fixed 2026-07-27): an `aria-label` REPLACES the
   content it wraps, and that content — the word and its exponent — IS the clue, so labelling the
   button deleted it from the button and from the sentence a screen reader reads. The hint moved to
@@ -898,6 +945,62 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   focused hole button through `releaseHoleFocus`. All three, not just typing: with Backspace and
   history recall leaving it focused, "close the map, fix a typo, press Enter" reopened the map
   instead of submitting (fixed 2026-07-27).
+- **Route discoverability (#129, decided 2026-07-27):** #117 made every hole a button and
+  nothing said so. Two fixes, both in the show-don't-tell grammar — no permanent chrome, no
+  tooltip, no message band (all three considered and rejected the same day).
+  **The ambient affordance is the letter WAVE and nothing else** (decided 2026-07-27): a hole
+  ripples its letters (`hole-wave`), quick and transform-only. The
+  issue's second motion — a continuous idle brightness/color pulse on every unsolved hole —
+  was built, seen, and **dropped on the user's call**; don't reintroduce it. What it cost is
+  worth recording, because it is why the surrounding code looks the way it does: to pulse the
+  word WITHOUT pulsing the heat-ramp exponent the animation had to ride on
+  `.hole-word-wrap` and animate COLOR, which meant `.hole-word` giving up its own `color` for
+  `inherit` and a `.hole.tappable` class existing purely as that rule's hook. Both are gone
+  with it; `.hole-word` keeps `color: var(--hole)` as before.
+  The wave needs per-letter boxes, which did NOT exist — the scramble renders a plain
+  string — so `Hole` now splits the word ONCE (`.hole-letter`, used by the resting word and
+  the scramble's frames alike; measured against plain text: same height, +0.06px over 5
+  letters, and `.hole`'s `nowrap` means the boxes add no wrap opportunity).
+  **EVERY hole owns its clock** (decided 2026-07-27, replacing a round-level scheduler that
+  picked ONE hole at a time): each waits a fresh random `WAVE_MIN_MS`–`WAVE_MAX_MS` (3–10s,
+  re-rolled per wave and whenever the sentence goes quiet again), so several words can stir at
+  once and the holes scatter on their own instead of being kept apart. A lone ripple travelling
+  around the sentence reads as a cursor pointing somewhere; several words breathing on separate
+  rhythms read as the words being alive, which is the claim the affordance makes. The round
+  contributes exactly ONE fact — `quiet`, the thing a hole cannot see for itself: no guess
+  feedback in flight, no map over the sentence, `promptExiting` false, not solved. Everything
+  else is the hole's own (`ticking`): its rank, its scramble, its hit, and whether it has a map
+  to open at all — the wave is an affordance for the TAP, so a hole with no #115 geometry never
+  ripples. A wave already in FLIGHT is cut when `ticking` drops, not merely when the hole's own
+  `busy` does: `quiet` also falls when the map opens over the sentence, and a wave left running
+  behind it shows its tail if the player closes quickly (both modal beats are 120ms, a wave up
+  to 460ms). Reduced motion: the clock never starts.
+  **The one-time auto-open** is the guaranteed half: the first hole a player EVER solves
+  opens its own finished journey — departure, every station visited, arrival — with their own
+  data, explaining the feature by being it. `routeSeen` (persist **v4**, defaulted false for
+  every older blob — nothing to grandfather, the map shipped with #117) is set by `openRoute`,
+  the ONE place a map opens, so a player who found it by tapping is never interrupted.
+  `shouldAutoOpenRoute` (pure, in `game/route.ts`) fires only on a mid-round solve — never the
+  FINAL one, which belongs to the solved sequence (streak → exits → leaderboard → source) and
+  must not gain a competing modal — and names the first newly solved hole in sentence order;
+  `Game` filters to holes that HAVE a map before asking. Two rules the ARMED offer needs beyond
+  that, both found on review 2026-07-28 and both reproduced in a browser before fixing:
+  it is **cancelled when the round ends**, because guessing stays live through the first solved
+  word's ~1.7s of settle and a player holding the last answer can finish the sentence inside
+  that window — the map then opened *over* the solved sequence, with two dialogs on screen at
+  once and the one-time offer spent on a moment it was never meant to fire; and **the first
+  armed target wins** (`current ?? target`), or a hole solved while the first is still resolving
+  takes its place and the player is shown the map of the word they reached second. It arms at submit time and waits for
+  the holes' own settle reports (`resolvedHoleIndices`, the signal the solved gating uses) plus
+  350ms, never a guessed timeout — and from the LAST of them, not the target hole's: one guess
+  can drop two mappable holes, and a beat measured from the first would put the modal over a
+  word still scrambling. The target has settled either way, and the restart is bounded (one per
+  hole, and the set only grows). **This is the one place #129 interrupts rather than invites**
+  (weighed again on review 2026-07-28 and kept): it takes focus for a modal the player did not
+  ask for. What makes it acceptable is all three of — once per device lifetime, triggered by
+  the player's own solve, and focus returned to the hole on close. The wave deliberately does
+  none of that, which is why it stays an affordance and this stays a demonstration. Archive replays included; the tutorial is untouched (it does
+  not render `Round`). No new analytics event — the three-event invariant stands.
 - **Offline LLM benchmark harness (#68, Kimi provider #91, native sessions #93,
   decided 2026-07-19).** The
   dedicated `benchmark` workspace owns `benchmark/scripts/llm_play.py`, its tests, and
@@ -1143,9 +1246,11 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   leaderboard no longer renders inline in the tray (decided 2026-07-25, superseding
   #110's inline table — too much information in the tray on mobile):** SEE MORE opens
   `LeaderboardDialog`, a borderless full-screen native dialog on the SOLID app
-  background (the animated noise never plays under it) with generous row rhythm,
-  closed via its X (`ariaClose`), Escape, or a backdrop click; focus returns to SEE
-  MORE. This dialog is the planned home of the deeper result views (#82): per-row
+  background (the animated noise never plays under it) with generous row rhythm. It
+  wears the shared `ModalHeader` and rises as a **SHEET** from the bottom edge
+  (`sheet-up` / `sheet-down`, 2026-07-27 — see the modal-behaviour bullet); it is
+  closed by its header X or Escape, **never by a backdrop tap**, and focus returns to
+  SEE MORE. This dialog is the planned home of the deeper result views (#82): per-row
   runs, tested words, per-hole word lists. **The run RULER replaced the bucketed
   trajectory squares (decided 2026-07-25):** one continuous bar per run on the
   PROGRESS ramp (`components/RunRuler.tsx`), one cell per counted try colored
@@ -1292,8 +1397,13 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   WHOLE modal dismisses — click/tap anywhere, ANY key (the "press any key" twin of
   tap-anywhere), or Escape — but dismissal is completely disabled until the hint's entrance
   finishes and it is fully visible. Every dismissal then fades the whole modal opacity over
-  200ms before unmounting; after source typing and the result rise, focus moves to the result
-  action. While any streak screen is open, the source and solved-result timers stay at their
+  200ms before unmounting. **The solved screen then focuses NOTHING** (decided 2026-07-27,
+  dropping the focus this dismissal used to hand to the result action): the celebration has no
+  trigger to restore focus to, so the tray was taking it by default and SHARE arrived already
+  ringed — a solved sentence is something to read, not a prompt to act, and a keyboard user is
+  one Tab away. The streak celebration also keeps its **tap-anywhere** dismissal: it is the
+  documented exception to the close-button-only rule the other modals now follow.
+  While any streak screen is open, the source and solved-result timers stay at their
   initial frame. **Dev-only preview:**
   `?streak=N` (integer `0..99999`)
   opens the sequence immediately with `N` as the PREVIOUS value (`?streak=9` → `9→10`),
@@ -1355,8 +1465,51 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   screen's contextual controls — every one a `.home-btn` (a transparent `--hud-height` square)
   wrapping a `.pixel-icon` SVG, muted → `--fg` on hover/focus. The **streak stat is NOT in the
   header** (moved back to the archive page 2026-07-21). **Any full-screen surface follows this
-  same row** rather than inventing chrome — the route modal (#117) reuses these exact classes,
-  minus the flag (switching language out from under a hole's map would navigate the game away).
+  same row** rather than inventing chrome, and since 2026-07-27 there is ONE component for it:
+  **`components/ModalHeader.tsx`** — the app's row (`.topbar-inner` / `.topbar-left` /
+  `.topbar-title` / `.topbar-right` / `.home-btn`) with a title and one close chip, minus the
+  flag (switching language out from under a modal would navigate the screen away). The route
+  map (#117) and the leaderboard (#110) both wear it; the leaderboard's own X floated in the
+  corner until then, so the app had two full-screen modals with two different dismissal chromes.
+  **A modal adopting it owes it the structure that lets it paint nothing**: the header sits IN
+  FLOW above a scroller that owns the overflow (`.lb-scroll` / `.route-scroll`), so no content
+  can pass beneath it and no band is needed — the DIALOG must not scroll. Two consequences for
+  the leaderboard: its padding moved from the dialog to the scroller (padding on the dialog sits
+  outside the scroll and clips the table on a short viewport), and its backdrop-dismiss test
+  gained the scroller, which is now most of the backdrop. The dialog is named by a new i18n key
+  `leaderboard` (en LEADERBOARD / fr CLASSEMENT) rather than `seeMore`, which names the button's
+  ACTION, not the surface. The **StreakDialog deliberately does NOT take this header** — the
+  celebration has nothing focusable by decision, and a close chip would be the first thing on it.
+- **How a modal opens and closes — `hooks/useModalDismiss.ts` (decided 2026-07-27).** Three
+  rules, shared so two modals cannot drift, and the StreakDialog is the standing exception to
+  all of them (it is a tap-anywhere celebration with nothing focusable, by its own decision):
+  - **Opening focuses the DIALOG, not the first control inside it.** `showModal()` otherwise
+    focuses the first focusable descendant — which, now that every modal leads with the shared
+    header, is the close chip: the modal would appear with its dismiss button already lit.
+    Focus still lands INSIDE the dialog (the element itself, `tabIndex: -1`, `outline: 0`), so
+    the focus trap and Escape are untouched.
+  - **A backdrop tap is NOT a dismissal.** The close chip is the way out; Escape stays, being a
+    keyboard affordance rather than a mis-tap. Both modals' click handlers are gone with it.
+  - **Closing is a BEAT, not an event.** `beginClose()` only starts the exit; the real
+    `dialog.close()` — which fires `onClose` and lets the owner unmount — waits on the exit
+    animation's `animationend`, with `EXIT_FALLBACK_MS` behind it. Escape goes through the same
+    door: its `cancel` event is `preventDefault`ed, or a native dialog vanishes on the spot.
+    The exit's name is a **string contract with a real `@keyframes` rule** that nothing
+    type-checks and no test can (jsdom runs no animations), so the hook VERIFIES it instead of
+    trusting it: on `closing` it reads the computed `animation-name` and, if the expected one
+    is not there, closes immediately. Renaming a keyframe then costs the animation and nothing
+    else — where before it left `animationend` unfired and the modal INVISIBLE over an inert
+    page for the whole fallback, which reads as a freeze. Measured: 193ms to close normally,
+    53ms with the name broken, never 800.
+  The hook must be the caller's FIRST hook, because it owns `showModal()` and a closed
+  `<dialog>` is `display: none` — anything a modal measures on open would read a tree with no
+  boxes (the route map's opening scroll is exactly that hazard).
+  **Which exit each wears:** the route map RETRACTS INTO ITS WORD, because it belongs to that
+  word; the leaderboard is a **SHEET** — up from the bottom edge to full screen, back down on
+  the way out — because a result screen belongs to nothing on the page. The sheet plays at
+  EVERY width, not just phones: this dialog is full-screen on the desktop too, and a
+  media-query-scoped exit would leave `animationend` unfired on desktop, where the close waits
+  on it.
   The game's right group holds the **archive calendar icon** and help `?` (#55); the tutorial
   puts "TUTORIAL" in the left chip and the skip fast-forward in the right group. The flag
   ALWAYS opens the language screen. The

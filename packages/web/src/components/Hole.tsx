@@ -43,6 +43,24 @@ export function rankHeatColor(rank: number, startRank: number) {
   return heatColor(heat);
 }
 
+// The letter wave (#129): one letter's whole up-and-down, and the delay between two
+// consecutive letters. Both are handed to CSS as custom properties rather than repeated
+// there, so the animation and the JS that ends it read the same numbers.
+const WAVE_LETTER_MS = 300;
+const WAVE_STEP_MS = 40;
+function waveDurationMs(letters: number): number {
+  return WAVE_LETTER_MS + Math.max(0, letters - 1) * WAVE_STEP_MS;
+}
+
+// How long a hole waits between its own waves. EVERY hole runs this clock independently
+// (decided 2026-07-27, replacing a single round-level scheduler that picked one hole at a
+// time): a lone ripple travelling around the sentence reads as a cursor pointing somewhere,
+// while several words stirring on their own separate rhythms read as the words being alive —
+// which is the whole claim the affordance makes. The band is wide and re-rolled per wave, so
+// the holes drift apart on their own instead of needing to be kept apart.
+const WAVE_MIN_MS = 3_000;
+const WAVE_MAX_MS = 10_000;
+
 // A hole: "displayed_word^-current_rank" (ex: sailor^-87). Rank 0 = solved.
 export default function Hole({
   hole,
@@ -51,6 +69,7 @@ export default function Hole({
   onHitDone,
   onResolved,
   explore,
+  quiet = false,
 }: {
   hole: RuntimeHole;
   hit: HitState | null;
@@ -63,6 +82,11 @@ export default function Hole({
   // the word mid-scramble. `hintId` points at the sr-only "explore" note Phrase renders
   // OUTSIDE the sentence; see the button below for why it is a description and not a label.
   explore?: { hintId: string; disabled: boolean; onOpen: () => void };
+  // Is the SENTENCE quiet — no guess feedback in flight, no map over it, the round still being
+  // played? That is the one thing about the ambient wave (#129) a hole cannot see for itself,
+  // so the round supplies it and the hole owns everything else: its own clock, and whether it
+  // is personally free to ripple.
+  quiet?: boolean;
 }) {
   // Exponent rolls toward the current rank one rank step at a time (or snaps under
   // reduced motion, see rankTweenDuration). A solved hole visibly reaches 0, then removes
@@ -133,14 +157,68 @@ export default function Hole({
     if (resolved) onResolved?.(holeIndex);
   }, [holeIndex, onResolved, resolved]);
 
+  // The letters the word is drawn from — ONE splitting path, used by the resting word and by
+  // the scramble's churning frames alike, so the wave has something to move without a second
+  // way of rendering a hole's word existing. Split by code point: a display form keeps its
+  // accents (`grincement`, `plissés`), and those are single code points in NFC.
+  const letters = Array.from(jumble ?? displayWord);
+
+  // The wave, on this hole's OWN clock. It never competes with feedback: a hole
+  // mid-choreography — a floating hit landing on it, its word churning through the
+  // slot-machine scramble, or already locked at rank 0 — does not run the clock at all, and a
+  // wave in flight when a guess lands is cut. Nor does a hole with no map ripple: the wave is
+  // an affordance for the tap, so advertising one that does nothing is worse than none.
+  const busy = hit !== null || jumble !== null || hole.rank === 0;
+  const ticking = quiet && !busy && explore !== undefined && !explore.disabled;
+  const [waving, setWaving] = useState(false);
+  // Bumped by each finished wave, purely to re-arm the clock below with a fresh delay.
+  const [waveCount, setWaveCount] = useState(0);
+
+  useEffect(() => {
+    if (!ticking || prefersReducedMotion()) return undefined;
+    const id = window.setTimeout(
+      () => setWaving(true),
+      WAVE_MIN_MS + Math.random() * (WAVE_MAX_MS - WAVE_MIN_MS),
+    );
+    return () => window.clearTimeout(id);
+    // Re-rolled whenever the sentence goes quiet again, so the holes also scatter after
+    // every guess rather than settling into lockstep off a shared start.
+  }, [ticking, waveCount]);
+
+  // The wave's own length — the last letter's delay plus its animation. Ending it in JS (and
+  // not on `animationend`) keeps ONE owner of the two numbers CSS is handed above.
+  useEffect(() => {
+    if (!waving) return undefined;
+    const id = window.setTimeout(() => {
+      setWaving(false);
+      setWaveCount((n) => n + 1);
+    }, waveDurationMs(letters.length));
+    return () => window.clearTimeout(id);
+    // The letter count is read when the wave STARTS: a scramble cannot begin mid-wave (it
+    // makes the hole busy, which cuts the wave on the next line).
+  }, [waving]);
+
+  // Cut a wave already in flight the moment this hole stops being free to run one — which is
+  // `ticking`, not just its own `busy`: the round drops `quiet` when a guess lands AND when the
+  // map opens over the sentence, and a wave left running behind the modal shows its tail if the
+  // player closes quickly (both animations are ~120ms, the wave up to 460ms).
+  useEffect(() => {
+    if (!ticking) setWaving(false);
+  }, [ticking]);
+
   // The exponent sizes to its own content (no reserved width), so a following suffix
   // sits right after the number instead of after a gap left for the widest rank.
   const rankStyle: CSSProperties & Record<'--rank-color', string> = {
     '--rank-color': rankHeatColor(shownRank, hole.startRank),
   };
-  const hitStyle: (CSSProperties & Record<'--hit-delay', string>) | undefined = hit
-    ? { '--hit-delay': `${hit.startDelayMs}ms` }
-    : undefined;
+  // The word carries the hit's shake delay and, while it waves, the two numbers its letters'
+  // animation is built from — so the timing lives in ONE place (above) and CSS reads it.
+  const wordStyle: CSSProperties & Record<string, string> = {};
+  if (hit) wordStyle['--hit-delay'] = `${hit.startDelayMs}ms`;
+  if (waving) {
+    wordStyle['--wave-dur'] = `${WAVE_LETTER_MS}ms`;
+    wordStyle['--wave-step'] = `${WAVE_STEP_MS}ms`;
+  }
 
   // The word + its exponent. The route button (below) wraps this whole group WITHOUT
   // touching it: the floating-hit/scramble choreography keys off this exact structure.
@@ -154,10 +232,17 @@ export default function Hole({
             changing it restarts the shake even on two consecutive hits. */}
         <span
           key={hit ? `word-${hit.id}` : 'word'}
-          className={`hole-word${hit ? ' hit-shake' : ''}`}
-          style={hitStyle}
+          className={`hole-word${hit ? ' hit-shake' : ''}${waving ? ' wave' : ''}`}
+          style={wordStyle}
         >
-          {jumble ?? displayWord}
+          {/* One span per letter — the structure the wave moves. Keyed by position, so the
+              scramble's 40ms frames replace glyphs in place instead of remounting the word
+              (which would restart any animation running on it). */}
+          {letters.map((ch, i) => (
+            <span key={i} className="hole-letter" style={{ '--i': i } as CSSProperties}>
+              {ch}
+            </span>
+          ))}
         </span>
         {/* Floating "damage"-style indicator: a distance number colored by the
             heatmap (capped heat), or "MISS" at the coldest color when too far. */}

@@ -16,6 +16,7 @@ export default function Phrase({
   exploreLabels,
   exploreDisabled = false,
   onExplore,
+  quiet = false,
 }: {
   words: string[];
   holes: RuntimeHole[];
@@ -30,6 +31,9 @@ export default function Phrase({
   exploreLabels?: (string | null)[];
   exploreDisabled?: boolean;
   onExplore?: (holeIndex: number) => void;
+  // Is the sentence quiet enough for the ambient wave (#129)? Passed straight through: each
+  // hole keeps its own clock and decides for itself, this is only the round-wide veto.
+  quiet?: boolean;
 }) {
   const holeIndexByPos = new Map<number, number>(holes.map((h, i) => [h.pos, i]));
   const puzzleHoleByPos = new Map<number, PuzzleHole>(puzzleHoles.map((h) => [h.pos, h]));
@@ -66,6 +70,7 @@ export default function Phrase({
                   holeIndex={idx}
                   onHitDone={onHitDone}
                   onResolved={onHoleResolved}
+                  quiet={quiet}
                   explore={
                     exploreLabel && onExplore
                       ? {
