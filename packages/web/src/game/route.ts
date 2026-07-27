@@ -114,6 +114,13 @@ interface RouteGeometry {
   lanes: Map<number, number>;
   nearTop: number; // the farthest rank of the near field — from the DATA, floored at APPROACH_TOP
   plottable: boolean; // the rank-1 group carries dq -> this map can be drawn
+  // Memo for the ONE lookup the near field cannot answer (see entryAtRank): a rank off a
+  // `--no-roads` map, which has no near field to speak of and so costs a walk of the whole
+  // alias-expanded map. Mutable, and deliberately part of the geometry rather than local to a
+  // build: `buildRoute` re-runs on every guess while the map is open, so a per-build memo would
+  // pay that walk again for the same rank each time. Holds a MISS as `undefined` too — hence
+  // `has` rather than `get` at the call site — so an absent rank cannot be rescanned forever.
+  resolved: Map<number, RankEntry | undefined>;
 }
 
 const geometryCache = new WeakMap<Record<string, RankEntry>, RouteGeometry>();
@@ -146,6 +153,7 @@ export function routeGeometry(rankMap: Record<string, RankEntry>): RouteGeometry
     lanes,
     nearTop: Math.max(forkRank, APPROACH_TOP),
     plottable: rank1 !== undefined && rank1.dq !== undefined,
+    resolved: new Map(),
   };
   geometryCache.set(rankMap, geometry);
   return geometry;
@@ -258,11 +266,25 @@ export function buildRoute({
   // and a hole never sits farther than where it was put down — so the scan is the fallback for a
   // `--no-roads` map, which has no near field to speak of. Aliases of a group carry identical
   // values, so the first key found wins, exactly as in the geometry pass.
+  //
+  // That walk is the one cost in this module that isn't paid once, so it is MEMOIZED on the
+  // geometry (which is itself cached per map object): `buildRoute` re-runs on every guess while
+  // the map is open, and both callers below ask for the same two ranks each time. Memoized, a
+  // rank is scanned for once and the round's repeats are free; the memo is bounded by the ranks
+  // the hole actually occupies.
   const entryAtRank = (rank: number): RankEntry | undefined => {
     const known = geometry.near.get(rank);
     if (known) return known;
-    for (const key in rankMap) if (rankMap[key].rank === rank) return rankMap[key];
-    return undefined;
+    if (geometry.resolved.has(rank)) return geometry.resolved.get(rank);
+    let found: RankEntry | undefined;
+    for (const key in rankMap) {
+      if (rankMap[key].rank === rank) {
+        found = rankMap[key];
+        break;
+      }
+    }
+    geometry.resolved.set(rank, found);
+    return found;
   };
 
   const startEntry = entryAtRank(startRank);

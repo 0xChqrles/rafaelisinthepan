@@ -92,7 +92,7 @@ describe('placement — every stop keeps its group geometry', () => {
     const model = route(map, [], hole(100))!;
     // Which is what puts the fork just before it: the renderer places it at the first
     // station that has a road, reading down from the cold end.
-    expect(model.stops.find((s) => s.start)?.road).not.toBeNull();
+    expect(model.stops.find((s) => s.start)!.road).not.toBeNull();
     expect(model.roads).toHaveLength(3);
   });
 
@@ -186,6 +186,18 @@ describe('markers — departure and "you are here"', () => {
     const noRoads = mkMap(300);
     const model = route(noRoads, [], hole(42))!;
     expect(model.stops.find((s) => s.best)).toMatchObject({ rank: 42, dq: noRoads.w42.dq });
+  });
+
+  it('answers the same on a rebuild — that lookup is memoized, not recomputed', () => {
+    // buildRoute re-runs on every guess while the map is open, and the --no-roads lookup above
+    // is cached on the geometry. A rebuild must read the memo, never a stale or wrong entry.
+    const noRoads = mkMap(300);
+    const first = route(noRoads, [], hole(42))!;
+    const second = route(noRoads, ['w200'], hole(42))!;
+    expect(second.stops.find((s) => s.best)).toMatchObject(first.stops.find((s) => s.best)!);
+    // ...and a rank the memo has not seen is still resolved on its own.
+    const moved = route(noRoads, ['w200'], hole(9))!;
+    expect(moved.stops.find((s) => s.best)).toMatchObject({ rank: 9, dq: noRoads.w9.dq });
   });
 
   it('marks nothing rather than the wrong station when the position has no entry', () => {
