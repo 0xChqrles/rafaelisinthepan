@@ -193,11 +193,19 @@ describe('markers — departure and "you are here"', () => {
     // is cached on the geometry. A rebuild must read the memo, never a stale or wrong entry.
     const noRoads = mkMap(300);
     const first = route(noRoads, [], hole(42))!;
+    // The walk RECORDED its answer — without this, a rebuild is a second full walk and the
+    // agreement below would still hold.
+    expect(routeGeometry(noRoads).resolved.has(42)).toBe(true);
     const second = route(noRoads, ['w200'], hole(42))!;
     expect(second.stops.find((s) => s.best)).toMatchObject(first.stops.find((s) => s.best)!);
     // ...and a rank the memo has not seen is still resolved on its own.
     const moved = route(noRoads, ['w200'], hole(9))!;
     expect(moved.stops.find((s) => s.best)).toMatchObject({ rank: 9, dq: noRoads.w9.dq });
+    // A rank the NEAR FIELD answers never reaches the memo: it only ever holds what the walk
+    // had to find, which is what keeps it bounded by the round rather than by the map.
+    const near = route(noRoads, [], hole(3))!;
+    expect(near.stops.find((s) => s.best)!.rank).toBe(3);
+    expect(routeGeometry(noRoads).resolved.has(3)).toBe(false);
   });
 
   it('marks nothing rather than the wrong station when the position has no entry', () => {
