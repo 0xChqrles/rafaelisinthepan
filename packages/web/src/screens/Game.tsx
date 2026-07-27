@@ -514,7 +514,7 @@ function Round({
       rankMap: ranks[hole.secret],
       tried: history,
       hole,
-      startSlug: puzzleHole.start.slug,
+      startRank: puzzleHole.start_rank,
       secretWord: puzzleHole.secret.word,
       number,
     });

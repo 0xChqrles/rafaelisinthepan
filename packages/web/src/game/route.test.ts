@@ -54,13 +54,13 @@ function route(
   map: Record<string, RankEntry>,
   tried: string[],
   h: RuntimeHole,
-  startSlug = 'w100',
+  startRank = 100,
 ) {
   return buildRoute({
     rankMap: map,
     tried,
     hole: h,
-    startSlug,
+    startRank,
     secretWord: 'secret',
     number: 2,
   });
@@ -111,7 +111,7 @@ describe('canonical dedupe — one GROUP is one stop (#104)', () => {
     const map = mkMap(50);
     map.privees = { word: 'privé', rank: 7, dq: map.w7.dq };
     map.privee = { word: 'privé', rank: 7, dq: map.w7.dq };
-    const model = route(map, ['privees', 'privee'], hole(7), 'w40')!;
+    const model = route(map, ['privees', 'privee'], hole(7), 40)!;
     const seven = model.stops.filter((s) => s.rank === 7);
     expect(seven).toHaveLength(1);
     expect(seven[0].word).toBe('privé');
@@ -120,7 +120,7 @@ describe('canonical dedupe — one GROUP is one stop (#104)', () => {
   it('keeps the departure marker when the start is re-typed as an alias', () => {
     const map = mkMap(50);
     map.startbis = { word: map.w40.word, rank: 40, dq: map.w40.dq };
-    const model = route(map, ['startbis'], hole(40), 'w40')!;
+    const model = route(map, ['startbis'], hole(40), 40)!;
     const stop = model.stops.filter((s) => s.rank === 40);
     expect(stop).toHaveLength(1);
     expect(stop[0].start).toBe(true);
@@ -163,6 +163,25 @@ describe('markers — departure and "you are here"', () => {
     expect(model.hidden.some((h) => h.rank === 5)).toBe(false);
   });
 
+  it('takes the DEPARTURE from its stated rank, never from the start word slug', () => {
+    // A slug is not an identity. `fold` drops accents, so `côté` and `coté` share the key
+    // `cote`, and a shared key belongs to the CLOSER group. When a hole prints an agreed form
+    // whose slug a closer group already owns, generation deliberately declines to re-key it
+    // (typing it really IS the closer distance) — so `hole.start.slug` resolves to a group the
+    // player was never put down on. Resolving the departure that way drew it at rank 4 on a
+    // board where nothing had been guessed, AND named the word there: `côté` is a stop, and a
+    // stop is rendered with its word, so the closest thing on the map was handed over for free.
+    const leaky = mkMap(300, { roadTop: 87, roadCount: 2 });
+    leaky.cote = { word: 'côté', rank: 4, dq: leaky.w4.dq, road: leaky.w4.road }; // owns the key
+    const model = route(leaky, [], hole(87, 87), 87)!;
+
+    const start = model.stops.find((s) => s.start)!;
+    expect(start.rank).toBe(87); // the rank the puzzle stated, not the slug's group
+    expect(model.stops.some((s) => s.rank === 4)).toBe(false);
+    // ...and rank 4 is still one of the censored ??? stations it always was.
+    expect(model.hidden.some((h) => h.rank === 4 && h.word === null)).toBe(true);
+  });
+
   it('finds that position even with no near field to read it from (--no-roads)', () => {
     const noRoads = mkMap(300);
     const model = route(noRoads, [], hole(42))!;
@@ -198,14 +217,14 @@ describe('the censored near field — every group on the roads', () => {
     // out to 60, and the departure is a STOP, so the farthest censored one sits just inside it.
     for (const startRank of [60, 140]) {
       const own = mkMap(300, { roadTop: startRank, roadCount: 2 });
-      const model = route(own, [], hole(startRank), `w${startRank}`)!;
+      const model = route(own, [], hole(startRank), startRank)!;
       expect(model.hidden.every((h) => h.rank < startRank)).toBe(true);
       expect(model.hidden.at(-1)!.rank).toBe(startRank - 1);
     }
     // A guess FARTHER than the departure is still a stop — it just rides the trunk, where the
     // departure itself is on a lane.
     const far = mkMap(300, { roadTop: 60, roadCount: 2 });
-    const model = route(far, ['w130'], hole(60), 'w60')!;
+    const model = route(far, ['w130'], hole(60), 60)!;
     expect(model.stops.map((s) => s.rank)).toEqual([60, 130]);
     expect(model.stops.find((s) => s.rank === 130)!.road).toBeNull();
     expect(model.stops.find((s) => s.rank === 60)!.road).toBe(far.w60.road);
@@ -248,7 +267,7 @@ describe('the censored near field — every group on the roads', () => {
     // --no-roads (or any pre-#115 day that still has dq): no near field to bound, so the closest
     // few are still censored rather than the map showing none.
     const noRoads = mkMap(300);
-    expect(route(noRoads, ['w200'], hole(100), 'w100')!.hidden.map((h) => h.rank)).toEqual(
+    expect(route(noRoads, ['w200'], hole(100), 100)!.hidden.map((h) => h.rank)).toEqual(
       Array.from({ length: APPROACH_TOP }, (_, i) => i + 1),
     );
   });
@@ -289,7 +308,7 @@ describe('roads are named by DISCOVERY, never by what is on them', () => {
 describe('the MISS shelf — off the map', () => {
   it('partitions guesses with no rank at all, in try order', () => {
     const map = mkMap(50);
-    const model = route(map, ['pizza', 'w20', 'tarte', 'w7'], hole(7), 'w40')!;
+    const model = route(map, ['pizza', 'w20', 'tarte', 'w7'], hole(7), 40)!;
     expect(model.misses).toEqual(['pizza', 'tarte']);
     expect(model.stops.map((s) => s.rank)).toEqual([7, 20, 40]);
   });
@@ -327,7 +346,7 @@ describe('a puzzle without dq has no map at all', () => {
   });
 
   it('builds nothing rather than a degraded list', () => {
-    expect(route(legacy, ['w1'], hole(1), 'w40')).toBeNull();
+    expect(route(legacy, ['w1'], hole(1), 40)).toBeNull();
   });
 
   // hasRoute answers from the rank-1 entry alone rather than building the geometry (it is

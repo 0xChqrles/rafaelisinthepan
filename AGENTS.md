@@ -917,6 +917,18 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   falling back to the closest logged one put the marker on a word the player had moved past — a
   rank-5 hole reading as its rank-104 departure, its current word censored `???` on the map while
   the sentence showed it.
+  **The DEPARTURE is read off its stated RANK, never off the start word's slug** (fixed
+  2026-07-28, the same shape as the note above — `buildRoute` takes `startRank`, and
+  `hole.start.slug` now has no consumer at all). A slug is not an identity: `fold` drops accents,
+  so `côté` and `coté` share the key `cote`, and a shared key belongs to the CLOSER group. When a
+  hole prints an agreed form (#119) whose slug a closer group already owns, `alias_start_display`
+  deliberately DECLINES to re-key it — typing it really is the closer distance, and that call is
+  right and stays — so the shipped `start.slug` resolves to a group the player was never put down
+  on. Looking the departure up that way drew it at that group's rank AND, because a stop renders
+  with its word, NAMED it: on a board where nothing had been guessed, the map printed a rank-4
+  word and lifted it out of the censored near field. That is the one thing the censored field
+  exists to prevent, and the sentence's own exponent was right the whole time — `start_rank` is
+  stated, unambiguous, and already what the sentence, the score and the progress all use.
   **The hole button is DESCRIBED, not LABELLED** (fixed 2026-07-27): an `aria-label` REPLACES the
   content it wraps, and that content — the word and its exponent — IS the clue, so labelling the
   button deleted it from the button and from the sentence a screen reader reads. The hint moved to

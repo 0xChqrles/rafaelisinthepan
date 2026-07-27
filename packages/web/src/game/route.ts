@@ -199,14 +199,24 @@ export function buildRoute({
   rankMap,
   tried,
   hole,
-  startSlug,
+  startRank,
   secretWord,
   number,
 }: {
   rankMap: Record<string, RankEntry> | undefined;
   tried: string[]; // the round's counted guesses, folded, in try order
   hole: RuntimeHole; // live state: its current rank is what "you are here" means
-  startSlug: string; // the departure: a ranked group like any other, just handed out
+  // The departure: a ranked group like any other, just handed out. Identified by its RANK,
+  // which the puzzle states outright (`hole.start_rank`) — never by the start word's slug.
+  // A slug is not an identity: `fold` drops accents, so `côté` and `coté` share the key
+  // `cote`, and the rank map gives a shared key to the CLOSER group. When the hole prints an
+  // agreed form whose slug a closer group already owns, generation deliberately declines to
+  // re-key it (typing it really is the closer distance — that call is right, and it stays),
+  // so the slug resolves to a group the player was never put down on. Looking the departure
+  // up that way drew it at that closer group's rank AND named the word there, lifting it out
+  // of the censored near field on a board where nothing had been guessed yet. The rank is
+  // stated, unambiguous, and already what the sentence, the exponent and the score all use.
+  startRank: number;
   secretWord: string; // the destination's accented form, shown only once solved
   number: number;
 }): RouteModel | null {
@@ -255,7 +265,7 @@ export function buildRoute({
     return undefined;
   };
 
-  const startEntry = rankMap[startSlug];
+  const startEntry = entryAtRank(startRank);
   if (startEntry) visit(startEntry, true);
   for (const typed of tried) {
     const entry = rankMap[typed];
