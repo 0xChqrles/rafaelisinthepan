@@ -14,8 +14,10 @@ import SolvedScreen, { RESULTS_IN_MS } from '../components/SolvedScreen';
 import StandingsLineup from '../components/StandingsLineup';
 import LazyStreakDialog, { preloadStreakDialog } from '../components/LazyStreakDialog';
 import SolvedCaption from '../components/SolvedCaption';
+import RouteModal from '../components/RouteModal';
 import LoadError from '../components/LoadError';
-import { t, srHoleResult, srModelAhead, srModelLead } from '../i18n';
+import { buildRoute, hasRoute } from '../game/route';
+import { t, ariaExploreHole, srHoleResult, srModelAhead, srModelLead } from '../i18n';
 import { lineupModel, lineupEvents, hasDisplayEntries, displayEntries } from '../game/benchmark';
 import { track } from '../analytics';
 import { fold } from '@whippin/shared';
@@ -463,12 +465,87 @@ function Round({
     syncProgress(progress);
   }, [progress, syncProgress]);
 
+  // --- route map (#117): each hole opens its own neighborhood, drawn as a journey ---
+  // Which holes have one, and under which number. Numbering is by DISTINCT secret in
+  // sentence order (1..3) — the same numbers the run ruler's ticks and the share row's
+  // keycaps use — so two occurrences of one secret, which share a rank map, share a number.
+  // A hole whose secret carries no #115 geometry gets `null`: no map, hence no entry point
+  // at all (explicit decision — there is no degraded list view).
+  const routeNumbers = useMemo<(number | null)[]>(() => {
+    const order: string[] = [];
+    for (const h of puzzleHoles) if (!order.includes(h.secret.slug)) order.push(h.secret.slug);
+    return puzzleHoles.map((h) =>
+      hasRoute(ranks[h.secret.slug]) ? order.indexOf(h.secret.slug) + 1 : null,
+    );
+  }, [puzzleHoles, ranks]);
+  const [routeHole, setRouteHole] = useState<number | null>(null);
+  // The solved sequence has played out and the sentence is the player's again — which is also
+  // the state a REHYDRATED solve mounts straight into.
+  const solvedSettled =
+    showResults && lineupGone && !keyboardLeaving && !showStreakDialog && sourceRevealComplete;
+  // Tapping a hole is available during normal play and on that settled screen, where the map
+  // becomes the post-mortem (terminus revealed, the whole neighborhood named) — never while the
+  // solving beats are running, which own the sentence.
+  //
+  // `promptExiting` is what covers the START of those beats: the prompt leaves on the solving
+  // submit while the holes are still resolving, so `solved` — which only follows the last word's
+  // settle — has not turned over yet. It is NEVER set back to false on a fresh solve (it doubles
+  // as "the input is retired", so resetting it would let typing resume), which is why it can only
+  // be read as "the beats began" and `solvedSettled` has to be what ends them. Reading it as a
+  // plain veto instead left every hole dead for the rest of the screen, and the post-mortem the
+  // reveal was built for was reachable only by reloading the page.
+  const exploreDisabled = !solvedSettled && (promptExiting || solved);
+  // Stable for the round: the button wraps the hole for the WHOLE round or not at all, and
+  // the gating above only disables it — unwrapping mid-round would remount the word while
+  // its scramble is running. These are the buttons' DESCRIPTIONS, not their names: a hole is
+  // named by the word and exponent it shows, which is the clue (see Hole/Phrase).
+  const exploreLabels = useMemo<(string | null)[]>(
+    () => routeNumbers.map((n) => (n === null ? null : ariaExploreHole(lang, n))),
+    [routeNumbers, lang],
+  );
+  const routeModel = useMemo(() => {
+    if (routeHole === null) return null;
+    const hole = holes[routeHole];
+    const puzzleHole = puzzleHoles[routeHole];
+    const number = routeNumbers[routeHole];
+    if (!hole || !puzzleHole || number === null) return null;
+    return buildRoute({
+      rankMap: ranks[hole.secret],
+      tried: history,
+      hole,
+      startSlug: puzzleHole.start.slug,
+      secretWord: puzzleHole.secret.word,
+      number,
+    });
+  }, [routeHole, holes, puzzleHoles, ranks, history, routeNumbers]);
+  const closeRoute = useCallback(() => {
+    const index = routeHole;
+    setRouteHole(null);
+    if (index === null) return;
+    // Hand focus back to the hole that opened the map (the dialog has no other trigger).
+    document
+      .querySelector<HTMLButtonElement>(`[data-hole-explore="${index}"]`)
+      ?.focus({ preventScroll: true });
+  }, [routeHole]);
+
   const removeHit = useCallback((id: number) => {
     setHits((prev) => prev.filter((h) => h.id !== id));
   }, []);
 
   // Input mutations shared by the on-screen keyboard (taps) and the physical keyboard.
   // Every path clears the "does not exist" feedback as soon as the player edits again.
+
+  // A hole button keeps focus after its route map closes, so a keyboard user keeps their place.
+  // But the moment the input is EDITED — typed, deleted or recalled — the player is guessing,
+  // not exploring, so hand the keyboard back. WordInput deliberately leaves Enter to a focused
+  // button (that is how the tutorial's NEXT is activated), so a button still holding focus after
+  // an edit swallows the Enter that submits and re-opens the map instead. Every editing path
+  // therefore has to release it, not just typing: a letter did, Backspace and history recall did
+  // not, which made "close the map, fix a typo, press Enter" reopen the map.
+  const releaseHoleFocus = useCallback(() => {
+    const focused = document.activeElement;
+    if (focused instanceof HTMLElement && focused.classList.contains('hole-btn')) focused.blur();
+  }, []);
 
   // Append one slug char, but ONLY if it keeps the input a prefix of some real word
   // (the same rule that greys the on-screen key). A dead-end char shakes the prompt
@@ -479,26 +556,29 @@ function Round({
   const appendChar = useCallback(
     (char: string) => {
       if (promptExiting) return;
+      releaseHoleFocus();
       setFeedback(null);
       if (canExtend(prefixSet, input, char)) setInput(input + char);
       else setInvalidAt(Date.now());
     },
-    [prefixSet, input, promptExiting],
+    [prefixSet, input, promptExiting, releaseHoleFocus],
   );
 
   const deleteChar = useCallback(() => {
     if (promptExiting) return;
+    releaseHoleFocus();
     setFeedback(null);
     setInput((cur) => cur.slice(0, -1));
-  }, [promptExiting]);
+  }, [promptExiting, releaseHoleFocus]);
 
   // Replace the whole input (physical-keyboard history recall). Recalled values are
   // past valid words, hence valid prefixes, so no re-validation is needed.
   const replaceInput = useCallback((v: string) => {
     if (promptExiting) return;
+    releaseHoleFocus();
     setFeedback(null);
     setInput(v);
-  }, [promptExiting]);
+  }, [promptExiting, releaseHoleFocus]);
 
   const submit = useCallback(
     (raw: string) => {
@@ -665,6 +745,9 @@ function Round({
             hits={hits}
             onHitDone={removeHit}
             onHoleResolved={markHoleResolved}
+            exploreLabels={exploreLabels}
+            exploreDisabled={exploreDisabled}
+            onExplore={setRouteHole}
           />
         </div>
 
@@ -692,7 +775,9 @@ function Round({
               onSubmit={submit}
               onReplace={replaceInput}
               invalidSignal={invalidAt}
-              active={!showResults}
+              // The route map covers the prompt: keystrokes must not build (or submit) a
+              // guess the player cannot see behind it.
+              active={!showResults && routeHole === null}
             />
             <p className="hint">{feedback?.text || ' '}</p>
           </div>
@@ -786,6 +871,10 @@ function Round({
       {showStreakDialog && (
         <LazyStreakDialog lang={lang} solvedDay={dayNumber} onDismiss={dismissStreakDialog} />
       )}
+
+      {/* One hole's neighborhood as a journey (#117). Fully derived from (tried, ranks,
+          hole state), so a guess landing while it is open simply adds a stop. */}
+      {routeModel && <RouteModal model={routeModel} lang={lang} onClose={closeRoute} />}
     </div>
   );
 }

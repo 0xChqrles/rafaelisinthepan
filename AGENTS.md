@@ -56,6 +56,7 @@ packages/
       glove_neighbors.py      en paths + derived .kv cache (thin wrapper over the above)
       french_neighbors.py     fr paths + derived .kv cache (thin wrapper)
       start_word.py           start/hint-word selection (rank band 50-150)
+      distances.py            stdlib-only: dq quantization + road clustering (#115)
       gen_phrase.py           one sentence -> one self-contained puzzle JSON
     embedding/<lang>/...      raw + *_reduced vectors + derived .kv caches
     wordlist/<lang>.txt.gz    versioned hors-dico reference wordlist (#38); .cache/ gitignored
@@ -182,7 +183,9 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
       "suffix": "" }                            // OPTIONAL display text after the blank
   ],
   "ranks": {                                    // keyed by SECRET slug
-    "foret": { "<input-slug>": { "word": "<accented>", "rank": 12 }, ... }
+    "foret": {                                  //   dq/road: OPTIONAL to consumers (#115)
+      "<input-slug>": { "word": "<accented>", "rank": 12, "dq": 231, "road": 1 }, ...
+    }
   },
   "source": {                                   // OPTIONAL origin metadata (#5); ACCENTS KEPT
     "kind": "book",                             //   book | movie | music | quote | poem | … (open set)
@@ -278,6 +281,42 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   selected secrets in one lemma group are rejected at generation.
 - **Rank semantics:** secret = `rank 0` (perfect); nearest lemma group = `1`; larger =
   farther. Alias keys share their group's rank.
+- **Every ranked group also carries its real geometry (`dq`, `road`) — #115, decided
+  2026-07-25.** Ranks are dense and uniformly spaced by construction, so they erase the
+  neighborhood's clumps and cliffs; cosine distance is only available at GENERATION time
+  (the client never sees vectors), so generation ships it:
+  - **`dq` — the quantized distance to the secret, one byte, per hole.** With `s1` = the
+    rank-1 group's similarity and `smin` = the LAST kept group's,
+    `dq = round(255 * (s − smin) / (s1 − smin))` → **rank 1 = 255, the farthest kept
+    group = 0**, non-increasing in between. The **per-hole affine normalization is
+    lossless for consumers**: what they compute are RATIOS of similarity DIFFERENCES,
+    which an affine map preserves exactly, so the journey ratio is
+    `(dq − dq_start) / (255 − dq_start)` with no floats shipped. Present on **every rank
+    ≥ 1 entry** of a newly generated puzzle; **the secret's own entry (rank 0) carries
+    NONE** — the terminus is off-scale by nature. A flat span (`s1 == smin`) is a **hard
+    error**, never silent all-zero `dq`.
+  - **`road` — which cluster of the TRAVELLED neighborhood the group sits in.** The zone
+    is the groups **from the hole's start word IN to the secret** — ranks
+    `1 .. start_rank`, **the departure included** (decided 2026-07-26, superseding the
+    flat top-150 zone): the line is a journey and it begins where the puzzle put the
+    player down — **ON one of the roads**, so the start word carries one too and the fork
+    lands just before it — while a fork farther out than the departure is a fork of a
+    route nobody walks. Because the zone is the departure's rank, **`road` is per-HOLE
+    data, not a property of the secret's neighborhood alone**, and it cannot be stamped
+    until the start word is chosen (`distances.road_zone`,
+    `gen_phrase.annotate_roads`).
+    `ROAD_TOP = 150` survives only as the **ceiling** on that zone — the start band tops
+    out at 150, so it bites only on a start hand-picked outside the band, where it keeps
+    the clustering (and the shipped fields) bounded. Deterministic average-linkage
+    agglomerative clustering over cosine distance, best `k ∈ {2,3,4}` by mean silhouette,
+    **falling back to ONE road (all `road: 0`) below `ROAD_MIN_SILHOUETTE`** — mandatory,
+    because some neighborhoods genuinely have a single facet. Roads are numbered by their
+    **closest member's rank**, so the road holding rank 1 is `road: 0`. `--no-roads`
+    skips them; **`dq` has no opt-out** — it is part of the schema.
+  - Both are **GROUP properties**, like `word`/`rank`: every alias key of a lemma group
+    carries its group's values, and slug-collision resolution keeps the winning (closest)
+    group's. Both are **OPTIONAL to every consumer** — no puzzle published before #115
+    carries them, and they must keep working untouched.
 - **Slug collisions** (`côté`/`coté` → `cote`): keep the **smallest-rank** entry
   (built closest-first) and display its `word`. Resolved **silently** — generation
   prints no collision output.
@@ -533,7 +572,9 @@ pnpm vocab:fr         # -> packages/web/public/vocab/fr.json
 #    Puzzle -> packages/generation/output/word/<lang>/ (then `pnpm puzzle:publish` it).
 #    NOTE: gen:phrase ALSO rewrites web/public/vocab/<lang>.json as a side effect.
 #    Reads wordlist/<lang>.lemmas.tsv.gz for lemma grouping (#104; missing table = hard
-#    error, --no-lemmas to skip).
+#    error, --no-lemmas to skip). Every ranked group is annotated with its dq distance
+#    and, for the groups from the hole's start word in to the secret, its road cluster
+#    (#115); --no-roads drops the road fields, dq has no opt-out.
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 distinct words; all occurrences hole (no `--`)
 
 # 4. Optionally benchmark the generated puzzle offline before publish. --model is required
@@ -605,7 +646,258 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
 *(Safe to update without touching the invariants above.)*
 
 - All paths below are under `packages/`. **Tunables:** `TOP_N = 400000` (reduce),
-  `TOP_K = 10000` (gen), start-rank band `50–150` (`start_word.py`).
+  `TOP_K = 10000` (gen), start-rank band `50–150` (`start_word.py`),
+  `ROAD_TOP = 150` (now the road zone's CEILING, not its size) / `ROAD_KS = (2,3,4)` /
+  `ROAD_MIN_SILHOUETTE = 0.05` (`distances.py`).
+- **Distance annotations (#115):** `distances.py` is stdlib-only (pure arithmetic over
+  float sequences), so the contract tests keep running without numpy/gensim and the
+  ≤150-point clustering costs a fraction of a second per secret. They are stamped in
+  **two passes, because they know different things**: `dq` is a property of the walk
+  alone, so `gen_phrase`'s `build_puzzle_rank_map` — the ONE entry point both authoring
+  paths use — wraps the structural `build_merged_rank_map` (#104) and stamps it onto
+  every entry by its rank; `road` describes the stretch the player travels, which does
+  not exist until the start word is picked, so each path calls `annotate_roads` right
+  after `choose_start` (and before the agreement pass, so a rewritten form inherits its
+  group's road like any other key). Both key off the entry's `rank` alone, which is what
+  makes "aliases share their group's values" true by construction. Deferring the roads
+  also takes the clustering off the interactive selector's hover path — it now runs only
+  for the words actually committed. **Previously published days keep legacy (annotation-free) behavior until
+  they are regenerated and republished** — a curator's call, not part of #115. Measured
+  on a real fr puzzle (`amer` / `plissés` / `grincement`, ~39k keys per secret):
+  **802 KB → 828 KB gzipped (+3.2%)**, raw 5.9 MB → 7.1 MB, and the map is otherwise
+  byte-identical. On that puzzle two secrets split into genuinely meaningful facets
+  (`amer` → figurative vs taste; `plissés` → participles vs garment nouns) while
+  `grincement` scored its BEST silhouette (0.19) on a degenerate 149/1 split — the
+  metric rewards isolating an outlier, so a minimum road size is worth considering when
+  Part 3 (#115's route modal) puts roads on screen.
+- **Route modal (#117, Part 3 of #115):** tapping a HOLE opens its neighborhood drawn as a
+  journey. `game/route.ts` is the pure model (`buildRoute`, contract-tested) and
+  `components/RouteModal.tsx` renders it; `Game` owns the open state so the guess prompt can
+  go inert behind it. **Entry point only where the geometry exists:** `hasRoute` gates on the
+  secret's rank-1 entry carrying `dq`, so every day published before #115 (and the tutorial's
+  synthetic boards) renders exactly as before — no button, no degraded list view. The hole
+  becomes a `<button>` wrapping its existing spans; it is present for the WHOLE round or not
+  at all and the solved choreography only `disabled`s it, because unwrapping mid-round would
+  remount the word while its scramble is running. **That disabling covers the solving BEATS
+  only — a settled solved screen keeps every hole tappable** (fixed 2026-07-27), which is what
+  makes the reveal below reachable at all. `exploreDisabled` is therefore
+  `!solvedSettled && (promptExiting || solved)`: `promptExiting` catches the start of the beats
+  (the prompt leaves on the solving submit, while `solved` still trails the last word's settle)
+  but is NEVER reset on a fresh solve — it doubles as "the input is retired" — so reading it as
+  a plain veto left every hole dead for the rest of the screen, and the post-mortem was
+  reachable only by RELOADING (the rehydrated branch does reset it).
+  **Geometry — a LINE, not a to-scale map (redesigned 2026-07-26 on the user's call: the first
+  version was "impossible to understand"; the reference is an SNCF trip).** That version put
+  `dq` straight onto absolute positions over a 340svh band, which is faithful and unreadable:
+  dq's real shape is a steep near field and a very long cold tail (rank 1 = 255, the start word
+  ≈ 120, rank 10 000 = 0), so a linear map spends most of its height on emptiness — the
+  departure landed two screens below the destination with nothing between them, and you had to
+  scroll to find out where you were. The distance now lives in the **LENGTH OF THE CONNECTOR
+  between two stations** — but only where the line SKIPS ranks. **Consecutive ranks are one row
+  apart whatever their dq** (decided 2026-07-26): with every near-field group drawn, the rank
+  ladder already says they are adjacent, so a proportional connector there buys nothing and costs
+  one glaring outlier — dq pins rank 1 at the top of its scale, so 1 and 2 are always further apart
+  than any other pair of neighbours. Out on the trunk, where the player's guesses are sparse, the
+  length is the only thing carrying the distance and stays proportional
+  (`linkHeight`: `LINK_SPAN` px per full dq scale, floored at `LINK_MIN`
+  so neighbours never collide, capped at `LINK_MAX` so the cold tail cannot push the
+  destination off screen). That is the SAME information — dq differences are all dq means — and
+  on a real fr puzzle it took the map from **3.9 screens of mostly emptiness to ~1.0**. (It runs
+  ~5 screens again now that the full roads are drawn — see the near field below — but every row is
+  content: what was wrong with the first version was the empty space, not the length.) The
+  identity leap and the cold end above the first station stay broken traces: neither is a
+  distance. **Both are cut to a WHOLE number of the dash unit** (`dashedRun`, fixed 2026-07-27):
+  the unit is 5px of line + 8px of nothing, declared once in `RouteModal` and handed to the
+  gradient as `--dash` / `--dash-period`, and a run is `n` units PLUS its closing dash. Any other
+  height cuts the last unit wherever it falls and the stub lands exactly where the trace meets the
+  solid rail — `TAIL_H` 34 ended on 3px of gap against the first station, which reads as a
+  rendering slip rather than a broken line. So the heights are DERIVED (34 → 31, 56 → 57), never
+  typed. `--route-band-h`,
+  the old lane geometry (`stopX`/`labelSide`/`laneNameFont`) and the axis contours are all gone
+  with it.
+  **The line is TRAVELLED, so it runs departure → arrival DOWN the page** (decided 2026-07-26):
+  the off-map words at the top past the torn break, every station reached farthest first, and
+  the word itself at the bottom. It **opens with the CLOSEST word you have reached sitting at the
+  bottom edge**, a few pixels short of it (decided 2026-07-26): the ground you have covered fills the screen above it, and
+  what is still ahead — the words closer than yours, and the destination — waits just below the
+  fold. A solved hole has no "here", so it opens on the terminus instead. Measuring that row is
+  the subtle part and the reason it is done with an inline `position: static`: it is the STICKY
+  one, and a sticky box reports its PARKED position (offsetTop and its rect alike), so at
+  scrollTop 0 it has already pinned itself to the bottom and measuring it there just hands back
+  the viewport height. Suspending the stickiness for the read is safe because this is a layout
+  effect — a synchronous write-read-write before paint, none of which reaches the screen.
+  **`showModal()` is its OWN layout effect, and the FIRST one** (fixed 2026-07-27): a closed
+  `<dialog>` is `display: none`, so until it opens there are no boxes to measure and the row's
+  offsetTop/offsetHeight and the scrollport's clientHeight all read **0** — not a small error but
+  a total one. A natural position of 0 makes EVERY scroll offset test as "parked at the top", so
+  the torn separator sat under the row for the modal's whole life, and the opening scroll clamped
+  to the top of the line. **Dev could not show it:** StrictMode re-runs layout effects after
+  mount, by which point the dialog is open, so it only ever appeared in a build — check this one
+  with `pnpm build` + `vite preview`, not `pnpm dev`. The parked test also carries a
+  **1px `STICK_SLACK`**, because the opening view lands the row EXACTLY on the bottom threshold by
+  design and sub-pixel scrollTop would otherwise decide the separator by coin toss.
+  Every row lays out on the same three
+  columns — the rank in a right-aligned gutter (the "time"), the rail, then the word — which is
+  what makes the rail read as one unbroken line; each cell **names its grid column**, because an
+  item with a definite ROW span is auto-placed BEFORE the fully-auto ones and leaving them
+  implicit silently reorders the columns.
+  **The map carries NO labels** (decided 2026-07-26, superseding the `ARRIVÉE` / `VOUS ÊTES ICI` /
+  `DÉPART` / `ROUTES` tags tried the same day): every one of those is said by a node's size,
+  fill and lane instead, and the only string left on it is `routeOffMap` — the words above the
+  torn break have no node, no lane and no distance, so nothing about them can be read off the
+  drawing. The screen-reader mirror still names all four in prose (`srRouteStop`), which is why
+  dropping them costs no information. Fixed-width `???` is the ONE token for "you have not found
+  this word": the destination and every censored station wear it.
+  **The censored near field is the WHOLE of it** (decided 2026-07-26, superseding the top-5 band):
+  every group of it renders as a station with its word withheld, so each road shows its real
+  **length and population** — the one thing a list of your own guesses can never say. Its extent
+  is **entirely the DATA's**: the near field IS the road zone, and generation ends that at the
+  **DEPARTURE** — the line is a journey and it begins where the puzzle put you down, so anything
+  farther than the start word is behind you rather than ahead. That alone took a real fr map from
+  ~8 screens to ~5. The bound has **ONE owner** (decided 2026-07-26, superseding the same day's
+  first cut, where generation shipped a flat top-150 and `buildRoute` clipped it back here): the
+  side that stops SHIPPING the roads is the side that decides where they end, so this module just
+  reads `geometry.nearTop` and the clip is gone. The departure is **inside** the zone — you are
+  put down on a road, so the fork is drawn just before it and its station sits on a lane (muted
+  node, word dimmed to 62% in that lane's colour). The player's own guesses past it are still
+  stops — they simply ride the trunk. The censored list ends one rank inside the departure for
+  free, because the departure is itself a STOP and a stop is never listed twice. `APPROACH_TOP = 5` survives only as the FLOOR, for a
+  `--no-roads` map that has no near field to bound and would otherwise draw none at all.
+  **Solving REVEALS the whole neighborhood** (decided 2026-07-26): while the round is live a
+  censored station is a position and a lane and nothing else (`RouteHidden.word` is `null`); once
+  the hole is solved every one of them gives up its canonical form and the map becomes the
+  post-mortem — each word in its ROAD's colour, so a secret's distinct senses finally read off the
+  page, dimmed and on the small node so what you FOUND still stands apart from what was merely
+  there. **The sr mirror enumerates what has a WORD and counts what does not**: the player's stops
+  always, the revealed neighborhood once solved, and `srRouteRoads` ("100 stops across 3 roads
+  (56 / 25 / 19), 4 found") standing in for the censored ones — ~100 items of "rank 87, hidden"
+  would bury the words the player actually knows, and the count is what they say collectively.
+  **Every node is a FILLED square** — outline-only stops were removed the same day. What a stop
+  IS comes from size + fill: found `--fg` 15px, the handed-out departure `--muted` 15px with its
+  word at 62% opacity (the map's quietest station — you were GIVEN it), "you are here" `--hole`
+  gold 21px, an unfound approach station its own lane's colour at 11px, the terminus 23px
+  (`--accent` once solved).
+  **Roads are LANES of the rail, not a badge** (decided 2026-07-26, superseding the RER letters
+  tried the same day — a small letter beside the word was too weak to read): the rail is as wide
+  as the neighborhood has roads, a station sits on ITS road's lane, and the trunk forks into them
+  (`Junction`) coming in from the far field and merges back out of them into the word. That is
+  structural — you read a road off the shape of the line — and it makes the one fact a list
+  cannot state visible for free: **a road nobody has reached is a lane with NO stations on it.**
+  Both junctions keep the SAME fixed height, and the distance preceding the fork rides in front of
+  it as an ordinary trunk link rather than being folded into it: absorbed, it made the junction as
+  tall as whatever gap came before, leaving the first lane station far below the bus while the
+  merge at the other end hugged its last one. The two ends of the fork have to mirror each other —
+  15px from bus to station at both.
+  Lane centres live in `RouteModal` (`LANE_X0`/`LANE_GAP`) because the node positions and the
+  `--lane-lines` gradient that paints them must agree exactly. Each lane is **as vivid as the
+  rest of the app** (decided 2026-07-26, superseding a first muted set — a metro line's whole
+  point is telling it from the next one at a glance): `LANE_COLORS` (≤ 4 — `ROAD_KS` caps roads
+  there) takes four far-apart hues from the **progress ramp's own stops**
+  (`shared/progressColor.ts`) rather than inventing a palette, COPIED not imported, because that
+  ramp means "progress" and these mean "identity". Pink leads, never cyan: lane A always holds
+  rank 1 and cyan is what the heat ramp paints a rank-1 number, so leading with it would imply a
+  rule that isn't one. Gold is "you" and blue is solved, so no lane may borrow either — and
+  `--rail` stays the ONE unsaturated line on the map, because the trunk is exactly the stretch
+  where no road has been identified. **A lane station's WORD is painted in its lane's colour too**
+  (`--lane-c`, set per station; `.on-lane`) — the road then reads off the type as well as off the
+  line, with nothing added — while a trunk word stays `--fg`, because above the fork there is no
+  road to name. An UNFOUND station's node takes the same colour: a dark node on a vivid lane reads
+  as the line being BROKEN, where the lane's own colour reads as a stop with no name on it yet.
+  The junction **bus is painted in the lanes' colours, split at the trunk** (`busGradient`), not
+  in one neutral bar: a single grey bar at each end of a set of parallel lines reads as a frame
+  drawn AROUND them.
+  Caveat worth keeping in view: on a real fr puzzle 2 of 3 secrets fork into one big road
+  plus a 1–2-group outlier, and an empty lane advertises that outlier as a whole road — honest to
+  the data, but see #115's own note above, a minimum road size is still an open question.
+  **Word sizes are computed, not measured:** Press Start 2P advances exactly **1em** per glyph
+  (measured — the retired `GLYPH_EM = 1.37` was wrong), so `fitWord` shrinks a long word to
+  `--wordw / length` rather than letting it break mid-word (`incontestableme/nt` reads as a
+  different word). `--wordw` is the one number the CSS has to guess at: it subtracts an **18px
+  allowance for a classic scrollbar**, which `100vw` cannot see and which would otherwise make the
+  real column narrower than the size fitWord picked. **The rank gutter, by contrast, is MEASURED,
+  not computed** (decided 2026-07-26): `.route` is ONE grid and every row a `subgrid` of it, so the
+  gutter track is a true `max-content` sized by the widest exponent actually rendered, across all
+  rows at once. Per-row grids cannot do that — each would fit its own rank and the rail would
+  zigzag — which is why the rows must be subgrid rather than repeat the template. `--gutter`
+  (`--rank-size × <widest exponent> + 10px`, set per-modal by RouteModal) survives for the two jobs
+  a measured track cannot do: it is the **fallback template** declared before `subgrid`, so a
+  browser without it degrades to a computed width instead of collapsing to one column, and it is
+  the NUMBER `--wordw` and the parked row's backgrounds need. It also keeps the responsive trick —
+  the char count is baked in as a literal while the cell size stays `--rank-size`, so the media
+  query shrinks both together (10px → 9px below 360px) without the component knowing: a 17-letter
+  word plus four wide roads genuinely does not fit a 320px screen otherwise. Verified no mid-word
+  break at 320/360/390/430/900.
+  **"You are here" is STICKY on both edges** (decided 2026-07-26): the line can run several
+  screens, and the one thing you always need while reading any part of it is where you stand, so
+  the `best` row carries `position: sticky` on BOTH offsets — scroll below it and it parks at the
+  top, scroll above it and it parks at the bottom, always at the edge it left by. It parks
+  `STICK_INSET` px SHORT of that edge rather than flush against it (flush reads as clipped), which
+  is one number in three places — the CSS offsets, the opening scroll and the parked test — so it
+  lives in `RouteModal` and reaches CSS as `--stick-inset`. A strip fills that margin on the edge
+  side: background, so no sliver of the rows sliding past shows through, carrying the lanes SOLID
+  so the line still runs all the way out to the edge instead of stopping short of it.
+  Its containing block is `.route`, i.e. the whole line, so it travels the entire map. Two things
+  follow: it needs an opaque `--bg` to stay legible over the rows it floats above (free
+  visually — the station draws its own cross-section of the rail, so the line still runs unbroken
+  through it), and **`.route-scroll` may carry no VERTICAL padding**, because a sticky offset
+  resolves against the scrollport's padding box and would park the row that far inside the real
+  edge; the line's breathing room lives on `.route` as content instead. A solved hole has no
+  `best`, so nothing sticks.
+  **A parked row shows the GAP it is hiding** (decided 2026-07-26): pinned, the row is drawn hard
+  against one it is nowhere near, with an unseen stretch of the line squeezed out between them, so
+  the side facing that skipped ground gets **a torn separator — the same dashes the off-map break
+  wears**, since both mean the map does not continue straight through there. Below when parked at
+  the top, above when parked at the bottom, nothing when the row is simply where it lives (which
+  includes the opening view). **`--stick-inset` is the row's ONE margin, used on both of its
+  sides**: the same distance holds it off the screen edge and off the separator, so a parked row
+  sits centred in its own clearance instead of leaning toward one side; beyond the separator that
+  same margin again is what masks the rows really passing behind. The margin on the ROW's side
+  still carries the lanes, so the roads run out of the station and INTO the separator: cut short
+  they read as a second `--bg` margin, and the separator looks framed on both sides rather than
+  ending the line. Two more details that are not decoration — the dashes' gaps are `--bg` rather
+  than transparent (over scrolling content, transparent gaps show 3px slivers of what is
+  underneath), and the pseudo-element states
+  `box-sizing: content-box`, because the global `* { box-sizing: border-box }` does NOT match
+  pseudo-elements: `height` there is the SEPARATOR and the borders are the margins, and assuming
+  otherwise renders the whole band as one solid block.
+  Knowing it is parked needs a scroll listener — the map's ONE piece of scroll JS, and still not
+  motion: `readStuck` is arithmetic against `scrollTop` (asking the DOM would be circular, since a
+  sticky box reports the parked position either way), and `setStuck` bails out on an unchanged
+  value so the ~100-row list re-renders only on a transition. Its natural offset is re-measured
+  whenever the model changes, because a guess landing while the map is open can add rows above it
+  or make a different station the closest one.
+  **The header is the APP's, not a modal's** (decided 2026-07-26): it reuses
+  `.topbar-inner` / `.topbar-left` / `.topbar-title` / `.topbar-right` / `.home-btn` wholesale,
+  so it cannot drift from the corner-chip policy above — no band, no border, no background, the
+  hole's name top-left and one close control top-right. It sits **in flow** above an inner
+  `.route-scroll`, which is precisely what lets it paint nothing: with the scroller (not the
+  dialog) owning the overflow, no content can ever pass beneath the header, so none has to be
+  hidden behind a band. The dismiss-on-backdrop click therefore tests the scroller as well as
+  the dialog — the space around the line lives inside it.
+  No motion (nothing for reduced motion to collapse) and **no new analytics event** — the
+  three-event invariant stands.
+  **"You are here" is read off the HOLE, never off the guess log** (fixed 2026-07-27): a guess
+  deduped as a canonical duplicate never enters `tried` (`gameStore.recordGuess`) and can still
+  IMPROVE another hole, so the current group can be one the history does not mention. `buildRoute`
+  therefore looks the hole's own rank up and visits it as a stop; inferring it from the log and
+  falling back to the closest logged one put the marker on a word the player had moved past — a
+  rank-5 hole reading as its rank-104 departure, its current word censored `???` on the map while
+  the sentence showed it.
+  **The hole button is DESCRIBED, not LABELLED** (fixed 2026-07-27): an `aria-label` REPLACES the
+  content it wraps, and that content — the word and its exponent — IS the clue, so labelling the
+  button deleted it from the button and from the sentence a screen reader reads. The hint moved to
+  `aria-describedby`, pointing at an sr-only note `Phrase` renders OUTSIDE the `<p>` (inside it,
+  "Explore word 2" would interleave into the prose).
+  **A road id may never BE an array length** (fixed 2026-07-27): ids come off the network, so
+  `routeGeometry` allocates one lane per DISTINCT road present (`lanes`, ascending → generation's
+  contiguous ids are unchanged) instead of sizing by `max id + 1`, where a well-formed
+  `road: 4294967295` threw `RangeError`. `api.ts` caps the value too (`MAX_ROAD` 63) — generous on
+  purpose, since a rejected puzzle costs the whole day.
+  Side effect on the shared input: `WordInput`'s window listener lets a focused BUTTON keep only
+  `Enter`, and EVERY editing path in `Game` (`appendChar`, `deleteChar`, `replaceInput`) blurs a
+  focused hole button through `releaseHoleFocus`. All three, not just typing: with Backspace and
+  history recall leaving it focused, "close the map, fix a typo, press Enter" reopened the map
+  instead of submitting (fixed 2026-07-27).
 - **Offline LLM benchmark harness (#68, Kimi provider #91, native sessions #93,
   decided 2026-07-19).** The
   dedicated `benchmark` workspace owns `benchmark/scripts/llm_play.py`, its tests, and
@@ -1049,15 +1341,25 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   `migrate` (v2) grandfathers any blob with prior play state so veterans never see it
   uninvited. Replay via the header `?`; `?tutorial=1` forces it; the dev-only `?streak=`
   preview suppresses the first-visit invitation.
-- **App header (decided 2026-07-06; game day-id removal confirmed 2026-07-11):** a fixed
-  **topbar** (`components/TopBar.tsx`) — flag (language) plus the optional live streak left,
-  an optional centered title, and a right-hand control — full-bleed with a
-  thin `--surface` bottom border separating it from the app; the **progress bar sits
-  in its own full-width row below it** (no more flag/`?` squeezing the bar on
-  mobile). The game's center is deliberately **empty** — `#<dayNumber>` was removed — and
-  its right group holds the **archive calendar icon** and help `?` (#55); the tutorial
-  fills the center with "TUTORIAL" + the skip fast-forward. The flag ALWAYS opens the
-  language screen. The
+- **App header (decided 2026-07-06; redesigned 2026-07-21 — this bullet was STALE and is
+  corrected 2026-07-26 from the code, which is ground truth):** a fixed **topbar**
+  (`components/TopBar.tsx`) of **two corner chips and NOTHING else — no band, no border, no
+  background, no blur.** Boxes read as floating rectangles over the animated waves, so the
+  groups sit DIRECTLY on the backdrop and the glyphs' own `text-shadow` carries legibility.
+  Layout is one optical row: `.topbar-inner` = `min(900px, 100vw - 48px)`, 56px, centred.
+  **LEFT is the status spot** — a screen's title in `.topbar-title` (ARCHIVE / TUTORIAL, plus
+  any inline stat like the tutorial's counter); the game passes nothing there and floats its
+  own progress **counter** (`.hud`, the arcade SCORE spot, painted in `progressColor(pct)`)
+  instead — the full-width progress BAR is gone, the number and its colour say what the bar
+  said. **RIGHT is the one action group** (`.topbar-right`): the language flag, then the
+  screen's contextual controls — every one a `.home-btn` (a transparent `--hud-height` square)
+  wrapping a `.pixel-icon` SVG, muted → `--fg` on hover/focus. The **streak stat is NOT in the
+  header** (moved back to the archive page 2026-07-21). **Any full-screen surface follows this
+  same row** rather than inventing chrome — the route modal (#117) reuses these exact classes,
+  minus the flag (switching language out from under a hole's map would navigate the game away).
+  The game's right group holds the **archive calendar icon** and help `?` (#55); the tutorial
+  puts "TUTORIAL" in the left chip and the skip fast-forward in the right group. The flag
+  ALWAYS opens the language screen. The
   game header is rendered by **`GameRoute` (App), NOT inside `Game`** (decided
   2026-07-08): it wraps EVERY state of the route — loading / error / missing-puzzle /
   the loaded game — so navigating into a game (e.g. from the archive) never blinks the

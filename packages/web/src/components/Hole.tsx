@@ -8,7 +8,9 @@ import type { HitState, RuntimeHole } from '@whippin/shared';
 
 // The floating number ("hit") does not improve any hole: cap its heat at 150 so
 // the gradient stays meaningful. Above that, everything stays at the coldest color.
-const HIT_HEAT_CAP = 150;
+// Exported: the route map (#117) colors a stop's exponent with the SAME cap, so the
+// number on the map is the color of the number that floated when it was guessed.
+export const HIT_HEAT_CAP = 150;
 
 // Keep the existing 520ms beat for a ten-rank transition below the cap, while making
 // every individual rank step take the same 52ms. Large transitions stay responsive.
@@ -48,12 +50,19 @@ export default function Hole({
   holeIndex,
   onHitDone,
   onResolved,
+  explore,
 }: {
   hole: RuntimeHole;
   hit: HitState | null;
   holeIndex: number;
   onHitDone: (id: number) => void;
   onResolved?: (index: number) => void;
+  // The route map's entry point (#117): the whole hole becomes one button. Present for the
+  // WHOLE round or not at all — a puzzle without the #115 geometry gets no affordance, and
+  // the choreography gates it with `disabled` rather than by unwrapping, which would remount
+  // the word mid-scramble. `hintId` points at the sr-only "explore" note Phrase renders
+  // OUTSIDE the sentence; see the button below for why it is a description and not a label.
+  explore?: { hintId: string; disabled: boolean; onOpen: () => void };
 }) {
   // Exponent rolls toward the current rank one rank step at a time (or snaps under
   // reduced motion, see rankTweenDuration). A solved hole visibly reaches 0, then removes
@@ -133,8 +142,10 @@ export default function Hole({
     ? { '--hit-delay': `${hit.startDelayMs}ms` }
     : undefined;
 
-  return (
-    <span className={`hole${resolved ? ' resolved' : ''}`}>
+  // The word + its exponent. The route button (below) wraps this whole group WITHOUT
+  // touching it: the floating-hit/scramble choreography keys off this exact structure.
+  const body = (
+    <>
       {/* The hit is positioned against this wrapper, which is sized to the WORD
           only (the exponent sits outside it), so the floating number stays centered
           over the word and not the word+exponent. */}
@@ -174,6 +185,30 @@ export default function Hole({
         >
           {shownRank === 0 ? '0' : `-${shownRank}`}
         </sup>
+      )}
+    </>
+  );
+
+  return (
+    <span className={`hole${resolved ? ' resolved' : ''}`}>
+      {explore ? (
+        <button
+          type="button"
+          className="hole-btn"
+          // DESCRIBED, never labelled. An aria-label REPLACES the content it wraps, and the
+          // content here is the clue — the current word and its exponent — so labelling the
+          // button deleted it from the button AND from the sentence a screen reader reads,
+          // leaving "Explore word 2" where "attends -87" belongs. Named by its own content,
+          // the hole reads as what it shows and the exploration hint stays supplementary.
+          aria-describedby={explore.hintId}
+          data-hole-explore={holeIndex}
+          disabled={explore.disabled}
+          onClick={explore.onOpen}
+        >
+          {body}
+        </button>
+      ) : (
+        body
       )}
     </span>
   );

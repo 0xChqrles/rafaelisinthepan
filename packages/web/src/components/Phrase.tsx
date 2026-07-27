@@ -13,6 +13,9 @@ export default function Phrase({
   hits,
   onHitDone,
   onHoleResolved,
+  exploreLabels,
+  exploreDisabled = false,
+  onExplore,
 }: {
   words: string[];
   holes: RuntimeHole[];
@@ -20,11 +23,20 @@ export default function Phrase({
   hits: HitState[]; // one transient number per warm hole (multi-hit)
   onHitDone: (id: number) => void;
   onHoleResolved?: (index: number) => void;
+  // Route map (#117), by hole index: the button's exploration hint, or null for a hole whose
+  // secret carries no #115 geometry (no map, so no entry point at all). Stable for the
+  // round — the solved choreography gates the buttons with `exploreDisabled`, never by
+  // taking them away.
+  exploreLabels?: (string | null)[];
+  exploreDisabled?: boolean;
+  onExplore?: (holeIndex: number) => void;
 }) {
   const holeIndexByPos = new Map<number, number>(holes.map((h, i) => [h.pos, i]));
   const puzzleHoleByPos = new Map<number, PuzzleHole>(puzzleHoles.map((h) => [h.pos, h]));
+  const hintId = (holeIndex: number) => `hole-explore-${holeIndex}`;
 
   return (
+    <>
     <p className="phrase">
       {words.map((w, i) => {
         const space = i > 0 ? ' ' : '';
@@ -33,6 +45,7 @@ export default function Phrase({
           const rHole = holes[idx];
           const activeHit = hits.find((h) => h.holeIndex === idx) ?? null;
           const { prefix, suffix } = puzzleHoleByPos.get(i) ?? {};
+          const exploreLabel = exploreLabels?.[idx] ?? null;
           // Prefix (leading clitic) and suffix (trailing punctuation) are sentence
           // context and always show. They live with the blank in a nowrap group so
           // they can never break onto a different line from it.
@@ -53,6 +66,15 @@ export default function Phrase({
                   holeIndex={idx}
                   onHitDone={onHitDone}
                   onResolved={onHoleResolved}
+                  explore={
+                    exploreLabel && onExplore
+                      ? {
+                          hintId: hintId(idx),
+                          disabled: exploreDisabled,
+                          onOpen: () => onExplore(idx),
+                        }
+                      : undefined
+                  }
                 />
                 {suffix ? <span className="word">{suffix}</span> : null}
               </span>
@@ -67,5 +89,19 @@ export default function Phrase({
         );
       })}
     </p>
+    {/* The exploration hints, referenced by each hole button's aria-describedby. They sit
+        OUTSIDE the sentence on purpose: a hole is named by its own content (the word and its
+        exponent — the clue), so the hint has to be a description, and a description lives in
+        the DOM. Inside the <p> it would interleave "Explore word 2" into the prose a screen
+        reader reads straight through; after it, the sentence stays a sentence. */}
+    {onExplore &&
+      exploreLabels?.map((label, idx) =>
+        label === null ? null : (
+          <span key={idx} id={hintId(idx)} className="sr-only">
+            {label}
+          </span>
+        ),
+      )}
+    </>
   );
 }
