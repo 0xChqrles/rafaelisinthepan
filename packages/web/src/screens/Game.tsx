@@ -54,11 +54,13 @@ const KB_EXIT_FALLBACK_MS = 1_200;
 const LINEUP_EXIT_FALLBACK_MS = 3_000;
 
 // Ambient affordance (#129): the letter wave visits ONE unsolved hole at a time, this often
-// (jittered, so the sentence never ticks like a metronome). Rare and quick on purpose — it
+// (jittered, so the sentence never ticks like a metronome). Quick and small on purpose — it
 // says "these words are alive", and anything more insistent would compete with the guess
-// feedback the same words carry.
-const WAVE_EVERY_MS = 4_000;
-const WAVE_JITTER_MS = 2_000;
+// feedback the same words carry. Halved from the 4–6s first tried (2026-07-27): with the
+// idle pulse dropped, the wave is the WHOLE ambient affordance, and a hole that ripples once
+// every few seconds is easy to sit through without ever noticing.
+const WAVE_EVERY_MS = 2_000;
+const WAVE_JITTER_MS = 1_000;
 // The beat between a first-ever solved word settling and its map opening itself (#129): long
 // enough for the resolved word to land as its own moment, short enough to read as its
 // consequence. The settle itself is never guessed — it waits for the hole's own report.
