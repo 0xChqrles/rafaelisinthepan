@@ -18,12 +18,18 @@ Two per-language concerns drive the rest:
     COMPARISON/LOOKUP (see slug()). We never fold a displayed form and never
     display a slug. Output filenames are ASCII slugs; JSON content keeps accents.
 
-The phrase is written to packages/generation/output/word/<lang>/<slug1>_<slug2>_<slug3>.json
-(the three distinct selected slugs in sentence order); rerunning with the same three words
-overwrites it. A repeated selected word produces one hole per sentence occurrence, but one
-rank map and one start hint for that secret. A puzzle is a generation artifact, NOT a web
-asset: publish it to the backend store (local FS or S3) with `pnpm puzzle:publish` — the
-front gets the day's puzzle from the backend (#6).
+The phrase is written under its SOURCE, to
+packages/generation/output/word/<lang>/<kind>/<author>/<work>/<slug1>_<slug2>_<slug3>.json
+(the three distinct selected slugs in sentence order). The directory levels are
+path_slug()s of the source metadata — readable ASCII names, never lookup keys — and a
+level that was not provided is omitted along with everything under it, so a puzzle with
+no source at all still lands at <lang>/ (#137). Rerunning overwrites only when BOTH the
+three words AND the source match: re-running to fix forgotten metadata writes a second
+file and leaves the first one behind, under the path it had. A repeated selected word
+produces one hole per sentence occurrence, but one rank map and one start hint for that
+secret. A puzzle is a generation artifact, NOT a web asset: publish it to the backend
+store (local FS or S3) with `pnpm puzzle:publish` — the front gets the day's puzzle from
+the backend (#6).
 
 On a terminal the script is fully interactive (#5): the phrase, language, and the
 optional source metadata (kind / author / work) are asked when not supplied as flags.
@@ -97,7 +103,7 @@ import glove_neighbors as gn
 from build_forms import FORM_LANGS, forms_path, load_forms  # lemma+trait→forme (#119)
 from build_lemmas import lemmas_path, load_lemmas  # stdlib-only form→lemma table (#104)
 from distances import cluster_roads, quantize_dq, road_zone  # dq / road annotations (#115)
-from slug import slug, write_vocab  # shared stdlib slug/fold contract + vocab writer
+from slug import path_slug, slug, write_vocab  # slug/fold contract, dir names, vocab
 from start_word import pick_start, start_band
 
 # --- Vocabulary ----------------------------------------------------------------
@@ -1779,6 +1785,40 @@ def build_source(kind=None, author=None, work=None):
     return src or None
 
 
+def source_dir_segments(source):
+    """The directory levels a puzzle files under, below its language (#137).
+
+    <kind>/<author>/<work>, each a path_slug — readable ASCII, never a lookup key.
+    `kind` is an OPEN union, so this validates nothing against KNOWN_KINDS: the
+    corpus already carries kinds outside it.
+
+    A missing level is OMITTED along with everything under it, rather than filled
+    with a placeholder: a path cannot skip a component, so an author with no kind
+    would read as a kind. The degenerate case is the point — a puzzle with no
+    `source` at all returns [] and lands at <out-dir>/<lang>/, exactly where every
+    puzzle landed before this layout existed.
+
+    An UNNAMABLE level collapses the same way but is NOT the same event, so it is
+    reported: the metadata was given, and path_slug just has nothing ASCII to make
+    a name from (a title of pure punctuation, or any non-Latin script — 村上春樹,
+    книга). The file then lands high in the tree carrying full metadata in its JSON,
+    which looks exactly like a puzzle that was never given a source; a curator who
+    typed the level deserves to be told the path dropped it."""
+    source = source or {}
+    segments = []
+    for key in ("kind", "author", "work"):
+        value = (source.get(key) or "").strip()
+        segment = path_slug(value)
+        if not segment:
+            if value:
+                print(f"  attention : « {value} » ({key}) n'a pas de nom de dossier "
+                      f"ASCII — ce niveau et tout ce qui suit sont retirés du chemin "
+                      f"(les métadonnées restent dans le JSON).", file=sys.stderr)
+            break
+        segments.append(segment)
+    return segments
+
+
 def parse_args():
     p = argparse.ArgumentParser(
         description="Génère un fichier de jeu autonome pour une phrase "
@@ -1818,7 +1858,9 @@ def parse_args():
     p.add_argument("--author", help="auteur / autrice")
     p.add_argument("--work", help="titre de l'œuvre")
     p.add_argument("--out-dir", default=os.path.join(GEN_OUTPUT, "word"), dest="out_dir",
-                   help="dossier de sortie des puzzles (défaut : packages/generation/output/word)")
+                   help="racine de sortie des puzzles ; le fichier est classé dessous "
+                        "en <lang>/<type>/<auteur>/<œuvre>/ (défaut : "
+                        "packages/generation/output/word)")
     return p.parse_args()
 
 
@@ -1937,7 +1979,9 @@ def main():
         phrase["source"] = source
 
     # --- Write one self-contained file ----------------------------------------
-    out_dir = os.path.join(args.out_dir, lang)
+    # Filed under its source (#137): <lang>/<kind>/<author>/<work>/. Missing levels
+    # are omitted, so a puzzle without metadata still lands at <lang>/.
+    out_dir = os.path.join(args.out_dir, lang, *source_dir_segments(source))
     os.makedirs(out_dir, exist_ok=True)
     fname = "_".join(filename_slugs_from_holes(holes)) + ".json"
     out_path = os.path.join(out_dir, fname)

@@ -51,7 +51,7 @@ packages/
       build_lemmas.py         offline builder: Lexique/AGID -> wordlist/<lang>.lemmas.tsv.gz (form→lemma, #104)
       build_forms.py          offline builder: Lefff 3.4 -> wordlist/fr.forms.tsv.gz (verb morphology, #119)
       build_vocab.py          reduced vectors -> web/public/vocab/<lang>.json (escape hatch; no re-reduce)
-      slug.py                 stdlib-only: slug() contract + write_vocab (shared by reduce + gen_phrase)
+      slug.py                 stdlib-only: slug() contract + path_slug() dir names + write_vocab
       embedding_neighbors.py  shared load/vocab/matrix/cosine-rank logic
       glove_neighbors.py      en paths + derived .kv cache (thin wrapper over the above)
       french_neighbors.py     fr paths + derived .kv cache (thin wrapper)
@@ -63,7 +63,8 @@ packages/
     wordlist/<lang>.lemmas.tsv.gz  versioned form→lemma table (lemma grouping, #104)
     wordlist/fr.forms.tsv.gz  versioned lemma+trait→forme table (display agreement, #119); fr only
     wordlist/fr.forms.LICENSE the LGPL-LR text governing the Lefff data it derives from
-    output/word/<lang>/<s1>_<s2>_<s3>.json   generated puzzles (gitignored; publish to store/S3)
+    output/word/<lang>/<kind>/<author>/<work>/<s1>_<s2>_<s3>.json   generated puzzles
+                              filed under their source (#137); gitignored; publish to store/S3
     pyproject.toml, uv.lock   Python project (uv)
   benchmark/                  offline LLM puzzle benchmark (pkg @whippin/benchmark, #68)
     scripts/llm_play.py       LLM player/referee; reads generation output + web vocab
@@ -373,12 +374,38 @@ Consequences that are load-bearing:
 
 - **Two outputs, two homes (by purpose):**
   - **Puzzles** — one self-contained file per puzzle at
-    `packages/generation/output/word/<lang>/<s1>_<s2>_<s3>.json`, slugs in **sentence
-    order** (by `pos`), *not* `--words` order. Same words overwrite. A puzzle is a
+    `packages/generation/output/word/<lang>/<kind>/<author>/<work>/<s1>_<s2>_<s3>.json`,
+    slugs in **sentence order** (by `pos`), *not* `--words` order. **Same words AND
+    same source overwrite** — the path now carries the metadata, so re-running to fix a
+    forgotten `--work` writes a SECOND file and leaves the first where it was, looking
+    exactly like a normal source-less puzzle. That is the accepted cost of filing by
+    source (`publish` takes whichever path you hand it, so the duplicate is inert until
+    you publish it), not a bug to fix by flattening. A puzzle is a
     generation **artifact** (gitignored), not a web asset: it is **published** to the
     daily store (local FS or S3) via `pnpm puzzle:publish`; the front gets the day's
-    puzzle from the **backend** (#6), never from web `public/`. Override the dir with
-    `--out-dir`.
+    puzzle from the **backend** (#6), never from web `public/`. Override the ROOT with
+    `--out-dir` (the source levels are always appended under it).
+    **A puzzle is FILED UNDER ITS SOURCE (#137, decided 2026-07-28):** the `source`
+    metadata (#5) already rides inside the JSON, so the corpus organizes itself by it
+    on disk — which works have been mined, which are over-represented, whether a
+    sentence's source was used before. Two rules make the levels well-defined:
+    - **They are `path_slug()`s, NOT slugs.** A directory name is browsed by a human,
+      so it answers a different question from the comparison key: a run of anything
+      non-alphanumeric becomes ONE dash (`Victor Hugo` → `victor-hugo`, where `slug()`
+      gives `victorhugo`; apostrophes separate in both their ASCII and typographic
+      forms), and **digits are KEPT** — a work is named `1, 2, 3` or `Joueur 1`, and
+      dropping digits the way `slug()` does would leave the first with no name at all.
+      It shares `slug()`'s accent/ligature folding and nothing else; it is **never** a
+      lookup key, and `slug()`/`fold()` stay byte-identical and untouched.
+    - **A missing level is OMITTED with everything under it**, never filled with a
+      placeholder — a path cannot skip a component, so an author with no kind would
+      read as a kind. So a puzzle with NO `source` still lands at `<lang>/`: the old
+      flat layout is this one's degenerate case. A level that WAS given but names
+      nothing ASCII (pure punctuation, or a non-Latin script — `книга`, `村上春樹`)
+      collapses the same way, but **says so on stderr**: the file then sits high in the
+      tree carrying full metadata, indistinguishable from a source-less one.
+      `kind` stays an **open** union — the
+      first level validates nothing against `KNOWN_KINDS`.
   - **Vocab** — `packages/web/public/vocab/<lang>.json` = the **full** slugged reduced
     vocab (existence set), deduped + sorted, deterministic, **NOT** capped to `TOP_K`.
     This one **stays a web asset**: the SPA fetches `/vocab/<lang>.json` from its own
@@ -569,7 +596,9 @@ pnpm reduce:en        # embedding/en/glove.6B.300d.txt -> glove.6B.300d_reduced.
 pnpm vocab:fr         # -> packages/web/public/vocab/fr.json
 
 # 3. Generate a puzzle per game (fast; first run for a language builds the .kv cache).
-#    Puzzle -> packages/generation/output/word/<lang>/ (then `pnpm puzzle:publish` it).
+#    Puzzle -> packages/generation/output/word/<lang>/<kind>/<author>/<work>/ (#137;
+#    levels not provided are omitted, so a source-less puzzle stays at <lang>/), then
+#    `pnpm puzzle:publish` it.
 #    NOTE: gen:phrase ALSO rewrites web/public/vocab/<lang>.json as a side effect.
 #    Reads wordlist/<lang>.lemmas.tsv.gz for lemma grouping (#104; missing table = hard
 #    error, --no-lemmas to skip). Every ranked group is annotated with its dq distance
@@ -1168,9 +1197,12 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   `fr` = Lexique ∪ Hunspell fr (~169k forms), `en` = SCOWL(≤60,US) ∪ Hunspell en_US
   (~91k). Built by `build_wordlist.py`; source downloads cache in `wordlist/.cache/`
   (gitignored). Tests use the small fixture `tests/fixtures/dico.fr.txt`.
-- **Puzzles:** generated into `generation/output/word/<lang>/` (gitignored), then
-  published to the store (`pnpm puzzle:publish`). They are no longer kept under
-  `web/public/word` — the front serves the day's puzzle from the backend (#6).
+- **Puzzles:** generated into `generation/output/word/<lang>/<kind>/<author>/<work>/`
+  (#137; gitignored), then published to the store (`pnpm puzzle:publish`). They are no
+  longer kept under `web/public/word` — the front serves the day's puzzle from the
+  backend (#6). The ~50 puzzles that predate the layout were moved into it by hand
+  (local output is gitignored and the store is keyed by `<date>.<lang>.json`, so there
+  is no migration path to maintain).
 - **Routing (#6), date-addressed (decided 2026-07-05, replacing the #42 version-in-URL
   scheme):** the **client computes the active game day itself** — `shared/src/day.ts`
   (moved from the backend) is the ONE 22:00-ET DST-correct day definition, used by the

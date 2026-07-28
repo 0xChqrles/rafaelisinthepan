@@ -60,7 +60,9 @@ pnpm bench:puzzle <puzzle.json> --model SONNET --auth subscription --effort medi
 ```
 
 Generation splits its two outputs by purpose: **puzzles** land in
-`packages/generation/output/word/<lang>/` (a generation artifact you then
+`packages/generation/output/word/<lang>/<kind>/<author>/<work>/`, filed under their
+source metadata — levels you did not provide are omitted, so a puzzle with no source
+stays at `<lang>/` (a generation artifact you then
 `pnpm puzzle:publish` into the daily store — local or S3), while the **vocab**
 existence set lands in `packages/web/public/vocab/<lang>.json`, a web runtime asset the
 SPA fetches from its own origin. See AGENTS.md for the data pipeline invariants and the
