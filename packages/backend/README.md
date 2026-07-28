@@ -33,8 +33,9 @@ object directly — no `ListObjects` scan — and a flat key stays listable by a
 prefix (`2026-06` for a month, `2026` for a year). The puzzle's words live in the file,
 not the key. The publish step (issue #4) maps the generator's
 `output/word/<lang>/<kind>/<author>/<work>/<s1>_<s2>_<s3>.json` artifact onto this key
-(publish takes a path, so the generator's source-filed layout is invisible here). The encoding is shared
-with the local store in `src/layout.ts` (`storeKey`), so local FS and S3 cannot drift apart.
+(publish takes a path, so the generator's source-filed layout is invisible here). The
+encoding is shared with the local store in `src/layout.ts` (`storeKey`), so local FS and
+S3 cannot drift apart.
 
 ## Environment
 
@@ -55,9 +56,10 @@ therefore identical to production — `src/serve.ts` is just a Function-URL ⇄ 
 pnpm gen:phrase "<sentence>" --lang fr --words a b c
 
 # 2. Publish it into the local store for a chosen day (defaults to local + the active day)
-pnpm puzzle:publish packages/generation/output/word/fr/book/an-author/a-work/a_b_c.json  # local, today
-pnpm puzzle:publish packages/generation/output/word/fr/book/an-author/a-work/a_b_c.json --day 2026-07-01
-pnpm puzzle:publish packages/generation/output/word/fr/book/an-author/a-work/a_b_c.json --s3 --bucket my-bucket  # real S3
+PUZZLE=packages/generation/output/word/fr/book/an-author/a-work/a_b_c.json
+pnpm puzzle:publish $PUZZLE                            # local, today
+pnpm puzzle:publish $PUZZLE --day 2026-07-01
+pnpm puzzle:publish $PUZZLE --s3 --bucket my-bucket    # real S3
 
 # 3. Serve it (GET /?lang=<xx>, GET /today) with no AWS creds
 pnpm backend:dev          # http://localhost:8787

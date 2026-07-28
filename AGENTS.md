@@ -375,8 +375,12 @@ Consequences that are load-bearing:
 - **Two outputs, two homes (by purpose):**
   - **Puzzles** — one self-contained file per puzzle at
     `packages/generation/output/word/<lang>/<kind>/<author>/<work>/<s1>_<s2>_<s3>.json`,
-    slugs in **sentence
-    order** (by `pos`), *not* `--words` order. Same words overwrite. A puzzle is a
+    slugs in **sentence order** (by `pos`), *not* `--words` order. **Same words AND
+    same source overwrite** — the path now carries the metadata, so re-running to fix a
+    forgotten `--work` writes a SECOND file and leaves the first where it was, looking
+    exactly like a normal source-less puzzle. That is the accepted cost of filing by
+    source (`publish` takes whichever path you hand it, so the duplicate is inert until
+    you publish it), not a bug to fix by flattening. A puzzle is a
     generation **artifact** (gitignored), not a web asset: it is **published** to the
     daily store (local FS or S3) via `pnpm puzzle:publish`; the front gets the day's
     puzzle from the **backend** (#6), never from web `public/`. Override the ROOT with
@@ -396,7 +400,11 @@ Consequences that are load-bearing:
     - **A missing level is OMITTED with everything under it**, never filled with a
       placeholder — a path cannot skip a component, so an author with no kind would
       read as a kind. So a puzzle with NO `source` still lands at `<lang>/`: the old
-      flat layout is this one's degenerate case. `kind` stays an **open** union — the
+      flat layout is this one's degenerate case. A level that WAS given but names
+      nothing ASCII (pure punctuation, or a non-Latin script — `книга`, `村上春樹`)
+      collapses the same way, but **says so on stderr**: the file then sits high in the
+      tree carrying full metadata, indistinguishable from a source-less one.
+      `kind` stays an **open** union — the
       first level validates nothing against `KNOWN_KINDS`.
   - **Vocab** — `packages/web/public/vocab/<lang>.json` = the **full** slugged reduced
     vocab (existence set), deduped + sorted, deterministic, **NOT** capped to `TOP_K`.

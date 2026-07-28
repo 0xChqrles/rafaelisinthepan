@@ -9,7 +9,8 @@ The rules those directory levels obey:
   - `kind` is an OPEN union — nothing is validated against KNOWN_KINDS;
   - a missing (or unnamable) level is OMITTED along with everything under it, so a
     puzzle with no `source` lands at <lang>/ exactly as it did before the layout
-    existed;
+    existed — but an UNNAMABLE one is reported on stderr, since that level WAS
+    provided and the resulting path is indistinguishable from a source-less one;
   - the FILENAME is unchanged: the three distinct secret slugs in sentence order.
 """
 
@@ -95,6 +96,20 @@ def test_blank_and_unnamable_levels_count_as_missing():
     assert gen_phrase.source_dir_segments(
         {"kind": "music", "author": "Cami", "work": "!!!"}
     ) == ["music", "cami"]
+
+
+def test_an_unnamable_level_is_reported_while_a_missing_one_is_silent(capsys):
+    # Any non-Latin script names nothing ASCII. The metadata survives in the JSON,
+    # so the only signal that the path dropped it is this line.
+    assert gen_phrase.source_dir_segments(
+        {"kind": "книга", "author": "Dostoïevski", "work": "Idiot"}
+    ) == []
+    reported = capsys.readouterr().err
+    assert "книга" in reported and "kind" in reported
+
+    # A level simply not provided is normal — the flat layout — and stays quiet.
+    assert gen_phrase.source_dir_segments({"author": "Dostoïevski"}) == []
+    assert capsys.readouterr().err == ""
 
 
 def test_kind_is_an_open_union():

@@ -20,13 +20,16 @@ Two per-language concerns drive the rest:
 
 The phrase is written under its SOURCE, to
 packages/generation/output/word/<lang>/<kind>/<author>/<work>/<slug1>_<slug2>_<slug3>.json
-(the three distinct selected slugs in sentence order); rerunning with the same three words
-overwrites it. The directory levels are path_slug()s of the source metadata — readable
-ASCII names, never lookup keys — and a level that was not provided is omitted along with
-everything under it, so a puzzle with no source at all still lands at <lang>/ (#137). A repeated selected word produces one hole per sentence occurrence, but one
-rank map and one start hint for that secret. A puzzle is a generation artifact, NOT a web
-asset: publish it to the backend store (local FS or S3) with `pnpm puzzle:publish` — the
-front gets the day's puzzle from the backend (#6).
+(the three distinct selected slugs in sentence order). The directory levels are
+path_slug()s of the source metadata — readable ASCII names, never lookup keys — and a
+level that was not provided is omitted along with everything under it, so a puzzle with
+no source at all still lands at <lang>/ (#137). Rerunning overwrites only when BOTH the
+three words AND the source match: re-running to fix forgotten metadata writes a second
+file and leaves the first one behind, under the path it had. A repeated selected word
+produces one hole per sentence occurrence, but one rank map and one start hint for that
+secret. A puzzle is a generation artifact, NOT a web asset: publish it to the backend
+store (local FS or S3) with `pnpm puzzle:publish` — the front gets the day's puzzle from
+the backend (#6).
 
 On a terminal the script is fully interactive (#5): the phrase, language, and the
 optional source metadata (kind / author / work) are asked when not supplied as flags.
@@ -1793,13 +1796,24 @@ def source_dir_segments(source):
     with a placeholder: a path cannot skip a component, so an author with no kind
     would read as a kind. The degenerate case is the point — a puzzle with no
     `source` at all returns [] and lands at <out-dir>/<lang>/, exactly where every
-    puzzle landed before this layout existed. An unnamable level (a title of pure
-    punctuation, path_slug -> "") is treated as missing for the same reason."""
+    puzzle landed before this layout existed.
+
+    An UNNAMABLE level collapses the same way but is NOT the same event, so it is
+    reported: the metadata was given, and path_slug just has nothing ASCII to make
+    a name from (a title of pure punctuation, or any non-Latin script — 村上春樹,
+    книга). The file then lands high in the tree carrying full metadata in its JSON,
+    which looks exactly like a puzzle that was never given a source; a curator who
+    typed the level deserves to be told the path dropped it."""
     source = source or {}
     segments = []
     for key in ("kind", "author", "work"):
-        segment = path_slug((source.get(key) or "").strip())
+        value = (source.get(key) or "").strip()
+        segment = path_slug(value)
         if not segment:
+            if value:
+                print(f"  attention : « {value} » ({key}) n'a pas de nom de dossier "
+                      f"ASCII — ce niveau et tout ce qui suit sont retirés du chemin "
+                      f"(les métadonnées restent dans le JSON).", file=sys.stderr)
             break
         segments.append(segment)
     return segments
