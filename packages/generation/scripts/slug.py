@@ -24,6 +24,21 @@ _LIGATURES = {"œ": "oe", "æ": "ae"}
 # slug keeps only ASCII letters and dashes; everything else is dropped.
 _SLUG_STRIP = re.compile(r"[^a-z-]")
 _SLUG_DASHES = re.compile(r"-+")
+# path_slug keeps letters AND digits; every other run becomes one separating dash.
+_PATH_SEPARATORS = re.compile(r"[^a-z0-9]+")
+
+
+def _fold_to_ascii(text):
+    """lowercase -> expand ligatures -> NFKD -> drop combining marks.
+
+    The accent folding both slug() and path_slug() start from, kept in ONE place so
+    the two can never fold differently. What each does with the folded text after
+    this differs, and deliberately so — see path_slug()."""
+    w = text.lower()
+    for lig, repl in _LIGATURES.items():
+        w = w.replace(lig, repl)
+    w = unicodedata.normalize("NFKD", w)
+    return "".join(c for c in w if not unicodedata.combining(c))
 
 
 def slug(word):
@@ -33,14 +48,33 @@ def slug(word):
     marks -> keep only [a-z] and '-' -> collapse repeated dashes -> trim edges.
     été->ete, forêt->foret, œuf->oeuf, peut-être->peut-etre, arc-en-ciel->arc-en-ciel.
     Stays byte-identical to the front-end fold() in src/screens/Game.tsx."""
-    w = word.lower()
-    for lig, repl in _LIGATURES.items():
-        w = w.replace(lig, repl)
-    w = unicodedata.normalize("NFKD", w)
-    w = "".join(c for c in w if not unicodedata.combining(c))
+    w = _fold_to_ascii(word)
     w = _SLUG_STRIP.sub("", w)
     w = _SLUG_DASHES.sub("-", w)
     return w.strip("-")
+
+
+def path_slug(text):
+    """Readable ASCII name for a DIRECTORY — NOT a key, and never a slug (#137).
+
+    A puzzle files under its source (<lang>/<kind>/<author>/<work>/), and those
+    segments are browsed by a human, so they answer a different question from
+    slug(): they must stay READABLE rather than comparable. Two deliberate
+    divergences follow, and neither may be "unified" with slug():
+
+      - a run of anything non-alphanumeric becomes ONE separating dash instead of
+        being dropped, so words stay apart — "Victor Hugo" -> "victor-hugo", where
+        slug() gives "victorhugo". Apostrophes separate like the rest, in both
+        their ASCII and typographic forms: "L'Usage du monde" -> "l-usage-du-monde".
+      - DIGITS ARE KEPT. Works are named "1, 2, 3" and "Joueur 1"; dropping digits
+        the way slug() does would leave the first one with an empty name.
+
+    Returns "" when nothing survives (a title of pure punctuation); the caller
+    decides what an unnamable level means — gen_phrase omits it.
+
+    Never use this to look a word up: it is not the slug()/fold() contract, and a
+    value folded through it can collide differently."""
+    return _PATH_SEPARATORS.sub("-", _fold_to_ascii(text)).strip("-")
 
 
 def write_vocab(words, lang, vocab_dir=None):
