@@ -50,6 +50,7 @@ packages/
       build_wordlist.py       offline builder: sources -> wordlist/<lang>.txt.gz (hors-dico ref, #38)
       build_lemmas.py         offline builder: Lexique/AGID -> wordlist/<lang>.lemmas.tsv.gz (form→lemma, #104)
       build_forms.py          offline builder: Lefff 3.4 -> wordlist/fr.forms.tsv.gz (verb morphology, #119)
+      compare_morphology.py   offline A/B audit: Morphalou 3.1 vs Lefff vs the reduced vocab -> reports/ (#131)
       build_vocab.py          reduced vectors -> web/public/vocab/<lang>.json (escape hatch; no re-reduce)
       slug.py                 stdlib-only: slug() contract + write_vocab (shared by reduce + gen_phrase)
       embedding_neighbors.py  shared load/vocab/matrix/cosine-rank logic
@@ -64,6 +65,7 @@ packages/
     wordlist/fr.forms.tsv.gz  versioned lemma+trait→forme table (display agreement, #119); fr only
     wordlist/fr.forms.LICENSE the LGPL-LR text governing the Lefff data it derives from
     output/word/<lang>/<s1>_<s2>_<s3>.json   generated puzzles (gitignored; publish to store/S3)
+    reports/morphology-ab.md  committed #131 audit report (regenerate via compare_morphology.py)
     pyproject.toml, uv.lock   Python project (uv)
   benchmark/                  offline LLM puzzle benchmark (pkg @whippin/benchmark, #68)
     scripts/llm_play.py       LLM player/referee; reads generation output + web vocab
