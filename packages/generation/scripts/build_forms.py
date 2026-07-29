@@ -543,36 +543,74 @@ def collect_rows(lexemes, weight):
 
 
 # --- The #131 guards --------------------------------------------------------------
-# Morphalou's enumerated basic-verb anomalies, pinned. Each is validated LOUDLY on
-# every build: the holes stay holes (a missing agreement degrades to the dictionary
-# form downstream) and the wrong forms stay dropped — but if a source bump or a rule
-# edit changes what sits under any of these cells, the build fails and the change
-# must be re-audited (#131 rules out patching them from another source).
+# The COMPLETE #131 audit set, pinned cell by cell: the two cell-level holes, every
+# cell the «forms only Lefff states» list showed Morphalou missing a spelling in,
+# every cell the «forms only Morphalou states» list showed polluted (which the
+# cleanup must leave holding ONLY the real forms), the spot checks, and the
+# legitimate-variation controls. Each is validated LOUDLY on every build: the holes
+# stay holes (a missing agreement degrades to the dictionary form downstream) and
+# the wrong forms stay dropped — but if a source bump or a rule edit changes what
+# sits under ANY of these cells, the build fails and the change must be re-audited
+# (#131 rules out patching them from another source). Only iterating this tuple is
+# what makes the guarantee real, so it must stay the whole enumerated set.
 #
-# (lemma, feature, expected forms, expected preferred spelling or None)
+# (lemma, feature, expected forms, expected preferred spelling or None — only named
+# where a cell holds several spellings and the frequency order is itself audited)
 EXPECTED_CELLS = (
+    # -- the two cell-level holes ("missing in Morphalou, present in Lefff") -------
     # the curated core mis-tags «puisses» thirdPerson, so the 2s cell is LOST — and
     # the mis-tag itself is harmless for realisation («puisse» outranks it by freq)
     ("pouvoir", "sub:pre:2s", frozenset(), None),
-    # «peux» carries only a secondPerson row: the 1s survives via «puis» alone
-    ("pouvoir", "ind:pre:1s", frozenset({"puis"}), "puis"),
     # «assis» has no masculine-plural participle row
     ("asseoir", "par:pas:m:p", frozenset(), None),
-    # the Morphalou gap #119 first recorded
-    ("conquérir", "par:pas:m:p", frozenset(), None),
-    # «fuie» is absent and «fuisse» (the sub:imp, mis-tagged sub:pre) is pollution
-    ("fuir", "sub:pre:1s", frozenset(), None),
-    # the DELA «-issant» conjugation glued into sortir/repartir: the wrong-only
-    # present cells must come out EMPTY (a hole), never realize «je sortis»
-    ("sortir", "ind:pre:1s", frozenset(), None),
-    ("repartir", "ind:pre:1s", frozenset(), None),
-    ("sortir", "ind:pre:3s", frozenset({"sort"}), "sort"),
+    # -- the cells Morphalou lacks a Lefff-attested spelling in --------------------
+    # (the «forms only Lefff states» list: the sibling paradigm's spelling — or
+    # nothing at all — is what the cell legitimately holds)
+    ("asseoir", "ind:pre:1s", frozenset({"assieds"}), None),      # no «assois» 1s
+    ("asseoir", "sub:pre:1s", frozenset({"asseye"}), None),       # no «assoie»
+    ("essayer", "cnd:pre:1s", frozenset({"essaierais"}), None),   # no «essayerais»
+    ("foutre", "cnd:pre:1s", frozenset({"fouterais"}), None),     # no «foutrais»
+    ("fuir", "ind:imp:1s", frozenset(), None),                    # no «fuyais» 1s
+    ("fuir", "sub:pre:1s", frozenset(), None),   # «fuie» absent, «fuisse» pollution
+    ("payer", "cnd:pre:1s", frozenset({"paierais"}), None),       # no «payerais»
+    # «peux» carries only a secondPerson row: the 1s survives via «puis» alone
+    ("pouvoir", "ind:pre:1s", frozenset({"puis"}), None),
+    ("repartir", "ind:imp:1s", frozenset(), None),                # no «repartais» 1s
+    ("repartir", "ind:pre:1s", frozenset(), None),                # no «repars» 1s
+    ("repartir", "sub:pre:1s", frozenset(), None),                # no «reparte» 1s
+    ("sortir", "ind:imp:1s", frozenset(), None),                  # no «sortais» 1s
+    ("sortir", "ind:pre:1s", frozenset(), None),                  # no «sors» 1s
+    ("sortir", "sub:pre:1s", frozenset(), None),                  # no «sorte» 1s
+    # -- the polluted cells ("forms only Morphalou states"): after the cleanup they
+    # hold ONLY the real paradigm — the DELA «-issant» conjugation glued into
+    # sortir/repartir and the mis-tagged «fuisse» must be gone, and a wrong-only
+    # cell (see the 1s rows above) must come out EMPTY, never realize «je sortis» --
+    ("fuir", "sub:pre:3s", frozenset({"fuie"}), None),
+    ("pouvoir", "sub:pre:3s", frozenset({"puisse", "puisses"}), "puisse"),
+    ("repartir", "imp:pre:1p", frozenset({"repartons"}), None),
+    ("repartir", "imp:pre:2p", frozenset({"repartez"}), None),
+    ("repartir", "imp:pre:2s", frozenset({"repars"}), None),
+    ("repartir", "ind:imp:3p", frozenset({"repartaient"}), None),
+    ("repartir", "ind:imp:3s", frozenset({"repartait"}), None),
+    ("repartir", "ind:pre:1p", frozenset({"repartons"}), None),
+    ("repartir", "ind:pre:2p", frozenset({"repartez"}), None),
+    ("repartir", "ind:pre:2s", frozenset({"repars"}), None),
+    ("repartir", "ind:pre:3p", frozenset({"repartent"}), None),
+    ("repartir", "ind:pre:3s", frozenset({"repart"}), None),
+    ("repartir", "par:pre", frozenset({"repartant"}), None),
+    ("repartir", "sub:pre:3p", frozenset({"repartent"}), None),
+    ("sortir", "imp:pre:2s", frozenset({"sors"}), None),
+    ("sortir", "ind:pre:2s", frozenset({"sors"}), None),
+    ("sortir", "ind:pre:3s", frozenset({"sort"}), None),
     # the real «fous» must win over the Lefff-import class error «fouts»
     ("foutre", "imp:pre:2s", frozenset({"fous", "fouts"}), "fous"),
+    # -- spot checks + legitimate-variation controls -------------------------------
+    # the Morphalou gap #119 first recorded
+    ("conquérir", "par:pas:m:p", frozenset(), None),
     # the legitimate double paradigms survive the cleanup untouched
     ("payer", "ind:pre:1s", frozenset({"paie", "paye"}), "paie"),
     # the corroborated repairs of the core's missing 1s rows survive too
-    ("finir", "ind:pre:1s", frozenset({"finis"}), "finis"),
+    ("finir", "ind:pre:1s", frozenset({"finis"}), None),
 )
 
 

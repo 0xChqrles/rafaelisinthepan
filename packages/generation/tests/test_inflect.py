@@ -627,33 +627,79 @@ def test_every_realization_is_deterministic():
 
 
 # --- the #131 pins, asserted against what actually ships ---------------------------
+# The COMPLETE audit set, restated here from the #131 report rather than imported
+# from the builder: EXPECTED_CELLS failing the build and this table failing the tests
+# are two independent statements of the same audit, so weakening one cannot silently
+# weaken the other. The wrong-paradigm cells must hold ONLY the real forms (a
+# wrong-only cell comes out EMPTY — a missing agreement degrades to the dictionary
+# form, a wrong one ships «je sortis»), and the known-lost cells stay lost until a
+# re-audited source bump.
 
-def test_the_enumerated_source_holes_stay_holes_not_wrong_forms():
-    """#131's decision: Morphalou's enumerated basic-verb anomalies are GUARDED, never
-    patched from another source. The wrong-paradigm cells must come out EMPTY — a
-    missing agreement degrades to the dictionary form, a wrong one ships «je sortis»
-    — and the known-lost cells stay lost until a re-audited source bump."""
+AUDITED_CELLS = [
+    # the two cell-level holes
+    ("pouvoir", "sub:pre:2s", None),
+    ("asseoir", "par:pas:m:p", None),
+    # the cells Morphalou lacks a Lefff-attested spelling in
+    ("asseoir", "ind:pre:1s", {"assieds"}),
+    ("asseoir", "sub:pre:1s", {"asseye"}),
+    ("essayer", "cnd:pre:1s", {"essaierais"}),
+    ("foutre", "cnd:pre:1s", {"fouterais"}),
+    ("fuir", "ind:imp:1s", None),
+    ("fuir", "sub:pre:1s", None),
+    ("payer", "cnd:pre:1s", {"paierais"}),
+    ("pouvoir", "ind:pre:1s", {"puis"}),
+    ("repartir", "ind:imp:1s", None),
+    ("repartir", "ind:pre:1s", None),
+    ("repartir", "sub:pre:1s", None),
+    ("sortir", "ind:imp:1s", None),
+    ("sortir", "ind:pre:1s", None),
+    ("sortir", "sub:pre:1s", None),
+    # the polluted cells, purged down to the real paradigm
+    ("fuir", "sub:pre:3s", {"fuie"}),
+    ("pouvoir", "sub:pre:3s", {"puisse", "puisses"}),
+    ("repartir", "imp:pre:1p", {"repartons"}),
+    ("repartir", "imp:pre:2p", {"repartez"}),
+    ("repartir", "imp:pre:2s", {"repars"}),
+    ("repartir", "ind:imp:3p", {"repartaient"}),
+    ("repartir", "ind:imp:3s", {"repartait"}),
+    ("repartir", "ind:pre:1p", {"repartons"}),
+    ("repartir", "ind:pre:2p", {"repartez"}),
+    ("repartir", "ind:pre:2s", {"repars"}),
+    ("repartir", "ind:pre:3p", {"repartent"}),
+    ("repartir", "ind:pre:3s", {"repart"}),
+    ("repartir", "par:pre", {"repartant"}),
+    ("repartir", "sub:pre:3p", {"repartent"}),
+    ("sortir", "imp:pre:2s", {"sors"}),
+    ("sortir", "ind:pre:2s", {"sors"}),
+    ("sortir", "ind:pre:3s", {"sort"}),
+    ("foutre", "imp:pre:2s", {"fous", "fouts"}),
+    # spot checks + legitimate-variation controls
+    ("conquérir", "par:pas:m:p", None),
+    ("payer", "ind:pre:1s", {"paie", "paye"}),
+    ("finir", "ind:pre:1s", {"finis"}),
+]
+
+
+@pytest.mark.parametrize("lemma,feature,expected", AUDITED_CELLS)
+def test_every_audited_131_cell_ships_exactly_as_audited(lemma, feature, expected):
+    forms = committed().realize.get((f"{lemma}:v", feature))
+    if expected is None:
+        assert forms is None, (lemma, feature, forms)
+    else:
+        assert forms is not None and set(forms) == expected, (lemma, feature, forms)
+
+
+def test_the_audited_preference_orders_hold():
+    # where a pinned cell holds several spellings, frequency must order the real one
+    # first — «fous» over the Lefff-import class error, «puisse» over the mis-tag.
     table = committed()
-    for pair in (("sortir:v", "ind:pre:1s"), ("repartir:v", "ind:pre:1s"),
-                 ("fuir:v", "sub:pre:1s"), ("pouvoir:v", "sub:pre:2s"),
-                 ("asseoir:v", "par:pas:m:p"), ("conquérir:v", "par:pas:m:p")):
-        assert pair not in table.realize, pair
-    # the cells beside them are intact: the holes are per-entry, not per-paradigm.
-    assert table.realize[("sortir:v", "ind:pre:3s")] == ("sort",)
-    assert table.realize[("pouvoir:v", "ind:pre:1s")] == ("puis",)
+    assert table.realize[("foutre:v", "imp:pre:2s")][0] == "fous"
+    assert table.realize[("pouvoir:v", "sub:pre:3s")][0] == "puisse"
+    assert table.realize[("payer:v", "ind:pre:1s")][0] == "paie"
     # the mis-tagged «puisses» may not resurface as the 2s it actually is.
-    assert ("pouvoir:v", "sub:pre:2s") not in {
-        pair for pair in committed().entries.get("puisses", ())}
-
-
-def test_the_cleanup_kept_the_legitimate_double_paradigms():
-    # the corroboration rule must not gut asseoir/payer-style genuine variation —
-    # the #131-measured "legit list", asserted on the shipped artifact.
-    table = committed()
-    assert set(table.realize[("payer:v", "ind:pre:1s")]) == {"paie", "paye"}
-    assert set(table.realize[("foutre:v", "imp:pre:2s")]) == {"fous", "fouts"}
-    assert table.realize[("foutre:v", "imp:pre:2s")][0] == "fous"  # frequency orders
-    assert table.realize[("finir:v", "ind:pre:1s")] == ("finis",)
+    assert ("pouvoir:v", "sub:pre:2s") not in set(
+        committed().entries.get("puisses", ()))
+    # and the cleanup must not gut asseoir-style genuine variation elsewhere.
     assert "assois" in set(table.realize[("asseoir:v", "ind:pre:2s")])
 
 
