@@ -65,6 +65,7 @@ Usage :
 """
 
 import argparse
+import functools
 import json
 import os
 import random
@@ -100,8 +101,8 @@ GEN_OUTPUT = os.path.join(ROOT, "output")
 
 import french_neighbors as frn
 import glove_neighbors as gn
-from build_forms import FORM_LANGS, forms_path, load_forms  # lemma+trait→forme (#119)
-from build_lemmas import lemmas_path, load_lemmas  # stdlib-only form→lemma table (#104)
+from build_forms import FORM_LANGS, forms_path, load_forms  # fr lexeme inventory (#132)
+from build_lemmas import lemmas_path, load_lemmas  # en form→lemma table (#104)
 from distances import cluster_roads, quantize_dq, road_zone  # dq / road annotations (#115)
 from slug import path_slug, slug, write_vocab  # slug/fold contract, dir names, vocab
 from start_word import pick_start, start_band
@@ -229,22 +230,52 @@ def build_rank_map(secret_display, ranking):
     return rmap
 
 
-# --- Lemma grouping (#104) ------------------------------------------------------
+# --- Lemma grouping (#104, unified inventory #132) --------------------------------
 # Inflected forms of one word ("privé"/"privée"/"privés", "vermine"/"vermines") are
-# ONE ranked group in a rank map. The committed form→lemma table (build_lemmas.py)
-# says which forms belong together; merging itself happens HERE, at generation time,
-# on the closest-first walk — a generalization of the slug-collision rule with a
-# coarser key. Embeddings, the reduction and the vocab existence set are untouched.
+# ONE ranked group in a rank map. The committed grouping table says which forms
+# belong together; merging itself happens HERE, at generation time, on the
+# closest-first walk — a generalization of the slug-collision rule with a coarser
+# key. Embeddings, the reduction and the vocab existence set are untouched.
+#
+# Since #132 the fr grouping comes from the SAME artifact as display agreement (the
+# Morphalou lexeme inventory, build_forms.py): one dictionary defines the lexeme for
+# grouping, ranking and display alike, so the merge walk and the agreement pass can
+# no longer disagree about what a form belongs to. Its group keys are lexeme keys
+# («porter:v», «porte:nc») — opaque to everything downstream. en keeps its AGID
+# form→lemma table (build_lemmas.py), a decided non-goal, not a gap.
+
+@functools.lru_cache(maxsize=None)
+def _load_lexicon(lang):
+    """Load (once) the committed lexeme inventory for a language (#132).
+
+    One artifact feeds BOTH the merge walk (grouping) and the agreement pass (the
+    verb view), so it is loaded once and shared. Missing or corrupt -> hard error,
+    like the hors-dico wordlist: silently generating without it would ship
+    near-duplicate ranks or a half-agreed puzzle."""
+    path = forms_path(lang)
+    if not os.path.exists(path):
+        die(f"inventaire de lexèmes introuvable : {path}\n"
+            f"         construis-le avec scripts/build_forms.py (pnpm forms:{lang}), "
+            f"ou passe --no-lemmas et --no-inflect pour t'en passer.")
+    try:
+        return load_forms(path)
+    except ValueError as exc:  # a truncated artifact is a startup failure
+        die(f"inventaire de lexèmes illisible : {exc}\n"
+            f"         reconstruis-le avec scripts/build_forms.py "
+            f"(pnpm forms:{lang}).")
+
 
 def load_lemma_table(lang, disabled=False):
-    """Load the committed form→lemma table for a language.
+    """Load the committed grouping table for a language.
 
-    Missing table -> hard error (like the hors-dico wordlist): silently generating
-    without merging would ship near-duplicate ranks. --no-lemmas opts out explicitly
-    and returns an empty table, under which every word is its own singleton group —
-    byte-identical to pre-#104 output."""
+    fr reads the unified inventory's grouping (#132); en reads its AGID form→lemma
+    table (#104). Missing table -> hard error either way. --no-lemmas opts out
+    explicitly and returns an empty table, under which every word is its own
+    singleton group — byte-identical to pre-#104 output."""
     if disabled:
         return {}
+    if lang in FORM_LANGS:
+        return _load_lexicon(lang).grouping
     path = lemmas_path(lang)
     if not os.path.exists(path):
         die(f"table forme→lemme introuvable : {path}\n"
@@ -533,9 +564,9 @@ def group_lemmas(secret, donor, lemma_table):
     Without a substitution: the secret's own lemmas (unchanged, #104). With one: the
     donor's too, because the borrowed identity has to be complete — every form of the
     donor's lemma then aliases to rank 0 and SOLVES the hole, exactly as an inflection
-    of an ordinary secret does. That is not cosmetic: a form the lemma table does not
-    know ("accoutumes" has no Lexique row) is its own singleton group, so without the
-    donor's lemmas its own family would rank as strangers around it."""
+    of an ordinary secret does. That is not cosmetic: a form the grouping table does
+    not know is its own singleton group, so without the donor's lemmas its own family
+    would rank as strangers around it."""
     lemmas = list(lemmas_of(secret, lemma_table))
     if donor != secret:
         lemmas += [l for l in lemmas_of(donor, lemma_table) if l not in lemmas]
@@ -593,10 +624,10 @@ class DonorResolver:
 
         The committed table when it knows the form. Otherwise the table is asked about
         the reduced-vocab forms sharing `word`'s SLUG — the very words that make the
-        secret typable. That bridge is what carries the real French case: Lexique has
-        rows for accoutume / accoutumés / accoutumer but NONE for "accoutumes", so the
-        missing form has no lemma of its own and only its accent sibling can name the
-        group. Returns () when nothing knows the word — then there is no donor."""
+        secret typable. The bridge carries a sentence form the grouping table happens
+        not to state: such a form has no lemma of its own, and only its accent
+        sibling can name the group. Returns () when nothing knows the word — then
+        there is no donor."""
         if word in self.lemma_table:
             return tuple(self.lemma_table[word])
         lemmas = []
@@ -907,8 +938,9 @@ def alias_start_display(rank_map, start, display, start_rank):
 # The agreement target is the SECRET's own morphology (it IS the correctly inflected
 # form), so nothing has to be guessed from the sentence; the author is asked only when
 # the forms table has no analysis for the secret or gives it several. Realizing a
-# neighbour into that form is then a lookup in the committed table (build_forms.py,
-# Lefff-derived since #119 addendum 3).
+# neighbour into that form is then a lookup in the committed inventory
+# (build_forms.py, Morphalou-derived since #132 — the same artifact the merge walk
+# groups by, so display and grouping can never disagree about a form's lexeme).
 
 def parse_form_args(pairs):
     """`--form MOT=TRAIT` occurrences -> {slug(mot): trait}.
@@ -928,28 +960,19 @@ def parse_form_args(pairs):
 
 
 def load_form_table(lang, disabled=False):
-    """Load the committed lemma+feature→form table for a language.
+    """Load the agreement (verb) view of the lexeme inventory for a language.
 
-    A language with no table (en — see FORM_LANGS) has no agreement pass at all: that
-    is a decided non-goal, so it returns None silently rather than erroring. For a
-    language that HAS one, a missing file is a hard error like the lemma table and the
-    hors-dico wordlist; --no-inflect opts out explicitly and reproduces pre-addendum
-    output exactly."""
+    A language with no inventory (en — see FORM_LANGS) has no agreement pass at all:
+    that is a decided non-goal, so it returns None silently rather than erroring. For
+    a language that HAS one, a missing file is a hard error like the hors-dico
+    wordlist (_load_lexicon, shared with the grouping so the file is parsed once);
+    --no-inflect opts out explicitly and reproduces agreement-free output exactly.
+    Loaded eagerly, before the vectors, so a missing or corrupt table fails fast —
+    deferring the parse would buy nothing: deciding whether a secret is even a verb
+    reads the table, so every fr run consults it on its first hole anyway."""
     if disabled or lang not in FORM_LANGS:
         return None
-    path = forms_path(lang)
-    if not os.path.exists(path):
-        die(f"table lemme+trait→forme introuvable : {path}\n"
-            f"         construis-la avec scripts/build_forms.py (pnpm forms:{lang}), "
-            f"ou passe --no-inflect pour t'en passer.")
-    # Loaded eagerly, before the vectors, so a missing or corrupt table fails fast.
-    # Deferring the parse would buy nothing: deciding whether a secret is even a verb
-    # reads the table, so every fr run consults it on its first hole anyway.
-    try:
-        return load_forms(path)
-    except ValueError as exc:  # a truncated artifact is a startup failure like any other
-        die(f"table lemme+trait→forme illisible : {exc}\n"
-            f"         reconstruis-la avec scripts/build_forms.py (pnpm forms:{lang}).")
+    return _load_lexicon(lang)
 
 
 class FormResolver:

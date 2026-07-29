@@ -3,28 +3,30 @@
 # dependencies = []
 # ///
 """
-Build the form→lemma table consumed by gen_phrase.py's lemma-merging rule (#104).
+Build the en form→lemma table consumed by gen_phrase.py's lemma-merging rule (#104).
 
-For a language, this fetches the reference source, extracts every (inflected form,
-lemma) pair, normalizes both sides the same way as an embedding token (lowercase;
-ACCENTS KEPT — the pre-slug form, exactly like the hors-dico wordlist), and writes
-the versioned, deterministic file
+This fetches the reference source, extracts every (inflected form, lemma) pair,
+normalizes both sides the same way as an embedding token (lowercase — the pre-slug
+form, exactly like the hors-dico wordlist), and writes the versioned, deterministic
+file
 
-    packages/generation/wordlist/<lang>.lemmas.tsv.gz
+    packages/generation/wordlist/en.lemmas.tsv.gz
 
 one `form<TAB>lemma` pair per line, sorted + unique. A form may appear on several
-lines (several lemmas: "portes" → porte / porter); every lemma is also registered as
-a form of itself, so the artifact is self-contained. This script is the OFFLINE
-builder: only it needs the network. The pipeline itself only READS the committed file
-(gen_phrase.py, --no-lemmas to opt out).
+lines (several lemmas); every lemma is also registered as a form of itself, so the
+artifact is self-contained. This script is the OFFLINE builder: only it needs the
+network. The pipeline itself only READS the committed file (gen_phrase.py,
+--no-lemmas to opt out).
 
-Sources (one per language)
-  fr : Lexique.org lexicon (TSV) — its `ortho` → `lemme` columns ARE the table.
+en ONLY since #132: the fr grouping now comes from the unified Morphalou lexeme
+inventory (build_forms.py), so ONE dictionary defines the fr lexeme for grouping,
+ranking and display alike. English keeps AGID — a decided non-goal, not a gap.
+
+Source
   en : AGID (Automatically Generated Inflection Database, SCOWL's sibling project) —
        infl.txt maps lemma → inflections; we invert it.
 
 Usage
-    uv run scripts/build_lemmas.py --lang fr
     uv run scripts/build_lemmas.py --lang en
 Downloads are cached under wordlist/.cache/ (gitignored); --refresh re-downloads.
 """
@@ -40,11 +42,6 @@ import build_wordlist as bw  # fetch() + the shared cache dir / UA
 import reduce_embedding as red  # token_pattern — one source for the token rule
 
 SOURCES = {
-    "fr": {
-        # Lexique383: one row per surface form; `ortho` = inflected spelling,
-        # `lemme` = its lemma. Same download (and cache file) as build_wordlist.
-        "lexique": "http://www.lexique.org/databases/Lexique383/Lexique383.tsv",
-    },
     "en": {
         # AGID rev 2016.01.19: infl.txt lists `lemma POS: inflections` lines.
         "agid": "http://downloads.sourceforge.net/wordlist/agid-2016.01.19.tar.gz",
@@ -59,17 +56,6 @@ _AGID_MARKERS = re.compile(r"[?~<!]+$")
 def lemmas_path(lang):
     """Default versioned lemma table for a language: wordlist/<lang>.lemmas.tsv.gz."""
     return os.path.join(red.WORDLIST_DIR, f"{lang}.lemmas.tsv.gz")
-
-
-def read_lexique_pairs(path):
-    """Lexique TSV -> (ortho, lemme) pairs: the surface form and its lemma."""
-    with open(path, encoding="utf-8") as f:
-        header = f.readline().rstrip("\n").split("\t")
-        i_ortho, i_lemme = header.index("ortho"), header.index("lemme")
-        for line in f:
-            cols = line.rstrip("\n").split("\t")
-            if len(cols) > max(i_ortho, i_lemme):
-                yield cols[i_ortho], cols[i_lemme]
 
 
 def parse_agid_line(line):
@@ -150,17 +136,9 @@ def load_lemmas(path):
 
 def build(lang, *, refresh):
     src = SOURCES[lang]
-    if "lexique" in src:
-        # Same cache file name as build_wordlist, so one download serves both builders.
-        path = bw.fetch(src["lexique"],
-                        os.path.join(bw.CACHE_DIR, f"{lang}.lexique.tsv"), refresh)
-        raw_pairs = read_lexique_pairs(path)
-    else:
-        path = bw.fetch(src["agid"],
-                        os.path.join(bw.CACHE_DIR, f"{lang}.agid.tar.gz"), refresh)
-        raw_pairs = read_agid_pairs(path)
-
-    pairs = collect_pairs(lang, raw_pairs)
+    path = bw.fetch(src["agid"],
+                    os.path.join(bw.CACHE_DIR, f"{lang}.agid.tar.gz"), refresh)
+    pairs = collect_pairs(lang, read_agid_pairs(path))
     if not pairs:
         print(f"Erreur : la source n'a produit aucune paire pour {lang}.", file=sys.stderr)
         sys.exit(1)
@@ -181,8 +159,10 @@ def build(lang, *, refresh):
 
 
 def main():
-    p = argparse.ArgumentParser(description="Construit la table forme→lemme d'une langue.")
-    p.add_argument("--lang", choices=("en", "fr"), required=True)
+    p = argparse.ArgumentParser(
+        description="Construit la table forme→lemme d'une langue (en ; le fr vient "
+                    "de l'inventaire de lexèmes, pnpm forms:fr).")
+    p.add_argument("--lang", choices=tuple(SOURCES), required=True)
     p.add_argument("--refresh", action="store_true",
                    help="re-télécharge la source (ignore le cache)")
     args = p.parse_args()

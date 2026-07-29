@@ -8,7 +8,6 @@
     "wordlist:en": "uv run scripts/build_wordlist.py --lang en",
     "wordlist:fr": "uv run scripts/build_wordlist.py --lang fr",
     "lemmas:en": "uv run scripts/build_lemmas.py --lang en",
-    "lemmas:fr": "uv run scripts/build_lemmas.py --lang fr",
     "forms:fr": "uv run scripts/build_forms.py --lang fr",
     "vocab:en": "uv run scripts/build_vocab.py --lang en",
     "vocab:fr": "uv run scripts/build_vocab.py --lang fr",
