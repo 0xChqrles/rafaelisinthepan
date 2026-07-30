@@ -16,7 +16,7 @@ FR = gen_phrase.CONFIG["fr"]
 
 # Generation reads the neighbors' vectors to cut the roads between the departure and the
 # secret (#115), so the fake kv must answer for every word the fake walk returns.
-KV = {"indice": [1.0, 0.0, 0.0], "proche": [0.0, 1.0, 0.0]}
+KV = {"arbre": [1.0, 0.0, 0.0], "forêt": [0.0, 1.0, 0.0]}
 
 
 def _sentence_words():
@@ -31,15 +31,15 @@ def _run_repeated_generation(monkeypatch):
 
     def closest(secret, _kv, _vocab, _matrix, *, n):
         calls.append((secret, n))
-        return [("indice", 0, 0.9), ("proche", 1, 0.8)]
+        return [("arbre", 0, 0.9), ("forêt", 1, 0.8)]
 
     monkeypatch.setattr(FR["module"], "closest", closest, raising=False)
     monkeypatch.setattr(
         gen_phrase,
         "choose_start",
-        lambda _secret, _ranking, _rank_map, _rank_by_display: "indice",
+        lambda _secret, _ranking, _rank_map, _rank_by_display: "arbre",
     )
-    vocab = ["chat", "poursuit", "jardin", "indice", "proche"]
+    vocab = ["chat", "poursuit", "jardin", "arbre", "forêt"]
     holes, ranks = gen_phrase.holes_from_words(
         ["jardin", "chat", "poursuit"],
         _sentence_words(),
@@ -65,7 +65,7 @@ def test_words_expand_a_repeated_secret_to_all_positions_and_share_rank_start(mo
         "chat",
         "jardin",
     ]
-    assert [hole["start"]["word"] for hole in holes] == ["indice"] * 4
+    assert [hole["start"]["word"] for hole in holes] == ["arbre"] * 4
     assert [hole["start_rank"] for hole in holes] == [1] * 4
 
     # The two chat occurrences keep their own token punctuation, while the shared
@@ -91,22 +91,26 @@ def test_filename_dedupes_repeated_slugs_but_keeps_sentence_order(monkeypatch):
 
 
 def test_main_writes_one_three_slug_filename_for_repeated_holes(monkeypatch, tmp_path):
-    vocab = ["chat", "poursuit", "jardin", "indice", "proche"]
+    vocab = ["chat", "poursuit", "jardin", "arbre", "forêt"]
 
+    # This test owns occurrence/file behavior, not the committed morphology. Keep its
+    # tiny fake vocabulary self-contained instead of letting real homographs leak in.
+    monkeypatch.setattr(gen_phrase, "load_lemma_table", lambda *_a, **_k: {})
     monkeypatch.setattr(FR["module"], "load_vectors", lambda: KV, raising=False)
     monkeypatch.setattr(FR["module"], "build_vocab", lambda _kv: vocab, raising=False)
     monkeypatch.setattr(FR["module"], "build_matrix", lambda _kv, _v: object(), raising=False)
     monkeypatch.setattr(
         FR["module"],
         "closest",
-        lambda _secret, _kv, _v, _m, *, n: [("indice", 86, 0.9), ("proche", 87, 0.5)],
+        lambda _secret, _kv, _v, _m, *, n: [
+            ("arbre", 86, 0.9), ("forêt", 87, 0.5)],
         raising=False,
     )
     monkeypatch.setattr(gen_phrase, "write_vocab", lambda _v, _lang: None)
     monkeypatch.setattr(
         gen_phrase,
         "choose_start",
-        lambda _secret, _ranking, _rank_map, _rank_by_display: "indice",
+        lambda _secret, _ranking, _rank_map, _rank_by_display: "arbre",
     )
     monkeypatch.setattr(
         gen_phrase.sys,

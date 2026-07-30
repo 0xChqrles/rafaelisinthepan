@@ -8,7 +8,7 @@ same-lemma form's vector, under these rules:
   - the borrow is the GEOMETRY source only: the hole keeps the true sentence form, the
     rank map stays keyed by the secret's slug, and ranks >= 1 are exactly the donor's;
   - the donor is absorbed as a rank-0 alias by the #104 merge walk (typing it solves);
-  - the donor's lemmas are claimed by the secret's group, so its whole family solves;
+  - the donor must resolve exactly ONE shared lexeme; that lexeme's whole family solves;
   - a missing form the lemma table does not know at all is bridged through the
     reduced-vocab forms sharing its SLUG (the real Lexique has no "accoutumes" row);
   - nothing is ever guessed: off a TTY the donor must be spelled out with --donor,
@@ -182,8 +182,9 @@ def test_off_tty_without_donor_lists_the_candidates(monkeypatch, capsys):
     with pytest.raises(SystemExit):
         _generate(monkeypatch)
     err = capsys.readouterr().err
-    for form in ("accoutumés", "accoutume", "accoutumer", "accoutumé"):
+    for form in ("accoutume", "accoutumer"):
         assert form in err
+    assert "accoutumés" not in err and "accoutumé" not in err
     assert "--donor accoutumes=" in err
 
 
@@ -197,6 +198,16 @@ def test_donor_must_have_a_vector(monkeypatch, capsys):
     with pytest.raises(SystemExit):
         _generate(monkeypatch, explicit={"accoutumes": "accoutumions"})
     assert "absent du vocabulaire réduit" in capsys.readouterr().err
+
+
+def test_donor_must_resolve_one_lexeme_not_bridge_two(monkeypatch, capsys):
+    # Both adjective and verb analyses are plausible for the missing slug, so choosing
+    # this surface would not settle which family belongs at rank 0.
+    with pytest.raises(SystemExit):
+        _generate(monkeypatch, explicit={"accoutumes": "accoutumés"})
+    err = capsys.readouterr().err
+    assert "laisse « accoutumes » ambigu" in err
+    assert "accoutumé" in err and "accoutumer" in err
 
 
 def test_untypable_secret_is_a_hard_error_even_with_a_valid_donor(monkeypatch, capsys):
@@ -235,11 +246,10 @@ def test_the_donors_whole_family_solves_the_borrowed_hole(monkeypatch):
 
 
 def test_candidates_are_sorted_by_edit_distance_then_frequency():
-    # Three forms are one edit away from "accoutumes" (accoutumés: e->é, accoutume:
-    # drop s, accoutumer: s->r) and rank by frequency; "accoutumé" is two edits away
-    # and comes last DESPITE being the most frequent of them all.
+    # The two adjective/verb homographs are deliberately absent: a donor must settle
+    # one shared lexeme. The remaining clean forms retain edit/frequency ordering.
     assert _resolver().candidates("accoutumes") == [
-        "accoutumés", "accoutume", "accoutumer", "accoutumé",
+        "accoutume", "accoutumer",
     ]
     # distance is measured on the DISPLAY forms: the accent sibling is not distance 0.
     assert gen_phrase.edit_distance("accoutumes", "accoutumés") == 1
@@ -268,9 +278,9 @@ def test_tty_prompt_defaults_to_the_suggestion_and_accepts_a_number(monkeypatch)
     cands = resolver.candidates("accoutumes")
 
     monkeypatch.setattr("builtins.input", lambda _p="": "")
-    assert resolver.choose_donor("accoutumes", cands) == "accoutumés"
-    monkeypatch.setattr("builtins.input", lambda _p="": "2")
     assert resolver.choose_donor("accoutumes", cands) == "accoutume"
+    monkeypatch.setattr("builtins.input", lambda _p="": "2")
+    assert resolver.choose_donor("accoutumes", cands) == "accoutumer"
 
 
 def test_donor_flag_parsing_rejects_a_malformed_pair(capsys):
@@ -320,8 +330,8 @@ def test_selector_asks_for_the_donor_before_ranking(monkeypatch, capsys):
         "accoutumes", "doucement", "jardin",
     ]
     # Entrée took the suggestion, and the walk started from it — not from the secret.
-    assert donors.used == {"accoutumes": ("accoutumes", "accoutumés")}
-    assert calls[0] == "accoutumés"
+    assert donors.used == {"accoutumes": ("accoutumes", "accoutume")}
+    assert calls[0] == "accoutume"
     assert ranks["accoutumes"]["accoutumes"] == {"word": "accoutumes", "rank": 0}
     assert ranks["accoutumes"]["accoutume"]["rank"] == 0
 

@@ -280,10 +280,15 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   group 0, so **an inflection of the secret solves the hole** (`vermines` solves
   `vermine`). Grouping is **strict** (the committed grouping tables — fr: the
   Morphalou lexeme inventory (#132), en: AGID —
-  no transitive merge across groups that share a form); an ambiguous form (`portes` →
-  porte/porter) aliases to whichever of its groups ranked **closest**. Merging is
-  filter-then-cap: `TOP_K` counts **distinct groups**, so ranks stay compacted. Two
-  selected secrets in one lemma group are rejected at generation.
+  no transitive merge across groups that share a form). **A cross-lexeme homograph
+  NEVER opens a group** (decided 2026-07-30): its mixed vector is skipped until a
+  clean form opens one of its lexemes, then the ambiguous form (`portes` →
+  porte/porter) aliases to whichever clean group ranked **closest**. Therefore every
+  survivor claims exactly ONE lexeme — `mois` can never fuse `moi:nc` with `mois:nc`.
+  An ambiguous SECRET is a hard generation error until #133 lets the author select
+  its exact lexeme; nothing guesses from surface frequency or POS. Merging is
+  filter-then-cap: `TOP_K` counts **distinct clean groups**, so ranks stay compacted.
+  Two selected secrets in one lemma group are rejected at generation.
 - **Rank semantics:** secret = `rank 0` (perfect); nearest lemma group = `1`; larger =
   farther. Alias keys share their group's rank.
 - **Every ranked group also carries its real geometry (`dq`, `road`) — #115, decided
@@ -365,9 +370,11 @@ Consequences that are load-bearing:
   else**, so `accoutumes` is admitted and a cross-POS homograph is declined rather
   than guessed. A gated form stays a legal **target**: `pensée` still realizes
   `penser/par:pas:f:s`.
-- **Ambiguity is described, never arbitrated.** The inventory states the cells a
-  spelling genuinely shares; an ambiguous secret asks on a TTY or needs `--form`,
-  nothing is guessed — unchanged.
+- **Agreement-feature ambiguity is described, never arbitrated.** The inventory
+  states the cells a spelling genuinely shares; a secret with several morphological
+  features asks on a TTY or needs `--form`, nothing is guessed — unchanged. This is
+  separate from the cross-lexeme homograph rule above: until #133, such a secret is
+  rejected outright because `--form` cannot choose a lexeme.
 - **Mixed-entry cleanup (the #131 hazard), measured before written:** the Morphalou
   fusion glued a few wrong paradigms INSIDE otherwise-correct entries (sortir's
   `-issant` conjugation, where `ind:pre:1s` would REALIZE «je sortis»). The build
@@ -376,14 +383,23 @@ Consequences that are load-bearing:
   (`plait`/`plaît`); a wholly single-source entry keeps its coherent paradigm.
   Measured on #131's enumerated cases: all pollution dropped, no legitimate row lost,
   −0.13% realizable verb cells.
+- **The Morphalou CSV parser fails closed at entry boundaries.** It skips the
+  distribution's prose preamble, then requires exactly 18 CSV fields on every data
+  row (quoted semicolons included); a malformed short header is a hard error, never a
+  continuation silently glued into the preceding lexeme. A small inline contract
+  fixture exercises block flushes, continuations, pronominal normalization,
+  uncategorised entries and malformed rows in CI — independent of the gitignored
+  source archive.
 - **Morphalou's enumerated holes are GUARDED, never patched** — #131 rules out any
   union of sources. `EXPECTED_CELLS` pins them (`sortir/ind:pre:1s` empty,
   `pouvoir/sub:pre:2s` lost, `conquérir + asseoir par:pas:m:p` missing, `pouvoir
   ind:pre:1s` = `puis` alone, …): the build **fails loudly** when the data under a
   pin moves, so a source bump or rule edit forces a re-audit; the committed artifact
-  is contract-tested against the same expectations. A missing agreement degrades to
-  the dictionary form downstream; a wrong one would ship a wrong word — holes beat
-  wrong forms.
+  is contract-tested against the same expectations. #132 adds separate all-POS cell
+  and homography sentinels for nouns, adjectives and closed classes; the #131 list
+  remains the complete basic-verb audit rather than pretending those are the same
+  scope. A missing agreement degrades to the dictionary form downstream; a wrong one
+  would ship a wrong word — holes beat wrong forms.
 - **Licensing travels with the artifact.** Morphalou is **LGPL-LR**; the licence text
   ships inside the distribution's own LISEZ-MOI (`#lgpllr` section), so the build
   extracts it from the exact archive into `wordlist/fr.forms.LICENSE`, and the table
@@ -1217,8 +1233,9 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   cells, noun **68,077**, adj **53,454** — and `ind:pre:2s` now exists for ~13,000
   lemmas (Lefff had 7,777, Lexique 1,901). The mixed-entry cleanup dropped 5,346
   uncorroborated rows across 1,314 entries; the #131-enumerated cells are pinned in
-  `EXPECTED_CELLS` and re-validated on every build and by the contract tests. No `en`
-  inventory — a decided non-goal, not a missing file.
+  `EXPECTED_CELLS`, with 6 all-POS cell + 3 homography sentinels for #132, and all are
+  re-validated on every build and by independent contract tests. No `en` inventory —
+  a decided non-goal, not a missing file.
 - **Hors-dico wordlists (#38):** `generation/wordlist/{fr,en}.txt.gz` are committed —
   `fr` = Lexique ∪ Hunspell fr (~169k forms), `en` = SCOWL(≤60,US) ∪ Hunspell en_US
   (~91k). Built by `build_wordlist.py`; source downloads cache in `wordlist/.cache/`

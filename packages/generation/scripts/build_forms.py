@@ -101,6 +101,7 @@ Downloads are cached under wordlist/.cache/ (gitignored); --refresh re-downloads
 """
 
 import argparse
+import csv
 import gzip
 import hashlib
 import html
@@ -309,6 +310,9 @@ def lexique_class(cgram):
         return "prep"
     if cgram.startswith("CON"):
         return "conj"
+    # Lexique's only interjection-like class is ONO. Other Morphalou interjections
+    # have no frequency counterpart and therefore use dominant_pos's conservative
+    # case 2 (admit only an uncontested analysis), never a guessed class mapping.
     if cgram == "ONO":
         return "intj"
     return cgram or "?"
@@ -415,18 +419,28 @@ def read_morphalou(csv_text, token_re):
         if dropped:
             stats["entries_cleaned"] += 1
             stats["rows_dropped"] += len(dropped)
-            if len(stats["dropped_samples"]) < 30:
+            remaining = 30 - len(stats["dropped_samples"])
+            if remaining > 0:
                 stats["dropped_samples"].extend(
-                    (key[0], key[1], feature, f) for feature, f in dropped)
+                    (key[0], key[1], feature, f)
+                    for feature, f in dropped[:remaining])
         target = lexemes.setdefault(key, {})
         for feature, forms in kept.items():
             target.setdefault(feature, set()).update(forms)
 
     key, cells = None, {}
-    for line in csv_text.splitlines():
-        cols = line.split(";")
-        if len(cols) < 18:
+    data_started = False
+    reader = csv.reader(io.StringIO(csv_text), delimiter=";", strict=True)
+    for cols in reader:
+        if not cols or not any(col.strip() for col in cols):
             continue
+        if len(cols) != 18:
+            if not data_started:
+                continue  # the distribution's 14-line prose preamble
+            raise ValueError(
+                f"Morphalou ligne {reader.line_num} : 18 colonnes attendues, "
+                f"{len(cols)} lues")
+        data_started = True
         if cols[_L_GRAPHIE]:  # a new lemma block: flush the previous source entry
             flush(key, cells)
             cells = {}
@@ -613,37 +627,82 @@ EXPECTED_CELLS = (
     ("finir", "ind:pre:1s", frozenset({"finis"}), None),
 )
 
+# #132's all-POS structural sentinels. The exhaustive #131 audit above is verbal by
+# definition; these deliberately small pins make a parser/mapping change prove that
+# nouns, adjectives and closed classes still survive with their real cells too.
+# (lemma, pos, feature, expected forms)
+EXPECTED_INVENTORY_CELLS = (
+    ("jardin", "nc", "n:s", frozenset({"jardin"})),
+    ("jardin", "nc", "n:p", frozenset({"jardins"})),
+    ("oeil", "nc", "n:p", frozenset({"oeils", "yeux"})),
+    ("grand", "adj", "adj:f:p", frozenset({"grandes"})),
+    ("vers", "prep", "cit", frozenset({"vers"})),
+    ("celui", "pro", "cit", frozenset({"celle", "celles", "celui", "ceux"})),
+)
+
+# Homography must remain derivable from the same rows (#132/#134), including
+# same-POS ambiguity (`mois`) that a POS-only gate cannot settle.
+EXPECTED_SURFACE_LEXEMES = (
+    ("vers", frozenset({"ver:nc", "vers:nc", "vers:prep"})),
+    ("mois", frozenset({"moi:nc", "mois:nc"})),
+    ("celle", frozenset({"celle:nc", "celui:pro"})),
+)
+
 
 def validate_rows(rows):
-    """Fail the build loudly when the data under an EXPECTED_CELLS pin moved.
+    """Fail loudly when data under a #131 or #132 sentinel moved.
 
     The source is digest-pinned, so a deviation means the parsing or cleanup rules
     changed — exactly the moment the #131 audit must be redone, consciously, instead
     of new morphology shipping under an old rationale."""
-    cells = {}
-    preferred = {}
+    wanted_cells = {
+        (lemma, "v", feature)
+        for lemma, feature, _expected, _first in EXPECTED_CELLS
+    } | {
+        (lemma, pos, feature)
+        for lemma, pos, feature, _expected in EXPECTED_INVENTORY_CELLS
+    }
+    wanted_surfaces = {form for form, _expected in EXPECTED_SURFACE_LEXEMES}
+    cells, preferred, surface_lexemes = {}, {}, {}
     for lemma, pos, feature, form, _dom, freq in rows:
-        if pos != "v":
-            continue
-        cells.setdefault((lemma, feature), set()).add(form)
-        best = preferred.get((lemma, feature))
-        if best is None or (-freq, form) < best[0]:
-            preferred[(lemma, feature)] = ((-freq, form), form)
+        cell = (lemma, pos, feature)
+        if cell in wanted_cells:
+            cells.setdefault(cell, set()).add(form)
+            best = preferred.get(cell)
+            if best is None or (-freq, form) < best[0]:
+                preferred[cell] = ((-freq, form), form)
+        if form in wanted_surfaces:
+            surface_lexemes.setdefault(form, set()).add(lexeme_key(lemma, pos))
     problems = []
     for lemma, feature, expected, first in EXPECTED_CELLS:
-        actual = frozenset(cells.get((lemma, feature), set()))
+        cell = (lemma, "v", feature)
+        actual = frozenset(cells.get(cell, set()))
         if actual != expected:
             problems.append(f"{lemma} / {feature} : formes {sorted(actual)}, "
                             f"attendu {sorted(expected)}")
-        elif first is not None and preferred[(lemma, feature)][1] != first:
+        elif first is not None and (
+                preferred.get(cell) is None or preferred[cell][1] != first):
+            actual_first = preferred[cell][1] if cell in preferred else "aucune"
             problems.append(f"{lemma} / {feature} : réalisation préférée "
-                            f"« {preferred[(lemma, feature)][1]} », attendue "
+                            f"« {actual_first} », attendue "
                             f"« {first} »")
+    for lemma, pos, feature, expected in EXPECTED_INVENTORY_CELLS:
+        actual = frozenset(cells.get((lemma, pos, feature), set()))
+        if actual != expected:
+            problems.append(
+                f"{lemma}:{pos} / {feature} : formes {sorted(actual)}, "
+                f"attendu {sorted(expected)}")
+    for form, expected in EXPECTED_SURFACE_LEXEMES:
+        actual = frozenset(surface_lexemes.get(form, set()))
+        if actual != expected:
+            problems.append(
+                f"surface « {form} » : lexèmes {sorted(actual)}, "
+                f"attendu {sorted(expected)}")
     if problems:
-        print("Erreur : les cellules pinnées par l'audit #131 ont bougé —\n"
+        print("Erreur : les cellules pinnées par les audits #131/#132 ont bougé —\n"
               + "".join(f"         {p}\n" for p in problems)
               + "         la source ou les règles ont changé : refais l'audit "
-                "avant de mettre à jour EXPECTED_CELLS.", file=sys.stderr)
+                "avant de mettre à jour les sentinelles.", file=sys.stderr)
         sys.exit(1)
 
 
@@ -784,6 +843,8 @@ def build(lang, *, refresh):
     # mtime=0 — via GzipFile, since gzip.open does not take it: gzip stamps the clock
     # into its header, so without this an unchanged rebuild produces a byte-different,
     # content-identical blob and dirties the working tree for nothing.
+    # build_lemmas.py / build_wordlist.py still share that wart; fixing them rewrites
+    # their committed artifacts too, so that mechanical sweep remains separate.
     with gzip.GzipFile(out_path, "wb", mtime=0) as gz, \
             io.TextIOWrapper(gz, encoding="utf-8") as f:
         for line in header_lines(lang):
@@ -816,6 +877,9 @@ def build(lang, *, refresh):
     print(f"Lignes source inexploitables : {stats['rows_unmappable']:,} ; entrées "
           f"sans catégorie : {stats['entries_no_category']:,}", file=sys.stderr)
     print(f"Gardes #131 : {len(EXPECTED_CELLS)} cellule(s) pinnée(s) vérifiée(s).",
+          file=sys.stderr)
+    print(f"Sentinelles #132 : {len(EXPECTED_INVENTORY_CELLS)} cellule(s) all-POS + "
+          f"{len(EXPECTED_SURFACE_LEXEMES)} surface(s) homographes vérifiées.",
           file=sys.stderr)
     print(f"Licence : {MORPHALOU_LICENSE_NAME} -> {lic_path}", file=sys.stderr)
     print(f"-> {out_path}", file=sys.stderr)

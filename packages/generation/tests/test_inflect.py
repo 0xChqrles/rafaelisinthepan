@@ -52,7 +52,7 @@ import build_forms
 import gen_phrase
 from build_forms import (clean_entry, collect_rows, dominant_pos, forms_path,
                          lexeme_key, lexique_class, lexique_weights, load_forms,
-                         morphalou_features, normalize_lemma)
+                         morphalou_features, normalize_lemma, read_morphalou)
 
 FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
 TABLE = load_forms(os.path.join(FIXTURES, "forms.fr.tsv"))
@@ -90,6 +90,86 @@ def _map(*entries):
 
 
 # --- the source mapping: Morphalou columns -> the internal feature vocabulary ------
+
+def _morphalou_row(lemma="", category="", form="", *, number="singular",
+                   mode="-", gender="-", tense="-", person="-",
+                   origins="morphalou2"):
+    """One 18-column source row for direct parser tests."""
+    cols = [""] * 18
+    cols[build_forms._L_GRAPHIE] = lemma
+    cols[build_forms._L_CAT] = category
+    cols[build_forms._F_GRAPHIE] = form
+    cols[build_forms._F_NOMBRE] = number
+    cols[build_forms._F_MODE] = mode
+    cols[build_forms._F_GENRE] = gender
+    cols[build_forms._F_TEMPS] = tense
+    cols[build_forms._F_PERS] = person
+    cols[build_forms._F_ORIG] = origins
+    return ";".join(cols)
+
+
+def test_read_morphalou_owns_entry_boundaries_and_normalization():
+    """Exercise the real state machine without the gitignored 38 MB source archive."""
+    text = "\n".join([
+        "Morphalou preamble",
+        _morphalou_row("jardin", "Nom commun", "jardin"),
+        _morphalou_row(form="jardins", number="plural"),
+        # An unknown-category entry and its continuation are skipped as one block;
+        # neither may leak into the preceding noun.
+        _morphalou_row("orphelin", "", "orphelin"),
+        _morphalou_row(form="orphelins", number="plural"),
+        # Pronominal and bare source entries intentionally merge into one verb lexeme.
+        _morphalou_row("se laver", "Verbe", "lave", mode="indicative",
+                       tense="present", person="firstPerson"),
+        _morphalou_row(form="lavons", number="plural", mode="indicative",
+                       tense="present", person="firstPerson"),
+        _morphalou_row("laver", "Verbe", "laves", mode="indicative",
+                       tense="present", person="secondPerson"),
+        # A quoted semicolon is one CSV field; token filtering rejects its contents
+        # without shifting every column after it.
+        _morphalou_row(form='"R;D"', mode="indicative",
+                       tense="present", person="thirdPerson"),
+    ])
+    lexemes, stats = read_morphalou(
+        text, build_forms.red.token_pattern("fr"))
+
+    assert lexemes[("jardin", "nc")] == {
+        "n:s": {"jardin"}, "n:p": {"jardins"}}
+    assert lexemes[("laver", "v")] == {
+        "ind:pre:1s": {"lave"},
+        "ind:pre:1p": {"lavons"},
+        "ind:pre:2s": {"laves"},
+    }
+    assert not any(lemma == "orphelin" for lemma, _pos in lexemes)
+    assert stats["entries_no_category"] == 1
+
+
+def test_read_morphalou_rejects_a_short_row_inside_the_data():
+    text = "\n".join([
+        "Morphalou preamble",
+        _morphalou_row("alpha", "Nom commun", "alpha"),
+        "beta;Nom commun",  # malformed new lemma header: never glue its continuation
+        _morphalou_row(form="betas", number="plural"),
+    ])
+    with pytest.raises(ValueError, match=r"ligne 3.*18 colonnes.*2 lues"):
+        read_morphalou(text, build_forms.red.token_pattern("fr"))
+
+
+def test_read_morphalou_caps_dropped_samples_exactly():
+    rows = [
+        _morphalou_row("tester", "Verbe", "teste", mode="indicative",
+                       tense="present", person="thirdPerson"),
+    ]
+    for i in range(35):
+        suffix = chr(ord("a") + i // 26) + chr(ord("a") + i % 26)
+        rows.append(_morphalou_row(
+            form=f"pollution{suffix}", mode="indicative", tense="present",
+            person="thirdPerson", origins="dela"))
+    _lexemes, stats = read_morphalou(
+        "\n".join(rows), build_forms.red.token_pattern("fr"))
+    assert stats["rows_dropped"] == 35
+    assert len(stats["dropped_samples"]) == 30
+
 
 def test_a_named_verb_row_names_one_cell():
     assert morphalou_features("v", "singular", "indicative", "-", "future",
@@ -525,17 +605,15 @@ def test_an_auxiliary_secret_still_refuses_to_guess_when_it_is_ambiguous():
 
 
 def test_a_number_invariable_participle_secret_is_asked_about():
-    # "conquis" covers m:s and the past historic, so « j'ai conquis » must not
-    # silently pick one. Several candidates -> the batch run declines and --form
-    # settles it, exactly like any other ambiguous secret.
+    # "pris" genuinely covers BOTH masculine numbers (plus the past historic), so
+    # « ils sont pris » must not silently agree its neighbours to the singular.
     resolver = gen_phrase.FormResolver(committed())
-    assert len(resolver.features_of("conquis")) > 1
-    assert "par:pas:m:s" in resolver.features_of("conquis")
-    assert resolver.feature_for("conquis") is None
+    assert {"par:pas:m:s", "par:pas:m:p"} <= set(resolver.features_of("pris"))
+    assert resolver.feature_for("pris") is None
     settled = gen_phrase.FormResolver(committed(),
-                                      explicit={"conquis": "par:pas:m:s"})
-    assert settled.feature_for("conquis") == "par:pas:m:s"
-    assert settled.realize("amusé", "par:pas:m:s") == "amusé"
+                                      explicit={"pris": "par:pas:m:p"})
+    assert settled.feature_for("pris") == "par:pas:m:p"
+    assert settled.realize("amusé", "par:pas:m:p") == "amusés"
 
 
 def test_a_rewrite_falls_back_to_a_typable_spelling():
@@ -701,6 +779,56 @@ def test_the_audited_preference_orders_hold():
         committed().entries.get("puisses", ()))
     # and the cleanup must not gut asseoir-style genuine variation elsewhere.
     assert "assois" in set(table.realize[("asseoir:v", "ind:pre:2s")])
+
+
+def test_an_inconsistent_empty_preference_pin_reports_instead_of_keyerror(
+        monkeypatch, capsys):
+    monkeypatch.setattr(
+        build_forms, "EXPECTED_CELLS",
+        (("fantôme", "ind:pre:1s", frozenset(), "fantôme"),))
+    monkeypatch.setattr(build_forms, "EXPECTED_INVENTORY_CELLS", ())
+    monkeypatch.setattr(build_forms, "EXPECTED_SURFACE_LEXEMES", ())
+
+    with pytest.raises(SystemExit):
+        build_forms.validate_rows([])
+    err = capsys.readouterr().err
+    assert "réalisation préférée « aucune »" in err
+    assert "attendue « fantôme »" in err
+
+
+@functools.lru_cache(maxsize=1)
+def committed_all_pos_cells():
+    """The shipped rows keyed before load_forms projects its verb-only view."""
+    cells = {}
+    with gzip.open(forms_path("fr"), "rt", encoding="utf-8") as f:
+        for line in f:
+            if line.startswith("#"):
+                continue
+            lemma, pos, feature, form, _dom = line.rstrip("\n").split("\t")
+            cells.setdefault((lemma, pos, feature), set()).add(form)
+    return cells
+
+
+@pytest.mark.parametrize("lemma,pos,feature,expected", [
+    ("jardin", "nc", "n:s", {"jardin"}),
+    ("jardin", "nc", "n:p", {"jardins"}),
+    ("oeil", "nc", "n:p", {"oeils", "yeux"}),
+    ("grand", "adj", "adj:f:p", {"grandes"}),
+    ("vers", "prep", "cit", {"vers"}),
+    ("celui", "pro", "cit", {"celle", "celles", "celui", "ceux"}),
+])
+def test_the_132_all_pos_sentinels_ship_exactly_as_audited(
+        lemma, pos, feature, expected):
+    assert committed_all_pos_cells().get((lemma, pos, feature)) == expected
+
+
+@pytest.mark.parametrize("form,expected", [
+    ("vers", {"ver:nc", "vers:nc", "vers:prep"}),
+    ("mois", {"moi:nc", "mois:nc"}),
+    ("celle", {"celle:nc", "celui:pro"}),
+])
+def test_the_132_homography_sentinels_ship_exactly_as_audited(form, expected):
+    assert set(committed().grouping[form]) == expected
 
 
 def test_the_grouping_is_the_same_artifact_as_the_agreement_pass():

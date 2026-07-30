@@ -4,8 +4,9 @@
     later forms alias to its {word, rank} and consume NO rank (compaction);
   - TOP_K counts distinct GROUPS (filter-then-cap);
   - the secret is group 0, so its own inflections alias to rank 0 (they solve);
-  - strict grouping: groups sharing a form do NOT transitively merge; an ambiguous
-    form attaches to whichever of its groups ranked closest;
+  - strict grouping: a cross-lexeme homograph NEVER opens/fuses groups; once a clean
+    form opens one of its lexemes, the ambiguous form aliases to the closest group;
+  - an ambiguous secret is rejected until authoring can select its exact lexeme;
   - alias expansion covers EVERY reduced-vocab form of a surviving group, including
     forms absent from the walk, and never overwrites an existing (closer) entry;
   - the slug-collision rule is unchanged on top of merging;
@@ -38,23 +39,24 @@ TABLE = {
 FORMS = gen_phrase.invert_lemmas(TABLE)
 
 
-def test_merge_ranking_closest_form_canonical_and_ranks_compacted():
-    # raw walk: privée (0), privé (1), public (2), vermines (3)
-    ranking = [("privée", 0, .9), ("privé", 1, .8), ("public", 2, .7), ("vermines", 3, .6)]
+def test_merge_ranking_closest_clean_form_canonical_and_ranks_compacted():
+    # raw walk: vermines (0), vermine (1), public (2)
+    ranking = [("vermines", 0, .9), ("vermine", 1, .8), ("public", 2, .7)]
     merged, groups = gen_phrase.merge_ranking("chat", ranking, TABLE)
 
-    # privé aliases into privée's group (both carry lemma privé), consuming no rank:
-    # public is promoted from raw rank 2 to compacted rank 1.
-    assert [(w, r) for w, r, _ in merged] == [("privée", 0), ("public", 1), ("vermines", 2)]
+    # vermine aliases into vermines' group, consuming no rank: public is promoted
+    # from raw rank 2 to compacted rank 1.
+    assert [(w, r) for w, r, _ in merged] == [("vermines", 0), ("public", 1)]
     assert groups[0] == ("chat", 0, ("chat",))  # the secret is group 0
-    assert ("privée", 1, ("privé", "priver")) in groups
+    assert ("vermines", 1, ("vermine",)) in groups
 
 
 def test_merge_ranking_top_k_counts_groups_not_raw_words():
-    ranking = [("privée", 0, .9), ("privé", 1, .8), ("vermine", 2, .7), ("porte", 3, .6)]
+    ranking = [("vermines", 0, .9), ("vermine", 1, .8),
+               ("porte", 2, .7), ("public", 3, .6)]
     merged, _groups = gen_phrase.merge_ranking("chat", ranking, TABLE, top_k=2)
-    # privé is an alias: the cap of 2 still admits vermine (filter-then-cap).
-    assert [w for w, _r, _s in merged] == ["privée", "vermine"]
+    # vermine is an alias: the cap of 2 still admits porte (filter-then-cap).
+    assert [w for w, _r, _s in merged] == ["vermines", "porte"]
 
 
 def test_secret_inflections_alias_to_rank_zero():
@@ -69,10 +71,10 @@ def test_secret_inflections_alias_to_rank_zero():
     assert rmap["porte"] == {"word": "porte", "rank": 1}  # compacted past the alias
 
 
-def test_strict_grouping_no_transitive_merge_and_ambiguous_attaches_closest():
-    # porte (rank 1) then porter (rank 2): distinct lemmas, so DISTINCT groups even
-    # though "portes" is a form of both.
-    ranking = [("porte", 0, .9), ("porter", 1, .8)]
+def test_strict_grouping_skips_an_ambiguous_opener_and_attaches_it_closest():
+    # "portes" has the closest raw vector but mixes porte + porter, so it may not
+    # open or fuse either group. Their clean forms remain DISTINCT survivors.
+    ranking = [("portes", 0, .95), ("porte", 1, .9), ("porter", 2, .8)]
     merged, groups = gen_phrase.merge_ranking("chat", ranking, TABLE)
     assert [(w, r) for w, r, _ in merged] == [("porte", 0), ("porter", 1)]
 
@@ -83,14 +85,28 @@ def test_strict_grouping_no_transitive_merge_and_ambiguous_attaches_closest():
     assert rmap["porter"] == {"word": "porter", "rank": 2}
 
 
+def test_an_ambiguous_secret_is_rejected_instead_of_claiming_every_lexeme():
+    table = {
+        "mois": ("moi:nc", "mois:nc"),
+        "moi": ("moi:nc",),
+        "année": ("année:nc",),
+    }
+    with pytest.raises(ValueError, match="secret ambigu.*moi:nc.*mois:nc"):
+        gen_phrase.merge_ranking("mois", [("année", 0, .9)], table)
+    with pytest.raises(ValueError, match="exactement un lexème"):
+        gen_phrase.merge_ranking(
+            "mois", [("année", 0, .9)], table,
+            secret_lemmas=("moi:nc", "mois:nc"))
+
+
 def test_expand_aliases_covers_vocab_forms_absent_from_walk_and_respects_vset():
-    # privait never appeared among the neighbors; it still hits privée's rank.
-    ranking = [("privée", 0, .9)]
+    # privait never appeared among the neighbors; it still hits priver's rank.
+    ranking = [("priver", 0, .9)]
     merged, groups = gen_phrase.merge_ranking("chat", ranking, TABLE)
     rmap = gen_phrase.build_rank_map("chat", merged)
-    gen_phrase.expand_aliases(rmap, groups, FORMS, {"privée", "privait"})
+    gen_phrase.expand_aliases(rmap, groups, FORMS, {"priver", "privait"})
 
-    assert rmap["privait"] == {"word": "privée", "rank": 1}
+    assert rmap["privait"] == {"word": "priver", "rank": 1}
     # privés is a form of the group but NOT in the reduced vocab: no unreachable key.
     assert "prives" not in rmap
 
@@ -115,9 +131,8 @@ def test_closer_alias_wins_slug_collision_against_farther_canonical():
 
 
 def test_max_selectable_groups_is_exact_not_greedy():
-    # Sentence order offers the ambiguous "portes" FIRST (lemmas porte + porter). A
-    # greedy walk would let it claim both lemmas and count only 2 groups; committing
-    # "porte", "porter" and "chien" separately is still a valid trio.
+    # Sentence order offers the ambiguous "portes" first; it is not selectable until
+    # #133 can name one lexeme. The clean porte, porter and chien remain a valid trio.
     def cand(word, pos):
         return {"pos": pos, "secret": word, "prefix": "", "suffix": ""}
 
@@ -127,6 +142,18 @@ def test_max_selectable_groups_is_exact_not_greedy():
     # Without the third independent word, no conflict-free trio exists.
     cands = [cand("portes", 0), cand("porte", 1), cand("porter", 2)]
     assert gen_phrase.max_selectable_groups(cands, TABLE) == 2
+
+
+def test_interactive_candidates_hide_cross_lexeme_homographs():
+    cfg = gen_phrase.CONFIG["fr"]
+    words = ["ce", "mois", "reste", "sombre"]
+    table = {
+        "mois": ("moi:nc", "mois:nc"),
+        "sombre": ("sombre:adj",),
+    }
+    cands = gen_phrase.extract_candidates(
+        words, cfg, {"mois", "sombre"}, lemma_table=table)
+    assert [c["secret"] for c in cands] == ["sombre"]
 
 
 def test_empty_table_reproduces_pre_104_rank_map():
@@ -170,3 +197,23 @@ def test_same_group_selected_secrets_rejected(monkeypatch):
     assert {h["secret"]["slug"] for h in holes} == {"vermine", "porte", "chien"}
     # every rank map got its aliases: vermines solves the vermine hole.
     assert ranks["vermine"]["vermines"]["rank"] == 0
+
+
+def test_batch_authoring_rejects_a_cross_lexeme_homograph(capsys):
+    table = {
+        "mois": ("moi:nc", "mois:nc"),
+        "moi": ("moi:nc",),
+        "jardin": ("jardin:nc",),
+        "sombre": ("sombre:adj",),
+    }
+    with pytest.raises(SystemExit):
+        gen_phrase.holes_from_words(
+            ["mois", "jardin", "sombre"],
+            ["ce", "mois", "est", "sombre", "au", "jardin"],
+            gen_phrase.CONFIG["fr"], "fr",
+            kv=None, V=[], M=None, Vset={"mois", "jardin", "sombre"},
+            lemma_table=table, forms_by_lemma=gen_phrase.invert_lemmas(table),
+        )
+    err = capsys.readouterr().err
+    assert "plusieurs lexèmes" in err
+    assert "moi:nc" in err and "mois:nc" in err
