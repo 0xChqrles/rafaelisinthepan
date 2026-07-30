@@ -290,26 +290,26 @@ def lemmas_of(word, lemma_table):
     return lemma_table.get(word, (word,))
 
 
-def is_cross_lexeme_homograph(word, lemma_table):
-    """Does `word` name more than one lexeme in the committed inventory?
+def claimed_lemmas(lemmas):
+    """The lexemes a group headed by a surface with `lemmas` may CLAIM.
 
-    Such a surface is useful as an ALIAS once one of its clean lexemes has opened a
-    group, but it cannot safely open a group itself: claiming every analysis would
-    fuse unrelated words (`mois` -> moi:nc + mois:nc, `fut` -> fut:nc + être:v).
-    Sentence context will select one exact lexeme in #133; until then an ambiguous
-    secret is declined rather than guessed."""
-    return len(lemmas_of(word, lemma_table)) > 1
+    A surface naming exactly one lexeme claims it: that is #104's merge, unchanged.
+    A CROSS-LEXEME HOMOGRAPH claims NOTHING and is its own singleton group. Its
+    vector is a blend of unrelated words, so claiming its analyses would fuse them —
+    `mois` would claim `moi:nc` and every form of «moi» would alias to it (typing
+    «moi» would SOLVE a `mois` hole); `bois` would claim `boire:v` and drag the whole
+    of «boire» to the distance of a wood.
 
+    Claiming nothing costs only COMPACTION — the surface keeps its own true rank and
+    its own canonical display, and each of its lexemes is still opened by its own
+    clean forms — so an uncertain identity degrades to "not merged", never to
+    "merged with the wrong word". It is the same trade the agreement pass makes:
+    holes beat wrong forms.
 
-def require_unambiguous_secret(word, lemma_table):
-    """Return a secret's sole lexeme, or stop authoring rather than infer its sense."""
-    lemmas = lemmas_of(word, lemma_table)
-    if len(lemmas) > 1:
-        die(f"« {word} » appartient à plusieurs lexèmes "
-            f"({', '.join(lemmas)}) : la génération ne peut pas deviner lequel "
-            "désigne la phrase. Choisis un autre mot cible ; #133 ajoutera la "
-            "sélection explicite du lexème.")
-    return lemmas
+    Note what this does NOT restrict: an ambiguous surface still ALIASES into an
+    already-open group when it shares that group's claimed lexeme, so «portes» still
+    attaches to whichever of porte/porter ranked closest (#104, unchanged)."""
+    return lemmas if len(lemmas) == 1 else ()
 
 
 def invert_lemmas(lemma_table):
@@ -327,19 +327,21 @@ def merge_ranking(secret_display, ranking, lemma_table, top_k=TOP_K, secret_lemm
 
     Walk closest-first. A word sharing ANY lemma with an earlier (closer) group is an
     alias of that group: it consumes NO rank (its slug keys are added later by
-    expand_aliases). A cross-lexeme homograph with no claimed analysis is SKIPPED:
-    its mixed vector cannot safely represent any one of its lexemes. The first clean
-    form of each lexeme opens that group instead; alias expansion later attaches the
-    ambiguous surface to whichever clean group ranked closest. Therefore every
-    survivor claims exactly ONE lexeme and unrelated homographs never fuse.
-    The secret itself is group 0, so its own inflections alias to rank 0 (they SOLVE
-    the hole — decided in #104), but an ordinary ambiguous secret is rejected rather
-    than allowed to claim several lexemes. Filter-then-cap: the walk stops once top_k
-    clean groups have PASSED, not after top_k raw neighbors.
+    expand_aliases) — so a later ambiguous form ("portes" -> porte/porter) attaches
+    to whichever of its groups ranked closest. Every other word OPENS a group at its
+    own true rank, whether or not it is a homograph, but it claims only what
+    `claimed_lemmas` allows: exactly one lexeme, or NOTHING when the surface names
+    several. Therefore no group ever claims two lexemes, and unrelated words can
+    never fuse. The secret itself is group 0, so its own inflections alias to rank 0
+    (they SOLVE the hole — decided in #104) whenever the secret names one lexeme; an
+    ambiguous secret claims nothing, so no unrelated word can solve its hole (its own
+    inflections then rank as their own groups rather than at 0 — a compaction the
+    data cannot justify, not a wrong answer). Filter-then-cap: the walk stops once
+    top_k groups have PASSED, not after top_k raw neighbors.
 
     `secret_lemmas` overrides what group 0 claims; it is what a borrowed vector (#119)
-    uses to carry the donor's explicitly resolved identity (see group_lemmas). Without
-    an override, the secret must name exactly one lexeme.
+    uses to carry the donor's identity too (see group_lemmas). Left None — always, on
+    the ordinary path — group 0 claims the secret's own lexeme, if it has just one.
 
     Returns (merged, groups):
       merged: [(word, rank_index, sim)] — the survivors, same shape as `ranking`
@@ -349,17 +351,8 @@ def merge_ranking(secret_display, ranking, lemma_table, top_k=TOP_K, secret_lemm
               secret at rank 0, ascending by rank (expand_aliases' input).
     """
     if secret_lemmas is None:
-        secret_lemmas = lemmas_of(secret_display, lemma_table)
-        if len(secret_lemmas) > 1:
-            raise ValueError(
-                f"secret ambigu « {secret_display} » : "
-                f"{', '.join(secret_lemmas)}")
-    else:
-        secret_lemmas = tuple(secret_lemmas)
-    if len(secret_lemmas) != 1:
-        raise ValueError(
-            f"le groupe secret « {secret_display} » doit désigner exactement un "
-            f"lexème (reçu : {', '.join(secret_lemmas) or 'aucun'})")
+        secret_lemmas = claimed_lemmas(lemmas_of(secret_display, lemma_table))
+    secret_lemmas = tuple(secret_lemmas)
     taken = set(secret_lemmas)
     groups = [(secret_display, 0, secret_lemmas)]
     merged = []
@@ -367,11 +360,12 @@ def merge_ranking(secret_display, ranking, lemma_table, top_k=TOP_K, secret_lemm
         lemmas = lemmas_of(w, lemma_table)
         if any(lemma in taken for lemma in lemmas):
             continue  # alias of a closer group: no rank consumed.
-        if len(lemmas) > 1:
-            continue  # mixed vector: wait for a clean form of one of its lexemes.
+        # The word opens a group at its true rank either way; only what it CLAIMS
+        # depends on whether its surface names one lexeme (see claimed_lemmas).
+        claimed = claimed_lemmas(lemmas)
         merged.append((w, len(merged), sim))
-        groups.append((w, len(merged), lemmas))
-        taken.update(lemmas)
+        groups.append((w, len(merged), claimed))
+        taken.update(claimed)
         if len(merged) >= top_k:
             break
     return merged, groups
@@ -572,11 +566,10 @@ def donor_candidates(lemmas, word, forms_by_lemma, Vset, freq_index):
 
 def free_donors(secret, used_lemmas, lemma_table, donors):
     """The donor candidates that would NOT merge `secret` into an already committed
-    group. A borrowed vector makes the secret's group claim the ONE lexeme that the
-    explicit donor resolves (see group_lemmas), so a spent donor would hole one word
-    twice."""
+    group. A borrowed vector gives the secret the donor's identity (see group_lemmas),
+    so a donor whose lemma is spent would hole one word twice."""
     return [d for d in donors.candidates(secret)
-            if not (set(group_lemmas(secret, d, lemma_table, donors)) & used_lemmas)]
+            if not (set(group_lemmas(secret, d, lemma_table)) & used_lemmas)]
 
 
 def spent_candidate(secret, used_slugs, used_lemmas, lemma_table, donors=None):
@@ -594,29 +587,39 @@ def spent_candidate(secret, used_slugs, used_lemmas, lemma_table, donors=None):
     donor = secret if donors is None else donors.resolved(secret)
     if donor is None:
         return not free_donors(secret, used_lemmas, lemma_table, donors)
-    return bool(set(group_lemmas(secret, donor, lemma_table, donors)) & used_lemmas)
+    return bool(set(group_lemmas(secret, donor, lemma_table)) & used_lemmas)
 
 
-def group_lemmas(secret, donor, lemma_table, donors=None):
-    """The lemma set the secret's group claims in the merge walk.
+def group_lemmas(secret, donor, lemma_table):
+    """The secret's IDENTITY: which lexemes count as "the same word" as this hole.
 
-    Without a substitution: the secret's own (necessarily unambiguous) lexeme. With
-    one: the DonorResolver returns the ONE lexeme shared by secret and donor, because
-    choosing a surface that still leaves two possible lexemes would merely move the
-    homograph guess. Every form of that resolved lexeme aliases to rank 0 and solves."""
+    Without a substitution: the secret's own lemmas (unchanged, #104). With one: the
+    donor's too, because the borrowed identity has to be complete — a form the
+    grouping table does not know is its own singleton group, so without the donor's
+    lemmas its own family would rank as strangers around it.
+
+    This is the DUPLICATE-HOLE test ("one word, one hole set"), so it stays the FULL
+    set: two occurrences of one family must clash even when neither can claim its
+    lexemes in the walk. What the group actually claims there is this run through
+    `claimed_lemmas` — a stricter set, and deliberately a separate question."""
+    lemmas = list(lemmas_of(secret, lemma_table))
     if donor != secret:
-        if donors is None:
-            raise ValueError(
-                f"un DonorResolver est requis pour résoudre « {secret} » via "
-                f"« {donor} »")
-        lemmas = donors.group_keys(secret, donor)
-    else:
-        lemmas = tuple(lemmas_of(secret, lemma_table))
-    if len(lemmas) != 1:
-        raise ValueError(
-            f"le groupe secret « {secret} » doit désigner exactement un lexème "
-            f"(reçu : {', '.join(lemmas) or 'aucun'})")
-    return lemmas
+        lemmas += [l for l in lemmas_of(donor, lemma_table) if l not in lemmas]
+    return tuple(lemmas)
+
+
+def group_claim(secret, donor, lemma_table):
+    """What the secret's group CLAIMS in the merge walk.
+
+    The restriction is on GUESSING, not on grouping: `claimed_lemmas` refuses to pick
+    an identity for an ambiguous surface, because nothing in the data chooses one. A
+    BORROWED vector (#119) is the case where something does — the author named the
+    donor, on a TTY prompt or with --donor — so a stated identity is claimed whole,
+    exactly as before, and the donor's family still solves the hole."""
+    lemmas = group_lemmas(secret, donor, lemma_table)
+    if donor != secret:
+        return lemmas
+    return claimed_lemmas(lemmas)
 
 
 class DonorResolver:
@@ -684,35 +687,17 @@ class DonorResolver:
         return tuple(lemmas)
 
     def shared_lemmas(self, word, donor):
-        """Lexemes that `donor` can explicitly resolve for `word`, in table order."""
+        """Lexemes `donor` has in common with `word`, in table order."""
         wanted = set(self.lemmas_for(word))
         return tuple(lemma for lemma in lemmas_of(donor, self.lemma_table)
                      if lemma in wanted)
 
-    def group_keys(self, word, donor):
-        """The one lexeme an explicit donor settles for a vector-less secret."""
-        shared = self.shared_lemmas(word, donor)
-        if len(shared) != 1:
-            # `_validate` normally catches this before authoring reaches the group
-            # walk; keep this boundary fail-closed for direct callers too.
-            self._validate(word, donor)
-        return shared
-
     def candidates(self, word):
-        """Unambiguous donor candidates for one missing form, cached.
-
-        A candidate that shares two possible lexemes with the secret does not resolve
-        anything (`accoutumés` can be adjective or verb), so it is omitted. The human
-        chooses a donor surface, not a hidden lexeme key; one shared key is therefore
-        the only honest eligibility rule."""
+        """Donor candidates for one missing form (cached per display form)."""
         if word not in self._candidates:
-            candidates = donor_candidates(
+            self._candidates[word] = donor_candidates(
                 self.lemmas_for(word), word, self.forms_by_lemma, self.Vset,
                 self.freq_index)
-            self._candidates[word] = [
-                donor for donor in candidates
-                if len(self.shared_lemmas(word, donor)) == 1
-            ]
         return self._candidates[word]
 
     def typable(self, word):
@@ -743,18 +728,13 @@ class DonorResolver:
         return donor
 
     def _validate(self, word, donor):
-        """A --donor pair must name a vector and resolve exactly one shared lexeme."""
+        """A --donor pair must name a real vector AND a genuine same-lemma form."""
         if donor not in self.Vset:
             die(f"--donor : « {donor} » est absent du vocabulaire réduit "
                 f"'{self.lang}' (aucun vecteur à emprunter).")
-        shared = self.shared_lemmas(word, donor)
-        if not shared:
+        if not self.shared_lemmas(word, donor):
             die(f"--donor : « {donor} » ne partage aucun lemme avec « {word} » ; "
                 f"donneurs valides : {', '.join(self.candidates(word)) or 'aucun'}.")
-        if len(shared) > 1:
-            die(f"--donor : « {donor} » laisse « {word} » ambigu entre "
-                f"{', '.join(shared)} ; choisis une forme qui n'en désigne qu'un "
-                f"(donneurs valides : {', '.join(self.candidates(word)) or 'aucun'}).")
 
     def start_display_error(self, start, display):
         """Why `display` cannot stand in for the start word `start` — None when it can.
@@ -1300,7 +1280,7 @@ def _sgr(codes, text):
     return f"{_ESC}[{codes}m{text}{_ESC}[0m"
 
 
-def extract_candidates(words, cfg, Vset, donors=None, lemma_table=None):
+def extract_candidates(words, cfg, Vset, donors=None):
     """The selectable occurrences in a sentence: for each token, its first word-core
     whose DISPLAY form is in Vset (i.e. survived reduction). Returns [{pos, secret,
     prefix, suffix}] — one entry per holeable token position.
@@ -1316,9 +1296,7 @@ def extract_candidates(words, cfg, Vset, donors=None, lemma_table=None):
     With a DonorResolver (#119) a core that has no vector is ALSO selectable when a
     same-lemma form can lend it one and the secret stays typable; the selector then
     asks which form before ranking it. Without one (or when nothing qualifies) such a
-    core is simply not offered, exactly as before. When the grouping table is supplied,
-    a cross-lexeme homograph is not offered as a secret: until #133 asks the author for
-    its exact lexeme, selecting it would let unrelated forms solve the hole."""
+    core is simply not offered, exactly as before."""
     cands = []
     for pos, token in enumerate(words):
         for m in cfg["core_re"].finditer(token):
@@ -1326,9 +1304,6 @@ def extract_candidates(words, cfg, Vset, donors=None, lemma_table=None):
             if not slug(secret):
                 continue
             if secret in Vset or (donors is not None and donors.eligible(secret)):
-                if lemma_table is not None and \
-                        is_cross_lexeme_homograph(secret, lemma_table):
-                    continue
                 cands.append({"pos": pos, "secret": secret,
                               "prefix": token[:m.start()], "suffix": token[m.end():]})
                 break
@@ -1339,17 +1314,17 @@ def max_selectable_groups(cands, lemma_table, need=3):
     """The largest number (capped at `need`) of pairwise lemma-disjoint distinct-slug
     candidates — CAN three holes be committed, in SOME order?
 
-    Cross-lexeme homographs are not selectable until #133 can name one intended
-    lexeme. Sentences hold few distinct words, so the remaining exact search over
-    combinations is exhaustive and instant."""
+    A greedy sentence-order count is wrong here: a multi-lemma form encountered first
+    ("portes" → porte + porter) would occupy BOTH lemmas and hide that committing
+    "porte" and "porter" separately still works. Sentences hold few distinct words, so
+    an exact search over combinations is exhaustive and instant. It weighs IDENTITY
+    (group_lemmas' question — could these two be the same word?), not what a group
+    claims in the walk, so a homograph still blocks its own family here."""
     from itertools import combinations
 
     by_slug = {}
     for c in cands:  # one representative per distinct slug (first occurrence)
-        lemmas = lemmas_of(c["secret"], lemma_table)
-        if len(lemmas) > 1:
-            continue
-        by_slug.setdefault(slug(c["secret"]), set(lemmas))
+        by_slug.setdefault(slug(c["secret"]), set(lemmas_of(c["secret"], lemma_table)))
     lemma_sets = list(by_slug.values())
     for size in range(min(need, len(lemma_sets)), 0, -1):
         for combo in combinations(lemma_sets, size):
@@ -1419,7 +1394,7 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
     import termios
     import tty
 
-    cands = extract_candidates(words, cfg, Vset, donors, lemma_table)
+    cands = extract_candidates(words, cfg, Vset, donors)
 
     # Feasibility pre-check, on the table's own groups. A word still waiting for a donor
     # counts as its own group here — its group is only decided by that choice (#119) —
@@ -1447,13 +1422,12 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
     def prep(secret, donor):
         secret_slug = slug(secret)
         if secret_slug not in cache:
-            require_unambiguous_secret(secret, lemma_table)
             # The walk starts from the DONOR's vector; everything the puzzle keeps
             # (rank-0 word, aliases, start band) stays on the true sentence form.
             ranking = cfg["module"].closest(donor, kv, V, M, n=None)
             merged, rank_map = build_puzzle_rank_map(
                 secret, ranking, lemma_table, forms_by_lemma, Vset,
-                secret_lemmas=group_lemmas(secret, donor, lemma_table, donors))
+                secret_lemmas=group_claim(secret, donor, lemma_table))
             rbd = {secret: 0}
             for w, r, _ in merged:
                 rbd[w] = r + 1
@@ -1623,7 +1597,7 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                             ))
                         used_slugs.add(secret_slug)
                         used_lemmas.update(
-                            group_lemmas(secret, donor, lemma_table, donors))
+                            group_lemmas(secret, donor, lemma_table))
                         if donors is not None:  # the hole exists now: the borrow is real
                             donors.note_used(secret, donor)
                         mode, numbuf = "nav", ""
@@ -1734,22 +1708,22 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
                     f"vocabulaire réduit '{lang}'. Choisis un autre mot cible, ou "
                     f"ajuste puis relance la réduction (scripts/reduce_embedding.py).")
         canonical_secret = canonical[0]
-        require_unambiguous_secret(canonical_secret, lemma_table)
         # The GEOMETRY source: the secret itself when it has a vector, else its donor.
         # Everything else below keeps using the true sentence form.
         donor = donors.donor_for(canonical_secret) if donors is not None else canonical_secret
 
         # Two selected secrets in one lemma group would be one word holed twice. A
-        # borrowed vector carries the one lexeme resolved by its donor, so a sibling
-        # of that lexeme is "the same word" as well (#119).
-        secret_lemmas = group_lemmas(
-            canonical_secret, donor, lemma_table, donors)
-        for lemma in secret_lemmas:
+        # borrowed vector carries the donor's lemmas too, so a sibling of the donor is
+        # "the same word" as well (#119). This test weighs the FULL identity, while
+        # the walk below claims only what the surface unambiguously names.
+        identity = group_lemmas(canonical_secret, donor, lemma_table)
+        for lemma in identity:
             if lemma in used_lemmas:
                 die(f"'{raw}' et '{used_lemmas[lemma]}' sont des formes du même mot "
                     f"(lemme commun « {lemma} ») : choisis 3 mots distincts.")
-        for lemma in secret_lemmas:
+        for lemma in identity:
             used_lemmas[lemma] = raw
+        secret_lemmas = group_claim(canonical_secret, donor, lemma_table)
 
         # Ranking, lemma merging and start selection happen ONCE per distinct secret
         # slug. The walk needs the FULL raw ranking: merging collapses inflections,

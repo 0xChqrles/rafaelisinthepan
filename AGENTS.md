@@ -280,15 +280,27 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   group 0, so **an inflection of the secret solves the hole** (`vermines` solves
   `vermine`). Grouping is **strict** (the committed grouping tables — fr: the
   Morphalou lexeme inventory (#132), en: AGID —
-  no transitive merge across groups that share a form). **A cross-lexeme homograph
-  NEVER opens a group** (decided 2026-07-30): its mixed vector is skipped until a
-  clean form opens one of its lexemes, then the ambiguous form (`portes` →
-  porte/porter) aliases to whichever clean group ranked **closest**. Therefore every
-  survivor claims exactly ONE lexeme — `mois` can never fuse `moi:nc` with `mois:nc`.
-  An ambiguous SECRET is a hard generation error until #133 lets the author select
-  its exact lexeme; nothing guesses from surface frequency or POS. Merging is
-  filter-then-cap: `TOP_K` counts **distinct clean groups**, so ranks stay compacted.
-  Two selected secrets in one lemma group are rejected at generation.
+  no transitive merge across groups that share a form); an ambiguous form (`portes` →
+  porte/porter) aliases to whichever of its groups ranked **closest**. **A group may
+  never claim TWO lexemes** (decided 2026-07-30, tightening the walk for the all-POS
+  inventory): a cross-lexeme homograph still **opens a group at its own true rank**,
+  like any other word, but it **CLAIMS NOTHING** — its vector is a blend of unrelated
+  words, so it may not stand for either. Without that, `mois` would claim `moi:nc`
+  and typing «moi» would SOLVE a `mois` hole; `bois` would claim `boire:v` and drag
+  the whole of «boire» to the distance of a wood. **The restriction is on CLAIMING,
+  not on ranking or aliasing** — the surface keeps its rank and its own display, each
+  of its lexemes is still opened by its own clean forms, and it still aliases INTO an
+  already-open group that claimed one of its lexemes. So the cost is **compaction
+  only**: an uncertain identity degrades to "not merged", never to "merged with the
+  wrong word" — the same trade as the agreement pass, holes beat wrong forms. The
+  same rule applies to the SECRET, so an ambiguous secret is **fully authorable**
+  (`amer`, `plissés`, `maison` are ~44% of frequent fr words) — its own inflections
+  simply rank as their own groups instead of aliasing to 0. **An explicit `--donor`
+  (#119) is exempt**: the author STATED that identity, so it is claimed whole; the
+  walk never states one by itself. Merging is filter-then-cap: `TOP_K` counts
+  **distinct groups**, so ranks stay compacted. Two selected secrets in one lemma
+  group are still rejected at generation — that test weighs the FULL identity, a
+  deliberately separate question from what a group may claim.
 - **Rank semantics:** secret = `rank 0` (perfect); nearest lemma group = `1`; larger =
   farther. Alias keys share their group's rank.
 - **Every ranked group also carries its real geometry (`dq`, `road`) — #115, decided
@@ -373,8 +385,9 @@ Consequences that are load-bearing:
 - **Agreement-feature ambiguity is described, never arbitrated.** The inventory
   states the cells a spelling genuinely shares; a secret with several morphological
   features asks on a TTY or needs `--form`, nothing is guessed — unchanged. This is
-  separate from the cross-lexeme homograph rule above: until #133, such a secret is
-  rejected outright because `--form` cannot choose a lexeme.
+  separate from the cross-lexeme homograph rule above, which needs no question
+  because it needs no answer: an unclaimed group is already correct, so nothing waits
+  on #133's explicit lexeme selection.
 - **Mixed-entry cleanup (the #131 hazard), measured before written:** the Morphalou
   fusion glued a few wrong paradigms INSIDE otherwise-correct entries (sortir's
   `-issant` conjugation, where `ind:pre:1s` would REALIZE «je sortis»). The build

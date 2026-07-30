@@ -124,11 +124,8 @@ def test_kind_is_an_open_union():
 
 
 def _run_main(monkeypatch, tmp_path, extra_argv):
-    vocab = ["chat", "poursuit", "jardin", "arbre", "forêt"]
-    kv = {"arbre": [1.0, 0.0, 0.0], "forêt": [0.0, 1.0, 0.0]}
-    # Path tests use a synthetic vocabulary; isolate them from real Morphalou
-    # homographs so they continue testing only the output layout.
-    monkeypatch.setattr(gen_phrase, "load_lemma_table", lambda *_a, **_k: {})
+    vocab = ["chat", "poursuit", "jardin", "indice", "proche"]
+    kv = {"indice": [1.0, 0.0, 0.0], "proche": [0.0, 1.0, 0.0]}
     monkeypatch.setattr(FR["module"], "load_vectors", lambda: kv, raising=False)
     monkeypatch.setattr(FR["module"], "build_vocab", lambda _kv: vocab, raising=False)
     monkeypatch.setattr(
@@ -137,15 +134,14 @@ def _run_main(monkeypatch, tmp_path, extra_argv):
     monkeypatch.setattr(
         FR["module"],
         "closest",
-        lambda _secret, _kv, _v, _m, *, n: [
-            ("arbre", 86, 0.9), ("forêt", 87, 0.5)],
+        lambda _secret, _kv, _v, _m, *, n: [("indice", 86, 0.9), ("proche", 87, 0.5)],
         raising=False,
     )
     monkeypatch.setattr(gen_phrase, "write_vocab", lambda _v, _lang: None)
     monkeypatch.setattr(
         gen_phrase,
         "choose_start",
-        lambda _secret, _ranking, _rank_map, _rank_by_display: "arbre",
+        lambda _secret, _ranking, _rank_map, _rank_by_display: "indice",
     )
     monkeypatch.setattr(
         gen_phrase.sys,
