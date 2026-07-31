@@ -1261,7 +1261,16 @@ class FormResolver:
         --form is a hard error — no prompt ever blocks a batch run, and no batch run
         ever guesses. --no-inflect is the explicit opt-out that reproduces
         agreement-free output byte for byte. Asked at most once per secret slug;
-        None (a declined agreement) is an answer and is cached like one."""
+        None (a declined agreement) is an answer and is cached like one.
+
+        A settled trait OUTSIDE the secret's listed analyses is a WARNING, not an
+        error — deliberately, on both counts. The table can be incomplete for the
+        surface while right about the cell («sors» carries no ind:pre:1s analysis,
+        one of the pinned Morphalou holes, yet « je sors » is exactly that trait),
+        so refusing would make such a sentence un-authorable; but when analyses
+        exist, an unlisted trait is nearly always a typo, so it is said out loud.
+        Checked here rather than in the --form parse so a trait typed at the prompt
+        gets the same scrutiny as a flag."""
         if self.table is None:
             return None
         key = slug(secret)
@@ -1276,14 +1285,22 @@ class FormResolver:
                 analyses = self.analyses_of(secret)
                 listing = "\n".join("         " + line
                                     for line in self._analysis_lines(analyses))
-                suggestion = analyses[0][0] if analyses else "TRAIT"
+                example = f" — ex. --form {secret}={analyses[0][0]}" if analyses \
+                    else ""
                 die(f"la forme de « {secret} » doit être explicite hors mode "
                     f"interactif (#133 : jamais déduite, même sans ambiguïté).\n"
                     + (f"         Analyses connues :\n{listing}\n" if analyses
                        else f"         Aucune analyse connue dans la table.\n")
-                    + f"         Passe --form {secret}={suggestion} "
-                    f"(ou --no-inflect pour désactiver l'accord).")
+                    + f"         Passe --form {secret}=TRAIT{example} — ou "
+                    f"--no-inflect pour désactiver l'accord.")
             feature = self._prompt(secret)
+        if feature is not None:
+            known = self.features_of(secret)
+            if known and feature not in known:
+                print(f"  attention : « {feature} » n'est aucune des analyses "
+                      f"connues de « {secret} » ({', '.join(known)}) — accord "
+                      f"appliqué quand même (table incomplète, ou faute de "
+                      f"frappe ?).", file=sys.stderr)
         self._chosen[key] = feature
         return feature
 

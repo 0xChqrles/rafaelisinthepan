@@ -837,8 +837,13 @@ def load_forms(path):
             features.add(feature)
             if dom == "1":
                 # dom marks the POS that dominates this surface (dominant_pos), so
-                # every dom=1 row of one form names the same pos.
-                dominant[form] = pos
+                # every dom=1 row of one form names the same pos — enforced, like
+                # the field-count check above: a hand-edited table with conflicting
+                # dom=1 rows would otherwise load last-writer-wins, silently.
+                if dominant.setdefault(form, pos) != pos:
+                    raise ValueError(
+                        f"{path}:{lineno}: « {form} » est dom=1 pour deux POS "
+                        f"({dominant[form]}, {pos}) — table corrompue ?")
     return Lexicon({form: tuple(keys) for form, keys in grouping.items()},
                    {form: tuple(pairs) for form, pairs in entries.items()},
                    dominant,

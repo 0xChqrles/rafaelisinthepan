@@ -437,12 +437,15 @@ def test_every_secret_needs_an_explicit_form_off_a_tty(capsys):
         _resolver().feature_for("compris")
     err = capsys.readouterr().err
     assert "jamais déduite" in err
-    assert "--form compris=ind:pas:1s" in err   # the fix, copy-pastable
+    # the fix stays copy-pastable but reads as an EXAMPLE, never a default: the
+    # alphabetically-first analysis is the least likely reading of "compris", and
+    # an error whose remedy line implies a pick would quietly contradict #133.
+    assert "ex. --form compris=ind:pas:1s" in err
     assert "par:pas:m:s" in err                 # ...and every analysis listed
     # ...but ALSO the unambiguous one (#133's point: never inferred, even at 999/1000):
     with pytest.raises(SystemExit):
         _resolver().feature_for("marchait")
-    assert "--form marchait=ind:imp:3s" in capsys.readouterr().err
+    assert "ex. --form marchait=ind:imp:3s" in capsys.readouterr().err
     # --form settles both without a prompt.
     assert _resolver(explicit={"compris": "par:pas:m:s"}).feature_for("compris") == \
         "par:pas:m:s"
@@ -454,6 +457,37 @@ def test_unknown_form_flag_is_a_clear_error(capsys):
     with pytest.raises(SystemExit):
         _resolver(explicit={"compris": "ind:pre:9z"}).feature_for("compris")
     assert "n'est pas un trait connu" in capsys.readouterr().err
+
+
+def test_a_trait_outside_the_secrets_analyses_warns_but_runs(capsys):
+    # A KNOWN trait outside the secret's listed analyses is nearly always a typo —
+    # --form compris=n:p would run a nominal transfer over a participle's
+    # neighborhood — so it is said on stderr. But it is a WARNING, not an error:
+    # the table can be right about the cell while incomplete for the surface
+    # («sors» carries no ind:pre:1s analysis, a pinned Morphalou hole, yet
+    # « je sors » is exactly that trait), so refusing would make such a sentence
+    # un-authorable. The human stays the authority; the script just points.
+    resolver = _resolver(explicit={"compris": "n:p"})
+    assert resolver.feature_for("compris") == "n:p"
+    err = capsys.readouterr().err
+    assert "n'est aucune des analyses connues" in err
+    assert "ind:pas:1s" in err   # the listed analyses ride along, for the re-check
+    # a listed trait warns nothing...
+    quiet = _resolver(explicit={"compris": "par:pas:m:s"})
+    assert quiet.feature_for("compris") == "par:pas:m:s"
+    assert capsys.readouterr().err == ""
+    # ...and an unknown surface has no analyses to check against.
+    free = _resolver(explicit={"inconnu": "ind:pre:2s"})
+    assert free.feature_for("inconnu") == "ind:pre:2s"
+    assert capsys.readouterr().err == ""
+
+
+def test_the_analysis_warning_covers_the_prompt_path_too(monkeypatch, capsys):
+    # The check lives where the trait is SETTLED, not in the --form parse: a trait
+    # typed at the TTY prompt gets the same scrutiny as a flag.
+    monkeypatch.setattr("builtins.input", lambda _p="": "n:p")
+    assert _resolver(interactive=True).feature_for("compris") == "n:p"
+    assert "n'est aucune des analyses connues" in capsys.readouterr().err
 
 
 def test_form_flag_parsing_rejects_a_malformed_pair(capsys):
@@ -1115,6 +1149,19 @@ def test_a_truncated_table_fails_loudly(tmp_path):
                       encoding="utf-8")
     with pytest.raises(ValueError, match="champs attendus"):
         load_forms(str(broken))
+
+
+def test_conflicting_dominant_rows_fail_loudly(tmp_path):
+    # dominant_pos marks exactly ONE POS per surface, so two dom=1 POS for one form
+    # can only come from a hand-edited or corrupt table — which must fail like a
+    # truncated one, not load last-writer-wins.
+    broken = tmp_path / "forms.tsv"
+    broken.write_text("porte\tnc\tn:s\tporte\t1\nporter\tv\tind:pre:3s\tporte\t1\n",
+                      encoding="utf-8")
+    with pytest.raises(ValueError, match="dom=1 pour deux POS"):
+        load_forms(str(broken))
+    # ...while several dom=1 LEXEMES of one POS stay legal («durent» in the fixture).
+    assert TABLE.dominant.get("durent") == "v"
 
 
 def test_form_flag_is_case_insensitive_on_both_sides():
