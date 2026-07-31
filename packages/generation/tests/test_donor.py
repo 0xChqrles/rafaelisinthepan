@@ -234,6 +234,35 @@ def test_the_donors_whole_family_solves_the_borrowed_hole(monkeypatch):
         assert rmap[gen_phrase.slug(form)]["word"] == "accoutumes"
 
 
+def test_a_borrowed_group_claims_the_SHARED_lexeme_never_the_union():
+    # A donor pair names a SURFACE — which vector to borrow — not a lexeme. «fut» is
+    # both the cask fut:nc and a past historic of être:v; borrowing its vector for the
+    # secret «futs» says "use fut's vector", NOT "the cask and être are one word".
+    # Claiming the union put every form of être at rank 0 of a noun hole — the same
+    # fusion the ordinary walk refuses. Only what the two SHARE may be claimed.
+    table = {
+        "futs": ("fut:nc",),
+        "fut": ("fut:nc", "être:v"),
+        "suis": ("être:v",),
+        "sera": ("être:v",),
+    }
+    donors = gen_phrase.DonorResolver(
+        table, gen_phrase.invert_lemmas(table),
+        ["fut", "suis", "sera"], {"fut", "suis", "sera"}, "fr")
+    assert gen_phrase.group_claim("futs", "fut", table, donors) == ("fut:nc",)
+    # the cask's own family still solves — the donor stays useful...
+    assert "fut:nc" in gen_phrase.group_lemmas("futs", "fut", table)
+    # ...while être:v, which the secret never names, can never be claimed.
+    assert "être:v" not in gen_phrase.group_claim("futs", "fut", table, donors)
+    # and a donor sharing SEVERAL lexemes settles nothing, so it claims nothing.
+    ambiguous = {"pensees": ("penser:v", "pensée:nc"),
+                 "pensées": ("penser:v", "pensée:nc")}
+    amb_donors = gen_phrase.DonorResolver(
+        ambiguous, gen_phrase.invert_lemmas(ambiguous),
+        ["pensées"], {"pensées"}, "fr")
+    assert gen_phrase.group_claim("pensees", "pensées", ambiguous, amb_donors) == ()
+
+
 def test_candidates_are_sorted_by_edit_distance_then_frequency():
     # Three forms are one edit away from "accoutumes" (accoutumés: e->é, accoutume:
     # drop s, accoutumer: s->r) and rank by frequency; "accoutumé" is two edits away
@@ -323,7 +352,30 @@ def test_selector_asks_for_the_donor_before_ranking(monkeypatch, capsys):
     assert donors.used == {"accoutumes": ("accoutumes", "accoutumés")}
     assert calls[0] == "accoutumés"
     assert ranks["accoutumes"]["accoutumes"] == {"word": "accoutumes", "rank": 0}
-    assert ranks["accoutumes"]["accoutume"]["rank"] == 0
+    # This fixture's "accoutumés" shares BOTH lemmas with the secret, so it settles
+    # neither and the group claims nothing: the secret still holds rank 0 alone, and
+    # no form of either lemma is dragged there. (The committed inventory bridges
+    # "accoutumes" to a single lexeme, where the family does solve — see
+    # test_the_donors_whole_family_solves_the_borrowed_hole, and the real-table
+    # coverage test below.)
+    assert "accoutume" not in ranks["accoutumes"]
+    assert "accoutumer" not in ranks["accoutumes"]
+
+
+def test_the_committed_inventory_resolves_the_flagship_borrow_to_one_lexeme():
+    # The fixture above is Lexique-shaped and predates #132. Against the artifact that
+    # actually ships, "accoutumes" bridges to a SINGLE lexeme, so every candidate
+    # resolves it and the borrowed family really does solve — the claim rule costs
+    # nothing here. Guards the fixture from quietly becoming the only thing tested.
+    import build_forms
+    table = build_forms.load_forms(build_forms.forms_path("fr")).grouping
+    vocab = ["accoutumés", "accoutumer", "accoutume"]
+    donors = gen_phrase.DonorResolver(
+        table, gen_phrase.invert_lemmas(table), vocab, set(vocab), "fr")
+    assert donors.lemmas_for("accoutumes") == ("accoutumer:v",)
+    for cand in donors.candidates("accoutumes"):
+        assert gen_phrase.group_claim("accoutumes", cand, table, donors) == \
+            ("accoutumer:v",)
 
 
 def test_answering_the_donor_question_is_not_using_the_donor():

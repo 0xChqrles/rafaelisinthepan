@@ -608,18 +608,32 @@ def group_lemmas(secret, donor, lemma_table):
     return tuple(lemmas)
 
 
-def group_claim(secret, donor, lemma_table):
-    """What the secret's group CLAIMS in the merge walk.
+def group_claim(secret, donor, lemma_table, donors=None):
+    """What the secret's group CLAIMS in the merge walk — at most ONE lexeme.
 
-    The restriction is on GUESSING, not on grouping: `claimed_lemmas` refuses to pick
-    an identity for an ambiguous surface, because nothing in the data chooses one. A
-    BORROWED vector (#119) is the case where something does — the author named the
-    donor, on a TTY prompt or with --donor — so a stated identity is claimed whole,
-    exactly as before, and the donor's family still solves the hole."""
-    lemmas = group_lemmas(secret, donor, lemma_table)
-    if donor != secret:
-        return lemmas
-    return claimed_lemmas(lemmas)
+    Without a substitution: the secret's own lexeme, if its surface names just one
+    (see claimed_lemmas).
+
+    With a BORROWED vector (#119), the claim is what the two SHARE, never the union
+    of what they name. A donor pair names a SURFACE — which vector to borrow — not a
+    lexeme: choosing «fut» for the secret «futs» says "use fut's vector", NOT "the
+    cask and the verb être are the same word". Claiming the union did exactly that,
+    and every form of être then aliased to rank 0 of a noun hole — the very fusion
+    the ordinary path refuses. The intersection keeps the donor useful (`futs`/`fut`
+    still share `fut:nc`, so the cask's family still solves) while `être:v`, which
+    the secret never names, can never be claimed.
+
+    `donors` supplies the slug-sibling bridge for a secret the table does not know
+    (`accoutumes`), which is the whole reason a borrowed identity exists; without a
+    resolver the plain intersection is used, which is fail-closed."""
+    if donor == secret:
+        return claimed_lemmas(lemmas_of(secret, lemma_table))
+    if donors is not None:
+        shared = donors.shared_lemmas(secret, donor)
+    else:
+        wanted = set(lemmas_of(secret, lemma_table))
+        shared = tuple(l for l in lemmas_of(donor, lemma_table) if l in wanted)
+    return claimed_lemmas(shared)
 
 
 class DonorResolver:
@@ -1427,7 +1441,7 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
             ranking = cfg["module"].closest(donor, kv, V, M, n=None)
             merged, rank_map = build_puzzle_rank_map(
                 secret, ranking, lemma_table, forms_by_lemma, Vset,
-                secret_lemmas=group_claim(secret, donor, lemma_table))
+                secret_lemmas=group_claim(secret, donor, lemma_table, donors))
             rbd = {secret: 0}
             for w, r, _ in merged:
                 rbd[w] = r + 1
@@ -1723,7 +1737,8 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
                     f"(lemme commun « {lemma} ») : choisis 3 mots distincts.")
         for lemma in identity:
             used_lemmas[lemma] = raw
-        secret_lemmas = group_claim(canonical_secret, donor, lemma_table)
+        secret_lemmas = group_claim(
+            canonical_secret, donor, lemma_table, donors)
 
         # Ranking, lemma merging and start selection happen ONCE per distinct secret
         # slug. The walk needs the FULL raw ranking: merging collapses inflections,

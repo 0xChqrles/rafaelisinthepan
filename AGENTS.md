@@ -295,9 +295,15 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   wrong word" — the same trade as the agreement pass, holes beat wrong forms. The
   same rule applies to the SECRET, so an ambiguous secret is **fully authorable**
   (`amer`, `plissés`, `maison` are ~44% of frequent fr words) — its own inflections
-  simply rank as their own groups instead of aliasing to 0. **An explicit `--donor`
-  (#119) is exempt**: the author STATED that identity, so it is claimed whole; the
-  walk never states one by itself. Merging is filter-then-cap: `TOP_K` counts
+  simply rank as their own groups instead of aliasing to 0. **A borrowed vector
+  (#119) claims what the secret and its donor SHARE, never the union of what they
+  name** (decided 2026-07-30): a `--donor` pair names a SURFACE — which vector to
+  borrow — not a lexeme, so choosing `fut` for the secret `futs` says "use fut's
+  vector", NOT "the cask and the verb être are the same word". Claiming the union
+  said exactly that, and every form of `être` aliased to rank 0 of a noun hole. The
+  intersection keeps the donor useful (`futs`/`fut` still share `fut:nc`, so the
+  cask's family still solves) and, run through the same one-lexeme rule, can never
+  reach a lexeme the secret does not name. Merging is filter-then-cap: `TOP_K` counts
   **distinct groups**, so ranks stay compacted. Two selected secrets in one lemma
   group are still rejected at generation — that test weighs the FULL identity, a
   deliberately separate question from what a group may claim.
