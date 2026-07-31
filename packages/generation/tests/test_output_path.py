@@ -155,6 +155,9 @@ def _run_main(monkeypatch, tmp_path, extra_argv):
             "jardin",
             "chat",
             "poursuit",
+            # agreement is out of scope here, and #133 makes a fr batch run without
+            # --form a hard error — opt out explicitly rather than settle three forms.
+            "--no-inflect",
             "--out-dir",
             str(tmp_path),
             *extra_argv,

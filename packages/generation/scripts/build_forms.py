@@ -166,6 +166,24 @@ CATEGORIES = {
 CITATION_POS = frozenset(CATEGORIES.values()) - {"v", "nc", "adj"}
 CITATION_FEATURE = "cit"
 
+
+def feature_pos(feature):
+    """The POS a feature belongs to — #133's per-POS transfer policy, in one place.
+
+    A feature IS a cell of one part of speech's paradigm (`n:p` names a noun cell,
+    `adj:f:p` an adjective cell, everything else a verb cell), so the secret's
+    confirmed feature decides which neighbours can agree at all: only a lexeme of
+    that POS has the cell. A cross-POS neighbour and every citation-only class keep
+    their citation form — no target form is defined for them — which is why `cit`
+    maps to None: a citation-form secret prescribes nothing to anyone."""
+    if feature == CITATION_FEATURE:
+        return None
+    if feature.startswith("n:"):
+        return "nc"
+    if feature.startswith("adj:"):
+        return "adj"
+    return "v"
+
 # The provenance classes the cleanup trusts: the curated ATILF core, and the two
 # independently compiled morphologies. dela/dicollecte are mechanical imports whose
 # UNCORROBORATED rows are exactly where #131 found the wrong paradigms.
@@ -774,10 +792,10 @@ def row_line(lemma, pos, feature, form, dom):
 
 # The loader's product. `grouping` spans EVERY POS — it is what gen_phrase's merge
 # walk consumes (#104's lemma_table shape: form -> lexeme keys). The other four are
-# the VERB view the display-agreement pass (#119) reads, shaped exactly as before —
-# only the lemma strings became lexeme keys, one namespace with `grouping`, which is
-# the point of #132: the grouping walk and the agreement pass can no longer disagree
-# about what a form belongs to.
+# the agreement views the display pass (#119, whole vocabulary since #133) reads —
+# every POS, the lemma strings as lexeme keys, one namespace with `grouping`, which
+# is the point of #132: the grouping walk and the agreement pass can no longer
+# disagree about what a form belongs to.
 Lexicon = namedtuple("Lexicon", "grouping entries dominant realize features")
 
 
@@ -785,11 +803,12 @@ def load_forms(path):
     """Load a committed inventory into the indexes gen_phrase needs.
 
     grouping  form -> (lexeme key, ...)         — ALL POS: the #104 merge-walk table
-    entries   form -> ((lexeme key, feature), ...)  — verb rows: what a surface IS
-    dominant  {form}                             — surfaces dominantly read as a verb
-    realize   (lexeme key, feature) -> (form, ...)  — verb rows: EVERY spelling,
+    entries   form -> ((lexeme key, feature), ...)  — every POS: what a surface IS
+    dominant  form -> pos                        — the POS that dominates a surface's
+              reading (the `dom` gate); absent when no reading dominates
+    realize   (lexeme key, feature) -> (form, ...)  — every POS: EVERY spelling,
               preferred first
-    features  {feature}                          — the verb inventory (--form checks)
+    features  {feature}                          — the cell inventory (--form checks)
 
     `realize` keeps the whole ordered candidate list, not just the winner: the
     caller's typability check falls back to the next spelling («déblaies» loses to
@@ -798,7 +817,7 @@ def load_forms(path):
     `#` lines are the provenance/licence header and are skipped; any other malformed
     line is an error, loudly, because a truncated artifact would otherwise load as a
     partial table and agree half a puzzle."""
-    grouping, entries, dominant, realize, features = {}, {}, set(), {}, set()
+    grouping, entries, dominant, realize, features = {}, {}, {}, {}, set()
     opener = gzip.open if path.endswith(".gz") else open
     with opener(path, "rt", encoding="utf-8") as f:
         for lineno, line in enumerate(f, 1):
@@ -813,13 +832,13 @@ def load_forms(path):
             keys = grouping.setdefault(form, [])
             if key not in keys:
                 keys.append(key)
-            if pos != "v":
-                continue
             entries.setdefault(form, []).append((key, feature))
             realize.setdefault((key, feature), []).append(form)
             features.add(feature)
             if dom == "1":
-                dominant.add(form)
+                # dom marks the POS that dominates this surface (dominant_pos), so
+                # every dom=1 row of one form names the same pos.
+                dominant[form] = pos
     return Lexicon({form: tuple(keys) for form, keys in grouping.items()},
                    {form: tuple(pairs) for form, pairs in entries.items()},
                    dominant,

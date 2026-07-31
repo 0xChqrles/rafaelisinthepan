@@ -501,6 +501,9 @@ def test_main_writes_the_puzzle_and_names_the_substitution(monkeypatch, tmp_path
         "gen_phrase.py", SENTENCE, "--lang", "fr",
         "--words", "accoutumes", "doucement", "jardin",
         "--donor", "accoutumes=accoutume",
+        # #133 makes a fr batch run without --form a hard error; this test is about
+        # the donor substitution, so agreement opts out explicitly.
+        "--no-inflect",
         "--out-dir", str(tmp_path),
     ])
 
