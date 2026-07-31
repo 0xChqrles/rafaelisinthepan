@@ -179,8 +179,10 @@ def test_closer_alias_wins_slug_collision_against_farther_canonical():
 
 
 def test_max_selectable_groups_is_exact_not_greedy():
-    # Sentence order offers the ambiguous "portes" first; it is not selectable until
-    # #133 can name one lexeme. The clean porte, porter and chien remain a valid trio.
+    # Sentence order offers the ambiguous "portes" first. It IS selectable (see the
+    # homograph test below) — but its FULL identity spans porte AND porter, so it
+    # cannot join a trio holding either; a greedy walk stopping on it would miss that
+    # committing the clean porte, porter and chien separately is a valid trio.
     def cand(word, pos):
         return {"pos": pos, "secret": word, "prefix": "", "suffix": ""}
 

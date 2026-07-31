@@ -380,6 +380,12 @@ def clean_entry(cells):
     spelling survives). An entry with no corroborated row at all is a coherent
     single-source paradigm and keeps everything — the hazard is MIXING.
 
+    The scope is deliberately the SOURCE ENTRY, not the merged lexeme: a wholly
+    uncorroborated homonym entry passes here whole and read_morphalou then merges it
+    into its (lemma, pos) — pollution arriving as a SEPARATE entry would slip this
+    rule. #131 found none in this release, and the EXPECTED_CELLS pins are what
+    guard the claim; on a source bump, re-audit this seam first.
+
     Returns (kept, dropped): kept as {feature: {form}}, dropped as a row list."""
     has_core = any(origins & TRUSTED_ORIGINS
                    for forms in cells.values() for origins in forms.values())
