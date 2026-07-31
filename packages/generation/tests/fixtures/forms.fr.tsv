@@ -1,28 +1,34 @@
-accoutumer	ind:pre:1s	accoutume	1
-accoutumer	inf	accoutumer	1
-amuser	ind:imp:3s	amusait	1
-amuser	ind:pre:1s	amuse	1
-amuser	ind:pre:2s	amuses	1
-amuser	ind:pre:3s	amuse	1
-amuser	par:pas:m:s	amusé	1
-comprendre	ind:pas:1s	compris	1
-comprendre	ind:pas:2s	compris	1
-comprendre	par:pas:m:s	compris	1
-devoir	ind:pas:3p	durent	1
-devoir	ind:pre:2s	dois	1
-distraire	ind:pre:2s	distrais	1
-distraire	inf	distraire	1
-durer	ind:pre:2s	dures	1
-durer	ind:pre:3p	durent	1
-lasser	ind:pre:2s	lasses	1
-lasser	par:pas:m:p	lassés	1
-marcher	ind:imp:3s	marchait	1
-marcher	ind:pre:2s	marches	1
-noyer	ind:imp:3s	noyait	1
-noyer	ind:pre:2s	noies	1
-noyer	par:pas:m:s	noyé	1
-penser	imp:pre:2s	pensé	1
-penser	par:pas:f:s	pensée	0
-penser	par:pas:m:s	pensé	1
-évider	ind:pre:3p	évident	0
-évider	par:pas:m:s	évidé	1
+accoutumer	v	ind:pre:1s	accoutume	1
+accoutumer	v	inf	accoutumer	1
+amuser	v	ind:imp:3s	amusait	1
+amuser	v	ind:pre:1s	amuse	1
+amuser	v	ind:pre:2s	amuses	1
+amuser	v	ind:pre:3s	amuse	1
+amuser	v	par:pas:m:s	amusé	1
+comprendre	v	ind:pas:1s	compris	1
+comprendre	v	ind:pas:2s	compris	1
+comprendre	v	par:pas:m:s	compris	1
+devoir	v	ind:pas:3p	durent	1
+devoir	v	ind:pre:2s	dois	1
+distraire	v	ind:pre:2s	distrais	1
+distraire	v	inf	distraire	1
+durer	v	ind:pre:2s	dures	1
+durer	v	ind:pre:3p	durent	1
+jardin	nc	n:s	jardin	1
+jardin	nc	n:p	jardins	1
+lasser	v	ind:pre:2s	lasses	1
+lasser	v	par:pas:m:p	lassés	1
+marcher	v	ind:imp:3s	marchait	1
+marcher	v	ind:pre:2s	marches	1
+noyer	v	ind:imp:3s	noyait	1
+noyer	v	ind:pre:2s	noies	1
+noyer	v	par:pas:m:s	noyé	1
+penser	v	imp:pre:2s	pensé	1
+penser	v	par:pas:f:s	pensée	0
+penser	v	par:pas:m:s	pensé	1
+pensée	nc	n:s	pensée	1
+pensée	nc	n:p	pensées	1
+évident	adj	adj:m:s	évident	1
+évident	adj	adj:m:p	évidents	1
+évider	v	ind:pre:3p	évident	0
+évider	v	par:pas:m:s	évidé	1

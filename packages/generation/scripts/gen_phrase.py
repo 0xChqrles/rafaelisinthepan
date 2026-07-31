@@ -65,6 +65,7 @@ Usage :
 """
 
 import argparse
+import functools
 import json
 import os
 import random
@@ -100,8 +101,8 @@ GEN_OUTPUT = os.path.join(ROOT, "output")
 
 import french_neighbors as frn
 import glove_neighbors as gn
-from build_forms import FORM_LANGS, forms_path, load_forms  # lemma+trait→forme (#119)
-from build_lemmas import lemmas_path, load_lemmas  # stdlib-only form→lemma table (#104)
+from build_forms import FORM_LANGS, forms_path, load_forms  # fr lexeme inventory (#132)
+from build_lemmas import lemmas_path, load_lemmas  # en form→lemma table (#104)
 from distances import cluster_roads, quantize_dq, road_zone  # dq / road annotations (#115)
 from slug import path_slug, slug, write_vocab  # slug/fold contract, dir names, vocab
 from start_word import pick_start, start_band
@@ -229,22 +230,52 @@ def build_rank_map(secret_display, ranking):
     return rmap
 
 
-# --- Lemma grouping (#104) ------------------------------------------------------
+# --- Lemma grouping (#104, unified inventory #132) --------------------------------
 # Inflected forms of one word ("privé"/"privée"/"privés", "vermine"/"vermines") are
-# ONE ranked group in a rank map. The committed form→lemma table (build_lemmas.py)
-# says which forms belong together; merging itself happens HERE, at generation time,
-# on the closest-first walk — a generalization of the slug-collision rule with a
-# coarser key. Embeddings, the reduction and the vocab existence set are untouched.
+# ONE ranked group in a rank map. The committed grouping table says which forms
+# belong together; merging itself happens HERE, at generation time, on the
+# closest-first walk — a generalization of the slug-collision rule with a coarser
+# key. Embeddings, the reduction and the vocab existence set are untouched.
+#
+# Since #132 the fr grouping comes from the SAME artifact as display agreement (the
+# Morphalou lexeme inventory, build_forms.py): one dictionary defines the lexeme for
+# grouping, ranking and display alike, so the merge walk and the agreement pass can
+# no longer disagree about what a form belongs to. Its group keys are lexeme keys
+# («porter:v», «porte:nc») — opaque to everything downstream. en keeps its AGID
+# form→lemma table (build_lemmas.py), a decided non-goal, not a gap.
+
+@functools.lru_cache(maxsize=None)
+def _load_lexicon(lang):
+    """Load (once) the committed lexeme inventory for a language (#132).
+
+    One artifact feeds BOTH the merge walk (grouping) and the agreement pass (the
+    verb view), so it is loaded once and shared. Missing or corrupt -> hard error,
+    like the hors-dico wordlist: silently generating without it would ship
+    near-duplicate ranks or a half-agreed puzzle."""
+    path = forms_path(lang)
+    if not os.path.exists(path):
+        die(f"inventaire de lexèmes introuvable : {path}\n"
+            f"         construis-le avec scripts/build_forms.py (pnpm forms:{lang}), "
+            f"ou passe --no-lemmas et --no-inflect pour t'en passer.")
+    try:
+        return load_forms(path)
+    except ValueError as exc:  # a truncated artifact is a startup failure
+        die(f"inventaire de lexèmes illisible : {exc}\n"
+            f"         reconstruis-le avec scripts/build_forms.py "
+            f"(pnpm forms:{lang}).")
+
 
 def load_lemma_table(lang, disabled=False):
-    """Load the committed form→lemma table for a language.
+    """Load the committed grouping table for a language.
 
-    Missing table -> hard error (like the hors-dico wordlist): silently generating
-    without merging would ship near-duplicate ranks. --no-lemmas opts out explicitly
-    and returns an empty table, under which every word is its own singleton group —
-    byte-identical to pre-#104 output."""
+    fr reads the unified inventory's grouping (#132); en reads its AGID form→lemma
+    table (#104). Missing table -> hard error either way. --no-lemmas opts out
+    explicitly and returns an empty table, under which every word is its own
+    singleton group — byte-identical to pre-#104 output."""
     if disabled:
         return {}
+    if lang in FORM_LANGS:
+        return _load_lexicon(lang).grouping
     path = lemmas_path(lang)
     if not os.path.exists(path):
         die(f"table forme→lemme introuvable : {path}\n"
@@ -257,6 +288,28 @@ def lemmas_of(word, lemma_table):
     """The lemma group key(s) of a word. Absent from the table = its own singleton
     group; two forms merge ONLY when the table says so (strict grouping)."""
     return lemma_table.get(word, (word,))
+
+
+def claimed_lemmas(lemmas):
+    """The lexemes a group headed by a surface with `lemmas` may CLAIM.
+
+    A surface naming exactly one lexeme claims it: that is #104's merge, unchanged.
+    A CROSS-LEXEME HOMOGRAPH claims NOTHING and is its own singleton group. Its
+    vector is a blend of unrelated words, so claiming its analyses would fuse them —
+    `mois` would claim `moi:nc` and every form of «moi» would alias to it (typing
+    «moi» would SOLVE a `mois` hole); `bois` would claim `boire:v` and drag the whole
+    of «boire» to the distance of a wood.
+
+    Claiming nothing costs only COMPACTION — the surface keeps its own true rank and
+    its own canonical display, and each of its lexemes is still opened by its own
+    clean forms — so an uncertain identity degrades to "not merged", never to
+    "merged with the wrong word". It is the same trade the agreement pass makes:
+    holes beat wrong forms.
+
+    Note what this does NOT restrict: an ambiguous surface still ALIASES into an
+    already-open group when it shares that group's claimed lexeme, so «portes» still
+    attaches to whichever of porte/porter ranked closest (#104, unchanged)."""
+    return lemmas if len(lemmas) == 1 else ()
 
 
 def invert_lemmas(lemma_table):
@@ -274,16 +327,21 @@ def merge_ranking(secret_display, ranking, lemma_table, top_k=TOP_K, secret_lemm
 
     Walk closest-first. A word sharing ANY lemma with an earlier (closer) group is an
     alias of that group: it consumes NO rank (its slug keys are added later by
-    expand_aliases). A word opening a new group is a survivor: it gets the next
-    compacted rank and claims ALL of its lemmas — so a later ambiguous form
-    ("portes" -> porte/porter) attaches to whichever of its groups ranked closest.
-    The secret itself is group 0, so its own inflections alias to rank 0 (they SOLVE
-    the hole — decided in #104). Filter-then-cap: the walk stops once top_k groups
-    have PASSED, not after top_k raw neighbors.
+    expand_aliases) — so a later ambiguous form ("portes" -> porte/porter) attaches
+    to whichever of its groups ranked closest. Every other word OPENS a group at its
+    own true rank, whether or not it is a homograph, but it claims only what
+    `claimed_lemmas` allows: exactly one lexeme, or NOTHING when the surface names
+    several. Therefore no group ever claims two lexemes, and unrelated words can
+    never fuse. The secret itself is group 0, so its own inflections alias to rank 0
+    (they SOLVE the hole — decided in #104) whenever the secret names one lexeme; an
+    ambiguous secret claims nothing, so no unrelated word can solve its hole (its own
+    inflections then rank as their own groups rather than at 0 — a compaction the
+    data cannot justify, not a wrong answer). Filter-then-cap: the walk stops once
+    top_k groups have PASSED, not after top_k raw neighbors.
 
     `secret_lemmas` overrides what group 0 claims; it is what a borrowed vector (#119)
     uses to carry the donor's identity too (see group_lemmas). Left None — always, on
-    the ordinary path — group 0 claims the secret's own lemmas, unchanged.
+    the ordinary path — group 0 claims the secret's own lexeme, if it has just one.
 
     Returns (merged, groups):
       merged: [(word, rank_index, sim)] — the survivors, same shape as `ranking`
@@ -292,7 +350,9 @@ def merge_ranking(secret_display, ranking, lemma_table, top_k=TOP_K, secret_lemm
       groups: [(canonical_display, rank, lemmas)] — every group INCLUDING the
               secret at rank 0, ascending by rank (expand_aliases' input).
     """
-    secret_lemmas = secret_lemmas or lemmas_of(secret_display, lemma_table)
+    if secret_lemmas is None:
+        secret_lemmas = claimed_lemmas(lemmas_of(secret_display, lemma_table))
+    secret_lemmas = tuple(secret_lemmas)
     taken = set(secret_lemmas)
     groups = [(secret_display, 0, secret_lemmas)]
     merged = []
@@ -300,9 +360,12 @@ def merge_ranking(secret_display, ranking, lemma_table, top_k=TOP_K, secret_lemm
         lemmas = lemmas_of(w, lemma_table)
         if any(lemma in taken for lemma in lemmas):
             continue  # alias of a closer group: no rank consumed.
+        # The word opens a group at its true rank either way; only what it CLAIMS
+        # depends on whether its surface names one lexeme (see claimed_lemmas).
+        claimed = claimed_lemmas(lemmas)
         merged.append((w, len(merged), sim))
-        groups.append((w, len(merged), lemmas))
-        taken.update(lemmas)
+        groups.append((w, len(merged), claimed))
+        taken.update(claimed)
         if len(merged) >= top_k:
             break
     return merged, groups
@@ -503,8 +566,8 @@ def donor_candidates(lemmas, word, forms_by_lemma, Vset, freq_index):
 
 def free_donors(secret, used_lemmas, lemma_table, donors):
     """The donor candidates that would NOT merge `secret` into an already committed
-    group. A borrowed vector makes the secret's group claim the donor's lemmas (see
-    group_lemmas), so a donor whose lemma is spent would hole one word twice."""
+    group. A borrowed vector gives the secret the donor's identity (see group_lemmas),
+    so a donor whose lemma is spent would hole one word twice."""
     return [d for d in donors.candidates(secret)
             if not (set(group_lemmas(secret, d, lemma_table)) & used_lemmas)]
 
@@ -528,18 +591,49 @@ def spent_candidate(secret, used_slugs, used_lemmas, lemma_table, donors=None):
 
 
 def group_lemmas(secret, donor, lemma_table):
-    """The lemma set the secret's group claims in the merge walk.
+    """The secret's IDENTITY: which lexemes count as "the same word" as this hole.
 
     Without a substitution: the secret's own lemmas (unchanged, #104). With one: the
-    donor's too, because the borrowed identity has to be complete — every form of the
-    donor's lemma then aliases to rank 0 and SOLVES the hole, exactly as an inflection
-    of an ordinary secret does. That is not cosmetic: a form the lemma table does not
-    know ("accoutumes" has no Lexique row) is its own singleton group, so without the
-    donor's lemmas its own family would rank as strangers around it."""
+    donor's too, because the borrowed identity has to be complete — a form the
+    grouping table does not know is its own singleton group, so without the donor's
+    lemmas its own family would rank as strangers around it.
+
+    This is the DUPLICATE-HOLE test ("one word, one hole set"), so it stays the FULL
+    set: two occurrences of one family must clash even when neither can claim its
+    lexemes in the walk. What the group actually claims there is this run through
+    `claimed_lemmas` — a stricter set, and deliberately a separate question."""
     lemmas = list(lemmas_of(secret, lemma_table))
     if donor != secret:
         lemmas += [l for l in lemmas_of(donor, lemma_table) if l not in lemmas]
     return tuple(lemmas)
+
+
+def group_claim(secret, donor, lemma_table, donors=None):
+    """What the secret's group CLAIMS in the merge walk — at most ONE lexeme.
+
+    Without a substitution: the secret's own lexeme, if its surface names just one
+    (see claimed_lemmas).
+
+    With a BORROWED vector (#119), the claim is what the two SHARE, never the union
+    of what they name. A donor pair names a SURFACE — which vector to borrow — not a
+    lexeme: choosing «fut» for the secret «futs» says "use fut's vector", NOT "the
+    cask and the verb être are the same word". Claiming the union did exactly that,
+    and every form of être then aliased to rank 0 of a noun hole — the very fusion
+    the ordinary path refuses. The intersection keeps the donor useful (`futs`/`fut`
+    still share `fut:nc`, so the cask's family still solves) while `être:v`, which
+    the secret never names, can never be claimed.
+
+    `donors` supplies the slug-sibling bridge for a secret the table does not know
+    (`accoutumes`), which is the whole reason a borrowed identity exists; without a
+    resolver the plain intersection is used, which is fail-closed."""
+    if donor == secret:
+        return claimed_lemmas(lemmas_of(secret, lemma_table))
+    if donors is not None:
+        shared = donors.shared_lemmas(secret, donor)
+    else:
+        wanted = set(lemmas_of(secret, lemma_table))
+        shared = tuple(l for l in lemmas_of(donor, lemma_table) if l in wanted)
+    return claimed_lemmas(shared)
 
 
 class DonorResolver:
@@ -593,10 +687,10 @@ class DonorResolver:
 
         The committed table when it knows the form. Otherwise the table is asked about
         the reduced-vocab forms sharing `word`'s SLUG — the very words that make the
-        secret typable. That bridge is what carries the real French case: Lexique has
-        rows for accoutume / accoutumés / accoutumer but NONE for "accoutumes", so the
-        missing form has no lemma of its own and only its accent sibling can name the
-        group. Returns () when nothing knows the word — then there is no donor."""
+        secret typable. The bridge carries a sentence form the grouping table happens
+        not to state: such a form has no lemma of its own, and only its accent
+        sibling can name the group. Returns () when nothing knows the word — then
+        there is no donor."""
         if word in self.lemma_table:
             return tuple(self.lemma_table[word])
         lemmas = []
@@ -605,6 +699,12 @@ class DonorResolver:
                 if lemma not in lemmas:
                     lemmas.append(lemma)
         return tuple(lemmas)
+
+    def shared_lemmas(self, word, donor):
+        """Lexemes `donor` has in common with `word`, in table order."""
+        wanted = set(self.lemmas_for(word))
+        return tuple(lemma for lemma in lemmas_of(donor, self.lemma_table)
+                     if lemma in wanted)
 
     def candidates(self, word):
         """Donor candidates for one missing form (cached per display form)."""
@@ -646,8 +746,7 @@ class DonorResolver:
         if donor not in self.Vset:
             die(f"--donor : « {donor} » est absent du vocabulaire réduit "
                 f"'{self.lang}' (aucun vecteur à emprunter).")
-        shared = set(self.lemmas_for(word)) & set(lemmas_of(donor, self.lemma_table))
-        if not shared:
+        if not self.shared_lemmas(word, donor):
             die(f"--donor : « {donor} » ne partage aucun lemme avec « {word} » ; "
                 f"donneurs valides : {', '.join(self.candidates(word)) or 'aucun'}.")
 
@@ -907,8 +1006,9 @@ def alias_start_display(rank_map, start, display, start_rank):
 # The agreement target is the SECRET's own morphology (it IS the correctly inflected
 # form), so nothing has to be guessed from the sentence; the author is asked only when
 # the forms table has no analysis for the secret or gives it several. Realizing a
-# neighbour into that form is then a lookup in the committed table (build_forms.py,
-# Lefff-derived since #119 addendum 3).
+# neighbour into that form is then a lookup in the committed inventory
+# (build_forms.py, Morphalou-derived since #132 — the same artifact the merge walk
+# groups by, so display and grouping can never disagree about a form's lexeme).
 
 def parse_form_args(pairs):
     """`--form MOT=TRAIT` occurrences -> {slug(mot): trait}.
@@ -928,28 +1028,19 @@ def parse_form_args(pairs):
 
 
 def load_form_table(lang, disabled=False):
-    """Load the committed lemma+feature→form table for a language.
+    """Load the agreement (verb) view of the lexeme inventory for a language.
 
-    A language with no table (en — see FORM_LANGS) has no agreement pass at all: that
-    is a decided non-goal, so it returns None silently rather than erroring. For a
-    language that HAS one, a missing file is a hard error like the lemma table and the
-    hors-dico wordlist; --no-inflect opts out explicitly and reproduces pre-addendum
-    output exactly."""
+    A language with no inventory (en — see FORM_LANGS) has no agreement pass at all:
+    that is a decided non-goal, so it returns None silently rather than erroring. For
+    a language that HAS one, a missing file is a hard error like the hors-dico
+    wordlist (_load_lexicon, shared with the grouping so the file is parsed once);
+    --no-inflect opts out explicitly and reproduces agreement-free output exactly.
+    Loaded eagerly, before the vectors, so a missing or corrupt table fails fast —
+    deferring the parse would buy nothing: deciding whether a secret is even a verb
+    reads the table, so every fr run consults it on its first hole anyway."""
     if disabled or lang not in FORM_LANGS:
         return None
-    path = forms_path(lang)
-    if not os.path.exists(path):
-        die(f"table lemme+trait→forme introuvable : {path}\n"
-            f"         construis-la avec scripts/build_forms.py (pnpm forms:{lang}), "
-            f"ou passe --no-inflect pour t'en passer.")
-    # Loaded eagerly, before the vectors, so a missing or corrupt table fails fast.
-    # Deferring the parse would buy nothing: deciding whether a secret is even a verb
-    # reads the table, so every fr run consults it on its first hole anyway.
-    try:
-        return load_forms(path)
-    except ValueError as exc:  # a truncated artifact is a startup failure like any other
-        die(f"table lemme+trait→forme illisible : {exc}\n"
-            f"         reconstruis-la avec scripts/build_forms.py (pnpm forms:{lang}).")
+    return _load_lexicon(lang)
 
 
 class FormResolver:
@@ -1238,9 +1329,11 @@ def max_selectable_groups(cands, lemma_table, need=3):
     candidates — CAN three holes be committed, in SOME order?
 
     A greedy sentence-order count is wrong here: a multi-lemma form encountered first
-    ("portes" → porte + porter) would claim BOTH lemmas and hide that committing
+    ("portes" → porte + porter) would occupy BOTH lemmas and hide that committing
     "porte" and "porter" separately still works. Sentences hold few distinct words, so
-    an exact search over combinations is exhaustive and instant."""
+    an exact search over combinations is exhaustive and instant. It weighs IDENTITY
+    (group_lemmas' question — could these two be the same word?), not what a group
+    claims in the walk, so a homograph still blocks its own family here."""
     from itertools import combinations
 
     by_slug = {}
@@ -1348,7 +1441,7 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
             ranking = cfg["module"].closest(donor, kv, V, M, n=None)
             merged, rank_map = build_puzzle_rank_map(
                 secret, ranking, lemma_table, forms_by_lemma, Vset,
-                secret_lemmas=group_lemmas(secret, donor, lemma_table))
+                secret_lemmas=group_claim(secret, donor, lemma_table, donors))
             rbd = {secret: 0}
             for w, r, _ in merged:
                 rbd[w] = r + 1
@@ -1517,7 +1610,8 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                                 start_rank,
                             ))
                         used_slugs.add(secret_slug)
-                        used_lemmas.update(group_lemmas(secret, donor, lemma_table))
+                        used_lemmas.update(
+                            group_lemmas(secret, donor, lemma_table))
                         if donors is not None:  # the hole exists now: the borrow is real
                             donors.note_used(secret, donor)
                         mode, numbuf = "nav", ""
@@ -1634,14 +1728,17 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
 
         # Two selected secrets in one lemma group would be one word holed twice. A
         # borrowed vector carries the donor's lemmas too, so a sibling of the donor is
-        # "the same word" as well (#119).
-        secret_lemmas = group_lemmas(canonical_secret, donor, lemma_table)
-        for lemma in secret_lemmas:
+        # "the same word" as well (#119). This test weighs the FULL identity, while
+        # the walk below claims only what the surface unambiguously names.
+        identity = group_lemmas(canonical_secret, donor, lemma_table)
+        for lemma in identity:
             if lemma in used_lemmas:
                 die(f"'{raw}' et '{used_lemmas[lemma]}' sont des formes du même mot "
                     f"(lemme commun « {lemma} ») : choisis 3 mots distincts.")
-        for lemma in secret_lemmas:
+        for lemma in identity:
             used_lemmas[lemma] = raw
+        secret_lemmas = group_claim(
+            canonical_secret, donor, lemma_table, donors)
 
         # Ranking, lemma merging and start selection happen ONCE per distinct secret
         # slug. The walk needs the FULL raw ranking: merging collapses inflections,

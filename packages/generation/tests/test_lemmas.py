@@ -1,8 +1,9 @@
-"""CONTRACT: build_lemmas.py — the committed form→lemma table (#104).
+"""CONTRACT: build_lemmas.py — the committed en form→lemma table (#104).
 
-  - one `form<TAB>lemma` pair per line, sorted + unique, lowercase, ACCENTS KEPT
-    (pre-slug forms, like the hors-dico wordlist);
-  - a form may carry several lemmas (portes -> porte / porter);
+  - en ONLY since #132: the fr grouping comes from the unified lexeme inventory
+    (build_forms.py); this builder keeps AGID for English;
+  - one `form<TAB>lemma` pair per line, sorted + unique, lowercase;
+  - a form may carry several lemmas;
   - every lemma is registered as a form of itself (self-contained artifact);
   - both sides must pass the language token rule (letters + internal hyphens);
   - AGID lines parse to (lemma, forms) with annotations stripped.
@@ -29,18 +30,24 @@ def test_parse_agid_line_malformed_yields_nothing():
 
 
 def test_collect_pairs_normalizes_filters_and_adds_identity():
-    pairs = build_lemmas.collect_pairs("fr", [
-        ("Privée", "privé"),      # lowercased, accents kept
-        ("vermines", "vermine"),
+    pairs = build_lemmas.collect_pairs("en", [
+        ("Mice", "mouse"),        # lowercased
+        ("geese", "goose"),
         ("co2", "co2"),           # digit: fails the token rule on both sides
         ("x y", "x"),             # space: not a token
     ])
-    assert ("privée", "privé") in pairs
-    assert ("vermines", "vermine") in pairs
+    assert ("mice", "mouse") in pairs
+    assert ("geese", "goose") in pairs
     # every lemma is also a form of itself
-    assert ("privé", "privé") in pairs
-    assert ("vermine", "vermine") in pairs
+    assert ("mouse", "mouse") in pairs
+    assert ("goose", "goose") in pairs
     assert all("co2" not in pair and "x y" not in pair for pair in pairs)
+
+
+def test_the_builder_is_en_only():
+    # fr is a decided removal (#132), not a missing entry: the fr grouping ships in
+    # the unified lexeme inventory, and a second fr identity is the bug #132 fixed.
+    assert tuple(build_lemmas.SOURCES) == ("en",)
 
 
 def test_collect_pairs_en_token_rule_drops_accents_and_uppercase_junk():
@@ -50,7 +57,7 @@ def test_collect_pairs_en_token_rule_drops_accents_and_uppercase_junk():
 
 
 def test_load_lemmas_roundtrip_multi_lemma_forms(tmp_path):
-    path = str(tmp_path / "fr.lemmas.tsv.gz")
+    path = str(tmp_path / "en.lemmas.tsv.gz")
     with gzip.open(path, "wt", encoding="utf-8") as f:
         f.write("porte\tporte\nportes\tporte\nportes\tporter\nporter\tporter\n")
     table = build_lemmas.load_lemmas(path)
