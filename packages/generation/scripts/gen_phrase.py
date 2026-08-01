@@ -55,7 +55,10 @@ inventory, per-POS (a verb secret conjugates verbs, a noun secret numbers nouns,
 adjective secret genders+numbers adjectives; cross-POS neighbours keep their citation
 form). The secret's form is never inferred: on a TTY every secret asks — a single
 analysis is shown and confirmed, several are listed to pick from — and off a TTY
---form MOT=TRAIT is required per secret (--no-inflect opts out).
+--form MOT=TRAIT is required per secret (--no-inflect opts out). Since #134 groups
+ARE lexemes, ranked by their homograph-free representative, and the confirmed form
+also NAMES the hole's lexeme — so the question fires before the walk, and an
+inflection of a homographic secret solves its hole («rouge» solves «rouges»).
 
 Usage :
     uv run scripts/gen_phrase.py                       # fully interactive
@@ -214,32 +217,13 @@ def ws(display):
     return {"word": display, "slug": slug(display)}
 
 
-def build_rank_map(secret_display, ranking):
-    """Slug-keyed rank map for one secret: { input_slug: {word, rank} }.
-
-    Iterates closest-first (secret itself is rank 0), so on a slug collision
-    (côté/coté -> cote) the first seen is the smallest rank: we keep it (collisions
-    are resolved SILENTLY — no output). The kept entry's `word` is the form the front
-    will display."""
-    # Combined list in ascending-rank order: secret at 0, then neighbors at r+1.
-    entries = [(secret_display, 0)]
-    entries.extend((w, r + 1) for w, r, _ in ranking)
-
-    rmap = {}
-    for display, rank in entries:
-        s = slug(display)
-        if s in rmap:  # first-seen wins (smallest rank); drop the later duplicate.
-            continue
-        rmap[s] = {"word": display, "rank": rank}
-    return rmap
-
-
-# --- Lemma grouping (#104, unified inventory #132) --------------------------------
+# --- Lemma grouping (#104) as LEXEME ranking (#134, unified inventory #132) -------
 # Inflected forms of one word ("privé"/"privée"/"privés", "vermine"/"vermines") are
-# ONE ranked group in a rank map. The committed grouping table says which forms
-# belong together; merging itself happens HERE, at generation time, on the
-# closest-first walk — a generalization of the slug-collision rule with a coarser
-# key. Embeddings, the reduction and the vocab existence set are untouched.
+# ONE ranked group in a rank map. Since #134 a group IS a lexeme: each lexeme is
+# ranked by its homograph-free representative (see rank_lexemes) and every
+# reduced-vocab form of it keys to its group, ambiguity resolved closest-first.
+# Merging happens HERE, at generation time; embeddings, the reduction and the vocab
+# existence set are untouched, and the front only ever LOOKS UP the keys.
 #
 # Since #132 the fr grouping comes from the SAME artifact as display agreement (the
 # Morphalou lexeme inventory, build_forms.py): one dictionary defines the lexeme for
@@ -295,30 +279,24 @@ def lemmas_of(word, lemma_table):
 
 
 def claimed_lemmas(lemmas):
-    """The lexemes a group headed by a surface with `lemmas` may CLAIM.
+    """The lexemes a SURFACE-derived group 0 may claim, absent a confirmed identity.
 
     A surface naming exactly one lexeme claims it: that is #104's merge, unchanged.
-    A CROSS-LEXEME HOMOGRAPH claims NOTHING and is its own singleton group. Its
-    vector is a blend of unrelated words, so claiming its analyses would fuse them —
-    `mois` would claim `moi:nc` and every form of «moi» would alias to it (typing
-    «moi» would SOLVE a `mois` hole); `bois` would claim `boire:v` and drag the whole
-    of «boire» to the distance of a wood.
-
-    Claiming nothing costs only COMPACTION — the surface keeps its own true rank and
-    its own canonical display, and each of its lexemes is still opened by its own
-    clean forms — so an uncertain identity degrades to "not merged", never to
-    "merged with the wrong word". It is the same trade the agreement pass makes:
-    holes beat wrong forms.
-
-    Note what this does NOT restrict: an ambiguous surface still ALIASES into an
-    already-open group when it shares that group's claimed lexeme, so «portes» still
-    attaches to whichever of porte/porter ranked closest (#104, unchanged)."""
+    A CROSS-LEXEME HOMOGRAPH claims NOTHING: its vector is a blend of unrelated
+    words, so claiming its analyses would fuse them — `mois` would claim `moi:nc`
+    and every form of «moi» would alias to rank 0 (typing «moi» would SOLVE a
+    `mois` hole). Since #134 this is only the FALLBACK for the secret's claim: the
+    author's #133 confirmation names the hole's lexeme outright (see secret_claim),
+    and neighbour groups don't go through here at all — they ARE lexemes, each
+    claiming exactly itself (rank_lexemes). Claiming nothing costs only compaction:
+    an uncertain identity degrades to "not merged", never to "merged with the wrong
+    word" — holes beat wrong forms."""
     return lemmas if len(lemmas) == 1 else ()
 
 
 def invert_lemmas(lemma_table):
     """Inverse index lemma -> [forms], in the table's deterministic (sorted) order.
-    Used by expand_aliases to enumerate every inflected form of a surviving group."""
+    Used by the assembly to enumerate every inflected form of a group's lexeme."""
     inv = {}
     for form, lemmas in lemma_table.items():
         for lemma in lemmas:
@@ -326,96 +304,130 @@ def invert_lemmas(lemma_table):
     return inv
 
 
-def merge_ranking(secret_display, ranking, lemma_table, top_k=TOP_K, secret_lemmas=None):
-    """Collapse a raw closest-first ranking into TOP_K distinct lemma groups.
+def rank_lexemes(ranking, lemma_table):
+    """Order every lexeme reachable from the walk by its representative form (#134).
 
-    Walk closest-first. A word sharing ANY lemma with an earlier (closer) group is an
-    alias of that group: it consumes NO rank (its slug keys are added later by
-    expand_aliases) — so a later ambiguous form ("portes" -> porte/porter) attaches
-    to whichever of its groups ranked closest. Every other word OPENS a group at its
-    own true rank, whether or not it is a homograph, but it claims only what
-    `claimed_lemmas` allows: exactly one lexeme, or NOTHING when the surface names
-    several. Therefore no group ever claims two lexemes, and unrelated words can
-    never fuse. The secret itself is group 0, so its own inflections alias to rank 0
-    (they SOLVE the hole — decided in #104) whenever the secret names one lexeme; an
-    ambiguous secret claims nothing, so no unrelated word can solve its hole (its own
-    inflections then rank as their own groups rather than at 0 — a compaction the
-    data cannot justify, not a wrong answer). Filter-then-cap: the walk stops once
-    top_k groups have PASSED, not after top_k raw neighbors.
+    A lexeme's representative is its closest embedded form that is NOT a
+    cross-lexeme homograph — group-min over clean forms. A homographic form's
+    vector provably blends strangers' meanings («vers» mixes the worm's plural with
+    the preposition and the poetry noun; ranking lexeme VER by it would put
+    "earthworm" next to «poème»), so it sets no lexeme's distance. An unambiguous
+    form owns its vector entirely, even when it diverges from its siblings —
+    «lunettes» near an eye secret is a contextually excellent guess and the whole
+    lexeme rides that closeness: the divergence is real sense signal, not noise.
+    Zero heuristics — homography is stated by the dictionary, nothing is guessed.
 
-    `secret_lemmas` overrides what group 0 claims; it is what a borrowed vector (#119)
-    uses to carry the donor's identity too (see group_lemmas). Left None — always, on
-    the ordinary path — group 0 claims the secret's own lexeme, if it has just one.
+    A lexeme with NO clean embedded form (rouge:adj — «rouge» and «rouges» are both
+    homographs) still ranks: its representative falls back to its closest embedded
+    form of any kind, flagged `clean=False` (#134's edge case — take what exists),
+    which the caller surfaces in generation output.
 
-    Returns (merged, groups):
-      merged: [(word, rank_index, sim)] — the survivors, same shape as `ranking`
-              but with COMPACTED rank indices, so start_band / pick_start / the
-              interactive band preview all operate on merged ranks unchanged;
-      groups: [(canonical_display, rank, lemmas)] — every group INCLUDING the
-              secret at rank 0, ascending by rank (expand_aliases' input).
-    """
-    if secret_lemmas is None:
-        secret_lemmas = claimed_lemmas(lemmas_of(secret_display, lemma_table))
-    secret_lemmas = tuple(secret_lemmas)
-    taken = set(secret_lemmas)
-    groups = [(secret_display, 0, secret_lemmas)]
-    merged = []
-    for w, _r, sim in ranking:
-        lemmas = lemmas_of(w, lemma_table)
-        if any(lemma in taken for lemma in lemmas):
-            continue  # alias of a closer group: no rank consumed.
-        # The word opens a group at its true rank either way; only what it CLAIMS
-        # depends on whether its surface names one lexeme (see claimed_lemmas).
-        claimed = claimed_lemmas(lemmas)
-        merged.append((w, len(merged), sim))
-        groups.append((w, len(merged), claimed))
-        taken.update(claimed)
-        if len(merged) >= top_k:
-            break
-    return merged, groups
+    A surface the table does not know is its own singleton lexeme (lemmas_of), so
+    it is trivially clean and ranks by its own vector — including under --no-lemmas,
+    where every surface is: the walk then degenerates to the ungrouped ranking.
 
-
-def expand_aliases(rmap, groups, forms_by_lemma, Vset):
-    """Add alias keys to a rank map: every REDUCED-VOCAB form of each surviving
-    group's lemma(s) points at that group's canonical {word, rank}.
-
-    Covers forms that never appeared in the walk ("privait" hits "privé"'s rank even
-    when it is not among the fetched neighbors). On a slug collision the SMALLEST rank
-    wins, exactly like build_rank_map: an existing entry is only replaced by a
-    strictly closer alias — so an ambiguous form aliases to its closest group, a
-    canonical entry never loses to an equal-or-farther alias, and a closer group's
-    alias ("côtés" of a "côté" secret) is never shadowed by a farther canonical that
-    happens to share its slug ("cotes"). Groups arrive ascending by rank, so
-    alias-vs-alias collisions also resolve closest-first. Filtering by Vset keeps the
-    map aligned with the existence set: a key the front can never look up is never
-    emitted."""
-    for canonical, rank, lemmas in groups:
-        for lemma in lemmas:
-            for form in forms_by_lemma.get(lemma, ()):
-                if form not in Vset:
-                    continue
-                s = slug(form)
-                if not s:
-                    continue
-                existing = rmap.get(s)
-                if existing is None or rank < existing["rank"]:
-                    rmap[s] = {"word": canonical, "rank": rank}
-    return rmap
+    Returns entities ascending by representative position (= descending similarity),
+    ties — only possible between no-clean lexemes sharing their best form — broken
+    by lexeme key: (lexeme, rep_form, rep_sim, rep_pos, clean)."""
+    best_clean, best_any = {}, {}
+    for pos, (w, _r, sim) in enumerate(ranking):
+        lexes = lemmas_of(w, lemma_table)
+        for lex in lexes:
+            if lex not in best_any:
+                best_any[lex] = (pos, w, sim)
+        if len(lexes) == 1 and lexes[0] not in best_clean:
+            best_clean[lexes[0]] = (pos, w, sim)
+    entities = []
+    for lex, fallback in best_any.items():
+        clean = lex in best_clean
+        pos, w, sim = best_clean[lex] if clean else fallback
+        entities.append((lex, w, sim, pos, clean))
+    entities.sort(key=lambda e: (e[3], e[0]))
+    return entities
 
 
 def build_merged_rank_map(secret_display, ranking, lemma_table, forms_by_lemma, Vset,
                           top_k=TOP_K, secret_lemmas=None):
-    """One secret's complete rank map under lemma grouping, plus its merged ranking.
+    """One secret's complete rank map under lexeme ranking (#134).
 
-    merge_ranking compacts the raw walk into distinct groups, build_rank_map keys the
-    survivors (slug-collision rule unchanged), expand_aliases adds every vocab form
-    of each group. With an empty lemma_table the output is byte-identical to the
-    pre-#104 rank map capped at top_k."""
-    merged, groups = merge_ranking(secret_display, ranking, lemma_table, top_k,
-                                   secret_lemmas)
-    rmap = build_rank_map(secret_display, merged)
-    expand_aliases(rmap, groups, forms_by_lemma, Vset)
-    return merged, rmap
+    Group 0 is the secret: its slug plus every reduced-vocab form of its claimed
+    lexeme(s) key at rank 0 — an inflection of the secret still solves the hole.
+    Then the entities of rank_lexemes, closest-first, each KEYED as it opens: a
+    group's candidate keys are its representative plus every reduced-vocab form of
+    its lexeme, and a slug is assigned only when no closer group holds it — the
+    #104 collision rule (smallest rank wins, silently), applied at assembly time,
+    so an ambiguous form still attaches to whichever of its lexemes' groups ranked
+    closest and «portes» still lands on the closer of porte/porter.
+
+    A group left with NO key cannot be typed, displayed or found, so it is SKIPPED
+    and consumes no rank. Filter-then-cap: TOP_K counts groups a player can
+    actually reach. This is also what keeps twin no-clean lexemes (vers:nc and
+    vers:prep own one embedded form between them) from minting duplicate ghost
+    ranks: the first twin takes the form, the second keys nothing and vanishes —
+    and it subsumes the old aliasing compaction (a form of an already-keyed lexeme
+    adds no new slug, so its lexeme's would-be group dissolves into the closer one).
+
+    A group's DISPLAY is its closest OWNED form: whatever the map prints must type
+    back at that group's own rank, so a group whose representative slug belongs to
+    a closer group falls back to the nearest form it actually holds.
+
+    With an empty lemma_table every surface is its own clean singleton lexeme and
+    the walk reproduces the ungrouped ranking (slug-collision losers now compacted
+    away instead of holding empty ranks).
+
+    Returns (merged, rmap, groups):
+      merged: [(display, rank_index, sim)] — survivors, compacted, ascending;
+              sims are the REPRESENTATIVES' (what the rank means), so dq keeps
+              quantizing the geometry the ranking was built from;
+      rmap:   {slug: {word, rank}} — every owned key of every surviving group;
+      groups: [(display, rank, claims, clean)] — the secret at rank 0 first;
+              a neighbour group claims exactly its own lexeme."""
+    if secret_lemmas is None:
+        secret_lemmas = claimed_lemmas(lemmas_of(secret_display, lemma_table))
+    secret_lemmas = tuple(secret_lemmas)
+    pos_of = {w: i for i, (w, _r, _s) in enumerate(ranking)}
+
+    def candidate_forms(head, lemmas):
+        """A group's key candidates, closest-first: head + its lexemes' vocab forms."""
+        forms = {form for lemma in lemmas
+                 for form in forms_by_lemma.get(lemma, ()) if form in Vset}
+        forms.add(head)
+        return sorted(forms, key=lambda f: (pos_of.get(f, -1), f))
+
+    rmap = {}
+
+    def open_group(head, rank, lemmas):
+        """Key one group's forms (unclaimed slugs only) and pick its display.
+
+        Returns the display form, or None when every candidate slug already
+        belongs to a closer group — the group then never existed."""
+        owned = []
+        for form in candidate_forms(head, lemmas):
+            s = slug(form)
+            if s and s not in rmap:
+                rmap[s] = {"word": form, "rank": rank}
+                owned.append(form)
+        if not owned:
+            return None
+        display = head if head in owned else owned[0]
+        for form in owned:
+            rmap[slug(form)]["word"] = display
+        return display
+
+    open_group(secret_display, 0, secret_lemmas)  # the secret always keys its slug
+    groups = [(secret_display, 0, secret_lemmas, True)]
+    merged = []
+    for lex, rep, sim, _pos, clean in rank_lexemes(ranking, lemma_table):
+        if lex in secret_lemmas:
+            continue  # the secret's own family: already keyed at rank 0
+        display = open_group(rep, len(merged) + 1, (lex,))
+        if display is None:
+            continue  # keyless: dissolved into closer groups, no rank consumed
+        merged.append((display, len(merged), sim))
+        groups.append((display, len(merged), (lex,), clean))
+        if len(merged) >= top_k:
+            break
+    return merged, rmap, groups
 
 
 # --- Distance annotations (#115) ------------------------------------------------
@@ -484,22 +496,49 @@ def annotate_roads(rmap, merged, kv, start_rank):
 
 def build_puzzle_rank_map(secret_display, ranking, lemma_table, forms_by_lemma, Vset,
                           top_k=TOP_K, secret_lemmas=None):
-    """One secret's rank map AS SHIPPED: lemma-merged, alias-expanded, dq-annotated.
+    """One secret's rank map AS SHIPPED: lexeme-ranked, keyed, dq-annotated.
 
     The one entry point both authoring paths use, so a puzzle can never be written
     with a structurally correct but distance-less map. build_merged_rank_map stays the
-    purely structural builder underneath it (#104). Roads are the second pass, once
-    the start word exists (annotate_roads).
+    purely structural builder underneath it (#104/#134). Roads are the second pass,
+    once the start word exists (annotate_roads).
 
     `ranking` may have been walked from a DONOR's vector (#119) while `secret_display`
     stays the true sentence form: the similarities are the donor's either way, which is
     the whole point — the donor is the geometry source, so the dq scale and the roads
     are the ones the borrowed vector describes."""
-    merged, rmap = build_merged_rank_map(
+    merged, rmap, groups = build_merged_rank_map(
         secret_display, ranking, lemma_table, forms_by_lemma, Vset, top_k,
         secret_lemmas)
     annotate_rank_map(rmap, merged, secret=secret_display)
-    return merged, rmap
+    return merged, rmap, groups
+
+
+def group_lexeme_map(groups):
+    """rank -> the group's lexeme key, for the agreement pass (#134).
+
+    Only groups claiming exactly one INVENTORY lexeme — a ':'-keyed claim — carry
+    cells to realize; a table-less singleton (its claim is its own surface) has
+    none and keeps its representative. Rank 0 is excluded: the secret already
+    holds the true sentence form."""
+    return {rank: claims[0] for _w, rank, claims, _clean in groups
+            if rank and len(claims) == 1 and ":" in claims[0]}
+
+
+def report_no_clean(secret, groups):
+    """Surface #134's edge case in generation output: a group ranked by a
+    homographic vector because its lexeme has no clean embedded form. The rank is
+    the best the data allows ("take what exists") — the curator just deserves to
+    know which distances are blends before publishing. Belongs in the playability
+    report once #135 exists; stderr until then."""
+    flagged = [(rank, w) for w, rank, _claims, clean in groups if rank and not clean]
+    if not flagged:
+        return
+    sample = ", ".join(f"« {w} » (rang {rank})" for rank, w in flagged[:5])
+    more = f", … {len(flagged)} au total" if len(flagged) > 5 else ""
+    print(f"  attention : « {secret} » : {len(flagged)} groupe(s) classé(s) sur un "
+          f"vecteur homographe (aucune forme nette) : {sample}{more}",
+          file=sys.stderr)
 
 
 # --- Lemma-donor vector substitution (#119) -------------------------------------
@@ -638,6 +677,32 @@ def group_claim(secret, donor, lemma_table, donors=None):
         wanted = set(lemmas_of(secret, lemma_table))
         shared = tuple(l for l in lemmas_of(donor, lemma_table) if l in wanted)
     return claimed_lemmas(shared)
+
+
+def secret_claim(secret, donor, lemma_table, donors=None, forms=None):
+    """What group 0 claims (#134): the lexeme the author CONFIRMED, else fall back.
+
+    The #133 answer is a cell, and when exactly one of the secret's analyses
+    carries that cell, the analysis names the hole's lexeme outright — «rouges»
+    confirmed adj:f:p IS rouge:adj. Claiming it is what makes an inflection of a
+    HOMOGRAPHIC secret solve its hole: the surface alone may not choose between
+    its lexemes (claimed_lemmas), but the author just did, explicitly — nothing is
+    inferred, and the one-lexeme invariant holds verbatim. A cell carried by
+    several of the secret's lexemes (— «fils» : n:p is fil:nc AND fils:nc —)
+    identifies nothing and falls back to the surface-derived claim, fail-closed.
+
+    A BORROWED vector (#119) still claims only what secret and donor share: the
+    confirmed lexeme is honoured only when it is in that shared set, else the
+    plain group_claim intersection applies. Asking the resolver here is what pulls
+    the #133 question AHEAD of the walk — the claim needs the answer, so the
+    prompt (or --form, or the off-TTY hard error) fires before any ranking."""
+    confirmed = forms.confirmed_lexeme(secret) if forms is not None else None
+    if confirmed is not None:
+        if donor == secret:
+            return (confirmed,)
+        if donors is not None and confirmed in donors.shared_lemmas(secret, donor):
+            return (confirmed,)
+    return group_claim(secret, donor, lemma_table, donors)
 
 
 class DonorResolver:
@@ -1119,6 +1184,8 @@ class FormResolver:
         self.explicit = explicit or {}
         self.interactive = interactive
         self.used = {}     # secret slug -> (secret, feature, rewrite count)
+        self.fallbacks = {}   # secret slug -> [(rank, canonical)] — the * report (#134)
+        self.collisions = {}  # secret slug -> declined-rewrite count (#134)
         # every secret slug the run settled a form for — --form keys outside it named
         # a word no hole used, which is nearly always a typo worth surfacing.
         self._chosen = {}  # secret slug -> feature or None
@@ -1151,25 +1218,37 @@ class FormResolver:
         """The features a surface can carry, every POS, sorted. See analyses_of."""
         return tuple(feat for feat, _keys in self.analyses_of(word))
 
-    def realizations(self, word, feature):
-        """Every spelling of `word` re-inflected to `feature`, preferred first.
+    def confirmed_lexeme(self, secret):
+        """The lexeme the secret's settled form names, or None when it names
+        nothing or several.
+
+        This is what pulls the #133 question ahead of the walk (secret_claim calls
+        it before any ranking): feature_for prompts on a TTY, reads --form off one,
+        or dies — its normal contract, just earlier. The settled cell identifies a
+        lexeme only when exactly ONE of the secret's analyses carries it; a shared
+        cell («fils» : n:p) or a trait outside the analyses (the warned case)
+        identifies nothing, and the caller falls back to the surface-derived
+        claim — fail-closed, never guessed."""
+        feature = self.feature_for(secret)
+        if feature is None or self.table is None:
+            return None
+        keys = {key for key, feat in self.table.entries.get(secret, ())
+                if feat == feature}
+        return next(iter(keys)) if len(keys) == 1 else None
+
+    def realize_cell(self, lexeme, feature):
+        """Every spelling of `lexeme` at the secret's cell, preferred first.
 
         The transfer is per-POS (#133): `feature` names a cell of ONE part of
-        speech's paradigm (feature_pos), so only a lexeme of that POS can realize
-        it — a cross-POS neighbour has no such cell and keeps its citation form, and
-        a citation-form target (`cit`) prescribes nothing to anyone.
+        speech's paradigm (feature_pos), so only a lexeme of that POS has it — a
+        cross-POS group keeps its representative, and a citation-form target
+        (`cit`) prescribes nothing to anyone.
 
-        Two refusals besides, both silent and both deliberate. A form the `dom` gate
-        does not admit as that POS is not read as one at all: "évident" is a form of
-        "évider" on paper and overwhelmingly the adjective, so it is never rewritten
-        as a verb. And a form carrying SEVERAL lexemes of the target POS is declined
-        outright rather than arbitrated: "durent" is the present of durer AND the
-        past historic of devoir, the table is right about both, and the embedding
-        vector means the first — so realizing devoir's `ind:pre:2s` would print
-        "dois" for a word the geometry placed as "durer". Choosing the more frequent
-        paradigm only makes that failure quieter; there is no evidence here to
-        choose WITH. The forms that lose their agreement this way simply keep the
-        dictionary form.
+        Keyed by the GROUP's lexeme (#134), not by its surface: the walk already
+        settled WHAT each group is, so there is nothing left to gate or arbitrate —
+        the old surface-side `dom` gate and multi-lexeme refusal answered a
+        question ("what is this word?") that no longer arises here. «durent» never
+        heads a group anymore; durer:v and devoir:v each realize their own cells.
 
         A paradigm can spell one cell more than one way ("déblaies" / "déblayes"), so
         this returns the list rather than the winner: the caller knows which spellings
@@ -1177,18 +1256,9 @@ class FormResolver:
         pos = feature_pos(feature)
         if self.table is None or pos is None:
             return ()
-        if self.table.dominant.get(word) != pos:
+        if lexeme.rpartition(":")[2] != pos:
             return ()
-        keys = {key for key, _feat in self.table.entries.get(word, ())
-                if key.rpartition(":")[2] == pos}
-        if len(keys) != 1:
-            return ()
-        return self.table.realize.get((next(iter(keys)), feature), ())
-
-    def realize(self, word, feature):
-        """The PREFERRED spelling of `word` at `feature`, or None. See realizations."""
-        forms = self.realizations(word, feature)
-        return forms[0] if forms else None
+        return self.table.realize.get((lexeme, feature), ())
 
     def _analysis_lines(self, analyses):
         """The numbered analysis listing, one line per feature with its lexeme(s)."""
@@ -1304,7 +1374,7 @@ class FormResolver:
         self._chosen[key] = feature
         return feature
 
-    def apply(self, rank_map, secret, donors):
+    def apply(self, rank_map, secret, donors, lexemes=None):
         """Re-inflect every group's canonical to the secret's form.
 
         The scope is the WHOLE map (#133) — every group, not just the ones a hole
@@ -1319,8 +1389,8 @@ class FormResolver:
         Rewriting a group means rewriting every entry that carries it, aliases included,
         so typing any form of the group displays the agreed one.
 
-        Taking an ALIAS key from a farther group is allowed (closest-first, as
-        expand_aliases already resolves collisions). Taking the CANONICAL key of a
+        Taking an ALIAS key from a farther group is allowed (closest-first, exactly
+        how the assembly resolves collisions). Taking the CANONICAL key of a
         farther group is not: with the whole map agreed, EVERY group prints its word
         somewhere, so stealing the very slug of the word a group prints leaves it
         showing that word at exponent N while typing it reads M < N — the same
@@ -1330,10 +1400,21 @@ class FormResolver:
         start.word="banque" at start_rank 5 while ranks[secret]["banque"] said 2, so the
         printed hint improves its own hole. Declining keeps map and hole in step, and
         `alias_start_display` could not have repaired it (the override short-circuits on
-        an unchanged slug)."""
+        an unchanged slug).
+
+        `lexemes` maps rank -> the group's lexeme key (#134): realization is keyed
+        by WHAT the group is, never by how its surface reads. A rank outside the
+        mapping (a table-less singleton) has no cells and keeps its representative.
+        Both #134 report counters land in `fallbacks` (groups of the feature's own
+        POS whose requested form is missing or untypable — they keep their closest
+        clean form, marked `*` in generation output) and `collisions` (rewrites the
+        collision rules declined; closest-wins itself is unchanged)."""
         feature = self.feature_for(secret)
         if feature is None or donors is None:
             return {}
+        lexemes = lexemes or {}
+        pos = feature_pos(feature)
+        fallbacks = self.fallbacks.setdefault(slug(secret), [])
         # Snapshot both the keys and each group's canonical BEFORE rewriting anything:
         # a closer group may reclaim one of these keys on an earlier pass, and reading
         # the word back out of the map would then hand this group the other one's form.
@@ -1346,22 +1427,36 @@ class FormResolver:
             if rank == 0:
                 continue
             canonical = canonicals[rank]
-            forms = self.realizations(canonical, feature)
-            if not forms or canonical in forms:
-                continue  # nothing to say, or the group already IS the agreed form
+            lexeme = lexemes.get(rank)
+            if lexeme is None:
+                continue  # a table-less singleton: no cells, nothing to agree
+            forms = self.realize_cell(lexeme, feature)
+            if canonical in forms:
+                continue  # the group already IS the agreed form
+            if not forms:
+                if pos is not None and lexeme.rpartition(":")[2] == pos:
+                    # same POS, no such cell: the requested form is MISSING — the
+                    # group keeps its representative (#134's fallback), marked *.
+                    fallbacks.append((rank, canonical))
+                continue
             # The artifact's preference order is by corpus frequency, which knows
             # nothing about the reduced vocabulary; take the first spelling a player
             # could actually type rather than dropping the group when the favourite
             # happens to be untypable ("déblaies" loses to "déblayes" here).
             form = next((f for f in forms if donors.typable(f)), None)
             if form is None:
+                fallbacks.append((rank, canonical))  # requested form UNTYPABLE: *
                 continue
             s = slug(form)
             owner = rank_map.get(s)
             if owner is not None and owner["rank"] != rank:
                 if owner["rank"] < rank:
+                    self.collisions[slug(secret)] = \
+                        self.collisions.get(slug(secret), 0) + 1
                     continue  # a closer group owns it: decline rather than contradict it
                 if s == slug(canonicals[owner["rank"]]):
+                    self.collisions[slug(secret)] = \
+                        self.collisions.get(slug(secret), 0) + 1
                     continue  # a farther group prints it: leave its word alone
             for key in keys:
                 if rank_map[key]["rank"] == rank:  # a reclaimed key belongs elsewhere now
@@ -1506,15 +1601,22 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
     hovered word's whole repeated-word group; its shared start word is then chosen by
     number (Enter validates, Esc cancels and returns to navigation). Three distinct
     commits end the loop; Ctrl-C aborts cleanly. The holes / ranks produced are identical
-    in shape to the --words path (build_rank_map + _make_hole are shared), so nothing
-    downstream needs to know which path chose the holes.
+    in shape to the --words path (build_puzzle_rank_map + _make_hole are shared), so
+    nothing downstream needs to know which path chose the holes.
 
     A word with no vector (#119) is offered when a same-lemma form can lend it one:
     committing it opens ONE extra step — the same numbered grammar, on the donor list —
     before the start-word step, and the answer is cached per secret slug so the question
     is asked once. Nothing is ranked until a donor is known, so no hover can crash. The
     picked start word then gets the same display-form question as the --words path (the
-    addendum to that issue), asked as a line prompt outside raw mode."""
+    addendum to that issue), asked as a line prompt outside raw mode.
+
+    The #133 form confirmation is part of the COMMIT step too, asked right before
+    the start band renders (#134): its answer names the hole's lexeme, which is what
+    group 0 claims, so the band the author picks from is drawn on the map that
+    ships. The HOVER preview deliberately runs on the provisional (surface-derived)
+    claim — browsing must not open questions — so committing a homographic secret
+    can shift the band slightly once its identity is confirmed."""
     import shutil
     import termios
     import tty
@@ -1544,29 +1646,36 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
         answer is given inside the selector, in `donor` mode."""
         return secret if donors is None else donors.resolved(secret)
 
-    def prep(secret, donor):
+    def prep(secret, donor, confirmed=False):
+        """The hovered/committed word's neighborhood, built once and rebuilt only
+        when its CLAIM changes: the hover preview uses the provisional
+        surface-derived claim (secret_claim with no resolver — never a prompt),
+        and once the commit step has confirmed the form, the same call re-merges
+        from the cached raw ranking with the confirmed lexeme claimed. The walk
+        starts from the DONOR's vector; everything the puzzle keeps (rank-0 word,
+        aliases, start band) stays on the true sentence form."""
         secret_slug = slug(secret)
-        if secret_slug not in cache:
-            # The walk starts from the DONOR's vector; everything the puzzle keeps
-            # (rank-0 word, aliases, start band) stays on the true sentence form.
-            ranking = cfg["module"].closest(donor, kv, V, M, n=None)
-            merged, rank_map = build_puzzle_rank_map(
+        claim = secret_claim(secret, donor, lemma_table, donors,
+                             forms if confirmed else None)
+        entry = cache.get(secret_slug)
+        if entry is None or entry["claim"] != claim:
+            ranking = entry["ranking"] if entry is not None \
+                else cfg["module"].closest(donor, kv, V, M, n=None)
+            merged, rank_map, groups = build_puzzle_rank_map(
                 secret, ranking, lemma_table, forms_by_lemma, Vset,
-                secret_lemmas=group_claim(secret, donor, lemma_table, donors))
+                secret_lemmas=claim)
             rbd = {secret: 0}
             for w, r, _ in merged:
-                rbd[w] = r + 1
-            cache[secret_slug] = (
-                secret,
-                rank_map,
-                start_band(secret, merged),
-                rbd,
-                merged,
-            )
-        return cache[secret_slug]
+                rbd.setdefault(w, r + 1)
+            entry = {"ranking": ranking, "claim": claim,
+                     "rank_map": rank_map, "band": start_band(secret, merged),
+                     "rbd": rbd, "merged": merged, "groups": groups}
+            cache[secret_slug] = entry
+        return entry
 
     holes = []
     ranks = {}
+    flagged = {}  # committed secret -> groups, for the post-loop no-clean report
     used_slugs = set()
     used_lemmas = set()  # lemmas claimed by committed groups: their forms block too
 
@@ -1615,22 +1724,35 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
     fd = sys.stdin.fileno()
     saved = termios.tcgetattr(fd)
 
-    def ask_display(secret, rank_map, start, start_rank):
+    def confirm_form(secret):
+        """The #133 confirmation, at the head of the commit step (#134): asked once
+        (feature_for caches per slug), outside raw mode, BEFORE the start band
+        renders — its answer names the hole's lexeme, so the band the author picks
+        from is drawn on the map that ships."""
+        if forms is None:
+            return
+        termios.tcsetattr(fd, termios.TCSADRAIN, saved)
+        try:
+            forms.feature_for(secret)
+        finally:
+            tty.setcbreak(fd)
+
+    def ask_display(secret, entry, start, start_rank):
         """Leave raw mode for the free-text questions of the flow (#119 + addendum 2).
 
         Navigation and both numbered picks are single keypresses, so the loop reads them
-        raw; the form question and the display override are WORDS — accented, worth
-        editing with the arrow keys — which is precisely what canonical mode and
-        readline already give the line prompts. The next frame clears the screen, so the
-        detour leaves nothing behind.
+        raw; the display override is a WORD — accented, worth editing with the arrow
+        keys — which is precisely what canonical mode and readline already give the
+        line prompts. The next frame clears the screen, so the detour leaves nothing
+        behind.
 
-        The agreement pass runs here too — the form confirmation (#133) is part of
-        the commit step, right beside the start-word pick, so the band preview above
-        still lists dictionary forms: nothing is agreed until there is a hole to
-        agree with."""
+        The agreement pass runs here (the form itself was confirmed before the band,
+        so feature_for answers from its cache): it needs the roads stamped first, so
+        a rewritten form inherits its group's road like any other key."""
         termios.tcsetattr(fd, termios.TCSADRAIN, saved)
         try:
-            agreed = forms.apply(rank_map, secret, donors) \
+            agreed = forms.apply(entry["rank_map"], secret, donors,
+                                 lexemes=group_lexeme_map(entry["groups"])) \
                 if forms is not None else {}
             return choose_start_display(
                 start, start_rank, donors,
@@ -1653,14 +1775,18 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                 # same numbered grammar. Only the donors that keep this word its own
                 # group are offered, so no choice can hole a committed lemma twice.
                 dcands = free_donors(secret, used_lemmas, lemma_table, donors)
-                rank_map, band, rbd, merged = None, [], {}, []
+                entry, band, rbd = None, [], {}
                 title = f"  « {secret} » n'a pas de vecteur — formes du même lemme"
                 if mode == "donor":
                     title += numero + f"  (Entrée = {dcands[0]} · Échap annuler)"
                 cells = donors.donor_lines(secret, dcands)
             else:
                 dcands = []
-                _canonical, rank_map, band, rbd, merged = prep(secret, donor)
+                # Confirmed once the commit step has asked (feature_for caches per
+                # slug), provisional while merely hovering — see prep.
+                confirmed = forms is not None and slug(secret) in forms.answered
+                entry = prep(secret, donor, confirmed)
+                band, rbd = entry["band"], entry["rbd"]
                 title = f"  Mots de départ pour « {secret} »"
                 if mode == "start":
                     title += numero + "  (Entrée valider · Échap annuler)"
@@ -1677,7 +1803,11 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                 elif key in ("RIGHT", "DOWN"):
                     cursor = avail[(ai + 1) % len(avail)]
                 elif key == "ENTER":
-                    mode, numbuf = ("donor" if donor is None else "start"), ""
+                    if donor is None:
+                        mode, numbuf = "donor", ""
+                    else:
+                        confirm_form(secret)  # #133/#134: names the hole's lexeme
+                        mode, numbuf = "start", ""
             elif mode == "donor":  # which same-lemma form lends its vector (#119)
                 if key == "ESC":
                     mode, numbuf = "nav", ""
@@ -1686,9 +1816,11 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                 elif key == "ENTER":
                     if not numbuf:  # Entrée = the suggestion, as in the line prompt
                         donors.choose(secret, dcands[0])
+                        confirm_form(secret)
                         mode, numbuf = "start", ""
                     elif numbuf.isdigit() and 1 <= int(numbuf) <= len(dcands):
                         donors.choose(secret, dcands[int(numbuf) - 1])
+                        confirm_form(secret)
                         mode, numbuf = "start", ""
                     else:
                         error = f"Numéro invalide (1–{len(dcands)})."
@@ -1701,6 +1833,7 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                     numbuf = numbuf[:-1]
                 elif key == "ENTER":
                     if numbuf.isdigit() and 1 <= int(numbuf) <= len(band):
+                        rank_map, merged = entry["rank_map"], entry["merged"]
                         start = band[int(numbuf) - 1][0]
                         start_rank = rbd[start]
                         # The departure is what bounds the roads (#115), so they are cut
@@ -1711,10 +1844,11 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                         # Same last questions as the --words path: agree what this hole
                         # can display with the sentence, then let the author name the
                         # start word's own form (#119 addendum + addendum 2).
-                        display = ask_display(secret, rank_map, start, start_rank)
+                        display = ask_display(secret, entry, start, start_rank)
                         alias_start_display(rank_map, start, display, start_rank)
                         secret_slug = slug(secret)
                         ranks[secret_slug] = rank_map
+                        flagged[secret] = entry["groups"]
                         for occurrence in candidates_for_slug(cands, secret_slug):
                             holes.append(_make_hole(
                                 occurrence["secret"], occurrence["prefix"],
@@ -1746,6 +1880,11 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
 
     if aborted:
         die("sélection interrompue.")
+
+    # The raw-mode loop clears the screen every frame, so the #134 edge-case flags
+    # for the committed secrets are printed only now, where they stay readable.
+    for secret, groups in flagged.items():
+        report_no_clean(secret, groups)
 
     holes.sort(key=lambda h: h["pos"])
     return holes, ranks
@@ -1841,7 +1980,7 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
         # Two selected secrets in one lemma group would be one word holed twice. A
         # borrowed vector carries the donor's lemmas too, so a sibling of the donor is
         # "the same word" as well (#119). This test weighs the FULL identity, while
-        # the walk below claims only what the surface unambiguously names.
+        # the walk below claims only what is confirmed or unambiguous.
         identity = group_lemmas(canonical_secret, donor, lemma_table)
         for lemma in identity:
             if lemma in used_lemmas:
@@ -1849,19 +1988,23 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
                     f"(lemme commun « {lemma} ») : choisis 3 mots distincts.")
         for lemma in identity:
             used_lemmas[lemma] = raw
-        secret_lemmas = group_claim(
-            canonical_secret, donor, lemma_table, donors)
+        # The #133 question fires HERE, ahead of the walk (#134): its answer names
+        # the hole's lexeme, which is what group 0 claims — so an inflection of a
+        # homographic secret solves once the author has said which word it is.
+        secret_lemmas = secret_claim(
+            canonical_secret, donor, lemma_table, donors, forms)
 
-        # Ranking, lemma merging and start selection happen ONCE per distinct secret
+        # Ranking, lexeme merging and start selection happen ONCE per distinct secret
         # slug. The walk needs the FULL raw ranking: merging collapses inflections,
         # so reaching TOP_K distinct groups can consume well over TOP_K raw neighbors.
         ranking = cfg["module"].closest(donor, kv, V, M, n=None)
-        merged, rank_map = build_puzzle_rank_map(
+        merged, rank_map, groups = build_puzzle_rank_map(
             canonical_secret, ranking, lemma_table, forms_by_lemma, Vset,
             secret_lemmas=secret_lemmas)
+        report_no_clean(canonical_secret, groups)
         rank_by_display = {canonical_secret: 0}
         for w, r, _ in merged:
-            rank_by_display[w] = r + 1
+            rank_by_display.setdefault(w, r + 1)
 
         ranks[target_slug] = rank_map
         start = choose_start(canonical_secret, merged, rank_map, rank_by_display)
@@ -1872,8 +2015,10 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
         # group's keys.
         annotate_roads(rank_map, merged, kv if roads else None, start_rank)
         # Agree the whole map with the sentence (#133), the start word included — it
-        # is just the rank == start_rank group.
-        agreed = forms.apply(rank_map, canonical_secret, donors) \
+        # is just the rank == start_rank group. Realization is keyed by each group's
+        # LEXEME (#134), which the walk just settled.
+        agreed = forms.apply(rank_map, canonical_secret, donors,
+                             lexemes=group_lexeme_map(groups)) \
             if forms is not None else {}
         # The band only offers forms that HAVE a vector; the sentence may demand one it
         # lacks. The override is DISPLAY only (#119 addendum) — start_rank is untouched,
@@ -2212,6 +2357,19 @@ def main():
     for secret_word, feature, count in forms.used.values():
         print(f"  secret « {secret_word} » : {count} mot(s) affiché(s) accordé(s) "
               f"au trait {feature}")
+    # #134's curator-facing marks, generation output only. `*` = the requested form
+    # is missing from the paradigm or untypable: the group keeps its closest clean
+    # form instead. Collisions = rewrites the closest-wins rules declined.
+    for key, entries in forms.fallbacks.items():
+        if not entries:
+            continue
+        sample = ", ".join(f"*{w} (rang {r})" for r, w in entries[:5])
+        more = f", … {len(entries)} au total" if len(entries) > 5 else ""
+        print(f"  secret « {key} » : {len(entries)} groupe(s) en repli* — forme "
+              f"demandée absente ou intypable, forme nette gardée : {sample}{more}")
+    for key, count in forms.collisions.items():
+        print(f"  secret « {key} » : {count} collision(s) de slug après accord "
+              f"(le plus proche gagne, réécriture(s) déclinée(s))")
     # A --form that named a word no hole used is nearly always a typo in the WORD.
     # Say so now: after publishing, the puzzle just quietly lacks its agreement.
     if explicit_forms:
