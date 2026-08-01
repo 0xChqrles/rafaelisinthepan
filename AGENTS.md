@@ -1258,7 +1258,7 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   AGID `infl.txt` inverted (~260k pairs), filtered by the language token rule, every
   lemma registered as a form of itself. Built by `build_lemmas.py` (downloads cache
   in `wordlist/.cache/`); `gen_phrase` reads it at startup for en (hard error when
-  missing; `--no-lemmas` opts out and reproduces pre-#104 output). The old
+  missing; `--no-lemmas` opts out and reproduces the ungrouped walk). The old
   `fr.lemmas.tsv.gz` was REMOVED by #132 — the fr grouping now comes from the lexeme
   inventory below, and `pnpm lemmas:fr` no longer exists.
 - **fr lexeme inventory (#132, Morphalou-sourced, superseding the Lefff verb table):**
@@ -1268,8 +1268,10 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   (LGPL-LR, extracted from the archive's LISEZ-MOI). Built by `build_forms.py`
   (`pnpm forms:fr`; downloads cache in `wordlist/.cache/`, sha256-pinned).
   `gen_phrase` loads it ONCE at startup for fr and derives both the grouping and the
-  verb view from it (missing/corrupt = hard error; `--no-lemmas` disables grouping,
-  `--no-inflect` the agreement pass). What the source swap bought, intersected with
+  verb view from it (missing/corrupt = hard error; `--no-inflect` disables the
+  agreement pass, and `--no-lemmas` disables grouping but then REQUIRES
+  `--no-inflect` on fr — since #134 agreement is keyed by the lexemes grouping
+  provides, so the pair is rejected rather than silently rewriting nothing). What the source swap bought, intersected with
   the reduced vocabulary (#131's realizable-cell measure): verb 92,030 → **102,911**
   cells, noun **68,077**, adj **53,454** — and `ind:pre:2s` now exists for ~13,000
   lemmas (Lefff had 7,777, Lexique 1,901). The mixed-entry cleanup dropped 5,346

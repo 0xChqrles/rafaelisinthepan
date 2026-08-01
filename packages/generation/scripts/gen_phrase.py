@@ -259,7 +259,9 @@ def load_lemma_table(lang, disabled=False):
     fr reads the unified inventory's grouping (#132); en reads its AGID form→lemma
     table (#104). Missing table -> hard error either way. --no-lemmas opts out
     explicitly and returns an empty table, under which every word is its own
-    singleton group — byte-identical to pre-#104 output."""
+    singleton group — the ungrouped ranking, slug-collision losers compacted
+    (#134). For a language WITH a forms table it also requires --no-inflect
+    (see main): the agreement pass is keyed by the lexemes grouping provides."""
     if disabled:
         return {}
     if lang in FORM_LANGS:
@@ -2221,8 +2223,10 @@ def parse_args():
                         "sélecteur interactif sur un terminal)")
     # Optional source metadata (#5); any flag given here is NOT re-prompted on a TTY.
     p.add_argument("--no-lemmas", action="store_true",
-                   help="désactive le regroupement par lemme (#104) — chaque forme "
-                        "fléchie garde son propre rang")
+                   help="désactive le regroupement par lexème (#104/#134) — chaque "
+                        "forme fléchie garde son propre rang ; exige --no-inflect "
+                        "quand la langue a une table de formes (l'accord est indexé "
+                        "par les lexèmes du regroupement)")
     p.add_argument("--no-roads", action="store_true",
                    help="n'émet aucun champ `road` (#115) — les distances `dq` "
                         "restent écrites (le score en dépend)")
@@ -2287,7 +2291,7 @@ def main():
     explicit_forms = parse_form_args(args.form)
 
     # Lemma table (#104), loaded before the vectors so a missing table fails fast.
-    # An empty table (--no-lemmas) reproduces the pre-#104 behaviour exactly.
+    # An empty table (--no-lemmas) reproduces the ungrouped walk.
     lemma_table = load_lemma_table(lang, disabled=args.no_lemmas)
     forms_by_lemma = invert_lemmas(lemma_table)
 
