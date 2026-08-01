@@ -546,7 +546,7 @@ def test_a_rewrite_the_player_could_not_type_is_declined():
     assert rmap["distraire"] == {"word": "distraire", "rank": 1}
     # ...and the decline is a counted FALLBACK (#134's * report): the requested
     # form exists but nobody could type it, so the representative stays.
-    assert resolver.fallbacks["amuses"] == [(1, "distraire")]
+    assert resolver.fallbacks["amuses"] == ("amuses", [(1, "distraire")])
 
 
 def test_the_whole_map_agrees_not_just_the_near_field():
@@ -631,7 +631,7 @@ def test_cross_group_collision_skips_the_rewrite():
                           lexemes={3: "lasser:v"}) == {}
     assert rmap["lassés"] == {"word": "lassés", "rank": 3}   # original form kept
     assert rmap["lasses"] == {"word": "autre", "rank": 1}    # closer group untouched
-    assert resolver.collisions["amuses"] == 1   # ...and the decline is reported
+    assert resolver.collisions["amuses"] == ("amuses", 1)   # ...and it is reported
 
     # positive control: with that slug free, the very same rewrite happens.
     free = _map(("amuses", "amuses", 0), ("lassés", "lassés", 3))
@@ -838,7 +838,7 @@ def test_a_rewrite_falls_back_to_a_typable_spelling():
     fell = gen_phrase.FormResolver(table, explicit={"amuses": "ind:pre:2s"})
     assert fell.apply(rmap, "amuses", none_typable,
                       lexemes={1: "déblayer:v"}) == {}
-    assert fell.fallbacks["amuses"] == [(1, "déblayer")]
+    assert fell.fallbacks["amuses"] == ("amuses", [(1, "déblayer")])
 
 
 def test_a_group_already_in_the_right_cell_is_not_respelled():
@@ -1116,6 +1116,30 @@ def test_durent_needs_no_arbitration_anymore():
     assert {l for l, _f in TABLE.entries["durent"]} == {"devoir:v", "durer:v"}
     assert resolver.realize_cell("durer:v", "ind:pre:2s") == ("dures",)
     assert resolver.realize_cell("devoir:v", "ind:pre:2s") == ("dois",)
+
+
+def test_reports_carry_the_secrets_display_form_not_its_slug():
+    # The report keys are slugs (dedupe), but what prints is the DISPLAY form: a
+    # «lassés» secret must be reported as « lassés », never « lasses ».
+    # (--form keys are slugs too, exactly like the parse produces them.)
+    resolver = _resolver(explicit={"lasses": "par:pas:m:p"})
+    rmap = _map(("lasses", "lassés", 0), ("marchait", "marchait", 1))
+    assert resolver.apply(rmap, "lassés", _donors(),
+                          lexemes={1: "marcher:v"}) == {}
+    assert resolver.fallbacks["lasses"] == ("lassés", [(1, "marchait")])
+
+
+def test_no_lemmas_without_no_inflect_is_rejected(monkeypatch, capsys):
+    # --no-lemmas removes the lexemes the agreement pass is keyed by (#134):
+    # running it anyway would take --form answers and rewrite nothing, silently.
+    monkeypatch.setattr(gen_phrase.sys.stdin, "isatty", lambda: False,
+                        raising=False)
+    monkeypatch.setattr(gen_phrase.sys, "argv", [
+        "gen_phrase.py", "la scie coupe le bois sec", "--lang", "fr",
+        "--words", "scie", "bois", "sec", "--no-lemmas"])
+    with pytest.raises(SystemExit):
+        gen_phrase.main()
+    assert "--no-inflect" in capsys.readouterr().err
 
 
 # --- a batch run agrees ONLY when told the form (#133) -----------------------------

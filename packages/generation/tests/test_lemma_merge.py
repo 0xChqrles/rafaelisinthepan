@@ -69,8 +69,8 @@ def test_closest_form_canonical_and_ranks_compacted():
     # vermine adds no new key to an already-keyed lexeme: no rank consumed, public
     # is promoted from raw rank 2 to compacted rank 1.
     assert [(w, r) for w, r, _ in merged] == [("vermines", 0), ("public", 1)]
-    assert groups[0] == ("chat", 0, ("chat",), True)  # the secret is group 0
-    assert ("vermines", 1, ("vermine",), True) in groups
+    assert groups[0] == ("chat", 0, ("chat",), True, "chat")  # the secret: group 0
+    assert ("vermines", 1, ("vermine",), True, "vermines") in groups
 
 
 def test_top_k_counts_surviving_groups_not_raw_words():
@@ -150,8 +150,8 @@ def test_twin_no_clean_lexemes_mint_one_group_not_ghost_ranks():
     _m, _rmap, groups = _build("poème", ranking, POETRY,
                                {"vers", "strophe", "ver"})
 
-    assert ("vers", 1, ("vers:nc",), False) in groups        # take what exists...
-    assert all(claims != ("vers:prep",) for _w, _r, claims, _c in groups)
+    assert ("vers", 1, ("vers:nc",), False, "vers") in groups   # take what exists...
+    assert all(claims != ("vers:prep",) for _w, _r, claims, _c, _rep in groups)
     assert [g[1] for g in groups] == [0, 1, 2, 3]            # ...and no ghost rank
 
 
@@ -188,7 +188,7 @@ def test_a_no_clean_family_is_one_group_both_forms_key_to_it():
     assert [(w, r) for w, r, _ in merged] == [("écarlate", 0), ("rouge", 1)]
     assert rmap["rouge"]["rank"] == 2
     assert rmap["rouges"]["rank"] == 2        # same group: same distance
-    assert ("rouge", 2, ("rouge:adj",), False) in groups   # flagged not-clean
+    assert ("rouge", 2, ("rouge:adj",), False, "rouge") in groups  # flagged not-clean
 
 
 def test_display_is_the_closest_owned_form_never_a_stolen_slug():
@@ -207,6 +207,42 @@ def test_display_is_the_closest_owned_form_never_a_stolen_slug():
     assert rmap["cotation"] == {"word": "cotation", "rank": 1}  # owned display
     # ...while the group still RANKS by its representative's similarity.
     assert [(w, r, s) for w, r, s in merged] == [("cotation", 0, .9)]
+
+
+def test_a_borrowed_secret_sharing_its_donors_slug_keeps_its_own_display():
+    # #119 x #134: «abattît» has no vector and borrows «abattit»'s; both fold to
+    # one slug and BOTH sit outside the ranking (the donor is the walk's origin).
+    # The head keys FIRST, so rank 0 displays the true sentence form — the solved
+    # sentence must never lose its accent to the donor's spelling.
+    table = {"abattît": ("abattre:v",), "abattit": ("abattre:v",),
+             "hache": ("hache:nc",)}
+    ranking = [("hache", 0, .9)]
+    _m, rmap, groups = _build("abattît", ranking, table, {"abattit", "hache"},
+                              secret_lemmas=("abattre:v",))
+    assert rmap["abattit"] == {"word": "abattît", "rank": 0}
+    assert groups[0][0] == "abattît"
+
+
+def test_roads_cluster_the_representative_not_the_display_fallback():
+    # cote:nc displays «cotation» (its representative's slug belongs to the
+    # secret's «côtés») but it was RANKED by «cotes»' vector — the roads must
+    # cluster that vector. kv here does not even know the display form, so
+    # reading it would be a hard error, not a subtle one.
+    table = {"côté": ("côté:nc",), "côtés": ("côté:nc",),
+             "cotes": ("cote:nc",), "cotation": ("cote:nc",),
+             "taux": ("taux:nc",), "marée": ("marée:nc",),
+             "impôt": ("impôt:nc",)}
+    ranking = [("cotes", 0, .9), ("taux", 1, .8), ("marée", 2, .7),
+               ("impôt", 3, .6)]
+    merged, rmap, groups = _build(
+        "côté", ranking, table,
+        {"côté", "côtés", "cotes", "cotation", "taux", "marée", "impôt"})
+    assert rmap["cotation"]["rank"] == 1     # the display fell back...
+    kv = {"cotes": [1.0, 0.0, 0.0], "taux": [0.0, 1.0, 0.0],
+          "marée": [1.0, 0.1, 0.0], "impôt": [0.0, 0.9, 0.1]}
+    gen_phrase.annotate_roads(rmap, merged, kv, start_rank=4,
+                              reps=gen_phrase.group_reps(groups))
+    assert "road" in rmap["cotation"]        # ...and the geometry still lands
 
 
 def test_a_group_with_no_free_key_dissolves_and_consumes_no_rank():
@@ -282,7 +318,7 @@ def test_an_unconfirmed_ambiguous_secret_still_claims_nothing():
     merged, rmap, groups = _build("mois", ranking, table,
                                   {"moi", "mois", "arbre"})
 
-    assert groups[0] == ("mois", 0, (), True)
+    assert groups[0] == ("mois", 0, (), True, "mois")
     assert [(w, r) for w, r, _ in merged] == [("moi", 0), ("arbre", 1)]
     assert rmap["mois"] == {"word": "mois", "rank": 0}
     assert rmap["moi"]["rank"] == 1
