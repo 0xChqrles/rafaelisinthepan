@@ -167,13 +167,14 @@ def _long_map(n=200):
     words = [letters[i // 10] + letters[i % 10] for i in range(n)]
     ranking = [(w, i, 0.9 - i * 0.001) for i, w in enumerate(words)]
     kv = {w: [1.0, 0.0, 0.0] if i % 2 else [0.0, 1.0, 0.0] for i, w in enumerate(words)}
-    merged, rmap = gen_phrase.build_puzzle_rank_map("secret", ranking, {}, {}, set(words))
+    merged, rmap, _groups = gen_phrase.build_puzzle_rank_map("secret", ranking, {}, {},
+                                                         set(words))
     return words, merged, rmap, kv
 
 
 def test_every_alias_key_of_a_group_carries_the_group_dq_and_road():
     ranking = [("privée", 0, 0.80), ("chien", 1, 0.40)]
-    merged, rmap = gen_phrase.build_puzzle_rank_map(
+    merged, rmap, _groups = gen_phrase.build_puzzle_rank_map(
         "vermine", ranking, TABLE, FORMS, VSET)
     gen_phrase.annotate_roads(rmap, merged, KV, start_rank=2)
 
@@ -187,7 +188,7 @@ def test_every_alias_key_of_a_group_carries_the_group_dq_and_road():
 
 def test_the_secret_entry_carries_no_dq_and_no_road():
     ranking = [("privée", 0, 0.80), ("chien", 1, 0.40)]
-    merged, rmap = gen_phrase.build_puzzle_rank_map(
+    merged, rmap, _groups = gen_phrase.build_puzzle_rank_map(
         "vermine", ranking, TABLE, FORMS, VSET)
     gen_phrase.annotate_roads(rmap, merged, KV, start_rank=2)
 
@@ -204,7 +205,7 @@ def test_slug_collision_keeps_the_winning_group_annotations():
     table = {"côté": ("côté",), "coté": ("coté",), "chien": ("chien",)}
     forms = gen_phrase.invert_lemmas(table)
     ranking = [("côté", 0, 0.80), ("coté", 1, 0.60), ("chien", 2, 0.40)]
-    _merged, rmap = gen_phrase.build_puzzle_rank_map(
+    _merged, rmap, _groups = gen_phrase.build_puzzle_rank_map(
         "vermine", ranking, table, forms, {"côté", "coté", "chien"})
 
     assert rmap["cote"] == {"word": "côté", "rank": 1, "dq": 255}
@@ -236,7 +237,7 @@ def test_the_road_ceiling_still_bounds_a_start_picked_outside_the_band():
 def test_no_roads_flag_drops_roads_but_keeps_dq():
     # --no-roads reaches annotate_roads as "no vectors to cluster with".
     ranking = [("privée", 0, 0.80), ("chien", 1, 0.40)]
-    merged, rmap = gen_phrase.build_puzzle_rank_map(
+    merged, rmap, _groups = gen_phrase.build_puzzle_rank_map(
         "vermine", ranking, TABLE, FORMS, VSET)
     gen_phrase.annotate_roads(rmap, merged, None, start_rank=2)
 

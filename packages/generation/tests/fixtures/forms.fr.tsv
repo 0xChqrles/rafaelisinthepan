@@ -39,6 +39,13 @@ penser	v	par:pas:f:s	pensée	0
 penser	v	par:pas:m:s	pensé	1
 pensée	nc	n:s	pensée	1
 pensée	nc	n:p	pensées	1
+rouge	adj	adj:m:s	rouge	1
+rouge	adj	adj:f:s	rouge	1
+rouge	adj	adj:m:p	rouges	1
+rouge	adj	adj:f:p	rouges	1
+rouge	adv	cit	rouge	0
+rouge	nc	n:s	rouge	0
+rouge	nc	n:p	rouges	0
 vers	prep	cit	vers	1
 évident	adj	adj:m:s	évident	1
 évident	adj	adj:m:p	évidents	1

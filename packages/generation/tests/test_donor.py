@@ -153,7 +153,7 @@ def test_borrowed_ranks_are_the_donors_own_ranks(monkeypatch):
 
     # Everything past the secret's own group is exactly what a map built directly on
     # the donor would hold: the substitution moves the walk's origin, nothing else.
-    merged, donor_map = gen_phrase.build_puzzle_rank_map(
+    merged, donor_map, _groups = gen_phrase.build_puzzle_rank_map(
         "accoutume", RANKINGS["accoutume"], TABLE, FORMS, VSET)
     # The stub starts every hole on "vermine", the rank-1 group, so the road zone is
     # exactly it (#115 cuts the roads from the departure in).

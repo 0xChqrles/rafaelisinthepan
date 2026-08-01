@@ -17,12 +17,17 @@ sentence: « tu t'___ » must read "t'distrais", never "t'distraire". The rules:
     numbers nouns (gender is lexical, not inflectional), an adjective secret
     genders+numbers adjectives — and a cross-POS neighbour or an invariable keeps its
     citation form (a `cit` secret prescribes nothing to anyone);
-  - a form carrying several lexemes of the target POS is DECLINED, never arbitrated;
-  - a group is left alone when its canonical is not `dom`-admitted as the feature's
-    POS, has no such form, would become a word nobody could type back, would land on
-    a slug a CLOSER group already owns, or would take the slug a farther group's
-    canonical — with the whole map agreed every group prints its word somewhere, so
-    whatever it prints must type back at its own exponent, never a closer one;
+  - realization is keyed by each GROUP's LEXEME (#134), which the walk settled: the
+    old surface-side `dom` gate and multi-lexeme refusal answered "what is this
+    word?", a question that no longer arises here — «durent» never heads a group,
+    and the requested form is ALWAYS displayed when it exists and is typable (no
+    drift guard: sentence context disambiguates for the player);
+  - a group is left alone when its lexeme has no such cell or none of its spellings
+    is typable — it keeps its clean representative, the #134 fallback, counted for
+    the curator's `*` report — or when the rewrite would land on a slug a CLOSER
+    group already owns, or take the slug a farther group's canonical: whatever a
+    group prints must type back at its own exponent, never a closer one (declines
+    counted as collisions);
   - rewriting a group rewrites every entry carrying it (aliases included) and keys the
     new slug at that same rank, so typing any form of the group displays the agreed one.
 
@@ -39,11 +44,13 @@ below follow that split of responsibilities:
     the curated core or a compiled morphology) from entries that have corroborated
     ones — measured on #131's enumerated cases — and PINS the source's enumerated
     basic-verb holes rather than patching them from another source.
-  - LEXIQUE is frequency/POS evidence only. The `dom` gate keeps two cases: with
+  - LEXIQUE is frequency/POS evidence only. The `dom` column keeps two cases: with
     corpus evidence the row's class must strictly beat every rival ("évident" is
-    dominantly the adjective, so it is never read — nor written — as a verb); without
-    evidence, the surface is admitted only when it is analysable as that class and
-    nothing else ("accoutumes"), never guessed.
+    dominantly the adjective); without evidence, the surface is admitted only when
+    it is analysable as that class and nothing else ("accoutumes"), never guessed.
+    Since #134 the DISPLAY side no longer consults it — realization is keyed by the
+    group's lexeme — but the column still ships (the artifact is unchanged and #135
+    reads it for its flags).
   - a gated form stays a legal TARGET: "pensée" realizes penser's par:pas:f:s.
 """
 
@@ -367,17 +374,23 @@ def test_grouping_and_agreement_views_span_every_pos():
     assert TABLE.dominant.get("jardin") == "nc"
 
 
-def test_the_two_naive_rewrites_are_refused():
+def test_realization_is_keyed_by_the_lexeme_never_the_surface():
     resolver = _resolver()
-    # évident -> évidé: the POS gate refuses to WRITE "évident" as a verb — its
-    # analyses are still DESCRIBED (the secret question lists them all, #133), but
-    # the neighbour rewrite only admits the dominant reading.
+    # the secret question still DESCRIBES every analysis of a surface (#133)...
     assert resolver.features_of("évident") == ("adj:m:s", "ind:pre:3p")
-    assert resolver.realize("évident", "par:pas:m:s") is None
+    # ...but realizing is per-LEXEME and per-POS: a cross-POS lexeme has no cell at
+    # the feature, and a `cit` target prescribes nothing to anyone.
+    assert resolver.realize_cell("jardin:nc", "ind:pre:2s") == ()
+    assert resolver.realize_cell("marcher:v", "n:p") == ()
+    assert resolver.realize_cell("doucement:adv", "cit") == ()
     # pensé -> pensée: the gender lives in the feature, so a masculine target stays
-    # masculine. (And "pensée" is gated as a source in its own right.)
-    assert resolver.realize("pensé", "par:pas:m:s") == "pensé"
-    assert resolver.realize("pensé", "par:pas:f:s") == "pensée"
+    # masculine.
+    assert resolver.realize_cell("penser:v", "par:pas:m:s") == ("pensé",)
+    assert resolver.realize_cell("penser:v", "par:pas:f:s") == ("pensée",)
+    # Display is ALWAYS the requested form (#134): the walk settled WHAT each group
+    # is, so évider:v states — and prints — «évident» when a verb secret's cell asks
+    # for it. No drift guard; sentence context disambiguates for the player.
+    assert resolver.realize_cell("évider:v", "ind:pre:3p") == ("évident",)
 
 
 # --- 9. the secret's form is NEVER inferred (#133) --------------------------------
@@ -511,7 +524,8 @@ def test_pass_agrees_the_groups_and_their_aliases():
     # its alias key "marche" must follow, so typing any form displays the agreed one.
     rmap = _map(("amuses", "amuses", 0), ("marchait", "marchait", 1),
                 ("marche", "marchait", 1), ("jardin", "jardin", 2))
-    changed = _settled("ind:pre:2s").apply(rmap, "amuses", _donors())
+    changed = _settled("ind:pre:2s").apply(
+        rmap, "amuses", _donors(), lexemes={1: "marcher:v", 2: "jardin:nc"})
 
     assert changed == {1: ("marchait", "marches")}
     assert rmap["marchait"] == {"word": "marches", "rank": 1}
@@ -526,15 +540,21 @@ def test_a_rewrite_the_player_could_not_type_is_declined():
     # 12. the table knows distraire -> "distrais", but no reduced word folds to that
     # slug: displaying it would print a hint nobody can type back.
     rmap = _map(("amuses", "amuses", 0), ("distraire", "distraire", 1))
-    assert _settled("ind:pre:2s").apply(rmap, "amuses", _donors()) == {}
+    resolver = _settled("ind:pre:2s")
+    assert resolver.apply(rmap, "amuses", _donors(),
+                          lexemes={1: "distraire:v"}) == {}
     assert rmap["distraire"] == {"word": "distraire", "rank": 1}
+    # ...and the decline is a counted FALLBACK (#134's * report): the requested
+    # form exists but nobody could type it, so the representative stays.
+    assert resolver.fallbacks["amuses"] == ("amuses", [(1, "distraire")])
 
 
 def test_the_whole_map_agrees_not_just_the_near_field():
     # 13 (#133): the scope is every group — a rank far past any start band agrees too.
     rmap = _map(("amuses", "amuses", 0), ("marchait", "marchait", 2),
                 ("lassés", "lassés", 400))
-    changed = _settled("ind:pre:2s").apply(rmap, "amuses", _donors())
+    changed = _settled("ind:pre:2s").apply(
+        rmap, "amuses", _donors(), lexemes={2: "marcher:v", 400: "lasser:v"})
 
     assert changed == {2: ("marchait", "marches"), 400: ("lassés", "lasses")}
     assert rmap["lasses"] == {"word": "lasses", "rank": 400}
@@ -550,7 +570,10 @@ def test_a_noun_secret_numbers_the_nouns_and_only_the_nouns():
     rmap = _map(("jardins", "jardins", 0), ("pensee", "pensée", 1),
                 ("marchait", "marchait", 2), ("grand", "grand", 3),
                 ("doucement", "doucement", 4))
-    changed = _settled("n:p", "jardins").apply(rmap, "jardins", _donors())
+    changed = _settled("n:p", "jardins").apply(
+        rmap, "jardins", _donors(),
+        lexemes={1: "pensée:nc", 2: "marcher:v", 3: "grand:adj",
+                 4: "doucement:adv"})
 
     assert changed == {1: ("pensée", "pensées")}
     assert rmap["pensee"] == {"word": "pensées", "rank": 1}
@@ -565,7 +588,8 @@ def test_an_adjective_secret_genders_and_numbers_the_adjectives():
     # number; the noun stays — nouns take number only, and from a noun secret.
     rmap = _map(("grandes", "grandes", 0), ("lent", "lent", 1),
                 ("jardin", "jardin", 2))
-    changed = _settled("adj:f:p", "grandes").apply(rmap, "grandes", _donors())
+    changed = _settled("adj:f:p", "grandes").apply(
+        rmap, "grandes", _donors(), lexemes={1: "lent:adj", 2: "jardin:nc"})
 
     assert changed == {1: ("lent", "lentes")}
     assert rmap["lent"] == {"word": "lentes", "rank": 1}
@@ -578,17 +602,20 @@ def test_a_citation_form_secret_prescribes_nothing():
     rmap = _map(("doucement", "doucement", 0), ("marchait", "marchait", 1),
                 ("jardin", "jardin", 2), ("grand", "grand", 3))
     before = {k: dict(v) for k, v in rmap.items()}
-    assert _settled("cit", "doucement").apply(rmap, "doucement", _donors()) == {}
+    assert _settled("cit", "doucement").apply(
+        rmap, "doucement", _donors(),
+        lexemes={1: "marcher:v", 2: "jardin:nc", 3: "grand:adj"}) == {}
     assert rmap == before
 
 
-def test_a_same_pos_homograph_neighbour_is_declined_not_arbitrated():
-    # "fils" carries TWO noun lexemes (fil:nc and fils:nc) — the `dom` gate cannot
-    # settle same-POS ambiguity, so the neighbour keeps its dictionary form: the
-    # same durent/devoir refusal, reached through the nominal paradigms.
-    rmap = _map(("jardins", "jardins", 0), ("fils", "fils", 1))
-    assert _settled("n:s", "jardins").apply(rmap, "jardins", _donors()) == {}
-    assert rmap["fils"] == {"word": "fils", "rank": 1}
+def test_a_shared_surface_no_longer_needs_arbitration():
+    # "fils" carries TWO noun lexemes (fil:nc and fils:nc); the old surface-keyed
+    # rewrite had to decline it. Under #134 it never heads a group — the walk hands
+    # apply each group's LEXEME, and each realizes its own cells.
+    resolver = _resolver()
+    assert resolver.realize_cell("fil:nc", "n:s") == ("fil",)
+    assert resolver.realize_cell("fil:nc", "n:p") == ("fils",)
+    assert resolver.realize_cell("fils:nc", "n:s") == ("fils",)
 
 
 # --- 14. the collision rule: decline, never contradict -----------------------------
@@ -599,13 +626,17 @@ def test_cross_group_collision_skips_the_rewrite():
     # typing it read 1: a displayed clue improving its own hole. So it is declined.
     rmap = _map(("amuses", "amuses", 0), ("lasses", "autre", 1),
                 ("lassés", "lassés", 3))
-    assert _settled("ind:pre:2s").apply(rmap, "amuses", _donors()) == {}
+    resolver = _settled("ind:pre:2s")
+    assert resolver.apply(rmap, "amuses", _donors(),
+                          lexemes={3: "lasser:v"}) == {}
     assert rmap["lassés"] == {"word": "lassés", "rank": 3}   # original form kept
     assert rmap["lasses"] == {"word": "autre", "rank": 1}    # closer group untouched
+    assert resolver.collisions["amuses"] == ("amuses", 1)   # ...and it is reported
 
     # positive control: with that slug free, the very same rewrite happens.
     free = _map(("amuses", "amuses", 0), ("lassés", "lassés", 3))
-    assert _settled("ind:pre:2s").apply(free, "amuses", _donors()) == \
+    assert _settled("ind:pre:2s").apply(free, "amuses", _donors(),
+                                        lexemes={3: "lasser:v"}) == \
         {3: ("lassés", "lasses")}
     assert free["lasses"] == {"word": "lasses", "rank": 3}
 
@@ -622,7 +653,8 @@ def test_a_group_reclaimed_down_to_nothing_is_not_resurrected_without_geometry()
         "lassés": {"word": "lassés", "rank": 1, "dq": 255, "road": 0},
         "lasses": {"word": "marchait", "rank": 3, "dq": 200, "road": 0},
     }
-    changed = _settled("ind:pre:2s").apply(rmap, "amuses", _donors())
+    changed = _settled("ind:pre:2s").apply(
+        rmap, "amuses", _donors(), lexemes={1: "lasser:v", 3: "marcher:v"})
 
     assert changed == {1: ("lassés", "lasses")}      # the closer rewrite still happens
     assert rmap["lasses"] == {"word": "lasses", "rank": 1, "dq": 255, "road": 0}
@@ -635,10 +667,11 @@ def test_a_group_reclaimed_down_to_nothing_is_not_resurrected_without_geometry()
 
 def test_a_farther_key_is_reclaimed_like_any_closest_first_alias():
     # The mirror of the case above: the slug is held by a FARTHER group, so taking it
-    # contradicts nothing — closest-first is exactly what expand_aliases already does.
+    # contradicts nothing — closest-first is exactly how the assembly resolves keys.
     rmap = _map(("amuses", "amuses", 0), ("lassés", "lassés", 2),
                 ("lasses", "autre", 7))
-    assert _settled("ind:pre:2s").apply(rmap, "amuses", _donors()) == \
+    assert _settled("ind:pre:2s").apply(rmap, "amuses", _donors(),
+                                        lexemes={2: "lasser:v"}) == \
         {2: ("lassés", "lasses")}
     assert rmap["lasses"] == {"word": "lasses", "rank": 2}
 
@@ -648,7 +681,8 @@ def test_a_farther_key_is_reclaimed_like_any_closest_first_alias():
 def test_no_inflect_leaves_the_map_exactly_as_it_was():
     rmap = _map(("amuses", "amuses", 0), ("marchait", "marchait", 1))
     before = {k: dict(v) for k, v in rmap.items()}
-    assert _resolver(table=None).apply(rmap, "amuses", _donors()) == {}
+    assert _resolver(table=None).apply(rmap, "amuses", _donors(),
+                                       lexemes=None) == {}
     assert rmap == before
     assert gen_phrase.load_form_table("fr", disabled=True) is None
     # en has no inventory at all — a decided non-goal, not a missing file.
@@ -658,12 +692,12 @@ def test_no_inflect_leaves_the_map_exactly_as_it_was():
 def test_a_rewritten_hole_is_reported():
     resolver = _settled("ind:pre:2s")
     rmap = _map(("amuses", "amuses", 0), ("marchait", "marchait", 1))
-    resolver.apply(rmap, "amuses", _donors())
+    resolver.apply(rmap, "amuses", _donors(), lexemes={1: "marcher:v"})
     assert resolver.used == {"amuses": ("amuses", "ind:pre:2s", 1)}
     # a hole nothing moved is never announced
     quiet = _settled("ind:pre:2s")
     quiet.apply(_map(("amuses", "amuses", 0), ("jardin", "jardin", 1)), "amuses",
-                _donors())
+                _donors(), lexemes={1: "jardin:nc"})
     assert quiet.used == {}
 
 
@@ -733,17 +767,20 @@ def test_committed_table_analyses_the_form_exactly(form, analyses):
     assert tuple(sorted(committed().entries.get(form, ()))) == analyses
 
 
-def test_the_source_side_gate_still_declines_a_dominant_non_verb():
+def test_the_dom_column_still_ships_and_display_is_lexeme_keyed():
     table = committed()
-    # "évident" is a form of "évider" on paper and overwhelmingly the adjective, so it
-    # is never WRITTEN as a verb — while staying available as a target realization,
-    # and while its analyses stay describable for the secret question (#133).
+    # The `dom` data is unchanged in the artifact ("évident" is dominantly the
+    # adjective) — but since #134 the display side realizes by LEXEME: évider:v
+    # states «évident», and prints it when a verb secret's cell asks for it (no
+    # drift guard — decided; sentence context disambiguates for the player).
     assert table.dominant.get("évident") == "adj"
-    assert gen_phrase.FormResolver(table).realizations("évident", "ind:pre:3p") == ()
     assert table.realize[("évider:v", "ind:pre:3p")] == ("évident",)
-    # "pensée" likewise: dominantly the noun, legal as penser's f:s participle.
+    resolver = gen_phrase.FormResolver(table)
+    assert resolver.realize_cell("évider:v", "ind:pre:3p") == ("évident",)
+    # "pensée": dominantly the noun, and penser's f:s participle all the same.
     assert table.dominant.get("pensée") == "nc"
-    # ...and the auxiliaries ARE admitted as verbs, so an être/avoir hole can agree.
+    assert resolver.realize_cell("penser:v", "par:pas:f:s")[:1] == ("pensée",)
+    # ...and the auxiliaries are ordinary verbs in the data.
     for form in ("avais", "ai", "ont", "avez", "étant", "été", "eu", "aurai"):
         assert table.dominant.get(form) == "v", form
 
@@ -755,7 +792,7 @@ def test_an_auxiliary_secret_still_refuses_to_guess_when_it_is_ambiguous():
     assert resolver.features_of("avais") == ("ind:imp:1s", "ind:imp:2s")
     with pytest.raises(SystemExit):
         resolver.feature_for("avais")
-    assert gen_phrase.FormResolver(committed()).realize("avais", "par:pas:m:s") == "eu"
+    assert resolver.realize_cell("avoir:v", "par:pas:m:s")[:1] == ("eu",)
 
 
 def test_a_number_invariable_participle_secret_is_asked_about():
@@ -768,7 +805,7 @@ def test_a_number_invariable_participle_secret_is_asked_about():
     settled = gen_phrase.FormResolver(committed(),
                                       explicit={"pris": "par:pas:m:p"})
     assert settled.feature_for("pris") == "par:pas:m:p"
-    assert settled.realize("amusé", "par:pas:m:p") == "amusés"
+    assert settled.realize_cell("amuser:v", "par:pas:m:p")[:1] == ("amusés",)
 
 
 def test_a_rewrite_falls_back_to_a_typable_spelling():
@@ -779,27 +816,30 @@ def test_a_rewrite_falls_back_to_a_typable_spelling():
     table = committed()
     assert table.realize[("déblayer:v", "ind:pre:2s")] == ("déblaies", "déblayes")
     resolver = gen_phrase.FormResolver(table)
-    assert resolver.realize("déblayer", "ind:pre:2s") == "déblaies"   # preferred...
-    assert resolver.realizations("déblayer", "ind:pre:2s") == ("déblaies", "déblayes")
+    assert resolver.realize_cell("déblayer:v", "ind:pre:2s") == \
+        ("déblaies", "déblayes")
 
     # "déblaies" is not typable here, "déblayes" is -> the group agrees on the latter.
     vocab = ["déblayer", "déblayes", "amuses"]
     donors = gen_phrase.DonorResolver({}, {}, vocab, set(vocab), "fr")
     rmap = _map(("amuses", "amuses", 0), ("deblayer", "déblayer", 1))
     with pytest.raises(SystemExit):     # no --form, no TTY: never inferred (#133)
-        resolver.apply(rmap, "amuses", donors)
+        resolver.apply(rmap, "amuses", donors, lexemes={1: "déblayer:v"})
     settled = gen_phrase.FormResolver(table, explicit={"amuses": "ind:pre:2s"})
     rmap = _map(("amuses", "amuses", 0), ("deblayer", "déblayer", 1))
-    assert settled.apply(rmap, "amuses", donors) == {1: ("déblayer", "déblayes")}
+    assert settled.apply(rmap, "amuses", donors,
+                         lexemes={1: "déblayer:v"}) == {1: ("déblayer", "déblayes")}
     assert rmap["deblayer"]["word"] == "déblayes"
 
-    # ...and with NEITHER spelling typable the group is left alone, as before.
+    # ...and with NEITHER spelling typable the group is left alone — a counted
+    # fallback for the * report (#134).
     bare = ["déblayer", "amuses"]
     none_typable = gen_phrase.DonorResolver({}, {}, bare, set(bare), "fr")
     rmap = _map(("amuses", "amuses", 0), ("deblayer", "déblayer", 1))
-    assert gen_phrase.FormResolver(
-        table, explicit={"amuses": "ind:pre:2s"}).apply(
-            rmap, "amuses", none_typable) == {}
+    fell = gen_phrase.FormResolver(table, explicit={"amuses": "ind:pre:2s"})
+    assert fell.apply(rmap, "amuses", none_typable,
+                      lexemes={1: "déblayer:v"}) == {}
+    assert fell.fallbacks["amuses"] == ("amuses", [(1, "déblayer")])
 
 
 def test_a_group_already_in_the_right_cell_is_not_respelled():
@@ -813,7 +853,7 @@ def test_a_group_already_in_the_right_cell_is_not_respelled():
     donors = gen_phrase.DonorResolver({}, {}, vocab, set(vocab), "fr")
     rmap = _map(("ont", "ont", 0), ("asseyent", "asseyent", 1))
     resolver = gen_phrase.FormResolver(table, explicit={"ont": "ind:pre:3p"})
-    assert resolver.apply(rmap, "ont", donors) == {}
+    assert resolver.apply(rmap, "ont", donors, lexemes={1: "asseoir:v"}) == {}
     assert rmap["asseyent"] == {"word": "asseyent", "rank": 1}
 
 
@@ -1068,15 +1108,39 @@ def test_paradigm_coverage_cannot_collapse_back_to_a_corpus_baseline():
 
 # --- a form with several verb lemmas is declined, not arbitrated -------------------
 
-def test_an_ambiguous_paradigm_is_refused():
-    # "durent" is the present of durer AND the past historic of devoir. The table is
-    # right about both and the embedding vector means the first, so realizing
-    # devoir's paradigm would print "dois" for a word the geometry placed as "durer".
+def test_durent_needs_no_arbitration_anymore():
+    # "durent" is the present of durer AND the past historic of devoir — the case
+    # the old surface-keyed rewrite had to DECLINE. Under #134 it never heads a
+    # group (a homograph is only a key, resolved closest-first): durer:v and
+    # devoir:v are separate groups, and each realizes its own paradigm.
     resolver = _resolver()
     assert {l for l, _f in TABLE.entries["durent"]} == {"devoir:v", "durer:v"}
-    assert resolver.realize("durent", "ind:pre:2s") is None
-    # the unambiguous neighbour right beside it still agrees.
-    assert resolver.realize("marchait", "ind:pre:2s") == "marches"
+    assert resolver.realize_cell("durer:v", "ind:pre:2s") == ("dures",)
+    assert resolver.realize_cell("devoir:v", "ind:pre:2s") == ("dois",)
+
+
+def test_reports_carry_the_secrets_display_form_not_its_slug():
+    # The report keys are slugs (dedupe), but what prints is the DISPLAY form: a
+    # «lassés» secret must be reported as « lassés », never « lasses ».
+    # (--form keys are slugs too, exactly like the parse produces them.)
+    resolver = _resolver(explicit={"lasses": "par:pas:m:p"})
+    rmap = _map(("lasses", "lassés", 0), ("marchait", "marchait", 1))
+    assert resolver.apply(rmap, "lassés", _donors(),
+                          lexemes={1: "marcher:v"}) == {}
+    assert resolver.fallbacks["lasses"] == ("lassés", [(1, "marchait")])
+
+
+def test_no_lemmas_without_no_inflect_is_rejected(monkeypatch, capsys):
+    # --no-lemmas removes the lexemes the agreement pass is keyed by (#134):
+    # running it anyway would take --form answers and rewrite nothing, silently.
+    monkeypatch.setattr(gen_phrase.sys.stdin, "isatty", lambda: False,
+                        raising=False)
+    monkeypatch.setattr(gen_phrase.sys, "argv", [
+        "gen_phrase.py", "la scie coupe le bois sec", "--lang", "fr",
+        "--words", "scie", "bois", "sec", "--no-lemmas"])
+    with pytest.raises(SystemExit):
+        gen_phrase.main()
+    assert "--no-inflect" in capsys.readouterr().err
 
 
 # --- a batch run agrees ONLY when told the form (#133) -----------------------------
@@ -1086,7 +1150,8 @@ def test_a_batch_run_agrees_with_form_and_dies_without():
     batch = _resolver(explicit={"marchait": "ind:imp:3s"}, interactive=False)
     assert batch.feature_for("marchait") == "ind:imp:3s"
     rmap = _map(("marchait", "marchait", 0), ("amuse", "amuse", 1))
-    assert batch.apply(rmap, "marchait", _donors()) == {1: ("amuse", "amusait")}
+    assert batch.apply(rmap, "marchait", _donors(),
+                       lexemes={1: "amuser:v"}) == {1: ("amuse", "amusait")}
     assert rmap["amuse"] == {"word": "amusait", "rank": 1}
     assert batch.used == {"marchait": ("marchait", "ind:imp:3s", 1)}
     # ...and without the flag the same unambiguous secret is a hard error.
@@ -1109,7 +1174,7 @@ def test_a_rewrite_never_takes_a_farther_groups_canonical_key():
     rmap = _map(("amuses", "amuses", 0), ("amusait", "amusait", 2),
                 ("amuse", "amuse", 5))
     agreed = _resolver(explicit={"amuses": "par:pas:m:s"}).apply(
-        rmap, "amuses", _donors())
+        rmap, "amuses", _donors(), lexemes={2: "amuser:v", 5: "amuser:v"})
 
     assert 2 not in agreed                      # the closer group declined...
     assert agreed == {5: ("amuse", "amusé")}    # ...and rank 5 kept its own slug
@@ -1129,13 +1194,17 @@ def test_every_groups_canonical_key_is_protected():
     # "past start_rank is reclaimable" carve-out is gone with the start_rank bound.
     far = _map(("marchait", "marchait", 0), ("amuse", "amuse", 1),
                ("amusait", "amusait", 20))
-    assert _settled("ind:imp:3s", "marchait").apply(far, "marchait", _donors()) == {}
+    assert _settled("ind:imp:3s", "marchait").apply(
+        far, "marchait", _donors(),
+        lexemes={1: "amuser:v", 20: "amuser:v"}) == {}
     assert far["amusait"] == {"word": "amusait", "rank": 20}
     assert far["amuse"] == {"word": "amuse", "rank": 1}
 
     near = _map(("marchait", "marchait", 0), ("amuse", "amuse", 1),
                 ("amusait", "amusait", 4))
-    assert _settled("ind:imp:3s", "marchait").apply(near, "marchait", _donors()) == {}
+    assert _settled("ind:imp:3s", "marchait").apply(
+        near, "marchait", _donors(),
+        lexemes={1: "amuser:v", 4: "amuser:v"}) == {}
     assert near["amusait"] == {"word": "amusait", "rank": 4}
     assert near["amuse"] == {"word": "amuse", "rank": 1}
 
@@ -1179,7 +1248,8 @@ def test_a_reclaimed_key_is_not_dragged_along_by_its_old_group():
     # is no longer its own.
     rmap = _map(("marchait", "marchait", 0), ("amuse", "amuse", 2),
                 ("noies", "noies", 5), ("amusait", "noies", 5))
-    changed = _settled("ind:imp:3s", "marchait").apply(rmap, "marchait", _donors())
+    changed = _settled("ind:imp:3s", "marchait").apply(
+        rmap, "marchait", _donors(), lexemes={2: "amuser:v", 5: "noyer:v"})
 
     assert changed == {2: ("amuse", "amusait"), 5: ("noies", "noyait")}
     # the reclaimed key belongs to the closer group now, and kept ITS form — without

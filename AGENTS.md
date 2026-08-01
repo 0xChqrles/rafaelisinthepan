@@ -272,41 +272,43 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
 - `ranks` is keyed by **secret slug**; the inner map is keyed by **input slug** →
   `{word, rank}`. The value carries the **canonical accented form** of its group (see
   below), which the front displays — not necessarily the typed form.
-- **Inflected forms of one word are ONE ranked group (#104, decided 2026-07-20):** on
-  the closest-first walk, a word sharing a lemma with a closer word consumes NO rank;
-  the closest form is the group's canonical entry, and every other reduced-vocab form
-  of the group's lemma(s) is an extra **alias key** pointing at the same
-  `{word, rank}` (typing `privées` finds — and displays — `privé`). The secret is
-  group 0, so **an inflection of the secret solves the hole** (`vermines` solves
-  `vermine`). Grouping is **strict** (the committed grouping tables — fr: the
-  Morphalou lexeme inventory (#132), en: AGID —
-  no transitive merge across groups that share a form); an ambiguous form (`portes` →
-  porte/porter) aliases to whichever of its groups ranked **closest**. **A group may
-  never claim TWO lexemes** (decided 2026-07-30, tightening the walk for the all-POS
-  inventory): a cross-lexeme homograph still **opens a group at its own true rank**,
-  like any other word, but it **CLAIMS NOTHING** — its vector is a blend of unrelated
-  words, so it may not stand for either. Without that, `mois` would claim `moi:nc`
-  and typing «moi» would SOLVE a `mois` hole; `bois` would claim `boire:v` and drag
-  the whole of «boire» to the distance of a wood. **The restriction is on CLAIMING,
-  not on ranking or aliasing** — the surface keeps its rank and its own display, each
-  of its lexemes is still opened by its own clean forms, and it still aliases INTO an
-  already-open group that claimed one of its lexemes. So the cost is **compaction
-  only**: an uncertain identity degrades to "not merged", never to "merged with the
-  wrong word" — the same trade as the agreement pass, holes beat wrong forms. The
-  same rule applies to the SECRET, so an ambiguous secret is **fully authorable**
-  (`amer`, `plissés`, `maison` are ~44% of frequent fr words) — its own inflections
-  simply rank as their own groups instead of aliasing to 0. **A borrowed vector
-  (#119) claims what the secret and its donor SHARE, never the union of what they
-  name** (decided 2026-07-30): a `--donor` pair names a SURFACE — which vector to
-  borrow — not a lexeme, so choosing `fut` for the secret `futs` says "use fut's
-  vector", NOT "the cask and the verb être are the same word". Claiming the union
-  said exactly that, and every form of `être` aliased to rank 0 of a noun hole. The
-  intersection keeps the donor useful (`futs`/`fut` still share `fut:nc`, so the
-  cask's family still solves) and, run through the same one-lexeme rule, can never
-  reach a lexeme the secret does not name. Merging is filter-then-cap: `TOP_K` counts
-  **distinct groups**, so ranks stay compacted. Two selected secrets in one lemma
-  group are still rejected at generation — that test weighs the FULL identity, a
-  deliberately separate question from what a group may claim.
+- **Inflected forms of one word are ONE ranked group (#104, decided 2026-07-20), and
+  a group IS a lexeme, ranked by its homograph-free representative (#134, decided
+  2026-08-01, superseding the 2026-07-30 surface walk):** each lexeme reachable from
+  the walk is ranked by its **closest embedded form that is NOT a cross-lexeme
+  homograph** (group-min over clean forms) — a homograph's vector provably blends
+  strangers' meanings (`vers` mixes the worm's plural with the preposition and the
+  poetry noun; ranking lexeme VER by it would put "earthworm" next to `poème`),
+  while an unambiguous form owns its vector entirely, even when it diverges from
+  its siblings (`lunettes` near an eye secret is real sense signal, and its whole
+  lexeme rides that closeness). A lexeme with NO clean embedded form still ranks —
+  representative = its closest form of any kind, **flagged in generation output**
+  ("take what exists"). Every reduced-vocab form of a lexeme is a key of its group
+  (typing `privées` finds — and displays — `privé`); an ambiguous form (`portes` →
+  porte/porter, `bois` → bois:nc/boire:v) keys to whichever of its lexemes' groups
+  ranked **closest** — a homographic surface is only a KEY now, never a group of
+  its own. Keys are assigned closest-first at assembly: **a group left with no key
+  dissolves and consumes no rank** (that is the old aliasing compaction, and what
+  stops twin no-clean lexemes — vers:nc/vers:prep own one embedded form between
+  them — from minting ghost ranks), and **a group's display is its closest OWNED
+  form**, so what the map prints types back at that group's own rank. The secret is
+  group 0 and **claims the lexeme the author CONFIRMED via #133** (`secret_claim`:
+  the confirmed cell names the lexeme when exactly one analysis carries it —
+  `rouges` confirmed adj:f:p IS rouge:adj — so **an inflection of a homographic
+  secret solves its hole**, `rouge` solves `rouges`), falling back fail-closed to
+  the surface-derived claim: one lexeme, or NOTHING for an unconfirmed homograph —
+  `mois` must never claim `moi:nc`, or typing «moi» would SOLVE a `mois` hole, and
+  a confirmed `mois` claims `mois:nc` alone, so the guarantee survives
+  confirmation. Because the claim needs the answer, **the #133 question fires
+  BEFORE the walk** (off a TTY `--form` is read there; the selector confirms at
+  commit, before the start band renders, its hover preview staying provisional).
+  **A borrowed vector (#119) still claims only what the secret and its donor
+  SHARE** (decided 2026-07-30): a `--donor` pair names a SURFACE — which vector to
+  borrow — not a lexeme, and a confirmed lexeme is honoured only inside that shared
+  set. Merging is filter-then-cap: `TOP_K` counts **surviving groups**, so ranks
+  stay compacted. Two selected secrets in one lemma group are still rejected at
+  generation — that test weighs the FULL identity, a deliberately separate question
+  from what a group may claim.
 - **Rank semantics:** secret = `rank 0` (perfect); nearest lemma group = `1`; larger =
   farther. Alias keys share their group's rank.
 - **Every ranked group also carries its real geometry (`dq`, `road`) — #115, decided
@@ -355,7 +357,7 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
 dom` rows over EVERY part of speech. A lexeme is **(lemma, pos)** — its consumer key
 is `porter:v` / `porte:nc`, opaque downstream — so **homography is derivable from the
 rows** (`vers` appears under `ver:nc`, `vers:nc` and `vers:prep`), which is what the
-#134 ranking rule will read. The same artifact feeds BOTH `gen_phrase`'s merge walk
+#134 ranking rule reads. The same artifact feeds BOTH `gen_phrase`'s merge walk
 (grouping, #104) and the display-agreement pass (#119): one dictionary defines the
 lexeme for grouping, ranking and display alike, so aliases can never point at one
 group while display forms come from another. The data has **three sources and one
@@ -383,11 +385,13 @@ Consequences that are load-bearing:
 
 - **The POS gate has two cases**, unchanged in meaning from #119: with Lexique
   frequency for the surface, the row's class (VER **and** AUX merge — an auxiliary is
-  a verb) must strictly beat every rival, so `évident` is never read as a verb.
+  a verb) must strictly beat every rival, so `évident` is dominantly the adjective.
   Without frequency, admit only a surface analysable as that class and **nothing
   else**, so `accoutumes` is admitted and a cross-POS homograph is declined rather
   than guessed. A gated form stays a legal **target**: `pensée` still realizes
-  `penser/par:pas:f:s`.
+  `penser/par:pas:f:s`. Since #134 the `dom` column is **build-time data the display
+  pass no longer consults** (realization is keyed by the group's lexeme); the column
+  still ships unchanged in the artifact.
 - **Agreement-feature ambiguity is described, never arbitrated — and the secret's
   form is NEVER inferred (#133, decided 2026-07-31).** The inventory states the
   cells a spelling genuinely shares; EVERY fr secret settles its form explicitly:
@@ -398,9 +402,14 @@ Consequences that are load-bearing:
   map** (all TOP_K groups, not just the near field): verbs take the full feature
   vector, nouns number only (gender is lexical), adjectives gender+number, and
   cross-POS neighbours / invariables keep their citation form (a `cit` secret
-  prescribes nothing). This is separate from the cross-lexeme homograph rule above,
-  which needs no question because it needs no answer: an unclaimed group is already
-  correct.
+  prescribes nothing). Since #134 realization is **keyed by each group's LEXEME**
+  (the walk settled what every group is, so nothing is left to gate or arbitrate:
+  `durent` never heads a group, and the old surface-side `dom` veto is gone from
+  display) and **the requested form is ALWAYS displayed when it exists and is
+  typable** — no drift guard, sentence context disambiguates; a missing or
+  untypable cell keeps the group's clean representative, marked `*` in generation
+  output only, and post-agreement slug collisions are counted and reported
+  (closest-wins itself unchanged).
 - **Mixed-entry cleanup (the #131 hazard), measured before written:** the Morphalou
   fusion glued a few wrong paradigms INSIDE otherwise-correct entries (sortir's
   `-issant` conjugation, where `ind:pre:1s` would REALIZE «je sortis»). The build
@@ -670,7 +679,10 @@ pnpm vocab:fr         # -> packages/web/public/vocab/fr.json
 #    hard error, --no-lemmas to skip). The secret's form is never inferred (#133): a
 #    TTY run confirms it per secret; off a TTY --form MOT=TRAIT is required per fr
 #    secret (hard error otherwise; --no-inflect opts out of agreement entirely).
-#    Every ranked group is annotated with its dq distance
+#    The confirmed form also NAMES the hole's lexeme, so the question fires before
+#    the walk and an inflection of a homographic secret solves its hole (#134);
+#    groups are lexemes ranked by their homograph-free representative, no-clean
+#    lexemes are flagged on stderr. Every ranked group is annotated with its dq distance
 #    and, for the groups from the hole's start word in to the secret, its road cluster
 #    (#115); --no-roads drops the road fields, dq has no opt-out.
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 distinct words; all occurrences hole (no `--`)
@@ -1246,7 +1258,7 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   AGID `infl.txt` inverted (~260k pairs), filtered by the language token rule, every
   lemma registered as a form of itself. Built by `build_lemmas.py` (downloads cache
   in `wordlist/.cache/`); `gen_phrase` reads it at startup for en (hard error when
-  missing; `--no-lemmas` opts out and reproduces pre-#104 output). The old
+  missing; `--no-lemmas` opts out and reproduces the ungrouped walk). The old
   `fr.lemmas.tsv.gz` was REMOVED by #132 — the fr grouping now comes from the lexeme
   inventory below, and `pnpm lemmas:fr` no longer exists.
 - **fr lexeme inventory (#132, Morphalou-sourced, superseding the Lefff verb table):**
@@ -1256,8 +1268,10 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   (LGPL-LR, extracted from the archive's LISEZ-MOI). Built by `build_forms.py`
   (`pnpm forms:fr`; downloads cache in `wordlist/.cache/`, sha256-pinned).
   `gen_phrase` loads it ONCE at startup for fr and derives both the grouping and the
-  verb view from it (missing/corrupt = hard error; `--no-lemmas` disables grouping,
-  `--no-inflect` the agreement pass). What the source swap bought, intersected with
+  verb view from it (missing/corrupt = hard error; `--no-inflect` disables the
+  agreement pass, and `--no-lemmas` disables grouping but then REQUIRES
+  `--no-inflect` on fr — since #134 agreement is keyed by the lexemes grouping
+  provides, so the pair is rejected rather than silently rewriting nothing). What the source swap bought, intersected with
   the reduced vocabulary (#131's realizable-cell measure): verb 92,030 → **102,911**
   cells, noun **68,077**, adj **53,454** — and `ind:pre:2s` now exists for ~13,000
   lemmas (Lefff had 7,777, Lexique 1,901). The mixed-entry cleanup dropped 5,346
