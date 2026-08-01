@@ -681,7 +681,8 @@ def test_a_farther_key_is_reclaimed_like_any_closest_first_alias():
 def test_no_inflect_leaves_the_map_exactly_as_it_was():
     rmap = _map(("amuses", "amuses", 0), ("marchait", "marchait", 1))
     before = {k: dict(v) for k, v in rmap.items()}
-    assert _resolver(table=None).apply(rmap, "amuses", _donors()) == {}
+    assert _resolver(table=None).apply(rmap, "amuses", _donors(),
+                                       lexemes=None) == {}
     assert rmap == before
     assert gen_phrase.load_form_table("fr", disabled=True) is None
     # en has no inventory at all — a decided non-goal, not a missing file.

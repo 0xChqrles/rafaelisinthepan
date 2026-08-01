@@ -1402,7 +1402,7 @@ class FormResolver:
         self._chosen[key] = feature
         return feature
 
-    def apply(self, rank_map, secret, donors, lexemes=None):
+    def apply(self, rank_map, secret, donors, *, lexemes):
         """Re-inflect every group's canonical to the secret's form.
 
         The scope is the WHOLE map (#133) — every group, not just the ones a hole
@@ -1433,6 +1433,9 @@ class FormResolver:
         `lexemes` maps rank -> the group's lexeme key (#134): realization is keyed
         by WHAT the group is, never by how its surface reads. A rank outside the
         mapping (a table-less singleton) has no cells and keeps its representative.
+        REQUIRED, precisely because a forgotten argument would be a silent no-op
+        pass — the very failure mode the --no-lemmas guard exists to reject;
+        an explicit None says "no cells anywhere" on purpose.
         Both #134 report counters land in `fallbacks` (groups of the feature's own
         POS whose requested form is missing or untypable — they keep their closest
         clean form, marked `*` in generation output) and `collisions` (rewrites the
@@ -2295,18 +2298,19 @@ def main():
     lemma_table = load_lemma_table(lang, disabled=args.no_lemmas)
     forms_by_lemma = invert_lemmas(lemma_table)
 
-    # Verb form table (addendum 2), same fail-fast placement. None for a language with
-    # no table (en) or under --no-inflect: the agreement pass then never runs.
-    form_table = load_form_table(lang, disabled=args.no_inflect)
-
     # Since #134 the agreement pass is keyed by the walk's LEXEMES, which --no-lemmas
     # removes (every surface becomes its own table-less singleton, and nothing carries
     # a cell to realize). Running it anyway would take --form answers and silently
-    # rewrite nothing — reject the combination instead of degrading it.
-    if form_table is not None and args.no_lemmas:
+    # rewrite nothing — reject the combination instead of degrading it, and BEFORE
+    # the ~5 MB inventory loads: the reject path owes nobody a two-second parse.
+    if lang in FORM_LANGS and not args.no_inflect and args.no_lemmas:
         die("--no-lemmas retire les lexèmes sur lesquels l'accord d'affichage est "
             "indexé (#134) : ajoute --no-inflect pour générer sans regroupement, "
             "ou retire --no-lemmas.")
+
+    # Verb form table (addendum 2), same fail-fast placement. None for a language with
+    # no table (en) or under --no-inflect: the agreement pass then never runs.
+    form_table = load_form_table(lang, disabled=args.no_inflect)
 
     kv = cfg["module"].load_vectors()
     V = build_lang_vocab(kv, cfg)

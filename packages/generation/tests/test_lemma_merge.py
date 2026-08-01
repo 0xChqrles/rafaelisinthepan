@@ -26,6 +26,7 @@
   - two selected secrets in one lemma group are rejected.
 """
 
+import functools
 import os
 import sys
 import types
@@ -262,9 +263,6 @@ def test_a_group_with_no_free_key_dissolves_and_consumes_no_rank():
 
 
 # --- the secret's claim: confirmed identity first, fail-closed second ---------------
-
-import functools
-
 
 @functools.lru_cache(maxsize=1)
 def _lexicon():
