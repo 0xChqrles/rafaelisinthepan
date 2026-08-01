@@ -490,6 +490,13 @@ Consequences that are load-bearing:
   rank 0 plus its `K` nearest **distinct lemma groups** (#104), each with its alias
   forms. The front is **K-agnostic** — it tests membership in the map, never
   hardcodes 2000.
+- **The playability report is observation only (#135, decided 2026-08-01):** after
+  each selected secret's rank map is built, `gen_phrase` prints curator-facing
+  evidence for its near field (top ~150): form coverage (clean agreement vs `*`
+  fallback vs cross-POS citation), reduced-vocabulary frequency profile, lexemes
+  with no clean embedded form, and intra-lexeme vector divergence. It is a REPORT,
+  never a filter or a publication gate: no metric/threshold changes the puzzle and
+  the report itself does not turn generation into a failure. The curator decides.
 
 ### Front game loop
 
@@ -756,9 +763,22 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
 *(Safe to update without touching the invariants above.)*
 
 - All paths below are under `packages/`. **Tunables:** `TOP_N = 400000` (reduce),
-  `TOP_K = 10000` (gen), start-rank band `50–150` (`start_word.py`),
+  `TOP_K = 10000` / curator report window `PLAYABILITY_TOP = 150` (gen),
+  start-rank band `50–150` (`start_word.py`),
   `ROAD_TOP = 150` (now the road zone's CEILING, not its size) / `ROAD_KS = (2,3,4)` /
   `ROAD_MIN_SILHOUETTE = 0.05` (`distances.py`).
+- **Playability report (#135):** `build_playability_report` reads (never mutates)
+  the final groups at ranks 1..`PLAYABILITY_TOP`; both `--words` and the raw-mode
+  selector feed the same `PlayabilityReporter`, whose output is deferred until the
+  selector has restored the terminal. Form fractions are exhaustive: a realizable
+  rewrite declined by closest-wins is stated separately as a slug collision rather
+  than mislabeled as #134's missing/untypable `*` fallback. Frequency uses the final
+  display's exact reduced-vocab rank, or its most-frequent slug sibling when that is
+  the form's only typability witness; it prints p50/p90/max and the five lowest-
+  frequency examples. The report retains every homograph-only flag and every
+  comparable divergence internally, rendering the count + five closest flags and
+  the five largest representative-to-clean-form cosine distances — measured values,
+  no quality verdict or cutoff.
 - **Distance annotations (#115):** `distances.py` is stdlib-only (pure arithmetic over
   float sequences), so the contract tests keep running without numpy/gensim and the
   ≤150-point clustering costs a fraction of a second per secret. They are stamped in

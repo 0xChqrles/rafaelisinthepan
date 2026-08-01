@@ -60,6 +60,11 @@ ARE lexemes, ranked by their homograph-free representative, and the confirmed fo
 also NAMES the hole's lexeme — so the question fires before the walk, and an
 inflection of a homographic secret solves its hole («rouge» solves «rouges»).
 
+After each selected rank map is complete, generation prints a curator-only
+playability report (#135) over ranks 1..150: display-form coverage, reduced-vocab
+frequency profile, homograph-only groups, and the largest measured clean-form
+vector divergences. It is observation only — no metric filters or changes a puzzle.
+
 Usage :
     uv run scripts/gen_phrase.py                       # fully interactive
     uv run scripts/gen_phrase.py "<phrase>" --lang fr --words a b c
@@ -73,6 +78,7 @@ Usage :
 import argparse
 import functools
 import json
+import math
 import os
 import random
 import re
@@ -125,6 +131,12 @@ from start_word import pick_start, start_band
 # like the reduction — so K bounds how many distinct words can register as "warm".
 # Easy to change here; the front never sees K and stays K-agnostic.
 TOP_K = 10_000
+
+# Curator-only playability window (#135). The report reads the nearest groups that
+# can make up a normal journey (the start band also tops out at 150), but never
+# filters, reorders or otherwise changes the rank map it describes.
+PLAYABILITY_TOP = 150
+PLAYABILITY_SAMPLES = 5
 
 # Known "kind of piece" values offered by the interactive prompt (#5). Stored as
 # canonical English tokens (the front localises for display); the list is a
@@ -550,21 +562,294 @@ def group_reps(groups):
     return [rep for _w, rank, _claims, _clean, rep in groups if rank]
 
 
-def report_no_clean(secret, groups):
-    """Surface #134's edge case in generation output: a group ranked by a
-    homographic vector because its lexeme has no clean embedded form. The rank is
-    the best the data allows ("take what exists") — the curator just deserves to
-    know which distances are blends before publishing. Belongs in the playability
-    report once #135 exists; stderr until then."""
-    flagged = [(rank, w) for w, rank, _claims, clean, _rep in groups
-               if rank and not clean]
-    if not flagged:
-        return
-    sample = ", ".join(f"« {w} » (rang {rank})" for rank, w in flagged[:5])
-    more = f", … {len(flagged)} au total" if len(flagged) > 5 else ""
-    print(f"  attention : « {secret} » : {len(flagged)} groupe(s) classé(s) sur un "
-          f"vecteur homographe (aucune forme nette) : {sample}{more}",
-          file=sys.stderr)
+def _percentile_rank(values, fraction):
+    """Nearest-rank percentile over positive integer vocabulary ranks."""
+    if not values:
+        return None
+    ordered = sorted(values)
+    index = max(0, math.ceil(len(ordered) * fraction) - 1)
+    return ordered[index]
+
+
+def _cosine_distance(left, right):
+    """Cosine distance for two plain or numpy-like vectors, or None if unusable.
+
+    This is report-only arithmetic: malformed/missing vectors suppress one
+    divergence datum rather than turning a valid puzzle into a generation error.
+    The ranking and shipped geometry keep their existing fail-fast contracts."""
+    try:
+        pairs = [(float(a), float(b)) for a, b in zip(left, right)]
+    except (TypeError, ValueError):
+        return None
+    if not pairs:
+        return None
+    dot = sum(a * b for a, b in pairs)
+    left_norm = math.sqrt(sum(a * a for a, _b in pairs))
+    right_norm = math.sqrt(sum(b * b for _a, b in pairs))
+    if left_norm == 0.0 or right_norm == 0.0:
+        return None
+    similarity = max(-1.0, min(1.0, dot / (left_norm * right_norm)))
+    distance = 1.0 - similarity
+    return distance if math.isfinite(distance) else None
+
+
+def build_playability_report(secret, groups, rank_map, vocab, lemma_table,
+                             forms_by_lemma, kv, resolver=None, feature=None,
+                             top=PLAYABILITY_TOP):
+    """Build #135's neutral, read-only report for one secret.
+
+    The window is the shipped groups at ranks 1..``top``. It reports four form
+    outcomes so the requested three fractions stay truthful and exhaustive:
+      - ``agreed``: the final display is in the requested cell;
+      - ``fallback``: same-POS cell missing or no spelling is typable (the ``*``);
+      - ``citation``: cross-POS/invariable/table-less group, so no target cell;
+      - ``collision``: a realizable form was declined by closest-wins slug keying.
+    Collision is deliberately not folded into ``fallback``: #134 gives ``*`` the
+    narrower missing-or-untypable meaning and already reports collisions separately.
+
+    Frequency uses the final displayed form when it exists verbatim in the reduced
+    vocabulary. A display that is typable only through an accent/slug sibling uses
+    that slug's first (most frequent) reduced-vocab position and records ``proxy``.
+    Divergence is the maximum cosine distance from the group's representative to
+    another clean embedded form of the same lexeme. Reporting every comparable
+    value lets the formatter select the largest examples without a quality cutoff.
+
+    Nothing here mutates ``groups`` or ``rank_map`` and no metric gates generation.
+    """
+    top = max(0, int(top))
+    by_rank = {}
+    for entry in rank_map.values():
+        rank = entry.get("rank")
+        if isinstance(rank, int) and 0 < rank <= top:
+            by_rank.setdefault(rank, entry.get("word", ""))
+    near = [(*group, by_rank[group[1]]) for group in groups
+            if group[1] in by_rank and 0 < group[1] <= top]
+
+    frequency = {word: index for index, word in enumerate(vocab, 1)}
+    slug_frequency = {}
+    for word, index in frequency.items():
+        key = slug(word)
+        if key:
+            slug_frequency.setdefault(key, index)
+
+    form_coverage = None
+    if resolver is not None and feature is not None:
+        counts = {"agreed": 0, "fallback": 0, "citation": 0, "collision": 0}
+        target_pos = feature_pos(feature)
+        for _word, _rank, claims, _clean, _rep, display in near:
+            lexeme = claims[0] if len(claims) == 1 and ":" in claims[0] else None
+            if (target_pos is None or lexeme is None
+                    or lexeme.rpartition(":")[2] != target_pos):
+                counts["citation"] += 1
+                continue
+            realizations = resolver.realize_cell(lexeme, feature)
+            if display in realizations:
+                counts["agreed"] += 1
+                continue
+            typable = any(slug(form) in slug_frequency for form in realizations)
+            if not realizations or not typable:
+                counts["fallback"] += 1
+            else:
+                # A same-POS requested form exists and is typable, but the final
+                # group does not display it: closest-wins declined the rewrite.
+                counts["collision"] += 1
+        form_coverage = counts
+
+    frequency_items = []
+    for _word, rank, _claims, _clean, _rep, display in near:
+        exact = frequency.get(display)
+        freq_rank = exact if exact is not None else slug_frequency.get(slug(display))
+        if freq_rank is not None:
+            frequency_items.append({
+                "rank": rank,
+                "word": display,
+                "frequency_rank": freq_rank,
+                "proxy": exact is None,
+            })
+    values = [item["frequency_rank"] for item in frequency_items]
+    rarest = sorted(frequency_items,
+                    key=lambda item: (-item["frequency_rank"], item["rank"],
+                                      item["word"]))[:PLAYABILITY_SAMPLES]
+    frequency_profile = {
+        "measured": len(values),
+        "unmeasured": len(near) - len(values),
+        "proxy": sum(item["proxy"] for item in frequency_items),
+        "p50": _percentile_rank(values, 0.50),
+        "p90": _percentile_rank(values, 0.90),
+        "max": max(values) if values else None,
+        "rarest": rarest,
+    }
+
+    no_clean = []
+    divergences = []
+    vocab_set = set(vocab)
+
+    def vector_of(word):
+        try:
+            return kv[word]
+        except (KeyError, TypeError):
+            return None
+
+    for _word, rank, claims, clean, rep, display in near:
+        lexeme = claims[0] if len(claims) == 1 else None
+        if not clean:
+            no_clean.append({"rank": rank, "word": display, "lexeme": lexeme})
+            continue
+        if lexeme is None:
+            continue
+        rep_vector = vector_of(rep)
+        if rep_vector is None:
+            continue
+        clean_forms = []
+        for form in forms_by_lemma.get(lexeme, ()):
+            analyses = lemmas_of(form, lemma_table)
+            if (form in vocab_set and len(analyses) == 1
+                    and analyses[0] == lexeme and vector_of(form) is not None):
+                clean_forms.append(form)
+        if rep not in clean_forms:
+            # A clean representative should be present in its lexeme's inventory;
+            # keep the report robust to table-less fixtures or partial artifacts.
+            analyses = lemmas_of(rep, lemma_table)
+            if (rep in vocab_set and len(analyses) == 1
+                    and analyses[0] == lexeme):
+                clean_forms.append(rep)
+        farthest = None
+        for form in sorted(set(clean_forms)):
+            if form == rep:
+                continue
+            distance = _cosine_distance(rep_vector, vector_of(form))
+            if distance is None:
+                continue
+            candidate = (distance, form)
+            if farthest is None or candidate > farthest:
+                farthest = candidate
+        if farthest is not None:
+            divergences.append({
+                "rank": rank,
+                "lexeme": lexeme,
+                "representative": rep,
+                "form": farthest[1],
+                "distance": farthest[0],
+            })
+    divergences.sort(key=lambda item: (-item["distance"], item["rank"],
+                                       item["lexeme"], item["form"]))
+
+    return {
+        "secret": secret,
+        "top": top,
+        "groups": len(near),
+        "last_rank": max((group[1] for group in near), default=0),
+        "forms": form_coverage,
+        "frequency": frequency_profile,
+        "no_clean": no_clean,
+        "divergences": divergences,
+    }
+
+
+def _fraction(count, total):
+    percent = 100.0 * count / total if total else 0.0
+    return f"{count}/{total} ({percent:.1f} %)"
+
+
+def format_playability_report(report):
+    """Render one neutral curator report. No adjectives or pass/fail labels."""
+    lines = [
+        f"  secret « {report['secret']} » — {report['groups']} groupe(s), "
+        f"rangs 1–{report['last_rank']} (fenêtre ≤ {report['top']})"
+    ]
+    coverage = report["forms"]
+    if coverage is None:
+        lines.append("    formes : non mesurées (aucun trait d'accord appliqué)")
+    else:
+        total = sum(coverage.values())
+        parts = [
+            f"accord net {_fraction(coverage['agreed'], total)}",
+            f"repli* {_fraction(coverage['fallback'], total)}",
+            f"citation inter-POS/invariable {_fraction(coverage['citation'], total)}",
+        ]
+        if coverage["collision"]:
+            parts.append(f"collision de slug {_fraction(coverage['collision'], total)}")
+        lines.append("    formes : " + " · ".join(parts))
+
+    freq = report["frequency"]
+    if freq["measured"]:
+        suffix = []
+        if freq["proxy"]:
+            suffix.append(f"{freq['proxy']} via slug")
+        if freq["unmeasured"]:
+            suffix.append(f"{freq['unmeasured']} sans rang")
+        note = f" ({', '.join(suffix)})" if suffix else ""
+        lines.append(
+            f"    fréquence réduite : p50 #{freq['p50']} · p90 #{freq['p90']} · "
+            f"max #{freq['max']} · n={freq['measured']}{note}"
+        )
+        rare = ", ".join(
+            f"« {item['word']} » #{item['frequency_rank']}"
+            + ("~" if item["proxy"] else "")
+            for item in freq["rarest"]
+        )
+        lines.append(f"    fréquences les plus basses : {rare}")
+    else:
+        lines.append("    fréquence réduite : aucun rang mesurable")
+
+    if report["no_clean"]:
+        shown = report["no_clean"][:PLAYABILITY_SAMPLES]
+        flags = ", ".join(
+            f"{describe_lexeme(item['lexeme']) if item['lexeme'] else item['word']} "
+            f"→ « {item['word']} » (rang {item['rank']})"
+            for item in shown
+        )
+        more = (f", … {len(report['no_clean'])} au total"
+                if len(report["no_clean"]) > len(shown) else "")
+        lines.append(
+            f"    vecteur uniquement homographe : "
+            f"{_fraction(len(report['no_clean']), report['groups'])} · {flags}{more}"
+        )
+    else:
+        lines.append("    vecteur uniquement homographe : aucun")
+
+    comparable = len(report["divergences"])
+    if comparable:
+        shown = report["divergences"][:PLAYABILITY_SAMPLES]
+        values = ", ".join(
+            f"{describe_lexeme(item['lexeme'])} : « {item['representative']} » ↔ "
+            f"« {item['form']} » = {item['distance']:.3f}"
+            for item in shown
+        )
+        lines.append(
+            f"    écarts cosinus aux représentants ({len(shown)}/{comparable} "
+            f"plus grands) : {values}"
+        )
+    else:
+        lines.append("    écarts cosinus aux représentants : aucun lexème comparable")
+    return "\n".join(lines)
+
+
+class PlayabilityReporter:
+    """Collect reports across both authoring paths and print them after raw mode."""
+
+    def __init__(self, vocab, lemma_table, forms_by_lemma, kv, resolver=None,
+                 top=PLAYABILITY_TOP):
+        self.vocab = vocab
+        self.lemma_table = lemma_table
+        self.forms_by_lemma = forms_by_lemma
+        self.kv = kv
+        self.resolver = resolver
+        self.top = top
+        self.reports = {}
+
+    def capture(self, secret, groups, rank_map, feature=None):
+        self.reports[slug(secret)] = build_playability_report(
+            secret, groups, rank_map, self.vocab, self.lemma_table,
+            self.forms_by_lemma, self.kv, resolver=self.resolver,
+            feature=feature, top=self.top)
+
+    def print(self):
+        if not self.reports:
+            return
+        print("\nRapport de jouabilité (informatif — aucun filtrage) :")
+        for report in self.reports.values():
+            print(format_playability_report(report))
 
 
 # --- Lemma-donor vector substitution (#119) -------------------------------------
@@ -1625,7 +1910,7 @@ def _read_key(fd):
 
 def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                              lemma_table, forms_by_lemma, donors=None, forms=None,
-                             roads=True):
+                             roads=True, reporter=None):
     """Pick three distinct secret groups on a TTY; return holes sorted by position.
 
     Full-screen loop: ←/→ move between the sentence's selectable content words (see
@@ -1708,7 +1993,6 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
 
     holes = []
     ranks = {}
-    flagged = {}  # committed secret -> groups, for the post-loop no-clean report
     used_slugs = set()
     used_lemmas = set()  # lemmas claimed by committed groups: their forms block too
 
@@ -1787,6 +2071,9 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
             agreed = forms.apply(entry["rank_map"], secret, donors,
                                  lexemes=group_lexeme_map(entry["groups"])) \
                 if forms is not None else {}
+            if reporter is not None:
+                feature = forms.feature_for(secret) if forms is not None else None
+                reporter.capture(secret, entry["groups"], entry["rank_map"], feature)
             return choose_start_display(
                 start, start_rank, donors,
                 default=agreed.get(start_rank, (start, start))[1])
@@ -1881,7 +2168,6 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                         alias_start_display(rank_map, start, display, start_rank)
                         secret_slug = slug(secret)
                         ranks[secret_slug] = rank_map
-                        flagged[secret] = entry["groups"]
                         for occurrence in candidates_for_slug(cands, secret_slug):
                             holes.append(_make_hole(
                                 occurrence["secret"], occurrence["prefix"],
@@ -1913,11 +2199,6 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
 
     if aborted:
         die("sélection interrompue.")
-
-    # The raw-mode loop clears the screen every frame, so the #134 edge-case flags
-    # for the committed secrets are printed only now, where they stay readable.
-    for secret, groups in flagged.items():
-        report_no_clean(secret, groups)
 
     holes.sort(key=lambda h: h["pos"])
     return holes, ranks
@@ -1959,7 +2240,7 @@ def filename_slugs_from_holes(holes):
 
 def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
                      lemma_table, forms_by_lemma, donors=None, forms=None,
-                     roads=True):
+                     roads=True, reporter=None):
     """Resolve three distinct ``--words`` selectors into all matching holes.
 
     Matching is slug-based. Each selected slug gets one ranking and one start hint, then
@@ -2034,7 +2315,6 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
         merged, rank_map, groups = build_puzzle_rank_map(
             canonical_secret, ranking, lemma_table, forms_by_lemma, Vset,
             secret_lemmas=secret_lemmas)
-        report_no_clean(canonical_secret, groups)
         rank_by_display = {canonical_secret: 0}
         for w, r, _ in merged:
             rank_by_display.setdefault(w, r + 1)
@@ -2054,6 +2334,9 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
         agreed = forms.apply(rank_map, canonical_secret, donors,
                              lexemes=group_lexeme_map(groups)) \
             if forms is not None else {}
+        if reporter is not None:
+            feature = forms.feature_for(canonical_secret) if forms is not None else None
+            reporter.capture(canonical_secret, groups, rank_map, feature)
         # The band only offers forms that HAVE a vector; the sentence may demand one it
         # lacks. The override is DISPLAY only (#119 addendum) — start_rank is untouched,
         # and it defaults to what the pass made of the band word. Read from `agreed`,
@@ -2340,6 +2623,7 @@ def main():
     # (a single analysis included), and off one --form is required per secret.
     # --no-inflect is the opt-out that reproduces agreement-free output.
     forms = FormResolver(form_table, explicit=explicit_forms, interactive=interactive)
+    reporter = PlayabilityReporter(V, lemma_table, forms_by_lemma, kv, forms)
 
     # Two paths to the same (holes, ranks): --words is the explicit / batch path (each
     # distinct selector expands to all matching occurrences); with no --words on a TTY
@@ -2348,11 +2632,16 @@ def main():
     if words_arg is not None:
         holes, ranks = holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
                                         lemma_table, forms_by_lemma, donors, forms,
-                                        roads=not args.no_roads)
+                                        roads=not args.no_roads, reporter=reporter)
     else:
         holes, ranks = select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                                                 lemma_table, forms_by_lemma, donors,
-                                                forms, roads=not args.no_roads)
+                                                forms, roads=not args.no_roads,
+                                                reporter=reporter)
+
+    # #135 is a report only: print after every selected map exists (and after raw
+    # mode has restored the terminal), before metadata/file authoring continues.
+    reporter.print()
 
     # --- Optional source metadata (#5) ----------------------------------------
     # Flags win; otherwise ask on a TTY (any flag already given is not re-prompted);
