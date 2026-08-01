@@ -388,12 +388,19 @@ Consequences that are load-bearing:
   else**, so `accoutumes` is admitted and a cross-POS homograph is declined rather
   than guessed. A gated form stays a legal **target**: `pensée` still realizes
   `penser/par:pas:f:s`.
-- **Agreement-feature ambiguity is described, never arbitrated.** The inventory
-  states the cells a spelling genuinely shares; a secret with several morphological
-  features asks on a TTY or needs `--form`, nothing is guessed — unchanged. This is
-  separate from the cross-lexeme homograph rule above, which needs no question
-  because it needs no answer: an unclaimed group is already correct, so nothing waits
-  on #133's explicit lexeme selection.
+- **Agreement-feature ambiguity is described, never arbitrated — and the secret's
+  form is NEVER inferred (#133, decided 2026-07-31).** The inventory states the
+  cells a spelling genuinely shares; EVERY fr secret settles its form explicitly:
+  on a TTY a single analysis is shown and confirmed (Enter), several are listed to
+  pick from, and off a TTY `--form MOT=TRAIT` is required per secret — a batch run
+  without it is a hard error, never a guess (`--no-inflect` stays the explicit
+  opt-out). The confirmed feature drives a **per-POS transfer over the WHOLE rank
+  map** (all TOP_K groups, not just the near field): verbs take the full feature
+  vector, nouns number only (gender is lexical), adjectives gender+number, and
+  cross-POS neighbours / invariables keep their citation form (a `cit` secret
+  prescribes nothing). This is separate from the cross-lexeme homograph rule above,
+  which needs no question because it needs no answer: an unclaimed group is already
+  correct.
 - **Mixed-entry cleanup (the #131 hazard), measured before written:** the Morphalou
   fusion glued a few wrong paradigms INSIDE otherwise-correct entries (sortir's
   `-issant` conjugation, where `ind:pre:1s` would REALIZE «je sortis»). The build
@@ -660,7 +667,10 @@ pnpm vocab:fr         # -> packages/web/public/vocab/fr.json
 #    NOTE: gen:phrase ALSO rewrites web/public/vocab/<lang>.json as a side effect.
 #    Reads the grouping table for lemma grouping (#104) — fr: the lexeme inventory
 #    wordlist/fr.forms.tsv.gz (#132), en: wordlist/en.lemmas.tsv.gz (missing table =
-#    hard error, --no-lemmas to skip). Every ranked group is annotated with its dq distance
+#    hard error, --no-lemmas to skip). The secret's form is never inferred (#133): a
+#    TTY run confirms it per secret; off a TTY --form MOT=TRAIT is required per fr
+#    secret (hard error otherwise; --no-inflect opts out of agreement entirely).
+#    Every ranked group is annotated with its dq distance
 #    and, for the groups from the hole's start word in to the secret, its road cluster
 #    (#115); --no-roads drops the road fields, dq has no opt-out.
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 distinct words; all occurrences hole (no `--`)

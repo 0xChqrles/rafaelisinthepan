@@ -120,6 +120,9 @@ def test_main_writes_one_three_slug_filename_for_repeated_holes(monkeypatch, tmp
             "jardin",
             "chat",
             "poursuit",
+            # #133 makes a fr batch run without --form a hard error; agreement is
+            # out of scope here, so opt out explicitly.
+            "--no-inflect",
             "--out-dir",
             str(tmp_path),
         ],

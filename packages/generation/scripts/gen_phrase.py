@@ -48,11 +48,14 @@ form of the same lemma (#119) — explicitly: a numbered question on a TTY, --do
 MANQUANT=DONNEUR off one. Nothing is injected into the vocabulary and nothing is guessed.
 Mirroring it, an interactively chosen start word can be DISPLAYED under another form of
 the same word (« tu t'___ » must read "amuses" while only "amuse" has a vector); the
-rank and the geometry stay the chosen band word's. Addendum 2 generalises that to every
-word the hole can EVER display — the groups at rank <= start_rank, the only ones an
-improving hole can reach — agreeing each with the secret's own morphology through the
-committed lemma+trait→forme table (--no-inflect opts out, --form settles an ambiguity
-off a TTY).
+rank and the geometry stay the chosen band word's. Addendum 2 generalised that to the
+words a hole displays, and #133 extends it to the WHOLE rank map, every part of speech:
+each group agrees with the secret's own morphology through the committed lexeme
+inventory, per-POS (a verb secret conjugates verbs, a noun secret numbers nouns, an
+adjective secret genders+numbers adjectives; cross-POS neighbours keep their citation
+form). The secret's form is never inferred: on a TTY every secret asks — a single
+analysis is shown and confirmed, several are listed to pick from — and off a TTY
+--form MOT=TRAIT is required per secret (--no-inflect opts out).
 
 Usage :
     uv run scripts/gen_phrase.py                       # fully interactive
@@ -101,7 +104,8 @@ GEN_OUTPUT = os.path.join(ROOT, "output")
 
 import french_neighbors as frn
 import glove_neighbors as gn
-from build_forms import FORM_LANGS, forms_path, load_forms  # fr lexeme inventory (#132)
+from build_forms import (CITATION_FEATURE, FORM_LANGS, feature_pos, forms_path,
+                         load_forms)  # fr lexeme inventory (#132)
 from build_lemmas import lemmas_path, load_lemmas  # en form→lemma table (#104)
 from distances import cluster_roads, quantize_dq, road_zone  # dq / road annotations (#115)
 from slug import path_slug, slug, write_vocab  # slug/fold contract, dir names, vocab
@@ -992,23 +996,29 @@ def alias_start_display(rank_map, start, display, start_rank):
     return rank_map
 
 
-# --- Display agreement (#119 addendum 2) ----------------------------------------
+# --- Display agreement (#119 addendum 2, whole-vocabulary since #133) ------------
 # The start word is only the FIRST word a hole shows. Every improving guess replaces it,
 # and each replacement arrives in its dictionary form: « tu t'___ » renders "t'distraire"
 # where the sentence wants "t'distrais". So the whole run should agree, not just its
 # first frame.
 #
-# The set to fix is small and exactly bounded: a hole only ever IMPROVES (the front swaps
-# on `entry.rank < current`), and it starts at start_rank, so no group past start_rank is
-# ever rendered — ~100 groups per hole, not TOP_K. And only each group's CANONICAL form
-# needs rewriting, since its alias keys all point at it.
+# The set to agree is the WHOLE rank map (#133) — all TOP_K groups, not just the ones
+# below start_rank: a warm word's displayed form is data every consumer of the map may
+# surface, and re-inflection is a table lookup, so bounding it bought nothing. Only each
+# group's CANONICAL form needs rewriting, since its alias keys all point at it.
 #
 # The agreement target is the SECRET's own morphology (it IS the correctly inflected
-# form), so nothing has to be guessed from the sentence; the author is asked only when
-# the forms table has no analysis for the secret or gives it several. Realizing a
-# neighbour into that form is then a lookup in the committed inventory
-# (build_forms.py, Morphalou-derived since #132 — the same artifact the merge walk
-# groups by, so display and grouping can never disagree about a form's lexeme).
+# form) — and it is NEVER inferred (#133): even a single-analysis secret is confirmed
+# on a TTY, and off one --form is required per secret; a 999/1000-correct inference
+# silently corrupts the thousandth puzzle, where a confirmation keystroke is cheap.
+# The transfer is per-POS (feature_pos): the confirmed feature names one part of
+# speech's cell, so a verb secret conjugates the verbs, a noun secret numbers the
+# nouns (gender is lexical, not inflectional), an adjective secret genders+numbers
+# the adjectives — and a cross-POS neighbour or an invariable keeps its citation
+# form, because no target form is defined for it. Realizing a neighbour is then a
+# lookup in the committed inventory (build_forms.py, Morphalou-derived since #132 —
+# the same artifact the merge walk groups by, so display and grouping can never
+# disagree about a form's lexeme).
 
 def parse_form_args(pairs):
     """`--form MOT=TRAIT` occurrences -> {slug(mot): trait}.
@@ -1027,8 +1037,62 @@ def parse_form_args(pairs):
     return mapping
 
 
+# The prompt/report vocabulary: how a lexeme key and a feature read to a human. The
+# feature codes stay the artifact's (they are what --form takes); the description is
+# what makes « plissés → plisser, participe passé masculin pluriel » confirmable at
+# a glance.
+_POS_LABELS = {"v": "verbe", "nc": "nom", "adj": "adjectif", "adv": "adverbe",
+               "prep": "préposition", "conj": "conjonction", "intj": "interjection",
+               "pro": "pronom", "det": "déterminant", "num": "nombre"}
+_MOOD_LABELS = {"ind": "indicatif", "sub": "subjonctif", "cnd": "conditionnel",
+                "imp": "impératif"}
+_TENSE_LABELS = {"pre": "présent", "imp": "imparfait", "pas": "passé simple",
+                 "fut": "futur"}
+_GENDER_LABELS = {"m": "masculin", "f": "féminin"}
+_NUMBER_LABELS = {"s": "singulier", "p": "pluriel"}
+
+
+def _person_label(pn):
+    """'2s' -> '2e pers. singulier'."""
+    ordinal = "1re" if pn[0] == "1" else f"{pn[0]}e"
+    return f"{ordinal} pers. {_NUMBER_LABELS.get(pn[1:], pn[1:])}"
+
+
+def describe_feature(feature):
+    """One feature code -> its French description, for the prompt and the errors.
+
+    Falls back to the raw code for anything outside the known vocabulary — the
+    description is a courtesy, never a gate."""
+    parts = feature.split(":")
+    try:
+        if feature == CITATION_FEATURE:
+            return "forme de citation (invariable)"
+        if parts[0] == "n":
+            return f"nom, {_NUMBER_LABELS[parts[1]]}"
+        if parts[0] == "adj":
+            return f"adjectif, {_GENDER_LABELS[parts[1]]} {_NUMBER_LABELS[parts[2]]}"
+        if feature == "inf":
+            return "infinitif"
+        if parts[0] == "par":
+            if parts[1] == "pre":
+                return "participe présent"
+            return (f"participe passé, {_GENDER_LABELS[parts[2]]} "
+                    f"{_NUMBER_LABELS[parts[3]]}")
+        return (f"{_MOOD_LABELS[parts[0]]} {_TENSE_LABELS[parts[1]]}, "
+                f"{_person_label(parts[2])}")
+    except (KeyError, IndexError):
+        return feature
+
+
+def describe_lexeme(key):
+    """'plissé:adj' -> 'plissé (adjectif)' — curator-facing, never a lookup key."""
+    lemma, _sep, pos = key.rpartition(":")
+    label = _POS_LABELS.get(pos)
+    return f"{lemma} ({label})" if label else key
+
+
 def load_form_table(lang, disabled=False):
-    """Load the agreement (verb) view of the lexeme inventory for a language.
+    """Load the agreement views of the lexeme inventory for a language.
 
     A language with no inventory (en — see FORM_LANGS) has no agreement pass at all:
     that is a decided non-goal, so it returns None silently rather than erroring. For
@@ -1058,97 +1122,121 @@ class FormResolver:
         # every secret slug the run settled a form for — --form keys outside it named
         # a word no hole used, which is nearly always a typo worth surfacing.
         self._chosen = {}  # secret slug -> feature or None
-        self._verb_lemmas = None
 
     @property
     def answered(self):
         """The secret slugs this run actually settled a form for."""
         return frozenset(self._chosen)
 
-    @property
-    def verb_lemmas(self):
-        """Every lemma the table can conjugate — what tells a secret the table simply
-        does not know from one that is not a verb at all."""
-        if self._verb_lemmas is None:
-            self._verb_lemmas = {lemma for lemma, _feat in self.table.realize} \
-                if self.table else set()
-        return self._verb_lemmas
+    def analyses_of(self, word):
+        """Every analysis of a surface, every POS: (feature, (lexeme key, ...)).
 
-    def could_be_a_verb(self, word, donors):
-        """Is it worth asking the author what form this secret is in?
-
-        A word the table knows answers for itself. A word it does NOT know is the
-        interesting case, and it splits in two: a real verb form the table happens to
-        miss, and a plain noun like "jardin". The lemma bridge tells them apart — the
-        first reaches a verb lemma (through its slug siblings, the same bridge #119
-        uses), the second reaches only itself. Without that bridge every noun secret
-        would open a meaningless "which verb form?" question. Since addendum 3 the
-        table enumerates whole paradigms rather than corpus sightings, so the miss is
-        rare — but "rare" is not "never", and guessing is still the wrong answer."""
-        if self.table is None or donors is None:
-            return False
-        return any(lemma in self.verb_lemmas for lemma in donors.lemmas_for(word))
+        Deduped by FEATURE, because the feature is the whole answer downstream (the
+        transfer target); the lexeme keys ride along so the prompt can say WHICH
+        word each reading belongs to. Deliberately UNGATED — the secret's question
+        is answered by a human, and pre-filtering by dominance would be exactly the
+        arbitration #133 forbids (the sentence may well use the rarer reading). The
+        `dom` gate keeps its job on the other side, where nobody confirms anything:
+        realizing NEIGHBOURS (see realizations)."""
+        if self.table is None:
+            return ()
+        by_feature = {}
+        for key, feat in self.table.entries.get(word, ()):
+            keys = by_feature.setdefault(feat, [])
+            if key not in keys:
+                keys.append(key)
+        return tuple((feat, tuple(keys)) for feat, keys in sorted(by_feature.items()))
 
     def features_of(self, word):
-        """The verb features this surface form can carry — empty unless the POS gate
-        admits it. The gate is what keeps "évident" (dominantly the adjective, a form
-        of "évider" only on paper) from ever being read, or written, as a verb."""
-        if self.table is None or word not in self.table.dominant:
-            return ()
-        return tuple(sorted({feat for _lemma, feat in self.table.entries.get(word, ())}))
+        """The features a surface can carry, every POS, sorted. See analyses_of."""
+        return tuple(feat for feat, _keys in self.analyses_of(word))
 
     def realizations(self, word, feature):
         """Every spelling of `word` re-inflected to `feature`, preferred first.
 
-        Two refusals, both silent and both deliberate. A form the POS gate does not
-        admit is not read as a verb at all. And a form carrying SEVERAL verb lemmas is
-        declined outright rather than arbitrated: "durent" is the present of durer AND
-        the past historic of devoir, the table is right about both, and the embedding
-        vector means the first — so realizing devoir's `ind:pre:2s` would print "dois"
-        for a word the geometry placed as "durer". Choosing the more frequent paradigm
-        only makes that failure quieter; there is no evidence here to choose WITH. The
-        forms that lose their agreement this way simply keep the dictionary form.
+        The transfer is per-POS (#133): `feature` names a cell of ONE part of
+        speech's paradigm (feature_pos), so only a lexeme of that POS can realize
+        it — a cross-POS neighbour has no such cell and keeps its citation form, and
+        a citation-form target (`cit`) prescribes nothing to anyone.
+
+        Two refusals besides, both silent and both deliberate. A form the `dom` gate
+        does not admit as that POS is not read as one at all: "évident" is a form of
+        "évider" on paper and overwhelmingly the adjective, so it is never rewritten
+        as a verb. And a form carrying SEVERAL lexemes of the target POS is declined
+        outright rather than arbitrated: "durent" is the present of durer AND the
+        past historic of devoir, the table is right about both, and the embedding
+        vector means the first — so realizing devoir's `ind:pre:2s` would print
+        "dois" for a word the geometry placed as "durer". Choosing the more frequent
+        paradigm only makes that failure quieter; there is no evidence here to
+        choose WITH. The forms that lose their agreement this way simply keep the
+        dictionary form.
 
         A paradigm can spell one cell more than one way ("déblaies" / "déblayes"), so
         this returns the list rather than the winner: the caller knows which spellings
         a player could actually type, and this does not."""
-        if self.table is None or word not in self.table.dominant:
+        pos = feature_pos(feature)
+        if self.table is None or pos is None:
             return ()
-        entries = self.table.entries.get(word, ())
-        lemmas = {lemma for lemma, _feat in entries}
-        if len(lemmas) != 1:
+        if self.table.dominant.get(word) != pos:
             return ()
-        return self.table.realize.get((next(iter(lemmas)), feature), ())
+        keys = {key for key, _feat in self.table.entries.get(word, ())
+                if key.rpartition(":")[2] == pos}
+        if len(keys) != 1:
+            return ()
+        return self.table.realize.get((next(iter(keys)), feature), ())
 
     def realize(self, word, feature):
         """The PREFERRED spelling of `word` at `feature`, or None. See realizations."""
         forms = self.realizations(word, feature)
         return forms[0] if forms else None
 
-    def _prompt(self, secret, cands):
+    def _analysis_lines(self, analyses):
+        """The numbered analysis listing, one line per feature with its lexeme(s)."""
+        return [f"{i:>3}) {feature}  — {describe_feature(feature)} "
+                f"({', '.join(describe_lexeme(k) for k in keys)})"
+                for i, (feature, keys) in enumerate(analyses, 1)]
+
+    def _prompt(self, secret):
         """Ask which form the sentence puts this secret in (TTY only).
 
-        Numbered when the secret's own analysis is merely ambiguous ("compris" is a
-        masculine past participle, singular or plural, OR 1s/2s past historic) — the
-        same grammar as the donor and start-word questions. Free text when the table
-        has no analysis at all (there is no row to enumerate), with '?' listing the
-        inventory.
-        Enter always SKIPS: no agreement is applied unless someone said which one."""
+        EVERY secret asks (#133) — nothing is inferred, however lopsided the odds:
+          - a SINGLE analysis is shown and Enter CONFIRMS it — confirmation is
+            explicit but one keystroke, which is the issue's whole trade;
+          - SEVERAL analyses are listed to pick from (described, never arbitrated) —
+            Enter picks nothing, a number or a feature does;
+          - an UNKNOWN surface (no row at all) takes a free-text feature, and Enter
+            declines — there is nothing to confirm, and declining is the only
+            default that is not a guess.
+        '0' explicitly declines agreement in every case; '?' lists the inventory. A
+        closed stdin declines too — never confirms."""
+        analyses = self.analyses_of(secret)
+        cands = [feature for feature, _keys in analyses]
         if cands:
             print(f"\nForme de « {secret} » dans la phrase :")
-            for i, feature in enumerate(cands, 1):
-                print(f"  {i:>3}) {feature}")
-            hint = "numéro, trait, ? = liste, Entrée = aucun accord"
+            for line in self._analysis_lines(analyses):
+                print("  " + line)
+            if len(cands) == 1:
+                hint = f"Entrée = confirmer {cands[0]}, trait, ? = liste, 0 = aucun accord"
+            else:
+                hint = "numéro, trait, ? = liste, 0 = aucun accord"
         else:
             print(f"\n« {secret} » n'a pas de forme connue dans la table.")
             hint = "trait (ex. ind:pre:2s), ? = liste, Entrée = aucun accord"
         while True:
             try:
                 raw = input(f"Trait [{hint}] > ").strip()
-            except EOFError:  # stdin closed mid-prompt: no agreement.
+            except EOFError:  # stdin closed mid-prompt: decline, never confirm.
                 return None
             if not raw:
-                return None
+                if len(cands) == 1:
+                    return cands[0]  # the shown analysis, explicitly confirmed
+                if not cands:
+                    return None      # nothing to confirm: no agreement
+                print(f"  Plusieurs analyses : choisis un numéro (1–{len(cands)}) "
+                      f"ou un trait (0 = aucun accord).")
+                continue
+            if raw == "0":
+                return None          # explicit decline, in every case
             if raw == "?":
                 for feature in sorted(self.table.features):
                     print(f"  {feature}")
@@ -1163,16 +1251,26 @@ class FormResolver:
                 return raw
             print(f"  « {raw} » n'est pas un trait connu (? pour la liste).")
 
-    def feature_for(self, secret, donors=None):
+    def feature_for(self, secret):
         """The form this hole's displayed words must agree with, or None for no pass.
 
-        The secret decides it: its own analysis IS the answer whenever the table gives
-        it exactly one, and it decides EVERYWHERE — a batch run agrees too, which is the
-        whole point of reading the form off the secret rather than asking for it. Only
-        an ambiguous or unknown secret needs a human: --form off a TTY, the prompt on
-        one, and no agreement at all when neither answers. --no-inflect is what
-        reproduces the pre-addendum output byte for byte. A secret that could not be a
-        verb is never asked about (see could_be_a_verb) — most secrets are nouns."""
+        NEVER inferred (#133): the script does not read the answer off the table,
+        however unambiguous — a silent wrong pick corrupts a puzzle, a confirmation
+        keystroke is cheap. --form settles it without a question (both on and off a
+        TTY); otherwise a TTY always asks (see _prompt), and OFF a TTY the missing
+        --form is a hard error — no prompt ever blocks a batch run, and no batch run
+        ever guesses. --no-inflect is the explicit opt-out that reproduces
+        agreement-free output byte for byte. Asked at most once per secret slug;
+        None (a declined agreement) is an answer and is cached like one.
+
+        A settled trait OUTSIDE the secret's listed analyses is a WARNING, not an
+        error — deliberately, on both counts. The table can be incomplete for the
+        surface while right about the cell («sors» carries no ind:pre:1s analysis,
+        one of the pinned Morphalou holes, yet « je sors » is exactly that trait),
+        so refusing would make such a sentence un-authorable; but when analyses
+        exist, an unlisted trait is nearly always a typo, so it is said out loud.
+        Checked here rather than in the --form parse so a trait typed at the prompt
+        gets the same scrutiny as a flag."""
         if self.table is None:
             return None
         key = slug(secret)
@@ -1183,20 +1281,37 @@ class FormResolver:
             die(f"--form : « {feature} » n'est pas un trait connu de la table des "
                 f"formes (« {secret} »).")
         if feature is None:
-            cands = self.features_of(secret)
-            if len(cands) == 1:
-                feature = cands[0]
-            elif self.interactive and (cands or self.could_be_a_verb(secret, donors)):
-                feature = self._prompt(secret, cands)
+            if not self.interactive:
+                analyses = self.analyses_of(secret)
+                listing = "\n".join("         " + line
+                                    for line in self._analysis_lines(analyses))
+                example = f" — ex. --form {secret}={analyses[0][0]}" if analyses \
+                    else ""
+                die(f"la forme de « {secret} » doit être explicite hors mode "
+                    f"interactif (#133 : jamais déduite, même sans ambiguïté).\n"
+                    + (f"         Analyses connues :\n{listing}\n" if analyses
+                       else f"         Aucune analyse connue dans la table.\n")
+                    + f"         Passe --form {secret}=TRAIT{example} — ou "
+                    f"--no-inflect pour désactiver l'accord.")
+            feature = self._prompt(secret)
+        if feature is not None:
+            known = self.features_of(secret)
+            if known and feature not in known:
+                print(f"  attention : « {feature} » n'est aucune des analyses "
+                      f"connues de « {secret} » ({', '.join(known)}) — accord "
+                      f"appliqué quand même (table incomplète, ou faute de "
+                      f"frappe ?).", file=sys.stderr)
         self._chosen[key] = feature
         return feature
 
-    def apply(self, rank_map, start_rank, secret, donors):
-        """Re-inflect every DISPLAYABLE group's canonical to the secret's form.
+    def apply(self, rank_map, secret, donors):
+        """Re-inflect every group's canonical to the secret's form.
 
-        Groups past start_rank are skipped because a hole can never show them, and rank
-        0 is skipped because it already holds the true sentence form. A group is left
-        alone whenever its canonical is not an admitted verb, has no such form, would
+        The scope is the WHOLE map (#133) — every group, not just the ones a hole
+        can reach from its start rank: a group's displayed form is data wherever the
+        map is consumed, and the lookup costs nothing. Rank 0 is skipped because it
+        already holds the true sentence form. A group is left alone whenever its
+        canonical is not admitted as the feature's POS, has no such form, would
         become a word nobody could type back, or would land on a slug a CLOSER group
         already owns — that last one is the one that would otherwise print a word at
         exponent N while typing it read M < N, a clue contradicting its own distance.
@@ -1206,21 +1321,17 @@ class FormResolver:
 
         Taking an ALIAS key from a farther group is allowed (closest-first, as
         expand_aliases already resolves collisions). Taking the CANONICAL key of a
-        farther group that is still DISPLAYABLE is not. Such a group is shown through
-        its other keys, so stealing the very slug of the word it prints leaves it
+        farther group is not: with the whole map agreed, EVERY group prints its word
+        somewhere, so stealing the very slug of the word a group prints leaves it
         showing that word at exponent N while typing it reads M < N — the same
-        contradiction the closer-owner rule above refuses, only reached from the other
-        side. Past start_rank there is nothing to protect: a group no hole can ever
-        render prints nothing, so its canonical key is as reclaimable as any alias, and
-        guarding it would only cost live rewrites (rank 21's "déférait" is not worth
-        declining for a "déferait" sitting at 916). The start hint is where a live
-        collision bites hardest, because
+        contradiction the closer-owner rule above refuses, only reached from the
+        other side. The start hint is where a live collision bites hardest, because
         start_rank is captured BEFORE this pass runs: the hole would ship
         start.word="banque" at start_rank 5 while ranks[secret]["banque"] said 2, so the
         printed hint improves its own hole. Declining keeps map and hole in step, and
         `alias_start_display` could not have repaired it (the override short-circuits on
         an unchanged slug)."""
-        feature = self.feature_for(secret, donors)
+        feature = self.feature_for(secret)
         if feature is None or donors is None:
             return {}
         # Snapshot both the keys and each group's canonical BEFORE rewriting anything:
@@ -1232,7 +1343,7 @@ class FormResolver:
             canonicals.setdefault(entry["rank"], entry["word"])
         changed = {}
         for rank, keys in sorted(by_rank.items()):
-            if rank == 0 or rank > start_rank:
+            if rank == 0:
                 continue
             canonical = canonicals[rank]
             forms = self.realizations(canonical, feature)
@@ -1250,8 +1361,8 @@ class FormResolver:
             if owner is not None and owner["rank"] != rank:
                 if owner["rank"] < rank:
                     continue  # a closer group owns it: decline rather than contradict it
-                if owner["rank"] <= start_rank and s == slug(canonicals[owner["rank"]]):
-                    continue  # a DISPLAYABLE farther group prints it: leave its word alone
+                if s == slug(canonicals[owner["rank"]]):
+                    continue  # a farther group prints it: leave its word alone
             for key in keys:
                 if rank_map[key]["rank"] == rank:  # a reclaimed key belongs elsewhere now
                     rank_map[key]["word"] = form
@@ -1513,12 +1624,13 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
         readline already give the line prompts. The next frame clears the screen, so the
         detour leaves nothing behind.
 
-        The agreement pass runs here too: it needs start_rank, which only exists once
-        the start word is picked. That is why the band preview above still lists
-        dictionary forms — nothing is agreed until there is a hole to agree with."""
+        The agreement pass runs here too — the form confirmation (#133) is part of
+        the commit step, right beside the start-word pick, so the band preview above
+        still lists dictionary forms: nothing is agreed until there is a hole to
+        agree with."""
         termios.tcsetattr(fd, termios.TCSADRAIN, saved)
         try:
-            agreed = forms.apply(rank_map, start_rank, secret, donors) \
+            agreed = forms.apply(rank_map, secret, donors) \
                 if forms is not None else {}
             return choose_start_display(
                 start, start_rank, donors,
@@ -1686,8 +1798,8 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
 
     `donors` (a DonorResolver, #119) is what lets a secret whose surface form has no
     vector borrow one from a same-lemma form; without it a vector-less secret is the
-    same hard error as before. `forms` (a FormResolver, addendum 2) agrees every word
-    the hole can display with the sentence; without it they keep their dictionary form.
+    same hard error as before. `forms` (a FormResolver, #133) agrees the whole rank
+    map with the sentence; without it every word keeps its dictionary form.
     """
     selectors = _resolve_word_selectors(words_arg, cfg, lang)
     holes = []
@@ -1759,9 +1871,9 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
         # pass, so a group rewritten there inherits its road like any other of the
         # group's keys.
         annotate_roads(rank_map, merged, kv if roads else None, start_rank)
-        # Agree every word this hole can ever display with the sentence (addendum 2),
-        # the start word included — it is just the rank == start_rank group.
-        agreed = forms.apply(rank_map, start_rank, canonical_secret, donors) \
+        # Agree the whole map with the sentence (#133), the start word included — it
+        # is just the rank == start_rank group.
+        agreed = forms.apply(rank_map, canonical_secret, donors) \
             if forms is not None else {}
         # The band only offers forms that HAVE a vector; the sentence may demand one it
         # lacks. The override is DISPLAY only (#119 addendum) — start_rank is untouched,
@@ -1945,12 +2057,13 @@ def parse_args():
                         "absent de l'embedding (#119), ex. --donor accoutumes="
                         "accoutume ; répétable, requis hors mode interactif")
     p.add_argument("--no-inflect", action="store_true",
-                   help="désactive l'accord des mots affichés (#119 addendum 2) — "
+                   help="désactive l'accord des mots affichés (#119/#133) — "
                         "chaque mot garde sa forme de dictionnaire")
     p.add_argument("--form", action="append", metavar="MOT=TRAIT",
-                   help="trait morphologique que les mots affichés d'un trou doivent "
-                        "accorder, ex. --form accoutumes=ind:pre:2s ; répétable, requis "
-                        "hors mode interactif quand la table ne tranche pas")
+                   help="trait morphologique du secret, auquel son voisinage s'accorde "
+                        "(#133), ex. --form accoutumes=ind:pre:2s ; répétable, requis "
+                        "par secret hors mode interactif — la forme n'est jamais "
+                        "déduite")
     p.add_argument("--kind", help="type d'œuvre (book, movie, music, quote, poem, …)")
     p.add_argument("--author", help="auteur / autrice")
     p.add_argument("--work", help="titre de l'œuvre")
@@ -2031,10 +2144,10 @@ def main():
     donors = DonorResolver(lemma_table, forms_by_lemma, V, Vset, lang,
                            explicit=explicit_donors, interactive=interactive)
 
-    # Every word a hole can display agrees with the sentence (addendum 2). The secret's
-    # own morphology is the target and it decides everywhere, batch runs included; the
-    # author is asked only when the table cannot settle it (--form off a TTY, a prompt
-    # on one). --no-inflect is the opt-out that reproduces pre-addendum output.
+    # The whole rank map agrees with the sentence (#133). The secret's own morphology
+    # is the target and it is NEVER inferred: every secret confirms its form on a TTY
+    # (a single analysis included), and off one --form is required per secret.
+    # --no-inflect is the opt-out that reproduces agreement-free output.
     forms = FormResolver(form_table, explicit=explicit_forms, interactive=interactive)
 
     # Two paths to the same (holes, ranks): --words is the explicit / batch path (each

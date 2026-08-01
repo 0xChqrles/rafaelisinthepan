@@ -1,22 +1,28 @@
 """CONTRACT: the unified lexeme inventory and the display-agreement pass it feeds
-(#119 addenda 2/3, unified by #132).
+(#119 addenda 2/3, unified by #132, whole-vocabulary + never-inferred by #133).
 
 A hole displays the player's current best word, so that word should agree with the
 sentence: « tu t'___ » must read "t'distrais", never "t'distraire". The rules:
 
-  - the set to agree is EXACTLY the groups at rank <= start_rank — a hole only ever
-    improves and starts at start_rank, so no farther group is ever rendered;
-  - rank 0 is never touched: it already holds the true sentence form;
-  - the target form is the SECRET's own morphology, read off the committed table, and
-    it decides EVERYWHERE: a batch run agrees too. Only an ambiguous or unknown secret
-    needs a human (--form off a TTY, a prompt on one); --no-inflect is what reproduces
-    the agreement-free output byte for byte;
-  - a form carrying several verb lexemes is DECLINED, never arbitrated;
-  - a group is left alone when its canonical is not a POS-admitted verb, has no such
-    form, would become a word nobody could type back, would land on a slug a CLOSER
-    group already owns, or would take the slug a farther but still DISPLAYABLE group
-    prints — whatever a hole displays must type back at that hole's own exponent, never
-    a closer one. Past start_rank nothing is displayed, so nothing is protected;
+  - the set to agree is the WHOLE rank map (#133) — every group, not just the ones
+    below start_rank; rank 0 is never touched: it already holds the true sentence form;
+  - the target form is the SECRET's own morphology and it is NEVER inferred (#133):
+    even a single-analysis secret is confirmed on a TTY (Enter confirms the shown
+    analysis; several analyses are listed to pick from, described, never arbitrated),
+    and OFF a TTY --form is required per secret — a batch run without it is a hard
+    error, never a guess. --no-inflect is what reproduces the agreement-free output
+    byte for byte;
+  - the transfer is PER-POS (#133): the confirmed feature names one part of speech's
+    cell, so a verb secret conjugates verbs (full feature vector), a noun secret
+    numbers nouns (gender is lexical, not inflectional), an adjective secret
+    genders+numbers adjectives — and a cross-POS neighbour or an invariable keeps its
+    citation form (a `cit` secret prescribes nothing to anyone);
+  - a form carrying several lexemes of the target POS is DECLINED, never arbitrated;
+  - a group is left alone when its canonical is not `dom`-admitted as the feature's
+    POS, has no such form, would become a word nobody could type back, would land on
+    a slug a CLOSER group already owns, or would take the slug a farther group's
+    canonical — with the whole map agreed every group prints its word somewhere, so
+    whatever it prints must type back at its own exponent, never a closer one;
   - rewriting a group rewrites every entry carrying it (aliases included) and keys the
     new slug at that same rank, so typing any form of the group displays the agreed one.
 
@@ -59,16 +65,18 @@ TABLE = load_forms(os.path.join(FIXTURES, "forms.fr.tsv"))
 
 # The reduced vocabulary these tests run against. "distrais" is deliberately ABSENT:
 # it is the untypable-rewrite case (the table knows the form, the embedding does not).
-VOCAB = ["jardin", "amuse", "amuses", "amusé", "amusait", "distraire", "marchait",
-         "marches",
-         "lasses", "lassés", "compris", "pensé", "évident", "évidé", "noyé", "noies",
-         "accoutume", "accoutumer", "accoutumés", "noyait"]
+VOCAB = ["jardin", "jardins", "amuse", "amuses", "amusé", "amusait", "distraire",
+         "marchait", "marches",
+         "lasses", "lassés", "compris", "pensé", "pensée", "pensées", "évident",
+         "évidé", "noyé", "noies",
+         "accoutume", "accoutumer", "accoutumés", "noyait",
+         "grand", "grands", "grande", "grandes", "lent", "lentes",
+         "doucement", "fil", "fils", "vers"]
 VSET = set(VOCAB)
 
-# The grouping the donor bridge walks, in the inventory's lexeme-key namespace —
-# what makes could_be_a_verb's intersection with the verb view meaningful (#132).
-# "accoutumes" has no row of its own here, so only its accent sibling can name the
-# accoutumer group.
+# The grouping the donor bridge walks, in the inventory's lexeme-key namespace
+# (#132). "accoutumes" has no row of its own here, so only its accent sibling can
+# name the accoutumer group.
 LEMMAS = {"accoutume": ("accoutumer:v",), "accoutumer": ("accoutumer:v",),
           "accoutumés": ("accoutumer:v",), "jardin": ("jardin:nc",)}
 
@@ -339,23 +347,32 @@ def test_collect_rows_marks_dom_per_row_and_keeps_gated_targets():
 
 # --- the loader: one artifact, two views -------------------------------------------
 
-def test_grouping_spans_every_pos_and_the_verb_view_filters():
+def test_grouping_and_agreement_views_span_every_pos():
     # grouping is the #104 merge-walk table: every POS, lexeme keys as group ids —
     # "pensée" the noun and penser's participle are two lexemes sharing a surface.
     assert TABLE.grouping["pensée"] == ("penser:v", "pensée:nc")
     assert TABLE.grouping["jardin"] == ("jardin:nc",)
     assert set(TABLE.grouping["évident"]) == {"évider:v", "évident:adj"}
-    # the agreement pass reads the VERB view only: a noun row is not an analysis,
-    # not a cell, and no nominal feature leaks into --form's inventory.
-    assert "jardin" not in TABLE.entries
-    assert ("pensée:nc", "n:s") not in TABLE.realize
-    assert not {"n:s", "n:p", "adj:m:s", "cit"} & set(TABLE.features)
+    # since #133 the agreement views span every POS too: a noun row IS an analysis
+    # and a cell, and the nominal/adjectival/citation features are in --form's
+    # inventory (they name the per-POS transfer targets).
+    assert TABLE.entries["jardin"] == (("jardin:nc", "n:s"),)
+    assert TABLE.realize[("pensée:nc", "n:s")] == ("pensée",)
+    assert TABLE.realize[("jardin:nc", "n:p")] == ("jardins",)
+    assert {"n:s", "n:p", "adj:m:s", "adj:f:p", "cit"} <= set(TABLE.features)
+    # `dominant` names the POS the `dom` gate admits a surface as — the loader's
+    # side of dominant_pos: "évident" is the adjective, never the verb.
+    assert TABLE.dominant.get("évident") == "adj"
+    assert TABLE.dominant.get("marchait") == "v"
+    assert TABLE.dominant.get("jardin") == "nc"
 
 
 def test_the_two_naive_rewrites_are_refused():
     resolver = _resolver()
-    # évident -> évidé: the POS gate refuses to read "évident" as a verb at all.
-    assert resolver.features_of("évident") == ()
+    # évident -> évidé: the POS gate refuses to WRITE "évident" as a verb — its
+    # analyses are still DESCRIBED (the secret question lists them all, #133), but
+    # the neighbour rewrite only admits the dominant reading.
+    assert resolver.features_of("évident") == ("adj:m:s", "ind:pre:3p")
     assert resolver.realize("évident", "par:pas:m:s") is None
     # pensé -> pensée: the gender lives in the feature, so a masculine target stays
     # masculine. (And "pensée" is gated as a source in its own right.)
@@ -363,43 +380,114 @@ def test_the_two_naive_rewrites_are_refused():
     assert resolver.realize("pensé", "par:pas:f:s") == "pensée"
 
 
-# --- 9. the secret decides, silently, whenever its row is unambiguous -------------
+# --- 9. the secret's form is NEVER inferred (#133) --------------------------------
 
-def test_target_form_is_read_off_the_secret_with_no_prompt_and_no_flag(monkeypatch):
-    monkeypatch.setattr("builtins.input", lambda _p="": pytest.fail("asked"))
+def test_a_single_analysis_is_confirmed_never_auto_resolved(monkeypatch):
+    # "marchait" has exactly one analysis — the pre-#133 pass took it silently. Now
+    # the analysis is SHOWN and Enter explicitly confirms it.
+    asked = []
+    monkeypatch.setattr("builtins.input", lambda p="": (asked.append(p), "")[1])
     assert _resolver(interactive=True).feature_for("marchait") == "ind:imp:3s"
-    # A noun is never asked "which verb form?" — most secrets are nouns, and the table
-    # not knowing a word is not evidence that it is a verb.
-    assert _resolver(interactive=True).feature_for("jardin", _donors()) is None
+    assert asked, "the single-analysis secret was not asked"
+    assert "confirmer ind:imp:3s" in asked[0]
+    # A noun secret asks too — its analysis is a noun cell, not a verb question.
+    asked.clear()
+    assert _resolver(interactive=True).feature_for("jardin") == "n:s"
+    assert "confirmer n:s" in asked[0]
 
 
-def test_only_a_word_that_could_be_a_verb_is_asked_about():
+def test_the_question_is_asked_once_per_secret(monkeypatch):
+    calls = []
+    monkeypatch.setattr("builtins.input", lambda p="": (calls.append(p), "")[1])
     resolver = _resolver(interactive=True)
-    # "accoutumes" is a real 2sg the embedding lacks: the lemma bridge reaches
-    # "accoutumer:v" through its accent sibling, so the question is worth asking —
-    # and the bridge's keys and the verb view's keys are ONE namespace (#132).
-    assert resolver.could_be_a_verb("accoutumes", _donors())
-    # "jardin" reaches only its noun lexeme.
-    assert not resolver.could_be_a_verb("jardin", _donors())
-    # and with no bridge to walk, nothing is asked.
-    assert not resolver.could_be_a_verb("accoutumes", None)
+    assert resolver.feature_for("marchait") == "ind:imp:3s"
+    assert resolver.feature_for("marchait") == "ind:imp:3s"
+    assert len(calls) == 1
 
 
-# --- 10. an ambiguous secret is never guessed -------------------------------------
+def test_zero_declines_agreement_explicitly(monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda _p="": "0")
+    assert _resolver(interactive=True).feature_for("marchait") is None
 
-def test_ambiguous_secret_needs_an_explicit_form_off_a_tty():
-    # "compris" is past participle OR 1s/2s past historic: three features, no default.
+
+def test_an_unknown_secret_takes_free_text_and_enter_declines(monkeypatch):
+    # No analysis at all: nothing to confirm, so Enter declines — the only default
+    # that is not a guess — and a typed feature is accepted.
+    monkeypatch.setattr("builtins.input", lambda _p="": "")
+    assert _resolver(interactive=True).feature_for("inconnu") is None
+    monkeypatch.setattr("builtins.input", lambda _p="": "ind:pre:2s")
+    assert _resolver(interactive=True).feature_for("inconnu") == "ind:pre:2s"
+
+
+def test_an_ambiguous_secret_lists_its_analyses_and_enter_picks_nothing(monkeypatch):
+    # "compris" is a past participle OR the 1s/2s past historic. Enter must not pick
+    # one (described, never arbitrated) — the prompt re-asks until a number answers.
+    answers = iter(["", "3"])
+    monkeypatch.setattr("builtins.input", lambda _p="": next(answers))
+    assert _resolver(interactive=True).feature_for("compris") == "par:pas:m:s"
+
+
+# --- 10. off a TTY, --form is required per secret ----------------------------------
+
+def test_every_secret_needs_an_explicit_form_off_a_tty(capsys):
+    # ...the ambiguous one, as before:
     assert _resolver().features_of("compris") == (
         "ind:pas:1s", "ind:pas:2s", "par:pas:m:s")
-    assert _resolver().feature_for("compris") is None
+    with pytest.raises(SystemExit):
+        _resolver().feature_for("compris")
+    err = capsys.readouterr().err
+    assert "jamais déduite" in err
+    # the fix stays copy-pastable but reads as an EXAMPLE, never a default: the
+    # alphabetically-first analysis is the least likely reading of "compris", and
+    # an error whose remedy line implies a pick would quietly contradict #133.
+    assert "ex. --form compris=ind:pas:1s" in err
+    assert "par:pas:m:s" in err                 # ...and every analysis listed
+    # ...but ALSO the unambiguous one (#133's point: never inferred, even at 999/1000):
+    with pytest.raises(SystemExit):
+        _resolver().feature_for("marchait")
+    assert "ex. --form marchait=ind:imp:3s" in capsys.readouterr().err
+    # --form settles both without a prompt.
     assert _resolver(explicit={"compris": "par:pas:m:s"}).feature_for("compris") == \
         "par:pas:m:s"
+    assert _resolver(explicit={"marchait": "ind:imp:3s"}).feature_for("marchait") == \
+        "ind:imp:3s"
 
 
 def test_unknown_form_flag_is_a_clear_error(capsys):
     with pytest.raises(SystemExit):
         _resolver(explicit={"compris": "ind:pre:9z"}).feature_for("compris")
     assert "n'est pas un trait connu" in capsys.readouterr().err
+
+
+def test_a_trait_outside_the_secrets_analyses_warns_but_runs(capsys):
+    # A KNOWN trait outside the secret's listed analyses is nearly always a typo —
+    # --form compris=n:p would run a nominal transfer over a participle's
+    # neighborhood — so it is said on stderr. But it is a WARNING, not an error:
+    # the table can be right about the cell while incomplete for the surface
+    # («sors» carries no ind:pre:1s analysis, a pinned Morphalou hole, yet
+    # « je sors » is exactly that trait), so refusing would make such a sentence
+    # un-authorable. The human stays the authority; the script just points.
+    resolver = _resolver(explicit={"compris": "n:p"})
+    assert resolver.feature_for("compris") == "n:p"
+    err = capsys.readouterr().err
+    assert "n'est aucune des analyses connues" in err
+    assert "ind:pas:1s" in err   # the listed analyses ride along, for the re-check
+    # a listed trait warns nothing...
+    quiet = _resolver(explicit={"compris": "par:pas:m:s"})
+    assert quiet.feature_for("compris") == "par:pas:m:s"
+    assert capsys.readouterr().err == ""
+    # ...and an unknown surface has no analyses to check against.
+    free = _resolver(explicit={"inconnu": "ind:pre:2s"})
+    assert free.feature_for("inconnu") == "ind:pre:2s"
+    assert capsys.readouterr().err == ""
+
+
+def test_the_analysis_warning_covers_the_prompt_path_too(monkeypatch, capsys):
+    # The check lives where the trait is SETTLED, not in the --form parse: a trait
+    # typed at the TTY prompt gets the same scrutiny as a flag.
+    monkeypatch.setattr("builtins.input", lambda _p="": "n:p")
+    assert _resolver(interactive=True).feature_for("compris") == "n:p"
+    assert "n'est aucune des analyses connues" in capsys.readouterr().err
 
 
 def test_form_flag_parsing_rejects_a_malformed_pair(capsys):
@@ -412,18 +500,24 @@ def test_form_flag_parsing_rejects_a_malformed_pair(capsys):
 
 # --- 11-13. what the pass rewrites, and what it declines --------------------------
 
-def test_pass_agrees_the_displayable_groups_and_their_aliases():
+# apply() calls feature_for, which off a TTY demands --form (#133): the apply tests
+# therefore settle the secret's form explicitly, exactly like a batch run would.
+def _settled(feature, secret="amuses", table=TABLE):
+    return _resolver(explicit={secret: feature}, table=table)
+
+
+def test_pass_agrees_the_groups_and_their_aliases():
     # secret "amuses" (ind:pre:2s). "marchait" is a verb that must become "marches";
     # its alias key "marche" must follow, so typing any form displays the agreed one.
     rmap = _map(("amuses", "amuses", 0), ("marchait", "marchait", 1),
                 ("marche", "marchait", 1), ("jardin", "jardin", 2))
-    changed = _resolver().apply(rmap, 5, "amuses", _donors())
+    changed = _settled("ind:pre:2s").apply(rmap, "amuses", _donors())
 
     assert changed == {1: ("marchait", "marches")}
     assert rmap["marchait"] == {"word": "marches", "rank": 1}
     assert rmap["marche"] == {"word": "marches", "rank": 1}   # the alias followed
     assert rmap["marches"] == {"word": "marches", "rank": 1}  # ...and the new slug is keyed
-    # 11. a noun the verb view knows nothing about is left alone, as is the secret.
+    # 11. a cross-POS neighbour keeps its citation form (#133), as does the secret.
     assert rmap["jardin"] == {"word": "jardin", "rank": 2}
     assert rmap["amuses"] == {"word": "amuses", "rank": 0}
 
@@ -432,19 +526,69 @@ def test_a_rewrite_the_player_could_not_type_is_declined():
     # 12. the table knows distraire -> "distrais", but no reduced word folds to that
     # slug: displaying it would print a hint nobody can type back.
     rmap = _map(("amuses", "amuses", 0), ("distraire", "distraire", 1))
-    assert _resolver().apply(rmap, 5, "amuses", _donors()) == {}
+    assert _settled("ind:pre:2s").apply(rmap, "amuses", _donors()) == {}
     assert rmap["distraire"] == {"word": "distraire", "rank": 1}
 
 
-def test_groups_past_the_start_rank_are_never_touched():
-    # 13. a hole starts at start_rank and only improves, so rank 4 can never be shown.
+def test_the_whole_map_agrees_not_just_the_near_field():
+    # 13 (#133): the scope is every group — a rank far past any start band agrees too.
     rmap = _map(("amuses", "amuses", 0), ("marchait", "marchait", 2),
-                ("lassés", "lassés", 4))
-    changed = _resolver().apply(rmap, 2, "amuses", _donors())
+                ("lassés", "lassés", 400))
+    changed = _settled("ind:pre:2s").apply(rmap, "amuses", _donors())
 
-    assert changed == {2: ("marchait", "marches")}
-    assert "lasses" not in rmap  # no key invented for a group nobody can reach
-    assert rmap["lassés"] == {"word": "lassés", "rank": 4}
+    assert changed == {2: ("marchait", "marches"), 400: ("lassés", "lasses")}
+    assert rmap["lasses"] == {"word": "lasses", "rank": 400}
+    assert rmap["lassés"] == {"word": "lasses", "rank": 400}
+
+
+# --- 13bis. the per-POS transfer policy (#133) -------------------------------------
+
+def test_a_noun_secret_numbers_the_nouns_and_only_the_nouns():
+    # secret "jardins" (n:p): the noun neighbour takes the plural; the verb and the
+    # adjective are cross-POS — no target form is defined for them — and the
+    # invariable adverb has nothing to inflect. Gender never transfers to a noun.
+    rmap = _map(("jardins", "jardins", 0), ("pensee", "pensée", 1),
+                ("marchait", "marchait", 2), ("grand", "grand", 3),
+                ("doucement", "doucement", 4))
+    changed = _settled("n:p", "jardins").apply(rmap, "jardins", _donors())
+
+    assert changed == {1: ("pensée", "pensées")}
+    assert rmap["pensee"] == {"word": "pensées", "rank": 1}
+    assert rmap["pensees"] == {"word": "pensées", "rank": 1}
+    assert rmap["marchait"]["word"] == "marchait"
+    assert rmap["grand"]["word"] == "grand"
+    assert rmap["doucement"]["word"] == "doucement"
+
+
+def test_an_adjective_secret_genders_and_numbers_the_adjectives():
+    # secret "grandes" (adj:f:p): the adjective neighbour agrees in gender AND
+    # number; the noun stays — nouns take number only, and from a noun secret.
+    rmap = _map(("grandes", "grandes", 0), ("lent", "lent", 1),
+                ("jardin", "jardin", 2))
+    changed = _settled("adj:f:p", "grandes").apply(rmap, "grandes", _donors())
+
+    assert changed == {1: ("lent", "lentes")}
+    assert rmap["lent"] == {"word": "lentes", "rank": 1}
+    assert rmap["lentes"] == {"word": "lentes", "rank": 1}
+    assert rmap["jardin"]["word"] == "jardin"
+
+
+def test_a_citation_form_secret_prescribes_nothing():
+    # secret "doucement" (cit): invariable — no target form is defined for anyone.
+    rmap = _map(("doucement", "doucement", 0), ("marchait", "marchait", 1),
+                ("jardin", "jardin", 2), ("grand", "grand", 3))
+    before = {k: dict(v) for k, v in rmap.items()}
+    assert _settled("cit", "doucement").apply(rmap, "doucement", _donors()) == {}
+    assert rmap == before
+
+
+def test_a_same_pos_homograph_neighbour_is_declined_not_arbitrated():
+    # "fils" carries TWO noun lexemes (fil:nc and fils:nc) — the `dom` gate cannot
+    # settle same-POS ambiguity, so the neighbour keeps its dictionary form: the
+    # same durent/devoir refusal, reached through the nominal paradigms.
+    rmap = _map(("jardins", "jardins", 0), ("fils", "fils", 1))
+    assert _settled("n:s", "jardins").apply(rmap, "jardins", _donors()) == {}
+    assert rmap["fils"] == {"word": "fils", "rank": 1}
 
 
 # --- 14. the collision rule: decline, never contradict -----------------------------
@@ -455,13 +599,14 @@ def test_cross_group_collision_skips_the_rewrite():
     # typing it read 1: a displayed clue improving its own hole. So it is declined.
     rmap = _map(("amuses", "amuses", 0), ("lasses", "autre", 1),
                 ("lassés", "lassés", 3))
-    assert _resolver().apply(rmap, 5, "amuses", _donors()) == {}
+    assert _settled("ind:pre:2s").apply(rmap, "amuses", _donors()) == {}
     assert rmap["lassés"] == {"word": "lassés", "rank": 3}   # original form kept
     assert rmap["lasses"] == {"word": "autre", "rank": 1}    # closer group untouched
 
     # positive control: with that slug free, the very same rewrite happens.
     free = _map(("amuses", "amuses", 0), ("lassés", "lassés", 3))
-    assert _resolver().apply(free, 5, "amuses", _donors()) == {3: ("lassés", "lasses")}
+    assert _settled("ind:pre:2s").apply(free, "amuses", _donors()) == \
+        {3: ("lassés", "lasses")}
     assert free["lasses"] == {"word": "lasses", "rank": 3}
 
 
@@ -477,7 +622,7 @@ def test_a_group_reclaimed_down_to_nothing_is_not_resurrected_without_geometry()
         "lassés": {"word": "lassés", "rank": 1, "dq": 255, "road": 0},
         "lasses": {"word": "marchait", "rank": 3, "dq": 200, "road": 0},
     }
-    changed = _resolver().apply(rmap, 9, "amuses", _donors())
+    changed = _settled("ind:pre:2s").apply(rmap, "amuses", _donors())
 
     assert changed == {1: ("lassés", "lasses")}      # the closer rewrite still happens
     assert rmap["lasses"] == {"word": "lasses", "rank": 1, "dq": 255, "road": 0}
@@ -493,7 +638,8 @@ def test_a_farther_key_is_reclaimed_like_any_closest_first_alias():
     # contradicts nothing — closest-first is exactly what expand_aliases already does.
     rmap = _map(("amuses", "amuses", 0), ("lassés", "lassés", 2),
                 ("lasses", "autre", 7))
-    assert _resolver().apply(rmap, 9, "amuses", _donors()) == {2: ("lassés", "lasses")}
+    assert _settled("ind:pre:2s").apply(rmap, "amuses", _donors()) == \
+        {2: ("lassés", "lasses")}
     assert rmap["lasses"] == {"word": "lasses", "rank": 2}
 
 
@@ -502,7 +648,7 @@ def test_a_farther_key_is_reclaimed_like_any_closest_first_alias():
 def test_no_inflect_leaves_the_map_exactly_as_it_was():
     rmap = _map(("amuses", "amuses", 0), ("marchait", "marchait", 1))
     before = {k: dict(v) for k, v in rmap.items()}
-    assert _resolver(table=None).apply(rmap, 5, "amuses", _donors()) == {}
+    assert _resolver(table=None).apply(rmap, "amuses", _donors()) == {}
     assert rmap == before
     assert gen_phrase.load_form_table("fr", disabled=True) is None
     # en has no inventory at all — a decided non-goal, not a missing file.
@@ -510,13 +656,13 @@ def test_no_inflect_leaves_the_map_exactly_as_it_was():
 
 
 def test_a_rewritten_hole_is_reported():
-    resolver = _resolver()
+    resolver = _settled("ind:pre:2s")
     rmap = _map(("amuses", "amuses", 0), ("marchait", "marchait", 1))
-    resolver.apply(rmap, 5, "amuses", _donors())
+    resolver.apply(rmap, "amuses", _donors())
     assert resolver.used == {"amuses": ("amuses", "ind:pre:2s", 1)}
     # a hole nothing moved is never announced
-    quiet = _resolver()
-    quiet.apply(_map(("amuses", "amuses", 0), ("jardin", "jardin", 1)), 5, "amuses",
+    quiet = _settled("ind:pre:2s")
+    quiet.apply(_map(("amuses", "amuses", 0), ("jardin", "jardin", 1)), "amuses",
                 _donors())
     assert quiet.used == {}
 
@@ -575,8 +721,13 @@ def test_committed_table_realizes_the_real_form(lemma, feature, expected):
     # present 1s, present 2s and imperative 2s, one spelling
     ("distrais", (("distraire:v", "imp:pre:2s"), ("distraire:v", "ind:pre:1s"),
                   ("distraire:v", "ind:pre:2s"))),
-    ("pensé", (("penser:v", "par:pas:m:s"),)),
-    ("pensée", (("penser:v", "par:pas:f:s"),)),
+    # since #133 the analyses span every POS: the participle AND the lexicalised
+    # adjective — and for "pensée" the noun too, three lexemes on one surface.
+    ("pensé", (("penser:v", "par:pas:m:s"), ("pensé:adj", "adj:m:s"))),
+    ("pensée", (("penser:v", "par:pas:f:s"), ("pensé:adj", "adj:f:s"),
+                ("pensée:nc", "n:s"))),
+    ("jardin", (("jardin:nc", "n:s"),)),
+    ("doucement", (("doucement:adv", "cit"),)),
 ])
 def test_committed_table_analyses_the_form_exactly(form, analyses):
     assert tuple(sorted(committed().entries.get(form, ()))) == analyses
@@ -585,23 +736,26 @@ def test_committed_table_analyses_the_form_exactly(form, analyses):
 def test_the_source_side_gate_still_declines_a_dominant_non_verb():
     table = committed()
     # "évident" is a form of "évider" on paper and overwhelmingly the adjective, so it
-    # is never READ as a verb — while staying available as a target realization.
-    assert "évident" not in table.dominant
-    assert gen_phrase.FormResolver(table).features_of("évident") == ()
+    # is never WRITTEN as a verb — while staying available as a target realization,
+    # and while its analyses stay describable for the secret question (#133).
+    assert table.dominant.get("évident") == "adj"
+    assert gen_phrase.FormResolver(table).realizations("évident", "ind:pre:3p") == ()
     assert table.realize[("évider:v", "ind:pre:3p")] == ("évident",)
-    # "pensée" likewise: gated as a source, legal as penser's f:s participle.
-    assert "pensée" not in table.dominant
-    # ...and the auxiliaries ARE admitted, so an être/avoir hole can agree at all.
+    # "pensée" likewise: dominantly the noun, legal as penser's f:s participle.
+    assert table.dominant.get("pensée") == "nc"
+    # ...and the auxiliaries ARE admitted as verbs, so an être/avoir hole can agree.
     for form in ("avais", "ai", "ont", "avez", "étant", "été", "eu", "aurai"):
-        assert form in table.dominant, form
+        assert table.dominant.get(form) == "v", form
 
 
 def test_an_auxiliary_secret_still_refuses_to_guess_when_it_is_ambiguous():
-    # Admitted is not the same as unambiguous: "avais" is 1s or 2s and asks.
+    # Admitted is not the same as unambiguous: "avais" is 1s or 2s — off a TTY the
+    # form must be explicit (#133: every secret's must, this one visibly so).
     resolver = gen_phrase.FormResolver(committed())
     assert resolver.features_of("avais") == ("ind:imp:1s", "ind:imp:2s")
-    assert resolver.feature_for("avais") is None
-    assert resolver.realize("avais", "par:pas:m:s") == "eu"
+    with pytest.raises(SystemExit):
+        resolver.feature_for("avais")
+    assert gen_phrase.FormResolver(committed()).realize("avais", "par:pas:m:s") == "eu"
 
 
 def test_a_number_invariable_participle_secret_is_asked_about():
@@ -609,7 +763,8 @@ def test_a_number_invariable_participle_secret_is_asked_about():
     # « ils sont pris » must not silently agree its neighbours to the singular.
     resolver = gen_phrase.FormResolver(committed())
     assert {"par:pas:m:s", "par:pas:m:p"} <= set(resolver.features_of("pris"))
-    assert resolver.feature_for("pris") is None
+    with pytest.raises(SystemExit):
+        resolver.feature_for("pris")
     settled = gen_phrase.FormResolver(committed(),
                                       explicit={"pris": "par:pas:m:p"})
     assert settled.feature_for("pris") == "par:pas:m:p"
@@ -631,10 +786,11 @@ def test_a_rewrite_falls_back_to_a_typable_spelling():
     vocab = ["déblayer", "déblayes", "amuses"]
     donors = gen_phrase.DonorResolver({}, {}, vocab, set(vocab), "fr")
     rmap = _map(("amuses", "amuses", 0), ("deblayer", "déblayer", 1))
-    assert resolver.apply(rmap, 5, "amuses", donors) == {}   # secret has no feature
+    with pytest.raises(SystemExit):     # no --form, no TTY: never inferred (#133)
+        resolver.apply(rmap, "amuses", donors)
     settled = gen_phrase.FormResolver(table, explicit={"amuses": "ind:pre:2s"})
     rmap = _map(("amuses", "amuses", 0), ("deblayer", "déblayer", 1))
-    assert settled.apply(rmap, 5, "amuses", donors) == {1: ("déblayer", "déblayes")}
+    assert settled.apply(rmap, "amuses", donors) == {1: ("déblayer", "déblayes")}
     assert rmap["deblayer"]["word"] == "déblayes"
 
     # ...and with NEITHER spelling typable the group is left alone, as before.
@@ -643,7 +799,7 @@ def test_a_rewrite_falls_back_to_a_typable_spelling():
     rmap = _map(("amuses", "amuses", 0), ("deblayer", "déblayer", 1))
     assert gen_phrase.FormResolver(
         table, explicit={"amuses": "ind:pre:2s"}).apply(
-            rmap, 5, "amuses", none_typable) == {}
+            rmap, "amuses", none_typable) == {}
 
 
 def test_a_group_already_in_the_right_cell_is_not_respelled():
@@ -657,7 +813,7 @@ def test_a_group_already_in_the_right_cell_is_not_respelled():
     donors = gen_phrase.DonorResolver({}, {}, vocab, set(vocab), "fr")
     rmap = _map(("ont", "ont", 0), ("asseyent", "asseyent", 1))
     resolver = gen_phrase.FormResolver(table, explicit={"ont": "ind:pre:3p"})
-    assert resolver.apply(rmap, 5, "ont", donors) == {}
+    assert resolver.apply(rmap, "ont", donors) == {}
     assert rmap["asseyent"] == {"word": "asseyent", "rank": 1}
 
 
@@ -677,9 +833,15 @@ def test_every_feature_in_the_committed_table_is_a_known_cell():
               for p in "123" for n in "sp"}
     imperative = {"imp:pre:2s", "imp:pre:1p", "imp:pre:2p"}
     participles = {f"par:pas:{g}:{n}" for g in "mf" for n in "sp"}
-    known = finite | imperative | participles | {"par:pre", "inf"}
+    nominal = {"n:s", "n:p"}
+    adjectival = {f"adj:{g}:{n}" for g in "mf" for n in "sp"}
+    known = (finite | imperative | participles | nominal | adjectival
+             | {"par:pre", "inf", "cit"})
     assert committed().features <= known
     assert "imp:pre:3s" not in committed().features
+    # every feature names exactly one POS — the per-POS transfer's precondition
+    for feature in committed().features:
+        assert build_forms.feature_pos(feature) in ("v", "nc", "adj", None)
 
 
 def test_the_committed_table_has_no_duplicate_row():
@@ -917,19 +1079,19 @@ def test_an_ambiguous_paradigm_is_refused():
     assert resolver.realize("marchait", "ind:pre:2s") == "marches"
 
 
-# --- a batch run DOES agree when the secret's row is unambiguous -------------------
+# --- a batch run agrees ONLY when told the form (#133) -----------------------------
 
-def test_an_unambiguous_secret_agrees_off_a_tty_too():
-    # The secret decides everywhere: reading the form off the secret is exactly what
-    # lets a piped run agree without being told anything. --no-inflect is the opt-out.
-    batch = _resolver(interactive=False)
+def test_a_batch_run_agrees_with_form_and_dies_without():
+    # Off a TTY nothing is inferred, however unambiguous: --form per secret or bust.
+    batch = _resolver(explicit={"marchait": "ind:imp:3s"}, interactive=False)
     assert batch.feature_for("marchait") == "ind:imp:3s"
     rmap = _map(("marchait", "marchait", 0), ("amuse", "amuse", 1))
-    assert batch.apply(rmap, 3, "marchait", _donors()) == {1: ("amuse", "amusait")}
+    assert batch.apply(rmap, "marchait", _donors()) == {1: ("amuse", "amusait")}
     assert rmap["amuse"] == {"word": "amusait", "rank": 1}
     assert batch.used == {"marchait": ("marchait", "ind:imp:3s", 1)}
-    # ...and an ambiguous one still refuses to guess, TTY or not.
-    assert batch.feature_for("compris") is None
+    # ...and without the flag the same unambiguous secret is a hard error.
+    with pytest.raises(SystemExit):
+        _resolver(interactive=False).feature_for("marchait")
 
 
 # --- a rewrite may never take the slug another group PRINTS ------------------------
@@ -947,7 +1109,7 @@ def test_a_rewrite_never_takes_a_farther_groups_canonical_key():
     rmap = _map(("amuses", "amuses", 0), ("amusait", "amusait", 2),
                 ("amuse", "amuse", 5))
     agreed = _resolver(explicit={"amuses": "par:pas:m:s"}).apply(
-        rmap, 5, "amuses", _donors())
+        rmap, "amuses", _donors())
 
     assert 2 not in agreed                      # the closer group declined...
     assert agreed == {5: ("amuse", "amusé")}    # ...and rank 5 kept its own slug
@@ -961,19 +1123,19 @@ def test_a_rewrite_never_takes_a_farther_groups_canonical_key():
     assert rmap[gen_phrase.slug(start_display)]["rank"] == start_rank
 
 
-def test_only_a_displayable_groups_canonical_key_is_protected():
-    # The protection exists because the owner still PRINTS that word. Past start_rank no
-    # hole can ever render it, so there is nothing to strand and the slug is as
-    # reclaimable as any alias — guarding it would only cost live rewrites.
+def test_every_groups_canonical_key_is_protected():
+    # With the whole map agreed (#133) every group prints its word somewhere, so a
+    # farther group's canonical slug is protected WHEREVER it ranks — the pre-#133
+    # "past start_rank is reclaimable" carve-out is gone with the start_rank bound.
     far = _map(("marchait", "marchait", 0), ("amuse", "amuse", 1),
-               ("amusait", "amusait", 20))          # canonical, but rank 20 > start 5
-    assert _resolver().apply(far, 5, "marchait", _donors()) == {1: ("amuse", "amusait")}
-    assert far["amusait"] == {"word": "amusait", "rank": 1}
+               ("amusait", "amusait", 20))
+    assert _settled("ind:imp:3s", "marchait").apply(far, "marchait", _donors()) == {}
+    assert far["amusait"] == {"word": "amusait", "rank": 20}
+    assert far["amuse"] == {"word": "amuse", "rank": 1}
 
-    # ...and the control: the very same collision INSIDE the displayable range declines.
     near = _map(("marchait", "marchait", 0), ("amuse", "amuse", 1),
-                ("amusait", "amusait", 4))          # canonical at rank 4 <= start 5
-    assert _resolver().apply(near, 5, "marchait", _donors()) == {}
+                ("amusait", "amusait", 4))
+    assert _settled("ind:imp:3s", "marchait").apply(near, "marchait", _donors()) == {}
     assert near["amusait"] == {"word": "amusait", "rank": 4}
     assert near["amuse"] == {"word": "amuse", "rank": 1}
 
@@ -987,6 +1149,19 @@ def test_a_truncated_table_fails_loudly(tmp_path):
                       encoding="utf-8")
     with pytest.raises(ValueError, match="champs attendus"):
         load_forms(str(broken))
+
+
+def test_conflicting_dominant_rows_fail_loudly(tmp_path):
+    # dominant_pos marks exactly ONE POS per surface, so two dom=1 POS for one form
+    # can only come from a hand-edited or corrupt table — which must fail like a
+    # truncated one, not load last-writer-wins.
+    broken = tmp_path / "forms.tsv"
+    broken.write_text("porte\tnc\tn:s\tporte\t1\nporter\tv\tind:pre:3s\tporte\t1\n",
+                      encoding="utf-8")
+    with pytest.raises(ValueError, match="dom=1 pour deux POS"):
+        load_forms(str(broken))
+    # ...while several dom=1 LEXEMES of one POS stay legal («durent» in the fixture).
+    assert TABLE.dominant.get("durent") == "v"
 
 
 def test_form_flag_is_case_insensitive_on_both_sides():
@@ -1004,7 +1179,7 @@ def test_a_reclaimed_key_is_not_dragged_along_by_its_old_group():
     # is no longer its own.
     rmap = _map(("marchait", "marchait", 0), ("amuse", "amuse", 2),
                 ("noies", "noies", 5), ("amusait", "noies", 5))
-    changed = _resolver().apply(rmap, 9, "marchait", _donors())
+    changed = _settled("ind:imp:3s", "marchait").apply(rmap, "marchait", _donors())
 
     assert changed == {2: ("amuse", "amusait"), 5: ("noies", "noyait")}
     # the reclaimed key belongs to the closer group now, and kept ITS form — without
