@@ -98,9 +98,11 @@ def _report(**kwargs):
 
 def test_report_covers_the_near_field_without_mutating_the_map():
     before = copy.deepcopy(RANK_MAP)
+    groups_before = copy.deepcopy(GROUPS)
     report = _report()
 
     assert RANK_MAP == before
+    assert GROUPS == groups_before
     assert report["groups"] == 5
     assert report["last_rank"] == 5
     assert report["forms"] == {
@@ -163,14 +165,14 @@ def test_formatter_prints_every_requested_section_without_a_verdict(capsys):
     out = capsys.readouterr().out
 
     assert "Rapport de jouabilité (informatif — aucun filtrage)" in out
-    assert "accord net 1/5 (20.0 %)" in out
-    assert "repli* 1/5 (20.0 %)" in out
-    assert "citation inter-POS/invariable 2/5 (40.0 %)" in out
-    assert "collision de slug 1/5 (20.0 %)" in out
+    assert "accord net 1/5 (20,0 %)" in out
+    assert "repli* 1/5 (20,0 %)" in out
+    assert "citation inter-POS/invariable 2/5 (40,0 %)" in out
+    assert "collision de slug 1/5 (20,0 %)" in out
     assert "p50 #3 · p90 #6 · max #6" in out
-    assert "vecteur uniquement homographe : 1/5 (20.0 %)" in out
+    assert "vecteur uniquement homographe : 1/5 (20,0 %)" in out
     assert "vers (préposition) → « vers » (rang 4)" in out
-    assert "« courant » ↔ « courantes » = 1.000" in out
+    assert "« courant » ↔ « courantes » = 1,000" in out
     assert "bon" not in out.lower()
     assert "mauvais" not in out.lower()
 

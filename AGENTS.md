@@ -689,7 +689,8 @@ pnpm vocab:fr         # -> packages/web/public/vocab/fr.json
 #    The confirmed form also NAMES the hole's lexeme, so the question fires before
 #    the walk and an inflection of a homographic secret solves its hole (#134);
 #    groups are lexemes ranked by their homograph-free representative, no-clean
-#    lexemes are flagged on stderr. Every ranked group is annotated with its dq distance
+#    lexemes are surfaced in the playability report (#135, printed per secret on
+#    stdout, observation only). Every ranked group is annotated with its dq distance
 #    and, for the groups from the hole's start word in to the secret, its road cluster
 #    (#115); --no-roads drops the road fields, dq has no opt-out.
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 distinct words; all occurrences hole (no `--`)

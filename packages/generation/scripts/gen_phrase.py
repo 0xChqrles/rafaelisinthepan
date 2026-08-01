@@ -593,9 +593,25 @@ def _cosine_distance(left, right):
     return distance if math.isfinite(distance) else None
 
 
+def build_vocab_indexes(vocab):
+    """Frequency and existence indexes of the reduced vocabulary, for the report.
+
+    A pure function of ``vocab`` — but ~TOP_N words, so slugging it is the
+    report's one real cost. PlayabilityReporter builds it once and shares it
+    across the run's secrets; computing it here by default keeps
+    build_playability_report self-contained."""
+    frequency = {word: index for index, word in enumerate(vocab, 1)}
+    slug_frequency = {}
+    for word, index in frequency.items():
+        key = slug(word)
+        if key:
+            slug_frequency.setdefault(key, index)
+    return frequency, slug_frequency, frozenset(vocab)
+
+
 def build_playability_report(secret, groups, rank_map, vocab, lemma_table,
                              forms_by_lemma, kv, resolver=None, feature=None,
-                             top=PLAYABILITY_TOP):
+                             top=PLAYABILITY_TOP, indexes=None):
     """Build #135's neutral, read-only report for one secret.
 
     The window is the shipped groups at ranks 1..``top``. It reports four form
@@ -623,14 +639,10 @@ def build_playability_report(secret, groups, rank_map, vocab, lemma_table,
         if isinstance(rank, int) and 0 < rank <= top:
             by_rank.setdefault(rank, entry.get("word", ""))
     near = [(*group, by_rank[group[1]]) for group in groups
-            if group[1] in by_rank and 0 < group[1] <= top]
+            if group[1] in by_rank]
 
-    frequency = {word: index for index, word in enumerate(vocab, 1)}
-    slug_frequency = {}
-    for word, index in frequency.items():
-        key = slug(word)
-        if key:
-            slug_frequency.setdefault(key, index)
+    frequency, slug_frequency, vocab_set = (
+        indexes if indexes is not None else build_vocab_indexes(vocab))
 
     form_coverage = None
     if resolver is not None and feature is not None:
@@ -682,7 +694,6 @@ def build_playability_report(secret, groups, rank_map, vocab, lemma_table,
 
     no_clean = []
     divergences = []
-    vocab_set = set(vocab)
 
     def vector_of(word):
         try:
@@ -691,6 +702,10 @@ def build_playability_report(secret, groups, rank_map, vocab, lemma_table,
             return None
 
     for _word, rank, claims, clean, rep, display in near:
+        # Unlike the coverage loop, no ':' guard: en claims are bare AGID lemmas
+        # (and key forms_by_lemma the same way), so requiring an inventory-style
+        # lexeme key would silently drop every en divergence. Only the coverage
+        # fractions need cells, which only ':'-keyed inventory lexemes carry.
         lexeme = claims[0] if len(claims) == 1 else None
         if not clean:
             no_clean.append({"rank": rank, "word": display, "lexeme": lexeme})
@@ -746,9 +761,14 @@ def build_playability_report(secret, groups, rank_map, vocab, lemma_table,
     }
 
 
+def _fr_decimal(value, digits):
+    """The report is French prose; its numbers take the French decimal comma."""
+    return f"{value:.{digits}f}".replace(".", ",")
+
+
 def _fraction(count, total):
     percent = 100.0 * count / total if total else 0.0
-    return f"{count}/{total} ({percent:.1f} %)"
+    return f"{count}/{total} ({_fr_decimal(percent, 1)} %)"
 
 
 def format_playability_report(report):
@@ -813,7 +833,7 @@ def format_playability_report(report):
         shown = report["divergences"][:PLAYABILITY_SAMPLES]
         values = ", ".join(
             f"{describe_lexeme(item['lexeme'])} : « {item['representative']} » ↔ "
-            f"« {item['form']} » = {item['distance']:.3f}"
+            f"« {item['form']} » = {_fr_decimal(item['distance'], 3)}"
             for item in shown
         )
         lines.append(
@@ -837,12 +857,15 @@ class PlayabilityReporter:
         self.resolver = resolver
         self.top = top
         self.reports = {}
+        self._indexes = None  # built on first capture — a pure function of vocab
 
     def capture(self, secret, groups, rank_map, feature=None):
+        if self._indexes is None:
+            self._indexes = build_vocab_indexes(self.vocab)
         self.reports[slug(secret)] = build_playability_report(
             secret, groups, rank_map, self.vocab, self.lemma_table,
             self.forms_by_lemma, self.kv, resolver=self.resolver,
-            feature=feature, top=self.top)
+            feature=feature, top=self.top, indexes=self._indexes)
 
     def print(self):
         if not self.reports:
@@ -2623,7 +2646,8 @@ def main():
     # (a single analysis included), and off one --form is required per secret.
     # --no-inflect is the opt-out that reproduces agreement-free output.
     forms = FormResolver(form_table, explicit=explicit_forms, interactive=interactive)
-    reporter = PlayabilityReporter(V, lemma_table, forms_by_lemma, kv, forms)
+    reporter = PlayabilityReporter(V, lemma_table, forms_by_lemma, kv,
+                                   resolver=forms)
 
     # Two paths to the same (holes, ranks): --words is the explicit / batch path (each
     # distinct selector expands to all matching occurrences); with no --words on a TTY
