@@ -90,7 +90,8 @@ def test_filename_dedupes_repeated_slugs_but_keeps_sentence_order(monkeypatch):
     ]
 
 
-def test_main_writes_one_three_slug_filename_for_repeated_holes(monkeypatch, tmp_path):
+def test_main_writes_one_three_slug_filename_for_repeated_holes(
+        monkeypatch, tmp_path, capsys):
     vocab = ["chat", "poursuit", "jardin", "indice", "proche"]
 
     monkeypatch.setattr(FR["module"], "load_vectors", lambda: KV, raising=False)
@@ -135,6 +136,11 @@ def test_main_writes_one_three_slug_filename_for_repeated_holes(monkeypatch, tmp
     data = json.loads(output.read_text(encoding="utf-8"))
     assert len(data["holes"]) == 4
     assert set(data["ranks"]) == {"chat", "poursuit", "jardin"}
+    # #135 is wired into the real batch path: one neutral report per selected
+    # secret, with --no-inflect reported as unmeasured rather than made an error.
+    printed = capsys.readouterr().out
+    assert printed.count("secret «") >= 3
+    assert printed.count("formes : non mesurées") == 3
 
 
 def test_duplicate_words_selectors_are_rejected_after_slug_normalization(capsys):

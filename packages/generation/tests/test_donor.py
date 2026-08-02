@@ -338,10 +338,16 @@ def test_selector_asks_for_the_donor_before_ranking(monkeypatch, capsys):
     monkeypatch.setattr("builtins.input", lambda _p="": "")
 
     donors = _resolver(interactive=True)
+    captures = []
+    reporter = type("Reporter", (), {
+        "capture": lambda _self, secret, groups, rank_map, feature:
+            captures.append((secret, groups, rank_map, feature)),
+    })()
     try:
         holes, ranks = gen_phrase.select_holes_interactive(
             _words(), FR, "fr", kv=KV, V=VOCAB, M=object(), Vset=VSET,
-            lemma_table=TABLE, forms_by_lemma=FORMS, donors=donors)
+            lemma_table=TABLE, forms_by_lemma=FORMS, donors=donors,
+            reporter=reporter)
     finally:
         os.close(fd)
 
@@ -360,6 +366,10 @@ def test_selector_asks_for_the_donor_before_ranking(monkeypatch, capsys):
     # coverage test below.)
     assert "accoutume" not in ranks["accoutumes"]
     assert "accoutumer" not in ranks["accoutumes"]
+    # #135 observes the committed maps after raw-mode authoring too; printing is
+    # deferred to main so the selector's next clear-screen frame cannot erase it.
+    assert [secret for secret, _groups, _rank_map, _feature in captures] == [
+        "accoutumes", "doucement", "jardin"]
 
 
 def test_the_committed_inventory_resolves_the_flagship_borrow_to_one_lexeme():
