@@ -504,11 +504,109 @@ def test_the_analysis_warning_covers_the_prompt_path_too(monkeypatch, capsys):
 
 
 def test_form_flag_parsing_rejects_a_malformed_pair(capsys):
+    # A plain trait is an UNQUALIFIED answer: no lexeme named (#144).
     assert gen_phrase.parse_form_args(["Accoutumes=ind:pre:2s"]) == {
-        "accoutumes": "ind:pre:2s"}
+        "accoutumes": (None, "ind:pre:2s")}
+    # The qualified spelling names the (lexeme, cell) pair.
+    assert gen_phrase.parse_form_args(["Tropiques=tropique:nc/n:p"]) == {
+        "tropiques": ("tropique:nc", "n:p")}
     with pytest.raises(SystemExit):
         gen_phrase.parse_form_args(["accoutumes"])
     assert "MOT=TRAIT" in capsys.readouterr().err
+    # A dangling qualifier is malformed on either side of the '/'.
+    for bad in ("fils=/n:p", "fils=fil:nc/"):
+        with pytest.raises(SystemExit):
+            gen_phrase.parse_form_args([bad])
+        assert "LEXÈME/TRAIT" in capsys.readouterr().err
+
+
+# --- #144: the answer names the (lexeme, cell) pair --------------------------------
+
+def test_the_prompt_lists_one_number_per_lexeme_and_cell_pair(monkeypatch, capsys):
+    # «fils» : n:p is carried by fil:nc AND fils:nc — the cell-deduped listing hid
+    # that choice entirely. One number per PAIR makes it answerable: n:p appears
+    # once per owner, each naming its word.
+    monkeypatch.setattr("builtins.input", lambda _p="": "1")
+    resolver = _resolver(interactive=True)
+    assert resolver.feature_for("fils") == "n:p"
+    out = capsys.readouterr().out
+    assert "1) n:p" in out and "(fil (nom))" in out
+    assert "2) n:p" in out and "(fils (nom))" in out
+    assert "3) n:s" in out
+
+
+def test_a_numbered_pick_settles_the_claim_in_one_keystroke(monkeypatch):
+    # Picking the fil:nc pair names the hole's lexeme directly — no unique-owner
+    # reverse-engineering from the cell.
+    monkeypatch.setattr("builtins.input", lambda _p="": "1")
+    resolver = _resolver(interactive=True)
+    assert resolver.feature_for("fils") == "n:p"
+    assert resolver.confirmed_lexeme("fils") == "fil:nc"
+    # ...and picking the other owner of the SAME cell claims the other word.
+    monkeypatch.setattr("builtins.input", lambda _p="": "2")
+    other = _resolver(interactive=True)
+    assert other.feature_for("fils") == "n:p"
+    assert other.confirmed_lexeme("fils") == "fils:nc"
+
+
+def test_a_typed_bare_trait_keeps_the_fail_closed_claim(monkeypatch):
+    # The free-text answer exists for table-incomplete cells; it names a lexeme
+    # only when exactly one analysis carries it — a shared cell claims nothing.
+    monkeypatch.setattr("builtins.input", lambda _p="": "n:p")
+    resolver = _resolver(interactive=True)
+    assert resolver.feature_for("fils") == "n:p"
+    assert resolver.confirmed_lexeme("fils") is None
+
+
+def test_an_ambiguous_plain_form_flag_is_a_hard_error(capsys):
+    # --form settles without a question, so a plain trait that several lexemes
+    # carry can neither claim nor silently fail closed: it dies, naming the
+    # runnable qualified spellings.
+    with pytest.raises(SystemExit):
+        _resolver(explicit={"fils": "n:p"}).feature_for("fils")
+    err = capsys.readouterr().err
+    assert "plusieurs lexèmes" in err
+    assert "--form fils=fil:nc/n:p" in err
+    assert "--form fils=fils:nc/n:p" in err
+    # An unambiguous plain trait still settles silently, exactly as before.
+    assert _resolver(explicit={"fils": "n:s"}).feature_for("fils") == "n:s"
+    assert _resolver(explicit={"fils": "n:s"}).confirmed_lexeme("fils") == "fils:nc"
+
+
+def test_a_qualified_form_flag_names_the_claim(capsys):
+    resolver = _resolver(explicit={"fils": ("fil:nc", "n:p")})
+    assert resolver.feature_for("fils") == "n:p"
+    assert resolver.confirmed_lexeme("fils") == "fil:nc"
+    assert capsys.readouterr().err == ""
+
+
+def test_a_qualified_form_flag_rejects_a_stranger_lexeme(capsys):
+    # Naming a lexeme the table never analyses the surface as would claim the hole
+    # for a stranger — its inflections would solve a hole they don't answer.
+    with pytest.raises(SystemExit):
+        _resolver(explicit={"fils": ("jardin:nc", "n:p")}).feature_for("fils")
+    assert "n'est pas une analyse connue" in capsys.readouterr().err
+
+
+def test_a_qualified_form_flag_rejects_a_cross_pos_cell(capsys):
+    # fil:nc analyses the surface, but adj:f:p is no cell of a noun's paradigm.
+    with pytest.raises(SystemExit):
+        _resolver(explicit={"fils": ("fil:nc", "adj:f:p")}).feature_for("fils")
+    assert "n'est pas une cellule du paradigme" in capsys.readouterr().err
+
+
+def test_a_qualified_unlisted_cell_warns_but_claims(capsys):
+    # The «sors» shape: the table lacks the exact cell while the lexeme is right.
+    # The unlisted trait keeps its ordinary warning, and the named claim holds —
+    # explicit is explicit.
+    resolver = _resolver(explicit={"fils": ("fils:nc", "n:s")})
+    assert resolver.feature_for("fils") == "n:s"
+    assert resolver.confirmed_lexeme("fils") == "fils:nc"
+    assert capsys.readouterr().err == ""   # (fils:nc, n:s) is listed: no warning
+    quiet = _resolver(explicit={"marches": ("marcher:v", "ind:pre:1s")})
+    assert quiet.feature_for("marches") == "ind:pre:1s"
+    assert quiet.confirmed_lexeme("marches") == "marcher:v"
+    assert "n'est aucune des analyses connues" in capsys.readouterr().err
 
 
 # --- 11-13. what the pass rewrites, and what it declines --------------------------
@@ -1235,7 +1333,9 @@ def test_conflicting_dominant_rows_fail_loudly(tmp_path):
 
 def test_form_flag_is_case_insensitive_on_both_sides():
     assert gen_phrase.parse_form_args(["Marchait=IND:IMP:3S"]) == {
-        "marchait": "ind:imp:3s"}
+        "marchait": (None, "ind:imp:3s")}
+    assert gen_phrase.parse_form_args(["Fils=FIL:NC/N:P"]) == {
+        "fils": ("fil:nc", "n:p")}
 
 
 def test_a_reclaimed_key_is_not_dragged_along_by_its_old_group():
