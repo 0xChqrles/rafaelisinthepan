@@ -59,6 +59,12 @@ analysis is shown and confirmed, several are listed to pick from — and off a T
 ARE lexemes, ranked by their homograph-free representative, and the confirmed form
 also NAMES the hole's lexeme — so the question fires before the walk, and an
 inflection of a homographic secret solves its hole («rouge» solves «rouges»).
+Since #144 the answer names the (lexeme, cell) PAIR: the prompt lists one number
+per pair (picking one settles both in one keystroke), and a cell carried by
+several of the secret's lexemes («tropiques» : n:p is tropique:nc AND
+tropiques:nc) requires the qualified --form MOT=LEXÈME/TRAIT — the plain trait is
+then a hard error, never a guess. A bare typed trait keeps the fail-closed rule:
+it names a lexeme only when exactly one analysis carries it.
 
 After each selected rank map is complete, generation prints a curator-only
 playability report (#135) over ranks 1..150: display-form coverage, reduced-vocab
@@ -1016,14 +1022,16 @@ def group_claim(secret, donor, lemma_table, donors=None):
 def secret_claim(secret, donor, lemma_table, donors=None, forms=None):
     """What group 0 claims (#134): the lexeme the author CONFIRMED, else fall back.
 
-    The #133 answer is a cell, and when exactly one of the secret's analyses
-    carries that cell, the analysis names the hole's lexeme outright — «rouges»
-    confirmed adj:f:p IS rouge:adj. Claiming it is what makes an inflection of a
-    HOMOGRAPHIC secret solve its hole: the surface alone may not choose between
-    its lexemes (claimed_lemmas), but the author just did, explicitly — nothing is
-    inferred, and the one-lexeme invariant holds verbatim. A cell carried by
-    several of the secret's lexemes (— «fils» : n:p is fil:nc AND fils:nc —)
-    identifies nothing and falls back to the surface-derived claim, fail-closed.
+    The #133 answer names a (lexeme, cell) pair (#144): a numbered prompt pick or
+    a qualified --form MOT=LEXÈME/TRAIT is the claim outright — «rouges» confirmed
+    adj:f:p IS rouge:adj. Claiming it is what makes an inflection of a HOMOGRAPHIC
+    secret solve its hole: the surface alone may not choose between its lexemes
+    (claimed_lemmas), but the author just did, explicitly — nothing is inferred,
+    and the one-lexeme invariant holds verbatim. A BARE trait still names the
+    lexeme only when exactly one analysis carries it; carried by several (— «fils»
+    : n:p is fil:nc AND fils:nc —) it identifies nothing and falls back to the
+    surface-derived claim, fail-closed (a bare --form trait in that position is a
+    hard error instead — see feature_for).
 
     A BORROWED vector (#119) still claims only what secret and donor share: the
     confirmed lexeme is honoured only when it is in that shared set, else the
@@ -1420,19 +1428,28 @@ def alias_start_display(rank_map, start, display, start_rank):
 # disagree about a form's lexeme).
 
 def parse_form_args(pairs):
-    """`--form MOT=TRAIT` occurrences -> {slug(mot): trait}.
+    """`--form MOT=TRAIT` / `MOT=LEXÈME/TRAIT` -> {slug(mot): (lexème|None, trait)}.
 
-    Keyed by SLUG, like --donor: that is how a secret is identified everywhere else."""
+    Keyed by SLUG, like --donor: that is how a secret is identified everywhere else.
+    The qualified spelling (#144) names the hole's LEXEME along with its cell — the
+    only way to answer a cell that several of the secret's lexemes carry, where the
+    plain trait identifies nothing (`--form tropiques=tropique:nc/n:p`). Split on
+    '/' because neither side ever contains one: a lexeme key is `lemma:pos` and a
+    trait is ':'-separated codes. Validation against the table happens where the
+    answer is SETTLED (feature_for), same as a typed trait."""
     mapping = {}
     for raw in pairs or ():
-        word, sep, feature = raw.partition("=")
-        word, feature = word.strip().lower(), feature.strip().lower()
-        if not sep or not word or not feature:
-            die(f"--form attend 'MOT=TRAIT' (reçu : '{raw}').")
+        word, sep, value = raw.partition("=")
+        word, value = word.strip().lower(), value.strip().lower()
+        if not sep or not word or not value:
+            die(f"--form attend 'MOT=TRAIT' ou 'MOT=LEXÈME/TRAIT' (reçu : '{raw}').")
         key = slug(word)
         if not key:
             die(f"--form : '{word}' ne contient aucune lettre exploitable.")
-        mapping[key] = feature
+        lexeme, slash, feature = value.rpartition("/")
+        if slash and (not lexeme or not feature):
+            die(f"--form attend 'MOT=LEXÈME/TRAIT' (reçu : '{raw}').")
+        mapping[key] = (lexeme or None, feature if slash else value)
     return mapping
 
 
@@ -1515,7 +1532,11 @@ class FormResolver:
 
     def __init__(self, table, explicit=None, interactive=False):
         self.table = table
-        self.explicit = explicit or {}
+        # A plain-trait entry (the pre-#144 shape, still what tests and callers may
+        # hand over) is an UNQUALIFIED answer: normalize to the (lexeme|None, trait)
+        # pairs parse_form_args produces.
+        self.explicit = {key: value if isinstance(value, tuple) else (None, value)
+                         for key, value in (explicit or {}).items()}
         self.interactive = interactive
         self.used = {}     # secret slug -> (secret, feature, rewrite count)
         # both #134 reports carry the secret's DISPLAY form (the slug is only the
@@ -1525,6 +1546,10 @@ class FormResolver:
         # every secret slug the run settled a form for — --form keys outside it named
         # a word no hole used, which is nearly always a typo worth surfacing.
         self._chosen = {}  # secret slug -> feature or None
+        # the lexeme the run's answer NAMED (#144: a numbered prompt pick or a
+        # qualified --form), or None when the answer was a bare trait — then
+        # confirmed_lexeme keeps its fail-closed unique-owner rule.
+        self._claimed = {}  # secret slug -> lexeme key or None
 
     @property
     def answered(self):
@@ -1532,27 +1557,28 @@ class FormResolver:
         return frozenset(self._chosen)
 
     def analyses_of(self, word):
-        """Every analysis of a surface, every POS: (feature, (lexeme key, ...)).
+        """Every analysis of a surface, every POS: ((feature, lexeme key), ...).
 
-        Deduped by FEATURE, because the feature is the whole answer downstream (the
-        transfer target); the lexeme keys ride along so the prompt can say WHICH
-        word each reading belongs to. Deliberately UNGATED — the secret's question
+        One entry per (cell, lexeme) PAIR (#144, superseding the by-feature dedup):
+        since #134 the answer is not just the transfer target but also the hole's
+        CLAIM, and a cell carried by two lexemes is two different answers —
+        «tropiques» : n:p is tropique:nc or tropiques:nc, and only the author knows
+        which word the sentence uses. Deliberately UNGATED — the secret's question
         is answered by a human, and pre-filtering by dominance would be exactly the
         arbitration #133 forbids (the sentence may well use the rarer reading). The
         `dom` gate keeps its job on the other side, where nobody confirms anything:
         realizing NEIGHBOURS (see realizations)."""
         if self.table is None:
             return ()
-        by_feature = {}
+        pairs = []
         for key, feat in self.table.entries.get(word, ()):
-            keys = by_feature.setdefault(feat, [])
-            if key not in keys:
-                keys.append(key)
-        return tuple((feat, tuple(keys)) for feat, keys in sorted(by_feature.items()))
+            if (feat, key) not in pairs:
+                pairs.append((feat, key))
+        return tuple(sorted(pairs))
 
     def features_of(self, word):
         """The features a surface can carry, every POS, sorted. See analyses_of."""
-        return tuple(feat for feat, _keys in self.analyses_of(word))
+        return tuple(dict.fromkeys(feat for feat, _key in self.analyses_of(word)))
 
     def confirmed_lexeme(self, secret):
         """The lexeme the secret's settled form names, or None when it names
@@ -1560,14 +1586,19 @@ class FormResolver:
 
         This is what pulls the #133 question ahead of the walk (secret_claim calls
         it before any ranking): feature_for prompts on a TTY, reads --form off one,
-        or dies — its normal contract, just earlier. The settled cell identifies a
-        lexeme only when exactly ONE of the secret's analyses carries it; a shared
-        cell («fils» : n:p) or a trait outside the analyses (the warned case)
-        identifies nothing, and the caller falls back to the surface-derived
-        claim — fail-closed, never guessed."""
+        or dies — its normal contract, just earlier. An answer that NAMED its
+        lexeme (#144: a numbered prompt pick, or the qualified --form
+        MOT=LEXÈME/TRAIT) is the claim outright. A bare trait keeps the fail-closed
+        rule: it identifies a lexeme only when exactly ONE of the secret's analyses
+        carries it; a shared cell («fils» : n:p) or a trait outside the analyses
+        (the warned case) identifies nothing, and the caller falls back to the
+        surface-derived claim — never guessed."""
         feature = self.feature_for(secret)
         if feature is None or self.table is None:
             return None
+        named = self._claimed.get(slug(secret))
+        if named is not None:
+            return named
         keys = {key for key, feat in self.table.entries.get(secret, ())
                 if feat == feature}
         return next(iter(keys)) if len(keys) == 1 else None
@@ -1597,64 +1628,70 @@ class FormResolver:
         return self.table.realize.get((lexeme, feature), ())
 
     def _analysis_lines(self, analyses):
-        """The numbered analysis listing, one line per feature with its lexeme(s)."""
+        """The numbered analysis listing, one line per (feature, lexeme) pair."""
         return [f"{i:>3}) {feature}  — {describe_feature(feature)} "
-                f"({', '.join(describe_lexeme(k) for k in keys)})"
-                for i, (feature, keys) in enumerate(analyses, 1)]
+                f"({describe_lexeme(key)})"
+                for i, (feature, key) in enumerate(analyses, 1)]
 
     def _prompt(self, secret):
         """Ask which form the sentence puts this secret in (TTY only).
 
-        EVERY secret asks (#133) — nothing is inferred, however lopsided the odds:
+        Returns (feature|None, named lexeme|None). EVERY secret asks (#133) —
+        nothing is inferred, however lopsided the odds:
           - a SINGLE analysis is shown and Enter CONFIRMS it — confirmation is
             explicit but one keystroke, which is the issue's whole trade;
           - SEVERAL analyses are listed to pick from (described, never arbitrated) —
-            Enter picks nothing, a number or a feature does;
+            Enter picks nothing, a number or a feature does. A number answers the
+            (cell, lexeme) PAIR (#144), so picking it also settles the hole's
+            claim; a typed bare trait names no lexeme and leaves the claim to
+            confirmed_lexeme's fail-closed rule;
           - an UNKNOWN surface (no row at all) takes a free-text feature, and Enter
             declines — there is nothing to confirm, and declining is the only
             default that is not a guess.
         '0' explicitly declines agreement in every case; '?' lists the inventory. A
         closed stdin declines too — never confirms."""
         analyses = self.analyses_of(secret)
-        cands = [feature for feature, _keys in analyses]
-        if cands:
+        if analyses:
             print(f"\nForme de « {secret} » dans la phrase :")
             for line in self._analysis_lines(analyses):
                 print("  " + line)
-            if len(cands) == 1:
-                hint = f"Entrée = confirmer {cands[0]}, trait, ? = liste, 0 = aucun accord"
+            if len(analyses) == 1:
+                hint = (f"Entrée = confirmer {analyses[0][0]}, trait libre, "
+                        f"? = tous les traits, 0 = aucun accord")
             else:
-                hint = "numéro, trait, ? = liste, 0 = aucun accord"
+                hint = (f"numéro (1–{len(analyses)}), trait libre, "
+                        f"? = tous les traits, 0 = aucun accord")
         else:
             print(f"\n« {secret} » n'a pas de forme connue dans la table.")
-            hint = "trait (ex. ind:pre:2s), ? = liste, Entrée = aucun accord"
+            hint = ("trait libre (ex. ind:pre:2s), ? = tous les traits, "
+                    "Entrée = aucun accord")
         while True:
             try:
-                raw = input(f"Trait [{hint}] > ").strip()
+                raw = input(f"Forme [{hint}] > ").strip()
             except EOFError:  # stdin closed mid-prompt: decline, never confirm.
-                return None
+                return None, None
             if not raw:
-                if len(cands) == 1:
-                    return cands[0]  # the shown analysis, explicitly confirmed
-                if not cands:
-                    return None      # nothing to confirm: no agreement
-                print(f"  Plusieurs analyses : choisis un numéro (1–{len(cands)}) "
-                      f"ou un trait (0 = aucun accord).")
+                if len(analyses) == 1:
+                    return analyses[0]   # the shown pair, explicitly confirmed
+                if not analyses:
+                    return None, None    # nothing to confirm: no agreement
+                print(f"  Plusieurs analyses : choisis un numéro "
+                      f"(1–{len(analyses)}) ou un trait (0 = aucun accord).")
                 continue
             if raw == "0":
-                return None          # explicit decline, in every case
+                return None, None        # explicit decline, in every case
             if raw == "?":
                 for feature in sorted(self.table.features):
                     print(f"  {feature}")
                 continue
-            if raw.isdigit() and cands:
+            if raw.isdigit() and analyses:
                 idx = int(raw)
-                if 1 <= idx <= len(cands):
-                    return cands[idx - 1]
-                print(f"  Numéro hors liste (1–{len(cands)}).")
+                if 1 <= idx <= len(analyses):
+                    return analyses[idx - 1]
+                print(f"  Numéro hors liste (1–{len(analyses)}).")
                 continue
             if raw in self.table.features:
-                return raw
+                return raw, None
             print(f"  « {raw} » n'est pas un trait connu (? pour la liste).")
 
     def feature_for(self, secret):
@@ -1682,33 +1719,94 @@ class FormResolver:
         key = slug(secret)
         if key in self._chosen:
             return self._chosen[key]
-        feature = self.explicit.get(key)
+        named, feature = self.explicit.get(key, (None, None))
         if feature is not None and feature not in self.table.features:
             die(f"--form : « {feature} » n'est pas un trait connu de la table des "
                 f"formes (« {secret} »).")
+        if named is not None:
+            self._check_named_claim(secret, named, feature)
+        elif feature is not None:
+            # #144: a plain --form trait carried by several of the secret's lexemes
+            # answers the cell but not the claim — a hard error, never a guess, on
+            # and off a TTY alike (--form's contract is to settle without a
+            # question). The prompt path stays fail-closed instead: a typed bare
+            # trait claims nothing.
+            owners = sorted({k for k, feat in self.table.entries.get(secret, ())
+                             if feat == feature})
+            if len(owners) > 1:
+                spellings = " ou ".join(f"--form {secret}={k}/{feature}"
+                                        for k in owners)
+                die(f"--form : « {feature} » est porté par plusieurs lexèmes de "
+                    f"« {secret} » "
+                    f"({', '.join(describe_lexeme(k) for k in owners)}) — le "
+                    f"trait seul ne nomme pas le lexème (#144). "
+                    f"Précise : {spellings}.")
         if feature is None:
             if not self.interactive:
                 analyses = self.analyses_of(secret)
                 listing = "\n".join("         " + line
                                     for line in self._analysis_lines(analyses))
-                example = f" — ex. --form {secret}={analyses[0][0]}" if analyses \
-                    else ""
+                example = ""
+                if analyses:
+                    # The example must be RUNNABLE: a shared cell's plain trait
+                    # would itself die as ambiguous, so it shows qualified (#144).
+                    feat0, key0 = analyses[0]
+                    shared = sum(1 for f, _k in analyses if f == feat0) > 1
+                    spelt = f"{key0}/{feat0}" if shared else feat0
+                    example = f" — ex. --form {secret}={spelt}"
                 die(f"la forme de « {secret} » doit être explicite hors mode "
                     f"interactif (#133 : jamais déduite, même sans ambiguïté).\n"
                     + (f"         Analyses connues :\n{listing}\n" if analyses
                        else f"         Aucune analyse connue dans la table.\n")
-                    + f"         Passe --form {secret}=TRAIT{example} — ou "
+                    + f"         Passe --form {secret}=TRAIT (ou "
+                    f"{secret}=LEXÈME/TRAIT pour un trait partagé){example} — ou "
                     f"--no-inflect pour désactiver l'accord.")
-            feature = self._prompt(secret)
+            feature, named = self._prompt(secret)
         if feature is not None:
-            known = self.features_of(secret)
-            if known and feature not in known:
-                print(f"  attention : « {feature} » n'est aucune des analyses "
-                      f"connues de « {secret} » ({', '.join(known)}) — accord "
-                      f"appliqué quand même (table incomplète, ou faute de "
-                      f"frappe ?).", file=sys.stderr)
+            if named is not None:
+                # A NAMED claim narrows the check to the pair: another lexeme
+                # listing the same cell must not mask the mismatch (`fils=
+                # fil:nc/n:s` is unlisted for fil:nc even though fils:nc carries
+                # n:s), or a typo silently claims a hole for the wrong word.
+                listed = tuple(f for k, f in self.table.entries.get(secret, ())
+                               if k == named)
+                if feature not in listed:
+                    print(f"  attention : « {feature} » n'est aucune des analyses "
+                          f"connues de « {secret} » pour "
+                          f"« {describe_lexeme(named)} » ({', '.join(listed)}) — "
+                          f"accord appliqué quand même (table incomplète, ou "
+                          f"faute de frappe ?).", file=sys.stderr)
+            else:
+                known = self.features_of(secret)
+                if known and feature not in known:
+                    print(f"  attention : « {feature} » n'est aucune des analyses "
+                          f"connues de « {secret} » ({', '.join(known)}) — accord "
+                          f"appliqué quand même (table incomplète, ou faute de "
+                          f"frappe ?).", file=sys.stderr)
         self._chosen[key] = feature
+        self._claimed[key] = named if feature is not None else None
         return feature
+
+    def _check_named_claim(self, secret, named, feature):
+        """Refuse a qualified --form whose lexeme cannot be this secret's claim.
+
+        The named lexeme must be one the table already analyses the SURFACE as (any
+        cell — the «sors» pinned hole means the exact cell may be missing while the
+        lexeme is right, so an unlisted (lexeme, trait) pair only has to match the
+        trait's POS and rides the ordinary unlisted-trait warning). Naming a lexeme
+        the surface never realizes would claim the hole for a stranger — typing its
+        inflections would SOLVE a hole they don't answer — so that is a hard error,
+        not a warning."""
+        keys = sorted({k for k, _feat in self.table.entries.get(secret, ())})
+        if named not in keys:
+            listing = ", ".join(describe_lexeme(k) for k in keys) or "aucune"
+            die(f"--form : « {named} » n'est pas une analyse connue de "
+                f"« {secret} » (analyses : {listing}).")
+        if ((named, feature) not in
+                {(k, f) for k, f in self.table.entries.get(secret, ())}
+                and named.rpartition(":")[2] != feature_pos(feature)):
+            die(f"--form : le trait « {feature} » n'est pas une cellule du "
+                f"paradigme de « {describe_lexeme(named)} ».")
 
     def apply(self, rank_map, secret, donors, *, lexemes):
         """Re-inflect every group's canonical to the secret's form.
@@ -2550,7 +2648,9 @@ def parse_args():
                    help="trait morphologique du secret, auquel son voisinage s'accorde "
                         "(#133), ex. --form accoutumes=ind:pre:2s ; répétable, requis "
                         "par secret hors mode interactif — la forme n'est jamais "
-                        "déduite")
+                        "déduite. Un trait porté par plusieurs lexèmes du secret "
+                        "exige la forme qualifiée MOT=LEXÈME/TRAIT (#144), ex. "
+                        "--form tropiques=tropique:nc/n:p")
     p.add_argument("--kind", help="type d'œuvre (book, movie, music, quote, poem, …)")
     p.add_argument("--author", help="auteur / autrice")
     p.add_argument("--work", help="titre de l'œuvre")

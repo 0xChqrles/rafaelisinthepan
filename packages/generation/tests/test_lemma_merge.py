@@ -278,16 +278,37 @@ def test_secret_claim_uses_the_confirmed_lexeme():
     assert claim == ("rouge:adj",)
 
 
-def test_secret_claim_falls_back_when_the_cell_names_several_lexemes():
-    # «fils» : n:p is carried by fil:nc AND fils:nc — the cell identifies nothing,
-    # and the surface names two lexemes, so the claim falls back to NOTHING.
+def test_secret_claim_falls_back_when_the_bare_trait_names_several_lexemes(
+        monkeypatch):
+    # «fils» : n:p is carried by fil:nc AND fils:nc — a bare TYPED trait (#144: the
+    # prompt's free-text path) identifies nothing, and the surface names two
+    # lexemes, so the claim falls back to NOTHING. (The --form equivalent is a hard
+    # error instead — see test_inflect.)
     table = _lexicon()
-    forms = gen_phrase.FormResolver(table, explicit={"fils": "n:p"})
+    monkeypatch.setattr("builtins.input", lambda _p="": "n:p")
+    forms = gen_phrase.FormResolver(table, interactive=True)
     assert gen_phrase.secret_claim("fils", "fils", table.grouping,
                                    forms=forms) == ()
     # ...while an unambiguous surface keeps its ordinary claim with no resolver.
     assert gen_phrase.secret_claim("jardin", "jardin", table.grouping) == \
         ("jardin:nc",)
+
+
+def test_a_qualified_form_resolves_the_shared_cell_and_the_singular_solves():
+    # The #144 fix end to end, in the «tropiques» shape: n:p is shared, the author
+    # names fil:nc, group 0 claims it — so «fil», its singular, keys at rank 0 and
+    # SOLVES, where the pre-#144 fail-closed fallback left it a separate group.
+    table = _lexicon()
+    forms = gen_phrase.FormResolver(table,
+                                    explicit={"fils": ("fil:nc", "n:p")})
+    claim = gen_phrase.secret_claim("fils", "fils", table.grouping, forms=forms)
+    assert claim == ("fil:nc",)
+    ranking = [("corde", 0, .9), ("fil", 1, .85), ("jardin", 2, .5)]
+    _m, rmap, _g = gen_phrase.build_merged_rank_map(
+        "fils", ranking, table.grouping, gen_phrase.invert_lemmas(table.grouping),
+        {"fil", "fils", "corde", "jardin"}, secret_lemmas=claim)
+
+    assert rmap["fil"] == {"word": "fils", "rank": 0}    # solves
 
 
 def test_a_confirmed_homograph_secret_is_solved_by_its_own_inflection():

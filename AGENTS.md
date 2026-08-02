@@ -283,7 +283,15 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   its siblings (`lunettes` near an eye secret is real sense signal, and its whole
   lexeme rides that closeness). A lexeme with NO clean embedded form still ranks —
   representative = its closest form of any kind, **flagged in generation output**
-  ("take what exists"). Every reduced-vocab form of a lexeme is a key of its group
+  ("take what exists"). **The #133 answer names the (lexeme, cell) PAIR (#144,
+  decided 2026-08-02):** the TTY prompt lists one number per pair (no dedup by
+  cell), so a pick settles the transfer target AND the claim in one keystroke; a
+  cell carried by several of the secret's lexemes (`tropiques` : n:p is
+  tropique:nc AND tropiques:nc, a Morphalou pluralia-tantum twin) requires the
+  qualified `--form MOT=LEXÈME/TRAIT` — the plain trait is then a hard error
+  naming the runnable spellings, never a guess — while a bare TYPED trait keeps
+  the fail-closed rule (claims only a unique owner).
+  Every reduced-vocab form of a lexeme is a key of its group
   (typing `privées` finds — and displays — `privé`); an ambiguous form (`portes` →
   porte/porter, `bois` → bois:nc/boire:v) keys to whichever of its lexemes' groups
   ranked **closest** — a homographic surface is only a KEY now, never a group of
@@ -396,9 +404,10 @@ Consequences that are load-bearing:
   form is NEVER inferred (#133, decided 2026-07-31).** The inventory states the
   cells a spelling genuinely shares; EVERY fr secret settles its form explicitly:
   on a TTY a single analysis is shown and confirmed (Enter), several are listed to
-  pick from, and off a TTY `--form MOT=TRAIT` is required per secret — a batch run
-  without it is a hard error, never a guess (`--no-inflect` stays the explicit
-  opt-out). The confirmed feature drives a **per-POS transfer over the WHOLE rank
+  pick from — since #144 one numbered line per (lexeme, cell) pair — and off a TTY
+  `--form MOT=TRAIT` is required per secret (`MOT=LEXÈME/TRAIT` when the trait is
+  shared across lexemes) — a batch run without it is a hard error, never a guess
+  (`--no-inflect` stays the explicit opt-out). The confirmed feature drives a **per-POS transfer over the WHOLE rank
   map** (all TOP_K groups, not just the near field): verbs take the full feature
   vector, nouns number only (gender is lexical), adjectives gender+number, and
   cross-POS neighbours / invariables keep their citation form (a `cit` secret
@@ -686,6 +695,8 @@ pnpm vocab:fr         # -> packages/web/public/vocab/fr.json
 #    hard error, --no-lemmas to skip). The secret's form is never inferred (#133): a
 #    TTY run confirms it per secret; off a TTY --form MOT=TRAIT is required per fr
 #    secret (hard error otherwise; --no-inflect opts out of agreement entirely).
+#    A trait carried by several of the secret's lexemes needs the qualified
+#    --form MOT=LEXÈME/TRAIT, ex. tropiques=tropique:nc/n:p (#144).
 #    The confirmed form also NAMES the hole's lexeme, so the question fires before
 #    the walk and an inflection of a homographic secret solves its hole (#134);
 #    groups are lexemes ranked by their homograph-free representative, no-clean
