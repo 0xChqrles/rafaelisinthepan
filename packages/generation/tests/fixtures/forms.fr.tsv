@@ -1,53 +1,53 @@
-accoutumer	v	ind:pre:1s	accoutume	1
-accoutumer	v	inf	accoutumer	1
-amuser	v	ind:imp:3s	amusait	1
-amuser	v	ind:pre:1s	amuse	1
-amuser	v	ind:pre:2s	amuses	1
-amuser	v	ind:pre:3s	amuse	1
-amuser	v	par:pas:m:s	amusé	1
-comprendre	v	ind:pas:1s	compris	1
-comprendre	v	ind:pas:2s	compris	1
-comprendre	v	par:pas:m:s	compris	1
-devoir	v	ind:pas:3p	durent	1
-devoir	v	ind:pre:2s	dois	1
-distraire	v	ind:pre:2s	distrais	1
-distraire	v	inf	distraire	1
-durer	v	ind:pre:2s	dures	1
-durer	v	ind:pre:3p	durent	1
-doucement	adv	cit	doucement	1
-fil	nc	n:s	fil	1
-fil	nc	n:p	fils	1
-fils	nc	n:s	fils	1
-fils	nc	n:p	fils	1
-grand	adj	adj:m:s	grand	1
-grand	adj	adj:m:p	grands	1
-grand	adj	adj:f:s	grande	1
-grand	adj	adj:f:p	grandes	1
-jardin	nc	n:s	jardin	1
-jardin	nc	n:p	jardins	1
-lent	adj	adj:m:s	lent	1
-lent	adj	adj:f:p	lentes	1
-lasser	v	ind:pre:2s	lasses	1
-lasser	v	par:pas:m:p	lassés	1
-marcher	v	ind:imp:3s	marchait	1
-marcher	v	ind:pre:2s	marches	1
-noyer	v	ind:imp:3s	noyait	1
-noyer	v	ind:pre:2s	noies	1
-noyer	v	par:pas:m:s	noyé	1
-penser	v	imp:pre:2s	pensé	1
-penser	v	par:pas:f:s	pensée	0
-penser	v	par:pas:m:s	pensé	1
-pensée	nc	n:s	pensée	1
-pensée	nc	n:p	pensées	1
-rouge	adj	adj:m:s	rouge	1
-rouge	adj	adj:f:s	rouge	1
-rouge	adj	adj:m:p	rouges	1
-rouge	adj	adj:f:p	rouges	1
-rouge	adv	cit	rouge	0
-rouge	nc	n:s	rouge	0
-rouge	nc	n:p	rouges	0
-vers	prep	cit	vers	1
-évident	adj	adj:m:s	évident	1
-évident	adj	adj:m:p	évidents	1
-évider	v	ind:pre:3p	évident	0
-évider	v	par:pas:m:s	évidé	1
+accoutumer:v	accoutumer	v	ind:pre:1s	accoutume	1
+accoutumer:v	accoutumer	v	inf	accoutumer	1
+amuser:v	amuser	v	ind:imp:3s	amusait	1
+amuser:v	amuser	v	ind:pre:1s	amuse	1
+amuser:v	amuser	v	ind:pre:2s	amuses	1
+amuser:v	amuser	v	ind:pre:3s	amuse	1
+amuser:v	amuser	v	par:pas:m:s	amusé	1
+comprendre:v	comprendre	v	ind:pas:1s	compris	1
+comprendre:v	comprendre	v	ind:pas:2s	compris	1
+comprendre:v	comprendre	v	par:pas:m:s	compris	1
+devoir:v	devoir	v	ind:pas:3p	durent	1
+devoir:v	devoir	v	ind:pre:2s	dois	1
+distraire:v	distraire	v	ind:pre:2s	distrais	1
+distraire:v	distraire	v	inf	distraire	1
+durer:v	durer	v	ind:pre:2s	dures	1
+durer:v	durer	v	ind:pre:3p	durent	1
+doucement:adv	doucement	adv	cit	doucement	1
+fil:nc	fil	nc	n:s	fil	1
+fil:nc	fil	nc	n:p	fils	1
+fils:nc	fils	nc	n:s	fils	1
+fils:nc	fils	nc	n:p	fils	1
+grand:adj	grand	adj	adj:m:s	grand	1
+grand:adj	grand	adj	adj:m:p	grands	1
+grand:adj	grand	adj	adj:f:s	grande	1
+grand:adj	grand	adj	adj:f:p	grandes	1
+jardin:nc	jardin	nc	n:s	jardin	1
+jardin:nc	jardin	nc	n:p	jardins	1
+lent:adj	lent	adj	adj:m:s	lent	1
+lent:adj	lent	adj	adj:f:p	lentes	1
+lasser:v	lasser	v	ind:pre:2s	lasses	1
+lasser:v	lasser	v	par:pas:m:p	lassés	1
+marcher:v	marcher	v	ind:imp:3s	marchait	1
+marcher:v	marcher	v	ind:pre:2s	marches	1
+noyer:v	noyer	v	ind:imp:3s	noyait	1
+noyer:v	noyer	v	ind:pre:2s	noies	1
+noyer:v	noyer	v	par:pas:m:s	noyé	1
+penser:v	penser	v	imp:pre:2s	pensé	1
+penser:v	penser	v	par:pas:f:s	pensée	0
+penser:v	penser	v	par:pas:m:s	pensé	1
+pensée:nc	pensée	nc	n:s	pensée	1
+pensée:nc	pensée	nc	n:p	pensées	1
+rouge:nc	rouge	adj	adj:m:s	rouge	1
+rouge:nc	rouge	adj	adj:f:s	rouge	1
+rouge:nc	rouge	adj	adj:m:p	rouges	1
+rouge:nc	rouge	adj	adj:f:p	rouges	1
+rouge:adv	rouge	adv	cit	rouge	0
+rouge:nc	rouge	nc	n:s	rouge	0
+rouge:nc	rouge	nc	n:p	rouges	0
+vers:prep	vers	prep	cit	vers	1
+évident:adj	évident	adj	adj:m:s	évident	1
+évident:adj	évident	adj	adj:m:p	évidents	1
+évider:v	évider	v	ind:pre:3p	évident	0
+évider:v	évider	v	par:pas:m:s	évidé	1

@@ -50,21 +50,23 @@ Mirroring it, an interactively chosen start word can be DISPLAYED under another 
 the same word (« tu t'___ » must read "amuses" while only "amuse" has a vector); the
 rank and the geometry stay the chosen band word's. Addendum 2 generalised that to the
 words a hole displays, and #133 extends it to the WHOLE rank map, every part of speech:
-each group agrees with the secret's own morphology through the committed lexeme
-inventory, per-POS (a verb secret conjugates verbs, a noun secret numbers nouns, an
-adjective secret genders+numbers adjectives; cross-POS neighbours keep their citation
-form). The secret's form is never inferred: on a TTY every secret asks — a single
-analysis is shown and confirmed, several are listed to pick from — and off a TTY
---form MOT=TRAIT is required per secret (--no-inflect opts out). Since #134 groups
-ARE lexemes, ranked by their homograph-free representative, and the confirmed form
-also NAMES the hole's lexeme — so the question fires before the walk, and an
+each group agrees with every part of the secret's morphology it can express through
+the committed word-group inventory (#146): adjectives take gender+number, nouns take
+number, noun/adjective secrets do not guess a verb conjugation, and verb secrets
+lend their stated number to nouns (plus participle gender+number to adjectives).
+The secret's form is never inferred: on a TTY every secret asks in usage-level
+morphology (gender / number / conjugation), while the stored and --form vocabulary
+stays the per-POS cell codes; off a TTY --form MOT=TRAIT remains required per secret
+(--no-inflect opts out). Groups are ranked by their homograph-free representative;
+the confirmed morphology (and, only when needed, identity) NAMES group 0 — so the
+question fires before the walk, and an
 inflection of a homographic secret solves its hole («rouge» solves «rouges»).
-Since #144 the answer names the (lexeme, cell) PAIR: the prompt lists one number
-per pair (picking one settles both in one keystroke), and a cell carried by
-several of the secret's lexemes («tropiques» : n:p is tropique:nc AND
-tropiques:nc) requires the qualified --form MOT=LEXÈME/TRAIT — the plain trait is
-then a hard error, never a guess. A bare typed trait keeps the fail-closed rule:
-it names a lexeme only when exactly one analysis carries it.
+#146 removes duplicate dictionary entries before this point. A real identity choice
+that remains is shown only after the morphology choice, with each entry's complete
+forms («fil : fil, fils» vs «fils : fils»); choices whose typable outcomes are
+identical collapse because they cannot change play. Off a TTY, #144's qualified
+--form MOT=LEXÈME/TRAIT still names a real remaining ambiguity; a bare typed trait
+keeps the fail-closed rule.
 
 After each selected rank map is complete, generation prints a curator-only
 playability report (#135) over ranks 1..150: display-form coverage, reduced-vocab
@@ -90,6 +92,7 @@ import random
 import re
 import select
 import sys
+from dataclasses import dataclass
 
 # Importing readline (when present) turns every input() on a TTY into a line editor:
 # arrow keys move the cursor within the line, so an answer — the phrase especially — can
@@ -120,7 +123,7 @@ GEN_OUTPUT = os.path.join(ROOT, "output")
 import french_neighbors as frn
 import glove_neighbors as gn
 from build_forms import (CITATION_FEATURE, FORM_LANGS, feature_pos, forms_path,
-                         load_forms)  # fr lexeme inventory (#132)
+                         load_forms)  # fr word-group inventory (#132/#146)
 from build_lemmas import lemmas_path, load_lemmas  # en form→lemma table (#104)
 from distances import cluster_roads, quantize_dq, road_zone  # dq / road annotations (#115)
 from slug import path_slug, slug, write_vocab  # slug/fold contract, dir names, vocab
@@ -235,27 +238,29 @@ def ws(display):
     return {"word": display, "slug": slug(display)}
 
 
-# --- Lemma grouping (#104) as LEXEME ranking (#134, unified inventory #132) -------
+# --- Lemma grouping (#104) as WORD-GROUP ranking (#134/#146) ----------------------
 # Inflected forms of one word ("privé"/"privée"/"privés", "vermine"/"vermines") are
-# ONE ranked group in a rank map. Since #134 a group IS a lexeme: each lexeme is
-# ranked by its homograph-free representative (see rank_lexemes) and every
-# reduced-vocab form of it keys to its group, ambiguity resolved closest-first.
+# ONE ranked group in a rank map. Since #134 each group is ranked by its
+# homograph-free representative (see rank_lexemes), and #146 may merge source
+# lexemes whose complete playable form families are indistinguishable. Every
+# reduced-vocab form keys to its group, ambiguity resolved closest-first.
 # Merging happens HERE, at generation time; embeddings, the reduction and the vocab
 # existence set are untouched, and the front only ever LOOKS UP the keys.
 #
 # Since #132 the fr grouping comes from the SAME artifact as display agreement (the
-# Morphalou lexeme inventory, build_forms.py): one dictionary defines the lexeme for
+# Morphalou word-group inventory, build_forms.py): one dictionary defines identity for
 # grouping, ranking and display alike, so the merge walk and the agreement pass can
-# no longer disagree about what a form belongs to. Its group keys are lexeme keys
-# («porter:v», «porte:nc») — opaque to everything downstream. en keeps its AGID
+# no longer disagree about what a form belongs to. Group keys remain readable
+# («porter:v», «porte:nc») but are opaque downstream: their suffix is not group POS.
+# en keeps its AGID
 # form→lemma table (build_lemmas.py), a decided non-goal, not a gap.
 
 @functools.lru_cache(maxsize=None)
 def _load_lexicon(lang):
-    """Load (once) the committed lexeme inventory for a language (#132).
+    """Load (once) the committed word-group inventory for a language (#132/#146).
 
-    One artifact feeds BOTH the merge walk (grouping) and the agreement pass (the
-    verb view), so it is loaded once and shared. Missing or corrupt -> hard error,
+    One artifact feeds BOTH the merge walk (grouping) and the agreement pass (all
+    morphology views), so it is loaded once and shared. Missing or corrupt -> hard error,
     like the hors-dico wordlist: silently generating without it would ship
     near-duplicate ranks or a half-agreed puzzle."""
     path = forms_path(lang)
@@ -325,10 +330,10 @@ def invert_lemmas(lemma_table):
 
 
 def rank_lexemes(ranking, lemma_table):
-    """Order every lexeme reachable from the walk by its representative form (#134).
+    """Order every word group reachable from the walk by its representative (#134).
 
-    A lexeme's representative is its closest embedded form that is NOT a
-    cross-lexeme homograph — group-min over clean forms. A homographic form's
+    A group's representative is its closest embedded form that is NOT shared with
+    another group — group-min over clean forms. A homographic form's
     vector provably blends strangers' meanings («vers» mixes the worm's plural with
     the preposition and the poetry noun; ranking lexeme VER by it would put
     "earthworm" next to «poème»), so it sets no lexeme's distance. An unambiguous
@@ -337,10 +342,11 @@ def rank_lexemes(ranking, lemma_table):
     lexeme rides that closeness: the divergence is real sense signal, not noise.
     Zero heuristics — homography is stated by the dictionary, nothing is guessed.
 
-    A lexeme with NO clean embedded form (rouge:adj — «rouge» and «rouges» are both
-    homographs) still ranks: its representative falls back to its closest embedded
-    form of any kind, flagged `clean=False` (#134's edge case — take what exists),
-    which the caller surfaces in generation output.
+    A group with NO clean embedded form still ranks: its representative falls back
+    to its closest embedded form of any kind, flagged `clean=False` (#134's edge
+    case — take what exists), which the caller surfaces in generation output.
+    #146's exact-form twins are already one group here, so they cannot create a
+    false homograph flag against each other.
 
     A surface the table does not know is its own singleton lexeme (lemmas_of), so
     it is trivially clean and ranks by its own vector — including under --no-lemmas,
@@ -368,7 +374,7 @@ def rank_lexemes(ranking, lemma_table):
 
 def build_merged_rank_map(secret_display, ranking, lemma_table, forms_by_lemma, Vset,
                           top_k=TOP_K, secret_lemmas=None):
-    """One secret's complete rank map under lexeme ranking (#134).
+    """One secret's complete rank map under word-group ranking (#134/#146).
 
     Group 0 is the secret: its slug plus every reduced-vocab form of its claimed
     lexeme(s) key at rank 0 — an inflection of the secret still solves the hole.
@@ -381,11 +387,10 @@ def build_merged_rank_map(secret_display, ranking, lemma_table, forms_by_lemma, 
 
     A group left with NO key cannot be typed, displayed or found, so it is SKIPPED
     and consumes no rank. Filter-then-cap: TOP_K counts groups a player can
-    actually reach. This is also what keeps twin no-clean lexemes (vers:nc and
-    vers:prep own one embedded form between them) from minting duplicate ghost
-    ranks: the first twin takes the form, the second keys nothing and vanishes —
-    and it subsumes the old aliasing compaction (a form of an already-keyed lexeme
-    adds no new slug, so its lexeme's would-be group dissolves into the closer one).
+    actually reach. Duplicate entries have already merged in the inventory (#146);
+    the same assembly rule still dissolves any remaining group whose every playable
+    key was claimed closer. It also subsumes the old aliasing compaction (a form of
+    an already-keyed group adds no new slug, so its would-be rank disappears).
 
     A group's DISPLAY is its closest OWNED form: whatever the map prints must type
     back at that group's own rank, so a group whose representative slug belongs to
@@ -401,7 +406,7 @@ def build_merged_rank_map(secret_display, ranking, lemma_table, forms_by_lemma, 
               quantizing the geometry the ranking was built from;
       rmap:   {slug: {word, rank}} — every owned key of every surviving group;
       groups: [(display, rank, claims, clean, rep)] — the secret at rank 0 first;
-              a neighbour group claims exactly its own lexeme, and `rep` is the
+              a neighbour claims exactly its own word group, and `rep` is the
               form whose VECTOR ranked it (what the roads must cluster, even when
               the display fell back to another owned form)."""
     if secret_lemmas is None:
@@ -553,12 +558,13 @@ def build_puzzle_rank_map(secret_display, ranking, lemma_table, forms_by_lemma, 
 def group_lexeme_map(groups):
     """rank -> the group's lexeme key, for the agreement pass (#134).
 
-    Only groups claiming exactly one INVENTORY lexeme — a ':'-keyed claim — carry
-    cells to realize; a table-less singleton (its claim is its own surface) has
-    none and keeps its representative. Rank 0 is excluded: the secret already
+    Group ids are opaque since #146: a suffix cannot say which paradigms a merged
+    word carries. Pass every singleton claim through and let FormResolver's explicit
+    inventory metadata decide whether it has cells. A table-less singleton has no
+    entry there and keeps its representative. Rank 0 is excluded: the secret already
     holds the true sentence form."""
     return {rank: claims[0] for _w, rank, claims, _clean, _rep in groups
-            if rank and len(claims) == 1 and ":" in claims[0]}
+            if rank and len(claims) == 1}
 
 
 def group_reps(groups):
@@ -617,14 +623,14 @@ def build_vocab_indexes(vocab):
 
 def build_playability_report(secret, groups, rank_map, vocab, lemma_table,
                              forms_by_lemma, kv, resolver=None, feature=None,
-                             top=PLAYABILITY_TOP, indexes=None):
+                             morphology=None, top=PLAYABILITY_TOP, indexes=None):
     """Build #135's neutral, read-only report for one secret.
 
     The window is the shipped groups at ranks 1..``top``. It reports four form
     outcomes so the requested three fractions stay truthful and exhaustive:
       - ``agreed``: the final display is in the requested cell;
-      - ``fallback``: same-POS cell missing or no spelling is typable (the ``*``);
-      - ``citation``: cross-POS/invariable/table-less group, so no target cell;
+      - ``fallback``: an expressible target cell is missing/untypable (the ``*``);
+      - ``citation``: this group cannot express the selected morphology;
       - ``collision``: a realizable form was declined by closest-wins slug keying.
     Collision is deliberately not folded into ``fallback``: #134 gives ``*`` the
     narrower missing-or-untypable meaning and already reports collisions separately.
@@ -650,17 +656,41 @@ def build_playability_report(secret, groups, rank_map, vocab, lemma_table,
     frequency, slug_frequency, vocab_set = (
         indexes if indexes is not None else build_vocab_indexes(vocab))
 
+    # Group 0 is authoring evidence too (#146): a wrong/empty claim is the exact
+    # failure that made a singular stop solving its plural. Recover display forms
+    # from the inventory — never print folded map keys — and keep one spelling per
+    # actual rank-0 slug.
+    zero_claims = groups[0][2] if groups else ()
+    zero_slugs = {key for key, entry in rank_map.items()
+                  if entry.get("rank") == 0}
+    zero_forms = []
+    for claim in zero_claims:
+        zero_forms.extend(forms_by_lemma.get(claim, ()))
+    zero_forms.append(secret)
+    zero_forms = [form for form in zero_forms if slug(form) in zero_slugs]
+    canonical = (zero_claims[0].rpartition(":")[0]
+                 if len(zero_claims) == 1 else secret)
+    seen_zero = set()
+    zero_keys = []
+    for form in sorted(set(zero_forms), key=lambda form: (form != canonical, form)):
+        key = slug(form)
+        if key and key not in seen_zero:
+            seen_zero.add(key)
+            zero_keys.append(form)
+
     form_coverage = None
-    if resolver is not None and feature is not None:
+    if morphology is None and feature is not None:
+        morphology = morphology_from_feature(feature)
+    if resolver is not None and morphology is not None:
         counts = {"agreed": 0, "fallback": 0, "citation": 0, "collision": 0}
-        target_pos = feature_pos(feature)
         for _word, _rank, claims, _clean, _rep, display in near:
-            lexeme = claims[0] if len(claims) == 1 and ":" in claims[0] else None
-            if (target_pos is None or lexeme is None
-                    or lexeme.rpartition(":")[2] != target_pos):
+            lexeme = claims[0] if len(claims) == 1 else None
+            targets = resolver.target_features(lexeme, morphology) \
+                if lexeme is not None else ()
+            if not targets:
                 counts["citation"] += 1
                 continue
-            realizations = resolver.realize_cell(lexeme, feature)
+            realizations = resolver.realize_features(lexeme, targets)
             if display in realizations:
                 counts["agreed"] += 1
                 continue
@@ -668,7 +698,7 @@ def build_playability_report(secret, groups, rank_map, vocab, lemma_table,
             if not realizations or not typable:
                 counts["fallback"] += 1
             else:
-                # A same-POS requested form exists and is typable, but the final
+                # A requested form exists and is typable, but the final
                 # group does not display it: closest-wins declined the rewrite.
                 counts["collision"] += 1
         form_coverage = counts
@@ -757,6 +787,8 @@ def build_playability_report(secret, groups, rank_map, vocab, lemma_table,
 
     return {
         "secret": secret,
+        "claim": tuple(zero_claims),
+        "claim_keys": tuple(zero_keys),
         "top": top,
         "groups": len(near),
         "last_rank": max((group[1] for group in near), default=0),
@@ -777,12 +809,19 @@ def _fraction(count, total):
     return f"{count}/{total} ({_fr_decimal(percent, 1)} %)"
 
 
-def format_playability_report(report):
-    """Render one neutral curator report. No adjectives or pass/fail labels."""
+def format_playability_report(report, table=None):
+    """Render one neutral curator report. No adjectives or pass/fail labels.
+
+    `table` supplies #146's source-member metadata: opaque group ids cannot be
+    described by interpreting their canonical `:pos` suffix."""
     lines = [
         f"  secret « {report['secret']} » — {report['groups']} groupe(s), "
         f"rangs 1–{report['last_rank']} (fenêtre ≤ {report['top']})"
     ]
+    claim = ", ".join(report.get("claim", ())) or "aucun lexème"
+    keys = ", ".join(f"« {word} »" for word in report.get("claim_keys", ())) \
+        or "aucune"
+    lines.append(f"    groupe 0 : claim {claim} — clés : {keys}")
     coverage = report["forms"]
     if coverage is None:
         lines.append("    formes : non mesurées (aucun trait d'accord appliqué)")
@@ -821,7 +860,7 @@ def format_playability_report(report):
     if report["no_clean"]:
         shown = report["no_clean"][:PLAYABILITY_SAMPLES]
         flags = ", ".join(
-            f"{describe_lexeme(item['lexeme']) if item['lexeme'] else item['word']} "
+            f"{describe_lexeme(item['lexeme'], table) if item['lexeme'] else item['word']} "
             f"→ « {item['word']} » (rang {item['rank']})"
             for item in shown
         )
@@ -838,7 +877,8 @@ def format_playability_report(report):
     if comparable:
         shown = report["divergences"][:PLAYABILITY_SAMPLES]
         values = ", ".join(
-            f"{describe_lexeme(item['lexeme'])} : « {item['representative']} » ↔ "
+            f"{describe_lexeme(item['lexeme'], table)} : "
+            f"« {item['representative']} » ↔ "
             f"« {item['form']} » = {_fr_decimal(item['distance'], 3)}"
             for item in shown
         )
@@ -847,7 +887,7 @@ def format_playability_report(report):
             f"plus grands) : {values}"
         )
     else:
-        lines.append("    écarts cosinus aux représentants : aucun lexème comparable")
+        lines.append("    écarts cosinus aux représentants : aucun groupe comparable")
     return "\n".join(lines)
 
 
@@ -868,17 +908,22 @@ class PlayabilityReporter:
     def capture(self, secret, groups, rank_map, feature=None):
         if self._indexes is None:
             self._indexes = build_vocab_indexes(self.vocab)
+        morphology = (self.resolver._morphology.get(
+            slug(secret), morphology_from_feature(feature))
+            if self.resolver is not None and feature is not None else None)
         self.reports[slug(secret)] = build_playability_report(
             secret, groups, rank_map, self.vocab, self.lemma_table,
             self.forms_by_lemma, self.kv, resolver=self.resolver,
-            feature=feature, top=self.top, indexes=self._indexes)
+            feature=feature, morphology=morphology, top=self.top,
+            indexes=self._indexes)
 
     def print(self):
         if not self.reports:
             return
         print("\nRapport de jouabilité (informatif — aucun filtrage) :")
+        table = self.resolver.table if self.resolver is not None else None
         for report in self.reports.values():
-            print(format_playability_report(report))
+            print(format_playability_report(report, table))
 
 
 # --- Lemma-donor vector substitution (#119) -------------------------------------
@@ -992,9 +1037,9 @@ def group_lemmas(secret, donor, lemma_table):
 
 
 def group_claim(secret, donor, lemma_table, donors=None):
-    """What the secret's group CLAIMS in the merge walk — at most ONE lexeme.
+    """What the secret CLAIMS in the merge walk — at most ONE word group.
 
-    Without a substitution: the secret's own lexeme, if its surface names just one
+    Without a substitution: the secret's own group, if its surface names just one
     (see claimed_lemmas).
 
     With a BORROWED vector (#119), the claim is what the two SHARE, never the union
@@ -1020,21 +1065,19 @@ def group_claim(secret, donor, lemma_table, donors=None):
 
 
 def secret_claim(secret, donor, lemma_table, donors=None, forms=None):
-    """What group 0 claims (#134): the lexeme the author CONFIRMED, else fall back.
+    """What group 0 claims (#134/#146): the confirmed word group, else fall back.
 
-    The #133 answer names a (lexeme, cell) pair (#144): a numbered prompt pick or
-    a qualified --form MOT=LEXÈME/TRAIT is the claim outright — «rouges» confirmed
-    adj:f:p IS rouge:adj. Claiming it is what makes an inflection of a HOMOGRAPHIC
-    secret solve its hole: the surface alone may not choose between its lexemes
-    (claimed_lemmas), but the author just did, explicitly — nothing is inferred,
-    and the one-lexeme invariant holds verbatim. A BARE trait still names the
-    lexeme only when exactly one analysis carries it; carried by several (— «fils»
-    : n:p is fil:nc AND fils:nc —) it identifies nothing and falls back to the
-    surface-derived claim, fail-closed (a bare --form trait in that position is a
-    hard error instead — see feature_for).
+    The #133 answer first names usage morphology. Duplicate dictionary entries are
+    already one opaque group, so «rouges» needs only gender+number and its merged
+    group is the claim. If real groups with different typable families remain, the
+    prompt adds an identity pick; a qualified --form MOT=LEXÈME/TRAIT does the same
+    off a TTY (#144). Claiming that group is what makes an inflection of a
+    homographic secret solve its hole. A BARE trait still names a group only when
+    one distinct playable outcome carries it; otherwise it falls back fail-closed
+    (and a bare --form trait in that position is a hard error — see feature_for).
 
     A BORROWED vector (#119) still claims only what secret and donor share: the
-    confirmed lexeme is honoured only when it is in that shared set, else the
+    confirmed group is honoured only when it is in that shared set, else the
     plain group_claim intersection applies. Asking the resolver here is what pulls
     the #133 question AHEAD of the walk — the claim needs the answer, so the
     prompt (or --form, or the off-TTY hard error) fires before any ranking."""
@@ -1418,22 +1461,20 @@ def alias_start_display(rank_map, start, display, start_rank):
 # form) — and it is NEVER inferred (#133): even a single-analysis secret is confirmed
 # on a TTY, and off one --form is required per secret; a 999/1000-correct inference
 # silently corrupts the thousandth puzzle, where a confirmation keystroke is cheap.
-# The transfer is per-POS (feature_pos): the confirmed feature names one part of
-# speech's cell, so a verb secret conjugates the verbs, a noun secret numbers the
-# nouns (gender is lexical, not inflectional), an adjective secret genders+numbers
-# the adjectives — and a cross-POS neighbour or an invariable keeps its citation
-# form, because no target form is defined for it. Realizing a neighbour is then a
-# lookup in the committed inventory (build_forms.py, Morphalou-derived since #132 —
-# the same artifact the merge walk groups by, so display and grouping can never
-# disagree about a form's lexeme).
+# #146 transfers the usage information across every POS that can express it:
+# adjectives take gender+number, nouns take number, and nominal answers prescribe
+# no verb conjugation. A finite verb's stated number reaches nouns; a participle's
+# gender+number can reach adjectives too. Realizing a neighbour is then a lookup in
+# the committed inventory (build_forms.py, Morphalou-derived since #132 — the same
+# artifact the merge walk groups by, so display and grouping cannot disagree).
 
 def parse_form_args(pairs):
     """`--form MOT=TRAIT` / `MOT=LEXÈME/TRAIT` -> {slug(mot): (lexème|None, trait)}.
 
     Keyed by SLUG, like --donor: that is how a secret is identified everywhere else.
     The qualified spelling (#144) names the hole's LEXEME along with its cell — the
-    only way to answer a cell that several of the secret's lexemes carry, where the
-    plain trait identifies nothing (`--form tropiques=tropique:nc/n:p`). Split on
+    only way to answer a cell that several DISTINCT playable groups still carry,
+    where the plain trait identifies nothing (`--form fils=fils:nc/n:p`). Split on
     '/' because neither side ever contains one: a lexeme key is `lemma:pos` and a
     trait is ':'-separated codes. Validation against the table happens where the
     answer is SETTLED (feature_for), same as a typed trait."""
@@ -1453,10 +1494,9 @@ def parse_form_args(pairs):
     return mapping
 
 
-# The prompt/report vocabulary: how a lexeme key and a feature read to a human. The
-# feature codes stay the artifact's (they are what --form takes); the description is
-# what makes « plissés → plisser, participe passé masculin pluriel » confirmable at
-# a glance.
+# The prompt/report vocabulary. Feature codes stay the artifact / --form contract;
+# the TTY speaks morphology instead (#146), and only a remaining identity pick shows
+# dictionary entries plus their complete forms.
 _POS_LABELS = {"v": "verbe", "nc": "nom", "adj": "adjectif", "adv": "adverbe",
                "prep": "préposition", "conj": "conjonction", "intj": "interjection",
                "pro": "pronom", "det": "déterminant", "num": "nombre"}
@@ -1500,15 +1540,93 @@ def describe_feature(feature):
         return feature
 
 
-def describe_lexeme(key):
-    """'plissé:adj' -> 'plissé (adjectif)' — curator-facing, never a lookup key."""
-    lemma, _sep, pos = key.rpartition(":")
-    label = _POS_LABELS.get(pos)
-    return f"{lemma} ({label})" if label else key
+@dataclass(frozen=True)
+class Morphology:
+    """The usage-level answer transferred across paradigms (#146).
+
+    `feature` is populated only for a verb: conjugation remains its whole cell.
+    Nominals share gender+number; nouns consume only number and adjectives consume
+    both. A noun cell itself carries no gender, so the TTY's author answer supplies
+    it without changing the artifact or --form cell vocabulary."""
+
+    family: str
+    gender: str | None = None
+    number: str | None = None
+    feature: str | None = None
+
+
+def morphology_from_feature(feature):
+    """One stored/CLI cell -> the morphology it states (never more).
+
+    A noun `n:p` states plural but no gender; an off-TTY --form therefore transfers
+    number to nouns and honestly leaves adjective gender unspecified. The TTY adds
+    the author's explicit gender to that same source cell. Verb cells retain their
+    exact conjugation while exposing any number/gender they genuinely contain for
+    cross-POS transfer."""
+    if feature is None:
+        return None
+    parts = feature.split(":")
+    if feature == CITATION_FEATURE:
+        return Morphology("citation")
+    if parts[0] == "n" and len(parts) == 2:
+        return Morphology("nominal", number=parts[1])
+    if parts[0] == "adj" and len(parts) == 3:
+        return Morphology("nominal", gender=parts[1], number=parts[2])
+    gender = number = None
+    if parts[0] == "par" and len(parts) == 4 and parts[1] == "pas":
+        gender, number = parts[2], parts[3]
+    elif len(parts) >= 3 and re.fullmatch(r"[123][sp]", parts[-1]):
+        number = parts[-1][1]
+    return Morphology("verb", gender=gender, number=number, feature=feature)
+
+
+def describe_morphology(morphology):
+    """A morphology answer in the prompt's usage-level vocabulary."""
+    if morphology.family == "nominal":
+        parts = []
+        if morphology.gender is not None:
+            parts.append(_GENDER_LABELS.get(morphology.gender, morphology.gender))
+        if morphology.number is not None:
+            parts.append(_NUMBER_LABELS.get(morphology.number, morphology.number))
+        return " ".join(parts) or "nominal (genre et nombre non précisés)"
+    if morphology.family == "verb" and morphology.feature is not None:
+        return describe_feature(morphology.feature)
+    if morphology.family == "citation":
+        return "forme de citation (invariable)"
+    return "morphologie non précisée"
+
+
+def describe_lexeme(key, table=None):
+    """An opaque group key in curator-facing prose.
+
+    With #146 metadata, describe every source paradigm a merged word carries rather
+    than trusting the canonical key's suffix. The fallback keeps hand-built English
+    and unit-test tables readable."""
+    members = getattr(table, "members", {}).get(key, ()) if table is not None else ()
+    if not members:
+        lemma, _sep, pos = key.rpartition(":")
+        label = _POS_LABELS.get(pos)
+        return f"{lemma} ({label})" if label else key
+    parsed = [member.rpartition(":") for member in members]
+    lemmas = list(dict.fromkeys(lemma for lemma, _sep, _pos in parsed))
+    poses = list(dict.fromkeys(pos for _lemma, _sep, pos in parsed))
+    labels = [_POS_LABELS.get(pos, pos) for pos in poses]
+    head = " / ".join(lemmas)
+    return f"{head} ({' + '.join(labels)})" if labels else head
+
+
+def describe_group_forms(key, table):
+    """`fil : fil, fils` — the evidence shown for a real remaining identity pick."""
+    members = getattr(table, "members", {}).get(key, ())
+    lemmas = list(dict.fromkeys(member.rpartition(":")[0] for member in members))
+    if not lemmas:
+        lemmas = [key.rpartition(":")[0] or key]
+    forms = getattr(table, "group_forms", {}).get(key, ())
+    return f"{' / '.join(lemmas)} : {', '.join(forms) or 'aucune forme'}"
 
 
 def load_form_table(lang, disabled=False):
-    """Load the agreement views of the lexeme inventory for a language.
+    """Load the agreement views of the word-group inventory for a language.
 
     A language with no inventory (en — see FORM_LANGS) has no agreement pass at all:
     that is a decided non-goal, so it returns None silently rather than erroring. For
@@ -1530,7 +1648,7 @@ class FormResolver:
     that was actually rewritten is recorded in `used` so the run can report it — the
     agreement is as visible in the preview as a borrowed vector is."""
 
-    def __init__(self, table, explicit=None, interactive=False):
+    def __init__(self, table, explicit=None, interactive=False, typable=None):
         self.table = table
         # A plain-trait entry (the pre-#144 shape, still what tests and callers may
         # hand over) is an UNQUALIFIED answer: normalize to the (lexeme|None, trait)
@@ -1538,7 +1656,11 @@ class FormResolver:
         self.explicit = {key: value if isinstance(value, tuple) else (None, value)
                          for key, value in (explicit or {}).items()}
         self.interactive = interactive
-        self.used = {}     # secret slug -> (secret, feature, rewrite count)
+        # Reduced-vocabulary outcome equivalence (#146). Main passes the donor
+        # resolver's slug-aware predicate; defaulting to "all forms typable" keeps
+        # isolated table tests conservative (they collapse only truly equal sets).
+        self._typable = typable or (lambda _word: True)
+        self.used = {}     # secret slug -> (secret, feature, morphology, rewrite count)
         # both #134 reports carry the secret's DISPLAY form (the slug is only the
         # dedupe key — printing it would strip the very accents the pass is about):
         self.fallbacks = {}   # secret slug -> (secret, [(rank, canonical)]) — the *
@@ -1550,6 +1672,10 @@ class FormResolver:
         # qualified --form), or None when the answer was a bare trait — then
         # confirmed_lexeme keeps its fail-closed unique-owner rule.
         self._claimed = {}  # secret slug -> lexeme key or None
+        # Usage-level answer behind the per-POS feature. A noun's stored `n:p`
+        # cannot carry lexical gender, so the TTY records the author's m/f choice
+        # here without changing the artifact / --form vocabulary (#146).
+        self._morphology = {}  # secret slug -> Morphology or None
 
     @property
     def answered(self):
@@ -1559,15 +1685,12 @@ class FormResolver:
     def analyses_of(self, word):
         """Every analysis of a surface, every POS: ((feature, lexeme key), ...).
 
-        One entry per (cell, lexeme) PAIR (#144, superseding the by-feature dedup):
-        since #134 the answer is not just the transfer target but also the hole's
-        CLAIM, and a cell carried by two lexemes is two different answers —
-        «tropiques» : n:p is tropique:nc or tropiques:nc, and only the author knows
-        which word the sentence uses. Deliberately UNGATED — the secret's question
-        is answered by a human, and pre-filtering by dominance would be exactly the
-        arbitration #133 forbids (the sentence may well use the rarer reading). The
-        `dom` gate keeps its job on the other side, where nobody confirms anything:
-        realizing NEIGHBOURS (see realizations)."""
+        Duplicate entries have already merged in the artifact (#146), so repeated
+        dictionary filings no longer appear here. A genuinely distinct remaining
+        group still gets its own pair, but the TTY first collapses these pairs into
+        usage-level morphology and asks for group identity only when their TYPABLE
+        outcomes differ. Deliberately UNGATED: the sentence's human author remains
+        the authority for a rarer reading."""
         if self.table is None:
             return ()
         pairs = []
@@ -1581,37 +1704,37 @@ class FormResolver:
         return tuple(dict.fromkeys(feat for feat, _key in self.analyses_of(word)))
 
     def confirmed_lexeme(self, secret):
-        """The lexeme the secret's settled form names, or None when it names
-        nothing or several.
+        """The opaque group the settled answer names, or None when it names none.
+
+        The method keeps its pre-#146 name because `--form` still calls the opaque
+        identifier LEXÈME, but the returned key may now carry several source entries.
 
         This is what pulls the #133 question ahead of the walk (secret_claim calls
         it before any ranking): feature_for prompts on a TTY, reads --form off one,
         or dies — its normal contract, just earlier. An answer that NAMED its
-        lexeme (#144: a numbered prompt pick, or the qualified --form
+        group (#144: an identity pick, or the qualified --form
         MOT=LEXÈME/TRAIT) is the claim outright. A bare trait keeps the fail-closed
-        rule: it identifies a lexeme only when exactly ONE of the secret's analyses
-        carries it; a shared cell («fils» : n:p) or a trait outside the analyses
-        (the warned case) identifies nothing, and the caller falls back to the
-        surface-derived claim — never guessed."""
+        rule: it identifies a playable outcome only when exactly ONE remains after
+        #146's typable-key collapse. A cell shared by distinct outcomes («fils» :
+        n:p) or a trait outside the analyses (the warned case) identifies nothing,
+        and the caller falls back to the surface-derived claim — never guessed."""
         feature = self.feature_for(secret)
         if feature is None or self.table is None:
             return None
         named = self._claimed.get(slug(secret))
         if named is not None:
             return named
-        keys = {key for key, feat in self.table.entries.get(secret, ())
-                if feat == feature}
-        return next(iter(keys)) if len(keys) == 1 else None
+        choices = self._owner_choices(secret, feature)
+        return choices[0][0] if len(choices) == 1 else None
 
     def realize_cell(self, lexeme, feature):
-        """Every spelling of `lexeme` at the secret's cell, preferred first.
+        """Every spelling of an opaque group at one stored cell, preferred first.
 
-        The transfer is per-POS (#133): `feature` names a cell of ONE part of
-        speech's paradigm (feature_pos), so only a lexeme of that POS has it — a
-        cross-POS group keeps its representative, and a citation-form target
-        (`cit`) prescribes nothing to anyone.
+        `feature` itself belongs to one POS; `target_features` separately decides
+        which cells each group can express from the cross-POS #146 morphology.
+        A citation-form target (`cit`) prescribes nothing to anyone.
 
-        Keyed by the GROUP's lexeme (#134), not by its surface: the walk already
+        Keyed by the opaque GROUP (#134/#146), not by its surface: the walk already
         settled WHAT each group is, so there is nothing left to gate or arbitrate —
         the old surface-side `dom` gate and multi-lexeme refusal answered a
         question ("what is this word?") that no longer arises here. «durent» never
@@ -1620,78 +1743,249 @@ class FormResolver:
         A paradigm can spell one cell more than one way ("déblaies" / "déblayes"), so
         this returns the list rather than the winner: the caller knows which spellings
         a player could actually type, and this does not."""
-        pos = feature_pos(feature)
-        if self.table is None or pos is None:
-            return ()
-        if lexeme.rpartition(":")[2] != pos:
+        if self.table is None or feature_pos(feature) is None:
             return ()
         return self.table.realize.get((lexeme, feature), ())
 
+    def group_poses(self, lexeme):
+        """The paradigms an opaque #146 group carries, from explicit metadata."""
+        if self.table is None:
+            return frozenset()
+        return getattr(self.table, "group_pos", {}).get(lexeme, frozenset())
+
+    def group_forms(self, lexeme):
+        """Every dictionary form of one group, for outcome equivalence / evidence."""
+        if self.table is None:
+            return ()
+        forms = getattr(self.table, "group_forms", {}).get(lexeme)
+        if forms is not None:
+            return forms
+        return tuple(sorted({form for (key, _feature), candidates
+                             in self.table.realize.items() if key == lexeme
+                             for form in candidates}))
+
+    def _outcome(self, lexeme):
+        """The playable key set a claim would add; differences outside vocab vanish."""
+        return frozenset(slug(form) for form in self.group_forms(lexeme)
+                         if self._typable(form) and slug(form))
+
+    def _collapse_owners(self, owners):
+        """Collapse group picks whose typable outcomes are exactly identical (#146).
+
+        Returns `(representative, members)` entries, deterministically ordered. The
+        representative is only an authoring claim shortcut: every member adds the
+        same playable keys, so choosing it cannot change what solves."""
+        by_outcome = {}
+        for owner in sorted(set(owners)):
+            by_outcome.setdefault(self._outcome(owner), []).append(owner)
+        return tuple((members[0], tuple(members))
+                     for _outcome, members in sorted(
+                         by_outcome.items(), key=lambda item: item[1][0]))
+
+    def _owner_choices(self, secret, feature):
+        owners = [key for key, feat in self.table.entries.get(secret, ())
+                  if feat == feature]
+        return self._collapse_owners(owners)
+
+    def morphology_for(self, secret):
+        """The settled usage-level answer, prompting/validating exactly once."""
+        self.feature_for(secret)
+        return self._morphology.get(slug(secret))
+
+    def target_features(self, lexeme, morphology):
+        """Cells this group's paradigms can use from the author's answer (#146).
+
+        Nominal morphology crosses noun/adjective boundaries: adjectives express
+        gender+number, nouns express number. It prescribes no verb conjugation.
+        A verb answer keeps its exact verb cell and — the issue's open sub-decision,
+        resolved here in favour of useful stated information — lends NUMBER to nouns;
+        a past participle also lends its stated gender+number to adjectives. No
+        feature is guessed when the verb cell does not contain it."""
+        if morphology is None or self.table is None:
+            return ()
+        poses = self.group_poses(lexeme)
+        targets = []
+        if morphology.family == "nominal":
+            if ("adj" in poses and morphology.gender is not None
+                    and morphology.number is not None):
+                targets.append(f"adj:{morphology.gender}:{morphology.number}")
+            if "nc" in poses and morphology.number is not None:
+                targets.append(f"n:{morphology.number}")
+        elif morphology.family == "verb":
+            if "v" in poses and morphology.feature is not None:
+                targets.append(morphology.feature)
+            if ("adj" in poses and morphology.gender is not None
+                    and morphology.number is not None):
+                targets.append(f"adj:{morphology.gender}:{morphology.number}")
+            if "nc" in poses and morphology.number is not None:
+                targets.append(f"n:{morphology.number}")
+        return tuple(targets)
+
+    def realize_features(self, lexeme, features):
+        """Preferred, deduped spellings across every target cell a group carries."""
+        forms = []
+        for feature in features:
+            for form in self.realize_cell(lexeme, feature):
+                if form not in forms:
+                    forms.append(form)
+        return tuple(forms)
+
     def _analysis_lines(self, analyses):
-        """The numbered analysis listing, one line per (feature, lexeme) pair."""
+        """Raw stored/CLI analyses for errors and the rare identity evidence."""
         return [f"{i:>3}) {feature}  — {describe_feature(feature)} "
-                f"({describe_lexeme(key)})"
+                f"({describe_group_forms(key, self.table)})"
                 for i, (feature, key) in enumerate(analyses, 1)]
 
-    def _prompt(self, secret):
-        """Ask which form the sentence puts this secret in (TTY only).
+    @staticmethod
+    def _morphology_sort_key(morphology):
+        family = {"nominal": 0, "verb": 1, "citation": 2}.get(
+            morphology.family, 9)
+        gender = {"m": 0, "f": 1, None: 2}.get(morphology.gender, 3)
+        number = {"s": 0, "p": 1, None: 2}.get(morphology.number, 3)
+        return family, gender, number, morphology.feature or ""
 
-        Returns (feature|None, named lexeme|None). EVERY secret asks (#133) —
-        nothing is inferred, however lopsided the odds:
-          - a SINGLE analysis is shown and Enter CONFIRMS it — confirmation is
-            explicit but one keystroke, which is the issue's whole trade;
-          - SEVERAL analyses are listed to pick from (described, never arbitrated) —
-            Enter picks nothing, a number or a feature does. A number answers the
-            (cell, lexeme) PAIR (#144), so picking it also settles the hole's
-            claim; a typed bare trait names no lexeme and leaves the claim to
-            confirmed_lexeme's fail-closed rule;
-          - an UNKNOWN surface (no row at all) takes a free-text feature, and Enter
-            declines — there is nothing to confirm, and declining is the only
-            default that is not a guess.
-        '0' explicitly declines agreement in every case; '?' lists the inventory. A
-        closed stdin declines too — never confirms."""
+    def _morphology_choices(self, analyses):
+        """Usage-level options -> the raw pairs each option can represent.
+
+        Noun cells deliberately expand to both genders: noun gender is lexical but
+        the artifact's `n:s`/`n:p` cells do not carry it, and #146 says the human
+        answer supplies it. Adjective/noun pairs then collapse onto the same nominal
+        choice when their gender+number agree; verb conjugations remain distinct, so
+        «pensée» still distinguishes the noun/adjective reading from the participle."""
+        choices = {}
+        for feature, key in analyses:
+            morphology = morphology_from_feature(feature)
+            variants = (morphology,)
+            if (morphology is not None and morphology.family == "nominal"
+                    and morphology.gender is None):
+                variants = tuple(Morphology("nominal", gender, morphology.number)
+                                 for gender in ("m", "f"))
+            for variant in variants:
+                choices.setdefault(variant, []).append((feature, key))
+        return tuple((morphology, tuple(choices[morphology]))
+                     for morphology in sorted(choices,
+                                              key=self._morphology_sort_key))
+
+    @staticmethod
+    def _feature_preference(feature):
+        # A merged noun/adjective word uses its noun cell as the stable source code;
+        # morphology carries the author's gender separately. This keeps the stored
+        # vocabulary honest without reintroducing the POS question the merge removed.
+        if feature.startswith("n:"):
+            return 0, feature
+        if feature.startswith("adj:"):
+            return 1, feature
+        return 2, feature
+
+    def _identity_choices(self, analyses):
+        """Distinct playable outcomes for one selected morphology.
+
+        Several raw pairs for one group (merged noun + adjective), and several
+        groups whose every DIFFERING form is outside the reduced vocabulary, become
+        one pick. A remaining pick carries the representative group plus the source
+        cell used for --form/report compatibility."""
+        per_owner = {}
+        for feature, owner in analyses:
+            per_owner.setdefault(owner, []).append(feature)
+        choices = []
+        for representative, equivalent in self._collapse_owners(per_owner):
+            features = per_owner[representative]
+            feature = min(features, key=self._feature_preference)
+            choices.append((representative, feature, equivalent))
+        return tuple(choices)
+
+    def _prompt_identity(self, secret, morphology, analyses):
+        """Ask only when the dictionary distinctions change typable solve keys."""
+        choices = self._identity_choices(analyses)
+        if len(choices) == 1:
+            key, feature, _equivalent = choices[0]
+            return feature, key, morphology
+
+        print(f"\nSens de « {secret} » — les formes indiquent ce qui résoudra le trou :")
+        for i, (key, feature, _equivalent) in enumerate(choices, 1):
+            print(f"  {i:>3}) {feature}  — {describe_feature(feature)} "
+                  f"({describe_group_forms(key, self.table)})")
+        while True:
+            try:
+                raw = input(f"Sens [numéro (1–{len(choices)}), trait libre, "
+                            "0 = aucun accord] > ").strip()
+            except EOFError:
+                return None, None, None
+            if raw == "0":
+                return None, None, None
+            if raw.isdigit():
+                idx = int(raw)
+                if 1 <= idx <= len(choices):
+                    key, feature, _equivalent = choices[idx - 1]
+                    return feature, key, morphology
+                print(f"  Numéro hors liste (1–{len(choices)}).")
+                continue
+            if raw in self.table.features:
+                # Free text is the table-incomplete escape. It intentionally names
+                # no group; confirmed_lexeme applies the same fail-closed outcome
+                # rule as before.
+                return raw, None, morphology_from_feature(raw)
+            print(f"  « {raw} » n'est ni un numéro ni un trait connu.")
+
+    def _prompt(self, secret):
+        """Ask the sentence's morphology, then only a REAL remaining identity.
+
+        Returns `(stored feature, named opaque group, Morphology)`. EVERY secret
+        asks (#133): a single usage-level option is shown and confirmed with Enter;
+        several gender/number/conjugation options require a number. Duplicate POS
+        entries never appear. If the chosen morphology still spans groups with
+        different typable form families, `_prompt_identity` shows those families.
+
+        A typed feature remains the «sors» table-incomplete escape and names no
+        group. Unknown surfaces accept the same free text. `0` declines; `?` lists
+        the stored cell vocabulary; closed stdin never confirms."""
         analyses = self.analyses_of(secret)
         if analyses:
-            print(f"\nForme de « {secret} » dans la phrase :")
-            for line in self._analysis_lines(analyses):
-                print("  " + line)
-            if len(analyses) == 1:
-                hint = (f"Entrée = confirmer {analyses[0][0]}, trait libre, "
+            choices = self._morphology_choices(analyses)
+            print(f"\nMorphologie de « {secret} » dans la phrase :")
+            for i, (morphology, _pairs) in enumerate(choices, 1):
+                print(f"  {i:>3}) {describe_morphology(morphology)}")
+            if len(choices) == 1:
+                hint = (f"Entrée = confirmer {describe_morphology(choices[0][0])}, "
+                        f"trait libre, "
                         f"? = tous les traits, 0 = aucun accord")
             else:
-                hint = (f"numéro (1–{len(analyses)}), trait libre, "
+                hint = (f"numéro (1–{len(choices)}), trait libre, "
                         f"? = tous les traits, 0 = aucun accord")
         else:
             print(f"\n« {secret} » n'a pas de forme connue dans la table.")
+            choices = ()
             hint = ("trait libre (ex. ind:pre:2s), ? = tous les traits, "
                     "Entrée = aucun accord")
         while True:
             try:
-                raw = input(f"Forme [{hint}] > ").strip()
+                raw = input(f"Morphologie [{hint}] > ").strip()
             except EOFError:  # stdin closed mid-prompt: decline, never confirm.
-                return None, None
+                return None, None, None
             if not raw:
-                if len(analyses) == 1:
-                    return analyses[0]   # the shown pair, explicitly confirmed
+                if len(choices) == 1:
+                    morphology, pairs = choices[0]
+                    return self._prompt_identity(secret, morphology, pairs)
                 if not analyses:
-                    return None, None    # nothing to confirm: no agreement
-                print(f"  Plusieurs analyses : choisis un numéro "
-                      f"(1–{len(analyses)}) ou un trait (0 = aucun accord).")
+                    return None, None, None  # nothing to confirm: no agreement
+                print(f"  Plusieurs morphologies : choisis un numéro "
+                      f"(1–{len(choices)}) ou un trait (0 = aucun accord).")
                 continue
             if raw == "0":
-                return None, None        # explicit decline, in every case
+                return None, None, None  # explicit decline, in every case
             if raw == "?":
                 for feature in sorted(self.table.features):
                     print(f"  {feature}")
                 continue
-            if raw.isdigit() and analyses:
+            if raw.isdigit() and choices:
                 idx = int(raw)
-                if 1 <= idx <= len(analyses):
-                    return analyses[idx - 1]
-                print(f"  Numéro hors liste (1–{len(analyses)}).")
+                if 1 <= idx <= len(choices):
+                    morphology, pairs = choices[idx - 1]
+                    return self._prompt_identity(secret, morphology, pairs)
+                print(f"  Numéro hors liste (1–{len(choices)}).")
                 continue
             if raw in self.table.features:
-                return raw, None
+                return raw, None, morphology_from_feature(raw)
             print(f"  « {raw} » n'est pas un trait connu (? pour la liste).")
 
     def feature_for(self, secret):
@@ -1720,6 +2014,7 @@ class FormResolver:
         if key in self._chosen:
             return self._chosen[key]
         named, feature = self.explicit.get(key, (None, None))
+        morphology = morphology_from_feature(feature)
         if feature is not None and feature not in self.table.features:
             die(f"--form : « {feature} » n'est pas un trait connu de la table des "
                 f"formes (« {secret} »).")
@@ -1731,14 +2026,14 @@ class FormResolver:
             # and off a TTY alike (--form's contract is to settle without a
             # question). The prompt path stays fail-closed instead: a typed bare
             # trait claims nothing.
-            owners = sorted({k for k, feat in self.table.entries.get(secret, ())
-                             if feat == feature})
+            owners = self._owner_choices(secret, feature)
             if len(owners) > 1:
+                keys = [representative for representative, _equivalent in owners]
                 spellings = " ou ".join(f"--form {secret}={k}/{feature}"
-                                        for k in owners)
+                                        for k in keys)
                 die(f"--form : « {feature} » est porté par plusieurs lexèmes de "
                     f"« {secret} » "
-                    f"({', '.join(describe_lexeme(k) for k in owners)}) — le "
+                    f"({', '.join(describe_lexeme(k, self.table) for k in keys)}) — le "
                     f"trait seul ne nomme pas le lexème (#144). "
                     f"Précise : {spellings}.")
         if feature is None:
@@ -1750,8 +2045,10 @@ class FormResolver:
                 if analyses:
                     # The example must be RUNNABLE: a shared cell's plain trait
                     # would itself die as ambiguous, so it shows qualified (#144).
+                    # Outcome-identical owners have already collapsed (#146), so
+                    # they correctly keep the plain spelling.
                     feat0, key0 = analyses[0]
-                    shared = sum(1 for f, _k in analyses if f == feat0) > 1
+                    shared = len(self._owner_choices(secret, feat0)) > 1
                     spelt = f"{key0}/{feat0}" if shared else feat0
                     example = f" — ex. --form {secret}={spelt}"
                 die(f"la forme de « {secret} » doit être explicite hors mode "
@@ -1761,7 +2058,7 @@ class FormResolver:
                     + f"         Passe --form {secret}=TRAIT (ou "
                     f"{secret}=LEXÈME/TRAIT pour un trait partagé){example} — ou "
                     f"--no-inflect pour désactiver l'accord.")
-            feature, named = self._prompt(secret)
+            feature, named, morphology = self._prompt(secret)
         if feature is not None:
             if named is not None:
                 # A NAMED claim narrows the check to the pair: another lexeme
@@ -1773,7 +2070,8 @@ class FormResolver:
                 if feature not in listed:
                     print(f"  attention : « {feature} » n'est aucune des analyses "
                           f"connues de « {secret} » pour "
-                          f"« {describe_lexeme(named)} » ({', '.join(listed)}) — "
+                          f"« {describe_lexeme(named, self.table)} » "
+                          f"({', '.join(listed)}) — "
                           f"accord appliqué quand même (table incomplète, ou "
                           f"faute de frappe ?).", file=sys.stderr)
             else:
@@ -1785,28 +2083,29 @@ class FormResolver:
                           f"frappe ?).", file=sys.stderr)
         self._chosen[key] = feature
         self._claimed[key] = named if feature is not None else None
+        self._morphology[key] = morphology if feature is not None else None
         return feature
 
     def _check_named_claim(self, secret, named, feature):
-        """Refuse a qualified --form whose lexeme cannot be this secret's claim.
+        """Refuse a qualified --form whose opaque group cannot be the claim.
 
-        The named lexeme must be one the table already analyses the SURFACE as (any
+        The named group must be one the table already analyses the SURFACE as (any
         cell — the «sors» pinned hole means the exact cell may be missing while the
-        lexeme is right, so an unlisted (lexeme, trait) pair only has to match the
-        trait's POS and rides the ordinary unlisted-trait warning). Naming a lexeme
+        group is right, so an unlisted (group, trait) pair only has to match one of
+        the group's POSes and rides the ordinary warning). Naming a group
         the surface never realizes would claim the hole for a stranger — typing its
         inflections would SOLVE a hole they don't answer — so that is a hard error,
         not a warning."""
         keys = sorted({k for k, _feat in self.table.entries.get(secret, ())})
         if named not in keys:
-            listing = ", ".join(describe_lexeme(k) for k in keys) or "aucune"
+            listing = ", ".join(describe_lexeme(k, self.table) for k in keys) or "aucune"
             die(f"--form : « {named} » n'est pas une analyse connue de "
                 f"« {secret} » (analyses : {listing}).")
         if ((named, feature) not in
                 {(k, f) for k, f in self.table.entries.get(secret, ())}
-                and named.rpartition(":")[2] != feature_pos(feature)):
+                and feature_pos(feature) not in self.group_poses(named)):
             die(f"--form : le trait « {feature} » n'est pas une cellule du "
-                f"paradigme de « {describe_lexeme(named)} ».")
+                f"paradigme de « {describe_lexeme(named, self.table)} ».")
 
     def apply(self, rank_map, secret, donors, *, lexemes):
         """Re-inflect every group's canonical to the secret's form.
@@ -1847,10 +2146,10 @@ class FormResolver:
         clean form, marked `*` in generation output) and `collisions` (rewrites the
         collision rules declined; closest-wins itself is unchanged)."""
         feature = self.feature_for(secret)
-        if feature is None or donors is None:
+        morphology = self._morphology.get(slug(secret))
+        if feature is None or morphology is None or donors is None:
             return {}
         lexemes = lexemes or {}
-        pos = feature_pos(feature)
         fell, collided = [], 0
         # Snapshot both the keys and each group's canonical BEFORE rewriting anything:
         # a closer group may reclaim one of these keys on an earlier pass, and reading
@@ -1867,13 +2166,15 @@ class FormResolver:
             lexeme = lexemes.get(rank)
             if lexeme is None:
                 continue  # a table-less singleton: no cells, nothing to agree
-            forms = self.realize_cell(lexeme, feature)
+            targets = self.target_features(lexeme, morphology)
+            forms = self.realize_features(lexeme, targets)
             if canonical in forms:
                 continue  # the group already IS the agreed form
             if not forms:
-                if pos is not None and lexeme.rpartition(":")[2] == pos:
-                    # same POS, no such cell: the requested form is MISSING — the
-                    # group keeps its representative (#134's fallback), marked *.
+                if targets:
+                    # The group has a paradigm that can express this morphology,
+                    # but none of its requested cells exists: MISSING — keep the
+                    # representative (#134's fallback), marked *.
                     fell.append((rank, canonical))
                 continue
             # The artifact's preference order is by corpus frequency, which knows
@@ -1912,7 +2213,7 @@ class FormResolver:
             rank_map[s] = {**group, "word": form}
             changed[rank] = (canonical, form)
         if changed:
-            self.used[slug(secret)] = (secret, feature, len(changed))
+            self.used[slug(secret)] = (secret, feature, morphology, len(changed))
         if fell:
             self.fallbacks[slug(secret)] = (secret, fell)
         if collided:
@@ -2090,7 +2391,7 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
         when its CLAIM changes: the hover preview uses the provisional
         surface-derived claim (secret_claim with no resolver — never a prompt),
         and once the commit step has confirmed the form, the same call re-merges
-        from the cached raw ranking with the confirmed lexeme claimed. The walk
+        from the cached raw ranking with the confirmed group claimed. The walk
         starts from the DONOR's vector; everything the puzzle keeps (rank-0 word,
         aliases, start band) stays on the true sentence form."""
         secret_slug = slug(secret)
@@ -2650,7 +2951,7 @@ def parse_args():
                         "par secret hors mode interactif — la forme n'est jamais "
                         "déduite. Un trait porté par plusieurs lexèmes du secret "
                         "exige la forme qualifiée MOT=LEXÈME/TRAIT (#144), ex. "
-                        "--form tropiques=tropique:nc/n:p")
+                        "--form fils=fils:nc/n:p")
     p.add_argument("--kind", help="type d'œuvre (book, movie, music, quote, poem, …)")
     p.add_argument("--author", help="auteur / autrice")
     p.add_argument("--work", help="titre de l'œuvre")
@@ -2745,7 +3046,8 @@ def main():
     # is the target and it is NEVER inferred: every secret confirms its form on a TTY
     # (a single analysis included), and off one --form is required per secret.
     # --no-inflect is the opt-out that reproduces agreement-free output.
-    forms = FormResolver(form_table, explicit=explicit_forms, interactive=interactive)
+    forms = FormResolver(form_table, explicit=explicit_forms, interactive=interactive,
+                         typable=donors.typable)
     reporter = PlayabilityReporter(V, lemma_table, forms_by_lemma, kv,
                                    resolver=forms)
 
@@ -2813,9 +3115,9 @@ def main():
               f"« {donor_word} »")
     # Same for the agreement pass (addendum 2): say which form was applied and how many
     # displayable groups it moved, so a wrong trait is visible before publishing.
-    for secret_word, feature, count in forms.used.values():
+    for secret_word, feature, morphology, count in forms.used.values():
         print(f"  secret « {secret_word} » : {count} mot(s) affiché(s) accordé(s) "
-              f"au trait {feature}")
+              f"à {describe_morphology(morphology)} (trait source {feature})")
     # #134's curator-facing marks, generation output only. `*` = the requested form
     # is missing from the paradigm or untypable: the group keeps its closest clean
     # form instead. Collisions = rewrites the closest-wins rules declined.

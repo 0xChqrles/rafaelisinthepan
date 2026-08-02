@@ -21,7 +21,7 @@ import gen_phrase
 
 VOCAB = [
     "courantes",  # frequency #1; the agreed display of rank 1
-    "nom",        # #2
+    "noms",       # #2; nominal number transfer from the adjective answer
     "vers",       # #3
     "courant",    # #4; rank 1's representative
     "repli",      # #5
@@ -36,6 +36,7 @@ LEMMA_TABLE = {
     "courantes": ("courant:adj",),
     "repli": ("repli:adj",),
     "nom": ("nom:nc",),
+    "noms": ("nom:nc",),
     "vers": ("vers:nc", "vers:prep"),
     "collision": ("collision:adj",),
     "collées": ("collision:adj",),
@@ -60,7 +61,7 @@ RANK_MAP = {
     "secrete": {"word": "secrète", "rank": 0},
     "courantes": {"word": "courantes", "rank": 1},
     "repli": {"word": "repli", "rank": 2},
-    "nom": {"word": "nom", "rank": 3},
+    "noms": {"word": "noms", "rank": 3},
     "vers": {"word": "vers", "rank": 4},
     "collision": {"word": "collision", "rank": 5},
     "lointain": {"word": "lointain", "rank": 151},
@@ -71,6 +72,7 @@ KV = {
     "courantes": [0.0, 1.0],       # cosine distance 1 from representative
     "repli": [1.0, 0.0],
     "nom": [1.0, 0.0],
+    "noms": [1.0, 0.0],
     "vers": [1.0, 0.0],
     "collision": [1.0, 0.0],
     "collées": [1.0, 0.0],         # comparable, distance 0
@@ -80,13 +82,24 @@ KV = {
 
 
 def _resolver():
-    table = SimpleNamespace(realize={
-        ("courant:adj", "adj:f:p"): ("courantes",),
-        # Same POS but the requested spelling is absent from the reduced vocab: *.
-        ("repli:adj", "adj:f:p"): ("repliées",),
-        # Typable target exists, but final display stayed put: collision, not *.
-        ("collision:adj", "adj:f:p"): ("collées",),
-    })
+    table = SimpleNamespace(
+        realize={
+            ("courant:adj", "adj:f:p"): ("courantes",),
+            # Same POS but the requested spelling is absent from the reduced vocab: *.
+            ("repli:adj", "adj:f:p"): ("repliées",),
+            # #146 transfers the adjective answer's number to nouns.
+            ("nom:nc", "n:p"): ("noms",),
+            # Typable target exists, but final display stayed put: collision, not *.
+            ("collision:adj", "adj:f:p"): ("collées",),
+        },
+        group_pos={
+            "courant:adj": frozenset({"adj"}),
+            "repli:adj": frozenset({"adj"}),
+            "nom:nc": frozenset({"nc"}),
+            "vers:prep": frozenset({"prep"}),
+            "collision:adj": frozenset({"adj"}),
+        },
+    )
     return gen_phrase.FormResolver(table)
 
 
@@ -106,9 +119,9 @@ def test_report_covers_the_near_field_without_mutating_the_map():
     assert report["groups"] == 5
     assert report["last_rank"] == 5
     assert report["forms"] == {
-        "agreed": 1,
+        "agreed": 2,
         "fallback": 1,
-        "citation": 2,
+        "citation": 1,
         "collision": 1,
     }
 
@@ -128,7 +141,7 @@ def test_report_covers_the_near_field_without_mutating_the_map():
              "proxy": False},
             {"rank": 4, "word": "vers", "frequency_rank": 3,
              "proxy": False},
-            {"rank": 3, "word": "nom", "frequency_rank": 2,
+            {"rank": 3, "word": "noms", "frequency_rank": 2,
              "proxy": False},
             {"rank": 1, "word": "courantes", "frequency_rank": 1,
              "proxy": False},
@@ -165,9 +178,10 @@ def test_formatter_prints_every_requested_section_without_a_verdict(capsys):
     out = capsys.readouterr().out
 
     assert "Rapport de jouabilité (informatif — aucun filtrage)" in out
-    assert "accord net 1/5 (20,0 %)" in out
+    assert "groupe 0 : claim secret:adj — clés : « secrète »" in out
+    assert "accord net 2/5 (40,0 %)" in out
     assert "repli* 1/5 (20,0 %)" in out
-    assert "citation inter-POS/invariable 2/5 (40,0 %)" in out
+    assert "citation inter-POS/invariable 1/5 (20,0 %)" in out
     assert "collision de slug 1/5 (20,0 %)" in out
     assert "p50 #3 · p90 #6 · max #6" in out
     assert "vecteur uniquement homographe : 1/5 (20,0 %)" in out
@@ -175,6 +189,19 @@ def test_formatter_prints_every_requested_section_without_a_verdict(capsys):
     assert "« courant » ↔ « courantes » = 1,000" in out
     assert "bon" not in out.lower()
     assert "mauvais" not in out.lower()
+
+
+def test_formatter_describes_an_opaque_merged_group_from_its_members():
+    report = _report()
+    report["no_clean"] = [
+        {"rank": 4, "word": "rouge", "lexeme": "rouge:nc"}
+    ]
+    report["divergences"] = []
+    table = SimpleNamespace(
+        members={"rouge:nc": ("rouge:nc", "rouge:adj")})
+
+    out = gen_phrase.format_playability_report(report, table)
+    assert "rouge (nom + adjectif) → « rouge »" in out
 
 
 def test_report_still_describes_frequency_when_agreement_is_disabled():
@@ -185,6 +212,24 @@ def test_report_still_describes_frequency_when_agreement_is_disabled():
     assert report["forms"] is None
     assert report["frequency"]["measured"] == 5
     assert report["no_clean"][0]["lexeme"] == "vers:prep"
+
+
+def test_report_prints_group_zero_claim_and_every_actual_solve_key():
+    groups = [("tropiques", 0, ("tropique:nc",), True, "tropiques")]
+    rank_map = {
+        "tropique": {"word": "tropiques", "rank": 0},
+        "tropiques": {"word": "tropiques", "rank": 0},
+    }
+    report = gen_phrase.build_playability_report(
+        "tropiques", groups, rank_map, [],
+        {"tropique": ("tropique:nc",), "tropiques": ("tropique:nc",)},
+        {"tropique:nc": ["tropique", "tropiques"]}, {},
+        resolver=None, feature=None)
+
+    assert report["claim"] == ("tropique:nc",)
+    assert report["claim_keys"] == ("tropique", "tropiques")
+    assert "groupe 0 : claim tropique:nc — clés : « tropique », « tropiques »" \
+        in gen_phrase.format_playability_report(report)
 
 
 def test_frequency_uses_the_slug_sibling_that_makes_a_display_typable():
