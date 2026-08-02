@@ -1763,12 +1763,26 @@ class FormResolver:
                     f"--no-inflect pour désactiver l'accord.")
             feature, named = self._prompt(secret)
         if feature is not None:
-            known = self.features_of(secret)
-            if known and feature not in known:
-                print(f"  attention : « {feature} » n'est aucune des analyses "
-                      f"connues de « {secret} » ({', '.join(known)}) — accord "
-                      f"appliqué quand même (table incomplète, ou faute de "
-                      f"frappe ?).", file=sys.stderr)
+            if named is not None:
+                # A NAMED claim narrows the check to the pair: another lexeme
+                # listing the same cell must not mask the mismatch (`fils=
+                # fil:nc/n:s` is unlisted for fil:nc even though fils:nc carries
+                # n:s), or a typo silently claims a hole for the wrong word.
+                listed = tuple(f for k, f in self.table.entries.get(secret, ())
+                               if k == named)
+                if feature not in listed:
+                    print(f"  attention : « {feature} » n'est aucune des analyses "
+                          f"connues de « {secret} » pour "
+                          f"« {describe_lexeme(named)} » ({', '.join(listed)}) — "
+                          f"accord appliqué quand même (table incomplète, ou "
+                          f"faute de frappe ?).", file=sys.stderr)
+            else:
+                known = self.features_of(secret)
+                if known and feature not in known:
+                    print(f"  attention : « {feature} » n'est aucune des analyses "
+                          f"connues de « {secret} » ({', '.join(known)}) — accord "
+                          f"appliqué quand même (table incomplète, ou faute de "
+                          f"frappe ?).", file=sys.stderr)
         self._chosen[key] = feature
         self._claimed[key] = named if feature is not None else None
         return feature

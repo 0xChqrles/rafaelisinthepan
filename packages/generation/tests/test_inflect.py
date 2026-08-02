@@ -609,6 +609,19 @@ def test_a_qualified_unlisted_cell_warns_but_claims(capsys):
     assert "n'est aucune des analyses connues" in capsys.readouterr().err
 
 
+def test_the_pair_warning_is_not_masked_by_another_lexeme(capsys):
+    # A named claim narrows the unlisted-cell check to the PAIR: n:s exists for the
+    # surface «fils» — but under fils:nc, not fil:nc. The surface-wide check would
+    # stay silent, and a typo would silently claim a hole for the wrong word.
+    resolver = _resolver(explicit={"fils": ("fil:nc", "n:s")})
+    assert resolver.feature_for("fils") == "n:s"
+    assert resolver.confirmed_lexeme("fils") == "fil:nc"   # explicit is explicit
+    err = capsys.readouterr().err
+    assert "n'est aucune des analyses connues" in err
+    assert "fil (nom)" in err
+    assert "n:p" in err   # the named lexeme's own listed cells ride along
+
+
 # --- 11-13. what the pass rewrites, and what it declines --------------------------
 
 # apply() calls feature_for, which off a TTY demands --form (#133): the apply tests
