@@ -12,11 +12,16 @@ sentence: « tu t'___ » must read "t'distrais", never "t'distraire". The rules:
     and OFF a TTY --form is required per secret — a batch run without it is a hard
     error, never a guess. --no-inflect is what reproduces the agreement-free output
     byte for byte;
-  - the transfer is PER-POS (#133): the confirmed feature names one part of speech's
-    cell, so a verb secret conjugates verbs (full feature vector), a noun secret
-    numbers nouns (gender is lexical, not inflectional), an adjective secret
-    genders+numbers adjectives — and a cross-POS neighbour or an invariable keeps its
-    citation form (a `cit` secret prescribes nothing to anyone);
+  - #146 merges dictionary entries with exactly equal complete form sets and removes
+    same-POS entries whose every (cell, spelling) row is already owned by a larger
+    entry. The resulting group key is opaque and carries explicit source members/POS;
+  - the TTY asks usage-level morphology, never a dictionary identity unless two
+    remaining groups produce different typable form families. Noun gender is the
+    author's answer; stored/--form cells stay unchanged;
+  - transfer crosses the POSs that can express the answer: adjectives take
+    gender+number, nouns take number, noun/adjective answers never guess a verb
+    conjugation, and verb answers lend their stated number to nouns (plus participle
+    gender+number to adjectives). A `cit` secret prescribes nothing;
   - realization is keyed by each GROUP's LEXEME (#134), which the walk settled: the
     old surface-side `dom` gate and multi-lexeme refusal answered "what is this
     word?", a question that no longer arises here — «durent» never heads a group,
@@ -57,6 +62,7 @@ below follow that split of responsibilities:
 import functools
 import gzip
 import os
+from types import SimpleNamespace
 import zipfile
 
 import pytest
@@ -65,7 +71,8 @@ import build_forms
 import gen_phrase
 from build_forms import (clean_entry, collect_rows, dominant_pos, forms_path,
                          lexeme_key, lexique_class, lexique_weights, load_forms,
-                         morphalou_features, normalize_lemma, read_morphalou)
+                         merge_entries, morphalou_features, normalize_lemma,
+                         read_morphalou)
 
 FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
 TABLE = load_forms(os.path.join(FIXTURES, "forms.fr.tsv"))
@@ -94,9 +101,9 @@ def _donors():
                                     VOCAB, VSET, "fr")
 
 
-def _resolver(explicit=None, interactive=False, table=TABLE):
+def _resolver(explicit=None, interactive=False, table=TABLE, typable=None):
     return gen_phrase.FormResolver(table, explicit=explicit or {},
-                                   interactive=interactive)
+                                   interactive=interactive, typable=typable)
 
 
 def _map(*entries):
@@ -184,6 +191,58 @@ def test_read_morphalou_caps_dropped_samples_exactly():
         "\n".join(rows), build_forms.red.token_pattern("fr"))
     assert stats["rows_dropped"] == 35
     assert len(stats["dropped_samples"]) == 30
+
+
+# --- duplicate dictionary entries (#146) -----------------------------------------
+
+def test_equal_form_sets_merge_across_pos_under_an_opaque_first_entry_key():
+    lexemes = {
+        ("rouge", "nc"): {"n:s": {"rouge"}, "n:p": {"rouges"}},
+        ("rouge", "adj"): {
+            "adj:m:s": {"rouge"}, "adj:f:s": {"rouge"},
+            "adj:m:p": {"rouges"}, "adj:f:p": {"rouges"},
+        },
+        ("rouge", "adv"): {"cit": {"rouge"}},
+    }
+    groups, stats = merge_entries(lexemes)
+
+    assert tuple(groups) == ("rouge:nc", "rouge:adv")
+    assert [(lemma, pos) for lemma, pos, _cells in groups["rouge:nc"]] == [
+        ("rouge", "nc"), ("rouge", "adj")]
+    assert stats["twin_groups"] == 1
+    assert stats["twin_entries"] == 2
+
+
+def test_a_fully_contained_same_pos_entry_disappears_but_real_distinctions_stay():
+    lexemes = {
+        ("tropique", "nc"): {"n:s": {"tropique"}, "n:p": {"tropiques"}},
+        ("tropiques", "nc"): {"n:p": {"tropiques"}},
+        ("fil", "nc"): {"n:s": {"fil"}, "n:p": {"fils"}},
+        # Same surface set as fil's plural, but NOT the same row set: its singular
+        # claim is real information, so «fil» must never solve this word.
+        ("fils", "nc"): {"n:s": {"fils"}, "n:p": {"fils"}},
+        ("cafetier", "nc"): {"n:s": {"cafetier"}, "n:p": {"cafetiers"}},
+        ("cafetière", "nc"): {"n:s": {"cafetière"}, "n:p": {"cafetières"}},
+    }
+    groups, stats = merge_entries(lexemes)
+
+    assert "tropiques:nc" not in groups
+    assert {"tropique:nc", "fil:nc", "fils:nc", "cafetier:nc",
+            "cafetière:nc"} <= set(groups)
+    assert stats["contained_entries"] == 1
+
+
+def test_a_redundant_entry_shared_by_two_supersets_cannot_fuse_them():
+    lexemes = {
+        ("alpha", "nc"): {"n:s": {"alpha"}, "n:p": {"communs"}},
+        ("beta", "nc"): {"n:s": {"beta"}, "n:p": {"communs"}},
+        ("communs", "nc"): {"n:p": {"communs"}},
+    }
+    groups, _stats = merge_entries(lexemes)
+
+    assert tuple(groups) == ("alpha:nc", "beta:nc")
+    assert groups["alpha:nc"][0][2]["n:s"] == {"alpha"}
+    assert groups["beta:nc"][0][2]["n:s"] == {"beta"}
 
 
 def test_a_named_verb_row_names_one_cell():
@@ -344,12 +403,15 @@ def test_collect_rows_marks_dom_per_row_and_keeps_gated_targets():
         ("évident", "adj"): {"adj:m:s": {"évident"}},
         ("penser", "v"): {"par:pas:m:s": {"pensé"}},
     }
-    rows = {r[:5] for r in collect_rows(lexemes, weight)}
+    groups, _stats = merge_entries(lexemes)
+    rows = {r[:6] for r in collect_rows(groups, weight)}
     # the gated verb reading stays in the table (a legal TARGET), marked dom=0...
-    assert ("évider", "v", "ind:pre:3p", "évident", 0) in rows
-    # ...while the dominant reading of the same surface carries dom=1.
-    assert ("évident", "adj", "adj:m:s", "évident", 1) in rows
-    assert ("penser", "v", "par:pas:m:s", "pensé", 1) in rows
+    assert ("évider:v", "évider", "v", "ind:pre:3p", "évident", 0) in rows
+    # ...while the dominant reading of the same surface carries dom=1. These two
+    # one-form dictionary entries are exact #146 twins, so their opaque group id
+    # is the first source entry's key — never evidence of the row's own POS.
+    assert ("évider:v", "évident", "adj", "adj:m:s", "évident", 1) in rows
+    assert ("penser:v", "penser", "v", "par:pas:m:s", "pensé", 1) in rows
 
 
 # --- the loader: one artifact, two views -------------------------------------------
@@ -373,6 +435,13 @@ def test_grouping_and_agreement_views_span_every_pos():
     assert TABLE.dominant.get("marchait") == "v"
     assert TABLE.dominant.get("jardin") == "nc"
 
+    # #146: one opaque group can carry several paradigms. The source entries remain
+    # inspectable, while grouping/realization use only the canonical group key.
+    assert TABLE.grouping["rouges"] == ("rouge:nc",)
+    assert TABLE.members["rouge:nc"] == ("rouge:nc", "rouge:adj")
+    assert TABLE.group_pos["rouge:nc"] == {"adj", "nc"}
+    assert TABLE.group_forms["rouge:nc"] == ("rouge", "rouges")
+
 
 def test_realization_is_keyed_by_the_lexeme_never_the_surface():
     resolver = _resolver()
@@ -391,6 +460,10 @@ def test_realization_is_keyed_by_the_lexeme_never_the_surface():
     # is, so évider:v states — and prints — «évident» when a verb secret's cell asks
     # for it. No drift guard; sentence context disambiguates for the player.
     assert resolver.realize_cell("évider:v", "ind:pre:3p") == ("évident",)
+    # The key suffix is opaque after an exact-form merge: rouge:nc also carries
+    # adjective cells, and realization reads the explicit table rather than parsing
+    # `:nc` back into a false single POS.
+    assert resolver.realize_cell("rouge:nc", "adj:f:p") == ("rouges",)
 
 
 # --- 9. the secret's form is NEVER inferred (#133) --------------------------------
@@ -402,11 +475,22 @@ def test_a_single_analysis_is_confirmed_never_auto_resolved(monkeypatch):
     monkeypatch.setattr("builtins.input", lambda p="": (asked.append(p), "")[1])
     assert _resolver(interactive=True).feature_for("marchait") == "ind:imp:3s"
     assert asked, "the single-analysis secret was not asked"
-    assert "confirmer ind:imp:3s" in asked[0]
-    # A noun secret asks too — its analysis is a noun cell, not a verb question.
-    asked.clear()
-    assert _resolver(interactive=True).feature_for("jardin") == "n:s"
-    assert "confirmer n:s" in asked[0]
+    assert "confirmer indicatif imparfait, 3e pers. singulier" in asked[0]
+    assert "ind:imp:3s" not in asked[0]  # prompt speaks morphology, not storage
+
+
+def test_a_noun_secret_asks_the_author_for_lexical_gender(monkeypatch, capsys):
+    # The artifact's n:s cell states number only. The TTY asks the human for the
+    # missing lexical gender without changing the stored/CLI feature vocabulary.
+    monkeypatch.setattr("builtins.input", lambda _p="": "2")
+    resolver = _resolver(interactive=True)
+    assert resolver.feature_for("jardin") == "n:s"
+    assert resolver.morphology_for("jardin") == gen_phrase.Morphology(
+        "nominal", "f", "s")
+    out = capsys.readouterr().out
+    assert "masculin singulier" in out
+    assert "féminin singulier" in out
+    assert "jardin:nc" not in out
 
 
 def test_the_question_is_asked_once_per_secret(monkeypatch):
@@ -423,6 +507,14 @@ def test_zero_declines_agreement_explicitly(monkeypatch):
     assert _resolver(interactive=True).feature_for("marchait") is None
 
 
+def test_closed_stdin_declines_the_morphology_question(monkeypatch):
+    def closed(_prompt=""):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", closed)
+    assert _resolver(interactive=True).feature_for("marchait") is None
+
+
 def test_an_unknown_secret_takes_free_text_and_enter_declines(monkeypatch):
     # No analysis at all: nothing to confirm, so Enter declines — the only default
     # that is not a guess — and a typed feature is accepted.
@@ -435,7 +527,7 @@ def test_an_unknown_secret_takes_free_text_and_enter_declines(monkeypatch):
 def test_an_ambiguous_secret_lists_its_analyses_and_enter_picks_nothing(monkeypatch):
     # "compris" is a past participle OR the 1s/2s past historic. Enter must not pick
     # one (described, never arbitrated) — the prompt re-asks until a number answers.
-    answers = iter(["", "3"])
+    answers = iter(["", "1"])
     monkeypatch.setattr("builtins.input", lambda _p="": next(answers))
     assert _resolver(interactive=True).feature_for("compris") == "par:pas:m:s"
 
@@ -508,8 +600,8 @@ def test_form_flag_parsing_rejects_a_malformed_pair(capsys):
     assert gen_phrase.parse_form_args(["Accoutumes=ind:pre:2s"]) == {
         "accoutumes": (None, "ind:pre:2s")}
     # The qualified spelling names the (lexeme, cell) pair.
-    assert gen_phrase.parse_form_args(["Tropiques=tropique:nc/n:p"]) == {
-        "tropiques": ("tropique:nc", "n:p")}
+    assert gen_phrase.parse_form_args(["Fils=fils:nc/n:p"]) == {
+        "fils": ("fils:nc", "n:p")}
     with pytest.raises(SystemExit):
         gen_phrase.parse_form_args(["accoutumes"])
     assert "MOT=TRAIT" in capsys.readouterr().err
@@ -520,33 +612,97 @@ def test_form_flag_parsing_rejects_a_malformed_pair(capsys):
         assert "LEXÈME/TRAIT" in capsys.readouterr().err
 
 
-# --- #144: the answer names the (lexeme, cell) pair --------------------------------
+# --- #146: morphology first; only real remaining identities show forms ------------
 
-def test_the_prompt_lists_one_number_per_lexeme_and_cell_pair(monkeypatch, capsys):
-    # «fils» : n:p is carried by fil:nc AND fils:nc — the cell-deduped listing hid
-    # that choice entirely. One number per PAIR makes it answerable: n:p appears
-    # once per owner, each naming its word.
-    monkeypatch.setattr("builtins.input", lambda _p="": "1")
+def test_the_prompt_asks_morphology_then_shows_forms_for_a_real_identity_pick(
+        monkeypatch, capsys):
+    answers = iter(["2", "1"])  # masculin pluriel, then fil:nc
+    monkeypatch.setattr("builtins.input", lambda _p="": next(answers))
     resolver = _resolver(interactive=True)
     assert resolver.feature_for("fils") == "n:p"
     out = capsys.readouterr().out
-    assert "1) n:p" in out and "(fil (nom))" in out
-    assert "2) n:p" in out and "(fils (nom))" in out
-    assert "3) n:s" in out
+    assert "Morphologie de « fils »" in out
+    assert "masculin pluriel" in out
+    assert "Sens de « fils »" in out
+    assert "1) n:p" in out and "(fil : fil, fils)" in out
+    assert "2) n:p" in out and "(fils : fils)" in out
 
 
-def test_a_numbered_pick_settles_the_claim_in_one_keystroke(monkeypatch):
-    # Picking the fil:nc pair names the hole's lexeme directly — no unique-owner
-    # reverse-engineering from the cell.
-    monkeypatch.setattr("builtins.input", lambda _p="": "1")
+def test_the_identity_prompt_can_return_to_the_morphology_choice(
+        monkeypatch, capsys):
+    answers = iter(["2", "r", "4", "2"])
+    prompts = []
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda prompt="": (prompts.append(prompt), next(answers))[1])
+    resolver = _resolver(interactive=True)
+
+    assert resolver.feature_for("fils") == "n:p"
+    assert resolver.morphology_for("fils") == gen_phrase.Morphology(
+        "nominal", "f", "p")
+    assert resolver.confirmed_lexeme("fils") == "fils:nc"
+    assert any("r = retour" in prompt for prompt in prompts)
+    assert "Retour au choix de morphologie." in capsys.readouterr().out
+
+
+def test_the_identity_prompt_can_list_the_trait_vocabulary(monkeypatch, capsys):
+    answers = iter(["2", "?", "1"])
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
+
+    assert _resolver(interactive=True).feature_for("fils") == "n:p"
+    assert "adj:f:p" in capsys.readouterr().out
+
+
+def test_the_remaining_entry_pick_settles_the_claim(monkeypatch):
+    answers = iter(["2", "1"])
+    monkeypatch.setattr("builtins.input", lambda _p="": next(answers))
     resolver = _resolver(interactive=True)
     assert resolver.feature_for("fils") == "n:p"
     assert resolver.confirmed_lexeme("fils") == "fil:nc"
-    # ...and picking the other owner of the SAME cell claims the other word.
-    monkeypatch.setattr("builtins.input", lambda _p="": "2")
+    # ...and picking the other form family claims the other word.
+    answers = iter(["2", "2"])
+    monkeypatch.setattr("builtins.input", lambda _p="": next(answers))
     other = _resolver(interactive=True)
     assert other.feature_for("fils") == "n:p"
     assert other.confirmed_lexeme("fils") == "fils:nc"
+
+
+def test_duplicate_rouge_entries_are_one_morphology_only_question(monkeypatch, capsys):
+    monkeypatch.setattr("builtins.input", lambda _p="": "2")  # féminin pluriel
+    resolver = _resolver(interactive=True)
+
+    assert resolver.feature_for("rouges") == "n:p"
+    assert resolver.confirmed_lexeme("rouges") == "rouge:nc"
+    assert resolver.morphology_for("rouges") == gen_phrase.Morphology(
+        "nominal", "f", "p")
+    out = capsys.readouterr().out
+    assert "masculin pluriel" in out and "féminin pluriel" in out
+    assert "Sens de « rouges »" not in out
+    assert "adjectif" not in out and "nom" not in out
+
+
+def test_pensee_still_distinguishes_a_nominal_use_from_the_participle(
+        monkeypatch, capsys):
+    # Duplicate-entry removal must not erase a real verb/nominal distinction: the
+    # sentence author can still choose penser's participle without naming entries.
+    monkeypatch.setattr("builtins.input", lambda _p="": "3")
+    resolver = _resolver(interactive=True)
+
+    assert resolver.feature_for("pensée") == "par:pas:f:s"
+    assert resolver.confirmed_lexeme("pensée") == "penser:v"
+    out = capsys.readouterr().out
+    assert "féminin singulier" in out
+    assert "participe passé, féminin singulier" in out
+
+
+def test_groups_with_identical_typable_outcomes_collapse_without_a_question():
+    # If «fil» itself is outside this reduced vocabulary, fil:nc and fils:nc both
+    # contribute exactly the playable key {fils}; choosing between them cannot alter
+    # the puzzle, so plain --form is enough.
+    resolver = _resolver(explicit={"fils": "n:p"},
+                         typable=lambda form: form == "fils")
+    assert resolver.feature_for("fils") == "n:p"
+    assert resolver.confirmed_lexeme("fils") == "fil:nc"
 
 
 def test_a_typed_bare_trait_keeps_the_fail_closed_claim(monkeypatch):
@@ -675,9 +831,9 @@ def test_the_whole_map_agrees_not_just_the_near_field():
 # --- 13bis. the per-POS transfer policy (#133) -------------------------------------
 
 def test_a_noun_secret_numbers_the_nouns_and_only_the_nouns():
-    # secret "jardins" (n:p): the noun neighbour takes the plural; the verb and the
-    # adjective are cross-POS — no target form is defined for them — and the
-    # invariable adverb has nothing to inflect. Gender never transfers to a noun.
+    # Off-TTY `--form jardins=n:p` states number but no gender: nouns can consume
+    # that answer; adjectives cannot honestly choose an m/f cell, and verbs never
+    # take a guessed conjugation.
     rmap = _map(("jardins", "jardins", 0), ("pensee", "pensée", 1),
                 ("marchait", "marchait", 2), ("grand", "grand", 3),
                 ("doucement", "doucement", 4))
@@ -694,18 +850,73 @@ def test_a_noun_secret_numbers_the_nouns_and_only_the_nouns():
     assert rmap["doucement"]["word"] == "doucement"
 
 
-def test_an_adjective_secret_genders_and_numbers_the_adjectives():
-    # secret "grandes" (adj:f:p): the adjective neighbour agrees in gender AND
-    # number; the noun stays — nouns take number only, and from a noun secret.
+def test_an_adjective_secret_transfers_gender_and_number_where_expressible():
+    # Adjectives consume both dimensions; nouns consume the same answer's number.
+    # No POS identity question is charged for information both can express.
     rmap = _map(("grandes", "grandes", 0), ("lent", "lent", 1),
                 ("jardin", "jardin", 2))
     changed = _settled("adj:f:p", "grandes").apply(
         rmap, "grandes", _donors(), lexemes={1: "lent:adj", 2: "jardin:nc"})
 
-    assert changed == {1: ("lent", "lentes")}
+    assert changed == {1: ("lent", "lentes"), 2: ("jardin", "jardins")}
     assert rmap["lent"] == {"word": "lentes", "rank": 1}
     assert rmap["lentes"] == {"word": "lentes", "rank": 1}
-    assert rmap["jardin"]["word"] == "jardin"
+    assert rmap["jardin"]["word"] == "jardins"
+    assert rmap["jardins"]["rank"] == 2
+
+
+def test_a_merged_nominal_group_prefers_the_more_specific_adjective_cell():
+    # Both cells can spell this synthetic merged group differently. The adjective
+    # consumes the full f+p answer, so it deliberately wins over the noun's
+    # number-only fallback instead of relying on an undocumented dict order.
+    table = SimpleNamespace(
+        entries={},
+        features=frozenset({"adj:f:p", "n:p"}),
+        group_pos={"hybride:nc": frozenset({"adj", "nc"})},
+        realize={
+            ("hybride:nc", "adj:f:p"): ("adjectivales",),
+            ("hybride:nc", "n:p"): ("nominales",),
+        },
+    )
+    resolver = _settled("adj:f:p", "grandes", table=table)
+    rmap = _map(("grandes", "grandes", 0), ("hybride", "hybride", 1))
+
+    changed = resolver.apply(
+        rmap, "grandes", SimpleNamespace(typable=lambda _form: True),
+        lexemes={1: "hybride:nc"})
+
+    assert changed == {1: ("hybride", "adjectivales")}
+    assert rmap["hybride"]["word"] == "adjectivales"
+
+
+def test_a_noun_tty_gender_answer_reinflects_adjectives_too(monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda _p="": "2")  # féminin pluriel
+    resolver = _resolver(interactive=True)
+    rmap = _map(("jardins", "jardins", 0), ("grand", "grand", 1),
+                ("pensee", "pensée", 2), ("marchait", "marchait", 3))
+
+    changed = resolver.apply(
+        rmap, "jardins", _donors(),
+        lexemes={1: "grand:adj", 2: "pensée:nc", 3: "marcher:v"})
+
+    assert changed == {1: ("grand", "grandes"), 2: ("pensée", "pensées")}
+    assert rmap["grandes"]["rank"] == 1
+    assert rmap["pensees"]["rank"] == 2
+    assert rmap["marchait"]["word"] == "marchait"
+
+
+def test_a_verb_answer_lends_its_stated_number_to_nouns_only():
+    # #146's open sub-decision is resolved as number-only: 2p is real information,
+    # so a noun can use plural. An adjective would also need gender, which a finite
+    # conjugation does not state, and therefore stays untouched.
+    rmap = _map(("durent", "durent", 0), ("jardin", "jardin", 1),
+                ("grand", "grand", 2), ("marchait", "marchait", 3))
+    changed = _settled("ind:pas:3p", "durent").apply(
+        rmap, "durent", _donors(),
+        lexemes={1: "jardin:nc", 2: "grand:adj", 3: "marcher:v"})
+
+    assert changed == {1: ("jardin", "jardins")}
+    assert rmap["grand"]["word"] == "grand"
 
 
 def test_a_citation_form_secret_prescribes_nothing():
@@ -804,7 +1015,11 @@ def test_a_rewritten_hole_is_reported():
     resolver = _settled("ind:pre:2s")
     rmap = _map(("amuses", "amuses", 0), ("marchait", "marchait", 1))
     resolver.apply(rmap, "amuses", _donors(), lexemes={1: "marcher:v"})
-    assert resolver.used == {"amuses": ("amuses", "ind:pre:2s", 1)}
+    assert resolver.used == {
+        "amuses": ("amuses", "ind:pre:2s",
+                    gen_phrase.Morphology("verb", number="s",
+                                          feature="ind:pre:2s"), 1)
+    }
     # a hole nothing moved is never announced
     quiet = _settled("ind:pre:2s")
     quiet.apply(_map(("amuses", "amuses", 0), ("jardin", "jardin", 1)), "amuses",
@@ -822,6 +1037,56 @@ def committed():
     function so a missing or corrupt artifact fails the tests that read it rather
     than collecting the whole module."""
     return gen_phrase.load_form_table("fr")
+
+
+def test_the_committed_146_acceptance_matrix():
+    table = committed()
+
+    assert table.grouping["rouges"] == ("rouge:nc",)
+    assert set(table.members["rouge:nc"]) == {"rouge:nc", "rouge:adj"}
+    assert table.group_pos["rouge:nc"] == {"nc", "adj"}
+
+    assert table.grouping["tropiques"] == ("tropique:nc",)
+    assert table.group_forms["tropique:nc"] == ("tropique", "tropiques")
+    assert table.grouping["ciseaux"] == ("ciseau:nc",)
+    assert table.grouping["ciseau"] == ("ciseau:nc",)
+
+    assert table.grouping["hebdo"] == ("hebdomadaire:nc",)
+    assert "hebdomadaire" in table.group_forms["hebdomadaire:nc"]
+    assert table.grouping["ex-épouse"] == ("ex-épouse:nc",)
+    assert set(table.members["ex-épouse:nc"]) == {
+        "ex-épouse:nc", "ex-époux:nc"}
+
+    assert set(table.grouping["pensée"]) >= {"penser:v", "pensée:nc"}
+    assert set(table.grouping["fils"]) == {"fil:nc", "fils:nc"}
+    assert table.group_forms["fil:nc"] == ("fil", "fils")
+    assert table.group_forms["fils:nc"] == ("fils",)
+    assert set(table.grouping["mois"]) == {"moi:nc", "mois:nc"}
+    assert "moi" in table.group_forms["moi:nc"]
+    assert table.group_forms["mois:nc"] == ("mois",)
+    assert table.grouping["cafetière"] == ("cafetière:nc",)
+    assert table.grouping["cafetier"] == ("cafetier:nc",)
+
+
+@pytest.mark.parametrize("secret,singular,group", [
+    ("tropiques", "tropique", "tropique:nc"),
+    ("ciseaux", "ciseau", "ciseau:nc"),
+])
+def test_a_contained_plural_entry_is_solved_by_the_surviving_singular(
+        secret, singular, group):
+    table = committed()
+    resolver = gen_phrase.FormResolver(table, explicit={secret: "n:p"})
+    claim = gen_phrase.secret_claim(
+        secret, secret, table.grouping, forms=resolver)
+    assert claim == (group,)
+
+    ranking = [(singular, 0, .9), ("jardin", 1, .8), ("grand", 2, .7)]
+    _merged, rank_map, _groups = gen_phrase.build_merged_rank_map(
+        secret, ranking, table.grouping,
+        gen_phrase.invert_lemmas(table.grouping),
+        {secret, singular, "jardin", "grand"}, secret_lemmas=claim)
+    assert rank_map[gen_phrase.slug(secret)]["rank"] == 0
+    assert rank_map[gen_phrase.slug(singular)]["rank"] == 0
 
 
 @pytest.mark.parametrize("lemma,feature,expected", [
@@ -1098,7 +1363,7 @@ def test_an_inconsistent_empty_preference_pin_reports_instead_of_keyerror(
         monkeypatch, capsys):
     monkeypatch.setattr(
         build_forms, "EXPECTED_CELLS",
-        (("fantôme", "ind:pre:1s", frozenset(), "fantôme"),))
+        (("fantôme:v", "ind:pre:1s", frozenset(), "fantôme"),))
     monkeypatch.setattr(build_forms, "EXPECTED_INVENTORY_CELLS", ())
     monkeypatch.setattr(build_forms, "EXPECTED_SURFACE_LEXEMES", ())
 
@@ -1109,34 +1374,48 @@ def test_an_inconsistent_empty_preference_pin_reports_instead_of_keyerror(
     assert "attendue « fantôme »" in err
 
 
+def test_the_146_build_measurements_are_hard_guards(capsys):
+    stats = {name: expected for name, expected
+             in build_forms.EXPECTED_MERGE_STATS.items() if name != "rows"}
+    stats["twin_groups"] -= 1
+
+    with pytest.raises(SystemExit):
+        build_forms.validate_merge_stats(
+            stats, build_forms.EXPECTED_MERGE_STATS["rows"])
+    err = capsys.readouterr().err
+    assert "mesures pinnées par l'audit #146 ont bougé" in err
+    assert "twin_groups : 5,711, attendu 5,712" in err
+
+
 @functools.lru_cache(maxsize=1)
 def committed_all_pos_cells():
-    """The shipped rows keyed before load_forms projects its verb-only view."""
+    """The shipped rows keyed by #146's opaque group and stored cell."""
     cells = {}
     with gzip.open(forms_path("fr"), "rt", encoding="utf-8") as f:
         for line in f:
             if line.startswith("#"):
                 continue
-            lemma, pos, feature, form, _dom = line.rstrip("\n").split("\t")
-            cells.setdefault((lemma, pos, feature), set()).add(form)
+            group, _lemma, _pos, feature, form, _dom = \
+                line.rstrip("\n").split("\t")
+            cells.setdefault((group, feature), set()).add(form)
     return cells
 
 
-@pytest.mark.parametrize("lemma,pos,feature,expected", [
-    ("jardin", "nc", "n:s", {"jardin"}),
-    ("jardin", "nc", "n:p", {"jardins"}),
-    ("oeil", "nc", "n:p", {"oeils", "yeux"}),
-    ("grand", "adj", "adj:f:p", {"grandes"}),
-    ("vers", "prep", "cit", {"vers"}),
-    ("celui", "pro", "cit", {"celle", "celles", "celui", "ceux"}),
+@pytest.mark.parametrize("group,feature,expected", [
+    ("jardin:nc", "n:s", {"jardin"}),
+    ("jardin:nc", "n:p", {"jardins"}),
+    ("oeil:nc", "n:p", {"oeils", "yeux"}),
+    ("grand:adj", "adj:f:p", {"grandes"}),
+    ("vers:nc", "cit", {"vers"}),
+    ("celui:pro", "cit", {"celle", "celles", "celui", "ceux"}),
 ])
 def test_the_132_all_pos_sentinels_ship_exactly_as_audited(
-        lemma, pos, feature, expected):
-    assert committed_all_pos_cells().get((lemma, pos, feature)) == expected
+        group, feature, expected):
+    assert committed_all_pos_cells().get((group, feature)) == expected
 
 
 @pytest.mark.parametrize("form,expected", [
-    ("vers", {"ver:nc", "vers:nc", "vers:prep"}),
+    ("vers", {"ver:nc", "vers:nc"}),
     ("mois", {"moi:nc", "mois:nc"}),
     ("celle", {"celle:nc", "celui:pro"}),
 ])
@@ -1158,11 +1437,11 @@ def test_the_grouping_is_the_same_artifact_as_the_agreement_pass():
 
 
 def test_homography_is_derivable_from_the_inventory():
-    # the #134 discriminator must be readable straight off the rows: «vers» belongs
-    # to several lexemes (the worm's plural, the poetry noun, the preposition) while
-    # «lunettes» stays resolvable to a nominal lexeme of its own.
+    # The preposition and poetry noun have identical complete form sets, so #146
+    # merges them. The unrelated worm plural remains a distinct group.
     grouping = committed().grouping
-    assert {"ver:nc", "vers:nc", "vers:prep"} <= set(grouping["vers"])
+    assert set(grouping["vers"]) == {"ver:nc", "vers:nc"}
+    assert committed().members["vers:nc"] == ("vers:nc", "vers:prep")
     assert "oeil:nc" in grouping["yeux"]
     assert {"priver:v", "privé:adj"} <= set(grouping["privées"])
     # closed classes ride along: their surfaces are grouped and homography-visible
@@ -1182,9 +1461,16 @@ def test_a_fresh_build_reproduces_the_committed_artifact_exactly():
 
     with zipfile.ZipFile(archive) as z:
         csv_text = z.read(build_forms.MORPHALOU_MEMBER).decode("utf-8")
-    rows, _stats = build_forms.build_rows("fr", csv_text, lexique)
-    expected = [build_forms.row_line(l, p, ft, fo, d)
-                for l, p, ft, fo, d, _freq in rows]
+    rows, stats = build_forms.build_rows("fr", csv_text, lexique)
+    # The source measurements that motivated #146 are pinned to the digest-pinned
+    # release: a parser or merge-rule drift must be reviewed, not silently blessed.
+    assert stats["twin_groups"] == 5_712
+    assert stats["twin_entries"] == 11_472
+    assert stats["contained_entries"] == 1_496
+    assert stats["groups"] == 147_868
+    assert len(rows) == 994_497
+    expected = [build_forms.row_line(g, l, p, ft, fo, d)
+                for g, l, p, ft, fo, d, _freq in rows]
     with gzip.open(forms_path("fr"), "rt", encoding="utf-8") as f:
         actual = [line.rstrip("\n") for line in f if not line.startswith("#")]
     assert actual == expected
@@ -1264,7 +1550,11 @@ def test_a_batch_run_agrees_with_form_and_dies_without():
     assert batch.apply(rmap, "marchait", _donors(),
                        lexemes={1: "amuser:v"}) == {1: ("amuse", "amusait")}
     assert rmap["amuse"] == {"word": "amusait", "rank": 1}
-    assert batch.used == {"marchait": ("marchait", "ind:imp:3s", 1)}
+    assert batch.used == {
+        "marchait": ("marchait", "ind:imp:3s",
+                      gen_phrase.Morphology("verb", number="s",
+                                            feature="ind:imp:3s"), 1)
+    }
     # ...and without the flag the same unambiguous secret is a hard error.
     with pytest.raises(SystemExit):
         _resolver(interactive=False).feature_for("marchait")
@@ -1325,7 +1615,8 @@ def test_every_groups_canonical_key_is_protected():
 def test_a_truncated_table_fails_loudly(tmp_path):
     # Silently skipping short lines would load half a table and agree half a puzzle.
     broken = tmp_path / "forms.tsv"
-    broken.write_text("amuser\tv\tind:pre:2s\tamuses\t1\nmarcher\tv\tind:imp:3s\n",
+    broken.write_text("amuser:v\tamuser\tv\tind:pre:2s\tamuses\t1\n"
+                      "marcher:v\tmarcher\tv\tind:imp:3s\n",
                       encoding="utf-8")
     with pytest.raises(ValueError, match="champs attendus"):
         load_forms(str(broken))
@@ -1336,7 +1627,8 @@ def test_conflicting_dominant_rows_fail_loudly(tmp_path):
     # can only come from a hand-edited or corrupt table — which must fail like a
     # truncated one, not load last-writer-wins.
     broken = tmp_path / "forms.tsv"
-    broken.write_text("porte\tnc\tn:s\tporte\t1\nporter\tv\tind:pre:3s\tporte\t1\n",
+    broken.write_text("porte:nc\tporte\tnc\tn:s\tporte\t1\n"
+                      "porter:v\tporter\tv\tind:pre:3s\tporte\t1\n",
                       encoding="utf-8")
     with pytest.raises(ValueError, match="dom=1 pour deux POS"):
         load_forms(str(broken))

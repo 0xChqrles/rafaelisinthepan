@@ -3,7 +3,7 @@
 # dependencies = []
 # ///
 """
-Build the ONE fr lexeme inventory consumed by gen_phrase.py (#132).
+Build the ONE fr word-group inventory consumed by gen_phrase.py (#132/#146).
 
 Before #132 two different sources defined what a lexeme is: Lexique/AGID for the
 rank-map lemma grouping (#104) and Lefff (verbs only) for display agreement (#119).
@@ -15,11 +15,21 @@ builder (only it needs the network); the pipeline only READS the committed file:
 
     packages/generation/wordlist/fr.forms.tsv.gz
 
-one `lemma<TAB>pos<TAB>feature<TAB>form<TAB>dom` row per (lexeme, feature, form)
-triple, under a `#` header carrying provenance and licensing. A lexeme is
-(lemma, pos): «vers» the noun and «vers» the preposition are two lexemes, and
-homography is DERIVABLE from the rows — a surface shared across lexemes appears
-under each of them, which is what the ranking rule (#134) will read.
+one `group<TAB>lemma<TAB>pos<TAB>feature<TAB>form<TAB>dom` row per source-entry
+cell, under a `#` header carrying provenance and licensing. `group` is the opaque
+word identity consumers use; `lemma` / `pos` retain the Morphalou entry that
+contributed the row. Most groups still contain one `(lemma, pos)`, but #146 merges
+dictionary filings that make no playable distinction:
+
+  - entries with exactly the same complete form set are one group, across POS;
+  - an entry whose every `(feature, form)` row already occurs in a larger entry of
+    the same POS is redundant and disappears (if two larger entries contain it,
+    both larger words stay separate — only the redundant filing is removed).
+
+The first surviving entry in pinned Morphalou order names an exact-form group.
+That key stays readable (`rouge:nc`) but its suffix is NOT the group's POS:
+`rouge:nc` carries both the noun and adjective paradigms after #146. Consumers
+therefore treat it as opaque and read the explicit row POS / group metadata.
 
 TWO SOURCES, ONE RESPONSIBILITY EACH
 ------------------------------------
@@ -82,15 +92,16 @@ instead of silently shipping different morphology.
            right REALIZATION of someone else's paradigm («pensée» is a legitimate
            `par:pas:f:s` of «penser» while being dominantly the noun).
 
-A form carrying SEVERAL verb lexemes («durent» is both the present of durer and the
-past historic of devoir) is kept here in full — the table only describes. Choosing
-between paradigms is refused downstream, in FormResolver.realize.
+A form carrying SEVERAL genuinely distinct words («durent» is both the present of
+durer and the past historic of devoir) is kept here in full — the table only
+describes. The duplicate-entry rules above remove only distinctions the dictionary
+cannot cash in forms; every remaining choice stays visible downstream.
 
-Rows are sorted by (lemma, pos, feature, -Lexique frequency, form), so the FIRST row
-of a cell is its preferred realization: deterministic, and the reason the sort key is
-not simply the whole line. Losing spellings are KEPT, only ordered after — and
-`load_forms` hands the caller the whole ordered list, so "preferred" can fall back to
-"typable" instead of the cell going unrealized.
+Rows are sorted by (group, feature, -Lexique frequency, form, source lemma, source
+POS), so the FIRST row of a group cell is its preferred realization: deterministic,
+and the reason the sort key is not simply the whole line. Losing spellings are KEPT,
+only ordered after — and `load_forms` hands the caller the whole ordered list, so
+"preferred" can fall back to "typable" instead of the cell going unrealized.
 
 fr ONLY. English keeps its AGID lemma table (#104) and has no forms table — a decided
 non-goal, not a missing file (see FORM_LANGS).
@@ -141,7 +152,7 @@ MORPHALOU_CREDIT = "Morphalou 3.1 — ATILF / CNRS, via ORTOLANG"
 MORPHALOU_LICENSE_NAME = ("LGPL-LR (Lesser General Public License For "
                           "Linguistic Resources)")
 
-# The languages that HAVE a lexeme inventory. Anything else has no agreement pass and
+# The languages that HAVE a word-group inventory. Anything else has no agreement pass and
 # keeps its own lemma table (en: AGID) — deliberate, not a missing file.
 FORM_LANGS = ("fr",)
 
@@ -168,14 +179,13 @@ CITATION_FEATURE = "cit"
 
 
 def feature_pos(feature):
-    """The POS a feature belongs to — #133's per-POS transfer policy, in one place.
+    """The POS whose paradigm owns one stored/CLI cell code.
 
     A feature IS a cell of one part of speech's paradigm (`n:p` names a noun cell,
-    `adj:f:p` an adjective cell, everything else a verb cell), so the secret's
-    confirmed feature decides which neighbours can agree at all: only a lexeme of
-    that POS has the cell. A cross-POS neighbour and every citation-only class keep
-    their citation form — no target form is defined for them — which is why `cit`
-    maps to None: a citation-form secret prescribes nothing to anyone."""
+    `adj:f:p` an adjective cell, everything else a verb cell). #146 may transfer
+    the morphology expressed by that cell to another POS, but this function still
+    answers which paradigm can realize the cell itself. `cit` maps to None because
+    a citation-form secret prescribes nothing."""
     if feature == CITATION_FEATURE:
         return None
     if feature.startswith("n:"):
@@ -287,12 +297,13 @@ def normalize_lemma(graphie):
 
 
 def lexeme_key(lemma, pos):
-    """The lexeme's key as consumers see it («porter:v», «porte:nc»).
+    """One source entry's candidate group key («porter:v», «porte:nc»).
 
-    The pipeline treats it as opaque group identity; the pos suffix is what keeps
-    «vers» the noun and «vers» the preposition two groups. ':' cannot appear in a
-    lemma (the token rule keeps letters and dashes only), so the key is unambiguous
-    — and it reads acceptably in curator-facing messages."""
+    `merge_entries` chooses one surviving entry's key for each #146 group. The
+    pipeline treats that chosen value as OPAQUE: after an exact-form cross-POS
+    merge its suffix describes the entry that named the group, not every paradigm
+    the group carries. ':' cannot appear in a lemma (the token rule keeps letters
+    and dashes only), so the spelling stays unambiguous and curator-readable."""
     return f"{lemma}:{pos}"
 
 
@@ -496,6 +507,108 @@ def read_morphalou(csv_text, token_re):
     return lexemes, stats
 
 
+# --- Duplicate dictionary entries (#146) ----------------------------------------
+
+def entry_rows(cells):
+    """The exact information one Morphalou entry contributes.
+
+    Containment is deliberately tested on `(feature, form)`, not on surface forms
+    alone: `fils:nc` claims singular «fils» as well as plural «fils», so it is NOT
+    contained in `fil:nc`, whose «fils» row is plural only. That one-cell difference
+    is precisely why «fil» must never solve a confirmed `fils:nc` hole."""
+    return frozenset((feature, form)
+                     for feature, forms in cells.items() for form in forms)
+
+
+def entry_forms(cells):
+    """Every spelling an entry can produce, cells deliberately forgotten."""
+    return frozenset(form for forms in cells.values() for form in forms)
+
+
+def merge_entries(lexemes):
+    """Collapse Morphalou filings that make no playable distinction (#146).
+
+    Returns `(groups, stats)` where `groups` is insertion-ordered as
+    `{opaque_group_key: ((lemma, pos, cells), ...)}`.
+
+    Rule 1 groups surviving entries whose COMPLETE form sets are identical, across
+    POS. The first entry in the pinned source order names the opaque group; every
+    member row remains attached to its own lemma/POS in the artifact, so a merged
+    word can carry several paradigms without making the key suffix lie to consumers.
+
+    Rule 2 removes an entry B when a strictly larger entry A of the SAME POS already
+    contains every `(feature, form)` row B contributes. Nothing is copied: A already
+    owns every row. If B is contained in two incomparable larger entries, B still
+    disappears while A and C remain separate; unioning them through B would make
+    A-only forms solve C and change gameplay, contradicting the rule's no-new-
+    information premise.
+
+    The measurements in issue #146 are computed on the original cleaned entries,
+    before either rule changes the population, so the build report can pin the
+    source facts (5,712 twin sets / 11,472 entries and 1,496 contained entries on
+    Morphalou 3.1)."""
+    rows = {key: entry_rows(cells) for key, cells in lexemes.items()}
+    forms = {key: entry_forms(cells) for key, cells in lexemes.items()}
+
+    by_forms = {}
+    for key, spellings in forms.items():
+        by_forms.setdefault(spellings, []).append(key)
+    twin_sets = [keys for keys in by_forms.values() if len(keys) > 1]
+
+    # Invert each row within its POS. Anchoring a candidate search on the rarest
+    # row makes the exact subset test linear-ish over 155k entries instead of a
+    # quadratic comparison of every same-POS pair.
+    owners = {}
+    for key, contributed in rows.items():
+        per_pos = owners.setdefault(key[1], {})
+        for row in contributed:
+            per_pos.setdefault(row, set()).add(key)
+
+    contained = {}
+    for key, contributed in rows.items():
+        if not contributed:
+            continue
+        per_pos = owners[key[1]]
+        candidates = min((per_pos[row] for row in contributed), key=len)
+        supersets = tuple(candidate for candidate in candidates
+                          if candidate != key
+                          and len(rows[candidate]) > len(contributed)
+                          and contributed <= rows[candidate])
+        if supersets:
+            contained[key] = tuple(sorted(supersets,
+                                          key=lambda k: lexeme_key(*k)))
+
+    surviving = set(lexemes) - set(contained)
+    surviving_by_forms = {}
+    for key, spellings in forms.items():
+        if key in surviving:
+            surviving_by_forms.setdefault(spellings, []).append(key)
+
+    groups = {}
+    for key in lexemes:  # pinned source order owns exact-group naming
+        if key not in surviving:
+            continue
+        members = surviving_by_forms[forms[key]]
+        canonical = members[0]
+        group = lexeme_key(*canonical)
+        if group in groups:
+            continue
+        groups[group] = tuple((lemma, pos, lexemes[(lemma, pos)])
+                              for lemma, pos in members)
+
+    return groups, {
+        "twin_groups": len(twin_sets),
+        "twin_entries": sum(len(keys) for keys in twin_sets),
+        "contained_entries": len(contained),
+        "contained_samples": tuple(
+            (lexeme_key(*key), tuple(lexeme_key(*target)
+                                     for target in contained[key]))
+            for key in list(contained)[:10]
+        ),
+        "groups": len(groups),
+    }
+
+
 # --- Lexique evidence -------------------------------------------------------------
 
 def read_lexique_rows(path):
@@ -558,25 +671,27 @@ def dominant_pos(analyses, weight):
     return dominant
 
 
-def collect_rows(lexemes, weight):
-    """The cleaned lexemes -> the final deterministic (sortable) row set.
+def collect_rows(groups, weight):
+    """The #146 word groups -> the final deterministic (sortable) row set.
 
-    One row per (lexeme, feature, form); `dom` marks the rows whose POS dominates
-    their surface's reading; the surface's summed Lexique frequency rides along as
-    the sort key that puts the preferred spelling first."""
+    One row per `(group, source lemma, source POS, feature, form)`. `dom` still
+    describes the SOURCE row's POS — an exact-form group may carry several — and
+    the surface's summed Lexique frequency rides along as the preference sort key."""
     analyses = {}
-    for (lemma, pos), cells in lexemes.items():
-        for forms in cells.values():
-            for form in forms:
-                analyses.setdefault(form, set()).add(pos)
+    for members in groups.values():
+        for _lemma, pos, cells in members:
+            for forms in cells.values():
+                for form in forms:
+                    analyses.setdefault(form, set()).add(pos)
     dominant = dominant_pos(analyses, weight)
     rows = []
-    for (lemma, pos), cells in lexemes.items():
-        for feature, forms in cells.items():
-            for form in forms:
-                rows.append((lemma, pos, feature, form,
-                             1 if dominant.get(form) == pos else 0,
-                             sum(weight.get(form, {}).values())))
+    for group, members in groups.items():
+        for lemma, pos, cells in members:
+            for feature, forms in cells.items():
+                for form in forms:
+                    rows.append((group, lemma, pos, feature, form,
+                                 1 if dominant.get(form) == pos else 0,
+                                 sum(weight.get(form, {}).values())))
     return rows
 
 
@@ -594,7 +709,7 @@ def collect_rows(lexemes, weight):
 #
 # (lemma, feature, expected forms, expected preferred spelling or None — only named
 # where a cell holds several spellings and the frequency order is itself audited)
-EXPECTED_CELLS = (
+_EXPECTED_VERB_CELLS = (
     # -- the two cell-level holes ("missing in Morphalou, present in Lefff") -------
     # the curated core mis-tags «puisses» thirdPerson, so the 2s cell is LOST — and
     # the mis-tag itself is harmless for realisation («puisse» outranks it by freq)
@@ -651,26 +766,68 @@ EXPECTED_CELLS = (
     ("finir", "ind:pre:1s", frozenset({"finis"}), None),
 )
 
+# Sentinels name the OPAQUE post-merge group, not a source `(lemma, pos)` pair.
+# Verb keys happen to stay `lemma:v` in this release; spelling that conversion once
+# here prevents validators/consumers from rebuilding identity out of row columns.
+EXPECTED_CELLS = tuple(
+    (lexeme_key(lemma, "v"), feature, expected, first)
+    for lemma, feature, expected, first in _EXPECTED_VERB_CELLS
+)
+
 # #132's all-POS structural sentinels. The exhaustive #131 audit above is verbal by
 # definition; these deliberately small pins make a parser/mapping change prove that
 # nouns, adjectives and closed classes still survive with their real cells too.
-# (lemma, pos, feature, expected forms)
+# (opaque group key, feature, expected forms)
 EXPECTED_INVENTORY_CELLS = (
-    ("jardin", "nc", "n:s", frozenset({"jardin"})),
-    ("jardin", "nc", "n:p", frozenset({"jardins"})),
-    ("oeil", "nc", "n:p", frozenset({"oeils", "yeux"})),
-    ("grand", "adj", "adj:f:p", frozenset({"grandes"})),
-    ("vers", "prep", "cit", frozenset({"vers"})),
-    ("celui", "pro", "cit", frozenset({"celle", "celles", "celui", "ceux"})),
+    ("jardin:nc", "n:s", frozenset({"jardin"})),
+    ("jardin:nc", "n:p", frozenset({"jardins"})),
+    ("oeil:nc", "n:p", frozenset({"oeils", "yeux"})),
+    ("grand:adj", "adj:f:p", frozenset({"grandes"})),
+    # vers:prep is an exact-form duplicate of vers:nc under #146: the merged
+    # opaque group carries both the noun cells and this citation cell.
+    ("vers:nc", "cit", frozenset({"vers"})),
+    ("celui:pro", "cit", frozenset({"celle", "celles", "celui", "ceux"})),
 )
 
-# Homography must remain derivable from the same rows (#132/#134), including
-# same-POS ambiguity (`mois`) that a POS-only gate cannot settle.
+# Distinct playable groups must remain derivable from the same rows (#132/#134),
+# including same-POS ambiguity (`mois`) that a POS-only gate cannot settle. Values
+# are OPAQUE group keys since #146; a suffix no longer claims the group's only POS.
 EXPECTED_SURFACE_LEXEMES = (
-    ("vers", frozenset({"ver:nc", "vers:nc", "vers:prep"})),
+    ("vers", frozenset({"ver:nc", "vers:nc"})),
     ("mois", frozenset({"moi:nc", "mois:nc"})),
     ("celle", frozenset({"celle:nc", "celui:pro"})),
 )
+
+
+# #146's normalization measurements are source facts, not an informational build
+# report. Pin every published number here so a parser/source/merge-rule drift stops
+# the rebuild at the same boundary as the morphology sentinels below.
+EXPECTED_MERGE_STATS = {
+    "twin_groups": 5_712,
+    "twin_entries": 11_472,
+    "contained_entries": 1_496,
+    "groups": 147_868,
+    "rows": 994_497,
+}
+
+
+def validate_merge_stats(stats, row_count):
+    """Fail loudly when a #146 source measurement moves."""
+    actual = {name: stats.get(name) for name in EXPECTED_MERGE_STATS}
+    actual["rows"] = row_count
+    problems = [
+        f"{name} : {actual[name]:,}, attendu {expected:,}"
+        if isinstance(actual[name], int) else
+        f"{name} : absent, attendu {expected:,}"
+        for name, expected in EXPECTED_MERGE_STATS.items()
+        if actual[name] != expected
+    ]
+    if problems:
+        print("Erreur : les mesures pinnées par l'audit #146 ont bougé —\n"
+              + "".join(f"         {problem}\n" for problem in problems)
+              + "         la source ou les règles ont changé : refais l'audit "
+                "avant de mettre à jour les mesures.", file=sys.stderr)
+        sys.exit(1)
 
 
 def validate_rows(rows):
@@ -680,41 +837,41 @@ def validate_rows(rows):
     changed — exactly the moment the #131 audit must be redone, consciously, instead
     of new morphology shipping under an old rationale."""
     wanted_cells = {
-        (lemma, "v", feature)
-        for lemma, feature, _expected, _first in EXPECTED_CELLS
+        (group, feature)
+        for group, feature, _expected, _first in EXPECTED_CELLS
     } | {
-        (lemma, pos, feature)
-        for lemma, pos, feature, _expected in EXPECTED_INVENTORY_CELLS
+        (group, feature)
+        for group, feature, _expected in EXPECTED_INVENTORY_CELLS
     }
     wanted_surfaces = {form for form, _expected in EXPECTED_SURFACE_LEXEMES}
     cells, preferred, surface_lexemes = {}, {}, {}
-    for lemma, pos, feature, form, _dom, freq in rows:
-        cell = (lemma, pos, feature)
+    for group, _lemma, _pos, feature, form, _dom, freq in rows:
+        cell = (group, feature)
         if cell in wanted_cells:
             cells.setdefault(cell, set()).add(form)
             best = preferred.get(cell)
             if best is None or (-freq, form) < best[0]:
                 preferred[cell] = ((-freq, form), form)
         if form in wanted_surfaces:
-            surface_lexemes.setdefault(form, set()).add(lexeme_key(lemma, pos))
+            surface_lexemes.setdefault(form, set()).add(group)
     problems = []
-    for lemma, feature, expected, first in EXPECTED_CELLS:
-        cell = (lemma, "v", feature)
+    for group, feature, expected, first in EXPECTED_CELLS:
+        cell = (group, feature)
         actual = frozenset(cells.get(cell, set()))
         if actual != expected:
-            problems.append(f"{lemma} / {feature} : formes {sorted(actual)}, "
+            problems.append(f"{group} / {feature} : formes {sorted(actual)}, "
                             f"attendu {sorted(expected)}")
         elif first is not None and (
                 preferred.get(cell) is None or preferred[cell][1] != first):
             actual_first = preferred[cell][1] if cell in preferred else "aucune"
-            problems.append(f"{lemma} / {feature} : réalisation préférée "
+            problems.append(f"{group} / {feature} : réalisation préférée "
                             f"« {actual_first} », attendue "
                             f"« {first} »")
-    for lemma, pos, feature, expected in EXPECTED_INVENTORY_CELLS:
-        actual = frozenset(cells.get((lemma, pos, feature), set()))
+    for group, feature, expected in EXPECTED_INVENTORY_CELLS:
+        actual = frozenset(cells.get((group, feature), set()))
         if actual != expected:
             problems.append(
-                f"{lemma}:{pos} / {feature} : formes {sorted(actual)}, "
+                f"{group} / {feature} : formes {sorted(actual)}, "
                 f"attendu {sorted(expected)}")
     for form, expected in EXPECTED_SURFACE_LEXEMES:
         actual = frozenset(surface_lexemes.get(form, set()))
@@ -733,7 +890,7 @@ def validate_rows(rows):
 # --- Artifact ---------------------------------------------------------------------
 
 def forms_path(lang):
-    """Default versioned lexeme inventory for a language: wordlist/<lang>.forms.tsv.gz."""
+    """Default versioned word-group inventory: wordlist/<lang>.forms.tsv.gz."""
     return os.path.join(red.WORDLIST_DIR, f"{lang}.forms.tsv.gz")
 
 
@@ -752,8 +909,8 @@ def header_lines(lang):
     LGPL-LR asks for the notice to travel with the work — so it travels IN the
     artifact, not only in this script."""
     return [
-        f"# {lang}.forms.tsv.gz — the unified lexeme inventory (#132): lemma "
-        f"grouping, homography and display agreement.",
+        f"# {lang}.forms.tsv.gz — the unified word inventory (#132/#146): lemma "
+        f"grouping, duplicate-entry merging, homography and display agreement.",
         "# Built by scripts/build_forms.py (pnpm forms:fr). Do not edit by hand.",
         "#",
         f"# Lexemes     : {MORPHALOU_CREDIT}",
@@ -763,7 +920,7 @@ def header_lines(lang):
         f"{os.path.basename(license_path(lang))}.",
         f"# POS evidence: Lexique383 (surface frequency only) — {LEXIQUE_URL}",
         "#",
-        "# lemma<TAB>pos<TAB>feature<TAB>form<TAB>dom",
+        "# group<TAB>lemma<TAB>pos<TAB>feature<TAB>form<TAB>dom",
     ]
 
 
@@ -775,40 +932,48 @@ def build_rows(lang, csv_text, lexique_path):
     code proves nothing about it."""
     token_re = red.token_pattern(lang)
     lexemes, stats = read_morphalou(csv_text, token_re)
+    groups, merge_stats = merge_entries(lexemes)
+    stats.update(merge_stats)
     weight = lexique_weights(read_lexique_rows(lexique_path), token_re)
-    rows = collect_rows(lexemes, weight)
-    # Sorted by (lemma, pos, feature, -freq, form): deterministic, and the FIRST row
-    # of a cell is its preferred realization — which is what load_forms reads. A
-    # losing spelling is ordered after, never dropped.
-    rows.sort(key=lambda r: (r[0], r[1], r[2], -r[5], r[3]))
+    rows = collect_rows(groups, weight)
+    # Sorted by (group, feature, -freq, form, source lemma, source POS):
+    # deterministic, and the FIRST row of a GROUP cell is its preferred
+    # realization — which is what load_forms reads. A losing spelling and every
+    # merged source member stay present, only ordered after.
+    rows.sort(key=lambda r: (r[0], r[3], -r[6], r[4], r[1], r[2]))
+    validate_merge_stats(stats, len(rows))
     validate_rows(rows)
     return rows, stats
 
 
-def row_line(lemma, pos, feature, form, dom):
+def row_line(group, lemma, pos, feature, form, dom):
     """One artifact line. The single place the row shape is written."""
-    return f"{lemma}\t{pos}\t{feature}\t{form}\t{dom}"
+    return f"{group}\t{lemma}\t{pos}\t{feature}\t{form}\t{dom}"
 
 
 # The loader's product. `grouping` spans EVERY POS — it is what gen_phrase's merge
-# walk consumes (#104's lemma_table shape: form -> lexeme keys). The other four are
-# the agreement views the display pass (#119, whole vocabulary since #133) reads —
-# every POS, the lemma strings as lexeme keys, one namespace with `grouping`, which
-# is the point of #132: the grouping walk and the agreement pass can no longer
-# disagree about what a form belongs to.
-Lexicon = namedtuple("Lexicon", "grouping entries dominant realize features")
+# walk consumes (#104's lemma_table shape: form -> opaque group keys). `members`,
+# `group_forms` and `group_pos` make the #146 key deliberately opaque: no consumer
+# has to reverse-engineer a merged group's paradigms from its canonical suffix.
+Lexicon = namedtuple(
+    "Lexicon",
+    "grouping entries dominant realize features members group_forms group_pos",
+)
 
 
 def load_forms(path):
     """Load a committed inventory into the indexes gen_phrase needs.
 
-    grouping  form -> (lexeme key, ...)         — ALL POS: the #104 merge-walk table
-    entries   form -> ((lexeme key, feature), ...)  — every POS: what a surface IS
+    grouping  form -> (group key, ...)           — ALL POS: the #104 merge-walk table
+    entries   form -> ((group key, feature), ...) — every POS: what a surface IS
     dominant  form -> pos                        — the POS that dominates a surface's
               reading (the `dom` gate); absent when no reading dominates
-    realize   (lexeme key, feature) -> (form, ...)  — every POS: EVERY spelling,
+    realize   (group key, feature) -> (form, ...) — every POS: EVERY spelling,
               preferred first
     features  {feature}                          — the cell inventory (--form checks)
+    members   group key -> (source lexeme keys,) — exact-form entries merged by #146
+    group_forms group key -> (form, ...)          — every form, canonical lemma first
+    group_pos group key -> {pos}                  — paradigms the opaque group carries
 
     `realize` keeps the whole ordered candidate list, not just the winner: the
     caller's typability check falls back to the next spelling («déblaies» loses to
@@ -818,22 +983,33 @@ def load_forms(path):
     line is an error, loudly, because a truncated artifact would otherwise load as a
     partial table and agree half a puzzle."""
     grouping, entries, dominant, realize, features = {}, {}, {}, {}, set()
+    members, group_forms, group_pos = {}, {}, {}
     opener = gzip.open if path.endswith(".gz") else open
     with opener(path, "rt", encoding="utf-8") as f:
         for lineno, line in enumerate(f, 1):
             if line.startswith("#"):
                 continue
             parts = line.rstrip("\n").split("\t")
-            if len(parts) != 5:
-                raise ValueError(f"{path}:{lineno}: 5 champs attendus, "
+            if len(parts) != 6:
+                raise ValueError(f"{path}:{lineno}: 6 champs attendus, "
                                  f"{len(parts)} lus — table corrompue ?")
-            lemma, pos, feature, form, dom = parts
-            key = lexeme_key(lemma, pos)
+            group, lemma, pos, feature, form, dom = parts
+            source_key = lexeme_key(lemma, pos)
+            group_members = members.setdefault(group, [])
+            if source_key not in group_members:
+                group_members.append(source_key)
+            group_forms.setdefault(group, set()).add(form)
+            group_pos.setdefault(group, set()).add(pos)
             keys = grouping.setdefault(form, [])
-            if key not in keys:
-                keys.append(key)
-            entries.setdefault(form, []).append((key, feature))
-            realize.setdefault((key, feature), []).append(form)
+            if group not in keys:
+                keys.append(group)
+            pair = (group, feature)
+            surface_entries = entries.setdefault(form, [])
+            if pair not in surface_entries:
+                surface_entries.append(pair)
+            realizations = realize.setdefault(pair, [])
+            if form not in realizations:
+                realizations.append(form)
             features.add(feature)
             if dom == "1":
                 # dom marks the POS that dominates this surface (dominant_pos), so
@@ -848,7 +1024,14 @@ def load_forms(path):
                    {form: tuple(pairs) for form, pairs in entries.items()},
                    dominant,
                    {pair: tuple(forms) for pair, forms in realize.items()},
-                   frozenset(features))
+                   frozenset(features),
+                   {group: tuple(sorted(keys, key=lambda key: (
+                       key != group, key)))
+                    for group, keys in members.items()},
+                   {group: tuple(sorted(forms, key=lambda form: (
+                       form != group.rpartition(":")[0], form)))
+                    for group, forms in group_forms.items()},
+                   {group: frozenset(poses) for group, poses in group_pos.items()})
 
 
 def build(lang, *, refresh):
@@ -879,12 +1062,14 @@ def build(lang, *, refresh):
             io.TextIOWrapper(gz, encoding="utf-8") as f:
         for line in header_lines(lang):
             f.write(line + "\n")
-        for lemma, pos, feature, form, dom, _freq in rows:
-            f.write(row_line(lemma, pos, feature, form, dom) + "\n")
+        for group, lemma, pos, feature, form, dom, _freq in rows:
+            f.write(row_line(group, lemma, pos, feature, form, dom) + "\n")
 
     # --- Report (stderr) --------------------------------------------------------
     per_pos = {}
-    for lemma, pos, _feature, form, dom, _freq in rows:
+    group_keys = set()
+    for group, lemma, pos, _feature, form, dom, _freq in rows:
+        group_keys.add(group)
         entry = per_pos.setdefault(pos, {"rows": 0, "lemmas": set(), "forms": set(),
                                          "gated": 0})
         entry["rows"] += 1
@@ -894,6 +1079,7 @@ def build(lang, *, refresh):
             entry["gated"] += 1
     print(f"\nLangue : {lang}", file=sys.stderr)
     print(f"Lignes : {len(rows):,}", file=sys.stderr)
+    print(f"Groupes : {len(group_keys):,}", file=sys.stderr)
     for pos in sorted(per_pos, key=lambda p: -per_pos[p]["rows"]):
         e = per_pos[pos]
         print(f"          {pos:<5} {e['rows']:>9,} lignes  "
@@ -904,6 +1090,14 @@ def build(lang, *, refresh):
           f"(origines ⊄ {{morphalou2, lefff, lglexlefff}})", file=sys.stderr)
     for lemma, pos, feature, form in stats["dropped_samples"][:10]:
         print(f"          p.ex. {lemma}:{pos} / {feature} : {form}", file=sys.stderr)
+    print(f"Fusion #146, formes identiques : {stats['twin_groups']:,} groupe(s), "
+          f"{stats['twin_entries']:,} entrée(s) source.", file=sys.stderr)
+    print(f"Fusion #146, inclusions même POS : {stats['contained_entries']:,} "
+          f"entrée(s) redondante(s) retirée(s).", file=sys.stderr)
+    for source, targets in stats["contained_samples"][:5]:
+        print(f"          p.ex. {source} ⊂ {', '.join(targets)}", file=sys.stderr)
+    print(f"Gardes #146 : {len(EXPECTED_MERGE_STATS)} mesure(s) pinnée(s) "
+          "vérifiée(s).", file=sys.stderr)
     print(f"Lignes source inexploitables : {stats['rows_unmappable']:,} ; entrées "
           f"sans catégorie : {stats['entries_no_category']:,}", file=sys.stderr)
     print(f"Gardes #131 : {len(EXPECTED_CELLS)} cellule(s) pinnée(s) vérifiée(s).",

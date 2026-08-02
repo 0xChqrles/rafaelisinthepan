@@ -1,6 +1,9 @@
-"""CONTRACT: lemma grouping in rank maps (#104), ranked per LEXEME since #134.
+"""CONTRACT: word grouping in rank maps (#104/#146), ranked per group since #134.
 
-  - a group IS a lexeme, ranked by its REPRESENTATIVE: its closest embedded form
+  - a group is one playable word family: normally one dictionary lexeme, but #146
+    first merges entries with identical complete form sets and removes a same-POS
+    entry wholly contained in another. Its opaque id never supplies its POS;
+  - a group is ranked by its REPRESENTATIVE: its closest embedded form
     that is not a cross-lexeme homograph (group-min over clean forms). A homograph's
     vector provably blends strangers' meanings, so it sets no lexeme's distance
     («vers» must not put lexeme VER next to «poème»); an unambiguous form owns its
@@ -8,16 +11,16 @@
     secret is real sense signal, and its whole lexeme rides that closeness);
   - a lexeme with NO clean embedded form still ranks — representative = its closest
     form of any kind, flagged not-clean (take what exists, surfaced to the curator);
-  - every reduced-vocab form of a lexeme keys to its group; an ambiguous form
-    attaches to whichever of its lexemes' groups ranked closest (#104, unchanged);
+  - every reduced-vocab form of a group keys to it; an ambiguous form attaches to
+    whichever of its groups ranked closest (#104, unchanged);
   - keys are assigned closest-first at assembly: a group left with NO key cannot be
     typed, displayed or found, so it is SKIPPED and consumes no rank — that is both
-    the old aliasing compaction and what stops twin no-clean lexemes (vers:nc /
-    vers:prep, one embedded form between them) from minting ghost ranks;
+    the old aliasing compaction and what prevents any keyless residual group from
+    minting a ghost rank;
   - a group's DISPLAY is its closest OWNED form: what the map prints types back at
     that group's own rank, never a closer one;
   - TOP_K counts surviving groups (filter-then-cap);
-  - the secret is group 0 and claims the lexeme the author CONFIRMED (#133, via
+  - the secret is group 0 and claims the group the author CONFIRMED (#133, via
     secret_claim) — an inflection of a homographic secret then solves — falling
     back to the surface-derived claim (one lexeme or nothing) when nothing was
     confirmed: «moi» must never solve a «mois» hole;
@@ -122,7 +125,9 @@ def test_alias_expansion_covers_vocab_forms_absent_from_walk_and_respects_vset()
 # lexemes. Homography is stated by the data — nothing is guessed.
 
 POETRY = {
-    "vers": ("ver:nc", "vers:nc", "vers:prep"),
+    # #146 exact-merges the noun/preposition twins; the real remaining ambiguity
+    # is between that merged group and the worm plural.
+    "vers": ("ver:nc", "vers:nc"),
     "ver": ("ver:nc",),
     "strophe": ("strophe:nc",),
     "poème": ("poème:nc",),
@@ -143,16 +148,14 @@ def test_a_lexeme_is_ranked_by_its_clean_representative_never_a_homograph():
     assert rmap["vers"]["rank"] == 1                   # the blend, where it sits
 
 
-def test_twin_no_clean_lexemes_mint_one_group_not_ghost_ranks():
-    # vers:nc and vers:prep own ONE embedded form between them and neither has a
-    # clean one: the first (deterministic lexeme-key tie-break) takes the form, the
-    # second keys nothing, consumes no rank, and vanishes — flagged not-clean.
+def test_exact_twins_are_one_group_not_ghost_ranks():
+    # The exact noun/preposition twins already share ONE opaque group. It has no
+    # clean vector because « vers » is also ver:nc, but it can mint only one rank.
     ranking = [("vers", 0, .9), ("strophe", 1, .8), ("ver", 2, .2)]
     _m, _rmap, groups = _build("poème", ranking, POETRY,
                                {"vers", "strophe", "ver"})
 
     assert ("vers", 1, ("vers:nc",), False, "vers") in groups   # take what exists...
-    assert all(claims != ("vers:prep",) for _w, _r, claims, _c, _rep in groups)
     assert [g[1] for g in groups] == [0, 1, 2, 3]            # ...and no ghost rank
 
 
@@ -171,25 +174,27 @@ def test_a_divergent_clean_plural_is_its_lexemes_representative():
 
 
 ROUGE = {
-    "rouge": ("rouge:adj", "rouge:adv", "rouge:nc"),
-    "rouges": ("rouge:adj", "rouge:nc"),
+    # The adjective/noun twins are one #146 group. The adverb is a real remaining
+    # homograph, so the plural is the merged group's clean representative.
+    "rouge": ("rouge:adv", "rouge:nc"),
+    "rouges": ("rouge:nc",),
     "écarlate": ("écarlate:adj",),
     "forêt": ("forêt:nc",),
 }
 
 
-def test_a_no_clean_family_is_one_group_both_forms_key_to_it():
-    # Every form of rouge:adj is a homograph, so the lexeme has no clean vector:
-    # take what exists (its closest form), flagged — and «rouge»/«rouges» are ONE
-    # group, not two strangers two ranks apart (the pre-#134 −16 case).
+def test_merged_twins_use_their_clean_form_and_drop_the_false_flag():
+    # Merging the adjective/noun duplicates makes « rouges » clean for their one
+    # group. The real adverb still owns the closer singular at its own rank.
     ranking = [("écarlate", 0, .9), ("rouge", 1, .85), ("rouges", 2, .8)]
     merged, rmap, groups = _build("forêt", ranking, ROUGE,
                                   {"écarlate", "rouge", "rouges"})
 
-    assert [(w, r) for w, r, _ in merged] == [("écarlate", 0), ("rouge", 1)]
+    assert [(w, r) for w, r, _ in merged] == [
+        ("écarlate", 0), ("rouge", 1), ("rouges", 2)]
     assert rmap["rouge"]["rank"] == 2
-    assert rmap["rouges"]["rank"] == 2        # same group: same distance
-    assert ("rouge", 2, ("rouge:adj",), False, "rouge") in groups  # flagged not-clean
+    assert rmap["rouges"]["rank"] == 3
+    assert ("rouges", 3, ("rouge:nc",), True, "rouges") in groups
 
 
 def test_display_is_the_closest_owned_form_never_a_stolen_slug():
@@ -270,12 +275,12 @@ def _lexicon():
 
 
 def test_secret_claim_uses_the_confirmed_lexeme():
-    # «rouges» confirmed adj:f:p IS rouge:adj: the author said which word the hole
-    # is, so group 0 claims it — one lexeme, the invariant verbatim.
+    # «rouges» confirmed adj:f:p belongs to the merged adjective/noun group: the
+    # author says the usage morphology, and group 0 claims its opaque family.
     table = _lexicon()
     forms = gen_phrase.FormResolver(table, explicit={"rouges": "adj:f:p"})
     claim = gen_phrase.secret_claim("rouges", "rouges", table.grouping, forms=forms)
-    assert claim == ("rouge:adj",)
+    assert claim == ("rouge:nc",)
 
 
 def test_secret_claim_falls_back_when_the_bare_trait_names_several_lexemes(
@@ -295,9 +300,8 @@ def test_secret_claim_falls_back_when_the_bare_trait_names_several_lexemes(
 
 
 def test_a_qualified_form_resolves_the_shared_cell_and_the_singular_solves():
-    # The #144 fix end to end, in the «tropiques» shape: n:p is shared, the author
-    # names fil:nc, group 0 claims it — so «fil», its singular, keys at rank 0 and
-    # SOLVES, where the pre-#144 fail-closed fallback left it a separate group.
+    # A real identity choice remains for « fils »: naming fil:nc makes its singular
+    # solve, while the distinct fils:nc family remains a separate answer below.
     table = _lexicon()
     forms = gen_phrase.FormResolver(table,
                                     explicit={"fils": ("fil:nc", "n:p")})
@@ -311,10 +315,25 @@ def test_a_qualified_form_resolves_the_shared_cell_and_the_singular_solves():
     assert rmap["fil"] == {"word": "fils", "rank": 0}    # solves
 
 
+def test_confirming_the_fils_family_never_lets_fil_solve():
+    table = _lexicon()
+    forms = gen_phrase.FormResolver(
+        table, explicit={"fils": ("fils:nc", "n:p")})
+    claim = gen_phrase.secret_claim("fils", "fils", table.grouping, forms=forms)
+    assert claim == ("fils:nc",)
+
+    ranking = [("fil", 0, .9), ("corde", 1, .8), ("jardin", 2, .5)]
+    _m, rmap, _g = gen_phrase.build_merged_rank_map(
+        "fils", ranking, table.grouping, gen_phrase.invert_lemmas(table.grouping),
+        {"fil", "fils", "corde", "jardin"}, secret_lemmas=claim)
+
+    assert rmap["fils"]["rank"] == 0
+    assert rmap["fil"]["rank"] == 1
+
+
 def test_a_confirmed_homograph_secret_is_solved_by_its_own_inflection():
-    # The «rouges» case end to end: confirmed as the adjective, group 0 claims
-    # rouge:adj and «rouge» keys at rank 0 — typing the singular SOLVES. The other
-    # readings dissolve (their forms are all claimed), so no ghost ranks either.
+    # The «rouges» case end to end: the morphology identifies the merged noun /
+    # adjective group, so «rouge» keys at rank 0 and typing the singular SOLVES.
     table = _lexicon()
     forms = gen_phrase.FormResolver(table, explicit={"rouges": "adj:f:p"})
     claim = gen_phrase.secret_claim("rouges", "rouges", table.grouping, forms=forms)
@@ -487,7 +506,7 @@ def test_batch_authoring_confirms_the_secret_before_the_walk(monkeypatch):
         forms_by_lemma=gen_phrase.invert_lemmas(table.grouping),
         donors=donors, forms=forms,
     )
-    # the confirmed identity claimed rouge:adj: the singular solves.
+    # the confirmed morphology claimed the merged rouge:nc group: singular solves.
     assert ranks["rouges"]["rouge"]["rank"] == 0
     assert ranks["rouges"]["rouges"]["rank"] == 0
     assert ranks["rouges"]["ecarlate"]["rank"] == 1
