@@ -402,7 +402,8 @@ Consequences that are load-bearing:
   `hebdomadaire`. It deliberately does **not** merge real distinctions (`fil`/`fils`,
   `moi`/`mois`) or masculine/feminine noun derivations (`cafetier`/`cafetière`). On
   the pinned Morphalou 3.1 source the guarded measurements are 5,712 identical-form
-  sets / 11,472 entries and 1,496 contained entries.
+  sets / 11,472 entries, 1,496 contained entries, 147,868 resulting groups and
+  994,497 artifact rows; `build_rows` hard-fails when any of the five moves.
 
 - **The POS gate has two cases**, unchanged in meaning from #119: with Lexique
   frequency for the surface, the row's class (VER **and** AUX merge — an auxiliary is
@@ -428,7 +429,10 @@ Consequences that are load-bearing:
   but prescribe nothing to verbs; verb answers keep the exact conjugation for verbs
   and, by #146's implementation decision, lend their stated number to nouns (a past
   participle also lends stated gender+number to adjectives). `cit` prescribes
-  nothing. Realization is keyed by the opaque group plus explicit group-POS metadata,
+  nothing. If one merged group carries both a matching adjective and noun cell, the
+  adjective spelling is tried first because it consumes the full gender+number
+  answer; the noun's number-only spelling is the fallback. Realization is keyed by
+  the opaque group plus explicit group-POS metadata,
   never by parsing the key suffix. The requested form is displayed whenever it
   exists and is typable — no drift guard; a missing/untypable cell keeps the clean
   representative, marked `*` in generation output, and post-agreement slug

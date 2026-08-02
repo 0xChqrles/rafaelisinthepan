@@ -93,14 +93,17 @@ def _resolver():
             ("collision:adj", "adj:f:p"): ("collées",),
         },
         group_pos={
+            "secret:adj": frozenset({"adj"}),
             "courant:adj": frozenset({"adj"}),
             "repli:adj": frozenset({"adj"}),
             "nom:nc": frozenset({"nc"}),
             "vers:prep": frozenset({"prep"}),
             "collision:adj": frozenset({"adj"}),
         },
+        entries={"secrète": (("secret:adj", "adj:f:p"),)},
+        features=frozenset({"adj:f:p", "n:p"}),
     )
-    return gen_phrase.FormResolver(table)
+    return gen_phrase.FormResolver(table, explicit={"secrete": "adj:f:p"})
 
 
 def _report(**kwargs):
@@ -174,6 +177,7 @@ def test_formatter_prints_every_requested_section_without_a_verdict(capsys):
     reporter = gen_phrase.PlayabilityReporter(
         VOCAB, LEMMA_TABLE, FORMS_BY_LEMMA, KV, _resolver())
     reporter.capture("secrète", GROUPS, RANK_MAP, "adj:f:p")
+    assert reporter.resolver.answered == frozenset({"secrete"})
     reporter.print()
     out = capsys.readouterr().out
 
@@ -230,6 +234,21 @@ def test_report_prints_group_zero_claim_and_every_actual_solve_key():
     assert report["claim_keys"] == ("tropique", "tropiques")
     assert "groupe 0 : claim tropique:nc — clés : « tropique », « tropiques »" \
         in gen_phrase.format_playability_report(report)
+
+
+def test_a_bare_group_zero_claim_keeps_the_secret_first():
+    groups = [("zulu", 0, ("zulu",), True, "zulu")]
+    rank_map = {
+        "zulu": {"word": "zulu", "rank": 0},
+        "alpha": {"word": "zulu", "rank": 0},
+    }
+    report = gen_phrase.build_playability_report(
+        "zulu", groups, rank_map, [],
+        {"zulu": ("zulu",), "alpha": ("zulu",)},
+        {"zulu": ["alpha", "zulu"]}, {}, resolver=None, feature=None)
+
+    assert report["claim"] == ("zulu",)
+    assert report["claim_keys"] == ("zulu", "alpha")
 
 
 def test_frequency_uses_the_slug_sibling_that_makes_a_display_typable():

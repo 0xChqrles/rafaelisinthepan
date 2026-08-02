@@ -62,6 +62,7 @@ below follow that split of responsibilities:
 import functools
 import gzip
 import os
+from types import SimpleNamespace
 import zipfile
 
 import pytest
@@ -627,6 +628,31 @@ def test_the_prompt_asks_morphology_then_shows_forms_for_a_real_identity_pick(
     assert "2) n:p" in out and "(fils : fils)" in out
 
 
+def test_the_identity_prompt_can_return_to_the_morphology_choice(
+        monkeypatch, capsys):
+    answers = iter(["2", "r", "4", "2"])
+    prompts = []
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda prompt="": (prompts.append(prompt), next(answers))[1])
+    resolver = _resolver(interactive=True)
+
+    assert resolver.feature_for("fils") == "n:p"
+    assert resolver.morphology_for("fils") == gen_phrase.Morphology(
+        "nominal", "f", "p")
+    assert resolver.confirmed_lexeme("fils") == "fils:nc"
+    assert any("r = retour" in prompt for prompt in prompts)
+    assert "Retour au choix de morphologie." in capsys.readouterr().out
+
+
+def test_the_identity_prompt_can_list_the_trait_vocabulary(monkeypatch, capsys):
+    answers = iter(["2", "?", "1"])
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
+
+    assert _resolver(interactive=True).feature_for("fils") == "n:p"
+    assert "adj:f:p" in capsys.readouterr().out
+
+
 def test_the_remaining_entry_pick_settles_the_claim(monkeypatch):
     answers = iter(["2", "1"])
     monkeypatch.setattr("builtins.input", lambda _p="": next(answers))
@@ -837,6 +863,30 @@ def test_an_adjective_secret_transfers_gender_and_number_where_expressible():
     assert rmap["lentes"] == {"word": "lentes", "rank": 1}
     assert rmap["jardin"]["word"] == "jardins"
     assert rmap["jardins"]["rank"] == 2
+
+
+def test_a_merged_nominal_group_prefers_the_more_specific_adjective_cell():
+    # Both cells can spell this synthetic merged group differently. The adjective
+    # consumes the full f+p answer, so it deliberately wins over the noun's
+    # number-only fallback instead of relying on an undocumented dict order.
+    table = SimpleNamespace(
+        entries={},
+        features=frozenset({"adj:f:p", "n:p"}),
+        group_pos={"hybride:nc": frozenset({"adj", "nc"})},
+        realize={
+            ("hybride:nc", "adj:f:p"): ("adjectivales",),
+            ("hybride:nc", "n:p"): ("nominales",),
+        },
+    )
+    resolver = _settled("adj:f:p", "grandes", table=table)
+    rmap = _map(("grandes", "grandes", 0), ("hybride", "hybride", 1))
+
+    changed = resolver.apply(
+        rmap, "grandes", SimpleNamespace(typable=lambda _form: True),
+        lexemes={1: "hybride:nc"})
+
+    assert changed == {1: ("hybride", "adjectivales")}
+    assert rmap["hybride"]["word"] == "adjectivales"
 
 
 def test_a_noun_tty_gender_answer_reinflects_adjectives_too(monkeypatch):
@@ -1322,6 +1372,19 @@ def test_an_inconsistent_empty_preference_pin_reports_instead_of_keyerror(
     err = capsys.readouterr().err
     assert "réalisation préférée « aucune »" in err
     assert "attendue « fantôme »" in err
+
+
+def test_the_146_build_measurements_are_hard_guards(capsys):
+    stats = {name: expected for name, expected
+             in build_forms.EXPECTED_MERGE_STATS.items() if name != "rows"}
+    stats["twin_groups"] -= 1
+
+    with pytest.raises(SystemExit):
+        build_forms.validate_merge_stats(
+            stats, build_forms.EXPECTED_MERGE_STATS["rows"])
+    err = capsys.readouterr().err
+    assert "mesures pinnées par l'audit #146 ont bougé" in err
+    assert "twin_groups : 5,711, attendu 5,712" in err
 
 
 @functools.lru_cache(maxsize=1)

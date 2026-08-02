@@ -668,8 +668,11 @@ def build_playability_report(secret, groups, rank_map, vocab, lemma_table,
         zero_forms.extend(forms_by_lemma.get(claim, ()))
     zero_forms.append(secret)
     zero_forms = [form for form in zero_forms if slug(form) in zero_slugs]
-    canonical = (zero_claims[0].rpartition(":")[0]
-                 if len(zero_claims) == 1 else secret)
+    canonical = secret
+    if len(zero_claims) == 1:
+        # Inventory groups carry `lemma:pos`; table-less/en claims are bare. A bare
+        # claim has no suffix to strip, so the displayed secret remains canonical.
+        canonical = zero_claims[0].rpartition(":")[0] or secret
     seen_zero = set()
     zero_keys = []
     for form in sorted(set(zero_forms), key=lambda form: (form != canonical, form)):
@@ -908,9 +911,8 @@ class PlayabilityReporter:
     def capture(self, secret, groups, rank_map, feature=None):
         if self._indexes is None:
             self._indexes = build_vocab_indexes(self.vocab)
-        morphology = (self.resolver._morphology.get(
-            slug(secret), morphology_from_feature(feature))
-            if self.resolver is not None and feature is not None else None)
+        morphology = (self.resolver.morphology_for(secret)
+                      if self.resolver is not None and feature is not None else None)
         self.reports[slug(secret)] = build_playability_report(
             secret, groups, rank_map, self.vocab, self.lemma_table,
             self.forms_by_lemma, self.kv, resolver=self.resolver,
@@ -1555,6 +1557,9 @@ class Morphology:
     feature: str | None = None
 
 
+_PROMPT_BACK = object()
+
+
 def morphology_from_feature(feature):
     """One stored/CLI cell -> the morphology it states (never more).
 
@@ -1796,7 +1801,10 @@ class FormResolver:
         """Cells this group's paradigms can use from the author's answer (#146).
 
         Nominal morphology crosses noun/adjective boundaries: adjectives express
-        gender+number, nouns express number. It prescribes no verb conjugation.
+        gender+number, nouns express number. When one merged group carries both,
+        the adjective target deliberately comes first because it consumes the more
+        specific answer; the number-only noun target is its fallback. It prescribes
+        no verb conjugation.
         A verb answer keeps its exact verb cell and — the issue's open sub-decision,
         resolved here in favour of useful stated information — lends NUMBER to nouns;
         a past participle also lends its stated gender+number to adjectives. No
@@ -1822,7 +1830,12 @@ class FormResolver:
         return tuple(targets)
 
     def realize_features(self, lexeme, features):
-        """Preferred, deduped spellings across every target cell a group carries."""
+        """Preferred, deduped spellings in target priority order.
+
+        `apply` takes the first typable spelling, so preserving `target_features`
+        order is what makes a merged noun/adjective group prefer the more specific
+        adjective agreement before its number-only noun fallback.
+        """
         forms = []
         for feature in features:
             for form in self.realize_cell(lexeme, feature):
@@ -1895,7 +1908,11 @@ class FormResolver:
         return tuple(choices)
 
     def _prompt_identity(self, secret, morphology, analyses):
-        """Ask only when the dictionary distinctions change typable solve keys."""
+        """Ask only when dictionary distinctions change typable solve keys.
+
+        Returns `_PROMPT_BACK` when the curator wants to revise the preceding
+        usage-level morphology instead of declining agreement for the whole run.
+        """
         choices = self._identity_choices(analyses)
         if len(choices) == 1:
             key, feature, _equivalent = choices[0]
@@ -1908,11 +1925,18 @@ class FormResolver:
         while True:
             try:
                 raw = input(f"Sens [numéro (1–{len(choices)}), trait libre, "
+                            "? = tous les traits, r = retour, "
                             "0 = aucun accord] > ").strip()
             except EOFError:
                 return None, None, None
+            if raw == "r":
+                return _PROMPT_BACK
             if raw == "0":
                 return None, None, None
+            if raw == "?":
+                for feature in sorted(self.table.features):
+                    print(f"  {feature}")
+                continue
             if raw.isdigit():
                 idx = int(raw)
                 if 1 <= idx <= len(choices):
@@ -1938,7 +1962,8 @@ class FormResolver:
 
         A typed feature remains the «sors» table-incomplete escape and names no
         group. Unknown surfaces accept the same free text. `0` declines; `?` lists
-        the stored cell vocabulary; closed stdin never confirms."""
+        the stored cell vocabulary; `r` at the identity step returns to morphology;
+        closed stdin never confirms."""
         analyses = self.analyses_of(secret)
         if analyses:
             choices = self._morphology_choices(analyses)
@@ -1965,7 +1990,11 @@ class FormResolver:
             if not raw:
                 if len(choices) == 1:
                     morphology, pairs = choices[0]
-                    return self._prompt_identity(secret, morphology, pairs)
+                    resolved = self._prompt_identity(secret, morphology, pairs)
+                    if resolved is _PROMPT_BACK:
+                        print("  Retour au choix de morphologie.")
+                        continue
+                    return resolved
                 if not analyses:
                     return None, None, None  # nothing to confirm: no agreement
                 print(f"  Plusieurs morphologies : choisis un numéro "
@@ -1981,7 +2010,11 @@ class FormResolver:
                 idx = int(raw)
                 if 1 <= idx <= len(choices):
                     morphology, pairs = choices[idx - 1]
-                    return self._prompt_identity(secret, morphology, pairs)
+                    resolved = self._prompt_identity(secret, morphology, pairs)
+                    if resolved is _PROMPT_BACK:
+                        print("  Retour au choix de morphologie.")
+                        continue
+                    return resolved
                 print(f"  Numéro hors liste (1–{len(choices)}).")
                 continue
             if raw in self.table.features:

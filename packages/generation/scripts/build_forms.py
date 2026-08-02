@@ -799,6 +799,37 @@ EXPECTED_SURFACE_LEXEMES = (
 )
 
 
+# #146's normalization measurements are source facts, not an informational build
+# report. Pin every published number here so a parser/source/merge-rule drift stops
+# the rebuild at the same boundary as the morphology sentinels below.
+EXPECTED_MERGE_STATS = {
+    "twin_groups": 5_712,
+    "twin_entries": 11_472,
+    "contained_entries": 1_496,
+    "groups": 147_868,
+    "rows": 994_497,
+}
+
+
+def validate_merge_stats(stats, row_count):
+    """Fail loudly when a #146 source measurement moves."""
+    actual = {name: stats.get(name) for name in EXPECTED_MERGE_STATS}
+    actual["rows"] = row_count
+    problems = [
+        f"{name} : {actual[name]:,}, attendu {expected:,}"
+        if isinstance(actual[name], int) else
+        f"{name} : absent, attendu {expected:,}"
+        for name, expected in EXPECTED_MERGE_STATS.items()
+        if actual[name] != expected
+    ]
+    if problems:
+        print("Erreur : les mesures pinnées par l'audit #146 ont bougé —\n"
+              + "".join(f"         {problem}\n" for problem in problems)
+              + "         la source ou les règles ont changé : refais l'audit "
+                "avant de mettre à jour les mesures.", file=sys.stderr)
+        sys.exit(1)
+
+
 def validate_rows(rows):
     """Fail loudly when data under a #131 or #132 sentinel moved.
 
@@ -910,6 +941,7 @@ def build_rows(lang, csv_text, lexique_path):
     # realization — which is what load_forms reads. A losing spelling and every
     # merged source member stay present, only ordered after.
     rows.sort(key=lambda r: (r[0], r[3], -r[6], r[4], r[1], r[2]))
+    validate_merge_stats(stats, len(rows))
     validate_rows(rows)
     return rows, stats
 
@@ -1064,6 +1096,8 @@ def build(lang, *, refresh):
           f"entrée(s) redondante(s) retirée(s).", file=sys.stderr)
     for source, targets in stats["contained_samples"][:5]:
         print(f"          p.ex. {source} ⊂ {', '.join(targets)}", file=sys.stderr)
+    print(f"Gardes #146 : {len(EXPECTED_MERGE_STATS)} mesure(s) pinnée(s) "
+          "vérifiée(s).", file=sys.stderr)
     print(f"Lignes source inexploitables : {stats['rows_unmappable']:,} ; entrées "
           f"sans catégorie : {stats['entries_no_category']:,}", file=sys.stderr)
     print(f"Gardes #131 : {len(EXPECTED_CELLS)} cellule(s) pinnée(s) vérifiée(s).",
