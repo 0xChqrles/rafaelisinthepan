@@ -1971,8 +1971,26 @@ button * {
    i.e. the whole line, so it can travel the entire map.
    The opaque `--bg` is what makes it legible over the rows it floats above — and it costs nothing
    visually, because the station draws its OWN cross-section of the rail (`.route-rail::before`
-   paints every lane across its height), so the line still runs unbroken straight through it. */
-.route-you {
+   paints every lane across its height), so the line still runs unbroken straight through it.
+
+   It is the ONE row that states its columns outright instead of taking the subgrid, and that is a
+   WEBKIT WORKAROUND, not a design choice (2026-08-03). A sticky SUBGRID row loses the parent's
+   tracks the moment it actually parks: WebKit re-lays it out on its own and the `subgrid` degrades
+   to three `auto` tracks, which then stretch to share the row's width — measured on a real map,
+   50/75/225 became 116/66/168, sliding the rank, the node and the word ~57px to the right. It is a
+   ONE-WAY trip: nothing invalidates that layout again, so the row stays broken for the rest of the
+   modal's life, off the line even after it unparks. Reproduced in Playwright WebKit at every
+   viewport — which is every browser on iOS, Chrome included, plus Safari on the desktop — and never
+   in Chromium. Naming the tracks here is enough; `will-change`, `contain`, `transform` and
+   `isolation` all leave it broken.
+   This is NOT a second source of truth for the gutter: `--gutter` is `--rank-size` times the widest
+   exponent the line renders, and the pixel font advances exactly 1em per glyph, so it IS the
+   measured `max-content` track — verified equal to the byte in both engines, at 340/390/900 wide
+   and with the font request aborted. Every other row keeps the real subgrid, so the rail cannot
+   zigzag either way. The selector is doubled so this cannot be lost to source order against
+   `.route-station`, whose `subgrid` it exists to override. */
+.route-station.route-you {
+  grid-template-columns: var(--gutter) var(--railw) 1fr;
   position: sticky;
   top: var(--stick-inset, 8px);
   bottom: var(--stick-inset, 8px);
