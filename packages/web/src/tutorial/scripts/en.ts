@@ -22,7 +22,8 @@
 // the board, inside generation's own 50-150 start band), then three gated guesses teach
 // distance (forest, 214: farther, hint stays), MISS (violin, which the real map does not rank
 // at all), and improvement (boat, 45: closer, hint moves). The player then finds their way
-// back to OCEAN with free typing, and taps the word they found to meet the route map.
+// back to OCEAN with free typing, and taps the word they found — its route line takes its
+// place, and PLAY ends the lesson.
 //
 // scripts.test.ts replays this file and fails if an edit breaks the lesson arc.
 import type { WordPuzzle } from '@whippin/shared';
@@ -66,8 +67,8 @@ const script: TutorialScript = {
     { kind: 'guess', expect: 'violin', copyKey: 'tutGuessMiss' },
     { kind: 'guess', expect: 'boat', copyKey: 'tutGuessCloser' },
     { kind: 'find', target: word.slug, copyKey: 'tutFind', nudgeKey: 'tutFindNudge' },
-    // The ending: tap the word you found, read the roads, close — that is the tutorial.
-    { kind: 'tap', copyKey: 'tutTap', routeCopyKey: 'tutRoutes' },
+    // The ending: tap the word you found — the routes take its place — then PLAY.
+    { kind: 'tap', tapCopyKey: 'tutTap', clickCopyKey: 'tutClick', routeCopyKey: 'tutRoutes' },
   ],
 };
 

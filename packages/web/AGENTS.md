@@ -727,20 +727,26 @@ it to the local store — see `packages/backend/AGENTS.md`).
   REAL vocabulary (`useVocab` loads in the tutorial), nudged with the answer after 3
   straight MISSes.
   **It ENDS on the found word, teaching ROUTES (#155, decided 2026-08-03, superseding the
-  stage-2 bakery sentence):** analytics and feedback said the unguided second stage was widely
-  skipped and the game is intuitive enough without it — its one lesson (a guess filling several
-  holes) is discoverable in play — so cutting it freed the ending for the one concept nothing
-  else teaches. Finding the word retires the prompt and DROPS the keyboard out of the tray
-  (the game's own `kb-drop`), the coach nudges the tap, the word runs #129's ambient wave, and
-  the tap opens the REAL route map on the tutorial's own neighborhood — solved, so it opens as
-  the post-mortem with every road named. **CLOSING that map is the graduation**: `onDone`, no
-  SolvedScreen (a lesson has no score to show, so `SolvedScreen`'s tutorial `action` prop and
-  its null `dayNumber` are gone with it). The map carries the last line of copy in a
-  `RouteModal` **`coach` slot** — a flex item under the scroller, mirroring the header above
-  it, so the scroller simply gets shorter and every measurement it makes on open stays correct
-  (an overlay would need the line to reserve room, and `.route-scroll` may carry no vertical
-  padding). The daily game passes no `coach` and its dialog is exactly as it was.
-  **The board's ranks are a REAL generated neighborhood, and have to be:** the route map only
+  stage-2 bakery sentence; ending refined the same day on findings):** analytics and feedback
+  said the unguided second stage was widely skipped and the game is intuitive enough without
+  it — its one lesson (a guess filling several holes) is discoverable in play — so cutting it
+  freed the ending for the one concept nothing else teaches. Finding the word retires the
+  prompt and DROPS the keyboard out of the tray (the game's own `kb-drop`), the coach nudges
+  the tap **in the input device's own verb** — "tap" on a coarse pointer, "click" otherwise,
+  the same `(pointer: coarse)` test as the streak hint (`tutTap`/`tutClick`) — and the word
+  runs #129's ambient wave. **The tap REPLACES the word with its route line, INLINE — no
+  modal** (decided on findings 2026-08-03, superseding the RouteModal ending built first):
+  `RouteLine`, the drawing extracted from `RouteModal` (frame variables + decorative drawing +
+  sr mirror, on a `.route-frame` wrapper that now owns the drawing's CSS variables), renders
+  in the play area inside its OWN scroller (`.route-inline` — the page must not scroll, since
+  the topbar and coach float with no background; `.route-frame` is positioned so the absolute
+  sr-only list cannot escape the scroller and grow the page). It opens scrolled to the bottom
+  — the word, solved, every road named — the coach box explains the roads (`tutRoutes`), and
+  the tray offers **PLAY (`tutPlay`), which is the graduation**: `onDone`, no SolvedScreen (a
+  lesson has no score to show, so `SolvedScreen`'s tutorial `action` prop and its null
+  `dayNumber` are gone with it). The daily game's `RouteModal` wraps the same `RouteLine` and
+  behaves exactly as before.
+  **The board's ranks are a REAL generated neighborhood, and have to be:** the route line only
   opens where #115's geometry exists (`hasRoute` gates on the rank-1 group's `dq`), and the
   hand-authored ~22-entry map this replaced carried none. Each language embeds a #154
   single-word artifact (`pnpm gen:word`) PRUNED to the word + the road zone + the guided
@@ -748,6 +754,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   header, and `scripts.test.ts` fails if board and map ever drift. **en = OCEAN, fr = PHARE**,
   both chosen on ROUTE legibility (three well-populated senses each); LIGHTHOUSE was the first
   fr-symmetric en candidate and lost on a 135/15 split, because clarity beats en/fr symmetry.
+  **The guided words obey two findings-decided rules (2026-08-03):** the far guess stays on a
+  READABLE scale — same order of magnitude as the start word, ≤ 500, guarded by
+  `scripts.test.ts` (fr `désert^1183` read as noise; it is `casquette^330` now) — and a mix
+  stop's word should be an INTUITIVE neighbor (fr's second stop is `lampadaire^25`, not the
+  figurative `pilier^10`). Coach copy must fit the 3-line box at 320px — the routes and
+  closer-guess strings were cut to size for it.
   Copy is deliberately terse throughout, no under-the-hood talk. The tutorial is
   **data-driven**:
   the board, guesses and steps live in `web/src/tutorial/scripts/{en,fr}.ts`
@@ -934,7 +946,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `Game.tsx` (NOT rehydration; `archive` is `'yes'`
   when replaying a past archive day (#55), `'no'` for the live daily puzzle);
   `share {method:'native'|'clipboard'}` — `SolvedScreen`
-  success paths; `tutorial {action:'start'|'finish'|'skip'}` — invite accept / the route map
-  closing on the last step (#155; it was the PLAY button before) / skip (fast-forward or
-  invite SKIP). Plus automatic pageviews.
+  success paths; `tutorial {action:'start'|'finish'|'skip'}` — invite accept / the ending's
+  PLAY under the route line (#155) / skip (fast-forward or invite SKIP). Plus automatic
+  pageviews.
 

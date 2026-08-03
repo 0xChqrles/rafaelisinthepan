@@ -11,8 +11,8 @@
 //       (shows a distance, changes nothing), the "miss" word is absent from the map (MISS,
 //       not INVALID), the "closer" word ranks CLOSER (the word moves), and the find target
 //       is the secret itself (rank 0);
-//     - it ENDS on the tap: the last step opens the route map, which is the one concept
-//       nothing else in the game teaches.
+//     - it ENDS on the tap: the last step swaps the word for its route line, which is the one
+//       concept nothing else in the game teaches.
 //
 //   The board is a REAL map, which the ending depends on absolutely:
 //     - `hasRoute` must say yes — the map only opens where #115's geometry is (the
@@ -116,6 +116,10 @@ for (const lang of ['en', 'fr'] as const) {
         expect(guesses).toHaveLength(3);
         const [far, miss, closer] = guesses;
         expect(map[far.expect].rank).toBeGreaterThan(hole.start_rank); // shows a distance, no move
+        // …and on a READABLE scale (findings 2026-08-03): the lesson is "farther than your
+        // start", the same order of magnitude — désert^1183 read as noise where ^330 reads
+        // as a distance.
+        expect(map[far.expect].rank).toBeLessThanOrEqual(500);
         expect(map[miss.expect]).toBeUndefined(); // MISS, not INVALID
         expect(map[closer.expect].rank).toBeLessThan(hole.start_rank); // the word moves
         const find = script.steps.at(-2)!;

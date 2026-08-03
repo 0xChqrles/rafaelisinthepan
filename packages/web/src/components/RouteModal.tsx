@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { DQ_MAX, type RouteModel } from '../game/route';
 import { rankHeatColor, HIT_HEAT_CAP } from './Hole';
@@ -37,6 +37,10 @@ import useModalDismiss from '../hooks/useModalDismiss';
 // (`route-zoom-out`). That is the transition into and out of the map, not part of the drawing.
 // The whole drawing is derived from the model (game/route.ts), so a guess landing while it is
 // open just adds a station.
+//
+// The drawing itself is `RouteLine` (#155): the onboarding tutorial renders the same line
+// INLINE, in place of the word it just taught — no dialog, no header, page scroll — so the
+// modal is only the daily game's chrome around it.
 
 // A connector carries the distance between the two stations it joins: `LINK_SPAN` px per full
 // dq scale, floored so two neighbours never collide and capped so the cold tail cannot push the
@@ -200,42 +204,24 @@ function Junction({ height, converge }: { height: number; converge?: boolean }) 
   );
 }
 
-export default function RouteModal({
+// --- the line ---------------------------------------------------------------------------
+// The LINE itself: the per-map drawing variables, the decorative drawing and its sr-only
+// mirror. Extracted from the modal (#155) so the onboarding tutorial can render the same
+// journey INLINE, replacing the word it just taught — no dialog around it, the page's own
+// scroll. The modal passes its sticky "you are here" plumbing (`hereRef`, `stuck`); the
+// tutorial's hole is always solved, so no row is "you" and both stay inert there.
+export function RouteLine({
   model,
   lang,
-  origin,
-  onClose,
-  coach,
+  hereRef,
+  stuck = null,
 }: {
   model: RouteModel;
   lang: string;
-  // The point the map grows out of — the tapped word's centre in viewport coordinates, which
-  // are the dialog's own (fixed, inset 0). Null falls back to the centre of the screen.
-  origin?: { x: number; y: number } | null;
-  onClose: () => void;
-  // The onboarding tutorial's last line of copy (#155), written across the bottom of the map:
-  // the roads are the one thing the drawing itself cannot name. In FLOW under the scroller,
-  // the same way the header sits in flow above it — an overlay would need the line to reserve
-  // room for it, and `.route-scroll` may carry no vertical padding (a sticky offset resolves
-  // against the scrollport's padding box). In flow, the scroller simply gets shorter and every
-  // measurement below — the sticky row's park, the opening scroll — stays correct for free.
-  // The daily game passes nothing and the dialog is exactly as it was.
-  coach?: ReactNode;
+  // The modal's handle on the "you are here" row — the one row it measures and parks.
+  hereRef?: RefObject<HTMLDivElement | null>;
+  stuck?: 'top' | 'bottom' | null;
 }) {
-  // FIRST hook of the component on purpose: it owns the `showModal()` layout effect, and a
-  // closed `<dialog>` is `display: none` — everything measured below would read a tree with no
-  // boxes (see the measuring effects). It also takes opening focus to the dialog rather than to
-  // the header's close chip, and turns every dismissal into the retraction beat.
-  const { dialogRef, closing, beginClose, dialogProps } = useModalDismiss('route-zoom-out');
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const hereRef = useRef<HTMLDivElement>(null);
-  // Where the "you are here" row sits in the LINE, as opposed to where it is parked. Measured
-  // rather than derived because only the DOM knows how tall every row above it came out.
-  const naturalRef = useRef<{ top: number; height: number } | null>(null);
-  // Which edge it is currently parked against, if any — the row is the one thing on the map that
-  // can be somewhere it does not belong, and that has to be visible (see `.route-you.stuck-*`).
-  const [stuck, setStuck] = useState<'top' | 'bottom' | null>(null);
-  const title = routeTitle(lang, model.number);
   const stations = stationsOf(model);
 
   // A single road is generation's honest fallback for a neighborhood with no fork (#115): one
@@ -283,10 +269,195 @@ export default function RouteModal({
     // the heights count it, so both read it from here.
     '--dash': `${DASH}px`,
     '--dash-period': `${DASH_PERIOD}px`,
-    // Where the opening zoom starts. Omitted when the word could not be located, so the CSS
-    // fallback (dead centre) takes over rather than an origin of 0,0 throwing it to a corner.
-    ...(origin ? { '--zoom-x': `${origin.x}px`, '--zoom-y': `${origin.y}px` } : null),
   } as CSSProperties;
+  return (
+    <div className="route-frame" style={frame}>
+      {/* The drawing is decorative; the sr-only list below carries the same content. */}
+      <div className="route" aria-hidden="true">
+        {/* Before the line even starts: the guesses that earned no rank at all. Beyond the
+            top-K there is no distance left to draw, and that IS the mechanic. */}
+        {model.misses.length > 0 && (
+          <div className="route-shelf">
+            <p className="route-shelf-head">{t(lang, 'routeOffMap')}</p>
+            <p className="route-misses">
+              {model.misses.map((word) => (
+                <span key={word} className="route-miss">
+                  {word}
+                </span>
+              ))}
+            </p>
+            <span className="route-break" />
+          </div>
+        )}
+        {/* The line always comes in out of that void, whether or not this round hit it. */}
+        <div className="route-link tail" style={{ height: TAIL_H }} />
+
+        {stations.map((station, i) => {
+          const previous = stations[i - 1];
+          // Consecutive ranks are ONE row apart, whatever their dq. With every near-field group
+          // drawn the rank ladder itself already says they are adjacent, so a proportional
+          // connector in there buys nothing and costs one glaring outlier: dq pins rank 1 at the
+          // top of its scale, so 1 and 2 are always further apart than any other neighbours. The
+          // length stays proportional wherever the line SKIPS ranks — the trunk, where it is the
+          // only thing carrying the distance at all.
+          const gap = !previous
+            ? 0
+            : previous.rank - station.rank === 1
+              ? LINK_MIN
+              : linkHeight(previous.dq, station.dq);
+          // A censored station shows `???` while the round is live, and its real word once the
+          // hole is solved — the map is then the post-mortem of the whole neighborhood.
+          const label = station.hidden ? station.word ?? UNKNOWN : station.word;
+          const revealed = station.hidden && station.word !== null;
+          const onLane = forked && station.road !== null;
+          return (
+            <Fragment key={station.rank}>
+              {forked && i === forkAt ? (
+                // The fork keeps its OWN fixed height and the distance rides in front of it as
+                // an ordinary trunk link. Folding the two together made the junction as tall as
+                // whatever gap preceded it, which left the first lane station sitting far below
+                // the bus while the merge at the other end hugged its last one — the two ends of
+                // the fork have to mirror each other.
+                <>
+                  {previous && <div className="route-link" style={{ height: gap }} />}
+                  <Junction height={JUNCTION_H} />
+                </>
+              ) : (
+                previous && (
+                  <div
+                    className={`route-link${onLane ? ' lanes' : ''}`}
+                    style={{ height: gap }}
+                  />
+                )
+              )}
+              <div
+                ref={!station.hidden && station.best ? hereRef : undefined}
+                className={[
+                  'route-station',
+                  onLane ? 'on-lane' : '',
+                  station.hidden ? 'route-unknown' : '',
+                  revealed ? 'route-revealed' : '',
+                  !station.hidden && station.best ? 'route-you' : '',
+                  !station.hidden && station.best && stuck ? `stuck-${stuck}` : '',
+                  !station.hidden && station.start ? 'route-departure' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+                style={
+                  {
+                    '--node-x': `${onLane ? laneX(station.road!) : trunkX}px`,
+                    // Its own line's color, so an UNFOUND station can be drawn in it: a dark
+                    // node on a vivid lane reads as a gap in the line — as though the line
+                    // were broken — where the lane's own color reads as a stop with no name
+                    // on it yet, which is what it is. Found stations ignore this.
+                    '--lane-c': onLane ? LANE_COLORS[station.road! % LANE_COLORS.length] : 'var(--rail)',
+                  } as CSSProperties
+                }
+              >
+                <span
+                  className="route-rank"
+                  style={
+                    { '--rank-color': rankHeatColor(station.rank, HIT_HEAT_CAP) } as CSSProperties
+                  }
+                >
+                  -{station.rank}
+                </span>
+                <span className={`route-rail${onLane ? ' lanes' : ''}`}>
+                  <i className="route-node" />
+                </span>
+                <span className="route-body">
+                  <span
+                    className="route-word"
+                    style={{
+                      fontSize: fitWord(
+                        label,
+                        !station.hidden && station.best ? HERE_PX : STATION_PX,
+                      ),
+                    }}
+                  >
+                    {label}
+                  </span>
+                </span>
+              </div>
+            </Fragment>
+          );
+        })}
+
+        {forked && <Junction height={JUNCTION_H} converge />}
+        <div className="route-link leap" style={{ height: LEAP_H }} />
+
+        {/* The end of the line. Censored while the hole is open, the accented secret in the
+            solved-word blue once found — the same line then reads as the post-mortem. */}
+        <div
+          className={`route-station route-arrival${model.solved ? ' route-found' : ''}`}
+          style={{ '--node-x': `${trunkX}px` } as CSSProperties}
+        >
+          <span className="route-rank" />
+          <span className="route-rail">
+            <i className="route-node" />
+          </span>
+          <span className="route-body">
+            <span
+              className="route-word"
+              style={{ fontSize: fitWord(model.secret ?? UNKNOWN, ARRIVAL_PX) }}
+            >
+              {model.secret ?? UNKNOWN}
+            </span>
+          </span>
+        </div>
+      </div>
+      {/* The line in words. Closest FIRST here: a list has no "scrolled to the end", so it leads
+          with what the drawing opens on. Only stations with a WORD are announced — the player's
+          own stops always, plus the whole revealed neighborhood once solved. A still-censored
+          station is a position and a lane, nothing a reader can act on, so while the round is live
+          those ~100 are left to srRouteRoads' count rather than read out one at a time. */}
+      <ol className="sr-only">
+        <li>{srRouteDestination(lang, model.secret)}</li>
+        <li>{srRouteRoads(lang, nearPerRoad, nearFound)}</li>
+        {spoken.map((station) => (
+          <li key={station.rank}>
+            {srRouteStop(lang, {
+              rank: station.rank,
+              word: station.word,
+              road: forked && station.road !== null ? model.roads[station.road].label : null,
+              start: station.hidden ? false : station.start,
+              best: station.hidden ? false : station.best,
+            })}
+          </li>
+        ))}
+        {model.misses.length > 0 && <li>{srRouteOffMap(lang, model.misses)}</li>}
+      </ol>
+    </div>
+  );
+}
+
+export default function RouteModal({
+  model,
+  lang,
+  origin,
+  onClose,
+}: {
+  model: RouteModel;
+  lang: string;
+  // The point the map grows out of — the tapped word's centre in viewport coordinates, which
+  // are the dialog's own (fixed, inset 0). Null falls back to the centre of the screen.
+  origin?: { x: number; y: number } | null;
+  onClose: () => void;
+}) {
+  // FIRST hook of the component on purpose: it owns the `showModal()` layout effect, and a
+  // closed `<dialog>` is `display: none` — everything measured below would read a tree with no
+  // boxes (see the measuring effects). It also takes opening focus to the dialog rather than to
+  // the header's close chip, and turns every dismissal into the retraction beat.
+  const { dialogRef, closing, beginClose, dialogProps } = useModalDismiss('route-zoom-out');
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const hereRef = useRef<HTMLDivElement>(null);
+  // Where the "you are here" row sits in the LINE, as opposed to where it is parked. Measured
+  // rather than derived because only the DOM knows how tall every row above it came out.
+  const naturalRef = useRef<{ top: number; height: number } | null>(null);
+  // Which edge it is currently parked against, if any — the row is the one thing on the map that
+  // can be somewhere it does not belong, and that has to be visible (see `.route-you.stuck-*`).
+  const [stuck, setStuck] = useState<'top' | 'bottom' | null>(null);
+  const title = routeTitle(lang, model.number);
 
   // Where is the row parked, if it is parked at all? Pure arithmetic against the scroll offset —
   // asking the DOM would be circular, since a sticky box reports the parked position either way.
@@ -373,7 +544,13 @@ export default function RouteModal({
     <dialog
       {...dialogProps}
       className={`route-dialog${closing ? ' closing' : ''}`}
-      style={frame}
+      // Where the opening zoom starts. Omitted when the word could not be located, so the CSS
+      // fallback (dead centre) takes over rather than an origin of 0,0 throwing it to a corner.
+      style={
+        origin
+          ? ({ '--zoom-x': `${origin.x}px`, '--zoom-y': `${origin.y}px` } as CSSProperties)
+          : undefined
+      }
       aria-label={title}
       onClose={onClose}
     >
@@ -382,167 +559,9 @@ export default function RouteModal({
       <ModalHeader lang={lang} title={title} onClose={beginClose} />
 
       <div className="route-scroll" ref={scrollRef}>
-        {/* The drawing is decorative; the sr-only list below carries the same content. */}
-        <div className="route" aria-hidden="true">
-          {/* Before the line even starts: the guesses that earned no rank at all. Beyond the
-              top-K there is no distance left to draw, and that IS the mechanic. */}
-          {model.misses.length > 0 && (
-            <div className="route-shelf">
-              <p className="route-shelf-head">{t(lang, 'routeOffMap')}</p>
-              <p className="route-misses">
-                {model.misses.map((word) => (
-                  <span key={word} className="route-miss">
-                    {word}
-                  </span>
-                ))}
-              </p>
-              <span className="route-break" />
-            </div>
-          )}
-          {/* The line always comes in out of that void, whether or not this round hit it. */}
-          <div className="route-link tail" style={{ height: TAIL_H }} />
-
-          {stations.map((station, i) => {
-            const previous = stations[i - 1];
-            // Consecutive ranks are ONE row apart, whatever their dq. With every near-field group
-            // drawn the rank ladder itself already says they are adjacent, so a proportional
-            // connector in there buys nothing and costs one glaring outlier: dq pins rank 1 at the
-            // top of its scale, so 1 and 2 are always further apart than any other neighbours. The
-            // length stays proportional wherever the line SKIPS ranks — the trunk, where it is the
-            // only thing carrying the distance at all.
-            const gap = !previous
-              ? 0
-              : previous.rank - station.rank === 1
-                ? LINK_MIN
-                : linkHeight(previous.dq, station.dq);
-            // A censored station shows `???` while the round is live, and its real word once the
-            // hole is solved — the map is then the post-mortem of the whole neighborhood.
-            const label = station.hidden ? station.word ?? UNKNOWN : station.word;
-            const revealed = station.hidden && station.word !== null;
-            const onLane = forked && station.road !== null;
-            return (
-              <Fragment key={station.rank}>
-                {forked && i === forkAt ? (
-                  // The fork keeps its OWN fixed height and the distance rides in front of it as
-                  // an ordinary trunk link. Folding the two together made the junction as tall as
-                  // whatever gap preceded it, which left the first lane station sitting far below
-                  // the bus while the merge at the other end hugged its last one — the two ends of
-                  // the fork have to mirror each other.
-                  <>
-                    {previous && <div className="route-link" style={{ height: gap }} />}
-                    <Junction height={JUNCTION_H} />
-                  </>
-                ) : (
-                  previous && (
-                    <div
-                      className={`route-link${onLane ? ' lanes' : ''}`}
-                      style={{ height: gap }}
-                    />
-                  )
-                )}
-                <div
-                  ref={!station.hidden && station.best ? hereRef : undefined}
-                  className={[
-                    'route-station',
-                    onLane ? 'on-lane' : '',
-                    station.hidden ? 'route-unknown' : '',
-                    revealed ? 'route-revealed' : '',
-                    !station.hidden && station.best ? 'route-you' : '',
-                    !station.hidden && station.best && stuck ? `stuck-${stuck}` : '',
-                    !station.hidden && station.start ? 'route-departure' : '',
-                  ]
-                    .filter(Boolean)
-                    .join(' ')}
-                  style={
-                    {
-                      '--node-x': `${onLane ? laneX(station.road!) : trunkX}px`,
-                      // Its own line's color, so an UNFOUND station can be drawn in it: a dark
-                      // node on a vivid lane reads as a gap in the line — as though the line
-                      // were broken — where the lane's own color reads as a stop with no name
-                      // on it yet, which is what it is. Found stations ignore this.
-                      '--lane-c': onLane ? LANE_COLORS[station.road! % LANE_COLORS.length] : 'var(--rail)',
-                    } as CSSProperties
-                  }
-                >
-                  <span
-                    className="route-rank"
-                    style={
-                      { '--rank-color': rankHeatColor(station.rank, HIT_HEAT_CAP) } as CSSProperties
-                    }
-                  >
-                    -{station.rank}
-                  </span>
-                  <span className={`route-rail${onLane ? ' lanes' : ''}`}>
-                    <i className="route-node" />
-                  </span>
-                  <span className="route-body">
-                    <span
-                      className="route-word"
-                      style={{
-                        fontSize: fitWord(
-                          label,
-                          !station.hidden && station.best ? HERE_PX : STATION_PX,
-                        ),
-                      }}
-                    >
-                      {label}
-                    </span>
-                  </span>
-                </div>
-              </Fragment>
-            );
-          })}
-
-          {forked && <Junction height={JUNCTION_H} converge />}
-          <div className="route-link leap" style={{ height: LEAP_H }} />
-
-          {/* The end of the line. Censored while the hole is open, the accented secret in the
-              solved-word blue once found — the same line then reads as the post-mortem. */}
-          <div
-            className={`route-station route-arrival${model.solved ? ' route-found' : ''}`}
-            style={{ '--node-x': `${trunkX}px` } as CSSProperties}
-          >
-            <span className="route-rank" />
-            <span className="route-rail">
-              <i className="route-node" />
-            </span>
-            <span className="route-body">
-              <span
-                className="route-word"
-                style={{ fontSize: fitWord(model.secret ?? UNKNOWN, ARRIVAL_PX) }}
-              >
-                {model.secret ?? UNKNOWN}
-              </span>
-            </span>
-          </div>
-        </div>
+        <RouteLine model={model} lang={lang} hereRef={hereRef} stuck={stuck} />
       </div>
 
-      {/* The line in words. Closest FIRST here: a list has no "scrolled to the end", so it leads
-          with what the drawing opens on. Only stations with a WORD are announced — the player's
-          own stops always, plus the whole revealed neighborhood once solved. A still-censored
-          station is a position and a lane, nothing a reader can act on, so while the round is live
-          those ~100 are left to srRouteRoads' count rather than read out one at a time. */}
-      <ol className="sr-only">
-        <li>{srRouteDestination(lang, model.secret)}</li>
-        <li>{srRouteRoads(lang, nearPerRoad, nearFound)}</li>
-        {spoken.map((station) => (
-          <li key={station.rank}>
-            {srRouteStop(lang, {
-              rank: station.rank,
-              word: station.word,
-              road: forked && station.road !== null ? model.roads[station.road].label : null,
-              start: station.hidden ? false : station.start,
-              best: station.hidden ? false : station.best,
-            })}
-          </li>
-        ))}
-        {model.misses.length > 0 && <li>{srRouteOffMap(lang, model.misses)}</li>}
-      </ol>
-
-      {/* The tutorial's coach box (#155), in flow at the foot of the map. Absent everywhere
-          else, so the daily game's dialog is header + scroller exactly as before. */}
-      {coach && <div className="route-coach">{coach}</div>}
     </dialog>,
     document.body,
   );

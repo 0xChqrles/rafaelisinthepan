@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Phrase from '../components/Phrase';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import LoadError from '../components/LoadError';
-import RouteModal from '../components/RouteModal';
+import { RouteLine } from '../components/RouteModal';
 import TopBar from '../components/TopBar';
 import { HIT_FADE_MS } from '../components/FloatingHit';
 import { RANK_MAX_MS, rankTransitionDuration } from '../components/Hole';
@@ -33,13 +33,13 @@ import { scriptFor } from './scripts';
 //   each rolling straight into the next prompt. Then the player types back to the secret with
 //   the real vocabulary (free exploration; a nudge reveals the word after 3 straight MISSes).
 //   Finding it ENDS the lesson on the one concept nothing else teaches: the word they found
-//   is tappable, and the tap opens its real route map with a last line of copy over it.
-//   Closing that map is the graduation — there is no score to show, so there is no screen
-//   for it.
+//   is tappable, and the tap REPLACES it with its real route line, drawn inline — no modal,
+//   the map takes the word's place — while the coach explains the roads and the tray offers
+//   PLAY, which is the graduation. There is no score to show, so there is no screen for it.
 //
 // Everything that reacts is the real components with the real timing constants; the scripts
 // are data (./scripts/<lang>.ts) over a REAL generated neighborhood (a pruned #154 artifact),
-// which is also what makes the route map openable at all. Deliberately NOT Round: Round is
+// which is also what makes the route line drawable at all. Deliberately NOT Round: Round is
 // fused to the persisted store, and a tutorial round must never touch `rounds` (only the
 // `onboarded` flag changes, set by the caller via onDone).
 
@@ -91,7 +91,7 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
   // The scripted round's local state — the ephemeral twin of Round's persisted state.
   const [holes, setHoles] = useState<RuntimeHole[]>(() => freshHole(hole));
   const [hits, setHits] = useState<HitState[]>([]);
-  // The player's own guesses, in order — the journey the route map draws at the end. Deduped
+  // The player's own guesses, in order — the journey the route line draws at the end. Deduped
   // by folded slug, which is all the tutorial needs (it keeps no score, so the game's
   // canonical-identity dedupe has nothing to protect here).
   const [tried, setTried] = useState<string[]>([]);
@@ -131,8 +131,8 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
     setAnnounce(text + (announceFlip.current ? '' : '​'));
   }, []);
 
-  // Advance to the next step. The LAST step is the tap, which no guess can leave: only the
-  // route map closing ends the tutorial.
+  // Advance to the next step. The LAST step is the tap, which no guess can leave: only its
+  // PLAY ends the tutorial.
   const advance = useCallback(() => {
     setPhase('idle');
     setStepIndex((i) => Math.min(i + 1, script.steps.length - 1));
@@ -298,25 +298,15 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
     }, SCRAMBLE_MS + MIX_SETTLE_MS);
   }, [step, mixBusy, mixStop, ladder, later, advance]);
 
-  // --- the ending (#155): the found word opens its own route map ---
+  // --- the ending (#155): the found word gives way to its own route line ---
   // The button wraps the hole for the WHOLE tutorial (unwrapping it mid-round would remount
   // the word while its scramble is running, exactly as in the game); only the tap STEP enables
   // it. `quiet` lets the hole run its ambient wave then — the affordance for the tap the copy
-  // is asking for — and stands down while the map is over the sentence.
-  const [routeOrigin, setRouteOrigin] = useState<{ x: number; y: number } | null>(null);
+  // is asking for. The tap swaps the play area from the word to the line, INLINE (no modal —
+  // the routes simply take the word's place; findings 2026-08-03, superseding the RouteModal
+  // ending first built for #155), the coach explains the roads, and PLAY is the way out.
   const [routeOpen, setRouteOpen] = useState(false);
-  const openRoute = useCallback(() => {
-    // Where the map grows from: the word's centre on screen, in viewport coordinates (the
-    // dialog is fixed and fills the viewport, so they ARE its own box's).
-    const word = document
-      .querySelector<HTMLElement>('[data-hole-explore="0"]')
-      ?.querySelector('.hole-word-wrap');
-    const box = word?.getBoundingClientRect();
-    setRouteOrigin(box ? { x: box.left + box.width / 2, y: box.top + box.height / 2 } : null);
-    setRouteOpen(true);
-  }, []);
-  // Closing the map IS the graduation (the dialog's retraction has already played by the time
-  // this fires — see useModalDismiss).
+  const openRoute = useCallback(() => setRouteOpen(true), []);
   const finish = useCallback(() => {
     track('tutorial', { action: 'finish' });
     onDone();
@@ -335,6 +325,16 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
         : null,
     [routeOpen, rankMap, tried, holes, hole],
   );
+  // The line lives in its OWN scroller filling the play area (`.route-inline`), never the
+  // page: the topbar and the coach float with no background, so page-scrolled words would
+  // ride straight under them. It opens scrolled to the bottom — the word itself, with the
+  // roads merging into it and PLAY right below in the tray — and the player scrolls UP
+  // through the journey. Instant, like the route modal's own opening scroll.
+  const routeScrollRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = routeScrollRef.current;
+    if (routeOpen && el) el.scrollTop = el.scrollHeight;
+  }, [routeOpen]);
 
   // The keyboard leaves the way it does in a solved round: it drops out of the tray once
   // there is nothing left to type. No deadline behind the `animationend` (unlike Game's):
@@ -343,23 +343,34 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
   const tapping = step.kind === 'tap';
   const [kbGone, setKbGone] = useState(false);
 
+  // The nudge speaks the input device's own verb — "tap" only where the pointer actually
+  // taps, "click" everywhere else (the same coarse-pointer test the streak celebration's
+  // TAP/CLICK ANYWHERE hint uses; findings 2026-08-03).
+  const coarse = useMemo(
+    () =>
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(pointer: coarse)').matches,
+    [],
+  );
+
   // The explanation currently in the top box. Mix stop copy overrides the step's standing
-  // copy; while the map is open the explanation moves ONTO it (the box behind is covered).
+  // copy; once the line replaces the word, the routes explanation takes the box.
   let coachKey: UiKey | null = null;
   if (step.kind === 'mix') coachKey = mixCopy ?? step.copyKey;
-  else if (step.kind === 'guess' || step.kind === 'tap') coachKey = step.copyKey;
+  else if (step.kind === 'guess') coachKey = step.copyKey;
   else if (step.kind === 'find') {
     coachKey = missStreak >= NUDGE_AFTER_MISSES ? step.nudgeKey : step.copyKey;
+  } else if (step.kind === 'tap') {
+    coachKey = routeOpen ? step.routeCopyKey : coarse ? step.tapCopyKey : step.clickCopyKey;
   }
-  const routeCopy = step.kind === 'tap' && routeOpen ? t(lang, step.routeCopyKey) : null;
-  const coachCopy = routeOpen ? null : coachKey ? t(lang, coachKey) : null;
+  const coachCopy = coachKey ? t(lang, coachKey) : null;
 
   // Announce each new explanation once, in plain text (the visible typewriter is
   // aria-hidden — a live region would read every keystroke).
   useEffect(() => {
-    const copy = coachCopy ?? routeCopy;
-    if (copy) say(richToPlain(copy));
-  }, [coachCopy, routeCopy, say]);
+    if (coachCopy) say(richToPlain(coachCopy));
+  }, [coachCopy, say]);
 
   const mixLabel = step.kind === 'mix' ? step.stops[Math.min(mixStop, step.stops.length - 1)] : null;
   const exploreLabels = useMemo(() => [ariaExploreHole(lang, 1)], [lang]);
@@ -427,6 +438,12 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
               <p className="hint"> </p>
             </div>
           </>
+        ) : routeOpen && routeModel ? (
+          // The word gave way to its own route line: the same drawing the daily game's modal
+          // wraps, in a scroller of its own — solved, so every road is named.
+          <div className="route-inline" ref={routeScrollRef}>
+            <RouteLine model={routeModel} lang={lang} />
+          </div>
         ) : (
           <>
             <Phrase
@@ -452,7 +469,7 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
                 onSubmit={submit}
                 onReplace={replaceInput}
                 invalidSignal={invalidAt}
-                // The route map covers the prompt, and the tap step has nothing to submit.
+                // The tap step has nothing left to submit.
                 active={!tapping}
               />
               <p className="hint">{feedback || ' '}</p>
@@ -474,6 +491,12 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
           <LoadError message={t(lang, 'failedVocab')} lang={lang} onRetry={retryVocab} />
         ) : !vocab ? (
           <p className="status">{t(lang, 'loading')}</p>
+        ) : routeOpen ? (
+          // The graduation: the line ends on the word, and PLAY sits right under it. The same
+          // full-width interaction the mix button opened the lesson with closes it.
+          <button type="button" className="mix-btn" onClick={finish}>
+            {t(lang, 'tutPlay')}
+          </button>
         ) : kbGone ? null : (
           <div
             className={`kb-exit${tapping ? ' leaving' : ''}`}
@@ -495,18 +518,6 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
           </div>
         )}
       </div>
-
-      {/* The lesson's last beat: the real route map (#117) over the tutorial's own
-          neighborhood, with the one thing the drawing cannot say written across it. */}
-      {routeModel && routeCopy && (
-        <RouteModal
-          model={routeModel}
-          lang={lang}
-          origin={routeOrigin}
-          onClose={finish}
-          coach={<CoachText key={routeCopy} copy={routeCopy} />}
-        />
-      )}
     </div>
   );
 }

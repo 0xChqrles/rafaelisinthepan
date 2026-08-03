@@ -119,11 +119,11 @@ const STRINGS = {
   },
   tutMixed10: {
     en: '[[w:islands^10]] is the 10th closest word to [[b:ocean]].',
-    fr: '[[w:pilier^10]] est le 10e mot le plus proche de [[b:phare]].',
+    fr: '[[w:lampadaire^25]] est le 25e mot le plus proche de [[b:phare]].',
   },
   tutGuessFar: {
     en: 'Now type [[w:forest^214]].',
-    fr: "Maintenant tape [[w:désert^1183]] (sans l'accent)",
+    fr: 'Maintenant tape [[w:casquette^330]].',
   },
   tutGuessMiss: {
     en: 'Type a completely different word: [[m:violin]].',
@@ -131,7 +131,7 @@ const STRINGS = {
   },
   tutGuessCloser: {
     en: '[[m:violin]] was a [[m:MISS]] — too far to rank. Now try [[w:boat^45]].',
-    fr: '[[m:guitare]] était un [[m:MISS]] — trop loin pour être classé. Essaie [[w:voilier^51]].',
+    fr: '[[m:guitare]] était trop loin — [[m:MISS]]. Essaie [[w:voilier^51]].',
   },
   tutFind: {
     en: 'Now type the very first word — the blue one.',
@@ -141,17 +141,23 @@ const STRINGS = {
     en: 'Forgot it? It was [[b:ocean]].',
     fr: "Oublié ? C'était [[b:phare]].",
   },
-  // ---- the ending (#155): the found word opens its own route map, and closing it IS the
-  // graduation. tutTap nudges the tap (the word is already waving); tutRoutes is written
-  // across the map itself — the one thing the drawing cannot say about itself.
+  // ---- the ending (#155): tapping the found word replaces it with its route line, and
+  // PLAY ends the tutorial. The nudge speaks the input device's own verb — tutTap on a
+  // coarse pointer, tutClick otherwise (the tapAnywhere/clickAnywhere pattern) — and
+  // tutRoutes explains the line once it is on screen: plain words, no under-the-hood talk.
   tutTap: {
     en: 'Found it. Now tap [[b:ocean]].',
     fr: 'Trouvé. Touche [[b:phare]].',
   },
-  tutRoutes: {
-    en: 'Each lane is a road to [[b:ocean]] — one of its meanings.',
-    fr: 'Chaque voie mène à [[b:phare]] — un de ses sens.',
+  tutClick: {
+    en: 'Found it. Now click [[b:ocean]].',
+    fr: 'Trouvé. Clique sur [[b:phare]].',
   },
+  tutRoutes: {
+    en: 'Close words come in themes. One road per theme.',
+    fr: 'Les mots proches vont par thèmes. Une route par thème.',
+  },
+  tutPlay: { en: 'PLAY', fr: 'JOUER' },
 } satisfies Record<string, Record<UiLang, string>>;
 
 export type UiKey = keyof typeof STRINGS;

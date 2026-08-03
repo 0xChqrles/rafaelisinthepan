@@ -9,13 +9,13 @@
 // ONE board, one arc (#155, superseding the two-stage version): a single word and its REAL
 // neighborhood — the mix demo walks the secret out to the start word, three gated guesses
 // demonstrate distance / MISS / improvement, the player finds their way back, and then taps
-// the word they found to meet the route map. The unguided bakery sentence that used to
-// follow is gone: analytics said it was widely skipped, its one lesson (a guess filling
-// several holes) is discoverable in play, and the ending it freed is the only place the game
-// teaches ROUTES.
+// the word they found — its route line then takes its place. The unguided bakery sentence
+// that used to follow is gone: analytics said it was widely skipped, its one lesson (a guess
+// filling several holes) is discoverable in play, and the ending it freed is the only place
+// the game teaches ROUTES.
 //
 // The board's ranks are a REAL generated neighborhood (a #154 single-word artifact, pruned —
-// see scripts/<lang>.ts). They have to be: the route map only opens where #115's geometry
+// see scripts/<lang>.ts). They have to be: the route line only draws where #115's geometry
 // exists, and the hand-authored map this used to carry had no `dq` at all.
 
 import type { Puzzle } from '@whippin/shared';
@@ -23,8 +23,8 @@ import type { UiKey } from '../i18n';
 
 // The screen is split in two: EXPLANATIONS live in the top box (typewritten, with in-game
 // word styling — see CoachText's [[..]] markup in the copy), INTERACTIONS live at the bottom
-// (the mix button, then the keyboard). No modals until the very last beat, no NEXT, no SKIP —
-// the flow advances by playing.
+// (the mix button, then the keyboard, then PLAY). No modals, no NEXT, no SKIP — the flow
+// advances by playing.
 
 // One stop of the mix demo: pressing the button (labelled `labelKey`) animates the word to
 // `rank` — a single shake+swap for the first stop, a fast roll through every ladder word for
@@ -52,12 +52,14 @@ export type TutorialStep =
   // board's map, or MISS) — but after 3 consecutive MISSes the prompt swaps to `nudgeKey` in
   // case they forgot the word.
   | { kind: 'find'; target: string; copyKey: UiKey; nudgeKey: UiKey }
-  // The ending (#155). The word the player just found is now TAPPABLE — the same button, the
-  // same ambient wave and the same route map as a real round — and `copyKey` nudges the tap.
-  // The map that opens carries `routeCopyKey` over it, which is the one thing the tutorial
-  // still has to say: what the roads mean. CLOSING the map ends the tutorial; there is no
+  // The ending (#155). The word the player just found is now TAPPABLE — the same button and
+  // the same ambient wave as a real round — and the coach nudges the tap in the input
+  // device's own verb (`tapCopyKey` on a coarse pointer, `clickCopyKey` otherwise). The tap
+  // REPLACES the word with its route line, drawn inline (no modal — the map takes the word's
+  // place), `routeCopyKey` becomes the coach copy — the one thing the tutorial still has to
+  // say: what the roads mean — and the tray offers PLAY, which ends the tutorial. There is no
   // graduation screen, because there is no score to show.
-  | { kind: 'tap'; copyKey: UiKey; routeCopyKey: UiKey };
+  | { kind: 'tap'; tapCopyKey: UiKey; clickCopyKey: UiKey; routeCopyKey: UiKey };
 
 export interface TutorialScript {
   puzzle: Puzzle; // same schema as a real puzzle (parsePuzzle-valid)

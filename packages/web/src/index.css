@@ -1628,6 +1628,33 @@ button * {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+/* The onboarding's INLINE route line (#155): the word's place in the tutorial play area, as a
+   scroller of its own between the coach and PLAY. Its own, never the page's: the topbar and
+   the coach float with no background, so page-scrolled words would ride under them — and with
+   the tray fixed at the bottom, PLAY never has to be scrolled to. flex-basis 0 + min-height 0
+   is what keeps the line's height from growing the screen: the scroller sizes to the play
+   area's free space and the line overflows INSIDE it. */
+.route-inline {
+  align-self: stretch;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* The drawing's own variables live on `.route-frame` — the wrapper RouteLine renders — not on
+   the dialog, because since #155 the same line is also drawn INLINE by the onboarding tutorial
+   (replacing the word it just taught), where there is no dialog to carry them. Everything the
+   drawing's CSS consumes resolves from here, wherever the line is mounted; the dialog keeps
+   only its own chrome (position, zoom origin). */
+.route-frame {
+  /* The containing block for the sr-only mirror it carries: `.sr-only` is absolutely
+     positioned, and with the frame unpositioned it resolved against `.play` — OUTSIDE the
+     tutorial's inline scroller — where its static position sat below ~6000px of line and
+     quietly grew the PAGE by the line's whole height. Positioned here, it stays inside
+     whichever scroller mounts the frame. */
+  position: relative;
   /* The line itself: trunk, junction bus, the leap's and the tail's dashes, the torn break.
      Deliberately the ONE unsaturated line on the map — the trunk is the stretch where no road
      has been identified, so it reads as the far field the lanes fork out of. */
@@ -1742,23 +1769,6 @@ button * {
      any vertical padding here would park the "you are here" row that far inside the real edge.
      The line's own breathing room lives on `.route` instead, where it is just content. */
   padding: 0 20px;
-}
-/* The onboarding tutorial's coach box over the map (#155): the roads have to be NAMED once,
-   and the drawing cannot name them. It is a flex item of the dialog, under the scroller —
-   the mirror of the header above it — so the map simply gets a shorter viewport and the
-   sticky/opening measurements need no adjustment at all. The top border repeats the coach
-   box's own surface frame; there is no side or bottom border because the box IS the bottom
-   of the screen here. Absent outside the tutorial. */
-.route-coach {
-  flex: none;
-  border-top: 3px solid var(--surface);
-  background: var(--bg);
-  padding: 16px 18px calc(16px + env(safe-area-inset-bottom, 0px));
-}
-@media (max-width: 640px) {
-  .route-coach {
-    padding: 12px 14px calc(12px + env(safe-area-inset-bottom, 0px));
-  }
 }
 /* ONE grid for the whole line, every row a `subgrid` of it — which is what lets the rank gutter be
    a true `max-content` FIT: the track is sized by the widest exponent actually rendered, measured
@@ -2154,7 +2164,7 @@ button * {
    floor and break a long word in half. One cell smaller is enough — and because the gutter is
    `--rank-size` times the widest exponent, it follows on its own. */
 @media (max-width: 360px) {
-  .route-dialog[open] {
+  .route-frame {
     --rank-size: 9px;
   }
 }
