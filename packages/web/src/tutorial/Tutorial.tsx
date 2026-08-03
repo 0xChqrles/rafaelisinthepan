@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Phrase from '../components/Phrase';
-import CellDigits from '../components/CellDigits';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import LoadError from '../components/LoadError';
-import SolvedScreen from '../components/SolvedScreen';
+import RouteModal from '../components/RouteModal';
 import TopBar from '../components/TopBar';
 import { HIT_FADE_MS } from '../components/FloatingHit';
 import { RANK_MAX_MS, rankTransitionDuration } from '../components/Hole';
@@ -12,37 +11,36 @@ import SkipIcon from '../assets/icons/skip.svg?react';
 import { STAGGER_MS, FLOATING_HIT_INTRO_MS } from '../screens/Game';
 import MixWord, { SCRAMBLE_MS } from './MixWord';
 import CoachText, { richToPlain } from './CoachText';
-import { replayRun } from '../game/share';
+import { buildRoute } from '../game/route';
 import { buildPrefixSet, canExtend } from '../game/keyboard';
 import useVocab from '../hooks/useVocab';
 import { fold } from '@whippin/shared';
-import type { HitState, RankEntry, RuntimeHole } from '@whippin/shared';
-import { t, srHoleResult, type UiKey } from '../i18n';
+import type { HitState, Hole as PuzzleHole, RankEntry, RuntimeHole } from '@whippin/shared';
+import { ariaExploreHole, t, srHoleResult, type UiKey } from '../i18n';
 import { track } from '../analytics';
 import { scriptFor } from './scripts';
-import { isPadWord, type TutorialStage } from './script';
 
-// The onboarding tutorial (#51). Screen contract: EXPLANATIONS in the top box
-// (typewritten, in-game word styling), INTERACTIONS at the bottom (the mix button,
-// then the keyboard), the word/sentence in the middle. No modals, no NEXT, no SKIP
-// (browser navigation is the exit), no flag (the language was already chosen to get
-// here) — the flow advances by playing.
+// The onboarding tutorial (#51, re-arced by #155). Screen contract: EXPLANATIONS in the
+// top box (typewritten, in-game word styling), INTERACTIONS at the bottom (the mix button,
+// then the keyboard), the word in the middle. No NEXT, no SKIP button in the body (browser
+// navigation is the exit), no flag (the language was already chosen to get here) — the flow
+// advances by playing.
 //
-//   Stage 1 — one word, concept first. The secret is SHOWN (blue). MIX scrambles it
-//   to its 1st neighbor; MIX AGAIN and MIX EVEN MORE scramble to the 10th and 100th
-//   (the exponent ticking through every rank in between) — then the button gives
-//   way to the keyboard and three gated guesses show
-//   distance (farther, no move), MISS, and improvement, each rolling straight into
-//   the next prompt. Then the player types back to the secret with the real
-//   vocabulary (free exploration; a nudge reveals the word after 3 straight MISSes).
+//   ONE board, concept first. The secret is SHOWN (blue). MIX scrambles it to its 1st
+//   neighbor; MIX AGAIN and MIX EVEN MORE scramble to the 10th and to the START word (the
+//   exponent ticking through every rank in between) — then the button gives way to the
+//   keyboard and three gated guesses show distance (farther, no move), MISS, and improvement,
+//   each rolling straight into the next prompt. Then the player types back to the secret with
+//   the real vocabulary (free exploration; a nudge reveals the word after 3 straight MISSes).
+//   Finding it ENDS the lesson on the one concept nothing else teaches: the word they found
+//   is tappable, and the tap opens its real route map with a last line of copy over it.
+//   Closing that map is the graduation — there is no score to show, so there is no screen
+//   for it.
 //
-//   Stage 2 — an easy two-hole sentence played UNGUIDED (real vocabulary, tries
-//   counted, progress bar live). Solving it ends the tutorial wordlessly: the tray
-//   swaps to the score + PLAY TODAY'S PUZZLE.
-//
-// Everything that reacts is the real components with the real timing constants; the
-// scripts are data (./scripts/<lang>.ts). Deliberately NOT Round: Round is fused to
-// the persisted store, and a tutorial round must never touch `rounds` (only the
+// Everything that reacts is the real components with the real timing constants; the scripts
+// are data (./scripts/<lang>.ts) over a REAL generated neighborhood (a pruned #154 artifact),
+// which is also what makes the route map openable at all. Deliberately NOT Round: Round is
+// fused to the persisted store, and a tutorial round must never touch `rounds` (only the
 // `onboarded` flag changes, set by the caller via onDone).
 
 // Gated-empty sets: every letter greys out, Enter greys out.
@@ -52,20 +50,23 @@ const noop = () => {};
 // Consecutive MISSes in the find step before the prompt swaps to the reminder.
 const NUDGE_AFTER_MISSES = 3;
 
-// Mix demo pacing. EVERY press is the same slot-machine letter-scramble (see
-// MixWord, SCRAMBLE_MS); on the later presses the exponent ticks through the real
-// intermediate ladder ranks (>= 9 per segment, guarded by scripts.test.ts) while
-// the letters churn.
+// Mix demo pacing. EVERY press is the same slot-machine letter-scramble (see MixWord,
+// SCRAMBLE_MS); on the later presses the exponent ticks through the real intermediate ladder
+// ranks (>= 9 per segment, guarded by scripts.test.ts) while the letters churn.
 const MIX_SETTLE_MS = 500; // hold on a landing before the copy / next prompt
 
-function freshHoles(stage: TutorialStage): RuntimeHole[] {
-  return stage.puzzle.holes.map((h) => ({
-    pos: h.pos,
-    secret: h.secret.slug,
-    word: h.start.word,
-    rank: h.start_rank,
-    startRank: h.start_rank,
-  }));
+// The tutorial's ONE hole, at the board's start word — the same shape Game derives from a
+// real puzzle, so every component it feeds behaves identically.
+function freshHole(h: PuzzleHole): RuntimeHole[] {
+  return [
+    {
+      pos: h.pos,
+      secret: h.secret.slug,
+      word: h.start.word,
+      rank: h.start_rank,
+      startRank: h.start_rank,
+    },
+  ];
 }
 
 // The header stays in place throughout: the flag (left) opens the language screen —
@@ -74,27 +75,26 @@ function freshHoles(stage: TutorialStage): RuntimeHole[] {
 // that language — the centre reads "TUTORIAL", and the right control is a
 // fast-forward that SKIPS the whole tutorial (`onDone`) — a header affordance, not a
 // "close this box" icon, so it can't be mistaken for dismissing the explanation
-// alone. `onDone` fires on both a natural finish (PLAY) and a skip.
+// alone. `onDone` fires on both a natural finish (the map closing) and a skip.
 export default function Tutorial({ lang, onDone }: { lang: string; onDone: () => void }) {
   const script = useMemo(() => scriptFor(lang), [lang]);
+  const { puzzle } = script;
+  const hole = puzzle.holes[0];
+  const rankMap = puzzle.ranks[hole.secret.slug];
 
-  const [stageIndex, setStageIndex] = useState(0);
   const [stepIndex, setStepIndex] = useState(0);
-  // idle (acting) -> feedback (choreography playing) -> after (play step only: the
-  // sentence is solved, the tray shows the score + exit).
-  const [phase, setPhase] = useState<'idle' | 'feedback' | 'after'>('idle');
+  // idle (acting) -> feedback (choreography playing).
+  const [phase, setPhase] = useState<'idle' | 'feedback'>('idle');
 
-  const stage = script.stages[stageIndex];
-  const { puzzle } = stage;
-  const step = stage.steps[stepIndex];
-  // The sentence stage: live chrome (progress bar + tries watermark), free play.
-  const liveStage = stage.steps.some((s) => s.kind === 'play');
+  const step = script.steps[stepIndex];
 
   // The scripted round's local state — the ephemeral twin of Round's persisted state.
-  const [holes, setHoles] = useState<RuntimeHole[]>(() => freshHoles(script.stages[0]));
+  const [holes, setHoles] = useState<RuntimeHole[]>(() => freshHole(hole));
   const [hits, setHits] = useState<HitState[]>([]);
-  const [tries, setTries] = useState(0);
-  const triedRef = useRef<Set<string>>(new Set()); // dedupes tries, like the store does
+  // The player's own guesses, in order — the journey the route map draws at the end. Deduped
+  // by folded slug, which is all the tutorial needs (it keeps no score, so the game's
+  // canonical-identity dedupe has nothing to protect here).
+  const [tried, setTried] = useState<string[]>([]);
   const [missStreak, setMissStreak] = useState(0); // find step: consecutive MISSes
   const [input, setInput] = useState('');
   const [invalidAt, setInvalidAt] = useState(0);
@@ -109,8 +109,8 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
   const [mixCopy, setMixCopy] = useState<UiKey | null>(null);
   const [mixBusy, setMixBusy] = useState(false);
 
-  // The find/play steps type against the REAL vocabulary (loaded at mount, so it is
-  // warm long before the free steps — and already cached for the game right after).
+  // The find step types against the REAL vocabulary (loaded at mount, so it is warm long
+  // before the free step — and already cached for the game right after).
   const { vocab, error: vocabError, retry: retryVocab } = useVocab(lang);
 
   const timers = useRef<number[]>([]);
@@ -131,34 +131,17 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
     setAnnounce(text + (announceFlip.current ? '' : '​'));
   }, []);
 
-  // Advance to the next step, next stage, or hand over to the real game.
+  // Advance to the next step. The LAST step is the tap, which no guess can leave: only the
+  // route map closing ends the tutorial.
   const advance = useCallback(() => {
-    if (stepIndex < stage.steps.length - 1) {
-      setPhase('idle');
-      setStepIndex((i) => i + 1);
-      return;
-    }
-    if (stageIndex >= script.stages.length - 1) {
-      onDone();
-      return;
-    }
-    const nextStage = script.stages[stageIndex + 1];
-    setHoles(freshHoles(nextStage));
-    setHits([]);
-    setTries(0);
-    triedRef.current = new Set();
-    setMissStreak(0);
-    setInput('');
-    setFeedback(null);
     setPhase('idle');
-    setStepIndex(0);
-    setStageIndex((i) => i + 1);
-  }, [stage, stepIndex, stageIndex, script, onDone]);
+    setStepIndex((i) => Math.min(i + 1, script.steps.length - 1));
+  }, [script]);
 
   // Input gating. A gated guess step admits ONLY the expected word (the keyboard's
-  // own prefix/vocab contract greys everything else); free steps use the real sets.
+  // own prefix/vocab contract greys everything else); the find step uses the real sets.
   const gatedWord = step.kind === 'guess' && phase === 'idle' ? step.expect : null;
-  const freeTyping = (step.kind === 'find' || step.kind === 'play') && phase === 'idle';
+  const freeTyping = step.kind === 'find' && phase === 'idle';
   const vocabSet = useMemo(() => {
     if (gatedWord) return new Set([gatedWord]);
     if (freeTyping && vocab) return vocab.vocabSet;
@@ -191,70 +174,62 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
     setHits((prev) => prev.filter((h) => h.id !== id));
   }, []);
 
-  // The same guess loop as Game.submit, on local state. Gated guesses freeze input
-  // through the choreography then roll into the next prompt; free steps keep typing
-  // open and only lock when the guess completes the step.
+  // The same guess loop as Game.submit, on local state and one hole. Gated guesses freeze
+  // input through the choreography then roll into the next prompt; the find step keeps typing
+  // open and only locks when the guess completes it.
   const playGuess = useCallback(
     (typed: string, lock: boolean) => {
-      const impacted = holes.flatMap((h, index) => {
-        if (h.rank === 0) return [];
-        return [{ index, entry: puzzle.ranks[h.secret][typed] as RankEntry | undefined }];
-      });
-      const fadeDelayMs = Math.max(0, impacted.length - 1) * STAGGER_MS + FLOATING_HIT_INTRO_MS;
-      let anyImprove = false;
-      let maxRankTransitionMs = 0;
-      impacted.forEach(({ index, entry }, i) => {
-        const id = (hitId.current += 1);
-        setHits((prev) => [
-          ...prev,
-          entry != null
-            ? { holeIndex: index, value: entry.rank, id, startDelayMs: i * STAGGER_MS, fadeDelayMs }
-            : { holeIndex: index, value: 0, id, startDelayMs: i * STAGGER_MS, fadeDelayMs, miss: true },
-        ]);
-        if (entry == null || entry.rank >= holes[index].rank) return;
-        anyImprove = true;
-        maxRankTransitionMs = Math.max(
-          maxRankTransitionMs,
-          rankTransitionDuration(holes[index].rank, entry.rank),
-        );
+      const current = holes[0];
+      const entry = current.rank === 0 ? undefined : (rankMap[typed] as RankEntry | undefined);
+      const fadeDelayMs = FLOATING_HIT_INTRO_MS;
+      const id = (hitId.current += 1);
+      setHits((prev) => [
+        ...prev,
+        entry != null
+          ? { holeIndex: 0, value: entry.rank, id, startDelayMs: 0, fadeDelayMs }
+          : { holeIndex: 0, value: 0, id, startDelayMs: 0, fadeDelayMs, miss: true },
+      ]);
+
+      const improves = entry != null && entry.rank < current.rank;
+      if (improves) {
         const { word, rank } = entry;
         later(
-          () =>
-            setHoles((prev) => prev.map((h, j) => (j === index && rank < h.rank ? { ...h, word, rank } : h))),
+          () => setHoles((prev) => prev.map((h) => (rank < h.rank ? { ...h, word, rank } : h))),
           fadeDelayMs,
         );
-      });
-
-      if (step.kind === 'find') {
-        setMissStreak((s) => (impacted.every((x) => x.entry == null) ? s + 1 : 0));
       }
 
-      const solvesAll = holes.every((h) => h.rank === 0 || puzzle.ranks[h.secret][typed]?.rank === 0);
-      const parts = impacted.map(({ index, entry }) =>
-        srHoleResult(lang, index + 1, entry ? entry.rank : null),
+      if (step.kind === 'find') setMissStreak((s) => (entry == null ? s + 1 : 0));
+
+      const solves = entry?.rank === 0;
+      say(
+        solves
+          ? [srHoleResult(lang, 1, 0), t(lang, 'srSolvedAll')].join(', ')
+          : srHoleResult(lang, 1, entry ? entry.rank : null),
       );
-      say(solvesAll ? [...parts, t(lang, 'srSolvedAll')].join(', ') : parts.join(', '));
 
       // A swapped Hole holds its exponent tween (RANK_MAX_MS) then settles the letters
       // over SCRAMBLE_MS (see Hole/useScramble), so its word finishes last. Wait for the
       // slower of that, the rank tween, and the floating hit's fade before advancing.
       const settleMs =
         fadeDelayMs +
-        Math.max(HIT_FADE_MS, maxRankTransitionMs, anyImprove ? RANK_MAX_MS + SCRAMBLE_MS : 0) +
+        Math.max(
+          HIT_FADE_MS,
+          improves ? rankTransitionDuration(current.rank, entry.rank) : 0,
+          improves ? RANK_MAX_MS + SCRAMBLE_MS : 0,
+        ) +
         250;
       if (lock) {
         // The feedback taught the lesson — straight to the next prompt.
         setPhase('feedback');
         later(advance, settleMs);
-      } else if (solvesAll) {
+      } else if (solves) {
+        // Finding it needs no comment either: it rolls into the tap that ends the tutorial.
         setPhase('feedback');
-        // Solving needs no comment either: find rolls into the sentence stage; play
-        // is the graduation — the tray swaps to the score + exit ('after').
-        if (step.kind === 'find') later(advance, settleMs + 350);
-        else later(() => setPhase('after'), settleMs + 350);
+        later(advance, settleMs + 350);
       }
     },
-    [holes, puzzle, step, lang, say, later, advance],
+    [holes, rankMap, step, lang, say, later, advance],
   );
 
   const submit = useCallback(
@@ -267,11 +242,12 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
           return;
         }
         setInput('');
+        setTried((prev) => (prev.includes(typed) ? prev : [...prev, typed]));
         playGuess(typed, true);
         return;
       }
       if (!freeTyping) return;
-      // Free steps behave exactly like the game: existence is decided by the real
+      // The find step behaves exactly like the game: existence is decided by the real
       // vocabulary; invalid words shake + message and reach no hole.
       if (!vocab || !vocab.vocabSet.has(typed)) {
         setInvalidAt(Date.now());
@@ -281,28 +257,30 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
       }
       setInput('');
       setFeedback(null);
-      if (step.kind === 'play' && !triedRef.current.has(typed)) {
-        triedRef.current.add(typed);
-        setTries((n) => n + 1);
-      }
+      setTried((prev) => (prev.includes(typed) ? prev : [...prev, typed]));
       playGuess(typed, false);
     },
-    [gatedWord, freeTyping, vocab, step, lang, say, playGuess],
+    [gatedWord, freeTyping, vocab, lang, say, playGuess],
   );
 
-  // The mix ladder: the stage's own real rank entries up to the start word, rank
-  // ascending — the demo's word path.
+  // The mix ladder: the board's own real rank entries up to the start word, rank ascending —
+  // the demo's word path. ONE entry per GROUP: a real map keys every inflection of a group to
+  // the same entry (#104), and a ladder that walked them all would tick the same rank several
+  // times over and show the same word twice.
   const ladder = useMemo<RankEntry[]>(() => {
-    const hole = puzzle.holes[0];
-    return Object.values(puzzle.ranks[hole.secret.slug])
-      .filter((e) => !isPadWord(e.word) && e.rank > 0 && e.rank <= hole.start_rank)
-      .sort((a, b) => a.rank - b.rank);
-  }, [puzzle]);
+    const byRank = new Map<number, RankEntry>();
+    for (const entry of Object.values(rankMap)) {
+      if (entry.rank > 0 && entry.rank <= hole.start_rank && !byRank.has(entry.rank)) {
+        byRank.set(entry.rank, entry);
+      }
+    }
+    return [...byRank.values()].sort((a, b) => a.rank - b.rank);
+  }, [rankMap, hole]);
 
   // One press of the mix button: MixWord scrambles the letters into the stop's word
-  // (and, from the second press on, ticks the exponent through the intermediate
-  // ranks); we just set the landing entry and wait out the animation. The last stop
-  // lands on the start word, then the keyboard takes the button's place.
+  // (and, from the second press on, ticks the exponent through the intermediate ranks);
+  // we just set the landing entry and wait out the animation. The last stop lands on the
+  // start word, then the keyboard takes the button's place.
   const pressMix = useCallback(() => {
     if (step.kind !== 'mix' || mixBusy) return;
     const stop = step.stops[mixStop];
@@ -320,30 +298,76 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
     }, SCRAMBLE_MS + MIX_SETTLE_MS);
   }, [step, mixBusy, mixStop, ladder, later, advance]);
 
-  // The explanation currently in the top box (hidden once graduated — the score
-  // speaks last). Mix stop copy overrides the step's standing copy.
-  const graduated = step.kind === 'play' && phase === 'after';
+  // --- the ending (#155): the found word opens its own route map ---
+  // The button wraps the hole for the WHOLE tutorial (unwrapping it mid-round would remount
+  // the word while its scramble is running, exactly as in the game); only the tap STEP enables
+  // it. `quiet` lets the hole run its ambient wave then — the affordance for the tap the copy
+  // is asking for — and stands down while the map is over the sentence.
+  const [routeOrigin, setRouteOrigin] = useState<{ x: number; y: number } | null>(null);
+  const [routeOpen, setRouteOpen] = useState(false);
+  const openRoute = useCallback(() => {
+    // Where the map grows from: the word's centre on screen, in viewport coordinates (the
+    // dialog is fixed and fills the viewport, so they ARE its own box's).
+    const word = document
+      .querySelector<HTMLElement>('[data-hole-explore="0"]')
+      ?.querySelector('.hole-word-wrap');
+    const box = word?.getBoundingClientRect();
+    setRouteOrigin(box ? { x: box.left + box.width / 2, y: box.top + box.height / 2 } : null);
+    setRouteOpen(true);
+  }, []);
+  // Closing the map IS the graduation (the dialog's retraction has already played by the time
+  // this fires — see useModalDismiss).
+  const finish = useCallback(() => {
+    track('tutorial', { action: 'finish' });
+    onDone();
+  }, [onDone]);
+  const routeModel = useMemo(
+    () =>
+      routeOpen
+        ? buildRoute({
+            rankMap,
+            tried,
+            hole: holes[0],
+            startRank: hole.start_rank,
+            secretWord: hole.secret.word,
+            number: 1,
+          })
+        : null,
+    [routeOpen, rankMap, tried, holes, hole],
+  );
+
+  // The keyboard leaves the way it does in a solved round: it drops out of the tray once
+  // there is nothing left to type. No deadline behind the `animationend` (unlike Game's):
+  // nothing waits on it — the keyboard is already off screen and out of reach when it fires,
+  // so a lost event costs an unmount, not the screen.
+  const tapping = step.kind === 'tap';
+  const [kbGone, setKbGone] = useState(false);
+
+  // The explanation currently in the top box. Mix stop copy overrides the step's standing
+  // copy; while the map is open the explanation moves ONTO it (the box behind is covered).
   let coachKey: UiKey | null = null;
   if (step.kind === 'mix') coachKey = mixCopy ?? step.copyKey;
-  else if (step.kind === 'guess' || step.kind === 'play') coachKey = step.copyKey;
+  else if (step.kind === 'guess' || step.kind === 'tap') coachKey = step.copyKey;
   else if (step.kind === 'find') {
     coachKey = missStreak >= NUDGE_AFTER_MISSES ? step.nudgeKey : step.copyKey;
   }
-  const coachCopy = !graduated && coachKey ? t(lang, coachKey) : null;
+  const routeCopy = step.kind === 'tap' && routeOpen ? t(lang, step.routeCopyKey) : null;
+  const coachCopy = routeOpen ? null : coachKey ? t(lang, coachKey) : null;
 
   // Announce each new explanation once, in plain text (the visible typewriter is
   // aria-hidden — a live region would read every keystroke).
   useEffect(() => {
-    if (coachCopy) say(richToPlain(coachCopy));
-  }, [coachCopy, say]);
+    const copy = coachCopy ?? routeCopy;
+    if (copy) say(richToPlain(copy));
+  }, [coachCopy, routeCopy, say]);
 
-  const vocabNeeded = step.kind === 'find' || step.kind === 'play';
   const mixLabel = step.kind === 'mix' ? step.stops[Math.min(mixStop, step.stops.length - 1)] : null;
+  const exploreLabels = useMemo(() => [ariaExploreHole(lang, 1)], [lang]);
 
   return (
-    // tutorial--word: the concept stage is deliberately CLEAN — explanation on top,
-    // one big centered word in the middle, the interaction at the bottom.
-    <div className={`game tutorial${liveStage ? '' : ' tutorial--word'}`}>
+    // tutorial--word: the board is deliberately CLEAN — explanation on top, one big centered
+    // word in the middle, the interaction at the bottom.
+    <div className="game tutorial tutorial--word">
       <div className="sr-only" role="status" aria-live="polite">
         {announce}
       </div>
@@ -378,17 +402,12 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
       )}
 
       <div className="play">
-        {liveStage && (
-          <div className="progress-background" aria-hidden="true">
-            <CellDigits value={tries} />
-          </div>
-        )}
         {step.kind === 'mix' ? (
           <>
             <MixWord
-              secret={puzzle.holes[0].secret.word}
+              secret={hole.secret.word}
               entry={mixAt >= 0 ? ladder[mixAt] : null}
-              startRank={puzzle.holes[0].start_rank}
+              startRank={hole.start_rank}
               ladder={ladder}
             />
             {/* Hidden input slot: the REAL prompt structure, invisible and inert,
@@ -416,8 +435,15 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
               puzzleHoles={puzzle.holes}
               hits={hits}
               onHitDone={removeHit}
+              exploreLabels={exploreLabels}
+              exploreDisabled={!tapping}
+              onExplore={openRoute}
+              quiet={tapping && !routeOpen}
             />
-            <div className="input-area">
+            {/* Once there is nothing left to type the prompt retires in place, the same way
+                the game's does on the solving submit: still laid out, so the word does not
+                move, but invisible and inert. */}
+            <div className={`input-area${tapping ? ' retired' : ''}`} aria-hidden={tapping || undefined}>
               <WordInput
                 value={input}
                 history={[]}
@@ -426,6 +452,8 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
                 onSubmit={submit}
                 onReplace={replaceInput}
                 invalidSignal={invalidAt}
+                // The route map covers the prompt, and the tap step has nothing to submit.
+                active={!tapping}
               />
               <p className="hint">{feedback || ' '}</p>
             </div>
@@ -433,47 +461,52 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
         )}
       </div>
 
-      {/* The bottom is for INTERACTIONS: the mix button, then the keyboard, and at
-          the very end the REAL solved layout — run ruler + score reveal, with
-          PLAY standing in SHARE's slot — so graduation looks exactly like tomorrow's
-          win will. */}
-      <div className="tray">
-        {graduated ? (
-          <SolvedScreen
-            {...replayRun(freshHoles(stage), puzzle.ranks, [...triedRef.current])}
-            guessCount={tries}
-            dayNumber={null}
-            lang={lang}
-            action={{
-              label: t(lang, 'tutPlay'),
-              onClick: () => {
-                track('tutorial', { action: 'finish' });
-                onDone();
-              },
-            }}
-          />
-        ) : step.kind === 'mix' ? (
+      {/* The bottom is for INTERACTIONS: the mix button, then the keyboard — which drops
+          away for the ending, leaving the word alone with the invitation to tap it. */}
+      <div className={`tray${tapping && !kbGone ? ' kb-leaving' : ''}`}>
+        {step.kind === 'mix' ? (
           mixLabel && (
             <button type="button" className="mix-btn" onClick={pressMix} disabled={mixBusy}>
               {t(lang, mixLabel.labelKey)}
             </button>
           )
-        ) : vocabNeeded && vocabError ? (
+        ) : vocabError ? (
           <LoadError message={t(lang, 'failedVocab')} lang={lang} onRetry={retryVocab} />
-        ) : vocabNeeded && !vocab ? (
+        ) : !vocab ? (
           <p className="status">{t(lang, 'loading')}</p>
-        ) : (
-          <Keyboard
-            input={input}
-            prefixSet={prefixSet}
-            vocabSet={vocabSet}
-            lang={lang}
-            onType={appendChar}
-            onBackspace={deleteChar}
-            onSubmit={submit}
-          />
+        ) : kbGone ? null : (
+          <div
+            className={`kb-exit${tapping ? ' leaving' : ''}`}
+            onAnimationEnd={(e) => {
+              // Child animations (key shakes) bubble here too: only the wrapper's own
+              // kb-drop end unmounts it.
+              if (tapping && e.target === e.currentTarget) setKbGone(true);
+            }}
+          >
+            <Keyboard
+              input={input}
+              prefixSet={prefixSet}
+              vocabSet={vocabSet}
+              lang={lang}
+              onType={appendChar}
+              onBackspace={deleteChar}
+              onSubmit={submit}
+            />
+          </div>
         )}
       </div>
+
+      {/* The lesson's last beat: the real route map (#117) over the tutorial's own
+          neighborhood, with the one thing the drawing cannot say written across it. */}
+      {routeModel && routeCopy && (
+        <RouteModal
+          model={routeModel}
+          lang={lang}
+          origin={routeOrigin}
+          onClose={finish}
+          coach={<CoachText key={routeCopy} copy={routeCopy} />}
+        />
+      )}
     </div>
   );
 }

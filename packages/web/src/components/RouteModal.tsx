@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { DQ_MAX, type RouteModel } from '../game/route';
 import { rankHeatColor, HIT_HEAT_CAP } from './Hole';
@@ -205,6 +205,7 @@ export default function RouteModal({
   lang,
   origin,
   onClose,
+  coach,
 }: {
   model: RouteModel;
   lang: string;
@@ -212,6 +213,14 @@ export default function RouteModal({
   // are the dialog's own (fixed, inset 0). Null falls back to the centre of the screen.
   origin?: { x: number; y: number } | null;
   onClose: () => void;
+  // The onboarding tutorial's last line of copy (#155), written across the bottom of the map:
+  // the roads are the one thing the drawing itself cannot name. In FLOW under the scroller,
+  // the same way the header sits in flow above it — an overlay would need the line to reserve
+  // room for it, and `.route-scroll` may carry no vertical padding (a sticky offset resolves
+  // against the scrollport's padding box). In flow, the scroller simply gets shorter and every
+  // measurement below — the sticky row's park, the opening scroll — stays correct for free.
+  // The daily game passes nothing and the dialog is exactly as it was.
+  coach?: ReactNode;
 }) {
   // FIRST hook of the component on purpose: it owns the `showModal()` layout effect, and a
   // closed `<dialog>` is `display: none` — everything measured below would read a tree with no
@@ -530,6 +539,10 @@ export default function RouteModal({
         ))}
         {model.misses.length > 0 && <li>{srRouteOffMap(lang, model.misses)}</li>}
       </ol>
+
+      {/* The tutorial's coach box (#155), in flow at the foot of the map. Absent everywhere
+          else, so the daily game's dialog is header + scroller exactly as before. */}
+      {coach && <div className="route-coach">{coach}</div>}
     </dialog>,
     document.body,
   );

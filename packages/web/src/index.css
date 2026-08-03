@@ -471,8 +471,8 @@ button * {
 
 /* The centered play region between the fixed HUD and the keyboard. It grows to fill
    that space (flex:1) and centers its content (sentence + prompt). `relative` +
-   `isolation` keep it a valid watermark anchor for the TUTORIAL's .progress-background
-   (the game's own watermark anchors tighter, to .phrase-anchor below). */
+   `isolation` make it the stacking context the score watermark's z-index:-1 stays inside
+   (the watermark itself anchors tighter, to .phrase-anchor below). */
 .play {
   position: relative;
   isolation: isolate;
@@ -905,8 +905,8 @@ button * {
 }
 /* --- giant score watermark, always behind the play content --- */
 .progress-background {
-  /* absolute (not fixed) so it is anchored to its relative wrapper — .phrase-anchor in
-     the game (centered on the SENTENCE), .play in the tutorial — never the viewport:
+  /* absolute (not fixed) so it is anchored to its relative wrapper — .phrase-anchor,
+     centered on the SENTENCE — never the viewport:
      the score scrolls with the content instead of drifting into empty space. The number
      itself is a CellDigits canvas: digits printed on the page's 24px grid cells, sized
      and grid-snapped by the component (it centers on this box and overflows it
@@ -1742,6 +1742,23 @@ button * {
      any vertical padding here would park the "you are here" row that far inside the real edge.
      The line's own breathing room lives on `.route` instead, where it is just content. */
   padding: 0 20px;
+}
+/* The onboarding tutorial's coach box over the map (#155): the roads have to be NAMED once,
+   and the drawing cannot name them. It is a flex item of the dialog, under the scroller —
+   the mirror of the header above it — so the map simply gets a shorter viewport and the
+   sticky/opening measurements need no adjustment at all. The top border repeats the coach
+   box's own surface frame; there is no side or bottom border because the box IS the bottom
+   of the screen here. Absent outside the tutorial. */
+.route-coach {
+  flex: none;
+  border-top: 3px solid var(--surface);
+  background: var(--bg);
+  padding: 16px 18px calc(16px + env(safe-area-inset-bottom, 0px));
+}
+@media (max-width: 640px) {
+  .route-coach {
+    padding: 12px 14px calc(12px + env(safe-area-inset-bottom, 0px));
+  }
 }
 /* ONE grid for the whole line, every row a `subgrid` of it — which is what lets the rank gutter be
    a true `max-content` FIT: the track is sized by the widest exponent actually rendered, measured

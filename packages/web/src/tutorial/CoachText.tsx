@@ -58,8 +58,8 @@ function segLen(s: Seg): number {
 
 const TYPE_MS = 18; // per character — brisk, game-dialog pace
 
-// Numbers are colored on the same board scale as the demo (start = 100): 200 lands
-// past the cold end, exactly like a far float in-game.
+// Numbers are colored on the same board scale as the demo (both boards' start words sit
+// around rank 100): a "far" rank lands past the cold end, exactly like a far float in-game.
 const TEXT_HEAT_SCALE = 100;
 
 const HIDDEN: CSSProperties = { visibility: 'hidden' };

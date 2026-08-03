@@ -115,23 +115,23 @@ const STRINGS = {
   tutMixMore: { en: 'MIX EVEN MORE', fr: 'ENCORE PLUS' },
   tutMixed1: {
     en: '[[w:sea^1]] is the closest word to [[b:ocean]].',
-    fr: '[[w:mer^1]] est le mot le plus proche de [[b:océan]].',
+    fr: '[[w:emblématique^1]] est le mot le plus proche de [[b:phare]].',
   },
   tutMixed10: {
-    en: '[[w:beach^10]] is the 10th closest word to [[b:ocean]].',
-    fr: '[[w:plage^10]] est le 10e mot le plus proche de [[b:océan]].',
+    en: '[[w:islands^10]] is the 10th closest word to [[b:ocean]].',
+    fr: '[[w:pilier^10]] est le 10e mot le plus proche de [[b:phare]].',
   },
   tutGuessFar: {
-    en: 'Now type [[w:desert^200]].',
-    fr: 'Maintenant tape [[w:désert^200]] (sans l\'accent)',
+    en: 'Now type [[w:forest^214]].',
+    fr: "Maintenant tape [[w:désert^1183]] (sans l'accent)",
   },
   tutGuessMiss: {
-    en: 'Type a completely different word: [[m:music]].',
-    fr: 'Tape un mot complètement différent : [[m:musique]].',
+    en: 'Type a completely different word: [[m:violin]].',
+    fr: 'Tape un mot complètement différent : [[m:guitare]].',
   },
   tutGuessCloser: {
-    en: '[[m:music]] was a [[m:MISS]] — too far to rank. Now try [[w:boat^50]].',
-    fr: '[[m:musique]] était un [[m:MISS]] — trop loin pour être classé. Essaie [[w:bateau^50]].',
+    en: '[[m:violin]] was a [[m:MISS]] — too far to rank. Now try [[w:boat^45]].',
+    fr: '[[m:guitare]] était un [[m:MISS]] — trop loin pour être classé. Essaie [[w:voilier^51]].',
   },
   tutFind: {
     en: 'Now type the very first word — the blue one.',
@@ -139,14 +139,19 @@ const STRINGS = {
   },
   tutFindNudge: {
     en: 'Forgot it? It was [[b:ocean]].',
-    fr: "Oublié ? C'était [[b:océan]].",
+    fr: "Oublié ? C'était [[b:phare]].",
   },
-  tutSentence: {
-    en: 'This sentence hides TWO words. You are on your own.',
-    fr: 'Cette phrase cache DEUX mots. À toi de jouer.',
+  // ---- the ending (#155): the found word opens its own route map, and closing it IS the
+  // graduation. tutTap nudges the tap (the word is already waving); tutRoutes is written
+  // across the map itself — the one thing the drawing cannot say about itself.
+  tutTap: {
+    en: 'Found it. Now tap [[b:ocean]].',
+    fr: 'Trouvé. Touche [[b:phare]].',
   },
-  // Sits in SHARE's slot on the real solved layout, so it stays as short as SHARE.
-  tutPlay: { en: 'PLAY', fr: 'JOUER' },
+  tutRoutes: {
+    en: 'Each lane is a road to [[b:ocean]] — one of its meanings.',
+    fr: 'Chaque voie mène à [[b:phare]] — un de ses sens.',
+  },
 } satisfies Record<string, Record<UiLang, string>>;
 
 export type UiKey = keyof typeof STRINGS;

@@ -14,7 +14,8 @@
       hooks/usePuzzle.ts      fetch the client-computed day's puzzle from the backend
       api.ts                  backend client: puzzleUrl/todayUrl, 404->NO PUZZLE
       i18n.ts                 UI chrome strings (en+fr), t(lang, key); parity type-enforced
-      tutorial/               onboarding (#51): Tutorial.tsx + data scripts/<lang>.ts
+      tutorial/               onboarding (#51/#155): Tutorial.tsx + data scripts/<lang>.ts
+                              (+ <lang>.word.json, the pruned #154 board it plays on)
       screens/Game.tsx        the guess loop, hole state (imports fold from @whippin/shared)
       game/scoring.ts         s(rank), holeProgress, computeProgress
       components/Phrase.tsx,Hole.tsx,WordInput.tsx,FloatingHit.tsx  rendering
@@ -147,8 +148,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   journey. `game/route.ts` is the pure model (`buildRoute`, contract-tested) and
   `components/RouteModal.tsx` renders it; `Game` owns the open state so the guess prompt can
   go inert behind it. **Entry point only where the geometry exists:** `hasRoute` gates on the
-  secret's rank-1 entry carrying `dq`, so every day published before #115 (and the tutorial's
-  synthetic boards) renders exactly as before — no button, no degraded list view. The hole
+  secret's rank-1 entry carrying `dq`, so every day published before #115 renders exactly as
+  before — no button, no degraded list view. (The onboarding tutorial used to fall on that
+  side too; since #155 it plays on a REAL generated board precisely so its ending can open
+  this map.) The hole
   becomes a `<button>` wrapping its existing spans; it is present for the WHOLE round or not
   at all and the solved choreography only `disabled`s it, because unwrapping mid-round would
   remount the word while its scramble is running. **That disabling covers the solving BEATS
@@ -449,32 +452,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `busy` does: `quiet` also falls when the map opens over the sentence, and a wave left running
   behind it shows its tail if the player closes quickly (both modal beats are 120ms, a wave up
   to 460ms). Reduced motion: the clock never starts.
-  **The one-time auto-open** is the guaranteed half: the first hole a player EVER solves
-  opens its own finished journey — departure, every station visited, arrival — with their own
-  data, explaining the feature by being it. `routeSeen` (persist **v4**, defaulted false for
-  every older blob — nothing to grandfather, the map shipped with #117) is set by `openRoute`,
-  the ONE place a map opens, so a player who found it by tapping is never interrupted.
-  `shouldAutoOpenRoute` (pure, in `game/route.ts`) fires only on a mid-round solve — never the
-  FINAL one, which belongs to the solved sequence (streak → exits → leaderboard → source) and
-  must not gain a competing modal — and names the first newly solved hole in sentence order;
-  `Game` filters to holes that HAVE a map before asking. Two rules the ARMED offer needs beyond
-  that, both found on review 2026-07-28 and both reproduced in a browser before fixing:
-  it is **cancelled when the round ends**, because guessing stays live through the first solved
-  word's ~1.7s of settle and a player holding the last answer can finish the sentence inside
-  that window — the map then opened *over* the solved sequence, with two dialogs on screen at
-  once and the one-time offer spent on a moment it was never meant to fire; and **the first
-  armed target wins** (`current ?? target`), or a hole solved while the first is still resolving
-  takes its place and the player is shown the map of the word they reached second. It arms at submit time and waits for
-  the holes' own settle reports (`resolvedHoleIndices`, the signal the solved gating uses) plus
-  350ms, never a guessed timeout — and from the LAST of them, not the target hole's: one guess
-  can drop two mappable holes, and a beat measured from the first would put the modal over a
-  word still scrambling. The target has settled either way, and the restart is bounded (one per
-  hole, and the set only grows). **This is the one place #129 interrupts rather than invites**
-  (weighed again on review 2026-07-28 and kept): it takes focus for a modal the player did not
-  ask for. What makes it acceptable is all three of — once per device lifetime, triggered by
-  the player's own solve, and focus returned to the hole on close. The wave deliberately does
-  none of that, which is why it stays an affordance and this stays a demonstration. Archive replays included; the tutorial is untouched (it does
-  not render `Round`). No new analytics event — the three-event invariant stands.
+  **The one-time auto-open is GONE (#155, decided 2026-08-03).** It was #129's guaranteed
+  half — the first hole a player EVER solves opened its own finished journey, explaining the
+  feature by being it — and it existed because nothing TAUGHT the tap. The reworked onboarding
+  now ends on exactly that gesture, so the map no longer has to interrupt a round to introduce
+  itself, and #129's remaining half (the wave, plus the hole button) is a pure invitation
+  again. Removed with it: `shouldAutoOpenRoute` in `game/route.ts`, the arming/firing wiring
+  and `AUTO_ROUTE_AFTER_SOLVE_MS` in `Game`, and the persisted `routeSeen` flag it gated on
+  (store **v5** drops the field, the way v1's retired keyboard `layout` was dropped —
+  `markRouteSeen` had no other consumer). No back-compat, and no analytics change: the
+  three-event invariant stands.
 - **Archive routing (#55, decided 2026-07-07):** the client now also fetches **explicit
   past dates** — pairing with #53's server-side "serve any past day". `parseRoute`
   (`web/src/langs.ts`) grew two language-scoped routes beyond `/<lang>`:
@@ -724,27 +711,46 @@ it to the local store — see `packages/backend/AGENTS.md`).
   is a **fast-forward that SKIPS the whole tutorial** (`assets/icons/skip.svg`, →
   `onDone`) — a header affordance, NOT a coach-box `×` (which read as "close this
   box only"). Skip is available on both the first run and replays. The tutorial
-  itself is **two-stage**, in the REAL game components. **Screen contract:**
+  itself is **ONE board**, in the REAL game components. **Screen contract:**
   explanations in a TOP box (typewritten like a game dialog — `tutorial/CoachText.tsx`,
   app-bg + surface border — with inline markup so words look like what they are
   in-game: `[[b:]]` blue secret, `[[w:word^rank]]` gold + heat exponent, `[[m:]]`
   coldest heat, `[[n:]]` heat number); INTERACTIONS at the bottom (mix button, then
-  keyboard), no modals/NEXT. **Stage
-  1** is a single word, concept-first: the secret is SHOWN (blue); **MIX** shakes it
-  to −1, **MIX AGAIN** fast-rolls to −10, **MIX EVEN MORE** rolls to −100 — landing
-  on the start word (the demo explains where start words come from), where the
+  keyboard), no modals until the last beat, no NEXT. The board is a single word,
+  concept-first: the secret is SHOWN (blue); **MIX** shakes it
+  to −1, **MIX AGAIN** fast-rolls to −10, **MIX EVEN MORE** rolls to the START word —
+  the demo explains where start words come from — where the
   button gives way to the keyboard (`tutorial/MixWord.tsx` is the display-only
   widget; Tutorial owns the animation); three gated guesses then show distance
   (farther, no move), MISS, and improvement, each rolling straight into the next
   prompt (no after-panels); finally the player types back to the secret with the
   REAL vocabulary (`useVocab` loads in the tutorial), nudged with the answer after 3
-  straight MISSes. **Stage 2** is an easy two-hole sentence played **unguided** —
-  its rank maps are stocked so the obvious first guesses land on BOTH holes, so
-  multi-hole broadcast is discovered, not told; solving it ends the tutorial
-  **wordlessly** (the tray swaps to `N TRIES` + PLAY TODAY'S PUZZLE; copy is
-  deliberately terse throughout, no under-the-hood talk). The tutorial is
+  straight MISSes.
+  **It ENDS on the found word, teaching ROUTES (#155, decided 2026-08-03, superseding the
+  stage-2 bakery sentence):** analytics and feedback said the unguided second stage was widely
+  skipped and the game is intuitive enough without it — its one lesson (a guess filling several
+  holes) is discoverable in play — so cutting it freed the ending for the one concept nothing
+  else teaches. Finding the word retires the prompt and DROPS the keyboard out of the tray
+  (the game's own `kb-drop`), the coach nudges the tap, the word runs #129's ambient wave, and
+  the tap opens the REAL route map on the tutorial's own neighborhood — solved, so it opens as
+  the post-mortem with every road named. **CLOSING that map is the graduation**: `onDone`, no
+  SolvedScreen (a lesson has no score to show, so `SolvedScreen`'s tutorial `action` prop and
+  its null `dayNumber` are gone with it). The map carries the last line of copy in a
+  `RouteModal` **`coach` slot** — a flex item under the scroller, mirroring the header above
+  it, so the scroller simply gets shorter and every measurement it makes on open stays correct
+  (an overlay would need the line to reserve room, and `.route-scroll` may carry no vertical
+  padding). The daily game passes no `coach` and its dialog is exactly as it was.
+  **The board's ranks are a REAL generated neighborhood, and have to be:** the route map only
+  opens where #115's geometry exists (`hasRoute` gates on the rank-1 group's `dq`), and the
+  hand-authored ~22-entry map this replaced carried none. Each language embeds a #154
+  single-word artifact (`pnpm gen:word`) PRUNED to the word + the road zone + the guided
+  words, by `web/scripts/prune-word-map.mjs` — the exact command is recorded in each script's
+  header, and `scripts.test.ts` fails if board and map ever drift. **en = OCEAN, fr = PHARE**,
+  both chosen on ROUTE legibility (three well-populated senses each); LIGHTHOUSE was the first
+  fr-symmetric en candidate and lost on a 135/15 split, because clarity beats en/fr symmetry.
+  Copy is deliberately terse throughout, no under-the-hood talk. The tutorial is
   **data-driven**:
-  boards, ranks, guesses and steps live in `web/src/tutorial/scripts/{en,fr}.ts`
+  the board, guesses and steps live in `web/src/tutorial/scripts/{en,fr}.ts`
   (copy keys in `i18n.ts`) and `tutorial/scripts.test.ts` guards the lesson arc.
   Gated steps use synthetic vocab/prefix sets (the keyboard's existing contract);
   free steps use the real sets. The tutorial writes NOTHING to `rounds`; the store
@@ -928,6 +934,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `Game.tsx` (NOT rehydration; `archive` is `'yes'`
   when replaying a past archive day (#55), `'no'` for the live daily puzzle);
   `share {method:'native'|'clipboard'}` — `SolvedScreen`
-  success paths; `tutorial {action:'start'|'finish'|'skip'}` — invite accept / PLAY
-  finish / skip (fast-forward or invite SKIP). Plus automatic pageviews.
+  success paths; `tutorial {action:'start'|'finish'|'skip'}` — invite accept / the route map
+  closing on the last step (#155; it was the PLAY button before) / skip (fast-forward or
+  invite SKIP). Plus automatic pageviews.
 

@@ -1,6 +1,4 @@
-// Per-language onboarding script lookup. Lives HERE (not in ../script.ts) because the
-// script files import padRanks from ../script — aggregating them there again would be
-// a circular import.
+// Per-language onboarding script lookup, kept beside the scripts it aggregates.
 import type { TutorialScript } from '../script';
 import en from './en';
 import fr from './fr';
