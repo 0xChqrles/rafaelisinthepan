@@ -1,0 +1,41 @@
+# AGENTS.md — @whippin/shared (cross-cutting TS)
+
+> Package-scoped guidance. This package is the HOME of the cross-package contracts:
+> the invariants governing what lives here — the slug()⇔fold() identity, the
+> per-puzzle JSON schema types, and the day-addressed routing / game-day rules — are
+> documented in the root `AGENTS.md`. Read it before touching anything here.
+
+## File map
+
+```
+  shared/                     cross-cutting TS consumed by web (pkg @whippin/shared)
+    src/slug.ts               fold() — the slug/fold contract (byte-identical to slug())
+    src/day.ts                the ONE 22:00-ET DST-correct game-day logic (client + server + publish)
+    src/types.ts              per-puzzle schema types (Puzzle, Hole, RankMap, …)
+    src/heat.ts               heatColor() — heat ramp (rank exponents + floating hits ONLY)
+    src/progressColor.ts      progressColor() + progressEmoji() — progress ramp (progress bar, selector badge, run rulers incl. the card, share-text emoji row); shares ramp.ts
+    src/index.ts              re-exports
+```
+
+---
+
+## Invariants (pointers)
+
+- Every module here exists to be the ONE source of truth for its concern across
+  packages (web + backend + publish). Never fork a second implementation of any of
+  them in a consumer package.
+- `src/slug.ts` `fold()` must stay byte-identical to generation's Python `slug()`.
+  The shared case table is `fixtures/slug-cases.json`, consumed by BOTH languages —
+  add a case there, never on one side only (root `AGENTS.md`, Testing).
+- `src/day.ts` is the ONE 22:00-ET DST-correct game-day definition (client + server
+  + publish) — see the routing contract in the root `AGENTS.md`.
+- `src/heat.ts` (heat ramp: rank exponents + floating hits ONLY) and
+  `src/progressColor.ts` (progress ramp + `progressEmoji`) are DIFFERENT ramps with
+  different meanings — never borrow one for the other's job (they share `ramp.ts`).
+  The web's route-map lane colors are pinned COPIES of progress-ramp stops, guarded
+  by `laneColors.test.ts` in web.
+- `src/shareCard.ts` is the share-token codec (v2), running byte-identically in the
+  browser and the Lambda; the token's product behavior and evolution rules are in the
+  solved-result bullet of `packages/web/AGENTS.md`.
+- Changes here are contract changes by definition: update the Vitest contract tests
+  and run `pnpm test` (root testing policy).
