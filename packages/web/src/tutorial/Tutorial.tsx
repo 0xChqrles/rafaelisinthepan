@@ -304,9 +304,19 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
   // it. `quiet` lets the hole run its ambient wave then — the affordance for the tap the copy
   // is asking for. The tap swaps the play area from the word to the line, INLINE (no modal —
   // the routes simply take the word's place; findings 2026-08-03, superseding the RouteModal
-  // ending first built for #155), the coach explains the roads, and PLAY is the way out.
+  // ending first built for #155) — and the roads arrive ONE BY ONE (findings 2026-08-04:
+  // everything at once was too much at the same time). `routeStage` counts the roads the
+  // coach has introduced: stage k draws roads 0..k vivid (the rest recede into the unfound
+  // tint) with `roadCopyKeys[k]` naming the newcomer's theme, NEXT ROAD advances, and the
+  // stage past the last road is the close: every lane vivid, `routeCopyKey` stating the
+  // general principle, PLAY in the tray as the way out.
   const [routeOpen, setRouteOpen] = useState(false);
-  const openRoute = useCallback(() => setRouteOpen(true), []);
+  const [routeStage, setRouteStage] = useState(0);
+  const openRoute = useCallback(() => {
+    setRouteStage(0);
+    setRouteOpen(true);
+  }, []);
+  const nextRoad = useCallback(() => setRouteStage((k) => k + 1), []);
   const finish = useCallback(() => {
     track('tutorial', { action: 'finish' });
     onDone();
@@ -325,11 +335,17 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
         : null,
     [routeOpen, rankMap, tried, holes, hole],
   );
+  // Every road named -> the close. Reading the count off the MODEL (not the script) keeps
+  // the stages honest to the map actually drawn; scripts.test.ts pins the script's copy list
+  // to the same count.
+  const roadCount = routeModel?.roads.length ?? 0;
+  const routeDone = routeStage >= roadCount;
+
   // The line lives in its OWN scroller filling the play area (`.route-inline`), never the
   // page: the topbar and the coach float with no background, so page-scrolled words would
   // ride straight under them. It opens scrolled to the bottom — the word itself, with the
-  // roads merging into it and PLAY right below in the tray — and the player scrolls UP
-  // through the journey. Instant, like the route modal's own opening scroll.
+  // roads merging into it and the stepper right below in the tray — and the player scrolls
+  // UP through the journey. Instant, like the route modal's own opening scroll.
   const routeScrollRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const el = routeScrollRef.current;
@@ -362,7 +378,13 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
   else if (step.kind === 'find') {
     coachKey = missStreak >= NUDGE_AFTER_MISSES ? step.nudgeKey : step.copyKey;
   } else if (step.kind === 'tap') {
-    coachKey = routeOpen ? step.routeCopyKey : coarse ? step.tapCopyKey : step.clickCopyKey;
+    coachKey = !routeOpen
+      ? coarse
+        ? step.tapCopyKey
+        : step.clickCopyKey
+      : routeDone
+        ? step.routeCopyKey
+        : step.roadCopyKeys[Math.min(routeStage, step.roadCopyKeys.length - 1)];
   }
   const coachCopy = coachKey ? t(lang, coachKey) : null;
 
@@ -440,9 +462,14 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
           </>
         ) : routeOpen && routeModel ? (
           // The word gave way to its own route line: the same drawing the daily game's modal
-          // wraps, in a scroller of its own — solved, so every road is named.
+          // wraps, in a scroller of its own — solved, so every road is named. Until the coach
+          // has introduced them all, only the first `routeStage + 1` roads are vivid.
           <div className="route-inline" ref={routeScrollRef}>
-            <RouteLine model={routeModel} lang={lang} />
+            <RouteLine
+              model={routeModel}
+              lang={lang}
+              vividLanes={routeDone ? undefined : routeStage + 1}
+            />
           </div>
         ) : (
           <>
@@ -497,10 +524,11 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
         ) : !vocab ? (
           <p className="status">{t(lang, 'loading')}</p>
         ) : routeOpen ? (
-          // The graduation: the line ends on the word, and PLAY sits right under it. The same
-          // full-width interaction the mix button opened the lesson with closes it.
-          <button type="button" className="mix-btn" onClick={finish}>
-            {t(lang, 'tutPlay')}
+          // The road stepper, then the graduation: NEXT ROAD walks the coach through the
+          // lanes one at a time, and once every road has spoken the same full-width
+          // interaction the mix button opened the lesson with closes it — PLAY.
+          <button type="button" className="mix-btn" onClick={routeDone ? finish : nextRoad}>
+            {t(lang, routeDone ? 'tutPlay' : 'tutNextRoad')}
           </button>
         ) : kbGone ? null : (
           <div

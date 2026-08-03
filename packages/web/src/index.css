@@ -2134,6 +2134,16 @@ button * {
   color: var(--lane-c);
   opacity: 0.55;
 }
+/* The tutorial's staged reveal (#155): a station on a road the coach has NOT introduced yet
+   recedes whole — node and word both in the unfound tint, matching the LANE_DIM its line is
+   painted in — so each stage reads as ONE road speaking. AFTER the revealed/unknown/departure
+   rules and at their specificity, so a not-yet-introduced station dims whatever else it is. */
+.route .route-station.route-later .route-node {
+  background: var(--unfound);
+}
+.route .route-station.route-later .route-word {
+  color: var(--unfound);
+}
 
 /* --- off the map --- */
 /* ABOVE the line, behind a torn edge: the guesses that earned no rank at all. Beyond the

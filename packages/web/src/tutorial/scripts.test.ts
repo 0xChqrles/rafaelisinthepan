@@ -145,6 +145,12 @@ for (const lang of ['en', 'fr'] as const) {
             .map((e) => e.road),
         );
         expect(roads.size).toBeGreaterThanOrEqual(2);
+        // The staged reveal names each road as it arrives (findings 2026-08-04), so the
+        // script must carry exactly one line of copy per road the map actually ships —
+        // fewer leaves a road arriving unexplained, more leaves copy no stage ever shows.
+        const tap = script.steps.at(-1)!;
+        if (tap.kind !== 'tap') throw new Error('the last step must be the tap');
+        expect(tap.roadCopyKeys).toHaveLength(roads.size);
         // Every road is populated enough to read as a sense rather than as an outlier.
         for (const road of roads) {
           const members = new Set(

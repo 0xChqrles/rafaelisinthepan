@@ -56,10 +56,15 @@ export type TutorialStep =
   // the same ambient wave as a real round — and the coach nudges the tap in the input
   // device's own verb (`tapCopyKey` on a coarse pointer, `clickCopyKey` otherwise). The tap
   // REPLACES the word with its route line, drawn inline (no modal — the map takes the word's
-  // place), `routeCopyKey` becomes the coach copy — the one thing the tutorial still has to
-  // say: what the roads mean — and the tray offers PLAY, which ends the tutorial. There is no
-  // graduation screen, because there is no score to show.
-  | { kind: 'tap'; tapCopyKey: UiKey; clickCopyKey: UiKey; routeCopyKey: UiKey };
+  // place) — and the roads are introduced ONE BY ONE (findings 2026-08-04: all at once was
+  // too much at the same time): the first road arrives vivid with `roadCopyKeys[0]` naming
+  // its theme while the others recede into the unfound tint, and each NEXT ROAD press brings
+  // the next road in with its own line of copy. `roadCopyKeys` is ordered by LANE — road 0
+  // holds rank 1 — and must name every road the board's map actually ships
+  // (scripts.test.ts). After the last road, `routeCopyKey` states the general principle and
+  // the tray offers PLAY, which ends the tutorial. There is no graduation screen, because
+  // there is no score to show.
+  | { kind: 'tap'; tapCopyKey: UiKey; clickCopyKey: UiKey; roadCopyKeys: UiKey[]; routeCopyKey: UiKey };
 
 export interface TutorialScript {
   puzzle: Puzzle; // same schema as a real puzzle (parsePuzzle-valid)

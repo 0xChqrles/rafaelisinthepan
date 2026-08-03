@@ -123,7 +123,7 @@ const STRINGS = {
   },
   tutGuessFar: {
     en: 'Now type [[w:forest^214]].',
-    fr: 'Maintenant tape [[w:casquette^330]].',
+    fr: 'Maintenant tape [[w:bougie^318]].',
   },
   tutGuessMiss: {
     en: 'Type a completely different word: [[m:violin]].',
@@ -143,8 +143,11 @@ const STRINGS = {
   },
   // ---- the ending (#155): tapping the found word replaces it with its route line, and
   // PLAY ends the tutorial. The nudge speaks the input device's own verb — tutTap on a
-  // coarse pointer, tutClick otherwise (the tapAnywhere/clickAnywhere pattern) — and
-  // tutRoutes explains the line once it is on screen: plain words, no under-the-hood talk.
+  // coarse pointer, tutClick otherwise (the tapAnywhere/clickAnywhere pattern). The roads
+  // are then introduced ONE BY ONE (findings 2026-08-04): tutRoad1/2/3 each name the road
+  // arriving on screen — the en strings name OCEAN's themes, the fr strings PHARE's, since
+  // each language plays its own board — and tutRoutes closes on the general principle once
+  // every road has spoken. Plain words, no under-the-hood talk.
   tutTap: {
     en: 'Found it. Now tap [[b:ocean]].',
     fr: 'Trouvé. Touche [[b:phare]].',
@@ -153,9 +156,22 @@ const STRINGS = {
     en: 'Found it. Now click [[b:ocean]].',
     fr: 'Trouvé. Clique sur [[b:phare]].',
   },
+  tutRoad1: {
+    en: 'Each road is a theme. The first: the coast.',
+    fr: 'Chaque route est un thème. La première : le symbole.',
+  },
+  tutRoad2: {
+    en: 'The second: the deep.',
+    fr: 'La deuxième : la lumière.',
+  },
+  tutRoad3: {
+    en: 'The third: seafaring.',
+    fr: 'La troisième : la mer.',
+  },
+  tutNextRoad: { en: 'NEXT ROAD', fr: 'ROUTE SUIVANTE' },
   tutRoutes: {
-    en: 'Close words come in themes. One road per theme.',
-    fr: 'Les mots proches vont par thèmes. Une route par thème.',
+    en: 'Every word has its own roads.',
+    fr: 'Chaque mot a ses routes.',
   },
   tutPlay: { en: 'PLAY', fr: 'JOUER' },
 } satisfies Record<string, Record<UiLang, string>>;

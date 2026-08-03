@@ -8,7 +8,7 @@
 //   pnpm gen:word phare --lang fr --form phare=n:s
 //   node packages/web/scripts/prune-word-map.mjs \
 //     --in packages/generation/output/single-word/fr/phare.json \
-//     --out packages/web/src/tutorial/scripts/fr.word.json --keep casquette
+//     --out packages/web/src/tutorial/scripts/fr.word.json --keep bougie
 //
 // PHARE is the near-ideal first example of ROUTES (#155): its neighborhood splits into three
 // legible senses — the figurative landmark (emblématique, pilier, symbole, bastion), the car
@@ -19,9 +19,11 @@
 // The arc: the scramble ladder walks PHARE out to its 25th neighbor (lampadaire — picked over
 // rank 10's figurative « pilier » because a street lamp NEAR a lighthouse is intuition, not a
 // puzzle; findings 2026-08-03) and on to its 100th (faisceau — the start word, inside
-// generation's own 50-150 start band), then three gated guesses teach distance (casquette,
-// 330: farther, hint stays — an everyday word on a READABLE scale, replacing désert^1183,
-// same findings), MISS (guitare, which the real map does not rank at all), and improvement
+// generation's own 50-150 start band), then three gated guesses teach distance (bougie,
+// 318: farther, hint stays — a candle is INTUITIVELY a weaker, farther light than the beam
+// the player stands on, on a READABLE scale; it replaced casquette^330, which made no
+// intuitive sense as a somehow-close word, which had replaced désert^1183 — findings
+// 2026-08-03/04), MISS (guitare, which the real map does not rank at all), and improvement
 // (voilier, 51: closer, hint moves). The player then finds their way back to PHARE, and taps
 // the word they found — its route line takes its place, and JOUER ends the lesson.
 import type { WordPuzzle } from '@whippin/shared';
@@ -59,12 +61,21 @@ const script: TutorialScript = {
       ],
     },
     // Le feedback enseigne ; chaque essai enchaîne sur l'instruction suivante.
-    { kind: 'guess', expect: 'casquette', copyKey: 'tutGuessFar' },
+    { kind: 'guess', expect: 'bougie', copyKey: 'tutGuessFar' },
     { kind: 'guess', expect: 'guitare', copyKey: 'tutGuessMiss' },
     { kind: 'guess', expect: 'voilier', copyKey: 'tutGuessCloser' },
     { kind: 'find', target: word.slug, copyKey: 'tutFind', nudgeKey: 'tutFindNudge' },
-    // La fin : toucher le mot trouvé — les routes prennent sa place — puis JOUER.
-    { kind: 'tap', tapCopyKey: 'tutTap', clickCopyKey: 'tutClick', routeCopyKey: 'tutRoutes' },
+    // La fin : toucher le mot trouvé — les routes prennent sa place, une par une. Route 0 :
+    // le symbole (emblématique, pilier, bastion) ; route 1 : la lumière (fanal, lampadaire,
+    // ampoule) ; route 2 : la mer (sémaphore, brise-lame, vigie) — ordre des voies, route 0
+    // = rang 1.
+    {
+      kind: 'tap',
+      tapCopyKey: 'tutTap',
+      clickCopyKey: 'tutClick',
+      roadCopyKeys: ['tutRoad1', 'tutRoad2', 'tutRoad3'],
+      routeCopyKey: 'tutRoutes',
+    },
   ],
 };
 
