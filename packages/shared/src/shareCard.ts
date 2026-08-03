@@ -3,9 +3,11 @@
 // `…/s/<token>`; the backend decodes it to render the OG image + meta. Cross-runtime (pure
 // JS), so the SAME function runs in the browser and the Lambda.
 //
-// The card shows the puzzle's dayNumber (its stable ID), the score, and the player's RUN
-// RULER — NEVER a local date: the backend owns the day (22:00-ET flip), so a calendar date
-// would be wrong across timezones.
+// The TOKEN stores the puzzle's dayNumber (its stable, server-owned ID), never a date: the
+// backend owns the day (22:00-ET flip), so packing the SHARER's local date would be wrong
+// across timezones. The card DISPLAYS that index as the one calendar date it is
+// (`dateForDayNumber`, its exact inverse — decided 2026-08-03), which is timezone-free and
+// the same day the shared link resolves to.
 //
 // **v2 (decided 2026-07-25)** carries the RAW run instead of the bucketed squares, so the
 // card draws the same ruler the solved screen does: one cell per counted try, plus a tick
@@ -45,7 +47,7 @@ export const SHARE_LANGS = ['en', 'fr'];
 
 export interface ShareResult {
   lang: string; // 2-letter code; drives the click-through redirect, not shown on the card
-  dayNumber: number; // the puzzle's stable ID (server-owned day), shown as "#<dayNumber>"
+  dayNumber: number; // the puzzle's stable ID (server-owned day), shown as its calendar date
   score: number; // unique tries — ALSO the ruler's cell count (one cell per counted try)
   trajectory: number[]; // reconstruction % (0..100) after each counted try -> the bar's cells
   // Per DISTINCT secret, in sentence order (so the index IS the number under the tick): the

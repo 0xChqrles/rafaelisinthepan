@@ -1,11 +1,12 @@
 // CONTRACT (light): the share-card SVG (packages/shared/src/cardSvg.ts) must render the
 // player's RUN RULER — one cell per counted try on the SHARED progress ramp (so the card
 // matches the on-screen ruler), a tick per solving try with the dropped hole's sentence
-// index under it — plus the score and the puzzle id. (Exact positions/sizes are cosmetic
+// index under it — plus the score and the day's calendar date. (Exact positions/sizes are cosmetic
 // and not asserted; they get tuned against the rasterized PNG.)
 
 import { describe, it, expect } from 'vitest';
 import { renderCardSvg, CARD_WIDTH } from './cardSvg';
+import { dateForDayNumber } from './day';
 import { progressColor } from './progressColor';
 
 describe('renderCardSvg', () => {
@@ -47,10 +48,15 @@ describe('renderCardSvg', () => {
     expect([...svg.matchAll(/font-size="28"[^>]*>(\d+)</g)].map((m) => m[1])).toEqual(['1']);
   });
 
-  it('shows the try count (unit named — lower is better) and the puzzle id (#dayNumber, never a date)', () => {
+  it('shows the try count (unit named — lower is better) and the day as its calendar date', () => {
     const svg = renderCardSvg(data);
     expect(svg).toContain('6 TRIES');
-    expect(svg).toContain('#123');
+    // The token carries the day INDEX; the card draws the date that index IS — the server's
+    // game day in every timezone (dateForDayNumber is dayNumber's inverse), never "#123"
+    // and never the reader's local date.
+    expect(svg).toContain(dateForDayNumber(123));
+    expect(svg).toContain('1970-05-04');
+    expect(svg).not.toContain('#123');
   });
 
   it('uses the singular for one try', () => {

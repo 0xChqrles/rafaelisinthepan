@@ -579,12 +579,28 @@ but duplicate occurrences do not receive extra weight in the frontend percentage
 The score is simply the **number of unique tries**. A try is a submitted word that
 exists in the per-language vocabulary set, including cold misses and non-improving
 warm hits. Repeated guesses are deduped by **canonical identity** (`guessKey`,
-#104): a guess found in some rank map is identified by its resolved entry — the
-first secret (JSON key order) whose map knows it, plus that entry's rank — so accent
-variants AND inflections of an already-tried word count once; a guess in no map (a
-cold miss everywhere) falls back to its folded slug (`fold(raw)`). The uncounted
-variant plays its feedback but never enters the persisted `tried` history. Invalid
-non-words are rejected before counting. The score is displayed as the large background number during the round and
+#104): a guess is identified by its **whole outcome** — its rank in EVERY secret's
+map (JSON key order), with the absent maps marked — so two guesses count once only
+when they are indistinguishable, which is exactly what accent variants and
+inflections of an already-tried word are; a guess in no map (a cold miss
+everywhere) falls back to its folded slug (`fold(raw)`). The uncounted variant
+plays its feedback but never enters the persisted `tried` history — and because a
+deduped guess resolves identically everywhere, it provably cannot improve or solve
+a hole, so **replaying `tried` always reproduces the board**. Invalid non-words are
+rejected before counting.
+**The identity was the FIRST map's entry until 2026-08-03** (`secret:rank`), on the
+reasoning that aliasing is consistent across maps. It is not: a slug collision is
+resolved PER MAP, closest-wins, so one map can fuse two surfaces another map ranks
+far apart. On fr day 20667 `maniere`/`manieres` were one group in the first map
+(both folding onto `maniérés`) while the `manieres` hole ranked them 2 and 0 — the
+guess that SOLVED the sentence was discarded as a repeat, never entered `tried`,
+and every view replayed from it (run ruler, share card, emoji row, and the score)
+lost that solve: the card drew no tick for the middle word and a run that stopped
+at 93.5%. Comparing whole outcomes makes that unrepresentable. Already-persisted
+rounds keep the log they recorded (a token is a snapshot; nothing is back-filled).
+**`llm_play.py`'s `_guess_key` is the parity twin and moved with it** — there, a
+deduped guess also receives no feedback and changes no state, which the outcome
+identity finally makes sound. The score is displayed as the large background number during the round and
 as `<tries> TRIES` at game end (the unit is NAMED — on the solved screen, the share
 card, and the share text — because "SCORE" alone reads as points to maximize when
 lower is better; singular `TRY` at 1). Like the rest of the UI chrome the label is
@@ -1408,7 +1424,8 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   inverse. The **OG share page** (`backend/ogCard.ts` `renderShareHtml`) now click-throughs
   to the **shared day's** date-addressed URL (`/<lang>/<dateForDayNumber(dayNumber)>`),
   not bare `/<lang>` — so a shared archive result opens that archived date, not today (the
-  card/title were already `#dayNumber`-correct). The archive **must not touch streaks**
+  card/title named the right day all along, as `#<dayNumber>` then and as that same date
+  since 2026-08-03 — see the share-card bullet). The archive **must not touch streaks**
   (separate issue).
 - **Solved-result hierarchy (decided 2026-07-10; leaderboard variant 2026-07-24, #110;
   SEE-MORE dialog 2026-07-25):** the solved tray is sentence-specific and the SAME
@@ -1449,6 +1466,16 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   itself draws at most ONE rect per pixel column: the score field is 15 bits, so a
   hand-built token can declare ~32k tries, and below a pixel per cell the extras only
   stack — collapsing them bounds the rasterizer's work by the CARD instead of by the token.
+  **The day is named by its CALENDAR DATE, not the day index (decided 2026-08-03,
+  superseding `#<dayNumber>`):** `2026-08-02` in all three places a reader sees it — the
+  card image (`renderCardSvg`), the OG/Twitter title (`ogCard.renderShareHtml`) and the
+  shared plain text (`SolvedScreen`'s headline) — so a stranger can date the sentence,
+  where the internal index says nothing to anyone but the game, and so the card, the title
+  and the archive URL the link resolves to all spell the same day the same way. The TOKEN
+  is unchanged (it has always carried the day index, and no version bump is involved):
+  every surface formats it with `dateForDayNumber`, `dayNumber`'s exact inverse, so this is
+  still the SERVER-owned game day — never the reader's local date, which is what the old
+  "never a date" note was guarding against.
   **The plain-text EMOJI row moved onto the PROGRESS ramp too (decided 2026-07-25):**
   `progressEmoji` lives with the ramp stops in `shared/src/progressColor.ts` so the row
   and the ruler can't drift — `<35 🟦` (blue→cyan), `<45 🟩`, `<55 🟨`, `<65 🟧`,

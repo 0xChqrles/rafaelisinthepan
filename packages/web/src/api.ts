@@ -113,6 +113,12 @@ export function parsePuzzle(data: unknown): Puzzle {
     if (!isRecord(entries)) throw new Error('malformed puzzle: bad "ranks" entry');
     for (const entry of Object.values(entries)) {
       if (!isRecord(entry)) throw new Error('malformed puzzle: bad "ranks" entry');
+      // `rank` is read as a number by scoring/feedback AND is a component of the counted-try
+      // identity (guessKey, whose "unknown" sentinel is -1) — a negative or non-integer rank
+      // would corrupt both silently, so a present entry must carry a well-formed one.
+      if (typeof entry.rank !== 'number' || !Number.isInteger(entry.rank) || entry.rank < 0) {
+        throw new Error('malformed puzzle: "rank" must be a non-negative integer');
+      }
       checkRankAnnotations(entry);
     }
   }

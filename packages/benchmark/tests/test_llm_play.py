@@ -3348,8 +3348,8 @@ def _aliased_puzzle():
 
 
 def test_inflected_form_of_a_counted_try_is_deduped_like_the_front():
-    # Parity with the web store's guessKey dedup (#104): an inflection of an
-    # already-counted word resolves to the same rank entry and is ONE try.
+    # Parity with the web store's guessKey dedup (#104): an inflection that resolves to
+    # the same rank entry on EVERY word reveals nothing new and is ONE try.
     referee = PuzzleReferee(_aliased_puzzle(), VOCAB | {"shareds", "forests"})
 
     assert referee.submit("shared").kind == "counted"
@@ -3361,6 +3361,35 @@ def test_inflected_form_of_a_counted_try_is_deduped_like_the_front():
     # A genuinely different word still counts.
     assert referee.submit("cold").kind == "counted"
     assert referee.tries == 2
+
+
+def _collided_slug_puzzle():
+    # The fr day-20667 shape. Slug collisions are resolved PER MAP, closest-wins, so
+    # "warm"/"warms" are ONE group in the forest map (rank 10) while the ocean map ranks
+    # "warm" at 2 and keys "warms" to its secret at rank 0 — where it SOLVES.
+    stocked = puzzle()
+    stocked["ranks"]["forest"]["warm"] = {"word": "warm", "rank": 10}
+    stocked["ranks"]["forest"]["warms"] = {"word": "warm", "rank": 10}
+    stocked["ranks"]["ocean"]["warm"] = {"word": "warm", "rank": 2}
+    stocked["ranks"]["ocean"]["warms"] = {"word": "ocean", "rank": 0}
+    return stocked
+
+
+def test_a_guess_any_word_ranks_differently_counts_and_can_still_solve():
+    # The identity is the guess's outcome on every word, not its group in the FIRST map.
+    # Reading it off one map made this solving plural a repeat of the near-miss singular:
+    # it counted for nothing and, in the referee, produced no feedback at all — so a word
+    # the player had just answered exactly stayed unsolved.
+    referee = PuzzleReferee(_collided_slug_puzzle(), VOCAB | {"warm", "warms"})
+
+    assert referee.submit("warm").kind == "counted"
+    assert referee.holes[1].rank == 2  # near miss on the ocean word
+
+    solving = referee.submit("warms")
+    assert solving.kind == "counted"
+    assert referee.tries == 2
+    assert referee.holes[1].rank == 0  # and it solves
+    assert referee.holes[1].word == "ocean"  # displayed as the canonical secret form
 
 
 def test_secret_inflection_solves_the_hole_at_rank_zero():

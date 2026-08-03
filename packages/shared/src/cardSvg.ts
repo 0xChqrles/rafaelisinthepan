@@ -1,7 +1,14 @@
 // Share-card SVG (issue #8): a pure, dependency-free renderer for the minimal OG card —
-// the player's RUN RULER, "<n> TRIES", and the puzzle id "#<dayNumber>". The backend
+// the player's RUN RULER, "<n> TRIES", and the puzzle's DAY as a calendar date. The backend
 // rasterizes this SVG to a PNG (with the Press Start 2P font) for the link's OG image. Pure
 // + deterministic, so it is fully unit-testable without any AWS/rasterizer.
+//
+// The day reads "2026-08-02", not "#20667" (decided 2026-08-03): a stranger seeing the card
+// can date the sentence, where the internal day index says nothing to anyone but the game.
+// It is still the SERVER-owned day, never the reader's local date — `dateForDayNumber` is the
+// exact inverse of `dayNumber`, so the token's day index maps to the one calendar date that
+// game day IS, identically in every timezone. Nothing about the token changes: it has always
+// carried the day index, and the same date already names the archive URL the card links to.
 //
 // The ruler is the SAME display as the solved screen's (web components/RunRuler.tsx), scaled
 // to the card (decided 2026-07-25, replacing the bucketed heat squares — the v2 token carries
@@ -12,9 +19,11 @@
 // try AND the ticks, so it stays the richer view.
 //
 // The only interpolated strings are numeric fields (score/day/pct/hole index — all clamped
-// ints from the decoded token) and the try-count UNIT, which is a fixed per-lang table
-// CONSTANT (never interpolated input) — so there is no text to escape and no injection surface.
+// ints from the decoded token, the day formatted to digits + hyphens by dateForDayNumber) and
+// the try-count UNIT, which is a fixed per-lang table CONSTANT (never interpolated input) — so
+// there is no text to escape and no injection surface.
 
+import { dateForDayNumber } from './day';
 import { progressColor } from './progressColor';
 
 // Standard OG image size (Twitter/Slack/Discord `summary_large_image`).
@@ -52,7 +61,7 @@ const UNITS: Record<string, { one: string; many: string }> = {
 
 export interface CardData {
   lang: string; // 2-letter code; selects the try-count unit (en/fr), unknown -> en
-  dayNumber: number;
+  dayNumber: number; // the server-owned day index — DRAWN as its calendar date (YYYY-MM-DD)
   score: number;
   trajectory: number[]; // reconstruction % (0..100) after each counted try -> the cells
   solvedAt: (number | null)[]; // per distinct secret in sentence order -> the ticks
@@ -115,7 +124,7 @@ export function renderCardSvg({ lang, dayNumber, score, trajectory, solvedAt }: 
     // "N TRIES", not "SCORE N": naming the unit is what tells a stranger seeing the
     // card that lower is better. Localized by the token's lang (#59).
     `<text x="${cx}" y="430" text-anchor="middle" font-family="${CARD_FONT}" font-size="76" fill="${FG}">${score} ${score === 1 ? unit.one : unit.many}</text>`,
-    `<text x="${cx}" y="500" text-anchor="middle" font-family="${CARD_FONT}" font-size="30" fill="${MUTED}">#${dayNumber}</text>`,
+    `<text x="${cx}" y="500" text-anchor="middle" font-family="${CARD_FONT}" font-size="30" fill="${MUTED}">${dateForDayNumber(dayNumber)}</text>`,
     `</svg>`,
   ].join('');
 }

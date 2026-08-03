@@ -20,6 +20,12 @@ import {
 // them in one function is what stops the bar's cells and its ticks from ever disagreeing
 // about the same run — and every caller wants both, for the player and for each opponent.
 //
+// Everything here rests on `tried` being a COMPLETE record of the state changes: a guess the
+// log omits is a guess this replay cannot see. That is why the counted-try identity compares
+// a guess's outcome on every hole (`guessKey`) — a deduped guess resolves identically
+// everywhere, so it provably changed nothing, and the walk always lands on the real board.
+// Read that comment before touching either side; they are one contract.
+//
 //   trajectory — the reconstruction % AFTER each guess. Starts from `freshHoles` (each at
 //     its start_rank), monotonic non-decreasing, and the guess that solved the sentence
 //     lands at 100. One value per guess, so `.length === guessCount`.

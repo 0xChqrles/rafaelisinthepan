@@ -31,17 +31,28 @@ export function rankCount(rankMap: Record<string, RankEntry>): number {
   return seen.size;
 }
 
-// Canonical dedup identity of a valid folded guess (#104): inflections of one word are
-// aliases of one rank entry, so they are ONE counted try. The first secret (JSON key
-// order) whose map knows the guess anchors the identity — aliasing is consistent across
-// maps, so every variant of a word resolves to the same (secret, rank) pair. A guess
-// found in no map (a cold miss everywhere) keeps its folded slug as its identity.
+// Canonical dedup identity of a valid folded guess (#104): two guesses are ONE counted try
+// only when they are INDISTINGUISHABLE — every hole resolves them to the same entry, so the
+// second can tell the player nothing the first didn't. The identity is therefore the guess's
+// whole OUTCOME: its rank in each secret's map, in JSON key order, with -1 where a map does
+// not know it. A guess found in no map (a cold miss everywhere) keeps its folded slug.
+// Inflections of one word still collapse to one try — that is what aliasing to the same
+// entry in every map MEANS.
+//
+// It used to anchor on the FIRST map that knew the guess, on the reasoning that "aliasing is
+// consistent across maps, so every variant resolves to the same (secret, rank) pair". That
+// reasoning is false: a slug collision is resolved PER MAP, closest-wins, so one map can fuse
+// two surfaces that another map ranks far apart. On fr day 20667, `maniere` and `manieres`
+// were one group in the FIRST map (tropiques', where both fold onto `maniérés`, rank 6783)
+// while in the `manieres` hole's own map they were rank 2 and rank 0 — so the guess that
+// SOLVED that hole was dropped as a repeat of the singular, never entered `tried`, and every
+// view replayed from `tried` (the run ruler, the share card, the emoji row, and the score
+// itself) lost the solve: the shared card showed no tick for the middle word and a run that
+// never reached 100%. Comparing the whole outcome makes that unrepresentable — a guess that
+// can move any hole always counts, so replaying `tried` always reproduces the board.
 export function guessKey(ranks: RankMap, typed: string): string {
-  for (const secret of Object.keys(ranks)) {
-    const entry = ranks[secret][typed];
-    if (entry) return `${secret}:${entry.rank}`;
-  }
-  return typed;
+  const resolved = Object.keys(ranks).map((secret) => ranks[secret][typed]?.rank ?? -1);
+  return resolved.some((rank) => rank >= 0) ? resolved.join('|') : typed;
 }
 
 export function holeProgress(rank: number, startRank: number, N: number) {
