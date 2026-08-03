@@ -351,12 +351,20 @@ function Round({
   }, [lineupExiting, handleLineupExited]);
   // The SOURCE beat is the third such signal, and it was the one without a deadline — which
   // is what this is (2026-08-03, from a player report: after solving, the holes could not be
-  // tapped until the page was RELOADED). Its chain has two places that dead-end in silence:
-  // `SolvedScreen` only reports its rise while `animate` is true, and `SolvedCaption`'s
-  // `!animate` branch returns WITHOUT calling `onComplete`. If either is taken,
-  // `sourceRevealComplete` never turns over. And a reload is exactly the cure, because a
-  // rehydrated solve sets it true at mount — so the bug can only ever be seen on a live solve,
-  // which is what the report says.
+  // tapped until the page was RELOADED, while SHARE kept working the whole time). That second
+  // detail is what pinned it: SHARE lives in the result stack, which renders on exactly
+  // `resultsUp` above — so four of the five conjuncts were already true and the source beat was
+  // the only one outstanding. And a reload is precisely the cure, because a rehydrated solve
+  // sets `sourceRevealComplete` true at mount, so the bug can only ever be seen on a LIVE solve.
+  //
+  // The trigger was NOT reproduced, so this is a backstop rather than a proven cure. What the
+  // hunt did turn up is a real weakness, fixed at its own site: `SolvedCaption` ended the beat
+  // on a requestAnimationFrame — which does not run while the document is hidden — on the path
+  // taken by a source-less puzzle and by every reduced-motion player. That was the only link in
+  // this chain that needed the page to be ON SCREEN; it is a timer now. This deadline stays
+  // regardless, because the beat is still something the DOM has to hand back, and the two above
+  // were given theirs for the same reason: a lost signal must never be able to strand the
+  // player.
   //
   // It holds the HOLES hostage and nothing else: `solvedSettled` has one consumer,
   // `exploreDisabled`. So this releases the buttons and cannot touch the choreography — the
@@ -364,11 +372,6 @@ function Round({
   // real beat is RESULTS_IN_MS + one citation at TYPE_MS/char + CURSOR_HOLD_MS ≈ 2s for a long
   // one; the deadline is a generous multiple of that, in the manner of the two above, and it
   // is cancelled the moment the genuine report lands.
-  //
-  // It is a BACKSTOP, not the root cause: the trigger was never reproduced (five engine ×
-  // motion configs, six iOS viewports, backgrounding, the #129 auto-open races — all settle).
-  // If it ever fires in the wild the chain above is still worth fixing; this only guarantees
-  // the player is never locked out of their own post-mortem.
   useEffect(() => {
     if (!resultsUp || sourceRevealComplete) {
       setSourceRevealOverdue(false);
@@ -393,6 +396,7 @@ function Round({
       setPromptExiting(false);
       setSourceRevealStarted(false);
       setSourceRevealComplete(false);
+      setSourceRevealOverdue(false);
       return undefined;
     }
     if (!justSolved) {
@@ -425,6 +429,7 @@ function Round({
     if (didAdvanceStreak) preloadStreakDialog();
     setSourceRevealStarted(false);
     setSourceRevealComplete(false);
+    setSourceRevealOverdue(false);
     setAwaitingWordAnimations(true);
     return undefined;
   }, [solved]);
