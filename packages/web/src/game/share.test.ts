@@ -23,7 +23,7 @@ import {
   MAX_ROW_CELLS,
   ROW_BREAKPOINTS,
 } from './share';
-import { computeProgress } from './scoring';
+import { computeProgress, guessKey } from './scoring';
 import { decodeResult, progressEmoji, type RankMap, type RuntimeHole } from '@whippin/shared';
 
 // Visible glyphs in a row: a colored square is one code point, a keycap is three (digit +
@@ -142,6 +142,38 @@ describe('replayRun — the cells and the ticks come out of ONE walk', () => {
       trajectory: progressTrajectory(holes, ranks, tried),
       solvedAt: solveTicks(holes, ranks, tried),
     });
+  });
+
+  it('replays the SOLVED board from the counted tries, even across a slug collision', () => {
+    // Everything on the solved screen and the shared card is replayed from the counted-try
+    // log, so a solve the log cannot reproduce is invisible: no tick, no keycap, a run that
+    // stops short of 100. That happened on fr day 20667 because the dedupe identity was read
+    // off ONE map, which fused `maniere` and `manieres` (both folding onto `maniérés`) while
+    // the hole's own map ranks them 2 and 0. Same shape here, played in that order.
+    const ranks: RankMap = {
+      tropiques: {
+        w0: { word: 'tropiques', rank: 0 },
+        maniere: { word: 'maniérés', rank: 6783 },
+        manieres: { word: 'maniérés', rank: 6783 },
+      },
+      manieres: {
+        maniere: { word: 'manière', rank: 2 },
+        manieres: { word: 'manières', rank: 0 },
+        w0: { word: 'w0', rank: 900 },
+      },
+    };
+    const holes: RuntimeHole[] = [hole('tropiques', 146), { ...hole('manieres', 126), pos: 5 }];
+
+    // The log the store keeps: guesses deduped by canonical identity, as Game submits them.
+    const tried: string[] = [];
+    for (const typed of ['maniere', 'manieres', 'w0']) {
+      if (!tried.some((prev) => guessKey(ranks, prev) === guessKey(ranks, typed))) tried.push(typed);
+    }
+    expect(tried).toEqual(['maniere', 'manieres', 'w0']); // the solving plural is kept
+
+    const { trajectory, solvedAt } = replayRun(holes, ranks, tried);
+    expect(solvedAt).not.toContain(null); // every secret has its tick
+    expect(trajectory[trajectory.length - 1]).toBeCloseTo(100, 9);
   });
 });
 

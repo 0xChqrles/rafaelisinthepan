@@ -986,12 +986,13 @@ class PuzzleReferee:
         # every provider/run instead of copying hundreds of thousands of slugs each time.
         self.vocab = vocab if isinstance(vocab, set) else set(vocab)
         # Kept whole (insertion order preserved) for the canonical guess identity
-        # (#104): _guess_key walks the secrets in JSON key order like the front.
+        # (#104): _guess_key reads every secret's map in JSON key order like the front,
+        # so both sides build the same identity string.
         self.ranks = ranks_record
         self.tried: set[str] = set()
-        # Canonical identities of counted tries: inflections of one word alias to one
-        # rank entry, so they share one identity and count ONCE (parity with the
-        # front's guessKey dedup).
+        # Canonical identities of counted tries: a guess whose ranks are identical on
+        # EVERY word (an inflection aliasing to one entry) reveals nothing new and
+        # counts ONCE (parity with the front's guessKey dedup).
         self.tried_keys: set[str] = set()
         self.tried_words: list[str] = []
         # Parsed words outside the fixed vocabulary do not count, but keeping their
@@ -1065,17 +1066,26 @@ class PuzzleReferee:
 
     def _guess_key(self, folded: str) -> str:
         """Canonical dedup identity of a valid folded guess (#104) — the parity twin
-        of the front's guessKey. Inflections of one word alias to one rank entry, so
-        the first secret (JSON key order) whose map knows the guess anchors the
-        identity; aliasing is consistent across maps, so every variant of a word
-        resolves to the same (secret, rank) pair. A guess found in no map (a cold
-        miss everywhere) keeps its folded slug as its identity."""
-        for secret_slug, rank_map in self.ranks.items():
-            if isinstance(rank_map, Mapping):
-                entry = rank_map.get(folded)
-                if isinstance(entry, Mapping):
-                    return f"{secret_slug}:{entry.get('rank')}"
-        return folded
+        of the front's guessKey. Two guesses are ONE try only when they are
+        INDISTINGUISHABLE: every word resolves them to the same entry, so the second
+        can reveal nothing the first didn't. The identity is the whole OUTCOME — the
+        guess's rank in each secret's map (JSON key order), -1 where a map does not
+        know it; a guess found in no map keeps its folded slug. Inflections of one
+        word still count once, which is what aliasing to one entry everywhere means.
+
+        Anchoring on the FIRST map that knew the guess assumed aliasing is consistent
+        across maps. It is not: slug collisions resolve per map, closest-wins, so one
+        map can fuse two surfaces another map ranks far apart — and the fused pair's
+        second half could SOLVE a word while being discarded as a repeat. Comparing
+        outcomes keeps every state-changing guess counted, on both sides."""
+        resolved: list[int] = []
+        for rank_map in self.ranks.values():
+            entry = rank_map.get(folded) if isinstance(rank_map, Mapping) else None
+            rank = entry.get("rank") if isinstance(entry, Mapping) else None
+            resolved.append(rank if isinstance(rank, int) else -1)
+        if not any(rank >= 0 for rank in resolved):
+            return folded
+        return "|".join(str(rank) for rank in resolved)
 
     @property
     def progress(self) -> float:
@@ -1144,8 +1154,10 @@ class PuzzleReferee:
             )
         guess_key = self._guess_key(folded)
         if folded in self.tried or guess_key in self.tried_keys:
-            # Same folded form, or an inflection of an already-counted word (#104):
-            # both resolve to an identity that has already been counted.
+            # Same folded form, or a guess whose ranks are identical on every word
+            # (#104): its identity is already counted. Because the ranks match
+            # everywhere, giving it no feedback and no state change is provably the
+            # same outcome the earlier try already produced — never a swallowed solve.
             reason = (
                 "has the same folded lookup form as an already tried word"
                 if folded in self.tried

@@ -51,7 +51,9 @@ describe('GET /s/<token>', () => {
     expect(res.headers['Content-Type']).toContain('text/html');
     expect(res.body).toContain(`content="https://whippin.ai/og/${token}.png"`);
     expect(res.body).toContain('12 essais'); // fr unit named — lower is better
-    expect(res.body).toContain('#20638');
+    // The day is titled by its calendar date, like the card draws and the link resolves to.
+    expect(res.body).toContain(`Whippin AI ${dateForDayNumber(20638)} — 12 essais`);
+    expect(res.body).not.toContain('#20638');
     expect(res.body).toContain('<html lang="fr">');
     expect(res.body).toContain('Jouer à Whippin AI'); // no-JS body link (fr)
     // Redirect into the game AT THE SHARED DAY (date-addressed, #55), not bare /fr.

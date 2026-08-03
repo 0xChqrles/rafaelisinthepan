@@ -66,9 +66,13 @@ export function renderShareHtml(token: string, result: ShareResult, base: string
       ? { one: 'essai', many: 'essais', play: 'Jouer à Whippin AI' }
       : { one: 'try', many: 'tries', play: 'Play Whippin AI' };
   // "N tries" (unit named), matching the card image — "SCORE" alone reads as
-  // points to maximize when lower is better.
+  // points to maximize when lower is better. The day is its CALENDAR DATE, like the card
+  // draws and the click-through below addresses (decided 2026-08-03, replacing "#<index>"):
+  // one day, one spelling of it everywhere a reader can see it.
   const title = escapeAttr(
-    `Whippin AI #${result.dayNumber} — ${result.score} ${result.score === 1 ? L.one : L.many}`,
+    `Whippin AI ${dateForDayNumber(result.dayNumber)} — ${result.score} ${
+      result.score === 1 ? L.one : L.many
+    }`,
   );
   const image = escapeAttr(`${base}/og/${token}.png`);
   // Click-through lands on the SHARED day, not today (#55): the token carries the

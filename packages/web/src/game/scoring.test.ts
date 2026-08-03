@@ -120,9 +120,12 @@ describe('computeProgress(holes, ranks) — averaged, 0..100, path-independent',
   });
 });
 
+// SPEC: two guesses share one canonical identity — and so count as ONE try — exactly when
+// EVERY hole resolves them to the same entry. A guess that any hole judges differently can
+// tell the player something new, so it always counts.
 describe('guessKey(ranks, typed) — canonical try identity (#104)', () => {
-  // "privée"/"prive" alias to the privé entry (rank 2) in secret a's map; secret b
-  // knows neither. "portes" is an alias of a DIFFERENT group (porte, rank 5).
+  // "privée"/"prive" alias to the privé entry in BOTH maps (rank 2 in a, rank 90 in b).
+  // "portes" is an alias of a DIFFERENT group (porte, rank 5), which map b never knows.
   const ranks: RankMap = {
     a: {
       prive: { word: 'privé', rank: 2 },
@@ -145,10 +148,34 @@ describe('guessKey(ranks, typed) — canonical try identity (#104)', () => {
     expect(guessKey(ranks, 'portes')).toBe(guessKey(ranks, 'porte'));
   });
 
-  it('anchors on the FIRST map that knows the guess, consistently across variants', () => {
-    // Both variants exist in a and b: the identity comes from a (JSON key order), so
-    // the differing rank in b never splits them.
-    expect(guessKey(ranks, 'privee')).toBe('a:2');
+  it('is the outcome on EVERY hole, so a variant one map ranks differently is its own try', () => {
+    // Same rank in a, different rank in b: the player learns something new from the
+    // second one, so it cannot be folded into the first.
+    const split: RankMap = {
+      a: { chaud: { word: 'chaud', rank: 4 }, chaude: { word: 'chaud', rank: 4 } },
+      b: { chaud: { word: 'chaud', rank: 7 }, chaude: { word: 'chaude', rank: 9 } },
+    };
+    expect(guessKey(split, 'chaude')).not.toBe(guessKey(split, 'chaud'));
+  });
+
+  it('never fuses a SOLVING guess into a duplicate of a near miss (fr day 20667)', () => {
+    // The real regression: in the FIRST map the singular and the plural fold onto one
+    // group (`maniérés`, rank 6783), while in the hole's OWN map the plural IS the secret
+    // (rank 0) and the singular is a different group two ranks out. Anchoring the identity
+    // on the first map made the plural a repeat of the singular, so the guess that solved
+    // the sentence never entered `tried` — and the run ruler, the share card, the emoji
+    // row and the score all lost it.
+    const collided: RankMap = {
+      tropiques: {
+        maniere: { word: 'maniérés', rank: 6783 },
+        manieres: { word: 'maniérés', rank: 6783 },
+      },
+      manieres: {
+        maniere: { word: 'manière', rank: 2 },
+        manieres: { word: 'manières', rank: 0 },
+      },
+    };
+    expect(guessKey(collided, 'manieres')).not.toBe(guessKey(collided, 'maniere'));
   });
 
   it('a guess in no map (cold miss) keeps its folded slug as identity', () => {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { BenchmarkResults } from '@whippin/shared';
+import { dateForDayNumber, type BenchmarkResults } from '@whippin/shared';
 import { shareText, shareUrl } from '../game/share';
 import { lineupModel, hasDisplayEntries } from '../game/benchmark';
 import RunRuler, { rulerStagger, type RunReplay } from './RunRuler';
@@ -173,7 +173,11 @@ export default function SolvedScreen({
       solvedAt: solvedAt ?? [],
     });
     const unit = t(lang, guessCount === 1 ? 'try' : 'tries').toLowerCase();
-    const headline = `Whippin #${dayNumber} — ${guessCount} ${unit}`;
+    // The day is named by its CALENDAR DATE, not the internal day index (decided
+    // 2026-08-03): a reader can date the sentence, and it is the same string the card
+    // draws and the shared link resolves to. dateForDayNumber is dayNumber's exact
+    // inverse, so this is still the server-owned game day, not the sharer's local date.
+    const headline = `Whippin ${dateForDayNumber(dayNumber)} — ${guessCount} ${unit}`;
     // The card (via the token) draws the run in full; the plain-text row is the bounded
     // summary of that SAME run — trajectory and solve moments both — so the link and its
     // fallback can't disagree.
