@@ -89,8 +89,22 @@ export default function SolvedCaption({
     }
     if (reduceMotion || total === 0) {
       setShown(total);
-      const raf = requestAnimationFrame(() => onComplete?.());
-      return () => cancelAnimationFrame(raf);
+      // A TIMER, not a frame (2026-08-03). This branch is the WHOLE completion signal for a
+      // source-less puzzle (`total === 0` — `source` is optional in the schema) and for every
+      // reduced-motion player: no interval runs, so this one callback is what ends the source
+      // beat. A frame is the weaker guarantee of the two — `requestAnimationFrame` does not run
+      // while the document is HIDDEN (a hidden document gets no rendering opportunity), where a
+      // timer is merely throttled. So a player who solves and immediately locks the phone or
+      // switches apps leaves the beat unfinished for as long as they are away, and any path
+      // that drops the pending frame outright leaves it unfinished for good — with the result
+      // stack fully pressable and only the holes locked, which is the report this came from.
+      // The deferral only has to leave this commit, never to land on a paint, so the frame was
+      // buying nothing in exchange for that exposure. Whether a lost frame is what the reporter
+      // actually hit was NOT reproduced; `SOURCE_REVEAL_FALLBACK_MS` in `Game.tsx` is what
+      // guarantees the outcome either way. This just removes the one link in the chain that
+      // needed the page to be on screen.
+      const id = window.setTimeout(() => onComplete?.(), 0);
+      return () => window.clearTimeout(id);
     }
 
     setShown(0);

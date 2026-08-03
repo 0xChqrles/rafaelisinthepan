@@ -1544,7 +1544,22 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   `animationend`, the lineup's tick clock), and the tray renders NOTHING until they
   arrive — so each carries a **deadline** (`KB_EXIT_FALLBACK_MS` / `LINEUP_EXIT_FALLBACK_MS`
   in `Game.tsx`), a generous multiple of the real duration, cancelled by the genuine
-  signal. A lost signal must never be able to strand the player on an empty tray. On a
+  signal. A lost signal must never be able to strand the player on an empty tray. **The
+  SOURCE reveal is the third such signal and now carries the same deadline**
+  (`SOURCE_REVEAL_FALLBACK_MS`, 6s, added 2026-08-03): it gates `solvedSettled`, whose one
+  consumer is `exploreDisabled`, so a report that never lands used to leave every hole
+  untappable for the rest of the screen — the post-mortem reachable only by RELOADING, with
+  SHARE working the whole time (which is what located it: SHARE renders on the same four
+  conjuncts minus this one). The trigger was never reproduced, so the deadline is a backstop,
+  not a proven cure; alongside it `SolvedCaption` stopped ending the beat on a
+  `requestAnimationFrame` — which does not run while the document is hidden — on the path a
+  source-less puzzle and every reduced-motion player take. That was the chain's only link
+  requiring the page to be on screen. **That deadline counts VISIBLE time only** (restarted on
+  `visibilitychange`): the beat it backstops is paced by a frame and an interval, both of which
+  the browser suspends or throttles while the tab is hidden, where a plain timer would keep full
+  speed — so a wall-clock deadline could outrun a beat that had barely started and hand the holes
+  back over a citation still typing. The other two deadlines are still wall-clock; they gate the
+  tray rather than the sentence, and were left as they are. On a
   streak solve these exit beats do NOT play hidden behind the celebration — keyboard and lineup
   hold still under the modal and the drop + teleport-out start at its dismissal; the
   source types only after the leaderboard has risen (decided 2026-07-24). **The sentence

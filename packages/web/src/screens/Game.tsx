@@ -51,6 +51,10 @@ const STREAK_AFTER_WORDS_MS = 300;
 // itself was lost.
 const KB_EXIT_FALLBACK_MS = 1_200;
 const LINEUP_EXIT_FALLBACK_MS = 3_000;
+// The source typewriter's deadline. Its real beat is RESULTS_IN_MS + one citation typed at
+// TYPE_MS per character + CURSOR_HOLD_MS — under 2s even for a long author/work — so this is a
+// generous multiple, like the two above, and can never cut a genuine reveal short.
+const SOURCE_REVEAL_FALLBACK_MS = 6_000;
 
 // The beat between the sentence coming to rest and a first-ever solved word's map opening
 // itself (#129): long enough for the resolved word to land as its own moment, short enough to
@@ -308,6 +312,9 @@ function Round({
   // frozen until the source typewriter explicitly reports that it has finished.
   const [sourceRevealStarted, setSourceRevealStarted] = useState(solved);
   const [sourceRevealComplete, setSourceRevealComplete] = useState(solved);
+  // The deadline behind that report (see the fallback effect below). Never persisted, never
+  // rendered: it only releases the hole buttons if the source beat never reports in.
+  const [sourceRevealOverdue, setSourceRevealOverdue] = useState(false);
   // Solved exit choreography (#110, decided 2026-07-24): a LIVE solve doesn't swap the
   // tray instantly — the keyboard slides down out of it (kb-drop) while the lineup
   // characters teleport OUT one after another; only when the last is gone does the
@@ -320,6 +327,11 @@ function Round({
     setLineupExiting(false);
     setLineupGone(true);
   }, []);
+  // Everything the solved sequence owes EXCEPT the source reveal. This is exactly the condition
+  // that puts the result stack on screen (see the tray below), which is what makes the split
+  // diagnosable from outside: if the player can see and press SHARE, these four are true and
+  // only the source beat is outstanding — which is precisely the report this came from.
+  const resultsUp = showResults && lineupGone && !keyboardLeaving && !showStreakDialog;
   // Both exit beats hand the tray back through a signal the DOM has to produce: the
   // keyboard's own `animationend`, and the lineup's tick clock reporting the last
   // character gone. Both are reliable today, but the tray renders NOTHING until they
@@ -337,6 +349,58 @@ function Round({
     const id = window.setTimeout(handleLineupExited, LINEUP_EXIT_FALLBACK_MS);
     return () => window.clearTimeout(id);
   }, [lineupExiting, handleLineupExited]);
+  // The SOURCE beat is the third such signal, and it was the one without a deadline — which
+  // is what this is (2026-08-03, from a player report: after solving, the holes could not be
+  // tapped until the page was RELOADED, while SHARE kept working the whole time). That second
+  // detail is what pinned it: SHARE lives in the result stack, which renders on exactly
+  // `resultsUp` above — so four of the five conjuncts were already true and the source beat was
+  // the only one outstanding. And a reload is precisely the cure, because a rehydrated solve
+  // sets `sourceRevealComplete` true at mount, so the bug can only ever be seen on a LIVE solve.
+  //
+  // The trigger was NOT reproduced, so this is a backstop rather than a proven cure. What the
+  // hunt did turn up is a real weakness, fixed at its own site: `SolvedCaption` ended the beat
+  // on a requestAnimationFrame — which does not run while the document is hidden — on the path
+  // taken by a source-less puzzle and by every reduced-motion player. That was the only link in
+  // this chain that needed the page to be ON SCREEN; it is a timer now. This deadline stays
+  // regardless, because the beat is still something the DOM has to hand back, and the two above
+  // were given theirs for the same reason: a lost signal must never be able to strand the
+  // player.
+  //
+  // It holds the HOLES hostage and nothing else: `solvedSettled` has one consumer,
+  // `exploreDisabled`. So this releases the buttons and cannot touch the choreography — the
+  // typewriter still types whenever its own signal arrives, and this never cuts it short. The
+  // real beat is RESULTS_IN_MS + one citation at TYPE_MS/char + CURSOR_HOLD_MS ≈ 2s for a long
+  // one; the deadline is a generous multiple of that, in the manner of the two above, and it
+  // is cancelled the moment the genuine report lands.
+  //
+  // Only VISIBLE time counts, and that is not a refinement — it is what makes "generous multiple"
+  // true at all. The beat this waits on is paced by the SCREEN: a frame for the results' rise,
+  // an interval for the typewriter. Hide the document and the browser suspends the first and
+  // throttles the second to about a character a second, while a plain timer keeps running at
+  // full speed. So a player who backgrounds the tab for longer than the deadline comes back to
+  // holes already released over a citation still typing itself — the map free to open over the
+  // sentence mid-beat, which is the one thing `exploreDisabled` exists to prevent. Restarting
+  // the clock on every return makes this "six seconds ON SCREEN with no report", the only
+  // reading under which the number is measured against the same clock as the thing it backstops.
+  // It costs the guarantee nothing: a genuinely lost signal is still lost six seconds later.
+  useEffect(() => {
+    if (!resultsUp || sourceRevealComplete) {
+      setSourceRevealOverdue(false);
+      return undefined;
+    }
+    let id = 0;
+    const arm = () => {
+      window.clearTimeout(id);
+      if (document.visibilityState === 'hidden') return;
+      id = window.setTimeout(() => setSourceRevealOverdue(true), SOURCE_REVEAL_FALLBACK_MS);
+    };
+    arm();
+    document.addEventListener('visibilitychange', arm);
+    return () => {
+      window.clearTimeout(id);
+      document.removeEventListener('visibilitychange', arm);
+    };
+  }, [resultsUp, sourceRevealComplete]);
   const prevSolved = useRef<boolean>(solved);
   useEffect(() => {
     const justSolved = solved && !prevSolved.current;
@@ -353,6 +417,7 @@ function Round({
       setPromptExiting(false);
       setSourceRevealStarted(false);
       setSourceRevealComplete(false);
+      setSourceRevealOverdue(false);
       return undefined;
     }
     if (!justSolved) {
@@ -385,6 +450,7 @@ function Round({
     if (didAdvanceStreak) preloadStreakDialog();
     setSourceRevealStarted(false);
     setSourceRevealComplete(false);
+    setSourceRevealOverdue(false);
     setAwaitingWordAnimations(true);
     return undefined;
   }, [solved]);
@@ -483,8 +549,7 @@ function Round({
   const [routeOrigin, setRouteOrigin] = useState<{ x: number; y: number } | null>(null);
   // The solved sequence has played out and the sentence is the player's again — which is also
   // the state a REHYDRATED solve mounts straight into.
-  const solvedSettled =
-    showResults && lineupGone && !keyboardLeaving && !showStreakDialog && sourceRevealComplete;
+  const solvedSettled = resultsUp && (sourceRevealComplete || sourceRevealOverdue);
   // Tapping a hole is available during normal play and on that settled screen, where the map
   // becomes the post-mortem (terminus revealed, the whole neighborhood named) — never while the
   // solving beats are running, which own the sentence.
