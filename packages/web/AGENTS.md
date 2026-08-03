@@ -743,15 +743,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
   in the play area inside its OWN scroller (`.route-inline` — the page must not scroll, since
   the topbar and coach float with no background; `.route-frame` is positioned so the absolute
   sr-only list cannot escape the scroller and grow the page). It opens scrolled to the bottom
-  — the word, solved, every road named. **The roads are introduced ONE BY ONE (findings
-  2026-08-04: the whole map at once was too much at the same time):** stage k draws roads
-  0..k vivid and recedes the rest into the unfound tint (`RouteLine.vividLanes`; stations get
-  `route-later`, the lane gradients paint LANE_DIM — paint only, the layout never changes
-  between stages so nothing re-measures), while the coach names the arriving road's THEME
-  from the script's `roadCopyKeys` (`tutRoad1/2/3` — en names OCEAN's themes, fr PHARE's;
-  scripts.test.ts pins the list's length to the map's real road count). A NEXT ROAD press
-  (`tutNextRoad`) advances; after the last road the coach states the general principle
-  (`tutRoutes`) and the tray offers **PLAY (`tutPlay`), which is the graduation**: `onDone`,
+  — the word, solved, every road named. **The roads are shown ONE AT A TIME, then all together
+  (findings 2026-08-04: the whole map at once was too much at the same time):** stage k draws
+  road k ALONE — every other lane recedes into the unfound tint (`RouteLine.focusLane`;
+  stations get `route-later`, the lane gradients paint LANE_DIM — paint only, the layout
+  never changes between stages so nothing re-measures) — while the coach names that road's
+  THEME from the script's `roadCopyKeys` (`tutRoad1..4` — en names OCEAN's themes, fr
+  TROPIQUES's; scripts.test.ts pins the list's length to the map's real road count). A NEXT
+  ROAD press (`tutNextRoad`) moves the focus; after the last road the close shows ALL lanes
+  vivid at once, the coach states the general principle (`tutRoutes`), and the tray offers
+  **PLAY (`tutPlay`), which is the graduation**: `onDone`,
   no SolvedScreen (a lesson has no score to show, so `SolvedScreen`'s tutorial `action` prop
   and its null `dayNumber` are gone with it). The daily game's `RouteModal` wraps the same
   `RouteLine`, never passes `vividLanes`, and behaves exactly as before.
@@ -760,17 +761,21 @@ it to the local store — see `packages/backend/AGENTS.md`).
   hand-authored ~22-entry map this replaced carried none. Each language embeds a #154
   single-word artifact (`pnpm gen:word`) PRUNED to the word + the road zone + the guided
   words, by `web/scripts/prune-word-map.mjs` — the exact command is recorded in each script's
-  header, and `scripts.test.ts` fails if board and map ever drift. **en = OCEAN, fr = PHARE**,
-  both chosen on ROUTE legibility (three well-populated senses each); LIGHTHOUSE was the first
-  fr-symmetric en candidate and lost on a 135/15 split, because clarity beats en/fr symmetry.
+  header, and `scripts.test.ts` fails if board and map ever drift. **en = OCEAN, fr =
+  TROPIQUES**, both chosen on ROUTE legibility, and both a SINGLE definition (decided
+  2026-08-04): the routes lesson is about FACETS of one idea, so the board's word must not be
+  a homonym — PHARE (lighthouse / headlight) was replaced because its routes read as two
+  definitions, and LIGHTHOUSE had already lost to ocean on a 135/15 road split. Tropiques'
+  four roads — the climate, the islands, the globe, the holiday feel — are each nameable at a
+  glance; en/fr symmetry stays a non-goal.
   **The guided words obey two findings-decided rules (2026-08-03/04):** the far guess stays
   on a READABLE scale — same order of magnitude as the start word, ≤ 500, guarded by
   `scripts.test.ts` (fr `désert^1183` read as noise) — AND must make intuitive sense as a
-  somehow-close word (`casquette^330` did not; it is `bougie^318` now — a candle is a
-  weaker, farther light than the beam the player stands on, and plays against
-  `lampadaire^25`); a mix stop's word should likewise be an INTUITIVE neighbor (fr's second
-  stop is `lampadaire^25`, not the figurative `pilier^10`). Coach copy must fit the 3-line
-  box at 320px — the routes and closer-guess strings were cut to size for it.
+  somehow-close word (`casquette^330` did not; fr's is `neige^353` — snow is
+  climate-adjacent and intuitively the anti-tropics, so "farther" feels right); a mix stop's
+  word should likewise be an INTUITIVE neighbor (fr's second stop is `soleils^12`). Coach
+  copy must fit the 3-line box at 320px — the routes and closer-guess strings were cut to
+  size for it.
   Copy is deliberately terse throughout, no under-the-hood talk. The tutorial is
   **data-driven**:
   the board, guesses and steps live in `web/src/tutorial/scripts/{en,fr}.ts`

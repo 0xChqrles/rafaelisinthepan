@@ -115,15 +115,15 @@ const STRINGS = {
   tutMixMore: { en: 'MIX EVEN MORE', fr: 'ENCORE PLUS' },
   tutMixed1: {
     en: '[[w:sea^1]] is the closest word to [[b:ocean]].',
-    fr: '[[w:emblématique^1]] est le mot le plus proche de [[b:phare]].',
+    fr: '[[w:tropicales^1]] est le mot le plus proche de [[b:tropiques]].',
   },
   tutMixed10: {
     en: '[[w:islands^10]] is the 10th closest word to [[b:ocean]].',
-    fr: '[[w:lampadaire^25]] est le 25e mot le plus proche de [[b:phare]].',
+    fr: '[[w:soleils^12]] est le 12e mot le plus proche de [[b:tropiques]].',
   },
   tutGuessFar: {
     en: 'Now type [[w:forest^214]].',
-    fr: 'Maintenant tape [[w:bougie^318]].',
+    fr: 'Maintenant tape [[w:neige^353]].',
   },
   tutGuessMiss: {
     en: 'Type a completely different word: [[m:violin]].',
@@ -131,7 +131,7 @@ const STRINGS = {
   },
   tutGuessCloser: {
     en: '[[m:violin]] was a [[m:MISS]] — too far to rank. Now try [[w:boat^45]].',
-    fr: '[[m:guitare]] était trop loin — [[m:MISS]]. Essaie [[w:voilier^51]].',
+    fr: '[[m:guitare]] était trop loin — [[m:MISS]]. Essaie [[w:lagons^22]].',
   },
   tutFind: {
     en: 'Now type the very first word — the blue one.',
@@ -139,34 +139,40 @@ const STRINGS = {
   },
   tutFindNudge: {
     en: 'Forgot it? It was [[b:ocean]].',
-    fr: "Oublié ? C'était [[b:phare]].",
+    fr: "Oublié ? C'était [[b:tropiques]].",
   },
   // ---- the ending (#155): tapping the found word replaces it with its route line, and
   // PLAY ends the tutorial. The nudge speaks the input device's own verb — tutTap on a
   // coarse pointer, tutClick otherwise (the tapAnywhere/clickAnywhere pattern). The roads
-  // are then introduced ONE BY ONE (findings 2026-08-04): tutRoad1/2/3 each name the road
-  // arriving on screen — the en strings name OCEAN's themes, the fr strings PHARE's, since
+  // are then shown ONE AT A TIME (findings 2026-08-04): tutRoad1..4 each name the road on
+  // screen alone — the en strings name OCEAN's themes, the fr strings TROPIQUES's, since
   // each language plays its own board — and tutRoutes closes on the general principle once
   // every road has spoken. Plain words, no under-the-hood talk.
   tutTap: {
     en: 'Found it. Now tap [[b:ocean]].',
-    fr: 'Trouvé. Touche [[b:phare]].',
+    fr: 'Trouvé. Touche [[b:tropiques]].',
   },
   tutClick: {
     en: 'Found it. Now click [[b:ocean]].',
-    fr: 'Trouvé. Clique sur [[b:phare]].',
+    fr: 'Trouvé. Clique sur [[b:tropiques]].',
   },
   tutRoad1: {
     en: 'Each road is a theme. The first: the coast.',
-    fr: 'Chaque route est un thème. La première : le symbole.',
+    fr: 'Chaque route est un thème. La première : le climat.',
   },
   tutRoad2: {
     en: 'The second: the deep.',
-    fr: 'La deuxième : la lumière.',
+    fr: 'La deuxième : les îles.',
   },
   tutRoad3: {
     en: 'The third: seafaring.',
-    fr: 'La troisième : la mer.',
+    fr: 'La troisième : le globe.',
+  },
+  // The en string is UNREFERENCED — ocean's board ships three roads — but the parity
+  // contract wants both languages; re-author it if an en board ever ships four.
+  tutRoad4: {
+    en: 'The fourth road.',
+    fr: 'La quatrième : les vacances.',
   },
   tutNextRoad: { en: 'NEXT ROAD', fr: 'ROUTE SUIVANTE' },
   tutRoutes: {

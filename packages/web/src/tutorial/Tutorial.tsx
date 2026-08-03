@@ -304,12 +304,12 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
   // it. `quiet` lets the hole run its ambient wave then — the affordance for the tap the copy
   // is asking for. The tap swaps the play area from the word to the line, INLINE (no modal —
   // the routes simply take the word's place; findings 2026-08-03, superseding the RouteModal
-  // ending first built for #155) — and the roads arrive ONE BY ONE (findings 2026-08-04:
-  // everything at once was too much at the same time). `routeStage` counts the roads the
-  // coach has introduced: stage k draws roads 0..k vivid (the rest recede into the unfound
-  // tint) with `roadCopyKeys[k]` naming the newcomer's theme, NEXT ROAD advances, and the
-  // stage past the last road is the close: every lane vivid, `routeCopyKey` stating the
-  // general principle, PLAY in the tray as the way out.
+  // ending first built for #155) — and the roads are shown ONE AT A TIME (findings
+  // 2026-08-04: everything at once was too much at the same time). Stage k draws road k
+  // ALONE — every other lane recedes into the unfound tint — with `roadCopyKeys[k]` naming
+  // its theme; NEXT ROAD advances; and the stage past the last road is the close: ALL lanes
+  // vivid at once, `routeCopyKey` stating the general principle, PLAY in the tray as the way
+  // out.
   const [routeOpen, setRouteOpen] = useState(false);
   const [routeStage, setRouteStage] = useState(0);
   const openRoute = useCallback(() => {
@@ -462,13 +462,13 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
           </>
         ) : routeOpen && routeModel ? (
           // The word gave way to its own route line: the same drawing the daily game's modal
-          // wraps, in a scroller of its own — solved, so every road is named. Until the coach
-          // has introduced them all, only the first `routeStage + 1` roads are vivid.
+          // wraps, in a scroller of its own — solved, so every road is named. Each stage
+          // shows ONE road alone; the close shows them all.
           <div className="route-inline" ref={routeScrollRef}>
             <RouteLine
               model={routeModel}
               lang={lang}
-              vividLanes={routeDone ? undefined : routeStage + 1}
+              focusLane={routeDone ? undefined : routeStage}
             />
           </div>
         ) : (

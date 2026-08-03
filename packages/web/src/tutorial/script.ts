@@ -56,14 +56,14 @@ export type TutorialStep =
   // the same ambient wave as a real round — and the coach nudges the tap in the input
   // device's own verb (`tapCopyKey` on a coarse pointer, `clickCopyKey` otherwise). The tap
   // REPLACES the word with its route line, drawn inline (no modal — the map takes the word's
-  // place) — and the roads are introduced ONE BY ONE (findings 2026-08-04: all at once was
-  // too much at the same time): the first road arrives vivid with `roadCopyKeys[0]` naming
-  // its theme while the others recede into the unfound tint, and each NEXT ROAD press brings
-  // the next road in with its own line of copy. `roadCopyKeys` is ordered by LANE — road 0
-  // holds rank 1 — and must name every road the board's map actually ships
-  // (scripts.test.ts). After the last road, `routeCopyKey` states the general principle and
-  // the tray offers PLAY, which ends the tutorial. There is no graduation screen, because
-  // there is no score to show.
+  // place) — and the roads are shown ONE AT A TIME (findings 2026-08-04: all at once was
+  // too much at the same time): stage k draws road k ALONE, every other lane receding into
+  // the unfound tint, with `roadCopyKeys[k]` naming its theme; each NEXT ROAD press moves
+  // the focus to the next road. `roadCopyKeys` is ordered by LANE — road 0 holds rank 1 —
+  // and must name every road the board's map actually ships (scripts.test.ts). After the
+  // last road the close shows ALL lanes vivid at once, `routeCopyKey` states the general
+  // principle, and the tray offers PLAY, which ends the tutorial. There is no graduation
+  // screen, because there is no score to show.
   | { kind: 'tap'; tapCopyKey: UiKey; clickCopyKey: UiKey; roadCopyKeys: UiKey[]; routeCopyKey: UiKey };
 
 export interface TutorialScript {

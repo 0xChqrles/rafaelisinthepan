@@ -112,10 +112,10 @@ const LANE_W = 5;
 // #883beb where its stop is #883ceb: a one-off in the transcription, invisible on screen but
 // exactly the kind of thing "copied, not imported" can hide forever.)
 export const LANE_COLORS = ['#ef4f97', '#2ad2eb', '#883ceb', '#23dc91'];
-// A lane NOT yet introduced by the tutorial's staged reveal (#155): painted in the map's own
-// "unfound" tint so it recedes the way a censored word does, instead of competing with the
-// road being explained. Mirrors the CSS `--unfound` on `.route-frame` — copied, not read,
-// because this one paints JS-built gradients; keep the two in sync.
+// A lane OTHER than the one the tutorial's staged reveal is introducing (#155): painted in
+// the map's own "unfound" tint so it recedes the way a censored word does, instead of
+// competing with the road being explained. Mirrors the CSS `--unfound` on `.route-frame` —
+// copied, not read, because this one paints JS-built gradients; keep the two in sync.
 const LANE_DIM = '#3a4270';
 
 function laneX(road: number): number {
@@ -125,10 +125,11 @@ function laneX(road: number): number {
 // The rail's lines, as one gradient: a hard-stop band per lane, in that lane's tint. Built here
 // (not in CSS) because the number of lanes is data — and because painting every lane in one
 // background is what lets a single element carry a whole cross-section of the line.
-function laneLines(lanes: number, vivid: number = lanes): string {
+function laneLines(lanes: number, focus: number | null = null): string {
   const stops: string[] = [];
   for (let road = 0; road < lanes; road += 1) {
-    const color = road < vivid ? LANE_COLORS[road % LANE_COLORS.length] : LANE_DIM;
+    const color =
+      focus === null || road === focus ? LANE_COLORS[road % LANE_COLORS.length] : LANE_DIM;
     const from = laneX(road) - LANE_W / 2;
     stops.push(`transparent ${from}px, ${color} ${from}px, ${color} ${from + LANE_W}px`);
     stops.push(`transparent ${from + LANE_W}px`);
@@ -141,9 +142,12 @@ function laneLines(lanes: number, vivid: number = lanes): string {
 // a set of parallel lines reads as a frame drawn AROUND them, where two colored halves read as
 // what they are, the outer lanes turning in toward the trunk. With more than three roads the
 // inner lanes' elbows hide under the outer ones, which is what overlapping tracks do anyway.
-function busGradient(lanes: number, split: number, vivid: number = lanes): string {
-  const left = vivid > 0 ? LANE_COLORS[0] : LANE_DIM;
-  const right = lanes - 1 < vivid ? LANE_COLORS[(lanes - 1) % LANE_COLORS.length] : LANE_DIM;
+function busGradient(lanes: number, split: number, focus: number | null = null): string {
+  const left = focus === null || focus === 0 ? LANE_COLORS[0] : LANE_DIM;
+  const right =
+    focus === null || focus === lanes - 1
+      ? LANE_COLORS[(lanes - 1) % LANE_COLORS.length]
+      : LANE_DIM;
   const at = `${(split * 100).toFixed(2)}%`;
   return `linear-gradient(90deg, ${left} 0 ${at}, ${right} ${at} 100%)`;
 }
@@ -220,18 +224,20 @@ export function RouteLine({
   lang,
   hereRef,
   stuck = null,
-  vividLanes,
+  focusLane,
 }: {
   model: RouteModel;
   lang: string;
   // The modal's handle on the "you are here" row — the one row it measures and parks.
   hereRef?: RefObject<HTMLDivElement | null>;
   stuck?: 'top' | 'bottom' | null;
-  // The tutorial's staged reveal (#155): only the first `vividLanes` roads are drawn in
-  // their colors — the rest recede into the unfound tint (`route-later`, LANE_DIM) until
-  // the coach has introduced them. Purely paint: the layout never changes between stages,
-  // so nothing re-measures and nothing jumps. Omitted (the game), every lane is vivid.
-  vividLanes?: number;
+  // The tutorial's staged reveal (#155, exclusive since findings 2026-08-04): ONLY the
+  // focused road is drawn in its color — every other lane recedes into the unfound tint
+  // (`route-later`, LANE_DIM) — so each stage is one road speaking alone; the close passes
+  // nothing and every lane comes vivid at once. Purely paint: the layout never changes
+  // between stages, so nothing re-measures and nothing jumps. Omitted (the game), every
+  // lane is vivid.
+  focusLane?: number;
 }) {
   const stations = stationsOf(model);
 
@@ -267,15 +273,15 @@ export function RouteLine({
   const trunkX = LANE_X0 + ((lanes - 1) * LANE_GAP) / 2;
   const busX = laneX(0) - LANE_W / 2;
   const busW = (lanes - 1) * LANE_GAP + LANE_W;
-  const vivid = vividLanes ?? lanes;
+  const focus = focusLane ?? null;
   const frame = {
     '--gutter': `calc(var(--rank-size) * ${rankChars} + 10px)`,
     '--railw': `${railWidth}px`,
     '--trunk-x': `${trunkX}px`,
     '--bus-x': `${busX}px`,
     '--bus-w': `${busW}px`,
-    '--bus-grad': busGradient(lanes, (trunkX - busX) / busW, vivid),
-    '--lane-lines': laneLines(lanes, vivid),
+    '--bus-grad': busGradient(lanes, (trunkX - busX) / busW, focus),
+    '--lane-lines': laneLines(lanes, focus),
     '--stick-inset': `${STICK_INSET}px`,
     // The dash unit the leap and the tail are cut to (see dashedRun): the gradient paints it,
     // the heights count it, so both read it from here.
@@ -347,7 +353,7 @@ export function RouteLine({
                 className={[
                   'route-station',
                   onLane ? 'on-lane' : '',
-                  onLane && station.road! >= vivid ? 'route-later' : '',
+                  onLane && focus !== null && station.road !== focus ? 'route-later' : '',
                   station.hidden ? 'route-unknown' : '',
                   revealed ? 'route-revealed' : '',
                   !station.hidden && station.best ? 'route-you' : '',
