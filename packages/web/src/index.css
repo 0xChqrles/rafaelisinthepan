@@ -1749,7 +1749,18 @@ button * {
    rank and the rail would zigzag), and `--gutter` computes the same number but only under the
    assumption that the pixel font is the one that loaded. It is still declared — as the fallback
    template below for anything without subgrid, and because `--wordw` and the parked row's
-   backgrounds need the width as a NUMBER, which a measured track cannot hand them. */
+   backgrounds need the width as a NUMBER, which a measured track cannot hand them.
+   FLOORED at that number, though, and the floor is load-bearing (2026-08-03): the "you are here"
+   row states its own columns to dodge a WebKit bug (see `.route-station.route-you`), and a row
+   that is not `subgrid` and spans a flexible track contributes NOTHING to an intrinsic track's
+   size — so its rank silently stopped sizing this one. `--gutter` is computed from the FARTHEST
+   station, which on an untouched hole is the departure, which is that very row: at `start_rank`
+   exactly 100 it owned the only 3-digit rank on the line, the measured track fell back to `-99`,
+   and the row sat right of every other one — 9.4px in WebKit, 4.4px in Chromium, so this half is
+   NOT engine-specific and would have shipped everywhere. The floor makes
+   the two agree by construction, and costs nothing when they already do — `--gutter` is sized for
+   the widest exponent rendered, so `max-content` never exceeds it while the pixel font is the one
+   that loaded (verified identical at start ranks 50/60/99/101/110/150 in both engines). */
 .route {
   width: min(430px, 100%);
   margin: 0 auto;
@@ -1757,7 +1768,7 @@ button * {
      screen edge when the map is scrolled all the way down. */
   padding: 4px 0 104px;
   display: grid;
-  grid-template-columns: max-content var(--railw) 1fr;
+  grid-template-columns: minmax(var(--gutter), max-content) var(--railw) 1fr;
 }
 .route-station,
 .route-link,
