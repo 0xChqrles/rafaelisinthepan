@@ -372,13 +372,34 @@ function Round({
   // real beat is RESULTS_IN_MS + one citation at TYPE_MS/char + CURSOR_HOLD_MS ≈ 2s for a long
   // one; the deadline is a generous multiple of that, in the manner of the two above, and it
   // is cancelled the moment the genuine report lands.
+  //
+  // Only VISIBLE time counts, and that is not a refinement — it is what makes "generous multiple"
+  // true at all. The beat this waits on is paced by the SCREEN: a frame for the results' rise,
+  // an interval for the typewriter. Hide the document and the browser suspends the first and
+  // throttles the second to about a character a second, while a plain timer keeps running at
+  // full speed. So a player who backgrounds the tab for longer than the deadline comes back to
+  // holes already released over a citation still typing itself — the map free to open over the
+  // sentence mid-beat, which is the one thing `exploreDisabled` exists to prevent. Restarting
+  // the clock on every return makes this "six seconds ON SCREEN with no report", the only
+  // reading under which the number is measured against the same clock as the thing it backstops.
+  // It costs the guarantee nothing: a genuinely lost signal is still lost six seconds later.
   useEffect(() => {
     if (!resultsUp || sourceRevealComplete) {
       setSourceRevealOverdue(false);
       return undefined;
     }
-    const id = window.setTimeout(() => setSourceRevealOverdue(true), SOURCE_REVEAL_FALLBACK_MS);
-    return () => window.clearTimeout(id);
+    let id = 0;
+    const arm = () => {
+      window.clearTimeout(id);
+      if (document.visibilityState === 'hidden') return;
+      id = window.setTimeout(() => setSourceRevealOverdue(true), SOURCE_REVEAL_FALLBACK_MS);
+    };
+    arm();
+    document.addEventListener('visibilitychange', arm);
+    return () => {
+      window.clearTimeout(id);
+      document.removeEventListener('visibilitychange', arm);
+    };
   }, [resultsUp, sourceRevealComplete]);
   const prevSolved = useRef<boolean>(solved);
   useEffect(() => {

@@ -1554,7 +1554,12 @@ puzzle from the backend (test a specific puzzle by publishing it to the local st
   not a proven cure; alongside it `SolvedCaption` stopped ending the beat on a
   `requestAnimationFrame` — which does not run while the document is hidden — on the path a
   source-less puzzle and every reduced-motion player take. That was the chain's only link
-  requiring the page to be on screen. On a
+  requiring the page to be on screen. **That deadline counts VISIBLE time only** (restarted on
+  `visibilitychange`): the beat it backstops is paced by a frame and an interval, both of which
+  the browser suspends or throttles while the tab is hidden, where a plain timer would keep full
+  speed — so a wall-clock deadline could outrun a beat that had barely started and hand the holes
+  back over a citation still typing. The other two deadlines are still wall-clock; they gate the
+  tray rather than the sentence, and were left as they are. On a
   streak solve these exit beats do NOT play hidden behind the celebration — keyboard and lineup
   hold still under the modal and the drop + teleport-out start at its dismissal; the
   source types only after the leaderboard has risen (decided 2026-07-24). **The sentence
