@@ -43,7 +43,7 @@ export function rankCount(rankMap: Record<string, RankEntry>): number {
 // consistent across maps, so every variant resolves to the same (secret, rank) pair". That
 // reasoning is false: a slug collision is resolved PER MAP, closest-wins, so one map can fuse
 // two surfaces that another map ranks far apart. On fr day 20667, `maniere` and `manieres`
-// were one group in the FIRST map (tropiques', where both fold onto `maniéré`, rank 6783)
+// were one group in the FIRST map (tropiques', where both fold onto `maniérés`, rank 6783)
 // while in the `manieres` hole's own map they were rank 2 and rank 0 — so the guess that
 // SOLVED that hole was dropped as a repeat of the singular, never entered `tried`, and every
 // view replayed from `tried` (the run ruler, the share card, the emoji row, and the score

@@ -256,6 +256,21 @@ describe('parsePuzzle (shape validation)', () => {
     expect(parsePuzzle(bad({ road: 63 }))).toBeTruthy();
   });
 
+  // `rank` is NOT optional: scoring and guess feedback read it as a number, and it is a
+  // component of the counted-try identity (guessKey), whose "unknown" sentinel is -1 — so a
+  // missing, negative, or non-integer rank must be rejected, never shipped into the game.
+  it('rejects a rank entry whose rank is missing, negative, or non-integer', () => {
+    const bad = (rank: unknown) => ({
+      ...valid(),
+      ranks: { foret: { bois: { word: 'bois', rank } } },
+    });
+    expect(() => parsePuzzle(bad(undefined))).toThrow(/rank/);
+    expect(() => parsePuzzle(bad(-1))).toThrow(/rank/);
+    expect(() => parsePuzzle(bad(12.5))).toThrow(/rank/);
+    expect(() => parsePuzzle(bad('87'))).toThrow(/rank/);
+    expect(parsePuzzle(bad(0))).toBeTruthy(); // the secret's own entry is rank 0
+  });
+
   // Optional hole affixes: display-only text around the blank (leading clitic /
   // punctuation). Not load-bearing, so a hole is valid with or without them, and when
   // present they must survive to the front (Phrase renders them around the blank).

@@ -177,7 +177,7 @@ export default function SolvedScreen({
     // 2026-08-03): a reader can date the sentence, and it is the same string the card
     // draws and the shared link resolves to. dateForDayNumber is dayNumber's exact
     // inverse, so this is still the server-owned game day, not the sharer's local date.
-    const headline = `Whippin ${dateForDayNumber(dayNumber)} — ${guessCount} ${unit}`;
+    const headline = `Whippin AI ${dateForDayNumber(dayNumber)} — ${guessCount} ${unit}`;
     // The card (via the token) draws the run in full; the plain-text row is the bounded
     // summary of that SAME run — trajectory and solve moments both — so the link and its
     // fallback can't disagree.
