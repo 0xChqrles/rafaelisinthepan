@@ -2,12 +2,12 @@
 // in i18n.ts) to change the onboarding — the components read everything from here.
 //
 // The board is a REAL neighborhood: `en.word.json` is the #154 single-word artifact for
-// OCEAN, pruned to what the tutorial needs. Regenerate it with:
+// OCEAN, pruned to what the tutorial needs. Regenerate it with (both from the REPO ROOT):
 //
 //   pnpm gen:word ocean --lang en
-//   node scripts/prune-word-map.mjs \
-//     --in ../generation/output/single-word/en/ocean.json \
-//     --out src/tutorial/scripts/en.word.json --keep forest
+//   node packages/web/scripts/prune-word-map.mjs \
+//     --in packages/generation/output/single-word/en/ocean.json \
+//     --out packages/web/src/tutorial/scripts/en.word.json --keep forest
 //
 // (the prune keeps the word, the road zone — generation's flat top-150 for a word artifact —
 // and the groups of the `--keep` words, which is how the "far" guess survives being outside

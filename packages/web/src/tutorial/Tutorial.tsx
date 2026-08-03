@@ -456,6 +456,11 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
               exploreDisabled={!tapping}
               onExplore={openRoute}
               quiet={tapping && !routeOpen}
+              // The lesson ends ON the solved word: its wave is the affordance for the tap
+              // the coach is asking for, so the game's solved-holes-never-wave rule is
+              // inverted here and only here (see Hole.waveSolved). Inert outside the tap
+              // step, where `quiet` is false anyway.
+              waveSolved
             />
             {/* Once there is nothing left to type the prompt retires in place, the same way
                 the game's does on the solving submit: still laid out, so the word does not

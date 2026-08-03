@@ -22,10 +22,10 @@
 // records the exact invocation in its header, and scripts.test.ts fails if the two ever
 // drift (it replays the lesson arc against the embedded map).
 //
-// Usage:
-//   node scripts/prune-word-map.mjs \
-//     --in ../generation/output/single-word/en/ocean.json \
-//     --out src/tutorial/scripts/en.word.json \
+// Usage (paths are cwd-relative; the script headers record the exact repo-root invocations):
+//   node packages/web/scripts/prune-word-map.mjs \
+//     --in packages/generation/output/single-word/en/ocean.json \
+//     --out packages/web/src/tutorial/scripts/en.word.json \
 //     --keep forest --keep boat
 
 import { readFileSync, writeFileSync } from 'node:fs';

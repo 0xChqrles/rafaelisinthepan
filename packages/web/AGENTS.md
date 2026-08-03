@@ -448,7 +448,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   feedback in flight, no map over the sentence, `promptExiting` false, not solved. Everything
   else is the hole's own (`ticking`): its rank, its scramble, its hit, and whether it has a map
   to open at all — the wave is an affordance for the TAP, so a hole with no #115 geometry never
-  ripples. A wave already in FLIGHT is cut when `ticking` drops, not merely when the hole's own
+  ripples, and a hole locked at rank 0 never ripples in the game (`Hole.waveSolved`, default
+  false, is the ONE exception: the tutorial's ending waves its solved word, because there the
+  tap on that word IS the lesson — #155). A wave already in FLIGHT is cut when `ticking` drops, not merely when the hole's own
   `busy` does: `quiet` also falls when the map opens over the sentence, and a wave left running
   behind it shows its tail if the player closes quickly (both modal beats are 120ms, a wave up
   to 460ms). Reduced motion: the clock never starts.

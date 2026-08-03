@@ -3,12 +3,12 @@
 // typed UNACCENTED, which the find step forces (phare's ladder words float accented).
 //
 // The board is a REAL neighborhood: `fr.word.json` is the #154 single-word artifact for
-// PHARE, pruned to what the tutorial needs. Regenerate it with:
+// PHARE, pruned to what the tutorial needs. Regenerate it with (both from the REPO ROOT):
 //
 //   pnpm gen:word phare --lang fr --form phare=n:s
-//   node scripts/prune-word-map.mjs \
-//     --in ../generation/output/single-word/fr/phare.json \
-//     --out src/tutorial/scripts/fr.word.json --keep casquette
+//   node packages/web/scripts/prune-word-map.mjs \
+//     --in packages/generation/output/single-word/fr/phare.json \
+//     --out packages/web/src/tutorial/scripts/fr.word.json --keep casquette
 //
 // PHARE is the near-ideal first example of ROUTES (#155): its neighborhood splits into three
 // legible senses — the figurative landmark (emblématique, pilier, symbole, bastion), the car
