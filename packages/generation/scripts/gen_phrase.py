@@ -509,7 +509,8 @@ def annotate_roads(rmap, merged, kv, start_rank, reps=None):
     farther than the start word is behind them, so clustering it produced forks of a
     route nobody walks — road fields the client bounds away again at read time, and one
     shipped byte per key for nothing. road_zone (distances.py) owns that rule, ceiling
-    included.
+    included — and its `start_rank=None` case, which a start-less single-word artifact
+    passes (#154), turns that ceiling into the flat top-ROAD_TOP zone.
 
     `reps` (rank-aligned, ranks 1..) are the groups' REPRESENTATIVE forms (#134):
     the vectors the ranking — and dq — were built from. They are what the roads
@@ -1090,6 +1091,31 @@ def secret_claim(secret, donor, lemma_table, donors=None, forms=None):
         if donors is not None and confirmed in donors.shared_lemmas(secret, donor):
             return (confirmed,)
     return group_claim(secret, donor, lemma_table, donors)
+
+
+def walk_secret(secret, donor, cfg, kv, V, M, Vset, lemma_table, forms_by_lemma,
+                donors=None, forms=None):
+    """One word's ranked neighborhood, from its identity to its shipped rank map.
+
+    The per-secret pipeline, in the one order that is load-bearing: settle what
+    group 0 CLAIMS first (#133/#134 — the answer is the author's, so the question
+    fires before any ranking), then walk from the geometry source, then assemble and
+    dq-stamp the map. Roads are deliberately NOT here: they need a zone, and what
+    bounds it differs between a sentence hole (its departure, chosen after this) and
+    a lone word (the flat ceiling) — see annotate_roads.
+
+    Shared by every authoring path so none of them can reorder the pipeline: a
+    sentence hole (holes_from_words), and a single-word artifact (gen_word, #154).
+    `donor` is the vector source — the secret itself, or the form lending it one
+    (#119); `secret` stays the true form the artifact displays and keys either way.
+
+    Returns build_puzzle_rank_map's (merged, rank_map, groups)."""
+    secret_lemmas = secret_claim(secret, donor, lemma_table, donors, forms)
+    # The walk needs the FULL raw ranking: merging collapses inflections, so reaching
+    # TOP_K distinct groups can consume well over TOP_K raw neighbors.
+    ranking = cfg["module"].closest(donor, kv, V, M, n=None)
+    return build_puzzle_rank_map(secret, ranking, lemma_table, forms_by_lemma, Vset,
+                                 secret_lemmas=secret_lemmas)
 
 
 class DonorResolver:
@@ -2757,19 +2783,12 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
                     f"(lemme commun « {lemma} ») : choisis 3 mots distincts.")
         for lemma in identity:
             used_lemmas[lemma] = raw
-        # The #133 question fires HERE, ahead of the walk (#134): its answer names
-        # the hole's lexeme, which is what group 0 claims — so an inflection of a
-        # homographic secret solves once the author has said which word it is.
-        secret_lemmas = secret_claim(
-            canonical_secret, donor, lemma_table, donors, forms)
-
-        # Ranking, lexeme merging and start selection happen ONCE per distinct secret
-        # slug. The walk needs the FULL raw ranking: merging collapses inflections,
-        # so reaching TOP_K distinct groups can consume well over TOP_K raw neighbors.
-        ranking = cfg["module"].closest(donor, kv, V, M, n=None)
-        merged, rank_map, groups = build_puzzle_rank_map(
-            canonical_secret, ranking, lemma_table, forms_by_lemma, Vset,
-            secret_lemmas=secret_lemmas)
+        # Claim, ranking and lexeme merging happen ONCE per distinct secret slug, in
+        # walk_secret's fixed order — the #133 question fires inside it, ahead of the
+        # walk (#134), because its answer names the lexeme group 0 claims.
+        merged, rank_map, groups = walk_secret(
+            canonical_secret, donor, cfg, kv, V, M, Vset, lemma_table,
+            forms_by_lemma, donors, forms)
         rank_by_display = {canonical_secret: 0}
         for w, r, _ in merged:
             rank_by_display.setdefault(w, r + 1)
@@ -2859,10 +2878,10 @@ def prompt_lang(default="en"):
         print("  Réponds 'en' ou 'fr'.")
 
 
-def prompt_sentence(prefill=""):
-    """Ask for the sentence, reprompting until it is non-empty.
+def prompt_editable(label, prefill="", blank_error="La réponse ne peut pas être vide."):
+    """Ask for one required value, reprompting until it is non-empty.
 
-    On a TTY the prompt is pre-loaded with `prefill` (the flag-provided phrase, if any)
+    On a TTY the prompt is pre-loaded with `prefill` (the flag-provided value, if any)
     so a portion can be edited with the arrow keys instead of retyping the whole line;
     Enter accepts it unchanged. If the answer comes back empty (the user cleared it) we
     reprompt from scratch — the original prefill is not re-injected."""
@@ -2870,10 +2889,15 @@ def prompt_sentence(prefill=""):
     while True:
         _prefill_tty(prefill if first else "")
         first = False
-        raw = _prompt("Phrase")
+        raw = _prompt(label)
         if raw:
             return raw
-        print("  La phrase ne peut pas être vide.")
+        print(f"  {blank_error}")
+
+
+def prompt_sentence(prefill=""):
+    """Ask for the sentence, pre-loaded with the flag value — see prompt_editable."""
+    return prompt_editable("Phrase", prefill, "La phrase ne peut pas être vide.")
 
 
 def prompt_kind():

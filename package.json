@@ -18,6 +18,7 @@
     "vocab:en": "pnpm --filter @whippin/generation vocab:en",
     "vocab:fr": "pnpm --filter @whippin/generation vocab:fr",
     "gen:phrase": "pnpm --filter @whippin/generation gen:phrase",
+    "gen:word": "pnpm --filter @whippin/generation gen:word",
     "bench:puzzle": "pnpm --filter @whippin/benchmark bench:puzzle",
     "bench:playbook:distill": "pnpm --filter @whippin/benchmark bench:playbook:distill",
     "backend:dev": "pnpm --filter @whippin/backend serve:local",

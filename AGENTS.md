@@ -299,6 +299,40 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   `shared/src/types.ts` carries no `context`, and `SolvedCaption` renders only the kind tag +
   attribution.
 
+### Single-word artifact schema (#154, decided 2026-08-03)
+
+The SECOND puzzle type: one word and its ranked neighborhood, with no sentence around
+it. Produced by `packages/generation/scripts/gen_word.py` (`pnpm gen:word`), typed as
+`WordPuzzle` in `shared/src/types.ts`. It exists because "one word + its ranked
+neighborhood" is what the reworked onboarding and Word mode play on, and the only way
+to get one used to be authoring a 3-secret sentence and throwing two thirds of it away.
+
+```jsonc
+{
+  "lang": "fr",
+  "word": { "word": "phare", "slug": "phare" },   // accented display form + its slug
+  "ranks": {                                       // ONE FLAT map — no per-secret keying
+    "<input-slug>": { "word": "<accented>", "rank": 12, "dq": 231, "road": 1 }, ...
+  }
+}
+```
+
+- **The inner rank-map semantics are the sentence schema's, UNCHANGED** — same merge
+  walk and group semantics (#104/#134/#146), same #133 explicit-form confirmation, same
+  donor vectors (#119), same `TOP_K` group cap, same `dq`, same slug-collision rule:
+  alias keys per group, `word`/`rank`/`dq`/`road` are GROUP properties, rank 0 is the
+  word itself and carries **no `dq`**, every rank ≥ 1 entry carries one. Both commands
+  run the **one shared per-secret pipeline** (`gen_phrase.walk_secret`), so a word's
+  neighborhood can never differ by which game asked for it.
+- **`ranks` is ONE FLAT map** (there is only one word to rank around, so nothing to key
+  it by), and there is no `words` / `holes` / `start` / `start_rank`. **No `source`
+  either:** attribution belongs to a quoted line, and a lone word quotes nobody.
+- **`road` covers the FLAT top-`ROAD_TOP` (150).** With no start word there is no
+  departure to cut the zone at, so `ROAD_TOP` stops being merely the CEILING on a hole's
+  journey and becomes the zone itself — those 150 groups are Word mode's playing field
+  (`distances.road_zone(None)`). This is the ONE deliberate difference from a sentence
+  hole's `start_rank`-sized zone. `--no-roads` still opts out; `dq` still cannot.
+
 ### Day-addressed routing & the game day
 
 - **Routing (#6), date-addressed (decided 2026-07-05, replacing the #42 version-in-URL

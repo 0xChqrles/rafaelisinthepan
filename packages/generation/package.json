@@ -12,6 +12,7 @@
     "vocab:en": "uv run scripts/build_vocab.py --lang en",
     "vocab:fr": "uv run scripts/build_vocab.py --lang fr",
     "gen:phrase": "uv run scripts/gen_phrase.py",
+    "gen:word": "uv run scripts/gen_word.py",
     "test": "uv run --no-project --with pytest pytest -q tests"
   }
 }
