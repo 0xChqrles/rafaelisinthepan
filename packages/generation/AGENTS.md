@@ -27,7 +27,10 @@ relative to `packages/generation/` unless prefixed.
       french_neighbors.py     fr paths + derived .kv cache (thin wrapper)
       start_word.py           start/hint-word selection (rank band 50-150)
       distances.py            stdlib-only: dq quantization + road clustering (#115)
-      gen_phrase.py           one sentence -> one self-contained puzzle JSON
+      gen_phrase.py           one sentence -> one self-contained puzzle JSON; also owns the
+                              per-secret pipeline (walk_secret) both entry points share
+      gen_word.py             one word -> one single-word artifact JSON (#154); imports the
+                              per-secret machinery from gen_phrase, never re-implements it
     embedding/<lang>/...      raw + *_reduced vectors + derived .kv caches
     wordlist/<lang>.txt.gz    versioned hors-dico reference wordlist (#38); .cache/ gitignored
     wordlist/en.lemmas.tsv.gz versioned en form→lemma table (lemma grouping, #104)
@@ -36,6 +39,8 @@ relative to `packages/generation/` unless prefixed.
     wordlist/fr.forms.LICENSE the LGPL-LR text governing the Morphalou data it derives from
     output/word/<lang>/<kind>/<author>/<work>/<s1>_<s2>_<s3>.json   generated puzzles
                               filed under their source (#137); gitignored; publish to store/S3
+    output/single-word/<lang>/<slug>.json   generated single-word artifacts (#154);
+                              gitignored; one flat directory per language
     pyproject.toml, uv.lock   Python project (uv)
 ```
 
@@ -335,6 +340,16 @@ pnpm vocab:fr         # -> packages/web/public/vocab/fr.json
 #    and, for the groups from the hole's start word in to the secret, its road cluster
 #    (#115); --no-roads drops the road fields, dq has no opt-out.
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 distinct words; all occurrences hole (no `--`)
+
+# 4. Generate a SINGLE-WORD artifact (#154): one word + its ranked neighborhood, no
+#    sentence. -> packages/generation/output/single-word/<lang>/<slug>.json (--out-dir
+#    overrides the root). Every per-secret rule is gen_phrase's, imported not copied
+#    (walk_secret): merge walk, #133 form confirmation, #119 donors, TOP_K, dq,
+#    slug collisions. Two differences, both because there is no sentence — the road
+#    zone is the FLAT top-150 (no departure to cut it at) and the output has one flat
+#    `ranks` map with no words/holes/start/source. Unlike gen:phrase it does NOT
+#    rewrite web/public/vocab/<lang>.json (that is reduce's output).
+pnpm gen:word phare --lang fr --form phare=n:s   # --form required per fr word off a TTY
 ```
 
 `gen_phrase.py` requires **exactly 3 distinct** `--words` selectors after slug
@@ -463,6 +478,19 @@ output filename contains the three distinct secret slugs in sentence order.
   `fr` = Lexique ∪ Hunspell fr (~169k forms), `en` = SCOWL(≤60,US) ∪ Hunspell en_US
   (~91k). Built by `build_wordlist.py`; source downloads cache in `wordlist/.cache/`
   (gitignored). Tests use the small fixture `tests/fixtures/dico.fr.txt`.
+- **Single-word artifacts (#154):** `gen_word.py` is a thin entry point over
+  `gen_phrase`'s machinery — it imports `walk_secret` (claim → walk → keyed, dq-stamped
+  map), `annotate_roads`, and the shared command scaffolding `prepare_run` (flag
+  parsing → tables → the #134 gate → vectors → the three resolvers, one fail-fast
+  order) and `report_run_adjustments` (donor/agreement/`*`-fallback/collision/--form
+  reporting, parameterized on the command's wording), so neither the rules nor the
+  setup/reporting around them can drift; its own code is the flat road zone, the
+  artifact dict, the output path, a reject-early guard on multi-word/clitic input
+  (whitespace or apostrophes die with a clear "one word" error before the loads;
+  dashes stay legal) and the CLI. Measured on `phare` (fr): 10 000
+  ranked groups, 25 497 keys, ~1.5 MB raw — the same order as one sentence hole's map,
+  which is what it is. `--no-lemmas`/`--no-inflect`/`--no-roads`/`--donor`/`--form`
+  behave exactly as on `gen:phrase`, including the off-TTY hard errors.
 - **Puzzles:** generated into `generation/output/word/<lang>/<kind>/<author>/<work>/`
   (#137; gitignored), then published to the store (`pnpm puzzle:publish`). They are no
   longer kept under `web/public/word` — the front serves the day's puzzle from the

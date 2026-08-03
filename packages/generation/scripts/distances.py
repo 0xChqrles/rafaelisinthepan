@@ -95,7 +95,14 @@ def road_zone(start_rank, top=ROAD_TOP):
     Ranks 1..start_rank, the departure INCLUDED: the player is put down ON one of the
     roads, not on the trunk short of them, so the fork happens before the first station
     of the journey rather than after it. Never more than `top` — see ROAD_TOP.
+
+    A START-LESS artifact (a single word, #154) passes None: with no departure to stop
+    at, there is no stretch to cut short and the zone IS the ceiling — the top-`top`
+    groups are Word mode's whole playing field. That is the one case where ROAD_TOP
+    stops being a bound on the journey and becomes the journey.
     """
+    if start_rank is None:
+        return top
     return max(0, min(int(start_rank), top))
 
 

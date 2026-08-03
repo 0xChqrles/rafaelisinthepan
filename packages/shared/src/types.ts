@@ -38,8 +38,12 @@ export interface RankEntry {
   road?: number;
 }
 
+// One word's whole ranked neighborhood: inputSlug -> { word, rank }. Every alias key
+// of a group appears here, carrying that group's values.
+export type WordRanks = Record<string, RankEntry>;
+
 // ranks[secretSlug][inputSlug] -> { word, rank }
-export type RankMap = Record<string, Record<string, RankEntry>>;
+export type RankMap = Record<string, WordRanks>;
 
 // What kind of piece the daily sentence comes from (#5). The known values are
 // documented for authoring/autocomplete, but the union stays OPEN (`string & {}`)
@@ -80,6 +84,25 @@ export interface Puzzle {
   ranks: RankMap; // keyed by secret slug, then input slug
   source?: Source; // optional origin metadata (#5), shown on the solved screen (#8)
   benchmark?: BenchmarkResults; // optional tested-model results; front end filters display (#68/#80/#81)
+}
+
+// The second puzzle type: ONE word and its ranked neighborhood, with no sentence
+// around it (#154). Produced by packages/generation/scripts/gen_word.py; it is what
+// the onboarding tutorial and Word mode play on.
+//
+// The rank semantics are the sentence schema's, unchanged — rank 0 is the word itself
+// and carries no `dq`, every rank >= 1 entry carries one, and `word`/`rank`/`dq`/`road`
+// are GROUP properties shared by all of a group's alias keys. Two things differ,
+// both because there is no sentence: `ranks` is ONE flat map (nothing to key it by),
+// and `road` covers the flat top-150 — with no start word there is no departure to cut
+// the zone at, and those groups are the whole playing field.
+//
+// No `words`/`holes`/`start`/`start_rank`, and no `source`: a lone word has no
+// attribution.
+export interface WordPuzzle {
+  lang: string;
+  word: Word; // the accented display form + its slug
+  ranks: WordRanks;
 }
 
 export interface RuntimeHole {
