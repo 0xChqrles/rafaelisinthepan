@@ -2969,6 +2969,124 @@ def source_dir_segments(source):
     return segments
 
 
+# --- Shared command scaffolding (#154) -------------------------------------------
+# gen_phrase and gen_word share more than the per-secret pipeline (walk_secret): both
+# load the same tables and vectors in the same fail-fast order, build the same three
+# resolvers on top, and report the same substitution/agreement events after the run.
+# Sharing the rules but copying this scaffolding would let the copies drift the way the
+# rules no longer can (a new FormResolver reporting channel would need remembering in
+# two mains), so it lives here, once.
+
+@dataclass(frozen=True)
+class PreparedRun:
+    """Everything a generation command loads before its first walk (prepare_run)."""
+    cfg: dict
+    explicit_forms: dict
+    lemma_table: dict
+    forms_by_lemma: dict
+    kv: object
+    V: list
+    M: object
+    Vset: set
+    donors: DonorResolver
+    forms: FormResolver
+    reporter: PlayabilityReporter
+
+
+def prepare_run(lang, interactive, args):
+    """Load and wire the machinery a generation command needs before its first walk.
+
+    The ORDER is the fail-fast contract, written once for both commands: a malformed
+    --donor / --form pair dies before anything slow loads; the grouping table (#104)
+    loads before the vectors so a missing table fails fast; the --no-lemmas/--no-inflect
+    gate fires BEFORE the ~5 MB inventory parse (the reject path owes nobody a
+    two-second parse); and the resolvers are built on the loaded vocabulary. `args`
+    needs only the flags the two commands share: --no-lemmas, --no-inflect, --donor,
+    --form. Command-specific validation (the --words selectors, the single-word guard)
+    belongs before this call, so it too fails ahead of the loads."""
+    cfg = CONFIG[lang]
+    explicit_donors = parse_donor_args(args.donor)
+    explicit_forms = parse_form_args(args.form)
+
+    # Lemma table (#104): an empty table (--no-lemmas) reproduces the ungrouped walk.
+    lemma_table = load_lemma_table(lang, disabled=args.no_lemmas)
+    forms_by_lemma = invert_lemmas(lemma_table)
+
+    # Since #134 the agreement pass is keyed by the walk's LEXEMES, which --no-lemmas
+    # removes (every surface becomes its own table-less singleton, and nothing carries
+    # a cell to realize). Running it anyway would take --form answers and silently
+    # rewrite nothing — reject the combination instead of degrading it.
+    if lang in FORM_LANGS and not args.no_inflect and args.no_lemmas:
+        die("--no-lemmas retire les lexèmes sur lesquels l'accord d'affichage est "
+            "indexé (#134) : ajoute --no-inflect pour générer sans regroupement, "
+            "ou retire --no-lemmas.")
+
+    # Form table (addendum 2). None for a language with no table (en) or under
+    # --no-inflect: the agreement pass then never runs.
+    form_table = load_form_table(lang, disabled=args.no_inflect)
+
+    kv = cfg["module"].load_vectors()
+    V = build_lang_vocab(kv, cfg)
+    # V == kv == the whole reduced vocabulary, so there is no target to inject: a
+    # target either survived reduction (it is in V) or it cannot be used — the
+    # command's per-secret path errors clearly in the latter case.
+    M = cfg["module"].build_matrix(kv, V)
+    Vset = set(V)
+
+    # A secret whose surface form never survived reduction may borrow a same-lemma
+    # form's vector (#119) — explicitly: --donor off a TTY, a numbered question on one.
+    donors = DonorResolver(lemma_table, forms_by_lemma, V, Vset, lang,
+                           explicit=explicit_donors, interactive=interactive)
+    # The whole rank map agrees with the secret's morphology (#133), which is NEVER
+    # inferred: every secret confirms its form on a TTY (a single analysis included),
+    # and off one --form is required per secret. --no-inflect is the explicit opt-out.
+    forms = FormResolver(form_table, explicit=explicit_forms, interactive=interactive,
+                         typable=donors.typable)
+    reporter = PlayabilityReporter(V, lemma_table, forms_by_lemma, kv,
+                                   resolver=forms)
+    return PreparedRun(cfg, explicit_forms, lemma_table, forms_by_lemma, kv, V, M,
+                       Vset, donors, forms, reporter)
+
+
+def report_run_adjustments(donors, forms, explicit_forms, lang, no_inflect,
+                           subject_fmt="secret « {} »",
+                           unused_form_msg="n'a servi à aucun trou"):
+    """Print what the run substituted or rewrote — never silently (#119/#133/#134).
+
+    A borrowed vector says which form lent it; the agreement pass says which form was
+    applied and how many groups it moved; #134's curator marks follow (`*` fallbacks,
+    declined slug-collision rewrites); and a --form that named a word the run never
+    used is called out as the probable typo it is. `subject_fmt` names the word the
+    way the command's preview does (a sentence has secrets; a lone word is just the
+    word), and `unused_form_msg` finishes the typo warning in the command's terms."""
+    for secret_word, donor_word in donors.used.values():
+        print(f"  {subject_fmt.format(secret_word)} : rangs calculés depuis le "
+              f"donneur « {donor_word} »")
+    for secret_word, feature, morphology, count in forms.used.values():
+        print(f"  {subject_fmt.format(secret_word)} : {count} mot(s) affiché(s) "
+              f"accordé(s) à {describe_morphology(morphology)} "
+              f"(trait source {feature})")
+    for secret_word, entries in forms.fallbacks.values():
+        sample = ", ".join(f"*{w} (rang {r})" for r, w in entries[:5])
+        more = f", … {len(entries)} au total" if len(entries) > 5 else ""
+        print(f"  {subject_fmt.format(secret_word)} : {len(entries)} groupe(s) en "
+              f"repli* — forme demandée absente ou intypable, forme nette gardée : "
+              f"{sample}{more}")
+    for secret_word, count in forms.collisions.values():
+        print(f"  {subject_fmt.format(secret_word)} : {count} collision(s) de slug "
+              f"après accord (le plus proche gagne, réécriture(s) déclinée(s))")
+    if explicit_forms:
+        if no_inflect:
+            print("  attention : --form est ignoré sous --no-inflect.", file=sys.stderr)
+        elif lang not in FORM_LANGS:
+            print(f"  attention : --form est ignoré : pas de table de formes pour "
+                  f"'{lang}'.", file=sys.stderr)
+        else:
+            for key in sorted(set(explicit_forms) - forms.answered):
+                print(f"  attention : --form « {key} » {unused_form_msg}.",
+                      file=sys.stderr)
+
+
 def parse_args():
     p = argparse.ArgumentParser(
         description="Génère un fichier de jeu autonome pour une phrase "
@@ -3052,32 +3170,12 @@ def main():
     if words_arg is not None:
         _resolve_word_selectors(words_arg, cfg, lang)
 
-    # Same for a malformed --donor pair (#119): parse it now, validate it against the
-    # vocabulary only when a secret actually needs a substitution.
-    explicit_donors = parse_donor_args(args.donor)
-    explicit_forms = parse_form_args(args.form)
-
-    # Lemma table (#104), loaded before the vectors so a missing table fails fast.
-    # An empty table (--no-lemmas) reproduces the ungrouped walk.
-    lemma_table = load_lemma_table(lang, disabled=args.no_lemmas)
-    forms_by_lemma = invert_lemmas(lemma_table)
-
-    # Since #134 the agreement pass is keyed by the walk's LEXEMES, which --no-lemmas
-    # removes (every surface becomes its own table-less singleton, and nothing carries
-    # a cell to realize). Running it anyway would take --form answers and silently
-    # rewrite nothing — reject the combination instead of degrading it, and BEFORE
-    # the ~5 MB inventory loads: the reject path owes nobody a two-second parse.
-    if lang in FORM_LANGS and not args.no_inflect and args.no_lemmas:
-        die("--no-lemmas retire les lexèmes sur lesquels l'accord d'affichage est "
-            "indexé (#134) : ajoute --no-inflect pour générer sans regroupement, "
-            "ou retire --no-lemmas.")
-
-    # Verb form table (addendum 2), same fail-fast placement. None for a language with
-    # no table (en) or under --no-inflect: the agreement pass then never runs.
-    form_table = load_form_table(lang, disabled=args.no_inflect)
-
-    kv = cfg["module"].load_vectors()
-    V = build_lang_vocab(kv, cfg)
+    # Tables, gate, vectors and the three resolvers, in prepare_run's fixed fail-fast
+    # order — the scaffolding both generation commands share (#154).
+    run = prepare_run(lang, interactive, args)
+    kv, V, M, Vset = run.kv, run.V, run.M, run.Vset
+    lemma_table, forms_by_lemma = run.lemma_table, run.forms_by_lemma
+    donors, forms, reporter = run.donors, run.forms, run.reporter
 
     # DISPLAY tokens of the sentence: lowercased, but accents AND punctuation /
     # apostrophes KEPT (see display_token), so words[] reproduces the sentence. Each
@@ -3085,28 +3183,8 @@ def main():
     # its surrounding clitic/punctuation as the hole's prefix/suffix.
     words = [display_token(t) for t in sentence.split()]
 
-    # V == kv == the whole reduced vocabulary, so there is no target to inject: a
-    # target either survived reduction (it is in V) or it cannot be used. The
-    # per-secret loop below errors clearly in the latter case.
-    M = cfg["module"].build_matrix(kv, V)
-    Vset = set(V)
-
     # Existence set for the front: the whole (slugged) reduced vocabulary V.
     write_vocab(V, lang)
-
-    # A secret whose surface form never survived reduction may borrow a same-lemma
-    # form's vector (#119) — explicitly: --donor off a TTY, a numbered question on one.
-    donors = DonorResolver(lemma_table, forms_by_lemma, V, Vset, lang,
-                           explicit=explicit_donors, interactive=interactive)
-
-    # The whole rank map agrees with the sentence (#133). The secret's own morphology
-    # is the target and it is NEVER inferred: every secret confirms its form on a TTY
-    # (a single analysis included), and off one --form is required per secret.
-    # --no-inflect is the opt-out that reproduces agreement-free output.
-    forms = FormResolver(form_table, explicit=explicit_forms, interactive=interactive,
-                         typable=donors.typable)
-    reporter = PlayabilityReporter(V, lemma_table, forms_by_lemma, kv,
-                                   resolver=forms)
 
     # Two paths to the same (holes, ranks): --words is the explicit / batch path (each
     # distinct selector expands to all matching occurrences); with no --words on a TTY
@@ -3165,40 +3243,9 @@ def main():
     print(f"\nPhrase ({lang}) écrite dans {out_path} :")
     for h in holes:
         print(f"  {h['start']['word']}^-{h['start_rank']} -> {h['secret']['word']}")
-    # A borrowed vector (#119) is never silent: say which form lent it, whichever path
-    # chose it (--donor, the line prompt, or the selector).
-    for secret_word, donor_word in donors.used.values():
-        print(f"  secret « {secret_word} » : rangs calculés depuis le donneur "
-              f"« {donor_word} »")
-    # Same for the agreement pass (addendum 2): say which form was applied and how many
-    # displayable groups it moved, so a wrong trait is visible before publishing.
-    for secret_word, feature, morphology, count in forms.used.values():
-        print(f"  secret « {secret_word} » : {count} mot(s) affiché(s) accordé(s) "
-              f"à {describe_morphology(morphology)} (trait source {feature})")
-    # #134's curator-facing marks, generation output only. `*` = the requested form
-    # is missing from the paradigm or untypable: the group keeps its closest clean
-    # form instead. Collisions = rewrites the closest-wins rules declined.
-    for secret_word, entries in forms.fallbacks.values():
-        sample = ", ".join(f"*{w} (rang {r})" for r, w in entries[:5])
-        more = f", … {len(entries)} au total" if len(entries) > 5 else ""
-        print(f"  secret « {secret_word} » : {len(entries)} groupe(s) en repli* — "
-              f"forme demandée absente ou intypable, forme nette gardée : "
-              f"{sample}{more}")
-    for secret_word, count in forms.collisions.values():
-        print(f"  secret « {secret_word} » : {count} collision(s) de slug après "
-              f"accord (le plus proche gagne, réécriture(s) déclinée(s))")
-    # A --form that named a word no hole used is nearly always a typo in the WORD.
-    # Say so now: after publishing, the puzzle just quietly lacks its agreement.
-    if explicit_forms:
-        if args.no_inflect:
-            print("  attention : --form est ignoré sous --no-inflect.", file=sys.stderr)
-        elif lang not in FORM_LANGS:
-            print(f"  attention : --form est ignoré : pas de table de formes pour "
-                  f"'{lang}'.", file=sys.stderr)
-        else:
-            for key in sorted(set(explicit_forms) - forms.answered):
-                print(f"  attention : --form « {key} » n'a servi à aucun trou.",
-                      file=sys.stderr)
+    # Substitutions, agreement, #134's curator marks and --form typo warnings — the
+    # shared reporting block (#154), in the sentence path's own words.
+    report_run_adjustments(donors, forms, run.explicit_forms, lang, args.no_inflect)
     if source:
         print("  source : " + ", ".join(f"{k}={v}" for k, v in source.items()))
 

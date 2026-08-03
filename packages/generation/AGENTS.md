@@ -480,9 +480,14 @@ output filename contains the three distinct secret slugs in sentence order.
   (gitignored). Tests use the small fixture `tests/fixtures/dico.fr.txt`.
 - **Single-word artifacts (#154):** `gen_word.py` is a thin entry point over
   `gen_phrase`'s machinery — it imports `walk_secret` (claim → walk → keyed, dq-stamped
-  map), `annotate_roads`, the `DonorResolver` / `FormResolver` / `PlayabilityReporter`,
-  and the loaders, so the two commands cannot drift; its own code is the flat road zone,
-  the artifact dict, the output path and the CLI. Measured on `phare` (fr): 10 000
+  map), `annotate_roads`, and the shared command scaffolding `prepare_run` (flag
+  parsing → tables → the #134 gate → vectors → the three resolvers, one fail-fast
+  order) and `report_run_adjustments` (donor/agreement/`*`-fallback/collision/--form
+  reporting, parameterized on the command's wording), so neither the rules nor the
+  setup/reporting around them can drift; its own code is the flat road zone, the
+  artifact dict, the output path, a reject-early guard on multi-word/clitic input
+  (whitespace or apostrophes die with a clear "one word" error before the loads;
+  dashes stay legal) and the CLI. Measured on `phare` (fr): 10 000
   ranked groups, 25 497 keys, ~1.5 MB raw — the same order as one sentence hole's map,
   which is what it is. `--no-lemmas`/`--no-inflect`/`--no-roads`/`--donor`/`--form`
   behave exactly as on `gen:phrase`, including the off-TTY hard errors.

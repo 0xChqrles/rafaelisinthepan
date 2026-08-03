@@ -52,6 +52,7 @@ Usage :
 import argparse
 import json
 import os
+import re
 import sys
 
 # scripts/ -> generation package root, so the sibling modules import regardless of cwd.
@@ -62,14 +63,13 @@ for path in (ROOT, SCRIPT_DIR):
         sys.path.insert(0, path)
 
 # The per-secret machinery, imported whole: this command adds an entry point and a
-# schema, never a second copy of the rules.
-from build_forms import FORM_LANGS  # noqa: E402
-from gen_phrase import (CONFIG, GEN_OUTPUT, DonorResolver, FormResolver,  # noqa: E402
-                        PlayabilityReporter, annotate_roads, build_lang_vocab,
-                        describe_morphology, die, group_lexeme_map, group_reps,
-                        invert_lemmas, load_form_table, load_lemma_table, normalize,
-                        parse_donor_args, parse_form_args, prompt_editable,
-                        prompt_lang, walk_secret)
+# schema, never a second copy of the rules. prepare_run / report_run_adjustments are
+# the shared command scaffolding around walk_secret (#154), so the setup order and the
+# reporting channels cannot drift between the two commands either.
+from gen_phrase import (CONFIG, GEN_OUTPUT, annotate_roads, die,  # noqa: E402
+                        group_lexeme_map, group_reps, normalize, prepare_run,
+                        prompt_editable, prompt_lang, report_run_adjustments,
+                        walk_secret)
 from slug import slug  # noqa: E402
 
 
@@ -186,51 +186,35 @@ def main():
     elif word is None:
         die("aucun mot fourni (argument positionnel requis hors mode interactif).")
 
+    # ONE word means one: whitespace or an apostrophe would otherwise be silently
+    # stripped by normalize (« t'attends » -> « tattends ») and die three loads later
+    # with a misleading not-in-vocabulary error. Say what is actually wrong, now.
+    # Dashes stay legal — « arc-en-ciel » is one word.
+    if re.search(r"[\s'’]", word):
+        die(f"« {word} » n'est pas un mot seul (espace ou apostrophe) : cet artefact "
+            f"décrit le voisinage d'UN mot — donne-le sans clitique ni espace "
+            f"(ex. « attends », pas « t'attends »).")
+
     cfg = CONFIG[lang]
     target = normalize(word, cfg)
     if not slug(target):
         die(f"'{word}' ne contient aucune lettre valide pour la langue '{lang}'.")
 
-    # Malformed --donor / --form pairs fail before the expensive vector load.
-    explicit_donors = parse_donor_args(args.donor)
-    explicit_forms = parse_form_args(args.form)
-
-    # Grouping table (#104), loaded before the vectors so a missing table fails fast.
-    lemma_table = load_lemma_table(lang, disabled=args.no_lemmas)
-    forms_by_lemma = invert_lemmas(lemma_table)
-
-    # The agreement pass is keyed by the walk's lexemes (#134), which --no-lemmas
-    # removes: reject the pair rather than silently rewriting nothing.
-    if lang in FORM_LANGS and not args.no_inflect and args.no_lemmas:
-        die("--no-lemmas retire les lexèmes sur lesquels l'accord d'affichage est "
-            "indexé (#134) : ajoute --no-inflect pour générer sans regroupement, "
-            "ou retire --no-lemmas.")
-
-    form_table = load_form_table(lang, disabled=args.no_inflect)
-
-    kv = cfg["module"].load_vectors()
-    V = build_lang_vocab(kv, cfg)
-    # V == kv == the whole reduced vocabulary: nothing is injected. A word either
-    # survived reduction or it borrows a vector explicitly (#119), or it errors.
-    M = cfg["module"].build_matrix(kv, V)
-    Vset = set(V)
-
-    donors = DonorResolver(lemma_table, forms_by_lemma, V, Vset, lang,
-                           explicit=explicit_donors, interactive=interactive)
-    forms = FormResolver(form_table, explicit=explicit_forms, interactive=interactive,
-                         typable=donors.typable)
-    reporter = PlayabilityReporter(V, lemma_table, forms_by_lemma, kv, resolver=forms)
+    # Tables, gate, vectors and the three resolvers, in prepare_run's fixed fail-fast
+    # order — the scaffolding both generation commands share (#154).
+    run = prepare_run(lang, interactive, args)
 
     # The GEOMETRY source: the word itself when it has a vector, else the form lending
     # it one. donor_for asks on a TTY, reads --donor off one, and dies rather than
     # guess — the same three outcomes a sentence secret gets.
-    donor = donors.donor_for(target)
-    rank_map = build_word_map(target, donor, cfg, kv, V, M, Vset, lemma_table,
-                              forms_by_lemma, donors, forms,
-                              roads=not args.no_roads, reporter=reporter)
+    donor = run.donors.donor_for(target)
+    rank_map = build_word_map(target, donor, cfg, run.kv, run.V, run.M, run.Vset,
+                              run.lemma_table, run.forms_by_lemma, run.donors,
+                              run.forms, roads=not args.no_roads,
+                              reporter=run.reporter)
 
     # #135 is a report only: printed once the map exists, before the file is written.
-    reporter.print()
+    run.reporter.print()
 
     artifact = build_word_artifact(lang, target, rank_map)
     out_path = artifact_path(args.out_dir, lang, target)
@@ -246,36 +230,13 @@ def main():
                       if entry["rank"]}.items())[:5]
     if nearest:
         print("  plus proches : "
-              + ", ".join(f"{w} ^-{r}" for r, w in nearest))
-    # A borrowed vector (#119) is never silent: say which form lent it.
-    for secret_word, donor_word in donors.used.values():
-        print(f"  « {secret_word} » : rangs calculés depuis le donneur "
-              f"« {donor_word} »")
-    # Same for the agreement pass and #134's curator marks, so a wrong trait is
-    # visible before the artifact is used.
-    for secret_word, feature, morphology, count in forms.used.values():
-        print(f"  « {secret_word} » : {count} mot(s) affiché(s) accordé(s) "
-              f"à {describe_morphology(morphology)} (trait source {feature})")
-    for secret_word, entries in forms.fallbacks.values():
-        sample = ", ".join(f"*{w} (rang {r})" for r, w in entries[:5])
-        more = f", … {len(entries)} au total" if len(entries) > 5 else ""
-        print(f"  « {secret_word} » : {len(entries)} groupe(s) en repli* — "
-              f"forme demandée absente ou intypable, forme nette gardée : "
-              f"{sample}{more}")
-    for secret_word, count in forms.collisions.values():
-        print(f"  « {secret_word} » : {count} collision(s) de slug après accord "
-              f"(le plus proche gagne, réécriture(s) déclinée(s))")
-    # A --form naming another word is nearly always a typo in the WORD.
-    if explicit_forms:
-        if args.no_inflect:
-            print("  attention : --form est ignoré sous --no-inflect.", file=sys.stderr)
-        elif lang not in FORM_LANGS:
-            print(f"  attention : --form est ignoré : pas de table de formes pour "
-                  f"'{lang}'.", file=sys.stderr)
-        else:
-            for key in sorted(set(explicit_forms) - forms.answered):
-                print(f"  attention : --form « {key} » ne concerne pas ce mot.",
-                      file=sys.stderr)
+              + ", ".join(f"{w}^-{r}" for r, w in nearest))
+    # Substitutions, agreement, #134's curator marks and --form typo warnings — the
+    # shared reporting block (#154). A lone word is not a secret, so it is named
+    # plainly, and an unused --form named another word rather than another hole.
+    report_run_adjustments(run.donors, run.forms, run.explicit_forms, lang,
+                           args.no_inflect, subject_fmt="« {} »",
+                           unused_form_msg="ne concerne pas ce mot")
 
 
 if __name__ == "__main__":
