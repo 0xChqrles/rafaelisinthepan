@@ -759,8 +759,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   as a handful of things belonging together rather than a paragraph swapped for another
   (the delays are rolled once per cloud and are deliberately NOT index-derived — a
   left-to-right sweep reads as a list being filled in). The leaving cloud keeps the stage
-  for `CLOUD_EXIT_MS` before the stage advances, so two clouds never overlap and the coach's
-  next line arrives WITH its cloud; NEXT THEME is inert for that beat. Reduced motion
+  until it reports its last word gone (`onExited`, with `CLOUD_EXIT_FALLBACK_MS` as the
+  deadline behind a lost report — the winner cancels the loser), so two clouds never overlap
+  and the coach's next line arrives WITH its cloud; NEXT THEME is inert for that beat. Reduced motion
   collapses the durations and keeps the delays, so the words still arrive one by one. Never two clouds at once: the coach names each from the
   script's `themeCopyKeys` (`tutTheme1..4` — en names OCEAN's themes, fr TROPIQUES's;
   scripts.test.ts pins the list's length to the map's real road count), each headed
@@ -859,7 +860,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   free steps use the real sets. The tutorial writes NOTHING to `rounds`; the store
   `migrate` (v2) grandfathers any blob with prior play state so veterans never see it
   uninvited. Replay via the header `?`; `?tutorial=1` forces it; the dev-only `?streak=`
-  preview suppresses the first-visit invitation.
+  preview suppresses the first-visit invitation. The tutorial ships in its OWN chunk
+  (`LazyTutorial`, the LazyStreakDialog pattern, 2026-08-04): most sessions never render it,
+  so the components and the two embedded word maps stay out of the startup bundle — the
+  invitation preloads it while the player reads the question, a replay lazy-loads it behind
+  the plain loading line, and a failed chunk calls `onDone` (into the game) rather than
+  stranding a blank screen.
 - **App header (decided 2026-07-06; redesigned 2026-07-21 — this bullet was STALE and is
   corrected 2026-07-26 from the code, which is ground truth):** a fixed **topbar**
   (`components/TopBar.tsx`) of **two corner chips and NOTHING else — no band, no border, no
@@ -1038,6 +1044,6 @@ it to the local store — see `packages/backend/AGENTS.md`).
   when replaying a past archive day (#55), `'no'` for the live daily puzzle);
   `share {method:'native'|'clipboard'}` — `SolvedScreen`
   success paths; `tutorial {action:'start'|'finish'|'skip'}` — invite accept / the ending's
-  PLAY under the route line (#155) / skip (fast-forward or invite SKIP). Plus automatic
+  PLAY under the routes teaser (#155) / skip (fast-forward or invite SKIP). Plus automatic
   pageviews.
 

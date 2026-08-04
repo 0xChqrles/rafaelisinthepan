@@ -53,7 +53,8 @@ const SCALE_MIN = 0.55;
 // it is the cloud forming — and the exit is quicker, since it is only clearing the stage.
 // Both are BRISK (findings 2026-08-04, cut from 260/150): the scatter has to read as one
 // gesture, and a cloud that takes half a second to assemble reads as waiting for it.
-// CLOUD_EXIT_MS in Tutorial.tsx covers OUT_STAGGER_MS plus the exit's own duration.
+// Tutorial.tsx's CLOUD_EXIT_FALLBACK_MS — the deadline behind the `onExited` report —
+// comfortably covers OUT_STAGGER_MS plus the exit's own duration.
 const IN_STAGGER_MS = 150;
 const OUT_STAGGER_MS = 90;
 // The room a cloud word may take: the play column, minus its padding — phrased in CSS so the

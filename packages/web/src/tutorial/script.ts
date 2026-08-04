@@ -9,14 +9,14 @@
 // ONE board, one arc (#155, superseding the two-stage version): a single word and its REAL
 // neighborhood — the mix demo walks the secret out to the start word, three gated guesses
 // demonstrate distance / MISS / improvement, the player finds their way back, and then taps
-// the word they found — its route line then takes its place. The unguided bakery sentence
-// that used to follow is gone: analytics said it was widely skipped, its one lesson (a guess
-// filling several holes) is discoverable in play, and the ending it freed is the only place
-// the game teaches ROUTES.
+// the word they found — its THEMES then take its place, one cloud at a time, closing on the
+// routes teaser. The unguided bakery sentence that used to follow is gone: analytics said it
+// was widely skipped, its one lesson (a guess filling several holes) is discoverable in
+// play, and the ending it freed is the only place the game teaches ROUTES.
 //
 // The board's ranks are a REAL generated neighborhood (a #154 single-word artifact, pruned —
-// see scripts/<lang>.ts). They have to be: the route line only draws where #115's geometry
-// exists, and the hand-authored map this used to carry had no `dq` at all.
+// see scripts/<lang>.ts). They have to be: the themes ARE the map's #115 roads, and the
+// hand-authored map this used to carry had none at all.
 
 import type { Puzzle } from '@whippin/shared';
 import type { UiKey } from '../i18n';
@@ -65,8 +65,8 @@ export type TutorialStep =
   // swaps to the next cloud. `themeCopyKeys` is ordered by the map's road ids — road 0
   // holds rank 1 — and must name every road the board's map actually ships
   // (scripts.test.ts). After the last theme the close shows the ROUTES TEASER — the themes'
-  // colored lines with scroll chevrons and a couple of each theme's words riding them as
-  // stations, a glimpse of the map every word offers — `closeCopyKey` states the general
+  // colored lines with every near-field group riding them as stations, a glimpse of the map
+  // every word offers — `closeCopyKey` states the general
   // principle, and the tray offers PLAY,
   // which ends the tutorial. There is no graduation screen, because there is no score to
   // show.

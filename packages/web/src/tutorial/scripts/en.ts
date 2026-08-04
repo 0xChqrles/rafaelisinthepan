@@ -13,8 +13,8 @@
 // and the groups of the `--keep` words, which is how the "far" guess survives being outside
 // that zone). OCEAN was picked over LIGHTHOUSE, the first candidate, on ROUTE legibility: its
 // neighborhood splits into three well-populated roads a player can name at a glance — the
-// coastline (sea, waters, atlantic, shores), the ocean as a system (coral, waves, currents,
-// tides, reefs) and seafaring (vessel, ship, sail, voyage, whales) — where lighthouse's split
+// coastline (sea, waters, atlantic, shores), the ocean at planet scale (coral, arctic,
+// currents, antarctica, earth) and seafaring (vessel, ship, sail, voyage, whales) — where lighthouse's split
 // 135/15 and the small road reads as an outlier rather than a sense. Clarity beats en/fr
 // symmetry (#155), so the two languages do not share a word.
 //
@@ -69,9 +69,9 @@ const script: TutorialScript = {
     { kind: 'guess', expect: 'boat', copyKey: 'tutGuessCloser' },
     { kind: 'find', target: word.slug, copyKey: 'tutFind', nudgeKey: 'tutFindNudge' },
     // The ending: tap the word you found — its themes take its place, one cloud at a time.
-    // Theme 0 is the coast (sea, waters, atlantic, shores), theme 1 the deep (coral, waves,
-    // currents, tides), theme 2 seafaring (vessel, ship, sail, voyage) — the map's road
-    // order, road 0 = rank 1.
+    // Theme 0 is the coast (sea, waters, atlantic, shores), theme 1 the planet (coral,
+    // arctic, currents, earth), theme 2 seafaring (vessel, ship, sail, voyage) — the map's
+    // road order, road 0 = rank 1.
     {
       kind: 'tap',
       introCopyKey: 'tutThemesIntro',

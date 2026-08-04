@@ -49,7 +49,7 @@ const STREAK_AFTER_WORDS_MS = 300;
 // Deadlines for the two solved-exit beats that hand the tray back (see their effects):
 // generous multiples of the real durations, so they only ever fire if the DOM signal
 // itself was lost.
-const KB_EXIT_FALLBACK_MS = 1_200;
+export const KB_EXIT_FALLBACK_MS = 1_200;
 const LINEUP_EXIT_FALLBACK_MS = 3_000;
 // The source typewriter's deadline. Its real beat is RESULTS_IN_MS + one citation typed at
 // TYPE_MS per character + CURSOR_HOLD_MS — under 2s even for a long author/work — so this is a

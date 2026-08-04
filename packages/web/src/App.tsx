@@ -9,7 +9,7 @@ import BackgroundWaves from './components/BackgroundWaves';
 import LazyStreakDialog from './components/LazyStreakDialog';
 import LoadError from './components/LoadError';
 import NoPuzzle from './components/NoPuzzle';
-import Tutorial from './tutorial/Tutorial';
+import LazyTutorial from './tutorial/LazyTutorial';
 import Invite from './tutorial/Invite';
 import { useGameStore } from './state/gameStore';
 import { track } from './analytics';
@@ -120,7 +120,7 @@ function GameRoute({ lang, date }: { lang: LangCode; date?: string }) {
   // key={lang}: switching language mid-tutorial (via /select) restarts it in that
   // language.
   if (tutorialOpen) {
-    return <Tutorial key={lang} lang={lang} onDone={closeTutorial} />;
+    return <LazyTutorial key={lang} lang={lang} onDone={closeTutorial} />;
   }
   if (!onboarded && streakPreview == null) {
     return (

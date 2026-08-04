@@ -11,7 +11,7 @@ import TopBar from '../components/TopBar';
 import { HIT_FADE_MS } from '../components/FloatingHit';
 import { RANK_MAX_MS, rankTransitionDuration } from '../components/Hole';
 import SkipIcon from '../assets/icons/skip.svg?react';
-import { STAGGER_MS, FLOATING_HIT_INTRO_MS } from '../screens/Game';
+import { FLOATING_HIT_INTRO_MS, KB_EXIT_FALLBACK_MS } from '../screens/Game';
 import MixWord, { SCRAMBLE_MS } from './MixWord';
 import CoachText, { richToPlain } from './CoachText';
 import { buildPrefixSet, canExtend } from '../game/keyboard';
@@ -128,6 +128,7 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
       fn();
     }, ms);
     timers.current.push(id);
+    return id;
   }, []);
 
   // Screen-reader mirror, same pattern as Game (zero-width flip forces re-announcement).
@@ -325,8 +326,12 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
   // theme.
   const [cloudExiting, setCloudExiting] = useState(false);
   // Guards the race between the cloud's report and the deadline below: whichever lands first
-  // advances, the other is a no-op.
+  // advances, the other is a no-op. The winner must also CANCEL the pending deadline —
+  // `exitClaimed` only covers one exit, and the next press re-arms it, so an uncancelled
+  // timer from an earlier press would fire mid-way through a LATER cloud's exit and advance
+  // the stage over words still shrinking.
   const exitClaimed = useRef(false);
+  const exitDeadline = useRef<number | undefined>(undefined);
   const openThemes = useCallback(() => {
     setThemeStage(0);
     setThemesOpen(true);
@@ -334,13 +339,14 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
   const finishThemeExit = useCallback(() => {
     if (exitClaimed.current) return;
     exitClaimed.current = true;
+    window.clearTimeout(exitDeadline.current);
     setCloudExiting(false);
     setThemeStage((k) => k + 1);
   }, []);
   const nextTheme = useCallback(() => {
     exitClaimed.current = false;
     setCloudExiting(true);
-    later(finishThemeExit, CLOUD_EXIT_FALLBACK_MS);
+    exitDeadline.current = later(finishThemeExit, CLOUD_EXIT_FALLBACK_MS);
   }, [later, finishThemeExit]);
   const finish = useCallback(() => {
     track('tutorial', { action: 'finish' });
@@ -359,11 +365,16 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
   const themesDone = themeStage >= themeCount;
 
   // The keyboard leaves the way it does in a solved round: it drops out of the tray once
-  // there is nothing left to type. No deadline behind the `animationend` (unlike Game's):
-  // nothing waits on it — the keyboard is already off screen and out of reach when it fires,
-  // so a lost event costs an unmount, not the screen.
+  // there is nothing left to type. The ending WAITS on its `animationend`: the claim's NEXT
+  // renders only once the keyboard is gone (`kbGone`), so a lost event would strand the
+  // player with no way forward but the header fast-forward. Same signal as Game's identical
+  // beat, so it carries the same deadline (KB_EXIT_FALLBACK_MS) — the genuine event lands
+  // long before it, and firing after it is a no-op.
   const tapping = step.kind === 'tap';
   const [kbGone, setKbGone] = useState(false);
+  useEffect(() => {
+    if (tapping) later(() => setKbGone(true), KB_EXIT_FALLBACK_MS);
+  }, [tapping, later]);
 
   // The nudge speaks the input device's own verb — "tap" only where the pointer actually
   // taps, "click" everywhere else (the same coarse-pointer test the streak celebration's

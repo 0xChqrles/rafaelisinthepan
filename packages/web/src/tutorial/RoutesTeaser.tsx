@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { LANE_COLORS } from '../components/RouteModal';
 import { rankHeatColor } from '../components/Hole';
@@ -121,12 +121,22 @@ export default function RoutesTeaser({
     readEdges();
   }, [readEdges]);
 
+  // A resize (rotation, a dragged window) changes clientHeight/scrollHeight under an
+  // unchanged scrollTop, so the edges go stale without a scroll event — the same failure
+  // class as the cloud's mount-read height scale (findings 2026-08-04).
+  useEffect(() => {
+    window.addEventListener('resize', readEdges);
+    return () => window.removeEventListener('resize', readEdges);
+  }, [readEdges]);
+
   return (
     <div
       className={`routes-teaser${more.up ? ' more-up' : ''}${more.down ? ' more-down' : ''}`}
       aria-hidden="true"
     >
-      <div className="teaser-scroll pixel-scroll" ref={scrollRef} onScroll={readEdges}>
+      {/* tabIndex -1: browsers make scrollers keyboard-focusable, and a focusable element
+          may not live inside the aria-hidden frame. Scroll stays pointer/wheel, as designed. */}
+      <div className="teaser-scroll pixel-scroll" ref={scrollRef} onScroll={readEdges} tabIndex={-1}>
         <div
           className="teaser-map"
           style={

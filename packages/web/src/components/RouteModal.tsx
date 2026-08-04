@@ -38,9 +38,9 @@ import useModalDismiss from '../hooks/useModalDismiss';
 // The whole drawing is derived from the model (game/route.ts), so a guess landing while it is
 // open just adds a station.
 //
-// The drawing itself is `RouteLine` (#155): the onboarding tutorial renders the same line
-// INLINE, in place of the word it just taught — no dialog, no header, page scroll — so the
-// modal is only the daily game's chrome around it.
+// The drawing itself is `RouteLine` (#155, see its own comment below): this modal is its one
+// consumer — the tutorial's ending, which drew the line inline for a while, shows theme
+// clouds and the routes teaser instead.
 
 // A connector carries the distance between the two stations it joins: `LINK_SPAN` px per full
 // dq scale, floored so two neighbours never collide and capped so the cold tail cannot push the

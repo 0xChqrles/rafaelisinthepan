@@ -1672,10 +1672,10 @@ button * {
   overflow: hidden;
 }
 /* The drawing's own variables live on `.route-frame` — the wrapper RouteLine renders — not on
-   the dialog, because since #155 the same line is also drawn INLINE by the onboarding tutorial
-   (replacing the word it just taught), where there is no dialog to carry them. Everything the
-   drawing's CSS consumes resolves from here, wherever the line is mounted; the dialog keeps
-   only its own chrome (position, zoom origin). */
+   the dialog (#155): everything the drawing's CSS consumes resolves from the frame, so the
+   drawing stands apart from the modal shell and the dialog keeps only its own chrome
+   (position, zoom origin). The modal is the line's only consumer today — the tutorial's
+   inline line was superseded by its theme clouds. */
 .route-frame {
   /* The containing block for the sr-only mirror it carries: `.sr-only` is absolutely
      positioned, and an unpositioned frame would hand it to an ancestor outside the

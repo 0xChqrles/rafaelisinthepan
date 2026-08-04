@@ -142,10 +142,10 @@ const STRINGS = {
     en: 'Forgot it? It was [[b:ocean]].',
     fr: "Oublié ? C'était [[b:tropiques]].",
   },
-  // ---- the ending (#155): tapping the found word replaces it with its route line, and
-  // PLAY ends the tutorial. The nudge speaks the input device's own verb — tutTap on a
-  // coarse pointer, tutClick otherwise (the tapAnywhere/clickAnywhere pattern). The roads
-  // themes are then shown ONE AT A TIME as clouds of words (findings 2026-08-04). The ending
+  // ---- the ending (#155): tapping the found word replaces it with its THEMES — the map's
+  // roads, shown ONE AT A TIME as clouds of words, closing on the routes teaser (findings
+  // 2026-08-04) — and PLAY ends the tutorial. The nudge speaks the input device's own verb —
+  // tutTap on a coarse pointer, tutClick otherwise (the tapAnywhere/clickAnywhere pattern). The ending
   // opens on TWO beats, one idea each (findings 2026-08-04, splitting what had been one
   // over-long line): the CLAIM, advanced with the tray's NEXT; then the GESTURE, which is
   // where the word starts waving and becomes tappable. Each cloud is then headed
@@ -166,7 +166,10 @@ const STRINGS = {
     fr: 'Tu peux cliquer sur un mot pour découvrir ses thèmes.',
   },
   tutTheme1: { en: 'the coast', fr: 'le climat' },
-  tutTheme2: { en: 'the deep', fr: 'les îles' },
+  // en theme 2's cloud reads coral, arctic, waves, antarctica, surface, currents, earth,
+  // tropical… — the ocean at planet scale ("the deep" mislabelled it: half the cloud is
+  // surface and poles).
+  tutTheme2: { en: 'the planet', fr: 'les îles' },
   tutTheme3: { en: 'seafaring', fr: 'le globe' },
   // The en string is UNREFERENCED — ocean's board ships three themes — but the parity
   // contract wants both languages; re-author it if an en board ever ships four.

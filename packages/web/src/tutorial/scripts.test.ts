@@ -29,6 +29,7 @@ import { fold } from '@whippin/shared';
 import { parsePuzzle } from '../api';
 import { scriptFor } from './scripts';
 import type { TutorialStep } from './script';
+import { t, type UiKey } from '../i18n';
 
 const MIN_ROLL_WORDS = 9; // real words each fast roll passes through (incl. landing)
 
@@ -64,6 +65,44 @@ for (const lang of ['en', 'fr'] as const) {
 
     it('the board passes the real schema check (parsePuzzle)', () => {
       expect(() => parsePuzzle(JSON.parse(JSON.stringify(puzzle)))).not.toThrow();
+    });
+
+    it('coach copy naming board words matches the map — hand-written strings over regenerated data', () => {
+      // Every copy key a step can put in the coach box.
+      const keys = new Set<UiKey>();
+      for (const s of script.steps) {
+        if (s.kind === 'mix') {
+          keys.add(s.copyKey);
+          for (const stop of s.stops) if (stop.copyKey) keys.add(stop.copyKey);
+        } else if (s.kind === 'guess') keys.add(s.copyKey);
+        else if (s.kind === 'find') {
+          keys.add(s.copyKey);
+          keys.add(s.nudgeKey);
+        } else {
+          keys.add(s.introCopyKey);
+          keys.add(s.tapCopyKey);
+          keys.add(s.clickCopyKey);
+          for (const k of s.themeCopyKeys) keys.add(k);
+          keys.add(s.closeCopyKey);
+        }
+      }
+      // [[w:word^rank]] claims a rank the map must still assign to that word, and
+      // [[b:word]] claims the secret itself — both go stale silently when the board is
+      // regenerated, which is exactly the drift everything else here derives away.
+      let claims = 0;
+      for (const key of keys) {
+        const copy = t(lang, key);
+        for (const m of copy.matchAll(/\[\[w:([^^\]]+)\^(\d+)\]\]/g)) {
+          expect(map[fold(m[1])]?.rank, `${key}: ${m[0]}`).toBe(Number(m[2]));
+          claims += 1;
+        }
+        for (const m of copy.matchAll(/\[\[b:([^\]]+)\]\]/g)) {
+          expect(fold(m[1]), `${key}: ${m[0]}`).toBe(hole.secret.slug);
+          claims += 1;
+        }
+      }
+      // The guard must be guarding something: the arc's copy does name board words.
+      expect(claims).toBeGreaterThan(0);
     });
 
     it('every scripted word is a fold-stable slug the gated keyboard can produce', () => {
