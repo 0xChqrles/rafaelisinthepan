@@ -814,12 +814,24 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **PLAY (`tutPlay`), which is the graduation**: `onDone`, no SolvedScreen (a lesson has no
   score to show, so `SolvedScreen`'s tutorial `action` prop and its null `dayNumber` are gone
   with it).
+  **The ACTION BUTTON keeps ONE place for the whole lesson** (decided 2026-08-04): MIX, the
+  ending's NEXT and PLAY are the same control in the same spot — parked against the tray's
+  BOTTOM edge (`.mix-btn`'s `margin-top: auto`, which beats the tray's own centring), so the
+  page's frame inset is its whole margin below and it sits the same distance from the bottom as
+  from the left and right. That has to be stated as a rule because the tray's HEIGHT changes
+  under it — the keyboard's full footprint while the word is on screen, the button's own height
+  once the clouds replace it — so a button centred in the tray drifted: measured 87px above the
+  bottom on the mix and claim beats against 24px on the themes (desktop), 54.5 against 14 on a
+  phone, and the only control on screen jumped the moment the lesson moved on. On a phone the
+  button carries its own +10px back to the 14px page inset (the same rule as
+  `.tray.tray-results`, and the reason that offset lives on the BUTTON rather than on the themes
+  tray's padding: the earlier beats need it inside a tray whose height must stay the
+  keyboard's). The keyboard and the tray's transient loading/error lines keep the tray's
+  centring — the auto margin moves the button only.
   **From the clouds on, the TRAY stops reserving the keyboard's footprint** (`tutorial--themes`
   on the root, decided 2026-08-04): the keyboard has dropped for good and the tray holds one
-  button, so it shrinks to that button — the page's own frame inset is then the whole margin
-  below it, the same distance as the button's left and right, and the `.game` gap gives it 24px
-  above. (On a phone the game deliberately hugs the keyboard's 4px bottom gap, so the tray pads
-  the 14px side inset back — the same +10px rule as `.tray.tray-results`.) The ~120px that
+  button, so it shrinks to that button — which does NOT move it (it was already on the tray's
+  bottom edge); only the space ABOVE it changes. The ~120px that
   empty footprint held goes to the clouds and the routes map, which are
   the screens short of height. It cannot start any EARLIER: while the word is still on screen
   the tray's fixed height is exactly what keeps the word from moving between beats, so the
