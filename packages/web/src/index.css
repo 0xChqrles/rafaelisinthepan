@@ -2949,21 +2949,22 @@ button * {
   white-space: nowrap;
 }
 /* The close's route-map glimpse (#155): the themes' colored lines at the map's own lane
-   rhythm, each carrying a couple of its words as stations — rank exponent in a left gutter
-   like the real map's, node on the lane, word beside it in the lane's color — plus two
-   chevrons saying "this scrolls". A signpost to the real map, not the map. The rail
-   geometry (5px lines, 22px pitch) and the gutter are set inline by RoutesTeaser from the
-   map's own constants.
+   rhythm, every near-field group riding them as a station — heat-colored rank exponent in a
+   left gutter like the real map's, node on its lane, word beside it in the lane's color.
 
-   The lines STRETCH to the play area's free height: flex-basis 0 + min-height 0 mean they
-   can never grow the page (the same trick the retired inline scroller used), the max keeps
-   a desktop viewport from stretching them absurd, and the margin is the guaranteed
-   breathing room against the coach box above and the tray's button below. The station rows
-   spread evenly along whatever height that resolves to. */
+   It reads the way the real map reads: DOWN the page from the far field to the word, so `-1`
+   sits at the BOTTOM and the line opens parked there. It SCROLLS — the chevrons are its
+   buttons — so the height it stretches to is a viewport, not the content: flex-basis 0 +
+   min-height 0 mean it can never grow the page, the max keeps a desktop from stretching it
+   absurd, and the margin is the guaranteed breathing room against the coach box above and the
+   tray's button below. The width is DEFINITE (never fit-content): `.teaser-map` is an
+   inline-size container and its `cqw` word sizing would be circular against an auto width. */
 .routes-teaser {
+  align-self: center;
+  width: min(100%, 430px);
   display: flex;
   align-items: stretch;
-  gap: 26px;
+  gap: 14px;
   flex: 1 1 0;
   min-height: 0;
   max-height: 520px;
@@ -2973,15 +2974,46 @@ button * {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 8px 0;
+  padding: 2px 0;
+}
+/* The one interactive thing on the close. Same language as every other icon control: muted,
+   brightening on hover/focus, dimmed to near-nothing when the line has nowhere left to go. */
+.teaser-arrow {
+  padding: 4px;
+  border: 0;
+  background: none;
   color: var(--muted);
+  cursor: pointer;
+  transition: color 0.1s linear, opacity 0.1s linear;
+}
+.teaser-arrow:hover:not(:disabled),
+.teaser-arrow:focus-visible {
+  color: var(--fg);
+}
+.teaser-arrow:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.teaser-arrow:focus-visible {
+  outline: 3px solid var(--accent-dim);
+  outline-offset: 2px;
+}
+.pixel-icon.flipped {
+  transform: scaleY(-1);
+}
+.teaser-scroll {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* The lesson's last screen is not a place to rubber-band the page behind it. */
+  overscroll-behavior: contain;
 }
 .teaser-map {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-evenly;
-  padding: 6px 0;
+  /* The word column sizes itself off this box (see fitStation's cqw), so the container has
+     to be the row's real width — which is why the teaser's own width is definite above. */
+  container-type: inline-size;
 }
 .teaser-lanes {
   position: absolute;
@@ -2995,7 +3027,7 @@ button * {
 }
 .teaser-station {
   display: grid;
-  grid-template-columns: var(--teaser-gutter) var(--teaser-railw) auto;
+  grid-template-columns: var(--teaser-gutter) var(--teaser-railw) minmax(0, auto);
   align-items: center;
 }
 .t-rank {
@@ -3019,7 +3051,6 @@ button * {
 .t-word {
   margin-left: 16px;
   font-family: var(--vt);
-  font-size: 15px;
   white-space: nowrap;
   text-shadow: 2px 2px 0 black;
 }

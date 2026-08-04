@@ -753,13 +753,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `--coach-theme-c`, set on the box by the Tutorial), a NEXT THEME press (`tutNextTheme`)
   swaps to the next, and after the last the close shows **the ROUTES TEASER**
   (`tutorial/RoutesTeaser.tsx`: the themes' colored lines at the map's own lane rhythm,
-  STRETCHED to the play area's free height — flex-basis 0 + min-height 0 so they can never
-  grow the page, bounded by a max, margins guaranteeing breathing room against the coach
-  and the tray's button — two chevrons on the left saying "this scrolls", and a couple of
-  each theme's words riding the lines as stations: heat-colored rank exponent in a left
-  gutter like the real map's, node on the lane, word beside it in the lane's color. The
-  words are a DISPLAY pick: long ones are passed over for the theme's next closest, and
-  the survivors get a fitWord-style width cap — a signpost to the real map, not a ranking)
+  carrying EVERY near-field group out to rank 100 as a station — heat-colored rank exponent
+  in a left gutter like the real map's, node on its lane, word beside it in the lane's
+  colour. It reads the way the real map reads: DOWN the page from the far field to the word,
+  so **`-1` sits at the BOTTOM** and it opens parked there. It **SCROLLS**, and the two
+  chevrons are its control — real buttons that page toward `-100` and back, dimmed at each
+  end, and the only non-decorative thing on the drawing (hence named, and outside the
+  aria-hidden subtree). It stretches to the play area's free height — flex-basis 0 +
+  min-height 0 so it can never grow the page, bounded by a max, margins guaranteeing
+  breathing room against the coach and the tray's button — and its width is DEFINITE, never
+  fit-content, because `.teaser-map` is an inline-size container whose `cqw` word sizing
+  would otherwise be circular. **VT323 advances exactly 1em per glyph** (measured; a 0.95
+  guess clipped the longest words) and the floor is the route map's own 8px)
   under the general principle (`tutThemes` — "Plusieurs thèmes peuvent exister à travers
   le même mot.") while the tray offers
   **PLAY (`tutPlay`), which is the graduation**: `onDone`, no SolvedScreen (a lesson has no

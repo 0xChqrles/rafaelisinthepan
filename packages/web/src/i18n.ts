@@ -175,6 +175,10 @@ const STRINGS = {
     fr: 'Quatrième thème : [[t:les vacances]].',
   },
   tutNextTheme: { en: 'NEXT THEME', fr: 'THÈME SUIVANT' },
+  // The close's route line scrolls; its chevrons are the control, and they are the one
+  // interactive thing on an otherwise decorative drawing, so they are named.
+  ariaScrollFar: { en: 'Show farther words', fr: 'Voir les mots plus loin' },
+  ariaScrollClose: { en: 'Show the closest words', fr: 'Voir les mots les plus proches' },
   tutThemes: {
     en: 'Several themes can live inside the same word.',
     fr: 'Plusieurs thèmes peuvent exister à travers le même mot.',

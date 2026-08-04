@@ -23,9 +23,10 @@ const SIZE_MAX = 30;
 const SIZE_MIN = 15;
 // A long word must FIT the screen at whatever size the ramp hands it, so its size is capped
 // by width the same way the route map's fitWord does it — arithmetic, not measurement. The
-// game's word font advances ~0.95em per glyph (measured: « intertropical-5 » at 30px laid
-// out 424px), and the exponent's digits run at sup size, so they count for ~0.7 of a glyph.
-const GLYPH_EM = 0.95;
+// game's word font (VT323) advances EXACTLY 1em per glyph, measured; the exponent's digits
+// run at sup size, so they count for ~0.7 of a glyph (an over-estimate, which only ever
+// shrinks a word further — the safe direction).
+const GLYPH_EM = 1;
 const SUP_EM = 0.7;
 // The cloud must also FIT the play area's height — a tall cloud grew the page and made the
 // view scroll (findings 2026-08-04). The whole size ramp scales down on short viewports:
