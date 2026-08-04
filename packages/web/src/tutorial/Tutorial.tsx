@@ -448,7 +448,7 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
         ) : themesOpen && themesDone ? (
           // The close: a glimpse of the route map every word offers — the themes' colored
           // lines with a couple of their words riding them — under the general principle.
-          <RoutesTeaser map={rankMap} lanes={themeCount} />
+          <RoutesTeaser map={rankMap} lanes={themeCount} startRank={hole.start_rank} />
         ) : themesOpen ? (
           // The word gave way to one of its THEMES: a cloud of that theme's words in its
           // route color. One at a time.
