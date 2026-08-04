@@ -18,7 +18,7 @@ import { buildPrefixSet, canExtend } from '../game/keyboard';
 import useVocab from '../hooks/useVocab';
 import { fold } from '@whippin/shared';
 import type { HitState, Hole as PuzzleHole, RankEntry, RuntimeHole } from '@whippin/shared';
-import { ariaExploreHole, t, srHoleResult, type UiKey } from '../i18n';
+import { ariaExploreHole, t, srHoleResult, themeHeading, type UiKey } from '../i18n';
 import { track } from '../analytics';
 import { scriptFor } from './scripts';
 
@@ -374,22 +374,23 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
   );
 
   // The explanation currently in the top box. Mix stop copy overrides the step's standing
-  // copy; once the clouds replace the word, the theme on screen names the box.
+  // copy; once the clouds replace the word, the theme on screen heads the box — « Thème n/N :
+  // <name> », numbered from the board's real theme count rather than from a string.
   let coachKey: UiKey | null = null;
+  let coachCopy: string | null = null;
   if (step.kind === 'mix') coachKey = mixCopy ?? step.copyKey;
   else if (step.kind === 'guess') coachKey = step.copyKey;
   else if (step.kind === 'find') {
     coachKey = missStreak >= NUDGE_AFTER_MISSES ? step.nudgeKey : step.copyKey;
   } else if (step.kind === 'tap') {
-    coachKey = !themesOpen
-      ? coarse
-        ? step.tapCopyKey
-        : step.clickCopyKey
-      : themesDone
-        ? step.closeCopyKey
-        : step.themeCopyKeys[Math.min(themeStage, step.themeCopyKeys.length - 1)];
+    if (!themesOpen) coachKey = coarse ? step.tapCopyKey : step.clickCopyKey;
+    else if (themesDone) coachKey = step.closeCopyKey;
+    else {
+      const nameKey = step.themeCopyKeys[Math.min(themeStage, step.themeCopyKeys.length - 1)];
+      coachCopy = themeHeading(lang, themeStage + 1, themeCount, t(lang, nameKey));
+    }
   }
-  const coachCopy = coachKey ? t(lang, coachKey) : null;
+  if (coachKey) coachCopy = t(lang, coachKey);
 
   // Announce each new explanation once, in plain text (the visible typewriter is
   // aria-hidden — a live region would read every keystroke).

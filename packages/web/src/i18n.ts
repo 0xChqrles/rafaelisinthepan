@@ -102,8 +102,11 @@ const STRINGS = {
   // script's expected word (uppercased) so the copy can never drift from the script.
   // Tutorial copy is deliberately TERSE: the feedback on screen does the teaching,
   // the top box only sets up the next move. No under-the-hood talk. HARD LIMIT: the
-  // coach box is exactly 3 lines and clips — if a string wraps past three lines
-  // (~70 chars incl. exponents at the mobile width), it is too much: cut it.
+  // coach box is exactly FOUR lines and clips — if a string wraps past four lines
+  // (~80 chars incl. exponents at the mobile width), it is too much: cut it. (It was
+  // three until 2026-08-04, when the ending's thesis + its instruction landed in one
+  // line; the box is still a FIXED height, which is the part that matters — the word
+  // below it must never move.)
   // Copy uses CoachText's inline markup so words LOOK like what they are in-game:
   // [[b:secret]] blue, [[w:hint^rank]] gold + heat exponent, [[m:miss]] coldest heat.
   tutMixIntro: {
@@ -134,8 +137,8 @@ const STRINGS = {
     fr: '[[m:guitare]] était trop loin — [[m:MISS]]. Essaie [[w:lagon^22]].',
   },
   tutFind: {
-    en: 'Now type the very first word — the blue one.',
-    fr: 'Maintenant, tape le tout premier mot — celui en bleu.',
+    en: 'Now, find the original word.',
+    fr: 'Maintenant, retrouve le mot du début.',
   },
   tutFindNudge: {
     en: 'Forgot it? It was [[b:ocean]].',
@@ -144,40 +147,30 @@ const STRINGS = {
   // ---- the ending (#155): tapping the found word replaces it with its route line, and
   // PLAY ends the tutorial. The nudge speaks the input device's own verb — tutTap on a
   // coarse pointer, tutClick otherwise (the tapAnywhere/clickAnywhere pattern). The roads
-  // themes are then shown ONE AT A TIME as clouds of words (findings 2026-08-04):
-  // tutTheme1..4 each name the cloud on screen — the en strings name OCEAN's themes, the fr
-  // strings TROPIQUES's, since each language plays its own board — and tutThemes closes on
-  // the general principle once every theme has spoken. Plain words, no under-the-hood talk.
+  // themes are then shown ONE AT A TIME as clouds of words (findings 2026-08-04). The tap
+  // prompt states the PRINCIPLE and asks for the gesture in one line; each cloud is then
+  // headed « Thème n/N : <name> » (built by themeHeading below, so the count comes from the
+  // board's real road count and no string has to restate it); and the close says what the
+  // themes ARE. tutTheme1..4 hold only the NAME — the en strings name OCEAN's themes, the fr
+  // strings TROPIQUES's, since each language plays its own board.
   tutTap: {
-    en: 'Found it. Now tap [[b:ocean]].',
-    fr: 'Trouvé. Touche [[b:tropiques]].',
+    en: 'Several themes can live inside one word. Tap it to reveal them.',
+    fr: 'Plusieurs thèmes peuvent exister à travers le même mot. Touche le mot.',
   },
   tutClick: {
-    en: 'Found it. Now click [[b:ocean]].',
-    fr: 'Trouvé. Clique sur [[b:tropiques]].',
+    en: 'Several themes can live inside one word. Click it to reveal them.',
+    fr: 'Plusieurs thèmes peuvent exister à travers le même mot. Clique dessus.',
   },
-  tutTheme1: {
-    en: 'Close words come in themes. The first: [[t:the coast]].',
-    fr: 'Les mots proches vont par thèmes. Le premier : [[t:le climat]].',
-  },
-  tutTheme2: {
-    en: 'Second theme: [[t:the deep]].',
-    fr: 'Deuxième thème : [[t:les îles]].',
-  },
-  tutTheme3: {
-    en: 'Third theme: [[t:seafaring]].',
-    fr: 'Troisième thème : [[t:le globe]].',
-  },
+  tutTheme1: { en: 'the coast', fr: 'le climat' },
+  tutTheme2: { en: 'the deep', fr: 'les îles' },
+  tutTheme3: { en: 'seafaring', fr: 'le globe' },
   // The en string is UNREFERENCED — ocean's board ships three themes — but the parity
   // contract wants both languages; re-author it if an en board ever ships four.
-  tutTheme4: {
-    en: 'The fourth theme.',
-    fr: 'Quatrième thème : [[t:les vacances]].',
-  },
-  tutNextTheme: { en: 'NEXT THEME', fr: 'THÈME SUIVANT' },
+  tutTheme4: { en: 'the fourth', fr: 'les vacances' },
+  tutNextTheme: { en: 'NEXT', fr: 'SUIVANT' },
   tutThemes: {
-    en: 'Several themes can live inside the same word.',
-    fr: 'Plusieurs thèmes peuvent exister à travers le même mot.',
+    en: 'Each theme is a different semantic path to follow.',
+    fr: 'Chaque thème est un chemin sémantique différent à suivre.',
   },
   tutPlay: { en: 'PLAY', fr: 'JOUER' },
 } satisfies Record<string, Record<UiLang, string>>;
@@ -206,6 +199,16 @@ export function srHoleResult(lang: string, n: number, rank: number | null): stri
 // ---- route modal (#117). Holes are numbered like the run ruler's ticks and the share
 // row's keycaps: 1-based over the sentence's DISTINCT secrets, so two occurrences of one
 // secret — which share a rank map, and so share a map — carry the same number.
+// A theme cloud's heading (#155): « Thème 2/4 : les îles ». The COUNT comes from the board's
+// real road count rather than from a string, so a regenerated board with a different fork
+// cannot leave the copy claiming a total it does not ship. The name wears the cloud's colour
+// via CoachText's [[t:]] tag.
+export function themeHeading(lang: string, n: number, total: number, name: string): string {
+  return uiLang(lang) === 'fr'
+    ? `Thème ${n}/${total} : [[t:${name}]]`
+    : `Theme ${n}/${total}: [[t:${name}]]`;
+}
+
 export function routeTitle(lang: string, n: number): string {
   return uiLang(lang) === 'fr' ? `MOT ${n}` : `WORD ${n}`;
 }
