@@ -55,16 +55,17 @@ export type TutorialStep =
   // The ending (#155). The word the player just found is now TAPPABLE — the same button and
   // the same ambient wave as a real round — and the coach nudges the tap in the input
   // device's own verb (`tapCopyKey` on a coarse pointer, `clickCopyKey` otherwise). The tap
-  // REPLACES the word with its route line, drawn inline (no modal — the map takes the word's
-  // place) — and the roads are shown ONE AT A TIME (findings 2026-08-04: all at once was
-  // too much at the same time): stage k draws road k ALONE, every other lane receding into
-  // the unfound tint, with `roadCopyKeys[k]` naming its theme; each NEXT ROAD press moves
-  // the focus to the next road. `roadCopyKeys` is ordered by LANE — road 0 holds rank 1 —
-  // and must name every road the board's map actually ships (scripts.test.ts). After the
-  // last road the close shows ALL lanes vivid at once, `routeCopyKey` states the general
-  // principle, and the tray offers PLAY, which ends the tutorial. There is no graduation
-  // screen, because there is no score to show.
-  | { kind: 'tap'; tapCopyKey: UiKey; clickCopyKey: UiKey; roadCopyKeys: UiKey[]; routeCopyKey: UiKey };
+  // REPLACES the word with its THEMES, shown as clouds of words ONE AT A TIME (findings
+  // 2026-08-04 — first the route line, then one road at a time, finally clouds: the line
+  // was too much information at once, and a cloud of themed words with their exponents says
+  // "these belong together, this close" with nothing to decode): stage k is theme k's cloud
+  // alone, in that route's color, with `themeCopyKeys[k]` naming it; each NEXT THEME press
+  // swaps to the next cloud. `themeCopyKeys` is ordered by the map's road ids — road 0
+  // holds rank 1 — and must name every road the board's map actually ships
+  // (scripts.test.ts). After the last theme the word returns, `closeCopyKey` states the
+  // general principle, and the tray offers PLAY, which ends the tutorial. There is no
+  // graduation screen, because there is no score to show.
+  | { kind: 'tap'; tapCopyKey: UiKey; clickCopyKey: UiKey; themeCopyKeys: UiKey[]; closeCopyKey: UiKey };
 
 export interface TutorialScript {
   puzzle: Puzzle; // same schema as a real puzzle (parsePuzzle-valid)

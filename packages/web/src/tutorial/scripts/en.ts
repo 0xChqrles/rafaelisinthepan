@@ -67,15 +67,16 @@ const script: TutorialScript = {
     { kind: 'guess', expect: 'violin', copyKey: 'tutGuessMiss' },
     { kind: 'guess', expect: 'boat', copyKey: 'tutGuessCloser' },
     { kind: 'find', target: word.slug, copyKey: 'tutFind', nudgeKey: 'tutFindNudge' },
-    // The ending: tap the word you found — the routes take its place, one by one. Road 0 is
-    // the coast (sea, waters, atlantic, shores), road 1 the deep (coral, waves, currents,
-    // tides), road 2 seafaring (vessel, ship, sail, voyage) — lane order, road 0 = rank 1.
+    // The ending: tap the word you found — its themes take its place, one cloud at a time.
+    // Theme 0 is the coast (sea, waters, atlantic, shores), theme 1 the deep (coral, waves,
+    // currents, tides), theme 2 seafaring (vessel, ship, sail, voyage) — the map's road
+    // order, road 0 = rank 1.
     {
       kind: 'tap',
       tapCopyKey: 'tutTap',
       clickCopyKey: 'tutClick',
-      roadCopyKeys: ['tutRoad1', 'tutRoad2', 'tutRoad3'],
-      routeCopyKey: 'tutRoutes',
+      themeCopyKeys: ['tutTheme1', 'tutTheme2', 'tutTheme3'],
+      closeCopyKey: 'tutThemes',
     },
   ],
 };

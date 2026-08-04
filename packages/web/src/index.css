@@ -1629,20 +1629,6 @@ button * {
   flex-direction: column;
   overflow: hidden;
 }
-/* The onboarding's INLINE route line (#155): the word's place in the tutorial play area, as a
-   scroller of its own between the coach and PLAY. Its own, never the page's: the topbar and
-   the coach float with no background, so page-scrolled words would ride under them — and with
-   the tray fixed at the bottom, PLAY never has to be scrolled to. flex-basis 0 + min-height 0
-   is what keeps the line's height from growing the screen: the scroller sizes to the play
-   area's free space and the line overflows INSIDE it. */
-.route-inline {
-  align-self: stretch;
-  flex: 1 1 0;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-
 /* The drawing's own variables live on `.route-frame` — the wrapper RouteLine renders — not on
    the dialog, because since #155 the same line is also drawn INLINE by the onboarding tutorial
    (replacing the word it just taught), where there is no dialog to carry them. Everything the
@@ -1650,10 +1636,8 @@ button * {
    only its own chrome (position, zoom origin). */
 .route-frame {
   /* The containing block for the sr-only mirror it carries: `.sr-only` is absolutely
-     positioned, and with the frame unpositioned it resolved against `.play` — OUTSIDE the
-     tutorial's inline scroller — where its static position sat below ~6000px of line and
-     quietly grew the PAGE by the line's whole height. Positioned here, it stays inside
-     whichever scroller mounts the frame. */
+     positioned, and an unpositioned frame would hand it to an ancestor outside the
+     scroller, where its static position sits below the line's whole height. */
   position: relative;
   /* The line itself: trunk, junction bus, the leap's and the tail's dashes, the torn break.
      Deliberately the ONE unsaturated line on the map — the trunk is the stretch where no road
@@ -2134,17 +2118,6 @@ button * {
   color: var(--lane-c);
   opacity: 0.55;
 }
-/* The tutorial's staged reveal (#155): a station on a road the coach has NOT introduced yet
-   recedes whole — node and word both in the unfound tint, matching the LANE_DIM its line is
-   painted in — so each stage reads as ONE road speaking. AFTER the revealed/unknown/departure
-   rules and at their specificity, so a not-yet-introduced station dims whatever else it is. */
-.route .route-station.route-later .route-node {
-  background: var(--unfound);
-}
-.route .route-station.route-later .route-word {
-  color: var(--unfound);
-}
-
 /* --- off the map --- */
 /* ABOVE the line, behind a torn edge: the guesses that earned no rank at all. Beyond the
    top-K there is no distance left to draw, and that IS the mechanic. */
@@ -2947,6 +2920,27 @@ button * {
 }
 .rt-word {
   color: var(--hole);
+  white-space: nowrap;
+}
+
+/* The onboarding's theme clouds (#155): one THEME of the found word as a cloud of its
+   words — the theme's route color on the words, the game's heat ramp on the exponents,
+   type size falling with distance. One cloud on screen at a time; the coach names it. */
+.theme-cloud {
+  margin: 0;
+  font-family: var(--vt);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  column-gap: 22px;
+  row-gap: 10px;
+  max-width: 560px;
+  text-align: center;
+  text-shadow: 2px 2px 0 black;
+}
+.cloud-word {
+  color: var(--cloud-c);
   white-space: nowrap;
 }
 

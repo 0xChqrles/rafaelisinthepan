@@ -144,10 +144,10 @@ const STRINGS = {
   // ---- the ending (#155): tapping the found word replaces it with its route line, and
   // PLAY ends the tutorial. The nudge speaks the input device's own verb — tutTap on a
   // coarse pointer, tutClick otherwise (the tapAnywhere/clickAnywhere pattern). The roads
-  // are then shown ONE AT A TIME (findings 2026-08-04): tutRoad1..4 each name the road on
-  // screen alone — the en strings name OCEAN's themes, the fr strings TROPIQUES's, since
-  // each language plays its own board — and tutRoutes closes on the general principle once
-  // every road has spoken. Plain words, no under-the-hood talk.
+  // themes are then shown ONE AT A TIME as clouds of words (findings 2026-08-04):
+  // tutTheme1..4 each name the cloud on screen — the en strings name OCEAN's themes, the fr
+  // strings TROPIQUES's, since each language plays its own board — and tutThemes closes on
+  // the general principle once every theme has spoken. Plain words, no under-the-hood talk.
   tutTap: {
     en: 'Found it. Now tap [[b:ocean]].',
     fr: 'Trouvé. Touche [[b:tropiques]].',
@@ -156,28 +156,28 @@ const STRINGS = {
     en: 'Found it. Now click [[b:ocean]].',
     fr: 'Trouvé. Clique sur [[b:tropiques]].',
   },
-  tutRoad1: {
-    en: 'Each road is a theme. The first: the coast.',
-    fr: 'Chaque route est un thème. La première : le climat.',
+  tutTheme1: {
+    en: 'Close words come in themes. The first: the coast.',
+    fr: 'Les mots proches vont par thèmes. Le premier : le climat.',
   },
-  tutRoad2: {
-    en: 'The second: the deep.',
-    fr: 'La deuxième : les îles.',
+  tutTheme2: {
+    en: 'Second theme: the deep.',
+    fr: 'Deuxième thème : les îles.',
   },
-  tutRoad3: {
-    en: 'The third: seafaring.',
-    fr: 'La troisième : le globe.',
+  tutTheme3: {
+    en: 'Third theme: seafaring.',
+    fr: 'Troisième thème : le globe.',
   },
-  // The en string is UNREFERENCED — ocean's board ships three roads — but the parity
+  // The en string is UNREFERENCED — ocean's board ships three themes — but the parity
   // contract wants both languages; re-author it if an en board ever ships four.
-  tutRoad4: {
-    en: 'The fourth road.',
-    fr: 'La quatrième : les vacances.',
+  tutTheme4: {
+    en: 'The fourth theme.',
+    fr: 'Quatrième thème : les vacances.',
   },
-  tutNextRoad: { en: 'NEXT ROAD', fr: 'ROUTE SUIVANTE' },
-  tutRoutes: {
-    en: 'Every word has its own roads.',
-    fr: 'Chaque mot a ses routes.',
+  tutNextTheme: { en: 'NEXT THEME', fr: 'THÈME SUIVANT' },
+  tutThemes: {
+    en: 'Every word has its own themes.',
+    fr: 'Chaque mot a ses thèmes.',
   },
   tutPlay: { en: 'PLAY', fr: 'JOUER' },
 } satisfies Record<string, Record<UiLang, string>>;

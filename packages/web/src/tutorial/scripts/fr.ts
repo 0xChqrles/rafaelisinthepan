@@ -67,16 +67,16 @@ const script: TutorialScript = {
     { kind: 'guess', expect: 'guitare', copyKey: 'tutGuessMiss' },
     { kind: 'guess', expect: 'lagon', copyKey: 'tutGuessCloser' },
     { kind: 'find', target: word.slug, copyKey: 'tutFind', nudgeKey: 'tutFindNudge' },
-    // La fin : toucher le mot trouvé — les routes prennent sa place, une par une. Route 0 :
-    // le climat (tropicales, climat, alizés) ; route 1 : les îles (cocotier, palmier,
-    // lagon) ; route 2 : le globe (équateur, hémisphère, sud) ; route 3 : les vacances
-    // (soleil, farniente, tong) — ordre des voies, route 0 = rang 1.
+    // La fin : toucher le mot trouvé — ses thèmes prennent sa place, un nuage à la fois.
+    // Thème 0 : le climat (tropicales, climat, alizés) ; thème 1 : les îles (cocotier,
+    // palmier, lagon) ; thème 2 : le globe (équateur, hémisphère, sud) ; thème 3 : les
+    // vacances (soleil, farniente, tong) — ordre des routes de la carte, route 0 = rang 1.
     {
       kind: 'tap',
       tapCopyKey: 'tutTap',
       clickCopyKey: 'tutClick',
-      roadCopyKeys: ['tutRoad1', 'tutRoad2', 'tutRoad3', 'tutRoad4'],
-      routeCopyKey: 'tutRoutes',
+      themeCopyKeys: ['tutTheme1', 'tutTheme2', 'tutTheme3', 'tutTheme4'],
+      closeCopyKey: 'tutThemes',
     },
   ],
 };

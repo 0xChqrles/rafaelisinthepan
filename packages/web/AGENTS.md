@@ -149,9 +149,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `components/RouteModal.tsx` renders it; `Game` owns the open state so the guess prompt can
   go inert behind it. **Entry point only where the geometry exists:** `hasRoute` gates on the
   secret's rank-1 entry carrying `dq`, so every day published before #115 renders exactly as
-  before — no button, no degraded list view. (The onboarding tutorial used to fall on that
-  side too; since #155 it plays on a REAL generated board precisely so its ending can open
-  this map.) The hole
+  before — no button, no degraded list view. (The onboarding tutorial plays on a REAL
+  generated board since #155; its ending shows that board's roads as THEME clouds in this
+  map's own lane colors — see the onboarding bullet.) The hole
   becomes a `<button>` wrapping its existing spans; it is present for the WHOLE round or not
   at all and the solved choreography only `disabled`s it, because unwrapping mid-round would
   remount the word while its scramble is running. **That disabling covers the solving BEATS
@@ -736,29 +736,27 @@ it to the local store — see `packages/backend/AGENTS.md`).
   prompt and DROPS the keyboard out of the tray (the game's own `kb-drop`), the coach nudges
   the tap **in the input device's own verb** — "tap" on a coarse pointer, "click" otherwise,
   the same `(pointer: coarse)` test as the streak hint (`tutTap`/`tutClick`) — and the word
-  runs #129's ambient wave. **The tap REPLACES the word with its route line, INLINE — no
-  modal** (decided on findings 2026-08-03, superseding the RouteModal ending built first):
-  `RouteLine`, the drawing extracted from `RouteModal` (frame variables + decorative drawing +
-  sr mirror, on a `.route-frame` wrapper that now owns the drawing's CSS variables), renders
-  in the play area inside its OWN scroller (`.route-inline` — the page must not scroll, since
-  the topbar and coach float with no background; `.route-frame` is positioned so the absolute
-  sr-only list cannot escape the scroller and grow the page). It opens scrolled to the bottom
-  — the word, solved, every road named. **The roads are shown ONE AT A TIME, then all together
-  (findings 2026-08-04: the whole map at once was too much at the same time):** stage k draws
-  road k ALONE — every other lane recedes into the unfound tint (`RouteLine.focusLane`;
-  stations get `route-later`, the lane gradients paint LANE_DIM — paint only, the layout
-  never changes between stages so nothing re-measures) — while the coach names that road's
-  THEME from the script's `roadCopyKeys` (`tutRoad1..4` — en names OCEAN's themes, fr
-  TROPIQUES's; scripts.test.ts pins the list's length to the map's real road count). A NEXT
-  ROAD press (`tutNextRoad`) moves the focus; after the last road the close shows ALL lanes
-  vivid at once, the coach states the general principle (`tutRoutes`), and the tray offers
-  **PLAY (`tutPlay`), which is the graduation**: `onDone`,
-  no SolvedScreen (a lesson has no score to show, so `SolvedScreen`'s tutorial `action` prop
-  and its null `dayNumber` are gone with it). The daily game's `RouteModal` wraps the same
-  `RouteLine`, never passes `vividLanes`, and behaves exactly as before.
-  **The board's ranks are a REAL generated neighborhood, and have to be:** the route line only
-  opens where #115's geometry exists (`hasRoute` gates on the rank-1 group's `dq`), and the
-  hand-authored ~22-entry map this replaced carried none. Each language embeds a #154
+  runs #129's ambient wave. **The tap REPLACES the word with its THEMES, shown as CLOUDS of
+  words ONE AT A TIME** (findings 2026-08-04, superseding first the inline route line and
+  then its one-road-at-a-time variant — the line was too much information at once, where a
+  cloud of themed words says "these belong together, this close" with nothing to decode):
+  `tutorial/ThemeCloud.tsx` renders one theme — the map's road — as a cloud of its closest
+  groups (capped at 12), words painted in that route's LANE color (imported from
+  `RouteModal.LANE_COLORS`, so the lesson speaks the identity the game's map uses later),
+  heat-ramp exponents on the board's own scale, type size falling with distance and
+  width-capped by fitWord-style arithmetic (the word font advances ~0.95em/glyph). Never two
+  clouds at once: the coach names each from the script's `themeCopyKeys` (`tutTheme1..4` —
+  en names OCEAN's themes, fr TROPIQUES's; scripts.test.ts pins the list's length to the
+  map's real road count), a NEXT THEME press (`tutNextTheme`) swaps to the next, and after
+  the last the WORD returns with the general principle (`tutThemes`) while the tray offers
+  **PLAY (`tutPlay`), which is the graduation**: `onDone`, no SolvedScreen (a lesson has no
+  score to show, so `SolvedScreen`'s tutorial `action` prop and its null `dayNumber` are gone
+  with it). The daily game's `RouteModal` is untouched (its drawing lives in an internal
+  `RouteLine` on a `.route-frame` wrapper that owns the drawing's CSS variables — a #155
+  refactor kept for its cleanliness; nothing outside the modal renders it).
+  **The board's ranks are a REAL generated neighborhood, and have to be:** the themes ARE the
+  map's #115 roads — the hand-authored ~22-entry map this replaced carried none — and the
+  clouds step through them by road id. Each language embeds a #154
   single-word artifact (`pnpm gen:word`) PRUNED to the word + the road zone + the guided
   words, by `web/scripts/prune-word-map.mjs` — the exact command is recorded in each script's
   header, and `scripts.test.ts` fails if board and map ever drift. **en = OCEAN, fr =

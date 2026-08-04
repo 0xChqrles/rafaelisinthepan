@@ -3,7 +3,7 @@ import Phrase from '../components/Phrase';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import LoadError from '../components/LoadError';
-import { RouteLine } from '../components/RouteModal';
+import ThemeCloud from './ThemeCloud';
 import TopBar from '../components/TopBar';
 import { HIT_FADE_MS } from '../components/FloatingHit';
 import { RANK_MAX_MS, rankTransitionDuration } from '../components/Hole';
@@ -11,7 +11,6 @@ import SkipIcon from '../assets/icons/skip.svg?react';
 import { STAGGER_MS, FLOATING_HIT_INTRO_MS } from '../screens/Game';
 import MixWord, { SCRAMBLE_MS } from './MixWord';
 import CoachText, { richToPlain } from './CoachText';
-import { buildRoute } from '../game/route';
 import { buildPrefixSet, canExtend } from '../game/keyboard';
 import useVocab from '../hooks/useVocab';
 import { fold } from '@whippin/shared';
@@ -33,13 +32,14 @@ import { scriptFor } from './scripts';
 //   each rolling straight into the next prompt. Then the player types back to the secret with
 //   the real vocabulary (free exploration; a nudge reveals the word after 3 straight MISSes).
 //   Finding it ENDS the lesson on the one concept nothing else teaches: the word they found
-//   is tappable, and the tap REPLACES it with its real route line, drawn inline — no modal,
-//   the map takes the word's place — while the coach explains the roads and the tray offers
-//   PLAY, which is the graduation. There is no score to show, so there is no screen for it.
+//   is tappable, and the tap REPLACES it with its THEMES — one cloud of themed words at a
+//   time, in the route colors the game's map speaks — while the coach names each; the word
+//   then returns and the tray offers PLAY, which is the graduation. There is no score to
+//   show, so there is no screen for it.
 //
 // Everything that reacts is the real components with the real timing constants; the scripts
 // are data (./scripts/<lang>.ts) over a REAL generated neighborhood (a pruned #154 artifact),
-// which is also what makes the route line drawable at all. Deliberately NOT Round: Round is
+// which is what gives the themes their real roads. Deliberately NOT Round: Round is
 // fused to the persisted store, and a tutorial round must never touch `rounds` (only the
 // `onboarded` flag changes, set by the caller via onDone).
 
@@ -91,10 +91,6 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
   // The scripted round's local state — the ephemeral twin of Round's persisted state.
   const [holes, setHoles] = useState<RuntimeHole[]>(() => freshHole(hole));
   const [hits, setHits] = useState<HitState[]>([]);
-  // The player's own guesses, in order — the journey the route line draws at the end. Deduped
-  // by folded slug, which is all the tutorial needs (it keeps no score, so the game's
-  // canonical-identity dedupe has nothing to protect here).
-  const [tried, setTried] = useState<string[]>([]);
   const [missStreak, setMissStreak] = useState(0); // find step: consecutive MISSes
   const [input, setInput] = useState('');
   const [invalidAt, setInvalidAt] = useState(0);
@@ -242,7 +238,6 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
           return;
         }
         setInput('');
-        setTried((prev) => (prev.includes(typed) ? prev : [...prev, typed]));
         playGuess(typed, true);
         return;
       }
@@ -257,7 +252,6 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
       }
       setInput('');
       setFeedback(null);
-      setTried((prev) => (prev.includes(typed) ? prev : [...prev, typed]));
       playGuess(typed, false);
     },
     [gatedWord, freeTyping, vocab, lang, say, playGuess],
@@ -298,59 +292,37 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
     }, SCRAMBLE_MS + MIX_SETTLE_MS);
   }, [step, mixBusy, mixStop, ladder, later, advance]);
 
-  // --- the ending (#155): the found word gives way to its own route line ---
+  // --- the ending (#155): the found word gives way to its THEMES, one cloud at a time ---
   // The button wraps the hole for the WHOLE tutorial (unwrapping it mid-round would remount
-  // the word while its scramble is running, exactly as in the game); only the tap STEP enables
-  // it. `quiet` lets the hole run its ambient wave then — the affordance for the tap the copy
-  // is asking for. The tap swaps the play area from the word to the line, INLINE (no modal —
-  // the routes simply take the word's place; findings 2026-08-03, superseding the RouteModal
-  // ending first built for #155) — and the roads are shown ONE AT A TIME (findings
-  // 2026-08-04: everything at once was too much at the same time). Stage k draws road k
-  // ALONE — every other lane recedes into the unfound tint — with `roadCopyKeys[k]` naming
-  // its theme; NEXT ROAD advances; and the stage past the last road is the close: ALL lanes
-  // vivid at once, `routeCopyKey` stating the general principle, PLAY in the tray as the way
-  // out.
-  const [routeOpen, setRouteOpen] = useState(false);
-  const [routeStage, setRouteStage] = useState(0);
-  const openRoute = useCallback(() => {
-    setRouteStage(0);
-    setRouteOpen(true);
+  // the word while its scramble is running, exactly as in the game); only the tap STEP
+  // enables it. `quiet` lets the hole run its ambient wave then — the affordance for the tap
+  // the copy is asking for. The tap swaps the play area from the word to a CLOUD of one
+  // theme's words in that route's color (findings 2026-08-04, superseding both the inline
+  // route line and its one-road-at-a-time variant: the line was too much information at
+  // once); NEXT THEME swaps clouds — never two on screen — and after the last one the word
+  // returns, the coach states the general principle, and PLAY in the tray is the way out.
+  const [themesOpen, setThemesOpen] = useState(false);
+  const [themeStage, setThemeStage] = useState(0);
+  const openThemes = useCallback(() => {
+    setThemeStage(0);
+    setThemesOpen(true);
   }, []);
-  const nextRoad = useCallback(() => setRouteStage((k) => k + 1), []);
+  const nextTheme = useCallback(() => setThemeStage((k) => k + 1), []);
   const finish = useCallback(() => {
     track('tutorial', { action: 'finish' });
     onDone();
   }, [onDone]);
-  const routeModel = useMemo(
-    () =>
-      routeOpen
-        ? buildRoute({
-            rankMap,
-            tried,
-            hole: holes[0],
-            startRank: hole.start_rank,
-            secretWord: hole.secret.word,
-            number: 1,
-          })
-        : null,
-    [routeOpen, rankMap, tried, holes, hole],
-  );
-  // Every road named -> the close. Reading the count off the MODEL (not the script) keeps
-  // the stages honest to the map actually drawn; scripts.test.ts pins the script's copy list
+  // Every theme named -> the close. Reading the count off the MAP (not the script) keeps the
+  // stages honest to the board actually shipped; scripts.test.ts pins the script's copy list
   // to the same count.
-  const roadCount = routeModel?.roads.length ?? 0;
-  const routeDone = routeStage >= roadCount;
-
-  // The line lives in its OWN scroller filling the play area (`.route-inline`), never the
-  // page: the topbar and the coach float with no background, so page-scrolled words would
-  // ride straight under them. It opens scrolled to the bottom — the word itself, with the
-  // roads merging into it and the stepper right below in the tray — and the player scrolls
-  // UP through the journey. Instant, like the route modal's own opening scroll.
-  const routeScrollRef = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const el = routeScrollRef.current;
-    if (routeOpen && el) el.scrollTop = el.scrollHeight;
-  }, [routeOpen]);
+  const themeCount = useMemo(() => {
+    const roads = new Set<number>();
+    for (const entry of Object.values(rankMap)) {
+      if (entry.road !== undefined) roads.add(entry.road);
+    }
+    return roads.size;
+  }, [rankMap]);
+  const themesDone = themeStage >= themeCount;
 
   // The keyboard leaves the way it does in a solved round: it drops out of the tray once
   // there is nothing left to type. No deadline behind the `animationend` (unlike Game's):
@@ -371,20 +343,20 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
   );
 
   // The explanation currently in the top box. Mix stop copy overrides the step's standing
-  // copy; once the line replaces the word, the routes explanation takes the box.
+  // copy; once the clouds replace the word, the theme on screen names the box.
   let coachKey: UiKey | null = null;
   if (step.kind === 'mix') coachKey = mixCopy ?? step.copyKey;
   else if (step.kind === 'guess') coachKey = step.copyKey;
   else if (step.kind === 'find') {
     coachKey = missStreak >= NUDGE_AFTER_MISSES ? step.nudgeKey : step.copyKey;
   } else if (step.kind === 'tap') {
-    coachKey = !routeOpen
+    coachKey = !themesOpen
       ? coarse
         ? step.tapCopyKey
         : step.clickCopyKey
-      : routeDone
-        ? step.routeCopyKey
-        : step.roadCopyKeys[Math.min(routeStage, step.roadCopyKeys.length - 1)];
+      : themesDone
+        ? step.closeCopyKey
+        : step.themeCopyKeys[Math.min(themeStage, step.themeCopyKeys.length - 1)];
   }
   const coachCopy = coachKey ? t(lang, coachKey) : null;
 
@@ -460,17 +432,10 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
               <p className="hint"> </p>
             </div>
           </>
-        ) : routeOpen && routeModel ? (
-          // The word gave way to its own route line: the same drawing the daily game's modal
-          // wraps, in a scroller of its own — solved, so every road is named. Each stage
-          // shows ONE road alone; the close shows them all.
-          <div className="route-inline" ref={routeScrollRef}>
-            <RouteLine
-              model={routeModel}
-              lang={lang}
-              focusLane={routeDone ? undefined : routeStage}
-            />
-          </div>
+        ) : themesOpen && !themesDone ? (
+          // The word gave way to one of its THEMES: a cloud of that theme's words in its
+          // route color. One at a time — the close returns to the word below.
+          <ThemeCloud map={rankMap} road={themeStage} startRank={hole.start_rank} />
         ) : (
           <>
             <Phrase
@@ -481,8 +446,8 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
               onHitDone={removeHit}
               exploreLabels={exploreLabels}
               exploreDisabled={!tapping}
-              onExplore={openRoute}
-              quiet={tapping && !routeOpen}
+              onExplore={openThemes}
+              quiet={tapping && !themesOpen}
               // The lesson ends ON the solved word: its wave is the affordance for the tap
               // the coach is asking for, so the game's solved-holes-never-wave rule is
               // inverted here and only here (see Hole.waveSolved). Inert outside the tap
@@ -523,12 +488,12 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
           <LoadError message={t(lang, 'failedVocab')} lang={lang} onRetry={retryVocab} />
         ) : !vocab ? (
           <p className="status">{t(lang, 'loading')}</p>
-        ) : routeOpen ? (
-          // The road stepper, then the graduation: NEXT ROAD walks the coach through the
-          // lanes one at a time, and once every road has spoken the same full-width
-          // interaction the mix button opened the lesson with closes it — PLAY.
-          <button type="button" className="mix-btn" onClick={routeDone ? finish : nextRoad}>
-            {t(lang, routeDone ? 'tutPlay' : 'tutNextRoad')}
+        ) : themesOpen ? (
+          // The theme stepper, then the graduation: NEXT THEME swaps the clouds one at a
+          // time, and once every theme has spoken the same full-width interaction the mix
+          // button opened the lesson with closes it — PLAY.
+          <button type="button" className="mix-btn" onClick={themesDone ? finish : nextTheme}>
+            {t(lang, themesDone ? 'tutPlay' : 'tutNextTheme')}
           </button>
         ) : kbGone ? null : (
           <div

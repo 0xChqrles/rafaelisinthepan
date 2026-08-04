@@ -11,16 +11,14 @@
 //       (shows a distance, changes nothing), the "miss" word is absent from the map (MISS,
 //       not INVALID), the "closer" word ranks CLOSER (the word moves), and the find target
 //       is the secret itself (rank 0);
-//     - it ENDS on the tap: the last step swaps the word for its route line, which is the one
-//       concept nothing else in the game teaches.
+//     - it ENDS on the tap: the last step swaps the word for its THEMES, shown one cloud at
+//       a time — the one concept nothing else in the game teaches.
 //
 //   The board is a REAL map, which the ending depends on absolutely:
-//     - `hasRoute` must say yes — the map only opens where #115's geometry is (the
-//       hand-authored board this replaced carried no `dq` at all and could never open it);
-//     - it must fork: a neighborhood with ONE road draws a single rail, and a lesson about
-//       roads would then be pointing at nothing;
-//     - `buildRoute` must produce the post-mortem the tutorial ends on — destination named,
-//       the whole near field revealed, the player's own guesses on it.
+//     - it must carry #115 roads, and more than one: the themes ARE the map's roads, and a
+//       board with a single road has nothing to step through;
+//     - every theme must be populated enough to fill a cloud, and the script must carry
+//       exactly one line of copy per theme the map actually ships.
 //
 // Plus: the board stays byte-compatible with the real per-puzzle schema (parsePuzzle-valid —
 // it feeds the REAL game components) and every scripted word is a fold-stable slug the gated
@@ -29,7 +27,6 @@
 import { describe, it, expect } from 'vitest';
 import { fold } from '@whippin/shared';
 import { parsePuzzle } from '../api';
-import { buildRoute, hasRoute } from '../game/route';
 import { scriptFor } from './scripts';
 import type { TutorialStep } from './script';
 
@@ -130,28 +127,26 @@ for (const lang of ['en', 'fr'] as const) {
     });
 
     describe('the board is a REAL neighborhood — which is what makes the ending possible', () => {
-      it('carries #115 geometry: dq on every ranked group, none on the word itself', () => {
-        expect(hasRoute(map)).toBe(true);
-        for (const entry of Object.values(map)) {
-          if (entry.rank === 0) expect(entry.dq).toBeUndefined();
-          else expect(typeof entry.dq).toBe('number');
-        }
+      const roads = new Set(
+        Object.values(map)
+          .filter((e) => e.road !== undefined)
+          .map((e) => e.road as number),
+      );
+
+      it('carries more than one road — the themes are the roads, and one is no lesson', () => {
+        expect(roads.size).toBeGreaterThanOrEqual(2);
+        // Contiguous ids from 0, because the clouds step through them by index.
+        expect([...roads].sort((a, b) => a - b)).toEqual([...roads.keys()].map((_, i) => i));
       });
 
-      it('forks: the neighborhood carries at least two roads for the lesson to point at', () => {
-        const roads = new Set(
-          Object.values(map)
-            .filter((e) => e.road !== undefined)
-            .map((e) => e.road),
-        );
-        expect(roads.size).toBeGreaterThanOrEqual(2);
-        // The staged reveal names each road as it arrives (findings 2026-08-04), so the
-        // script must carry exactly one line of copy per road the map actually ships —
-        // fewer leaves a road arriving unexplained, more leaves copy no stage ever shows.
+      it('names every theme exactly once (one copy line per road the map ships)', () => {
+        // Fewer leaves a cloud arriving unexplained; more leaves copy no stage ever shows.
         const tap = script.steps.at(-1)!;
         if (tap.kind !== 'tap') throw new Error('the last step must be the tap');
-        expect(tap.roadCopyKeys).toHaveLength(roads.size);
-        // Every road is populated enough to read as a sense rather than as an outlier.
+        expect(tap.themeCopyKeys).toHaveLength(roads.size);
+      });
+
+      it('every theme is populated enough to fill a cloud', () => {
         for (const road of roads) {
           const members = new Set(
             Object.values(map)
@@ -160,36 +155,6 @@ for (const lang of ['en', 'fr'] as const) {
           );
           expect(members.size).toBeGreaterThanOrEqual(10);
         }
-      });
-
-      it('builds the post-mortem the tutorial ends on: word named, roads populated', () => {
-        // The state the tap step is in: the hole solved, the scripted guesses behind it.
-        const tried = script.steps.flatMap((s) => (s.kind === 'guess' ? [s.expect] : []));
-        const model = buildRoute({
-          rankMap: map,
-          tried: [...tried, hole.secret.slug],
-          hole: { pos: hole.pos, secret: hole.secret.slug, word: hole.secret.word, rank: 0, startRank: hole.start_rank },
-          startRank: hole.start_rank,
-          secretWord: hole.secret.word,
-          number: 1,
-        });
-        expect(model).not.toBeNull();
-        expect(model!.solved).toBe(true);
-        expect(model!.secret).toBe(hole.secret.word); // the destination is named
-        expect(model!.roads.length).toBeGreaterThanOrEqual(2);
-        // Solving reveals the whole near field: no censored station is left wordless.
-        expect(model!.hidden.length).toBeGreaterThan(0);
-        expect(model!.hidden.every((h) => h.word !== null)).toBe(true);
-        // The player's own journey is on it: the departure, the far guess and the closer
-        // one are stops; the miss word is off the map entirely.
-        const stops = new Set(model!.stops.map((s) => s.rank));
-        expect(stops.has(hole.start_rank)).toBe(true);
-        expect(model!.stops.some((s) => s.start)).toBe(true);
-        for (const word of tried) {
-          if (map[word]) expect(stops.has(map[word].rank)).toBe(true);
-          else expect(model!.misses).toContain(word);
-        }
-        expect(model!.misses).toHaveLength(1);
       });
     });
   });
