@@ -18,6 +18,12 @@
 
 :root {
   --bg: #0a0b12;
+  /* The route line's own colour: trunk, junction bus, the leap's and the tail's dashes, the
+     torn break — and the onboarding teaser's leap, which is why it lives here rather than on
+     `.route-frame` where it started. Deliberately the ONE unsaturated line on the map: the
+     trunk is the stretch where no road has been identified, so it reads as the far field the
+     lanes fork out of. */
+  --rail: #48528a;
   --surface: #1d2138;
   --surface-hover: #2c3358;
   --fg: #f4f4f2;
@@ -147,6 +153,42 @@ button * {
 
 /* Visually hidden but still announced: the screen-reader live region mirroring the
    per-hole guess feedback (floating numbers / MISS are invisible to assistive tech). */
+/* The app's scrollbar, on any scroller that opts in with this class (the route map's line,
+   the onboarding's routes teaser). The app draws in squares, so its scrollbar does too: a
+   flat RECTANGLE in a flat channel — no rounding, no arrow buttons, no inset. Styling it
+   also makes it always visible where the platform would overlay it, which is the point: a
+   permanent bar is the one thing on a long line that says the line goes on.
+
+   The standard `scrollbar-width`/`scrollbar-color` are deliberately NOT set alongside these:
+   since Chrome 121 either of them DISABLES the ::-webkit-scrollbar pseudo-elements, and the
+   standard scrollbar cannot be squared off — setting both cost the rectangle everywhere and
+   left an overlay bar behind. They live in the Firefox-only block below instead, detected by
+   the one engine that has no ::-webkit-scrollbar selector to support. */
+.pixel-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.pixel-scroll::-webkit-scrollbar-track {
+  background: var(--surface);
+}
+.pixel-scroll::-webkit-scrollbar-thumb {
+  background: var(--surface-hover);
+  border-radius: 0;
+}
+.pixel-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+.pixel-scroll::-webkit-scrollbar-button {
+  display: none;
+}
+/* Firefox: no pseudo-elements to style, so it gets the standard properties — the closest it
+   can come to the same bar. */
+@supports (scrollbar-width: thin) and (not (selector(::-webkit-scrollbar))) {
+  .pixel-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--surface-hover) var(--surface);
+  }
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -471,8 +513,8 @@ button * {
 
 /* The centered play region between the fixed HUD and the keyboard. It grows to fill
    that space (flex:1) and centers its content (sentence + prompt). `relative` +
-   `isolation` keep it a valid watermark anchor for the TUTORIAL's .progress-background
-   (the game's own watermark anchors tighter, to .phrase-anchor below). */
+   `isolation` make it the stacking context the score watermark's z-index:-1 stays inside
+   (the watermark itself anchors tighter, to .phrase-anchor below). */
 .play {
   position: relative;
   isolation: isolate;
@@ -905,8 +947,8 @@ button * {
 }
 /* --- giant score watermark, always behind the play content --- */
 .progress-background {
-  /* absolute (not fixed) so it is anchored to its relative wrapper — .phrase-anchor in
-     the game (centered on the SENTENCE), .play in the tutorial — never the viewport:
+  /* absolute (not fixed) so it is anchored to its relative wrapper — .phrase-anchor,
+     centered on the SENTENCE — never the viewport:
      the score scrolls with the content instead of drifting into empty space. The number
      itself is a CellDigits canvas: digits printed on the page's 24px grid cells, sized
      and grid-snapped by the component (it centers on this box and overflows it
@@ -1628,10 +1670,17 @@ button * {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  /* The line itself: trunk, junction bus, the leap's and the tail's dashes, the torn break.
-     Deliberately the ONE unsaturated line on the map — the trunk is the stretch where no road
-     has been identified, so it reads as the far field the lanes fork out of. */
-  --rail: #48528a;
+}
+/* The drawing's own variables live on `.route-frame` — the wrapper RouteLine renders — not on
+   the dialog (#155): everything the drawing's CSS consumes resolves from the frame, so the
+   drawing stands apart from the modal shell and the dialog keeps only its own chrome
+   (position, zoom origin). The modal is the line's only consumer today — the tutorial's
+   inline line was superseded by its theme clouds. */
+.route-frame {
+  /* The containing block for the sr-only mirror it carries: `.sr-only` is absolutely
+     positioned, and an unpositioned frame would hand it to an ancestor outside the
+     scroller, where its static position sits below the line's whole height. */
+  position: relative;
   /* A station whose word you have NOT found, and the `???` it wears: dimmer than the line, so
      it recedes behind the words that ARE on the map. */
   --unfound: #3a4270;
@@ -1800,11 +1849,11 @@ button * {
   margin-left: 0;
   background: var(--lane-lines);
 }
-/* The identity leap (the closest measurable group to the word itself), and the cold end above
-   the first station: neither is a distance, so neither is a solid line. The unit comes from
-   RouteModal (`--dash` / `--dash-period`), which cuts both heights to a whole number of it —
-   a run that ends mid-unit leaves a stub of gap right where the trace meets the solid rail. */
-.route-link.leap::before,
+/* The cold end above the first station: not a distance, so not a solid line — the map's one
+   broken trace since 2026-08-04 (the leap into the word joined the solid rail: the routes
+   should visibly LEAD to the word). The unit comes from RouteModal (`--dash` /
+   `--dash-period`), which cuts the height to a whole number of it — a run that ends mid-unit
+   leaves a stub of gap right where the trace meets the solid rail. */
 .route-link.tail::before {
   background: repeating-linear-gradient(
     to bottom,
@@ -2107,7 +2156,6 @@ button * {
   color: var(--lane-c);
   opacity: 0.55;
 }
-
 /* --- off the map --- */
 /* ABOVE the line, behind a torn edge: the guesses that earned no rank at all. Beyond the
    top-K there is no distance left to draw, and that IS the mechanic. */
@@ -2137,7 +2185,7 @@ button * {
    floor and break a long word in half. One cell smaller is enough — and because the gutter is
    `--rank-size` times the widest exponent, it follows on its own. */
 @media (max-width: 360px) {
-  .route-dialog[open] {
+  .route-frame {
     --rank-size: 9px;
   }
 }
@@ -2857,9 +2905,8 @@ button * {
    HUD (progress bar) shrinks with it. */
 .tutorial {
   max-width: 680px;
-  /* Clear the floating chip row + coach box, so the centered sentence never rides
-     under them (the counter now floats top-left beside the coach, not above it, so
-     both stages clear the same height). */
+  /* Clear the floating chip row + coach box, so the centered word never rides under
+     them. Tracks the coach's height: 64px top + 3 lines + its padding + a breath. */
   padding-top: 200px;
 }
 
@@ -2877,7 +2924,9 @@ button * {
 /* The explanation box: app background + surface border (a dialog, not a modal),
    pinned to the top. Its size NEVER changes: the text area is exactly three lines
    tall whatever the copy or the typewriter's progress, and text starts on the first
-   line. On the sentence stage it sits below the HUD's progress bar. */
+   line. (It was four for a day, while the themes ending carried its claim and its
+   instruction in ONE line; splitting that into two beats gave the third line back.
+   What the invariant protects is the FIXED height — the word below must never move.) */
 .coach {
   position: fixed;
   top: 64px; /* below the floating chip row (both stages — no bar row anymore) */
@@ -2908,9 +2957,228 @@ button * {
 .rt-blue {
   color: var(--accent);
 }
+/* A THEME's name in the coach copy (#155): the color of the cloud it names. The variable is
+   set on the coach box by the Tutorial, which knows which theme is on screen. */
+.rt-theme {
+  color: var(--coach-theme-c, var(--fg));
+}
 .rt-word {
   color: var(--hole);
   white-space: nowrap;
+}
+
+/* The onboarding's theme clouds (#155): one THEME of the found word as a cloud of its
+   words — the theme's route color on the words, the game's heat ramp on the exponents,
+   type size falling with distance. One cloud on screen at a time; the coach names it. */
+.theme-cloud {
+  margin: 0;
+  font-family: var(--vt);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  column-gap: 22px;
+  row-gap: 10px;
+  max-width: 560px;
+  text-align: center;
+  text-shadow: 2px 2px 0 black;
+}
+.cloud-word {
+  color: var(--cloud-c);
+  white-space: nowrap;
+  /* Its own place in the cloud's stagger, set per word by ThemeCloud. */
+  animation-delay: var(--cloud-delay, 0ms);
+  animation-fill-mode: both;
+}
+/* A cloud CONDENSES rather than appearing whole: each word scales up from nothing on its own
+   random delay, and scales back down the same way when the theme leaves. The words are flex
+   items, so they are blockified and `transform` applies; scaling from their own centre keeps
+   the layout still (baseline alignment is computed before the transform), so nothing reflows
+   while the cloud breathes. Reduced motion collapses the durations via the global rule and
+   keeps the delays, so the words still arrive one by one — just without the scaling. */
+.cloud-word.in {
+  animation-name: cloud-word-in;
+  animation-duration: 170ms;
+  animation-timing-function: cubic-bezier(0.2, 1.3, 0.4, 1);
+}
+.cloud-word.out {
+  animation-name: cloud-word-out;
+  animation-duration: 110ms;
+  animation-timing-function: ease-in;
+}
+@keyframes cloud-word-in {
+  from {
+    transform: scale(0);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@keyframes cloud-word-out {
+  from {
+    transform: scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: scale(0);
+    opacity: 0;
+  }
+}
+/* The close's route-map glimpse (#155): the themes' colored lines at the map's own lane
+   rhythm, every near-field group riding them as a station — heat-colored rank exponent in a
+   left gutter like the real map's, node on its lane, word beside it in the lane's color.
+
+   It reads the way the real map reads: DOWN the page from the far field to the word, so `-1`
+   sits at the BOTTOM and the line opens parked there. It SCROLLS — the frame holds the
+   scroller — and its squared-off scrollbar plus the torn edges below are what say so (the
+   flanking chevrons were removed on findings 2026-08-04: one affordance per gesture, and their
+   column was width the words needed on a 320px phone). The height it stretches to is a
+   viewport, not the content: it FILLS the play area's free height, whatever the screen —
+   flex-basis 0 + min-height 0 mean it can never grow the page, and there is deliberately no
+   max (a cap only opened a dead gap under the coach on tall screens, findings 2026-08-04). Its
+   scrollbar is the app's shared `.pixel-scroll` (see the utility beside `.sr-only`), and it
+   sits on the SCROLLER — so `.teaser-map`, the `cqw` container the words size against, already
+   excludes its width and the word fitting stays exact. The width is DEFINITE (never
+   fit-content): `.teaser-map` is an inline-size container and its `cqw` word sizing would be
+   circular against an auto width.
+
+   The FRAME and the SCROLLER are two boxes, because the torn edges below have to stay put
+   while the line moves under them: a background paints beneath the stations and a
+   pseudo-element inside a scroller scrolls away with them, so the rules live on a
+   non-scrolling parent instead. */
+.routes-teaser {
+  position: relative;
+  align-self: center;
+  width: min(100%, 430px);
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.teaser-scroll {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* The lesson's last screen is not a place to rubber-band the page behind it. */
+  overscroll-behavior: contain;
+}
+/* The window is smaller than the line at every real board, and an edge that simply ends reads
+   as the end of the map. So the side that still has line beyond it is TORN — the same 9px-on,
+   9px-off rule the route map's off-map break and its parked separator wear, meaning the same
+   thing here: it does not continue straight through. Opened parked at the destination, that is
+   the top edge alone; scrolled out to the far field, the bottom one; between them, both.
+   The rules sit just OUTSIDE the window (anchored past its edges), never over it: inside, the
+   tear covered the outermost station's row instead of marking where the window cuts. */
+.routes-teaser::before,
+.routes-teaser::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: repeating-linear-gradient(90deg, var(--rail) 0 9px, transparent 9px 18px);
+  pointer-events: none;
+  opacity: 0;
+}
+.routes-teaser::before {
+  bottom: 100%;
+}
+.routes-teaser::after {
+  top: 100%;
+}
+.routes-teaser.more-up::before,
+.routes-teaser.more-down::after {
+  opacity: 1;
+}
+.teaser-map {
+  position: relative;
+  /* The word column sizes itself off this box (see fitStation's cqw), so the container has
+     to be the row's real width — which is why the teaser's own width is definite above. */
+  container-type: inline-size;
+}
+/* The lanes stop short of the terminus (`--teaser-foot` = the arrival row + the join), where
+   they MERGE into it, so the line visibly ARRIVES somewhere instead of running off the
+   bottom. */
+.teaser-lanes {
+  position: absolute;
+  inset: 0 auto var(--teaser-foot, 0) var(--teaser-gutter);
+  width: var(--teaser-railw);
+  display: flex;
+  justify-content: space-between;
+}
+/* The merge into the word — the real map's converge junction at the miniature's scale, SOLID
+   (decided 2026-08-04, superseding the dashed identity leap): the lanes end on the bus, and
+   one trunk runs from it down into the word's node. */
+.teaser-bus {
+  position: absolute;
+  bottom: calc(var(--teaser-foot) - 5px);
+  left: var(--teaser-gutter);
+  width: var(--teaser-railw);
+  height: 5px;
+  background: var(--teaser-bus-grad, var(--rail));
+}
+.teaser-trunk {
+  position: absolute;
+  bottom: calc(var(--teaser-foot) - 5px - var(--teaser-trunk-h));
+  left: var(--teaser-trunk-x);
+  width: 5px;
+  height: var(--teaser-trunk-h);
+  transform: translateX(-50%);
+  background: var(--rail);
+}
+/* The terminus: the word every one of these routes leads to, in the blue the sentence gives a
+   solved word, on the map's biggest node. */
+.teaser-arrival {
+  /* The join (bus + trunk run) is drawn absolutely, so the flow has to RESERVE its height
+     here — without this the arrival butts against the last station and `--teaser-foot` eats
+     into that row, cutting the lanes short one station early. */
+  margin-top: var(--teaser-join-h);
+  display: grid;
+  grid-template-columns: var(--teaser-gutter) var(--teaser-railw) minmax(0, auto);
+  align-items: center;
+}
+.teaser-arrival .t-node {
+  width: 15px;
+  height: 15px;
+  background: var(--accent);
+}
+.teaser-arrival .t-word {
+  color: var(--accent);
+}
+.teaser-lanes i {
+  width: 5px; /* the map's --line-w */
+}
+.teaser-station {
+  display: grid;
+  grid-template-columns: var(--teaser-gutter) var(--teaser-railw) minmax(0, auto);
+  align-items: center;
+}
+.t-rank {
+  justify-self: end;
+  padding-right: 10px;
+  font-family: var(--press);
+  font-size: 10px;
+  text-shadow: 2px 2px 0 black;
+}
+.t-rail {
+  position: relative;
+  height: 100%;
+}
+.t-node {
+  position: absolute;
+  top: 50%;
+  width: 11px;
+  height: 11px;
+  transform: translate(-50%, -50%);
+}
+.t-word {
+  margin-left: 16px;
+  font-family: var(--vt);
+  white-space: nowrap;
+  text-shadow: 2px 2px 0 black;
 }
 
 /* The mix button — the bottom interaction of the demo, standing where the keyboard
@@ -2943,6 +3211,22 @@ button * {
   outline-offset: 2px;
 }
 
+/* The themes ending: the tray holds ONE button and the keyboard has dropped for good, so it
+   stops reserving the keyboard's footprint and shrinks to the button. The page's own frame
+   inset is then the entire margin below it — the same distance as the button's left and right
+   — and the .game gap gives it the same again above. (On a phone the game deliberately hugs
+   the keyboard's 4px bottom gap; the mobile block below pads the 14px side inset back, the
+   same way .tray.tray-results does.) The ~120px that empty footprint was holding goes to the
+   clouds and the routes map, which are the screens short of height.
+   It cannot start any earlier: while the WORD is still on screen the tray's fixed height is
+   exactly what keeps the word from moving between beats. */
+.tutorial--themes {
+  gap: 24px;
+}
+.tutorial--themes .tray {
+  height: auto;
+}
+
 @media (max-width: 640px) {
   .coach {
     padding: 12px 14px;
@@ -2951,9 +3235,15 @@ button * {
   .coach-text {
     font-size: 12px; /* 3-line height scales with it (6em) */
   }
-  /* Clear the compact chip row + coach (same for both stages — no bar row). */
+  /* Clear the compact chip row + coach (56px top + 3 lines + its padding + a breath). */
   .tutorial {
     padding-top: 172px;
+  }
+  /* The ending's lone button sits on the 14px page inset, not the keyboard's edge-to-edge
+     hug, so like the solved results it gets +10px back over the keyboard's 4px bottom gap:
+     bottom gap = side gap = 14px (the same rule as .tray.tray-results). */
+  .tutorial--themes .tray {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
   }
 }
 

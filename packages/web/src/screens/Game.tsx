@@ -16,7 +16,7 @@ import LazyStreakDialog, { preloadStreakDialog } from '../components/LazyStreakD
 import SolvedCaption from '../components/SolvedCaption';
 import RouteModal from '../components/RouteModal';
 import LoadError from '../components/LoadError';
-import { buildRoute, hasRoute, shouldAutoOpenRoute } from '../game/route';
+import { buildRoute, hasRoute } from '../game/route';
 import { t, ariaExploreHole, srHoleResult, srModelAhead, srModelLead } from '../i18n';
 import { lineupModel, lineupEvents, hasDisplayEntries, displayEntries } from '../game/benchmark';
 import { track } from '../analytics';
@@ -49,18 +49,12 @@ const STREAK_AFTER_WORDS_MS = 300;
 // Deadlines for the two solved-exit beats that hand the tray back (see their effects):
 // generous multiples of the real durations, so they only ever fire if the DOM signal
 // itself was lost.
-const KB_EXIT_FALLBACK_MS = 1_200;
+export const KB_EXIT_FALLBACK_MS = 1_200;
 const LINEUP_EXIT_FALLBACK_MS = 3_000;
 // The source typewriter's deadline. Its real beat is RESULTS_IN_MS + one citation typed at
 // TYPE_MS per character + CURSOR_HOLD_MS — under 2s even for a long author/work — so this is a
 // generous multiple, like the two above, and can never cut a genuine reveal short.
 const SOURCE_REVEAL_FALLBACK_MS = 6_000;
-
-// The beat between the sentence coming to rest and a first-ever solved word's map opening
-// itself (#129): long enough for the resolved word to land as its own moment, short enough to
-// read as its consequence. Never a guessed timeout — it is measured from the holes' own settle
-// reports (see the effect, which waits for the LAST of them).
-const AUTO_ROUTE_AFTER_SOLVE_MS = 350;
 
 // Wrapper: drives the single puzzle. Loads the language's fixed vocabulary
 // (existence set + keyboard prefix set) before playing — existence is decided by it,
@@ -154,10 +148,6 @@ function Round({
   const improveHole = useGameStore((s) => s.improveHole);
   const syncProgress = useGameStore((s) => s.syncProgress);
   const recordSolve = useGameStore((s) => s.recordSolve);
-  // Has this player ever opened a route map? Device-lifetime and global (#129) — it gates
-  // the one-time self-demonstration below.
-  const routeSeen = useGameStore((s) => s.routeSeen);
-  const markRouteSeen = useGameStore((s) => s.markRouteSeen);
 
   // The client's active game day (local, DST-correct) — the streak's reference point. May
   // be dayNumber + 1 when an in-flight round is finished just past the 22:00 flip; the
@@ -594,76 +584,28 @@ function Round({
       .querySelector<HTMLButtonElement>(`[data-hole-explore="${index}"]`)
       ?.focus({ preventScroll: true });
   }, [routeHole]);
-  // The ONE place a map opens — a tap, or the first-solve demonstration below — so the
-  // "seen it" flag can never fall out of step with the thing it records (#129).
-  //
-  // It also takes the WORD's position on screen, which is where the map grows from: opening
-  // is a zoom out of the thing you tapped, the way a desktop window opens out of its icon, so
-  // the full screen that lands reads as that word rather than as a screen that replaced it.
-  // Measured at the click (the word is on screen, and the auto-open fires with it settled),
-  // never re-measured — the map covers the sentence anyway. `.hole-word-wrap` and not the
-  // button, so the origin is the word itself with the exponent excluded.
-  const openRoute = useCallback(
-    (index: number) => {
-      markRouteSeen();
-      const word = document
-        .querySelector<HTMLElement>(`[data-hole-explore="${index}"]`)
-        ?.querySelector('.hole-word-wrap');
-      const box = word?.getBoundingClientRect();
-      setRouteOrigin(box ? { x: box.left + box.width / 2, y: box.top + box.height / 2 } : null);
-      setRouteHole(index);
-    },
-    [markRouteSeen],
-  );
+  // Opening the map takes the WORD's position on screen, which is where it grows from:
+  // opening is a zoom out of the thing you tapped, the way a desktop window opens out of its
+  // icon, so the full screen that lands reads as that word rather than as a screen that
+  // replaced it. Measured at the click (the word is on screen), never re-measured — the map
+  // covers the sentence anyway. `.hole-word-wrap` and not the button, so the origin is the
+  // word itself with the exponent excluded.
+  const openRoute = useCallback((index: number) => {
+    const word = document
+      .querySelector<HTMLElement>(`[data-hole-explore="${index}"]`)
+      ?.querySelector('.hole-word-wrap');
+    const box = word?.getBoundingClientRect();
+    setRouteOrigin(box ? { x: box.left + box.width / 2, y: box.top + box.height / 2 } : null);
+    setRouteHole(index);
+  }, []);
 
-  // --- #129, part A: the ambient letter wave ---
+  // --- #129: the ambient letter wave ---
   // EVERY hole runs its own clock (see Hole), so several words can stir at once and on their
   // own rhythms. All the round contributes is the one fact a hole cannot see for itself: that
   // the SENTENCE is quiet. Guess feedback owns these words while it plays, and the map owns
   // the screen while it is open, so the affordance stands down for both — and once the round
   // is over, stillness is what "done" looks like.
   const quiet = !solved && !promptExiting && routeHole === null && hits.length === 0;
-
-  // --- #129, part B: the one-time first-solve auto-open ---
-  // The hole whose map is owed, waiting for its own word to finish resolving. Transient: a
-  // reload during that second simply forgets it, and the next first-ever solve makes the
-  // same offer.
-  const [autoRouteHole, setAutoRouteHole] = useState<number | null>(null);
-  useEffect(() => {
-    if (autoRouteHole === null) return undefined;
-    // Found by tapping while the word was still resolving: the demonstration is moot.
-    if (routeSeen) {
-      setAutoRouteHole(null);
-      return undefined;
-    }
-    // The round ENDED while the map was owed. `shouldAutoOpenRoute` refuses a final solve at
-    // arm time, but an offer armed by an EARLIER guess outlives it: guessing stays live
-    // through the first solved word's ~1.7s of settle, so a player holding the last answer
-    // can finish the sentence inside that window. The map would then open over the solved
-    // sequence (streak -> exits -> leaderboard -> source) — two dialogs stacked, and the one
-    // competing modal that sequence is not allowed to gain. Cancelling here rather than at
-    // the submit keeps the rule in ONE place, and covers the store's own solved transition
-    // as well as the prompt's exit. A later round's mid-round solve makes the offer again.
-    if (promptExiting || solved) {
-      setAutoRouteHole(null);
-      return undefined;
-    }
-    // Never a guessed timeout: the hole reports its own settle (the same signal that gates
-    // the solved sequence), and only then does the map get its beat.
-    if (!resolvedHoleIndices.has(autoRouteHole)) return undefined;
-    // And the beat is measured from the LAST settle, not this hole's — `resolvedHoleIndices`
-    // is a fresh Set per resolve and it is a dependency, so a sibling hole settling after it
-    // restarts the timer. That is deliberate, not incidental: one guess can drop two mappable
-    // holes, and 350ms after the FIRST would put the modal over a word still scrambling —
-    // exactly what waiting for a real settle exists to avoid. The target hole has settled
-    // either way (the guard above), and the restart is bounded: at most one per hole, and the
-    // set only ever grows. Don't "fix" this dependency away.
-    const id = window.setTimeout(() => {
-      setAutoRouteHole(null);
-      openRoute(autoRouteHole);
-    }, AUTO_ROUTE_AFTER_SOLVE_MS);
-    return () => window.clearTimeout(id);
-  }, [autoRouteHole, openRoute, promptExiting, resolvedHoleIndices, routeSeen, solved]);
 
   const removeHit = useCallback((id: number) => {
     setHits((prev) => prev.filter((h) => h.id !== id));
@@ -759,25 +701,6 @@ function Round({
         return [{ index, entry }];
       });
 
-      // The first hole this player EVER solves shows them the map (#129). Decided here, at
-      // submit time, because this is where "solved by THIS guess" and "the round is over"
-      // are both known — but only armed: the map waits for the word to finish resolving.
-      // Restricted to holes that HAVE a map; a legacy puzzle simply never makes the offer.
-      // The `routeSeen` test lives in the helper alone (where it is part of the tested
-      // contract), not here as well — one decision, one place.
-      const autoRoute = shouldAutoOpenRoute(
-        routeSeen,
-        impacted
-          .filter(({ index, entry }) => entry?.rank === 0 && routeNumbers[index] !== null)
-          .map(({ index }) => index),
-        solvesAll,
-      );
-      // FIRST come, first served: it is the first hole this player ever solves that gets the
-      // demonstration. Another hole solved while that one is still resolving would otherwise
-      // replace the target and open a map they reached second. Cancellation is the effect's
-      // job alone (a final solve, or a manual tap), never this assignment's.
-      if (autoRoute !== null) setAutoRouteHole((current) => current ?? autoRoute);
-
       // Announce the guess's outcome to assistive tech — the audible twin of the
       // floating numbers below. One sentence covering every impacted hole (1-based, in
       // sentence order), plus the visible standings lineup's meaningful events (#81 —
@@ -856,8 +779,6 @@ function Round({
       benchmark,
       history,
       guessCount,
-      routeSeen,
-      routeNumbers,
     ],
   );
 

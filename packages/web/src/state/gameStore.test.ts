@@ -49,7 +49,6 @@ beforeEach(() => {
       lastLang: null,
       onboarded: false,
       solvedDays: {},
-      routeSeen: false,
       activeKey: null,
     },
     false,
@@ -322,16 +321,6 @@ describe('onboarded — the tutorial flag (#51)', () => {
   });
 });
 
-describe('routeSeen — the route map has been opened once (#129)', () => {
-  it('markRouteSeen is one-way and idempotent (a tap and the auto-open both call it)', () => {
-    expect(useGameStore.getState().routeSeen).toBe(false);
-    useGameStore.getState().markRouteSeen();
-    expect(useGameStore.getState().routeSeen).toBe(true);
-    useGameStore.getState().markRouteSeen();
-    expect(useGameStore.getState().routeSeen).toBe(true);
-  });
-});
-
 describe('recordSolve — per-language solved-day set (#56)', () => {
   const solved = (lang: string) => useGameStore.getState().solvedDays[lang];
 
@@ -390,7 +379,6 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       lastLang: null,
       onboarded: false,
       solvedDays: {},
-      routeSeen: false,
     });
   });
 
@@ -411,39 +399,39 @@ describe('migratePersisted — persisted-blob upgrades', () => {
     expect(migratePersisted({ rounds, lastLang: 'fr', onboarded: false }, 2).onboarded).toBe(false);
   });
 
-  it('drops retired fields (v1 keyboard layout) while keeping the current ones', () => {
-    const out = migratePersisted({ rounds: {}, lastLang: 'en', layout: 'azerty' }, 1);
+  it('drops retired fields (v1 keyboard layout, v4 routeSeen) while keeping the current ones', () => {
+    const out = migratePersisted(
+      { rounds: {}, lastLang: 'en', layout: 'azerty', routeSeen: true },
+      1,
+    );
     expect(out).toEqual({
       rounds: {},
       lastLang: 'en',
       onboarded: true,
       solvedDays: {},
-      routeSeen: false,
     });
     expect('layout' in out).toBe(false);
+    expect('routeSeen' in out).toBe(false);
   });
 
   it('v2 -> v3 adds an empty solvedDays and preserves rounds/lastLang/onboarded', () => {
     const rounds = { 'd:5:fr': { holes: freshHoles(), guessCount: 2, tried: ['a', 'b'], progress: 10 } };
     const out = migratePersisted({ rounds, lastLang: 'fr', onboarded: true }, 2);
-    expect(out).toEqual({ rounds, lastLang: 'fr', onboarded: true, solvedDays: {}, routeSeen: false });
+    expect(out).toEqual({ rounds, lastLang: 'fr', onboarded: true, solvedDays: {} });
   });
 
-  // v4 (#129): the route map is NOT grandfathered — it shipped with #117, so no older blob
-  // can describe a player who has already seen it. Everything else must survive untouched.
-  it('v3 -> v4 defaults routeSeen to false and preserves every other field', () => {
+  // v4 -> v5 (#155): `routeSeen` armed the one-time first-solve auto-open, which went away
+  // with the onboarding rework — the tutorial now ends by tapping a word, so the map has
+  // nothing left to introduce mid-round. A v4 blob carrying the flag upgrades cleanly and
+  // loses nothing else.
+  it('v4 -> v5 drops routeSeen and preserves every other field', () => {
     const rounds = { 'd:5:fr': { holes: freshHoles(), guessCount: 2, tried: ['a', 'b'], progress: 10 } };
     const solvedDays = { fr: [10, 11], en: [10] };
-    const out = migratePersisted({ rounds, lastLang: 'fr', onboarded: true, solvedDays }, 3);
-    expect(out).toEqual({ rounds, lastLang: 'fr', onboarded: true, solvedDays, routeSeen: false });
-  });
-
-  it('keeps an explicit routeSeen across the upgrade, and only a literal true reads as seen', () => {
-    const base = { rounds: {}, lastLang: 'fr', onboarded: true, solvedDays: {} };
-    expect(migratePersisted({ ...base, routeSeen: true }, 3).routeSeen).toBe(true);
-    expect(migratePersisted({ ...base, routeSeen: false }, 3).routeSeen).toBe(false);
-    // A junk value is not a "yes": a blob that cannot be read as seen owes the demonstration.
-    expect(migratePersisted({ ...base, routeSeen: 'yes' }, 3).routeSeen).toBe(false);
+    const out = migratePersisted(
+      { rounds, lastLang: 'fr', onboarded: true, solvedDays, routeSeen: true },
+      4,
+    );
+    expect(out).toEqual({ rounds, lastLang: 'fr', onboarded: true, solvedDays });
   });
 
   it('keeps an existing solvedDays across the upgrade (no backfill, but no data loss)', () => {

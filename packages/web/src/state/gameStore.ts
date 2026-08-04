@@ -100,11 +100,6 @@ interface PersistedState {
   // The onboarding tutorial (#51) has been completed or skipped. Global, not
   // per-language — the mechanic is the same in both.
   onboarded: boolean;
-  // The route map (#117) has been OPENED at least once, by any means — a tap on a hole or
-  // the one-time auto-open on the first solved word (#129). Global and device-lifetime, not
-  // per-language or per-round: it gates a single interruption in the product's lifetime, so
-  // a player who found the map by tapping never gets the demonstration.
-  routeSeen: boolean;
   // Per-language SET of solved game days (ascending, deduped dayNumbers). The raw fact,
   // not the derived stat: the streak counters (current/best) are DERIVED from this at read
   // time (game/streak.ts), never persisted (#56). The day-set shape is what makes a future
@@ -132,10 +127,6 @@ interface GameState extends PersistedState {
 
   // Mark the onboarding tutorial as seen (finish AND skip both count — never re-nag).
   setOnboarded: () => void;
-
-  // Mark the route map as discovered (#129). Called from the ONE place the modal opens, so
-  // a manual tap and the first-solve auto-open both retire the auto-open for good.
-  markRouteSeen: () => void;
 
   // Record a solved game day for the streak (#56). No-op when `solvedDay` is already in
   // the set (re-solves / rehydration never double-count) OR when `solvedDay < activeDay -
@@ -197,13 +188,12 @@ function freshRound(initialHoles: RuntimeHole[]): RoundProgress {
 //   v3 adds the per-language solved-day set (#56): any older blob gets an empty set (NO
 //     backfill from rounds — the streak starts fresh, by decision), and the counters are
 //     derived from it, never persisted.
-//   v4 adds `routeSeen` (#129). Unlike `onboarded` there is NOTHING to grandfather: the route
-//     map shipped with #117, so no older blob can describe a player who has seen it. Every
-//     upgraded blob gets `false` and earns the one-time auto-open on its next mid-round solve
-//     (at worst a dev-tester who already tapped a hole sees it once).
+//   v4 added `routeSeen` (#129) — the flag that armed the one-time first-solve auto-open. v5
+//     RETIRES it with the auto-open itself (#155: the onboarding now ends by tapping a word,
+//     so the map no longer introduces itself mid-round). Like the retired keyboard `layout`
+//     before it, picking only the current fields silently drops it from any older blob.
 export function migratePersisted(persisted: unknown, version: number): PersistedState {
-  if (version < 1)
-    return { rounds: {}, lastLang: null, onboarded: false, solvedDays: {}, routeSeen: false };
+  if (version < 1) return { rounds: {}, lastLang: null, onboarded: false, solvedDays: {} };
   const p = persisted as Partial<PersistedState>;
   const rounds = p.rounds ?? {};
   const lastLang = p.lastLang ?? null;
@@ -212,8 +202,7 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
       ? p.onboarded
       : Object.keys(rounds).length > 0 || lastLang != null;
   const solvedDays = p.solvedDays ?? {};
-  const routeSeen = p.routeSeen === true;
-  return { rounds, lastLang, onboarded, solvedDays, routeSeen };
+  return { rounds, lastLang, onboarded, solvedDays };
 }
 
 export const useGameStore = create<GameState>()(
@@ -223,7 +212,6 @@ export const useGameStore = create<GameState>()(
       lastLang: null,
       onboarded: false,
       solvedDays: {},
-      routeSeen: false,
       activeKey: null,
       tutorialOpen: null,
 
@@ -238,11 +226,6 @@ export const useGameStore = create<GameState>()(
       setOnboarded: () => {
         if (get().onboarded) return;
         set({ onboarded: true });
-      },
-
-      markRouteSeen: () => {
-        if (get().routeSeen) return;
-        set({ routeSeen: true });
       },
 
       recordSolve: (lang, solvedDay, activeDay) => {
@@ -336,17 +319,16 @@ export const useGameStore = create<GameState>()(
     {
       name: 'whippin-round',
       storage,
-      version: 4, // v4: + routeSeen (see migratePersisted for the upgrade path)
+      version: 5, // v5: - routeSeen (see migratePersisted for the upgrade path)
       migrate: migratePersisted,
-      // Persist rounds, last language, the onboarding + route-seen flags and the solved-day
-      // sets; activeKey and the actions are transient. Each language's solved-day set is
-      // capped to MAX_SOLVED_DAYS on write.
+      // Persist rounds, last language, the onboarding flag and the solved-day sets; activeKey
+      // and the actions are transient. Each language's solved-day set is capped to
+      // MAX_SOLVED_DAYS on write.
       partialize: (s): PersistedState => ({
         rounds: s.rounds,
         lastLang: s.lastLang,
         onboarded: s.onboarded,
         solvedDays: capAllSolvedDays(s.solvedDays),
-        routeSeen: s.routeSeen,
       }),
     },
   ),

@@ -360,8 +360,9 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   locally, publish it into the local store (`pnpm puzzle:publish`) and point the front at
   the local backend. Consequently `usePuzzle`'s `dayNumber` is **always a real number**
   (never `null`), which is why `Game`/`App` no longer carry override/null-day branches
-  (`SolvedScreen` still accepts a null `dayNumber` — that null is the TUTORIAL's, which
-  reuses it with the PLAY action instead of SHARE). `VITE_API_BASE_URL` (see
+  (`SolvedScreen`'s `dayNumber` is a plain `number` too since 2026-08-03: the null it used
+  to accept was the TUTORIAL's, whose ending moved onto the route map with #155 — a lesson
+  has no score, so it no longer borrows the solved screen). `VITE_API_BASE_URL` (see
   `web/.env.example`) configures the backend base and is required for `pnpm dev` /
   `pnpm build`; the frontend must not silently use its own origin as the backend.
   `usePuzzle` exposes `dayNumber` for persist (#7) / already-solved (#9).

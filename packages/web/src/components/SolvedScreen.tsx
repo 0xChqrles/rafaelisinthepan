@@ -19,8 +19,10 @@ const NEUTRAL_HOLD_MS = 55;
 // named `<tries> TRIES` headline, the PLAYER's run ruler, then the actions — SHARE plus,
 // when displayed opponents exist, SEE MORE opening the full-screen LeaderboardDialog
 // (the race lives there, with room to grow into #82's deeper views). Player-level
-// progression lives in StreakDialog, outside this layout. The tutorial reuses it with
-// PLAY in SHARE's slot (no opponents → no SEE MORE).
+// progression lives in StreakDialog, outside this layout. It belongs to a REAL solved day:
+// the onboarding tutorial used to borrow it with a null `dayNumber` and PLAY in SHARE's
+// slot, and stopped when its ending moved onto the route map (#155) — a lesson has no score
+// to show, so it has no result screen either.
 export default function SolvedScreen({
   guessCount,
   trajectory,
@@ -29,7 +31,6 @@ export default function SolvedScreen({
   lang,
   benchmark,
   runReplays,
-  action,
   animate = true,
   startAnimation = true,
   onRisen,
@@ -37,11 +38,10 @@ export default function SolvedScreen({
   guessCount: number;
   trajectory: number[]; // reconstruction % after each counted guess (one per try)
   solvedAt?: (number | null)[]; // the player's solve moments (ruler ticks)
-  dayNumber: number | null;
+  dayNumber: number;
   lang: string; // packed into the share token (drives the link's click-through target)
   benchmark?: BenchmarkResults; // offline opponents; shown only on this solved surface
   runReplays?: Map<string, RunReplay>; // model id -> its replayed run
-  action?: { label: string; onClick: () => void }; // replaces SHARE in the tutorial
   // Rehydrated solves render their final result immediately. Fresh solves animate, with
   // startAnimation acting as the source/streak gate while this component stays mounted.
   animate?: boolean;
@@ -161,9 +161,6 @@ export default function SolvedScreen({
   useEffect(() => () => window.clearTimeout(copiedTimer.current), []);
 
   const onShare = useCallback(async () => {
-    // The tutorial reuses this component with no real day (dayNumber null) and the PLAY
-    // action instead of SHARE, so the share button is never rendered there.
-    if (dayNumber == null) return;
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
     const url = shareUrl(origin, {
       lang,
@@ -238,21 +235,13 @@ export default function SolvedScreen({
       </div>
 
       <div className="result-actions">
-        {action ? (
-          <button type="button" className="result-action" onClick={action.onClick}>
-            {action.label}
-          </button>
-        ) : (
-          dayNumber != null && (
-            <button
-              type="button"
-              className={`result-action${copied ? ' copied' : ''}`}
-              onClick={onShare}
-            >
-              {copied ? t(lang, 'copied') : t(lang, 'share')}
-            </button>
-          )
-        )}
+        <button
+          type="button"
+          className={`result-action${copied ? ' copied' : ''}`}
+          onClick={onShare}
+        >
+          {copied ? t(lang, 'copied') : t(lang, 'share')}
+        </button>
         {rows && (
           <button
             type="button"

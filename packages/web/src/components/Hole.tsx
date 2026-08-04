@@ -70,6 +70,7 @@ export default function Hole({
   onResolved,
   explore,
   quiet = false,
+  waveSolved = false,
 }: {
   hole: RuntimeHole;
   hit: HitState | null;
@@ -87,6 +88,12 @@ export default function Hole({
   // so the round supplies it and the hole owns everything else: its own clock, and whether it
   // is personally free to ripple.
   quiet?: boolean;
+  // Let a SOLVED hole wave (#155). In the game a hole locked at rank 0 is done and never
+  // ripples — mid-round its neighbours still play, and advertising a finished word would pull
+  // the eye from them. The tutorial's ending is the ONE inversion of that: the lesson ends ON
+  // the solved word, whose tap is the very thing the wave exists to advertise. Only the
+  // tutorial passes this.
+  waveSolved?: boolean;
 }) {
   // Exponent rolls toward the current rank one rank step at a time (or snaps under
   // reduced motion, see rankTweenDuration). A solved hole visibly reaches 0, then removes
@@ -168,7 +175,7 @@ export default function Hole({
   // slot-machine scramble, or already locked at rank 0 — does not run the clock at all, and a
   // wave in flight when a guess lands is cut. Nor does a hole with no map ripple: the wave is
   // an affordance for the tap, so advertising one that does nothing is worse than none.
-  const busy = hit !== null || jumble !== null || hole.rank === 0;
+  const busy = hit !== null || jumble !== null || (hole.rank === 0 && !waveSolved);
   const ticking = quiet && !busy && explore !== undefined && !explore.disabled;
   const [waving, setWaving] = useState(false);
   // Bumped by each finished wave, purely to re-arm the clock below with a fresh delay.

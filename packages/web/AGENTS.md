@@ -14,7 +14,8 @@
       hooks/usePuzzle.ts      fetch the client-computed day's puzzle from the backend
       api.ts                  backend client: puzzleUrl/todayUrl, 404->NO PUZZLE
       i18n.ts                 UI chrome strings (en+fr), t(lang, key); parity type-enforced
-      tutorial/               onboarding (#51): Tutorial.tsx + data scripts/<lang>.ts
+      tutorial/               onboarding (#51/#155): Tutorial.tsx + data scripts/<lang>.ts
+                              (+ <lang>.word.json, the pruned #154 board it plays on)
       screens/Game.tsx        the guess loop, hole state (imports fold from @whippin/shared)
       game/scoring.ts         s(rank), holeProgress, computeProgress
       components/Phrase.tsx,Hole.tsx,WordInput.tsx,FloatingHit.tsx  rendering
@@ -147,8 +148,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   journey. `game/route.ts` is the pure model (`buildRoute`, contract-tested) and
   `components/RouteModal.tsx` renders it; `Game` owns the open state so the guess prompt can
   go inert behind it. **Entry point only where the geometry exists:** `hasRoute` gates on the
-  secret's rank-1 entry carrying `dq`, so every day published before #115 (and the tutorial's
-  synthetic boards) renders exactly as before — no button, no degraded list view. The hole
+  secret's rank-1 entry carrying `dq`, so every day published before #115 renders exactly as
+  before — no button, no degraded list view. (The onboarding tutorial plays on a REAL
+  generated board since #155; its ending shows that board's roads as THEME clouds in this
+  map's own lane colors — see the onboarding bullet.) The hole
   becomes a `<button>` wrapping its existing spans; it is present for the WHOLE round or not
   at all and the solved choreography only `disabled`s it, because unwrapping mid-round would
   remount the word while its scramble is running. **That disabling covers the solving BEATS
@@ -177,15 +180,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
   destination off screen). That is the SAME information — dq differences are all dq means — and
   on a real fr puzzle it took the map from **3.9 screens of mostly emptiness to ~1.0**. (It runs
   ~5 screens again now that the full roads are drawn — see the near field below — but every row is
-  content: what was wrong with the first version was the empty space, not the length.) The
-  identity leap and the cold end above the first station stay broken traces: neither is a
-  distance. **Both are cut to a WHOLE number of the dash unit** (`dashedRun`, fixed 2026-07-27):
+  content: what was wrong with the first version was the empty space, not the length.)
+  **The run from the merge into the terminus is SOLID** (decided 2026-08-04, superseding the
+  dashed "identity leap"): the lanes JOIN at the converge junction and one solid line leads to
+  the word — the routes should visibly LEAD to it, and a broken trace read as the line not
+  quite reaching it. The cold end above the first station stays a broken trace (it is not a
+  distance), and is **cut to a WHOLE number of the dash unit** (`dashedRun`, fixed 2026-07-27):
   the unit is 5px of line + 8px of nothing, declared once in `RouteModal` and handed to the
   gradient as `--dash` / `--dash-period`, and a run is `n` units PLUS its closing dash. Any other
   height cuts the last unit wherever it falls and the stub lands exactly where the trace meets the
   solid rail — `TAIL_H` 34 ended on 3px of gap against the first station, which reads as a
-  rendering slip rather than a broken line. So the heights are DERIVED (34 → 31, 56 → 57), never
-  typed. `--route-band-h`,
+  rendering slip rather than a broken line. So its height is DERIVED (34 → 31), never typed
+  (`LEAP_H`, now solid, is a plain 56). `--route-band-h`,
   the old lane geometry (`stopX`/`labelSide`/`laneNameFont`) and the axis contours are all gone
   with it.
   **The line is TRAVELLED, so it runs departure → arrival DOWN the page** (decided 2026-07-26):
@@ -445,36 +451,22 @@ it to the local store — see `packages/backend/AGENTS.md`).
   feedback in flight, no map over the sentence, `promptExiting` false, not solved. Everything
   else is the hole's own (`ticking`): its rank, its scramble, its hit, and whether it has a map
   to open at all — the wave is an affordance for the TAP, so a hole with no #115 geometry never
-  ripples. A wave already in FLIGHT is cut when `ticking` drops, not merely when the hole's own
+  ripples, and a hole locked at rank 0 never ripples in the game (`Hole.waveSolved`, default
+  false, is the ONE exception: the tutorial's ending waves its solved word, because there the
+  tap on that word IS the lesson — #155). A wave already in FLIGHT is cut when `ticking` drops, not merely when the hole's own
   `busy` does: `quiet` also falls when the map opens over the sentence, and a wave left running
   behind it shows its tail if the player closes quickly (both modal beats are 120ms, a wave up
   to 460ms). Reduced motion: the clock never starts.
-  **The one-time auto-open** is the guaranteed half: the first hole a player EVER solves
-  opens its own finished journey — departure, every station visited, arrival — with their own
-  data, explaining the feature by being it. `routeSeen` (persist **v4**, defaulted false for
-  every older blob — nothing to grandfather, the map shipped with #117) is set by `openRoute`,
-  the ONE place a map opens, so a player who found it by tapping is never interrupted.
-  `shouldAutoOpenRoute` (pure, in `game/route.ts`) fires only on a mid-round solve — never the
-  FINAL one, which belongs to the solved sequence (streak → exits → leaderboard → source) and
-  must not gain a competing modal — and names the first newly solved hole in sentence order;
-  `Game` filters to holes that HAVE a map before asking. Two rules the ARMED offer needs beyond
-  that, both found on review 2026-07-28 and both reproduced in a browser before fixing:
-  it is **cancelled when the round ends**, because guessing stays live through the first solved
-  word's ~1.7s of settle and a player holding the last answer can finish the sentence inside
-  that window — the map then opened *over* the solved sequence, with two dialogs on screen at
-  once and the one-time offer spent on a moment it was never meant to fire; and **the first
-  armed target wins** (`current ?? target`), or a hole solved while the first is still resolving
-  takes its place and the player is shown the map of the word they reached second. It arms at submit time and waits for
-  the holes' own settle reports (`resolvedHoleIndices`, the signal the solved gating uses) plus
-  350ms, never a guessed timeout — and from the LAST of them, not the target hole's: one guess
-  can drop two mappable holes, and a beat measured from the first would put the modal over a
-  word still scrambling. The target has settled either way, and the restart is bounded (one per
-  hole, and the set only grows). **This is the one place #129 interrupts rather than invites**
-  (weighed again on review 2026-07-28 and kept): it takes focus for a modal the player did not
-  ask for. What makes it acceptable is all three of — once per device lifetime, triggered by
-  the player's own solve, and focus returned to the hole on close. The wave deliberately does
-  none of that, which is why it stays an affordance and this stays a demonstration. Archive replays included; the tutorial is untouched (it does
-  not render `Round`). No new analytics event — the three-event invariant stands.
+  **The one-time auto-open is GONE (#155, decided 2026-08-03).** It was #129's guaranteed
+  half — the first hole a player EVER solves opened its own finished journey, explaining the
+  feature by being it — and it existed because nothing TAUGHT the tap. The reworked onboarding
+  now ends on exactly that gesture, so the map no longer has to interrupt a round to introduce
+  itself, and #129's remaining half (the wave, plus the hole button) is a pure invitation
+  again. Removed with it: `shouldAutoOpenRoute` in `game/route.ts`, the arming/firing wiring
+  and `AUTO_ROUTE_AFTER_SOLVE_MS` in `Game`, and the persisted `routeSeen` flag it gated on
+  (store **v5** drops the field, the way v1's retired keyboard `layout` was dropped —
+  `markRouteSeen` had no other consumer). No back-compat, and no analytics change: the
+  three-event invariant stands.
 - **Archive routing (#55, decided 2026-07-07):** the client now also fetches **explicit
   past dates** — pairing with #53's server-side "serve any past day". `parseRoute`
   (`web/src/langs.ts`) grew two language-scoped routes beyond `/<lang>`:
@@ -724,33 +716,156 @@ it to the local store — see `packages/backend/AGENTS.md`).
   is a **fast-forward that SKIPS the whole tutorial** (`assets/icons/skip.svg`, →
   `onDone`) — a header affordance, NOT a coach-box `×` (which read as "close this
   box only"). Skip is available on both the first run and replays. The tutorial
-  itself is **two-stage**, in the REAL game components. **Screen contract:**
+  itself is **ONE board**, in the REAL game components. **Screen contract:**
   explanations in a TOP box (typewritten like a game dialog — `tutorial/CoachText.tsx`,
   app-bg + surface border — with inline markup so words look like what they are
   in-game: `[[b:]]` blue secret, `[[w:word^rank]]` gold + heat exponent, `[[m:]]`
   coldest heat, `[[n:]]` heat number); INTERACTIONS at the bottom (mix button, then
-  keyboard), no modals/NEXT. **Stage
-  1** is a single word, concept-first: the secret is SHOWN (blue); **MIX** shakes it
-  to −1, **MIX AGAIN** fast-rolls to −10, **MIX EVEN MORE** rolls to −100 — landing
-  on the start word (the demo explains where start words come from), where the
+  keyboard), no modals until the last beat, no NEXT. The board is a single word,
+  concept-first: the secret is SHOWN (blue); **MIX** shakes it
+  to −1, **MIX AGAIN** fast-rolls to −10, **MIX EVEN MORE** rolls to the START word —
+  the demo explains where start words come from — where the
   button gives way to the keyboard (`tutorial/MixWord.tsx` is the display-only
   widget; Tutorial owns the animation); three gated guesses then show distance
   (farther, no move), MISS, and improvement, each rolling straight into the next
   prompt (no after-panels); finally the player types back to the secret with the
   REAL vocabulary (`useVocab` loads in the tutorial), nudged with the answer after 3
-  straight MISSes. **Stage 2** is an easy two-hole sentence played **unguided** —
-  its rank maps are stocked so the obvious first guesses land on BOTH holes, so
-  multi-hole broadcast is discovered, not told; solving it ends the tutorial
-  **wordlessly** (the tray swaps to `N TRIES` + PLAY TODAY'S PUZZLE; copy is
-  deliberately terse throughout, no under-the-hood talk). The tutorial is
+  straight MISSes.
+  **It ENDS on the found word, teaching ROUTES (#155, decided 2026-08-03, superseding the
+  stage-2 bakery sentence; ending refined the same day on findings):** analytics and feedback
+  said the unguided second stage was widely skipped and the game is intuitive enough without
+  it — its one lesson (a guess filling several holes) is discoverable in play — so cutting it
+  freed the ending for the one concept nothing else teaches. Finding the word retires the
+  prompt and DROPS the keyboard out of the tray (the game's own `kb-drop`). **The ending then
+  opens on TWO beats, one idea each** (decided 2026-08-04): the CLAIM — "Plusieurs thèmes
+  peuvent exister à travers le même mot." (`tutThemesIntro`) — with the tray's NEXT as its
+  only control, and only once that is acknowledged the GESTURE — "Tu peux cliquer sur un mot
+  pour découvrir ses thèmes.", **in the input device's own verb** ("tap" on a coarse pointer,
+  "click" otherwise, the same `(pointer: coarse)` test as the streak hint,
+  `tutTap`/`tutClick`) — which is where the word starts running #129's ambient wave and
+  accepts a tap, the beat's only control. The claim is made before the evidence, and the
+  clouds are the evidence. **The tap REPLACES the word with its THEMES, shown as CLOUDS of
+  words ONE AT A TIME** (findings 2026-08-04, superseding first the inline route line and
+  then its one-road-at-a-time variant — the line was too much information at once, where a
+  cloud of themed words says "these belong together, this close" with nothing to decode):
+  `tutorial/ThemeCloud.tsx` renders one theme — the map's road — as a cloud of its closest
+  groups (capped at 12), words painted in that route's LANE color (imported from
+  `RouteModal.LANE_COLORS`, so the lesson speaks the identity the game's map uses later),
+  heat-ramp exponents on the board's own scale, type size falling with distance,
+  width-capped by fitWord-style arithmetic (VT323 advances exactly 1em/glyph — measured) and
+  HEIGHT-scaled to the viewport (the whole ramp shrinks on short screens so the view never
+  scrolls — findings 2026-08-04). **A cloud CONDENSES and disperses**: every word scales up
+  from nothing on its OWN random delay and scales back down the same way, so the cloud reads
+  as a handful of things belonging together rather than a paragraph swapped for another
+  (the delays are rolled once per cloud and are deliberately NOT index-derived — a
+  left-to-right sweep reads as a list being filled in). The leaving cloud keeps the stage
+  until it reports its last word gone (`onExited`, with `CLOUD_EXIT_FALLBACK_MS` as the
+  deadline behind a lost report — the winner cancels the loser), so two clouds never overlap
+  and the coach's next line arrives WITH its cloud; NEXT THEME is inert for that beat. Reduced motion
+  collapses the durations and keeps the delays, so the words still arrive one by one. Never two clouds at once: the coach names each from the
+  script's `themeCopyKeys` (`tutTheme1..4` — en names OCEAN's themes, fr TROPIQUES's;
+  scripts.test.ts pins the list's length to the map's real road count), each headed
+  **« Thème n/N : <name> »** (`themeHeading`, so the total comes from the board's real road
+  count and no string restates it) with **the theme's NAME wearing the cloud's color**
+  (CoachText's `[[t:]]` tag reads `--coach-theme-c`, set on the box by the Tutorial), a
+  NEXT/SUIVANT press (`tutNext`, the one "go on" label the whole ending uses)
+  swaps to the next — and each swap WAITS for the leaving cloud to report its last word gone
+  (`ThemeCloud.onExited`, an `animationend` count with a deadline behind it, never a guessed
+  duration, so nothing lands over a word still on screen). After the last theme the close
+  shows **the ROUTES TEASER**
+  (`tutorial/RoutesTeaser.tsx`: the themes' colored lines at the map's own lane rhythm,
+  carrying EVERY near-field group out to rank 100 as a station — heat-colored rank exponent
+  in a left gutter like the real map's, node on its lane, word beside it in the lane's
+  colour. It reads the way the real map reads: DOWN the page from the far field to the word,
+  so **`-1` sits at the BOTTOM**, and past the lanes' MERGE the WORD ITSELF closes the line —
+  the lanes elbow onto a bus and ONE SOLID trunk leads down into the word's node (the real
+  map's converge junction at the miniature's scale; solid since 2026-08-04, superseding the
+  dashed identity leap, same decision as the modal's), the terminus in solved blue on the
+  biggest node — so the routes visibly JOIN and LEAD to the word rather than running out
+  (added 2026-08-04). It opens parked at
+  that bottom, on the destination. It **SCROLLS** by drag/wheel; the chevrons that used to
+  flank it were removed 2026-08-04 (one affordance per gesture, and their column was width the
+  words needed at 320px), which also leaves the whole drawing decorative with nothing
+  focusable in it. Two things say the line goes on: the squared-off scrollbar, and **the
+  frame's own EDGES — whichever side still has line beyond it wears a TORN dashed rule**
+  (decided 2026-08-04), the route map's 9px-on/9px-off break meaning the same thing here, so
+  parked at the destination the top edge reads as cut off rather than as the end of the map
+  (bottom edge scrolled to the far field; both in between). The rules sit just **OUTSIDE the
+  window's edges**, never over it — inside, the tear covered the outermost station's row
+  instead of marking where the window cuts. That is why the teaser is TWO
+  boxes — a non-scrolling `.routes-teaser` frame around the `.teaser-scroll` scroller: a
+  background paints beneath the stations and a pseudo-element inside a scroller scrolls away
+  with them, so the rules can only live on a parent that stays put. It **FILLS the play
+  area's free height** — flex-basis 0 + min-height 0 so it can never grow the page, and
+  deliberately NO max-height (a cap only opened a dead gap under the coach on tall screens,
+  findings 2026-08-04) — and its
+  width is DEFINITE, never
+  fit-content, because `.teaser-map` is an inline-size container whose `cqw` word sizing
+  would otherwise be circular. Its SCROLLBAR is the app's shared **`.pixel-scroll`** (defined
+  beside `.sr-only`, and worn by the route map's own `.route-scroll` too since 2026-08-04):
+  a flat rectangle in a flat channel, drawn with `::-webkit-scrollbar` — the standard
+  `scrollbar-width` / `scrollbar-color` are confined to a Firefox-only `@supports` block,
+  because since Chrome 121 either of them DISABLES those pseudo-elements and the standard bar
+  cannot be squared off. Any scroller that wants the app's bar opts in with the class; one
+  that does not is untouched. **VT323 advances exactly 1em per glyph** (measured; a 0.95
+  guess clipped the longest words) and the floor is the route map's own 8px)
+  under the general principle (`tutThemes` — "Chaque thème est un chemin sémantique
+  différent à suivre.") while the tray offers
+  **PLAY (`tutPlay`), which is the graduation**: `onDone`, no SolvedScreen (a lesson has no
+  score to show, so `SolvedScreen`'s tutorial `action` prop and its null `dayNumber` are gone
+  with it).
+  **From the clouds on, the TRAY stops reserving the keyboard's footprint** (`tutorial--themes`
+  on the root, decided 2026-08-04): the keyboard has dropped for good and the tray holds one
+  button, so it shrinks to that button — the page's own frame inset is then the whole margin
+  below it, the same distance as the button's left and right, and the `.game` gap gives it 24px
+  above. (On a phone the game deliberately hugs the keyboard's 4px bottom gap, so the tray pads
+  the 14px side inset back — the same +10px rule as `.tray.tray-results`.) The ~120px that
+  empty footprint held goes to the clouds and the routes map, which are
+  the screens short of height. It cannot start any EARLIER: while the word is still on screen
+  the tray's fixed height is exactly what keeps the word from moving between beats, so the
+  claim and gesture beats keep the full tray.
+  The daily game's `RouteModal` is untouched (its drawing lives in an internal
+  `RouteLine` on a `.route-frame` wrapper that owns the drawing's CSS variables — a #155
+  refactor kept for its cleanliness; nothing outside the modal renders it).
+  **The board's ranks are a REAL generated neighborhood, and have to be:** the themes ARE the
+  map's #115 roads — the hand-authored ~22-entry map this replaced carried none — and the
+  clouds step through them by road id. Each language embeds a #154
+  single-word artifact (`pnpm gen:word`) PRUNED to the word + the road zone + the guided
+  words, by `web/scripts/prune-word-map.mjs` — the exact command is recorded in each script's
+  header, and `scripts.test.ts` fails if board and map ever drift. **en = OCEAN, fr =
+  TROPIQUES**, both chosen on ROUTE legibility, and both a SINGLE definition (decided
+  2026-08-04): the routes lesson is about FACETS of one idea, so the board's word must not be
+  a homonym — PHARE (lighthouse / headlight) was replaced because its routes read as two
+  definitions, and LIGHTHOUSE had already lost to ocean on a 135/15 road split. Tropiques'
+  four roads — the climate, the islands, the globe, the holiday feel — are each nameable at a
+  glance; en/fr symmetry stays a non-goal.
+  **The guided words obey two findings-decided rules (2026-08-03/04):** the far guess stays
+  on a READABLE scale — same order of magnitude as the start word, ≤ 500, guarded by
+  `scripts.test.ts` (fr `désert^1183` read as noise) — AND must make intuitive sense as a
+  somehow-close word (`casquette^330` did not; fr's is `neige^353` — snow is
+  climate-adjacent and intuitively the anti-tropics, so "farther" feels right); a mix stop's
+  word should likewise be an INTUITIVE neighbor (fr's second stop is `soleil^12`; the fr
+  board is agreed SINGULAR — `--form tropiques=n:s` — because plural-agreed neighbors read
+  oddly on a word board, findings 2026-08-04). Coach
+  copy must fit the coach box's THREE lines at 320px — the routes and closer-guess strings
+  were cut to size for it, and the ending's claim + instruction were SPLIT into two beats
+  rather than trimmed into one (the box briefly went to four lines to hold the combined
+  sentence, 2026-08-04, and went back the same day once it was split: splitting the idea beat
+  growing the box).
+  Copy is deliberately terse throughout, no under-the-hood talk. The tutorial is
   **data-driven**:
-  boards, ranks, guesses and steps live in `web/src/tutorial/scripts/{en,fr}.ts`
+  the board, guesses and steps live in `web/src/tutorial/scripts/{en,fr}.ts`
   (copy keys in `i18n.ts`) and `tutorial/scripts.test.ts` guards the lesson arc.
   Gated steps use synthetic vocab/prefix sets (the keyboard's existing contract);
   free steps use the real sets. The tutorial writes NOTHING to `rounds`; the store
   `migrate` (v2) grandfathers any blob with prior play state so veterans never see it
   uninvited. Replay via the header `?`; `?tutorial=1` forces it; the dev-only `?streak=`
-  preview suppresses the first-visit invitation.
+  preview suppresses the first-visit invitation. The tutorial ships in its OWN chunk
+  (`LazyTutorial`, the LazyStreakDialog pattern, 2026-08-04): most sessions never render it,
+  so the components and the two embedded word maps stay out of the startup bundle — the
+  invitation preloads it while the player reads the question, a replay lazy-loads it behind
+  the plain loading line, and a failed chunk calls `onDone` (into the game) rather than
+  stranding a blank screen.
 - **App header (decided 2026-07-06; redesigned 2026-07-21 — this bullet was STALE and is
   corrected 2026-07-26 from the code, which is ground truth):** a fixed **topbar**
   (`components/TopBar.tsx`) of **two corner chips and NOTHING else — no band, no border, no
@@ -928,6 +1043,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `Game.tsx` (NOT rehydration; `archive` is `'yes'`
   when replaying a past archive day (#55), `'no'` for the live daily puzzle);
   `share {method:'native'|'clipboard'}` — `SolvedScreen`
-  success paths; `tutorial {action:'start'|'finish'|'skip'}` — invite accept / PLAY
-  finish / skip (fast-forward or invite SKIP). Plus automatic pageviews.
+  success paths; `tutorial {action:'start'|'finish'|'skip'}` — invite accept / the ending's
+  PLAY under the routes teaser (#155) / skip (fast-forward or invite SKIP). Plus automatic
+  pageviews.
 

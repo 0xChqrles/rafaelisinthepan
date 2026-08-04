@@ -1,6 +1,8 @@
+import { useEffect } from 'react';
 import Button from '../components/Button';
 import { t } from '../i18n';
 import logo from '../assets/logo-blue.png';
+import { preloadTutorial } from './LazyTutorial';
 
 // The tutorial invitation (#51): the tutorial NEVER starts without an action. On a
 // first visit this screen stands where LOADING would (the day's puzzle keeps loading
@@ -17,6 +19,12 @@ export default function Invite({
   onAccept: () => void;
   onSkip: () => void;
 }) {
+  // The tutorial chunk fetches while the player reads the question, so TUTORIAL opens
+  // without a network pause (see LazyTutorial).
+  useEffect(() => {
+    preloadTutorial();
+  }, []);
+
   return (
     <main className="invite" aria-labelledby="tutorial-invite-title">
       <img className="invite-logo" src={logo} alt="" draggable="false" />

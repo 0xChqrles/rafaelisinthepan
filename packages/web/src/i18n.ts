@@ -103,7 +103,8 @@ const STRINGS = {
   // Tutorial copy is deliberately TERSE: the feedback on screen does the teaching,
   // the top box only sets up the next move. No under-the-hood talk. HARD LIMIT: the
   // coach box is exactly 3 lines and clips — if a string wraps past three lines
-  // (~70 chars incl. exponents at the mobile width), it is too much: cut it.
+  // (~60 chars incl. exponents at the mobile width), it is too much: cut it — or split
+  // it into two beats, which is what the ending's claim and its instruction became.
   // Copy uses CoachText's inline markup so words LOOK like what they are in-game:
   // [[b:secret]] blue, [[w:hint^rank]] gold + heat exponent, [[m:miss]] coldest heat.
   tutMixIntro: {
@@ -115,37 +116,70 @@ const STRINGS = {
   tutMixMore: { en: 'MIX EVEN MORE', fr: 'ENCORE PLUS' },
   tutMixed1: {
     en: '[[w:sea^1]] is the closest word to [[b:ocean]].',
-    fr: '[[w:mer^1]] est le mot le plus proche de [[b:océan]].',
+    fr: '[[w:tropicales^1]] est le mot le plus proche de [[b:tropiques]].',
   },
   tutMixed10: {
-    en: '[[w:beach^10]] is the 10th closest word to [[b:ocean]].',
-    fr: '[[w:plage^10]] est le 10e mot le plus proche de [[b:océan]].',
+    en: '[[w:islands^10]] is the 10th closest word to [[b:ocean]].',
+    fr: '[[w:soleil^12]] est le 12e mot le plus proche de [[b:tropiques]].',
   },
   tutGuessFar: {
-    en: 'Now type [[w:desert^200]].',
-    fr: 'Maintenant tape [[w:désert^200]] (sans l\'accent)',
+    en: 'Now type [[w:forest^214]].',
+    fr: 'Maintenant tape [[w:neige^353]].',
   },
   tutGuessMiss: {
-    en: 'Type a completely different word: [[m:music]].',
-    fr: 'Tape un mot complètement différent : [[m:musique]].',
+    en: 'Type a completely different word: [[m:violin]].',
+    fr: 'Tape un mot complètement différent : [[m:guitare]].',
   },
   tutGuessCloser: {
-    en: '[[m:music]] was a [[m:MISS]] — too far to rank. Now try [[w:boat^50]].',
-    fr: '[[m:musique]] était un [[m:MISS]] — trop loin pour être classé. Essaie [[w:bateau^50]].',
+    en: '[[m:violin]] was a [[m:MISS]] — too far to rank. Now try [[w:boat^45]].',
+    fr: '[[m:guitare]] était trop loin — [[m:MISS]]. Essaie [[w:lagon^22]].',
   },
   tutFind: {
-    en: 'Now type the very first word — the blue one.',
-    fr: 'Maintenant, tape le tout premier mot — celui en bleu.',
+    en: 'Now, find the original word.',
+    fr: 'Maintenant, retrouve le mot du début.',
   },
   tutFindNudge: {
     en: 'Forgot it? It was [[b:ocean]].',
-    fr: "Oublié ? C'était [[b:océan]].",
+    fr: "Oublié ? C'était [[b:tropiques]].",
   },
-  tutSentence: {
-    en: 'This sentence hides TWO words. You are on your own.',
-    fr: 'Cette phrase cache DEUX mots. À toi de jouer.',
+  // ---- the ending (#155): tapping the found word replaces it with its THEMES — the map's
+  // roads, shown ONE AT A TIME as clouds of words, closing on the routes teaser (findings
+  // 2026-08-04) — and PLAY ends the tutorial. The nudge speaks the input device's own verb —
+  // tutTap on a coarse pointer, tutClick otherwise (the tapAnywhere/clickAnywhere pattern). The ending
+  // opens on TWO beats, one idea each (findings 2026-08-04, splitting what had been one
+  // over-long line): the CLAIM, advanced with the tray's NEXT; then the GESTURE, which is
+  // where the word starts waving and becomes tappable. Each cloud is then headed
+  // « Thème n/N : <name> » (built by themeHeading below, so the count comes from the board's
+  // real road count and no string has to restate it), and the close says what the themes ARE.
+  // tutTheme1..4 hold only the NAME — the en strings name OCEAN's themes, the fr strings
+  // TROPIQUES's, since each language plays its own board.
+  tutThemesIntro: {
+    en: 'Several themes can live inside the same word.',
+    fr: 'Plusieurs thèmes peuvent exister à travers le même mot.',
   },
-  // Sits in SHARE's slot on the real solved layout, so it stays as short as SHARE.
+  tutTap: {
+    en: 'You can tap a word to discover its themes.',
+    fr: 'Tu peux toucher un mot pour découvrir ses thèmes.',
+  },
+  tutClick: {
+    en: 'You can click a word to discover its themes.',
+    fr: 'Tu peux cliquer sur un mot pour découvrir ses thèmes.',
+  },
+  tutTheme1: { en: 'the coast', fr: 'le climat' },
+  // en theme 2's cloud reads coral, arctic, waves, antarctica, surface, currents, earth,
+  // tropical… — the ocean at planet scale ("the deep" mislabelled it: half the cloud is
+  // surface and poles).
+  tutTheme2: { en: 'the planet', fr: 'les îles' },
+  tutTheme3: { en: 'seafaring', fr: 'le globe' },
+  // The en string is UNREFERENCED — ocean's board ships three themes — but the parity
+  // contract wants both languages; re-author it if an en board ever ships four.
+  tutTheme4: { en: 'the fourth', fr: 'les vacances' },
+  // Drives both opening beats and the theme stepper — one label for "go on".
+  tutNext: { en: 'NEXT', fr: 'SUIVANT' },
+  tutThemes: {
+    en: 'Each theme is a different semantic path to follow.',
+    fr: 'Chaque thème est un chemin sémantique différent à suivre.',
+  },
   tutPlay: { en: 'PLAY', fr: 'JOUER' },
 } satisfies Record<string, Record<UiLang, string>>;
 
@@ -173,6 +207,16 @@ export function srHoleResult(lang: string, n: number, rank: number | null): stri
 // ---- route modal (#117). Holes are numbered like the run ruler's ticks and the share
 // row's keycaps: 1-based over the sentence's DISTINCT secrets, so two occurrences of one
 // secret — which share a rank map, and so share a map — carry the same number.
+// A theme cloud's heading (#155): « Thème 2/4 : les îles ». The COUNT comes from the board's
+// real road count rather than from a string, so a regenerated board with a different fork
+// cannot leave the copy claiming a total it does not ship. The name wears the cloud's colour
+// via CoachText's [[t:]] tag.
+export function themeHeading(lang: string, n: number, total: number, name: string): string {
+  return uiLang(lang) === 'fr'
+    ? `Thème ${n}/${total} : [[t:${name}]]`
+    : `Theme ${n}/${total}: [[t:${name}]]`;
+}
+
 export function routeTitle(lang: string, n: number): string {
   return uiLang(lang) === 'fr' ? `MOT ${n}` : `WORD ${n}`;
 }

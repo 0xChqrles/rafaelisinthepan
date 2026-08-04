@@ -181,27 +181,10 @@ export function hasRoute(rankMap: Record<string, RankEntry> | undefined): boolea
   return false;
 }
 
-// The one-time self-demonstration (#129): the FIRST hole a player ever solves opens its own
-// finished journey — departure, every station they visited, arrival — at a proud moment, with
-// their own data. It explains the map by being it; nothing is worded.
-//
-// Which hole, or null for "not now". Three conditions, and the third is the subtle one:
-//   - `routeSeen` false. Set the moment ANY map opens, so a player who found the feature by
-//     tapping is never interrupted by it.
-//   - this guess solved at least one MAPPABLE hole (the caller filters out a hole whose
-//     secret carries no #115 geometry — it has no map to open).
-//   - the round is NOT finished by it. The final solve belongs to the solved sequence
-//     (streak -> exits -> leaderboard -> source), which must not gain a competing modal;
-//     those players meet the map on a later round's mid-round solve, or through the wave.
-// A guess can drop several holes at once: the FIRST in sentence order gets the map.
-export function shouldAutoOpenRoute(
-  routeSeen: boolean,
-  newlySolvedIndices: number[],
-  allSolved: boolean,
-): number | null {
-  if (routeSeen || allSolved || newlySolvedIndices.length === 0) return null;
-  return Math.min(...newlySolvedIndices);
-}
+// (The one-time first-solve auto-open that used to live here — #129's guaranteed half — was
+// removed with #155. It existed because nothing TAUGHT the tap; the onboarding now ends on
+// exactly that gesture, so the map no longer has to interrupt a round to introduce itself.
+// What remains of #129 is the invitation: the ambient letter wave, and the hole button.)
 
 export function buildRoute({
   rankMap,
