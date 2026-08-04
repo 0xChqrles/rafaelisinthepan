@@ -774,11 +774,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   min-height 0 so it can never grow the page, bounded by a max, margins guaranteeing
   breathing room against the coach and the tray's button — and its width is DEFINITE, never
   fit-content, because `.teaser-map` is an inline-size container whose `cqw` word sizing
-  would otherwise be circular. Its SCROLLBAR is the app's one custom one: a flat rectangle
-  in a flat channel, drawn with `::-webkit-scrollbar` — the standard `scrollbar-width` /
-  `scrollbar-color` are confined to a Firefox-only `@supports` block, because since Chrome
-  121 either of them DISABLES those pseudo-elements and the standard bar cannot be squared
-  off. **VT323 advances exactly 1em per glyph** (measured; a 0.95
+  would otherwise be circular. Its SCROLLBAR is the app's shared **`.pixel-scroll`** (defined
+  beside `.sr-only`, and worn by the route map's own `.route-scroll` too since 2026-08-04):
+  a flat rectangle in a flat channel, drawn with `::-webkit-scrollbar` — the standard
+  `scrollbar-width` / `scrollbar-color` are confined to a Firefox-only `@supports` block,
+  because since Chrome 121 either of them DISABLES those pseudo-elements and the standard bar
+  cannot be squared off. Any scroller that wants the app's bar opts in with the class; one
+  that does not is untouched. **VT323 advances exactly 1em per glyph** (measured; a 0.95
   guess clipped the longest words) and the floor is the route map's own 8px)
   under the general principle (`tutThemes` — "Chaque thème est un chemin sémantique
   différent à suivre.") while the tray offers

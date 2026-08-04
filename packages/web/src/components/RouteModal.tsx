@@ -559,7 +559,7 @@ export default function RouteModal({
           above the scroller — which is what lets it paint nothing. */}
       <ModalHeader lang={lang} title={title} onClose={beginClose} />
 
-      <div className="route-scroll" ref={scrollRef}>
+      <div className="route-scroll pixel-scroll" ref={scrollRef}>
         <RouteLine model={model} lang={lang} hereRef={hereRef} stuck={stuck} />
       </div>
 

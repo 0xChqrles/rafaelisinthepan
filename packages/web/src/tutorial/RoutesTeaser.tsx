@@ -83,7 +83,7 @@ export default function RoutesTeaser({
   }, []);
 
   return (
-    <div className="routes-teaser" ref={scrollRef} aria-hidden="true">
+    <div className="routes-teaser pixel-scroll" ref={scrollRef} aria-hidden="true">
       <div
         className="teaser-map"
         style={

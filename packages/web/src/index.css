@@ -147,6 +147,42 @@ button * {
 
 /* Visually hidden but still announced: the screen-reader live region mirroring the
    per-hole guess feedback (floating numbers / MISS are invisible to assistive tech). */
+/* The app's scrollbar, on any scroller that opts in with this class (the route map's line,
+   the onboarding's routes teaser). The app draws in squares, so its scrollbar does too: a
+   flat RECTANGLE in a flat channel — no rounding, no arrow buttons, no inset. Styling it
+   also makes it always visible where the platform would overlay it, which is the point: a
+   permanent bar is the one thing on a long line that says the line goes on.
+
+   The standard `scrollbar-width`/`scrollbar-color` are deliberately NOT set alongside these:
+   since Chrome 121 either of them DISABLES the ::-webkit-scrollbar pseudo-elements, and the
+   standard scrollbar cannot be squared off — setting both cost the rectangle everywhere and
+   left an overlay bar behind. They live in the Firefox-only block below instead, detected by
+   the one engine that has no ::-webkit-scrollbar selector to support. */
+.pixel-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.pixel-scroll::-webkit-scrollbar-track {
+  background: var(--surface);
+}
+.pixel-scroll::-webkit-scrollbar-thumb {
+  background: var(--surface-hover);
+  border-radius: 0;
+}
+.pixel-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+.pixel-scroll::-webkit-scrollbar-button {
+  display: none;
+}
+/* Firefox: no pseudo-elements to style, so it gets the standard properties — the closest it
+   can come to the same bar. */
+@supports (scrollbar-width: thin) and (not (selector(::-webkit-scrollbar))) {
+  .pixel-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--surface-hover) var(--surface);
+  }
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -2999,7 +3035,10 @@ button * {
    was width the words needed on a 320px phone). The height it stretches to is a viewport, not
    the content: flex-basis 0 + min-height 0 mean it can never grow the page, the max keeps a
    desktop from stretching it absurd, and the margin is the guaranteed breathing room against
-   the coach box above and the tray's button below. The width is DEFINITE (never fit-content):
+   the coach box above and the tray's button below. Its scrollbar is the app's shared
+   `.pixel-scroll` (see the utility beside `.sr-only`), and it sits on the SCROLLER — so
+   `.teaser-map`, the `cqw` container the words size against, already excludes its width and
+   the word fitting stays exact. The width is DEFINITE (never fit-content):
    `.teaser-map` is an inline-size container and its `cqw` word sizing would be circular
    against an auto width. */
 .routes-teaser {
@@ -3013,41 +3052,6 @@ button * {
   overflow-x: hidden;
   /* The lesson's last screen is not a place to rubber-band the page behind it. */
   overscroll-behavior: contain;
-}
-/* The app draws in squares, so its one scrollbar does too: a flat RECTANGLE in a flat
-   channel — no rounding, no arrow buttons, no inset. Styling it also makes it always visible
-   where the platform would overlay it, which is the point now that the chevrons are gone.
-   It sits on the SCROLLER, so `.teaser-map` (the `cqw` container the words size against)
-   already excludes its width — the word fitting stays exact.
-
-   The standard `scrollbar-width`/`scrollbar-color` are deliberately NOT set here: since
-   Chrome 121 either of them DISABLES the ::-webkit-scrollbar pseudo-elements, and the
-   standard scrollbar cannot be squared off — setting them cost the rectangle everywhere and
-   left an overlay bar behind. They live in the Firefox-only block below instead, detected by
-   the one engine that has no ::-webkit-scrollbar selector to support. */
-.routes-teaser::-webkit-scrollbar {
-  width: 6px;
-}
-.routes-teaser::-webkit-scrollbar-track {
-  background: var(--surface);
-}
-.routes-teaser::-webkit-scrollbar-thumb {
-  background: var(--surface-hover);
-  border-radius: 0;
-}
-.routes-teaser::-webkit-scrollbar-thumb:hover {
-  background: var(--muted);
-}
-.routes-teaser::-webkit-scrollbar-button {
-  display: none;
-}
-/* Firefox: no pseudo-elements to style, so it gets the standard properties — the closest it
-   can come to the same bar. */
-@supports (scrollbar-width: thin) and (not (selector(::-webkit-scrollbar))) {
-  .routes-teaser {
-    scrollbar-width: thin;
-    scrollbar-color: var(--surface-hover) var(--surface);
-  }
 }
 .teaser-map {
   position: relative;
