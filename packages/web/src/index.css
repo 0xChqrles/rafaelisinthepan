@@ -1849,11 +1849,11 @@ button * {
   margin-left: 0;
   background: var(--lane-lines);
 }
-/* The identity leap (the closest measurable group to the word itself), and the cold end above
-   the first station: neither is a distance, so neither is a solid line. The unit comes from
-   RouteModal (`--dash` / `--dash-period`), which cuts both heights to a whole number of it —
-   a run that ends mid-unit leaves a stub of gap right where the trace meets the solid rail. */
-.route-link.leap::before,
+/* The cold end above the first station: not a distance, so not a solid line — the map's one
+   broken trace since 2026-08-04 (the leap into the word joined the solid rail: the routes
+   should visibly LEAD to the word). The unit comes from RouteModal (`--dash` /
+   `--dash-period`), which cuts the height to a whole number of it — a run that ends mid-unit
+   leaves a stub of gap right where the trace meets the solid rail. */
 .route-link.tail::before {
   background: repeating-linear-gradient(
     to bottom,
@@ -3031,29 +3031,67 @@ button * {
    left gutter like the real map's, node on its lane, word beside it in the lane's color.
 
    It reads the way the real map reads: DOWN the page from the far field to the word, so `-1`
-   sits at the BOTTOM and the line opens parked there. It SCROLLS — the element IS the
-   scroller — and its squared-off scrollbar is the only thing that has to say so (the flanking
-   chevrons were removed on findings 2026-08-04: one affordance per gesture, and their column
-   was width the words needed on a 320px phone). The height it stretches to is a viewport, not
-   the content: flex-basis 0 + min-height 0 mean it can never grow the page, the max keeps a
-   desktop from stretching it absurd, and the margin is the guaranteed breathing room against
-   the coach box above and the tray's button below. Its scrollbar is the app's shared
-   `.pixel-scroll` (see the utility beside `.sr-only`), and it sits on the SCROLLER — so
-   `.teaser-map`, the `cqw` container the words size against, already excludes its width and
-   the word fitting stays exact. The width is DEFINITE (never fit-content):
-   `.teaser-map` is an inline-size container and its `cqw` word sizing would be circular
-   against an auto width. */
+   sits at the BOTTOM and the line opens parked there. It SCROLLS — the frame holds the
+   scroller — and its squared-off scrollbar plus the torn edges below are what say so (the
+   flanking chevrons were removed on findings 2026-08-04: one affordance per gesture, and their
+   column was width the words needed on a 320px phone). The height it stretches to is a
+   viewport, not the content: it FILLS the play area's free height, whatever the screen —
+   flex-basis 0 + min-height 0 mean it can never grow the page, and there is deliberately no
+   max (a cap only opened a dead gap under the coach on tall screens, findings 2026-08-04). Its
+   scrollbar is the app's shared `.pixel-scroll` (see the utility beside `.sr-only`), and it
+   sits on the SCROLLER — so `.teaser-map`, the `cqw` container the words size against, already
+   excludes its width and the word fitting stays exact. The width is DEFINITE (never
+   fit-content): `.teaser-map` is an inline-size container and its `cqw` word sizing would be
+   circular against an auto width.
+
+   The FRAME and the SCROLLER are two boxes, because the torn edges below have to stay put
+   while the line moves under them: a background paints beneath the stations and a
+   pseudo-element inside a scroller scrolls away with them, so the rules live on a
+   non-scrolling parent instead. */
 .routes-teaser {
+  position: relative;
   align-self: center;
   width: min(100%, 430px);
   flex: 1 1 0;
   min-height: 0;
-  max-height: 520px;
-  margin: 14px 0;
+  display: flex;
+  flex-direction: column;
+}
+.teaser-scroll {
+  flex: 1 1 0;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   /* The lesson's last screen is not a place to rubber-band the page behind it. */
   overscroll-behavior: contain;
+}
+/* The window is smaller than the line at every real board, and an edge that simply ends reads
+   as the end of the map. So the side that still has line beyond it is TORN — the same 9px-on,
+   9px-off rule the route map's off-map break and its parked separator wear, meaning the same
+   thing here: it does not continue straight through. Opened parked at the destination, that is
+   the top edge alone; scrolled out to the far field, the bottom one; between them, both.
+   The rules sit just OUTSIDE the window (anchored past its edges), never over it: inside, the
+   tear covered the outermost station's row instead of marking where the window cuts. */
+.routes-teaser::before,
+.routes-teaser::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: repeating-linear-gradient(90deg, var(--rail) 0 9px, transparent 9px 18px);
+  pointer-events: none;
+  opacity: 0;
+}
+.routes-teaser::before {
+  bottom: 100%;
+}
+.routes-teaser::after {
+  top: 100%;
+}
+.routes-teaser.more-up::before,
+.routes-teaser.more-down::after {
+  opacity: 1;
 }
 .teaser-map {
   position: relative;
@@ -3061,8 +3099,9 @@ button * {
      to be the row's real width — which is why the teaser's own width is definite above. */
   container-type: inline-size;
 }
-/* The lanes stop short of the terminus (`--teaser-foot` = the arrival row + the leap), so the
-   line visibly ARRIVES somewhere instead of running off the bottom. */
+/* The lanes stop short of the terminus (`--teaser-foot` = the arrival row + the join), where
+   they MERGE into it, so the line visibly ARRIVES somewhere instead of running off the
+   bottom. */
 .teaser-lanes {
   position: absolute;
   inset: 0 auto var(--teaser-foot, 0) var(--teaser-gutter);
@@ -3070,24 +3109,33 @@ button * {
   display: flex;
   justify-content: space-between;
 }
-/* The identity leap: not a distance but a jump, so it is drawn broken — the same dashed
-   vocabulary the real map uses between its closest group and the word. */
-.teaser-leap {
+/* The merge into the word — the real map's converge junction at the miniature's scale, SOLID
+   (decided 2026-08-04, superseding the dashed identity leap): the lanes end on the bus, and
+   one trunk runs from it down into the word's node. */
+.teaser-bus {
   position: absolute;
-  bottom: calc(var(--teaser-foot) - var(--teaser-leap-h));
-  left: var(--teaser-leap-x);
+  bottom: calc(var(--teaser-foot) - 5px);
+  left: var(--teaser-gutter);
+  width: var(--teaser-railw);
+  height: 5px;
+  background: var(--teaser-bus-grad, var(--rail));
+}
+.teaser-trunk {
+  position: absolute;
+  bottom: calc(var(--teaser-foot) - 5px - var(--teaser-trunk-h));
+  left: var(--teaser-trunk-x);
   width: 5px;
-  height: var(--teaser-leap-h);
+  height: var(--teaser-trunk-h);
   transform: translateX(-50%);
-  background: repeating-linear-gradient(180deg, var(--rail) 0 5px, transparent 5px 13px);
+  background: var(--rail);
 }
 /* The terminus: the word every one of these routes leads to, in the blue the sentence gives a
    solved word, on the map's biggest node. */
 .teaser-arrival {
-  /* The leap is drawn absolutely, so the flow has to RESERVE its height here — without this
-     the arrival butts against the last station and `--teaser-foot` eats into that row, cutting
-     the lanes short one station early. */
-  margin-top: var(--teaser-leap-h);
+  /* The join (bus + trunk run) is drawn absolutely, so the flow has to RESERVE its height
+     here — without this the arrival butts against the last station and `--teaser-foot` eats
+     into that row, cutting the lanes short one station early. */
+  margin-top: var(--teaser-join-h);
   display: grid;
   grid-template-columns: var(--teaser-gutter) var(--teaser-railw) minmax(0, auto);
   align-items: center;
@@ -3163,6 +3211,22 @@ button * {
   outline-offset: 2px;
 }
 
+/* The themes ending: the tray holds ONE button and the keyboard has dropped for good, so it
+   stops reserving the keyboard's footprint and shrinks to the button. The page's own frame
+   inset is then the entire margin below it — the same distance as the button's left and right
+   — and the .game gap gives it the same again above. (On a phone the game deliberately hugs
+   the keyboard's 4px bottom gap; the mobile block below pads the 14px side inset back, the
+   same way .tray.tray-results does.) The ~120px that empty footprint was holding goes to the
+   clouds and the routes map, which are the screens short of height.
+   It cannot start any earlier: while the WORD is still on screen the tray's fixed height is
+   exactly what keeps the word from moving between beats. */
+.tutorial--themes {
+  gap: 24px;
+}
+.tutorial--themes .tray {
+  height: auto;
+}
+
 @media (max-width: 640px) {
   .coach {
     padding: 12px 14px;
@@ -3174,6 +3238,12 @@ button * {
   /* Clear the compact chip row + coach (56px top + 3 lines + its padding + a breath). */
   .tutorial {
     padding-top: 172px;
+  }
+  /* The ending's lone button sits on the 14px page inset, not the keyboard's edge-to-edge
+     hug, so like the solved results it gets +10px back over the keyboard's 4px bottom gap:
+     bottom gap = side gap = 14px (the same rule as .tray.tray-results). */
+  .tutorial--themes .tray {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
   }
 }
 

@@ -48,9 +48,9 @@ import useModalDismiss from '../hooks/useModalDismiss';
 const LINK_MIN = 14;
 const LINK_MAX = 92;
 const LINK_SPAN = 300;
-// The two broken traces are drawn from ONE repeating unit: DASH px of line, then DASH_GAP px of
+// The broken trace is drawn from ONE repeating unit: DASH px of line, then DASH_GAP px of
 // nothing. It is handed to CSS as well (`--dash`, `--dash-period`), because the gradient that
-// paints the unit and the heights that have to be a whole number of it cannot be allowed to
+// paints the unit and the height that has to be a whole number of it cannot be allowed to
 // disagree.
 const DASH = 5;
 const DASH_GAP = 8;
@@ -62,11 +62,13 @@ const DASH_PERIOD = DASH + DASH_GAP;
 const dashedRun = (px: number) =>
   Math.max(1, Math.round((px - DASH) / DASH_PERIOD)) * DASH_PERIOD + DASH;
 
-// The identity leap (#115): between the closest measurable group and the word itself there is
-// no step, only a jump. Fixed height, broken trace — it is not a distance.
-const LEAP_H = dashedRun(56); // 57
+// The run from the merge to the terminus: the lanes have JOINED, and one SOLID line leads to
+// the word (decided 2026-08-04, superseding the dashed "identity leap" — the routes should
+// visibly LEAD to the word, and a broken trace read as the line not quite reaching it).
+const LEAP_H = 56;
 // The cold end of the line, above the first station: it always continues into the words that
-// have no distance at all, whether or not this round produced any.
+// have no distance at all, whether or not this round produced any. Not a distance, so not a
+// solid line — the map's one remaining broken trace.
 const TAIL_H = dashedRun(34); // 31
 // Where the trunk splits into lanes, and where they merge back into the word. Its own fixed
 // minimum, since it draws a shape rather than a gap.
@@ -266,8 +268,8 @@ function RouteLine({
     '--bus-grad': busGradient(lanes, (trunkX - busX) / busW),
     '--lane-lines': laneLines(lanes),
     '--stick-inset': `${STICK_INSET}px`,
-    // The dash unit the leap and the tail are cut to (see dashedRun): the gradient paints it,
-    // the heights count it, so both read it from here.
+    // The dash unit the tail is cut to (see dashedRun): the gradient paints it, the height
+    // counts it, so both read it from here.
     '--dash': `${DASH}px`,
     '--dash-period': `${DASH_PERIOD}px`,
   } as CSSProperties;
@@ -385,7 +387,8 @@ function RouteLine({
         })}
 
         {forked && <Junction height={JUNCTION_H} converge />}
-        <div className="route-link leap" style={{ height: LEAP_H }} />
+        {/* The joined line's final run into the word: an ordinary SOLID trunk link. */}
+        <div className="route-link" style={{ height: LEAP_H }} />
 
         {/* The end of the line. Censored while the hole is open, the accented secret in the
             solved-word blue once found — the same line then reads as the post-mortem. */}

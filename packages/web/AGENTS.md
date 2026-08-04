@@ -180,15 +180,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
   destination off screen). That is the SAME information — dq differences are all dq means — and
   on a real fr puzzle it took the map from **3.9 screens of mostly emptiness to ~1.0**. (It runs
   ~5 screens again now that the full roads are drawn — see the near field below — but every row is
-  content: what was wrong with the first version was the empty space, not the length.) The
-  identity leap and the cold end above the first station stay broken traces: neither is a
-  distance. **Both are cut to a WHOLE number of the dash unit** (`dashedRun`, fixed 2026-07-27):
+  content: what was wrong with the first version was the empty space, not the length.)
+  **The run from the merge into the terminus is SOLID** (decided 2026-08-04, superseding the
+  dashed "identity leap"): the lanes JOIN at the converge junction and one solid line leads to
+  the word — the routes should visibly LEAD to it, and a broken trace read as the line not
+  quite reaching it. The cold end above the first station stays a broken trace (it is not a
+  distance), and is **cut to a WHOLE number of the dash unit** (`dashedRun`, fixed 2026-07-27):
   the unit is 5px of line + 8px of nothing, declared once in `RouteModal` and handed to the
   gradient as `--dash` / `--dash-period`, and a run is `n` units PLUS its closing dash. Any other
   height cuts the last unit wherever it falls and the stub lands exactly where the trace meets the
   solid rail — `TAIL_H` 34 ended on 3px of gap against the first station, which reads as a
-  rendering slip rather than a broken line. So the heights are DERIVED (34 → 31, 56 → 57), never
-  typed. `--route-band-h`,
+  rendering slip rather than a broken line. So its height is DERIVED (34 → 31), never typed
+  (`LEAP_H`, now solid, is a plain 56). `--route-band-h`,
   the old lane geometry (`stopX`/`labelSide`/`laneNameFont`) and the axis contours are all gone
   with it.
   **The line is TRAVELLED, so it runs departure → arrival DOWN the page** (decided 2026-07-26):
@@ -773,16 +776,29 @@ it to the local store — see `packages/backend/AGENTS.md`).
   carrying EVERY near-field group out to rank 100 as a station — heat-colored rank exponent
   in a left gutter like the real map's, node on its lane, word beside it in the lane's
   colour. It reads the way the real map reads: DOWN the page from the far field to the word,
-  so **`-1` sits at the BOTTOM**, and past a dashed identity leap the WORD ITSELF closes the
-  line — solved blue, the biggest node, the lanes stopping just above it — so the routes are
-  visibly leading somewhere rather than running out (added 2026-08-04). It opens parked at
-  that bottom, on the destination. It **SCROLLS** by drag/wheel, and
-  its squared-off scrollbar is the only thing that says so — the chevrons that used to flank
-  it were removed 2026-08-04 (one affordance per gesture, and their column was width the
+  so **`-1` sits at the BOTTOM**, and past the lanes' MERGE the WORD ITSELF closes the line —
+  the lanes elbow onto a bus and ONE SOLID trunk leads down into the word's node (the real
+  map's converge junction at the miniature's scale; solid since 2026-08-04, superseding the
+  dashed identity leap, same decision as the modal's), the terminus in solved blue on the
+  biggest node — so the routes visibly JOIN and LEAD to the word rather than running out
+  (added 2026-08-04). It opens parked at
+  that bottom, on the destination. It **SCROLLS** by drag/wheel; the chevrons that used to
+  flank it were removed 2026-08-04 (one affordance per gesture, and their column was width the
   words needed at 320px), which also leaves the whole drawing decorative with nothing
-  focusable in it. It stretches to the play area's free height — flex-basis 0 +
-  min-height 0 so it can never grow the page, bounded by a max, margins guaranteeing
-  breathing room against the coach and the tray's button — and its width is DEFINITE, never
+  focusable in it. Two things say the line goes on: the squared-off scrollbar, and **the
+  frame's own EDGES — whichever side still has line beyond it wears a TORN dashed rule**
+  (decided 2026-08-04), the route map's 9px-on/9px-off break meaning the same thing here, so
+  parked at the destination the top edge reads as cut off rather than as the end of the map
+  (bottom edge scrolled to the far field; both in between). The rules sit just **OUTSIDE the
+  window's edges**, never over it — inside, the tear covered the outermost station's row
+  instead of marking where the window cuts. That is why the teaser is TWO
+  boxes — a non-scrolling `.routes-teaser` frame around the `.teaser-scroll` scroller: a
+  background paints beneath the stations and a pseudo-element inside a scroller scrolls away
+  with them, so the rules can only live on a parent that stays put. It **FILLS the play
+  area's free height** — flex-basis 0 + min-height 0 so it can never grow the page, and
+  deliberately NO max-height (a cap only opened a dead gap under the coach on tall screens,
+  findings 2026-08-04) — and its
+  width is DEFINITE, never
   fit-content, because `.teaser-map` is an inline-size container whose `cqw` word sizing
   would otherwise be circular. Its SCROLLBAR is the app's shared **`.pixel-scroll`** (defined
   beside `.sr-only`, and worn by the route map's own `.route-scroll` too since 2026-08-04):
@@ -796,7 +812,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
   différent à suivre.") while the tray offers
   **PLAY (`tutPlay`), which is the graduation**: `onDone`, no SolvedScreen (a lesson has no
   score to show, so `SolvedScreen`'s tutorial `action` prop and its null `dayNumber` are gone
-  with it). The daily game's `RouteModal` is untouched (its drawing lives in an internal
+  with it).
+  **From the clouds on, the TRAY stops reserving the keyboard's footprint** (`tutorial--themes`
+  on the root, decided 2026-08-04): the keyboard has dropped for good and the tray holds one
+  button, so it shrinks to that button — the page's own frame inset is then the whole margin
+  below it, the same distance as the button's left and right, and the `.game` gap gives it 24px
+  above. (On a phone the game deliberately hugs the keyboard's 4px bottom gap, so the tray pads
+  the 14px side inset back — the same +10px rule as `.tray.tray-results`.) The ~120px that
+  empty footprint held goes to the clouds and the routes map, which are
+  the screens short of height. It cannot start any EARLIER: while the word is still on screen
+  the tray's fixed height is exactly what keeps the word from moving between beats, so the
+  claim and gesture beats keep the full tray.
+  The daily game's `RouteModal` is untouched (its drawing lives in an internal
   `RouteLine` on a `.route-frame` wrapper that owns the drawing's CSS variables — a #155
   refactor kept for its cleanliness; nothing outside the modal renders it).
   **The board's ranks are a REAL generated neighborhood, and have to be:** the themes ARE the

@@ -408,7 +408,10 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
   return (
     // tutorial--word: the board is deliberately CLEAN — explanation on top, one big centered
     // word in the middle, the interaction at the bottom.
-    <div className="game tutorial tutorial--word">
+    // tutorial--themes: the word has given way to the clouds/route map and the keyboard is
+    // gone for good, so the tray drops the keyboard's reserved footprint and closes up around
+    // its one button — the height goes to the drawing, which is what needs it.
+    <div className={`game tutorial tutorial--word${themesOpen ? ' tutorial--themes' : ''}`}>
       <div className="sr-only" role="status" aria-live="polite">
         {announce}
       </div>
