@@ -10,6 +10,8 @@ import {
   encodeResult,
   decodeResult,
   decodeLegacyShareTarget,
+  encodeWordResult,
+  decodeWordResult,
   type ShareResult,
 } from './shareCard';
 
@@ -215,5 +217,41 @@ describe('decodeLegacyShareTarget — where an OLD link should still land', () =
     expect(decodeLegacyShareTarget('')).toBeNull();
     // Leading nibble 0 is not a version we ever shipped.
     expect(decodeLegacyShareTarget(`A${encodeResult(sample).slice(1)}`)).toBeNull();
+  });
+});
+
+// Word mode's token (#156): its own format in the same version namespace — the shared
+// header and nothing else, since the whole result is the claim count.
+describe('encodeWordResult / decodeWordResult', () => {
+  const word = { lang: 'fr', dayNumber: 20638, score: 27 };
+
+  it('round-trips lang, dayNumber and score exactly', () => {
+    expect(decodeWordResult(encodeWordResult(word))).toEqual(word);
+    expect(decodeWordResult(encodeWordResult({ ...word, lang: 'en', score: 0 }))).toEqual({
+      ...word,
+      lang: 'en',
+      score: 0,
+    });
+  });
+
+  it('stays short + URL-safe', () => {
+    const token = encodeWordResult(word);
+    expect(token).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(token.length).toBeLessThanOrEqual(8);
+  });
+
+  it('the two formats never decode each other', () => {
+    expect(decodeResult(encodeWordResult(word))).toBeNull();
+    expect(decodeWordResult(encodeResult(sample))).toBeNull();
+    // Nor does a word token look "legacy": a malformed or cross-format token still
+    // gets the flat refusal, never a redirect.
+    expect(decodeLegacyShareTarget(encodeWordResult(word))).toBeNull();
+  });
+
+  it('rejects malformed input (garbage, truncation, trailing data)', () => {
+    expect(decodeWordResult('not a token!!')).toBeNull();
+    expect(decodeWordResult('')).toBeNull();
+    expect(decodeWordResult(encodeWordResult(word).slice(0, 2))).toBeNull();
+    expect(decodeWordResult(`${encodeWordResult(word)}AAAA`)).toBeNull();
   });
 });

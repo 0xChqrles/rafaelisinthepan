@@ -3352,3 +3352,61 @@ button * {
     gap: 18px;
   }
 }
+
+/* --- Word mode (#156): the second daily. The .game column is reused (HUD corner, a
+   middle that fills, the fixed-height tray); the middle here is the BOARD — the day's
+   neighborhood as the live route-map drawing (.route-frame reused wholesale, see
+   components/WordBoard) inside its own scroller — with the guess prompt between it and
+   the keyboard. --- */
+.word-scroll {
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Horizontal padding only, like .route-scroll — the line's breathing room is content. */
+  padding: 0 20px;
+}
+/* The board lives IN THE PAGE, inside .app's frame inset — unlike the route modal,
+   which is a full-bleed dialog — so `--wordw`'s 100vw arithmetic must also shed the
+   app's side padding (24px each side; 14px under the 640px mobile breakpoint) or
+   fitWord sizes long words to a column ~2 insets wider than the real one and they
+   break mid-word at the terminus. Verified: 'tropiques' at 390px wraps without this. */
+.word-frame {
+  --wordw: calc(min(430px, 100vw - 40px - 48px) - var(--gutter) - var(--railw) - 18px);
+}
+@media (max-width: 640px) {
+  .word-frame {
+    --wordw: calc(min(430px, 100vw - 40px - 28px) - var(--gutter) - var(--railw) - 18px);
+  }
+}
+.word-prompt {
+  width: 100%;
+}
+
+/* The arcade corner: the claim count (the score — higher is better in this mode) and
+   the strike pips beside it, filling as the consecutive-incorrect run grows. */
+.word-hud {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  pointer-events: none;
+}
+.word-count {
+  font-family: var(--press);
+  font-size: clamp(16px, 2.4vh, 22px);
+  color: var(--fg);
+}
+.word-strikes {
+  display: flex;
+  gap: 6px;
+}
+.strike-pip {
+  width: 10px;
+  height: 10px;
+  background: var(--surface-hover);
+}
+/* A landed strike wears the heat ramp's cold crimson — the same color a MISS floats in. */
+.strike-pip.hit {
+  background: rgb(255, 28, 84);
+}

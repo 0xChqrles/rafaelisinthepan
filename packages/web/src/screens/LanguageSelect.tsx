@@ -1,10 +1,10 @@
 import Flag from '../components/Flag';
-import { LANGS, pathForLang, resolveHomeLang } from '../langs';
+import { LANGS, pathForMode, resolveHomeLang } from '../langs';
 import { navigate } from '../routing';
 import useToday from '../hooks/useToday';
 import { progressColor } from '@whippin/shared';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
-import { statusOf, srStatus, type Status } from '../state/status';
+import { statusOf, wordStatusOf, srStatus, type Status } from '../state/status';
 // Bundled like the flags (small enough to inline as a data URI — no extra request).
 import logo from '../assets/logo-blue.png';
 
@@ -37,7 +37,11 @@ function StatusStrip({ status }: { status: Status }) {
 export default function LanguageSelect() {
   const dayNumber = useToday();
   const rounds = useGameStore((s) => s.rounds);
+  const wordRounds = useGameStore((s) => s.wordRounds);
   const lastLang = useGameStore((s) => s.lastLang);
+  // A card lands on the LAST-PLAYED MODE (#156, the same rule as the `/` redirect), so
+  // its status strip reads that mode's round — the day the tap will actually open.
+  const mode = useGameStore((s) => s.lastMode) ?? 'sentence';
   // This screen has no puzzle to take a language from; its chrome follows the same
   // resolution as the `/` redirect (last played, else browser, else English).
   const uiLang = resolveHomeLang(lastLang, navigator.language);
@@ -53,14 +57,17 @@ export default function LanguageSelect() {
       </h1>
       <div className="lang-list">
         {LANGS.map(({ code, native }) => {
-          const status = statusOf(rounds[roundKeyForDay(dayNumber, code)]);
+          const status =
+            mode === 'word'
+              ? wordStatusOf(wordRounds[roundKeyForDay(dayNumber, code, 'word')])
+              : statusOf(rounds[roundKeyForDay(dayNumber, code)]);
           return (
             <button
               key={code}
               type="button"
               className="lang-card"
               aria-label={`${native}${srStatus(uiLang, status)}`}
-              onClick={() => navigate(pathForLang(code))}
+              onClick={() => navigate(pathForMode(code, mode))}
             >
               <Flag code={code} className="lang-card-flag" />
               <span className="lang-card-name">{native}</span>

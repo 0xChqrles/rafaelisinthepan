@@ -45,34 +45,37 @@ import useModalDismiss from '../hooks/useModalDismiss';
 // A connector carries the distance between the two stations it joins: `LINK_SPAN` px per full
 // dq scale, floored so two neighbours never collide and capped so the cold tail cannot push the
 // destination off screen. The floor and the cap are what make this a line and not a map.
-const LINK_MIN = 14;
+// Exported drawing constants/helpers below are shared with Word mode's board (#156,
+// components/WordBoard.tsx) — a SIBLING drawing that reuses this map's visual grammar
+// (the .route-* CSS, the lanes, the junctions) without reusing the modal.
+export const LINK_MIN = 14;
 const LINK_MAX = 92;
 const LINK_SPAN = 300;
 // The broken trace is drawn from ONE repeating unit: DASH px of line, then DASH_GAP px of
 // nothing. It is handed to CSS as well (`--dash`, `--dash-period`), because the gradient that
 // paints the unit and the height that has to be a whole number of it cannot be allowed to
 // disagree.
-const DASH = 5;
+export const DASH = 5;
 const DASH_GAP = 8;
-const DASH_PERIOD = DASH + DASH_GAP;
+export const DASH_PERIOD = DASH + DASH_GAP;
 // A dashed run is a whole number of units PLUS its closing dash. Any other height cuts the last
 // unit wherever it happens to fall, and the stub lands exactly where the trace meets the solid
 // rail — a 3px sliver of gap against a station reads as a rendering slip, not as a broken line.
 // Snapped, both ends are clean: the run opens on a full dash and closes on one.
-const dashedRun = (px: number) =>
+export const dashedRun = (px: number) =>
   Math.max(1, Math.round((px - DASH) / DASH_PERIOD)) * DASH_PERIOD + DASH;
 
 // The run from the merge to the terminus: the lanes have JOINED, and one SOLID line leads to
 // the word (decided 2026-08-04, superseding the dashed "identity leap" — the routes should
 // visibly LEAD to the word, and a broken trace read as the line not quite reaching it).
-const LEAP_H = 56;
+export const LEAP_H = 56;
 // The cold end of the line, above the first station: it always continues into the words that
 // have no distance at all, whether or not this round produced any. Not a distance, so not a
 // solid line — the map's one remaining broken trace.
-const TAIL_H = dashedRun(34); // 31
+export const TAIL_H = dashedRun(34); // 31
 // Where the trunk splits into lanes, and where they merge back into the word. Its own fixed
 // minimum, since it draws a shape rather than a gap.
-const JUNCTION_H = 34;
+export const JUNCTION_H = 34;
 // How far short of the screen edge the "you are here" row parks — flush against it reads as
 // clipped rather than pinned. It is one number in three places (the CSS offsets, the opening
 // scroll and the parked test), so it is declared here and handed to CSS as `--stick-inset`.
@@ -86,7 +89,7 @@ const STICK_SLACK = 1;
 
 // A word you have not found — the destination, or a station of the censored final approach.
 // FIXED width: a placeholder that grew with the word would leak its length.
-const UNKNOWN = '???';
+export const UNKNOWN = '???';
 
 // How far into the SCROLLED CONTENT a row sits — the one number the sticky row's natural place,
 // the opening scroll and the parked test are all expressed in.
@@ -135,9 +138,9 @@ function offsetWithin(el: HTMLElement, scroller: HTMLElement): number {
 // have to agree exactly. Lane centres are `LANE_X0 + road * LANE_GAP`, so a LANE_W line is the
 // band [x - LANE_W/2, x + LANE_W/2] and the rail column is exactly wide enough for the outer
 // two — the gradient's last band lands inside it and the next one falls outside, clipped.
-const LANE_GAP = 22;
-const LANE_X0 = 15.5;
-const LANE_W = 5;
+export const LANE_GAP = 22;
+export const LANE_X0 = 15.5;
+export const LANE_W = 5;
 // One color per lane, as vivid as the rest of the app — a metro line's whole point is that you
 // can tell it from the next one at a glance. The hues are lifted from the progress ramp's own
 // stops (`shared/progressColor.ts`), four of them far apart, so the map speaks the app's palette
@@ -154,14 +157,14 @@ const LANE_W = 5;
 // — so the colors a player meets in the lesson are the ones this map speaks later.)
 export const LANE_COLORS = ['#ef4f97', '#2ad2eb', '#883ceb', '#23dc91'];
 
-function laneX(road: number): number {
+export function laneX(road: number): number {
   return LANE_X0 + road * LANE_GAP;
 }
 
 // The rail's lines, as one gradient: a hard-stop band per lane, in that lane's tint. Built here
 // (not in CSS) because the number of lanes is data — and because painting every lane in one
 // background is what lets a single element carry a whole cross-section of the line.
-function laneLines(lanes: number): string {
+export function laneLines(lanes: number): string {
   const stops: string[] = [];
   for (let road = 0; road < lanes; road += 1) {
     const color = LANE_COLORS[road % LANE_COLORS.length];
@@ -177,14 +180,14 @@ function laneLines(lanes: number): string {
 // a set of parallel lines reads as a frame drawn AROUND them, where two colored halves read as
 // what they are, the outer lanes turning in toward the trunk. With more than three roads the
 // inner lanes' elbows hide under the outer ones, which is what overlapping tracks do anyway.
-function busGradient(lanes: number, split: number): string {
+export function busGradient(lanes: number, split: number): string {
   const left = LANE_COLORS[0];
   const right = LANE_COLORS[(lanes - 1) % LANE_COLORS.length];
   const at = `${(split * 100).toFixed(2)}%`;
   return `linear-gradient(90deg, ${left} 0 ${at}, ${right} ${at} 100%)`;
 }
 
-function linkHeight(dqA: number, dqB: number): number {
+export function linkHeight(dqA: number, dqB: number): number {
   const span = (Math.abs(dqA - dqB) / DQ_MAX) * LINK_SPAN;
   return Math.round(Math.min(LINK_MAX, Math.max(LINK_MIN, span)));
 }
@@ -196,14 +199,14 @@ function linkHeight(dqA: number, dqB: number): number {
 // The divisor is baked as a literal rather than passed as a custom property, so no calc() has
 // to divide by a var. Below the floor the CSS `overflow-wrap` still catches it.
 const WORD_MIN_PX = 8;
-function fitWord(word: string, max: number): string {
+export function fitWord(word: string, max: number): string {
   return `clamp(${WORD_MIN_PX}px, calc(var(--wordw) / ${Math.max(1, word.length)}), ${max}px)`;
 }
 // Type sizes per station state: the destination reads as a headline, "you are here" a step
 // above the rest of the line, everything else at the line's own size.
-const ARRIVAL_PX = 24;
+export const ARRIVAL_PX = 24;
 const HERE_PX = 17;
-const STATION_PX = 15;
+export const STATION_PX = 15;
 
 // One row of the line, FARTHEST first. `hidden` stations are real positions with the word
 // withheld; the model hands them over separately and they interleave by rank.
@@ -231,7 +234,7 @@ function stationsOf(model: RouteModel): Station[] {
 // The trunk splitting into lanes (and, flipped, the lanes merging into the word). Orthogonal
 // only — a trunk stub, a bus across the lanes, then the lanes themselves. Unlabelled: the shape
 // IS the statement, and naming it added a word the map does not need.
-function Junction({ height, converge }: { height: number; converge?: boolean }) {
+export function Junction({ height, converge }: { height: number; converge?: boolean }) {
   return (
     <div className={`route-station route-junction${converge ? ' converge' : ''}`} style={{ height }}>
       <span className="route-rank" />

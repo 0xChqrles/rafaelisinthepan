@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { RuntimeHole } from '@whippin/shared';
-import { isLang } from '../langs';
+import { isLang, type Mode } from '../langs';
 
 // A round is identified by its `roundKey` = (server day, language). The store keeps a
 // MAP of rounds keyed by this string so progress in one language survives switching to
@@ -23,16 +23,21 @@ export interface RoundProgress {
   progress: number;
 }
 
-// The canonical round key: (server day, language). Kept here so Game (which builds it)
-// and the selector (which looks it up per language) agree byte-for-byte.
-export function roundKeyForDay(dayNumber: number, lang: string): string {
-  return `d:${dayNumber}:${lang}`;
+// The canonical round key: (server day, language, MODE — #156: the two dailies would
+// otherwise collide on one key). Kept here so the game screens (which build it) and the
+// selector/archive (which look it up per language) agree byte-for-byte. Sentence rounds
+// keep their historical `d:` prefix; Word mode rounds live under `w:` (in their own map,
+// `wordRounds` — the two shapes differ).
+export function roundKeyForDay(dayNumber: number, lang: string, mode: Mode = 'sentence'): string {
+  return `${mode === 'word' ? 'w' : 'd'}:${dayNumber}:${lang}`;
 }
 
 // The dayNumber a day-keyed round belongs to, or null for a legacy non-day key. Orders
 // day rounds newest-first for the retention cap, and marks legacy rounds for dropping.
+// Both prefixes parse — the sentence and word maps are separate, but they share this
+// helper for their caps.
 function dayNumberOf(key: string): number | null {
-  const m = /^d:(\d+):/.exec(key);
+  const m = /^[dw]:(\d+):/.exec(key);
   return m ? Number(m[1]) : null;
 }
 
@@ -78,6 +83,38 @@ function capDayRounds(
   return out;
 }
 
+// One Word mode round (#156). `tried` is the SOURCE OF TRUTH — the counted guesses
+// (claims and strikes, folded, in order; free guesses never enter it), from which the
+// whole run replays (game/wordGame.ts replayWordRun). `claimed`/`ended` are CACHED
+// derived values so the archive/selector can badge a day WITHOUT loading its rank map —
+// like RoundProgress.progress, never the source of truth. `word` is the day's word slug:
+// a republished different word under the same (day, lang) key resets the round instead
+// of replaying a stale log against the new map.
+export interface WordRoundProgress {
+  word: string;
+  tried: string[];
+  claimed: number;
+  ended: boolean;
+}
+
+// Enforce the word-round cap, mirroring capDayRounds below.
+function capWordRounds(
+  rounds: Record<string, WordRoundProgress>,
+  activeKey: string,
+): Record<string, WordRoundProgress> {
+  const keys = Object.keys(rounds);
+  if (keys.length <= MAX_DAY_ROUNDS) return rounds;
+  const survivors = new Set(
+    keys.sort((a, b) => dayNumberOf(b)! - dayNumberOf(a)!).slice(0, MAX_DAY_ROUNDS),
+  );
+  survivors.add(activeKey);
+  const out: Record<string, WordRoundProgress> = {};
+  for (const [k, v] of Object.entries(rounds)) {
+    if (survivors.has(k)) out[k] = v;
+  }
+  return out;
+}
+
 // Do the stored round's holes still describe THIS puzzle? A round key is only
 // (day, lang), so re-publishing a DIFFERENT sentence for the same day+lang keeps the key
 // but changes the holes. Rehydrating the old holes then feeds secrets that are absent
@@ -94,9 +131,16 @@ interface PersistedState {
   // All rounds keyed by roundKey. Day rounds accumulate across days (archive history),
   // bounded to the MAX_DAY_ROUNDS most recent by ensureRound.
   rounds: Record<string, RoundProgress>;
+  // Word mode rounds (#156), keyed by roundKeyForDay(day, lang, 'word'). Their own map
+  // because the shape differs from a sentence round's; same retention policy.
+  wordRounds: Record<string, WordRoundProgress>;
   // Last-played language: seeds the `/` redirect so a return visit lands where you
   // last played (falls back to the browser language, then English).
   lastLang: string | null;
+  // Last-played MODE (#156): arrival lands on it (like lastLang) — the `/` redirect
+  // sends a word-mode player to /<lang>/word. Switching modes is a deliberate act
+  // (the header toggle); this only decides where "/" lands.
+  lastMode: Mode | null;
   // The onboarding tutorial (#51) has been completed or skipped. Global, not
   // per-language — the mechanic is the same in both.
   onboarded: boolean;
@@ -113,6 +157,10 @@ interface GameState extends PersistedState {
   // load from the active puzzle's (day, lang). The mutating actions target rounds[activeKey].
   activeKey: string | null;
 
+  // Word mode's twin (#156): the word round being played. NOT persisted; set by
+  // ensureWordRound. recordWordGuess targets wordRounds[activeWordKey].
+  activeWordKey: string | null;
+
   // The tutorial currently on screen (transient, NOT persisted): 'first' = the run a
   // newcomer accepted from the invitation, 'replay' = summoned via the header's "?".
   // It lives in the store (not GameRoute state) so it survives the /select
@@ -124,6 +172,9 @@ interface GameState extends PersistedState {
 
   // Remember the last-played language (drives the `/` redirect). Ignores non-languages.
   setLastLang: (lang: string) => void;
+
+  // Remember the last-played mode (#156, drives where `/` lands).
+  setLastMode: (mode: Mode) => void;
 
   // Mark the onboarding tutorial as seen (finish AND skip both count — never re-nag).
   setOnboarded: () => void;
@@ -147,6 +198,17 @@ interface GameState extends PersistedState {
   // every day round (the archive needs history), drops any legacy non-day round, then
   // bounds the map with the MAX_DAY_ROUNDS most-recent cap.
   ensureRound: (key: string, initialHoles: RuntimeHole[]) => void;
+
+  // Reconcile the persisted WORD rounds to `key` (#156): a matching key playing the SAME
+  // word rehydrates untouched; a new key — or a republished different word under the same
+  // (day, lang) — starts fresh. Same retention/cap policy as ensureRound.
+  ensureWordRound: (key: string, word: string) => void;
+
+  // Count one Word mode guess (a claim or a strike — free guesses never reach here) on
+  // the active word round: append it to `tried` and cache the caller-derived
+  // claimed/ended so the status surfaces need no rank map. The caller (WordGame) derives
+  // both by replaying the appended log through the pure model (replayWordRun).
+  recordWordGuess: (typed: string, claimed: number, ended: boolean) => void;
 
   // Count a valid guess on the active round. Deduped by the caller-supplied canonical
   // identity (#104: inflections of one word are ONE try — Game passes guessKey over the
@@ -192,8 +254,20 @@ function freshRound(initialHoles: RuntimeHole[]): RoundProgress {
 //     RETIRES it with the auto-open itself (#155: the onboarding now ends by tapping a word,
 //     so the map no longer introduces itself mid-round). Like the retired keyboard `layout`
 //     before it, picking only the current fields silently drops it from any older blob.
+//   v6 adds Word mode (#156): the `wordRounds` map and `lastMode`. Older blobs get an
+//     empty map and no mode preference (arrival stays on the sentence until a word round
+//     is played).
 export function migratePersisted(persisted: unknown, version: number): PersistedState {
-  if (version < 1) return { rounds: {}, lastLang: null, onboarded: false, solvedDays: {} };
+  if (version < 1) {
+    return {
+      rounds: {},
+      wordRounds: {},
+      lastLang: null,
+      lastMode: null,
+      onboarded: false,
+      solvedDays: {},
+    };
+  }
   const p = persisted as Partial<PersistedState>;
   const rounds = p.rounds ?? {};
   const lastLang = p.lastLang ?? null;
@@ -202,17 +276,22 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
       ? p.onboarded
       : Object.keys(rounds).length > 0 || lastLang != null;
   const solvedDays = p.solvedDays ?? {};
-  return { rounds, lastLang, onboarded, solvedDays };
+  const wordRounds = p.wordRounds ?? {};
+  const lastMode = p.lastMode === 'word' || p.lastMode === 'sentence' ? p.lastMode : null;
+  return { rounds, wordRounds, lastLang, lastMode, onboarded, solvedDays };
 }
 
 export const useGameStore = create<GameState>()(
   persist(
     (set, get) => ({
       rounds: {},
+      wordRounds: {},
       lastLang: null,
+      lastMode: null,
       onboarded: false,
       solvedDays: {},
       activeKey: null,
+      activeWordKey: null,
       tutorialOpen: null,
 
       openTutorial: (kind) => set({ tutorialOpen: kind }),
@@ -221,6 +300,11 @@ export const useGameStore = create<GameState>()(
       setLastLang: (lang) => {
         if (!isLang(lang) || get().lastLang === lang) return;
         set({ lastLang: lang });
+      },
+
+      setLastMode: (mode) => {
+        if (get().lastMode === mode) return;
+        set({ lastMode: mode });
       },
 
       setOnboarded: () => {
@@ -263,6 +347,37 @@ export const useGameStore = create<GameState>()(
               : freshRound(initialHoles);
           // Bound the map: evict the oldest day rounds beyond MAX_DAY_ROUNDS.
           return { activeKey: key, rounds: capDayRounds(kept, key) };
+        }),
+
+      ensureWordRound: (key, word) =>
+        set((s) => {
+          // Same retention story as ensureRound: keep every day-keyed word round (the
+          // archive rehydrates past days), drop anything else, bound the map.
+          const kept: Record<string, WordRoundProgress> = {};
+          for (const [k, v] of Object.entries(s.wordRounds)) {
+            if (dayNumberOf(k) !== null) kept[k] = v;
+          }
+          const existing = s.wordRounds[key];
+          kept[key] =
+            existing && existing.word === word
+              ? existing
+              : { word, tried: [], claimed: 0, ended: false };
+          return { activeWordKey: key, wordRounds: capWordRounds(kept, key) };
+        }),
+
+      recordWordGuess: (typed, claimed, ended) =>
+        set((s) => {
+          const key = s.activeWordKey;
+          if (!key) return {};
+          const round = s.wordRounds[key];
+          if (!round || round.ended) return {};
+          if (round.tried.includes(typed)) return {};
+          return {
+            wordRounds: {
+              ...s.wordRounds,
+              [key]: { ...round, tried: [...round.tried, typed], claimed, ended },
+            },
+          };
         }),
 
       recordGuess: (typed, keyOf = (t) => t) =>
@@ -319,14 +434,16 @@ export const useGameStore = create<GameState>()(
     {
       name: 'whippin-round',
       storage,
-      version: 5, // v5: - routeSeen (see migratePersisted for the upgrade path)
+      version: 6, // v6: + wordRounds, lastMode (#156 — see migratePersisted)
       migrate: migratePersisted,
-      // Persist rounds, last language, the onboarding flag and the solved-day sets; activeKey
-      // and the actions are transient. Each language's solved-day set is capped to
-      // MAX_SOLVED_DAYS on write.
+      // Persist rounds (both modes'), last language/mode, the onboarding flag and the
+      // solved-day sets; the active keys and the actions are transient. Each language's
+      // solved-day set is capped to MAX_SOLVED_DAYS on write.
       partialize: (s): PersistedState => ({
         rounds: s.rounds,
+        wordRounds: s.wordRounds,
         lastLang: s.lastLang,
+        lastMode: s.lastMode,
         onboarded: s.onboarded,
         solvedDays: capAllSolvedDays(s.solvedDays),
       }),

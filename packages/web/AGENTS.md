@@ -144,6 +144,30 @@ it to the local store — see `packages/backend/AGENTS.md`).
 
 *(Safe to update without touching the invariants above.)*
 
+- **Word mode (#156, the second daily):** one app, two faces — `/<lang>/word` (plus
+  `/word/<date>` and `/word/archive`, same date rules) plays the day's #154 artifact:
+  the word is PUBLIC and the player claims its top-`CLAIM_ZONE` (150) groups until
+  `STRIKES_TO_END` (3) CONSECUTIVE incorrect guesses land; the score is the claim
+  count. Incorrect = a valid vocab word, not already tried, ranked outside the zone
+  (a ranked near miss shows its rank); not-in-vocab and group-level repeats (#104) are
+  free. The pure rules live in `game/wordGame.ts` (`judgeWordGuess` / `wordGuessKey` /
+  `replayWordRun` — a round replays from its counted-guess log exactly like the
+  sentence game), the board model in `game/wordBoard.ts` (a SIBLING of `buildRoute`:
+  no departure, no "you are here", the whole zone censored until claimed, the run's
+  end revealing the field as the post-mortem), and the surface in `screens/WordGame.tsx`
+  + `components/WordBoard.tsx`, which reuses the route map's `.route-*` drawing grammar
+  and RouteModal's exported geometry helpers so the two surfaces cannot drift (the ONE
+  CSS difference: `.word-frame` re-derives `--wordw` minus the app's page inset, since
+  the board lives in the page rather than a full-bleed dialog). The end screen
+  (`components/WordEndScreen.tsx`) is the named `<n> WORDS/MOTS` count + SHARE via the
+  v3 word token. Identity is mode-addressed everywhere: `roundKeyForDay(day, lang,
+  'word')` = `w:` keys into the store's own `wordRounds` map (persist v6; `ensureWordRound`
+  resets on a republished different word), `lastMode` decides where `/` lands (like
+  `lastLang`; the header toggle — `mode-btn`, icons naming the TARGET mode — is the
+  deliberate switch), and the archive/selector read word statuses via `wordStatusOf`
+  (ended = done-for-the-day gold; live = claimed/zone %). Word runs never touch the
+  streak, fire no new analytics events, and have no benchmark opponents (out of scope
+  per the issue).
 - **Route modal (#117, Part 3 of #115):** tapping a HOLE opens its neighborhood drawn as a
   journey. `game/route.ts` is the pure model (`buildRoute`, contract-tested) and
   `components/RouteModal.tsx` renders it; `Game` owns the open state so the guess prompt can

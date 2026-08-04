@@ -46,10 +46,13 @@ beforeEach(() => {
   useGameStore.setState(
     {
       rounds: {},
+      wordRounds: {},
       lastLang: null,
+      lastMode: null,
       onboarded: false,
       solvedDays: {},
       activeKey: null,
+      activeWordKey: null,
     },
     false,
   );
@@ -59,6 +62,62 @@ describe('roundKeyForDay', () => {
   it('is (day, lang) and matches the documented format', () => {
     expect(roundKeyForDay(5, 'fr')).toBe('d:5:fr');
     expect(roundKeyForDay(6, 'en')).toBe('d:6:en');
+  });
+  it('carries the MODE (#156) — the two dailies can never share a key', () => {
+    expect(roundKeyForDay(5, 'fr', 'word')).toBe('w:5:fr');
+    expect(roundKeyForDay(5, 'fr', 'sentence')).toBe('d:5:fr');
+    expect(roundKeyForDay(5, 'fr', 'word')).not.toBe(roundKeyForDay(5, 'fr'));
+  });
+});
+
+describe('word rounds (#156) — ensureWordRound / recordWordGuess', () => {
+  it('initializes a fresh word round and makes it active, separate from sentence rounds', () => {
+    const { ensureRound, ensureWordRound } = useGameStore.getState();
+    ensureRound('d:5:fr', freshHoles());
+    ensureWordRound('w:5:fr', 'phare');
+    const s = useGameStore.getState();
+    expect(s.activeWordKey).toBe('w:5:fr');
+    expect(s.wordRounds['w:5:fr']).toEqual({ word: 'phare', tried: [], claimed: 0, ended: false });
+    // The sentence round is untouched — the two dailies' progress never collide.
+    expect(s.rounds['d:5:fr']).toBeDefined();
+    expect(s.activeKey).toBe('d:5:fr');
+  });
+
+  it('rehydrates the SAME key playing the same word; a republished different word resets', () => {
+    const { ensureWordRound, recordWordGuess } = useGameStore.getState();
+    ensureWordRound('w:5:fr', 'phare');
+    recordWordGuess('mer', 1, false);
+    ensureWordRound('w:5:fr', 'phare');
+    expect(useGameStore.getState().wordRounds['w:5:fr'].tried).toEqual(['mer']);
+    ensureWordRound('w:5:fr', 'ocean'); // republished word
+    expect(useGameStore.getState().wordRounds['w:5:fr']).toEqual({
+      word: 'ocean',
+      tried: [],
+      claimed: 0,
+      ended: false,
+    });
+  });
+
+  it('recordWordGuess appends counted guesses, caches claimed/ended, refuses after the end', () => {
+    const { ensureWordRound, recordWordGuess } = useGameStore.getState();
+    ensureWordRound('w:5:fr', 'phare');
+    recordWordGuess('mer', 1, false);
+    recordWordGuess('loin', 1, true); // the ending strike
+    let round = useGameStore.getState().wordRounds['w:5:fr'];
+    expect(round).toEqual({ word: 'phare', tried: ['mer', 'loin'], claimed: 1, ended: true });
+    recordWordGuess('tard', 2, true); // past the end — must not enter the log
+    round = useGameStore.getState().wordRounds['w:5:fr'];
+    expect(round.tried).toEqual(['mer', 'loin']);
+  });
+
+  it('keeps past days\' word rounds when a new day flips (archive history)', () => {
+    const { ensureWordRound, recordWordGuess } = useGameStore.getState();
+    ensureWordRound('w:5:fr', 'phare');
+    recordWordGuess('mer', 1, false);
+    ensureWordRound('w:6:fr', 'foret');
+    const s = useGameStore.getState();
+    expect(s.wordRounds['w:5:fr']?.tried).toEqual(['mer']);
+    expect(s.wordRounds['w:6:fr']).toEqual({ word: 'foret', tried: [], claimed: 0, ended: false });
   });
 });
 
@@ -376,7 +435,9 @@ describe('migratePersisted — persisted-blob upgrades', () => {
   it('discards a v0 blob entirely (one-time reset)', () => {
     expect(migratePersisted({ roundKey: 'x', holes: [] }, 0)).toEqual({
       rounds: {},
+      wordRounds: {},
       lastLang: null,
+      lastMode: null,
       onboarded: false,
       solvedDays: {},
     });
@@ -406,7 +467,9 @@ describe('migratePersisted — persisted-blob upgrades', () => {
     );
     expect(out).toEqual({
       rounds: {},
+      wordRounds: {},
       lastLang: 'en',
+      lastMode: null,
       onboarded: true,
       solvedDays: {},
     });
@@ -417,7 +480,14 @@ describe('migratePersisted — persisted-blob upgrades', () => {
   it('v2 -> v3 adds an empty solvedDays and preserves rounds/lastLang/onboarded', () => {
     const rounds = { 'd:5:fr': { holes: freshHoles(), guessCount: 2, tried: ['a', 'b'], progress: 10 } };
     const out = migratePersisted({ rounds, lastLang: 'fr', onboarded: true }, 2);
-    expect(out).toEqual({ rounds, lastLang: 'fr', onboarded: true, solvedDays: {} });
+    expect(out).toEqual({
+      rounds,
+      wordRounds: {},
+      lastLang: 'fr',
+      lastMode: null,
+      onboarded: true,
+      solvedDays: {},
+    });
   });
 
   // v4 -> v5 (#155): `routeSeen` armed the one-time first-solve auto-open, which went away
@@ -431,7 +501,29 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       { rounds, lastLang: 'fr', onboarded: true, solvedDays, routeSeen: true },
       4,
     );
-    expect(out).toEqual({ rounds, lastLang: 'fr', onboarded: true, solvedDays });
+    expect(out).toEqual({
+      rounds,
+      wordRounds: {},
+      lastLang: 'fr',
+      lastMode: null,
+      onboarded: true,
+      solvedDays,
+    });
+  });
+
+  // v5 -> v6 (#156): Word mode adds its own rounds map and the last-played mode. An
+  // older blob gets an empty map + no preference; a v6 blob keeps both.
+  it('v5 -> v6 adds empty wordRounds + null lastMode; a v6 blob keeps both', () => {
+    const out = migratePersisted({ rounds: {}, lastLang: 'fr', onboarded: true, solvedDays: {} }, 5);
+    expect(out.wordRounds).toEqual({});
+    expect(out.lastMode).toBeNull();
+    const wordRounds = { 'w:5:fr': { word: 'phare', tried: ['mer'], claimed: 1, ended: false } };
+    const kept = migratePersisted(
+      { rounds: {}, wordRounds, lastLang: 'fr', lastMode: 'word', onboarded: true, solvedDays: {} },
+      6,
+    );
+    expect(kept.wordRounds).toEqual(wordRounds);
+    expect(kept.lastMode).toBe('word');
   });
 
   it('keeps an existing solvedDays across the upgrade (no backfill, but no data loss)', () => {

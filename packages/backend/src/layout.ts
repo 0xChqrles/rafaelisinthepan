@@ -27,11 +27,16 @@ export function isValidDate(date: string): boolean {
   );
 }
 
-// The store key (also the basename, the layout is flat) for a (game day, language):
-// "<date>.<lang>.json". Used by the readers to GetObject/readFile directly and by
-// `publish` to write — one key per (date, lang), so there is never ambiguity.
-export function storeKey(date: string, lang: string): string {
-  return `${date}.${lang}.json`;
+// The two daily artifact types (#156): the sentence puzzle, and Word mode's single-word
+// artifact (#154). Both are day-addressed the same way; the mode only picks the key.
+export type PuzzleMode = 'sentence' | 'word';
+
+// The store key (also the basename, the layout is flat) for a (game day, language, mode):
+// "<date>.<lang>.json" for the sentence puzzle, "<date>.<lang>.word.json" for the Word
+// mode artifact (#154/#156). Used by the readers to GetObject/readFile directly and by
+// `publish` to write — one key per (date, lang, mode), so there is never ambiguity.
+export function storeKey(date: string, lang: string, mode: PuzzleMode = 'sentence'): string {
+  return mode === 'word' ? `${date}.${lang}.word.json` : `${date}.${lang}.json`;
 }
 
 // Default local store root: packages/backend/.local-store (gitignored). Override with

@@ -1,4 +1,5 @@
-import type { RoundProgress } from './gameStore';
+import type { RoundProgress, WordRoundProgress } from './gameStore';
+import { CLAIM_ZONE } from '../game/wordGame';
 import { t } from '../i18n';
 
 // A device-local play status for one (day, lang), read straight from the persisted round
@@ -15,6 +16,16 @@ export function statusOf(round: RoundProgress | undefined): Status {
   if (!round || round.guessCount === 0) return { kind: 'none' };
   if (round.holes.length > 0 && round.holes.every((h) => h.rank === 0)) return { kind: 'solved' };
   return { kind: 'progress', pct: Math.round(round.progress) };
+}
+
+// Word mode's status (#156), same visual grammar off the CACHED derived fields: an
+// ENDED run is the day played to its end ("solved" — done for the day, gold), a live
+// run with counted guesses is in progress at the fraction of the zone claimed (low
+// numbers are honest: the field is deliberately unclaimable in full).
+export function wordStatusOf(round: WordRoundProgress | undefined): Status {
+  if (!round || round.tried.length === 0) return { kind: 'none' };
+  if (round.ended) return { kind: 'solved' };
+  return { kind: 'progress', pct: Math.round((100 * round.claimed) / CLAIM_ZONE) };
 }
 
 // The screen-reader status fragment appended to a card/cell's aria-label (" — solved",

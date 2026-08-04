@@ -12,9 +12,12 @@ import { readFile } from 'node:fs/promises';
 import { Resvg, initWasm } from '@resvg/resvg-wasm';
 import {
   renderCardSvg,
+  renderWordCardSvg,
   dateForDayNumber,
   type CardData,
   type ShareResult,
+  type WordCardData,
+  type WordShareResult,
   CARD_WIDTH,
   CARD_HEIGHT,
 } from '@whippin/shared';
@@ -37,12 +40,21 @@ function ensureReady(): Promise<Uint8Array> {
   return ready;
 }
 
-export async function renderCardPng(data: CardData): Promise<Buffer> {
+async function rasterize(svg: string): Promise<Buffer> {
   const font = await ensureReady();
-  const resvg = new Resvg(renderCardSvg(data), {
+  const resvg = new Resvg(svg, {
     font: { fontBuffers: [font], loadSystemFonts: false, defaultFontFamily: CARD_FONT },
   });
   return Buffer.from(resvg.render().asPng());
+}
+
+export async function renderCardPng(data: CardData): Promise<Buffer> {
+  return rasterize(renderCardSvg(data));
+}
+
+// Word mode's card (#156): same rasterizer, its own SVG (claim count + date, no ruler).
+export async function renderWordCardPng(data: WordCardData): Promise<Buffer> {
+  return rasterize(renderWordCardSvg(data));
 }
 
 const escapeAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -69,18 +81,44 @@ export function renderShareHtml(token: string, result: ShareResult, base: string
   // points to maximize when lower is better. The day is its CALENDAR DATE, like the card
   // draws and the click-through below addresses (decided 2026-08-03, replacing "#<index>"):
   // one day, one spelling of it everywhere a reader can see it.
-  const title = escapeAttr(
-    `Whippin AI ${dateForDayNumber(result.dayNumber)} — ${result.score} ${
-      result.score === 1 ? L.one : L.many
-    }`,
-  );
-  const image = escapeAttr(`${base}/og/${token}.png`);
+  const title = `Whippin AI ${dateForDayNumber(result.dayNumber)} — ${result.score} ${
+    result.score === 1 ? L.one : L.many
+  }`;
   // Click-through lands on the SHARED day, not today (#55): the token carries the
   // puzzle's dayNumber, and past days are playable at /<lang>/<YYYY-MM-DD>, so a shared
   // ARCHIVE result opens that archived date (a shared "today" result opens today's date,
   // which the front routes identically to /<lang>). Safe: base is server-set, lang is
   // /^[a-z]{2}$/, and dateForDayNumber emits only digits + hyphens.
   const gameUrl = `${base}/${lang}/${dateForDayNumber(result.dayNumber)}`;
+  return sharePage(token, base, lang, title, gameUrl, L.play);
+}
+
+// Word mode's share page (#156): the same template, its own title ("N words" — higher is
+// better here) and click-through, which lands on the shared day's WORD route so the link
+// opens the daily the result belongs to.
+export function renderWordShareHtml(token: string, result: WordShareResult, base: string): string {
+  const lang = /^[a-z]{2}$/.test(result.lang) ? result.lang : 'en'; // sanitize (token-sourced)
+  const L =
+    lang === 'fr'
+      ? { one: 'mot', many: 'mots', play: 'Jouer à Whippin AI' }
+      : { one: 'word', many: 'words', play: 'Play Whippin AI' };
+  const title = `Whippin AI ${dateForDayNumber(result.dayNumber)} — ${result.score} ${
+    result.score === 1 ? L.one : L.many
+  }`;
+  const gameUrl = `${base}/${lang}/word/${dateForDayNumber(result.dayNumber)}`;
+  return sharePage(token, base, lang, title, gameUrl, L.play);
+}
+
+function sharePage(
+  token: string,
+  base: string,
+  lang: string,
+  rawTitle: string,
+  gameUrl: string,
+  playLabel: string,
+): string {
+  const title = escapeAttr(rawTitle);
+  const image = escapeAttr(`${base}/og/${token}.png`);
   return `<!doctype html>
 <html lang="${lang}">
 <head>
@@ -97,6 +135,6 @@ export function renderShareHtml(token: string, result: ShareResult, base: string
 <meta name="twitter:title" content="${title}">
 <meta name="twitter:image" content="${image}">
 </head>
-<body><a href="${escapeAttr(gameUrl)}">${L.play}</a></body>
+<body><a href="${escapeAttr(gameUrl)}">${playLabel}</a></body>
 </html>`;
 }

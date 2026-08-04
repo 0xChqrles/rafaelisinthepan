@@ -42,6 +42,18 @@ const STRINGS = {
   // share card); the share text lowercases these.
   try: { en: 'TRY', fr: 'ESSAI' },
   tries: { en: 'TRIES', fr: 'ESSAIS' },
+  // ---- Word mode (#156): the second daily — claim the day's word's neighborhood until
+  // struck out. Its score unit is likewise NAMED (higher is better here, and "WORDS"
+  // says what was counted).
+  word: { en: 'WORD', fr: 'MOT' },
+  words: { en: 'WORDS', fr: 'MOTS' },
+  // Free-guess feedback: a group-level repeat (#104), and the day's word itself (it is
+  // public — on the board already).
+  wordRepeat: { en: 'already played', fr: 'déjà joué' },
+  wordItself: { en: "that's the word itself", fr: "c'est le mot lui-même" },
+  // The header mode toggle names its TARGET (the mode a tap lands on).
+  ariaWordMode: { en: 'Word mode', fr: 'Mode mot' },
+  ariaSentenceMode: { en: 'Sentence mode', fr: 'Mode phrase' },
   // Deliberately NOT translated (decided 2026-07-24): "YOU" is universal enough, and one
   // label keeps the player's tag identical across languages (lineup + leaderboard).
   you: { en: 'YOU', fr: 'YOU' },
@@ -267,6 +279,33 @@ export function srRouteRoads(lang: string, perRoad: number[], found: number): st
 export function srRouteOffMap(lang: string, words: string[]): string {
   const list = words.join(', ');
   return uiLang(lang) === 'fr' ? `hors carte : ${list}` : `off the map: ${list}`;
+}
+
+// ---- Word mode (#156). The board drawing is decorative like the route map's; these
+// carry it — and the per-guess outcomes — in words.
+export function srWordBoardWord(lang: string, word: string): string {
+  return uiLang(lang) === 'fr' ? `mot du jour : ${word}` : `word of the day: ${word}`;
+}
+
+export function srWordClaim(lang: string, word: string, rank: number, total: number): string {
+  if (uiLang(lang) === 'fr') return `${word} trouvé (rang ${rank}) — ${total} mots`;
+  return `claimed ${word} (rank ${rank}) — ${total} words`;
+}
+
+// A strike: `rank` is the near miss's rank (it teaches where the boundary is), or null
+// for an off-map miss. Names the run's end when this strike ends it.
+export function srWordStrike(
+  lang: string,
+  rank: number | null,
+  strikes: number,
+  max: number,
+  ended: boolean,
+): string {
+  const fr = uiLang(lang) === 'fr';
+  const what = rank == null ? (fr ? 'raté' : 'miss') : fr ? `trop loin : rang ${rank}` : `too far: rank ${rank}`;
+  const count = fr ? `faute ${strikes}/${max}` : `strike ${strikes}/${max}`;
+  const over = ended ? (fr ? ' — partie terminée' : ' — run over') : '';
+  return `${what} — ${count}${over}`;
 }
 
 // Screen-reader mirror of the standings lineup's meaningful events (#81) — the visual
