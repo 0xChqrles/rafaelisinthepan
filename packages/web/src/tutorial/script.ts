@@ -63,8 +63,9 @@ export type TutorialStep =
   // swaps to the next cloud. `themeCopyKeys` is ordered by the map's road ids — road 0
   // holds rank 1 — and must name every road the board's map actually ships
   // (scripts.test.ts). After the last theme the close shows the ROUTES TEASER — the themes'
-  // colored lines with scroll chevrons, an abstract glimpse of the map every word offers,
-  // no words on it — `closeCopyKey` states the general principle, and the tray offers PLAY,
+  // colored lines with scroll chevrons and a couple of each theme's words riding them as
+  // stations, a glimpse of the map every word offers — `closeCopyKey` states the general
+  // principle, and the tray offers PLAY,
   // which ends the tutorial. There is no graduation screen, because there is no score to
   // show.
   | { kind: 'tap'; tapCopyKey: UiKey; clickCopyKey: UiKey; themeCopyKeys: UiKey[]; closeCopyKey: UiKey };

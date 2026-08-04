@@ -2948,9 +2948,11 @@ button * {
   color: var(--cloud-c);
   white-space: nowrap;
 }
-/* The close's abstract route-map glimpse (#155): the themes' colored lines — the map's own
-   lane width — with two chevrons saying "this scrolls". No words, no nodes: a signpost to
-   the real map, not the map. */
+/* The close's route-map glimpse (#155): the themes' colored lines at the map's own lane
+   rhythm, each carrying a couple of its words as stations — node on the lane, word beside
+   it, both in the lane's color — plus two chevrons saying "this scrolls". A signpost to the
+   real map, not the map. The rail geometry (5px lines, 22px pitch) is set inline by
+   RoutesTeaser from the map's own constants. */
 .routes-teaser {
   display: flex;
   align-items: center;
@@ -2964,13 +2966,39 @@ button * {
   padding: 8px 0;
   color: var(--muted);
 }
-.teaser-lanes {
+.teaser-map {
+  position: relative;
   display: flex;
-  gap: 17px; /* the map's LANE_GAP minus the line width — same rhythm as the rail */
-  height: 200px;
+  flex-direction: column;
+  padding: 6px 0;
+}
+.teaser-lanes {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--teaser-railw);
+  display: flex;
+  justify-content: space-between;
 }
 .teaser-lanes i {
   width: 5px; /* the map's --line-w */
+}
+.teaser-station {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.t-node {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  transform: translateX(-50%);
+}
+.t-word {
+  margin-left: calc(var(--teaser-railw) + 16px);
+  font-family: var(--vt);
+  font-size: 15px;
+  white-space: nowrap;
+  text-shadow: 2px 2px 0 black;
 }
 
 /* The mix button — the bottom interaction of the demo, standing where the keyboard
