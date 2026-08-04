@@ -2918,6 +2918,11 @@ button * {
 .rt-blue {
   color: var(--accent);
 }
+/* A THEME's name in the coach copy (#155): the color of the cloud it names. The variable is
+   set on the coach box by the Tutorial, which knows which theme is on screen. */
+.rt-theme {
+  color: var(--coach-theme-c, var(--fg));
+}
 .rt-word {
   color: var(--hole);
   white-space: nowrap;
@@ -2942,6 +2947,30 @@ button * {
 .cloud-word {
   color: var(--cloud-c);
   white-space: nowrap;
+}
+/* The close's abstract route-map glimpse (#155): the themes' colored lines — the map's own
+   lane width — with two chevrons saying "this scrolls". No words, no nodes: a signpost to
+   the real map, not the map. */
+.routes-teaser {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+}
+.teaser-arrows {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-self: stretch;
+  padding: 8px 0;
+  color: var(--muted);
+}
+.teaser-lanes {
+  display: flex;
+  gap: 17px; /* the map's LANE_GAP minus the line width — same rhythm as the rail */
+  height: 200px;
+}
+.teaser-lanes i {
+  width: 5px; /* the map's --line-w */
 }
 
 /* The mix button — the bottom interaction of the demo, standing where the keyboard

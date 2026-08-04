@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import Phrase from '../components/Phrase';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import LoadError from '../components/LoadError';
+import { LANE_COLORS } from '../components/RouteModal';
 import ThemeCloud from './ThemeCloud';
+import RoutesTeaser from './RoutesTeaser';
 import TopBar from '../components/TopBar';
 import { HIT_FADE_MS } from '../components/FloatingHit';
 import { RANK_MAX_MS, rankTransitionDuration } from '../components/Hole';
@@ -33,9 +36,10 @@ import { scriptFor } from './scripts';
 //   the real vocabulary (free exploration; a nudge reveals the word after 3 straight MISSes).
 //   Finding it ENDS the lesson on the one concept nothing else teaches: the word they found
 //   is tappable, and the tap REPLACES it with its THEMES — one cloud of themed words at a
-//   time, in the route colors the game's map speaks — while the coach names each; the word
-//   then returns and the tray offers PLAY, which is the graduation. There is no score to
-//   show, so there is no screen for it.
+//   time, in the route colors the game's map speaks — while the coach names each; the close
+//   is an abstract glimpse of the route map (RoutesTeaser) under the general principle, and
+//   PLAY in the tray is the graduation. There is no score to show, so there is no screen
+//   for it.
 //
 // Everything that reacts is the real components with the real timing constants; the scripts
 // are data (./scripts/<lang>.ts) over a REAL generated neighborhood (a pruned #154 artifact),
@@ -299,8 +303,9 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
   // the copy is asking for. The tap swaps the play area from the word to a CLOUD of one
   // theme's words in that route's color (findings 2026-08-04, superseding both the inline
   // route line and its one-road-at-a-time variant: the line was too much information at
-  // once); NEXT THEME swaps clouds — never two on screen — and after the last one the word
-  // returns, the coach states the general principle, and PLAY in the tray is the way out.
+  // once); NEXT THEME swaps clouds — never two on screen — and after the last one the close
+  // shows the abstract routes teaser (the themes' colored lines, a glimpse of the game's
+  // map) while the coach states the general principle, and PLAY in the tray is the way out.
   const [themesOpen, setThemesOpen] = useState(false);
   const [themeStage, setThemeStage] = useState(0);
   const openThemes = useCallback(() => {
@@ -399,9 +404,17 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
       />
 
       {/* The top box: the current explanation, typewritten. Same background as the
-          app, surface border — a dialog, not a modal. */}
+          app, surface border — a dialog, not a modal. While a theme cloud is on screen its
+          NAME in the copy wears the cloud's color ([[t:]] -> --coach-theme-c). */}
       {coachCopy && (
-        <div className="coach">
+        <div
+          className="coach"
+          style={
+            themesOpen && !themesDone
+              ? ({ '--coach-theme-c': LANE_COLORS[themeStage % LANE_COLORS.length] } as CSSProperties)
+              : undefined
+          }
+        >
           <CoachText key={coachCopy} copy={coachCopy} />
         </div>
       )}
@@ -432,9 +445,13 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
               <p className="hint"> </p>
             </div>
           </>
-        ) : themesOpen && !themesDone ? (
+        ) : themesOpen && themesDone ? (
+          // The close: an abstract glimpse of the route map every word offers — the themes'
+          // colored lines and the scroll chevrons, no words — under the general principle.
+          <RoutesTeaser lanes={themeCount} />
+        ) : themesOpen ? (
           // The word gave way to one of its THEMES: a cloud of that theme's words in its
-          // route color. One at a time — the close returns to the word below.
+          // route color. One at a time.
           <ThemeCloud map={rankMap} road={themeStage} startRank={hole.start_rank} />
         ) : (
           <>

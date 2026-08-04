@@ -157,27 +157,27 @@ const STRINGS = {
     fr: 'Trouvé. Clique sur [[b:tropiques]].',
   },
   tutTheme1: {
-    en: 'Close words come in themes. The first: the coast.',
-    fr: 'Les mots proches vont par thèmes. Le premier : le climat.',
+    en: 'Close words come in themes. The first: [[t:the coast]].',
+    fr: 'Les mots proches vont par thèmes. Le premier : [[t:le climat]].',
   },
   tutTheme2: {
-    en: 'Second theme: the deep.',
-    fr: 'Deuxième thème : les îles.',
+    en: 'Second theme: [[t:the deep]].',
+    fr: 'Deuxième thème : [[t:les îles]].',
   },
   tutTheme3: {
-    en: 'Third theme: seafaring.',
-    fr: 'Troisième thème : le globe.',
+    en: 'Third theme: [[t:seafaring]].',
+    fr: 'Troisième thème : [[t:le globe]].',
   },
   // The en string is UNREFERENCED — ocean's board ships three themes — but the parity
   // contract wants both languages; re-author it if an en board ever ships four.
   tutTheme4: {
     en: 'The fourth theme.',
-    fr: 'Quatrième thème : les vacances.',
+    fr: 'Quatrième thème : [[t:les vacances]].',
   },
   tutNextTheme: { en: 'NEXT THEME', fr: 'THÈME SUIVANT' },
   tutThemes: {
-    en: 'Every word has its own themes.',
-    fr: 'Chaque mot a ses thèmes.',
+    en: 'Several themes can live inside the same word.',
+    fr: 'Plusieurs thèmes peuvent exister à travers le même mot.',
   },
   tutPlay: { en: 'PLAY', fr: 'JOUER' },
 } satisfies Record<string, Record<UiLang, string>>;

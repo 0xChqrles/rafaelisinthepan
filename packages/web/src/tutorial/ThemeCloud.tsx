@@ -27,6 +27,14 @@ const SIZE_MIN = 15;
 // out 424px), and the exponent's digits run at sup size, so they count for ~0.7 of a glyph.
 const GLYPH_EM = 0.95;
 const SUP_EM = 0.7;
+// The cloud must also FIT the play area's height — a tall cloud grew the page and made the
+// view scroll (findings 2026-08-04). The whole size ramp scales down on short viewports:
+// full size once ~300px of cloud room exists above the tray, floored so the tail never
+// becomes unreadable. Read once at mount — the tutorial is one sitting, and a mid-cloud
+// resize at worst wraps a line early.
+const CLOUD_ROOM_OFFSET = 430; // header + coach + gaps + tray, roughly
+const CLOUD_ROOM_FULL = 300; // the room the unscaled ramp needs
+const SCALE_MIN = 0.55;
 // The room a cloud word may take: the play column, minus its padding — phrased in CSS so the
 // cap stays live across resizes without this component measuring anything.
 const CLOUD_AVAIL = 'min(100vw, 600px) - 40px';
@@ -45,6 +53,11 @@ export default function ThemeCloud({
   road: number; // which theme: the map's road id, also the cloud's LANE_COLORS index
   startRank: number; // the exponents' heat scale — the same one the board's floats use
 }) {
+  const scale = useMemo(() => {
+    if (typeof window === 'undefined') return 1;
+    return Math.min(1, Math.max(SCALE_MIN, (window.innerHeight - CLOUD_ROOM_OFFSET) / CLOUD_ROOM_FULL));
+  }, []);
+
   // One entry per GROUP of this theme (a real map keys every inflection to the same entry),
   // closest first, capped.
   const words = useMemo<RankEntry[]>(() => {
@@ -68,7 +81,7 @@ export default function ThemeCloud({
         <span
           key={entry.rank}
           className="cloud-word"
-          style={{ fontSize: fitSize(Math.round(SIZE_MAX - i * step), entry) }}
+          style={{ fontSize: fitSize(Math.round((SIZE_MAX - i * step) * scale), entry) }}
         >
           {entry.word}
           <sup

@@ -743,12 +743,19 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `tutorial/ThemeCloud.tsx` renders one theme — the map's road — as a cloud of its closest
   groups (capped at 12), words painted in that route's LANE color (imported from
   `RouteModal.LANE_COLORS`, so the lesson speaks the identity the game's map uses later),
-  heat-ramp exponents on the board's own scale, type size falling with distance and
-  width-capped by fitWord-style arithmetic (the word font advances ~0.95em/glyph). Never two
-  clouds at once: the coach names each from the script's `themeCopyKeys` (`tutTheme1..4` —
-  en names OCEAN's themes, fr TROPIQUES's; scripts.test.ts pins the list's length to the
-  map's real road count), a NEXT THEME press (`tutNextTheme`) swaps to the next, and after
-  the last the WORD returns with the general principle (`tutThemes`) while the tray offers
+  heat-ramp exponents on the board's own scale, type size falling with distance,
+  width-capped by fitWord-style arithmetic (the word font advances ~0.95em/glyph) and
+  HEIGHT-scaled to the viewport (the whole ramp shrinks on short screens so the view never
+  scrolls — findings 2026-08-04). Never two clouds at once: the coach names each from the
+  script's `themeCopyKeys` (`tutTheme1..4` — en names OCEAN's themes, fr TROPIQUES's;
+  scripts.test.ts pins the list's length to the map's real road count), **the theme's NAME
+  in the copy wearing the cloud's color** (CoachText's `[[t:]]` tag reads
+  `--coach-theme-c`, set on the box by the Tutorial), a NEXT THEME press (`tutNextTheme`)
+  swaps to the next, and after the last the close shows **the abstract ROUTES TEASER**
+  (`tutorial/RoutesTeaser.tsx`: the themes' colored lines at the map's own lane rhythm,
+  two chevrons on the left saying "this scrolls", NO words — a signpost to the real map)
+  under the general principle (`tutThemes` — "Plusieurs thèmes peuvent exister à travers
+  le même mot.") while the tray offers
   **PLAY (`tutPlay`), which is the graduation**: `onDone`, no SolvedScreen (a lesson has no
   score to show, so `SolvedScreen`'s tutorial `action` prop and its null `dayNumber` are gone
   with it). The daily game's `RouteModal` is untouched (its drawing lives in an internal
