@@ -59,6 +59,12 @@ const NUDGE_AFTER_MISSES = 3;
 // ranks (>= 9 per segment, guarded by scripts.test.ts) while the letters churn.
 const MIX_SETTLE_MS = 500; // hold on a landing before the copy / next prompt
 
+// How long a leaving theme cloud keeps the stage before the next one is built (#155): its
+// exit animation's duration plus the latest word's stagger (see ThemeCloud's OUT_STAGGER_MS),
+// with a beat of clearance — so the clouds never overlap and the coach's next line arrives
+// WITH its cloud rather than over the old one.
+const CLOUD_EXIT_MS = 380;
+
 // The tutorial's ONE hole, at the board's start word — the same shape Game derives from a
 // real puzzle, so every component it feeds behaves identically.
 function freshHole(h: PuzzleHole): RuntimeHole[] {
@@ -308,11 +314,22 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
   // map) while the coach states the general principle, and PLAY in the tray is the way out.
   const [themesOpen, setThemesOpen] = useState(false);
   const [themeStage, setThemeStage] = useState(0);
+  // The leaving beat: the cloud on screen scales away word by word, and only then does the
+  // stage advance — so the next cloud (and the coach line naming it, which is derived from
+  // the same stage) arrives on a cleared screen. The button is inert while it plays, or a
+  // double press would skip a theme.
+  const [cloudExiting, setCloudExiting] = useState(false);
   const openThemes = useCallback(() => {
     setThemeStage(0);
     setThemesOpen(true);
   }, []);
-  const nextTheme = useCallback(() => setThemeStage((k) => k + 1), []);
+  const nextTheme = useCallback(() => {
+    setCloudExiting(true);
+    later(() => {
+      setCloudExiting(false);
+      setThemeStage((k) => k + 1);
+    }, CLOUD_EXIT_MS);
+  }, [later]);
   const finish = useCallback(() => {
     track('tutorial', { action: 'finish' });
     onDone();
@@ -457,7 +474,12 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
         ) : themesOpen ? (
           // The word gave way to one of its THEMES: a cloud of that theme's words in its
           // route color. One at a time.
-          <ThemeCloud map={rankMap} road={themeStage} startRank={hole.start_rank} />
+          <ThemeCloud
+            map={rankMap}
+            road={themeStage}
+            startRank={hole.start_rank}
+            exiting={cloudExiting}
+          />
         ) : (
           <>
             <Phrase
@@ -514,7 +536,12 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
           // The theme stepper, then the graduation: NEXT THEME swaps the clouds one at a
           // time, and once every theme has spoken the same full-width interaction the mix
           // button opened the lesson with closes it — PLAY.
-          <button type="button" className="mix-btn" onClick={themesDone ? finish : nextTheme}>
+          <button
+            type="button"
+            className="mix-btn"
+            onClick={themesDone ? finish : nextTheme}
+            disabled={cloudExiting}
+          >
             {t(lang, themesDone ? 'tutPlay' : 'tutNextTheme')}
           </button>
         ) : kbGone ? null : (

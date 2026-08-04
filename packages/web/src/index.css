@@ -2947,6 +2947,45 @@ button * {
 .cloud-word {
   color: var(--cloud-c);
   white-space: nowrap;
+  /* Its own place in the cloud's stagger, set per word by ThemeCloud. */
+  animation-delay: var(--cloud-delay, 0ms);
+  animation-fill-mode: both;
+}
+/* A cloud CONDENSES rather than appearing whole: each word scales up from nothing on its own
+   random delay, and scales back down the same way when the theme leaves. The words are flex
+   items, so they are blockified and `transform` applies; scaling from their own centre keeps
+   the layout still (baseline alignment is computed before the transform), so nothing reflows
+   while the cloud breathes. Reduced motion collapses the durations via the global rule and
+   keeps the delays, so the words still arrive one by one — just without the scaling. */
+.cloud-word.in {
+  animation-name: cloud-word-in;
+  animation-duration: 260ms;
+  animation-timing-function: cubic-bezier(0.2, 1.3, 0.4, 1);
+}
+.cloud-word.out {
+  animation-name: cloud-word-out;
+  animation-duration: 170ms;
+  animation-timing-function: ease-in;
+}
+@keyframes cloud-word-in {
+  from {
+    transform: scale(0);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@keyframes cloud-word-out {
+  from {
+    transform: scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: scale(0);
+    opacity: 0;
+  }
 }
 /* The close's route-map glimpse (#155): the themes' colored lines at the map's own lane
    rhythm, every near-field group riding them as a station — heat-colored rank exponent in a

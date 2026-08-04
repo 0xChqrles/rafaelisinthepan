@@ -15,6 +15,14 @@ import type { RankEntry, WordRanks } from '@whippin/shared';
 // The words are the theme's closest groups, closest first, biggest first: font size falls
 // with cloud position, so nearness reads off the type the way it reads off the exponent.
 // Capped — a theme can hold 79 groups and a cloud is a taste, not an inventory.
+//
+// A cloud SCALES in and out, word by word on a random stagger (findings 2026-08-04): the
+// words pop into being one after another rather than the block appearing whole, which is
+// what makes a cloud read as a cloud — a handful of things that belong together — instead
+// of as a paragraph swapped for another. `exiting` plays the same beat backwards; the
+// Tutorial holds the leaving cloud on screen for CLOUD_EXIT_MS before swapping themes, so
+// the two never overlap. Under reduced motion the global rule collapses the durations while
+// keeping the delays, so the words still arrive one by one, just without the scaling.
 
 const CLOUD_WORDS = 12;
 // The size ramp, in px of the game's word font: the closest word leads like a headline and
@@ -36,6 +44,11 @@ const SUP_EM = 0.7;
 const CLOUD_ROOM_OFFSET = 430; // header + coach + gaps + tray, roughly
 const CLOUD_ROOM_FULL = 300; // the room the unscaled ramp needs
 const SCALE_MIN = 0.55;
+// The per-word stagger: how late the LAST word can be. The entrance is the generous one —
+// it is the cloud forming — and the exit is quicker, since it is only clearing the stage.
+// CLOUD_EXIT_MS in Tutorial.tsx must outlast IN_STAGGER's counterpart here (see there).
+const IN_STAGGER_MS = 260;
+const OUT_STAGGER_MS = 150;
 // The room a cloud word may take: the play column, minus its padding — phrased in CSS so the
 // cap stays live across resizes without this component measuring anything.
 const CLOUD_AVAIL = 'min(100vw, 600px) - 40px';
@@ -49,10 +62,12 @@ export default function ThemeCloud({
   map,
   road,
   startRank,
+  exiting = false,
 }: {
   map: WordRanks; // the board's whole rank map — the cloud filters its own theme out of it
   road: number; // which theme: the map's road id, also the cloud's LANE_COLORS index
   startRank: number; // the exponents' heat scale — the same one the board's floats use
+  exiting?: boolean; // play the entrance backwards — the Tutorial's swap beat (see above)
 }) {
   const scale = useMemo(() => {
     if (typeof window === 'undefined') return 1;
@@ -73,6 +88,13 @@ export default function ThemeCloud({
 
   const step = words.length > 1 ? (SIZE_MAX - SIZE_MIN) / (words.length - 1) : 0;
 
+  // Each word's own place in the stagger, rolled ONCE per cloud: re-rolling per render would
+  // re-time an animation already running, and rolling per phase would cost the word the
+  // personality that makes the entrance and the exit read as the same cloud breathing.
+  // Deliberately NOT index-derived — a left-to-right sweep reads as a list being filled in,
+  // where a scatter reads as a cloud condensing.
+  const offsets = useMemo(() => words.map(() => Math.random()), [words]);
+
   return (
     <p
       className="theme-cloud"
@@ -81,8 +103,15 @@ export default function ThemeCloud({
       {words.map((entry, i) => (
         <span
           key={entry.rank}
-          className="cloud-word"
-          style={{ fontSize: fitSize(Math.round((SIZE_MAX - i * step) * scale), entry) }}
+          className={`cloud-word ${exiting ? 'out' : 'in'}`}
+          style={
+            {
+              fontSize: fitSize(Math.round((SIZE_MAX - i * step) * scale), entry),
+              '--cloud-delay': `${Math.round(
+                offsets[i] * (exiting ? OUT_STAGGER_MS : IN_STAGGER_MS),
+              )}ms`,
+            } as CSSProperties
+          }
         >
           {entry.word}
           <sup

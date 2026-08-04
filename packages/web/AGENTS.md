@@ -744,9 +744,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
   groups (capped at 12), words painted in that route's LANE color (imported from
   `RouteModal.LANE_COLORS`, so the lesson speaks the identity the game's map uses later),
   heat-ramp exponents on the board's own scale, type size falling with distance,
-  width-capped by fitWord-style arithmetic (the word font advances ~0.95em/glyph) and
+  width-capped by fitWord-style arithmetic (VT323 advances exactly 1em/glyph — measured) and
   HEIGHT-scaled to the viewport (the whole ramp shrinks on short screens so the view never
-  scrolls — findings 2026-08-04). Never two clouds at once: the coach names each from the
+  scrolls — findings 2026-08-04). **A cloud CONDENSES and disperses**: every word scales up
+  from nothing on its OWN random delay and scales back down the same way, so the cloud reads
+  as a handful of things belonging together rather than a paragraph swapped for another
+  (the delays are rolled once per cloud and are deliberately NOT index-derived — a
+  left-to-right sweep reads as a list being filled in). The leaving cloud keeps the stage
+  for `CLOUD_EXIT_MS` before the stage advances, so two clouds never overlap and the coach's
+  next line arrives WITH its cloud; NEXT THEME is inert for that beat. Reduced motion
+  collapses the durations and keeps the delays, so the words still arrive one by one. Never two clouds at once: the coach names each from the
   script's `themeCopyKeys` (`tutTheme1..4` — en names OCEAN's themes, fr TROPIQUES's;
   scripts.test.ts pins the list's length to the map's real road count), **the theme's NAME
   in the copy wearing the cloud's color** (CoachText's `[[t:]]` tag reads
