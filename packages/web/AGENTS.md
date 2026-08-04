@@ -773,7 +773,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `scripts.test.ts` (fr `désert^1183` read as noise) — AND must make intuitive sense as a
   somehow-close word (`casquette^330` did not; fr's is `neige^353` — snow is
   climate-adjacent and intuitively the anti-tropics, so "farther" feels right); a mix stop's
-  word should likewise be an INTUITIVE neighbor (fr's second stop is `soleils^12`). Coach
+  word should likewise be an INTUITIVE neighbor (fr's second stop is `soleil^12`; the fr
+  board is agreed SINGULAR — `--form tropiques=n:s` — because plural-agreed neighbors read
+  oddly on a word board, findings 2026-08-04). Coach
   copy must fit the 3-line box at 320px — the routes and closer-guess strings were cut to
   size for it.
   Copy is deliberately terse throughout, no under-the-hood talk. The tutorial is

@@ -5,7 +5,7 @@
 // The board is a REAL neighborhood: `fr.word.json` is the #154 single-word artifact for
 // TROPIQUES, pruned to what the tutorial needs. Regenerate it with (both from the REPO ROOT):
 //
-//   pnpm gen:word tropiques --lang fr --form tropiques=n:p
+//   pnpm gen:word tropiques --lang fr --form tropiques=n:s
 //   node packages/web/scripts/prune-word-map.mjs \
 //     --in packages/generation/output/single-word/fr/tropiques.json \
 //     --out packages/web/src/tutorial/scripts/fr.word.json --keep neige
@@ -13,15 +13,18 @@
 // TROPIQUES replaced PHARE on findings 2026-08-04: phare is a homonym (lighthouse /
 // headlight), so its routes read as two DEFINITIONS rather than as facets of one idea — and
 // the routes lesson is about facets. Tropiques has a single clear definition and four clear
-// routes: the climate (tropicales, alizés, torrides, pluies), the islands (cocotiers,
-// caraïbes, palmiers, lagons), the globe (équateur, hémisphères, sud) and the holiday feel
-// (soleils, farniente, bronzettes, tongs) — each nameable at a glance.
+// routes: the climate (tropicales, climat, alizés, torride), the islands (cocotier,
+// caraïbe, palmier, lagon), the globe (équateur, hémisphère, sud) and the holiday feel
+// (soleil, farniente, bronzette, tong) — each nameable at a glance. The AGREEMENT is
+// singular (`--form tropiques=n:s`, findings 2026-08-04: plural-agreed neighbors read
+// oddly on a word board), while the word itself keeps its natural plural display —
+// « tropiques » is the rank-0 display either way.
 //
-// The arc: the scramble ladder walks TROPIQUES out to its 12th neighbor (soleils) and on to
+// The arc: the scramble ladder walks TROPIQUES out to its 12th neighbor (soleil) and on to
 // its 97th (ananas — the start word, inside generation's own 50-150 start band, and
 // unmistakably tropical), then three gated guesses teach distance (neige, 353: farther, hint
 // stays — snow is INTUITIVELY the anti-tropics, climate-adjacent but far, on a READABLE
-// scale), MISS (guitare, which the real map does not rank at all), and improvement (lagons,
+// scale), MISS (guitare, which the real map does not rank at all), and improvement (lagon,
 // 22: closer, hint moves). The player then finds their way back to TROPIQUES, and taps the
 // word they found — its route line takes its place, one road at a time, and JOUER ends the
 // lesson.
@@ -62,12 +65,12 @@ const script: TutorialScript = {
     // Le feedback enseigne ; chaque essai enchaîne sur l'instruction suivante.
     { kind: 'guess', expect: 'neige', copyKey: 'tutGuessFar' },
     { kind: 'guess', expect: 'guitare', copyKey: 'tutGuessMiss' },
-    { kind: 'guess', expect: 'lagons', copyKey: 'tutGuessCloser' },
+    { kind: 'guess', expect: 'lagon', copyKey: 'tutGuessCloser' },
     { kind: 'find', target: word.slug, copyKey: 'tutFind', nudgeKey: 'tutFindNudge' },
     // La fin : toucher le mot trouvé — les routes prennent sa place, une par une. Route 0 :
-    // le climat (tropicales, alizés, torrides) ; route 1 : les îles (cocotiers, palmiers,
-    // lagons) ; route 2 : le globe (équateur, hémisphères, sud) ; route 3 : les vacances
-    // (soleils, farniente, tongs) — ordre des voies, route 0 = rang 1.
+    // le climat (tropicales, climat, alizés) ; route 1 : les îles (cocotier, palmier,
+    // lagon) ; route 2 : le globe (équateur, hémisphère, sud) ; route 3 : les vacances
+    // (soleil, farniente, tong) — ordre des voies, route 0 = rang 1.
     {
       kind: 'tap',
       tapCopyKey: 'tutTap',

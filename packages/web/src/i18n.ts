@@ -119,7 +119,7 @@ const STRINGS = {
   },
   tutMixed10: {
     en: '[[w:islands^10]] is the 10th closest word to [[b:ocean]].',
-    fr: '[[w:soleils^12]] est le 12e mot le plus proche de [[b:tropiques]].',
+    fr: '[[w:soleil^12]] est le 12e mot le plus proche de [[b:tropiques]].',
   },
   tutGuessFar: {
     en: 'Now type [[w:forest^214]].',
@@ -131,7 +131,7 @@ const STRINGS = {
   },
   tutGuessCloser: {
     en: '[[m:violin]] was a [[m:MISS]] — too far to rank. Now try [[w:boat^45]].',
-    fr: '[[m:guitare]] était trop loin — [[m:MISS]]. Essaie [[w:lagons^22]].',
+    fr: '[[m:guitare]] était trop loin — [[m:MISS]]. Essaie [[w:lagon^22]].',
   },
   tutFind: {
     en: 'Now type the very first word — the blue one.',
