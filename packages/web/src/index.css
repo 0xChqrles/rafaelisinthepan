@@ -2992,94 +2992,58 @@ button * {
    left gutter like the real map's, node on its lane, word beside it in the lane's color.
 
    It reads the way the real map reads: DOWN the page from the far field to the word, so `-1`
-   sits at the BOTTOM and the line opens parked there. It SCROLLS — the chevrons are its
-   buttons — so the height it stretches to is a viewport, not the content: flex-basis 0 +
-   min-height 0 mean it can never grow the page, the max keeps a desktop from stretching it
-   absurd, and the margin is the guaranteed breathing room against the coach box above and the
-   tray's button below. The width is DEFINITE (never fit-content): `.teaser-map` is an
-   inline-size container and its `cqw` word sizing would be circular against an auto width. */
+   sits at the BOTTOM and the line opens parked there. It SCROLLS — the element IS the
+   scroller — and its squared-off scrollbar is the only thing that has to say so (the flanking
+   chevrons were removed on findings 2026-08-04: one affordance per gesture, and their column
+   was width the words needed on a 320px phone). The height it stretches to is a viewport, not
+   the content: flex-basis 0 + min-height 0 mean it can never grow the page, the max keeps a
+   desktop from stretching it absurd, and the margin is the guaranteed breathing room against
+   the coach box above and the tray's button below. The width is DEFINITE (never fit-content):
+   `.teaser-map` is an inline-size container and its `cqw` word sizing would be circular
+   against an auto width. */
 .routes-teaser {
   align-self: center;
   width: min(100%, 430px);
-  display: flex;
-  align-items: stretch;
-  gap: 14px;
   flex: 1 1 0;
   min-height: 0;
   max-height: 520px;
   margin: 14px 0;
-}
-.teaser-arrows {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 2px 0;
-}
-/* The one interactive thing on the close. Same language as every other icon control: muted,
-   brightening on hover/focus, dimmed to near-nothing when the line has nowhere left to go. */
-.teaser-arrow {
-  padding: 4px;
-  border: 0;
-  background: none;
-  color: var(--muted);
-  cursor: pointer;
-  transition: color 0.1s linear, opacity 0.1s linear;
-}
-.teaser-arrow:hover:not(:disabled),
-.teaser-arrow:focus-visible {
-  color: var(--fg);
-}
-.teaser-arrow:disabled {
-  opacity: 0.25;
-  cursor: default;
-}
-.teaser-arrow:focus-visible {
-  outline: 3px solid var(--accent-dim);
-  outline-offset: 2px;
-}
-.pixel-icon.flipped {
-  transform: scaleY(-1);
-}
-.teaser-scroll {
-  flex: 1;
-  min-width: 0;
   overflow-y: auto;
   overflow-x: hidden;
   /* The lesson's last screen is not a place to rubber-band the page behind it. */
   overscroll-behavior: contain;
 }
 /* The app draws in squares, so its one scrollbar does too: a flat RECTANGLE in a flat
-   channel — no rounding, no arrow buttons, no inset. Styling it also makes it always
-   visible where the platform would overlay it, which is no loss here: a permanent bar
-   beside the chevrons is one more thing saying the line goes on. It sits on the SCROLLER,
-   so `.teaser-map` (the `cqw` container the words size against) already excludes its
-   width — the word fitting stays exact.
+   channel — no rounding, no arrow buttons, no inset. Styling it also makes it always visible
+   where the platform would overlay it, which is the point now that the chevrons are gone.
+   It sits on the SCROLLER, so `.teaser-map` (the `cqw` container the words size against)
+   already excludes its width — the word fitting stays exact.
 
    The standard `scrollbar-width`/`scrollbar-color` are deliberately NOT set here: since
    Chrome 121 either of them DISABLES the ::-webkit-scrollbar pseudo-elements, and the
    standard scrollbar cannot be squared off — setting them cost the rectangle everywhere and
    left an overlay bar behind. They live in the Firefox-only block below instead, detected by
    the one engine that has no ::-webkit-scrollbar selector to support. */
-.teaser-scroll::-webkit-scrollbar {
+.routes-teaser::-webkit-scrollbar {
   width: 6px;
 }
-.teaser-scroll::-webkit-scrollbar-track {
+.routes-teaser::-webkit-scrollbar-track {
   background: var(--surface);
 }
-.teaser-scroll::-webkit-scrollbar-thumb {
+.routes-teaser::-webkit-scrollbar-thumb {
   background: var(--surface-hover);
   border-radius: 0;
 }
-.teaser-scroll::-webkit-scrollbar-thumb:hover {
+.routes-teaser::-webkit-scrollbar-thumb:hover {
   background: var(--muted);
 }
-.teaser-scroll::-webkit-scrollbar-button {
+.routes-teaser::-webkit-scrollbar-button {
   display: none;
 }
 /* Firefox: no pseudo-elements to style, so it gets the standard properties — the closest it
    can come to the same bar. */
 @supports (scrollbar-width: thin) and (not (selector(::-webkit-scrollbar))) {
-  .teaser-scroll {
+  .routes-teaser {
     scrollbar-width: thin;
     scrollbar-color: var(--surface-hover) var(--surface);
   }

@@ -59,11 +59,12 @@ const NUDGE_AFTER_MISSES = 3;
 // ranks (>= 9 per segment, guarded by scripts.test.ts) while the letters churn.
 const MIX_SETTLE_MS = 500; // hold on a landing before the copy / next prompt
 
-// How long a leaving theme cloud keeps the stage before the next one is built (#155): its
-// exit animation's duration plus the latest word's stagger (see ThemeCloud's OUT_STAGGER_MS),
-// with a beat of clearance — so the clouds never overlap and the coach's next line arrives
-// WITH its cloud rather than over the old one.
-const CLOUD_EXIT_MS = 230;
+// The DEADLINE behind the leaving cloud's own report (#155): the cloud tells us when its last
+// word has finished shrinking (ThemeCloud's `onExited`), and this only covers a report that
+// never lands — a renamed keyframe, a lost event. A generous multiple of the real beat
+// (~200ms), like the game's other exit deadlines: it must never cut a genuine exit short, and
+// it must never let a lost signal strand the player on a cloud that will not leave.
+const CLOUD_EXIT_FALLBACK_MS = 900;
 
 // The tutorial's ONE hole, at the board's start word — the same shape Game derives from a
 // real puzzle, so every component it feeds behaves identically.
@@ -314,22 +315,30 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
   // map) while the coach states the general principle, and PLAY in the tray is the way out.
   const [themesOpen, setThemesOpen] = useState(false);
   const [themeStage, setThemeStage] = useState(0);
-  // The leaving beat: the cloud on screen scales away word by word, and only then does the
-  // stage advance — so the next cloud (and the coach line naming it, which is derived from
-  // the same stage) arrives on a cleared screen. The button is inert while it plays, or a
-  // double press would skip a theme.
+  // The leaving beat: the cloud on screen scales away word by word, and only once IT reports
+  // the last word gone does the stage advance — so whatever comes next, the following cloud or
+  // the routes line, lands on a cleared screen, and the coach line (derived from the same
+  // stage) arrives with it. The button is inert while it plays, or a double press would skip a
+  // theme.
   const [cloudExiting, setCloudExiting] = useState(false);
+  // Guards the race between the cloud's report and the deadline below: whichever lands first
+  // advances, the other is a no-op.
+  const exitClaimed = useRef(false);
   const openThemes = useCallback(() => {
     setThemeStage(0);
     setThemesOpen(true);
   }, []);
+  const finishThemeExit = useCallback(() => {
+    if (exitClaimed.current) return;
+    exitClaimed.current = true;
+    setCloudExiting(false);
+    setThemeStage((k) => k + 1);
+  }, []);
   const nextTheme = useCallback(() => {
+    exitClaimed.current = false;
     setCloudExiting(true);
-    later(() => {
-      setCloudExiting(false);
-      setThemeStage((k) => k + 1);
-    }, CLOUD_EXIT_MS);
-  }, [later]);
+    later(finishThemeExit, CLOUD_EXIT_FALLBACK_MS);
+  }, [later, finishThemeExit]);
   const finish = useCallback(() => {
     track('tutorial', { action: 'finish' });
     onDone();
@@ -465,12 +474,7 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
         ) : themesOpen && themesDone ? (
           // The close: a glimpse of the route map every word offers — the themes' colored
           // lines with a couple of their words riding them — under the general principle.
-          <RoutesTeaser
-            map={rankMap}
-            lanes={themeCount}
-            startRank={hole.start_rank}
-            lang={lang}
-          />
+          <RoutesTeaser map={rankMap} lanes={themeCount} startRank={hole.start_rank} />
         ) : themesOpen ? (
           // The word gave way to one of its THEMES: a cloud of that theme's words in its
           // route color. One at a time.
@@ -479,6 +483,7 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
             road={themeStage}
             startRank={hole.start_rank}
             exiting={cloudExiting}
+            onExited={finishThemeExit}
           />
         ) : (
           <>

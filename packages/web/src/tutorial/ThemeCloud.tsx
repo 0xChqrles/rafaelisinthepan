@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import type { CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
+import type { AnimationEvent, CSSProperties } from 'react';
 import { LANE_COLORS } from '../components/RouteModal';
 import { rankHeatColor } from '../components/Hole';
 import type { RankEntry, WordRanks } from '@whippin/shared';
@@ -19,10 +19,12 @@ import type { RankEntry, WordRanks } from '@whippin/shared';
 // A cloud SCALES in and out, word by word on a random stagger (findings 2026-08-04): the
 // words pop into being one after another rather than the block appearing whole, which is
 // what makes a cloud read as a cloud — a handful of things that belong together — instead
-// of as a paragraph swapped for another. `exiting` plays the same beat backwards; the
-// Tutorial holds the leaving cloud on screen for CLOUD_EXIT_MS before swapping themes, so
-// the two never overlap. Under reduced motion the global rule collapses the durations while
-// keeping the delays, so the words still arrive one by one, just without the scaling.
+// of as a paragraph swapped for another. `exiting` plays the same beat backwards, and the
+// cloud REPORTS when the last word has finished shrinking (`onExited`) rather than leaving
+// the caller to guess a duration — the same rule the game's other exit beats follow, so what
+// comes next can never land over a word still on screen. Under reduced motion the global rule
+// collapses the durations while keeping the delays, so the words still arrive one by one,
+// just without the scaling (and `animationend` still fires, so the report is unaffected).
 
 const CLOUD_WORDS = 12;
 // The size ramp, in px of the game's word font: the closest word leads like a headline and
@@ -65,11 +67,14 @@ export default function ThemeCloud({
   road,
   startRank,
   exiting = false,
+  onExited,
 }: {
   map: WordRanks; // the board's whole rank map — the cloud filters its own theme out of it
   road: number; // which theme: the map's road id, also the cloud's LANE_COLORS index
   startRank: number; // the exponents' heat scale — the same one the board's floats use
   exiting?: boolean; // play the entrance backwards — the Tutorial's swap beat (see above)
+  // Fired once, when the LAST word of an exiting cloud has finished shrinking.
+  onExited?: () => void;
 }) {
   const scale = useMemo(() => {
     if (typeof window === 'undefined') return 1;
@@ -97,8 +102,26 @@ export default function ThemeCloud({
   // where a scatter reads as a cloud condensing.
   const offsets = useMemo(() => words.map(() => Math.random()), [words]);
 
+  // The exit's finish line: every word's `animationend` bubbles here, and the last one to
+  // land is the cloud being gone. Counted rather than timed off the word with the biggest
+  // delay — two words can share it — and reset whenever the phase flips, so a cloud that
+  // enters, leaves and enters again reports each exit exactly once.
+  const exited = useRef(0);
+  useEffect(() => {
+    exited.current = 0;
+  }, [exiting, words]);
+  const onWordAnimationEnd = useCallback(
+    (e: AnimationEvent) => {
+      if (!exiting || e.animationName !== 'cloud-word-out') return;
+      exited.current += 1;
+      if (exited.current >= words.length) onExited?.();
+    },
+    [exiting, words, onExited],
+  );
+
   return (
     <p
+      onAnimationEnd={onWordAnimationEnd}
       className="theme-cloud"
       style={{ '--cloud-c': LANE_COLORS[road % LANE_COLORS.length] } as CSSProperties}
     >
