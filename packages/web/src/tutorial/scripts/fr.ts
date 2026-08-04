@@ -73,6 +73,7 @@ const script: TutorialScript = {
     // vacances (soleil, farniente, tong) — ordre des routes de la carte, route 0 = rang 1.
     {
       kind: 'tap',
+      introCopyKey: 'tutThemesIntro',
       tapCopyKey: 'tutTap',
       clickCopyKey: 'tutClick',
       themeCopyKeys: ['tutTheme1', 'tutTheme2', 'tutTheme3', 'tutTheme4'],

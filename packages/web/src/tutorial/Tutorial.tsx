@@ -35,11 +35,11 @@ import { scriptFor } from './scripts';
 //   each rolling straight into the next prompt. Then the player types back to the secret with
 //   the real vocabulary (free exploration; a nudge reveals the word after 3 straight MISSes).
 //   Finding it ENDS the lesson on the one concept nothing else teaches: the word they found
-//   is tappable, and the tap REPLACES it with its THEMES — one cloud of themed words at a
+//   ENDS on the themes: the coach states the claim, NEXT hands over to the gesture line, the
+//   word then waves and its tap REPLACES it with its THEMES — one cloud of themed words at a
 //   time, in the route colors the game's map speaks — while the coach names each; the close
-//   is an abstract glimpse of the route map (RoutesTeaser) under the general principle, and
-//   PLAY in the tray is the graduation. There is no score to show, so there is no screen
-//   for it.
+//   is a glimpse of the route map (RoutesTeaser) under the general principle, and PLAY in the
+//   tray is the graduation. There is no score to show, so there is no screen for it.
 //
 // Everything that reacts is the real components with the real timing constants; the scripts
 // are data (./scripts/<lang>.ts) over a REAL generated neighborhood (a pruned #154 artifact),
@@ -313,6 +313,9 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
   // once); NEXT THEME swaps clouds — never two on screen — and after the last one the close
   // shows the abstract routes teaser (the themes' colored lines, a glimpse of the game's
   // map) while the coach states the general principle, and PLAY in the tray is the way out.
+  // The ending's first beat: the claim, before the word is offered. NEXT retires it, and only
+  // then does the word start waving and accept a tap — one idea, one affordance at a time.
+  const [claimMade, setClaimMade] = useState(false);
   const [themesOpen, setThemesOpen] = useState(false);
   const [themeStage, setThemeStage] = useState(0);
   // The leaving beat: the cloud on screen scales away word by word, and only once IT reports
@@ -383,7 +386,8 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
   else if (step.kind === 'find') {
     coachKey = missStreak >= NUDGE_AFTER_MISSES ? step.nudgeKey : step.copyKey;
   } else if (step.kind === 'tap') {
-    if (!themesOpen) coachKey = coarse ? step.tapCopyKey : step.clickCopyKey;
+    if (!claimMade) coachKey = step.introCopyKey;
+    else if (!themesOpen) coachKey = coarse ? step.tapCopyKey : step.clickCopyKey;
     else if (themesDone) coachKey = step.closeCopyKey;
     else {
       const nameKey = step.themeCopyKeys[Math.min(themeStage, step.themeCopyKeys.length - 1)];
@@ -495,9 +499,9 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
               hits={hits}
               onHitDone={removeHit}
               exploreLabels={exploreLabels}
-              exploreDisabled={!tapping}
+              exploreDisabled={!(tapping && claimMade)}
               onExplore={openThemes}
-              quiet={tapping && !themesOpen}
+              quiet={tapping && claimMade && !themesOpen}
               // The lesson ends ON the solved word: its wave is the affordance for the tap
               // the coach is asking for, so the game's solved-holes-never-wave rule is
               // inverted here and only here (see Hole.waveSolved). Inert outside the tap
@@ -539,16 +543,22 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
         ) : !vocab ? (
           <p className="status">{t(lang, 'loading')}</p>
         ) : themesOpen ? (
-          // The theme stepper, then the graduation: NEXT THEME swaps the clouds one at a
-          // time, and once every theme has spoken the same full-width interaction the mix
-          // button opened the lesson with closes it — PLAY.
+          // The theme stepper, then the graduation: NEXT swaps the clouds one at a time, and
+          // once every theme has spoken the same full-width interaction the mix button opened
+          // the lesson with closes it — PLAY.
           <button
             type="button"
             className="mix-btn"
             onClick={themesDone ? finish : nextTheme}
             disabled={cloudExiting}
           >
-            {t(lang, themesDone ? 'tutPlay' : 'tutNextTheme')}
+            {t(lang, themesDone ? 'tutPlay' : 'tutNext')}
+          </button>
+        ) : kbGone && !claimMade ? (
+          // The claim's own beat: the keyboard has dropped and NEXT is the only thing on
+          // screen, so the line above it is the only thing to read.
+          <button type="button" className="mix-btn" onClick={() => setClaimMade(true)}>
+            {t(lang, 'tutNext')}
           </button>
         ) : kbGone ? null : (
           <div

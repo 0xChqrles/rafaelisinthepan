@@ -2904,8 +2904,8 @@ button * {
 .tutorial {
   max-width: 680px;
   /* Clear the floating chip row + coach box, so the centered word never rides under
-     them. Tracks the coach's height: 64px top + 4 lines + its padding + a breath. */
-  padding-top: 248px;
+     them. Tracks the coach's height: 64px top + 3 lines + its padding + a breath. */
+  padding-top: 200px;
 }
 
 /* The concept stage is CLEAN: explanation on top, ONE big centered word in the
@@ -2920,11 +2920,11 @@ button * {
 }
 
 /* The explanation box: app background + surface border (a dialog, not a modal),
-   pinned to the top. Its size NEVER changes: the text area is exactly FOUR lines
+   pinned to the top. Its size NEVER changes: the text area is exactly three lines
    tall whatever the copy or the typewriter's progress, and text starts on the first
-   line. (Three until 2026-08-04, when the themes ending put its thesis and its
-   instruction in one line; what the invariant protects is the FIXED height — the word
-   below must never move — not the particular number.) */
+   line. (It was four for a day, while the themes ending carried its claim and its
+   instruction in ONE line; splitting that into two beats gave the third line back.
+   What the invariant protects is the FIXED height — the word below must never move.) */
 .coach {
   position: fixed;
   top: 64px; /* below the floating chip row (both stages — no bar row anymore) */
@@ -2941,10 +2941,10 @@ button * {
   font-family: var(--press);
   font-size: clamp(13px, 2vh, 16px);
   line-height: 2;
-  /* EXACTLY four lines, top-aligned — the box is a fixed dialog window, not a
-     balloon. Copy that wraps past four lines is a COPY bug (too much to read);
+  /* EXACTLY three lines, top-aligned — the box is a fixed dialog window, not a
+     balloon. Copy that wraps past three lines is a COPY bug (too much to read);
      the overflow clip makes that mistake visible instead of growing the box. */
-  height: 8em; /* 4 lines × line-height 2 */
+  height: 6em; /* 3 lines × line-height 2 */
   overflow: hidden;
   color: var(--fg);
   text-shadow: none;
@@ -3137,9 +3137,9 @@ button * {
   .coach-text {
     font-size: 12px; /* 3-line height scales with it (6em) */
   }
-  /* Clear the compact chip row + coach (56px top + 4 lines + its padding + a breath). */
+  /* Clear the compact chip row + coach (56px top + 3 lines + its padding + a breath). */
   .tutorial {
-    padding-top: 212px;
+    padding-top: 172px;
   }
 }
 

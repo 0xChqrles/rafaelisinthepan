@@ -52,9 +52,11 @@ export type TutorialStep =
   // board's map, or MISS) — but after 3 consecutive MISSes the prompt swaps to `nudgeKey` in
   // case they forgot the word.
   | { kind: 'find'; target: string; copyKey: UiKey; nudgeKey: UiKey }
-  // The ending (#155). The word the player just found is now TAPPABLE — the same button and
-  // the same ambient wave as a real round — and the coach nudges the tap in the input
-  // device's own verb (`tapCopyKey` on a coarse pointer, `clickCopyKey` otherwise). The tap
+  // The ending (#155). It opens on TWO beats, one idea each: `introCopyKey` states the
+  // CLAIM — several themes can live inside one word — and the tray's NEXT advances it; then
+  // the word becomes TAPPABLE (the same button and the same ambient wave as a real round)
+  // under the gesture line, in the input device's own verb (`tapCopyKey` on a coarse
+  // pointer, `clickCopyKey` otherwise). The tap
   // REPLACES the word with its THEMES, shown as clouds of words ONE AT A TIME (findings
   // 2026-08-04 — first the route line, then one road at a time, finally clouds: the line
   // was too much information at once, and a cloud of themed words with their exponents says
@@ -68,7 +70,14 @@ export type TutorialStep =
   // principle, and the tray offers PLAY,
   // which ends the tutorial. There is no graduation screen, because there is no score to
   // show.
-  | { kind: 'tap'; tapCopyKey: UiKey; clickCopyKey: UiKey; themeCopyKeys: UiKey[]; closeCopyKey: UiKey };
+  | {
+      kind: 'tap';
+      introCopyKey: UiKey;
+      tapCopyKey: UiKey;
+      clickCopyKey: UiKey;
+      themeCopyKeys: UiKey[];
+      closeCopyKey: UiKey;
+    };
 
 export interface TutorialScript {
   puzzle: Puzzle; // same schema as a real puzzle (parsePuzzle-valid)

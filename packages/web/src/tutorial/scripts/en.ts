@@ -73,6 +73,7 @@ const script: TutorialScript = {
     // order, road 0 = rank 1.
     {
       kind: 'tap',
+      introCopyKey: 'tutThemesIntro',
       tapCopyKey: 'tutTap',
       clickCopyKey: 'tutClick',
       themeCopyKeys: ['tutTheme1', 'tutTheme2', 'tutTheme3'],

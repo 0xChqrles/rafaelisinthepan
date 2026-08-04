@@ -102,11 +102,9 @@ const STRINGS = {
   // script's expected word (uppercased) so the copy can never drift from the script.
   // Tutorial copy is deliberately TERSE: the feedback on screen does the teaching,
   // the top box only sets up the next move. No under-the-hood talk. HARD LIMIT: the
-  // coach box is exactly FOUR lines and clips — if a string wraps past four lines
-  // (~80 chars incl. exponents at the mobile width), it is too much: cut it. (It was
-  // three until 2026-08-04, when the ending's thesis + its instruction landed in one
-  // line; the box is still a FIXED height, which is the part that matters — the word
-  // below it must never move.)
+  // coach box is exactly 3 lines and clips — if a string wraps past three lines
+  // (~60 chars incl. exponents at the mobile width), it is too much: cut it — or split
+  // it into two beats, which is what the ending's claim and its instruction became.
   // Copy uses CoachText's inline markup so words LOOK like what they are in-game:
   // [[b:secret]] blue, [[w:hint^rank]] gold + heat exponent, [[m:miss]] coldest heat.
   tutMixIntro: {
@@ -147,19 +145,25 @@ const STRINGS = {
   // ---- the ending (#155): tapping the found word replaces it with its route line, and
   // PLAY ends the tutorial. The nudge speaks the input device's own verb — tutTap on a
   // coarse pointer, tutClick otherwise (the tapAnywhere/clickAnywhere pattern). The roads
-  // themes are then shown ONE AT A TIME as clouds of words (findings 2026-08-04). The tap
-  // prompt states the PRINCIPLE and asks for the gesture in one line; each cloud is then
-  // headed « Thème n/N : <name> » (built by themeHeading below, so the count comes from the
-  // board's real road count and no string has to restate it); and the close says what the
-  // themes ARE. tutTheme1..4 hold only the NAME — the en strings name OCEAN's themes, the fr
-  // strings TROPIQUES's, since each language plays its own board.
+  // themes are then shown ONE AT A TIME as clouds of words (findings 2026-08-04). The ending
+  // opens on TWO beats, one idea each (findings 2026-08-04, splitting what had been one
+  // over-long line): the CLAIM, advanced with the tray's NEXT; then the GESTURE, which is
+  // where the word starts waving and becomes tappable. Each cloud is then headed
+  // « Thème n/N : <name> » (built by themeHeading below, so the count comes from the board's
+  // real road count and no string has to restate it), and the close says what the themes ARE.
+  // tutTheme1..4 hold only the NAME — the en strings name OCEAN's themes, the fr strings
+  // TROPIQUES's, since each language plays its own board.
+  tutThemesIntro: {
+    en: 'Several themes can live inside the same word.',
+    fr: 'Plusieurs thèmes peuvent exister à travers le même mot.',
+  },
   tutTap: {
-    en: 'Several themes can live inside one word. Tap it to reveal them.',
-    fr: 'Plusieurs thèmes peuvent exister à travers le même mot. Touche le mot.',
+    en: 'You can tap a word to discover its themes.',
+    fr: 'Tu peux toucher un mot pour découvrir ses thèmes.',
   },
   tutClick: {
-    en: 'Several themes can live inside one word. Click it to reveal them.',
-    fr: 'Plusieurs thèmes peuvent exister à travers le même mot. Clique dessus.',
+    en: 'You can click a word to discover its themes.',
+    fr: 'Tu peux cliquer sur un mot pour découvrir ses thèmes.',
   },
   tutTheme1: { en: 'the coast', fr: 'le climat' },
   tutTheme2: { en: 'the deep', fr: 'les îles' },
@@ -167,7 +171,8 @@ const STRINGS = {
   // The en string is UNREFERENCED — ocean's board ships three themes — but the parity
   // contract wants both languages; re-author it if an en board ever ships four.
   tutTheme4: { en: 'the fourth', fr: 'les vacances' },
-  tutNextTheme: { en: 'NEXT', fr: 'SUIVANT' },
+  // Drives both opening beats and the theme stepper — one label for "go on".
+  tutNext: { en: 'NEXT', fr: 'SUIVANT' },
   tutThemes: {
     en: 'Each theme is a different semantic path to follow.',
     fr: 'Chaque thème est un chemin sémantique différent à suivre.',
