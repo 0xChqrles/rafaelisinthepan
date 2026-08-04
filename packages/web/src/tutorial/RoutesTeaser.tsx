@@ -10,8 +10,10 @@ import type { RankEntry, WordRanks } from '@whippin/shared';
 // left gutter, node on its lane, word beside it in the lane's color).
 //
 // It runs the way the real map runs: the line is TRAVELLED, so it reads DOWN the page from the
-// far field to the word — the farthest rank at the top, `-1` at the BOTTOM — and it opens
-// scrolled to that bottom, where the destination is. It SCROLLS, by drag/wheel/trackpad, and
+// far field to the word — the farthest rank at the top, `-1` at the bottom, and THE WORD ITSELF
+// at the very foot, in the solved blue past a dashed leap, so the lines are visibly leading
+// somewhere rather than just running out. It opens scrolled to that bottom, where the
+// destination is. It SCROLLS, by drag/wheel/trackpad, and
 // its own squared-off scrollbar is what says so: the two chevrons that used to flank it were
 // removed on findings 2026-08-04 — one affordance for one gesture is enough, and the column
 // they took was width the words needed on a 320px phone.
@@ -29,6 +31,17 @@ const LANE_PITCH = 16;
 const TEASER_TOP = 100;
 // One station's row.
 const ROW_H = 30;
+// The terminus at the foot of the line: the word the routes lead to. The lanes stop short of
+// it and a dashed trace bridges the gap — the real map's identity leap, which is not a
+// distance but a jump: between the closest measurable group and the word itself there is no
+// step. Its type is the map's arrival size, and the lanes' `bottom` is these two summed.
+const ARRIVAL_H = 44;
+// A whole number of the map's dash units (5px of line + 8px of nothing) PLUS its closing
+// dash, so the trace opens and closes on a dash instead of ending on a cut gap — the same
+// arithmetic as the map's `dashedRun`. 31 = two units + close, i.e. three dashes: enough to
+// read as a broken LINE, where 18 (one unit + close) read as two dots.
+const LEAP_H = 31;
+const ARRIVAL_PX = 22;
 // The word column's type: capped at WORD_PX, shrunk to FIT when a long word would not. `cqw`
 // makes that exact rather than guessed — `.teaser-map` is an inline-size container, so 100cqw
 // IS the row's real width (scrollbar already excluded) at any viewport.
@@ -42,19 +55,21 @@ const GLYPH_EM = 1;
 // The rank gutter's cell: the map's own --rank-size (Press Start advances 1em per glyph).
 const RANK_PX = 10;
 
-function fitStation(word: string, overheadPx: number): string {
+function fitStation(word: string, overheadPx: number, max = WORD_PX): string {
   const glyphs = (word.length * GLYPH_EM).toFixed(1);
-  return `clamp(${WORD_MIN_PX}px, calc((100cqw - ${overheadPx}px) / ${glyphs}), ${WORD_PX}px)`;
+  return `clamp(${WORD_MIN_PX}px, calc((100cqw - ${overheadPx}px) / ${glyphs}), ${max}px)`;
 }
 
 export default function RoutesTeaser({
   map,
   lanes,
   startRank,
+  word,
 }: {
   map: WordRanks;
   lanes: number;
   startRank: number; // the exponents' heat scale — the same one the whole tutorial uses
+  word: string; // the destination: the accented word every one of these routes leads to
 }) {
   // Every group of the near field out to TEASER_TOP, one entry per GROUP (a real map keys
   // every inflection to the same entry), FARTHEST FIRST — the order the line is drawn in.
@@ -90,6 +105,9 @@ export default function RoutesTeaser({
           {
             '--teaser-railw': `${railWidth}px`,
             '--teaser-gutter': `${gutter}px`,
+            '--teaser-foot': `${ARRIVAL_H + LEAP_H}px`,
+            '--teaser-leap-h': `${LEAP_H}px`,
+            '--teaser-leap-x': `calc(var(--teaser-gutter) + ${railWidth / 2}px)`,
           } as CSSProperties
         }
       >
@@ -120,6 +138,19 @@ export default function RoutesTeaser({
             </span>
           );
         })}
+        {/* The leap, then the word: the lanes end above it (see `--teaser-foot`), the dashed
+            trace bridges the gap, and the terminus wears the solved blue the sentence gives a
+            found word. */}
+        <i className="teaser-leap" />
+        <span className="teaser-arrival" style={{ height: ARRIVAL_H }}>
+          <span className="t-rank" />
+          <span className="t-rail">
+            <i className="t-node" style={{ left: railWidth / 2 }} />
+          </span>
+          <span className="t-word" style={{ fontSize: fitStation(word, wordOverhead, ARRIVAL_PX) }}>
+            {word}
+          </span>
+        </span>
       </div>
     </div>
   );

@@ -773,7 +773,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   carrying EVERY near-field group out to rank 100 as a station — heat-colored rank exponent
   in a left gutter like the real map's, node on its lane, word beside it in the lane's
   colour. It reads the way the real map reads: DOWN the page from the far field to the word,
-  so **`-1` sits at the BOTTOM** and it opens parked there. It **SCROLLS** by drag/wheel, and
+  so **`-1` sits at the BOTTOM**, and past a dashed identity leap the WORD ITSELF closes the
+  line — solved blue, the biggest node, the lanes stopping just above it — so the routes are
+  visibly leading somewhere rather than running out (added 2026-08-04). It opens parked at
+  that bottom, on the destination. It **SCROLLS** by drag/wheel, and
   its squared-off scrollbar is the only thing that says so — the chevrons that used to flank
   it were removed 2026-08-04 (one affordance per gesture, and their column was width the
   words needed at 320px), which also leaves the whole drawing decorative with nothing

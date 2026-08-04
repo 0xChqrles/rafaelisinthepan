@@ -18,6 +18,12 @@
 
 :root {
   --bg: #0a0b12;
+  /* The route line's own colour: trunk, junction bus, the leap's and the tail's dashes, the
+     torn break — and the onboarding teaser's leap, which is why it lives here rather than on
+     `.route-frame` where it started. Deliberately the ONE unsaturated line on the map: the
+     trunk is the stretch where no road has been identified, so it reads as the far field the
+     lanes fork out of. */
+  --rail: #48528a;
   --surface: #1d2138;
   --surface-hover: #2c3358;
   --fg: #f4f4f2;
@@ -1675,10 +1681,6 @@ button * {
      positioned, and an unpositioned frame would hand it to an ancestor outside the
      scroller, where its static position sits below the line's whole height. */
   position: relative;
-  /* The line itself: trunk, junction bus, the leap's and the tail's dashes, the torn break.
-     Deliberately the ONE unsaturated line on the map — the trunk is the stretch where no road
-     has been identified, so it reads as the far field the lanes fork out of. */
-  --rail: #48528a;
   /* A station whose word you have NOT found, and the `???` it wears: dimmer than the line, so
      it recedes behind the words that ARE on the map. */
   --unfound: #3a4270;
@@ -3059,12 +3061,44 @@ button * {
      to be the row's real width — which is why the teaser's own width is definite above. */
   container-type: inline-size;
 }
+/* The lanes stop short of the terminus (`--teaser-foot` = the arrival row + the leap), so the
+   line visibly ARRIVES somewhere instead of running off the bottom. */
 .teaser-lanes {
   position: absolute;
-  inset: 0 auto 0 var(--teaser-gutter);
+  inset: 0 auto var(--teaser-foot, 0) var(--teaser-gutter);
   width: var(--teaser-railw);
   display: flex;
   justify-content: space-between;
+}
+/* The identity leap: not a distance but a jump, so it is drawn broken — the same dashed
+   vocabulary the real map uses between its closest group and the word. */
+.teaser-leap {
+  position: absolute;
+  bottom: calc(var(--teaser-foot) - var(--teaser-leap-h));
+  left: var(--teaser-leap-x);
+  width: 5px;
+  height: var(--teaser-leap-h);
+  transform: translateX(-50%);
+  background: repeating-linear-gradient(180deg, var(--rail) 0 5px, transparent 5px 13px);
+}
+/* The terminus: the word every one of these routes leads to, in the blue the sentence gives a
+   solved word, on the map's biggest node. */
+.teaser-arrival {
+  /* The leap is drawn absolutely, so the flow has to RESERVE its height here — without this
+     the arrival butts against the last station and `--teaser-foot` eats into that row, cutting
+     the lanes short one station early. */
+  margin-top: var(--teaser-leap-h);
+  display: grid;
+  grid-template-columns: var(--teaser-gutter) var(--teaser-railw) minmax(0, auto);
+  align-items: center;
+}
+.teaser-arrival .t-node {
+  width: 15px;
+  height: 15px;
+  background: var(--accent);
+}
+.teaser-arrival .t-word {
+  color: var(--accent);
 }
 .teaser-lanes i {
   width: 5px; /* the map's --line-w */
