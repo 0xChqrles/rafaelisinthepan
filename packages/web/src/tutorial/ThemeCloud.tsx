@@ -46,9 +46,11 @@ const CLOUD_ROOM_FULL = 300; // the room the unscaled ramp needs
 const SCALE_MIN = 0.55;
 // The per-word stagger: how late the LAST word can be. The entrance is the generous one —
 // it is the cloud forming — and the exit is quicker, since it is only clearing the stage.
-// CLOUD_EXIT_MS in Tutorial.tsx must outlast IN_STAGGER's counterpart here (see there).
-const IN_STAGGER_MS = 260;
-const OUT_STAGGER_MS = 150;
+// Both are BRISK (findings 2026-08-04, cut from 260/150): the scatter has to read as one
+// gesture, and a cloud that takes half a second to assemble reads as waiting for it.
+// CLOUD_EXIT_MS in Tutorial.tsx covers OUT_STAGGER_MS plus the exit's own duration.
+const IN_STAGGER_MS = 150;
+const OUT_STAGGER_MS = 90;
 // The room a cloud word may take: the play column, minus its padding — phrased in CSS so the
 // cap stays live across resizes without this component measuring anything.
 const CLOUD_AVAIL = 'min(100vw, 600px) - 40px';

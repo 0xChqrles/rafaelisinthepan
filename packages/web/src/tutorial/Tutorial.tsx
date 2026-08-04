@@ -63,7 +63,7 @@ const MIX_SETTLE_MS = 500; // hold on a landing before the copy / next prompt
 // exit animation's duration plus the latest word's stagger (see ThemeCloud's OUT_STAGGER_MS),
 // with a beat of clearance — so the clouds never overlap and the coach's next line arrives
 // WITH its cloud rather than over the old one.
-const CLOUD_EXIT_MS = 380;
+const CLOUD_EXIT_MS = 230;
 
 // The tutorial's ONE hole, at the board's start word — the same shape Game derives from a
 // real puzzle, so every component it feeds behaves identically.

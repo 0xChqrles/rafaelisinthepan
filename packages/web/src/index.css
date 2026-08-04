@@ -2959,12 +2959,12 @@ button * {
    keeps the delays, so the words still arrive one by one — just without the scaling. */
 .cloud-word.in {
   animation-name: cloud-word-in;
-  animation-duration: 260ms;
+  animation-duration: 170ms;
   animation-timing-function: cubic-bezier(0.2, 1.3, 0.4, 1);
 }
 .cloud-word.out {
   animation-name: cloud-word-out;
-  animation-duration: 170ms;
+  animation-duration: 110ms;
   animation-timing-function: ease-in;
 }
 @keyframes cloud-word-in {
@@ -3047,6 +3047,42 @@ button * {
   overflow-x: hidden;
   /* The lesson's last screen is not a place to rubber-band the page behind it. */
   overscroll-behavior: contain;
+}
+/* The app draws in squares, so its one scrollbar does too: a flat RECTANGLE in a flat
+   channel — no rounding, no arrow buttons, no inset. Styling it also makes it always
+   visible where the platform would overlay it, which is no loss here: a permanent bar
+   beside the chevrons is one more thing saying the line goes on. It sits on the SCROLLER,
+   so `.teaser-map` (the `cqw` container the words size against) already excludes its
+   width — the word fitting stays exact.
+
+   The standard `scrollbar-width`/`scrollbar-color` are deliberately NOT set here: since
+   Chrome 121 either of them DISABLES the ::-webkit-scrollbar pseudo-elements, and the
+   standard scrollbar cannot be squared off — setting them cost the rectangle everywhere and
+   left an overlay bar behind. They live in the Firefox-only block below instead, detected by
+   the one engine that has no ::-webkit-scrollbar selector to support. */
+.teaser-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.teaser-scroll::-webkit-scrollbar-track {
+  background: var(--surface);
+}
+.teaser-scroll::-webkit-scrollbar-thumb {
+  background: var(--surface-hover);
+  border-radius: 0;
+}
+.teaser-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+.teaser-scroll::-webkit-scrollbar-button {
+  display: none;
+}
+/* Firefox: no pseudo-elements to style, so it gets the standard properties — the closest it
+   can come to the same bar. */
+@supports (scrollbar-width: thin) and (not (selector(::-webkit-scrollbar))) {
+  .teaser-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--surface-hover) var(--surface);
+  }
 }
 .teaser-map {
   position: relative;
