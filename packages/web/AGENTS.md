@@ -733,10 +733,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
   said the unguided second stage was widely skipped and the game is intuitive enough without
   it — its one lesson (a guess filling several holes) is discoverable in play — so cutting it
   freed the ending for the one concept nothing else teaches. Finding the word retires the
-  prompt and DROPS the keyboard out of the tray (the game's own `kb-drop`), the coach nudges
-  the tap **in the input device's own verb** — "tap" on a coarse pointer, "click" otherwise,
-  the same `(pointer: coarse)` test as the streak hint (`tutTap`/`tutClick`) — and the word
-  runs #129's ambient wave. **The tap REPLACES the word with its THEMES, shown as CLOUDS of
+  prompt and DROPS the keyboard out of the tray (the game's own `kb-drop`). **The ending then
+  opens on TWO beats, one idea each** (decided 2026-08-04): the CLAIM — "Plusieurs thèmes
+  peuvent exister à travers le même mot." (`tutThemesIntro`) — with the tray's NEXT as its
+  only control, and only once that is acknowledged the GESTURE — "Tu peux cliquer sur un mot
+  pour découvrir ses thèmes.", **in the input device's own verb** ("tap" on a coarse pointer,
+  "click" otherwise, the same `(pointer: coarse)` test as the streak hint,
+  `tutTap`/`tutClick`) — which is where the word starts running #129's ambient wave and
+  accepts a tap, the beat's only control. The claim is made before the evidence, and the
+  clouds are the evidence. **The tap REPLACES the word with its THEMES, shown as CLOUDS of
   words ONE AT A TIME** (findings 2026-08-04, superseding first the inline route line and
   then its one-road-at-a-time variant — the line was too much information at once, where a
   cloud of themed words says "these belong together, this close" with nothing to decode):
@@ -755,9 +760,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   next line arrives WITH its cloud; NEXT THEME is inert for that beat. Reduced motion
   collapses the durations and keeps the delays, so the words still arrive one by one. Never two clouds at once: the coach names each from the
   script's `themeCopyKeys` (`tutTheme1..4` — en names OCEAN's themes, fr TROPIQUES's;
-  scripts.test.ts pins the list's length to the map's real road count), **the theme's NAME
-  in the copy wearing the cloud's color** (CoachText's `[[t:]]` tag reads
-  `--coach-theme-c`, set on the box by the Tutorial), a NEXT THEME press (`tutNextTheme`)
+  scripts.test.ts pins the list's length to the map's real road count), each headed
+  **« Thème n/N : <name> »** (`themeHeading`, so the total comes from the board's real road
+  count and no string restates it) with **the theme's NAME wearing the cloud's color**
+  (CoachText's `[[t:]]` tag reads `--coach-theme-c`, set on the box by the Tutorial), a
+  NEXT/SUIVANT press (`tutNext`, the one "go on" label the whole ending uses)
   swaps to the next — and each swap WAITS for the leaving cloud to report its last word gone
   (`ThemeCloud.onExited`, an `animationend` count with a deadline behind it, never a guessed
   duration, so nothing lands over a word still on screen). After the last theme the close
@@ -809,13 +816,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   word should likewise be an INTUITIVE neighbor (fr's second stop is `soleil^12`; the fr
   board is agreed SINGULAR — `--form tropiques=n:s` — because plural-agreed neighbors read
   oddly on a word board, findings 2026-08-04). Coach
-  copy must fit the coach box at 320px — the routes and closer-guess strings were cut to
-  size for it. **That box is FOUR lines since 2026-08-04** (three before): the ending's thesis
-  and its instruction land in one line and did not fit. The invariant that matters is
-  unchanged — the height is FIXED, so the word below never moves — and the clip still makes
-  over-long copy visible; `.tutorial`'s padding-top tracks the taller box at both breakpoints.
-  The fr instruction is trimmed ("Clique dessus." / "Touche le mot.") to fit four lines at
-  320px, keeping the thesis verbatim.
+  copy must fit the coach box's THREE lines at 320px — the routes and closer-guess strings
+  were cut to size for it, and the ending's claim + instruction were SPLIT into two beats
+  rather than trimmed into one (the box briefly went to four lines to hold the combined
+  sentence, 2026-08-04, and went back the same day once it was split: splitting the idea beat
+  growing the box).
   Copy is deliberately terse throughout, no under-the-hood talk. The tutorial is
   **data-driven**:
   the board, guesses and steps live in `web/src/tutorial/scripts/{en,fr}.ts`
