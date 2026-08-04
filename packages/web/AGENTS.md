@@ -780,8 +780,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   121 either of them DISABLES those pseudo-elements and the standard bar cannot be squared
   off. **VT323 advances exactly 1em per glyph** (measured; a 0.95
   guess clipped the longest words) and the floor is the route map's own 8px)
-  under the general principle (`tutThemes` — "Plusieurs thèmes peuvent exister à travers
-  le même mot.") while the tray offers
+  under the general principle (`tutThemes` — "Chaque thème est un chemin sémantique
+  différent à suivre.") while the tray offers
   **PLAY (`tutPlay`), which is the graduation**: `onDone`, no SolvedScreen (a lesson has no
   score to show, so `SolvedScreen`'s tutorial `action` prop and its null `dayNumber` are gone
   with it). The daily game's `RouteModal` is untouched (its drawing lives in an internal
@@ -807,8 +807,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   word should likewise be an INTUITIVE neighbor (fr's second stop is `soleil^12`; the fr
   board is agreed SINGULAR — `--form tropiques=n:s` — because plural-agreed neighbors read
   oddly on a word board, findings 2026-08-04). Coach
-  copy must fit the 3-line box at 320px — the routes and closer-guess strings were cut to
-  size for it.
+  copy must fit the coach box at 320px — the routes and closer-guess strings were cut to
+  size for it. **That box is FOUR lines since 2026-08-04** (three before): the ending's thesis
+  and its instruction land in one line and did not fit. The invariant that matters is
+  unchanged — the height is FIXED, so the word below never moves — and the clip still makes
+  over-long copy visible; `.tutorial`'s padding-top tracks the taller box at both breakpoints.
+  The fr instruction is trimmed ("Clique dessus." / "Touche le mot.") to fit four lines at
+  320px, keeping the thesis verbatim.
   Copy is deliberately terse throughout, no under-the-hood talk. The tutorial is
   **data-driven**:
   the board, guesses and steps live in `web/src/tutorial/scripts/{en,fr}.ts`
