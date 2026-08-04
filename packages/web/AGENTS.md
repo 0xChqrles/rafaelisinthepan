@@ -758,15 +758,19 @@ it to the local store — see `packages/backend/AGENTS.md`).
   scripts.test.ts pins the list's length to the map's real road count), **the theme's NAME
   in the copy wearing the cloud's color** (CoachText's `[[t:]]` tag reads
   `--coach-theme-c`, set on the box by the Tutorial), a NEXT THEME press (`tutNextTheme`)
-  swaps to the next, and after the last the close shows **the ROUTES TEASER**
+  swaps to the next — and each swap WAITS for the leaving cloud to report its last word gone
+  (`ThemeCloud.onExited`, an `animationend` count with a deadline behind it, never a guessed
+  duration, so nothing lands over a word still on screen). After the last theme the close
+  shows **the ROUTES TEASER**
   (`tutorial/RoutesTeaser.tsx`: the themes' colored lines at the map's own lane rhythm,
   carrying EVERY near-field group out to rank 100 as a station — heat-colored rank exponent
   in a left gutter like the real map's, node on its lane, word beside it in the lane's
   colour. It reads the way the real map reads: DOWN the page from the far field to the word,
-  so **`-1` sits at the BOTTOM** and it opens parked there. It **SCROLLS**, and the two
-  chevrons are its control — real buttons that page toward `-100` and back, dimmed at each
-  end, and the only non-decorative thing on the drawing (hence named, and outside the
-  aria-hidden subtree). It stretches to the play area's free height — flex-basis 0 +
+  so **`-1` sits at the BOTTOM** and it opens parked there. It **SCROLLS** by drag/wheel, and
+  its squared-off scrollbar is the only thing that says so — the chevrons that used to flank
+  it were removed 2026-08-04 (one affordance per gesture, and their column was width the
+  words needed at 320px), which also leaves the whole drawing decorative with nothing
+  focusable in it. It stretches to the play area's free height — flex-basis 0 +
   min-height 0 so it can never grow the page, bounded by a max, margins guaranteeing
   breathing room against the coach and the tray's button — and its width is DEFINITE, never
   fit-content, because `.teaser-map` is an inline-size container whose `cqw` word sizing
