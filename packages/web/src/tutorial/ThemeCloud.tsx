@@ -41,8 +41,11 @@ const SUP_EM = 0.7;
 // The cloud must also FIT the play area's height — a tall cloud grew the page and made the
 // view scroll (findings 2026-08-04). The whole size ramp scales down on short viewports:
 // full size once ~300px of cloud room exists above the tray, floored so the tail never
-// becomes unreadable. Read once at mount — the tutorial is one sitting, and a mid-cloud
-// resize at worst wraps a line early.
+// becomes unreadable. Phrased in CSS, like the width cap below (fixed 2026-08-04): read once
+// at mount it went STALE on any resize — 390x844 shrunk to 320x568 kept the full ramp, grew
+// the page to 624px and pushed the tray under the fold, which is exactly the failure the
+// scaling exists to prevent. "The tutorial is one sitting" is not true of a rotated phone or
+// a dragged window.
 const CLOUD_ROOM_OFFSET = 430; // header + coach + gaps + tray, roughly
 const CLOUD_ROOM_FULL = 300; // the room the unscaled ramp needs
 const SCALE_MIN = 0.55;
@@ -57,9 +60,20 @@ const OUT_STAGGER_MS = 90;
 // cap stays live across resizes without this component measuring anything.
 const CLOUD_AVAIL = 'min(100vw, 600px) - 40px';
 
+// A word's size: its place on the ramp, scaled to the viewport's height and capped by the
+// column's width — all three in ONE live CSS expression, so a resize re-solves it with nothing
+// to recompute here.
+//
+// The height term is `ramp * clamp(SCALE_MIN, (100dvh - OFFSET) / FULL, 1)`. CSS cannot divide a
+// length by a length to get a number, so the ratio is distributed over the multiplication
+// instead: `ramp / FULL` is a plain number at this point, and number x length is a length. `dvh`
+// rather than `vh` because the room being budgeted is the room the layout actually gets — the
+// same unit `.game`'s own min-height speaks.
 function fitSize(ramp: number, entry: RankEntry): string {
   const glyphs = entry.word.length * GLYPH_EM + (String(entry.rank).length + 1) * SUP_EM;
-  return `min(${ramp}px, calc((${CLOUD_AVAIL}) / ${glyphs.toFixed(1)}))`;
+  const room = `calc(${(ramp / CLOUD_ROOM_FULL).toFixed(4)} * (100dvh - ${CLOUD_ROOM_OFFSET}px))`;
+  const scaled = `clamp(${(ramp * SCALE_MIN).toFixed(2)}px, ${room}, ${ramp}px)`;
+  return `min(${scaled}, calc((${CLOUD_AVAIL}) / ${glyphs.toFixed(1)}))`;
 }
 
 export default function ThemeCloud({
@@ -76,11 +90,6 @@ export default function ThemeCloud({
   // Fired once, when the LAST word of an exiting cloud has finished shrinking.
   onExited?: () => void;
 }) {
-  const scale = useMemo(() => {
-    if (typeof window === 'undefined') return 1;
-    return Math.min(1, Math.max(SCALE_MIN, (window.innerHeight - CLOUD_ROOM_OFFSET) / CLOUD_ROOM_FULL));
-  }, []);
-
   // One entry per GROUP of this theme (a real map keys every inflection to the same entry),
   // closest first, capped.
   const words = useMemo<RankEntry[]>(() => {
@@ -131,7 +140,7 @@ export default function ThemeCloud({
           className={`cloud-word ${exiting ? 'out' : 'in'}`}
           style={
             {
-              fontSize: fitSize(Math.round((SIZE_MAX - i * step) * scale), entry),
+              fontSize: fitSize(SIZE_MAX - i * step, entry),
               '--cloud-delay': `${Math.round(
                 offsets[i] * (exiting ? OUT_STAGGER_MS : IN_STAGGER_MS),
               )}ms`,

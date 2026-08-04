@@ -22,8 +22,9 @@
 // the board, inside generation's own 50-150 start band), then three gated guesses teach
 // distance (forest, 214: farther, hint stays), MISS (violin, which the real map does not rank
 // at all), and improvement (boat, 45: closer, hint moves). The player then finds their way
-// back to OCEAN with free typing, and taps the word they found — its route line takes its
-// place, and PLAY ends the lesson.
+// back to OCEAN with free typing, and taps the word they found — its THEMES take its place,
+// one cloud at a time, the routes teaser closes on the general principle, and PLAY ends the
+// lesson.
 //
 // scripts.test.ts replays this file and fails if an edit breaks the lesson arc.
 import type { WordPuzzle } from '@whippin/shared';

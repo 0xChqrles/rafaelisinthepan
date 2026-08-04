@@ -88,6 +88,43 @@ const STICK_SLACK = 1;
 // FIXED width: a placeholder that grew with the word would leak its length.
 const UNKNOWN = '???';
 
+// How far into the SCROLLED CONTENT a row sits — the one number the sticky row's natural place,
+// the opening scroll and the parked test are all expressed in.
+//
+// It is computed from LAYOUT metrics, never from a rect: the dialog opens on a `route-zoom`
+// transform, which scales every getBoundingClientRect while leaving offsetTop/offsetHeight/
+// clientHeight untouched, so a rect read here would measure a box mid-zoom.
+//
+// And it has to WALK the offsetParent chain, because the scroller is NOT the row's offsetParent:
+// `.route-frame` is positioned (it is the containing block for the sr-only mirror it carries) and
+// so takes the job. The old `here.offsetTop - scroller.offsetTop` mixed two coordinate spaces the
+// moment that wrapper appeared — the row's offset was already relative to the frame, so
+// subtracting the scroller's own offset took off one HEADER too many (48px at phone widths, 56 on
+// desktop): the opening scroll landed the row that far below the bottom edge, and both parked
+// thresholds fired that far early. Walking is right whichever ancestor happens to be positioned,
+// which is the whole point — the subtraction was correct until a refactor moved the positioning,
+// and said nothing when it stopped being.
+function offsetWithin(el: HTMLElement, scroller: HTMLElement): number {
+  let top = 0;
+  let node: HTMLElement | null = el;
+  while (node && node !== scroller) {
+    const parent = node.offsetParent as HTMLElement | null;
+    if (!parent) break;
+    if (scroller.contains(parent)) {
+      // Still inside the scroller (`contains` counts the scroller itself), so this offset is
+      // already measured against a box within the scrolled content.
+      top += node.offsetTop;
+      node = parent;
+    } else {
+      // The chain has left the scroller: `node` and the scroller are now measured against the
+      // same ancestor, so their difference converts into the scroller's own space.
+      top += node.offsetTop - scroller.offsetTop;
+      break;
+    }
+  }
+  return top;
+}
+
 // --- lanes -----------------------------------------------------------------------------
 // The roads (#115) are drawn as LANES of the rail, the way a metro line draws its branches:
 // which lane a station sits on is its road. That is structural — you read it from the shape of
@@ -500,7 +537,7 @@ export default function RouteModal({
       return;
     }
     here.style.position = 'static';
-    naturalRef.current = { top: here.offsetTop - scroller.offsetTop, height: here.offsetHeight };
+    naturalRef.current = { top: offsetWithin(here, scroller), height: here.offsetHeight };
     here.style.position = '';
     readStuck();
   }, [model, readStuck]);

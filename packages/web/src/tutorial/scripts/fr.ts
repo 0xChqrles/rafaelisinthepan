@@ -26,8 +26,8 @@
 // stays — snow is INTUITIVELY the anti-tropics, climate-adjacent but far, on a READABLE
 // scale), MISS (guitare, which the real map does not rank at all), and improvement (lagon,
 // 22: closer, hint moves). The player then finds their way back to TROPIQUES, and taps the
-// word they found — its route line takes its place, one road at a time, and JOUER ends the
-// lesson.
+// word they found — its THEMES take its place, one cloud at a time, the routes teaser closes
+// on the general principle, and JOUER ends the lesson.
 import type { WordPuzzle } from '@whippin/shared';
 import type { TutorialScript } from '../script';
 import artifact from './fr.word.json';
