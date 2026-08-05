@@ -17,7 +17,7 @@ import Keyboard from '../components/Keyboard';
 import WordEndScreen from '../components/WordEndScreen';
 import LoadError from '../components/LoadError';
 import { rankHeatColor, HIT_HEAT_CAP } from '../components/Hole';
-import { t, srWordClaim, srWordStrike } from '../i18n';
+import { t, srWordClaim, srWordHud, srWordStrike } from '../i18n';
 
 // Word mode (#156): the second daily game on the same mechanic, inverted — the word is
 // SHOWN and the player names its neighborhood. One claim per zone group, the run ends
@@ -330,18 +330,27 @@ function WordRound({
       </div>
 
       {/* The arcade corner: the claim COUNT (the score — higher is better here) and the
-          strike pips, which fill as the consecutive-incorrect run grows and empty on a
-          claim. */}
+          three LIVES beside it, one spent per consecutive incorrect guess and all three
+          back on a claim. */}
       <div className="hud">
         <span className="word-hud">
           <span className="word-count">{score}</span>
-          <span className="word-strikes" aria-hidden="true">
+          {/* LIVES, not strikes: three hearts, one spent per consecutive incorrect guess.
+              A living heart shimmers (the `ultraheart` sprite, the calendar ripple's own
+              technique); a spent one keeps its place and goes dark, so the row shows what
+              you HAD as well as what is left. Decorative — the sr line below states it. */}
+          <span className="word-lives" aria-hidden="true">
+            {/* Spent from the RIGHT, so what is left reads off the row's start — the
+                arcade convention, and the reason the count sits to their left. */}
             {Array.from({ length: STRIKES_TO_END }, (_, i) => (
-              <i key={i} className={`strike-pip${i < run.strikes ? ' hit' : ''}`} />
+              <i
+                key={i}
+                className={`life-heart${i >= STRIKES_TO_END - run.strikes ? ' spent' : ''}`}
+              />
             ))}
           </span>
           <span className="sr-only">
-            {`${score} ${t(lang, score === 1 ? 'word' : 'words')} — ${run.strikes}/${STRIKES_TO_END}`}
+            {srWordHud(lang, score, STRIKES_TO_END - run.strikes, STRIKES_TO_END)}
           </span>
         </span>
       </div>

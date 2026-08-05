@@ -180,7 +180,21 @@ it to the local store — see `packages/backend/AGENTS.md`).
   trailing off rather than arriving. The teaser is the shape the routes were TAUGHT in, so
   it is the one to match; the connector contributes only what the junction and the arrival
   row do not already spend (`TEASER_MERGE_RUN`/`JX_STUB`/`ARRIVAL_HALF_HEAD` in
-  `WordBoard`, measured at 36px bus→node). The rank gutter fits the farthest row drawn,
+  `WordBoard`, measured at 36px bus→node).
+  **The HUD's run state is three LIVES, not a strike counter** (decided 2026-08-05): the
+  arcade corner carries the claim count and three hearts beside it, one spent per
+  consecutive incorrect guess and all three back on a claim — spent from the RIGHT, so what
+  is left reads off the row's start. They are `assets/ultraheart.png`, a **10-frame
+  horizontal sprite sheet (130×13, ten 13×13 frames)** played EXACTLY the way the archive's
+  solved-day ripple plays `ultracode.png` — `background-size: 1000% 100%`, `steps(10)`,
+  end value `100% × 10/9` so frame 9 lands on 100% and the loop wraps clean, `pixelated` at
+  an exact 2× (26px). A living heart shimmers, which is what makes it read as ALIVE rather
+  than as a counter; a spent one KEEPS its place (a row that shrank would shift the count
+  beside it), stops, and drains to a dark outline. **Reduced motion parks it on frame 0
+  instead of hiding it** — the opposite of `.cal-ripple`, and deliberately: there the sprite
+  decorates a status the cell's fill already carries, here the heart IS the status. The
+  hearts are decorative to assistive tech; `srWordHud` states the standing in prose.
+  The rank gutter fits the farthest row drawn,
   which with the whole field on the line is the field's own outer edge until a near strike
   lands beyond it.
   **The window wears the teaser's TORN EDGES** (decided 2026-08-05): the line outruns the

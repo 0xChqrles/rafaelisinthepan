@@ -296,6 +296,16 @@ export function srWordBoardWord(lang: string, word: string): string {
   return uiLang(lang) === 'fr' ? `mot du jour : ${word}` : `word of the day: ${word}`;
 }
 
+// The HUD in words — the hearts are decorative, so this is what states the run's standing:
+// how much has been claimed, and how many lives are left of the three. Prose, so it stays in
+// the reader's own language.
+export function srWordHud(lang: string, score: number, lives: number, max: number): string {
+  if (uiLang(lang) === 'fr') {
+    return `${score} ${score === 1 ? 'mot' : 'mots'} — ${lives}/${max} ${lives === 1 ? 'vie' : 'vies'}`;
+  }
+  return `${score} ${score === 1 ? 'word' : 'words'} — ${lives}/${max} ${lives === 1 ? 'life' : 'lives'}`;
+}
+
 export function srWordClaim(lang: string, word: string, rank: number, total: number): string {
   if (uiLang(lang) === 'fr') return `${word} trouvé (rang ${rank}) — ${total} mots`;
   return `claimed ${word} (rank ${rank}) — ${total} words`;

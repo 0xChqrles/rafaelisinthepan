@@ -3458,8 +3458,8 @@ button * {
   width: 100%;
 }
 
-/* The arcade corner: the claim count (the score — higher is better in this mode) and
-   the strike pips beside it, filling as the consecutive-incorrect run grows. */
+/* The arcade corner: the claim count (the score — higher is better in this mode) and the
+   three LIVES beside it, one spent per consecutive incorrect guess. */
 .word-hud {
   display: flex;
   align-items: center;
@@ -3471,16 +3471,48 @@ button * {
   font-size: clamp(16px, 2.4vh, 22px);
   color: var(--fg);
 }
-.word-strikes {
+.word-lives {
   display: flex;
-  gap: 6px;
+  gap: 5px;
 }
-.strike-pip {
-  width: 10px;
-  height: 10px;
-  background: var(--surface-hover);
+/* A LIVING heart, drawn by `ultraheart.png` — a 10-frame horizontal sprite sheet (130×13,
+   ten 13×13 frames) played exactly the way the calendar's solved-day ripple plays
+   `ultracode.png`: `background-size: 1000% 100%` fits one frame to the square box, and
+   `steps(10)` walks `background-position-x` to `100% × 10/9`, so frame 9 lands on 100% and
+   the loop wraps clean. `image-rendering: pixelated` keeps the pixel art crisp at the
+   exact 2× (26px) it is drawn at — the app never scales pixel art fractionally.
+   The shimmer is what makes a life read as ALIVE rather than as a counter; it is the same
+   argument the calendar's ripple makes for a solved day. */
+.life-heart {
+  width: 26px; /* 2 × the 13px source */
+  height: 26px;
+  background-image: url('./assets/ultraheart.png');
+  background-repeat: no-repeat;
+  background-size: 1000% 100%;
+  image-rendering: pixelated;
+  animation: life-heart 1.5s steps(10) infinite;
 }
-/* A landed strike wears the heat ramp's cold crimson — the same color a MISS floats in. */
-.strike-pip.hit {
-  background: rgb(255, 28, 84);
+@keyframes life-heart {
+  from {
+    background-position-x: 0%;
+  }
+  to {
+    background-position-x: calc(100% * 10 / 9); /* frame 9 lands on 100%; endpoint wraps */
+  }
+}
+/* Spent: the heart KEEPS its place — the row has to say what you had as well as what is
+   left, and three hearts that shrink to two would move the count beside them — but it
+   stops beating and drains to a dark outline of itself. */
+.life-heart.spent {
+  animation: none;
+  filter: grayscale(1) brightness(0.42);
+  opacity: 0.55;
+}
+/* Unlike the calendar's ripple, the motion may NOT be dropped wholesale here: this sprite
+   is not decoration over a status, it IS the status. Reduced motion parks it on frame 0 —
+   a living heart, simply still. */
+@media (prefers-reduced-motion: reduce) {
+  .life-heart {
+    animation: none;
+  }
 }
