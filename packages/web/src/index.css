@@ -1861,6 +1861,31 @@ button * {
     transparent var(--dash, 5px) var(--dash-period, 13px)
   );
 }
+/* A run that SKIPS ranks — Word mode's board draws only the words you have found (#156,
+   decided 2026-08-05), so the stretches between them are ground nobody has named. Same
+   dash unit as the tail above, meaning the same thing: the line does not continue
+   straight through here. (Only that board applies it; the route map draws every group of
+   its near field, so it has no gaps to mark.) */
+.route-link.dashed::before {
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--rail) 0 var(--dash, 5px),
+    transparent var(--dash, 5px) var(--dash-period, 13px)
+  );
+}
+/* Inside the fork a run carries EVERY lane, so the dashes are MASKED out of the lane
+   gradient instead of being painted over it: this board sits on the page's animated
+   backdrop rather than a modal's opaque panel, so a gap has to be genuinely transparent
+   (the route map's parked-row separator fills its gaps with --bg for the opposite
+   reason — there, transparent would show slivers of the rows scrolling behind it). */
+.route-link.lanes.dashed::before {
+  background: var(--lane-lines);
+  mask-image: repeating-linear-gradient(
+    to bottom,
+    #000 0 var(--dash, 5px),
+    transparent var(--dash, 5px) var(--dash-period, 13px)
+  );
+}
 
 /* --- one station --- */
 /* Every cell names its column: an item with a definite ROW span but an auto column is placed
@@ -3374,6 +3399,12 @@ button * {
    break mid-word at the terminus. Verified: 'tropiques' at 390px wraps without this. */
 .word-frame {
   --wordw: calc(min(430px, 100vw - 40px - 48px) - var(--gutter) - var(--railw) - 18px);
+}
+/* The line ends just above the prompt, not on a modal's generous bottom margin: the board
+   is SHORT while the field is unexplored (it draws only what has been found), and the
+   route map's 104px tail then reads as a hole between the word and the input. */
+.word-frame .route {
+  padding-bottom: 40px;
 }
 @media (max-width: 640px) {
   .word-frame {

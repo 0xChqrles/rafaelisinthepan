@@ -1,7 +1,7 @@
 // Word mode's BOARD model (#156): the day's neighborhood drawn as the route-map concept
-// (#117) — lanes, dq-spaced stations, censored unfound stops — but inverted and live.
-// The center word is PUBLIC, there is no hidden destination, no departure and no "you
-// are here": the whole zone is the playing field, and a claim reveals its station.
+// (#117) — lanes, dq-spaced stations — but inverted and live. The center word is PUBLIC,
+// there is no hidden destination, no departure and no "you are here": the whole zone is
+// the playing field, and a claim reveals its station.
 // `buildRoute` assumes a secret / start_rank / "you are here", so this is a SIBLING
 // model, not a parameter tweak — same derivation contract though: everything comes from
 // (ranks, ordered counted guesses), nothing new is persisted, and a guess landing simply
@@ -12,7 +12,9 @@ import { CLAIM_ZONE, STRIKES_TO_END, judgeWordGuess, wordGuessKey } from './word
 
 // One group of the zone: a station on its road's lane. `word` is null while unclaimed
 // and the run is live; a claim — or the run ending, which turns the board into the
-// post-mortem — reveals the canonical accented form.
+// post-mortem — reveals the canonical accented form. A null-word group is NOT DRAWN
+// (the board draws only found words, decided 2026-08-05); it still ships because the
+// drawing measures its connectors across it and the sr mirror counts it.
 export interface WordStation {
   rank: number;
   dq: number;

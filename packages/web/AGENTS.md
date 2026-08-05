@@ -153,12 +153,26 @@ it to the local store — see `packages/backend/AGENTS.md`).
   free. The pure rules live in `game/wordGame.ts` (`judgeWordGuess` / `wordGuessKey` /
   `replayWordRun` — a round replays from its counted-guess log exactly like the
   sentence game), the board model in `game/wordBoard.ts` (a SIBLING of `buildRoute`:
-  no departure, no "you are here", the whole zone censored until claimed, the run's
-  end revealing the field as the post-mortem), and the surface in `screens/WordGame.tsx`
+  no departure, no "you are here"), and the surface in `screens/WordGame.tsx`
   + `components/WordBoard.tsx`, which reuses the route map's `.route-*` drawing grammar
   and RouteModal's exported geometry helpers so the two surfaces cannot drift (the ONE
   CSS difference: `.word-frame` re-derives `--wordw` minus the app's page inset, since
-  the board lives in the page rather than a full-bleed dialog). The end screen
+  the board lives in the page rather than a full-bleed dialog).
+  **The board draws ONLY what has a WORD** (decided 2026-08-05, superseding the censored
+  `???` census it shipped with): the route map draws every unfound group because its job
+  is to show a neighborhood you cannot see, bounded by your departure — here the field is
+  a flat 150 and the word is already public, so 150 placeholders said one thing 150 times
+  and buried the handful of words the player knows. Unfound ground is now the GAPS: a
+  connector that SKIPS ranks is drawn as a broken trace (`.route-link.dashed`, the cold
+  tail's own dash unit, snapped by `dashedRun` so it meets the next node on a full dash;
+  inside the fork the dashes are MASKED out of the lane gradient, because this board sits
+  on the page's animated backdrop and a gap has to be genuinely transparent). So the
+  board starts empty — fork, one dashed run, merge — and fills in as you claim, while the
+  run's end still reveals every group and turns it into the full post-mortem. Junctions
+  stand ON the field's edges (its farthest group, and rank 1), so a run touching one is
+  dashed unless a found word sits on that edge; the merge→word leap stays SOLID (the
+  2026-08-04 decision). The rank gutter is sized by the FIELD's widest exponent, not the
+  drawn rows', so a far claim never jolts the column. The end screen
   (`components/WordEndScreen.tsx`) is the named `<n> WORDS/MOTS` count + SHARE via the
   v3 word token. Identity is mode-addressed everywhere: `roundKeyForDay(day, lang,
   'word')` = `w:` keys into the store's own `wordRounds` map (persist v6; `ensureWordRound`
