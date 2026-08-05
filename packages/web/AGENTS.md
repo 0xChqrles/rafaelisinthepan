@@ -188,7 +188,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   map, so whichever side still has line beyond it gets the 9px-on/9px-off rule — the same
   vocabulary as the route map's parked separator. That needs the
   board to be TWO boxes (`.word-window` around `.word-scroll`), because a pseudo-element
-  inside a scroller scrolls away with the content, and the rules live on the shared
+  inside a scroller scrolls away with the content, and — since a rule spans its WINDOW —
+  that window is capped at the line's own width (`430 + 40 + 6`: the drawing, the scroller's
+  sides, the pixel scrollbar) and centred, with the PROMPT sharing the column. Uncapped it
+  was the whole 1200px page column on a desktop while the line inside it was 430, so the
+  tears ran nearly three times the width of what they were tearing and the prompt answered
+  from a third of a screen away. Both caps are no-ops on a phone. The rules live on the shared
   `.scroll-torn` utility (beside `.pixel-scroll`) with `hooks/useScrollEdges` behind them —
   BOTH shared with the onboarding teaser, which was refactored onto them rather than
   leaving two copies of the slack/bail-out/resize details to drift. `WordGame` re-reads the

@@ -3385,6 +3385,21 @@ button * {
   display: flex;
   flex-direction: column;
 }
+/* The board and its prompt share ONE COLUMN, capped at the line's own width (2026-08-05).
+   The drawing is `min(430px, 100%)` and centres itself inside the scroller, so on a desktop
+   the WINDOW was the whole 1200px page column while the line in it was 430 — and the torn
+   edges span the window, so they ran nearly three times the width of the thing they were
+   tearing. The cap is the line (430) + the scroller's own 20px sides + the 6px pixel
+   scrollbar, so the drawing still lands at its full width and the rules bracket it with
+   exactly the scroller's breathing room and no more. The prompt takes the same column
+   because it belongs to the board: left-aligned against the page it sat a third of a screen
+   away from the line it answers. Both are no-ops on a phone, where the column is already
+   narrower than the cap. */
+.word-window,
+.word-prompt {
+  max-width: calc(430px + 40px + 6px);
+  align-self: center;
+}
 .word-scroll {
   flex: 1 1 0;
   min-height: 0;
