@@ -193,7 +193,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
   BOTH shared with the onboarding teaser, which was refactored onto them rather than
   leaving two copies of the slack/bail-out/resize details to drift. `WordGame` re-reads the
   edges when the MODEL changes too: a claim adds rows and the run's end reveals the whole
-  field, neither of which fires a scroll event. The end screen
+  field, neither of which fires a scroll event.
+  **The move onto a landed guess's station runs on the APP's clock, not the browser's**
+  (decided 2026-08-05): `scrollIntoView({ behavior: 'smooth' })` times itself by the
+  DISTANCE travelled, and the field is ~150 rows, so a claim out at the far edge crawled for
+  the better part of a second while the next guess was already typeable. `WordGame` animates
+  `scrollTop` itself instead — `SCROLL_MIN_MS`/`SCROLL_MAX_MS`/`SCROLL_PX_PER_MS`, ease-out,
+  a rAF loop the next guess cancels mid-flight — so the whole board crosses in ~320ms and a
+  one-rank hop in ~140 (measured 2833px in 316ms, landing centred to the pixel). Reduced
+  motion sets `scrollTop` outright. The target is measured off RECTS, never `offsetTop`:
+  `.route-frame` is positioned, so it and not the scroller is the offsetParent (the trap the
+  route map's `offsetWithin` exists for). The end screen
   (`components/WordEndScreen.tsx`) is the named `<n> WORDS/MOTS` count + SHARE via the
   v3 word token. Identity is mode-addressed everywhere: `roundKeyForDay(day, lang,
   'word')` = `w:` keys into the store's own `wordRounds` map (persist v6; `ensureWordRound`

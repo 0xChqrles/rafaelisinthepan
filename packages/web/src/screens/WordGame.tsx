@@ -25,6 +25,19 @@ import { t, srWordClaim, srWordStrike } from '../i18n';
 // The board (components/WordBoard) is the primary play surface — the route-map concept,
 // live; this screen owns the guess loop, the persisted round, and the tray.
 
+// The auto-scroll onto a landed guess's station (see the effect below). The band is
+// narrow ON PURPOSE: a hop to the next rank and a jump across the whole field should feel
+// like the same gesture, and the far jump is exactly the one the browser's own smooth
+// scroll spent close to a second on. At 6px/ms the widest board still lands inside
+// SCROLL_MAX_MS, which sits with the app's other transitions (the modals' 120ms, the
+// keyboard drop's 200, the results' 250) rather than above them.
+const SCROLL_MIN_MS = 140;
+const SCROLL_MAX_MS = 320;
+const SCROLL_PX_PER_MS = 6;
+// Ease OUT only: the move starts at full speed (it is a reaction to the guess just
+// submitted) and settles onto the station.
+const easeOutScroll = (t: number) => 1 - (1 - t) ** 3;
+
 // The guess feedback under the input — Word mode's one hole is the WORD, always on
 // screen, so the under-input line carries the per-guess outcome (the sentence game's
 // feedback grammar splits this between the holes and the input; here they are the same
@@ -134,13 +147,58 @@ function WordRound({
   useLayoutEffect(() => {
     readEdges();
   }, [board, readEdges]);
+  // The move onto the station a counted guess just landed on. Driven here rather than by
+  // `scrollIntoView({ behavior: 'smooth' })`, whose duration is the BROWSER's and scales
+  // with the distance travelled: the field is ~150 rows, so a claim out at the far edge
+  // crawled for the better part of a second before the player could see where it had
+  // landed — and the next guess is typeable the whole time. On this clock the move is over
+  // in a beat, with the distance changing it only inside a narrow band.
   useLayoutEffect(() => {
-    if (!focusRank) return;
-    const station = scrollRef.current?.querySelector(`[data-word-rank="${focusRank.rank}"]`);
+    if (!focusRank) return undefined;
+    const scroller = scrollRef.current;
+    const station = scroller?.querySelector<HTMLElement>(`[data-word-rank="${focusRank.rank}"]`);
+    if (!scroller || !station) return undefined;
+    // Centre the station in the window, clamped into the scroll range. Measured off RECTS,
+    // never offsetTop: `.route-frame` is positioned, so IT is the offsetParent rather than
+    // the scroller, and the two coordinate spaces differ (the route map's own `offsetWithin`
+    // exists for exactly that trap). Nothing here is mid-transform, so rects are honest.
+    const stationBox = station.getBoundingClientRect();
+    const scrollerBox = scroller.getBoundingClientRect();
+    const from = scroller.scrollTop;
+    const to = Math.max(
+      0,
+      Math.min(
+        from +
+          stationBox.top +
+          stationBox.height / 2 -
+          (scrollerBox.top + scroller.clientHeight / 2),
+        scroller.scrollHeight - scroller.clientHeight,
+      ),
+    );
+    const distance = Math.abs(to - from);
+    if (distance < 1) return undefined;
     const reduceMotion =
       typeof window.matchMedia === 'function' &&
       window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    station?.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' });
+    if (reduceMotion) {
+      scroller.scrollTop = to;
+      return undefined;
+    }
+    const duration = Math.min(
+      SCROLL_MAX_MS,
+      Math.max(SCROLL_MIN_MS, distance / SCROLL_PX_PER_MS),
+    );
+    let frame = 0;
+    let start = 0;
+    const step = (now: number) => {
+      if (!start) start = now;
+      const t = Math.min(1, (now - start) / duration);
+      scroller.scrollTop = from + (to - from) * easeOutScroll(t);
+      if (t < 1) frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+    // A guess landing mid-move takes over from wherever the line has got to.
+    return () => cancelAnimationFrame(frame);
   }, [focusRank]);
 
   // Same prefix rule as the sentence game: a dead-end char shakes the prompt instead of
