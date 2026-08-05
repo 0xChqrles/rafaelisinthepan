@@ -318,7 +318,10 @@ function RouteLine({
       {/* The drawing is decorative; the sr-only list below carries the same content. */}
       <div className="route" aria-hidden="true">
         {/* Before the line even starts: the guesses that earned no rank at all. Beyond the
-            top-K there is no distance left to draw, and that IS the mechanic. */}
+            top-K there is no distance left to draw, and that IS the mechanic. It carries no
+            rule under it (removed 2026-08-05): the shelf sits above the line's own broken
+            tail, so a second horizontal tear only fenced the words off from what they are
+            already outside of. */}
         {model.misses.length > 0 && (
           <div className="route-shelf">
             <p className="route-shelf-head">{t(lang, 'routeOffMap')}</p>
@@ -329,7 +332,6 @@ function RouteLine({
                 </span>
               ))}
             </p>
-            <span className="route-break" />
           </div>
         )}
         {/* The line always comes in out of that void, whether or not this round hit it. */}

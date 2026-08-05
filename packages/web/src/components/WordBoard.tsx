@@ -45,9 +45,9 @@ import { t, srRouteRoads, srRouteStop, srRouteOffMap, srWordBoardWord } from '..
 //
 // It reuses the route map's drawing grammar wholesale — the `.route-frame` / `.route-*`
 // CSS and RouteModal's exported geometry helpers — so the two surfaces cannot drift
-// apart visually. The line runs DOWN the page like the map does: the off-map strikes
-// past a torn break at the top, then the near strikes riding the trunk, the fork, the
-// field farthest-first, and the day's word closing the line at the bottom.
+// apart visually. The line runs DOWN the page like the map does: the off-map strikes at
+// the top, then the broken tail, the near strikes riding the trunk, the fork, the field
+// farthest-first, and the day's word closing the line at the bottom.
 
 // The merge into the word runs the ONBOARDING TEASER's distance, not the route modal's
 // (decided 2026-08-05). The map spends `LEAP_H` (56) there, which with the converge
@@ -127,6 +127,9 @@ export default function WordBoard({ model, lang }: { model: WordBoardModel; lang
     <div className="route-frame word-frame" style={frame}>
       {/* The drawing is decorative; the sr-only list below carries the same content. */}
       <div className="route" aria-hidden="true">
+        {/* The off-map strikes, above the line and outside every distance it draws. No rule
+            under them (removed 2026-08-05, with the map's own): the broken tail below already
+            says the line does not continue straight through. */}
         {model.misses.length > 0 && (
           <div className="route-shelf">
             <p className="route-shelf-head">{t(lang, 'routeOffMap')}</p>
@@ -137,7 +140,6 @@ export default function WordBoard({ model, lang }: { model: WordBoardModel; lang
                 </span>
               ))}
             </p>
-            <span className="route-break" />
           </div>
         )}
         {/* The line always comes in out of that void, whether or not this run hit it — the

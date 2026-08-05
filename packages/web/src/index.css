@@ -18,9 +18,9 @@
 
 :root {
   --bg: #0a0b12;
-  /* The route line's own colour: trunk, junction bus, the leap's and the tail's dashes, the
-     torn break — and the onboarding teaser's leap, which is why it lives here rather than on
-     `.route-frame` where it started. Deliberately the ONE unsaturated line on the map: the
+  /* The route line's own colour: trunk, junction bus, the tail's dashes, the parked row's
+     separator and the windows' torn edges — and the onboarding teaser's leap, which is why it
+     lives here rather than on `.route-frame` where it started. Deliberately the ONE unsaturated line on the map: the
      trunk is the stretch where no road has been identified, so it reads as the far field the
      lanes fork out of. */
   --rail: #48528a;
@@ -193,7 +193,7 @@ button * {
    taller than its window (the onboarding's routes teaser #155, Word mode's board #156). The
    window is smaller than the line on every real board, and an edge that simply ends reads as
    the end of the map — so the side that still has line beyond it is torn, with the same
-   9px-on, 9px-off rule the route map's off-map break and its parked separator wear, meaning
+   9px-on, 9px-off rule the route map's parked separator wears, meaning
    the same thing here: it does not continue straight through. Which sides those are is the
    scroll position's business (hooks/useScrollEdges), handed back as `more-up` / `more-down`.
 
@@ -2125,8 +2125,8 @@ button * {
 }
 /* Parked, i.e. NOT where it belongs: the row is drawn hard against one it is nowhere near on the
    line, with an unseen stretch of the neighborhood squeezed out between them. So the side facing
-   that skipped ground gets a torn separator — the same dashes the off-map break wears, since both
-   mean "the map does not continue straight through here". Down from a row parked at the top, up
+   that skipped ground gets a torn separator — the same dashes a scrolling window's cut-off edge
+   wears, since both mean "the map does not continue straight through here". Down from a row parked at the top, up
    from one parked at the bottom, and nothing at all when the row is simply where it lives (which
    includes the view the map opens in).
    The row is framed by ONE margin, `--stick-inset`, used on both of its sides: the same distance
@@ -2199,8 +2199,10 @@ button * {
   opacity: 0.55;
 }
 /* --- off the map --- */
-/* ABOVE the line, behind a torn edge: the guesses that earned no rank at all. Beyond the
-   top-K there is no distance left to draw, and that IS the mechanic. */
+/* ABOVE the line: the guesses that earned no rank at all. Beyond the top-K there is no
+   distance left to draw, and that IS the mechanic. Nothing rules them off (2026-08-05,
+   dropping `.route-break`) — the line's own broken tail runs immediately below, and a second
+   horizontal tear only fenced these words off from what they are already outside of. */
 .route-shelf-head {
   margin: 0 0 12px;
   font-family: var(--press);
@@ -2230,11 +2232,6 @@ button * {
   .route-frame {
     --rank-size: 9px;
   }
-}
-.route-break {
-  display: block;
-  height: 3px;
-  background: repeating-linear-gradient(90deg, var(--rail) 0 9px, transparent 9px 18px);
 }
 
 /* Result action: the same flat key language as the keyboard it replaces. */

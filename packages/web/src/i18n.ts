@@ -72,8 +72,8 @@ const STRINGS = {
   // ARRIVAL / YOU ARE HERE / START / ROADS were removed 2026-07-26). The screen-reader
   // mirror still names every one of them: see `srRouteStop` below, which spells them out
   // in prose rather than depending on any of this. The ONE string left is the heading over
-  // the words above the torn break — guesses that earned no rank at all, so they have no
-  // node, no lane and no distance to be read off.
+  // the words above the line — guesses that earned no rank at all, so they have no node, no
+  // lane and no distance to be read off, and nothing about them can be read off the drawing.
   routeOffMap: { en: 'OFF THE MAP', fr: 'HORS CARTE' },
   // The streak celebration's ending hint: pure "what to do" — the whole screen dismisses,
   // so naming a "why" (continue/close — continue to WHAT? the game is done) would only

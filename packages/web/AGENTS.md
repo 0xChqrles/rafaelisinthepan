@@ -186,7 +186,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **The window wears the teaser's TORN EDGES** (decided 2026-08-05): the line outruns the
   screen as soon as a few claims land, and an edge that simply ends reads as the end of the
   map, so whichever side still has line beyond it gets the 9px-on/9px-off rule — the same
-  vocabulary as the route map's off-map break and its parked separator. That needs the
+  vocabulary as the route map's parked separator. That needs the
   board to be TWO boxes (`.word-window` around `.word-scroll`), because a pseudo-element
   inside a scroller scrolls away with the content, and the rules live on the shared
   `.scroll-torn` utility (beside `.pixel-scroll`) with `hooks/useScrollEdges` behind them —
@@ -264,8 +264,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the old lane geometry (`stopX`/`labelSide`/`laneNameFont`) and the axis contours are all gone
   with it.
   **The line is TRAVELLED, so it runs departure → arrival DOWN the page** (decided 2026-07-26):
-  the off-map words at the top past the torn break, every station reached farthest first, and
-  the word itself at the bottom. It **opens with the CLOSEST word you have reached sitting at the
+  the off-map words at the top, then the broken tail, every station reached farthest first, and
+  the word itself at the bottom. **The off-map shelf carries NO rule under it** (decided
+  2026-08-05, dropping `.route-break` from both surfaces): the tail's own broken trace begins
+  immediately below it, so a horizontal tear as well only fenced those words off from the
+  distance they are already outside of. It **opens with the CLOSEST word you have reached sitting at the
   bottom edge**, a few pixels short of it (decided 2026-07-26): the ground you have covered fills the screen above it, and
   what is still ahead — the words closer than yours, and the destination — waits just below the
   fold. A solved hole has no "here", so it opens on the terminus instead. Measuring that row is
@@ -292,7 +295,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **The map carries NO labels** (decided 2026-07-26, superseding the `ARRIVÉE` / `VOUS ÊTES ICI` /
   `DÉPART` / `ROUTES` tags tried the same day): every one of those is said by a node's size,
   fill and lane instead, and the only string left on it is `routeOffMap` — the words above the
-  torn break have no node, no lane and no distance, so nothing about them can be read off the
+  line have no node, no lane and no distance, so nothing about them can be read off the
   drawing. The screen-reader mirror still names all four in prose (`srRouteStop`), which is why
   dropping them costs no information. Fixed-width `???` is the ONE token for "you have not found
   this word": the destination and every censored station wear it.
@@ -399,8 +402,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `best`, so nothing sticks.
   **A parked row shows the GAP it is hiding** (decided 2026-07-26): pinned, the row is drawn hard
   against one it is nowhere near, with an unseen stretch of the line squeezed out between them, so
-  the side facing that skipped ground gets **a torn separator — the same dashes the off-map break
-  wears**, since both mean the map does not continue straight through there. Below when parked at
+  the side facing that skipped ground gets **a torn separator — the same dashes a scrolling
+  window's cut-off edge wears** (`.scroll-torn`), since both mean the map does not continue
+  straight through there. Below when parked at
   the top, above when parked at the bottom, nothing when the row is simply where it lives (which
   includes the opening view). **`--stick-inset` is the row's ONE margin, used on both of its
   sides**: the same distance holds it off the screen edge and off the separator, so a parked row
