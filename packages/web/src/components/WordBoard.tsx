@@ -1,5 +1,6 @@
 import { Fragment } from 'react';
 import type { CSSProperties } from 'react';
+import { heatColor } from '@whippin/shared';
 import type { WordBoardModel } from '../game/wordBoard';
 import { rankHeatColor, HIT_HEAT_CAP } from './Hole';
 import {
@@ -132,7 +133,11 @@ export default function WordBoard({ model, lang }: { model: WordBoardModel; lang
             says the line does not continue straight through. */}
         {model.misses.length > 0 && (
           <div className="route-shelf">
-            <p className="route-shelf-head">{t(lang, 'routeOffMap')}</p>
+            {/* The heat ramp's coldest colour — what the floating `MISS` and this board's
+                own strike feedback already wear (`heatColor(0)`, computed, never copied). */}
+            <p className="route-shelf-head" style={{ color: heatColor(0) }}>
+              {t(lang, 'routeOffMap')}
+            </p>
             <p className="route-misses">
               {model.misses.map((word) => (
                 <span key={word} className="route-miss">

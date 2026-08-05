@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, RefObject } from 'react';
 import { createPortal } from 'react-dom';
+import { heatColor } from '@whippin/shared';
 import { DQ_MAX, type RouteModel } from '../game/route';
 import { rankHeatColor, HIT_HEAT_CAP } from './Hole';
 import {
@@ -324,7 +325,13 @@ function RouteLine({
             already outside of. */}
         {model.misses.length > 0 && (
           <div className="route-shelf">
-            <p className="route-shelf-head">{t(lang, 'routeOffMap')}</p>
+            {/* In the heat ramp's COLDEST colour — the exact one the floating `MISS` wears
+                when a guess is too far to rank (`heatColor(0)`, computed rather than copied,
+                so the two can never drift). The heading names the same outcome, so it says
+                it in the same voice. */}
+            <p className="route-shelf-head" style={{ color: heatColor(0) }}>
+              {t(lang, 'routeOffMap')}
+            </p>
             <p className="route-misses">
               {model.misses.map((word) => (
                 <span key={word} className="route-miss">

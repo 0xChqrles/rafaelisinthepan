@@ -2208,6 +2208,10 @@ button * {
   font-family: var(--press);
   font-size: 10px;
   letter-spacing: 2px;
+  /* Only the FALLBACK: both drawings set the heat ramp's coldest colour inline — the one
+     the floating `MISS` wears — so the heading says "missed" in the voice the round
+     already answered these words in. Computed there (`heatColor(0)`), never a hex copied
+     down here, so the two cannot drift. */
   color: var(--muted);
   text-align: center;
   text-shadow: none;
