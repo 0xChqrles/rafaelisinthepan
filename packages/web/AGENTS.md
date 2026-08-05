@@ -193,7 +193,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
   sides, the pixel scrollbar) and centred, with the PROMPT sharing the column. Uncapped it
   was the whole 1200px page column on a desktop while the line inside it was 430, so the
   tears ran nearly three times the width of what they were tearing and the prompt answered
-  from a third of a screen away. Both caps are no-ops on a phone. The rules live on the shared
+  from a third of a screen away. Both caps are no-ops on a phone. **In HEIGHT it is the
+  opposite — the window takes everything left over** (decided 2026-08-05): the board IS this
+  screen, and every row of the line the player can see is a road's length made visible, where
+  the space around it says nothing. So `.game.word-game` cuts its own chrome — the HUD's row
+  reserved with 60px rather than 76 (the score has to be CLEARED, not breathed under), the two
+  seams down to `clamp(10px, 1.6vh, 18px)` (the prompt belongs to the board and the keyboard
+  to the prompt: joins, not separations), and the hint 10px under the caret instead of the
+  sentence screen's 20 (which answers to a phrase this screen does not have). Measured: 53% of
+  the viewport → 59% at 1440×900, and 45% → 52% on a 700px-tall one, which is where it
+  mattered. The sentence screen keeps its generous rhythm untouched — there the phrase is the
+  content and the air around it is what makes it legible — which is why every one of these is
+  scoped to `.word-game`. The rules live on the shared
   `.scroll-torn` utility (beside `.pixel-scroll`) with `hooks/useScrollEdges` behind them —
   BOTH shared with the onboarding teaser, which was refactored onto them rather than
   leaving two copies of the slack/bail-out/resize details to drift. `WordGame` re-reads the
