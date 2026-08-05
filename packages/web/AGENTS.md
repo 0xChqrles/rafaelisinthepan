@@ -158,28 +158,31 @@ it to the local store — see `packages/backend/AGENTS.md`).
   and RouteModal's exported geometry helpers so the two surfaces cannot drift (the ONE
   CSS difference: `.word-frame` re-derives `--wordw` minus the app's page inset, since
   the board lives in the page rather than a full-bleed dialog).
-  **The board draws ONLY what has a WORD** (decided 2026-08-05, superseding the censored
-  `???` census it shipped with): the route map draws every unfound group because its job
-  is to show a neighborhood you cannot see, bounded by your departure — here the field is
-  a flat 150 and the word is already public, so 150 placeholders said one thing 150 times
-  and buried the handful of words the player knows. Unfound ground is now the GAPS: a
-  connector that SKIPS ranks is drawn as a broken trace (`.route-link.dashed`, the cold
-  tail's own dash unit, snapped by `dashedRun` so it meets the next node on a full dash;
-  inside the fork the dashes are MASKED out of the lane gradient, because this board sits
-  on the page's animated backdrop and a gap has to be genuinely transparent). So the
-  board starts empty — fork, one dashed run, merge — and fills in as you claim, while the
-  run's end still reveals every group and turns it into the full post-mortem. Junctions
-  stand ON the field's edges (its farthest group, and rank 1), so a run touching one is
-  dashed unless a found word sits on that edge; the merge→word leap stays SOLID (the
-  2026-08-04 decision) **and runs the ONBOARDING TEASER's distance, not the modal's**
+  **The whole FIELD is drawn, censored until it is claimed** (decided 2026-08-05, restoring
+  the `???` census after a day without it — the sparse variant that drew only found words
+  and dashed the ground between them is gone, `.route-link.dashed` with it): every group of
+  the claimable zone is a station wearing the route map's fixed-width `???`, so each road
+  shows its real length and population — the one thing a list of your own words can never
+  say — and a claim lands ON a stop that was already there rather than appearing out of
+  nothing. The run's end reveals every word and turns the board into the post-mortem, where
+  a group merely NAMED keeps the small node and the dimmed word that tell it from one you
+  found (`route-unknown route-revealed`, the map's own distinction).
+  **The TAIL is the board's only broken run** (same decision): dashes mean "the line
+  continues into words with no distance at all", which is true at the cold top end and
+  nowhere else here — every rank between two stations is itself a station, so no connector
+  hides ground. Consecutive ranks are one row apart (`LINK_MIN`) and only the sparse trunk
+  between far strikes keeps a proportional length, exactly as on the map. The merge→word
+  leap stays SOLID (the 2026-08-04 decision) **and runs the ONBOARDING TEASER's distance,
+  not the modal's**
   (decided 2026-08-05): the map spends `LEAP_H` (56) there, which with the junction's own
   stub and the arrival's half-row puts 90px between the bus and the word — 2.5× the
   teaser's 36 — and on a board that is mostly unknown ground that stretch read as the line
   trailing off rather than arriving. The teaser is the shape the routes were TAUGHT in, so
   it is the one to match; the connector contributes only what the junction and the arrival
   row do not already spend (`TEASER_MERGE_RUN`/`JX_STUB`/`ARRIVAL_HALF_HEAD` in
-  `WordBoard`, measured at 36px bus→node). The rank gutter is sized by the FIELD's widest
-  exponent, not the drawn rows', so a far claim never jolts the column.
+  `WordBoard`, measured at 36px bus→node). The rank gutter fits the farthest row drawn,
+  which with the whole field on the line is the field's own outer edge until a near strike
+  lands beyond it.
   **The window wears the teaser's TORN EDGES** (decided 2026-08-05): the line outruns the
   screen as soon as a few claims land, and an edge that simply ends reads as the end of the
   map, so whichever side still has line beyond it gets the 9px-on/9px-off rule — the same
