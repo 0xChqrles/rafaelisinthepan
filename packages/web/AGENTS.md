@@ -171,8 +171,26 @@ it to the local store — see `packages/backend/AGENTS.md`).
   run's end still reveals every group and turns it into the full post-mortem. Junctions
   stand ON the field's edges (its farthest group, and rank 1), so a run touching one is
   dashed unless a found word sits on that edge; the merge→word leap stays SOLID (the
-  2026-08-04 decision). The rank gutter is sized by the FIELD's widest exponent, not the
-  drawn rows', so a far claim never jolts the column. The end screen
+  2026-08-04 decision) **and runs the ONBOARDING TEASER's distance, not the modal's**
+  (decided 2026-08-05): the map spends `LEAP_H` (56) there, which with the junction's own
+  stub and the arrival's half-row puts 90px between the bus and the word — 2.5× the
+  teaser's 36 — and on a board that is mostly unknown ground that stretch read as the line
+  trailing off rather than arriving. The teaser is the shape the routes were TAUGHT in, so
+  it is the one to match; the connector contributes only what the junction and the arrival
+  row do not already spend (`TEASER_MERGE_RUN`/`JX_STUB`/`ARRIVAL_HALF_HEAD` in
+  `WordBoard`, measured at 36px bus→node). The rank gutter is sized by the FIELD's widest
+  exponent, not the drawn rows', so a far claim never jolts the column.
+  **The window wears the teaser's TORN EDGES** (decided 2026-08-05): the line outruns the
+  screen as soon as a few claims land, and an edge that simply ends reads as the end of the
+  map, so whichever side still has line beyond it gets the 9px-on/9px-off rule — the same
+  vocabulary as the route map's off-map break and its parked separator. That needs the
+  board to be TWO boxes (`.word-window` around `.word-scroll`), because a pseudo-element
+  inside a scroller scrolls away with the content, and the rules live on the shared
+  `.scroll-torn` utility (beside `.pixel-scroll`) with `hooks/useScrollEdges` behind them —
+  BOTH shared with the onboarding teaser, which was refactored onto them rather than
+  leaving two copies of the slack/bail-out/resize details to drift. `WordGame` re-reads the
+  edges when the MODEL changes too: a claim adds rows and the run's end reveals the whole
+  field, neither of which fires a scroll event. The end screen
   (`components/WordEndScreen.tsx`) is the named `<n> WORDS/MOTS` count + SHARE via the
   v3 word token. Identity is mode-addressed everywhere: `roundKeyForDay(day, lang,
   'word')` = `w:` keys into the store's own `wordRounds` map (persist v6; `ensureWordRound`
@@ -833,7 +851,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   instead of marking where the window cuts. That is why the teaser is TWO
   boxes — a non-scrolling `.routes-teaser` frame around the `.teaser-scroll` scroller: a
   background paints beneath the stations and a pseudo-element inside a scroller scrolls away
-  with them, so the rules can only live on a parent that stays put. It **FILLS the play
+  with them, so the rules can only live on a parent that stays put. **Both halves are SHARED
+  since 2026-08-05** — the rules are the `.scroll-torn` utility and the scroll state is
+  `hooks/useScrollEdges` — because Word mode's board (#156) needed the same edges and the
+  parts worth keeping in one place are the details (the sub-pixel slack, the bail-out on an
+  unchanged value, the resize listener). It **FILLS the play
   area's free height** — flex-basis 0 + min-height 0 so it can never grow the page, and
   deliberately NO max-height (a cap only opened a dead gap under the coach on tall screens,
   findings 2026-08-04) — and its

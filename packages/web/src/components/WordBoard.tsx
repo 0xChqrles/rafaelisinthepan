@@ -14,7 +14,6 @@ import {
   fitWord,
   dashedRun,
   TAIL_H,
-  LEAP_H,
   JUNCTION_H,
   LINK_MIN,
   ARRIVAL_PX,
@@ -45,6 +44,19 @@ import { t, srRouteRoads, srRouteStop, srRouteOffMap, srWordBoardWord } from '..
 // apart visually. The line runs DOWN the page like the map does: the off-map strikes
 // past a torn break at the top, then the near strikes riding the trunk, the fork, the
 // claims farthest-first, and the day's word closing the line at the bottom.
+
+// The merge into the word runs the ONBOARDING TEASER's distance, not the route modal's
+// (decided 2026-08-05). The map spends `LEAP_H` (56) there, which with the converge
+// junction's own stub below the bus and the arrival's half-row above its node puts 90px
+// between the two — two and a half times the teaser's 36 — and on a board that is mostly
+// unknown ground that stretch reads as the line trailing off rather than arriving
+// somewhere. The teaser is the shape the player was taught the routes in, so it is the
+// one to match. What the CONNECTOR contributes is only what those two do not already
+// spend, which on a forked board is almost nothing: the junction's stub lands on the
+// arrival row and the row's own rail carries the line down into the node.
+const TEASER_MERGE_RUN = 36; // tutorial/RoutesTeaser: TRUNK_RUN 14 + ARRIVAL_H / 2 (22)
+const JX_STUB = 14; // `.jx-trunk`'s run below the bus (index.css)
+const ARRIVAL_HALF_HEAD = 20; // `.route-arrival`'s --head (40) / 2 — its node's offset into the row
 
 // One drawn row: a word the player has (a claim, a near strike, or — once the run is
 // over — one the reveal named). Trunk rows carry no road.
@@ -224,8 +236,18 @@ export default function WordBoard({ model, lang }: { model: WordBoardModel; lang
 
         {line}
 
-        {/* The joined line's final run into the word: an ordinary SOLID trunk link. */}
-        <div className="route-link" style={{ height: LEAP_H }} />
+        {/* The joined line's final run into the word: an ordinary SOLID trunk link, at the
+            teaser's distance (see the constants above). An unforked board has no junction to
+            spend the stub, so its connector carries that share too. */}
+        <div
+          className="route-link"
+          style={{
+            height: Math.max(
+              0,
+              TEASER_MERGE_RUN - ARRIVAL_HALF_HEAD - (forked ? JX_STUB : 0),
+            ),
+          }}
+        />
 
         {/* The end of the line: the day's word — PUBLIC, the one thing this board never
             withholds. It wears the terminus size and the found (accent) face from frame

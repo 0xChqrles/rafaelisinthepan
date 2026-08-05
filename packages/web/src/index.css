@@ -189,6 +189,44 @@ button * {
   }
 }
 
+/* TORN EDGES, the scrollbar's twin: worn by the FRAME around a scroller whose drawing runs
+   taller than its window (the onboarding's routes teaser #155, Word mode's board #156). The
+   window is smaller than the line on every real board, and an edge that simply ends reads as
+   the end of the map — so the side that still has line beyond it is torn, with the same
+   9px-on, 9px-off rule the route map's off-map break and its parked separator wear, meaning
+   the same thing here: it does not continue straight through. Which sides those are is the
+   scroll position's business (hooks/useScrollEdges), handed back as `more-up` / `more-down`.
+
+   Two structural requirements on anyone wearing it. The rules sit just OUTSIDE the window
+   (anchored past its edges), never over it: inside, the tear covered the outermost row instead
+   of marking where the window cuts. And they must live on a NON-SCROLLING parent of the
+   scroller — a pseudo-element inside a scroller scrolls away with the content — which is why
+   both surfaces are two boxes, a frame around a scroller. */
+.scroll-torn {
+  position: relative;
+}
+.scroll-torn::before,
+.scroll-torn::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: repeating-linear-gradient(90deg, var(--rail) 0 9px, transparent 9px 18px);
+  pointer-events: none;
+  opacity: 0;
+}
+.scroll-torn::before {
+  bottom: 100%;
+}
+.scroll-torn::after {
+  top: 100%;
+}
+.scroll-torn.more-up::before,
+.scroll-torn.more-down::after {
+  opacity: 1;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -3057,7 +3095,8 @@ button * {
 
    It reads the way the real map reads: DOWN the page from the far field to the word, so `-1`
    sits at the BOTTOM and the line opens parked there. It SCROLLS — the frame holds the
-   scroller — and its squared-off scrollbar plus the torn edges below are what say so (the
+   scroller — and its squared-off scrollbar plus the shared TORN EDGES (`.scroll-torn`, the
+   utility beside `.pixel-scroll`; Word mode's board wears the same) are what say so (the
    flanking chevrons were removed on findings 2026-08-04: one affordance per gesture, and their
    column was width the words needed on a 320px phone). The height it stretches to is a
    viewport, not the content: it FILLS the play area's free height, whatever the screen —
@@ -3069,10 +3108,9 @@ button * {
    fit-content): `.teaser-map` is an inline-size container and its `cqw` word sizing would be
    circular against an auto width.
 
-   The FRAME and the SCROLLER are two boxes, because the torn edges below have to stay put
-   while the line moves under them: a background paints beneath the stations and a
-   pseudo-element inside a scroller scrolls away with them, so the rules live on a
-   non-scrolling parent instead. */
+   The FRAME and the SCROLLER are two boxes, because the torn edges have to stay put while the
+   line moves under them: a pseudo-element inside a scroller scrolls away with the content, so
+   the rules live on a non-scrolling parent instead (see `.scroll-torn`). */
 .routes-teaser {
   position: relative;
   align-self: center;
@@ -3089,34 +3127,6 @@ button * {
   overflow-x: hidden;
   /* The lesson's last screen is not a place to rubber-band the page behind it. */
   overscroll-behavior: contain;
-}
-/* The window is smaller than the line at every real board, and an edge that simply ends reads
-   as the end of the map. So the side that still has line beyond it is TORN — the same 9px-on,
-   9px-off rule the route map's off-map break and its parked separator wear, meaning the same
-   thing here: it does not continue straight through. Opened parked at the destination, that is
-   the top edge alone; scrolled out to the far field, the bottom one; between them, both.
-   The rules sit just OUTSIDE the window (anchored past its edges), never over it: inside, the
-   tear covered the outermost station's row instead of marking where the window cuts. */
-.routes-teaser::before,
-.routes-teaser::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: repeating-linear-gradient(90deg, var(--rail) 0 9px, transparent 9px 18px);
-  pointer-events: none;
-  opacity: 0;
-}
-.routes-teaser::before {
-  bottom: 100%;
-}
-.routes-teaser::after {
-  top: 100%;
-}
-.routes-teaser.more-up::before,
-.routes-teaser.more-down::after {
-  opacity: 1;
 }
 .teaser-map {
   position: relative;
@@ -3383,12 +3393,27 @@ button * {
    neighborhood as the live route-map drawing (.route-frame reused wholesale, see
    components/WordBoard) inside its own scroller — with the guess prompt between it and
    the keyboard. --- */
+/* The board's WINDOW: a non-scrolling frame around the scroller, which is what lets it wear
+   the shared TORN EDGES (`.scroll-torn`) — the line runs taller than the screen on any board
+   with a few claims on it, and an edge that simply ends would read as the end of the map. The
+   two boxes are the teaser's own structure, for the same reason (a pseudo-element inside a
+   scroller scrolls away with the content). */
+.word-window {
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
 .word-scroll {
   flex: 1 1 0;
   min-height: 0;
   width: 100%;
   overflow-y: auto;
   overflow-x: hidden;
+  /* The board is the screen behind a live prompt — rubber-banding the page under it while
+     hunting the line would take the keyboard with it. */
+  overscroll-behavior: contain;
   /* Horizontal padding only, like .route-scroll — the line's breathing room is content. */
   padding: 0 20px;
 }

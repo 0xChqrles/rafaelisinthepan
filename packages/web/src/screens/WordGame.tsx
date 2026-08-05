@@ -10,6 +10,7 @@ import {
 } from '../game/wordGame';
 import { buildWordBoard } from '../game/wordBoard';
 import { canExtend } from '../game/keyboard';
+import useScrollEdges from '../hooks/useScrollEdges';
 import WordBoard from '../components/WordBoard';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
@@ -119,10 +120,20 @@ function WordRound({
   // landing.
   const scrollRef = useRef<HTMLDivElement>(null);
   const [focusRank, setFocusRank] = useState<{ rank: number; at: number } | null>(null);
+  // Which way the line still runs past the window's edges — the frame wears a torn dashed
+  // rule on that side (the onboarding teaser's own vocabulary, shared with it in the hook).
+  const { more, readEdges } = useScrollEdges(scrollRef);
   useLayoutEffect(() => {
     const scroller = scrollRef.current;
     if (scroller) scroller.scrollTop = scroller.scrollHeight;
-  }, [roundKey]);
+    readEdges();
+  }, [roundKey, readEdges]);
+  // A claim adds rows and the run's end reveals the whole field, both of which change the
+  // line's height under an unchanged scrollTop — no scroll event to catch it, exactly like
+  // the resize the hook watches for.
+  useLayoutEffect(() => {
+    readEdges();
+  }, [board, readEdges]);
   useLayoutEffect(() => {
     if (!focusRank) return;
     const station = scrollRef.current?.querySelector(`[data-word-rank="${focusRank.rank}"]`);
@@ -277,9 +288,17 @@ function WordRound({
         </span>
       </div>
 
-      {/* The board IS the play surface: the day's neighborhood as the live route map. */}
-      <div className="word-scroll pixel-scroll" ref={scrollRef}>
-        <WordBoard model={board} lang={lang} />
+      {/* The board IS the play surface: the day's neighborhood as the live route map. The
+          WINDOW around it is a second, non-scrolling box — the torn rules that mark a cut-off
+          edge have to stay put while the line moves under them (see `.scroll-torn`). */}
+      <div
+        className={`word-window scroll-torn${more.up ? ' more-up' : ''}${
+          more.down ? ' more-down' : ''
+        }`}
+      >
+        <div className="word-scroll pixel-scroll" ref={scrollRef} onScroll={readEdges}>
+          <WordBoard model={board} lang={lang} />
+        </div>
       </div>
 
       <div className={`input-area word-prompt${ended ? ' retired' : ''}`} aria-hidden={ended || undefined}>

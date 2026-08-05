@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef } from 'react';
 import type { CSSProperties } from 'react';
 import { LANE_COLORS } from '../components/RouteModal';
 import { rankHeatColor } from '../components/Hole';
+import useScrollEdges from '../hooks/useScrollEdges';
 import type { RankEntry, WordRanks } from '@whippin/shared';
 
 // The onboarding's CLOSE (#155, findings 2026-08-04): after the theme clouds, a real glimpse
@@ -58,9 +59,6 @@ const WORD_MIN_PX = 8;
 const GLYPH_EM = 1;
 // The rank gutter's cell: the map's own --rank-size (Press Start advances 1em per glyph).
 const RANK_PX = 10;
-// Sub-pixel scroll offsets: a scrollport sitting exactly on an edge reports a fractional
-// remainder, and without this slack that edge's rule would flicker on and off.
-const EDGE_SLACK = 1;
 
 function fitStation(word: string, overheadPx: number, max = WORD_PX): string {
   const glyphs = (word.length * GLYPH_EM).toFixed(1);
@@ -100,19 +98,12 @@ export default function RoutesTeaser({
   // player lands and the far field is what scrolling goes looking for.
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Which way the line still runs past the visible edge. The frame then wears a torn dashed
-  // rule on that side — the route map's own vocabulary for "it does not continue straight
-  // through here". Opened parked at the destination that is the TOP edge; scrolled out to the
-  // far field, the BOTTOM one; anywhere between, both.
-  const [more, setMore] = useState({ up: false, down: false });
-  const readEdges = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const up = el.scrollTop > EDGE_SLACK;
-    const down = el.scrollTop + el.clientHeight < el.scrollHeight - EDGE_SLACK;
-    // Bail on an unchanged value: a scroll event fires per frame and the line is ~100 rows.
-    setMore((prev) => (prev.up === up && prev.down === down ? prev : { up, down }));
-  }, []);
+  // Which way the line still runs past the visible edge (shared with Word mode's board —
+  // see the hook). The frame then wears a torn dashed rule on that side, the route map's
+  // own vocabulary for "it does not continue straight through here". Opened parked at the
+  // destination that is the TOP edge; scrolled out to the far field, the BOTTOM one;
+  // anywhere between, both.
+  const { more, readEdges } = useScrollEdges(scrollRef);
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
@@ -121,17 +112,11 @@ export default function RoutesTeaser({
     readEdges();
   }, [readEdges]);
 
-  // A resize (rotation, a dragged window) changes clientHeight/scrollHeight under an
-  // unchanged scrollTop, so the edges go stale without a scroll event — the same failure
-  // class as the cloud's mount-read height scale (findings 2026-08-04).
-  useEffect(() => {
-    window.addEventListener('resize', readEdges);
-    return () => window.removeEventListener('resize', readEdges);
-  }, [readEdges]);
-
   return (
     <div
-      className={`routes-teaser${more.up ? ' more-up' : ''}${more.down ? ' more-down' : ''}`}
+      className={`routes-teaser scroll-torn${more.up ? ' more-up' : ''}${
+        more.down ? ' more-down' : ''
+      }`}
       aria-hidden="true"
     >
       {/* tabIndex -1: browsers make scrollers keyboard-focusable, and a focusable element
