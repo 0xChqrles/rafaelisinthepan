@@ -296,8 +296,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `DÉPART` / `ROUTES` tags tried the same day): every one of those is said by a node's size,
   fill and lane instead, and the only string left on it is `routeOffMap` — the words above the
   line have no node, no lane and no distance, so nothing about them can be read off the
-  drawing. The screen-reader mirror still names all four in prose (`srRouteStop`), which is why
-  dropping them costs no information. Fixed-width `???` is the ONE token for "you have not found
+  drawing. It reads **MISSED, untranslated in both languages** (decided 2026-08-05,
+  superseding OFF THE MAP / HORS CARTE): those words are precisely the ones the round answered
+  with the floating `MISS`, which is itself untranslated wherever it appears (the tutorial's fr
+  copy included), so the shelf names them in vocabulary the player has already met instead of
+  describing where they sit — one label in every language, like `you` and `dnf`. Its
+  screen-reader mirror stays PROSE in the reader's own language (`srRouteOffMap`: "missed:" /
+  « manqués : »), the rule every sr helper here follows. The screen-reader mirror still names
+  all four in prose (`srRouteStop`), which is why dropping them costs no information. Fixed-width `???` is the ONE token for "you have not found
   this word": the destination and every censored station wear it.
   **The censored near field is the WHOLE of it** (decided 2026-07-26, superseding the top-5 band):
   every group of it renders as a station with its word withheld, so each road shows its real

@@ -74,7 +74,13 @@ const STRINGS = {
   // in prose rather than depending on any of this. The ONE string left is the heading over
   // the words above the line — guesses that earned no rank at all, so they have no node, no
   // lane and no distance to be read off, and nothing about them can be read off the drawing.
-  routeOffMap: { en: 'OFF THE MAP', fr: 'HORS CARTE' },
+  // It reads MISSED in BOTH languages (decided 2026-08-05, superseding OFF THE MAP / HORS
+  // CARTE): these words are exactly the ones the round answered with the floating `MISS`,
+  // which is itself untranslated everywhere it appears (the tutorial's fr copy says MISS
+  // too), so the shelf now names them in the vocabulary the player already met rather than
+  // describing where they sit. Untranslated like `you` and `dnf` for the same reason — one
+  // label, identical in every language.
+  routeOffMap: { en: 'MISSED', fr: 'MISSED' },
   // The streak celebration's ending hint: pure "what to do" — the whole screen dismisses,
   // so naming a "why" (continue/close — continue to WHAT? the game is done) would only
   // raise a question it can't answer. Pointer-aware: coarse pointers read TAP.
@@ -276,9 +282,12 @@ export function srRouteRoads(lang: string, perRoad: number[], found: number): st
     : `neighborhood: ${total} stops, ${found} found`;
 }
 
+// The shelf in words. The visible heading is the universal MISSED token, but this is PROSE
+// and prose stays in the reader's language (the rule every sr helper here follows) — it
+// just says the same thing the heading now does.
 export function srRouteOffMap(lang: string, words: string[]): string {
   const list = words.join(', ');
-  return uiLang(lang) === 'fr' ? `hors carte : ${list}` : `off the map: ${list}`;
+  return uiLang(lang) === 'fr' ? `manqués : ${list}` : `missed: ${list}`;
 }
 
 // ---- Word mode (#156). The board drawing is decorative like the route map's; these
