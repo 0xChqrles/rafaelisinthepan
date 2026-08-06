@@ -18,11 +18,10 @@
 
 :root {
   --bg: #0a0b12;
-  /* The route line's own colour: trunk, junction bus, the tail's dashes, the parked row's
-     separator and the windows' torn edges — and the onboarding teaser's leap, which is why it
-     lives here rather than on `.route-frame` where it started. Deliberately the ONE unsaturated line on the map: the
-     trunk is the stretch where no road has been identified, so it reads as the far field the
-     lanes fork out of. */
+  /* The route line's own colour: trunk, junction bus, the tail's dashes and the onboarding
+     teaser's leap, which is why it lives here rather than on `.route-frame` where it started.
+     Deliberately the ONE unsaturated line on the map: the trunk is the stretch where no road
+     has been identified, so it reads as the far field the lanes fork out of. */
   --rail: #48528a;
   --surface: #1d2138;
   --surface-hover: #2c3358;
@@ -212,7 +211,7 @@ button * {
   left: 0;
   right: 0;
   height: 3px;
-  background: repeating-linear-gradient(90deg, var(--rail) 0 9px, transparent 9px 18px);
+  background: repeating-linear-gradient(90deg, var(--surface) 0 9px, transparent 9px 18px);
   pointer-events: none;
   opacity: 0;
 }
@@ -284,8 +283,7 @@ button * {
   text-shadow: none;
   transition: filter 0.08s linear;
 }
-.lang-card:hover,
-.lang-card:focus-visible {
+.lang-card:hover {
   filter: brightness(1.2);
 }
 .lang-card:active {
@@ -390,8 +388,7 @@ button * {
   cursor: pointer;
   transition: color 0.08s linear, filter 0.08s linear;
 }
-.cal-arrow:hover:not([disabled]),
-.cal-arrow:focus-visible {
+.cal-arrow:hover:not([disabled]) {
   color: var(--fg);
 }
 .cal-arrow[disabled] {
@@ -440,8 +437,7 @@ button * {
 }
 /* Brighten only PLAYABLE days — a disabled day is inert, so it must not react to hover
    (native :disabled can still match :hover). */
-.cal-day:not([disabled]):hover,
-.cal-day:not([disabled]):focus-visible {
+.cal-day:not([disabled]):hover {
   filter: brightness(1.2);
 }
 .cal-day:not([disabled]):active {
@@ -820,11 +816,10 @@ button * {
 /* --- Floating app header (redesigned 2026-07-21): NO band, NO border — the old opaque
    56px bar + its full-width progress row read as heavy chrome against the fine pixel
    art, so the header is now two floating corner groups over the playfield, arcade-HUD
-   style: the game's progress counter top-left (own .hud element), streak + flag +
-   contextual controls top-right (here). Each group sits on a translucent SQUARED chip
-   (backdrop blur) so content scrolling under it on mobile stays legible without
-   resurrecting a band. The layer itself must not eat clicks: pointer-events pass
-   through everywhere except the actual controls. --- */
+   style: the game's live status in the header's left slot, with flag + contextual
+   controls in its right slot. Both sit directly on the backdrop, with no band or boxes.
+   The layer itself must not eat clicks: pointer-events pass through everywhere except
+   the actual controls. --- */
 .topbar {
   --hud-height: clamp(38px, 5vh, 46px);
   position: fixed;
@@ -845,9 +840,9 @@ button * {
   /* Left chip (when present) sits left; .topbar-right's margin-left:auto hugs the
      right edge either way. */
 }
-/* The header's two corner groups and the game's progress-counter .hud sit DIRECTLY on
-   the backdrop — no chip background/blur (removed 2026-07-21: boxes read as floating
-   rectangles over the animated waves); the glyphs' own text-shadow keeps them legible. */
+/* The header's two corner groups sit DIRECTLY on the backdrop — no chip background/blur
+   (removed 2026-07-21: boxes read as floating rectangles over the animated waves); the
+   glyphs' own text-shadow keeps them legible. */
 /* The left status chip: a screen's title (ARCHIVE / TUTORIAL — top-left like the
    game's percentage), optionally joined by an inline stat (the tutorial's counter). */
 .topbar-left {
@@ -860,15 +855,13 @@ button * {
 }
 /* The header's right controls: the game's "?" help (replays the tutorial) and the
    tutorial's fast-forward (skip) — both inline pixel-art icons. Buttons don't inherit
-   color, so the muted tint is explicit; both brighten to --fg on hover/focus. */
+   color, so the muted tint is explicit; both brighten to --fg on hover. */
 .help-btn,
 .topbar-skip {
   color: var(--muted);
 }
 .help-btn:hover,
-.help-btn:focus-visible,
-.topbar-skip:hover,
-.topbar-skip:focus-visible {
+.topbar-skip:hover {
   color: var(--fg);
 }
 /* Icon policy: a standalone pixel-art icon carries its OWN display size — the SVG's
@@ -880,6 +873,14 @@ button * {
 .pixel-icon {
   display: block;
   shape-rendering: crispEdges;
+}
+
+/* The 7x7 mode sprites use the header's established 4x pixel scale. */
+.mode-icon {
+  display: block;
+  width: 28px;
+  height: 28px;
+  image-rendering: pixelated;
 }
 
 /* The header's single action group, floating top-right: streak stat, language flag,
@@ -896,15 +897,13 @@ button * {
   pointer-events: auto;
 }
 /* The game header's archive entry + the archive's back-to-today control: currentColor
-   glyphs, muted -> fg on hover/focus like the "?" and skip. */
+   glyphs, muted -> fg on hover like the "?" and skip. */
 .archive-btn,
 .archive-close {
   color: var(--muted);
 }
 .archive-btn:hover,
-.archive-btn:focus-visible,
-.archive-close:hover,
-.archive-close:focus-visible {
+.archive-close:hover {
   color: var(--fg);
 }
 
@@ -920,23 +919,6 @@ button * {
      row), so flex-centering reads shifted UP next to the right chip's icons — nudge
      down ~0.15em (the same correction the streak counts carry). */
   transform: translateY(0.15em);
-}
-
-/* --- HUD: the game's floating progress counter, top-LEFT corner (the arcade "SCORE"
-   spot) — the status twin of the header's top-right action chip. Vertically centered
-   on the same 56px optical row; left edge aligned with the header column's. --- */
-.hud {
-  --hud-height: clamp(38px, 5vh, 46px);
-  position: fixed;
-  top: calc((56px - var(--hud-height)) / 2);
-  left: max(24px, calc((100vw - 900px) / 2));
-  z-index: 50;
-  height: var(--hud-height);
-  display: flex;
-  align-items: center;
-  padding: 0 12px;
-  font-family: var(--press);
-  pointer-events: none;
 }
 
 /* Logo doubles as the home button, sitting at the left of the HUD beside the bar.
@@ -956,8 +938,7 @@ button * {
   opacity: 0.85;
   transition: opacity 0.12s ease, filter 0.12s ease;
 }
-.home-btn:hover,
-.home-btn:focus-visible {
+.home-btn:hover {
   opacity: 1;
   filter: brightness(1.2);
 }
@@ -1066,10 +1047,6 @@ button * {
 .hole-btn:not([disabled]):active .hole-word,
 .hole-btn:not([disabled]):active .hole-rank {
   filter: brightness(1.35);
-}
-.hole-btn:focus-visible {
-  outline: 3px solid var(--accent-dim);
-  outline-offset: 3px;
 }
 /* Sized to the word only (exponent is a sibling outside it): the floating hit
    centers on this box, so it lands over the word, not the word+exponent. */
@@ -1385,7 +1362,7 @@ button * {
      slide, not the old 8px settle. The stack fades in from 0 opacity, so the displaced
      start position never paints outside the tray — no clipping needed here. */
   transform: translateY(clamp(24px, 5vh, 44px));
-  /* Duration mirrored by RESULTS_IN_MS (SolvedScreen) — keep the two in sync. */
+  /* Duration mirrored by resultAnimation.ts — keep the two in sync. */
   transition: opacity 0.25s ease-out, transform 0.25s ease-out;
 }
 .solved-results.in {
@@ -1580,8 +1557,8 @@ button * {
    (`.topbar-inner` / `.topbar-left` / `.topbar-title` / `.topbar-right` / `.home-btn`, see
    TopBar and the Archive screen), so no modal can drift from it — no band, no border, no
    background, the surface's name top-left and one control top-right, directly on the backdrop.
-   All these rules add is `--hud-height` (declared on `.topbar` and `.hud`, which this row is
-   not inside), keeping the row out of the scroller's flex growth, and the muted-until-touched
+   All these rules add is `--hud-height` (declared on `.topbar`, which this row is not
+   inside), keeping the row out of the scroller's flex growth, and the muted-until-touched
    close. Extracted from the route map's own bar 2026-07-27, when the leaderboard stopped
    floating its own X in the corner. */
 .modal-bar {
@@ -1591,8 +1568,7 @@ button * {
 .modal-close {
   color: var(--muted);
 }
-.modal-close:hover,
-.modal-close:focus-visible {
+.modal-close:hover {
   color: var(--fg);
 }
 
@@ -1984,6 +1960,33 @@ button * {
 .route-station.on-lane .route-word {
   color: var(--lane-c);
 }
+/* A claimed station stays pinned to the line while its width changes through the shared
+   slot-machine scramble. Compress once at the start, remain nearly still while the letters
+   resolve, then make a small landing overshoot as the final glyphs settle. This has its own
+   motion instead of borrowing the exponent's 1.6x pop, which was too large and too short for
+   a whole word. */
+.route-word.revealing {
+  transform-origin: left center;
+  animation: route-word-reveal var(--reveal-ms, 650ms) cubic-bezier(0.22, 0.75, 0.25, 1) both;
+  will-change: transform;
+}
+@keyframes route-word-reveal {
+  0% {
+    transform: scale(1);
+  }
+  16% {
+    transform: scale(0.92);
+  }
+  72% {
+    transform: scale(0.98);
+  }
+  88% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
 
 /* --- the fork, and the merge into the word --- */
 /* Orthogonal only: a trunk stub, a bus across the lanes, then the lanes themselves. Reusing
@@ -2147,7 +2150,7 @@ button * {
   height: calc(var(--stick-inset, 8px) * 2 + 3px);
   background-color: var(--bg);
   background-image:
-    repeating-linear-gradient(90deg, var(--rail) 0 9px, var(--bg) 9px 18px),
+    repeating-linear-gradient(90deg, var(--surface) 0 9px, var(--bg) 9px 18px),
     var(--lane-lines);
   background-repeat: no-repeat, no-repeat;
   background-size:
@@ -2206,7 +2209,7 @@ button * {
 .route-shelf-head {
   margin: 0 0 12px;
   font-family: var(--press);
-  font-size: 10px;
+  font-size: 16px;
   letter-spacing: 2px;
   /* Only the FALLBACK: both drawings set the heat ramp's coldest colour inline — the one
      the floating `MISS` wears — so the heading says "missed" in the voice the round
@@ -2253,8 +2256,7 @@ button * {
   text-shadow: none;
   transition: filter 0.08s linear, color 0.08s linear;
 }
-.result-action:hover,
-.result-action:focus-visible {
+.result-action:hover {
   filter: brightness(1.35);
 }
 .result-action:active {
@@ -2692,8 +2694,7 @@ button * {
   background: transparent;
   color: var(--muted);
 }
-.btn-secondary:hover,
-.btn-secondary:focus-visible {
+.btn-secondary:hover {
   color: var(--fg);
 }
 
@@ -2758,15 +2759,11 @@ button * {
   .solved-caption {
     align-items: stretch;
   }
-  /* Compact floating corners: the chip row tightens to 48px optical height, the
-     counter chip hugs the same 12px inset as the header column. */
+  /* Compact floating corners: the header row tightens to 48px optical height and hugs
+     the same 12px page inset. */
   .topbar-inner {
     width: calc(100vw - 24px);
     height: 48px;
-  }
-  .hud {
-    top: calc((48px - var(--hud-height)) / 2);
-    left: 12px;
   }
   .progress-counter {
     font-size: 20px;
@@ -2828,6 +2825,10 @@ button * {
      the same thin frame on all three sides (decided 2026-07-24). +10px over the
      keyboard's 4px = 14px. */
   .tray.tray-results {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  }
+  /* Word mode's overlaid result shares the sentence tray's 14px phone-bottom frame. */
+  .game.word-game .word-footer-result {
     padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
   }
 
@@ -2902,20 +2903,6 @@ button * {
   .topbar-inner {
     width: calc(100vw - 16px);
   }
-}
-
-/* ===================== keyboard focus ===================== */
-/* Every interactive control gets a VISIBLE keyboard-focus indicator (hover keeps its
-   brightness-only affordance; :focus-visible fires only on keyboard focus). */
-.kb-key:focus-visible,
-.result-action:focus-visible,
-.btn:focus-visible,
-.lang-card:focus-visible,
-.cal-day:focus-visible,
-.cal-arrow:focus-visible,
-.home-btn:focus-visible {
-  outline: 3px solid var(--accent-dim);
-  outline-offset: 2px;
 }
 
 /* ===================== reduced motion ===================== */
@@ -3231,11 +3218,6 @@ button * {
   opacity: 0.6;
   cursor: default;
 }
-.mix-btn:focus-visible {
-  outline: 3px solid var(--accent-dim);
-  outline-offset: 2px;
-}
-
 /* The themes ending: the tray holds ONE button and the keyboard has dropped for good, so it
    stops reserving the keyboard's footprint and shrinks to the button. The page's own frame
    inset is then the entire margin below it — the same distance as the button's left and right
@@ -3380,16 +3362,63 @@ button * {
    nothing. The sentence screen keeps its own generous rhythm — there the PHRASE is the
    content and the air around it is what makes it legible — so all of this is scoped to
    `.word-game`.
-   Where the height came from, measured at 1440x900: the HUD's row was reserved with 76px
-   where the score only has to be cleared, not breathed under (its chip ends at ~50); the two
-   seams below ran to 27px each, though the prompt belongs to the board and the keyboard to
-   the prompt — they are joins, not separations; and the hint sat a full 20px under the caret,
-   the sentence game's answer to a phrase above it that this screen does not have. Together
-   the board went from 53% of the viewport to 59%, and on a SHORT desktop (700px) from 45% to
-   52% — which is where it mattered most. */
+   The top reserve is 48px: enough to clear the fixed header while balancing the header's
+   screen-top inset against the gap before the board. The prompt gets a little breathing
+   room on both sides while remaining visually tied to the board and keyboard; its
+   three-cross failure row uses the retired last-guess hint's slot, 10px under the caret. */
 .game.word-game {
-  padding-top: 60px;
-  gap: clamp(10px, 1.6vh, 18px);
+  padding-top: 48px;
+  gap: clamp(16px, 2.4vh, 26px);
+}
+/* Prompt + keyboard are one stable footer footprint. The Word result is much shorter than
+   that pair, so putting it in `.tray` alone left the retired prompt's whole row plus the
+   tray's unused top half as one large blank band. Both footer states share a grid cell:
+   play keeps sizing the cell underneath, while the final score uses all of it. The inner
+   gap restores the prompt→keyboard seam that moved inside this wrapper. */
+.word-footer {
+  width: 100%;
+  display: grid;
+}
+.word-footer > * {
+  grid-area: 1 / 1;
+}
+.word-footer-play {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: clamp(16px, 2.4vh, 26px);
+}
+.word-footer-result {
+  z-index: 1;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+/* Sentence mode's result stack ends on the tray's bottom edge. Word mode keeps that exact
+   action baseline, but its result has no ruler/opponents to occupy the space above Share:
+   make the score the flexible upper region and give the number the arcade-scale weight that
+   space can carry. The shared `.solved-results` entrance still moves the whole composition. */
+.word-footer-result .solved-results {
+  height: 100%;
+  justify-content: flex-start;
+  gap: 0;
+}
+.word-footer-result .solved-score {
+  flex: 1 1 0;
+  justify-content: center;
+  gap: clamp(11px, 1.8vh, 16px);
+}
+.word-footer-result .solved-score-num {
+  font-size: clamp(52px, 10vh, 88px);
+}
+.word-footer-result .solved-score-unit {
+  font-size: clamp(11px, 1.5vh, 14px);
+}
+.word-footer-result .result-actions {
+  flex: 0 0 auto;
 }
 .input-area.word-prompt {
   gap: 10px;
@@ -3458,61 +3487,51 @@ button * {
   width: 100%;
 }
 
-/* The arcade corner: the claim count (the score — higher is better in this mode) and the
-   three LIVES beside it, one spent per consecutive incorrect guess. */
+/* The arcade header corner carries only the claim count (the score — higher is better
+   in this mode). The failure row belongs to the play controls below. */
 .word-hud {
   display: flex;
   align-items: center;
-  gap: 12px;
   pointer-events: none;
 }
 .word-count {
-  font-family: var(--press);
-  font-size: clamp(16px, 2.4vh, 22px);
-  color: var(--fg);
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 4px;
+  width: fit-content;
+  height: 28px;
 }
-.word-lives {
+.word-strikes {
   display: flex;
-  gap: 5px;
+  gap: 20px;
+  align-self: center;
 }
-/* A LIVING heart, drawn by `ultraheart.png` — a 10-frame horizontal sprite sheet (130×13,
-   ten 13×13 frames) played exactly the way the calendar's solved-day ripple plays
-   `ultracode.png`: `background-size: 1000% 100%` fits one frame to the square box, and
-   `steps(10)` walks `background-position-x` to `100% × 10/9`, so frame 9 lands on 100% and
-   the loop wraps clean. `image-rendering: pixelated` keeps the pixel art crisp at the
-   exact 2× (26px) it is drawn at — the app never scales pixel art fractionally.
-   The shimmer is what makes a life read as ALIVE rather than as a counter; it is the same
-   argument the calendar's ripple makes for a solved day. */
-.life-heart {
-  width: 26px; /* 2 × the 13px source */
-  height: 26px;
-  background-image: url('./assets/ultraheart.png');
-  background-repeat: no-repeat;
-  background-size: 1000% 100%;
+.strike-pip {
+  display: block;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+}
+/* failIcon.ts bakes the live semantic colors into the PNG with exact pixel replacement. */
+.strike-pip img {
+  display: block;
+  width: 28px;
+  height: 28px;
   image-rendering: pixelated;
-  animation: life-heart 1.5s steps(10) infinite;
 }
-@keyframes life-heart {
-  from {
-    background-position-x: 0%;
-  }
-  to {
-    background-position-x: calc(100% * 10 / 9); /* frame 9 lands on 100%; endpoint wraps */
-  }
-}
-/* Spent: the heart KEEPS its place — the row has to say what you had as well as what is
-   left, and three hearts that shrink to two would move the count beside them — but it
-   stops beating and drains to a dark outline of itself. */
-.life-heart.spent {
-  animation: none;
-  filter: grayscale(1) brightness(0.42);
-  opacity: 0.55;
-}
-/* Unlike the calendar's ripple, the motion may NOT be dropped wholesale here: this sprite
-   is not decoration over a status, it IS the status. Reduced motion parks it on frame 0 —
-   a living heart, simply still. */
-@media (prefers-reduced-motion: reduce) {
-  .life-heart {
-    animation: none;
-  }
+.word-digit {
+  display: block;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  background-color: var(--fg);
+  image-rendering: pixelated;
+  -webkit-mask-image: url('./assets/digits.png');
+  mask-image: url('./assets/digits.png');
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 280px 28px;
+  mask-size: 280px 28px;
+  -webkit-mask-position: var(--digit-x) 0;
+  mask-position: var(--digit-x) 0;
 }

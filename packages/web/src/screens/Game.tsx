@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { computeProgress, guessKey } from '../game/scoring';
 import { replayRun, type RunReplay } from '../game/share';
 import { canExtend } from '../game/keyboard';
@@ -58,13 +66,14 @@ const SOURCE_REVEAL_FALLBACK_MS = 6_000;
 
 // Wrapper: drives the single puzzle. Loads the language's fixed vocabulary
 // (existence set + keyboard prefix set) before playing — existence is decided by it,
-// not by ranks. The header lives ABOVE this (GameRoute), so Game renders only the game
-// body (progress-bar row + play + tray) under the fixed header.
+// not by ranks. GameRoute supplies the actual app-header renderer; once the round has
+// computed its progress, that counter is rendered into the header's left slot.
 export default function Game({
   puzzle,
   dayNumber,
   isActiveDay = true,
   deferResultsAnimation = false,
+  onHeaderLeftChange,
 }: {
   puzzle: Puzzle;
   dayNumber: number;
@@ -74,6 +83,7 @@ export default function Game({
   // The dev streak preview lives above Game in App, so it supplies the same animation gate
   // as the real in-round dialog without coupling the preview to persisted round state.
   deferResultsAnimation?: boolean;
+  onHeaderLeftChange: (left: ReactNode | null) => void;
 }) {
   const { vocab, error, retry } = useVocab(puzzle.lang);
 
@@ -95,6 +105,7 @@ export default function Game({
       dayNumber={dayNumber}
       isActiveDay={isActiveDay}
       deferResultsAnimation={deferResultsAnimation}
+      onHeaderLeftChange={onHeaderLeftChange}
     />
   );
 }
@@ -113,6 +124,7 @@ function Round({
   dayNumber,
   isActiveDay,
   deferResultsAnimation,
+  onHeaderLeftChange,
 }: {
   words: string[];
   puzzleHoles: Hole[];
@@ -125,6 +137,7 @@ function Round({
   dayNumber: number;
   isActiveDay: boolean;
   deferResultsAnimation: boolean;
+  onHeaderLeftChange: (left: ReactNode | null) => void;
 }) {
   // Fresh per-hole state derived from the puzzle. Used until the persisted store
   // reconciles to this round, and as the reset state on a new day/language.
@@ -249,8 +262,15 @@ function Round({
   }, [dayNumber, isActiveDay, roundKey, solved]);
 
   // Reconstruction progress (0–100): how much of the sentence is rebuilt. Drives the
-  // WIDTH of the top progress bar. Distinct from the guess-count performance number.
+  // header's colored counter. Distinct from the guess-count performance number.
   const progress = useMemo<number>(() => computeProgress(holes, ranks), [holes, ranks]);
+
+  // The status belongs to TopBar's actual left group, not to the game body. A layout
+  // effect updates that slot before paint and clears it when this round leaves.
+  useLayoutEffect(() => {
+    onHeaderLeftChange(<ProgressCounter value={progress} />);
+    return () => onHeaderLeftChange(null);
+  }, [onHeaderLeftChange, progress]);
 
   // This round replayed: the per-guess reconstruction-% trajectory (the run ruler's cells,
   // and what the share token carries) plus the solve moments (its ticks), from ONE walk of
@@ -507,8 +527,8 @@ function Round({
   // NOTHING is focused when the solved screen lands (decided 2026-07-27, dropping the focus
   // the streak's dismissal used to hand to SHARE). The celebration has no trigger to restore
   // focus to, so the tray was taking it by default and the share button arrived already
-  // ringed — a solved sentence is something to read, not a prompt to act. A keyboard user
-  // reaches the actions with one Tab.
+  // ringed — a solved sentence is something to read, not a prompt to act. Buttons are now
+  // pointer-only app-wide, so the result actions remain unfocused by construction.
   const finishSourceReveal = useCallback(() => {
     setSourceRevealComplete(true);
   }, []);
@@ -576,14 +596,8 @@ function Round({
     });
   }, [routeHole, holes, puzzleHoles, ranks, history, routeNumbers]);
   const closeRoute = useCallback(() => {
-    const index = routeHole;
     setRouteHole(null);
-    if (index === null) return;
-    // Hand focus back to the hole that opened the map (the dialog has no other trigger).
-    document
-      .querySelector<HTMLButtonElement>(`[data-hole-explore="${index}"]`)
-      ?.focus({ preventScroll: true });
-  }, [routeHole]);
+  }, []);
   // Opening the map takes the WORD's position on screen, which is where it grows from:
   // opening is a zoom out of the thing you tapped, the way a desktop window opens out of its
   // icon, so the full screen that lands reads as that word rather than as a screen that
@@ -614,18 +628,6 @@ function Round({
   // Input mutations shared by the on-screen keyboard (taps) and the physical keyboard.
   // Every path clears the "does not exist" feedback as soon as the player edits again.
 
-  // A hole button keeps focus after its route map closes, so a keyboard user keeps their place.
-  // But the moment the input is EDITED — typed, deleted or recalled — the player is guessing,
-  // not exploring, so hand the keyboard back. WordInput deliberately leaves Enter to a focused
-  // button (that is how the tutorial's NEXT is activated), so a button still holding focus after
-  // an edit swallows the Enter that submits and re-opens the map instead. Every editing path
-  // therefore has to release it, not just typing: a letter did, Backspace and history recall did
-  // not, which made "close the map, fix a typo, press Enter" reopen the map.
-  const releaseHoleFocus = useCallback(() => {
-    const focused = document.activeElement;
-    if (focused instanceof HTMLElement && focused.classList.contains('hole-btn')) focused.blur();
-  }, []);
-
   // Append one slug char, but ONLY if it keeps the input a prefix of some real word
   // (the same rule that greys the on-screen key). A dead-end char shakes the prompt
   // instead of being silently dropped: the on-screen keys grey out and shake in place,
@@ -635,29 +637,26 @@ function Round({
   const appendChar = useCallback(
     (char: string) => {
       if (promptExiting) return;
-      releaseHoleFocus();
       setFeedback(null);
       if (canExtend(prefixSet, input, char)) setInput(input + char);
       else setInvalidAt(Date.now());
     },
-    [prefixSet, input, promptExiting, releaseHoleFocus],
+    [prefixSet, input, promptExiting],
   );
 
   const deleteChar = useCallback(() => {
     if (promptExiting) return;
-    releaseHoleFocus();
     setFeedback(null);
     setInput((cur) => cur.slice(0, -1));
-  }, [promptExiting, releaseHoleFocus]);
+  }, [promptExiting]);
 
   // Replace the whole input (physical-keyboard history recall). Recalled values are
   // past valid words, hence valid prefixes, so no re-validation is needed.
   const replaceInput = useCallback((v: string) => {
     if (promptExiting) return;
-    releaseHoleFocus();
     setFeedback(null);
     setInput(v);
-  }, [promptExiting, releaseHoleFocus]);
+  }, [promptExiting]);
 
   const submit = useCallback(
     (raw: string) => {
@@ -789,14 +788,6 @@ function Round({
           echo mid-word. */}
       <div className="sr-only" role="status" aria-live="polite">
         {announce}
-      </div>
-
-      {/* The floating header (streak/flag/archive/help, top-right) is rendered by
-          GameRoute ABOVE this, so it stays put across the route's states. The game owns
-          the matching top-LEFT corner: the reconstruction % as a floating arcade
-          counter — VALUE carries the length, ramp COLOR carries the feel. */}
-      <div className="hud">
-        <ProgressCounter value={progress} />
       </div>
 
       {/* The play area fills the space between the fixed HUD (top) and the keyboard

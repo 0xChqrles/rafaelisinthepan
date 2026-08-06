@@ -47,6 +47,10 @@ const STRINGS = {
   // says what was counted).
   word: { en: 'WORD', fr: 'MOT' },
   words: { en: 'WORDS', fr: 'MOTS' },
+  // The final score names the achievement, not just the unit. Kept separate because the
+  // live header counter and the plain-text share result still use the compact unit above.
+  foundWord: { en: 'FOUND WORD', fr: 'MOT TROUVÉ' },
+  foundWords: { en: 'FOUND WORDS', fr: 'MOTS TROUVÉS' },
   // Free-guess feedback: a group-level repeat (#104), and the day's word itself (it is
   // public — on the board already).
   wordRepeat: { en: 'already played', fr: 'déjà joué' },
@@ -296,19 +300,14 @@ export function srWordBoardWord(lang: string, word: string): string {
   return uiLang(lang) === 'fr' ? `mot du jour : ${word}` : `word of the day: ${word}`;
 }
 
-// The HUD in words — the hearts are decorative, so this is what states the run's standing:
-// how much has been claimed, and how many lives are left of the three. Prose, so it stays in
-// the reader's own language.
-export function srWordHud(lang: string, score: number, lives: number, max: number): string {
-  if (uiLang(lang) === 'fr') {
-    return `${score} ${score === 1 ? 'mot' : 'mots'} — ${lives}/${max} ${lives === 1 ? 'vie' : 'vies'}`;
-  }
-  return `${score} ${score === 1 ? 'word' : 'words'} — ${lives}/${max} ${lives === 1 ? 'life' : 'lives'}`;
-}
-
 export function srWordClaim(lang: string, word: string, rank: number, total: number): string {
   if (uiLang(lang) === 'fr') return `${word} trouvé (rang ${rank}) — ${total} mots`;
   return `claimed ${word} (rank ${rank}) — ${total} words`;
+}
+
+export function srWordFailures(lang: string, strikes: number, max: number): string {
+  if (uiLang(lang) === 'fr') return `${strikes}/${max} fautes`;
+  return `${strikes}/${max} strikes`;
 }
 
 // A strike: `rank` is the near miss's rank (it teaches where the boundary is), or null

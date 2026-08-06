@@ -7,11 +7,10 @@ import LeaderboardDialog, { type LeaderboardRow } from './LeaderboardDialog';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import { track } from '../analytics';
 import { t } from '../i18n';
+import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 
 // Reveal choreography (this component mounts after the last hole has settled): the result
 // stack rises in, the score tallies, then the neutral run ruler colorizes in try order.
-export const RESULTS_IN_MS = 250; // mirrors .solved-results' transition duration in CSS
-const SCORE_COUNT_MS = 800;
 const NEUTRAL_HOLD_MS = 55;
 
 // Sentence-specific results only. The tray is the SAME compact stack at every breakpoint
@@ -147,12 +146,11 @@ export default function SolvedScreen({
     };
   }, [animate, rulerSpanMs, reduceMotion, resultsIn, rulerStartMs]);
 
-  // The SEE MORE leaderboard modal; closing returns focus to its trigger.
+  // The SEE MORE leaderboard modal. Buttons are pointer-only app-wide, so closing leaves
+  // focus unset instead of restoring it to the trigger.
   const [lbOpen, setLbOpen] = useState(false);
-  const seeMoreRef = useRef<HTMLButtonElement>(null);
   const closeLeaderboard = useCallback(() => {
     setLbOpen(false);
-    seeMoreRef.current?.focus({ preventScroll: true });
   }, []);
 
   // "COPIED" confirmation after a clipboard fallback (the native share sheet needs none).
@@ -245,7 +243,6 @@ export default function SolvedScreen({
         {rows && (
           <button
             type="button"
-            ref={seeMoreRef}
             className="result-action"
             onClick={() => setLbOpen(true)}
           >

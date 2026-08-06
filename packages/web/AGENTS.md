@@ -180,21 +180,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   trailing off rather than arriving. The teaser is the shape the routes were TAUGHT in, so
   it is the one to match; the connector contributes only what the junction and the arrival
   row do not already spend (`TEASER_MERGE_RUN`/`JX_STUB`/`ARRIVAL_HALF_HEAD` in
-  `WordBoard`, measured at 36px bus→node).
-  **The HUD's run state is three LIVES, not a strike counter** (decided 2026-08-05): the
-  arcade corner carries the claim count and three hearts beside it, one spent per
-  consecutive incorrect guess and all three back on a claim — spent from the RIGHT, so what
-  is left reads off the row's start. They are `assets/ultraheart.png`, a **10-frame
-  horizontal sprite sheet (130×13, ten 13×13 frames)** played EXACTLY the way the archive's
-  solved-day ripple plays `ultracode.png` — `background-size: 1000% 100%`, `steps(10)`,
-  end value `100% × 10/9` so frame 9 lands on 100% and the loop wraps clean, `pixelated` at
-  an exact 2× (26px). A living heart shimmers, which is what makes it read as ALIVE rather
-  than as a counter; a spent one KEEPS its place (a row that shrank would shift the count
-  beside it), stops, and drains to a dark outline. **Reduced motion parks it on frame 0
-  instead of hiding it** — the opposite of `.cal-ripple`, and deliberately: there the sprite
-  decorates a status the cell's fill already carries, here the heart IS the status. The
-  hearts are decorative to assistive tech; `srWordHud` states the standing in prose.
-  The rank gutter fits the farthest row drawn,
+  `WordBoard`, measured at 36px bus→node). The rank gutter fits the farthest row drawn,
   which with the whole field on the line is the field's own outer edge until a near strike
   lands beyond it.
   **The window wears the teaser's TORN EDGES** (decided 2026-08-05): the line outruns the
@@ -211,10 +197,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   opposite — the window takes everything left over** (decided 2026-08-05): the board IS this
   screen, and every row of the line the player can see is a road's length made visible, where
   the space around it says nothing. So `.game.word-game` cuts its own chrome — the HUD's row
-  reserved with 60px rather than 76 (the score has to be CLEARED, not breathed under), the two
-  seams down to `clamp(10px, 1.6vh, 18px)` (the prompt belongs to the board and the keyboard
-  to the prompt: joins, not separations), and the hint 10px under the caret instead of the
-  sentence screen's 20 (which answers to a phrase this screen does not have). Measured: 53% of
+  reserved with 48px rather than 76 (clearing the fixed header while balancing its screen-top
+  inset against the gap before the board), the two
+  prompt seams at `clamp(16px, 2.4vh, 26px)` (enough breathing room while the prompt remains
+  tied to both the board and keyboard), and the three-cross failure row 10px under the
+  caret, in the retired last-guess hint's place directly above the keyboard. Measured: 53% of
   the viewport → 59% at 1440×900, and 45% → 52% on a 700px-tall one, which is where it
   mattered. The sentence screen keeps its generous rhythm untouched — there the phrase is the
   content and the air around it is what makes it legible — which is why every one of these is
@@ -529,11 +516,6 @@ it to the local store — see `packages/backend/AGENTS.md`).
   contiguous ids are unchanged) instead of sizing by `max id + 1`, where a well-formed
   `road: 4294967295` threw `RangeError`. `api.ts` caps the value too (`MAX_ROAD` 63) — generous on
   purpose, since a rejected puzzle costs the whole day.
-  Side effect on the shared input: `WordInput`'s window listener lets a focused BUTTON keep only
-  `Enter`, and EVERY editing path in `Game` (`appendChar`, `deleteChar`, `replaceInput`) blurs a
-  focused hole button through `releaseHoleFocus`. All three, not just typing: with Backspace and
-  history recall leaving it focused, "close the map, fix a typo, press Enter" reopened the map
-  instead of submitting (fixed 2026-07-27).
 - **Route discoverability (#129, decided 2026-07-27):** #117 made every hole a button and
   nothing said so. Two fixes, both in the show-don't-tell grammar — no permanent chrome, no
   tooltip, no message band (all three considered and rejected the same day).
@@ -625,8 +607,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   background (the animated noise never plays under it) with generous row rhythm. It
   wears the shared `ModalHeader` and rises as a **SHEET** from the bottom edge
   (`sheet-up` / `sheet-down`, 2026-07-27 — see the modal-behaviour bullet); it is
-  closed by its header X or Escape, **never by a backdrop tap**, and focus returns to
-  SEE MORE. This dialog is the planned home of the deeper result views (#82): per-row
+  closed by its header X or Escape, **never by a backdrop tap**, and closing leaves focus
+  unset. This dialog is the planned home of the deeper result views (#82): per-row
   runs, tested words, per-hole word lists. **The run RULER replaced the bucketed
   trajectory squares (decided 2026-07-25):** one continuous bar per run on the
   PROGRESS ramp (`components/RunRuler.tsx`), one cell per counted try colored
@@ -801,8 +783,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   200ms before unmounting. **The solved screen then focuses NOTHING** (decided 2026-07-27,
   dropping the focus this dismissal used to hand to the result action): the celebration has no
   trigger to restore focus to, so the tray was taking it by default and SHARE arrived already
-  ringed — a solved sentence is something to read, not a prompt to act, and a keyboard user is
-  one Tab away. The streak celebration also keeps its **tap-anywhere** dismissal: it is the
+  ringed — a solved sentence is something to read, not a prompt to act. The streak celebration
+  also keeps its **tap-anywhere** dismissal: it is the
   documented exception to the close-button-only rule the other modals now follow.
   While any streak screen is open, the source and solved-result timers stay at their
   initial frame. **Dev-only preview:**
@@ -997,13 +979,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
   background, no blur.** Boxes read as floating rectangles over the animated waves, so the
   groups sit DIRECTLY on the backdrop and the glyphs' own `text-shadow` carries legibility.
   Layout is one optical row: `.topbar-inner` = `min(900px, 100vw - 48px)`, 56px, centred.
-  **LEFT is the status spot** — a screen's title in `.topbar-title` (ARCHIVE / TUTORIAL, plus
-  any inline stat like the tutorial's counter); the game passes nothing there and floats its
-  own progress **counter** (`.hud`, the arcade SCORE spot, painted in `progressColor(pct)`)
-  instead — the full-width progress BAR is gone, the number and its colour say what the bar
-  said. **RIGHT is the one action group** (`.topbar-right`): the language flag, then the
+  **LEFT is the status spot** (`.topbar-left`) — a screen's title in `.topbar-title`
+  (ARCHIVE / TUTORIAL, plus any inline stat like the tutorial's counter), or a loaded game's
+  live arcade status: the sentence's progress **counter** (painted in `progressColor(pct)`),
+  or Word mode's score. Word mode's three-cross failure row stays with its play controls,
+  directly above the keyboard. Both left and right groups are children of the actual
+  `<header>`; game bodies never render a separate fixed header half. The full-width progress
+  BAR is gone — the number and its colour say what the bar said. **RIGHT is the one action
+  group** (`.topbar-right`): the language flag, then the
   screen's contextual controls — every one a `.home-btn` (a transparent `--hud-height` square)
-  wrapping a `.pixel-icon` SVG, muted → `--fg` on hover/focus. The **streak stat is NOT in the
+  wrapping a `.pixel-icon` SVG, muted → `--fg` on hover. The **streak stat is NOT in the
   header** (moved back to the archive page 2026-07-21). **Any full-screen surface follows this
   same row** rather than inventing chrome, and since 2026-07-27 there is ONE component for it:
   **`components/ModalHeader.tsx`** — the app's row (`.topbar-inner` / `.topbar-left` /
@@ -1053,10 +1038,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   The game's right group holds the **archive calendar icon** and help `?` (#55); the tutorial
   puts "TUTORIAL" in the left chip and the skip fast-forward in the right group. The flag
   ALWAYS opens the language screen. The
-  game header is rendered by **`GameRoute` (App), NOT inside `Game`** (decided
-  2026-07-08): it wraps EVERY state of the route — loading / error / missing-puzzle /
-  the loaded game — so navigating into a game (e.g. from the archive) never blinks the
-  header away; only the body under the fixed header refreshes. `usePuzzle`'s **stable
+  game header is owned by **`GameRoute` (App)** (decided 2026-07-08): it constructs the
+  same `TopBar` for EVERY state of the route — loading / error / missing-puzzle / the loaded
+  game — while the loaded screen supplies its live status through the header's `left` slot.
+  That keeps the status inside `<header>` and outside `.game`, and navigating into a game
+  (e.g. from the archive) never changes the header structure; only its contents and the body
+  under it refresh. `usePuzzle`'s **stable
   `dayNumber`** is still captured ONCE per request (`useMemo` on the requested date) and
   shared by the fetch, round key, and share, but is no longer rendered in the header. An
   undated tab held open across the 22:00 flip therefore still keeps its fetched puzzle/day;
@@ -1080,8 +1067,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   redirect. `<html lang>` is kept in sync by App. Guess feedback is mirrored to a
   `.sr-only` polite live region (`srHoleResult`), animations honor
   `prefers-reduced-motion` (durations collapse to ~0 — never `animation: none`, several
-  swaps advance on `animationend`; delays are kept so the floating numbers still show),
-  and every control has a visible `:focus-visible` outline. **The missing-puzzle screen
+  swaps advance on `animationend`; delays are kept so the floating numbers still show).
+  **Every BUTTON is pointer-only and may NEVER retain focus** (decided 2026-08-06):
+  `buttonFocus.ts`, installed before React renders, gives current/future/lazy/portaled buttons
+  `tabIndex = -1`, prevents mouse-down focus without suppressing click, and immediately blurs
+  any browser or programmatic button focus. There are no `:focus-visible` button treatments and
+  modal close paths never restore focus to their triggers. Native modal focus may stay on the
+  non-button `<dialog>` itself so its focus trap and Escape behavior survive. **The missing-puzzle screen
   has TWO wordings, told apart by the ROUTE (#77, decided 2026-07-27)** — the backend's
   404 is undifferentiated, and which route asked is the only signal needed: on the
   **undated** route (today) it owns that the state is **abnormal** (a publish that did not
@@ -1171,4 +1163,3 @@ it to the local store — see `packages/backend/AGENTS.md`).
   success paths; `tutorial {action:'start'|'finish'|'skip'}` — invite accept / the ending's
   PLAY under the routes teaser (#155) / skip (fast-forward or invite SKIP). Plus automatic
   pageviews.
-

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { dateForDayNumber, encodeWordResult } from '@whippin/shared';
 import { track } from '../analytics';
 import { t } from '../i18n';
+import useAnimatedNumber from '../hooks/useAnimatedNumber';
+import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 
 // Word mode's end-of-run screen (#156): the claim count with its unit NAMED (higher is
 // better here — "12 WORDS" says what was counted) plus SHARE, in the tray the keyboard
@@ -13,11 +15,41 @@ export default function WordEndScreen({
   score,
   dayNumber,
   lang,
+  animate = true,
 }: {
   score: number;
   dayNumber: number;
   lang: string;
+  // A live run rises and tallies like the sentence result. Rehydrated runs render their
+  // final state immediately, so revisiting a finished day never replays the celebration.
+  animate?: boolean;
 }) {
+  const reduceMotion =
+    typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // First rise into the tray the keyboard vacated, then count the claimed words up from zero.
+  const [resultsIn, setResultsIn] = useState(() => !animate);
+  useEffect(() => {
+    if (!animate) {
+      setResultsIn(true);
+      return undefined;
+    }
+    const raf = requestAnimationFrame(() => setResultsIn(true));
+    return () => cancelAnimationFrame(raf);
+  }, [animate]);
+
+  const [countTarget, setCountTarget] = useState(() => (animate ? 0 : score));
+  useEffect(() => {
+    if (!animate) {
+      setCountTarget(score);
+      return undefined;
+    }
+    if (!resultsIn) return undefined;
+    const id = window.setTimeout(() => setCountTarget(score), reduceMotion ? 0 : RESULTS_IN_MS);
+    return () => window.clearTimeout(id);
+  }, [animate, reduceMotion, resultsIn, score]);
+  const shownScore = useAnimatedNumber(countTarget, !animate || reduceMotion ? 1 : SCORE_COUNT_MS);
+
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(copiedTimer.current), []);
@@ -57,12 +89,18 @@ export default function WordEndScreen({
   }, [lang, dayNumber, score]);
 
   return (
-    <div className="solved-results in">
+    <div className={`solved-results${resultsIn ? ' in' : ''}`}>
       <span className="solved-score">
         <span className="solved-score-num">
-          <span className="solved-score-live">{score}</span>
+          {/* Reserve the final width while the live number counts, matching Sentence mode. */}
+          <span className="solved-score-ghost" aria-hidden="true">
+            {score}
+          </span>
+          <span className="solved-score-live">{Math.round(shownScore)}</span>
         </span>
-        <span className="solved-score-unit">{t(lang, score === 1 ? 'word' : 'words')}</span>
+        <span className="solved-score-unit">
+          {t(lang, score === 1 ? 'foundWord' : 'foundWords')}
+        </span>
       </span>
 
       <div className="result-actions">

@@ -1,7 +1,8 @@
-import { Fragment } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { heatColor } from '@whippin/shared';
 import type { WordBoardModel } from '../game/wordBoard';
+import { SCRAMBLE_MS, useScramble } from '../hooks/useScramble';
 import { rankHeatColor, HIT_HEAT_CAP } from './Hole';
 import {
   Junction,
@@ -76,6 +77,31 @@ type Row =
       claimed: boolean;
     }
   | { zone: false; rank: number; dq: number; word: string };
+
+// A station starts as `???` and uses the same slot-machine replacement as sentence holes.
+// The initial target is seeded as settled, so loading an already-played round does not
+// replay every reveal; only a newly claimed station transitions.
+function StationWord({ target, fontSize }: { target: string; fontSize: string }) {
+  const { jumble, start } = useScramble();
+  const [displayWord, setDisplayWord] = useState(target);
+
+  useEffect(() => {
+    if (target === displayWord) return undefined;
+    start(target, displayWord.length, () => setDisplayWord(target));
+    return undefined;
+  }, [displayWord, start, target]);
+
+  const style = {
+    fontSize,
+    '--reveal-ms': `${SCRAMBLE_MS}ms`,
+  } as CSSProperties;
+
+  return (
+    <span className={`route-word${jumble !== null ? ' revealing' : ''}`} style={style}>
+      {jumble ?? displayWord}
+    </span>
+  );
+}
 
 export default function WordBoard({ model, lang }: { model: WordBoardModel; lang: string }) {
   const lanes = model.lanes;
@@ -212,9 +238,7 @@ export default function WordBoard({ model, lang }: { model: WordBoardModel; lang
                   <i className="route-node" />
                 </span>
                 <span className="route-body">
-                  <span className="route-word" style={{ fontSize: fitWord(label, STATION_PX) }}>
-                    {label}
-                  </span>
+                  <StationWord target={label} fontSize={fitWord(label, STATION_PX)} />
                 </span>
               </div>
             </Fragment>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { activeDate } from '@whippin/shared';
 import usePuzzle from './hooks/usePuzzle';
 import useWordPuzzle from './hooks/useWordPuzzle';
@@ -26,13 +26,12 @@ import {
 } from './langs';
 import { t } from './i18n';
 import { streakPreviewFromSearch } from './dev/streakPreview';
-// Inline SVG (vite-plugin-svgr): the header controls — calendar into the archive (#55),
-// the "?" help that replays the tutorial, and the mode toggle (#156, each icon naming
-// the mode a tap lands on). Decorative glyphs; the buttons' aria-labels name them.
+// Header controls: inline SVGs for archive/help, and pixel PNGs for the mode toggle.
+// Decorative glyphs; the buttons' aria-labels name their actions.
 import CalendarIcon from './assets/icons/calendar.svg?react';
 import QuestionIcon from './assets/icons/question.svg?react';
-import WordModeIcon from './assets/icons/word-mode.svg?react';
-import SentenceModeIcon from './assets/icons/sentence-mode.svg?react';
+import wordModeIcon from './assets/icons/word.png';
+import sentenceModeIcon from './assets/icons/sentence.png';
 
 export default function App() {
   const pathname = useLocation();
@@ -87,8 +86,9 @@ export default function App() {
 // component for both faces, so the header, the tutorial gate and the transient states
 // (loading / error / missing-puzzle) cannot drift between them. Loads the day's
 // artifact for the language and records it as the last-played language AND mode. The
-// header (TopBar) is rendered HERE — above every transient state and the loaded game
-// alike — so it stays put while only the body swaps.
+// header (TopBar) is owned HERE — above every transient state and the loaded game alike.
+// A loaded screen only reports the live content for its left slot, so the header itself
+// stays put while the body swaps.
 function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: string }) {
   // ONE of the two hooks fetches (the other idles on a null lang): the two dailies are
   // separate artifacts behind separate URLs, and this route plays exactly one of them.
@@ -147,6 +147,20 @@ function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: st
     useGameStore.getState().closeTutorial();
   }, [setOnboarded]);
 
+  // The header itself stays mounted at this route boundary. A loaded game reports the
+  // live content for its left slot; keying the report prevents a departing route's
+  // layout-effect cleanup from blanking the next route's status.
+  const headerKey = `${lang}:${mode}:${date ?? 'today'}`;
+  const [headerLeft, setHeaderLeft] = useState<{
+    key: string;
+    content: ReactNode | null;
+  } | null>(null);
+  const updateHeaderLeft = useCallback(
+    (content: ReactNode | null) => setHeaderLeft({ key: headerKey, content }),
+    [headerKey],
+  );
+  const currentHeaderLeft = headerLeft?.key === headerKey ? headerLeft.content : undefined;
+
   // key={lang}: switching language mid-tutorial (via /select) restarts it in that
   // language.
   if (tutorialOpen) {
@@ -169,53 +183,48 @@ function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: st
   }
 
   const otherMode: Mode = mode === 'word' ? 'sentence' : 'word';
+  const headerRight = (
+    <>
+      {/* The mode toggle (#156): the icon identifies the current daily, while the
+          accessible name identifies the mode a tap lands on. */}
+      <button
+        type="button"
+        className="home-btn mode-btn"
+        aria-label={t(lang, otherMode === 'word' ? 'ariaWordMode' : 'ariaSentenceMode')}
+        onClick={() => navigate(pathForMode(lang, otherMode))}
+      >
+        <img
+          className="mode-icon"
+          src={mode === 'word' ? wordModeIcon : sentenceModeIcon}
+          alt=""
+          aria-hidden="true"
+        />
+      </button>
+      {/* Into the archive calendar (#55) — past days, one tap from the game. */}
+      <button
+        type="button"
+        className="home-btn archive-btn"
+        aria-label={t(lang, 'ariaArchive')}
+        onClick={() => navigate(pathForArchive(lang, mode))}
+      >
+        <CalendarIcon className="pixel-icon" aria-hidden />
+      </button>
+      {/* Replays the onboarding tutorial (#51) on demand — one tap, out of the way. */}
+      <button
+        type="button"
+        className="home-btn help-btn"
+        aria-label={t(lang, 'ariaHelp')}
+        onClick={() => openTutorial('replay')}
+      >
+        <QuestionIcon className="pixel-icon" aria-hidden />
+      </button>
+    </>
+  );
   return (
     <>
-      {/* One persistent floating header for the whole route: the top-right action group
-          (flag from TopBar itself, then the mode toggle, archive and help controls
-          passed here), no center title — the top-LEFT corner belongs to the game's
-          floating counter. It renders in EVERY state below — loading, error, the
-          missing-puzzle screen, and the loaded game — so navigating into a game never
-          blinks the header away; only the body under it refreshes. */}
-      <TopBar
-        lang={lang}
-        right={
-          <>
-            {/* The mode toggle (#156): switching dailies is a deliberate act — one tap,
-                named by (and showing) the mode it lands on. */}
-            <button
-              type="button"
-              className="home-btn mode-btn"
-              aria-label={t(lang, otherMode === 'word' ? 'ariaWordMode' : 'ariaSentenceMode')}
-              onClick={() => navigate(pathForMode(lang, otherMode))}
-            >
-              {otherMode === 'word' ? (
-                <WordModeIcon className="pixel-icon" aria-hidden />
-              ) : (
-                <SentenceModeIcon className="pixel-icon" aria-hidden />
-              )}
-            </button>
-            {/* Into the archive calendar (#55) — past days, one tap from the game. */}
-            <button
-              type="button"
-              className="home-btn archive-btn"
-              aria-label={t(lang, 'ariaArchive')}
-              onClick={() => navigate(pathForArchive(lang, mode))}
-            >
-              <CalendarIcon className="pixel-icon" aria-hidden />
-            </button>
-            {/* Replays the onboarding tutorial (#51) on demand — one tap, out of the way. */}
-            <button
-              type="button"
-              className="home-btn help-btn"
-              aria-label={t(lang, 'ariaHelp')}
-              onClick={() => openTutorial('replay')}
-            >
-              <QuestionIcon className="pixel-icon" aria-hidden />
-            </button>
-          </>
-        }
-      />
+      {/* The route owns one persistent actual header. Loaded games populate its left slot;
+          loading/error/missing states leave it empty. */}
+      <TopBar lang={lang} left={currentHeaderLeft} right={headerRight} />
       {loading && <p className="status">{t(lang, 'loading')}</p>}
       {error !== null && <LoadError message={t(lang, 'failedPuzzle')} lang={lang} onRetry={retry} />}
       {/* `date` is the ONLY thing NoPuzzle needs to tell an unpublished archive day
@@ -227,10 +236,15 @@ function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: st
           dayNumber={dayNumber}
           isActiveDay={isActiveDay}
           deferResultsAnimation={streakPreview != null}
+          onHeaderLeftChange={updateHeaderLeft}
         />
       )}
       {mode === 'word' && word.puzzle && (
-        <WordGame puzzle={word.puzzle} dayNumber={dayNumber} />
+        <WordGame
+          puzzle={word.puzzle}
+          dayNumber={dayNumber}
+          onHeaderLeftChange={updateHeaderLeft}
+        />
       )}
       {streakPreview != null && (
         <LazyStreakDialog
