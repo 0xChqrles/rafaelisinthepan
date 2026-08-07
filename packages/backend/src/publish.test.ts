@@ -46,4 +46,13 @@ describe('planPublish — (day, lang) -> store key + destination', () => {
   it('--s3 with no resolved bucket is rejected (no silent local fallback)', () => {
     expect(() => planPublish({ s3: true }, 'fr', NOON_UTC)).toThrow(/bucket/i);
   });
+
+  // Word mode (#156): the #154 artifact routes under its OWN key — the same key the
+  // readers' getWordPuzzle GETs — so the two dailies can never overwrite each other.
+  it('a word artifact routes to the word key, distinct from the sentence key', () => {
+    const plan = planPublish({ s3: false, day: '2026-07-01' }, 'fr', NOON_UTC, undefined, 'word');
+    expect(plan.key).toBe('2026-07-01.fr.word.json');
+    expect(plan.key).toBe(storeKey('2026-07-01', 'fr', 'word'));
+    expect(plan.key).not.toBe(storeKey('2026-07-01', 'fr'));
+  });
 });

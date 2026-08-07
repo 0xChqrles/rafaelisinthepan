@@ -29,8 +29,8 @@
 
 ```bash
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
-pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output)
-pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--ci]  # publish-buffer coverage (#61); reports + exits 0 by default, --ci exits 1 on any (day,lang) gap for cron/CI
+pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output). Sentence puzzles AND #154 word artifacts (#156): the artifact type is detected from the file's SHAPE and routed to its own key.
+pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--mode sentence|word] [--ci]  # publish-buffer coverage (#61); --mode word probes the #156 word-artifact buffer; reports + exits 0 by default, --ci exits 1 on any (day,lang) gap for cron/CI
 pnpm backend:dev                # local server (GET /?lang=, /today) on :8787 over the local store
 ```
 
@@ -40,6 +40,22 @@ pnpm backend:dev                # local server (GET /?lang=, /today) on :8787 ov
 
 *(Safe to update without touching the invariants above.)*
 
+- **Word mode's daily artifact (#154/#156):** the ONE puzzle endpoint also serves the
+  single-word artifact under `mode=word` (`GET /?lang=&date=&mode=word`; absent/
+  `sentence` = the sentence puzzle, anything else = 400) with identical day-addressing,
+  404 semantics, caching and compression. **A new query parameter here is only half the
+  change:** the CDN cache policy (`infra/lib/backend-stack.ts`) has to list it too, or
+  CloudFront both collapses the two responses onto one year-long edge entry and — having no
+  origin request policy — strips the parameter before this handler ever sees it. See the
+  routing contract in the root `AGENTS.md`; `backend:dev` has no CDN and cannot show it. The
+  store key is
+  `<date>.<lang>.word.json` (`layout.storeKey(date, lang, 'word')`), read by
+  `PuzzleStore.getWordPuzzle` in both store impls; `publish` detects the artifact type
+  from the JSON shape (`holes` = sentence, `word` + flat `ranks` = word) and routes it
+  to that key, and `inventory --mode word` probes the word buffer. The share routes
+  additionally decode Word mode's v3 token (`decodeWordResult`) into its own card
+  (`renderWordCardPng`) and share page, whose click-through lands on
+  `/<lang>/word/<date>`.
 - **Puzzle responses are content-negotiated AT THE ORIGIN (#123/#124, decided
   2026-07-26).** A puzzle is megabytes of rank maps (#104's alias expansion roughly tripled
   them), and Lambda refuses a response **envelope** over ~6.29 MB with a 413 the caller only

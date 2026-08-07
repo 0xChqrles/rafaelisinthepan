@@ -2,8 +2,9 @@
 // agreed design:
 //   - a hole's neighborhood is a journey along the dq axis (#115), not a guess list: every
 //     stop keeps its group's REAL position and lane;
-//   - a group is one stop however many of its aliases were typed (#104), named by its
-//     canonical accented form;
+//   - a group is one stop however many of its aliases were typed (#104), named by its canonical
+//     accented form ON a road — where the station was already drawn, censored — and by what the
+//     player TYPED off every road, where the stop exists only because they typed it;
 //   - the departure (the given start word) and "you are here" (the hole's current word) are
 //     marked, EVERY near-field group the player has not reached stays censored (so each road
 //     shows its real length), roads are named only by what the player DISCOVERED on them, and a
@@ -98,14 +99,30 @@ describe('placement — every stop keeps its group geometry', () => {
 });
 
 describe('canonical dedupe — one GROUP is one stop (#104)', () => {
-  it('collapses aliases of one group, keeping the canonical form', () => {
-    const map = mkMap(50);
-    map.privees = { word: 'privé', rank: 7, dq: map.w7.dq };
-    map.privee = { word: 'privé', rank: 7, dq: map.w7.dq };
+  it('collapses aliases of one group, keeping the canonical form ON a road', () => {
+    // Rank 7 is inside the road zone, so its station was already on the map as `???` before
+    // either alias was typed: naming it is the map naming its own census.
+    const map = mkMap(50, { roadTop: 40, roadCount: 2 });
+    map.privees = { word: 'privé', rank: 7, dq: map.w7.dq, road: map.w7.road };
+    map.privee = { word: 'privé', rank: 7, dq: map.w7.dq, road: map.w7.road };
     const model = route(map, ['privees', 'privee'], hole(7), 40)!;
     const seven = model.stops.filter((s) => s.rank === 7);
     expect(seven).toHaveLength(1);
     expect(seven[0].word).toBe('privé');
+  });
+
+  it('collapses them just the same OFF the roads, keeping the form that was TYPED', () => {
+    // Out on the trunk nothing was drawn before the guess landed, so the stop IS the guess:
+    // a player who typed `privees` must not find `privé` sitting there instead — a word they
+    // never played, at a distance they cannot account for. Still ONE stop, so the second
+    // inflection changes nothing.
+    const map = mkMap(300, { roadTop: 100, roadCount: 2 });
+    map.privees = { word: 'privé', rank: 207, dq: map.w207.dq };
+    map.privee = { word: 'privé', rank: 207, dq: map.w207.dq };
+    const model = route(map, ['privees', 'privee'], hole(100))!;
+    const stop = model.stops.filter((s) => s.rank === 207);
+    expect(stop).toHaveLength(1);
+    expect(stop[0]).toMatchObject({ word: 'privees', road: null, dq: map.w207.dq });
   });
 
   it('keeps the departure marker when the start is re-typed as an alias', () => {
@@ -177,6 +194,17 @@ describe('markers — departure and "you are here"', () => {
     const noRoads = mkMap(300);
     const model = route(noRoads, [], hole(42))!;
     expect(model.stops.find((s) => s.best)).toMatchObject({ rank: 42, dq: noRoads.w42.dq });
+  });
+
+  it('names a trunk stop nobody typed by its canonical form — there is no typed form', () => {
+    // Both markers are places the player was PUT, not places they typed their way to. On a
+    // --no-roads map every stop rides the trunk, so this is where the fallback shows: they
+    // still carry their group's own word rather than nothing.
+    const noRoads = mkMap(300);
+    noRoads.w42 = { ...noRoads.w42, word: 'côté' };
+    const model = route(noRoads, [], hole(42), 100)!;
+    expect(model.stops.find((s) => s.best)!.word).toBe('côté');
+    expect(model.stops.find((s) => s.start)!.word).toBe('w100');
   });
 
   it('answers the same on a rebuild — that lookup is memoized, not recomputed', () => {
@@ -313,6 +341,22 @@ describe('roads are named by DISCOVERY, never by what is on them', () => {
     const model = route(map, ['w200'], hole(100))!;
     expect(model.roads.filter((r) => r.label !== null)).toHaveLength(1);
     expect(model.roads[map.w100.road!].label).toBe('w100');
+  });
+});
+
+describe('the rank gutter is reserved from the MAP, not from the line', () => {
+  // The drawing sizes its gutter from this rather than from the widest exponent currently
+  // drawn — otherwise a guess landing at a wider rank than anything on the line widens the
+  // track and shoves the whole drawing sideways, while the player is reading it.
+  it('states the map farthest rank, whatever the line currently shows', () => {
+    const map = mkMap(1200, { roadTop: 100, roadCount: 2 });
+    for (const tried of [[], ['w5'], ['w1100', 'pizza'], ['w7', 'w900']]) {
+      expect(route(map, tried, hole(100))!.maxRank).toBe(1200);
+    }
+  });
+
+  it('ignores the secret, which is rank 0 and not on the axis', () => {
+    expect(route(mkMap(40), [], hole(40), 40)!.maxRank).toBe(40);
   });
 });
 

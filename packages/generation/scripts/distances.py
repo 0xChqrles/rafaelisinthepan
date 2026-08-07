@@ -11,7 +11,8 @@ ships two extra group properties inside the existing per-puzzle JSON:
 
 Stdlib-only, like slug.py: this module is pure arithmetic over plain float sequences
 (anything indexable works, numpy rows included), so the contract tests keep running
-without numpy/gensim, and the 150-point clustering costs a fraction of a second.
+without numpy/gensim, and the 250-point clustering costs a fraction of a second
+(measured 0.34s at ROAD_TOP, against 0.11s at the 150 it superseded).
 """
 
 import math
@@ -30,12 +31,45 @@ DQ_MAX = 255
 # (start_word.START_RANK_MAX), so it never bites on a band start; it exists for the
 # author who hand-picks a start far outside the band, where it keeps the O(n^3)
 # clustering (and the shipped road fields) bounded.
-ROAD_TOP = 150
-# Candidate cluster counts, evaluated by mean silhouette; below the threshold the
-# neighborhood has no honest split and gets ONE road (some words genuinely have a
-# single facet, and forcing a split there would teach a falsehood in the UI).
-ROAD_KS = (2, 3, 4)
+#
+# It is ALSO the whole zone of a start-less single-word artifact (#154) — see road_zone —
+# which is what actually sets this number: those groups are Word mode's playing field, and
+# the client's CLAIM_ZONE restates it (packages/web/src/game/wordGame.ts, pinned to this
+# literal by wordGame.test.ts). Raised 150 -> 250 on 2026-08-07 to give Word mode a longer
+# run; a sentence hole is unaffected, since its zone is its departure's rank and the band
+# tops out well below either value.
+ROAD_TOP = 250
+# Candidate cluster counts. Below ROAD_MIN_SILHOUETTE the neighborhood has no honest
+# split and gets ONE road (some words genuinely have a single facet, and forcing a split
+# there would teach a falsehood in the UI).
+#
+# Silhouette is the HONESTY GATE, not the ranking (decided 2026-08-07): among the splits
+# that clear it, the one with the MOST roads wins. Ranking BY silhouette does not survive
+# a zone this wide — measured across nine real neighborhoods at ROAD_TOP 250, the top
+# score went to k=2 on eight of them, and on seven of those the winning split was one
+# trunk plus a 1-3 word straggler (`ocean` 248/2, `vie` 249/1). The metric buys its score
+# by isolating a tight outlier, and the wider the zone the more diffuse mass there is to
+# make that trade look good — "several roads lead to the word" is the product claim, so a
+# 2-way cut of 250 groups says less than the 4-way one sitting right beside it at a
+# marginally lower score (`tropiques` 233/17 at k=2, against its real 113/107/17/13 at
+# k=4). What stops "most roads" from manufacturing facets out of stragglers is the size
+# floor below, applied BEFORE scoring.
+#
+# ROAD_KS caps the road count, so it is also the number of lanes the drawing must be able
+# to paint: widening it past the web's LANE_COLORS would ship a road with no colour.
+ROAD_KS = (2, 3, 4, 5, 6)
 ROAD_MIN_SILHOUETTE = 0.05
+
+# A road must hold at least this FRACTION of the zone, or it is not a road — it is an
+# outlier, and drawing it as a lane advertises a whole route nobody can walk. Undersized
+# clusters are folded back into their nearest neighbour before the silhouette is read
+# (see _absorb_small_roads), which is what removes the metric's incentive to isolate one.
+#
+# A FRACTION, not a count, because the zone's size is not fixed: it is ROAD_TOP for a word
+# artifact but the DEPARTURE's rank for a sentence hole, which can be 50. 4% is 10 groups
+# at 250 and 2 at 50 — measured to clear every straggler observed (all <= 9 at 250) while
+# keeping the smallest genuinely nameable facet (`tropiques`'s 13-group theme).
+ROAD_MIN_FRACTION = 0.04
 
 
 def quantize_dq(sims, dq_max=DQ_MAX):
@@ -222,24 +256,75 @@ def _renumber_by_first_appearance(labels):
     return out
 
 
-def cluster_roads(vectors, ks=ROAD_KS, min_silhouette=ROAD_MIN_SILHOUETTE):
+def _absorb_small_roads(dist, labels, min_size):
+    """Fold every cluster below `min_size` into its nearest surviving one.
+
+    A handful of groups sitting slightly apart is not a road — it is an outlier, and a
+    lane drawn for it claims a route that has nowhere to go. So it goes back where it
+    actually belongs: repeatedly take the smallest undersized cluster and merge it into
+    the cluster it is closest to by AVERAGE linkage, the same measure that built the
+    tree, until every survivor clears the floor or only one is left.
+
+    Doing this BEFORE the silhouette is read is the point (see ROAD_KS): it takes away
+    the score a split could earn by isolating a tight straggler, because the straggler is
+    no longer isolated by the time the split is judged.
+
+    Ties break on the lowest cluster label, so the fold is deterministic like the rest of
+    this module. Returns fresh labels; ids are renumbered by the caller as usual.
+    """
+    members = {}
+    for i, label in enumerate(labels):
+        members.setdefault(label, []).append(i)
+    while len(members) > 1:
+        smallest = min(members, key=lambda l: (len(members[l]), l))
+        if len(members[smallest]) >= min_size:
+            break
+        orphans = members.pop(smallest)
+        host = min(members, key=lambda l: (
+            sum(dist[i][j] for i in orphans for j in members[l])
+            / (len(orphans) * len(members[l])), l))
+        members[host].extend(orphans)
+    out = list(labels)
+    for label, group in members.items():
+        for i in group:
+            out[i] = label
+    return out
+
+
+def cluster_roads(vectors, ks=ROAD_KS, min_silhouette=ROAD_MIN_SILHOUETTE,
+                  min_fraction=ROAD_MIN_FRACTION):
     """Road id per input vector, which must arrive in ascending rank order.
 
-    Evaluates k in `ks` by mean silhouette and keeps the best (ties -> the smaller k).
-    When the best split is weaker than `min_silhouette` the neighborhood has no honest
-    fork and everything falls back to ONE road (all zeros) — mandatory, not an escape
-    hatch. Road ids are then renumbered by closest member (see above).
+    For each k in `ks`: cluster, fold the undersized roads back in
+    (`_absorb_small_roads`), and read the mean silhouette of what is left. A split must
+    clear `min_silhouette` to be considered honest at all; among those that do, the one
+    with the MOST roads wins — silhouette is the gate, not the ranking (see ROAD_KS for
+    the measurements behind that). Ties on both keep the smaller k.
+
+    When nothing clears the gate the neighborhood has no honest fork and everything falls
+    back to ONE road (all zeros) — mandatory, not an escape hatch. Road ids are then
+    renumbered by closest member (see above).
     """
     n = len(vectors)
     if n < 2:
         return [0] * n
+    # At least 2: a single group is never a road, but on a zone too short for the
+    # fraction to mean anything the floor must not swallow every split.
+    min_size = max(2, round(n * min_fraction))
     dist = _distance_matrix(vectors)
     labelings = _linkage_labelings(dist, ks)
-    best_score, best_labels = None, None
+    best_key, best_labels = None, None
     for k in sorted(labelings):
-        score = _silhouette(dist, labelings[k])
-        if best_score is None or score > best_score:  # strict: ties keep the smaller k
-            best_score, best_labels = score, labelings[k]
-    if best_labels is None or best_score < min_silhouette:
+        labels = _absorb_small_roads(dist, labelings[k], min_size)
+        roads = len(set(labels))
+        if roads < 2:
+            continue
+        score = _silhouette(dist, labels)
+        if score < min_silhouette:
+            continue
+        key = (roads, score)
+        if best_key is None or key > best_key:  # strict: ties keep the smaller k
+            best_key, best_labels = key, labels
+    if best_labels is None:
         return [0] * n
     return _renumber_by_first_appearance(best_labels)

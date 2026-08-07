@@ -4,7 +4,14 @@
 // day. A 404 from the backend is the graceful "no puzzle today" state, not an error.
 
 import { describe, it, expect } from 'vitest';
-import { apiBase, puzzleUrl, puzzleOutcome, parsePuzzle } from './api';
+import {
+  apiBase,
+  puzzleUrl,
+  wordPuzzleUrl,
+  puzzleOutcome,
+  parsePuzzle,
+  parseWordPuzzle,
+} from './api';
 
 describe('apiBase', () => {
   it('reads VITE_API_BASE_URL and trims trailing slashes', () => {
@@ -35,6 +42,16 @@ describe('backend routing URLs', () => {
 
   it('fails loudly when the backend base is unset instead of using the web origin', () => {
     expect(() => puzzleUrl('fr', '2026-07-05', '')).toThrow(/VITE_API_BASE_URL/);
+  });
+
+  // Word mode names its daily with `mode=word` (#156) — a DISTINCT URL, which is the whole
+  // reason the CDN can hold the two dailies as separate entries. The parameter has to be in
+  // the CloudFront cache policy's allowList for that to be true (see infra/backend-stack).
+  it('wordPuzzleUrl is the same date-addressed URL, selected by mode=word', () => {
+    expect(wordPuzzleUrl('fr', '2026-07-05', base)).toBe(
+      'https://api.example/?lang=fr&date=2026-07-05&mode=word',
+    );
+    expect(wordPuzzleUrl('fr', '2026-07-05', base)).not.toBe(puzzleUrl('fr', '2026-07-05', base));
   });
 });
 
@@ -326,5 +343,84 @@ describe('parsePuzzle (shape validation)', () => {
     const p = valid();
     (p as { ranks: unknown }).ranks = [];
     expect(() => parsePuzzle(p)).toThrow(/ranks/);
+  });
+});
+
+// Word mode's artifact (#154/#156) gets the same guard as the sentence puzzle, for the same
+// reason: a truncated or wrong-shaped body must surface as the error state, never crash the
+// board mid-render. It is also the ONE thing standing between the network and the numbers the
+// drawing sizes itself by — and the failure that motivated it is real: with `mode` missing from
+// the CDN cache key the word route was served the day's SENTENCE puzzle, and this is what
+// turned that into a clean "failed to load" instead of a blank screen.
+describe('parseWordPuzzle (shape validation)', () => {
+  const valid = () => ({
+    lang: 'fr',
+    word: { word: 'forêt', slug: 'foret' },
+    ranks: {
+      foret: { word: 'forêt', rank: 0 },
+      bois: { word: 'bois', rank: 1, dq: 255, road: 0 },
+      arbre: { word: 'arbre', rank: 2, dq: 240, road: 1 },
+    },
+  });
+
+  it('accepts a well-formed artifact unchanged', () => {
+    const p = valid();
+    expect(parseWordPuzzle(p)).toBe(p);
+  });
+
+  it('rejects a non-object / a missing lang / a bad word', () => {
+    expect(() => parseWordPuzzle(null)).toThrow(/word puzzle/);
+    expect(() => parseWordPuzzle([])).toThrow(/word puzzle/);
+    const noLang = valid();
+    delete (noLang as { lang?: unknown }).lang;
+    expect(() => parseWordPuzzle(noLang)).toThrow(/lang/);
+    const badWord = valid();
+    (badWord as { word: unknown }).word = { word: 'forêt' }; // no slug
+    expect(() => parseWordPuzzle(badWord)).toThrow(/word/);
+  });
+
+  // The flat map has to hold the day's own word at rank 0 — that entry is what the board
+  // draws as its terminus and what makes typing the word itself free rather than a strike.
+  it('rejects a ranks map that does not hold the word itself at rank 0', () => {
+    const missing = valid();
+    delete (missing.ranks as Record<string, unknown>).foret;
+    expect(() => parseWordPuzzle(missing)).toThrow(/rank 0/);
+    const notZero = valid();
+    (notZero.ranks.foret as { rank: number }).rank = 3;
+    expect(() => parseWordPuzzle(notZero)).toThrow(/rank 0/);
+  });
+
+  it('rejects a malformed rank / dq / road on any entry', () => {
+    const badRank = valid();
+    (badRank.ranks.bois as { rank: unknown }).rank = -1;
+    expect(() => parseWordPuzzle(badRank)).toThrow(/rank/);
+    const badDq = valid();
+    (badDq.ranks.bois as { dq: unknown }).dq = 256;
+    expect(() => parseWordPuzzle(badDq)).toThrow(/dq/);
+    const badRoad = valid();
+    (badRoad.ranks.arbre as { road: unknown }).road = 4294967295;
+    expect(() => parseWordPuzzle(badRoad)).toThrow(/road/);
+  });
+
+  // A rank entry with no dq/road is a legitimate pre-#115 shape; only a PRESENT one is checked.
+  it('accepts entries with no distance annotations', () => {
+    const bare = {
+      lang: 'en',
+      word: { word: 'ocean', slug: 'ocean' },
+      ranks: { ocean: { word: 'ocean', rank: 0 }, sea: { word: 'sea', rank: 1 } },
+    };
+    expect(() => parseWordPuzzle(bare)).not.toThrow();
+  });
+
+  // The two dailies' bodies must not pass for each other: this is exactly what a cache-key
+  // collision or a mis-published file delivers.
+  it('rejects a SENTENCE puzzle body', () => {
+    const sentence = {
+      lang: 'fr',
+      words: ['la', 'forêt'],
+      holes: [{ pos: 1, secret: { word: 'forêt', slug: 'foret' }, start: { word: 'bois', slug: 'bois' }, start_rank: 87 }],
+      ranks: { foret: { bois: { word: 'bois', rank: 12 } } },
+    };
+    expect(() => parseWordPuzzle(sentence)).toThrow(/word puzzle/);
   });
 });

@@ -94,8 +94,10 @@ export interface Puzzle {
 // and carries no `dq`, every rank >= 1 entry carries one, and `word`/`rank`/`dq`/`road`
 // are GROUP properties shared by all of a group's alias keys. Two things differ,
 // both because there is no sentence: `ranks` is ONE flat map (nothing to key it by),
-// and `road` covers the flat top-150 — with no start word there is no departure to cut
-// the zone at, and those groups are the whole playing field.
+// and `road` covers the flat top-`ROAD_TOP` (250) — with no start word there is no
+// departure to cut the zone at, and those groups are the whole playing field. That makes
+// the number Word mode's RANGE rather than a safety ceiling, which is why the client's
+// CLAIM_ZONE (web/src/game/wordGame.ts) restates it and the two move together.
 //
 // No `words`/`holes`/`start`/`start_rank`, and no `source`: a lone word has no
 // attribution.

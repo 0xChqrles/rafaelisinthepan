@@ -3,10 +3,10 @@ import type { CSSProperties } from 'react';
 import { activeDate, dayNumber, progressColor } from '@whippin/shared';
 import TopBar from '../components/TopBar';
 import { navigate } from '../routing';
-import { pathForLang, pathForDay, type LangCode } from '../langs';
+import { pathForMode, pathForDay, type LangCode, type Mode } from '../langs';
 import { FIRST_PUZZLE_DATE } from '../config';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
-import { statusOf, srStatus, type Status } from '../state/status';
+import { statusOf, wordStatusOf, srStatus, type Status } from '../state/status';
 import { currentStreak } from '../game/streak';
 import useToday from '../hooks/useToday';
 import streakSmall from '../assets/streak-small.png';
@@ -46,8 +46,12 @@ function firstDayOfWeek(lang: string): number {
 // progress / not started) is read from the persisted rounds — device-local, as intended.
 const NO_SOLVED_DAYS: number[] = [];
 
-export default function Archive({ lang }: { lang: LangCode }) {
+// `mode` (#156): each daily has its own archive face — a Word mode cell reads its
+// status from the word rounds and navigates to /<lang>/word/<date>, so the two dailies'
+// histories never blur into one calendar.
+export default function Archive({ lang, mode = 'sentence' }: { lang: LangCode; mode?: Mode }) {
   const rounds = useGameStore((s) => s.rounds);
+  const wordRounds = useGameStore((s) => s.wordRounds);
 
   // The live streak — displayed HERE (the player-history screen), above the calendar
   // it is derived from (moved from the header, decided 2026-07-21). Hidden at zero.
@@ -106,7 +110,7 @@ export default function Archive({ lang }: { lang: LangCode }) {
             type="button"
             className="home-btn archive-close"
             aria-label={t(lang, 'ariaBackToToday')}
-            onClick={() => navigate(pathForLang(lang))}
+            onClick={() => navigate(pathForMode(lang, mode))}
           >
             <CloseIcon className="pixel-icon" aria-hidden />
           </button>
@@ -114,8 +118,10 @@ export default function Archive({ lang }: { lang: LangCode }) {
       />
 
       {/* The streak hero: flame + count above the calendar the streak is made of —
-          a stat headline, no label (the flame IS the label). Hidden when zero. */}
-      {streak > 0 && (
+          a stat headline, no label (the flame IS the label). Hidden when zero — and on
+          Word mode's archive face, whose runs don't feed the streak (#156, out of
+          scope beyond what the round key gives for free). */}
+      {mode === 'sentence' && streak > 0 && (
         <div className="archive-streak">
           <img src={streakSmall} className="archive-streak-flame" alt="" />
           <span className="sr-only">{t(lang, 'streak')} </span>
@@ -169,9 +175,14 @@ export default function Archive({ lang }: { lang: LangCode }) {
                 key={date}
                 date={date}
                 lang={lang}
+                mode={mode}
                 inRange={date >= FIRST_PUZZLE_DATE && date <= today}
                 isToday={date === today}
-                status={statusOf(rounds[roundKeyForDay(dayNumber(date), lang)])}
+                status={
+                  mode === 'word'
+                    ? wordStatusOf(wordRounds[roundKeyForDay(dayNumber(date), lang, 'word')])
+                    : statusOf(rounds[roundKeyForDay(dayNumber(date), lang)])
+                }
                 longDate={longDate}
               />
             ),
@@ -192,6 +203,7 @@ export default function Archive({ lang }: { lang: LangCode }) {
 function DayCell({
   date,
   lang,
+  mode,
   inRange,
   isToday,
   status,
@@ -199,6 +211,7 @@ function DayCell({
 }: {
   date: string;
   lang: LangCode;
+  mode: Mode;
   inRange: boolean;
   isToday: boolean;
   status: Status;
@@ -224,7 +237,7 @@ function DayCell({
       aria-label={`${longDate.format(dateObj)}${srStatus(lang, status)}`}
       aria-disabled={!inRange}
       disabled={!inRange}
-      onClick={() => inRange && navigate(pathForDay(lang, date))}
+      onClick={() => inRange && navigate(pathForDay(lang, date, mode))}
       // Only the fill color is dynamic (per-day %); the bg-colored number is static CSS
       // (.cal-day-filled). Neutral days pass no style, so the surface default stands.
       style={filled ? ({ background: progressColor(pct) } as CSSProperties) : undefined}

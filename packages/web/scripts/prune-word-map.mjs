@@ -10,7 +10,7 @@
 // What the tutorial actually needs is small and exactly definable:
 //   - the word itself (rank 0);
 //   - the ROAD ZONE — every group generation stamped a `road` on, which for a word artifact
-//     is the flat top-ROAD_TOP (150). That zone IS the map: `buildRoute` draws the near
+//     is the flat top-ROAD_TOP (250). That zone IS the map: `buildRoute` draws the near
 //     field out to the farthest road, so anything past it would be invisible anyway;
 //   - the scripted guided words (`--keep`), which are deliberately outside the zone: the
 //     "far" guess of the lesson has to rank FARTHER than the start word.

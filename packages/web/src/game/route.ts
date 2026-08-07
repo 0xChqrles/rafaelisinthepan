@@ -37,10 +37,23 @@ export const APPROACH_TOP = 5;
 
 // One place on the map the player has actually been: a ranked GROUP they typed (or the
 // start word they were given). Aliases collapse here — a group reached through any of its
-// inflections (#104) is ONE stop, at its canonical accented form.
+// inflections (#104) is ONE stop.
 export interface RouteStop {
   rank: number; // the group's rank — also its identity on this map
-  word: string; // canonical accented display form (never a slug)
+  // How the stop is NAMED, which depends on whether it is ON A ROAD (decided 2026-08-06).
+  //
+  // On a road, it is the group's canonical accented form: that station was already on the map,
+  // censored, before the player got anywhere near it, so naming it is the map naming its own
+  // census — which is the whole point of drawing the roads' real length and population.
+  //
+  // OFF every road — out on the trunk — it is the form the PLAYER TYPED. Nothing was drawn
+  // there before the guess landed, so the stop IS the guess, and answering `portes` with the
+  // group's `porter` puts a word on the map that the player never played. That reads as the
+  // game correcting them, or as a stop they cannot account for. Same rule as the MISS shelf
+  // below, one step closer in — and no more a "displayed slug" than the shelf is (see `misses`
+  // for why the typed form is a display form on this game). Falls back to the canonical form
+  // for a trunk stop nobody typed: the departure, and "you are here" on a --no-roads map.
+  word: string;
   dq: number; // position on the distance axis
   // Its LANE: the group's road as an index into `RouteModel.roads`, or null when it sits below
   // the fork (the trunk). Generation numbers roads contiguously from the closest member's rank,
@@ -84,15 +97,21 @@ export interface RouteModel {
   // Every NEAR-FIELD group not yet reached, closest-first, out to the DEPARTURE's rank. Words
   // withheld until the hole is solved.
   hidden: RouteHidden[];
-  // Tried words with NO entry in this map, in try order. These are the ONLY words on the map
-  // rendered from `tried` rather than from a rank entry's canonical `word` — which looks like a
-  // breach of "never display a slug", and isn't: on this game the player CANNOT type an accent.
+  // Tried words with NO entry in this map, in try order. These — and, since 2026-08-06, every
+  // stop off the roads (see RouteStop.word) — are rendered from `tried` rather than from a rank
+  // entry's canonical `word`, which looks like a breach of "never display a slug" and isn't: on
+  // this game the player CANNOT type an accent.
   // Both input paths produce folded slug characters only — the on-screen keyboard has no accent
   // keys, and WordInput folds every physical keystroke through `slugChars` — so `foret` is
   // literally what was typed, not a slugged `forêt`. There is no canonical form to prefer here
   // either: a word in no rank map has none, and the vocab file is slugs. (Flagged in review
   // 2026-07-27 and checked; if the input ever accepts accents, this becomes a real bug.)
   misses: string[];
+  // The farthest rank this MAP holds, not the farthest currently drawn — so the drawing can
+  // reserve a rank gutter wide enough for any exponent the round can still produce. It is a
+  // property of the puzzle, so it never changes while the map is open: the line cannot shift
+  // sideways under the player when a far guess lands.
+  maxRank: number;
 }
 
 // What the map needs to know about a rank map that a single guess lookup can't tell it:
@@ -113,6 +132,10 @@ interface RouteGeometry {
   // by the near field) rather than what an id VALUE claims.
   lanes: Map<number, number>;
   nearTop: number; // the farthest rank of the near field — from the DATA, floored at APPROACH_TOP
+  // The FARTHEST rank this map holds — every one of which is typeable, so it is the widest
+  // exponent the line can ever be asked to draw. The drawing reserves its rank gutter for it
+  // (see RouteModel.maxRank); free here, since this pass already visits every entry.
+  maxRank: number;
   plottable: boolean; // the rank-1 group carries dq -> this map can be drawn
   // Memo for the ONE lookup the near field cannot answer (see entryAtRank): a rank off a
   // `--no-roads` map, which has no near field to speak of and so costs a walk of the whole
@@ -131,9 +154,13 @@ export function routeGeometry(rankMap: Record<string, RankEntry>): RouteGeometry
   const near = new Map<number, RankEntry>();
   const roadIds = new Set<number>();
   let forkRank = 0;
+  let maxRank = 1;
   for (const key in rankMap) {
     const entry = rankMap[key];
     if (entry.rank === 0) continue; // the secret is the terminus, not a group on the axis
+    // Before the near-field filter: the widest exponent lives at the FAR end of the map,
+    // which is exactly what the near field excludes.
+    if (entry.rank > maxRank) maxRank = entry.rank;
     const onRoad = entry.road !== undefined && entry.dq !== undefined;
     // The near field is exactly the road-carrying groups; APPROACH_TOP only keeps a map with no
     // roads from having none at all. Aliases of one group carry identical values, so the first
@@ -152,6 +179,7 @@ export function routeGeometry(rankMap: Record<string, RankEntry>): RouteGeometry
     near,
     lanes,
     nearTop: Math.max(forkRank, APPROACH_TOP),
+    maxRank,
     plottable: rank1 !== undefined && rank1.dq !== undefined,
     resolved: new Map(),
   };
@@ -225,8 +253,13 @@ export function buildRoute({
     entry.road === undefined ? null : geometry.lanes.get(entry.road) ?? null;
 
   // One stop per GROUP: an alias typed twice, or two different inflections of one word,
-  // land on the same rank and collapse into the one canonical stop (#104).
-  const visit = (entry: RankEntry, start: boolean) => {
+  // land on the same rank and collapse into ONE stop (#104) — the first visit wins, so a stop
+  // off the roads wears the inflection that first reached it.
+  //
+  // `typed` is what the player entered to get here, absent for the two places they were put
+  // rather than went: the departure, and a "you are here" read off the hole. See RouteStop.word
+  // for which of the two names the stop.
+  const visit = (entry: RankEntry, { start = false, typed }: { start?: boolean; typed?: string } = {}) => {
     // rank 0 is the secret itself — the terminus, off the dq scale by construction.
     if (entry.rank === 0 || entry.dq === undefined) return;
     const seen = byRank.get(entry.rank);
@@ -234,11 +267,12 @@ export function buildRoute({
       if (start) seen.start = true;
       return;
     }
+    const road = laneOf(entry);
     byRank.set(entry.rank, {
       rank: entry.rank,
-      word: entry.word,
+      word: road === null && typed !== undefined ? typed : entry.word,
       dq: entry.dq,
-      road: laneOf(entry),
+      road,
       start,
       best: false,
     });
@@ -271,14 +305,14 @@ export function buildRoute({
   };
 
   const startEntry = entryAtRank(startRank);
-  if (startEntry) visit(startEntry, true);
+  if (startEntry) visit(startEntry, { start: true });
   for (const typed of tried) {
     const entry = rankMap[typed];
     if (!entry) {
       misses.push(typed); // no rank at all: literally off the map
       continue;
     }
-    visit(entry, false);
+    visit(entry, { typed });
   }
 
   // "You are here" is the hole's OWN position, looked up rather than inferred from the guess log:
@@ -292,7 +326,7 @@ export function buildRoute({
   // have been. A solved hole has reached the terminus, so nothing on the axis carries the marker.
   if (!solved) {
     const entry = entryAtRank(hole.rank);
-    if (entry) visit(entry, false);
+    if (entry) visit(entry);
     const here = byRank.get(hole.rank);
     if (here) here.best = true;
   }
@@ -337,5 +371,6 @@ export function buildRoute({
     stops,
     hidden,
     misses,
+    maxRank: geometry.maxRank,
   };
 }

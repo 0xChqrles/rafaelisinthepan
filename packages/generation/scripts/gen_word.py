@@ -18,8 +18,10 @@ literally the same code (gen_phrase.walk_secret is the shared per-secret pipelin
 Exactly TWO things differ, both because there is no sentence:
 
   - No start word, so no `start_rank` to size the road zone. It is the flat
-    top-ROAD_TOP (150) instead — deliberate: those groups ARE Word mode's playing
-    field, so the whole field gets its roads (distances.road_zone(None)).
+    top-ROAD_TOP (250) instead — deliberate: those groups ARE Word mode's playing
+    field, so the whole field gets its roads (distances.road_zone(None)). Which is
+    also why ROAD_TOP's value is Word mode's RANGE and not a mere safety ceiling:
+    the client's CLAIM_ZONE restates it, and the two move together.
   - No `words` / `holes` / `start` / `start_rank`, and no `source`: a lone word has no
     attribution. The rank map is ONE flat map, not keyed by secret.
 

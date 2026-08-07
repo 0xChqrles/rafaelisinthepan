@@ -1,10 +1,29 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { DQ_MAX, type RouteModel } from '../game/route';
-import { rankHeatColor, HIT_HEAT_CAP } from './Hole';
+import { type RouteModel } from '../game/route';
 import {
-  t,
+  ARRIVAL_PX,
+  HERE_PX,
+  JUNCTION_H,
+  Junction,
+  LEAP_H,
+  OffMapShelf,
+  RouteLink,
+  RouteRow,
+  RouteTail,
+  RouteWord,
+  STATION_PX,
+  STICK_INSET,
+  UNKNOWN,
+  laneColor,
+  laneX,
+  linkGap,
+  rankGutterChars,
+  routeFrameVars,
+  trunkX,
+} from './routeDrawing';
+import {
   routeTitle,
   srRouteDestination,
   srRouteOffMap,
@@ -42,51 +61,17 @@ import useModalDismiss from '../hooks/useModalDismiss';
 // consumer — the tutorial's ending, which drew the line inline for a while, shows theme
 // clouds and the routes teaser instead.
 
-// A connector carries the distance between the two stations it joins: `LINK_SPAN` px per full
-// dq scale, floored so two neighbours never collide and capped so the cold tail cannot push the
-// destination off screen. The floor and the cap are what make this a line and not a map.
-const LINK_MIN = 14;
-const LINK_MAX = 92;
-const LINK_SPAN = 300;
-// The broken trace is drawn from ONE repeating unit: DASH px of line, then DASH_GAP px of
-// nothing. It is handed to CSS as well (`--dash`, `--dash-period`), because the gradient that
-// paints the unit and the height that has to be a whole number of it cannot be allowed to
-// disagree.
-const DASH = 5;
-const DASH_GAP = 8;
-const DASH_PERIOD = DASH + DASH_GAP;
-// A dashed run is a whole number of units PLUS its closing dash. Any other height cuts the last
-// unit wherever it happens to fall, and the stub lands exactly where the trace meets the solid
-// rail — a 3px sliver of gap against a station reads as a rendering slip, not as a broken line.
-// Snapped, both ends are clean: the run opens on a full dash and closes on one.
-const dashedRun = (px: number) =>
-  Math.max(1, Math.round((px - DASH) / DASH_PERIOD)) * DASH_PERIOD + DASH;
+// The geometry, the constants and the row parts all live in `routeDrawing` — this modal is one
+// of two surfaces that draw a route (Word mode's board is the other), so none of the drawing's
+// vocabulary belongs to either of them. What is left here is the modal's own: the sticky "you
+// are here" row and the plumbing that measures and parks it.
 
-// The run from the merge to the terminus: the lanes have JOINED, and one SOLID line leads to
-// the word (decided 2026-08-04, superseding the dashed "identity leap" — the routes should
-// visibly LEAD to the word, and a broken trace read as the line not quite reaching it).
-const LEAP_H = 56;
-// The cold end of the line, above the first station: it always continues into the words that
-// have no distance at all, whether or not this round produced any. Not a distance, so not a
-// solid line — the map's one remaining broken trace.
-const TAIL_H = dashedRun(34); // 31
-// Where the trunk splits into lanes, and where they merge back into the word. Its own fixed
-// minimum, since it draws a shape rather than a gap.
-const JUNCTION_H = 34;
-// How far short of the screen edge the "you are here" row parks — flush against it reads as
-// clipped rather than pinned. It is one number in three places (the CSS offsets, the opening
-// scroll and the parked test), so it is declared here and handed to CSS as `--stick-inset`.
-const STICK_INSET = 8;
 // One pixel of slack before the row counts as parked. The opening view lands it EXACTLY on the
 // bottom threshold by design (that is what "a few pixels short of the edge" means), so a bare
 // comparison there is decided by sub-pixel noise — scrollTop is fractional on a non-integer device
 // ratio, clientHeight is rounded — and a coin toss between "where it lives" and "parked" is a
 // separator flickering into the opening view.
 const STICK_SLACK = 1;
-
-// A word you have not found — the destination, or a station of the censored final approach.
-// FIXED width: a placeholder that grew with the word would leak its length.
-const UNKNOWN = '???';
 
 // How far into the SCROLLED CONTENT a row sits — the one number the sticky row's natural place,
 // the opening scroll and the parked test are all expressed in.
@@ -125,86 +110,6 @@ function offsetWithin(el: HTMLElement, scroller: HTMLElement): number {
   return top;
 }
 
-// --- lanes -----------------------------------------------------------------------------
-// The roads (#115) are drawn as LANES of the rail, the way a metro line draws its branches:
-// which lane a station sits on is its road. That is structural — you read it from the shape of
-// the line, not from a badge — and it makes the one fact a list cannot state visible for free:
-// a road nobody has reached is a lane with NO stations on it.
-//
-// Geometry lives here because the node positions and the CSS gradient that paints the lines
-// have to agree exactly. Lane centres are `LANE_X0 + road * LANE_GAP`, so a LANE_W line is the
-// band [x - LANE_W/2, x + LANE_W/2] and the rail column is exactly wide enough for the outer
-// two — the gradient's last band lands inside it and the next one falls outside, clipped.
-const LANE_GAP = 22;
-const LANE_X0 = 15.5;
-const LANE_W = 5;
-// One color per lane, as vivid as the rest of the app — a metro line's whole point is that you
-// can tell it from the next one at a glance. The hues are lifted from the progress ramp's own
-// stops (`shared/progressColor.ts`), four of them far apart, so the map speaks the app's palette
-// instead of inventing one; they are COPIED rather than imported, because that ramp means
-// "progress" and these mean "identity". Ordered so the common 2- and 3-road cases get the
-// widest-apart hues, and pink (never cyan) leads: lane A always holds rank 1, and cyan is what
-// the heat ramp paints a rank-1 number, so leading with it would imply a rule that isn't one.
-// Gold is "you" and blue is solved, so no lane may borrow either. ROAD_KS caps roads at 4.
-// Exported for the drift guard in laneColors.test.ts, which pins each to the stop it was taken
-// from — pink 70, cyan 30, violet 90, green 40. (That guard immediately caught the violet as
-// #883beb where its stop is #883ceb: a one-off in the transcription, invisible on screen but
-// exactly the kind of thing "copied, not imported" can hide forever.)
-// (Also the identity the onboarding's theme clouds paint each theme in — tutorial/ThemeCloud
-// — so the colors a player meets in the lesson are the ones this map speaks later.)
-export const LANE_COLORS = ['#ef4f97', '#2ad2eb', '#883ceb', '#23dc91'];
-
-function laneX(road: number): number {
-  return LANE_X0 + road * LANE_GAP;
-}
-
-// The rail's lines, as one gradient: a hard-stop band per lane, in that lane's tint. Built here
-// (not in CSS) because the number of lanes is data — and because painting every lane in one
-// background is what lets a single element carry a whole cross-section of the line.
-function laneLines(lanes: number): string {
-  const stops: string[] = [];
-  for (let road = 0; road < lanes; road += 1) {
-    const color = LANE_COLORS[road % LANE_COLORS.length];
-    const from = laneX(road) - LANE_W / 2;
-    stops.push(`transparent ${from}px, ${color} ${from}px, ${color} ${from + LANE_W}px`);
-    stops.push(`transparent ${from + LANE_W}px`);
-  }
-  return `linear-gradient(90deg, ${stops.join(', ')})`;
-}
-
-// The junction's bus — the horizontal run the lanes elbow along to reach the trunk. Painted in
-// the LANES' colors, split at the trunk, not in one neutral bar: a single grey bar at each end of
-// a set of parallel lines reads as a frame drawn AROUND them, where two colored halves read as
-// what they are, the outer lanes turning in toward the trunk. With more than three roads the
-// inner lanes' elbows hide under the outer ones, which is what overlapping tracks do anyway.
-function busGradient(lanes: number, split: number): string {
-  const left = LANE_COLORS[0];
-  const right = LANE_COLORS[(lanes - 1) % LANE_COLORS.length];
-  const at = `${(split * 100).toFixed(2)}%`;
-  return `linear-gradient(90deg, ${left} 0 ${at}, ${right} ${at} 100%)`;
-}
-
-function linkHeight(dqA: number, dqB: number): number {
-  const span = (Math.abs(dqA - dqB) / DQ_MAX) * LINK_SPAN;
-  return Math.round(Math.min(LINK_MAX, Math.max(LINK_MIN, span)));
-}
-
-// The word column's own width is known in CSS (`--wordw`), and Press Start 2P advances
-// EXACTLY 1em per glyph — measured, not assumed — so the size at which a word fits its column
-// is arithmetic: width / length. A long French compound therefore shrinks a little instead of
-// breaking mid-word (`incontestableme/nt` reads as a different word) or running off the map.
-// The divisor is baked as a literal rather than passed as a custom property, so no calc() has
-// to divide by a var. Below the floor the CSS `overflow-wrap` still catches it.
-const WORD_MIN_PX = 8;
-function fitWord(word: string, max: number): string {
-  return `clamp(${WORD_MIN_PX}px, calc(var(--wordw) / ${Math.max(1, word.length)}), ${max}px)`;
-}
-// Type sizes per station state: the destination reads as a headline, "you are here" a step
-// above the rest of the line, everything else at the line's own size.
-const ARRIVAL_PX = 24;
-const HERE_PX = 17;
-const STATION_PX = 15;
-
 // One row of the line, FARTHEST first. `hidden` stations are real positions with the word
 // withheld; the model hands them over separately and they interleave by rank.
 type Station =
@@ -226,23 +131,6 @@ function stationsOf(model: RouteModel): Station[] {
   ];
   // Descending rank: the line is travelled, so the far end comes first and the word is last.
   return rows.sort((a, b) => b.rank - a.rank);
-}
-
-// The trunk splitting into lanes (and, flipped, the lanes merging into the word). Orthogonal
-// only — a trunk stub, a bus across the lanes, then the lanes themselves. Unlabelled: the shape
-// IS the statement, and naming it added a word the map does not need.
-function Junction({ height, converge }: { height: number; converge?: boolean }) {
-  return (
-    <div className={`route-station route-junction${converge ? ' converge' : ''}`} style={{ height }}>
-      <span className="route-rank" />
-      <span className="route-rail jx">
-        <i className="jx-trunk" />
-        <i className="jx-bus" />
-        <i className="jx-lanes" />
-      </span>
-      <span className="route-body" />
-    </div>
-  );
 }
 
 // --- the line ---------------------------------------------------------------------------
@@ -286,70 +174,36 @@ function RouteLine({
   // Closest-first, and only what has a word to announce (see the sr-only list below).
   const spoken = [...stations].reverse().filter((s) => !s.hidden || s.word !== null);
 
-  // The rank gutter fits the widest exponent this line actually shows, rather than the widest a
-  // TOP_K map could ever produce: stations are farthest-first, so the first one names it. The char
-  // COUNT is baked in as a literal and the cell size stays a CSS variable, so the gutter tracks the
-  // responsive `--rank-size` without any calc having to divide by a custom property.
-  const rankChars = 1 + String(stations[0]?.rank ?? 1).length;
+  // The rank gutter is reserved for the widest exponent THIS MAP can produce (see
+  // rankGutterChars), not the widest the line currently shows. It used to take the farthest
+  // station drawn — stations are farthest-first, so `stations[0]` named it — which is stable
+  // only while the map is closed: a guess landing at a wider rank than anything on the line
+  // widened the track and shoved the whole drawing sideways under the player. The char COUNT is
+  // still baked in as a literal while the cell size stays a CSS variable, so the gutter tracks
+  // the responsive `--rank-size` without any calc having to divide by a custom property.
+  const rankChars = rankGutterChars(model.maxRank);
 
-  const railWidth = LANE_X0 * 2 + (lanes - 1) * LANE_GAP;
-  const trunkX = LANE_X0 + ((lanes - 1) * LANE_GAP) / 2;
-  const busX = laneX(0) - LANE_W / 2;
-  const busW = (lanes - 1) * LANE_GAP + LANE_W;
-  const frame = {
-    '--gutter': `calc(var(--rank-size) * ${rankChars} + 10px)`,
-    '--railw': `${railWidth}px`,
-    '--trunk-x': `${trunkX}px`,
-    '--bus-x': `${busX}px`,
-    '--bus-w': `${busW}px`,
-    '--bus-grad': busGradient(lanes, (trunkX - busX) / busW),
-    '--lane-lines': laneLines(lanes),
-    '--stick-inset': `${STICK_INSET}px`,
-    // The dash unit the tail is cut to (see dashedRun): the gradient paints it, the height
-    // counts it, so both read it from here.
-    '--dash': `${DASH}px`,
-    '--dash-period': `${DASH_PERIOD}px`,
-  } as CSSProperties;
+  const trunk = trunkX(lanes);
   return (
-    <div className="route-frame" style={frame}>
+    <div className="route-frame" style={routeFrameVars(lanes, rankChars)}>
       {/* The drawing is decorative; the sr-only list below carries the same content. */}
       <div className="route" aria-hidden="true">
-        {/* Before the line even starts: the guesses that earned no rank at all. Beyond the
-            top-K there is no distance left to draw, and that IS the mechanic. */}
-        {model.misses.length > 0 && (
-          <div className="route-shelf">
-            <p className="route-shelf-head">{t(lang, 'routeOffMap')}</p>
-            <p className="route-misses">
-              {model.misses.map((word) => (
-                <span key={word} className="route-miss">
-                  {word}
-                </span>
-              ))}
-            </p>
-            <span className="route-break" />
-          </div>
-        )}
-        {/* The line always comes in out of that void, whether or not this round hit it. */}
-        <div className="route-link tail" style={{ height: TAIL_H }} />
+        {/* Before the line even starts: the guesses that earned no rank at all. */}
+        <OffMapShelf lang={lang} misses={model.misses} />
+        <RouteTail />
 
         {stations.map((station, i) => {
           const previous = stations[i - 1];
-          // Consecutive ranks are ONE row apart, whatever their dq. With every near-field group
-          // drawn the rank ladder itself already says they are adjacent, so a proportional
-          // connector in there buys nothing and costs one glaring outlier: dq pins rank 1 at the
-          // top of its scale, so 1 and 2 are always further apart than any other neighbours. The
-          // length stays proportional wherever the line SKIPS ranks — the trunk, where it is the
-          // only thing carrying the distance at all.
-          const gap = !previous
-            ? 0
-            : previous.rank - station.rank === 1
-              ? LINK_MIN
-              : linkHeight(previous.dq, station.dq);
+          const gap = linkGap(previous, station);
           // A censored station shows `???` while the round is live, and its real word once the
           // hole is solved — the map is then the post-mortem of the whole neighborhood.
           const label = station.hidden ? station.word ?? UNKNOWN : station.word;
           const revealed = station.hidden && station.word !== null;
-          const onLane = forked && station.road !== null;
+          // Sits ON a road, independent of whether the line FORKS (fixed 2026-08-07 — see the
+          // same note in WordBoard). A single-road map is still a route and still wears its
+          // colour; `forked` gates only the junctions, which need something to fork into.
+          const onLane = station.road !== null;
+          const here = !station.hidden && station.best;
           return (
             <Fragment key={station.rank}>
               {forked && i === forkAt ? (
@@ -359,93 +213,51 @@ function RouteLine({
                 // the bus while the merge at the other end hugged its last one — the two ends of
                 // the fork have to mirror each other.
                 <>
-                  {previous && <div className="route-link" style={{ height: gap }} />}
+                  {previous && <RouteLink height={gap} />}
                   <Junction height={JUNCTION_H} />
                 </>
               ) : (
-                previous && (
-                  <div
-                    className={`route-link${onLane ? ' lanes' : ''}`}
-                    style={{ height: gap }}
-                  />
-                )
+                previous && <RouteLink height={gap} lanes={onLane} />
               )}
-              <div
-                ref={!station.hidden && station.best ? hereRef : undefined}
+              <RouteRow
+                rowRef={here ? hereRef : undefined}
+                rank={station.rank}
+                onLane={onLane}
                 className={[
-                  'route-station',
                   onLane ? 'on-lane' : '',
                   station.hidden ? 'route-unknown' : '',
                   revealed ? 'route-revealed' : '',
-                  !station.hidden && station.best ? 'route-you' : '',
-                  !station.hidden && station.best && stuck ? `stuck-${stuck}` : '',
+                  here ? 'route-you' : '',
+                  here && stuck ? `stuck-${stuck}` : '',
                   !station.hidden && station.start ? 'route-departure' : '',
                 ]
                   .filter(Boolean)
                   .join(' ')}
                 style={
                   {
-                    '--node-x': `${onLane ? laneX(station.road!) : trunkX}px`,
-                    // Its own line's color, so an UNFOUND station can be drawn in it: a dark
-                    // node on a vivid lane reads as a gap in the line — as though the line
-                    // were broken — where the lane's own color reads as a stop with no name
-                    // on it yet, which is what it is. Found stations ignore this.
-                    '--lane-c': onLane ? LANE_COLORS[station.road! % LANE_COLORS.length] : 'var(--rail)',
+                    '--node-x': `${onLane ? laneX(station.road!, lanes) : trunk}px`,
+                    '--lane-c': laneColor(onLane ? station.road : null),
                   } as CSSProperties
                 }
               >
-                <span
-                  className="route-rank"
-                  style={
-                    { '--rank-color': rankHeatColor(station.rank, HIT_HEAT_CAP) } as CSSProperties
-                  }
-                >
-                  -{station.rank}
-                </span>
-                <span className={`route-rail${onLane ? ' lanes' : ''}`}>
-                  <i className="route-node" />
-                </span>
-                <span className="route-body">
-                  <span
-                    className="route-word"
-                    style={{
-                      fontSize: fitWord(
-                        label,
-                        !station.hidden && station.best ? HERE_PX : STATION_PX,
-                      ),
-                    }}
-                  >
-                    {label}
-                  </span>
-                </span>
-              </div>
+                <RouteWord word={label} max={here ? HERE_PX : STATION_PX} />
+              </RouteRow>
             </Fragment>
           );
         })}
 
         {forked && <Junction height={JUNCTION_H} converge />}
         {/* The joined line's final run into the word: an ordinary SOLID trunk link. */}
-        <div className="route-link" style={{ height: LEAP_H }} />
+        <RouteLink height={LEAP_H} />
 
         {/* The end of the line. Censored while the hole is open, the accented secret in the
             solved-word blue once found — the same line then reads as the post-mortem. */}
-        <div
-          className={`route-station route-arrival${model.solved ? ' route-found' : ''}`}
-          style={{ '--node-x': `${trunkX}px` } as CSSProperties}
+        <RouteRow
+          className={`route-arrival${model.solved ? ' route-found' : ''}`}
+          style={{ '--node-x': `${trunk}px` } as CSSProperties}
         >
-          <span className="route-rank" />
-          <span className="route-rail">
-            <i className="route-node" />
-          </span>
-          <span className="route-body">
-            <span
-              className="route-word"
-              style={{ fontSize: fitWord(model.secret ?? UNKNOWN, ARRIVAL_PX) }}
-            >
-              {model.secret ?? UNKNOWN}
-            </span>
-          </span>
-        </div>
+          <RouteWord word={model.secret ?? UNKNOWN} max={ARRIVAL_PX} />
+        </RouteRow>
       </div>
       {/* The line in words. Closest FIRST here: a list has no "scrolled to the end", so it leads
           with what the drawing opens on. Only stations with a WORD are announced — the player's

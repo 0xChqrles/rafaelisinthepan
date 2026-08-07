@@ -346,7 +346,7 @@ pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 distinct word
 #    overrides the root). Every per-secret rule is gen_phrase's, imported not copied
 #    (walk_secret): merge walk, #133 form confirmation, #119 donors, TOP_K, dq,
 #    slug collisions. Two differences, both because there is no sentence — the road
-#    zone is the FLAT top-150 (no departure to cut it at) and the output has one flat
+#    zone is the FLAT top-ROAD_TOP (250; no departure to cut it at) and the output has one flat
 #    `ranks` map with no words/holes/start/source. Unlike gen:phrase it does NOT
 #    rewrite web/public/vocab/<lang>.json (that is reduce's output).
 pnpm gen:word phare --lang fr --form phare=n:s   # --form required per fr word off a TTY
@@ -366,8 +366,24 @@ output filename contains the three distinct secret slugs in sentence order.
 - All paths below are under `packages/`. **Tunables:** `TOP_N = 400000` (reduce),
   `TOP_K = 10000` / curator report window `PLAYABILITY_TOP = 150` (gen),
   start-rank band `50–150` (`start_word.py`),
-  `ROAD_TOP = 150` (now the road zone's CEILING, not its size) / `ROAD_KS = (2,3,4)` /
-  `ROAD_MIN_SILHOUETTE = 0.05` (`distances.py`).
+  `ROAD_TOP = 250` (the CEILING on a sentence hole's road zone, and the WHOLE zone of a
+  start-less word artifact — i.e. Word mode's range, raised from 150 on 2026-08-07; the
+  web's `CLAIM_ZONE` restates it and the two must move together) /
+  `ROAD_KS = (2,3,4,5,6)` / `ROAD_MIN_SILHOUETTE = 0.05` /
+  `ROAD_MIN_FRACTION = 0.04` (`distances.py`). Note `PLAYABILITY_TOP` stayed at 150: it is
+  a curator report window sized for a sentence hole's near field, not the word game's field.
+  `ROAD_KS` is also a front-end commitment — it caps the road count, and the web must have a
+  lane colour per road (see the root `AGENTS.md` road bullet).
+- **Road SELECTION was reworked with the wider zone (2026-08-07)** — the rules are in the
+  root `AGENTS.md`; what belongs here is the evidence, measured over nine real
+  neighborhoods. Before: at zone 250 the best-silhouette split was `k=2` on eight of nine,
+  and seven of those were a straggler cut — `ocean` 248/2, `vie` 249/1, `nuage` 247/3 — where
+  the same words at zone 150 had given `ocean` a legible 62/61/27. After (size floor + most
+  roads): `ocean` 4 roads 160/45/28/17, `éclipse` 4 roads 98/80/59/13, `nuage` 4 roads
+  124/56/46/24, `tropiques` its own 4 themes 113/107/17/13, `cochon` 139/111, `forêt`
+  238/12, and `pain`/`vie` ONE road — honest, since their only "split" was a 1–3 word
+  straggler. **Four roads is the most any real neighborhood produced**, so lanes 5 and 6
+  exist for the ceiling, not for observed data.
 - **Playability report (#135):** `build_playability_report` reads (never mutates)
   the final groups at ranks 1..`PLAYABILITY_TOP`; both `--words` and the raw-mode
   selector feed the same `PlayabilityReporter`, whose output is deferred until the
@@ -382,7 +398,8 @@ output filename contains the three distinct secret slugs in sentence order.
   no quality verdict or cutoff.
 - **Distance annotations (#115):** `distances.py` is stdlib-only (pure arithmetic over
   float sequences), so the contract tests keep running without numpy/gensim and the
-  ≤150-point clustering costs a fraction of a second per secret. They are stamped in
+  ≤`ROAD_TOP`-point clustering costs a fraction of a second per secret (measured 0.34s at
+  250 points, against 0.11s at the 150 that preceded it). They are stamped in
   **two passes, because they know different things**: `dq` is a property of the walk
   alone, so `gen_phrase`'s `build_puzzle_rank_map` — the ONE entry point both authoring
   paths use — wraps the structural `build_merged_rank_map` (#104) and stamps it onto

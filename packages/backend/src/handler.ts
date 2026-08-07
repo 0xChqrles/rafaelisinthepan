@@ -4,6 +4,7 @@ import {
   dayNumber,
   decodeLegacyShareTarget,
   decodeResult,
+  decodeWordResult,
   nextResetAt,
   secondsUntilNextReset,
   RESET_HOUR,
@@ -23,7 +24,7 @@ import {
   png,
   redirect,
 } from './respond';
-import { renderCardPng, renderShareHtml } from './ogCard';
+import { renderCardPng, renderShareHtml, renderWordCardPng, renderWordShareHtml } from './ogCard';
 import { isValidDate } from './layout';
 import type { PuzzleStore } from './store';
 
@@ -113,15 +114,27 @@ export function createHandler(deps: HandlerDeps) {
       const ogMatch = OG_PNG_RE.exec(rawPath);
       if (ogMatch) {
         const result = decodeResult(ogMatch[1]);
-        if (!result) return errorResponse(404, 'not_found', 'Invalid share token.', cors);
-        const buffer = await renderCardPng({
-          lang: result.lang,
-          dayNumber: result.dayNumber,
-          score: result.score,
-          trajectory: result.trajectory,
-          solvedAt: result.solvedAt,
-        });
-        return png(200, buffer, { 'Cache-Control': `public, max-age=${SHARE_MAX_AGE}, immutable` });
+        if (result) {
+          const buffer = await renderCardPng({
+            lang: result.lang,
+            dayNumber: result.dayNumber,
+            score: result.score,
+            trajectory: result.trajectory,
+            solvedAt: result.solvedAt,
+          });
+          return png(200, buffer, {
+            'Cache-Control': `public, max-age=${SHARE_MAX_AGE}, immutable`,
+          });
+        }
+        // Word mode's token (#156): its own format in the same version namespace.
+        const word = decodeWordResult(ogMatch[1]);
+        if (word) {
+          const buffer = await renderWordCardPng(word);
+          return png(200, buffer, {
+            'Cache-Control': `public, max-age=${SHARE_MAX_AGE}, immutable`,
+          });
+        }
+        return errorResponse(404, 'not_found', 'Invalid share token.', cors);
       }
       const shareMatch = SHARE_RE.exec(rawPath);
       if (shareMatch) {
@@ -132,6 +145,14 @@ export function createHandler(deps: HandlerDeps) {
         const result = decodeResult(shareMatch[1]);
         if (result) {
           const body = renderShareHtml(shareMatch[1], result, base);
+          return html(200, body, {
+            'Cache-Control': `public, max-age=${SHARE_MAX_AGE}, immutable`,
+          });
+        }
+        // Word mode's token (#156): its own share page, click-through to the word route.
+        const word = decodeWordResult(shareMatch[1]);
+        if (word) {
+          const body = renderWordShareHtml(shareMatch[1], word, base);
           return html(200, body, {
             'Cache-Control': `public, max-age=${SHARE_MAX_AGE}, immutable`,
           });
@@ -181,6 +202,20 @@ export function createHandler(deps: HandlerDeps) {
         );
       }
 
+      // Which daily artifact (#156): the sentence puzzle (default) or Word mode's #154
+      // single-word artifact. The mode is part of the URL, so the CDN caches the two
+      // dailies as distinct entries; an unknown value is a protocol violation.
+      const rawMode = event.queryStringParameters?.mode;
+      if (rawMode !== undefined && rawMode !== 'sentence' && rawMode !== 'word') {
+        return errorResponse(
+          400,
+          'bad_request',
+          'Query parameter "mode" must be "sentence" or "word" when present.',
+          cors,
+        );
+      }
+      const mode = rawMode ?? 'sentence';
+
       // The puzzle endpoint is DATE-addressed: the client computes the active 22:00-ET
       // day (shared day.ts) and names it explicitly, so what is served is exactly what
       // was asked — the old /today->puzzle pair (and its flip race) is gone. A missing
@@ -211,13 +246,16 @@ export function createHandler(deps: HandlerDeps) {
         );
       }
 
-      const puzzle = await deps.store.getPuzzle(requestedDate, lang);
+      const puzzle =
+        mode === 'word'
+          ? await deps.store.getWordPuzzle(requestedDate, lang)
+          : await deps.store.getPuzzle(requestedDate, lang);
       if (puzzle == null) {
         // Missing puzzle is a clean 404, never a 500.
         return errorResponse(
           404,
           'not_found',
-          `No puzzle for ${requestedDate} (${lang}).`,
+          `No ${mode === 'word' ? 'word puzzle' : 'puzzle'} for ${requestedDate} (${lang}).`,
           { ...cors, 'Cache-Control': dailyCacheControl(NOT_FOUND_MAX_AGE) },
           { date: requestedDate, lang },
         );

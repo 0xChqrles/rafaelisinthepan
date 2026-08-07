@@ -4,7 +4,7 @@ import Phrase from '../components/Phrase';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import LoadError from '../components/LoadError';
-import { LANE_COLORS } from '../components/RouteModal';
+import { LANE_COLORS } from '../components/routeDrawing';
 import ThemeCloud from './ThemeCloud';
 import RoutesTeaser from './RoutesTeaser';
 import TopBar from '../components/TopBar';

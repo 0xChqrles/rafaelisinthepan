@@ -5,13 +5,12 @@ import { lineupModel, hasDisplayEntries } from '../game/benchmark';
 import RunRuler, { rulerStagger, type RunReplay } from './RunRuler';
 import LeaderboardDialog, { type LeaderboardRow } from './LeaderboardDialog';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
-import { track } from '../analytics';
+import useShare from '../hooks/useShare';
 import { t } from '../i18n';
+import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 
 // Reveal choreography (this component mounts after the last hole has settled): the result
 // stack rises in, the score tallies, then the neutral run ruler colorizes in try order.
-export const RESULTS_IN_MS = 250; // mirrors .solved-results' transition duration in CSS
-const SCORE_COUNT_MS = 800;
 const NEUTRAL_HOLD_MS = 55;
 
 // Sentence-specific results only. The tray is the SAME compact stack at every breakpoint
@@ -147,18 +146,16 @@ export default function SolvedScreen({
     };
   }, [animate, rulerSpanMs, reduceMotion, resultsIn, rulerStartMs]);
 
-  // The SEE MORE leaderboard modal; closing returns focus to its trigger.
+  // The SEE MORE leaderboard modal. Buttons are pointer-only app-wide, so closing leaves
+  // focus unset instead of restoring it to the trigger.
   const [lbOpen, setLbOpen] = useState(false);
-  const seeMoreRef = useRef<HTMLButtonElement>(null);
   const closeLeaderboard = useCallback(() => {
     setLbOpen(false);
-    seeMoreRef.current?.focus({ preventScroll: true });
   }, []);
 
-  // "COPIED" confirmation after a clipboard fallback (the native share sheet needs none).
-  const [copied, setCopied] = useState(false);
-  const copiedTimer = useRef<number | undefined>(undefined);
-  useEffect(() => () => window.clearTimeout(copiedTimer.current), []);
+  // Delivery (native sheet / clipboard + the "COPIED" confirmation) is the shared hook's;
+  // this screen only composes the sentence result's text.
+  const { share, copied } = useShare();
 
   const onShare = useCallback(async () => {
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
@@ -178,33 +175,8 @@ export default function SolvedScreen({
     // The card (via the token) draws the run in full; the plain-text row is the bounded
     // summary of that SAME run — trajectory and solve moments both — so the link and its
     // fallback can't disagree.
-    const text = shareText(headline, trajectory, solvedAt ?? [], url);
-
-    // Touch devices get their native share sheet; desktop copies the result directly.
-    const isTouch =
-      typeof window !== 'undefined' &&
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(pointer: coarse)').matches;
-    if (isTouch && typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-      try {
-        await navigator.share({ title: 'Whippin AI', text });
-        track('share', { method: 'native' });
-        return;
-      } catch (err) {
-        if ((err as DOMException)?.name === 'AbortError') return;
-        // Any other native-share failure falls through to the clipboard.
-      }
-    }
-    try {
-      await navigator.clipboard.writeText(text);
-      track('share', { method: 'clipboard' });
-      setCopied(true);
-      window.clearTimeout(copiedTimer.current);
-      copiedTimer.current = window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard blocked (insecure context / denied): there is no further browser fallback.
-    }
-  }, [lang, dayNumber, guessCount, trajectory, solvedAt]);
+    await share(shareText(headline, trajectory, solvedAt ?? [], url));
+  }, [lang, dayNumber, guessCount, trajectory, solvedAt, share]);
 
   return (
     <div className={`solved-results${resultsIn ? ' in' : ''}`}>
@@ -245,7 +217,6 @@ export default function SolvedScreen({
         {rows && (
           <button
             type="button"
-            ref={seeMoreRef}
             className="result-action"
             onClick={() => setLbOpen(true)}
           >

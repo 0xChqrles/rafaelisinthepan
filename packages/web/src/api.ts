@@ -5,7 +5,7 @@
 // a ±1-day clock-skew window of its own active day.
 
 import { fold } from '@whippin/shared';
-import type { Puzzle, Word } from '@whippin/shared';
+import type { Puzzle, Word, WordPuzzle } from '@whippin/shared';
 
 // Base URL of the backend, configured at build time via VITE_API_BASE_URL.
 // Trailing slashes are trimmed so callers can append paths cleanly. Empty when
@@ -29,6 +29,12 @@ function requireApiBase(base: string): string {
 // A request without `date` is a protocol violation the backend rejects with 400.
 export function puzzleUrl(lang: string, date: string, base: string = apiBase()): string {
   return `${requireApiBase(base)}/?lang=${encodeURIComponent(lang)}&date=${encodeURIComponent(date)}`;
+}
+
+// Word mode's daily artifact (#154/#156): the same date-addressed endpoint, selected by
+// `mode=word` — a distinct URL, so the CDN caches the two dailies separately.
+export function wordPuzzleUrl(lang: string, date: string, base: string = apiBase()): string {
+  return `${puzzleUrl(lang, date, base)}&mode=word`;
 }
 
 // Routing outcome of the backend puzzle fetch, by HTTP status:
@@ -170,4 +176,30 @@ export function parsePuzzle(data: unknown): Puzzle {
     }
   }
   return data as unknown as Puzzle;
+}
+
+// Runtime shape check for Word mode's fetched artifact (#154/#156) — the same job as
+// parsePuzzle for the same reason: a truncated/wrong body must surface as the error
+// state, never crash the board mid-render. Asserts the load-bearing structure: lang, the
+// public word {word, slug}, and the ONE flat rank map with well-formed rank/dq/road on
+// every entry.
+export function parseWordPuzzle(data: unknown): WordPuzzle {
+  if (!isRecord(data)) throw new Error('malformed word puzzle: not an object');
+  const { lang, word, ranks } = data;
+  if (typeof lang !== 'string') throw new Error('malformed word puzzle: missing "lang"');
+  if (!isWord(word)) throw new Error('malformed word puzzle: bad "word"');
+  if (!isRecord(ranks)) throw new Error('malformed word puzzle: "ranks" must be an object');
+  if (!isRecord(ranks[word.slug]) || (ranks[word.slug] as { rank?: unknown }).rank !== 0) {
+    throw new Error('malformed word puzzle: "ranks" must hold the word itself at rank 0');
+  }
+  for (const entry of Object.values(ranks)) {
+    if (!isRecord(entry) || typeof entry.word !== 'string') {
+      throw new Error('malformed word puzzle: bad "ranks" entry');
+    }
+    if (typeof entry.rank !== 'number' || !Number.isInteger(entry.rank) || entry.rank < 0) {
+      throw new Error('malformed word puzzle: "rank" must be a non-negative integer');
+    }
+    checkRankAnnotations(entry);
+  }
+  return data as unknown as WordPuzzle;
 }

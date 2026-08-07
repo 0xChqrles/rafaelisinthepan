@@ -67,6 +67,34 @@ export interface CardData {
   solvedAt: (number | null)[]; // per distinct secret in sentence order -> the ticks
 }
 
+// Word mode's card (#156): the run has no trajectory to draw — the whole result is the
+// claim count — so the card is the count with its unit named ("12 WORDS": higher is
+// better here, and the unit says what was counted), over the day's calendar date. Same
+// palette, same no-injection guarantee: every interpolated value is a clamped int or a
+// fixed per-lang constant.
+const WORD_UNITS: Record<string, { one: string; many: string }> = {
+  en: { one: 'WORD', many: 'WORDS' },
+  fr: { one: 'MOT', many: 'MOTS' },
+};
+
+export interface WordCardData {
+  lang: string;
+  dayNumber: number; // drawn as its calendar date, like the sentence card
+  score: number; // top-zone words claimed before striking out
+}
+
+export function renderWordCardSvg({ lang, dayNumber, score }: WordCardData): string {
+  const unit = WORD_UNITS[lang] ?? WORD_UNITS.en;
+  const cx = CARD_WIDTH / 2;
+  return [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_WIDTH}" height="${CARD_HEIGHT}" viewBox="0 0 ${CARD_WIDTH} ${CARD_HEIGHT}">`,
+    `<rect width="${CARD_WIDTH}" height="${CARD_HEIGHT}" fill="${BG}"/>`,
+    `<text x="${cx}" y="340" text-anchor="middle" font-family="${CARD_FONT}" font-size="76" fill="${FG}">${score} ${score === 1 ? unit.one : unit.many}</text>`,
+    `<text x="${cx}" y="420" text-anchor="middle" font-family="${CARD_FONT}" font-size="30" fill="${MUTED}">${dateForDayNumber(dayNumber)}</text>`,
+    `</svg>`,
+  ].join('');
+}
+
 export function renderCardSvg({ lang, dayNumber, score, trajectory, solvedAt }: CardData): string {
   const n = Math.max(1, trajectory.length);
 

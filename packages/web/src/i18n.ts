@@ -42,6 +42,26 @@ const STRINGS = {
   // share card); the share text lowercases these.
   try: { en: 'TRY', fr: 'ESSAI' },
   tries: { en: 'TRIES', fr: 'ESSAIS' },
+  // ---- Word mode (#156): the second daily — claim the day's word's neighborhood until
+  // struck out. Its score unit is likewise NAMED (higher is better here, and "WORDS"
+  // says what was counted).
+  word: { en: 'WORD', fr: 'MOT' },
+  words: { en: 'WORDS', fr: 'MOTS' },
+  // The final score names the achievement, not just the unit. Kept separate because the
+  // live header counter and the plain-text share result still use the compact unit above.
+  foundWord: { en: 'FOUND WORD', fr: 'MOT TROUVÉ' },
+  foundWords: { en: 'FOUND WORDS', fr: 'MOTS TROUVÉS' },
+  // Free-guess feedback: a group-level repeat (#104), and the day's word itself (it is
+  // public — on the board already).
+  wordRepeat: { en: 'already played', fr: 'déjà joué' },
+  wordItself: { en: "that's the word itself", fr: "c'est le mot lui-même" },
+  // The header's Whippin mark opens the mode CHOOSER (2026-08-06, replacing the toggle
+  // whose label had to name the mode a tap landed on), and the chooser's two cards name
+  // the dailies themselves. The card names are display forms — the CSS uppercases them,
+  // like the language cards' native names.
+  ariaChangeMode: { en: 'Change game mode', fr: 'Changer de mode de jeu' },
+  modeSentence: { en: 'Sentence', fr: 'Phrase' },
+  modeWord: { en: 'Word', fr: 'Mot' },
   // Deliberately NOT translated (decided 2026-07-24): "YOU" is universal enough, and one
   // label keeps the player's tag identical across languages (lineup + leaderboard).
   you: { en: 'YOU', fr: 'YOU' },
@@ -60,9 +80,15 @@ const STRINGS = {
   // ARRIVAL / YOU ARE HERE / START / ROADS were removed 2026-07-26). The screen-reader
   // mirror still names every one of them: see `srRouteStop` below, which spells them out
   // in prose rather than depending on any of this. The ONE string left is the heading over
-  // the words above the torn break — guesses that earned no rank at all, so they have no
-  // node, no lane and no distance to be read off.
-  routeOffMap: { en: 'OFF THE MAP', fr: 'HORS CARTE' },
+  // the words above the line — guesses that earned no rank at all, so they have no node, no
+  // lane and no distance to be read off, and nothing about them can be read off the drawing.
+  // It reads MISSED in BOTH languages (decided 2026-08-05, superseding OFF THE MAP / HORS
+  // CARTE): these words are exactly the ones the round answered with the floating `MISS`,
+  // which is itself untranslated everywhere it appears (the tutorial's fr copy says MISS
+  // too), so the shelf now names them in the vocabulary the player already met rather than
+  // describing where they sit. Untranslated like `you` and `dnf` for the same reason — one
+  // label, identical in every language.
+  routeOffMap: { en: 'MISSED', fr: 'MISSED' },
   // The streak celebration's ending hint: pure "what to do" — the whole screen dismisses,
   // so naming a "why" (continue/close — continue to WHAT? the game is done) would only
   // raise a question it can't answer. Pointer-aware: coarse pointers read TAP.
@@ -264,9 +290,46 @@ export function srRouteRoads(lang: string, perRoad: number[], found: number): st
     : `neighborhood: ${total} stops, ${found} found`;
 }
 
+// The shelf in words. The visible heading is the universal MISSED token, but this is PROSE
+// and prose stays in the reader's language (the rule every sr helper here follows) — it
+// just says the same thing the heading now does.
 export function srRouteOffMap(lang: string, words: string[]): string {
   const list = words.join(', ');
-  return uiLang(lang) === 'fr' ? `hors carte : ${list}` : `off the map: ${list}`;
+  return uiLang(lang) === 'fr' ? `manqués : ${list}` : `missed: ${list}`;
+}
+
+// ---- Word mode (#156). The board drawing is decorative like the route map's; these
+// carry it — and the per-guess outcomes — in words.
+export function srWordBoardWord(lang: string, word: string): string {
+  return uiLang(lang) === 'fr' ? `mot du jour : ${word}` : `word of the day: ${word}`;
+}
+
+export function srWordClaim(lang: string, word: string, rank: number, total: number): string {
+  if (uiLang(lang) === 'fr') return `${word} trouvé (rang ${rank}) — ${total} mots`;
+  return `claimed ${word} (rank ${rank}) — ${total} words`;
+}
+
+export function srWordFailures(lang: string, strikes: number, max: number): string {
+  if (uiLang(lang) === 'fr') return `${strikes}/${max} fautes`;
+  return `${strikes}/${max} strikes`;
+}
+
+// A strike: `rank` is the near miss's rank (it teaches where the boundary is), or null
+// for an off-map miss. Names the run's end when this strike ends it.
+export function srWordStrike(
+  lang: string,
+  rank: number | null,
+  strikes: number,
+  max: number,
+  ended: boolean,
+): string {
+  const fr = uiLang(lang) === 'fr';
+  let what: string;
+  if (rank == null) what = fr ? 'raté' : 'miss';
+  else what = fr ? `trop loin : rang ${rank}` : `too far: rank ${rank}`;
+  const count = fr ? `faute ${strikes}/${max}` : `strike ${strikes}/${max}`;
+  const over = ended ? (fr ? ' — partie terminée' : ' — run over') : '';
+  return `${what} — ${count}${over}`;
 }
 
 // Screen-reader mirror of the standings lineup's meaningful events (#81) — the visual

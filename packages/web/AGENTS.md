@@ -19,6 +19,11 @@
       screens/Game.tsx        the guess loop, hole state (imports fold from @whippin/shared)
       game/scoring.ts         s(rank), holeProgress, computeProgress
       components/Phrase.tsx,Hole.tsx,WordInput.tsx,FloatingHit.tsx  rendering
+      components/routeDrawing.tsx  THE route drawing: geometry, lanes, frame vars + the row
+                              parts (Junction/OffMapShelf/RouteTail/RouteLink/RouteRow/RouteWord).
+                              Owned by neither surface — RouteModal (#117) and WordBoard (#156)
+                              both compose it, so a change to the line changes every route.
+      hooks/useShare.ts       how a RESULT leaves the app (native sheet -> clipboard + COPIED)
     public/                   served at site root (web assets + generated data)
       vocab/<lang>.json       full slugged reduced vocab (existence set) — fetched by the SPA
 ```
@@ -144,6 +149,260 @@ it to the local store — see `packages/backend/AGENTS.md`).
 
 *(Safe to update without touching the invariants above.)*
 
+- **Word mode (#156, the second daily):** one app, two faces — `/<lang>/word` (plus
+  `/word/<date>` and `/word/archive`, same date rules) plays the day's #154 artifact:
+  the word is PUBLIC and the player claims its top-`CLAIM_ZONE` (**250** since 2026-08-07,
+  was 150) groups until
+  `STRIKES_TO_END` (**3**) CONSECUTIVE incorrect guesses
+  land; the score is the claim
+  count. **`CLAIM_ZONE` is the one constant here that is NOT this package's to pick alone:**
+  it restates generation's `ROAD_TOP` (`distances.py`), because the field the board draws is
+  the set of groups that carry a road — move one and the board grows lane-less stations, or
+  draws stations it will not let you claim. `wordGame.test.ts` reads the Python literal and
+  pins them together, and widening it means republishing every word artifact (one generated
+  at the old ceiling has roads only that far). `STRIKES_TO_END`, by contrast, is
+  a declared TUNING KNOB, so nothing restates it: the HUD's cross row
+  is `Array.from` over the constant and the tests derive their strike sequences from it, which
+  is what keeps retuning it the one-line change the code promises — proven on 2026-08-06, when
+  it went 3 → 5 → 3 and the second move needed no test edits at all. The ONE thing that does
+  not follow automatically is the row's WIDTH: 44px crosses at a 20px gap fit a 320px screen up
+  to FOUR, and five run to 300px against ~292px of usable width. While it was 5 a
+  `--strike-gap` override in the `max-width: 360px` query paid for that; back at 3 the row is
+  172px and the override is gone. Raise it past 4 and that has to come back.
+  Incorrect = a valid vocab word, not already tried, ranked outside the zone
+  (a ranked near miss shows its rank, and — being off every road — the form the player
+  TYPED, per the naming rule in the route-map bullet below); not-in-vocab and group-level
+  repeats (#104) are
+  free. The pure rules live in `game/wordGame.ts` (`judgeWordGuess` / `wordGuessKey` /
+  `replayWordRun` — a round replays from its counted-guess log exactly like the
+  sentence game), the board model in `game/wordBoard.ts` (a SIBLING of `buildRoute`:
+  no departure, no "you are here"), and the surface in `screens/WordGame.tsx`
+  + `components/WordBoard.tsx`.
+  **The failure row is `assets/cross-button.png`, and a reset is a WAVE** (decided
+  2026-08-06): a two-frame **11×11** sheet — frame 0 the un-pressed button, frame 1 the pressed
+  red fail — drawn at an exact **4× (44px)** as a plain `background-image` whose state is one
+  frame's step in `background-position`. (A 15×16 redraw was tried the same day and rolled
+  back; if the art changes again, the three numbers to move together are `width`/`height`,
+  `background-size` — the WHOLE sheet at that scale — and `.failed`'s offset.)
+  **On a narrow phone the GAP pays for that size, never the sprite** (decided 2026-08-06):
+  five 44px crosses are 220px of the ~292px a
+  320px screen leaves inside the page inset, so `--strike-gap` drops 20px → 14px in the existing
+  `max-width: 360px` query — the same breakpoint and the same trade as the route gutter's
+  `--rank-size`, and what keeps the row at 276px where the standard gap would run to 300 and
+  overflow. The crosses themselves never shrink: a fractional scale leaves some source
+  pixels a row wider than others, which is the one thing `image-rendering: pixelated` cannot fix
+  afterwards. It REPLACED
+  `fail.png` + `components/failIcon.ts`, both deleted: that sprite carried a placeholder red
+  which a canvas pass had to repaint per state at runtime, so the row rendered blank until an
+  async decode resolved. One frame per state needs none of that, and the sheet bakes `--danger`
+  (#ff1f54) in directly. A strike LANDS at once — it is a hit — but a claim resetting the run
+  puts the crosses out **one at a time, rightmost first, `CROSS_WAVE_MS` (70) apart**, so the
+  row rewinds the way it filled instead of the whole HUD blinking (a full row clears in ~280ms,
+  under the board scroll running alongside it). `WordFailures` holds a `shown` count that trails
+  `strikes` only while a reset sweeps; it starts AT the count, so a rehydrated round renders
+  settled and replays nothing, and reduced motion clears in the frame (a JS timer — the global
+  CSS rule collapses durations but not delays, the same trap `rulerStagger` exists for). The
+  `aria-label` always speaks the real count, never the animation trailing it.
+  **`replayWordRun` is the ONE walk of a word round** (2026-08-06): it returns the ordered
+  `counted` guesses with their judgements, and `buildWordBoard` sorts THOSE into claims /
+  trunk strikes / the misses shelf rather than re-deriving the dedup, the strike counting and
+  the end-of-run rule a second time — the score, the strike pips and the drawing cannot
+  disagree about what one log means.
+  **The drawing itself is `components/routeDrawing`** (extracted 2026-08-06, superseding
+  "the board imports RouteModal's exported geometry helpers"): the geometry, the frame
+  variables, the shelf, the tail, the connector rule, the junctions and the station ROW are
+  one module belonging to neither surface. Importing half a component's internals is not
+  sharing it — the modal ended up owning a vocabulary it only half-uses while the board
+  re-implemented everything it had not imported, which is how the two came to hold separate
+  copies of the same shelf, tail, row markup and CSS-variable block. A detail of the line
+  changed in that module now changes it on EVERY route the app draws, which is the rule:
+  there is ONE routes component, never a second version of it. What each surface keeps is
+  what is genuinely its own — the modal's sticky "you are here" plumbing, the board's
+  censored field, claim reveal and pinned terminus footer, and their two screen-reader
+  mirrors. (The ONE CSS
+  difference stays: `.word-frame` re-derives `--wordw` minus the app's page inset, since the
+  board lives in the page rather than a full-bleed dialog.)
+  **The TERMINUS never leaves the screen — as the board's PINNED FOOTER, not a sticky row —
+  and every counted guess lands its hit ON it** (both decided 2026-08-06). The day's word is
+  the whole game, so its row (`WordBoard.WordTerminus`) lives OUTSIDE the scroller, pinned
+  under the window as the board's own footer: nothing ever scrolls behind it, so it needs no
+  masking background at all. A sticky in-scroller row wearing the route map's "you are here"
+  mechanics was BUILT FIRST the same day and rejected on sight ("remove this ugly black
+  background"): the parked row needs an opaque `--bg` box to float over the line, which the
+  modal gets away with only because its dialog is flat `--bg` — on this page it stamps a
+  black patch over the animated-waves backdrop, which no CSS background can reproduce (it is
+  a canvas). The footer re-derives the same `routeFrameVars` from the same model and pads for
+  the scroller's right side + its 6px pixel scrollbar (`.word-terminus`), so its grid lands on
+  the line's columns to the pixel; `.word-frame .route` dropped its bottom padding so, scrolled
+  to the bottom, the merge's last link runs out of the scroller straight into the terminus's
+  own rail. The TORN EDGES moved onto a new `.word-cut` box between the window and the
+  scroller: the footer is the window's last child, and a tear on the window's own bottom edge
+  would draw UNDER it — on the cut, the bottom rule lands exactly on the footer's top edge,
+  where the terminus's rail stub runs into it, so a line severed mid-field wears the modal's
+  parked-separator reading for free. **While torn, the content stops 8px SHORT of that rule**
+  (decided 2026-08-07): the modal's separator sits in a `--stick-inset` clearance, so this one
+  does too — via a MASK on the scroller (`.word-cut.more-down .word-scroll`), never a painted
+  strip (a strip is a box over the waves again), and only while torn, since at the true bottom
+  the merge link must run flush into the terminus's rail.
+  The HIT is the sentence game's own feedback grammar on the one row that is always
+  visible: every counted guess floats the rank it earned — `FloatingHit`, heat-coloured
+  under the same `HIT_HEAT_CAP`, plus the word shake (`.route-word.hit-shake`) — or MISS in
+  the coldest heat for an off-map strike; claims included. Free guesses (repeats, invalid
+  words, the day's word itself) land nothing, exactly as they float nothing in the sentence
+  game. A single target means a single hit: no stagger, and the lone-hit fade delay
+  (`FLOATING_HIT_INTRO_MS`). The hit state is `WordGame`'s; the terminus only renders it.
+  **Only a CLAIM scrambles its station** (decided 2026-08-06): the slot-machine reveal is the
+  beat that says "you found this", and the run's END reveals the whole ~150-row field at once
+  — 150 scrambles starting in one frame, each its own 40ms interval writing state for 650ms —
+  for a moment that is not a find at all but the post-mortem naming what was always there.
+  Those land outright (`StationWord`'s `animate`); the initial
+  target is likewise seeded settled, so a rehydrated round replays nothing.
+  **The ending plays in BEATS (2026-08-07), like the sentence solve, instead of piling onto
+  the killing strike's frame** (where the reveal, the scroll and the prompt exit all used to
+  land at once, under a MISS still floating): first the strike plays out in full on the still
+  board — the last cross fills and the terminus hit runs its whole float
+  (`WORD_END_HOLD_MS` = the hit's own intro + fade) — then the post-mortem names the field
+  and the line runs to its true bottom while the prompt leaves, then the keyboard drops and
+  the results rise. The reveal beat rides `buildWordBoard`'s optional `reveal` (presentation
+  pacing only — `ended` itself stays `replayWordRun`'s fact); a rehydrated ended round seeds
+  every beat settled, and reduced motion zeroes the JS-timer holds (the global CSS rule
+  cannot collapse those).
+  **The whole FIELD is drawn, censored until it is claimed** (decided 2026-08-05, restoring
+  the `???` census after a day without it — the sparse variant that drew only found words
+  and dashed the ground between them is gone, `.route-link.dashed` with it): every group of
+  the claimable zone is a station wearing the route map's fixed-width `???`, so each road
+  shows its real length and population — the one thing a list of your own words can never
+  say — and a claim lands ON a stop that was already there rather than appearing out of
+  nothing. The run's end reveals every word and turns the board into the post-mortem, where
+  a group merely NAMED keeps the small node and the dimmed word that tell it from one you
+  found (`route-unknown route-revealed`, the map's own distinction).
+  **The TAIL is the board's only broken run** (same decision): dashes mean "the line
+  continues into words with no distance at all", which is true at the cold top end and
+  nowhere else here — every rank between two stations is itself a station, so no connector
+  hides ground. Consecutive ranks are one row apart (`LINK_MIN`) and only the sparse trunk
+  between far strikes keeps a proportional length, exactly as on the map. The merge→word
+  leap stays SOLID (the 2026-08-04 decision) **and runs the ONBOARDING TEASER's distance,
+  not the modal's**
+  (decided 2026-08-05): the map spends `LEAP_H` (56) there, which with the junction's own
+  stub and the arrival's half-row puts 90px between the bus and the word — 2.5× the
+  teaser's 36 — and on a board that is mostly unknown ground that stretch read as the line
+  trailing off rather than arriving. The teaser is the shape the routes were TAUGHT in, so
+  it is the one to match; the connector contributes only what the junction and the arrival
+  row do not already spend (`TEASER_MERGE_RUN`/`JX_STUB`/`ARRIVAL_HALF_HEAD` in
+  `WordBoard`, measured at 36px bus→node). The rank gutter fits the farthest row drawn,
+  which with the whole field on the line is the field's own outer edge until a near strike
+  lands beyond it.
+  **The window wears the teaser's TORN EDGES** (decided 2026-08-05): the line outruns the
+  screen as soon as a few claims land, and an edge that simply ends reads as the end of the
+  map, so whichever side still has line beyond it gets the 9px-on/9px-off rule — the same
+  vocabulary as the route map's parked separator. That needs the
+  board to be TWO boxes (`.word-window` around `.word-scroll`), because a pseudo-element
+  inside a scroller scrolls away with the content, and — since a rule spans its WINDOW —
+  that window is capped at the line's own width (`430 + 20 + 6`: the drawing, the scroller's
+  ONE side, the pixel scrollbar) and centred, with the PROMPT sharing the column. Uncapped it
+  was the whole 1200px page column on a desktop while the line inside it was 430, so the
+  tears ran nearly three times the width of what they were tearing and the prompt answered
+  from a third of a screen away. Both caps are no-ops on a phone.
+  **The scroller's LEFT side is 0** (decided 2026-08-06, superseding a symmetric `0 20px`):
+  the drawing is a left-aligned block — the rank gutter opens it and the words run off to the
+  right — so an inset there only held the whole board 20px in from the prompt beneath it and
+  from the torn rules that bracket it, and it read as a box floating inside the page instead
+  of as the page's own content. The board's left edge, the prompt's and the window's are now
+  one line at every width. The RIGHT side keeps its 20px — that is the clearance the pixel
+  scrollbar needs off the words. Three numbers move together with it and are the thing to
+  re-check if it changes again: the window/prompt cap above, `.word-frame`'s `--wordw`, and
+  `--promptw` (456, not 476). Verified after the change: all 156 words of a fully revealed
+  field fit on one line at 320/360/390/430/900, none wrapping mid-word. **In HEIGHT it is the
+  opposite — the window takes everything left over** (decided 2026-08-05): the board IS this
+  screen, and every row of the line the player can see is a road's length made visible, where
+  the space around it says nothing. So `.game.word-game` cuts its own chrome — the HUD's row
+  reserved with 48px rather than 76 (clearing the fixed header while balancing its screen-top
+  inset against the gap before the board), and the three seams below it — which are
+  deliberately NOT equal (retuned 2026-08-06, superseding the two-even-seams version): the
+  PROMPT is what the player acts through, so it takes the room on BOTH of its sides
+  (`.game.word-game` above it, `.input-area.word-prompt` below), while the cross failure row
+  sits TIGHT against the keyboard (`.word-footer-play`, the smallest of the three) because it
+  reports on the guessing those keys do. Evenly spaced, the prompt read as one more band in a
+  stack of four; pushed to its two sides, it reads as the live line and the crosses read as a
+  status strip on the keys. Measured at 430px: 31 / 22 / 9. Earlier measured with the even
+  seams: 53% of
+  the viewport → 59% at 1440×900, and 45% → 52% on a 700px-tall one, which is where it
+  mattered (57% / 51% after this retune — the prompt bought its room from the board, on
+  purpose).
+  **ONE prompt for BOTH games, at a flat 24px, and a long guess CROPS ITS OWN HEAD**
+  (decided 2026-08-06). `WordInput` is a single control doing the same job on both screens, so
+  it has one size and one behaviour: `.word-input` is 24px everywhere, and the sentence game's
+  own smaller `clamp(13px, 4.2vw, 19px)` — which it shared with `.phrase` on mobile so the
+  input MIRRORED the sentence — no longer applies to it (that rule is `.phrase` alone now).
+  24px was walked DOWN to: 40 dominated the screen the BOARD is supposed to own, 28 was still
+  a touch heavy. Note the consequence on the sentence screen — the prompt is now LARGER than
+  the phrase it answers, inverting the old "input is a footnote to the phrase" hierarchy.
+  **When a guess outruns its column the TEXT crops at the head**, not the size: the letters
+  just typed and the caret hold their place at full size and the beginning slides off the
+  left, a terminal's behaviour. `.wi-text` is a `justify-content: flex-end` flex window with
+  `overflow: hidden` around a `.wi-text-run` holding the whole string — pinning the run to the
+  window's right edge is what puts the spill on the LEFT. The nesting is required: one element
+  cannot both clip and overflow its own start. The value stays whole in the DOM, so a reader
+  still gets the real guess.
+  Two `min-width: 0`s are load-bearing and were each found by a real overflow: on `.wi-text`
+  (a flex item will not shrink below its content without it, so the window grows instead of
+  cropping) and on `.input-area` (a GRID item of `.prompt-zone`, whose default `min-width:
+  auto` let it inflate to its content — so `max-width: 100%` on the input resolved against the
+  grown width, never bit, and the sentence prompt pushed the whole page sideways).
+  This replaced a shrink-to-fit (`promptFontSize` / `--promptw`, both deleted) that divided
+  the column by the glyph count: it kept every letter, but rendered fr's longest word
+  (`anticonstitutionnellement`) at ~10px and resized the whole line on almost every keystroke.
+  Both approaches fixed the same original bug — at the old fixed size the prompt simply ran
+  off the page from about 16 letters on, pushing the document to 508px on a 320px screen.
+  (Unrelated latent bug found while measuring, deliberately NOT fixed: `.word-input`'s
+  `padding` shorthand computes to 0 because `calc(4px + var(--text-shift))` adds a UNITLESS
+  zero, which is invalid in calc and voids the whole shorthand. It has always been 0;
+  restoring it would push the prompt 8px off the page's left edge, which is exactly the
+  alignment the board was just given.) The sentence screen keeps its generous rhythm untouched — there the phrase is the
+  content and the air around it is what makes it legible — which is why every one of these is
+  scoped to `.word-game`. The rules live on the shared
+  `.scroll-torn` utility (beside `.pixel-scroll`) with `hooks/useScrollEdges` behind them —
+  BOTH shared with the onboarding teaser, which was refactored onto them rather than
+  leaving two copies of the slack/bail-out/resize details to drift. `WordGame` re-reads the
+  edges when the MODEL changes too: a claim adds rows and the run's end reveals the whole
+  field, neither of which fires a scroll event.
+  **ONLY a CLAIM moves the board** (decided 2026-08-06, superseding "a counted guess"): a
+  strike used to scroll out to the near miss's own row on the trunk, which carries the player
+  AWAY from the field they are working on — as the answer to a FAILURE — and leaves them to
+  find their way back before the next guess. The move is the reward for a find; the cross row
+  and the floating rank already report a strike, and they report it without moving the ground.
+  An off-map miss has no row to move to and never scrolled. Verified by measuring a LANDMARK
+  ROW's on-screen position rather than `scrollTop`: a strike inserts a row above the view, so
+  the browser's scroll anchoring bumps `scrollTop` by that row's height precisely IN ORDER TO
+  hold the content still — reading `scrollTop` alone says "moved 40px" about a board that did
+  not move at all.
+  **The move itself runs on the APP's clock, not the browser's**
+  (decided 2026-08-05): `scrollIntoView({ behavior: 'smooth' })` times itself by the
+  DISTANCE travelled, and the field is ~150 rows, so a claim out at the far edge crawled for
+  the better part of a second while the next guess was already typeable. `WordGame` animates
+  `scrollTop` itself instead — `SCROLL_MIN_MS`/`SCROLL_MAX_MS`/`SCROLL_PX_PER_MS`, ease-out,
+  a rAF loop the next guess cancels mid-flight — so the whole board crosses in ~320ms and a
+  one-rank hop in ~140 (measured 2833px in 316ms, landing centred to the pixel). Reduced
+  motion sets `scrollTop` outright. The target is measured off RECTS, never `offsetTop`:
+  `.route-frame` is positioned, so it and not the scroller is the offsetParent (the trap the
+  route map's `offsetWithin` exists for). The end screen
+  (`components/WordEndScreen.tsx`) is the named `<n> WORDS/MOTS` count + SHARE via the
+  v3 word token; its tally ends on a one-shot scale pop (`score-land`, 2026-08-07) — the
+  count is this screen's LAST beat, with no ruler colorize following it as in the sentence
+  tray, so the number marks its own landing (never at 0, never on rehydration, collapsed
+  under reduced motion). Identity is mode-addressed everywhere: `roundKeyForDay(day, lang,
+  'word')` = `w:` keys into the store's own `wordRounds` map (persist v6; `ensureWordRound`
+  resets on a republished different word), `lastMode` decides where `/` lands (like
+  `lastLang`; the header's Whippin mark opening the mode CHOOSER is the deliberate switch —
+  see the chooser bullet) — but **only a LOADED artifact records it** (2026-08-06): unlike a
+  language, a mode can be genuinely absent, since word artifacts are published per day and
+  past days are not backfilled. Written on arrival instead, one tap of the toggle on a day
+  with no word artifact pinned every later visit to a route showing NO PUZZLE TODAY and
+  nothing else. Arrival lands where you last PLAYED, and a 404 is not play.
+  The archive/selector read word statuses via `wordStatusOf`
+  (ended = done-for-the-day gold; live = claimed/zone %). Word runs never touch the
+  streak, fire no new analytics events, and have no benchmark opponents (out of scope
+  per the issue).
 - **Route modal (#117, Part 3 of #115):** tapping a HOLE opens its neighborhood drawn as a
   journey. `game/route.ts` is the pure model (`buildRoute`, contract-tested) and
   `components/RouteModal.tsx` renders it; `Game` owns the open state so the guess prompt can
@@ -195,8 +454,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the old lane geometry (`stopX`/`labelSide`/`laneNameFont`) and the axis contours are all gone
   with it.
   **The line is TRAVELLED, so it runs departure → arrival DOWN the page** (decided 2026-07-26):
-  the off-map words at the top past the torn break, every station reached farthest first, and
-  the word itself at the bottom. It **opens with the CLOSEST word you have reached sitting at the
+  the off-map words at the top, then the broken tail, every station reached farthest first, and
+  the word itself at the bottom. **The off-map shelf carries NO rule under it** (decided
+  2026-08-05, dropping `.route-break` from both surfaces): the tail's own broken trace begins
+  immediately below it, so a horizontal tear as well only fenced those words off from the
+  distance they are already outside of. It **opens with the CLOSEST word you have reached sitting at the
   bottom edge**, a few pixels short of it (decided 2026-07-26): the ground you have covered fills the screen above it, and
   what is still ahead — the words closer than yours, and the destination — waits just below the
   fold. A solved hole has no "here", so it opens on the terminus instead. Measuring that row is
@@ -223,10 +485,31 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **The map carries NO labels** (decided 2026-07-26, superseding the `ARRIVÉE` / `VOUS ÊTES ICI` /
   `DÉPART` / `ROUTES` tags tried the same day): every one of those is said by a node's size,
   fill and lane instead, and the only string left on it is `routeOffMap` — the words above the
-  torn break have no node, no lane and no distance, so nothing about them can be read off the
-  drawing. The screen-reader mirror still names all four in prose (`srRouteStop`), which is why
-  dropping them costs no information. Fixed-width `???` is the ONE token for "you have not found
+  line have no node, no lane and no distance, so nothing about them can be read off the
+  drawing. It reads **MISSED, untranslated in both languages** (decided 2026-08-05,
+  superseding OFF THE MAP / HORS CARTE): those words are precisely the ones the round answered
+  with the floating `MISS`, which is itself untranslated wherever it appears (the tutorial's fr
+  copy included), so the shelf names them in vocabulary the player has already met instead of
+  describing where they sit — one label in every language, like `you` and `dnf`. Its
+  screen-reader mirror stays PROSE in the reader's own language (`srRouteOffMap`: "missed:" /
+  « manqués : »), the rule every sr helper here follows. The screen-reader mirror still names
+  all four in prose (`srRouteStop`), which is why dropping them costs no information. Fixed-width `???` is the ONE token for "you have not found
   this word": the destination and every censored station wear it.
+  **What NAMES a stop depends on whether it is ON a road (decided 2026-08-06, and the rule for
+  EVERY mode that draws a route):** on a road, its group's canonical accented form — that station
+  was already drawn there, censored, before the player got near it, so naming it is the map naming
+  its own census, which is the whole point of showing the roads' real length and population. OFF
+  every road — out on the trunk — it is **the form the player TYPED**. Nothing was drawn there
+  before the guess landed, so the stop IS the guess, and answering `portes` with the group's
+  `porter` puts a word on the map that was never played, at a distance the player cannot account
+  for; the inflection being the closer one is exactly what makes it read as a correction rather
+  than as their own stop. It is the same rule the MISSED shelf has always followed, one step
+  closer in, and no more a "displayed slug" than the shelf is — on this game the input produces
+  folded slug characters only, so the typed form IS a display form (see `RouteModel.misses`).
+  A trunk stop nobody typed falls back to the canonical form, which is what the departure and a
+  `--no-roads` "you are here" take. Both surfaces obey it in their MODEL — `RouteStop.word`
+  (`game/route.ts`) and `WordOutsideStop.word` (`game/wordBoard.ts`) — so the drawing, the sr
+  mirror and any later view get it for free.
   **The censored near field is the WHOLE of it** (decided 2026-07-26, superseding the top-5 band):
   every group of it renders as a station with its word withheld, so each road shows its real
   **length and population** — the one thing a list of your own guesses can never say. Its extent
@@ -267,16 +550,36 @@ it to the local store — see `packages/backend/AGENTS.md`).
   tall as whatever gap came before, leaving the first lane station far below the bus while the
   merge at the other end hugged its last one. The two ends of the fork have to mirror each other —
   15px from bus to station at both.
-  Lane centres live in `RouteModal` (`LANE_X0`/`LANE_GAP`) because the node positions and the
-  `--lane-lines` gradient that paints them must agree exactly. Each lane is **as vivid as the
+  Lane centres live in `routeDrawing` (`LANE_X0`/`laneGap`) because the node positions and the
+  `--lane-lines` gradient that paints them must agree exactly — which is why EVERY consumer of a
+  lane position goes through `laneX(road, lanes)` / `trunkX(lanes)` rather than doing the
+  arithmetic itself. **Past `LANE_BUNDLE_FULL` (4) roads the bundle TIGHTENS instead of widening**
+  (decided 2026-08-07, when `ROAD_KS` went to 6): the rail takes its width from the WORD column,
+  and below ~360px there is none to give — at six lanes the rail ran 141px against 97, leaving
+  ~67px of word column on a 320px screen, where a 9-letter station wrapped mid-word
+  (`boisemen`/`t`). `fitWord` floors at `WORD_MIN_PX`, so past that floor the overflow has
+  nowhere to go, and mid-word breaks are the one thing that module exists to prevent. So the
+  lanes give way instead of the type: the bundle spans a constant `LANE_SPAN` whatever the road
+  count and only the gap closes (22px at ≤ 4, 16.5 at five, 13.2 at six — still 8px between 5px
+  lines). Verified at 320/430 with a synthetic 6-road board: six distinguishable lanes, no
+  mid-word wrap, no horizontal overflow.
+  Each lane is **as vivid as the
   rest of the app** (decided 2026-07-26, superseding a first muted set — a metro line's whole
-  point is telling it from the next one at a glance): `LANE_COLORS` (≤ 4 — `ROAD_KS` caps roads
-  there) takes four far-apart hues from the **progress ramp's own stops**
+  point is telling it from the next one at a glance): `LANE_COLORS` (one per road `ROAD_KS` can
+  emit — **6 since 2026-08-07**, and `laneColors.test.ts` reads `ROAD_KS` out of `distances.py`
+  to keep it that way, because a road past the last colour wraps around to lane 0's and draws
+  two roads identically) takes far-apart hues from the **progress ramp's own stops**
   (`shared/progressColor.ts`) rather than inventing a palette, COPIED not imported, because that
   ramp means "progress" and these mean "identity". Copied means nothing catches drift, so
   `laneColors.test.ts` pins each hex to the stop it was taken from — pink 70, cyan 30, violet 90,
   green 40 (added 2026-07-27 on review; it immediately caught the violet as `#883beb` where its
-  stop is `#883ceb`). If a stop is ever retuned the guard fails, and the choice gets made again
+  stop is `#883ceb`), then coral 60 and magenta 80. **The first four did not move**, so every map
+  that forks 4 ways or fewer renders exactly as before; only three ramp stops were left to choose
+  the new pair from, and it was MEASURED rather than eyeballed — coral + magenta hold a minimum
+  CIE76 ΔE of 36.9 across the whole set, where either pairing with indigo collapses to 15.3
+  (indigo sits on top of violet). That ΔE is also why magenta is admissible despite reading
+  "pinkish" in the abstract: against pink it is 40+. If a stop is ever retuned the guard fails,
+  and the choice gets made again
   on purpose rather than the map quietly speaking a stale palette.
   Pink leads, never cyan: lane A always holds
   rank 1 and cyan is what the heat ramp paints a rank-1 number, so leading with it would imply a
@@ -287,6 +590,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
   line, with nothing added — while a trunk word stays `--fg`, because above the fork there is no
   road to name. An UNFOUND station's node takes the same colour: a dark node on a vivid lane reads
   as the line being BROKEN, where the lane's own colour reads as a stop with no name on it yet.
+  **Being ON a road and the line FORKING are different questions** (decided 2026-08-07): `onLane`
+  is `road !== null` and nothing else, on BOTH surfaces. A neighborhood with a single honest facet
+  ships ONE road, and gating the colour on `forked` drew that entire board in the colourless trunk
+  treatment — a route rendered as if no route had been found. It is only the COLOUR at stake, since
+  `laneX(0, 1)` and `trunkX(1)` are the same point. `forked` still gates the JUNCTIONS, where it
+  belongs: one road has nothing to fork into, and drawing a fork would claim a structure the data
+  does not have — so a one-road board is a single coloured line with no junction at either end.
+  The real other side of the rule is `--no-roads`, where `road` is null: no road, so no colour.
+  `WordBoard.test.tsx` pins both directions, because "always colour it" is the tempting
+  simplification that breaks the second one. (The stricter road rules made single-road maps
+  common — `pain` and `vie` both fall to one.)
   The junction **bus is painted in the lanes' colours, split at the trunk** (`busGradient`), not
   in one neutral bar: a single grey bar at each end of a set of parallel lines reads as a frame
   drawn AROUND them.
@@ -312,6 +626,21 @@ it to the local store — see `packages/backend/AGENTS.md`).
   query shrinks both together (10px → 9px below 360px) without the component knowing: a 17-letter
   word plus four wide roads genuinely does not fit a 320px screen otherwise. Verified no mid-word
   break at 320/360/390/430/900.
+  **That `<widest exponent>` is the MAP's, never the LINE's** (decided 2026-08-06,
+  `rankGutterChars` in `routeDrawing`, fed by `RouteModel.maxRank` / `WordBoardModel.maxRank`).
+  It used to be the farthest station DRAWN, which is stable only until a guess lands farther
+  out than anything on the line: the track is `minmax(var(--gutter), max-content)`, so a
+  4-digit rank arriving on a word board whose field ends at 150 widened it and shoved the whole
+  drawing — rail, lanes and words — one glyph right, mid-round. An exponent is a REPORT on a
+  guess; it must not move the map the player is reading. Both geometries already walk every
+  entry, so the farthest rank costs nothing to carry, and being a property of the PUZZLE it
+  cannot change during a round. **Know the price:** generation caps every map at rank 10000, so
+  the reservation is in practice a constant **6 glyphs (70px)** — where a word board at rest
+  shows `-150` and would fit in 4 (50px). That is ~20px of gutter standing empty to hold one
+  rank value (10000 is the ONLY 5-digit rank; 9000 ranks have 4). Reserving 5 glyphs instead
+  would need the track to stop negotiating at all (a fixed `var(--gutter)`, letting a too-wide
+  exponent hang left into the margin rather than push the line) — considered and NOT done,
+  since it trades away the measured track's font-fallback safety.
   **"You are here" is STICKY on both edges** (decided 2026-07-26): the line can run several
   screens, and the one thing you always need while reading any part of it is where you stand, so
   the `best` row carries `position: sticky` on BOTH offsets — scroll below it and it parks at the
@@ -330,8 +659,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `best`, so nothing sticks.
   **A parked row shows the GAP it is hiding** (decided 2026-07-26): pinned, the row is drawn hard
   against one it is nowhere near, with an unseen stretch of the line squeezed out between them, so
-  the side facing that skipped ground gets **a torn separator — the same dashes the off-map break
-  wears**, since both mean the map does not continue straight through there. Below when parked at
+  the side facing that skipped ground gets **a torn separator — the same dashes a scrolling
+  window's cut-off edge wears** (`.scroll-torn`), since both mean the map does not continue
+  straight through there. Below when parked at
   the top, above when parked at the bottom, nothing when the row is simply where it lives (which
   includes the opening view). **`--stick-inset` is the row's ONE margin, used on both of its
   sides**: the same distance holds it off the screen edge and off the separator, so a parked row
@@ -420,11 +750,6 @@ it to the local store — see `packages/backend/AGENTS.md`).
   contiguous ids are unchanged) instead of sizing by `max id + 1`, where a well-formed
   `road: 4294967295` threw `RangeError`. `api.ts` caps the value too (`MAX_ROAD` 63) — generous on
   purpose, since a rejected puzzle costs the whole day.
-  Side effect on the shared input: `WordInput`'s window listener lets a focused BUTTON keep only
-  `Enter`, and EVERY editing path in `Game` (`appendChar`, `deleteChar`, `replaceInput`) blurs a
-  focused hole button through `releaseHoleFocus`. All three, not just typing: with Backspace and
-  history recall leaving it focused, "close the map, fix a typo, press Enter" reopened the map
-  instead of submitting (fixed 2026-07-27).
 - **Route discoverability (#129, decided 2026-07-27):** #117 made every hole a button and
   nothing said so. Two fixes, both in the show-don't-tell grammar — no permanent chrome, no
   tooltip, no message band (all three considered and rejected the same day).
@@ -494,7 +819,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   Reduced-motion hides it → the static fill + aria-label carry the status.
   The calendar itself is **vertically centered** (`.archive` flex column, top padding
   clears the fixed header). **The live streak stat moved out of the archive body and into
-  the shared `TopBar` (decided 2026-07-11):** immediately right of the language flag it is
+  the shared `TopBar` (decided 2026-07-11):** immediately right of the language control it is
   only `assets/streak-small.png` (the 8×10 pixel-art source displayed at an exact 3× =
   24×30) plus a larger bare streak amount; a zero/broken streak remains hidden. Entry: a
   calendar icon in the
@@ -516,8 +841,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   background (the animated noise never plays under it) with generous row rhythm. It
   wears the shared `ModalHeader` and rises as a **SHEET** from the bottom edge
   (`sheet-up` / `sheet-down`, 2026-07-27 — see the modal-behaviour bullet); it is
-  closed by its header X or Escape, **never by a backdrop tap**, and focus returns to
-  SEE MORE. This dialog is the planned home of the deeper result views (#82): per-row
+  closed by its header X or Escape, **never by a backdrop tap**, and closing leaves focus
+  unset. This dialog is the planned home of the deeper result views (#82): per-row
   runs, tested words, per-hole word lists. **The run RULER replaced the bucketed
   trajectory squares (decided 2026-07-25):** one continuous bar per run on the
   PROGRESS ramp (`components/RunRuler.tsx`), one cell per counted try colored
@@ -692,8 +1017,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   200ms before unmounting. **The solved screen then focuses NOTHING** (decided 2026-07-27,
   dropping the focus this dismissal used to hand to the result action): the celebration has no
   trigger to restore focus to, so the tray was taking it by default and SHARE arrived already
-  ringed — a solved sentence is something to read, not a prompt to act, and a keyboard user is
-  one Tab away. The streak celebration also keeps its **tap-anywhere** dismissal: it is the
+  ringed — a solved sentence is something to read, not a prompt to act. The streak celebration
+  also keeps its **tap-anywhere** dismissal: it is the
   documented exception to the close-button-only rule the other modals now follow.
   While any streak screen is open, the source and solved-result timers stay at their
   initial frame. **Dev-only preview:**
@@ -795,7 +1120,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   instead of marking where the window cuts. That is why the teaser is TWO
   boxes — a non-scrolling `.routes-teaser` frame around the `.teaser-scroll` scroller: a
   background paints beneath the stations and a pseudo-element inside a scroller scrolls away
-  with them, so the rules can only live on a parent that stays put. It **FILLS the play
+  with them, so the rules can only live on a parent that stays put. **Both halves are SHARED
+  since 2026-08-05** — the rules are the `.scroll-torn` utility and the scroll state is
+  `hooks/useScrollEdges` — because Word mode's board (#156) needed the same edges and the
+  parts worth keeping in one place are the details (the sub-pixel slack, the bail-out on an
+  unchanged value, the resize listener). It **FILLS the play
   area's free height** — flex-basis 0 + min-height 0 so it can never grow the page, and
   deliberately NO max-height (a cap only opened a dead gap under the coach on tall screens,
   findings 2026-08-04) — and its
@@ -884,13 +1213,29 @@ it to the local store — see `packages/backend/AGENTS.md`).
   background, no blur.** Boxes read as floating rectangles over the animated waves, so the
   groups sit DIRECTLY on the backdrop and the glyphs' own `text-shadow` carries legibility.
   Layout is one optical row: `.topbar-inner` = `min(900px, 100vw - 48px)`, 56px, centred.
-  **LEFT is the status spot** — a screen's title in `.topbar-title` (ARCHIVE / TUTORIAL, plus
-  any inline stat like the tutorial's counter); the game passes nothing there and floats its
-  own progress **counter** (`.hud`, the arcade SCORE spot, painted in `progressColor(pct)`)
-  instead — the full-width progress BAR is gone, the number and its colour say what the bar
-  said. **RIGHT is the one action group** (`.topbar-right`): the language flag, then the
+  **LEFT is the status spot** (`.topbar-left`) — a screen's title in `.topbar-title`
+  (ARCHIVE / TUTORIAL, plus any inline stat like the tutorial's counter), or a loaded game's
+  live arcade status: the sentence's progress **counter** (painted in `progressColor(pct)`),
+  or Word mode's score. Word mode's cross failure row stays with its play controls,
+  directly above the keyboard. Both left and right groups are children of the actual
+  `<header>`; game bodies never render a separate fixed header half. The full-width progress
+  BAR is gone — the number and its colour say what the bar said. **RIGHT is the one action
+  group** (`.topbar-right`), in two halves: the CHOOSERS the bar itself owns — the
+  **Whippin mark** (which daily, `/mode`) then the **globe** (which language, `/select`),
+  in that order because which GAME you are playing is the larger choice and the mark is the
+  app's own logo — then the
   screen's contextual controls — every one a `.home-btn` (a transparent `--hud-height` square)
-  wrapping a `.pixel-icon` SVG, muted → `--fg` on hover/focus. The **streak stat is NOT in the
+  wrapping a `.pixel-icon` SVG, muted → `--fg` on hover.
+  **The language control is a GLOBE, not the loaded language's flag** (decided 2026-08-06,
+  `components/LangButton.tsx`, which replaced `FlagButton`): the button's job is *change
+  language*, and a flag answered a different question — which language is loaded — that the
+  screen under it already answers in every other way. One glyph in every language also makes
+  it read as fixed chrome rather than as a status that happens to be tappable. Flags survive
+  where the choice is actually MADE: the language screen's cards (`Flag.tsx`, now their only
+  consumer). `globe.png` is a single-colour 15×15 sprite drawn at an exact 2× and **MASKED**
+  (`.globe-icon`, `background-color: currentColor` — the `.word-digit` technique), so it takes
+  the group's muted → `--fg` hover with the inline SVGs instead of being the one control that
+  cannot. The **streak stat is NOT in the
   header** (moved back to the archive page 2026-07-21). **Any full-screen surface follows this
   same row** rather than inventing chrome, and since 2026-07-27 there is ONE component for it:
   **`components/ModalHeader.tsx`** — the app's row (`.topbar-inner` / `.topbar-left` /
@@ -938,28 +1283,51 @@ it to the local store — see `packages/backend/AGENTS.md`).
   media-query-scoped exit would leave `animationend` unfired on desktop, where the close waits
   on it.
   The game's right group holds the **archive calendar icon** and help `?` (#55); the tutorial
-  puts "TUTORIAL" in the left chip and the skip fast-forward in the right group. The flag
-  ALWAYS opens the language screen. The
-  game header is rendered by **`GameRoute` (App), NOT inside `Game`** (decided
-  2026-07-08): it wraps EVERY state of the route — loading / error / missing-puzzle /
-  the loaded game — so navigating into a game (e.g. from the archive) never blinks the
-  header away; only the body under the fixed header refreshes. `usePuzzle`'s **stable
+  puts "TUTORIAL" in the left chip and the skip fast-forward in the right group. The globe
+  ALWAYS opens the language screen; the Whippin mark is opt-in (`TopBar`'s `modeChooser`)
+  and appears on GAME routes only — the archive and the tutorial show the globe alone, since
+  only a game route is IN a mode. The
+  game header is owned by **`GameRoute` (App)** (decided 2026-07-08): it constructs the
+  same `TopBar` for EVERY state of the route — loading / error / missing-puzzle / the loaded
+  game — while the loaded screen supplies its live status through the header's `left` slot.
+  That keeps the status inside `<header>` and outside `.game`, and navigating into a game
+  (e.g. from the archive) never changes the header structure; only its contents and the body
+  under it refresh. `usePuzzle`'s **stable
   `dayNumber`** is still captured ONCE per request (`useMemo` on the requested date) and
   shared by the fetch, round key, and share, but is no longer rendered in the header. An
   undated tab held open across the 22:00 flip therefore still keeps its fetched puzzle/day;
   the puzzle itself does not silently swap. The topbar is the extension point for future
   chrome (streaks, stats, …).
-- **Language screen (redesigned 2026-07-06):** headed by the **logo** (blue pixel
+- **The CHOOSER screens (language 2026-07-06, mode 2026-08-06):** the app asks "which one
+  do you want to play?" twice — about the LANGUAGE (`/select`, the header globe) and about
+  the DAILY (`/mode`, the header Whippin mark) — and both are the SAME screen, so there is
+  ONE of it: `components/Chooser.tsx` holds the shell, the card and the status strip;
+  `screens/LanguageSelect.tsx` and `screens/ModeSelect.tsx` supply only what the options
+  are, what each is called, which art it wears and where a tap lands (`.chooser-*` in CSS,
+  renamed from `.lang-*` when the second one arrived). Both are ROUTES, never modals, and
+  both sit ABOVE `/<lang>` since neither is language- or mode-scoped.
+  Headed by the **logo** (blue pixel
   glyph, 3×/2× its native 22px — language-neutral, and the app's ONE in-app branding
   spot), NOT a "select language" title (the cards self-explain, and a title would
   have to guess the user's language on the screen where it is unknown). One **card**
-  per language — a full-opacity flag + the language's **native** name
-  (`LANGS[].native`; never translated) — in a vertical list that scales to any number
-  of languages, with the app's standard brighten-on-hover/press (no dimmed flags).
+  per option — full-opacity art + its name — in a vertical list that scales to any number
+  of them, with the app's standard brighten-on-hover/press (no dimmed art). Languages show
+  a flag + the language's **native** name (`LANGS[].native`; never translated); modes show
+  the 7×7 sprite + a localized name (`modeSentence`/`modeWord`). Card art takes an exact
+  INTEGER scale — 2× for the 16×16 flags, 4× (`.mode-sprite`) for the 7×7 mode icons —
+  because a fractional one leaves some source pixels a row wider than others, which
+  `image-rendering: pixelated` cannot fix.
   The old NEW/%/✓ badges are gone: today's status is a thin **strip on the card's
-  bottom edge** — absent = not started, partial = reconstruction % on the progress
-  ramp, full **gold** = solved (the solved-word gold). The card's aria-label speaks
-  the status.
+  bottom edge** — absent = not started, partial = progress on the progress
+  ramp, full **gold** = solved / done for the day (the solved-word gold). The card's
+  aria-label speaks the status.
+  **Each chooser holds the OTHER's axis fixed**, so neither can strand you: a language card
+  lands in the last-played MODE and reads that mode's status, and a mode card lands in the
+  last-played LANGUAGE and reads that language's. **The mode chooser replaced a header
+  TOGGLE** (decided 2026-08-06): a toggle had to show the mode you were NOT in — a thing to
+  decode rather than read — and could only ever flip between exactly two, where a chooser
+  shows both dailies side by side with today's progress on each and stays right when a
+  third arrives.
 - **UI chrome is localized + a11y'd (decided 2026-07-06):** `web/src/i18n.ts` holds every
   UI string in **en + fr** (`t(lang, key)`; the `satisfies` clause makes a missing
   translation a type error, so parity needs no test). Game screens resolve strings with
@@ -967,8 +1335,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   redirect. `<html lang>` is kept in sync by App. Guess feedback is mirrored to a
   `.sr-only` polite live region (`srHoleResult`), animations honor
   `prefers-reduced-motion` (durations collapse to ~0 — never `animation: none`, several
-  swaps advance on `animationend`; delays are kept so the floating numbers still show),
-  and every control has a visible `:focus-visible` outline. **The missing-puzzle screen
+  swaps advance on `animationend`; delays are kept so the floating numbers still show).
+  **Every BUTTON is pointer-only and may NEVER retain focus** (decided 2026-08-06):
+  `buttonFocus.ts`, installed before React renders, gives current/future/lazy/portaled buttons
+  `tabIndex = -1`, prevents mouse-down focus without suppressing click, and immediately blurs
+  any browser or programmatic button focus. There are no `:focus-visible` button treatments and
+  modal close paths never restore focus to their triggers. Native modal focus may stay on the
+  non-button `<dialog>` itself so its focus trap and Escape behavior survive. **The missing-puzzle screen
   has TWO wordings, told apart by the ROUTE (#77, decided 2026-07-27)** — the backend's
   404 is undifferentiated, and which route asked is the only signal needed: on the
   **undated** route (today) it owns that the state is **abnormal** (a publish that did not
@@ -1058,4 +1431,3 @@ it to the local store — see `packages/backend/AGENTS.md`).
   success paths; `tutorial {action:'start'|'finish'|'skip'}` — invite accept / the ending's
   PLAY under the routes teaser (#155) / skip (fast-forward or invite SKIP). Plus automatic
   pageviews.
-

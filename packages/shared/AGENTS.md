@@ -34,8 +34,15 @@
   different meanings — never borrow one for the other's job (they share `ramp.ts`).
   The web's route-map lane colors are pinned COPIES of progress-ramp stops, guarded
   by `laneColors.test.ts` in web.
-- `src/shareCard.ts` is the share-token codec (v2), running byte-identically in the
+- `src/shareCard.ts` is the share-token codec, running byte-identically in the
   browser and the Lambda; the token's product behavior and evolution rules are in the
-  solved-result bullet of `packages/web/AGENTS.md`.
+  solved-result bullet of `packages/web/AGENTS.md`. Its leading VERSION field is a
+  **format id in ONE namespace shared by both dailies**: v2 = the sentence result
+  (ruler trajectory + solve ticks), **v3 = Word mode's (#156) — the common header
+  alone (`version | lang | day | scoreLen | score`), since the claim count IS the
+  whole result**. A future sentence bump must SKIP a value already taken. Each format
+  has its own encode/decode pair, neither decodes the other, and
+  `decodeLegacyShareTarget`'s "strictly older than the sentence version" rule keeps a
+  malformed token of either shape at a flat 404 rather than a redirect.
 - Changes here are contract changes by definition: update the Vitest contract tests
   and run `pnpm test` (root testing policy).

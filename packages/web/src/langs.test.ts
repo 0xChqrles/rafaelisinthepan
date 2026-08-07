@@ -8,6 +8,7 @@ import {
   isLang,
   langFromPath,
   pathForLang,
+  pathForMode,
   pathForArchive,
   pathForDay,
   parseRoute,
@@ -59,13 +60,20 @@ describe('pathForLang', () => {
 
 describe('parseRoute', () => {
   it('routes /<lang> to the game for that language', () => {
-    expect(parseRoute('/fr')).toEqual({ view: 'game', lang: 'fr' });
-    expect(parseRoute('/en')).toEqual({ view: 'game', lang: 'en' });
-    expect(parseRoute('/fr/')).toEqual({ view: 'game', lang: 'fr' });
+    expect(parseRoute('/fr')).toEqual({ view: 'game', lang: 'fr', mode: 'sentence' });
+    expect(parseRoute('/en')).toEqual({ view: 'game', lang: 'en', mode: 'sentence' });
+    expect(parseRoute('/fr/')).toEqual({ view: 'game', lang: 'fr', mode: 'sentence' });
   });
   it('routes /select to the language picker', () => {
     expect(parseRoute('/select')).toEqual({ view: 'select' });
     expect(parseRoute('/select/')).toEqual({ view: 'select' });
+  });
+  // The two choosers sit ABOVE /<lang>: neither is language- or mode-scoped, and /mode
+  // must never be read as a language segment or shadow Word mode's /<lang>/word.
+  it('routes /mode to the game-mode picker, without touching the mode grammar', () => {
+    expect(parseRoute('/mode')).toEqual({ view: 'modeSelect' });
+    expect(parseRoute('/mode/')).toEqual({ view: 'modeSelect' });
+    expect(parseRoute('/fr/word')).toEqual({ view: 'game', lang: 'fr', mode: 'word' });
   });
   it('treats / and unknown paths as a home redirect', () => {
     expect(parseRoute('/')).toEqual({ view: 'home' });
@@ -81,20 +89,22 @@ describe('parseRoute — archive + past-day deep links (#55)', () => {
   const bounds = { firstDate: '2026-01-01', activeDate: '2026-06-30' };
 
   it('routes /<lang>/archive to the calendar', () => {
-    expect(parseRoute('/fr/archive')).toEqual({ view: 'archive', lang: 'fr' });
-    expect(parseRoute('/en/archive/')).toEqual({ view: 'archive', lang: 'en' });
+    expect(parseRoute('/fr/archive')).toEqual({ view: 'archive', lang: 'fr', mode: 'sentence' });
+    expect(parseRoute('/en/archive/')).toEqual({ view: 'archive', lang: 'en', mode: 'sentence' });
   });
 
   it('routes /<lang>/<YYYY-MM-DD> in range to that day’s game', () => {
     expect(parseRoute('/fr/2026-06-12', bounds)).toEqual({
       view: 'game',
       lang: 'fr',
+      mode: 'sentence',
       date: '2026-06-12',
     });
     // The active day itself is a valid (shareable) dated URL.
     expect(parseRoute('/en/2026-06-30', bounds)).toEqual({
       view: 'game',
       lang: 'en',
+      mode: 'sentence',
       date: '2026-06-30',
     });
   });
@@ -102,7 +112,7 @@ describe('parseRoute — archive + past-day deep links (#55)', () => {
   it('treats malformed / impossible dates as unknown -> home', () => {
     expect(parseRoute('/fr/2026-13-40', bounds)).toEqual({ view: 'home' }); // no month 13
     expect(parseRoute('/fr/2026-02-30', bounds)).toEqual({ view: 'home' }); // no Feb 30
-    expect(parseRoute('/fr/2026-6-1', bounds)).toEqual({ view: 'game', lang: 'fr' }); // not \d{4}-\d{2}-\d{2}: tolerated -> today
+    expect(parseRoute('/fr/2026-6-1', bounds)).toEqual({ view: 'game', lang: 'fr', mode: 'sentence' }); // not \d{4}-\d{2}-\d{2}: tolerated -> today
   });
 
   it('treats a real date outside [firstDate, activeDate] as unknown -> home', () => {
@@ -114,12 +124,43 @@ describe('parseRoute — archive + past-day deep links (#55)', () => {
     expect(parseRoute('/fr/2999-01-01', { firstDate: '2026-01-01' })).toEqual({
       view: 'game',
       lang: 'fr',
+      mode: 'sentence',
       date: '2999-01-01',
     });
   });
 
   it('keeps /<lang> (no second segment) as today’s game', () => {
-    expect(parseRoute('/fr', bounds)).toEqual({ view: 'game', lang: 'fr' });
+    expect(parseRoute('/fr', bounds)).toEqual({ view: 'game', lang: 'fr', mode: 'sentence' });
+  });
+});
+
+describe('parseRoute — Word mode grammar (#156): /<lang>/word[/…]', () => {
+  const bounds = { firstDate: '2026-01-01', activeDate: '2026-06-30' };
+
+  it('routes /<lang>/word to today\'s word game', () => {
+    expect(parseRoute('/fr/word')).toEqual({ view: 'game', lang: 'fr', mode: 'word' });
+    expect(parseRoute('/en/word/')).toEqual({ view: 'game', lang: 'en', mode: 'word' });
+  });
+
+  it('routes /<lang>/word/archive to the word-mode calendar', () => {
+    expect(parseRoute('/fr/word/archive')).toEqual({ view: 'archive', lang: 'fr', mode: 'word' });
+  });
+
+  it('routes /<lang>/word/<date> in range to that day\'s word game', () => {
+    expect(parseRoute('/fr/word/2026-06-12', bounds)).toEqual({
+      view: 'game',
+      lang: 'fr',
+      mode: 'word',
+      date: '2026-06-12',
+    });
+  });
+
+  it('applies the SAME date rules as the sentence grammar', () => {
+    expect(parseRoute('/fr/word/2026-02-30', bounds)).toEqual({ view: 'home' }); // no Feb 30
+    expect(parseRoute('/fr/word/2025-12-31', bounds)).toEqual({ view: 'home' }); // before first
+    expect(parseRoute('/fr/word/2026-07-01', bounds)).toEqual({ view: 'home' }); // after active
+    // Non-date third segment keeps the tolerance -> today's word.
+    expect(parseRoute('/fr/word/xyz', bounds)).toEqual({ view: 'game', lang: 'fr', mode: 'word' });
   });
 });
 
@@ -130,11 +171,30 @@ describe('pathForArchive / pathForDay', () => {
     expect(pathForDay('en', '2026-06-12')).toBe('/en/2026-06-12');
     expect(pathForDay(null, '2026-06-12')).toBe('/');
   });
+  it('builds the Word mode paths (#156), round-tripping through parseRoute', () => {
+    expect(pathForMode('fr', 'word')).toBe('/fr/word');
+    expect(pathForMode('fr', 'sentence')).toBe('/fr');
+    expect(pathForArchive('fr', 'word')).toBe('/fr/word/archive');
+    expect(pathForDay('fr', '2026-06-12', 'word')).toBe('/fr/word/2026-06-12');
+    const bounds = { firstDate: '2026-01-01', activeDate: '2026-12-31' };
+    expect(parseRoute(pathForDay('fr', '2026-06-12', 'word'), bounds)).toEqual({
+      view: 'game',
+      lang: 'fr',
+      mode: 'word',
+      date: '2026-06-12',
+    });
+    expect(parseRoute(pathForMode('en', 'word'))).toEqual({
+      view: 'game',
+      lang: 'en',
+      mode: 'word',
+    });
+  });
   it('pathForDay round-trips through parseRoute for an in-range date', () => {
     const bounds = { firstDate: '2026-01-01', activeDate: '2026-12-31' };
     expect(parseRoute(pathForDay('fr', '2026-06-12'), bounds)).toEqual({
       view: 'game',
       lang: 'fr',
+      mode: 'sentence',
       date: '2026-06-12',
     });
   });

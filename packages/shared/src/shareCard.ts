@@ -27,6 +27,15 @@
 
 const SHARE_VERSION = 2;
 
+// Word mode's token (#156) lives in the SAME version namespace — the version field is a
+// FORMAT id, and the word result is a different format: no trajectory, no ticks, just the
+// header every version shares (version | lang | day | scoreLen | score), where the score
+// is the number of top-zone words claimed before striking out. A future sentence-format
+// bump must skip this value. decodeLegacyShareTarget's "strictly older than the sentence
+// version" rule keeps rejecting it, so a malformed word token still 404s rather than
+// earning a redirect.
+const WORD_SHARE_VERSION = 3;
+
 // --- field widths ------------------------------------------------------------------------
 const VERSION_BITS = 4;
 const LANG_BITS = 2; // room for 4 languages before a version bump
@@ -182,6 +191,50 @@ export function encodeResult(r: ShareResult): string {
     }
   }
   return bytesToB64url(w.toBytes());
+}
+
+// --- Word mode (#156) ---------------------------------------------------------------------
+// One daily word, claims until struck out: the whole result is the CLAIM COUNT, so the
+// token is just the shared header. Encoded/decoded by its own pair rather than a mode bit
+// inside the sentence token, so neither format pays for the other's fields.
+export interface WordShareResult {
+  lang: string; // 2-letter code; drives the click-through redirect (/<lang>/word/<date>)
+  dayNumber: number; // the puzzle's stable ID (server-owned day), shown as its calendar date
+  score: number; // top-zone groups claimed before the run ended
+}
+
+export function encodeWordResult(r: WordShareResult): string {
+  const w = new BitWriter();
+  w.write(WORD_SHARE_VERSION, VERSION_BITS);
+  w.write(Math.max(0, SHARE_LANGS.indexOf(r.lang)), LANG_BITS); // unknown -> 0 (en)
+  w.write(clamp(Math.round(r.dayNumber) - ID_EPOCH, 0, (1 << DAY_BITS) - 1), DAY_BITS);
+  const score = clamp(Math.round(r.score), 0, SCORE_MAX);
+  const scoreLen = bitLength(score);
+  w.write(scoreLen, SCORE_LEN_BITS);
+  w.write(score, scoreLen);
+  return bytesToB64url(w.toBytes());
+}
+
+// Decode + validate a word-mode token. Null on ANY malformation (bad chars, wrong
+// version, overrun, leftover bytes), the same flat refusal the sentence decoder gives —
+// a hand-crafted token renders nothing but numbers from the fixed template.
+export function decodeWordResult(token: string): WordShareResult | null {
+  const bytes = b64urlToBytes(token);
+  if (!bytes) return null;
+  try {
+    const rd = new BitReader(bytes);
+    if (rd.read(VERSION_BITS) !== WORD_SHARE_VERSION) return null;
+    const lang = SHARE_LANGS[rd.read(LANG_BITS)];
+    if (!lang) return null;
+    const dayNumber = rd.read(DAY_BITS) + ID_EPOCH;
+    const scoreLen = rd.read(SCORE_LEN_BITS);
+    const score = scoreLen === 0 ? 0 : rd.read(scoreLen);
+    // Only the final byte's padding bits (0..7) may remain.
+    if (rd.remainingBits >= 8) return null;
+    return { lang, dayNumber, score };
+  } catch {
+    return null; // bit overrun (truncated token)
+  }
 }
 
 // Every version so far opens with the SAME header — `version | lang | day | scoreLen |

@@ -15,8 +15,8 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { activeDate, type Puzzle } from '@whippin/shared';
-import { defaultLocalStoreRoot, isValidDate, storeKey } from './layout';
+import { activeDate, type Puzzle, type WordPuzzle } from '@whippin/shared';
+import { defaultLocalStoreRoot, isValidDate, storeKey, type PuzzleMode } from './layout';
 import { STACK_REGION, stackOutputs } from './stack';
 
 interface Args {
@@ -59,13 +59,15 @@ function die(msg: string): never {
 
 export interface PublishPlan {
   day: string; // the GAME DAY this puzzle is served as (22:00-ET day of #2/#6)
-  key: string; // storeKey(day, lang) — the SAME key the readers GetObject/readFile
+  key: string; // storeKey(day, lang, mode) — the SAME key the readers GetObject/readFile
   target: { kind: 'local' } | { kind: 's3'; bucket: string };
 }
 
 // Pure (day, key, destination) routing — the issue #4 contract, with no fs/AWS/argv/
-// process so it is unit-testable. The store key is fully determined by (game day, lang)
-// via `storeKey`, identical to what `fsStore`/`s3Store` select. The day defaults to the
+// process so it is unit-testable. The store key is fully determined by (game day, lang,
+// mode) via `storeKey`, identical to what `fsStore`/`s3Store` select — `mode` is detected
+// from the artifact's SHAPE (see `artifactMode`), never a flag, so a word artifact can
+// never land under a sentence key. The day defaults to the
 // active 22:00-ET day (`activeDate`) unless `--day` overrides it. The destination is
 // LOCAL unless `--s3` opts in, in which case `bucket` (the name resolved from the deployed
 // stack output) is REQUIRED — never a silent local fallback. The (impure, AWS) lookup is
@@ -76,10 +78,11 @@ export function planPublish(
   lang: string,
   now: Date,
   bucket?: string,
+  mode: PuzzleMode = 'sentence',
 ): PublishPlan {
   const day = args.day ?? activeDate(now);
   if (!isValidDate(day)) throw new Error(`invalid --day "${day}" (expected YYYY-MM-DD).`);
-  const key = storeKey(day, lang);
+  const key = storeKey(day, lang, mode);
   if (args.s3) {
     if (!bucket) throw new Error('--s3 requires the deployed bucket (no stack output resolved).');
     return { day, key, target: { kind: 's3', bucket } };
@@ -94,16 +97,27 @@ function resolveInput(p: string): string {
   return path.resolve(process.env.INIT_CWD ?? process.cwd(), p);
 }
 
-// Minimal shape check — enough to name/route the puzzle and fail loudly on garbage.
-function asPuzzle(raw: unknown, file: string): Puzzle {
-  const p = raw as Partial<Puzzle>;
+// Minimal shape check — enough to name/route the artifact and fail loudly on garbage.
+// The MODE is detected from the shape, never a flag (#156): a sentence puzzle carries
+// `holes`, Word mode's #154 artifact carries `word` + a flat `ranks` map and no holes.
+function asArtifact(raw: unknown, file: string): { lang: string; mode: PuzzleMode } {
+  const p = raw as Partial<Puzzle & WordPuzzle>;
   if (!p || typeof p.lang !== 'string' || !/^[a-z]{2}$/.test(p.lang)) {
     die(`${file}: missing/invalid "lang" (expected two lowercase letters).`);
   }
-  if (!Array.isArray(p.holes) || p.holes.length === 0) {
-    die(`${file}: missing/empty "holes".`);
+  if (Array.isArray(p.holes) && p.holes.length > 0) {
+    return { lang: p.lang, mode: 'sentence' };
   }
-  return p as Puzzle;
+  if (
+    p.word &&
+    typeof p.word.word === 'string' &&
+    typeof p.word.slug === 'string' &&
+    p.ranks &&
+    typeof p.ranks === 'object'
+  ) {
+    return { lang: p.lang, mode: 'word' };
+  }
+  die(`${file}: neither a sentence puzzle (holes) nor a word artifact (word + ranks).`);
 }
 
 async function main() {
@@ -114,14 +128,14 @@ async function main() {
 
   const file = resolveInput(args.file);
   const text = await readFile(file, 'utf8').catch(() => die(`cannot read ${file}`));
-  const puzzle = asPuzzle(JSON.parse(text), file);
+  const artifact = asArtifact(JSON.parse(text), file);
 
   // For S3, the destination is always the deployed bucket, discovered from the stack output.
   const deployed = args.s3 ? await stackOutputs() : undefined;
 
   let plan: PublishPlan;
   try {
-    plan = planPublish(args, puzzle.lang, new Date(), deployed?.bucket);
+    plan = planPublish(args, artifact.lang, new Date(), deployed?.bucket, artifact.mode);
   } catch (err) {
     die(err instanceof Error ? err.message : String(err));
   }
@@ -140,7 +154,7 @@ async function main() {
         ContentType: 'application/json; charset=utf-8',
       }),
     );
-    console.log(`[publish] s3://${bucket}/${plan.key}  (${puzzle.lang}, day ${plan.day})`);
+    console.log(`[publish] s3://${bucket}/${plan.key}  (${artifact.lang}, ${artifact.mode}, day ${plan.day})`);
 
     // The puzzle URL is date-addressed and the CDN holds it via a year-long s-maxage, so a
     // REPUBLISH must invalidate the cached entry or the correction would never reach the
@@ -170,7 +184,7 @@ async function main() {
   const dest = path.join(root, plan.key);
   await mkdir(path.dirname(dest), { recursive: true });
   await writeFile(dest, text);
-  console.log(`[publish] ${dest}  (${puzzle.lang}, day ${plan.day})`);
+  console.log(`[publish] ${dest}  (${artifact.lang}, ${artifact.mode}, day ${plan.day})`);
 }
 
 // Run as a CLI only when executed directly (`tsx src/publish.ts ...`), NOT when this
