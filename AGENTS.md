@@ -279,14 +279,34 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
     data, not a property of the secret's neighborhood alone**, and it cannot be stamped
     until the start word is chosen (`distances.road_zone`,
     `gen_phrase.annotate_roads`).
-    `ROAD_TOP = 150` survives only as the **ceiling** on that zone — the start band tops
-    out at 150, so it bites only on a start hand-picked outside the band, where it keeps
-    the clustering (and the shipped fields) bounded. Deterministic average-linkage
-    agglomerative clustering over cosine distance, best `k ∈ {2,3,4}` by mean silhouette,
-    **falling back to ONE road (all `road: 0`) below `ROAD_MIN_SILHOUETTE`** — mandatory,
-    because some neighborhoods genuinely have a single facet. Roads are numbered by their
-    **closest member's rank**, so the road holding rank 1 is `road: 0`. `--no-roads`
+    `ROAD_TOP` survives only as the **ceiling** on that zone — the start band tops
+    out at 150, well below its value, so it bites only on a start hand-picked outside the
+    band, where it keeps the clustering (and the shipped fields) bounded. **What SETS that
+    value is Word mode, not this path** (see the single-word artifact schema below): it is
+    the word game's range, raised 150 → 250 on 2026-08-07, which changes nothing for a
+    sentence hole other than how far a hand-picked far start may road. Deterministic average-linkage
+    agglomerative clustering over cosine distance, `k ∈ ROAD_KS` (`{2..6}` since
+    2026-08-07), **falling back to ONE road (all `road: 0`) below `ROAD_MIN_SILHOUETTE`** —
+    mandatory, because some neighborhoods genuinely have a single facet. Roads are numbered by
+    their **closest member's rank**, so the road holding rank 1 is `road: 0`. `--no-roads`
     skips them; **`dq` has no opt-out** — it is part of the schema.
+    **Two rules decide WHICH split ships (both decided 2026-08-07, when the wider zone broke
+    the old one):**
+    - **A road must hold at least `ROAD_MIN_FRACTION` (4%) of the zone.** A smaller cluster is
+      an outlier, not a route, and a lane drawn for it advertises a whole road nobody can
+      walk. Undersized clusters are **folded into their nearest neighbour** — never dropped,
+      every group still gets a road — **before the silhouette is read**, which is what removes
+      the metric's incentive to isolate one. A FRACTION, not a count, because the zone is
+      `ROAD_TOP` for a word artifact but the DEPARTURE's rank for a sentence hole.
+    - **Mean silhouette is the HONESTY GATE, not the ranking: among the splits that clear it,
+      the one with the MOST roads wins** (ties → the smaller `k`). Ranking by silhouette does
+      not survive a zone this wide — measured over nine real neighborhoods at 250, the top
+      score went to `k=2` on eight, and seven of those were one trunk plus a 1–3 word
+      straggler. "Several roads lead to the word" is the product claim, so a 2-way cut of 250
+      groups says less than the 4-way one beside it at a marginally lower score.
+    **`ROAD_KS`'s ceiling is also a FRONT-END commitment:** it caps the road count, so the web
+    must be able to paint that many lanes (`LANE_COLORS`, pinned to it by `laneColors.test.ts`
+    — widen one without the other and two roads render in the same colour).
   - Both are **GROUP properties**, like `word`/`rank`: every alias key of a lemma group
     carries its group's values, and slug-collision resolution keeps the winning (closest)
     group's. Both are **OPTIONAL to every consumer** (a `--no-roads` puzzle legitimately
@@ -327,11 +347,19 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
 - **`ranks` is ONE FLAT map** (there is only one word to rank around, so nothing to key
   it by), and there is no `words` / `holes` / `start` / `start_rank`. **No `source`
   either:** attribution belongs to a quoted line, and a lone word quotes nobody.
-- **`road` covers the FLAT top-`ROAD_TOP` (150).** With no start word there is no
+- **`road` covers the FLAT top-`ROAD_TOP` (250 since 2026-08-07, was 150).** With no start
+  word there is no
   departure to cut the zone at, so `ROAD_TOP` stops being merely the CEILING on a hole's
-  journey and becomes the zone itself — those 150 groups are Word mode's playing field
+  journey and becomes the zone itself — those groups are Word mode's playing field
   (`distances.road_zone(None)`). This is the ONE deliberate difference from a sentence
   hole's `start_rank`-sized zone. `--no-roads` still opts out; `dq` still cannot.
+  **Therefore `ROAD_TOP` is Word mode's RANGE, and the web's `CLAIM_ZONE`
+  (`web/src/game/wordGame.ts`) is that same number restated in TypeScript** — the field the
+  board draws is exactly the set that carries a road, so the two move TOGETHER or the board
+  grows lane-less stations (or refuses to claim ones it drew). `wordGame.test.ts` pins the
+  client constant to this file's literal; retuning the range means editing both, and
+  **regenerating every word artifact** — one produced at an older ceiling carries roads only
+  that far.
 
 ### Day-addressed routing & the game day
 

@@ -151,10 +151,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
 
 - **Word mode (#156, the second daily):** one app, two faces — `/<lang>/word` (plus
   `/word/<date>` and `/word/archive`, same date rules) plays the day's #154 artifact:
-  the word is PUBLIC and the player claims its top-`CLAIM_ZONE` (150) groups until
+  the word is PUBLIC and the player claims its top-`CLAIM_ZONE` (**250** since 2026-08-07,
+  was 150) groups until
   `STRIKES_TO_END` (**3**) CONSECUTIVE incorrect guesses
   land; the score is the claim
-  count. That number is a declared TUNING KNOB, so nothing restates it: the HUD's cross row
+  count. **`CLAIM_ZONE` is the one constant here that is NOT this package's to pick alone:**
+  it restates generation's `ROAD_TOP` (`distances.py`), because the field the board draws is
+  the set of groups that carry a road — move one and the board grows lane-less stations, or
+  draws stations it will not let you claim. `wordGame.test.ts` reads the Python literal and
+  pins them together, and widening it means republishing every word artifact (one generated
+  at the old ceiling has roads only that far). `STRIKES_TO_END`, by contrast, is
+  a declared TUNING KNOB, so nothing restates it: the HUD's cross row
   is `Array.from` over the constant and the tests derive their strike sequences from it, which
   is what keeps retuning it the one-line change the code promises — proven on 2026-08-06, when
   it went 3 → 5 → 3 and the second move needed no test edits at all. The ONE thing that does
@@ -543,16 +550,36 @@ it to the local store — see `packages/backend/AGENTS.md`).
   tall as whatever gap came before, leaving the first lane station far below the bus while the
   merge at the other end hugged its last one. The two ends of the fork have to mirror each other —
   15px from bus to station at both.
-  Lane centres live in `routeDrawing` (`LANE_X0`/`LANE_GAP`) because the node positions and the
-  `--lane-lines` gradient that paints them must agree exactly. Each lane is **as vivid as the
+  Lane centres live in `routeDrawing` (`LANE_X0`/`laneGap`) because the node positions and the
+  `--lane-lines` gradient that paints them must agree exactly — which is why EVERY consumer of a
+  lane position goes through `laneX(road, lanes)` / `trunkX(lanes)` rather than doing the
+  arithmetic itself. **Past `LANE_BUNDLE_FULL` (4) roads the bundle TIGHTENS instead of widening**
+  (decided 2026-08-07, when `ROAD_KS` went to 6): the rail takes its width from the WORD column,
+  and below ~360px there is none to give — at six lanes the rail ran 141px against 97, leaving
+  ~67px of word column on a 320px screen, where a 9-letter station wrapped mid-word
+  (`boisemen`/`t`). `fitWord` floors at `WORD_MIN_PX`, so past that floor the overflow has
+  nowhere to go, and mid-word breaks are the one thing that module exists to prevent. So the
+  lanes give way instead of the type: the bundle spans a constant `LANE_SPAN` whatever the road
+  count and only the gap closes (22px at ≤ 4, 16.5 at five, 13.2 at six — still 8px between 5px
+  lines). Verified at 320/430 with a synthetic 6-road board: six distinguishable lanes, no
+  mid-word wrap, no horizontal overflow.
+  Each lane is **as vivid as the
   rest of the app** (decided 2026-07-26, superseding a first muted set — a metro line's whole
-  point is telling it from the next one at a glance): `LANE_COLORS` (≤ 4 — `ROAD_KS` caps roads
-  there) takes four far-apart hues from the **progress ramp's own stops**
+  point is telling it from the next one at a glance): `LANE_COLORS` (one per road `ROAD_KS` can
+  emit — **6 since 2026-08-07**, and `laneColors.test.ts` reads `ROAD_KS` out of `distances.py`
+  to keep it that way, because a road past the last colour wraps around to lane 0's and draws
+  two roads identically) takes far-apart hues from the **progress ramp's own stops**
   (`shared/progressColor.ts`) rather than inventing a palette, COPIED not imported, because that
   ramp means "progress" and these mean "identity". Copied means nothing catches drift, so
   `laneColors.test.ts` pins each hex to the stop it was taken from — pink 70, cyan 30, violet 90,
   green 40 (added 2026-07-27 on review; it immediately caught the violet as `#883beb` where its
-  stop is `#883ceb`). If a stop is ever retuned the guard fails, and the choice gets made again
+  stop is `#883ceb`), then coral 60 and magenta 80. **The first four did not move**, so every map
+  that forks 4 ways or fewer renders exactly as before; only three ramp stops were left to choose
+  the new pair from, and it was MEASURED rather than eyeballed — coral + magenta hold a minimum
+  CIE76 ΔE of 36.9 across the whole set, where either pairing with indigo collapses to 15.3
+  (indigo sits on top of violet). That ΔE is also why magenta is admissible despite reading
+  "pinkish" in the abstract: against pink it is 40+. If a stop is ever retuned the guard fails,
+  and the choice gets made again
   on purpose rather than the map quietly speaking a stale palette.
   Pink leads, never cyan: lane A always holds
   rank 1 and cyan is what the heat ramp paints a rank-1 number, so leading with it would imply a
@@ -563,6 +590,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
   line, with nothing added — while a trunk word stays `--fg`, because above the fork there is no
   road to name. An UNFOUND station's node takes the same colour: a dark node on a vivid lane reads
   as the line being BROKEN, where the lane's own colour reads as a stop with no name on it yet.
+  **Being ON a road and the line FORKING are different questions** (decided 2026-08-07): `onLane`
+  is `road !== null` and nothing else, on BOTH surfaces. A neighborhood with a single honest facet
+  ships ONE road, and gating the colour on `forked` drew that entire board in the colourless trunk
+  treatment — a route rendered as if no route had been found. It is only the COLOUR at stake, since
+  `laneX(0, 1)` and `trunkX(1)` are the same point. `forked` still gates the JUNCTIONS, where it
+  belongs: one road has nothing to fork into, and drawing a fork would claim a structure the data
+  does not have — so a one-road board is a single coloured line with no junction at either end.
+  The real other side of the rule is `--no-roads`, where `road` is null: no road, so no colour.
+  `WordBoard.test.tsx` pins both directions, because "always colour it" is the tempting
+  simplification that breaks the second one. (The stricter road rules made single-road maps
+  common — `pain` and `vie` both fall to one.)
   The junction **bus is painted in the lanes' colours, split at the trunk** (`busGradient`), not
   in one neutral bar: a single grey bar at each end of a set of parallel lines reads as a frame
   drawn AROUND them.

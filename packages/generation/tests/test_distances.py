@@ -12,6 +12,10 @@ JSON schema").
   - roads cluster the journey — the DEPARTURE and every group closer than it, the start
     word included — deterministically, numbered by their closest member's rank (the road
     holding rank 1 is road 0); ROAD_TOP is only the ceiling on that zone;
+  - a road must hold at least ROAD_MIN_FRACTION of the zone: a smaller cluster is an
+    outlier, not a route, and is folded into its nearest neighbour BEFORE scoring;
+  - among the splits that clear ROAD_MIN_SILHOUETTE, the one with the MOST roads wins —
+    silhouette is the honesty gate, not the ranking;
   - a neighborhood with no honest split falls back to ONE road (all zeros);
   - --no-roads emits no road field at all, dq is unaffected (scoring depends on it).
 
@@ -75,7 +79,7 @@ def test_a_walk_that_is_not_closest_first_is_rejected():
 
 # --- roads: clustering the near neighborhood ------------------------------------
 
-def _cloud(center, n, spread=0.01):
+def _cloud(center, n, spread=0.01):  # `spread` widens a facet from tight to diffuse
     """n distinct unit-ish vectors bunched around `center` (deterministic, no rng)."""
     out = []
     for i in range(n):
@@ -128,8 +132,61 @@ def test_the_road_zone_is_the_journey_from_the_departure_in():
     assert distances.road_zone(150) == 150
     assert distances.road_zone(1) == 1
     # ROAD_TOP is the CEILING, for a start hand-picked far outside the 50-150 band.
-    assert distances.ROAD_TOP == 150
-    assert distances.road_zone(3000) == 150
+    assert distances.ROAD_TOP == 250
+    assert distances.road_zone(3000) == 250
+
+
+def test_an_outlier_is_folded_back_in_instead_of_becoming_its_own_road():
+    # Two real facets plus ONE straggler sitting slightly off on a third axis. A lane drawn
+    # for that straggler advertises a whole route with one stop on it, so the floor sends it
+    # back to whichever facet it is actually nearest — the map keeps two roads, not three,
+    # and every group still gets one (nothing is dropped by being absorbed).
+    vectors = _two_clear_clusters() + _cloud([0.0, 0.0, 1.0, 0.0], 1)
+    roads = distances.cluster_roads(vectors, min_fraction=0.2)  # floor = 3 of 13
+
+    assert len(roads) == len(vectors)
+    assert len(set(roads)) == 2
+    assert min(roads.count(r) for r in set(roads)) >= 3
+
+
+def test_the_floor_is_a_FRACTION_of_the_zone_not_a_fixed_count():
+    # The zone's size is not fixed — ROAD_TOP for a word artifact, the DEPARTURE's rank for a
+    # sentence hole, which can be short. A fixed floor would let the same honest 2-facet split
+    # pass on a long zone and be swallowed on a short one; a fraction scales with it.
+    small = distances.cluster_roads(_two_clear_clusters(), min_fraction=0.04)  # floor 2 of 12
+    assert len(set(small)) == 2
+
+    # The SAME shape of split, one tenth the relative size, is not a split at all: two 6-group
+    # clusters inside a 120-group zone are 5% each, below a 20% floor, so both fold in.
+    padded = _two_clear_clusters() + _cloud([0.0, 0.0, 1.0, 0.0], 108)
+    assert len(set(distances.cluster_roads(padded, min_fraction=0.2))) == 1
+
+
+def test_the_most_roads_wins_even_when_a_coarser_split_scores_higher():
+    # Silhouette is the GATE, not the ranking — the whole reason the rule changed. The shape
+    # that forces the distinction is the one the real neighborhoods have: ONE tight cluster
+    # beside a diffuse mass that itself holds two loose facets. Merging those two costs the
+    # score almost nothing (they overlap), so the 2-way read outscores the 3-way one — and a
+    # 2-way cut still says less about where this word's routes go. Both are honest; the
+    # richer one ships.
+    vectors = (_cloud([1.0, 0.0, 0.0, 0.0], 10, spread=0.002)
+               + _cloud([0.0, 1.0, 0.35, 0.0], 14, spread=0.05)
+               + _cloud([0.0, 0.35, 1.0, 0.0], 14, spread=0.05))
+    roads = distances.cluster_roads(vectors, min_fraction=0.2)
+    assert len(set(roads)) == 3
+    assert roads[0] == 0  # numbering still follows the closest member
+
+    # The rule, stated as the comparison it makes: the shipped split really does score LOWER
+    # than the coarse one it beat. Without this the test would pass on a fixture where the
+    # two rankings happen to agree, proving nothing about which one is in force.
+    dist = distances._distance_matrix(vectors)
+    floor = round(len(vectors) * 0.2)
+    coarse = distances._absorb_small_roads(
+        dist, distances._linkage_labelings(dist, (2,))[2], floor)
+    assert len(set(coarse)) == 2
+    assert distances._silhouette(dist, coarse) > distances._silhouette(dist, roads)
+    # ...and it cleared the gate, which is the only bar it had to clear.
+    assert distances._silhouette(dist, roads) >= distances.ROAD_MIN_SILHOUETTE
 
 
 def test_one_road_fallback_when_no_split_is_honest():
@@ -159,12 +216,13 @@ KV = {
 }
 
 
-def _long_map(n=200):
+def _long_map(n=300):
     """A shipped rank map of `n` groups, with the vectors the roads need. Words are
     letters-only so each one is its own slug key, and the two facets alternate so any
-    zone the clustering is handed has an honest split to find."""
+    zone the clustering is handed has an honest split to find. The default runs PAST
+    ROAD_TOP, so the ceiling has ranks beyond it to leave unroaded."""
     letters = "abcdefghijklmnopqrst"
-    words = [letters[i // 10] + letters[i % 10] for i in range(n)]
+    words = [letters[i // 20] + letters[i % 20] for i in range(n)]
     ranking = [(w, i, 0.9 - i * 0.001) for i, w in enumerate(words)]
     kv = {w: [1.0, 0.0, 0.0] if i % 2 else [0.0, 1.0, 0.0] for i, w in enumerate(words)}
     merged, rmap, _groups = gen_phrase.build_puzzle_rank_map("secret", ranking, {}, {},
@@ -228,10 +286,11 @@ def test_the_road_ceiling_still_bounds_a_start_picked_outside_the_band():
     # choose_start accepts any word of the map, so a hand-picked far start must not
     # hand the clustering thousands of points (nor ship a road on each).
     words, merged, rmap, kv = _long_map()
-    gen_phrase.annotate_roads(rmap, merged, kv, start_rank=190)
+    gen_phrase.annotate_roads(rmap, merged, kv, start_rank=3000)
 
-    assert "road" in rmap[words[149]]  # rank 150 = ROAD_TOP
-    assert "road" not in rmap[words[150]]  # rank 151
+    top = distances.ROAD_TOP
+    assert "road" in rmap[words[top - 1]]  # the last rank of the ceiling
+    assert "road" not in rmap[words[top]]  # the first one past it
 
 
 def test_no_roads_flag_drops_roads_but_keeps_dq():

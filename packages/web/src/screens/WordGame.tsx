@@ -318,7 +318,7 @@ function WordRound({
   // Move onto the station a CLAIM just landed on; on the post-mortem beat, the terminus
   // takes priority and the view returns to the true bottom of the routes. Driven here
   // rather than by `scrollIntoView({ behavior: 'smooth' })`, whose duration is the BROWSER's
-  // and scales with the distance travelled: the field is ~150 rows, so a claim out at the
+  // and scales with the distance travelled: the field is CLAIM_ZONE rows, so a claim out at the
   // far edge crawled for the better part of a second before the player could see where it
   // landed — and the next guess is typeable the whole time. On this clock the move is over
   // in a beat, with the distance changing it only inside a narrow band.

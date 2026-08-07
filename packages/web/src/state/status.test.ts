@@ -5,6 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import type { RuntimeHole } from '@whippin/shared';
 import type { RoundProgress } from './gameStore';
+import { CLAIM_ZONE } from '../game/wordGame';
 import { statusOf, wordStatusOf, srStatus } from './status';
 
 const hole = (rank: number): RuntimeHole => ({
@@ -63,10 +64,15 @@ describe('wordStatusOf — Word mode (#156), off the cached derived fields', () 
     );
   });
   it('a live run is in progress at the claimed fraction of the zone', () => {
-    expect(wordStatusOf({ word: 'phare', tried: ['mer'], claimed: 15, ended: false })).toEqual({
-      kind: 'progress',
-      pct: 10, // 15 / 150
-    });
+    // Anchored on the ZONE, never on the number it happens to hold (it went 150 -> 250 on
+    // 2026-08-07): half the claimable zone reads 50%, all of it 100%. That is what "fraction
+    // of the zone" means, and it survives the next retune without an edit here.
+    expect(
+      wordStatusOf({ word: 'phare', tried: ['mer'], claimed: CLAIM_ZONE / 2, ended: false }),
+    ).toEqual({ kind: 'progress', pct: 50 });
+    expect(
+      wordStatusOf({ word: 'phare', tried: ['mer'], claimed: CLAIM_ZONE, ended: false }),
+    ).toEqual({ kind: 'progress', pct: 100 });
   });
 });
 

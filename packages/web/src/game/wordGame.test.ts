@@ -1,5 +1,5 @@
 // CONTRACT (#156 — Word mode rules, decided 2026-08-03):
-//   - score = number of top-zone (CLAIM_ZONE = the #154 road zone, 150) groups claimed
+//   - score = number of top-zone (CLAIM_ZONE = the #154 road zone, 250) groups claimed
 //     before the run ends;
 //   - the run ends after STRIKES_TO_END CONSECUTIVE incorrect guesses — that count is a
 //     tuning knob, so every sequence below is DERIVED from it rather than typed out;

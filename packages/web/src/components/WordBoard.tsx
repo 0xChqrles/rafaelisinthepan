@@ -83,7 +83,7 @@ type Row =
 // slot-machine replacement as a sentence hole — a word you found is worth the beat.
 //
 // `animate` is what keeps that beat meaningful and cheap. The run's END reveals the whole
-// field at once, and a scramble there would start ~150 of them in one frame — each its own
+// field at once, and a scramble there would start CLAIM_ZONE of them in one frame — each its own
 // 40ms interval writing state for 650ms, on top of the result tray rising — for a reveal that
 // is not a "found it" moment at all but the post-mortem naming what was always there. Those
 // land outright; only a claim churns. (The initial target is likewise seeded as settled, so
@@ -211,8 +211,8 @@ export default function WordBoard({ model, lang }: { model: WordBoardModel; lang
   const forked = lanes > 1 && field.length > 0;
 
   // The field's population per road and how much of it is claimed — what the sr mirror
-  // states as a count (the same reason the route map states it: ~150 items of "rank 87,
-  // hidden" would bury the words the player knows).
+  // states as a count (the same reason the route map states it: a few hundred items of
+  // "rank 87, hidden" would bury the words the player knows).
   const perRoad = Array.from({ length: lanes }, () => 0);
   let claimedCount = 0;
   for (const s of model.stations) {
@@ -244,7 +244,16 @@ export default function WordBoard({ model, lang }: { model: WordBoardModel; lang
         {rows.map((row, i) => {
           const previous = rows[i - 1];
           const gap = linkGap(previous, row);
-          const onLane = forked && row.zone && row.road !== null;
+          // Sits ON a road — which is NOT the same question as whether the line forks, and was
+          // wrongly gated on it until 2026-08-07. A neighborhood with a single honest facet
+          // ships one road, and reading `forked` here drew that whole board in the colourless
+          // trunk treatment: the field is a route, it is just the only one. (The stricter road
+          // rules made that case common — `pain` and `vie` both fall to one road.) The node's x
+          // is unaffected either way, since laneX(0, 1) and trunkX(1) are the same point; what
+          // was lost was purely the colour. `forked` still gates the JUNCTIONS below, where it
+          // belongs — one road has nothing to fork into, and drawing a fork there would claim a
+          // structure the data does not have.
+          const onLane = row.zone && row.road !== null;
           const label = row.zone ? (row.word ?? UNKNOWN) : row.word;
           // Withheld while the run is live; named by its end, which is the post-mortem —
           // and named there is not the same as FOUND, so it keeps the small node and the
@@ -273,8 +282,8 @@ export default function WordBoard({ model, lang }: { model: WordBoardModel; lang
                   .join(' ')}
                 style={
                   {
-                    '--node-x': `${onLane && row.zone ? laneX(row.road!) : trunkCentre}px`,
-                    '--lane-c': laneColor(onLane && row.zone ? row.road : null),
+                    '--node-x': `${onLane ? laneX(row.road!, lanes) : trunkCentre}px`,
+                    '--lane-c': laneColor(onLane ? row.road : null),
                   } as CSSProperties
                 }
               >

@@ -7,10 +7,17 @@
 import { describe, it, expect } from 'vitest';
 import type { WordRanks } from '@whippin/shared';
 import { buildWordBoard, hasWordBoard } from './wordBoard';
-import { STRIKES_TO_END } from './wordGame';
+import { CLAIM_ZONE, STRIKES_TO_END } from './wordGame';
 
 // `n` DISTINCT off-map words — distinct guesses by the slug fallback, so each one strikes.
 const offMap = (n: number): string[] => Array.from({ length: n }, (_, i) => `motfaux${i}`);
+
+// The two ranked groups OUTSIDE the claimable zone, positioned AGAINST the zone rather than
+// typed as literals: the zone is a tuning knob (150 -> 250 on 2026-08-07) and a fixed number
+// silently falls inside it on the next widening, turning both near strikes into claims and
+// leaving the trunk untested.
+const NEAR_RANK = CLAIM_ZONE + 1;
+const FAR_RANK = CLAIM_ZONE + 100;
 
 const RANKS: WordRanks = {
   tropiques: { word: 'tropiques', rank: 0 },
@@ -18,9 +25,9 @@ const RANKS: WordRanks = {
   tropical: { word: 'tropicales', rank: 1, dq: 255, road: 0 },
   cocotier: { word: 'cocotier', rank: 2, dq: 236, road: 1 },
   lagon: { word: 'lagon', rank: 3, dq: 200, road: 1 },
-  sable: { word: 'sable', rank: 151, dq: 39 },
-  sables: { word: 'sable', rank: 151, dq: 39 },
-  neige: { word: 'neige', rank: 353, dq: 12 },
+  sable: { word: 'sable', rank: NEAR_RANK, dq: 39 },
+  sables: { word: 'sable', rank: NEAR_RANK, dq: 39 },
+  neige: { word: 'neige', rank: FAR_RANK, dq: 12 },
 };
 
 const WORD = 'tropiques';
@@ -45,7 +52,7 @@ describe('buildWordBoard', () => {
 
   it('a near strike rides the trunk with its word and rank shown; a miss shelves', () => {
     const board = buildWordBoard({ ranks: RANKS, word: WORD, tried: ['sable', 'guitare'] })!;
-    expect(board.outside).toEqual([{ rank: 151, dq: 39, word: 'sable' }]);
+    expect(board.outside).toEqual([{ rank: NEAR_RANK, dq: 39, word: 'sable' }]);
     expect(board.misses).toEqual(['guitare']);
   });
 
@@ -54,7 +61,7 @@ describe('buildWordBoard', () => {
     // answering `sables` with `sable` puts a word on the board that was never played. The
     // claim above is the opposite case — that station was already there as `???`.
     const board = buildWordBoard({ ranks: RANKS, word: WORD, tried: ['sables'] })!;
-    expect(board.outside).toEqual([{ rank: 151, dq: 39, word: 'sables' }]);
+    expect(board.outside).toEqual([{ rank: NEAR_RANK, dq: 39, word: 'sables' }]);
   });
 
   it('the run ending reveals the whole field (the post-mortem)', () => {
@@ -96,9 +103,9 @@ describe('buildWordBoard', () => {
     // drawn — otherwise the first far strike widens the track and shoves the whole line
     // sideways. So it must be the MAP's outer edge, and must not move when a guess lands.
     const empty = buildWordBoard({ ranks: RANKS, word: WORD, tried: [] })!;
-    expect(empty.maxRank).toBe(353); // `neige`, well outside the zone
+    expect(empty.maxRank).toBe(FAR_RANK); // `neige`, well outside the zone
     for (const tried of [['sable'], ['sables', 'guitare'], ['tropicales', 'neige']]) {
-      expect(buildWordBoard({ ranks: RANKS, word: WORD, tried })!.maxRank).toBe(353);
+      expect(buildWordBoard({ ranks: RANKS, word: WORD, tried })!.maxRank).toBe(FAR_RANK);
     }
   });
 

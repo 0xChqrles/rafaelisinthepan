@@ -8,9 +8,11 @@ Asserted against the schema in AGENTS.md, not against the implementation:
   - the sentence schema's rank semantics, unchanged: rank 0 is the word itself and
     carries NO `dq`, every rank >= 1 entry carries one, and word/rank/dq/road are
     GROUP properties every alias key of the group repeats;
-  - the ROAD ZONE is the flat top-`ROAD_TOP` (150). With no start word there is no
-    departure to cut the zone at, and those 150 groups are the whole playing field —
-    as opposed to the sentence path, which stops its roads at the hole's departure;
+  - the ROAD ZONE is the flat top-`ROAD_TOP` (250). With no start word there is no
+    departure to cut the zone at, and those groups are the whole playing field — as
+    opposed to the sentence path, which stops its roads at the hole's departure. The
+    extent is asserted through the constant, never against a typed number: it is Word
+    mode's range, and the client's CLAIM_ZONE is pinned to the same literal;
   - the rank map is the SAME artifact the sentence pipeline builds for that secret.
     Both commands walk through gen_phrase.walk_secret, so a word's neighborhood can
     never differ by which game asked for it.
@@ -55,12 +57,13 @@ def _word_map(word, ranking, kv, vset=VSET, table=TABLE, forms=FORMS, roads=True
                                    roads=roads)
 
 
-def _long_neighborhood(n=200):
+def _long_neighborhood(n=300):
     """`n` singleton groups with the vectors the clustering needs. Letters-only words
     so each is its own slug key; the two facets alternate so any zone handed to the
-    clustering has an honest split to find."""
+    clustering has an honest split to find. The default runs PAST ROAD_TOP, so the
+    zone has ranks beyond it to leave unroaded."""
     letters = "abcdefghijklmnopqrst"
-    words = [letters[i // 10] + letters[i % 10] for i in range(n)]
+    words = [letters[i // 20] + letters[i % 20] for i in range(n)]
     ranking = [(w, i, 0.9 - i * 0.001) for i, w in enumerate(words)]
     kv = {w: [1.0, 0.0, 0.0] if i % 2 else [0.0, 1.0, 0.0] for i, w in enumerate(words)}
     return words, ranking, kv
@@ -125,15 +128,15 @@ def test_no_roads_drops_roads_but_keeps_dq():
     assert rank_map["chien"]["dq"] == 255 and rank_map["felin"]["dq"] == 0
 
 
-# --- the road zone: flat top-150, because there is no departure -----------------
+# --- the road zone: the flat top-ROAD_TOP, because there is no departure ---------
 
-def test_the_road_zone_is_the_flat_top_150_with_no_start_word():
+def test_the_road_zone_is_the_flat_top_road_top_with_no_start_word():
     words, ranking, kv = _long_neighborhood()
     rank_map = _word_map("secret", ranking, kv, vset=set(words), table={}, forms={})
 
-    assert "road" in rank_map[words[0]]           # rank 1
-    assert "road" in rank_map[words[ROAD_TOP - 1]]  # rank 150: still the playing field
-    assert "road" not in rank_map[words[ROAD_TOP]]  # rank 151: outside it
+    assert "road" in rank_map[words[0]]             # rank 1
+    assert "road" in rank_map[words[ROAD_TOP - 1]]  # the last rank of the field
+    assert "road" not in rank_map[words[ROAD_TOP]]  # the first one outside it
     assert all("dq" in rank_map[w] for w in words)  # dq has no such cutoff
 
 

@@ -96,6 +96,24 @@ export const UNKNOWN = '???';
 const LANE_GAP = 22;
 const LANE_X0 = 15.5;
 const LANE_W = 5;
+// Past this many roads the bundle TIGHTENS instead of widening (2026-08-07, when ROAD_KS went
+// to 6). The rail takes its width from the WORD column, and below ~360px there is none to
+// give: at six lanes the rail ran 141px against 97, which left ~67px of word column on a 320px
+// screen and wrapped a 9-letter station mid-word (`boisemen`/`t`) — fitWord floors at
+// WORD_MIN_PX, so past that floor the overflow has nowhere to go. Mid-word breaks are the one
+// thing that module exists to prevent, so the lanes give way instead of the type: the bundle
+// spans the same LANE_SPAN whatever the road count, and only the gap between lanes closes
+// (22px at <= 4 roads, 16.5 at five, 13.2 at six — still 8px of gap between 5px lines).
+const LANE_BUNDLE_FULL = 4;
+const LANE_SPAN = (LANE_BUNDLE_FULL - 1) * LANE_GAP;
+
+// The gap between two lane centres, for a rail of `lanes` roads. EVERY consumer of a lane
+// position goes through this, so the gradient that paints the lanes and the nodes that sit on
+// them cannot disagree about where a lane is — which is the whole reason the geometry lives in
+// one module (see the note above LANE_GAP).
+function laneGap(lanes: number): number {
+  return lanes <= LANE_BUNDLE_FULL ? LANE_GAP : LANE_SPAN / (lanes - 1);
+}
 // One color per lane, as vivid as the rest of the app — a metro line's whole point is that you
 // can tell it from the next one at a glance. The hues are lifted from the progress ramp's own
 // stops (`shared/progressColor.ts`), four of them far apart, so the map speaks the app's palette
@@ -103,22 +121,29 @@ const LANE_W = 5;
 // "progress" and these mean "identity". Ordered so the common 2- and 3-road cases get the
 // widest-apart hues, and pink (never cyan) leads: lane A always holds rank 1, and cyan is what
 // the heat ramp paints a rank-1 number, so leading with it would imply a rule that isn't one.
-// Gold is "you" and blue is solved, so no lane may borrow either. ROAD_KS caps roads at 4.
+// Gold is "you" and blue is solved, so no lane may borrow either. ROAD_KS caps roads at 6.
 // Exported for the drift guard in laneColors.test.ts, which pins each to the stop it was taken
-// from — pink 70, cyan 30, violet 90, green 40. (That guard immediately caught the violet as
-// #883beb where its stop is #883ceb: a one-off in the transcription, invisible on screen but
-// exactly the kind of thing "copied, not imported" can hide forever.)
+// from — pink 70, cyan 30, violet 90, green 40, coral 60, magenta 80. (That guard immediately
+// caught the violet as #883beb where its stop is #883ceb: a one-off in the transcription,
+// invisible on screen but exactly the kind of thing "copied, not imported" can hide forever.)
+//
+// Lanes 5 and 6 arrived 2026-08-07 with the widened ROAD_KS, and the FIRST FOUR ARE UNCHANGED
+// on purpose: every map that forks 4 ways or fewer renders exactly as it did. Only three ramp
+// stops were left to choose from, and the pair was measured rather than eyeballed — coral +
+// magenta hold a minimum CIE76 ΔE of 36.9 across the whole set, where either pairing with
+// indigo collapses to 15.3 (indigo sits right on top of violet). ΔE is why magenta is here
+// despite reading "pinkish" in the abstract: against pink it is 40+, against violet 36.9.
 // (Also the identity the onboarding's theme clouds paint each theme in — tutorial/ThemeCloud
 // — so the colors a player meets in the lesson are the ones this map speaks later.)
-export const LANE_COLORS = ['#ef4f97', '#2ad2eb', '#883ceb', '#23dc91'];
+export const LANE_COLORS = ['#ef4f97', '#2ad2eb', '#883ceb', '#23dc91', '#ee674e', '#db24c8'];
 
-export function laneX(road: number): number {
-  return LANE_X0 + road * LANE_GAP;
+export function laneX(road: number, lanes: number): number {
+  return LANE_X0 + road * laneGap(lanes);
 }
 
 // Where the trunk runs: the middle of the lane bundle, so the fork and the merge are symmetric.
 export function trunkX(lanes: number): number {
-  return LANE_X0 + ((lanes - 1) * LANE_GAP) / 2;
+  return LANE_X0 + ((lanes - 1) * laneGap(lanes)) / 2;
 }
 
 // The colour a station's node and word take: its own lane's, or the trunk's where no road has
@@ -135,7 +160,7 @@ function laneLines(lanes: number): string {
   const stops: string[] = [];
   for (let road = 0; road < lanes; road += 1) {
     const color = LANE_COLORS[road % LANE_COLORS.length];
-    const from = laneX(road) - LANE_W / 2;
+    const from = laneX(road, lanes) - LANE_W / 2;
     stops.push(`transparent ${from}px, ${color} ${from}px, ${color} ${from + LANE_W}px`);
     stops.push(`transparent ${from + LANE_W}px`);
   }
@@ -159,7 +184,7 @@ function busGradient(lanes: number, split: number): string {
 // It takes the widest rank the MAP can ever produce, never the widest currently DRAWN (fixed
 // 2026-08-06). The gutter track is `minmax(var(--gutter), max-content)`, so sizing it to the
 // line as it stands means the first guess that lands a wider exponent — a 4-digit rank on a
-// board whose field ends at 150 — widens the track and shoves the whole line, rail and lanes
+// board whose field ends at CLAIM_ZONE — widens the track and shoves the whole line, rail and lanes
 // and words, one glyph to the right. The exponent that arrives is a REPORT on a guess; it must
 // not move the map the player is reading. Reserved up front the width is a property of the
 // puzzle, so it is fixed for the round and nothing shifts. It costs one glyph of gutter on a
@@ -178,10 +203,10 @@ export function rankGutterChars(maxRank: number): number {
 // by a custom property. (`--gutter` is only the FALLBACK template — `.route` is one grid and
 // each row a subgrid of it, so the real gutter is `max-content` across every row at once.)
 export function routeFrameVars(lanes: number, rankChars: number): CSSProperties {
-  const railWidth = LANE_X0 * 2 + (lanes - 1) * LANE_GAP;
+  const railWidth = LANE_X0 * 2 + (lanes - 1) * laneGap(lanes);
   const trunk = trunkX(lanes);
-  const busX = laneX(0) - LANE_W / 2;
-  const busW = (lanes - 1) * LANE_GAP + LANE_W;
+  const busX = laneX(0, lanes) - LANE_W / 2;
+  const busW = (lanes - 1) * laneGap(lanes) + LANE_W;
   return {
     '--gutter': `calc(var(--rank-size) * ${rankChars} + 10px)`,
     '--railw': `${railWidth}px`,

@@ -24,7 +24,12 @@ export const STRIKES_TO_END = 3;
 // (ROAD_TOP), which is Word mode's whole playing field (#154). This is a GAME RULE
 // mirroring the artifact's road zone, not the TOP_K map cap (which stays untested here:
 // off-map is simply "no entry").
-export const CLAIM_ZONE = 150;
+//
+// It is NOT independently tunable: the field the board DRAWS is the set generation stamped
+// a road on, so this number and ROAD_TOP move together or the board grows lane-less
+// stations (wordGame.test.ts pins them). Widened 150 -> 250 on 2026-08-07 — a longer run,
+// and an artifact generated at the old ceiling must be regenerated to carry roads that far.
+export const CLAIM_ZONE = 250;
 
 // What one submitted, vocab-valid guess IS, before dedup:
 //   claim — a zone group (1 <= rank <= CLAIM_ZONE): +1 word, resets the strike run.

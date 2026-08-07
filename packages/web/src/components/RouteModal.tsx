@@ -199,7 +199,10 @@ function RouteLine({
           // hole is solved — the map is then the post-mortem of the whole neighborhood.
           const label = station.hidden ? station.word ?? UNKNOWN : station.word;
           const revealed = station.hidden && station.word !== null;
-          const onLane = forked && station.road !== null;
+          // Sits ON a road, independent of whether the line FORKS (fixed 2026-08-07 — see the
+          // same note in WordBoard). A single-road map is still a route and still wears its
+          // colour; `forked` gates only the junctions, which need something to fork into.
+          const onLane = station.road !== null;
           const here = !station.hidden && station.best;
           return (
             <Fragment key={station.rank}>
@@ -232,7 +235,7 @@ function RouteLine({
                   .join(' ')}
                 style={
                   {
-                    '--node-x': `${onLane ? laneX(station.road!) : trunk}px`,
+                    '--node-x': `${onLane ? laneX(station.road!, lanes) : trunk}px`,
                     '--lane-c': laneColor(onLane ? station.road : null),
                   } as CSSProperties
                 }
