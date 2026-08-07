@@ -97,6 +97,15 @@ export interface WordRoundProgress {
   ended: boolean;
 }
 
+// The cached half of a word round, recomputed from the log the store just appended to.
+// `recordWordGuess` takes a REPLAY rather than two finished numbers so the cache can never
+// describe a different log than the one it is stored beside: handed values are derived from
+// whatever `tried` the caller last rendered, which two submissions batched into one tick
+// would make stale — the second would overwrite the first's count with a replay that never
+// saw it. The store owns the log, so the store decides what it means; the callback carries
+// the rank map the store must not know about.
+export type WordRunCache = Pick<WordRoundProgress, 'claimed' | 'ended'>;
+
 // Enforce the word-round cap, mirroring capDayRounds below.
 function capWordRounds(
   rounds: Record<string, WordRoundProgress>,
@@ -204,11 +213,12 @@ interface GameState extends PersistedState {
   // (day, lang) — starts fresh. Same retention/cap policy as ensureRound.
   ensureWordRound: (key: string, word: string) => void;
 
-  // Count one Word mode guess (a claim or a strike — free guesses never reach here) on
-  // the active word round: append it to `tried` and cache the caller-derived
-  // claimed/ended so the status surfaces need no rank map. The caller (WordGame) derives
-  // both by replaying the appended log through the pure model (replayWordRun).
-  recordWordGuess: (typed: string, claimed: number, ended: boolean) => void;
+  // Count one Word mode guess (a claim or a strike — free guesses never reach here) on the
+  // active word round: append it to `tried`, then cache what `replay` makes of the resulting
+  // log so the status surfaces need no rank map. `replay` is the pure model
+  // (game/wordGame.ts replayWordRun) closed over this puzzle's ranks — see WordRunCache for
+  // why the store replays instead of being handed the numbers.
+  recordWordGuess: (typed: string, replay: (tried: string[]) => WordRunCache) => void;
 
   // Count a valid guess on the active round. Deduped by the caller-supplied canonical
   // identity (#104: inflections of one word are ONE try — Game passes guessKey over the
@@ -365,18 +375,16 @@ export const useGameStore = create<GameState>()(
           return { activeWordKey: key, wordRounds: capWordRounds(kept, key) };
         }),
 
-      recordWordGuess: (typed, claimed, ended) =>
+      recordWordGuess: (typed, replay) =>
         set((s) => {
           const key = s.activeWordKey;
           if (!key) return {};
           const round = s.wordRounds[key];
           if (!round || round.ended) return {};
           if (round.tried.includes(typed)) return {};
+          const tried = [...round.tried, typed];
           return {
-            wordRounds: {
-              ...s.wordRounds,
-              [key]: { ...round, tried: [...round.tried, typed], claimed, ended },
-            },
+            wordRounds: { ...s.wordRounds, [key]: { ...round, tried, ...replay(tried) } },
           };
         }),
 

@@ -75,7 +75,10 @@ function WordScore({ value }: { value: number }) {
       {String(value)
         .split('')
         .map((digit, index) => {
-          // digits.png is ordered 1..9,0, with one 7px slot per digit.
+          // digits.png is ten 7px slots ordered 1..9,0 — so '0' is the LAST one, not the
+          // first. Drawn at the header's 4x pixel scale, which is where 28 comes from: the
+          // step below and `.word-digit`'s 280x28 mask-size are that same scale and have to
+          // move together with it.
           const slot = digit === '0' ? 9 : Number(digit) - 1;
           return (
             <span
@@ -436,12 +439,18 @@ function WordRound({
         return;
       }
 
-      // A COUNTED guess: append it and cache the replayed claim count / end state, so
-      // the archive and selector can badge the day without this rank map. On the last
-      // strike, `ended` follows through the persisted replay and the effect above runs
-      // the end beats — the prompt stays for the hold, so the strike is SEEN landing.
+      // A COUNTED guess: append it, and let the store replay the log it just appended to
+      // for the cached claim count / end state the archive and selector badge a day with
+      // (see gameStore's WordRunCache for why the store replays rather than being handed
+      // the numbers). On the last strike, `ended` follows through that persisted replay and
+      // the effect above runs the end beats — the prompt stays for the hold, so the strike
+      // is SEEN landing.
+      recordWordGuess(typed, (log) => {
+        const stored = replayWordRun(ranks, log);
+        return { claimed: stored.claimedRanks.length, ended: stored.ended };
+      });
+      // This render's own view of the same walk, for the feedback THIS guess speaks.
       const nextRun = replayWordRun(ranks, [...tried, typed]);
-      recordWordGuess(typed, nextRun.claimedRanks.length, nextRun.ended);
 
       // Every counted guess lands its hit on the terminus. `judged` here is claim/near/miss —
       // zero already returned above, and free guesses never reach this point.

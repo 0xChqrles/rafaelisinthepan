@@ -11,10 +11,12 @@ import type { RankEntry, WordRanks } from '@whippin/shared';
 import { CLAIM_ZONE, replayWordRun } from './wordGame';
 
 // One group of the zone: a station on its road's lane. `word` is null while unclaimed
-// and the run is live; a claim — or the run ending, which turns the board into the
-// post-mortem — reveals the canonical accented form. A null-word group is NOT DRAWN
-// (the board draws only found words, decided 2026-08-05); it still ships because the
-// drawing measures its connectors across it and the sr mirror counts it.
+// and the run is live; a claim — or the post-mortem, which names the whole field —
+// reveals the canonical accented form. A null-word group IS still drawn, wearing the
+// route map's fixed-width `???` (the census, restored 2026-08-05 after a day of drawing
+// only the found words): every rank of the zone is a station, which is what lets a road
+// show its real length and population, and what makes a claim land on a stop that was
+// already there rather than appear out of nothing.
 export interface WordStation {
   rank: number;
   dq: number;
@@ -55,7 +57,13 @@ export interface WordBoardModel {
 interface WordGeometry {
   zone: Map<number, RankEntry>; // rank -> its group, for every zone group carrying dq
   lanes: Map<number, number>; // distinct road id -> lane index, ascending (see route.ts)
-  plottable: boolean; // the rank-1 group carries dq -> the board can be drawn
+  // The rank-1 group carries dq, so there is a line to draw at all. Deliberately the SAME
+  // narrow gate as the route map's `hasRoute` and no stronger: `dq` is optional to every
+  // consumer by contract, so a zone group missing one is not malformed data to refuse —
+  // it simply gets no station. Such a group stays CLAIMABLE (the rules read `rank`, not
+  // geometry) and scores; it just has nothing on the board to reveal. That cannot happen
+  // on a generated artifact, where every rank >= 1 carries a dq.
+  plottable: boolean;
   // The FARTHEST rank this map holds — every one of which is typeable, so it is the widest
   // exponent the line can ever be asked to draw. The drawing reserves its rank gutter for it
   // (see WordBoardModel.maxRank); free here, since this pass already visits every entry.
@@ -95,7 +103,7 @@ export function wordGeometry(ranks: WordRanks): WordGeometry {
 }
 
 // Can this artifact be played on the drawn board at all? Same gate as the route map
-// (hasRoute): the feature is the geometry or nothing.
+// (hasRoute) — see `plottable` for exactly what it does and does not promise.
 export function hasWordBoard(ranks: WordRanks): boolean {
   return wordGeometry(ranks).plottable;
 }

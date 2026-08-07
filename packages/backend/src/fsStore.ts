@@ -11,7 +11,7 @@ import { storeKey, type PuzzleMode } from './layout';
 // — no listing. A missing file (no puzzle that day/lang) is a clean null -> 404
 // upstream, never a 500.
 export function fsStore(root: string): PuzzleStore {
-  async function read(date: string, lang: string, mode: PuzzleMode): Promise<unknown | null> {
+  async function read(date: string, lang: string, mode: PuzzleMode): Promise<unknown> {
     try {
       const text = await readFile(path.join(root, storeKey(date, lang, mode)), 'utf8');
       return JSON.parse(text);

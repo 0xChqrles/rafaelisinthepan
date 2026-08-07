@@ -9,6 +9,7 @@
 //     aliases of a tried group are a repeat) — and the day's word itself (it is public).
 // Asserted against the spec, not the implementation.
 
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import type { WordRanks } from '@whippin/shared';
 import {
@@ -43,6 +44,24 @@ const offMap = (n: number, tag: string): string[] =>
 // site rather than typed out, so retuning the constant cannot quietly stop testing the end.
 const strikeRun = (n: number, tag = 'a'): string[] =>
   ['sable', 'neige', ...offMap(Math.max(0, n - 2), tag)].slice(0, n);
+
+// The claimable zone is not a number this package gets to pick: the #154 artifact draws its
+// roads over generation's flat top-ROAD_TOP, and those groups ARE Word mode's playing field,
+// so CLAIM_ZONE is that constant restated in TypeScript. Nothing else couples them — retune
+// ROAD_TOP alone and the client strikes on groups the board has drawn a road for, or draws a
+// field it will not let you claim. Cross-language, so it is asserted against the source of
+// truth the way the slug/fold fixture is.
+describe('CLAIM_ZONE — generation\'s road zone, in TypeScript', () => {
+  it('matches distances.py ROAD_TOP', () => {
+    const distances = readFileSync(
+      new URL('../../../generation/scripts/distances.py', import.meta.url),
+      'utf8',
+    );
+    const declared = /^ROAD_TOP = (\d+)$/m.exec(distances);
+    expect(declared, 'ROAD_TOP is no longer a plain literal in distances.py').not.toBeNull();
+    expect(Number(declared![1])).toBe(CLAIM_ZONE);
+  });
+});
 
 describe('judgeWordGuess — the claim boundary', () => {
   it('a zone group is a claim, the zone edge included', () => {

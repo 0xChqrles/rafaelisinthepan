@@ -18,7 +18,7 @@ function isNotFound(err: unknown): boolean {
 // directly — no ListObjects scan. A missing object (NoSuchKey / 404) is a clean null
 // -> 404 upstream, NOT an error/500.
 export function s3Store(client: S3Client, bucket: string): PuzzleStore {
-  async function read(date: string, lang: string, mode: PuzzleMode): Promise<unknown | null> {
+  async function read(date: string, lang: string, mode: PuzzleMode): Promise<unknown> {
     try {
       const got = await client.send(
         new GetObjectCommand({ Bucket: bucket, Key: storeKey(date, lang, mode) }),
