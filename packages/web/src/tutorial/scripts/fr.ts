@@ -10,6 +10,15 @@
 //     --in packages/generation/output/single-word/fr/tropiques.json \
 //     --out packages/web/src/tutorial/scripts/fr.word.json --keep neige
 //
+// The committed map holds a 150-group ROAD ZONE — it was generated before ROAD_TOP went
+// 150 -> 250 on 2026-08-07, and the prune copies whatever zone its input carries. Re-running
+// the recipe today therefore produces a LONGER board, and what that costs and does not cost
+// was measured rather than assumed: the lesson is untouched (the same four roads in the same
+// order, the same themes — climat / îles / globe / vacances — and every anchor the arc reads
+// off the map identical: soleil^12, ananas^97, lagon^22, neige^353, and every display form
+// over ranks 1..150 unchanged), while the embedded JSON goes 19.6 KB -> 35.2 KB for a screen
+// a player sees once. Regenerating is safe here; it is not free.
+//
 // TROPIQUES replaced PHARE on findings 2026-08-04: phare is a homonym (lighthouse /
 // headlight), so its routes read as two DEFINITIONS rather than as facets of one idea — and
 // the routes lesson is about facets. Tropiques has a single clear definition and four clear

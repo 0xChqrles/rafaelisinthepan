@@ -370,7 +370,8 @@ output filename contains the three distinct secret slugs in sentence order.
   start-less word artifact — i.e. Word mode's range, raised from 150 on 2026-08-07; the
   web's `CLAIM_ZONE` restates it and the two must move together) /
   `ROAD_KS = (2,3,4,5,6)` / `ROAD_MIN_SILHOUETTE = 0.05` /
-  `ROAD_MIN_FRACTION = 0.04` (`distances.py`). Note `PLAYABILITY_TOP` stayed at 150: it is
+  `ROAD_MIN_FRACTION = 0.04` with `ROAD_MIN_GROUPS = 4` under it — a road clears the LARGER
+  of the two (`distances.py`). Note `PLAYABILITY_TOP` stayed at 150: it is
   a curator report window sized for a sentence hole's near field, not the word game's field.
   `ROAD_KS` is also a front-end commitment — it caps the road count, and the web must have a
   lane colour per road (see the root `AGENTS.md` road bullet).
@@ -382,8 +383,34 @@ output filename contains the three distinct secret slugs in sentence order.
   roads): `ocean` 4 roads 160/45/28/17, `éclipse` 4 roads 98/80/59/13, `nuage` 4 roads
   124/56/46/24, `tropiques` its own 4 themes 113/107/17/13, `cochon` 139/111, `forêt`
   238/12, and `pain`/`vie` ONE road — honest, since their only "split" was a 1–3 word
-  straggler. **Four roads is the most any real neighborhood produced**, so lanes 5 and 6
-  exist for the ceiling, not for observed data.
+  straggler.
+  **Re-measured on review, 2026-08-07**, with the count floor in and each word generated the
+  way a curator actually generates one (`--form <mot>=n:s`, so the #133 claim names group 0 —
+  that claim shifts every rank by one and therefore the clustering, which is why the run above
+  and this one disagree on some words; a `--no-inflect` measurement is NOT what ships):
+  `océan` **5** roads 108/52/61/14/15, `tropiques` 4 roads 107/113/13/17, `éclipse` 4 roads
+  13/79/103/55, `montagne` 3 roads 180/34/36, `neige` 3 roads 161/73/16, `nuage` 3 roads
+  142/53/55, `phare` 3 roads 98/81/71, `cochon` 2 roads 111/139, `forêt` 2 roads 238/12,
+  `pain` and `vie` ONE road each. Distribution over those eleven: 2×one, 2×two, 4×three,
+  2×four, 1×five; the smallest road anywhere is 12 groups, against a floor of 10. So **five
+  roads is OBSERVED data, not headroom** — an earlier note here claimed four was the ceiling
+  any real neighborhood reached, and `océan` alone disproves it. Six has not been seen; treat
+  `ROAD_KS`'s top as the bound it is, not as a prediction.
+  **The SENTENCE zone is the other half of that review, and it is where `ROAD_MIN_GROUPS`
+  came from.** The rework was measured at 250 only, but "most roads wins" applies to every
+  hole, and a hole's zone is its DEPARTURE's rank — the start band runs 50–150, where a 4%
+  floor is 2 to 6 groups. Re-clustered at zone 50 with the fraction alone, real merged fr
+  neighborhoods took exactly the lane the floor was written to forbid. (Instrument, so the
+  numbers are read for what they are: the 50 closest GROUPS of a generated artifact, their
+  shipped display forms looked back up in the vectors — the same population `annotate_roads`
+  is handed at `start_rank` 50, standing in for its representative forms rather than
+  replaying them exactly.) `phare`
+  7/19/**2**/11/9/**2** (six roads, two of them a pair), `neige` 34/**2**/8/6, `montagne`
+  30/18/**2**, `tropiques` 22/17/5/4/**2**. With the count floor: `phare` 9/19/11/11, `neige`
+  36/8/6, `montagne` 26/18/6, `tropiques` 22/19/5/4 — and at zone 100 and beyond every one of
+  them is byte-identical either way, because there the fraction is already the larger rule.
+  The old best-silhouette rule gave 49/1 or 20/30 on those same words, so this is not a
+  regression the rework introduced so much as the short end of the band it never looked at.
 - **Playability report (#135):** `build_playability_report` reads (never mutates)
   the final groups at ranks 1..`PLAYABILITY_TOP`; both `--words` and the raw-mode
   selector feed the same `PlayabilityReporter`, whose output is deferred until the
@@ -415,8 +442,11 @@ output filename contains the three distinct secret slugs in sentence order.
   byte-identical. On that puzzle two secrets split into genuinely meaningful facets
   (`amer` → figurative vs taste; `plissés` → participles vs garment nouns) while
   `grincement` scored its BEST silhouette (0.19) on a degenerate 149/1 split — the
-  metric rewards isolating an outlier, so a minimum road size is worth considering when
-  Part 3 (#115's route modal) puts roads on screen.
+  metric rewards isolating an outlier. **That open question was CLOSED on 2026-08-07**
+  by `ROAD_MIN_FRACTION` + `ROAD_MIN_GROUPS` (see the road-selection bullet above and the
+  rules in the root `AGENTS.md`): an undersized cluster is folded into its nearest
+  neighbour before the silhouette is read, so the 149/1 shape can no longer be scored,
+  let alone win.
 - **`gen_phrase` is fully interactive on a TTY (#5).** Anything not passed as a flag is
   prompted: the **sentence** (positional, now optional), **`--lang`**, and the optional
   **source metadata** — `--kind` (offers `KNOWN_KINDS` numbered, but free text is

@@ -65,11 +65,26 @@ ROAD_MIN_SILHOUETTE = 0.05
 # clusters are folded back into their nearest neighbour before the silhouette is read
 # (see _absorb_small_roads), which is what removes the metric's incentive to isolate one.
 #
-# A FRACTION, not a count, because the zone's size is not fixed: it is ROAD_TOP for a word
-# artifact but the DEPARTURE's rank for a sentence hole, which can be 50. 4% is 10 groups
-# at 250 and 2 at 50 — measured to clear every straggler observed (all <= 9 at 250) while
-# keeping the smallest genuinely nameable facet (`tropiques`'s 13-group theme).
+# A FRACTION because the zone's size is not fixed: it is ROAD_TOP for a word artifact but
+# the DEPARTURE's rank for a sentence hole. 4% is 10 groups at 250 — measured to clear every
+# straggler observed there (all <= 9) while keeping the smallest genuinely nameable facet
+# (`tropiques`'s 13-group theme).
 ROAD_MIN_FRACTION = 0.04
+# ...and a COUNT underneath it, because a fraction alone says nothing about what a lane
+# LOOKS like (2026-08-07, the day after the fraction). The sentence game's zone is the
+# departure's rank and the start band OPENS at 50 (start_word.START_RANK_MIN), where 4% is
+# TWO groups — so down there the floor admitted exactly the two-stop lane it was written to
+# forbid, and with "most roads wins" pulling the other way real fr neighborhoods at zone 50
+# shipped six roads with a pair of 2-group ones among them (`phare` 7/19/2/11/9/2). A lane
+# with two stops on it reads as an outlier whatever the zone is, so the floor is the LARGER
+# of the two rules.
+#
+# 4, measured over the same neighborhoods at every zone both games ship. It clears every 2-
+# and 3-group lane (`phare` at 50 -> 9/19/11/11, `neige` -> 36/8/6, `montagne` -> 26/18/6)
+# where 5 already costs `tropiques` its fourth real theme (22/19/5/4 -> 22/23/5). From zone
+# 100 up the fraction is the larger of the two and this changes nothing at all — it is a
+# rule about the SHORT end of the sentence band, where the fraction runs out of resolution.
+ROAD_MIN_GROUPS = 4
 
 
 def quantize_dq(sims, dq_max=DQ_MAX):
@@ -292,14 +307,14 @@ def _absorb_small_roads(dist, labels, min_size):
 
 
 def cluster_roads(vectors, ks=ROAD_KS, min_silhouette=ROAD_MIN_SILHOUETTE,
-                  min_fraction=ROAD_MIN_FRACTION):
+                  min_fraction=ROAD_MIN_FRACTION, min_groups=ROAD_MIN_GROUPS):
     """Road id per input vector, which must arrive in ascending rank order.
 
     For each k in `ks`: cluster, fold the undersized roads back in
     (`_absorb_small_roads`), and read the mean silhouette of what is left. A split must
     clear `min_silhouette` to be considered honest at all; among those that do, the one
     with the MOST roads wins — silhouette is the gate, not the ranking (see ROAD_KS for
-    the measurements behind that). Ties on both keep the smaller k.
+    the measurements behind that). Ties on road count keep the smaller k.
 
     When nothing clears the gate the neighborhood has no honest fork and everything falls
     back to ONE road (all zeros) — mandatory, not an escape hatch. Road ids are then
@@ -308,12 +323,15 @@ def cluster_roads(vectors, ks=ROAD_KS, min_silhouette=ROAD_MIN_SILHOUETTE,
     n = len(vectors)
     if n < 2:
         return [0] * n
-    # At least 2: a single group is never a road, but on a zone too short for the
-    # fraction to mean anything the floor must not swallow every split.
-    min_size = max(2, round(n * min_fraction))
+    # The LARGER of the two floors: the fraction scales with the zone, the count says what a
+    # lane has to look like on screen at any zone size (see ROAD_MIN_GROUPS). On a zone too
+    # short for either to leave two roads standing, nothing clears the gate and the
+    # neighborhood ships ONE road — which is the honest answer for a zone that short.
+    # Round the percentage UP: a road must contain AT LEAST the configured fraction.
+    min_size = max(min_groups, math.ceil(n * min_fraction))
     dist = _distance_matrix(vectors)
     labelings = _linkage_labelings(dist, ks)
-    best_key, best_labels = None, None
+    best_roads, best_labels = 1, None
     for k in sorted(labelings):
         labels = _absorb_small_roads(dist, labelings[k], min_size)
         roads = len(set(labels))
@@ -322,9 +340,10 @@ def cluster_roads(vectors, ks=ROAD_KS, min_silhouette=ROAD_MIN_SILHOUETTE,
         score = _silhouette(dist, labels)
         if score < min_silhouette:
             continue
-        key = (roads, score)
-        if best_key is None or key > best_key:  # strict: ties keep the smaller k
-            best_key, best_labels = key, labels
+        # `k` is ascending and the comparison is strict, so an equal-road split keeps the
+        # smaller k. Silhouette has already done its only job: admitting the split.
+        if roads > best_roads:
+            best_roads, best_labels = roads, labels
     if best_labels is None:
         return [0] * n
     return _renumber_by_first_appearance(best_labels)

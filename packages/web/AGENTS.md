@@ -604,10 +604,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   The junction **bus is painted in the lanes' colours, split at the trunk** (`busGradient`), not
   in one neutral bar: a single grey bar at each end of a set of parallel lines reads as a frame
   drawn AROUND them.
-  Caveat worth keeping in view: on a real fr puzzle 2 of 3 secrets fork into one big road
-  plus a 1–2-group outlier, and an empty lane advertises that outlier as a whole road — honest to
-  the data, but see the #115 distance-annotations note in `packages/generation/AGENTS.md` —
-  a minimum road size is still an open question.
+  The caveat this bullet used to carry — a real fr puzzle forking into one big road plus a
+  1–2-group outlier, with the empty lane advertising that outlier as a whole road — is
+  **ANSWERED as of 2026-08-07 and no longer an open question**: generation now folds an
+  undersized cluster into its nearest neighbour before scoring the split
+  (`ROAD_MIN_FRACTION` + `ROAD_MIN_GROUPS`, rules in the root `AGENTS.md`), so a lane the
+  drawing paints always has a route's worth of stations on it. Nothing changed on this side —
+  the fix belongs to the side that decides what a road IS.
   **Word sizes are computed, not measured:** Press Start 2P advances exactly **1em** per glyph
   (measured — the retired `GLYPH_EM = 1.37` was wrong), so `fitWord` shrinks a long word to
   `--wordw / length` rather than letting it break mid-word (`incontestableme/nt` reads as a
