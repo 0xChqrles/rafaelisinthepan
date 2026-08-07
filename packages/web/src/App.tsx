@@ -3,6 +3,7 @@ import { activeDate } from '@whippin/shared';
 import usePuzzle from './hooks/usePuzzle';
 import useWordPuzzle from './hooks/useWordPuzzle';
 import LanguageSelect from './screens/LanguageSelect';
+import ModeSelect from './screens/ModeSelect';
 import Archive from './screens/Archive';
 import Game from './screens/Game';
 import WordGame from './screens/WordGame';
@@ -26,12 +27,10 @@ import {
 } from './langs';
 import { t } from './i18n';
 import { streakPreviewFromSearch } from './dev/streakPreview';
-// Header controls: inline SVGs for archive/help, and pixel PNGs for the mode toggle.
-// Decorative glyphs; the buttons' aria-labels name their actions.
+// This route's own header controls (the two choosers are TopBar's). Decorative glyphs;
+// the buttons' aria-labels name their actions.
 import CalendarIcon from './assets/icons/calendar.svg?react';
 import QuestionIcon from './assets/icons/question.svg?react';
-import wordModeIcon from './assets/icons/word.png';
-import sentenceModeIcon from './assets/icons/sentence.png';
 
 export default function App() {
   const pathname = useLocation();
@@ -72,6 +71,7 @@ export default function App() {
       {/* The living backdrop — every screen (game, archive, select, tutorial) sits on it. */}
       <BackgroundWaves />
       {route.view === 'select' && <LanguageSelect />}
+      {route.view === 'modeSelect' && <ModeSelect />}
       {route.view === 'archive' && <Archive lang={route.lang} mode={route.mode} />}
       {route.view === 'game' && (
         <GameRoute lang={route.lang} mode={route.mode} date={route.date} />
@@ -104,12 +104,22 @@ function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: st
   // undated route is always the active day. Gates the streak celebration + solve analytics.
   const isActiveDay = date == null || date === activeDate(new Date());
 
-  // Visiting a puzzle route makes this the last-played language and mode (seeds the `/`
-  // redirect — arrival lands where you last played, #156).
+  // Visiting a puzzle route makes this the last-played language (seeds the `/` redirect).
   useEffect(() => {
     setLastLang(lang);
-    setLastMode(mode);
-  }, [lang, mode, setLastLang, setLastMode]);
+  }, [lang, setLastLang]);
+
+  // The MODE is only remembered once the day's artifact has actually LOADED (#156). It
+  // decides where `/` lands, and unlike a language a mode can be genuinely absent — word
+  // artifacts are published per day and past days are not backfilled, so a day without one
+  // is a plain 404. Recorded on arrival instead, a single tap on the header toggle on such
+  // a day would pin every later visit to a route that shows NO PUZZLE TODAY and nothing
+  // else, with only the toggle to escape it: arrival lands where you last PLAYED, and a
+  // 404 is not play.
+  const loaded = (mode === 'word' ? word.puzzle : sentence.puzzle) != null;
+  useEffect(() => {
+    if (loaded) setLastMode(mode);
+  }, [loaded, mode, setLastMode]);
 
   // Onboarding tutorial (#51): it NEVER starts without an action. A first visit (no
   // persisted `onboarded`) lands on the INVITATION — standing in for the loading
@@ -182,24 +192,10 @@ function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: st
     );
   }
 
-  const otherMode: Mode = mode === 'word' ? 'sentence' : 'word';
+  // The two CHOOSERS (mode, language) are the header's own — see TopBar; `modeChooser`
+  // below opts this route into the first. What follows is this screen's own controls.
   const headerRight = (
     <>
-      {/* The mode toggle (#156): the icon identifies the current daily, while the
-          accessible name identifies the mode a tap lands on. */}
-      <button
-        type="button"
-        className="home-btn mode-btn"
-        aria-label={t(lang, otherMode === 'word' ? 'ariaWordMode' : 'ariaSentenceMode')}
-        onClick={() => navigate(pathForMode(lang, otherMode))}
-      >
-        <img
-          className="mode-icon"
-          src={mode === 'word' ? wordModeIcon : sentenceModeIcon}
-          alt=""
-          aria-hidden="true"
-        />
-      </button>
       {/* Into the archive calendar (#55) — past days, one tap from the game. */}
       <button
         type="button"
@@ -224,7 +220,7 @@ function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: st
     <>
       {/* The route owns one persistent actual header. Loaded games populate its left slot;
           loading/error/missing states leave it empty. */}
-      <TopBar lang={lang} left={currentHeaderLeft} right={headerRight} />
+      <TopBar lang={lang} modeChooser left={currentHeaderLeft} right={headerRight} />
       {loading && <p className="status">{t(lang, 'loading')}</p>}
       {error !== null && <LoadError message={t(lang, 'failedPuzzle')} lang={lang} onRetry={retry} />}
       {/* `date` is the ONLY thing NoPuzzle needs to tell an unpublished archive day

@@ -1,6 +1,6 @@
 import { useLayoutEffect, useMemo, useRef } from 'react';
 import type { CSSProperties } from 'react';
-import { LANE_COLORS } from '../components/RouteModal';
+import { LANE_COLORS } from '../components/routeDrawing';
 import { rankHeatColor } from '../components/Hole';
 import useScrollEdges from '../hooks/useScrollEdges';
 import type { RankEntry, WordRanks } from '@whippin/shared';

@@ -55,9 +55,13 @@ const STRINGS = {
   // public — on the board already).
   wordRepeat: { en: 'already played', fr: 'déjà joué' },
   wordItself: { en: "that's the word itself", fr: "c'est le mot lui-même" },
-  // The header mode toggle names its TARGET (the mode a tap lands on).
-  ariaWordMode: { en: 'Word mode', fr: 'Mode mot' },
-  ariaSentenceMode: { en: 'Sentence mode', fr: 'Mode phrase' },
+  // The header's Whippin mark opens the mode CHOOSER (2026-08-06, replacing the toggle
+  // whose label had to name the mode a tap landed on), and the chooser's two cards name
+  // the dailies themselves. The card names are display forms — the CSS uppercases them,
+  // like the language cards' native names.
+  ariaChangeMode: { en: 'Change game mode', fr: 'Changer de mode de jeu' },
+  modeSentence: { en: 'Sentence', fr: 'Phrase' },
+  modeWord: { en: 'Word', fr: 'Mot' },
   // Deliberately NOT translated (decided 2026-07-24): "YOU" is universal enough, and one
   // label keeps the player's tag identical across languages (lineup + leaderboard).
   you: { en: 'YOU', fr: 'YOU' },
@@ -320,7 +324,9 @@ export function srWordStrike(
   ended: boolean,
 ): string {
   const fr = uiLang(lang) === 'fr';
-  const what = rank == null ? (fr ? 'raté' : 'miss') : fr ? `trop loin : rang ${rank}` : `too far: rank ${rank}`;
+  let what: string;
+  if (rank == null) what = fr ? 'raté' : 'miss';
+  else what = fr ? `trop loin : rang ${rank}` : `too far: rank ${rank}`;
   const count = fr ? `faute ${strikes}/${max}` : `strike ${strikes}/${max}`;
   const over = ended ? (fr ? ' — partie terminée' : ' — run over') : '';
   return `${what} — ${count}${over}`;

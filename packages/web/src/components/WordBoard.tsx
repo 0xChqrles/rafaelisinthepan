@@ -3,34 +3,37 @@ import type { CSSProperties } from 'react';
 import { heatColor } from '@whippin/shared';
 import type { WordBoardModel } from '../game/wordBoard';
 import { SCRAMBLE_MS, useScramble } from '../hooks/useScramble';
-import { rankHeatColor, HIT_HEAT_CAP } from './Hole';
+import FloatingHit from './FloatingHit';
+import { HIT_HEAT_CAP, rankHeatColor } from './Hole';
 import {
-  Junction,
-  LANE_COLORS,
-  LANE_GAP,
-  LANE_X0,
-  LANE_W,
-  laneX,
-  laneLines,
-  busGradient,
-  linkHeight,
-  fitWord,
-  TAIL_H,
-  JUNCTION_H,
-  LINK_MIN,
-  UNKNOWN,
   ARRIVAL_PX,
+  JUNCTION_H,
+  Junction,
+  OffMapShelf,
+  RouteLink,
+  RouteRow,
+  RouteTail,
   STATION_PX,
-  DASH,
-  DASH_PERIOD,
-} from './RouteModal';
-import { t, srRouteRoads, srRouteStop, srRouteOffMap, srWordBoardWord } from '../i18n';
+  UNKNOWN,
+  fitWord,
+  laneColor,
+  laneX,
+  linkGap,
+  rankGutterChars,
+  routeFrameVars,
+  trunkX,
+} from './routeDrawing';
+import { srRouteRoads, srRouteStop, srRouteOffMap, srWordBoardWord } from '../i18n';
 
-// Word mode's play surface (#156): the route-map CONCEPT — lanes, dq-spaced stations,
-// censored unfound stops — as the PRIMARY, LIVE surface, not the modal reused. The
-// differences are the mode's own: the center word is PUBLIC (the terminus is revealed
-// from the first frame), there is no departure and no "you are here", and the drawing
-// changes under the player's claims.
+// Word mode's play surface (#156): the route drawing — lanes, dq-spaced stations, censored
+// unfound stops — as the PRIMARY, LIVE surface rather than a modal. The differences are the
+// mode's own: the center word is PUBLIC (the terminus is revealed from the first frame), there
+// is no departure and no "you are here", and the drawing changes under the player's claims.
+//
+// Everything the drawing has in common with the daily game's route map — the geometry, the
+// frame variables, the shelf, the tail, the connector rule, the junctions and the station row
+// itself — comes from `routeDrawing`, which owns it for both. A detail of the line changed
+// there changes it on every route the app draws; that is the point of the module.
 //
 // **The whole FIELD is drawn, censored until it is claimed** (decided 2026-08-05,
 // restoring the `???` census after a day without it): every group of the claimable zone
@@ -42,14 +45,11 @@ import { t, srRouteRoads, srRouteStop, srRouteOffMap, srWordBoardWord } from '..
 // **Only the TAIL is broken** (same decision): the dashes at the cold top end mean "the
 // line continues into words with no distance at all", and that is the one place on this
 // board where they mean anything — every rank between the stations is itself a station, so
-// a connector is never hiding ground. (The variant that drew only found words and dashed
-// the gaps between them is gone with the census it existed to serve.)
+// a connector is never hiding ground.
 //
-// It reuses the route map's drawing grammar wholesale — the `.route-frame` / `.route-*`
-// CSS and RouteModal's exported geometry helpers — so the two surfaces cannot drift
-// apart visually. The line runs DOWN the page like the map does: the off-map strikes at
-// the top, then the broken tail, the near strikes riding the trunk, the fork, the field
-// farthest-first, and the day's word closing the line at the bottom.
+// The line runs DOWN the page like the map does: the off-map strikes at the top, then the
+// broken tail, the near strikes riding the trunk, the fork, the field farthest-first, and the
+// day's word closing the line at the bottom.
 
 // The merge into the word runs the ONBOARDING TEASER's distance, not the route modal's
 // (decided 2026-08-05). The map spends `LEAP_H` (56) there, which with the converge
@@ -65,8 +65,9 @@ const JX_STUB = 14; // `.jx-trunk`'s run below the bus (index.css)
 const ARRIVAL_HALF_HEAD = 20; // `.route-arrival`'s --head (40) / 2 — its node's offset into the row
 
 // One row of the line, farthest first: a group of the claimable FIELD — its word withheld
-// until the player claims it, or until the run's end names the whole neighborhood — or a
-// near strike out on the trunk, which always shows the word that was typed.
+// until the player claims it, or until the run's end names the whole neighborhood, and named
+// with its group's canonical form either way — or a near strike out on the trunk, which shows
+// the form the player TYPED (see wordBoard.ts WordOutsideStop.word).
 type Row =
   | {
       zone: true;
@@ -78,18 +79,35 @@ type Row =
     }
   | { zone: false; rank: number; dq: number; word: string };
 
-// A station starts as `???` and uses the same slot-machine replacement as sentence holes.
-// The initial target is seeded as settled, so loading an already-played round does not
-// replay every reveal; only a newly claimed station transitions.
-function StationWord({ target, fontSize }: { target: string; fontSize: string }) {
+// A station starts as `???` and, when the player CLAIMS it, swaps in with the same
+// slot-machine replacement as a sentence hole — a word you found is worth the beat.
+//
+// `animate` is what keeps that beat meaningful and cheap. The run's END reveals the whole
+// field at once, and a scramble there would start ~150 of them in one frame — each its own
+// 40ms interval writing state for 650ms, on top of the result tray rising — for a reveal that
+// is not a "found it" moment at all but the post-mortem naming what was always there. Those
+// land outright; only a claim churns. (The initial target is likewise seeded as settled, so
+// loading an already-played round replays nothing.)
+function StationWord({
+  target,
+  fontSize,
+  animate,
+}: {
+  target: string;
+  fontSize: string;
+  animate: boolean;
+}) {
   const { jumble, start } = useScramble();
   const [displayWord, setDisplayWord] = useState(target);
 
   useEffect(() => {
-    if (target === displayWord) return undefined;
+    if (target === displayWord) return;
+    if (!animate) {
+      setDisplayWord(target);
+      return;
+    }
     start(target, displayWord.length, () => setDisplayWord(target));
-    return undefined;
-  }, [displayWord, start, target]);
+  }, [animate, displayWord, start, target]);
 
   const style = {
     fontSize,
@@ -100,6 +118,81 @@ function StationWord({ target, fontSize }: { target: string; fontSize: string })
     <span className={`route-word${jumble !== null ? ' revealing' : ''}`} style={style}>
       {jumble ?? displayWord}
     </span>
+  );
+}
+
+// A guess's feedback on the TERMINUS (#156): every counted guess lands the sentence game's
+// floating hit on the day's word — the rank it earned in that rank's heat colour, or MISS in
+// the coldest — so the one row that never leaves the screen is also where every answer
+// reports. Presentation state, owned by the screen (WordGame): the terminus only renders it.
+export interface WordHit {
+  id: number; // monotonic, so a guess landing mid-hit restarts the animation
+  value: number; // the guess's rank (unused when miss)
+  miss: boolean; // off-map -> "MISS" instead of a number
+  startDelayMs: number;
+  fadeDelayMs: number;
+}
+
+// The end of the line, as the board's own PINNED FOOTER — the day's word never leaves the
+// screen, so its row lives OUTSIDE the scroller (WordGame renders it under the window's cut),
+// where nothing can ever scroll behind it and it needs no masking background. (A sticky
+// in-scroller row was tried first, 2026-08-06: its opaque `--bg` box — invisible in the route
+// modal, whose dialog is flat `--bg` — read as a black patch stamped over this page's animated
+// waves.) Scrolled to the bottom, the line's merge link runs out of the scroller straight into
+// this row's rail; cut mid-field, the window's torn bottom rule lands on this row's top edge,
+// where the rail stub runs into it. Its own `.route-frame` re-derives the SAME frame vars from
+// the same model, so its grid lands on the line's columns (`.word-terminus` pads for the
+// scroller's right side + scrollbar).
+export function WordTerminus({
+  model,
+  hit = null,
+  onHitDone,
+}: {
+  model: WordBoardModel;
+  hit?: WordHit | null;
+  onHitDone?: (id: number) => void;
+}) {
+  const rankChars = rankGutterChars(model.maxRank);
+  const trunkCentre = trunkX(model.lanes);
+  // Decorative like the drawing above it: the board's sr mirror already announces the word.
+  return (
+    <div
+      className="route-frame word-frame word-terminus"
+      style={routeFrameVars(model.lanes, rankChars)}
+      aria-hidden="true"
+    >
+      <div className="route">
+        <RouteRow
+          className="route-arrival route-found"
+          style={{ '--node-x': `${trunkCentre}px` } as CSSProperties}
+        >
+          {/* The wrap is sized to the WORD alone (the sentence game's own hit anchor), so
+              the floating number lands centred over the word, not over the whole cell. */}
+          <span className="hole-word-wrap">
+            {/* Keyed per hit so a guess landing mid-shake restarts it (Hole's own trick). */}
+            <span
+              key={hit ? `word-${hit.id}` : 'word'}
+              className={`route-word${hit ? ' hit-shake' : ''}`}
+              style={{ fontSize: fitWord(model.word, ARRIVAL_PX) }}
+            >
+              {model.word}
+            </span>
+            {hit && onHitDone && (
+              <FloatingHit
+                key={hit.id}
+                id={hit.id}
+                value={hit.value}
+                miss={hit.miss}
+                startDelayMs={hit.startDelayMs}
+                fadeDelayMs={hit.fadeDelayMs}
+                color={hit.miss ? heatColor(0) : rankHeatColor(hit.value, HIT_HEAT_CAP)}
+                onDone={onHitDone}
+              />
+            )}
+          </span>
+        </RouteRow>
+      </div>
+    </div>
   );
 }
 
@@ -123,72 +216,34 @@ export default function WordBoard({ model, lang }: { model: WordBoardModel; lang
   const perRoad = Array.from({ length: lanes }, () => 0);
   let claimedCount = 0;
   for (const s of model.stations) {
-    if (s.road === null) continue;
-    perRoad[s.road] = (perRoad[s.road] ?? 0) + 1;
     if (s.claimed) claimedCount += 1;
+    // `road` is optional in the artifact contract. A --no-roads board already renders on
+    // one trunk, so its sr mirror must count that same single-lane neighborhood instead of
+    // announcing an empty field. On a multi-road artifact a stray unassigned station stays
+    // unassigned rather than being misreported as part of road 1.
+    const road = s.road ?? (lanes === 1 ? 0 : null);
+    if (road !== null) perRoad[road] = (perRoad[road] ?? 0) + 1;
   }
 
-  // The gutter fits the widest exponent the line actually shows — the farthest row, since
-  // they are drawn farthest first. That is the field's own outer edge until a near strike
-  // lands beyond it.
-  const rankChars = 1 + String(rows[0]?.rank ?? 1).length;
-
-  const railWidth = LANE_X0 * 2 + (lanes - 1) * LANE_GAP;
-  const trunkX = LANE_X0 + ((lanes - 1) * LANE_GAP) / 2;
-  const busX = laneX(0) - LANE_W / 2;
-  const busW = (lanes - 1) * LANE_GAP + LANE_W;
-  const frame = {
-    '--gutter': `calc(var(--rank-size) * ${rankChars} + 10px)`,
-    '--railw': `${railWidth}px`,
-    '--trunk-x': `${trunkX}px`,
-    '--bus-x': `${busX}px`,
-    '--bus-w': `${busW}px`,
-    '--bus-grad': busGradient(lanes, (trunkX - busX) / busW),
-    '--lane-lines': laneLines(lanes),
-    // The dash unit the TAIL is cut to — the one broken run on this board.
-    '--dash': `${DASH}px`,
-    '--dash-period': `${DASH_PERIOD}px`,
-  } as CSSProperties;
+  // The gutter is reserved for the widest exponent the MAP can produce, not the widest this
+  // line currently draws (see rankGutterChars): a near strike out at a 4-digit rank would
+  // otherwise widen the track and shove the whole drawing sideways, mid-round.
+  const rankChars = rankGutterChars(model.maxRank);
+  const trunkCentre = trunkX(lanes);
 
   return (
-    <div className="route-frame word-frame" style={frame}>
+    <div className="route-frame word-frame" style={routeFrameVars(lanes, rankChars)}>
       {/* The drawing is decorative; the sr-only list below carries the same content. */}
       <div className="route" aria-hidden="true">
-        {/* The off-map strikes, above the line and outside every distance it draws. No rule
-            under them (removed 2026-08-05, with the map's own): the broken tail below already
-            says the line does not continue straight through. */}
-        {model.misses.length > 0 && (
-          <div className="route-shelf">
-            {/* The heat ramp's coldest colour — what the floating `MISS` and this board's
-                own strike feedback already wear (`heatColor(0)`, computed, never copied). */}
-            <p className="route-shelf-head" style={{ color: heatColor(0) }}>
-              {t(lang, 'routeOffMap')}
-            </p>
-            <p className="route-misses">
-              {model.misses.map((word) => (
-                <span key={word} className="route-miss">
-                  {word}
-                </span>
-              ))}
-            </p>
-          </div>
-        )}
+        {/* The off-map strikes, above the line and outside every distance it draws. */}
+        <OffMapShelf lang={lang} misses={model.misses} />
         {/* The line always comes in out of that void, whether or not this run hit it — the
             board's ONE broken run, and the only stretch that hides anything. */}
-        <div className="route-link tail" style={{ height: TAIL_H }} />
+        <RouteTail />
 
         {rows.map((row, i) => {
           const previous = rows[i - 1];
-          // Consecutive ranks are ONE row apart whatever their dq: the field is drawn in
-          // full, so the rank ladder already says they are adjacent and a proportional
-          // connector there would buy nothing (the route map's own rule). Out on the trunk,
-          // where the player's strikes are sparse, the length is the only thing carrying
-          // the distance and stays proportional.
-          const gap = !previous
-            ? 0
-            : previous.rank - row.rank === 1
-              ? LINK_MIN
-              : linkHeight(previous.dq, row.dq);
+          const gap = linkGap(previous, row);
           const onLane = forked && row.zone && row.road !== null;
           const label = row.zone ? (row.word ?? UNKNOWN) : row.word;
           // Withheld while the run is live; named by its end, which is the post-mortem —
@@ -200,18 +255,16 @@ export default function WordBoard({ model, lang }: { model: WordBoardModel; lang
             <Fragment key={`${row.zone ? 'z' : 'o'}${row.rank}`}>
               {forked && i === forkAt ? (
                 <>
-                  {previous && <div className="route-link" style={{ height: gap }} />}
+                  {previous && <RouteLink height={gap} />}
                   <Junction height={JUNCTION_H} />
                 </>
               ) : (
-                previous && (
-                  <div className={`route-link${onLane ? ' lanes' : ''}`} style={{ height: gap }} />
-                )
+                previous && <RouteLink height={gap} lanes={onLane} />
               )}
-              <div
-                data-word-rank={row.rank}
+              <RouteRow
+                rank={row.rank}
+                onLane={onLane}
                 className={[
-                  'route-station',
                   onLane ? 'on-lane' : '',
                   censored ? 'route-unknown' : '',
                   revealed ? 'route-unknown route-revealed' : '',
@@ -220,27 +273,17 @@ export default function WordBoard({ model, lang }: { model: WordBoardModel; lang
                   .join(' ')}
                 style={
                   {
-                    '--node-x': `${onLane && row.zone ? laneX(row.road!) : trunkX}px`,
-                    '--lane-c':
-                      onLane && row.zone && row.road !== null
-                        ? LANE_COLORS[row.road % LANE_COLORS.length]
-                        : 'var(--rail)',
+                    '--node-x': `${onLane && row.zone ? laneX(row.road!) : trunkCentre}px`,
+                    '--lane-c': laneColor(onLane && row.zone ? row.road : null),
                   } as CSSProperties
                 }
               >
-                <span
-                  className="route-rank"
-                  style={{ '--rank-color': rankHeatColor(row.rank, HIT_HEAT_CAP) } as CSSProperties}
-                >
-                  -{row.rank}
-                </span>
-                <span className={`route-rail${onLane ? ' lanes' : ''}`}>
-                  <i className="route-node" />
-                </span>
-                <span className="route-body">
-                  <StationWord target={label} fontSize={fitWord(label, STATION_PX)} />
-                </span>
-              </div>
+                <StationWord
+                  target={label}
+                  fontSize={fitWord(label, STATION_PX)}
+                  animate={row.zone && row.claimed}
+                />
+              </RouteRow>
             </Fragment>
           );
         })}
@@ -248,31 +291,12 @@ export default function WordBoard({ model, lang }: { model: WordBoardModel; lang
         {forked && <Junction height={JUNCTION_H} converge />}
         {/* The joined line's final run into the word: an ordinary SOLID trunk link, at the
             teaser's distance (see the constants above). An unforked board has no junction to
-            spend the stub, so its connector carries that share too. */}
-        <div
-          className="route-link"
-          style={{
-            height: Math.max(0, TEASER_MERGE_RUN - ARRIVAL_HALF_HEAD - (forked ? JX_STUB : 0)),
-          }}
+            spend the stub, so its connector carries that share too. It is the LINE's last
+            row — the terminus itself is the board's pinned footer (WordTerminus), so scrolled
+            to the bottom this link runs out of the scroller straight into its rail. */}
+        <RouteLink
+          height={Math.max(0, TEASER_MERGE_RUN - ARRIVAL_HALF_HEAD - (forked ? JX_STUB : 0))}
         />
-
-        {/* The end of the line: the day's word — PUBLIC, the one thing this board never
-            withholds. It wears the terminus size and the found (accent) face from frame
-            one: the whole game is naming what leads to it. */}
-        <div
-          className="route-station route-arrival route-found"
-          style={{ '--node-x': `${trunkX}px` } as CSSProperties}
-        >
-          <span className="route-rank" />
-          <span className="route-rail">
-            <i className="route-node" />
-          </span>
-          <span className="route-body">
-            <span className="route-word" style={{ fontSize: fitWord(model.word, ARRIVAL_PX) }}>
-              {model.word}
-            </span>
-          </span>
-        </div>
       </div>
 
       {/* The board in words, closest first — the drawing above is decorative. Only what

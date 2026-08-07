@@ -155,17 +155,31 @@ export class BackendStack extends Stack {
     }
 
     // ── CloudFront: CDN in front of the Function URL ──────────────────────────
-    // Cache key = request path (`/` vs `/today`) + the `lang` and `date` query strings —
-    // the puzzle URL is DATE-addressed (the client computes the active 22:00-ET day via
-    // the shared day.ts and names it). The origin drives the TTL via Cache-Control: the
+    // Cache key = request path (`/` vs `/today`) + the `lang`, `date` and `mode` query
+    // strings — the puzzle URL is DATE-addressed (the client computes the active 22:00-ET
+    // day via the shared day.ts and names it) and `mode` picks which of the two dailies it
+    // asks for (#156: absent/`sentence` = the sentence puzzle, `word` = the #154 artifact).
+    // The origin drives the TTL via Cache-Control: the
     // puzzle is held long on the CDN (s-maxage; `pnpm puzzle:publish --s3` invalidates on
     // republish) with a short browser max-age, while `/today` (diagnostic) is `no-store`.
     // minTtl 0 lets `no-store`/the short 404 TTL through; maxTtl allows the year-long
     // s-maxage of a date-addressed entry.
+    //
+    // **Every query string the handler READS has to be listed here.** A cache policy is
+    // both halves of the contract: absent an origin request policy — and there is none on
+    // this behavior — CloudFront forwards to the origin EXACTLY the values in the cache
+    // key, so an unlisted parameter is not merely uncached, it never reaches the Lambda.
+    // Leaving `mode` off did both at once: `/?lang&date` and `/?lang&date&mode=word`
+    // collapsed onto one entry held for a year, and the origin never saw the mode, so
+    // every Word mode request came back as that day's SENTENCE puzzle — which the client
+    // rejects as a malformed word artifact. It cannot show up in local development either
+    // (`pnpm backend:dev` is the handler with no CDN in front of it), so the rule is
+    // written down rather than left to be rediscovered.
     const cachePolicy = new cloudfront.CachePolicy(this, 'PuzzleCachePolicy', {
       cachePolicyName: 'WhippinDailyPuzzle',
-      comment: 'Daily puzzle: cache key = path + ?lang + ?date; TTL from origin Cache-Control.',
-      queryStringBehavior: cloudfront.CacheQueryStringBehavior.allowList('lang', 'date'),
+      comment:
+        'Daily puzzle: cache key = path + ?lang + ?date + ?mode; TTL from origin Cache-Control.',
+      queryStringBehavior: cloudfront.CacheQueryStringBehavior.allowList('lang', 'date', 'mode'),
       headerBehavior: cloudfront.CacheHeaderBehavior.none(),
       cookieBehavior: cloudfront.CacheCookieBehavior.none(),
       minTtl: Duration.seconds(0),

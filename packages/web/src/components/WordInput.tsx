@@ -159,7 +159,15 @@ export default function WordInput({ value, history, onType, onBackspace, onSubmi
   return (
     <div className={`word-input${shaking ? ' invalid' : ''}`} onAnimationEnd={() => setShaking(false)}>
       <span className="wi-prompt" aria-hidden="true">&gt;</span>
-      <span className="wi-text">{value}</span>
+      {/* The typed text is the only part of the line that gives when a guess outruns its
+          column, and it gives at the HEAD: `.wi-text` is the clipping window and this run is
+          the full string inside it, pushed to the window's right edge (see the CSS). The
+          nesting is what makes that possible — a single element cannot both clip and overflow
+          its own start. The value stays whole in the DOM, so a screen reader still reads the
+          guess the player has actually typed. */}
+      <span className="wi-text">
+        <span className="wi-text-run">{value}</span>
+      </span>
       <span className="wi-cursor" aria-hidden="true">_</span>
     </div>
   );

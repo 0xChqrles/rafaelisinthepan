@@ -68,6 +68,13 @@ describe('parseRoute', () => {
     expect(parseRoute('/select')).toEqual({ view: 'select' });
     expect(parseRoute('/select/')).toEqual({ view: 'select' });
   });
+  // The two choosers sit ABOVE /<lang>: neither is language- or mode-scoped, and /mode
+  // must never be read as a language segment or shadow Word mode's /<lang>/word.
+  it('routes /mode to the game-mode picker, without touching the mode grammar', () => {
+    expect(parseRoute('/mode')).toEqual({ view: 'modeSelect' });
+    expect(parseRoute('/mode/')).toEqual({ view: 'modeSelect' });
+    expect(parseRoute('/fr/word')).toEqual({ view: 'game', lang: 'fr', mode: 'word' });
+  });
   it('treats / and unknown paths as a home redirect', () => {
     expect(parseRoute('/')).toEqual({ view: 'home' });
     expect(parseRoute('')).toEqual({ view: 'home' });

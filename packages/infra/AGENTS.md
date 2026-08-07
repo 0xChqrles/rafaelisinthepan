@@ -36,8 +36,13 @@
   **IAM-auth Function URL via OAC** (only CloudFront may invoke it). The Lambda gets
   **read-only** S3 (`bucket.grantRead`) and a **reserved concurrency of 10** (cost/abuse
   ceiling for the unauthenticated `/og` render until WAF is warranted). Cache policy keys
-  on path + the `lang` **and `date`** query strings and honours the origin
-  `Cache-Control` — the puzzle endpoint **requires `date`** (400 otherwise) and is served
+  on path + the `lang`, `date` **and `mode`** query strings and honours the origin
+  `Cache-Control`. **Every query string the handler reads must be in that allowList:** with
+  no origin request policy on the behavior, CloudFront forwards to the origin exactly the
+  cache-key values, so an unlisted parameter never reaches the Lambda AND collapses two
+  distinct responses onto one year-long edge entry (`mode` was missing when #156 landed —
+  Word mode got the day's sentence puzzle in production while local `backend:dev`, which has
+  no CDN, was fine). The puzzle endpoint **requires `date`** (400 otherwise) and is served
   `max-age=300, s-maxage=31536000` (CDN holds it until `puzzle:publish --s3` invalidates);
   `/today` (diagnostic) is `no-store`; maxTtl = 365 days.
   Outputs: `ApiUrl` (→ `VITE_API_BASE_URL`), `PuzzleBucketName` (#4 upload target),

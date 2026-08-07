@@ -339,8 +339,20 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   scheme):** the **client computes the active game day itself** — `shared/src/day.ts`
   (moved from the backend) is the ONE 22:00-ET DST-correct day definition, used by the
   web, the handler, and `publish`. Normal play is **ONE fetch**:
-  `GET <VITE_API_BASE_URL>/?lang=<lang>&date=<YYYY-MM-DD>` with the client-computed
-  `activeDate`. The server serves **any past day** (the archive is date-addressed —
+  `GET <VITE_API_BASE_URL>/?lang=<lang>&date=<YYYY-MM-DD>[&mode=word]` with the
+  client-computed
+  `activeDate`. **`mode` names WHICH daily (#156):** absent or `sentence` = the sentence
+  puzzle, `word` = the #154 single-word artifact; anything else → 400. Everything below —
+  day-addressing, the future guard, the 404, the caching — is identical for both, and each
+  reads its own store key (`<date>.<lang>.json` / `<date>.<lang>.word.json`).
+  **Every query string the handler reads MUST also be in the CloudFront cache policy's
+  allowList** (`infra/lib/backend-stack.ts`): with no origin request policy on that
+  behavior, CloudFront forwards to the origin exactly the cache-key values, so an unlisted
+  parameter both collapses two responses onto one year-long edge entry AND never reaches
+  the Lambda at all. That is three packages agreeing on one list, which is why it is
+  recorded here; `pnpm backend:dev` has no CDN in front of it and can never show the
+  disagreement.
+  The server serves **any past day** (the archive is date-addressed —
   decided 2026-07-07, #53, superseding the earlier symmetric ±1-day window that refused
   the archive) but the **future only within +1 day** of its own active day (clock-skew
   tolerance around the 22:00 flip; a pre-published buffer day at +2 or beyond → 404). An

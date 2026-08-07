@@ -12,13 +12,15 @@ import {
 import { buildWordBoard } from '../game/wordBoard';
 import { canExtend } from '../game/keyboard';
 import useScrollEdges from '../hooks/useScrollEdges';
-import WordBoard from '../components/WordBoard';
+import WordBoard, { WordTerminus, type WordHit } from '../components/WordBoard';
+import { FLOATING_HIT_INTRO_MS } from './Game';
+import { HIT_FADE_MS } from '../components/FloatingHit';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import WordEndScreen from '../components/WordEndScreen';
 import LoadError from '../components/LoadError';
 import { t, srWordClaim, srWordFailures, srWordStrike } from '../i18n';
-import { failIconUrl, preloadFailIcons } from '../components/failIcon';
+import { prefersReducedMotion } from '../hooks/useScramble';
 
 // Word mode (#156): the second daily game on the same mechanic, inverted — the word is
 // SHOWN and the player names its neighborhood. One claim per zone group, the run ends
@@ -35,8 +37,14 @@ import { failIconUrl, preloadFailIcons } from '../components/failIcon';
 const SCROLL_MIN_MS = 140;
 const SCROLL_MAX_MS = 320;
 const SCROLL_PX_PER_MS = 6;
-// Let the final strike/reveal settle for one board-scroll beat before the keyboard leaves.
-// The exit itself is the shared `.kb-drop`; this is only the clean look at what just landed.
+// The ending plays in BEATS, like the sentence solve, instead of piling onto the killing
+// strike's own frame (which is where everything used to land at once — the reveal, the
+// scroll and the prompt exit, all under a MISS still floating). First the strike plays out
+// in full on a still board: the third cross fills and the terminus hit runs its whole
+// float, which is exactly this long.
+const WORD_END_HOLD_MS = FLOATING_HIT_INTRO_MS + HIT_FADE_MS;
+// Then the post-mortem names the field and the line runs to its true bottom — one
+// board-scroll beat, with the prompt leaving under it — before the keyboard drops.
 const WORD_END_SETTLE_MS = SCROLL_MAX_MS;
 // Like Sentence mode's fallback: a lost animationend must not strand an empty result tray.
 const KB_EXIT_FALLBACK_MS = 1_200;
@@ -44,26 +52,21 @@ const KB_EXIT_FALLBACK_MS = 1_200;
 // submitted) and settles onto the station.
 const easeOutScroll = (t: number) => 1 - (1 - t) ** 3;
 
+// A claim RESETS the strike run, and the crosses go out ONE AT A TIME rather than in a
+// single frame: each un-presses CROSS_WAVE_MS after the one to its right, rewinding the row
+// the way it filled. Short on purpose — a flourish on a state change, not a beat the player
+// waits through: a full row clears in 280ms, under the board scroll running alongside it.
+// Filling is NOT staggered; a strike is a hit and lands at once.
+const CROSS_WAVE_MS = 70;
+
+// One cross of the failure row, straight off `cross-button.png` — a two-frame 11x11 sheet
+// where frame 0 is the un-pressed button and frame 1 the pressed red fail. Both colours are
+// baked into the sprite, which is what retired the canvas recolor this used to run: the old
+// single-frame `fail.png` carried a placeholder red that had to be repainted per state at
+// runtime, so the row stayed blank until an async decode finished. One frame per state needs
+// none of it — the sheet is a plain background and the state is a background-position.
 function FailIcon({ filled }: { filled: boolean }) {
-  const [, refresh] = useState(0);
-  const state = filled ? 'filled' : 'empty';
-
-  useEffect(() => {
-    let active = true;
-    void preloadFailIcons().then(() => {
-      if (active) refresh((value) => value + 1);
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const src = failIconUrl(state);
-  return (
-    <span className="strike-pip" aria-hidden="true">
-      {src && <img src={src} alt="" />}
-    </span>
-  );
+  return <span className={`strike-pip${filled ? ' failed' : ''}`} aria-hidden="true" />;
 }
 
 function WordScore({ value }: { value: number }) {
@@ -104,14 +107,34 @@ function WordHeaderStatus({
 }
 
 function WordFailures({ lang, strikes }: { lang: string; strikes: number }) {
+  // How many crosses the ROW shows, which trails `strikes` only while a reset sweeps them
+  // out. It starts AT the count, so a rehydrated round renders its strikes settled and
+  // replays no wave.
+  const [shown, setShown] = useState(strikes);
+
+  useEffect(() => {
+    // Filling — and a reduced-motion reset, since this is a JS timer and the global CSS
+    // rule collapses durations but not delays — happens in this frame.
+    if (strikes >= shown || prefersReducedMotion()) {
+      setShown(strikes);
+      return undefined;
+    }
+    // Otherwise one cross per tick, rightmost first. The effect re-runs on its own result
+    // until the row has caught up, so the sweep needs no schedule of its own, and a strike
+    // landing mid-wave simply ends it through the branch above.
+    const timer = window.setTimeout(() => setShown((n) => n - 1), CROSS_WAVE_MS);
+    return () => window.clearTimeout(timer);
+  }, [shown, strikes]);
+
   return (
     <div
       className="word-strikes"
       role="img"
+      // The reader hears the real count, never the animation trailing it.
       aria-label={srWordFailures(lang, strikes, STRIKES_TO_END)}
     >
       {Array.from({ length: STRIKES_TO_END }, (_, i) => (
-        <FailIcon key={i} filled={i < strikes} />
+        <FailIcon key={i} filled={i < shown} />
       ))}
     </div>
   );
@@ -183,11 +206,15 @@ function WordRound({
   const score = run.claimedRanks.length;
   const ended = run.ended;
 
-  // End presentation is transient, not persisted. A live run shows its final strike and
-  // revealed board, drops the keyboard, then raises the results. A rehydrated ended run
-  // initializes directly at the final frame.
+  // End presentation is transient, not persisted. A live run lets the killing strike play
+  // out on the still board, then reveals the post-mortem and scrolls to the word, then
+  // drops the keyboard and raises the results. A rehydrated ended run initializes directly
+  // at the final frame.
   const [promptExiting, setPromptExiting] = useState(false);
   const [keyboardLeaving, setKeyboardLeaving] = useState(false);
+  // The post-mortem reveal is ITS OWN BEAT, not the strike's frame: `ended` is the run's
+  // fact, this is when the board gets to say it.
+  const [postMortem, setPostMortem] = useState(ended);
   const [showResults, setShowResults] = useState(ended);
   const [animateResults, setAnimateResults] = useState(false);
   const previousEnded = useRef(ended);
@@ -196,10 +223,20 @@ function WordRound({
     previousEnded.current = ended;
     if (!justEnded) return undefined;
 
-    setPromptExiting(true);
     setAnimateResults(true);
-    const id = window.setTimeout(() => setKeyboardLeaving(true), WORD_END_SETTLE_MS);
-    return () => window.clearTimeout(id);
+    // Reduced motion collapses the beats to their state changes — these are JS timers, so
+    // the global CSS rule cannot do it for them.
+    const holdMs = prefersReducedMotion() ? 0 : WORD_END_HOLD_MS;
+    const settleMs = prefersReducedMotion() ? 0 : WORD_END_SETTLE_MS;
+    const reveal = window.setTimeout(() => {
+      setPostMortem(true);
+      setPromptExiting(true);
+    }, holdMs);
+    const kb = window.setTimeout(() => setKeyboardLeaving(true), holdMs + settleMs);
+    return () => {
+      window.clearTimeout(reveal);
+      window.clearTimeout(kb);
+    };
   }, [ended]);
 
   const finishKeyboardExit = useCallback(() => {
@@ -213,8 +250,8 @@ function WordRound({
   }, [finishKeyboardExit, keyboardLeaving]);
 
   const board = useMemo(
-    () => buildWordBoard({ ranks, word: puzzle.word.word, tried }),
-    [ranks, puzzle.word.word, tried],
+    () => buildWordBoard({ ranks, word: puzzle.word.word, tried, reveal: postMortem }),
+    [ranks, puzzle.word.word, tried, postMortem],
   );
 
   // Keep the arcade standing inside the real app header. The status is absent when the
@@ -227,6 +264,17 @@ function WordRound({
   const [input, setInput] = useState('');
   const [invalidAt, setInvalidAt] = useState(0);
 
+  // The floating hit on the terminus: every counted guess reports there — the rank it earned,
+  // or MISS — with the sentence game's own animation (a single target, so a single hit: no
+  // stagger, and the intro-length fade delay a lone sentence hit gets). Free guesses (repeats,
+  // invalid words, the day's word itself) change no state and land no hit, exactly as they
+  // fire no floating number in the sentence game.
+  const [hit, setHit] = useState<WordHit | null>(null);
+  const hitId = useRef(0);
+  const clearHit = useCallback((id: number) => {
+    setHit((cur) => (cur && cur.id === id ? null : cur));
+  }, []);
+
   // Screen-reader mirror of the guess feedback (same pattern as the sentence round).
   const [announce, setAnnounce] = useState('');
   const announceFlip = useRef(false);
@@ -235,12 +283,21 @@ function WordRound({
     setAnnounce(text + (announceFlip.current ? '' : '​'));
   }, []);
 
-  // The board scroller. It opens parked on the WORD at the bottom — the line is read
-  // up from it, like the route map opens on its own end — and a counted guess scrolls
-  // its station into view so the claim (or the near strike's boundary lesson) is seen
-  // landing.
+  // The board scroller. It opens parked at the bottom, where the line runs into the pinned
+  // terminus word below it — the line is read up from that end, like the route map opens on
+  // its own end — and a CLAIM scrolls its station into view so the find is seen landing.
+  //
+  // ONLY a claim (decided 2026-08-06). A strike used to move the board too, out to the near
+  // miss's own row on the trunk: it strikes, so the player is being carried AWAY from the
+  // field they are working on, and then has to find their way back before the next guess.
+  // The move is a reward for a find, not a report on a failure — the cross row and the
+  // floating rank already say what happened, and they say it without moving the ground. (An
+  // off-map miss has no row to move to and never scrolled.)
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [focusRank, setFocusRank] = useState<{ rank: number; at: number } | null>(null);
+  // Boxed rather than a bare number so that landing on the SAME rank twice still moves the
+  // board: a fresh object is never `Object.is` the last one, which is what re-runs the
+  // effect below.
+  const [focusRank, setFocusRank] = useState<{ rank: number } | null>(null);
   // Which way the line still runs past the window's edges — the frame wears a torn dashed
   // rule on that side (the onboarding teaser's own vocabulary, shared with it in the hook).
   const { more, readEdges } = useScrollEdges(scrollRef);
@@ -255,7 +312,7 @@ function WordRound({
   useLayoutEffect(() => {
     readEdges();
   }, [board, readEdges]);
-  // Move onto the station a counted guess just landed on; once the run ends, the terminus
+  // Move onto the station a CLAIM just landed on; on the post-mortem beat, the terminus
   // takes priority and the view returns to the true bottom of the routes. Driven here
   // rather than by `scrollIntoView({ behavior: 'smooth' })`, whose duration is the BROWSER's
   // and scales with the distance travelled: the field is ~150 rows, so a claim out at the
@@ -263,19 +320,19 @@ function WordRound({
   // landed — and the next guess is typeable the whole time. On this clock the move is over
   // in a beat, with the distance changing it only inside a narrow band.
   useLayoutEffect(() => {
-    if (!ended && !focusRank) return undefined;
+    if (!postMortem && !focusRank) return undefined;
     const scroller = scrollRef.current;
     if (!scroller) return undefined;
     const from = scroller.scrollTop;
     const bottom = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
     let to = bottom;
-    if (!ended && focusRank) {
-      const station = scroller.querySelector<HTMLElement>(`[data-word-rank="${focusRank.rank}"]`);
+    if (!postMortem && focusRank) {
+      const station = scroller.querySelector<HTMLElement>(`[data-route-rank="${focusRank.rank}"]`);
       if (!station) return undefined;
       // Centre a live station in the window, clamped into the scroll range. Measured off
       // RECTS, never offsetTop: `.route-frame` is positioned, so IT is the offsetParent
-      // rather than the scroller, and the two coordinate spaces differ (the route map's
-      // own `offsetWithin` exists for exactly that trap). Nothing here is mid-transform,
+      // rather than the scroller, and the two coordinate spaces differ (the shared
+      // `offsetWithin` exists for exactly that trap). Nothing here is mid-transform,
       // so rects are honest. The ended branch deliberately skips this: the destination is
       // after every ranked station, at the route's actual bottom edge.
       const stationBox = station.getBoundingClientRect();
@@ -315,20 +372,20 @@ function WordRound({
     frame = requestAnimationFrame(step);
     // A guess landing mid-move takes over from wherever the line has got to.
     return () => cancelAnimationFrame(frame);
-  }, [ended, focusRank]);
+  }, [postMortem, focusRank]);
 
   // Same prefix rule as the sentence game: a dead-end char shakes the prompt instead of
-  // being silently dropped (physical typing has no greyed key to look at).
+  // being silently dropped (physical typing has no greyed key to look at). Read off the
+  // current input rather than from inside a `setInput` updater — an updater has to be pure
+  // (React runs it twice under StrictMode and may re-run it while rendering), and the
+  // sentence game's own appendChar is written exactly this way.
   const appendChar = useCallback(
     (char: string) => {
       if (ended) return;
-      setInput((cur) => {
-        if (canExtend(prefixSet, cur, char)) return cur + char;
-        setInvalidAt(Date.now());
-        return cur;
-      });
+      if (canExtend(prefixSet, input, char)) setInput(input + char);
+      else setInvalidAt(Date.now());
     },
-    [ended, prefixSet],
+    [ended, input, prefixSet],
   );
 
   const deleteChar = useCallback(() => {
@@ -380,21 +437,33 @@ function WordRound({
       }
 
       // A COUNTED guess: append it and cache the replayed claim count / end state, so
-      // the archive and selector can badge the day without this rank map.
+      // the archive and selector can badge the day without this rank map. On the last
+      // strike, `ended` follows through the persisted replay and the effect above runs
+      // the end beats — the prompt stays for the hold, so the strike is SEEN landing.
       const nextRun = replayWordRun(ranks, [...tried, typed]);
-      // Start retiring the prompt in the SAME commit as the last strike. `ended` follows
-      // through the persisted replay and advances the remaining end sequence above.
-      if (nextRun.ended) setPromptExiting(true);
       recordWordGuess(typed, nextRun.claimedRanks.length, nextRun.ended);
 
+      // Every counted guess lands its hit on the terminus. `judged` here is claim/near/miss —
+      // zero already returned above, and free guesses never reach this point.
+      hitId.current += 1;
+      setHit({
+        id: hitId.current,
+        value: judged.kind === 'miss' ? 0 : judged.entry.rank,
+        miss: judged.kind === 'miss',
+        startDelayMs: 0,
+        fadeDelayMs: FLOATING_HIT_INTRO_MS,
+      });
+
       if (judged.kind === 'claim') {
-        setFocusRank({ rank: judged.entry.rank, at: Date.now() });
+        setFocusRank({ rank: judged.entry.rank });
         say(srWordClaim(lang, judged.entry.word, judged.entry.rank, nextRun.claimedRanks.length));
         return;
       }
       if (judged.kind === 'near') {
         // A ranked near miss STRIKES but shows its rank — it teaches where the boundary is.
-        setFocusRank({ rank: judged.entry.rank, at: Date.now() });
+        // It does NOT move the board: a strike must not carry the player off the field they
+        // are working on (see the scroller's comment above). Its row is drawn on the trunk
+        // either way, to be found on the way past.
         say(srWordStrike(lang, judged.entry.rank, nextRun.strikes, STRIKES_TO_END, nextRun.ended));
         return;
       }
@@ -418,14 +487,23 @@ function WordRound({
       {/* The board IS the play surface: the day's neighborhood as the live route map. The
           WINDOW around it is a second, non-scrolling box — the torn rules that mark a cut-off
           edge have to stay put while the line moves under them (see `.scroll-torn`). */}
-      <div
-        className={`word-window scroll-torn${more.up ? ' more-up' : ''}${
-          more.down ? ' more-down' : ''
-        }`}
-      >
-        <div className="word-scroll pixel-scroll" ref={scrollRef} onScroll={readEdges}>
-          <WordBoard model={board} lang={lang} />
+      <div className="word-window">
+        {/* The CUT wears the torn edges, not the window: the terminus footer below is the
+            window's last child, and a tear on the window's own bottom edge would draw under
+            the footer — the cut is where the SCROLLER ends, which is where the line can be
+            severed mid-field (its bottom rule lands on the footer's top edge, right where
+            the terminus's rail stub runs into it). */}
+        <div
+          className={`word-cut scroll-torn${more.up ? ' more-up' : ''}${
+            more.down ? ' more-down' : ''
+          }`}
+        >
+          <div className="word-scroll pixel-scroll" ref={scrollRef} onScroll={readEdges}>
+            <WordBoard model={board} lang={lang} />
+          </div>
         </div>
+        {/* The day's word, pinned under the cut — always on screen, never scrolled behind. */}
+        <WordTerminus model={board} hit={hit} onHitDone={clearHit} />
       </div>
 
       {/* One stable footer footprint: while playing it is prompt + keyboard; once the

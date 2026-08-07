@@ -1,39 +1,17 @@
 import Flag from '../components/Flag';
+import Chooser, { ChooserCard } from '../components/Chooser';
 import { LANGS, pathForMode, resolveHomeLang } from '../langs';
 import { navigate } from '../routing';
 import useToday from '../hooks/useToday';
-import { progressColor } from '@whippin/shared';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
-import { statusOf, wordStatusOf, srStatus, type Status } from '../state/status';
-// Bundled like the flags (small enough to inline as a data URI — no extra request).
-import logo from '../assets/logo-blue.png';
+import { statusOf, wordStatusOf } from '../state/status';
 
-// Today's status, spoken in the game's own visual language instead of text badges: a
-// thin strip along the card's bottom edge. Absent = not started (NOTHING is the "new"
-// signal); partial = today's reconstruction %, tinted like the in-game progress bar;
-// full GOLD = solved, the same gold as a solved word. Decorative — the aria-label
-// carries the status for screen readers.
-function StatusStrip({ status }: { status: Status }) {
-  if (status.kind === 'none') return null;
-  const pct = status.kind === 'solved' ? 100 : status.pct;
-  return (
-    <span
-      className="lang-strip"
-      style={{
-        width: `${pct}%`,
-        background: status.kind === 'solved' ? 'var(--hole)' : progressColor(pct),
-      }}
-      aria-hidden="true"
-    />
-  );
-}
-
-// The language screen is a ROUTE (/select), not a modal: the header flag links here
-// from the game AND the tutorial (whose transient open-state survives the round-trip,
-// so picking a language returns into it). One CARD per language — full-opacity flag +
-// the language's NATIVE name — in a vertical list that scales to any number of
-// languages; hover/press brighten like every key in the app. The per-(day,lang)
+// The language chooser (/select), reached from the header globe on every screen — the
+// game AND the tutorial (whose transient open-state survives the round-trip, so picking
+// a language returns into it). One card per language: full-opacity flag + the language's
+// NATIVE name, in a list that scales to any number of languages. The per-(day,lang)
 // persist keeps each language's in-progress state, so switching needs no confirmation.
+// The screen itself is the shared `Chooser` — see it for the shell and the card.
 export default function LanguageSelect() {
   const dayNumber = useToday();
   const rounds = useGameStore((s) => s.rounds);
@@ -47,35 +25,21 @@ export default function LanguageSelect() {
   const uiLang = resolveHomeLang(lastLang, navigator.language);
 
   return (
-    <div className="lang-screen">
-      {/* The logo, not a "select language" instruction: the cards self-explain, and a
-          title would have to GUESS the user's language on the one screen where it is
-          unknown. The logo is language-neutral and this quasi-menu screen is the
-          app's one in-app branding spot. The h1 + alt keep the accessible name. */}
-      <h1 className="lang-logo-title">
-        <img className="lang-logo" src={logo} alt="Whippin AI" draggable="false" />
-      </h1>
-      <div className="lang-list">
-        {LANGS.map(({ code, native }) => {
-          const status =
+    <Chooser>
+      {LANGS.map(({ code, native }) => (
+        <ChooserCard
+          key={code}
+          name={native}
+          uiLang={uiLang}
+          icon={<Flag code={code} className="chooser-card-icon" />}
+          status={
             mode === 'word'
               ? wordStatusOf(wordRounds[roundKeyForDay(dayNumber, code, 'word')])
-              : statusOf(rounds[roundKeyForDay(dayNumber, code)]);
-          return (
-            <button
-              key={code}
-              type="button"
-              className="lang-card"
-              aria-label={`${native}${srStatus(uiLang, status)}`}
-              onClick={() => navigate(pathForMode(code, mode))}
-            >
-              <Flag code={code} className="lang-card-flag" />
-              <span className="lang-card-name">{native}</span>
-              <StatusStrip status={status} />
-            </button>
-          );
-        })}
-      </div>
-    </div>
+              : statusOf(rounds[roundKeyForDay(dayNumber, code)])
+          }
+          onClick={() => navigate(pathForMode(code, mode))}
+        />
+      ))}
+    </Chooser>
   );
 }

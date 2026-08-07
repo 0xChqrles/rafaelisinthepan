@@ -57,18 +57,23 @@ export function pathForDay(lang: string | null, date: string, mode: Mode = 'sent
   return mode === 'word' ? `/${lang}/${WORD_SEGMENT}/${date}` : `/${lang}/${date}`;
 }
 
-// The language selector lives at its own route (not a modal): the HUD flag links here.
+// The two CHOOSERS live at their own routes (not modals), each opened by one header
+// glyph: the globe → /select picks the language, the Whippin mark → /mode picks which
+// daily to play. Neither is language- or mode-scoped, so both sit above /<lang>.
 export const SELECT_PATH = '/select';
+export const MODE_SELECT_PATH = '/mode';
 
 // A parsed route. The game IS the home: /<lang> plays today's puzzle, /<lang>/<date>
 // plays a past day (archive, #55), /<lang>/archive is the calendar, /select is the
-// language picker, and anything else (/, unknown paths) is a `home` redirect that
-// bounces to the user's language (see resolveHomeLang). Word mode (#156) mirrors the
-// whole grammar under /<lang>/word: today's word, /word/<date>, /word/archive.
+// language picker, /mode the game-mode picker, and anything else (/, unknown paths) is
+// a `home` redirect that bounces to the user's language (see resolveHomeLang). Word
+// mode (#156) mirrors the whole grammar under /<lang>/word: today's word,
+// /word/<date>, /word/archive.
 export type Route =
   | { view: 'game'; lang: LangCode; mode: Mode; date?: string }
   | { view: 'archive'; lang: LangCode; mode: Mode }
   | { view: 'select' }
+  | { view: 'modeSelect' }
   | { view: 'home' };
 
 // A strict "YYYY-MM-DD" that is ALSO a real calendar date (so 2026-13-40 is rejected):
@@ -97,6 +102,7 @@ export function parseRoute(pathname: string, bounds: RouteBounds = {}): Route {
   const segs = pathname.replace(/^\/+/, '').replace(/\/+$/, '').split('/');
   const [seg, second, third] = segs;
   if (seg === 'select') return { view: 'select' };
+  if (seg === 'mode') return { view: 'modeSelect' };
   if (!isLang(seg)) return { view: 'home' };
 
   // A dated deep link is honored only when it is a real calendar date within range; a

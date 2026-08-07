@@ -245,7 +245,7 @@ button * {
    flags, no badges). Today's status is the thin strip along a card's bottom edge:
    absent = not started, partial = reconstruction % in the progress ramp, full GOLD =
    solved (the same gold as a solved word). */
-.lang-screen {
+.chooser-screen {
   width: min(420px, 100%);
   text-align: center;
 }
@@ -253,10 +253,10 @@ button * {
 /* The logo heads the screen instead of a "select language" instruction (the cards
    self-explain; a title would have to guess the user's language). Sized at an exact
    multiple of its 22px pixel art so it stays crisp. */
-.lang-logo-title {
+.chooser-logo-title {
   margin: 0 0 40px;
 }
-.lang-logo {
+.chooser-logo {
   display: block;
   margin: 0 auto;
   width: 66px; /* 3 × 22px */
@@ -264,13 +264,13 @@ button * {
   image-rendering: pixelated;
 }
 
-.lang-list {
+.chooser-list {
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
 
-.lang-card {
+.chooser-card {
   position: relative;
   overflow: hidden; /* keeps the status strip inside the tile */
   display: flex;
@@ -283,22 +283,29 @@ button * {
   text-shadow: none;
   transition: filter 0.08s linear;
 }
-.lang-card:hover {
+.chooser-card:hover {
   filter: brightness(1.2);
 }
-.lang-card:active {
+.chooser-card:active {
   filter: brightness(1.35);
 }
 
-/* 16x16 pixel-art flag at an exact 2x (32px) — integer scale keeps the grid crisp. */
-.lang-card-flag {
+/* A card's option art at an exact INTEGER scale — a fractional one leaves some source
+   pixels a row wider than others, which `pixelated` cannot fix. The default fits the
+   16x16 flags at 2x (32px); the 7x7 mode sprites take their own 4x (28px), the nearest
+   integer scale to it, so the two choosers read at the same optical size. */
+.chooser-card-icon {
   display: block;
   width: 32px;
   height: 32px;
   image-rendering: pixelated;
 }
+.chooser-card-icon.mode-sprite {
+  width: 28px;
+  height: 28px;
+}
 
-.lang-card-name {
+.chooser-card-name {
   font-family: var(--press);
   font-size: clamp(13px, 2vh, 16px);
   letter-spacing: 2px;
@@ -309,7 +316,7 @@ button * {
 
 /* Today's status strip (width + color set inline: % on the progress ramp, full gold
    when solved). Decorative — the card's aria-label speaks the status. */
-.lang-strip {
+.chooser-strip {
   position: absolute;
   left: 0;
   bottom: 0;
@@ -875,11 +882,14 @@ button * {
   shape-rendering: crispEdges;
 }
 
-/* The 7x7 mode sprites use the header's established 4x pixel scale. */
+/* The header's Whippin mark (the mode chooser's glyph): the 16x16 sprite at an exact 2x,
+   the same 32px the flag used to take in this row. Drawn, not masked — unlike .globe-icon
+   it is COLOURED art, so it keeps its blue and takes .home-btn's opacity/brightness hover
+   rather than the group's currentColor tint. */
 .mode-icon {
   display: block;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   image-rendering: pixelated;
 }
 
@@ -896,12 +906,16 @@ button * {
   margin-left: auto;
   pointer-events: auto;
 }
-/* The game header's archive entry + the archive's back-to-today control: currentColor
-   glyphs, muted -> fg on hover like the "?" and skip. */
+/* The language globe, the game header's archive entry and the archive's back-to-today
+   control: currentColor glyphs, muted -> fg on hover like the "?" and skip. The globe is a
+   masked PNG rather than an inline SVG (see .globe-icon) but takes currentColor the same
+   way, so the whole right group brightens together. */
+.lang-btn,
 .archive-btn,
 .archive-close {
   color: var(--muted);
 }
+.lang-btn:hover,
 .archive-btn:hover,
 .archive-close:hover {
   color: var(--fg);
@@ -942,13 +956,24 @@ button * {
   opacity: 1;
   filter: brightness(1.2);
 }
-/* The current puzzle's language flag in the header: the 16x16 pixel art at an exact
-   2x (32px), centered in the square .home-btn box by its flex — an integer scale, never
-   stretched to the box (a fractional fill would blur the grid). */
-.hud-flag {
-  display: block;
-  width: 32px;
-  height: 32px;
+/* The header's language control (2026-08-06, replacing the current puzzle's flag): the
+   15x15 globe at an exact 2x (30px), centered in the square .home-btn box by its flex — an
+   integer scale, never stretched to the box (a fractional fill would blur the grid), and
+   sitting at the same optical weight as the 27px calendar and "?" beside it.
+   It is MASKED rather than drawn as an <img>: globe.png is one colour plus transparency, so
+   painting the mask with `currentColor` puts it on the group's muted -> --fg hover with the
+   inline SVGs, which an <img> could only approximate with a filter. (The same technique as
+   .word-digit, which masks the digits sheet.) */
+.globe-icon {
+  width: 30px;
+  height: 30px;
+  background-color: currentColor;
+  -webkit-mask-image: url('./assets/icons/globe.png');
+  mask-image: url('./assets/icons/globe.png');
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 30px 30px;
+  mask-size: 30px 30px;
   image-rendering: pixelated;
 }
 
@@ -1225,6 +1250,13 @@ button * {
   display: flex;
   flex-direction: column;
   align-items: start;
+  /* Required for `.word-input`'s crop to work here (2026-08-06): this is a GRID item of
+     `.prompt-zone`, and a grid item's default `min-width: auto` lets it inflate to its own
+     content — so an over-long guess grew this box, `max-width: 100%` on the input resolved
+     against the grown width and never bit, and the prompt pushed the whole page sideways.
+     Bounded, the input hits the column's real width and crops its head instead. Word mode
+     never showed this: `.word-prompt` carries its own `width: 100%` + cap. */
+  min-width: 0;
   gap: 20px;
   opacity: 1;
   transform: translateX(0);
@@ -1236,14 +1268,21 @@ button * {
   transform: translateX(-24px);
 }
 
+/* ONE prompt for both games (2026-08-06): Word mode's larger, cropping prompt replaced the
+   sentence game's own smaller clamp rather than living beside it — it is the same control
+   doing the same job on both screens, and two sizes of it was a difference nothing asked for.
+   24px flat: walked down from 40 (which dominated the screen the board is supposed to own)
+   through 28, and still a clear step up from the 18px the old clamp gave a phone. */
 .word-input {
   position: relative;
   display: inline-flex;
   align-items: baseline;
   min-width: 280px;
+  /* Never wider than the column it sits in — that bound is what `.wi-text` crops against. */
+  max-width: 100%;
   padding: calc(4px + var(--text-shift)) 8px calc(4px - var(--text-shift));
   font-family: var(--vt);
-  font-size: clamp(18px, 3.2vw, 30px);
+  font-size: 24px;
   color: var(--fg);
   /* No native <input> to focus (issue #36): input comes from the on-screen keyboard
      and the physical keyboard, so the prompt never needs to hold a caret. */
@@ -1252,12 +1291,31 @@ button * {
 .wi-prompt {
   color: var(--accent);
   margin-right: 0.45em;
+  flex: 0 0 auto;
 }
+/* A guess that outruns the column CROPS ITS OWN BEGINNING (decided 2026-08-06, superseding a
+   shrink-to-fit): the letters just typed and the caret are what the player is looking at, so
+   they hold their place at full size and the head of the word slides off the left — a
+   terminal's behaviour. Shrinking instead kept every letter, but a 25-letter guess came out at
+   10px and the whole line changed size on almost every keystroke.
+   `justify-content: flex-end` is what puts the overflow at the START: the run is pinned to the
+   window's right edge, so what spills is on the left, where `overflow: hidden` cuts it. The
+   `min-width: 0` is required — a flex item will not shrink below its content without it, and
+   the window would simply grow instead of cropping. */
 .wi-text {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  justify-content: flex-end;
+  overflow: hidden;
+}
+.wi-text-run {
+  flex: 0 0 auto;
   white-space: pre;
 }
 .wi-cursor {
   color: var(--accent);
+  flex: 0 0 auto;
   /* Blinking underscore. */
   animation: blink 1s steps(1) infinite;
 }
@@ -2732,7 +2790,7 @@ button * {
   /* Screens with no HUD stay vertically centered (auto margins beat align-items).
      max-width caps them to the viewport so a long title / the flag grid wrap
      within it instead of sizing to content and overflowing (h-scroll / clipping). */
-  .lang-screen,
+  .chooser-screen,
   .app > .status,
   .app > .load-error {
     margin: auto 0;
@@ -2769,16 +2827,19 @@ button * {
     font-size: 20px;
   }
 
-  /* Sentence + mirrored input: a touch smaller so a hole + its exponent near the
-     right edge still fits (and otherwise the hole wraps as one unit to the next line). */
-  .phrase,
-  .word-input {
+  /* The sentence: a touch smaller so a hole + its exponent near the right edge still fits
+     (and otherwise the hole wraps as one unit to the next line).
+     The PROMPT used to ride this same rule, mirroring the phrase's size. It no longer does
+     (2026-08-06): both games now share ONE 24px prompt that CROPS rather than shrinks, so
+     tying it to the phrase would have reintroduced exactly the shrinking that replaced. */
+  .phrase {
     font-size: clamp(13px, 4.2vw, 19px);
   }
-  /* The input must be able to shrink below its desktop min-width on a narrow screen. */
+  /* The input must be able to shrink below its desktop min-width on a narrow screen — which
+     is what lets `.wi-text` crop instead of the whole line overflowing (`max-width: 100%` is
+     on the base rule now, for both games). */
   .word-input {
     min-width: 0;
-    max-width: 100%;
   }
 
   /* Floating hit / MISS scaled down to sit over the smaller hole words. */
@@ -2869,14 +2930,14 @@ button * {
   }
 
   /* Language picker: tighter cards on a phone. */
-  .lang-logo-title {
+  .chooser-logo-title {
     margin-bottom: 28px;
   }
-  .lang-logo {
+  .chooser-logo {
     width: 44px; /* 2 × 22px */
     height: 44px;
   }
-  .lang-card {
+  .chooser-card {
     padding: 16px 18px;
     gap: 16px;
   }
@@ -3363,12 +3424,16 @@ button * {
    content and the air around it is what makes it legible — so all of this is scoped to
    `.word-game`.
    The top reserve is 48px: enough to clear the fixed header while balancing the header's
-   screen-top inset against the gap before the board. The prompt gets a little breathing
-   room on both sides while remaining visually tied to the board and keyboard; its
-   three-cross failure row uses the retired last-guess hint's slot, 10px under the caret. */
+   screen-top inset against the gap before the board.
+   The three seams below the board are NOT equal, and that is the point (retuned 2026-08-06):
+   the PROMPT is what the player acts through, so it gets the room — a wide seam above it
+   (this gap) and a wide one under it (`.input-area.word-prompt`) — while the crosses sit
+   CLOSE to the keyboard they report on (`.word-footer-play`). Evenly spaced, the prompt read
+   as one more band in a stack of four; with the space pushed to its two sides it reads as the
+   live line and the crosses read as a status strip on top of the keys. */
 .game.word-game {
   padding-top: 48px;
-  gap: clamp(16px, 2.4vh, 26px);
+  gap: clamp(22px, 3.4vh, 36px);
 }
 /* Prompt + keyboard are one stable footer footprint. The Word result is much shorter than
    that pair, so putting it in `.tray` alone left the retired prompt's whole row plus the
@@ -3382,12 +3447,15 @@ button * {
 .word-footer > * {
   grid-area: 1 / 1;
 }
+/* The crosses→keyboard seam, deliberately the TIGHTEST of the three (2026-08-06): the row
+   reports on the guessing the keys do, so it belongs ON the keyboard rather than floating
+   between it and the prompt. What it gives up here is what the prompt's own two seams take. */
 .word-footer-play {
   min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: start;
-  gap: clamp(16px, 2.4vh, 26px);
+  gap: clamp(6px, 1vh, 12px);
 }
 .word-footer-result {
   z-index: 1;
@@ -3414,14 +3482,33 @@ button * {
 .word-footer-result .solved-score-num {
   font-size: clamp(52px, 10vh, 88px);
 }
+/* The tally's landing: word mode's count is the result's LAST beat (no ruler colorize
+   follows it, as in the sentence tray), so the number marks its own arrival with a
+   one-shot scale pop when the count reaches its final value. */
+.word-footer-result .solved-score-num.landed {
+  animation: score-land 0.3s ease-out;
+}
+@keyframes score-land {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.12);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
 .word-footer-result .solved-score-unit {
   font-size: clamp(11px, 1.5vh, 14px);
 }
 .word-footer-result .result-actions {
   flex: 0 0 auto;
 }
+/* Under the caret: the prompt's own lower seam. Wide, like the one above it — the two
+   together are what give the prompt its room (see `.game.word-game`). */
 .input-area.word-prompt {
-  gap: 10px;
+  gap: clamp(16px, 2.4vh, 24px);
 }
 /* The board's WINDOW: a non-scrolling frame around the scroller, which is what lets it wear
    the shared TORN EDGES (`.scroll-torn`) — the line runs taller than the screen on any board
@@ -3439,15 +3526,17 @@ button * {
    The drawing is `min(430px, 100%)` and centres itself inside the scroller, so on a desktop
    the WINDOW was the whole 1200px page column while the line in it was 430 — and the torn
    edges span the window, so they ran nearly three times the width of the thing they were
-   tearing. The cap is the line (430) + the scroller's own 20px sides + the 6px pixel
+   tearing. The cap is the line (430) + the scroller's ONE remaining 20px side + the 6px pixel
    scrollbar, so the drawing still lands at its full width and the rules bracket it with
-   exactly the scroller's breathing room and no more. The prompt takes the same column
+   exactly the scroller's breathing room and no more. (It was 40px of sides until 2026-08-06,
+   when the left one went to 0 so the board's left edge lines up with the prompt's — see
+   `.word-scroll`.) The prompt takes the same column
    because it belongs to the board: left-aligned against the page it sat a third of a screen
    away from the line it answers. Both are no-ops on a phone, where the column is already
    narrower than the cap. */
 .word-window,
 .word-prompt {
-  max-width: calc(430px + 40px + 6px);
+  max-width: calc(430px + 20px + 6px);
   align-self: center;
 }
 .word-scroll {
@@ -3459,28 +3548,87 @@ button * {
   /* The board is the screen behind a live prompt — rubber-banding the page under it while
      hunting the line would take the keyboard with it. */
   overscroll-behavior: contain;
-  /* Horizontal padding only, like .route-scroll — the line's breathing room is content. */
-  padding: 0 20px;
+  /* Horizontal only, like .route-scroll — the line's breathing room is content, never a
+     vertical padding (a sticky offset would resolve against it).
+     The LEFT side is 0 (2026-08-06): the drawing is a left-aligned block — the rank gutter
+     starts it and the words run off to the right — so an inset there just held the whole
+     board 20px in from the prompt under it and from the torn rules that bracket it, and it
+     read as a box floating inside the page rather than as the page's own content. The RIGHT
+     side keeps its 20px: that is the clearance the pixel scrollbar needs off the words. */
+  padding: 0 20px 0 0;
 }
 /* The board lives IN THE PAGE, inside .app's frame inset — unlike the route modal,
    which is a full-bleed dialog — so `--wordw`'s 100vw arithmetic must also shed the
    app's side padding (24px each side; 14px under the 640px mobile breakpoint) or
    fitWord sizes long words to a column ~2 insets wider than the real one and they
-   break mid-word at the terminus. Verified: 'tropiques' at 390px wraps without this. */
+   break mid-word at the terminus. Verified: 'tropiques' at 390px wraps without this.
+   The 20px is the scroller's ONE remaining side (right only since 2026-08-06). */
 .word-frame {
-  --wordw: calc(min(430px, 100vw - 40px - 48px) - var(--gutter) - var(--railw) - 18px);
+  --wordw: calc(min(430px, 100vw - 20px - 48px) - var(--gutter) - var(--railw) - 18px);
 }
-/* The line ends just above the prompt, not on a modal's generous bottom margin. The map's
-   104px foot is sized for a full-screen dialog with nothing under it — here the window's
-   bottom edge IS where the prompt begins, and the board opens parked on the word, so that
-   much clearance reads as a hole between the word and the input rather than as breathing
-   room. */
+/* The scrolling line ends AT the window's bottom edge, because the terminus sits just past
+   it (see `.word-terminus`): scrolled all the way down, the merge's last link runs out of
+   the scroller and straight into the terminus's own rail. Any padding here would open a gap
+   in the middle of that line. */
 .word-frame .route {
-  padding-bottom: 40px;
+  padding-bottom: 0;
+}
+/* The window cut: the non-scrolling frame that wears the TORN EDGES around the scroller.
+   It exists as its own box INSIDE `.word-window` (rather than the window wearing them, as it
+   did while the terminus lived in the scroller) because the terminus footer is the window's
+   last child: tears on the window would draw UNDER the footer, marking the wrong edge — the
+   cut is where the SCROLLER ends, which is exactly where the line can be cut mid-field. */
+.word-cut {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* While the line is CUT, the content stops 8px SHORT of the torn rule: an empty band of bare
+   backdrop between the severed field and the dashes — the route map's own grammar for a parked
+   row, whose separator sits in a `--stick-inset` (8px) clearance rather than against the rows
+   it interrupts. Spoken here with a MASK, not a strip: painting the band would put a box over
+   the animated waves, which is the thing this footer exists to avoid. Only while torn — at the
+   true bottom the mask lifts, because the merge's last link must run flush out of the scroller
+   into the terminus's rail below it. */
+.word-cut.more-down .word-scroll {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 calc(100% - 8px),
+    transparent calc(100% - 8px)
+  );
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 8px), transparent calc(100% - 8px));
+}
+/* The TERMINUS: the day's word, pinned UNDER the window as the board's own footer — always
+   on screen, and with nothing ever scrolling behind it, so it needs no masking background
+   (a sticky in-scroller row needed an opaque `--bg` box, which over the page's animated
+   waves read as a black patch stamped on the backdrop — the route modal never shows one
+   only because its dialog is flat `--bg`). When the line is cut mid-field, the cut's torn
+   bottom rule lands right on this footer's top edge, where the terminus's own rail stub
+   runs into it — the same "the map does not continue straight through here" the modal's
+   parked separator speaks, for free.
+   The right padding mirrors the scroller's one padded side PLUS its 6px pixel scrollbar, so
+   this grid lands on the same columns as the line scrolling above it. */
+.word-terminus {
+  padding: 0 26px 0 0;
+}
+.word-terminus .route {
+  padding: 0;
+}
+/* The guess's impact lands on the terminus word (the sentence game's own hit grammar): the
+   same shake, minus `.hole-word`'s inline-block — the route word is a flex row and keeps it. */
+.route-word.hit-shake {
+  animation: word-shake 0.4s ease-in-out var(--hit-delay, 0ms);
+}
+/* The hit anchors on the word alone. Inside the route grid the wrap is the body cell's only
+   content, so nothing needs its baseline — top-aligning it keeps the inline-block's strut from
+   adding phantom height under the 40px word row. */
+.route-body .hole-word-wrap {
+  vertical-align: top;
 }
 @media (max-width: 640px) {
   .word-frame {
-    --wordw: calc(min(430px, 100vw - 40px - 28px) - var(--gutter) - var(--railw) - 18px);
+    --wordw: calc(min(430px, 100vw - 20px - 28px) - var(--gutter) - var(--railw) - 18px);
   }
 }
 .word-prompt {
@@ -3506,18 +3654,31 @@ button * {
   gap: 20px;
   align-self: center;
 }
+/* cross-button.png is a 22x11 sheet of two square 11x11 frames: 0 the un-pressed button, 1 the
+   pressed red fail (the sprite bakes `--danger` #ff1f54 in, so nothing recolors it at
+   runtime).
+   Drawn at an exact 4x — 44px — like every other pixel sprite here: a fractional scale leaves
+   some source pixels a row wider than others, and `image-rendering: pixelated` cannot fix
+   that. `background-size` is the WHOLE sheet at that scale (two frames wide), so picking a
+   state is one frame's step in `background-position`.
+   Three crosses at a 20px gap are 172px, well inside the ~292px a 320px screen has, so the row
+   needs nothing responsive. It DID while STRIKES_TO_END was 5 (300px, which overflows), and
+   there the GAP paid for it and never the sprite — the crosses may not shrink, a fractional
+   scale being the one thing this sprite cannot survive. Past FOUR crosses that override has to
+   come back; see the note on STRIKES_TO_END. */
 .strike-pip {
   display: block;
-  flex: 0 0 28px;
-  width: 28px;
-  height: 28px;
-}
-/* failIcon.ts bakes the live semantic colors into the PNG with exact pixel replacement. */
-.strike-pip img {
-  display: block;
-  width: 28px;
-  height: 28px;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  background-image: url('./assets/cross-button.png');
+  background-repeat: no-repeat;
+  background-size: 88px 44px;
+  background-position: 0 0;
   image-rendering: pixelated;
+}
+.strike-pip.failed {
+  background-position: -44px 0;
 }
 .word-digit {
   display: block;

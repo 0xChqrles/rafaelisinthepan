@@ -8,7 +8,7 @@
 // changes the drawing.
 
 import type { RankEntry, WordRanks } from '@whippin/shared';
-import { CLAIM_ZONE, STRIKES_TO_END, judgeWordGuess, wordGuessKey } from './wordGame';
+import { CLAIM_ZONE, replayWordRun } from './wordGame';
 
 // One group of the zone: a station on its road's lane. `word` is null while unclaimed
 // and the run is live; a claim — or the run ending, which turns the board into the
@@ -28,6 +28,11 @@ export interface WordStation {
 export interface WordOutsideStop {
   rank: number;
   dq: number;
+  // The form the PLAYER TYPED, not the group's canonical one (decided 2026-08-06 — the same
+  // rule as the sentence map's trunk stops, see route.ts RouteStop.word). Off the roads nothing
+  // was drawn before the guess landed, so the stop IS the guess: answering `sables` with its
+  // group's `sable` puts a word on the board that was never played. A CLAIM is the opposite
+  // case — that station was already there as `???`, so revealing it names the census.
   word: string;
 }
 
@@ -38,6 +43,11 @@ export interface WordBoardModel {
   outside: WordOutsideStop[]; // near strikes, rank ascending
   misses: string[]; // off-map strikes, in try order (typed slugs — see route.ts misses)
   ended: boolean;
+  // The farthest rank this MAP holds, not the farthest currently drawn — so the drawing can
+  // reserve a rank gutter wide enough for any exponent the round can still produce. It is a
+  // property of the puzzle, so it never changes mid-round: the line cannot shift sideways
+  // under the player when a far guess lands.
+  maxRank: number;
 }
 
 // One pass over the (alias-expanded) flat map, cached per map object — the map is
@@ -46,6 +56,10 @@ interface WordGeometry {
   zone: Map<number, RankEntry>; // rank -> its group, for every zone group carrying dq
   lanes: Map<number, number>; // distinct road id -> lane index, ascending (see route.ts)
   plottable: boolean; // the rank-1 group carries dq -> the board can be drawn
+  // The FARTHEST rank this map holds — every one of which is typeable, so it is the widest
+  // exponent the line can ever be asked to draw. The drawing reserves its rank gutter for it
+  // (see WordBoardModel.maxRank); free here, since this pass already visits every entry.
+  maxRank: number;
 }
 
 const geometryCache = new WeakMap<WordRanks, WordGeometry>();
@@ -55,8 +69,12 @@ export function wordGeometry(ranks: WordRanks): WordGeometry {
   if (cached) return cached;
   const zone = new Map<number, RankEntry>();
   const roadIds = new Set<number>();
+  let maxRank = 1;
   for (const key in ranks) {
     const entry = ranks[key];
+    // Before the zone filter: the widest exponent comes from the FAR end of the map, which is
+    // exactly what the zone excludes.
+    if (entry.rank > maxRank) maxRank = entry.rank;
     if (entry.rank === 0 || entry.rank > CLAIM_ZONE || entry.dq === undefined) continue;
     if (!zone.has(entry.rank)) zone.set(entry.rank, entry);
     if (entry.road !== undefined) roadIds.add(entry.road);
@@ -70,6 +88,7 @@ export function wordGeometry(ranks: WordRanks): WordGeometry {
     zone,
     lanes,
     plottable: zone.get(1)?.dq !== undefined,
+    maxRank,
   };
   geometryCache.set(ranks, geometry);
   return geometry;
@@ -85,46 +104,42 @@ export function buildWordBoard({
   ranks,
   word,
   tried,
+  reveal,
 }: {
   ranks: WordRanks;
   word: string; // the day's accented display form
   tried: string[]; // the round's counted guesses, folded, in try order
+  // When the post-mortem NAMES the field. Defaults to the run ending; the screen passes
+  // its own later beat so the killing strike can play out before the reveal (the reveal
+  // is presentation pacing — the run's END itself stays `replayWordRun`'s).
+  reveal?: boolean;
 }): WordBoardModel | null {
   const geometry = wordGeometry(ranks);
   if (!geometry.plottable) return null;
 
-  // Walk the counted log once, with the model's own group-level dedup, splitting it into
-  // claims / near strikes / off-map strikes — and replaying the end-of-run rule so the
-  // board knows when it has become the post-mortem.
-  const seen = new Set<string>();
+  // The RULES are `replayWordRun`'s, never restated here: this only sorts the counted
+  // guesses it hands back into the three things the drawing shows. A near strike with no
+  // `dq` is deliberately dropped from both — it struck, but there is no distance to hang it
+  // on the trunk by and it is not off the map either.
+  const { counted, ended } = replayWordRun(ranks, tried);
+  const revealField = reveal ?? ended;
   const claimed = new Set<number>();
   const outside = new Map<number, WordOutsideStop>();
   const misses: string[] = [];
-  let strikes = 0;
-  let ended = false;
-  for (const typed of tried) {
-    if (ended) break;
-    const key = wordGuessKey(ranks, typed);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const judged = judgeWordGuess(ranks, typed);
-    if (judged.kind === 'zero') continue;
+  for (const { typed, judged } of counted) {
     if (judged.kind === 'claim') {
       claimed.add(judged.entry.rank);
-      strikes = 0;
-      continue;
-    }
-    if (judged.kind === 'near' && judged.entry.dq !== undefined) {
-      outside.set(judged.entry.rank, {
-        rank: judged.entry.rank,
-        dq: judged.entry.dq,
-        word: judged.entry.word,
-      });
-    } else if (judged.kind === 'miss') {
+    } else if (judged.kind === 'near') {
+      if (judged.entry.dq !== undefined) {
+        outside.set(judged.entry.rank, {
+          rank: judged.entry.rank,
+          dq: judged.entry.dq,
+          word: typed,
+        });
+      }
+    } else {
       misses.push(typed);
     }
-    strikes += 1;
-    if (strikes >= STRIKES_TO_END) ended = true;
   }
 
   const laneOf = (entry: RankEntry): number | null =>
@@ -137,9 +152,9 @@ export function buildWordBoard({
       rank,
       dq: entry.dq!,
       road: laneOf(entry),
-      // A claim reveals its word; the run ending reveals the WHOLE field — the board is
+      // A claim reveals its word; the post-mortem reveals the WHOLE field — the board is
       // then the post-mortem, like the solved route map.
-      word: isClaimed || ended ? entry.word : null,
+      word: isClaimed || revealField ? entry.word : null,
       claimed: isClaimed,
     });
   }
@@ -151,5 +166,6 @@ export function buildWordBoard({
     outside: [...outside.values()].sort((a, b) => a.rank - b.rank),
     misses,
     ended,
+    maxRank: geometry.maxRank,
   };
 }

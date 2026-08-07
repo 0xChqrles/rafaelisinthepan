@@ -43,7 +43,12 @@ pnpm backend:dev                # local server (GET /?lang=, /today) on :8787 ov
 - **Word mode's daily artifact (#154/#156):** the ONE puzzle endpoint also serves the
   single-word artifact under `mode=word` (`GET /?lang=&date=&mode=word`; absent/
   `sentence` = the sentence puzzle, anything else = 400) with identical day-addressing,
-  404 semantics, caching and compression. The store key is
+  404 semantics, caching and compression. **A new query parameter here is only half the
+  change:** the CDN cache policy (`infra/lib/backend-stack.ts`) has to list it too, or
+  CloudFront both collapses the two responses onto one year-long edge entry and — having no
+  origin request policy — strips the parameter before this handler ever sees it. See the
+  routing contract in the root `AGENTS.md`; `backend:dev` has no CDN and cannot show it. The
+  store key is
   `<date>.<lang>.word.json` (`layout.storeKey(date, lang, 'word')`), read by
   `PuzzleStore.getWordPuzzle` in both store impls; `publish` detects the artifact type
   from the JSON shape (`holes` = sentence, `word` + flat `ranks` = word) and routes it

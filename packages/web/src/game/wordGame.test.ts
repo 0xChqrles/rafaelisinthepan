@@ -1,7 +1,8 @@
 // CONTRACT (#156 — Word mode rules, decided 2026-08-03):
 //   - score = number of top-zone (CLAIM_ZONE = the #154 road zone, 150) groups claimed
 //     before the run ends;
-//   - the run ends after STRIKES_TO_END (3) CONSECUTIVE incorrect guesses;
+//   - the run ends after STRIKES_TO_END CONSECUTIVE incorrect guesses — that count is a
+//     tuning knob, so every sequence below is DERIVED from it rather than typed out;
 //   - incorrect = a valid vocab word, not already tried, ranked OUTSIDE the zone —
 //     including off-map (beyond the TOP_K cap); a ranked near miss shows its rank;
 //   - free (no strike, no claim): repeats — deduped at GROUP level (#104: inflections/
@@ -32,6 +33,16 @@ const RANKS: WordRanks = {
   sables: { word: 'sable', rank: CLAIM_ZONE + 1, dq: 39 },
   neige: { word: 'neige', rank: 353, dq: 12 },
 };
+
+// `n` DISTINCT off-map words — distinct guesses by the slug fallback, so each one strikes.
+const offMap = (n: number, tag: string): string[] =>
+  Array.from({ length: n }, (_, i) => `motfaux${tag}${i}`);
+
+// `n` DISTINCT incorrect guesses: the map's two ranked near misses first, so a run also
+// exercises the near strike, then off-map words. Derived from STRIKES_TO_END at the call
+// site rather than typed out, so retuning the constant cannot quietly stop testing the end.
+const strikeRun = (n: number, tag = 'a'): string[] =>
+  ['sable', 'neige', ...offMap(Math.max(0, n - 2), tag)].slice(0, n);
 
 describe('judgeWordGuess — the claim boundary', () => {
   it('a zone group is a claim, the zone edge included', () => {
@@ -76,16 +87,26 @@ describe('replayWordRun — scoring and the end of the run', () => {
     expect(run.ended).toBe(false);
   });
 
-  it(`ends after ${STRIKES_TO_END} CONSECUTIVE incorrect guesses`, () => {
-    const run = replayWordRun(RANKS, ['sable', 'neige', 'guitare']);
+  it(`ends after ${STRIKES_TO_END} CONSECUTIVE incorrect guesses, and not before`, () => {
+    const run = replayWordRun(RANKS, strikeRun(STRIKES_TO_END));
     expect(run.strikes).toBe(STRIKES_TO_END);
     expect(run.ended).toBe(true);
+    // One short is still a live run — the threshold is exact, not "about this many".
+    const short = replayWordRun(RANKS, strikeRun(STRIKES_TO_END - 1));
+    expect(short.strikes).toBe(STRIKES_TO_END - 1);
+    expect(short.ended).toBe(false);
   });
 
   it('a claim RESETS the consecutive count', () => {
-    const run = replayWordRun(RANKS, ['sable', 'neige', 'tropicales', 'guitare', 'violon']);
+    // One strike short of the end, then a claim — after which the run survives another full
+    // stretch one short of the end, which it could not do if the count had carried over.
+    const run = replayWordRun(RANKS, [
+      ...strikeRun(STRIKES_TO_END - 1),
+      'tropicales',
+      ...offMap(STRIKES_TO_END - 1, 'b'),
+    ]);
     expect(run.ended).toBe(false);
-    expect(run.strikes).toBe(2);
+    expect(run.strikes).toBe(STRIKES_TO_END - 1);
     expect(run.claimedRanks).toEqual([1]);
   });
 
@@ -105,7 +126,7 @@ describe('replayWordRun — scoring and the end of the run', () => {
   });
 
   it('nothing counts past the end of the run', () => {
-    const run = replayWordRun(RANKS, ['sable', 'neige', 'guitare', 'tropicales']);
+    const run = replayWordRun(RANKS, [...strikeRun(STRIKES_TO_END), 'tropicales']);
     expect(run.ended).toBe(true);
     expect(run.claimedRanks).toEqual([]); // the late claim never happened
   });

@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { dateForDayNumber, encodeWordResult } from '@whippin/shared';
-import { track } from '../analytics';
 import { t } from '../i18n';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
+import useShare from '../hooks/useShare';
 import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 
 // Word mode's end-of-run screen (#156): the claim count with its unit NAMED (higher is
@@ -50,9 +50,20 @@ export default function WordEndScreen({
   }, [animate, reduceMotion, resultsIn, score]);
   const shownScore = useAnimatedNumber(countTarget, !animate || reduceMotion ? 1 : SCORE_COUNT_MS);
 
-  const [copied, setCopied] = useState(false);
-  const copiedTimer = useRef<number | undefined>(undefined);
-  useEffect(() => () => window.clearTimeout(copiedTimer.current), []);
+  // The tally is this screen's LAST beat — no ruler colorize follows it, as it does in the
+  // sentence tray — so the number itself marks the landing with a one-shot scale pop.
+  // Not at zero: there is no count to land, and a popping 0 celebrates nothing.
+  const [landed, setLanded] = useState(false);
+  useEffect(() => {
+    if (!animate || reduceMotion || score === 0) return undefined;
+    if (countTarget !== score) return undefined;
+    const id = window.setTimeout(() => setLanded(true), SCORE_COUNT_MS);
+    return () => window.clearTimeout(id);
+  }, [animate, reduceMotion, countTarget, score]);
+
+  // Delivery (native sheet / clipboard + the "COPIED" confirmation) is the shared hook's;
+  // this screen only composes the word result's text.
+  const { share, copied } = useShare();
 
   const onShare = useCallback(async () => {
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
@@ -61,37 +72,13 @@ export default function WordEndScreen({
     // The day is named by its calendar date, like every share surface (decided
     // 2026-08-03) — the same string the card draws and the link resolves to.
     const headline = `Whippin AI ${dateForDayNumber(dayNumber)} — ${score} ${unit}`;
-    const text = `${headline}\n\n${url}`;
-
-    const isTouch =
-      typeof window !== 'undefined' &&
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(pointer: coarse)').matches;
-    if (isTouch && typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-      try {
-        await navigator.share({ title: 'Whippin AI', text });
-        track('share', { method: 'native' });
-        return;
-      } catch (err) {
-        if ((err as DOMException)?.name === 'AbortError') return;
-        // Any other native-share failure falls through to the clipboard.
-      }
-    }
-    try {
-      await navigator.clipboard.writeText(text);
-      track('share', { method: 'clipboard' });
-      setCopied(true);
-      window.clearTimeout(copiedTimer.current);
-      copiedTimer.current = window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard blocked (insecure context / denied): there is no further browser fallback.
-    }
-  }, [lang, dayNumber, score]);
+    await share(`${headline}\n\n${url}`);
+  }, [lang, dayNumber, score, share]);
 
   return (
     <div className={`solved-results${resultsIn ? ' in' : ''}`}>
       <span className="solved-score">
-        <span className="solved-score-num">
+        <span className={`solved-score-num${landed ? ' landed' : ''}`}>
           {/* Reserve the final width while the live number counts, matching Sentence mode. */}
           <span className="solved-score-ghost" aria-hidden="true">
             {score}

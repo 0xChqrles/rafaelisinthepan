@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { AnimationEvent, CSSProperties } from 'react';
-import { LANE_COLORS } from '../components/RouteModal';
+import { LANE_COLORS } from '../components/routeDrawing';
 import { rankHeatColor } from '../components/Hole';
 import type { RankEntry, WordRanks } from '@whippin/shared';
 

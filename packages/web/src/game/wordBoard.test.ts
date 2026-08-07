@@ -1,11 +1,16 @@
 // CONTRACT (#156 — the Word mode board model): the zone renders as censored stations
 // until claimed, a claim reveals its group's canonical form, the run ending reveals the
-// WHOLE field (the post-mortem), near strikes ride the trunk with their word shown, and
-// off-map strikes land on the misses shelf. Lanes come from the data's distinct roads.
+// WHOLE field (the post-mortem), near strikes ride the trunk showing the form the player
+// TYPED, and off-map strikes land on the misses shelf. Lanes come from the data's distinct
+// roads.
 
 import { describe, it, expect } from 'vitest';
 import type { WordRanks } from '@whippin/shared';
 import { buildWordBoard, hasWordBoard } from './wordBoard';
+import { STRIKES_TO_END } from './wordGame';
+
+// `n` DISTINCT off-map words — distinct guesses by the slug fallback, so each one strikes.
+const offMap = (n: number): string[] => Array.from({ length: n }, (_, i) => `motfaux${i}`);
 
 const RANKS: WordRanks = {
   tropiques: { word: 'tropiques', rank: 0 },
@@ -14,6 +19,7 @@ const RANKS: WordRanks = {
   cocotier: { word: 'cocotier', rank: 2, dq: 236, road: 1 },
   lagon: { word: 'lagon', rank: 3, dq: 200, road: 1 },
   sable: { word: 'sable', rank: 151, dq: 39 },
+  sables: { word: 'sable', rank: 151, dq: 39 },
   neige: { word: 'neige', rank: 353, dq: 12 },
 };
 
@@ -43,16 +49,57 @@ describe('buildWordBoard', () => {
     expect(board.misses).toEqual(['guitare']);
   });
 
+  it('a near strike shows the form the player TYPED, not its group canonical one', () => {
+    // Off the roads nothing was drawn before the guess landed, so the stop IS the guess:
+    // answering `sables` with `sable` puts a word on the board that was never played. The
+    // claim above is the opposite case — that station was already there as `???`.
+    const board = buildWordBoard({ ranks: RANKS, word: WORD, tried: ['sables'] })!;
+    expect(board.outside).toEqual([{ rank: 151, dq: 39, word: 'sables' }]);
+  });
+
   it('the run ending reveals the whole field (the post-mortem)', () => {
-    const board = buildWordBoard({
-      ranks: RANKS,
-      word: WORD,
-      tried: ['sable', 'neige', 'guitare'],
-    })!;
+    // Enough DISTINCT incorrect guesses to strike out, derived from the rule's own constant:
+    // the two ranked near misses this map carries, then off-map words.
+    const strikeOut = ['sable', 'neige', ...offMap(Math.max(0, STRIKES_TO_END - 2))].slice(
+      0,
+      STRIKES_TO_END,
+    );
+    const board = buildWordBoard({ ranks: RANKS, word: WORD, tried: strikeOut })!;
     expect(board.ended).toBe(true);
     expect(board.stations.map((s) => s.word)).toEqual(['tropicales', 'cocotier', 'lagon']);
     // Revealed-by-ending is not claiming: nothing counts as claimed.
     expect(board.stations.every((s) => !s.claimed)).toBe(true);
+  });
+
+  it('`reveal` paces the post-mortem without touching the run facts', () => {
+    // The screen holds the reveal until the killing strike has played out. The board stays
+    // censored while `reveal` is false — claims excepted, they were earned — but `ended`
+    // is the replay's fact and never waits for presentation.
+    const strikeOut = ['sable', 'neige', ...offMap(Math.max(0, STRIKES_TO_END - 2))].slice(
+      0,
+      STRIKES_TO_END,
+    );
+    const held = buildWordBoard({ ranks: RANKS, word: WORD, tried: strikeOut, reveal: false })!;
+    expect(held.ended).toBe(true);
+    expect(held.stations.map((s) => s.word)).toEqual([null, null, null]);
+    const claimedHeld = buildWordBoard({
+      ranks: RANKS,
+      word: WORD,
+      tried: ['tropical', ...strikeOut],
+      reveal: false,
+    })!;
+    expect(claimedHeld.stations.find((s) => s.rank === 1)!.word).toBe('tropicales');
+  });
+
+  it('states the map FARTHEST rank, so the rank gutter can be reserved up front', () => {
+    // The drawing sizes its gutter from this rather than from the widest exponent currently
+    // drawn — otherwise the first far strike widens the track and shoves the whole line
+    // sideways. So it must be the MAP's outer edge, and must not move when a guess lands.
+    const empty = buildWordBoard({ ranks: RANKS, word: WORD, tried: [] })!;
+    expect(empty.maxRank).toBe(353); // `neige`, well outside the zone
+    for (const tried of [['sable'], ['sables', 'guitare'], ['tropicales', 'neige']]) {
+      expect(buildWordBoard({ ranks: RANKS, word: WORD, tried })!.maxRank).toBe(353);
+    }
   });
 
   it('an artifact with no drawable geometry has no board', () => {

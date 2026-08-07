@@ -6,7 +6,7 @@
 // new value, or pick a different stop — instead of the map quietly speaking a stale palette.
 import { describe, it, expect } from 'vitest';
 import { progressColor } from '@whippin/shared';
-import { LANE_COLORS } from './RouteModal';
+import { LANE_COLORS } from './routeDrawing';
 
 // The stop each lane was taken from, in lane order: pink leads (lane A always holds rank 1,
 // and cyan is what the heat ramp paints a rank-1 number, so leading with it would imply a rule
