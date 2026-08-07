@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import Button from './Button';
 import { navigate } from '../routing';
-import { SELECT_PATH, pathForArchive } from '../langs';
+import { SELECT_PATH, pathForArchive, type Mode } from '../langs';
 import { t } from '../i18n';
 
 // Shown when the backend has no puzzle for the requested day in this language (404 ->
@@ -18,7 +18,15 @@ import { t } from '../i18n';
 //
 // Neither is a failure to RETRY (nothing transient to re-fetch), so both offer only
 // navigation. Renders WITHOUT the HUD, on the shared .load-error surface.
-export default function NoPuzzle({ lang, date }: { lang: string; date?: string }) {
+export default function NoPuzzle({
+  lang,
+  mode,
+  date,
+}: {
+  lang: string;
+  mode: Mode;
+  date?: string;
+}) {
   // The day is worth naming: nothing else on this screen says WHICH day is missing (the
   // header carries no date). `parseRoute` only ever yields a real calendar date, but the
   // prop is a plain string — an unparseable one drops the line rather than printing NaN.
@@ -55,7 +63,7 @@ export default function NoPuzzle({ lang, date }: { lang: string; date?: string }
         )}
         {t(lang, 'noPuzzleDayNote')}
       </p>
-      <Button variant="secondary" onClick={() => navigate(pathForArchive(lang))}>
+      <Button variant="secondary" onClick={() => navigate(pathForArchive(lang, mode))}>
         {t(lang, 'backToArchive')}
       </Button>
       <Button variant="secondary" onClick={() => navigate(SELECT_PATH)}>
