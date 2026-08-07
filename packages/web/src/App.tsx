@@ -223,9 +223,9 @@ function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: st
       <TopBar lang={lang} modeChooser left={currentHeaderLeft} right={headerRight} />
       {loading && <p className="status">{t(lang, 'loading')}</p>}
       {error !== null && <LoadError message={t(lang, 'failedPuzzle')} lang={lang} onRetry={retry} />}
-      {/* `date` is the ONLY thing NoPuzzle needs to tell an unpublished archive day
-          (normal) from a missing daily publish (abnormal) — see the component. */}
-      {noPuzzle && <NoPuzzle lang={lang} date={date} />}
+      {/* `date` tells NoPuzzle whether this is an archive miss; `mode` keeps its return
+          route on the same daily game's calendar. */}
+      {noPuzzle && <NoPuzzle lang={lang} mode={mode} date={date} />}
       {mode === 'sentence' && sentence.puzzle && (
         <Game
           puzzle={sentence.puzzle}

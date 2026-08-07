@@ -10,8 +10,12 @@
 // What the tutorial actually needs is small and exactly definable:
 //   - the word itself (rank 0);
 //   - the ROAD ZONE — every group generation stamped a `road` on, which for a word artifact
-//     is the flat top-ROAD_TOP (250). That zone IS the map: `buildRoute` draws the near
-//     field out to the farthest road, so anything past it would be invisible anyway;
+//     is the flat top-ROAD_TOP (250 since 2026-08-07, 150 before it). That zone IS the map:
+//     `buildRoute` draws the near field out to the farthest road, so anything past it would
+//     be invisible anyway. Which means the ZONE IS WHATEVER THE INPUT ARTIFACT CARRIES, not
+//     whatever ROAD_TOP says today: the committed <lang>.word.json files were generated at
+//     150 and re-running the recipe now produces a longer board (see each script's header).
+//     This script neither imposes nor checks a size — it copies the roads it is handed;
 //   - the scripted guided words (`--keep`), which are deliberately outside the zone: the
 //     "far" guess of the lesson has to rank FARTHER than the start word.
 // A kept word brings its whole GROUP (every alias key at that rank), because `word`/`rank`/

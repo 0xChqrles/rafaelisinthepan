@@ -9,9 +9,22 @@
 //     --in packages/generation/output/single-word/en/ocean.json \
 //     --out packages/web/src/tutorial/scripts/en.word.json --keep forest
 //
-// (the prune keeps the word, the road zone — generation's flat top-150 for a word artifact —
-// and the groups of the `--keep` words, which is how the "far" guess survives being outside
-// that zone). OCEAN was picked over LIGHTHOUSE, the first candidate, on ROUTE legibility: its
+// (the prune keeps the word, the road zone — generation's flat top-ROAD_TOP for a word
+// artifact — and the groups of the `--keep` words, which is how the "far" guess survives
+// being outside that zone).
+//
+// The committed map holds a 150-group road zone: it was generated before ROAD_TOP went
+// 150 -> 250 on 2026-08-07, and the prune copies whatever zone its input carries. Unlike fr,
+// re-running the recipe today CHANGES THE LESSON and needs a decision first, so it was left
+// alone: at 250 this neighborhood re-partitions into FOUR roads, 160/45/28/17 — the coast and
+// the planet fuse into one 160-group trunk, the named waters (atlantic, pacific,
+// mediterranean, archipelago) split off, and the planet (earth, equator, sky, moon, neptune)
+// comes back as a fourth. That needs a fourth line of theme copy (`tutTheme4`'s en string is
+// still the `the fourth` placeholder, since this map has only ever shipped three), and
+// scripts.test.ts fails until it gets one. It is also the shape the paragraph below rejects:
+// one dominant trunk plus smaller roads is why LIGHTHOUSE lost this slot in the first place.
+//
+// OCEAN was picked over LIGHTHOUSE, the first candidate, on ROUTE legibility: its
 // neighborhood splits into three well-populated roads a player can name at a glance — the
 // coastline (sea, waters, atlantic, shores), the ocean at planet scale (coral, arctic,
 // currents, antarctica, earth) and seafaring (vessel, ship, sail, voyage, whales) — where lighthouse's split

@@ -292,12 +292,18 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
     skips them; **`dq` has no opt-out** — it is part of the schema.
     **Two rules decide WHICH split ships (both decided 2026-08-07, when the wider zone broke
     the old one):**
-    - **A road must hold at least `ROAD_MIN_FRACTION` (4%) of the zone.** A smaller cluster is
+    - **A road must hold at least `ROAD_MIN_FRACTION` (4%) of the zone AND never fewer than
+      `ROAD_MIN_GROUPS` (4) groups** — the larger of the two. A smaller cluster is
       an outlier, not a route, and a lane drawn for it advertises a whole road nobody can
       walk. Undersized clusters are **folded into their nearest neighbour** — never dropped,
       every group still gets a road — **before the silhouette is read**, which is what removes
-      the metric's incentive to isolate one. A FRACTION, not a count, because the zone is
-      `ROAD_TOP` for a word artifact but the DEPARTURE's rank for a sentence hole.
+      the metric's incentive to isolate one. The FRACTION is there because the zone is
+      `ROAD_TOP` for a word artifact but the DEPARTURE's rank for a sentence hole; the COUNT
+      is under it because the start band opens at rank 50 (`start_word.START_RANK_MIN`),
+      where 4% is TWO groups — the fraction alone admitted exactly the two-stop lane it was
+      written to forbid, and real fr neighborhoods at zone 50 took it. A lane reads as an
+      outlier at two stops whatever the zone is. From zone 100 up the fraction is the larger
+      of the two, so the count is a rule about the SHORT end of the sentence band only.
     - **Mean silhouette is the HONESTY GATE, not the ranking: among the splits that clear it,
       the one with the MOST roads wins** (ties → the smaller `k`). Ranking by silhouette does
       not survive a zone this wide — measured over nine real neighborhoods at 250, the top

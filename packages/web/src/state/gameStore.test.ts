@@ -71,9 +71,7 @@ describe('roundKeyForDay', () => {
 });
 
 describe('word rounds (#156) — ensureWordRound / recordWordGuess', () => {
-  // A replay that ignores the log and reports a fixed outcome — for the tests that are
-  // about the LOG, not about what it means. `countLog` below is the opposite.
-  const outcome = (claimed: number, ended: boolean) => () => ({ claimed, ended });
+  const openRun = (log: string[]) => ({ claimed: log.length, ended: false });
 
   it('initializes a fresh word round and makes it active, separate from sentence rounds', () => {
     const { ensureRound, ensureWordRound } = useGameStore.getState();
@@ -90,7 +88,7 @@ describe('word rounds (#156) — ensureWordRound / recordWordGuess', () => {
   it('rehydrates the SAME key playing the same word; a republished different word resets', () => {
     const { ensureWordRound, recordWordGuess } = useGameStore.getState();
     ensureWordRound('w:5:fr', 'phare');
-    recordWordGuess('mer', outcome(1, false));
+    recordWordGuess('mer', openRun);
     ensureWordRound('w:5:fr', 'phare');
     expect(useGameStore.getState().wordRounds['w:5:fr'].tried).toEqual(['mer']);
     ensureWordRound('w:5:fr', 'ocean'); // republished word
@@ -105,13 +103,53 @@ describe('word rounds (#156) — ensureWordRound / recordWordGuess', () => {
   it('recordWordGuess appends counted guesses, caches claimed/ended, refuses after the end', () => {
     const { ensureWordRound, recordWordGuess } = useGameStore.getState();
     ensureWordRound('w:5:fr', 'phare');
-    recordWordGuess('mer', outcome(1, false));
-    recordWordGuess('loin', outcome(1, true)); // the ending strike
+    const endingAtLoin = (log: string[]) => ({
+      claimed: log.includes('mer') ? 1 : 0,
+      ended: log.includes('loin'),
+    });
+    recordWordGuess('mer', endingAtLoin);
+    recordWordGuess('loin', endingAtLoin); // the ending strike
     let round = useGameStore.getState().wordRounds['w:5:fr'];
     expect(round).toEqual({ word: 'phare', tried: ['mer', 'loin'], claimed: 1, ended: true });
-    recordWordGuess('tard', outcome(2, true)); // past the end — must not enter the log
+    recordWordGuess('tard', endingAtLoin); // past the end — must not enter the log
     round = useGameStore.getState().wordRounds['w:5:fr'];
     expect(round.tried).toEqual(['mer', 'loin']);
+  });
+
+  it('replays the log instead of trusting a stale ended cache after a same-word republish', () => {
+    const { ensureWordRound, recordWordGuess } = useGameStore.getState();
+    ensureWordRound('w:5:fr', 'phare');
+    const oldRanks = (log: string[]) => ({ claimed: 0, ended: log.length >= 1 });
+    recordWordGuess('old-strike', oldRanks);
+    expect(useGameStore.getState().wordRounds['w:5:fr'].ended).toBe(true);
+
+    // The word identity stayed the same, so ensureWordRound intentionally retained the
+    // log. Under the republished rank map it is live again; the new guess must not vanish.
+    recordWordGuess('new-claim', openRun);
+    expect(useGameStore.getState().wordRounds['w:5:fr']).toEqual({
+      word: 'phare',
+      tried: ['old-strike', 'new-claim'],
+      claimed: 2,
+      ended: false,
+    });
+  });
+
+  it('blocks and repairs the cache when replay says a stale live round has ended', () => {
+    const { ensureWordRound, recordWordGuess } = useGameStore.getState();
+    ensureWordRound('w:5:fr', 'phare');
+    recordWordGuess('mer', openRun);
+    const republishedRanks = (log: string[]) => ({
+      claimed: 0,
+      ended: log.includes('mer'),
+    });
+
+    recordWordGuess('must-not-land', republishedRanks);
+    expect(useGameStore.getState().wordRounds['w:5:fr']).toEqual({
+      word: 'phare',
+      tried: ['mer'],
+      claimed: 0,
+      ended: true,
+    });
   });
 
   // The cache describes the log it is stored beside, never the caller's snapshot of it:
@@ -135,7 +173,7 @@ describe('word rounds (#156) — ensureWordRound / recordWordGuess', () => {
   it('keeps past days\' word rounds when a new day flips (archive history)', () => {
     const { ensureWordRound, recordWordGuess } = useGameStore.getState();
     ensureWordRound('w:5:fr', 'phare');
-    recordWordGuess('mer', outcome(1, false));
+    recordWordGuess('mer', openRun);
     ensureWordRound('w:6:fr', 'foret');
     const s = useGameStore.getState();
     expect(s.wordRounds['w:5:fr']?.tried).toEqual(['mer']);

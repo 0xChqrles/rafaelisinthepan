@@ -12,8 +12,9 @@ JSON schema").
   - roads cluster the journey — the DEPARTURE and every group closer than it, the start
     word included — deterministically, numbered by their closest member's rank (the road
     holding rank 1 is road 0); ROAD_TOP is only the ceiling on that zone;
-  - a road must hold at least ROAD_MIN_FRACTION of the zone: a smaller cluster is an
-    outlier, not a route, and is folded into its nearest neighbour BEFORE scoring;
+  - a road must hold at least ROAD_MIN_FRACTION of the zone AND never fewer than
+    ROAD_MIN_GROUPS groups: a smaller cluster is an outlier, not a route, and is folded
+    into its nearest neighbour BEFORE scoring;
   - among the splits that clear ROAD_MIN_SILHOUETTE, the one with the MOST roads wins —
     silhouette is the honesty gate, not the ranking;
   - a neighborhood with no honest split falls back to ONE road (all zeros);
@@ -142,24 +143,61 @@ def test_an_outlier_is_folded_back_in_instead_of_becoming_its_own_road():
     # back to whichever facet it is actually nearest — the map keeps two roads, not three,
     # and every group still gets one (nothing is dropped by being absorbed).
     vectors = _two_clear_clusters() + _cloud([0.0, 0.0, 1.0, 0.0], 1)
-    roads = distances.cluster_roads(vectors, min_fraction=0.2)  # floor = 3 of 13
+    floor = max(distances.ROAD_MIN_GROUPS, math.ceil(len(vectors) * 0.2))
+    roads = distances.cluster_roads(vectors, min_fraction=0.2)
 
     assert len(roads) == len(vectors)
     assert len(set(roads)) == 2
-    assert min(roads.count(r) for r in set(roads)) >= 3
+    assert min(roads.count(r) for r in set(roads)) >= floor
 
 
-def test_the_floor_is_a_FRACTION_of_the_zone_not_a_fixed_count():
-    # The zone's size is not fixed — ROAD_TOP for a word artifact, the DEPARTURE's rank for a
-    # sentence hole, which can be short. A fixed floor would let the same honest 2-facet split
-    # pass on a long zone and be swallowed on a short one; a fraction scales with it.
-    small = distances.cluster_roads(_two_clear_clusters(), min_fraction=0.04)  # floor 2 of 12
+def test_the_floor_is_a_FRACTION_of_the_zone_under_an_absolute_count():
+    # Two rules, and a road clears BOTH — max(count, fraction * zone). This asserts the
+    # FRACTION half, isolated by pinning the count out of the way, so what passes and fails
+    # here is the scaling and nothing else.
+    #
+    # It scales because the zone's size is not fixed — ROAD_TOP for a word artifact, the
+    # DEPARTURE's rank for a sentence hole. A pure count would let the same honest 2-facet
+    # split pass on a long zone and be swallowed on a short one.
+    small = distances.cluster_roads(_two_clear_clusters(), min_fraction=0.04, min_groups=2)
     assert len(set(small)) == 2
 
     # The SAME shape of split, one tenth the relative size, is not a split at all: two 6-group
     # clusters inside a 120-group zone are 5% each, below a 20% floor, so both fold in.
     padded = _two_clear_clusters() + _cloud([0.0, 0.0, 1.0, 0.0], 108)
-    assert len(set(distances.cluster_roads(padded, min_fraction=0.2))) == 1
+    assert len(set(distances.cluster_roads(padded, min_fraction=0.2, min_groups=2))) == 1
+
+
+def test_the_fractional_floor_rounds_UP_to_mean_at_least_the_fraction():
+    # Five groups are 19.2% of this zone: ordinary rounding would incorrectly preserve
+    # them as a road under a 20% floor. "At least" requires six, so they are absorbed.
+    vectors = (_cloud([1.0, 0.0, 0.0], 10)
+               + _cloud([0.0, 1.0, 0.0], 11)
+               + _cloud([0.0, 0.0, 1.0], 5))
+    roads = distances.cluster_roads(
+        vectors, ks=(3,), min_fraction=0.2, min_groups=2)
+
+    floor = math.ceil(len(vectors) * 0.2)
+    assert len(set(roads)) == 2
+    assert min(roads.count(r) for r in set(roads)) >= floor
+
+
+def test_a_lane_needs_A_HANDFUL_of_groups_however_short_the_zone_is():
+    # The COUNT half, at both shipped values. A fraction alone says nothing about what a lane
+    # LOOKS like, and the sentence game runs where that bites: its zone is the departure's
+    # rank, the start band OPENS at 50, and 4% of 50 is TWO groups — so for one day the floor
+    # admitted precisely the two-stop lane it was written to forbid, and real fr neighborhoods
+    # took it (`phare` at zone 50 shipped 7/19/2/11/9/2, two of those roads a pair).
+    #
+    # Same fixture, read twice: the fraction on its own leaves the pair standing as its own
+    # road, the count folds it back into the facet it is nearest.
+    vectors = _two_clear_clusters() + _cloud([0.0, 0.0, 1.0, 0.0], 2)
+    assert math.ceil(len(vectors) * distances.ROAD_MIN_FRACTION) < 2
+    assert len(set(distances.cluster_roads(vectors, min_groups=2))) == 3
+
+    roads = distances.cluster_roads(vectors)
+    assert len(set(roads)) == 2
+    assert min(roads.count(r) for r in set(roads)) >= distances.ROAD_MIN_GROUPS
 
 
 def test_the_most_roads_wins_even_when_a_coarser_split_scores_higher():
@@ -180,13 +218,33 @@ def test_the_most_roads_wins_even_when_a_coarser_split_scores_higher():
     # than the coarse one it beat. Without this the test would pass on a fixture where the
     # two rankings happen to agree, proving nothing about which one is in force.
     dist = distances._distance_matrix(vectors)
-    floor = round(len(vectors) * 0.2)
+    floor = math.ceil(len(vectors) * 0.2)
     coarse = distances._absorb_small_roads(
         dist, distances._linkage_labelings(dist, (2,))[2], floor)
     assert len(set(coarse)) == 2
     assert distances._silhouette(dist, coarse) > distances._silhouette(dist, roads)
     # ...and it cleared the gate, which is the only bar it had to clear.
     assert distances._silhouette(dist, roads) >= distances.ROAD_MIN_SILHOUETTE
+
+
+def test_equal_road_counts_keep_the_smaller_k_regardless_of_silhouette():
+    # Both candidate trees collapse to three surviving roads. The k=5 tree has a much
+    # higher silhouette, but the metric is only an honesty gate; the k=4 tree must ship.
+    angles = [-0.020798, 0.043811, 2.05546, 0.405627,
+              0.259583, -1.513905, -1.479063, -0.106956]
+    vectors = [[math.cos(angle), math.sin(angle)] for angle in angles]
+    dist = distances._distance_matrix(vectors)
+    labelings = distances._linkage_labelings(dist, (4, 5))
+    candidates = {
+        k: distances._absorb_small_roads(dist, labels, min_size=2)
+        for k, labels in labelings.items()
+    }
+
+    assert len(set(candidates[4])) == len(set(candidates[5])) == 3
+    assert distances._silhouette(dist, candidates[5]) > distances._silhouette(
+        dist, candidates[4])
+    assert distances.cluster_roads(vectors, ks=(4, 5), min_groups=2) == (
+        distances._renumber_by_first_appearance(candidates[4]))
 
 
 def test_one_road_fallback_when_no_split_is_honest():

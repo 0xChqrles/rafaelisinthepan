@@ -97,13 +97,14 @@ export interface WordRoundProgress {
   ended: boolean;
 }
 
-// The cached half of a word round, recomputed from the log the store just appended to.
-// `recordWordGuess` takes a REPLAY rather than two finished numbers so the cache can never
-// describe a different log than the one it is stored beside: handed values are derived from
-// whatever `tried` the caller last rendered, which two submissions batched into one tick
-// would make stale — the second would overwrite the first's count with a replay that never
-// saw it. The store owns the log, so the store decides what it means; the callback carries
-// the rank map the store must not know about.
+// The cached half of a word round, recomputed from its source log. `recordWordGuess` takes
+// a REPLAY rather than two finished numbers so the cache can never describe a different log
+// than the one it is stored beside: handed values are derived from whatever `tried` the
+// caller last rendered, which two submissions batched into one tick would make stale — the
+// second would overwrite the first's count with a replay that never saw it. The replay also
+// decides whether the CURRENT log has ended before another word is admitted; the persisted
+// cache may describe an older rank map after a same-word republish. The store owns the log,
+// so the store decides what it means; the callback carries the rank map it must not know.
 export type WordRunCache = Pick<WordRoundProgress, 'claimed' | 'ended'>;
 
 // Enforce the word-round cap, mirroring capDayRounds below.
@@ -214,8 +215,9 @@ interface GameState extends PersistedState {
   ensureWordRound: (key: string, word: string) => void;
 
   // Count one Word mode guess (a claim or a strike — free guesses never reach here) on the
-  // active word round: append it to `tried`, then cache what `replay` makes of the resulting
-  // log so the status surfaces need no rank map. `replay` is the pure model
+  // active word round: replay the current log to decide whether play is still live, append
+  // the guess, then cache what `replay` makes of the resulting log so the status surfaces
+  // need no rank map. `replay` is the pure model
   // (game/wordGame.ts replayWordRun) closed over this puzzle's ranks — see WordRunCache for
   // why the store replays instead of being handed the numbers.
   recordWordGuess: (typed: string, replay: (tried: string[]) => WordRunCache) => void;
@@ -380,8 +382,19 @@ export const useGameStore = create<GameState>()(
           const key = s.activeWordKey;
           if (!key) return {};
           const round = s.wordRounds[key];
-          if (!round || round.ended) return {};
-          if (round.tried.includes(typed)) return {};
+          if (!round) return {};
+
+          // `tried` is authoritative. A same-word republish keeps the log, but changed
+          // ranks can move its strike boundary and make the persisted cache stale in
+          // EITHER direction. Gate on a replay of the current log, and repair the cache
+          // even when this particular submission cannot be appended.
+          const current = replay(round.tried);
+          if (current.ended || round.tried.includes(typed)) {
+            if (round.claimed === current.claimed && round.ended === current.ended) return {};
+            return {
+              wordRounds: { ...s.wordRounds, [key]: { ...round, ...current } },
+            };
+          }
           const tried = [...round.tried, typed];
           return {
             wordRounds: { ...s.wordRounds, [key]: { ...round, tried, ...replay(tried) } },
