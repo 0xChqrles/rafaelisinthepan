@@ -28,13 +28,14 @@
 const SHARE_VERSION = 2;
 
 // Word mode's token (#156) lives in the SAME version namespace — the version field is a
-// FORMAT id, and the word result is a different format: no trajectory, no ticks, just the
-// header every version shares (version | lang | day | scoreLen | score), where the score
-// is the number of top-zone words claimed before striking out. A future sentence-format
-// bump must skip this value. decodeLegacyShareTarget's "strictly older than the sentence
-// version" rule keeps rejecting it, so a malformed word token still 404s rather than
-// earning a redirect.
-const WORD_SHARE_VERSION = 3;
+// FORMAT id, and the word result is a different format: no trajectory or ticks, just the
+// common result header followed by the day's UTF-8 DISPLAY word. The card needs that word
+// to reproduce the game's blue terminus while remaining content-addressed by the token (no
+// puzzle-store lookup on an OG request). v3's score-only Word payload is retired; a future
+// sentence-format bump must skip both ids. decodeLegacyShareTarget's "strictly older than
+// the sentence version" rule keeps rejecting either one, so a malformed Word token still
+// 404s rather than earning a redirect.
+const WORD_SHARE_VERSION = 4;
 
 // --- field widths ------------------------------------------------------------------------
 const VERSION_BITS = 4;
@@ -42,6 +43,8 @@ const LANG_BITS = 2; // room for 4 languages before a version bump
 const DAY_BITS = 15; // days since ID_EPOCH -> ~89 years of headroom
 const SCORE_LEN_BITS = 4; // holds the bit-length of the score (0..15)
 const SCORE_MAX = 0x7fff; // 15-bit scores (32767) — far above any real game
+const WORD_LEN_BITS = 8; // UTF-8 bytes; 255 comfortably covers any generated display word
+const WORD_MAX_BYTES = (1 << WORD_LEN_BITS) - 1;
 const CELL_BITS = 5;
 const QUANT_MAX = (1 << CELL_BITS) - 1; // 31 reconstruction levels
 const TICK_COUNT_BITS = 3; // a puzzle has 3 distinct secrets; 0..7 leaves headroom
@@ -147,6 +150,22 @@ const bitLength = (x: number) => (x <= 0 ? 0 : 32 - Math.clz32(x));
 const quant = (pct: number) => Math.round((clamp(pct, 0, 100) / 100) * QUANT_MAX);
 const dequant = (level: number) => (level / QUANT_MAX) * 100;
 
+// The Word display form is interpolated into XML after escaping markup characters. Reject
+// control/surrogate/noncharacter scalars that XML 1.0 cannot represent at all, so a forged
+// but otherwise well-packed token still fails flat instead of reaching the rasterizer as a
+// malformed document. Generated words are ordinary letters/marks/dashes and pass unchanged.
+function isXmlText(value: string): boolean {
+  if (value.length === 0) return false;
+  return Array.from(value).every((char) => {
+    const cp = char.codePointAt(0)!;
+    return (
+      (cp >= 0x20 && cp <= 0xd7ff) ||
+      (cp >= 0xe000 && cp <= 0xfffd) ||
+      (cp >= 0x10000 && cp <= 0x10ffff)
+    );
+  });
+}
+
 export function encodeResult(r: ShareResult): string {
   const w = new BitWriter();
   w.write(SHARE_VERSION, VERSION_BITS);
@@ -194,13 +213,15 @@ export function encodeResult(r: ShareResult): string {
 }
 
 // --- Word mode (#156) ---------------------------------------------------------------------
-// One daily word, claims until struck out: the whole result is the CLAIM COUNT, so the
-// token is just the shared header. Encoded/decoded by its own pair rather than a mode bit
-// inside the sentence token, so neither format pays for the other's fields.
+// One daily word, claims until struck out: the gameplay result is the CLAIM COUNT, followed
+// by the day's display word solely so the OG card can reproduce the public blue terminus.
+// Encoded/decoded by its own pair rather than a mode bit inside the sentence token, so
+// neither format pays for the other's fields.
 export interface WordShareResult {
   lang: string; // 2-letter code; drives the click-through redirect (/<lang>/word/<date>)
   dayNumber: number; // the puzzle's stable ID (server-owned day), shown as its calendar date
   score: number; // top-zone groups claimed before the run ended
+  word: string; // accented display form — never the slug
 }
 
 export function encodeWordResult(r: WordShareResult): string {
@@ -212,12 +233,19 @@ export function encodeWordResult(r: WordShareResult): string {
   const scoreLen = bitLength(score);
   w.write(scoreLen, SCORE_LEN_BITS);
   w.write(score, scoreLen);
+
+  const word = new TextEncoder().encode(r.word);
+  if (!isXmlText(r.word) || word.length > WORD_MAX_BYTES) {
+    throw new RangeError(`Word share display form must occupy 1..${WORD_MAX_BYTES} UTF-8 bytes.`);
+  }
+  w.write(word.length, WORD_LEN_BITS);
+  for (const byte of word) w.write(byte, 8);
   return bytesToB64url(w.toBytes());
 }
 
 // Decode + validate a word-mode token. Null on ANY malformation (bad chars, wrong
 // version, overrun, leftover bytes), the same flat refusal the sentence decoder gives —
-// a hand-crafted token renders nothing but numbers from the fixed template.
+// its only free text is length-bounded, valid UTF-8/XML and escaped by the SVG renderer.
 export function decodeWordResult(token: string): WordShareResult | null {
   const bytes = b64urlToBytes(token);
   if (!bytes) return null;
@@ -229,9 +257,15 @@ export function decodeWordResult(token: string): WordShareResult | null {
     const dayNumber = rd.read(DAY_BITS) + ID_EPOCH;
     const scoreLen = rd.read(SCORE_LEN_BITS);
     const score = scoreLen === 0 ? 0 : rd.read(scoreLen);
+    const wordLength = rd.read(WORD_LEN_BITS);
+    if (wordLength === 0) return null;
+    const wordBytes = new Uint8Array(wordLength);
+    for (let i = 0; i < wordLength; i += 1) wordBytes[i] = rd.read(8);
+    const word = new TextDecoder('utf-8', { fatal: true }).decode(wordBytes);
+    if (!isXmlText(word)) return null;
     // Only the final byte's padding bits (0..7) may remain.
     if (rd.remainingBits >= 8) return null;
-    return { lang, dayNumber, score };
+    return { lang, dayNumber, score, word };
   } catch {
     return null; // bit overrun (truncated token)
   }

@@ -573,6 +573,7 @@ function WordRound({
               score={score}
               dayNumber={dayNumber}
               lang={lang}
+              word={puzzle.word.word}
               animate={animateResults}
             />
           </div>

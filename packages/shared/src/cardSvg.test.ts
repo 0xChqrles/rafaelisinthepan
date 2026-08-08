@@ -1,11 +1,12 @@
 // CONTRACT (light): the share-card SVG (packages/shared/src/cardSvg.ts) must render the
 // player's RUN RULER — one cell per counted try on the SHARED progress ramp (so the card
 // matches the on-screen ruler), a tick per solving try with the dropped hole's sentence
-// index under it — plus the score and the day's calendar date. (Exact positions/sizes are cosmetic
-// and not asserted; they get tuned against the rasterized PNG.)
+// index under it — plus the score and the day's calendar date. Word mode instead repeats
+// its public terminus (accented blue word + blue square), then its claim count and date.
+// Exact positions are cosmetic and not asserted; they get tuned against the rasterized PNG.
 
 import { describe, it, expect } from 'vitest';
-import { renderCardSvg, CARD_WIDTH } from './cardSvg';
+import { renderCardSvg, renderWordCardSvg, CARD_WIDTH } from './cardSvg';
 import { dateForDayNumber } from './day';
 import { progressColor } from './progressColor';
 
@@ -115,5 +116,28 @@ describe('renderCardSvg', () => {
     // And it still spans the full bar — collapsing cells must not shorten the run.
     const last = cells[cells.length - 1];
     expect(Number(last[1]) + Number(last[2])).toBe(Number(cells[0][1]) + 1020);
+  });
+});
+
+describe('renderWordCardSvg', () => {
+  const data = { lang: 'fr', dayNumber: 20638, score: 12, word: 'forêt' };
+
+  it('draws the accented word with the game terminus blue and a matching large square', () => {
+    const svg = renderWordCardSvg(data);
+    expect(svg).toMatch(/<rect[^>]+width="72"[^>]+height="72"[^>]+fill="#2f7bff"/);
+    expect(svg).toMatch(/<text[^>]+fill="#2f7bff">forêt<\/text>/);
+    expect(svg).not.toContain('foret');
+  });
+
+  it('keeps the named score and calendar date below the word', () => {
+    const svg = renderWordCardSvg(data);
+    expect(svg).toContain('12 MOTS');
+    expect(svg).toContain(dateForDayNumber(data.dayNumber));
+  });
+
+  it('escapes the display word before interpolating it into the SVG', () => {
+    const svg = renderWordCardSvg({ ...data, word: 'cœur & <île>' });
+    expect(svg).toContain('cœur &amp; &lt;île&gt;');
+    expect(svg).not.toContain('cœur & <île>');
   });
 });

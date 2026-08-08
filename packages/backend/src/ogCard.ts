@@ -52,7 +52,8 @@ export async function renderCardPng(data: CardData): Promise<Buffer> {
   return rasterize(renderCardSvg(data));
 }
 
-// Word mode's card (#156): same rasterizer, its own SVG (claim count + date, no ruler).
+// Word mode's card (#156): same rasterizer, its own SVG (blue terminus + claim count + date,
+// no ruler). The display word travels in the v4 token, so this render stays self-contained.
 export async function renderWordCardPng(data: WordCardData): Promise<Buffer> {
   return rasterize(renderWordCardSvg(data));
 }

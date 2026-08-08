@@ -220,24 +220,33 @@ describe('decodeLegacyShareTarget — where an OLD link should still land', () =
   });
 });
 
-// Word mode's token (#156): its own format in the same version namespace — the shared
-// header and nothing else, since the whole result is the claim count.
+// Word mode's token (#156): its own format in the same version namespace — the common
+// result header plus the accented display word needed by the self-contained OG card.
 describe('encodeWordResult / decodeWordResult', () => {
-  const word = { lang: 'fr', dayNumber: 20638, score: 27 };
+  const word = { lang: 'fr', dayNumber: 20638, score: 27, word: 'forêt' };
 
-  it('round-trips lang, dayNumber and score exactly', () => {
+  it('round-trips lang, dayNumber, score and the accented display word exactly', () => {
     expect(decodeWordResult(encodeWordResult(word))).toEqual(word);
-    expect(decodeWordResult(encodeWordResult({ ...word, lang: 'en', score: 0 }))).toEqual({
+    expect(
+      decodeWordResult(encodeWordResult({ ...word, lang: 'en', score: 0, word: 'heart' })),
+    ).toEqual({
       ...word,
       lang: 'en',
       score: 0,
+      word: 'heart',
     });
   });
 
-  it('stays short + URL-safe', () => {
+  it('stays compact + URL-safe with the display word included', () => {
     const token = encodeWordResult(word);
     expect(token).toMatch(/^[A-Za-z0-9_-]+$/);
-    expect(token.length).toBeLessThanOrEqual(8);
+    expect(token.length).toBeLessThanOrEqual(24);
+  });
+
+  it('rejects a missing or impossibly long display word instead of truncating it', () => {
+    expect(() => encodeWordResult({ ...word, word: '' })).toThrow(RangeError);
+    expect(() => encodeWordResult({ ...word, word: 'é'.repeat(128) })).toThrow(RangeError);
+    expect(() => encodeWordResult({ ...word, word: 'forêt\u0000' })).toThrow(RangeError);
   });
 
   it('the two formats never decode each other', () => {

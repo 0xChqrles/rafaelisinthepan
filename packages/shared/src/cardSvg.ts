@@ -18,10 +18,9 @@
 // bounded 3..18 cells on the same ramp (it has to fit a text message); the card draws every
 // try AND the ticks, so it stays the richer view.
 //
-// The only interpolated strings are numeric fields (score/day/pct/hole index — all clamped
-// ints from the decoded token, the day formatted to digits + hyphens by dateForDayNumber) and
-// the try-count UNIT, which is a fixed per-lang table CONSTANT (never interpolated input) — so
-// there is no text to escape and no injection surface.
+// Sentence-card strings are numeric fields plus fixed units. Word mode additionally carries
+// the day's accented display word in its token; that one value is XML-escaped before it is
+// interpolated into the SVG.
 
 import { dateForDayNumber } from './day';
 import { progressColor } from './progressColor';
@@ -34,6 +33,7 @@ export const CARD_HEIGHT = 630;
 const BG = '#0a0b12';
 const FG = '#f4f4f2';
 const MUTED = '#c4c9d8';
+const ACCENT = '#2f7bff';
 
 const CARD_FONT = 'Press Start 2P';
 
@@ -68,10 +68,8 @@ export interface CardData {
 }
 
 // Word mode's card (#156): the run has no trajectory to draw — the whole result is the
-// claim count — so the card is the count with its unit named ("12 WORDS": higher is
-// better here, and the unit says what was counted), over the day's calendar date. Same
-// palette, same no-injection guarantee: every interpolated value is a clamped int or a
-// fixed per-lang constant.
+// claim count — so the card is the game's public terminus (accented word + its large blue
+// square), the count with its unit named ("12 WORDS": higher is better here), and the day.
 const WORD_UNITS: Record<string, { one: string; many: string }> = {
   en: { one: 'WORD', many: 'WORDS' },
   fr: { one: 'MOT', many: 'MOTS' },
@@ -81,16 +79,37 @@ export interface WordCardData {
   lang: string;
   dayNumber: number; // drawn as its calendar date, like the sentence card
   score: number; // top-zone words claimed before striking out
+  word: string; // accented display form — never the slug
 }
 
-export function renderWordCardSvg({ lang, dayNumber, score }: WordCardData): string {
+const WORD_ROW_Y = 195;
+const WORD_MAX_SIZE = 76;
+const WORD_NODE_SIZE = 72;
+const WORD_NODE_GAP = 36;
+
+function escapeSvgText(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+export function renderWordCardSvg({ lang, dayNumber, score, word }: WordCardData): string {
   const unit = WORD_UNITS[lang] ?? WORD_UNITS.en;
   const cx = CARD_WIDTH / 2;
+  // Press Start 2P advances exactly 1em per glyph once ligatures are disabled (the same
+  // arithmetic as the in-game terminus). Keep the complete word on one line and center the
+  // square + word as ONE lockup rather than centering the text independently.
+  const glyphs = Math.max(1, Array.from(word).length);
+  const wordSpace = CARD_WIDTH - 2 * MARGIN - WORD_NODE_SIZE - WORD_NODE_GAP;
+  const wordSize = Math.min(WORD_MAX_SIZE, Math.max(1, Math.floor(wordSpace / glyphs)));
+  const lockupWidth = WORD_NODE_SIZE + WORD_NODE_GAP + glyphs * wordSize;
+  const lockupX = (CARD_WIDTH - lockupWidth) / 2;
+  const wordX = lockupX + WORD_NODE_SIZE + WORD_NODE_GAP;
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_WIDTH}" height="${CARD_HEIGHT}" viewBox="0 0 ${CARD_WIDTH} ${CARD_HEIGHT}">`,
     `<rect width="${CARD_WIDTH}" height="${CARD_HEIGHT}" fill="${BG}"/>`,
-    `<text x="${cx}" y="340" text-anchor="middle" font-family="${CARD_FONT}" font-size="76" fill="${FG}">${score} ${score === 1 ? unit.one : unit.many}</text>`,
-    `<text x="${cx}" y="420" text-anchor="middle" font-family="${CARD_FONT}" font-size="30" fill="${MUTED}">${dateForDayNumber(dayNumber)}</text>`,
+    `<rect x="${lockupX}" y="${WORD_ROW_Y - WORD_NODE_SIZE / 2}" width="${WORD_NODE_SIZE}" height="${WORD_NODE_SIZE}" fill="${ACCENT}" shape-rendering="crispEdges"/>`,
+    `<text x="${wordX}" y="${WORD_ROW_Y}" dy="0.16em" dominant-baseline="middle" font-family="${CARD_FONT}" font-size="${wordSize}" font-variant-ligatures="none" fill="${ACCENT}">${escapeSvgText(word)}</text>`,
+    `<text x="${cx}" y="390" text-anchor="middle" font-family="${CARD_FONT}" font-size="76" fill="${FG}">${score} ${score === 1 ? unit.one : unit.many}</text>`,
+    `<text x="${cx}" y="470" text-anchor="middle" font-family="${CARD_FONT}" font-size="30" fill="${MUTED}">${dateForDayNumber(dayNumber)}</text>`,
     `</svg>`,
   ].join('');
 }
