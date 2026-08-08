@@ -387,7 +387,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `.route-frame` is positioned, so it and not the scroller is the offsetParent (the trap the
   route map's `offsetWithin` exists for). The end screen
   (`components/WordEndScreen.tsx`) is the named `<n> WORDS/MOTS` count + SHARE via the
-  v3 word token; its tally ends on a one-shot scale pop (`score-land`, 2026-08-07) — the
+  v4 word token; **the score OG card repeats the in-game terminus — the accented display
+  word in solved blue with its large blue square on the left — above the count and date**
+  (decided 2026-08-08; the token carries that display word so the preview is self-contained).
+  **The plain share text puts `🟦 <DISPLAY WORD IN LOCALE-AWARE UPPERCASE>` on its own
+  line, with one blank line between it and both the named score headline and URL**
+  (decided 2026-08-08; accents stay display accents, never a slug).
+  Its tally ends on a one-shot scale pop (`score-land`, 2026-08-07) — the
   count is this screen's LAST beat, with no ruler colorize following it as in the sentence
   tray, so the number marks its own landing (never at 0, never on rehydration, collapsed
   under reduced motion). Identity is mode-addressed everywhere: `roundKeyForDay(day, lang,

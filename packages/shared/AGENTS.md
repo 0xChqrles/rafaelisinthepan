@@ -38,9 +38,10 @@
   browser and the Lambda; the token's product behavior and evolution rules are in the
   solved-result bullet of `packages/web/AGENTS.md`. Its leading VERSION field is a
   **format id in ONE namespace shared by both dailies**: v2 = the sentence result
-  (ruler trajectory + solve ticks), **v3 = Word mode's (#156) — the common header
-  alone (`version | lang | day | scoreLen | score`), since the claim count IS the
-  whole result**. A future sentence bump must SKIP a value already taken. Each format
+  (ruler trajectory + solve ticks), **v4 = Word mode's (#156) — the common header
+  (`version | lang | day | scoreLen | score`) plus the accented UTF-8 display word used
+  by its terminus-style OG card** (decided 2026-08-08; v3's score-only Word payload is
+  retired). A future sentence bump must SKIP a value already taken. Each format
   has its own encode/decode pair, neither decodes the other, and
   `decodeLegacyShareTarget`'s "strictly older than the sentence version" rule keeps a
   malformed token of either shape at a flat 404 rather than a redirect.

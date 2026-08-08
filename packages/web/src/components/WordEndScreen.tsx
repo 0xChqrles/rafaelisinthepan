@@ -9,17 +9,19 @@ import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 // better here — "12 WORDS" says what was counted) plus SHARE, in the tray the keyboard
 // vacates — the same visual grammar as the sentence game's solved results, minus what a
 // word run does not have (no trajectory, no opponents). The share link carries the
-// word-mode token, so it unfurls into the word card and clicks through to the day's
-// word route.
+// word-mode token, including the accented public word so it unfurls into the terminus-style
+// word card, and clicks through to the day's word route.
 export default function WordEndScreen({
   score,
   dayNumber,
   lang,
+  word,
   animate = true,
 }: {
   score: number;
   dayNumber: number;
   lang: string;
+  word: string; // accented display form carried into the OG card
   // A live run rises and tallies like the sentence result. Rehydrated runs render their
   // final state immediately, so revisiting a finished day never replays the celebration.
   animate?: boolean;
@@ -67,13 +69,16 @@ export default function WordEndScreen({
 
   const onShare = useCallback(async () => {
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    const url = `${origin}/s/${encodeWordResult({ lang, dayNumber, score })}`;
+    const url = `${origin}/s/${encodeWordResult({ lang, dayNumber, score, word })}`;
     const unit = t(lang, score === 1 ? 'word' : 'words').toLowerCase();
     // The day is named by its calendar date, like every share surface (decided
     // 2026-08-03) — the same string the card draws and the link resolves to.
     const headline = `Whippin AI ${dateForDayNumber(dayNumber)} — ${score} ${unit}`;
-    await share(`${headline}\n\n${url}`);
-  }, [lang, dayNumber, score, share]);
+    // Set the public target apart as the share's one visual result: solved-blue square,
+    // then its locale-aware uppercase DISPLAY form (accents kept — never the slug), with
+    // a blank line on either side before the URL.
+    await share(`${headline}\n\n🟦 ${word.toLocaleUpperCase(lang)}\n\n${url}`);
+  }, [lang, dayNumber, score, share, word]);
 
   return (
     <div className={`solved-results${resultsIn ? ' in' : ''}`}>

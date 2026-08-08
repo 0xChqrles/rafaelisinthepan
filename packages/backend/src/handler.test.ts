@@ -421,7 +421,7 @@ describe('share-card /og route — lang passthrough (#59)', () => {
 });
 
 describe('word-mode share routes (#156)', () => {
-  const wordToken = encodeWordResult({ lang: 'fr', dayNumber: 20638, score: 12 });
+  const wordToken = encodeWordResult({ lang: 'fr', dayNumber: 20638, score: 12, word: 'forêt' });
 
   it('/s/<word token> serves the share page, click-through to the word route', async () => {
     const res = await makeHandler()(event({ path: `/s/${wordToken}` }));
