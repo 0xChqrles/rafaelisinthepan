@@ -338,6 +338,38 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `HIT_TILT_MIN/MAX_DEG` (3–8°) each time, so a run of guesses reads as hand-thrown notes
   rather than one stamp printed over and over. Every rotation in `rarity-stamp`/
   `rarity-vanish` is relative to `--hit-tilt`.
+  **The whole beat was retimed on 2026-08-09** after the first cut read as uncanny. Four
+  things were wrong and each has a rule now:
+  - **The easing is PER KEYFRAME, not one curve over the whole stamp.** A falling object
+    accelerates and an impact decelerates, and no single cubic-bezier does both; the element
+    sets `linear` and each segment declares its own `animation-timing-function`.
+  - **The label is fully opaque well before it lands.** Fading in across the approach made it
+    materialise at the moment of contact, which is what read as ghostly.
+  - **EVERYTHING THE WORD DOES WAITS FOR THE IMPACT** (`--impact-delay`, exported as
+    `RARITY_IMPACT_MS` so the JS and the keyframe percentage cannot drift). Firing the shake
+    and the wave at mount meant the word flinched and THEN something hit it — which is what
+    "the wave seems to appear after the hit" was actually describing.
+  - **The wave is a SHOCKWAVE, not a ripple**: `--ring` is each letter's distance from the
+    CENTRE, so the middle moves first and the outer letters last, and the letters are driven
+    DOWN (where a thing falling on you pushes) rather than up. A left-to-right ripple has a
+    direction and so implies a source off to one side; a stamp lands in the middle. It has
+    its OWN keyframes (`word-impact`), which let the sentence game's ambient `hole-wave` go
+    back to its literal — one less shared animation, and `FloatingHit` with it.
+  **The word STANDS DOWN under the label, and the fade is EASE-IN for a measured reason.**
+  Two words of the same size in the same place cannot both be read: a cyan RARE over the blue
+  day's word is 77 dE apart and still illegible superimposed, which is the limit of what a
+  colour measurement can tell you. So the word drops to `--stamp-dim` (0.2) on impact and
+  comes back as the label leaves — and because the fade is EASE-IN it holds near full
+  brightness through its first half, which is exactly the window the shockwave peaks in
+  (measured: 0.98 when the centre letter is at its lowest, 0.94 when the outer ones are,
+  ghosted by 500ms). Ghost it on contact and the wave the grade earned would play on
+  something nobody can see. The label also carries an eight-way hard KNOCKOUT ring in `--bg`
+  — no blur, the app has none anywhere — so it reads as a solid thing on top of the word
+  rather than tangling with it.
+  **The ladder is tuned AGAINST THE WORD** (retuned 2026-08-09): the label lands on a word
+  `fitWord` draws at up to 40px, so ARCANE tops out around that same size (desktop 22→41px,
+  mobile 16→30px). A steeper ladder had it at half again and it swallowed the thing it was
+  about.
   **Two ambient readouts bracket the prompt during a run** (decided 2026-08-09), and both
   RESERVE their full footprint from the first frame — the word sits in the flexible space
   above them, and a column that grew as the run filled it would walk the word up the screen
@@ -346,12 +378,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `justify-content: flex-end` + `overflow: hidden` buys. It is where the RANK went: the float
   carries the grade now, but "how close was that one?" is a question a moment later, and a
   log is where a moment later belongs, so each line is the word in its grade's colour with
-  its exponent. Below it, `components/WordTally`: `found/total` per grade, commonest first,
-  with **the COLOUR as the only label** — no names, no legend, since the five colours are
-  already the language the float speaks. It spans **the KEYBOARD's own box** and spreads the
-  grades evenly across it, so it reads as a strip belonging to the keys rather than a ragged
-  line under the prompt; that width is a MIRROR of `.keyboard`'s, full-bleed override
-  included, and the two must move together. A grade the day's zone does not contain is
+  its exponent. Both share the PROMPT's column — they are added to its `max-width` +
+  `align-self: center` rule — or on a desktop the prompt is centred in 456px while the
+  history starts at the far left of a 1200px footer (2026-08-09). Below it,
+  `components/WordTally`: `found/total` per grade, commonest first, with **the COLOUR as the
+  only label** — no names, no legend, since the five colours are already the language the
+  float speaks. It spans **the keyboard's ROW, not its box** (2026-08-09): `.keyboard` is
+  capped at 680px but its keys are capped at 46px each, so on a wide screen ten of them plus
+  nine gaps come to 514px and centre INSIDE that box — matching the box put the strip visibly
+  wider than the keys it belongs to. It therefore recomputes the row from
+  `--kb-gap`/`--kb-key-max`, which moved to `:root` for exactly this reason: the row width is
+  no longer only the keyboard's business. Verified equal to the real key extents at
+  320/430/700/900/1200/1400. A grade the day's zone does not contain is
   DROPPED rather than shown as `0/0`: an English board often has no ARCANE group at all, and
   a permanent `0/0` reads as a goal being failed rather than one the day never offered. Both
   totals come from `zoneGroups`/`tallyRarity` (`game/wordGame.ts`), so the numerator and the

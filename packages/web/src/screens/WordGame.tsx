@@ -32,8 +32,7 @@ import WordHistory from '../components/WordHistory';
 import WordTimer, { type TimeGain } from '../components/WordTimer';
 import CellDigits from '../components/CellDigits';
 import Button from '../components/Button';
-import { FLOATING_HIT_INTRO_MS } from './Game';
-import { RARITY_VANISH_MS } from '../components/RarityHit';
+import { RARITY_STAMP_MS, RARITY_VANISH_MS } from '../components/RarityHit';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import WordEndScreen from '../components/WordEndScreen';
@@ -67,7 +66,7 @@ import { prefersReducedMotion } from '../hooks/useScramble';
 // outlives this by nearly a second; the screen tracks when the live float actually ends
 // and waits for the later of the two. Getting that wrong would cut the run's best moment
 // off mid-air to show the board.
-const WORD_END_HOLD_MS = FLOATING_HIT_INTRO_MS + RARITY_VANISH_MS;
+const WORD_END_HOLD_MS = RARITY_STAMP_MS + RARITY_VANISH_MS;
 // Then the field arrives under the word and the prompt leaves; then the keyboard drops
 // and the result rises. This beat is what separates the reveal from the drop — it is the
 // board's own moment, with nothing else moving in it.
@@ -375,7 +374,7 @@ function WordRound({
       const grade = claimed ? rarityOf(claimed.freq, corpusSize) : null;
       const style = grade ? RARITY_HIT[rarityStep(grade)] : MISS_HIT;
       hitId.current += 1;
-      const fadeDelayMs = FLOATING_HIT_INTRO_MS + style.holdMs;
+      const fadeDelayMs = RARITY_STAMP_MS + style.holdMs;
       hitEndsAt.current = Date.now() + fadeDelayMs + RARITY_VANISH_MS;
       setHit({
         id: hitId.current,

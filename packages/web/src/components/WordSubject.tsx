@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 import RarityHit from './RarityHit';
 import { fitWord } from './routeDrawing';
+import { RARITY_IMPACT_MS } from './RarityHit';
 import { srWordBoardWord } from '../i18n';
 
 // The day's word while the run is on (#163): JUST THE WORD, centred, in the solved blue —
@@ -41,8 +42,8 @@ export interface WordHit {
 // The letter wave's own clock, the sentence game's #129 numbers exactly: one letter's whole
 // up-and-down, and the gap between two consecutive letters. Handed to CSS rather than
 // repeated there, the way `Hole` hands down the same pair.
-const WAVE_LETTER_MS = 300;
-const WAVE_STEP_MS = 40;
+const WAVE_LETTER_MS = 220;
+const WAVE_STEP_MS = 22;
 
 export default function WordSubject({
   word,
@@ -79,15 +80,28 @@ export default function WordSubject({
               '--wave-lift': hit && hit.wave > 0 ? `${hit.wave}px` : undefined,
               '--wave-dur': `${WAVE_LETTER_MS}ms`,
               '--wave-step': `${WAVE_STEP_MS}ms`,
+              // Everything the word does waits for the label to actually LAND on it — and
+              // the word comes back when the label starts to LEAVE, which is the same
+              // instant the label's own vanish is delayed to.
+              '--impact-delay': `${RARITY_IMPACT_MS}ms`,
+              '--hit-fade-delay': hit ? `${hit.fadeDelayMs}ms` : undefined,
             } as CSSProperties
           }
         >
-          {/* Split into per-letter boxes so the wave has something to ripple. The pixel font
+          {/* Split into per-letter boxes so the wave has something to move. The pixel font
               is monospace and each box advances exactly as the glyph did, so the word
               measures the same as plain text (the sentence game's holes are split the same
-              way, for the same animation). */}
+              way, for its own animation).
+              `--ring` is the letter's distance from the CENTRE, which is what makes this a
+              shockwave out of the point of impact rather than a ripple travelling in from
+              one side. (`--i`, the plain index, is what the sentence game's ambient wave
+              uses; the two want different orders, so they carry different numbers.) */}
           {Array.from(word, (letter, i) => (
-            <span key={i} className="hole-letter" style={{ '--i': i } as CSSProperties}>
+            <span
+              key={i}
+              className="hole-letter"
+              style={{ '--ring': Math.abs(i - (word.length - 1) / 2) } as CSSProperties}
+            >
               {letter}
             </span>
           ))}

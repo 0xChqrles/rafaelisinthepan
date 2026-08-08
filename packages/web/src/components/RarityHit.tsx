@@ -1,9 +1,16 @@
 import { useEffect } from 'react';
 import type { CSSProperties } from 'react';
 
-// How long the label takes to leave once its hold is up. The JS mirror of
-// `rarity-vanish`'s duration in index.css, and what the screen adds to a hit's hold to know
-// when the thing is actually gone.
+// The three numbers the stamp's choreography is built out of, and the JS mirrors of what
+// index.css does with them. They are here rather than only in the CSS because the WORD's own
+// reaction has to be timed against them: the shake and the letter wave must fire at the
+// moment of IMPACT, not when the label mounts, or the word flinches before anything hits it.
+export const RARITY_STAMP_MS = 300; // fall + land + settle
+// Where in that the label actually LANDS. Must match the impact keyframe's percentage in
+// `rarity-stamp` — the one place these two files have to agree.
+const RARITY_IMPACT_AT = 0.45;
+export const RARITY_IMPACT_MS = Math.round(RARITY_STAMP_MS * RARITY_IMPACT_AT);
+// How long it takes to leave once its hold is up.
 export const RARITY_VANISH_MS = 600;
 
 // Word mode's guess feedback (#163): the claim's RARITY GRADE, or MISS, stamped onto the

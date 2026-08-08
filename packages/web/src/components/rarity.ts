@@ -79,13 +79,17 @@ export const MISS_COLOR = '#ff1f54';
 // before this, so the ladder was tuned OUTWARD from the known-good middle rather than
 // invented at both ends.
 //
-// THE SIZES ARE CAPPED BY THE LABEL'S OWN WIDTH, not just by these numbers. A grade name is
-// a WORD — `UNCOMMON` is 8 characters, `OBSCURE` 7 — and at these sizes the widest of them
-// would run off a 320px screen at the peak of its pop. `.floating-hit` therefore takes the
-// SMALLER of `base x scale` and what the column can hold, exactly as `fitWord` does for the
-// route drawing's words. The cap only bites at the narrowest widths, and the ladder is
-// tuned so that when it does the ORDER still holds — a capped OBSCURE must never render
-// smaller than an uncapped RARE.
+// THE LADDER IS TUNED AGAINST THE WORD, not in the abstract (retuned 2026-08-09). The label
+// lands ON the day's word, which `fitWord` draws at up to SUBJECT_PX (40), so ARCANE reads
+// as a stamp of comparable weight rather than something that swallows what it is about — it
+// tops out around the word's own size, where a steeper ladder had it at half again.
+//
+// The sizes are ALSO capped by the label's own width. A grade name is a WORD — `UNCOMMON` is
+// 8 characters, `OBSCURE` 7 — so `.rarity-hit` takes the SMALLER of `base x scale` and what
+// the column can hold, exactly as `fitWord` does for the route drawing's words. At these
+// sizes the cap no longer bites at any width; it stays as the guard that a future size bump
+// cannot silently run off a phone, and the ladder is tuned so that if it ever does bite the
+// ORDER still holds — a capped OBSCURE must never render smaller than an uncapped RARE.
 export interface RarityHitStyle {
   scale: number;
   holdMs: number;
@@ -97,11 +101,11 @@ export interface RarityHitStyle {
 }
 
 export const RARITY_HIT: readonly RarityHitStyle[] = [
-  { scale: 1, holdMs: 220, drop: 26, rise: 110, punch: 1.25, shake: 0.6, wave: 0 }, // COMMON
-  { scale: 1.35, holdMs: 340, drop: 32, rise: 125, punch: 1.3, shake: 0.85, wave: 0 }, // UNCOMMON
-  { scale: 1.7, holdMs: 500, drop: 40, rise: 145, punch: 1.35, shake: 1.1, wave: 3 }, // RARE
-  { scale: 2.1, holdMs: 700, drop: 50, rise: 170, punch: 1.4, shake: 1.45, wave: 5 }, // OBSCURE
-  { scale: 2.6, holdMs: 950, drop: 62, rise: 200, punch: 1.45, shake: 1.9, wave: 8 }, // ARCANE
+  { scale: 1, holdMs: 220, drop: 22, rise: 100, punch: 1.25, shake: 0.6, wave: 0 }, // COMMON
+  { scale: 1.15, holdMs: 340, drop: 26, rise: 112, punch: 1.3, shake: 0.85, wave: 0 }, // UNCOMMON
+  { scale: 1.35, holdMs: 500, drop: 32, rise: 128, punch: 1.35, shake: 1.1, wave: 4 }, // RARE
+  { scale: 1.6, holdMs: 700, drop: 39, rise: 148, punch: 1.4, shake: 1.45, wave: 6 }, // OBSCURE
+  { scale: 1.85, holdMs: 950, drop: 47, rise: 172, punch: 1.45, shake: 1.9, wave: 9 }, // ARCANE
 ];
 
 // The label's resting TILT, in degrees (decided 2026-08-09). It leans a random way on every

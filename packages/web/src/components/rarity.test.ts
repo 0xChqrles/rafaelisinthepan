@@ -136,13 +136,13 @@ describe('rarity intensity escalates with the ladder', () => {
   });
 
   // The label is a WORD, and the rarest are drawn several times the base size, so the
-  // ladder can only climb as far as the narrowest column holds. `.floating-hit` caps the
+  // ladder can only climb as far as the narrowest column holds. `.rarity-hit` caps the
   // size at `room / (glyphs x punch)`; this pins the thing that cap can silently break —
   // if two grades both cap, the rarer one must still render LARGER, or the ladder inverts
   // on exactly the screens where it matters most.
   it('survives its own width cap at 320px without inverting', () => {
     const ROOM = 320 - 28; // the page inset a side, i.e. what `--hit-room` resolves to
-    const BASE = 17; // `.word-subject .floating-hit` at the mobile breakpoint
+    const BASE = 16; // `.word-subject .rarity-hit` at the mobile breakpoint
     const LABELS = [...RARITY_NAMES];
     const rendered = RARITY_HIT.map((row, i) =>
       Math.min(BASE * row.scale, ROOM / (LABELS[i].length * row.punch)),
