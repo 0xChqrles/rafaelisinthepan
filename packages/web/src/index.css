@@ -1096,16 +1096,21 @@ button * {
    phrase must not reflow or shift width — and staggered off the letter's index, with both
    numbers handed down from Hole so the JS that ends the wave and the CSS that draws it
    cannot disagree. */
-.hole-word.wave .hole-letter {
+.hole-word.wave .hole-letter,
+.word-subject-text.wave .hole-letter {
   animation: hole-wave var(--wave-dur, 300ms) ease-in-out calc(var(--i) * var(--wave-step, 40ms));
 }
+/* `--wave-lift` DEFAULTS to the sentence game's 3px, so the hole's ambient ripple is
+   untouched. Word mode drives it from the rarity grade (#163): the wave arrives at RARE and
+   the word visibly heaves higher the rarer the find. It is the one intensity channel that
+   costs no width, which is why the top of the ladder leans on it. */
 @keyframes hole-wave {
   0%,
   100% {
     transform: translateY(0);
   }
   50% {
-    transform: translateY(-3px);
+    transform: translateY(calc(-1 * var(--wave-lift, 3px)));
   }
 }
 .hole-rank {
@@ -1195,17 +1200,28 @@ button * {
    here restates a grade.
 
    `--hit-base` is the SURFACE's to set, not the float's: the sentence game wants one size
-   for a 2-3 character number, Word mode a much smaller one for an 8-character word like
-   UNCOMMON, and the mobile breakpoint has to shrink both. That is why the media query below
-   moves the BASE and not the font-size — a hard `font-size` there would clobber the scale
-   and flatten the whole ladder on every phone. --- */
+   for a 2-3 character number, Word mode another for an 8-character word like UNCOMMON, and
+   the mobile breakpoint has to shrink both. That is why the media query below moves the BASE
+   and not the font-size — a hard `font-size` there would clobber the scale and flatten the
+   whole ladder on every phone.
+
+   THE SIZE IS ALSO CAPPED BY WHAT THE COLUMN HOLDS, which is the same rule and the same
+   arithmetic `fitWord` applies to the route drawing's words: the pixel font advances exactly
+   1em per glyph, so `room / (glyphs x peak scale)` is the largest size that still fits at
+   the loudest frame of the pop. Without it a 2.6x ARCANE runs clean off a 320px screen.
+   `--hit-room` is declared by the surface and defaults to something no cap can bite through,
+   so every surface that does not declare one — which is all of them but Word mode's — is
+   sized by `base x scale` exactly as before. --- */
 .floating-hit {
   position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
   font-family: var(--press);
-  font-size: calc(var(--hit-base, 28px) * var(--hit-scale, 1));
+  font-size: min(
+    calc(var(--hit-base, 28px) * var(--hit-scale, 1)),
+    calc(var(--hit-room, 10000px) / (var(--hit-len, 1) * var(--hit-punch, 1.35)))
+  );
   color: #fff;
   pointer-events: none;
   opacity: 0;
@@ -2881,6 +2897,7 @@ button * {
     --hit-base: 18px;
   }
 
+
   .input-area {
     gap: 14px;
   }
@@ -3698,16 +3715,25 @@ button * {
    would lose to it and every grade would render at the sentence game's size. Measured
    before the fix: an OBSCURE label 343px wide, clipped off a 320px screen. */
 .word-subject .floating-hit {
-  --hit-base: 17px;
+  --hit-base: 24px;
+  /* What the grade label has to fit inside — the page column, which is what caps the
+     rarest grades on a narrow screen (see `.floating-hit`). The float is absolutely
+     positioned and centred on the word, so it may run wider than `.word-window`'s own cap
+     without clipping; the viewport is the real limit. */
+  --hit-room: min(760px, calc(100vw - 48px));
 }
 .word-subject-text {
   display: inline-block;
   font-family: var(--vt);
   line-height: 1.15;
   color: var(--accent);
+  /* The letters are boxes so the wave has something to ripple; keep the word one line. */
+  white-space: nowrap;
 }
 /* The guess's impact lands on the word (the sentence game's own hit grammar), at an
-   amplitude the rarity sets — see `--shake-amp` on @keyframes word-shake. */
+   amplitude the rarity sets — see `--shake-amp` on @keyframes word-shake. From RARE up the
+   letters ALSO ripple (`.wave`, driven by `--wave-lift`), so the top half of the ladder
+   does something the bottom half does not. */
 .word-subject-text.hit-shake {
   animation: word-shake 0.4s ease-in-out;
 }
@@ -3723,7 +3749,8 @@ button * {
     --wordw: min(430px, calc(100vw - 28px));
   }
   .word-subject .floating-hit {
-    --hit-base: 13px;
+    --hit-base: 17px;
+    --hit-room: calc(100vw - 28px);
   }
 }
 .word-prompt {
@@ -3735,8 +3762,10 @@ button * {
    not here: it is the watermark behind the word (`.word-anchor`), because it is the number
    the end screen names.
    Bigger than the sentence's counter on purpose: it is the one live number on the screen,
-   and the thing every claim visibly pays into. Tabular figures so a two-digit clock does not
-   twitch as the units turn. */
+   and the thing every claim visibly pays into. Tabular figures so the digits do not twitch
+   as they turn — which matters far more now that the last one turns ten times a second.
+   The corner it sits in holds ~104px at 320px before it reaches the icon group, which is
+   what sets the mobile size below: a three-digit clock and its tenth have to fit that. */
 .word-timer {
   position: relative;
   display: inline-block;
@@ -3749,6 +3778,21 @@ button * {
   transform: translateY(0.15em);
   transition: color 0.25s linear;
   pointer-events: none;
+}
+/* The tenth, smaller than the seconds it hangs off. Width is the hard reason (see above),
+   but it also reads right: the seconds are the number and the tenth is the number MOVING,
+   so the eye reads the value off the big glyphs and the motion off the small one. */
+.word-timer .timer-dec {
+  font-size: 0.55em;
+}
+/* The mobile size lives HERE, immediately after the rule it overrides, and not up in the
+   stylesheet's shared mobile block — the two have equal specificity, so a media query
+   written earlier in the file simply loses to this rule and never applies. (Measured: it
+   did, and a clock past 100 seconds then ran into the header's icon group.) */
+@media (max-width: 640px) {
+  .word-timer {
+    font-size: 24px;
+  }
 }
 /* Before START the clock shows what a run is worth without having begun to spend it — a
    preview, so it reads as chrome rather than as time already running out. */

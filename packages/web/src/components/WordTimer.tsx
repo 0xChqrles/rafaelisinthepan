@@ -12,10 +12,10 @@ import { srWordClock } from '../i18n';
 // score is neither — it is the WATERMARK behind the play surface, because it is the
 // thing displayed properly later, as the end screen's headline.
 
-// Where the clock stops being a number and starts being a warning. Presentation only —
-// the run's length is `game/wordGame.ts`'s to declare, this is just when the HUD raises
-// its voice about it.
-const WARN_SECONDS = 10;
+// Where the clock stops being a number and starts being a warning — the last 20 seconds.
+// Presentation only: the run's length is `game/wordGame.ts`'s to declare, this is just
+// when the HUD raises its voice about it.
+const WARN_SECONDS = 20;
 
 // A gain to play, handed down by the screen. `id` is monotonic so two claims in a row
 // restart the animation instead of the second one landing on a finished element.
@@ -40,22 +40,33 @@ export default function WordTimer({
   // thing that re-renders that often (see hooks/useCountdown's useDeadlinePassed).
   const remainingMs = useCountdown(deadline);
   const idle = deadline === null;
-  // CEIL, so the last second is a whole second on screen and the display only reads 0
-  // when the run is genuinely over — floor would show 0 for the final second of play.
-  const seconds = idle ? START_SECONDS : Math.ceil(remainingMs / 1000);
+  // Counted in DECISECONDS, because that is what the clock shows. CEIL, so the last tenth
+  // is a whole tenth on screen and the display only reads 0.0 when the run is genuinely
+  // over — floor would show 0.0 for the final tenth of play.
+  const tenths = idle ? START_SECONDS * 10 : Math.ceil(remainingMs / 100);
+  const whole = Math.floor(tenths / 10);
   // Spent is its own state, not the deepest warning: a run that is over has nothing left
-  // to warn about, and a red 0 beating away under the whole result screen would.
-  const spent = !idle && seconds === 0;
-  const warn = !idle && !spent && seconds <= WARN_SECONDS;
+  // to warn about, and a red 0.0 beating away under the whole result screen would.
+  const spent = !idle && tenths === 0;
+  const warn = !idle && !spent && tenths <= WARN_SECONDS * 10;
   return (
     <span
       className={`word-timer${warn ? ' warn' : ''}${spent ? ' spent' : ''}${idle ? ' idle' : ''}`}
       // A live region that defaults to OFF, which is exactly right: the clock must be
-      // readable on demand and must never be announced every second.
+      // readable on demand and must never be announced every second — let alone every
+      // tenth of one, which is why the label rounds to whole seconds where the display
+      // does not.
       role="timer"
-      aria-label={srWordClock(lang, seconds)}
+      aria-label={srWordClock(lang, Math.ceil(tenths / 10))}
     >
-      <span aria-hidden="true">{seconds}</span>
+      <span aria-hidden="true">{whole}</span>
+      {/* The tenth rides SMALLER than the seconds, and that is width and not taste: the
+          header corner holds about 104px at 320px before it reaches the icon group, and a
+          three-digit clock plus a full-size `.0` does not fit in it. Smaller also reads
+          right — the seconds are the number, the tenth is the number moving. */}
+      <span className="timer-dec" aria-hidden="true">
+        {`.${tenths % 10}`}
+      </span>
       {gain && (
         <span key={gain.id} className="timer-gain" aria-hidden="true">
           {`+${gain.seconds}s`}

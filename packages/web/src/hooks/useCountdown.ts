@@ -21,10 +21,11 @@ import { useEffect, useState } from 'react';
 //
 // `deadline` is null before START; the run then simply has no time to report.
 
-// How often the display re-reads the clock. Fast enough that the seconds figure turns on
-// time (a whole-second cadence would show each number for anywhere between 0 and 2
-// seconds depending on the phase it started in), slow enough to be free.
-const TICK_MS = 100;
+// How often the display re-reads the clock. The clock shows TENTHS, so it has to be read
+// at least that often or the last digit stutters — and comfortably faster than that, since
+// nothing phase-locks this interval to the deadline. Cheap: the only thing subscribed at
+// this rate is the timer itself (see useDeadlinePassed for why that matters).
+const TICK_MS = 50;
 
 const leftOf = (deadline: number): number => Math.max(0, deadline - Date.now());
 

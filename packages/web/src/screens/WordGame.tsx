@@ -371,6 +371,7 @@ function WordRound({
         rise: style.rise,
         punch: style.punch,
         shake: style.shake,
+        wave: style.wave,
         fadeDelayMs,
       });
 

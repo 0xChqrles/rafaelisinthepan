@@ -33,8 +33,15 @@ export interface WordHit {
   rise: number;
   punch: number;
   shake: number; // multiplier on the word's own shake
+  wave: number; // the letter wave's amplitude in px; 0 below RARE, where there is no wave
   fadeDelayMs: number; // how long the label holds before it leaves — rarity buys hold too
 }
+
+// The letter wave's own clock, the sentence game's #129 numbers exactly: one letter's whole
+// up-and-down, and the gap between two consecutive letters. Handed to CSS rather than
+// repeated there, the way `Hole` hands down the same pair.
+const WAVE_LETTER_MS = 300;
+const WAVE_STEP_MS = 40;
 
 export default function WordSubject({
   word,
@@ -54,21 +61,35 @@ export default function WordSubject({
           day's word would be spoken nowhere for the whole game. */}
       <span className="sr-only">{srWordBoardWord(lang, word)}</span>
       <span className="hole-word-wrap" aria-hidden="true">
-        {/* Keyed per hit so a guess landing mid-shake restarts it (Hole's own trick), and
-            the shake's amplitude rides the grade — `--shake-amp` defaults to 1 everywhere
-            else, so the sentence hole and the standings sprite keep the exact shake they
-            had. */}
+        {/* Keyed per hit so a guess landing mid-shake restarts it (Hole's own trick) — which
+            is also what replays the letter wave, so neither needs a clock of its own. The
+            shake's amplitude and the wave's ride the grade; `--shake-amp` and `--wave-lift`
+            both default to what the sentence game uses, so the hole, the standings sprite
+            and the tutorial keep the exact motion they had. */}
         <span
           key={hit ? `word-${hit.id}` : 'word'}
-          className={`word-subject-text${hit ? ' hit-shake' : ''}`}
+          className={`word-subject-text${hit ? ' hit-shake' : ''}${
+            hit && hit.wave > 0 ? ' wave' : ''
+          }`}
           style={
             {
               fontSize: fitWord(word, SUBJECT_PX),
               '--shake-amp': hit ? String(hit.shake) : undefined,
+              '--wave-lift': hit && hit.wave > 0 ? `${hit.wave}px` : undefined,
+              '--wave-dur': `${WAVE_LETTER_MS}ms`,
+              '--wave-step': `${WAVE_STEP_MS}ms`,
             } as CSSProperties
           }
         >
-          {word}
+          {/* Split into per-letter boxes so the wave has something to ripple. The pixel font
+              is monospace and each box advances exactly as the glyph did, so the word
+              measures the same as plain text (the sentence game's holes are split the same
+              way, for the same animation). */}
+          {Array.from(word, (letter, i) => (
+            <span key={i} className="hole-letter" style={{ '--i': i } as CSSProperties}>
+              {letter}
+            </span>
+          ))}
         </span>
         {hit && onHitDone && (
           <FloatingHit

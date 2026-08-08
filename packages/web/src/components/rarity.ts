@@ -63,17 +63,29 @@ export const MISS_COLOR = '#ff1f54';
 //   holdMs — extra time the label sits before it leaves. A DELAY: survives reduced motion.
 //   lift   — where it comes to rest above the word's centre, px. STATIC once it lands, and
 //            it has to grow with `scale`: these labels are WORDS, so at one fixed lift an
-//            ARCANE (drawn at twice the base) sat squarely on the word and hid it. The rare
-//            grades tower over the word instead of smothering it.
+//            ARCANE sat squarely on the word and hid it. The rare grades tower over the word
+//            instead of smothering it.
 //   rise   — how far it drifts as it fades, px. Motion. Always well past `lift`.
 //   punch  — the pop's peak scale. Motion.
 //   shake  — multiplier on the word's own shake amplitude. Motion.
+//   wave   — the LETTER WAVE: the day's word ripples letter by letter, at this amplitude in
+//            px. 0 is off. It arrives at RARE and grows from there — the top half of the
+//            ladder does something the bottom half simply does not do, which reads as a
+//            different KIND of event rather than a louder one. It is also the only channel
+//            here that costs no width, which is what lets the ladder keep climbing on a
+//            phone (see the note on the size cap below).
 //
 // RARE is deliberately the anchor: its punch (1.35) is what every float in the app did
 // before this, so the ladder was tuned OUTWARD from the known-good middle rather than
-// invented at both ends. The lifts run higher than the sentence game's 14 across the board
-// because these labels are WORDS, several times wider than a two-digit distance, and a
-// wide label resting where a narrow number rests covers the thing it is about.
+// invented at both ends.
+//
+// THE SIZES ARE CAPPED BY THE LABEL'S OWN WIDTH, not just by these numbers. A grade name is
+// a WORD — `UNCOMMON` is 8 characters, `OBSCURE` 7 — and at these sizes the widest of them
+// would run off a 320px screen at the peak of its pop. `.floating-hit` therefore takes the
+// SMALLER of `base x scale` and what the column can hold, exactly as `fitWord` does for the
+// route drawing's words. The cap only bites at the narrowest widths, and the ladder is
+// tuned so that when it does the ORDER still holds — a capped OBSCURE must never render
+// smaller than an uncapped RARE.
 export interface RarityHitStyle {
   scale: number;
   holdMs: number;
@@ -81,14 +93,15 @@ export interface RarityHitStyle {
   rise: number;
   punch: number;
   shake: number;
+  wave: number;
 }
 
 export const RARITY_HIT: readonly RarityHitStyle[] = [
-  { scale: 1, holdMs: 0, lift: 12, rise: 40, punch: 1.15, shake: 0.6 }, // COMMON
-  { scale: 1.25, holdMs: 120, lift: 16, rise: 48, punch: 1.25, shake: 0.8 }, // UNCOMMON
-  { scale: 1.5, holdMs: 260, lift: 22, rise: 58, punch: 1.35, shake: 1 }, // RARE
-  { scale: 1.75, holdMs: 420, lift: 30, rise: 70, punch: 1.5, shake: 1.3 }, // OBSCURE
-  { scale: 2, holdMs: 600, lift: 40, rise: 86, punch: 1.7, shake: 1.7 }, // ARCANE
+  { scale: 1, holdMs: 0, lift: 16, rise: 44, punch: 1.25, shake: 0.6, wave: 0 }, // COMMON
+  { scale: 1.35, holdMs: 120, lift: 22, rise: 54, punch: 1.3, shake: 0.85, wave: 0 }, // UNCOMMON
+  { scale: 1.7, holdMs: 260, lift: 32, rise: 70, punch: 1.35, shake: 1.1, wave: 3 }, // RARE
+  { scale: 2.1, holdMs: 420, lift: 44, rise: 90, punch: 1.4, shake: 1.45, wave: 5 }, // OBSCURE
+  { scale: 2.6, holdMs: 600, lift: 58, rise: 112, punch: 1.45, shake: 1.9, wave: 8 }, // ARCANE
 ];
 
 // A miss is the quietest thing that can happen: it costs nothing but the seconds spent

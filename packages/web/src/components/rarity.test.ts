@@ -111,13 +111,52 @@ describe('rarity intensity escalates with the ladder', () => {
     for (const name of RARITY_NAMES) expect(RARITY_HIT[rarityStep(name)]).toBeDefined();
   });
 
-  it('every channel is strictly stronger at a rarer grade', () => {
+  it('every graded channel is strictly stronger at a rarer grade', () => {
     for (const channel of ['scale', 'holdMs', 'lift', 'rise', 'punch', 'shake'] as const) {
       const values = RARITY_HIT.map((row) => row[channel]);
       for (let i = 1; i < values.length; i += 1) {
         expect(values[i], `${channel} at step ${i}`).toBeGreaterThan(values[i - 1]);
       }
     }
+  });
+
+  it('the letter WAVE is a threshold, not a dial: off at the bottom, on and growing above', () => {
+    // The wave is the one channel that is absent rather than quiet at the common end —
+    // which is the point of it. It makes the top of the ladder a different KIND of event
+    // instead of a louder one, and it is why the ladder can keep climbing on a phone: a
+    // ripple costs no width, where every other channel does.
+    const waves = RARITY_HIT.map((row) => row.wave);
+    expect(waves[0], 'the commonest grade does not ripple').toBe(0);
+    // Once it starts it never stops and never weakens.
+    const firstOn = waves.findIndex((w) => w > 0);
+    expect(firstOn).toBeGreaterThan(0);
+    for (let i = firstOn; i < waves.length; i += 1) {
+      expect(waves[i], `wave at step ${i}`).toBeGreaterThan(i === firstOn ? 0 : waves[i - 1]);
+    }
+  });
+
+  // The label is a WORD, and the rarest are drawn several times the base size, so the
+  // ladder can only climb as far as the narrowest column holds. `.floating-hit` caps the
+  // size at `room / (glyphs x punch)`; this pins the thing that cap can silently break —
+  // if two grades both cap, the rarer one must still render LARGER, or the ladder inverts
+  // on exactly the screens where it matters most.
+  it('survives its own width cap at 320px without inverting', () => {
+    const ROOM = 320 - 28; // the page inset a side, i.e. what `--hit-room` resolves to
+    const BASE = 17; // `.word-subject .floating-hit` at the mobile breakpoint
+    const LABELS = [...RARITY_NAMES];
+    const rendered = RARITY_HIT.map((row, i) =>
+      Math.min(BASE * row.scale, ROOM / (LABELS[i].length * row.punch)),
+    );
+    for (let i = 1; i < rendered.length; i += 1) {
+      expect(rendered[i], `${LABELS[i]} vs ${LABELS[i - 1]} at 320px`).toBeGreaterThan(
+        rendered[i - 1],
+      );
+    }
+    // And nothing overruns the screen at the loudest frame of its pop.
+    rendered.forEach((size, i) => {
+      expect(size * LABELS[i].length * RARITY_HIT[i].punch, `${LABELS[i]} peak width`)
+        .toBeLessThanOrEqual(ROOM + 0.001);
+    });
   });
 
   it('keeps a channel that survives reduced motion', () => {

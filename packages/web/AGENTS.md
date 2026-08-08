@@ -291,23 +291,44 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the count is this mode's end-screen headline). That split IS the mode's feedback grammar:
   **a float on the WORD is about the guess** (its GRADE, or MISS), **a gain on the TIMER is
   about your clock** — `+4s` in the solved-word gold, keyed by a monotonic id so two claims
-  in a row replay it.
+  in a row replay it. The clock reads **`seconds.decisecond`** and goes `--danger` red for
+  the **last 20 seconds** (`WARN_SECONDS`); the tenth renders smaller than the seconds,
+  which is width before it is taste — the header corner holds ~104px at 320px before the
+  icon group, and a three-digit clock plus a full-size `.0` does not fit it (measured: it
+  pushed the help icon off the screen). `useCountdown` ticks at 50ms so the last digit does
+  not stutter.
   **The float is the GRADE, and it lands harder the rarer it is** (decided 2026-08-08,
   superseding the rank exponent). It is still ONE `FloatingHit` with one animation — the
   sentence game must not acquire a rarity concept it does not have — so every new knob
-  (`label`, `scale`, `lift`, `rise`, `punch`) is optional and **defaults to exactly what the
-  float did before**, which is stated as named constants in the component rather than left
-  implicit in the CSS. Word mode's values live in ONE table indexed by `rarityStep`
-  (`components/rarity.ts` `RARITY_HIT`), so "ARCANE feels bigger than COMMON" is a data row,
-  not five rules. **Two of the five channels are load-bearing for a reason**: the global
-  reduced-motion rule collapses DURATIONS but KEEPS DELAYS, so a ladder built only out of
-  movement would not exist at all for a player who asked for none — `scale` is static and
-  `holdMs` is a delay, and between them the escalation always lands (`rarity.test.ts` pins
-  that). `lift` (where the label rests above the word) grows with the grade because these
-  labels are WORDS: at the sentence game's fixed 14px an ARCANE drawn at twice the base sat
-  squarely ON the word and hid it. The word's own shake rides `--shake-amp`, which
-  **defaults to 1** — `word-shake` is shared by the sentence hole, this word AND the
-  standings sprite, and only Word mode sets the variable.
+  (`label`, `scale`, `lift`, `rise`, `punch`, `--hit-len`) is optional and **defaults to
+  exactly what the float did before**, which is stated as named constants in the component
+  rather than left implicit in the CSS. Word mode's values live in ONE table indexed by
+  `rarityStep` (`components/rarity.ts` `RARITY_HIT`), so "ARCANE feels bigger than COMMON"
+  is a data row, not six rules. **Two of the channels are load-bearing for a reason**: the
+  global reduced-motion rule collapses DURATIONS but KEEPS DELAYS, so a ladder built only
+  out of movement would not exist at all for a player who asked for none — `scale` is static
+  and `holdMs` is a delay, and between them the escalation always lands (`rarity.test.ts`
+  pins that). `lift` (where the label rests above the word) grows with the grade because
+  these labels are WORDS: at the sentence game's fixed 14px an ARCANE sat squarely ON the
+  word and hid it.
+  **From RARE up the day's word RIPPLES** (decided 2026-08-08): the #129 letter wave, at an
+  amplitude the grade sets (`--wave-lift`, 3/5/8px). It is a THRESHOLD channel, absent below
+  RARE rather than merely quiet, so the top half of the ladder does something the bottom half
+  does not — a different KIND of event, not a louder one. It is also the only channel that
+  costs NO WIDTH, which is what lets the sizes keep climbing on a phone. `WordSubject` splits
+  the word into `.hole-letter` boxes for it, exactly as `Hole` does.
+  **The grade's SIZE is capped by what the column holds**, the same arithmetic `fitWord`
+  applies to the route drawing: `min(base × scale, room / (glyphs × punch))`. A grade name is
+  a WORD — `UNCOMMON` is 8 characters — and at a 2.6× ARCANE the widest would run clean off a
+  320px screen at the peak of its pop. The cap only bites at the narrowest width and only on
+  the top two grades (measured at 320px: OBSCURE 35.7→29.8, ARCANE 44.2→33.6), and the ladder
+  is tuned so the ORDER survives it — a capped OBSCURE must never render smaller than an
+  uncapped RARE, which `rarity.test.ts` pins because it is exactly what a future size bump
+  would break silently.
+  Both the shake and the wave ride variables that **default to the sentence game's values**
+  (`--shake-amp` 1, `--wave-lift` 3px) — `word-shake` is shared by the sentence hole, this
+  word AND the standings sprite, and `hole-wave` by the hole's ambient ripple, so only Word
+  mode's own rules set them.
   **The rarity COLOURS are copies of existing ramp stops, measured, and pinned**
   (`components/rarity.ts` + `rarity.test.ts`, mirroring `LANE_COLORS`/`laneColors.test.ts`):
   `--muted` / progress-green / progress-cyan / heat-electric-violet / progress-pink, minimum

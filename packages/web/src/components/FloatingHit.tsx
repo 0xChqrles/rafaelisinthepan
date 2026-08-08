@@ -57,9 +57,17 @@ export default function FloatingHit({
     return () => clearTimeout(t);
   }, [fadeDelayMs, id, onDone]);
 
+  const text = label ?? (miss ? 'MISS' : value === 0 ? '0' : `-${value}`);
+
   const style: CSSProperties &
     Record<
-      '--hit-delay' | '--hit-fade-delay' | '--hit-scale' | '--hit-lift' | '--hit-rise' | '--hit-punch',
+      | '--hit-delay'
+      | '--hit-fade-delay'
+      | '--hit-scale'
+      | '--hit-lift'
+      | '--hit-rise'
+      | '--hit-punch'
+      | '--hit-len',
       string
     > = {
     color,
@@ -69,11 +77,16 @@ export default function FloatingHit({
     '--hit-lift': `${lift}px`,
     '--hit-rise': `${rise}px`,
     '--hit-punch': String(punch),
+    // How many glyphs wide this is. The pixel font advances exactly 1em per glyph, so the
+    // CSS can cap the size at what the column holds — the same arithmetic `fitWord` does,
+    // and the reason a 2.6x ARCANE cannot run off a phone. Harmless where no surface
+    // declares a `--hit-room` to cap against, which is every surface but Word mode's.
+    '--hit-len': String(Math.max(1, text.length)),
   };
 
   return (
     <span className="floating-hit" style={style}>
-      {label ?? (miss ? 'MISS' : value === 0 ? '0' : `-${value}`)}
+      {text}
     </span>
   );
 }
