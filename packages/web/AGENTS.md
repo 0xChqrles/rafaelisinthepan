@@ -355,6 +355,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
     direction and so implies a source off to one side; a stamp lands in the middle. It has
     its OWN keyframes (`word-impact`), which let the sentence game's ambient `hole-wave` go
     back to its literal — one less shared animation, and `FloatingHit` with it.
+  **The label NEVER SCALES and NEVER wears a border** — both learned the hard way on
+  2026-08-09, and both are rules rather than preferences:
+  - Animating `scale` on the pixel font renders blurry intermediate frames for the whole
+    transition. It is the same reason every sprite here takes an exact integer scale, and it
+    is what made the stamp read as "utterly ugly" through two cuts of it. The motion is
+    TRANSLATE AND OPACITY ONLY; the impact is carried by what the label does to the WORD.
+    The fall accelerates the whole way and stops dead — no settle, no rebound, because the
+    recoil belongs to the thing that was hit, not the thing that hit it. (`punch` left the
+    intensity table with the scaling; nothing is left to overshoot.)
+  - **NOTHING in this app outlines type.** A knockout ring was tried to separate the label
+    from the word it covers and was rejected on sight: it is not the artistic direction, and
+    it read as a cheap sticker. What separates them is `word-dim` and nothing else, which is
+    why that value is load-bearing rather than cosmetic — measured on the worst case (cyan
+    RARE over the blue day's word), 0.45 and 0.32 are both mud and 0.2 is clean.
   **The word STANDS DOWN under the label, and the fade is EASE-IN for a measured reason.**
   Two words of the same size in the same place cannot both be read: a cyan RARE over the blue
   day's word is 77 dE apart and still illegible superimposed, which is the limit of what a
@@ -366,10 +380,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   something nobody can see. The label also carries an eight-way hard KNOCKOUT ring in `--bg`
   — no blur, the app has none anywhere — so it reads as a solid thing on top of the word
   rather than tangling with it.
-  **The ladder is tuned AGAINST THE WORD** (retuned 2026-08-09): the label lands on a word
-  `fitWord` draws at up to 40px, so ARCANE tops out around that same size (desktop 22→41px,
-  mobile 16→30px). A steeper ladder had it at half again and it swallowed the thing it was
-  about.
+  **The ladder is tuned AGAINST THE WORD** (retuned twice on 2026-08-09): the label lands on
+  a word `fitWord` draws at up to 40px, and it is a STAMP on that word, so it stays clearly
+  SMALLER than it — desktop 18→30px, mobile 14→24px. Two earlier cuts overshot in both
+  directions: one so small the grades barely differed, one where ARCANE matched the word and
+  swallowed it.
   **Two ambient readouts bracket the prompt during a run** (decided 2026-08-09), and both
   RESERVE their full footprint from the first frame — the word sits in the flexible space
   above them, and a column that grew as the run filled it would walk the word up the screen
@@ -378,18 +393,22 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `justify-content: flex-end` + `overflow: hidden` buys. It is where the RANK went: the float
   carries the grade now, but "how close was that one?" is a question a moment later, and a
   log is where a moment later belongs, so each line is the word in its grade's colour with
-  its exponent. Both share the PROMPT's column — they are added to its `max-width` +
-  `align-self: center` rule — or on a desktop the prompt is centred in 456px while the
-  history starts at the far left of a 1200px footer (2026-08-09). Below it,
-  `components/WordTally`: `found/total` per grade, commonest first, with **the COLOUR as the
-  only label** — no names, no legend, since the five colours are already the language the
-  float speaks. It spans **the keyboard's ROW, not its box** (2026-08-09): `.keyboard` is
-  capped at 680px but its keys are capped at 46px each, so on a wide screen ten of them plus
-  nine gaps come to 514px and centre INSIDE that box — matching the box put the strip visibly
-  wider than the keys it belongs to. It therefore recomputes the row from
-  `--kb-gap`/`--kb-key-max`, which moved to `:root` for exactly this reason: the row width is
-  no longer only the keyboard's business. Verified equal to the real key extents at
-  320/430/700/900/1200/1400. A grade the day's zone does not contain is
+  its exponent. Below it, `components/WordTally`: `found/total` per grade, commonest first,
+  with **the COLOUR as the only label** — no names, no legend, since the five colours are
+  already the language the float speaks.
+  **The HISTORY, the PROMPT and the TALLY are all exactly as wide as the KEYBOARD's row of
+  keys, and sit on its left edge** (`--play-w` on `.word-footer-play`, decided 2026-08-09).
+  They used to take the BOARD's column instead (430 + the scroller's side + its scrollbar =
+  456), which on a desktop left the prompt a few dozen pixels narrower than the keys under
+  it — ALMOST aligned, which reads worse than either aligned or plainly not. The row is not
+  the keyboard's BOX either: `.keyboard` is capped at 680px but its keys are capped at 46px
+  each, so ten of them plus nine gaps come to 514px and centre inside that box. The column
+  therefore recomputes the row from `--kb-gap`/`--kb-key-max`, which moved to `:root` for
+  exactly this reason — the row width is no longer only the keyboard's business — and it
+  follows the keyboard's full-bleed shift on a phone, or the prompt sits 10px inboard of the
+  Q key it answers. Verified equal to the real key extents at 320/430/700/900/1200/1400. The
+  board's own window keeps the 456 column: it draws a 430px line, and it is never on screen
+  at the same time as the prompt. A grade the day's zone does not contain is
   DROPPED rather than shown as `0/0`: an English board often has no ARCANE group at all, and
   a permanent `0/0` reads as a goal being failed rather than one the day never offered. Both
   totals come from `zoneGroups`/`tallyRarity` (`game/wordGame.ts`), so the numerator and the

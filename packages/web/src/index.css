@@ -1239,16 +1239,24 @@ button * {
    day's word. A different object from the float above and a deliberately different animation
    (decided 2026-08-09): that one pops UP off the word and drifts away as a footnote to it,
    which is right for a distance — a remark ABOUT the word. A grade is not a remark, it is a
-   VERDICT on the guess, so this one FALLS onto the word from above, lands squarely on it,
-   SITS there long enough to be read, and then leaves straight up.
+   VERDICT on the guess, so this one FALLS onto the word, SITS there long enough to be read,
+   and then leaves straight up.
 
-   Three things it reads that the other does not. `--hit-tilt` is the angle it lands at,
-   rolled a random way per hit, so a run of guesses reads as hand-thrown notes rather than one
-   stamp printed over and over. `--hit-scale` multiplies the surface's `--hit-base`, which is
-   how the five grades differ in size. And that size is CAPPED by what the column holds — the
-   same arithmetic `fitWord` applies to the route drawing's words, since the pixel font
-   advances exactly 1em per glyph — because a grade name is a WORD (`UNCOMMON` is 8
-   characters) and at the rarest scales the widest would run clean off a 320px screen. --- */
+   IT NEVER SCALES, and that is the rule the first two cuts of this got wrong. The type is a
+   pixel font: animating `scale` on it renders blurry intermediate frames for the whole
+   transition, which is the same reason every sprite in this app takes an exact integer scale.
+   So the motion is TRANSLATE AND OPACITY ONLY, the label arrives at its final size, and the
+   IMPACT is carried by what it does to the WORD — the shake and the shockwave, both timed to
+   the landing. There is no border either: nothing in this app outlines type, and a knockout
+   ring made it read as a cheap sticker. What separates it from the word is that the word
+   stands down under it (see `word-dim`).
+
+   `--hit-tilt` is the angle it lands at, rolled a random way per hit so a run of guesses
+   reads as hand-thrown notes rather than one stamp printed over and over — small, because
+   rotation is the other transform pixel type cannot take much of. `--hit-scale` multiplies
+   the surface's `--hit-base`, which is how the five grades differ in size, and that size is
+   CAPPED by what the column holds (the same arithmetic `fitWord` applies to the route
+   drawing's words, since the pixel font advances exactly 1em per glyph). --- */
 .rarity-hit {
   position: absolute;
   left: 50%;
@@ -1256,81 +1264,40 @@ button * {
   font-family: var(--press);
   font-size: min(
     calc(var(--hit-base, 24px) * var(--hit-scale, 1)),
-    calc(var(--hit-room, 10000px) / (var(--hit-len, 1) * var(--hit-punch, 1.35)))
+    calc(var(--hit-room, 10000px) / var(--hit-len, 1))
   );
   white-space: nowrap;
   pointer-events: none;
   opacity: 0;
-  /* A hard KNOCKOUT ring in the page's own background colour, so the label reads as a solid
-     thing sitting on top of the word rather than tangling with it (2026-08-09: a cyan RARE
-     landing on the blue day's word was measurably far apart in colour and still illegible,
-     because two texts of the same size superimposed are mud whatever their hue). Eight
-     hard offsets, no blur — the app has no blurred shadow anywhere, and a pixel font wants
-     none. It rotates with the label, since a text-shadow lives in the element's own space. */
-  text-shadow:
-    2px 0 0 var(--bg),
-    -2px 0 0 var(--bg),
-    0 2px 0 var(--bg),
-    0 -2px 0 var(--bg),
-    2px 2px 0 var(--bg),
-    -2px 2px 0 var(--bg),
-    2px -2px 0 var(--bg),
-    -2px -2px 0 var(--bg);
-  /* `linear` on the stamp so the per-keyframe timing functions inside it govern; see the
-     keyframes below for why it needs more than one curve. */
   animation:
-    rarity-stamp var(--stamp-dur, 300ms) linear forwards,
-    rarity-vanish 0.6s cubic-bezier(0.55, 0, 0.9, 0.35) var(--hit-fade-delay, 320ms) forwards;
+    rarity-stamp var(--stamp-dur, 180ms) cubic-bezier(0.55, 0, 0.85, 0.4) forwards,
+    rarity-vanish 0.42s cubic-bezier(0.5, 0, 0.9, 0.35) var(--hit-fade-delay, 320ms) forwards;
 }
-/* Down onto the word and STOPS — the weight of something landing, not the spring of
-   something popping out. The shape is the polish (retuned 2026-08-09, when the first cut
-   read as uncanny):
-
-   - the easing is PER KEYFRAME, not one curve over the whole thing. A falling object
-     accelerates and an impact decelerates, and no single cubic-bezier does both — the
-     element sets `linear` so each segment's own function governs.
-   - it is fully OPAQUE well before it lands. Fading in across the whole approach made it
-     materialise at the moment of contact, which is what read as ghostly.
-   - it SQUASHES on impact and rebounds once, small. The first version scaled DOWN after
-     landing and back up, a bounce with no cause; compressing against the thing it hits has
-     one.
-   - the resting frame is a plain `translate(-50%, -50%)`: dead centre ON the word. */
+/* Down onto the word, ACCELERATING the whole way and stopping dead. No settle, no rebound:
+   the recoil belongs to the thing that was hit, not to the thing that hit it. */
 @keyframes rarity-stamp {
   0% {
     opacity: 0;
-    transform: translate(-50%, calc(-50% - var(--hit-drop, 26px)))
-      scale(var(--hit-punch, 1.35)) rotate(var(--hit-tilt, 0deg));
-    animation-timing-function: cubic-bezier(0.5, 0, 0.85, 0.5);
+    transform: translate(-50%, calc(-50% - var(--hit-drop, 20px))) rotate(var(--hit-tilt, 0deg));
   }
-  22% {
+  35% {
     opacity: 1;
-    animation-timing-function: cubic-bezier(0.5, 0, 0.85, 0.5);
-  }
-  45% {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(0.93) rotate(var(--hit-tilt, 0deg));
-    animation-timing-function: cubic-bezier(0.2, 0, 0.25, 1);
-  }
-  72% {
-    transform: translate(-50%, -50%) scale(1.04) rotate(var(--hit-tilt, 0deg));
-    animation-timing-function: ease-out;
   }
   100% {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1) rotate(var(--hit-tilt, 0deg));
+    transform: translate(-50%, -50%) rotate(var(--hit-tilt, 0deg));
   }
 }
-/* Then straight up and out, ACCELERATING away rather than drifting — the word is handed
-   back rather than slowly uncovered. */
+/* Then straight up and out, accelerating away rather than drifting — the word is handed back
+   rather than slowly uncovered. */
 @keyframes rarity-vanish {
   0% {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1) rotate(var(--hit-tilt, 0deg));
+    transform: translate(-50%, -50%) rotate(var(--hit-tilt, 0deg));
   }
   100% {
     opacity: 0;
-    transform: translate(-50%, calc(-50% - var(--hit-rise, 120px))) scale(0.8)
-      rotate(var(--hit-tilt, 0deg));
+    transform: translate(-50%, calc(-50% - var(--hit-rise, 90px))) rotate(var(--hit-tilt, 0deg));
   }
 }
 
@@ -3580,6 +3547,26 @@ button * {
   flex-direction: column;
   align-items: start;
   gap: clamp(6px, 1vh, 12px);
+  /* THE PLAY COLUMN, and everything the player acts through lines up on it: the history, the
+     prompt and the tally are all exactly as wide as the KEYBOARD's row of keys and sit on its
+     left edge (2026-08-09). They used to take the BOARD's column instead (430 + the
+     scroller's side + its scrollbar = 456), which on a desktop left the prompt a few dozen
+     pixels narrower than the keys under it — almost aligned, which reads worse than either
+     aligned or plainly not. The row is recomputed from the same `:root` constants the
+     keyboard uses: cap the box, fit ten keys in it, be exactly that wide. On a phone the
+     keyboard is full-bleed, 10px past the page inset on each side, so the column goes with
+     it — otherwise the prompt sits 10px inboard of the Q key it answers. */
+  --play-box: min(680px, 100%);
+  --play-shift: 0px;
+  --play-key: min(var(--kb-key-max), calc((var(--play-box) - 9 * var(--kb-gap)) / 10));
+  --play-w: calc(10 * var(--play-key) + 9 * var(--kb-gap));
+}
+.word-history,
+.word-prompt,
+.word-tally {
+  align-self: center;
+  width: var(--play-w);
+  margin-inline: var(--play-shift);
 }
 /* The pre-run GATE (#163): the rules, then START, occupying exactly the footprint the prompt
    and keyboard will take — the button sits in a real `.tray`, whose height is the keyboard's
@@ -3663,7 +3650,6 @@ button * {
    four things with four different needs, and the history is the one that must stand clear of
    the prompt (they are both text on the same left edge, and read as one block otherwise). */
 .word-history {
-  width: 100%;
   height: calc(5 * 1.5em);
   margin-bottom: clamp(14px, 2.4vh, 24px);
   font-family: var(--vt);
@@ -3703,16 +3689,6 @@ button * {
    clear air; the bottom seam stays the footer's tight gap, because this row reports on the
    guessing those keys do. */
 .word-tally {
-  align-self: center;
-  /* The keyboard's ROW width, NOT its box. `.keyboard` is capped at 680px, but its keys are
-     capped at 46px each, so on a wide screen ten of them plus nine gaps come to 514px and
-     centre INSIDE that box — matching the box put this strip visibly wider than the keys it
-     belongs to (reported 2026-08-09). So it recomputes the row from the same `:root`
-     constants: cap the box, fit ten keys in it, and be exactly that wide. On a phone the
-     keys already fill their box, so the two agree there and always did. */
-  --tally-box: min(680px, 100%);
-  --tally-key: min(var(--kb-key-max), calc((var(--tally-box) - 9 * var(--kb-gap)) / 10));
-  width: calc(10 * var(--tally-key) + 9 * var(--kb-gap));
   margin-top: clamp(14px, 2.4vh, 24px);
 }
 .tally-row {
@@ -3774,9 +3750,7 @@ button * {
    answer the word above them. Both are no-ops on a phone, where the column is already
    narrower than the cap. */
 .word-window,
-.word-prompt,
-.word-rules,
-.word-history {
+.word-rules {
   max-width: calc(430px + 20px + 6px);
   align-self: center;
 }
@@ -3878,7 +3852,7 @@ button * {
    exactly what the mobile breakpoint used to do, measured as an OBSCURE label 343px wide
    clipped off a 320px screen. */
 .word-subject .rarity-hit {
-  --hit-base: 22px;
+  --hit-base: 18px;
   /* What the grade label has to fit inside — the page column, which is what caps the
      rarest grades on a narrow screen (see `.rarity-hit`). The label is absolutely
      positioned and centred on the word, so it may run wider than `.word-window`'s own cap
@@ -3961,18 +3935,15 @@ button * {
     --wordw: min(430px, calc(100vw - 28px));
   }
   .word-subject .rarity-hit {
-    --hit-base: 16px;
+    --hit-base: 14px;
     --hit-room: calc(100vw - 28px);
   }
   /* The keyboard goes full-bleed here — 10px past the page inset on each side (see
-     `.keyboard`) — so the strip's box does too, and the row formula above fills it. */
-  .word-tally {
-    --tally-box: calc(100% + 20px);
-    margin-inline: -10px;
+     `.keyboard`) — so the whole play column goes with it. */
+  .word-footer-play {
+    --play-box: calc(100% + 20px);
+    --play-shift: -10px;
   }
-}
-.word-prompt {
-  width: 100%;
 }
 
 /* The arcade header corner carries the CLOCK (#163) — the resource this mode is played

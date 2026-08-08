@@ -5,13 +5,14 @@ import type { CSSProperties } from 'react';
 // index.css does with them. They are here rather than only in the CSS because the WORD's own
 // reaction has to be timed against them: the shake and the letter wave must fire at the
 // moment of IMPACT, not when the label mounts, or the word flinches before anything hits it.
-export const RARITY_STAMP_MS = 300; // fall + land + settle
-// Where in that the label actually LANDS. Must match the impact keyframe's percentage in
-// `rarity-stamp` — the one place these two files have to agree.
-const RARITY_IMPACT_AT = 0.45;
-export const RARITY_IMPACT_MS = Math.round(RARITY_STAMP_MS * RARITY_IMPACT_AT);
+// The fall. It ACCELERATES the whole way and stops dead — an impact, with no settle and no
+// bounce after it, because the recoil belongs to the thing that was hit and not to the thing
+// that hit it.
+export const RARITY_STAMP_MS = 180;
+// The label therefore LANDS at the end of its own fall, which is when the word reacts.
+export const RARITY_IMPACT_MS = RARITY_STAMP_MS;
 // How long it takes to leave once its hold is up.
-export const RARITY_VANISH_MS = 600;
+export const RARITY_VANISH_MS = 420;
 
 // Word mode's guess feedback (#163): the claim's RARITY GRADE, or MISS, stamped onto the
 // day's word.
@@ -29,7 +30,6 @@ export default function RarityHit({
   scale,
   drop,
   rise,
-  punch,
   tilt,
   fadeDelayMs,
   onDone,
@@ -39,11 +39,11 @@ export default function RarityHit({
   color: string;
   // The intensity dimensions, straight off components/rarity.ts RARITY_HIT: the type size
   // as a multiple of the surface's `--hit-base`, how far above the word it falls FROM, how
-  // far it flies when it leaves, the scale it arrives at, and the angle it lands at.
+  // far it flies when it leaves, and the angle it lands at. `scale` is a static SIZE and
+  // never an animated one — see the note in rarity.ts on why nothing here scales.
   scale: number;
   drop: number;
   rise: number;
-  punch: number;
   tilt: number;
   fadeDelayMs: number; // how long it SITS on the word before leaving — rarity buys hold
   onDone?: (id: number) => void;
@@ -59,7 +59,6 @@ export default function RarityHit({
       | '--hit-scale'
       | '--hit-drop'
       | '--hit-rise'
-      | '--hit-punch'
       | '--hit-tilt'
       | '--hit-len',
       string
@@ -69,7 +68,6 @@ export default function RarityHit({
     '--hit-scale': String(scale),
     '--hit-drop': `${drop}px`,
     '--hit-rise': `${rise}px`,
-    '--hit-punch': String(punch),
     '--hit-tilt': `${tilt}deg`,
     // How many glyphs wide this is. The pixel font advances exactly 1em per glyph, so the
     // CSS can cap the size at what the column holds — the same arithmetic `fitWord` does,

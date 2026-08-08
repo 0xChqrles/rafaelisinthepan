@@ -66,7 +66,6 @@ export const MISS_COLOR = '#ff1f54';
 //            there (decided 2026-08-09) — a grade is a verdict on the guess, not a footnote
 //            beside it — so this is where the stamp comes DOWN from, not where it stops.
 //   rise   — how far it flies when it leaves, straight up, px. Motion.
-//   punch  — the scale it arrives at, before settling to 1. Motion.
 //   shake  — multiplier on the word's own shake amplitude. Motion.
 //   wave   — the LETTER WAVE: the day's word ripples letter by letter, at this amplitude in
 //            px. 0 is off. It arrives at RARE and grows from there — the top half of the
@@ -75,14 +74,18 @@ export const MISS_COLOR = '#ff1f54';
 //            here that costs no width, which is what lets the ladder keep climbing on a
 //            phone (see the note on the size cap below).
 //
-// RARE is deliberately the anchor: its punch (1.35) is what every float in the app did
-// before this, so the ladder was tuned OUTWARD from the known-good middle rather than
-// invented at both ends.
+// NOTHING HERE SCALES THE LABEL, and that is a rule rather than an omission (2026-08-09):
+// the type is a pixel font, and animating `scale` on it renders blurry intermediate frames
+// for the whole transition — the same reason every sprite in this app takes an exact integer
+// scale and never a fractional one. The label arrives at its final size and stays there; the
+// IMPACT is carried by what it does to the WORD (the shake and the shockwave), which is the
+// app's own grammar for a hit. `scale` below is a static type size, never a keyframe.
 //
-// THE LADDER IS TUNED AGAINST THE WORD, not in the abstract (retuned 2026-08-09). The label
-// lands ON the day's word, which `fitWord` draws at up to SUBJECT_PX (40), so ARCANE reads
-// as a stamp of comparable weight rather than something that swallows what it is about — it
-// tops out around the word's own size, where a steeper ladder had it at half again.
+// THE LADDER IS TUNED AGAINST THE WORD (retuned 2026-08-09). The label lands ON the day's
+// word, which `fitWord` draws at up to SUBJECT_PX (40), and it is a STAMP on that word — so
+// it stays clearly smaller than it, topping out around three quarters. Two earlier cuts
+// overshot in both directions: one so small the grades barely differed, one where ARCANE
+// matched the word and swallowed it.
 //
 // The sizes are ALSO capped by the label's own width. A grade name is a WORD — `UNCOMMON` is
 // 8 characters, `OBSCURE` 7 — so `.rarity-hit` takes the SMALLER of `base x scale` and what
@@ -95,27 +98,27 @@ export interface RarityHitStyle {
   holdMs: number;
   drop: number;
   rise: number;
-  punch: number;
   shake: number;
   wave: number;
 }
 
 export const RARITY_HIT: readonly RarityHitStyle[] = [
-  { scale: 1, holdMs: 220, drop: 22, rise: 100, punch: 1.25, shake: 0.6, wave: 0 }, // COMMON
-  { scale: 1.15, holdMs: 340, drop: 26, rise: 112, punch: 1.3, shake: 0.85, wave: 0 }, // UNCOMMON
-  { scale: 1.35, holdMs: 500, drop: 32, rise: 128, punch: 1.35, shake: 1.1, wave: 4 }, // RARE
-  { scale: 1.6, holdMs: 700, drop: 39, rise: 148, punch: 1.4, shake: 1.45, wave: 6 }, // OBSCURE
-  { scale: 1.85, holdMs: 950, drop: 47, rise: 172, punch: 1.45, shake: 1.9, wave: 9 }, // ARCANE
+  { scale: 1, holdMs: 220, drop: 20, rise: 90, shake: 0.6, wave: 0 }, // COMMON
+  { scale: 1.15, holdMs: 340, drop: 24, rise: 100, shake: 0.85, wave: 0 }, // UNCOMMON
+  { scale: 1.32, holdMs: 500, drop: 29, rise: 112, shake: 1.1, wave: 4 }, // RARE
+  { scale: 1.5, holdMs: 700, drop: 35, rise: 126, shake: 1.45, wave: 6 }, // OBSCURE
+  { scale: 1.68, holdMs: 950, drop: 42, rise: 142, shake: 1.9, wave: 9 }, // ARCANE
 ];
 
 // The label's resting TILT, in degrees (decided 2026-08-09). It leans a random way on every
 // hit — the sign is a coin flip and the amount lands somewhere in this band — so a run of
 // guesses reads as a stack of hand-thrown notes rather than one stamp printed over and over.
-// Small on purpose: the type is a pixel font and rotation is the one transform it cannot
-// survive much of (a diagonal edge on a glyph built out of squares reads as a rendering
-// fault long before it reads as an angle).
-export const HIT_TILT_MIN_DEG = 3;
-export const HIT_TILT_MAX_DEG = 8;
+// SMALL on purpose, and narrowed to 2-5 degrees on 2026-08-09: the type is a pixel font and
+// rotation is the one transform it cannot survive much of — a diagonal edge on a glyph built
+// out of squares reads as a rendering fault long before it reads as an angle. Enough to say
+// "placed by hand", not enough to shred the glyphs.
+export const HIT_TILT_MIN_DEG = 2;
+export const HIT_TILT_MAX_DEG = 5;
 
 // One roll. Called once per hit, in the submit handler, so a re-render never re-tilts a
 // label that is already on screen.

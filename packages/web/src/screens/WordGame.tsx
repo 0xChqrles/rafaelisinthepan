@@ -383,7 +383,6 @@ function WordRound({
         scale: style.scale,
         drop: style.drop,
         rise: style.rise,
-        punch: style.punch,
         tilt: rollHitTilt(),
         shake: style.shake,
         wave: style.wave,

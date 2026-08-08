@@ -32,7 +32,6 @@ export interface WordHit {
   scale: number; // the intensity dimensions, straight off components/rarity.ts
   drop: number;
   rise: number;
-  punch: number;
   tilt: number; // degrees, rolled per hit — it leans a random way every time
   shake: number; // multiplier on the word's own shake
   wave: number; // the letter wave's amplitude in px; 0 below RARE, where there is no wave
@@ -115,7 +114,6 @@ export default function WordSubject({
             scale={hit.scale}
             drop={hit.drop}
             rise={hit.rise}
-            punch={hit.punch}
             tilt={hit.tilt}
             fadeDelayMs={hit.fadeDelayMs}
             onDone={onHitDone}
