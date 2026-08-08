@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { RuntimeHole } from '@whippin/shared';
 import { isLang, type Mode } from '../langs';
+import { runMs } from '../game/wordGame';
 
 // A round is identified by its `roundKey` = (server day, language). The store keeps a
 // MAP of rounds keyed by this string so progress in one language survives switching to
@@ -83,29 +84,47 @@ function capDayRounds(
   return out;
 }
 
-// One Word mode round (#156). `tried` is the SOURCE OF TRUTH — the counted guesses
-// (claims and strikes, folded, in order; free guesses never enter it), from which the
-// whole run replays (game/wordGame.ts replayWordRun). `claimed`/`ended` are CACHED
-// derived values so the archive/selector can badge a day WITHOUT loading its rank map —
-// like RoundProgress.progress, never the source of truth. `word` is the day's word slug:
-// a republished different word under the same (day, lang) key resets the round instead
-// of replaying a stale log against the new map.
+// One Word mode round (#156, retimed by #163). `tried` is the SOURCE OF TRUTH — the
+// counted guesses (folded, in order; free guesses never enter it), from which the whole
+// run replays (game/wordGame.ts replayWordRun) — and `startedAt` is the second one: the
+// wall-clock moment START was tapped.
+//
+// `deadline` is DERIVED from those two (startedAt + runMs of the log's claimed bonuses)
+// and recomputed on every write, so the clock can never drift away from the guesses that
+// bought it. It is nevertheless PERSISTED, because it is the ONE thing the status
+// surfaces need and the one thing they cannot compute: the archive and the choosers badge
+// a day without loading its rank map, so they cannot replay the log to price it.
+//
+// There is NO `ended` field. Whether a run is over is `now > deadline`, wall-clock and
+// always current — a stored boolean would be a second answer to the same question, stale
+// the moment the tab is closed (which is exactly the case the no-pause rule is about).
+// `claimed` stays a cached derived value for those same status surfaces, like
+// RoundProgress.progress; never the source of truth. `word` is the day's word slug: a
+// republished different word under the same (day, lang) key resets the round instead of
+// replaying a stale log against the new map.
 export interface WordRoundProgress {
   word: string;
+  // null until START is tapped: a fetched-but-unplayed day sits at the rules gate, and
+  // the clock has not begun.
+  startedAt: number | null;
+  deadline: number | null;
   tried: string[];
   claimed: number;
-  ended: boolean;
 }
 
-// The cached half of a word round, recomputed from its source log. `recordWordGuess` takes
-// a REPLAY rather than two finished numbers so the cache can never describe a different log
-// than the one it is stored beside: handed values are derived from whatever `tried` the
-// caller last rendered, which two submissions batched into one tick would make stale — the
-// second would overwrite the first's count with a replay that never saw it. The replay also
-// decides whether the CURRENT log has ended before another word is admitted; the persisted
-// cache may describe an older rank map after a same-word republish. The store owns the log,
-// so the store decides what it means; the callback carries the rank map it must not know.
-export type WordRunCache = Pick<WordRoundProgress, 'claimed' | 'ended'>;
+// What a REPLAY of a word round's log makes of it — the two numbers the store needs to
+// keep the round's cached half honest. `recordWordGuess` takes the replay rather than
+// finished values so the cache can never describe a different log than the one it is
+// stored beside: handed values are derived from whatever `tried` the caller last
+// rendered, which two submissions batched into one tick would make stale — the second
+// would overwrite the first's count with a replay that never saw it. The persisted
+// deadline may also describe an older rank map after a same-word republish, and only a
+// replay against the CURRENT map can repair it. The store owns the log, so the store
+// decides what it means; the callback carries the rank map it must not know.
+export interface WordRunCache {
+  claimed: number;
+  bonus: number; // seconds the claims bought, summed (game/wordGame.ts replayWordRun)
+}
 
 // Enforce the word-round cap, mirroring capDayRounds below.
 function capWordRounds(
@@ -214,12 +233,18 @@ interface GameState extends PersistedState {
   // (day, lang) — starts fresh. Same retention/cap policy as ensureRound.
   ensureWordRound: (key: string, word: string) => void;
 
-  // Count one Word mode guess (a claim or a strike — free guesses never reach here) on the
-  // active word round: replay the current log to decide whether play is still live, append
-  // the guess, then cache what `replay` makes of the resulting log so the status surfaces
-  // need no rank map. `replay` is the pure model
-  // (game/wordGame.ts replayWordRun) closed over this puzzle's ranks — see WordRunCache for
-  // why the store replays instead of being handed the numbers.
+  // START the active word round's clock (#163): stamp `startedAt` NOW and open the
+  // deadline at the full START_SECONDS. Idempotent — a round that has already started
+  // keeps its clock, so a re-render, a double tap or a rehydration can never restart a
+  // run (the daily is one-shot: no retry, no practice).
+  startWordRun: () => void;
+
+  // Count one Word mode guess (a claim or a near/off-map miss — free guesses never reach
+  // here) on the active word round: check the guess against the DEADLINE as of now,
+  // append it, then re-price the whole resulting log so the cached claim count and the
+  // deadline both describe exactly what is stored beside them. `replay` is the pure model
+  // (game/wordGame.ts replayWordRun) closed over this puzzle's ranks — see WordRunCache
+  // for why the store replays instead of being handed the numbers.
   recordWordGuess: (typed: string, replay: (tried: string[]) => WordRunCache) => void;
 
   // Count a valid guess on the active round. Deduped by the caller-supplied canonical
@@ -269,6 +294,12 @@ function freshRound(initialHoles: RuntimeHole[]): RoundProgress {
 //   v6 adds Word mode (#156): the `wordRounds` map and `lastMode`. Older blobs get an
 //     empty map and no mode preference (arrival stays on the sentence until a word round
 //     is played).
+//   v7 RETIMES those word rounds (#163): the strike count gave way to a countdown, so a
+//     round now carries `startedAt`/`deadline` and no `ended`. A v6 word round has no
+//     clock and no way to invent one — it recorded a run under rules that no longer
+//     exist — so every one of them is DROPPED (the standing no-back-compat rule; the
+//     sentence rounds, the solved days and the streak are untouched). The cost is a
+//     device-local word history that predates the timer, which is pre-launch data.
 export function migratePersisted(persisted: unknown, version: number): PersistedState {
   if (version < 1) {
     return {
@@ -288,7 +319,9 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
       ? p.onboarded
       : Object.keys(rounds).length > 0 || lastLang != null;
   const solvedDays = p.solvedDays ?? {};
-  const wordRounds = p.wordRounds ?? {};
+  // Word rounds only survive from v7 on: before it they were strike runs, and a strike
+  // run cannot be re-read as a clock (see the v7 note above).
+  const wordRounds = version < 7 ? {} : (p.wordRounds ?? {});
   const lastMode = p.lastMode === 'word' || p.lastMode === 'sentence' ? p.lastMode : null;
   return { rounds, wordRounds, lastLang, lastMode, onboarded, solvedDays };
 }
@@ -373,8 +406,26 @@ export const useGameStore = create<GameState>()(
           kept[key] =
             existing && existing.word === word
               ? existing
-              : { word, tried: [], claimed: 0, ended: false };
+              : { word, startedAt: null, deadline: null, tried: [], claimed: 0 };
           return { activeWordKey: key, wordRounds: capWordRounds(kept, key) };
+        }),
+
+      startWordRun: () =>
+        set((s) => {
+          const key = s.activeWordKey;
+          if (!key) return {};
+          const round = s.wordRounds[key];
+          // Already running (or already run out): the clock is stamped once and never
+          // re-stamped. This is the whole no-retry rule, and it lives here rather than in
+          // the screen so no render path can reopen a finished day.
+          if (!round || round.startedAt !== null) return {};
+          const startedAt = Date.now();
+          return {
+            wordRounds: {
+              ...s.wordRounds,
+              [key]: { ...round, startedAt, deadline: startedAt + runMs(0) },
+            },
+          };
         }),
 
       recordWordGuess: (typed, replay) =>
@@ -382,22 +433,32 @@ export const useGameStore = create<GameState>()(
           const key = s.activeWordKey;
           if (!key) return {};
           const round = s.wordRounds[key];
-          if (!round) return {};
+          if (!round || round.startedAt === null || round.deadline === null) return {};
 
-          // `tried` is authoritative. A same-word republish keeps the log, but changed
-          // ranks can move its strike boundary and make the persisted cache stale in
-          // EITHER direction. Gate on a replay of the current log, and repair the cache
-          // even when this particular submission cannot be appended.
-          const current = replay(round.tried);
-          if (current.ended || round.tried.includes(typed)) {
-            if (round.claimed === current.claimed && round.ended === current.ended) return {};
-            return {
-              wordRounds: { ...s.wordRounds, [key]: { ...round, ...current } },
-            };
+          // The guess is judged against the deadline AS OF NOW — a guess in flight when
+          // the clock dies is dead — and against the deadline BEFORE this claim, so a
+          // claim cannot pay for the moment it arrived in. Past it the round is FROZEN,
+          // repairs included: re-pricing a finished run could hand it a later deadline
+          // and bring it back to life, and a run happened under the map it happened
+          // under.
+          if (Date.now() > round.deadline) return {};
+
+          const startedAt = round.startedAt;
+          const price = (cache: WordRunCache) => ({
+            claimed: cache.claimed,
+            deadline: startedAt + runMs(cache.bonus),
+          });
+          if (round.tried.includes(typed)) {
+            // Nothing to append, but `tried` is authoritative and a same-word republish
+            // can have changed what the SAME log is worth — repair the cached half rather
+            // than leaving it describing an older rank map.
+            const current = price(replay(round.tried));
+            if (round.claimed === current.claimed && round.deadline === current.deadline) return {};
+            return { wordRounds: { ...s.wordRounds, [key]: { ...round, ...current } } };
           }
           const tried = [...round.tried, typed];
           return {
-            wordRounds: { ...s.wordRounds, [key]: { ...round, tried, ...replay(tried) } },
+            wordRounds: { ...s.wordRounds, [key]: { ...round, tried, ...price(replay(tried)) } },
           };
         }),
 
@@ -455,7 +516,7 @@ export const useGameStore = create<GameState>()(
     {
       name: 'whippin-round',
       storage,
-      version: 6, // v6: + wordRounds, lastMode (#156 — see migratePersisted)
+      version: 7, // v7: word rounds are TIMED (#163 — see migratePersisted)
       migrate: migratePersisted,
       // Persist rounds (both modes'), last language/mode, the onboarding flag and the
       // solved-day sets; the active keys and the actions are transient. Each language's

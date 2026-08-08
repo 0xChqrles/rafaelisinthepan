@@ -65,12 +65,16 @@ function isWord(v: unknown): v is Word {
 // rejected here fails the whole DAY, which must never be the price of a cosmetic knob moving.
 const MAX_ROAD = 63;
 
-// The optional distance annotations on a rank entry (#115). They are group properties
-// generation adds — every puzzle published before them carries none, so ABSENT stays
-// valid — but a PRESENT one must be well formed: scoring and the route view read them
-// as numbers, so a string or an out-of-range value would corrupt both silently.
+// The optional group annotations on a rank entry (#115 distances, #163 rarity). They are
+// group properties generation adds — every puzzle published before them carries none, so
+// ABSENT stays valid — but a PRESENT one must be well formed: scoring, the route view and
+// Word mode's clock read them as numbers, so a string or an out-of-range value would
+// corrupt them silently. `freq` is the one whose damage would be invisible rather than
+// visual: it buys SECONDS, and a NaN reaching the deadline arithmetic ends a run instantly
+// or never. Its upper end is deliberately unbounded — it is a vocabulary position, and an
+// implausibly large one simply lands in the rarest bonus tier.
 function checkRankAnnotations(entry: Record<string, unknown>): void {
-  const { dq, road } = entry;
+  const { dq, road, freq } = entry;
   if (dq !== undefined && (typeof dq !== 'number' || !Number.isInteger(dq) || dq < 0 || dq > 255)) {
     throw new Error('malformed puzzle: "dq" must be an integer 0-255');
   }
@@ -79,6 +83,9 @@ function checkRankAnnotations(entry: Record<string, unknown>): void {
     (typeof road !== 'number' || !Number.isInteger(road) || road < 0 || road > MAX_ROAD)
   ) {
     throw new Error(`malformed puzzle: "road" must be an integer 0-${MAX_ROAD}`);
+  }
+  if (freq !== undefined && (typeof freq !== 'number' || !Number.isInteger(freq) || freq < 1)) {
+    throw new Error('malformed puzzle: "freq" must be a positive integer');
   }
 }
 
@@ -181,8 +188,8 @@ export function parsePuzzle(data: unknown): Puzzle {
 // Runtime shape check for Word mode's fetched artifact (#154/#156) — the same job as
 // parsePuzzle for the same reason: a truncated/wrong body must surface as the error
 // state, never crash the board mid-render. Asserts the load-bearing structure: lang, the
-// public word {word, slug}, and the ONE flat rank map with well-formed rank/dq/road on
-// every entry.
+// public word {word, slug}, and the ONE flat rank map with well-formed rank/dq/road/freq
+// on every entry.
 export function parseWordPuzzle(data: unknown): WordPuzzle {
   if (!isRecord(data)) throw new Error('malformed word puzzle: not an object');
   const { lang, word, ranks } = data;

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { progressColor } from '@whippin/shared';
-import { srStatus, type Status } from '../state/status';
+import { isComplete, srStatus, type Status } from '../state/status';
 import type { Status as CardStatus } from '../state/status';
 // Bundled like the flags (small enough to inline as a data URI — no extra request).
 import logo from '../assets/logo-blue.png';
@@ -19,17 +19,20 @@ import logo from '../assets/logo-blue.png';
 // Today's status, spoken in the game's own visual language instead of text badges: a
 // thin strip along the card's bottom edge. Absent = not started (NOTHING is the "new"
 // signal); partial = today's progress, tinted like the in-game counter; full GOLD =
-// done for the day, the same gold as a solved word. Decorative — the card's aria-label
-// carries the status for screen readers.
+// done for the day, the same gold as a solved word — whether the day was SOLVED (a
+// sentence) or merely finished (a word run's clock, #163), which is a distinction only
+// the aria-label makes. Decorative — the card's aria-label carries the status for screen
+// readers.
 function StatusStrip({ status }: { status: CardStatus }) {
   if (status.kind === 'none') return null;
-  const pct = status.kind === 'solved' ? 100 : status.pct;
+  const complete = isComplete(status);
+  const pct = status.kind === 'progress' ? status.pct : 100;
   return (
     <span
       className="chooser-strip"
       style={{
         width: `${pct}%`,
-        background: status.kind === 'solved' ? 'var(--hole)' : progressColor(pct),
+        background: complete ? 'var(--hole)' : progressColor(pct),
       }}
       aria-hidden="true"
     />

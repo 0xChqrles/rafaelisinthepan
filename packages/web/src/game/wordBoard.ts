@@ -10,9 +10,14 @@
 import type { RankEntry, WordRanks } from '@whippin/shared';
 import { CLAIM_ZONE, replayWordRun } from './wordGame';
 
+// Since #163 this board is the END SCREEN's, not the play surface's: the run is typed
+// against the clock with the word alone on screen, and the whole field is revealed when
+// the clock dies, as the post-mortem the run earned. Nothing about the model changed
+// with that — it is the same drawing, mounted at a different moment.
+//
 // One group of the zone: a station on its road's lane. `word` is null while unclaimed
-// and the run is live; a claim — or the post-mortem, which names the whole field —
-// reveals the canonical accented form. A null-word group IS still drawn, wearing the
+// and the field is still censored; a claim — or the reveal, which names the whole field
+// — gives the canonical accented form. A null-word group IS still drawn, wearing the
 // route map's fixed-width `???` (the census, restored 2026-08-05 after a day of drawing
 // only the found words): every rank of the zone is a station, which is what lets a road
 // show its real length and population, and what makes a claim land on a stop that was
@@ -25,7 +30,7 @@ export interface WordStation {
   claimed: boolean;
 }
 
-// A ranked guess OUTSIDE the zone (a "near" strike): it rides the trunk above the fork,
+// A ranked guess OUTSIDE the zone (a "near" miss): it rides the trunk above the fork,
 // its rank teaching where the boundary is. Always revealed — the player typed it.
 export interface WordOutsideStop {
   rank: number;
@@ -42,9 +47,8 @@ export interface WordBoardModel {
   word: string; // the day's word, accented display form — public from the first frame
   lanes: number; // how many roads the zone forks into (>= 1)
   stations: WordStation[]; // the zone, rank ascending (1 first)
-  outside: WordOutsideStop[]; // near strikes, rank ascending
-  misses: string[]; // off-map strikes, in try order (typed slugs — see route.ts misses)
-  ended: boolean;
+  outside: WordOutsideStop[]; // ranked near misses, rank ascending
+  misses: string[]; // off-map guesses, in try order (typed slugs — see route.ts misses)
   // The farthest rank this MAP holds, not the farthest currently drawn — so the drawing can
   // reserve a rank gutter wide enough for any exponent the round can still produce. It is a
   // property of the puzzle, so it never changes mid-round: the line cannot shift sideways
@@ -112,25 +116,23 @@ export function buildWordBoard({
   ranks,
   word,
   tried,
-  reveal,
+  reveal = false,
 }: {
   ranks: WordRanks;
   word: string; // the day's accented display form
-  tried: string[]; // the round's counted guesses, folded, in try order
-  // When the post-mortem NAMES the field. Defaults to the run ending; the screen passes
-  // its own later beat so the killing strike can play out before the reveal (the reveal
-  // is presentation pacing — the run's END itself stays `replayWordRun`'s).
+  tried: readonly string[]; // the round's counted guesses, folded, in try order
+  // When the post-mortem NAMES the field. Presentation pacing, owned by the screen: the
+  // run's end is a DEADLINE fact (#163) and the reveal is its own later beat.
   reveal?: boolean;
 }): WordBoardModel | null {
   const geometry = wordGeometry(ranks);
   if (!geometry.plottable) return null;
 
   // The RULES are `replayWordRun`'s, never restated here: this only sorts the counted
-  // guesses it hands back into the three things the drawing shows. A near strike with no
-  // `dq` is deliberately dropped from both — it struck, but there is no distance to hang it
-  // on the trunk by and it is not off the map either.
-  const { counted, ended } = replayWordRun(ranks, tried);
-  const revealField = reveal ?? ended;
+  // guesses it hands back into the three things the drawing shows. A near miss with no
+  // `dq` is deliberately dropped from both — there is no distance to hang it on the trunk
+  // by and it is not off the map either.
+  const { counted } = replayWordRun(ranks, tried);
   const claimed = new Set<number>();
   const outside = new Map<number, WordOutsideStop>();
   const misses: string[] = [];
@@ -162,7 +164,7 @@ export function buildWordBoard({
       road: laneOf(entry),
       // A claim reveals its word; the post-mortem reveals the WHOLE field — the board is
       // then the post-mortem, like the solved route map.
-      word: isClaimed || revealField ? entry.word : null,
+      word: isClaimed || reveal ? entry.word : null,
       claimed: isClaimed,
     });
   }
@@ -173,7 +175,6 @@ export function buildWordBoard({
     stations,
     outside: [...outside.values()].sort((a, b) => a.rank - b.rank),
     misses,
-    ended,
     maxRank: geometry.maxRank,
   };
 }

@@ -8,6 +8,10 @@ Asserted against the schema in AGENTS.md, not against the implementation:
   - the sentence schema's rank semantics, unchanged: rank 0 is the word itself and
     carries NO `dq`, every rank >= 1 entry carries one, and word/rank/dq/road are
     GROUP properties every alias key of the group repeats;
+  - `freq` (#163), this artifact's OWN annotation: the 1-based position, in the
+    frequency-ordered reduced vocabulary, of the group's MOST FREQUENT embedded
+    form — a group property like the rest, on every entry including rank 0, and
+    emitted by this command alone (a sentence puzzle has no consumer for it);
   - the ROAD ZONE is the flat top-`ROAD_TOP` (250). With no start word there is no
     departure to cut the zone at, and those groups are the whole playing field — as
     opposed to the sentence path, which stops its roads at the hole's departure. The
@@ -49,12 +53,16 @@ class _Embedding:
         return self.ranking
 
 
-def _word_map(word, ranking, kv, vset=VSET, table=TABLE, forms=FORMS, roads=True):
-    """gen_word's shipped rank map for `word`, with the vectors the roads need."""
+def _word_map(word, ranking, kv, vset=VSET, table=TABLE, forms=FORMS, roads=True,
+              vocab=None):
+    """gen_word's shipped rank map for `word`, with the vectors the roads need.
+
+    `vocab` is V — the reduced vocabulary in FREQUENCY order, which is what `freq`
+    reads positions out of. Tests that do not care about rarity leave it unordered."""
     module = _Embedding(ranking)
     return gen_word.build_word_map(word, word, {"module": module}, kv,
-                                   list(vset), object(), vset, table, forms,
-                                   roads=roads)
+                                   list(vset) if vocab is None else vocab,
+                                   object(), vset, table, forms, roads=roads)
 
 
 def _long_neighborhood(n=300):
@@ -128,6 +136,37 @@ def test_no_roads_drops_roads_but_keeps_dq():
     assert rank_map["chien"]["dq"] == 255 and rank_map["felin"]["dq"] == 0
 
 
+# --- freq: the group's corpus rarity, what Word mode's clock pays by (#163) ------
+
+# The reduced vocabulary in FREQUENCY order. Built so that one group's commonest
+# form is NOT its representative: félins (position 6) outranks félin (position 8),
+# which is the whole point of "most frequent form, not the representative".
+FREQ_VOCAB = ["chat", "chien", "noir", "chiens", "dort", "félins", "chats", "félin"]
+
+
+def test_freq_is_the_group_most_frequent_embedded_form_one_based():
+    rank_map = _word_map("chat", RANKING, KV, vocab=FREQ_VOCAB)
+
+    # 1-based, so the commonest word the game admits is 1 and never a falsy 0.
+    assert rank_map["chat"]["freq"] == 1                       # chat, position 1
+    assert rank_map["chien"]["freq"] == 2                      # chien, position 2
+    # félin's group: its representative sits at position 8, but the group is as
+    # common as its commonest inflection — félins, position 6.
+    assert rank_map["felin"]["freq"] == 6
+    assert rank_map["felin"]["word"] == "félin"                # display is untouched
+
+
+def test_freq_is_a_group_property_every_alias_key_repeats():
+    rank_map = _word_map("chat", RANKING, KV, vocab=FREQ_VOCAB)
+
+    # Like word/rank/dq/road: one value per group, on every key that reaches it —
+    # including the word's own rank-0 aliases, which carry no dq.
+    assert rank_map["chat"] == rank_map["chats"]
+    assert rank_map["chien"] == rank_map["chiens"]
+    assert rank_map["felin"] == rank_map["felins"]
+    assert all("freq" in entry for entry in rank_map.values())
+
+
 # --- the road zone: the flat top-ROAD_TOP, because there is no departure ---------
 
 def test_the_road_zone_is_the_flat_top_road_top_with_no_start_word():
@@ -166,8 +205,10 @@ def test_the_rank_map_is_the_one_the_sentence_pipeline_builds(monkeypatch):
     Drives the sentence path end to end (holes_from_words) and the word path
     (build_word_map) over the same vocabulary and the same walk, then compares the
     maps key by key. Roads are off on both: their zone is the ONE thing that
-    legitimately differs (see above), so leaving them in would compare the
-    difference this test is not about.
+    legitimately differs in the WALK (see above), so leaving them in would compare
+    the difference this test is not about. `freq` is the other, and it is an
+    ANNOTATION rather than a walk: it is asserted here as absent from the sentence
+    map and stripped from the word map before the comparison.
     """
     module = _Embedding(RANKING)
     cfg = dict(gen_phrase.CONFIG["fr"], module=module)
@@ -183,6 +224,12 @@ def test_the_rank_map_is_the_one_the_sentence_pipeline_builds(monkeypatch):
 
     word_map = _word_map("chat", RANKING, KV, roads=False)
 
-    # Same keys, same display forms, same ranks, same dq — including the rank-0
-    # inflection alias and both grouped neighbors.
-    assert ranks["chat"] == word_map
+    # A sentence puzzle carries no rarity: nothing there consumes it, and those maps
+    # are already ~500 KB gzipped.
+    assert all("freq" not in entry for entry in ranks["chat"].values())
+
+    # Otherwise: same keys, same display forms, same ranks, same dq — including the
+    # rank-0 inflection alias and both grouped neighbors.
+    stripped = {key: {k: v for k, v in entry.items() if k != "freq"}
+                for key, entry in word_map.items()}
+    assert ranks["chat"] == stripped

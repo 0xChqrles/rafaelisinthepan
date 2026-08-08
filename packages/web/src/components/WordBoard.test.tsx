@@ -14,7 +14,6 @@ describe('WordBoard accessibility mirror', () => {
       ],
       outside: [],
       misses: [],
-      ended: false,
       maxRank: 2,
     };
 
@@ -43,7 +42,6 @@ describe('WordBoard lane treatment', () => {
           ],
           outside: [],
           misses: [],
-          ended: false,
           maxRank: 2,
         }}
         lang="en"

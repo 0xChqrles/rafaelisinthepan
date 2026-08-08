@@ -17,6 +17,9 @@
       tutorial/               onboarding (#51/#155): Tutorial.tsx + data scripts/<lang>.ts
                               (+ <lang>.word.json, the pruned #154 board it plays on)
       screens/Game.tsx        the guess loop, hole state (imports fold from @whippin/shared)
+      screens/WordGame.tsx    Word mode's three phases: rules gate -> timed run -> post-mortem
+      game/wordGame.ts        Word mode's rules + economy (CLAIM_ZONE, the clock's tuning knobs)
+      hooks/useCountdown.ts   the run's deadline, as a ticking clock (HUD) and as one flip (screen)
       game/scoring.ts         s(rank), holeProgress, computeProgress
       components/Phrase.tsx,Hole.tsx,WordInput.tsx,FloatingHit.tsx  rendering
       components/routeDrawing.tsx  THE route drawing: geometry, lanes, frame vars + the row
@@ -149,65 +152,125 @@ it to the local store — see `packages/backend/AGENTS.md`).
 
 *(Safe to update without touching the invariants above.)*
 
-- **Word mode (#156, the second daily):** one app, two faces — `/<lang>/word` (plus
-  `/word/<date>` and `/word/archive`, same date rules) plays the day's #154 artifact:
-  the word is PUBLIC and the player claims its top-`CLAIM_ZONE` (**250** since 2026-08-07,
-  was 150) groups until
-  `STRIKES_TO_END` (**3**) CONSECUTIVE incorrect guesses
-  land; the score is the claim
-  count. **`CLAIM_ZONE` is the one constant here that is NOT this package's to pick alone:**
+- **Word mode (#156, the second daily; RETIMED by #163 on 2026-08-08):** one app, two faces
+  — `/<lang>/word` (plus `/word/<date>` and `/word/archive`, same date rules) plays the day's
+  #154 artifact: the word is PUBLIC and the player claims its top-`CLAIM_ZONE` (**250** since
+  2026-08-07, was 150) groups **against a COUNTDOWN**; the score is the claim count.
+  **`CLAIM_ZONE` is the one constant here that is NOT this package's to pick alone:**
   it restates generation's `ROAD_TOP` (`distances.py`), because the field the board draws is
   the set of groups that carry a road — move one and the board grows lane-less stations, or
   draws stations it will not let you claim. `wordGame.test.ts` reads the Python literal and
   pins them together, and widening it means republishing every word artifact (one generated
-  at the old ceiling has roads only that far). `STRIKES_TO_END`, by contrast, is
-  a declared TUNING KNOB, so nothing restates it: the HUD's cross row
-  is `Array.from` over the constant and the tests derive their strike sequences from it, which
-  is what keeps retuning it the one-line change the code promises — proven on 2026-08-06, when
-  it went 3 → 5 → 3 and the second move needed no test edits at all. The ONE thing that does
-  not follow automatically is the row's WIDTH: 44px crosses at a 20px gap fit a 320px screen up
-  to FOUR, and five run to 300px against ~292px of usable width. While it was 5 a
-  `--strike-gap` override in the `max-width: 360px` query paid for that; back at 3 the row is
-  172px and the override is gone. Raise it past 4 and that has to come back.
-  Incorrect = a valid vocab word, not already tried, ranked outside the zone
-  (a ranked near miss shows its rank, and — being off every road — the form the player
-  TYPED, per the naming rule in the route-map bullet below); not-in-vocab and group-level
-  repeats (#104) are
-  free. The pure rules live in `game/wordGame.ts` (`judgeWordGuess` / `wordGuessKey` /
-  `replayWordRun` — a round replays from its counted-guess log exactly like the
-  sentence game), the board model in `game/wordBoard.ts` (a SIBLING of `buildRoute`:
-  no departure, no "you are here"), and the surface in `screens/WordGame.tsx`
-  + `components/WordBoard.tsx`.
-  **The failure row is `assets/cross-button.png`, and a reset is a WAVE** (decided
-  2026-08-06): a two-frame **11×11** sheet — frame 0 the un-pressed button, frame 1 the pressed
-  red fail — drawn at an exact **4× (44px)** as a plain `background-image` whose state is one
-  frame's step in `background-position`. (A 15×16 redraw was tried the same day and rolled
-  back; if the art changes again, the three numbers to move together are `width`/`height`,
-  `background-size` — the WHOLE sheet at that scale — and `.failed`'s offset.)
-  **On a narrow phone the GAP pays for that size, never the sprite** (decided 2026-08-06):
-  five 44px crosses are 220px of the ~292px a
-  320px screen leaves inside the page inset, so `--strike-gap` drops 20px → 14px in the existing
-  `max-width: 360px` query — the same breakpoint and the same trade as the route gutter's
-  `--rank-size`, and what keeps the row at 276px where the standard gap would run to 300 and
-  overflow. The crosses themselves never shrink: a fractional scale leaves some source
-  pixels a row wider than others, which is the one thing `image-rendering: pixelated` cannot fix
-  afterwards. It REPLACED
-  `fail.png` + `components/failIcon.ts`, both deleted: that sprite carried a placeholder red
-  which a canvas pass had to repaint per state at runtime, so the row rendered blank until an
-  async decode resolved. One frame per state needs none of that, and the sheet bakes `--danger`
-  (#ff1f54) in directly. A strike LANDS at once — it is a hit — but a claim resetting the run
-  puts the crosses out **one at a time, rightmost first, `CROSS_WAVE_MS` (70) apart**, so the
-  row rewinds the way it filled instead of the whole HUD blinking (a full row clears in ~280ms,
-  under the board scroll running alongside it). `WordFailures` holds a `shown` count that trails
-  `strikes` only while a reset sweeps; it starts AT the count, so a rehydrated round renders
-  settled and replays nothing, and reduced motion clears in the frame (a JS timer — the global
-  CSS rule collapses durations but not delays, the same trap `rulerStagger` exists for). The
-  `aria-label` always speaks the real count, never the animation trailing it.
+  at the old ceiling has roads only that far).
+  **The CLOCK replaced the strike system (#163).** Two dailies should be two games:
+  Sentence mode is think slowly and beat the AI, Word mode is think fast and beat the clock.
+  Everything the strikes legislated, the timer legislates for free — a repeat, an invalid
+  word or a far miss punishes itself in the seconds it cost to type — so `STRIKES_TO_END`,
+  the consecutive rule, end-by-strikes, `WordFailures`, the crosses row, `assets/cross-button.png`
+  and the `--strike-gap` responsive override are all GONE, along with `srWordFailures` /
+  `srWordStrike`. Word mode has **no bots and never will**: an LLM cannot play a timed game
+  honestly and we never miseducate what a model did, so this mode's comparison story is
+  friends (a leaderboard, later), not AIs. That is a feature of the split, not a gap.
+  **The economy is `game/wordGame.ts`, and every constant in it is a declared TUNING KNOB**
+  (the way `STRIKES_TO_END` was): `START_SECONDS` (**60**), `CLAIM_BASE_SECONDS` (**2**) and
+  the `RARITY_TIERS` ladder (3k / 15k / 60k / rest → +0/+1/+2/+3). Nothing restates them —
+  the HUD reads them and the tests DERIVE their expectations from them — so retuning after a
+  play session stays a one-line change. **The values are placeholders until played** (solo,
+  then beta testers); the margin question is whether an average claim's bonus roughly covers
+  the typing cost of the next guess on MOBILE, the slower device. Mis-tuned low, runs end in
+  90 seconds and feel unwinnable; high, every run exhausts the zone.
+  **Rarity is the bonus axis because it is ORTHOGONAL to the score:** a closeness-scaled
+  bonus would double-pay what the count already measures, where corpus rarity pays for
+  vocabulary depth — and since rare words tend to be longer, it is exactly the knob that
+  keeps long words worth their typing cost in a spam meta. `bonusSeconds(freq)` reads the
+  schema's optional `freq` (root `AGENTS.md`); an artifact without it pays the base alone.
+  Rarity feeds the CLOCK only, never the score — one resource, one number. Total time is
+  bounded by construction (`START_SECONDS` + the zone's summed bonuses), so no run is
+  infinite and the zone stays unclearable in practice.
+  A claim is a valid vocab word, not already tried, ranked inside the zone. A **near miss**
+  (ranked, outside it) and a **miss** (off-map) add nothing and cost nothing but the time
+  spent — the near miss still floats its rank, which is the zone's teaching signal, and shows
+  the form the player TYPED (being off every road, per the naming rule in the route-map
+  bullet below). Not-in-vocab, group-level repeats (#104) and the day's word itself stay
+  free non-events.
+  The pure rules live in `game/wordGame.ts` (`judgeWordGuess` / `wordGuessKey` /
+  `replayWordRun` / `bonusSeconds` / `runMs` — a round replays from its counted-guess log
+  exactly like the sentence game), the board model in `game/wordBoard.ts` (a SIBLING of
+  `buildRoute`: no departure, no "you are here"), and the surface in `screens/WordGame.tsx`
+  + `components/WordBoard.tsx` + `components/WordTimer.tsx`.
+  **The clock is a wall-clock DEADLINE, not a ticking counter, and there is NO PAUSE**
+  (decided 2026-08-08). The round persists `startedAt` and a `deadline` = `startedAt +
+  runMs(Σ bonuses)`, re-derived from the WHOLE log on every write, so the clock can never
+  drift from the guesses that bought it; the run is over when `now > deadline`, whatever
+  happened to the tab in between. Backgrounding, reloading or closing it does not stop the
+  clock — an interrupted run is a ruined run ("it is what it is") — and that shape is also
+  what makes the rule enforceable: there is no remaining-seconds value to freeze, so there
+  is nothing to cheese by closing the tab mid-bad-run. A submit is judged against the
+  deadline at the moment Enter lands, in the STORE, so a guess in flight when the clock dies
+  is dead; past the deadline the round is FROZEN, re-pricing included (re-pricing a finished
+  run could hand it a later deadline and revive it). A reload rehydrates from the log +
+  deadline: time left resumes with the real remaining time, none renders ended. The daily is
+  one-shot — `startWordRun` stamps `startedAt` once and is idempotent, so no render path can
+  reopen a finished day. Verified end to end at 320/430: reload mid-run resumes, a
+  ten-minute background jump lands on the finished screen, and a guess typed before the
+  deadline but entered after it never enters the log.
+  **Two hooks, one deadline, for a REASON** (`hooks/useCountdown.ts`): `useCountdown`
+  returns the remaining ms and re-renders ~10×/s, and is used ONLY inside `WordTimer`;
+  the SCREEN uses `useDeadlinePassed`, which schedules ONE timeout for the deadline itself
+  and re-renders once. Subscribing the screen to the fine clock re-rendered the prompt and
+  the whole keyboard at 10 Hz for the entire run — during exactly the phase where a fast
+  game must not make the player wait on a keystroke. Both DERIVE from `Date.now()` at render
+  rather than storing a countdown: the deadline appears in the same commit that starts the
+  run, so a value only an effect could refresh would paint one frame reading zero — which is
+  the run's own end condition, and the whole ending would fire on the START tap.
   **`replayWordRun` is the ONE walk of a word round** (2026-08-06): it returns the ordered
-  `counted` guesses with their judgements, and `buildWordBoard` sorts THOSE into claims /
-  trunk strikes / the misses shelf rather than re-deriving the dedup, the strike counting and
-  the end-of-run rule a second time — the score, the strike pips and the drawing cannot
-  disagree about what one log means.
+  `counted` guesses with their judgements plus the seconds they bought, and `buildWordBoard`
+  sorts THOSE into claims / trunk stops / the misses shelf rather than re-deriving the dedup
+  a second time — the score, the clock and the drawing cannot disagree about what one log
+  means. What it does NOT return is `ended`: that is the deadline's, and a log cannot see a
+  wall clock (`WordBoardModel` lost its `ended` field with it).
+  **The screen runs in THREE phases** (#163), each putting one thing in front of the player.
+  **GATE** — the day's word, the rules in two sentences, and START. A timer needs a start
+  control anyway, and the control is where the rules live, so this screen is Word mode's
+  whole onboarding and no tutorial change was needed. The clock previews `START_SECONDS`
+  greyed beside it, so the number teaches what it is before it starts moving; the copy
+  states no duration (that would restate a tuning knob). **RUN** — the word, the prompt, the
+  keyboard, the timer and the score, and **NO BOARD**: this is a fast game, and a live map
+  to read is a contemplative surface pulling against the clock. **OVER** — the board
+  arrives, revealed, as the post-mortem the run earned.
+  **The TIMER is the HUD and the SCORE is the watermark.** The clock takes the header's
+  status corner (where the sentence game puts its progress counter) at 34px — the one live
+  number on the screen — and the count becomes the big `CellDigits` watermark behind the
+  word (`.word-anchor`, the standing watermark rule: what is displayed better later, since
+  the count is this mode's end-screen headline). That split IS the mode's feedback grammar:
+  **a float on the WORD is about the guess** (its rank, or MISS, on the terminus row exactly
+  as before), **a gain on the TIMER is about your clock** — `+4s` in the solved-word gold,
+  keyed by a monotonic id so two claims in a row replay it. The gain sits UNDER the clock,
+  not beside it: measured at 320px, a `+5s` to the right of a two-digit number runs 15px
+  into the header's icon group, where below it has the empty top of the play area to itself
+  at every width (and a gain only ever plays during a run, where the word is centred far
+  below). The clock is `--fg`, goes `--danger` + a 1s pulse under `WARN_SECONDS` (10), and
+  at ZERO goes `.spent` — red but STILL, because an alarm about time running out has nothing
+  left to say once it has, and it would otherwise beat under the whole result screen. No
+  heat/progress ramp is borrowed for it: those two mean DISTANCE and PROGRESS, and a clock
+  is neither. `role="timer"` is a live region defaulting to OFF, which is the point — the
+  number must be readable on demand and never announced every second; the run's END is
+  announced once (`srWordTimeUp`), on the transition only.
+  **The board is the END SCREEN's reward, and the word never moves to get there.** The
+  `.word-window` is `justify-content: center`, which puts the word in the middle of the
+  screen while it is alone there and needs no phase class to stop doing so: once
+  `.word-cut` mounts it is `flex: 1 1 0` and eats every spare pixel, leaving the word
+  pinned to the window's bottom edge with the line running down into it. So the reveal moves
+  the FIELD in around a word that stays put. Nothing was rebuilt for this — `WordBoard` /
+  `routeDrawing` / the censored census / the torn edges / the MISSED shelf are the same
+  components, mounted at a different moment — and the whole claim-scroll animation the
+  screen used to run (`SCROLL_MIN_MS`/`SCROLL_MAX_MS`/`SCROLL_PX_PER_MS`, the focused rank,
+  the rAF loop) is GONE with the live board: there is no station to scroll onto during a run
+  any more. The ending keeps its BEAT structure, adapted to "the clock hits zero": the
+  killing moment plays out on the surface the player was looking at (`WORD_END_HOLD_MS` =
+  the hit's own intro + fade), then the field arrives and the prompt leaves
+  (`WORD_END_SETTLE_MS`), then the keyboard drops and the result rises. A rehydrated ended
+  round seeds every beat settled, and reduced motion zeroes the JS-timer holds.
   **The drawing itself is `components/routeDrawing`** (extracted 2026-08-06, superseding
   "the board imports RouteModal's exported geometry helpers"): the geometry, the frame
   variables, the shelf, the tail, the connector rule, the junctions and the station ROW are
@@ -247,7 +310,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   The HIT is the sentence game's own feedback grammar on the one row that is always
   visible: every counted guess floats the rank it earned — `FloatingHit`, heat-coloured
   under the same `HIT_HEAT_CAP`, plus the word shake (`.route-word.hit-shake`) — or MISS in
-  the coldest heat for an off-map strike; claims included. Free guesses (repeats, invalid
+  the coldest heat for an off-map miss; claims included. Free guesses (repeats, invalid
   words, the day's word itself) land nothing, exactly as they float nothing in the sentence
   game. A single target means a single hit: no stagger, and the lone-hit fade delay
   (`FLOATING_HIT_INTRO_MS`). The hit state is `WordGame`'s; the terminus only renders it.
@@ -257,16 +320,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   for a moment that is not a find at all but the post-mortem naming what was always there.
   Those land outright (`StationWord`'s `animate`); the initial
   target is likewise seeded settled, so a rehydrated round replays nothing.
-  **The ending plays in BEATS (2026-08-07), like the sentence solve, instead of piling onto
-  the killing strike's frame** (where the reveal, the scroll and the prompt exit all used to
-  land at once, under a MISS still floating): first the strike plays out in full on the still
-  board — the last cross fills and the terminus hit runs its whole float
-  (`WORD_END_HOLD_MS` = the hit's own intro + fade) — then the post-mortem names the field
-  and the line runs to its true bottom while the prompt leaves, then the keyboard drops and
-  the results rise. The reveal beat rides `buildWordBoard`'s optional `reveal` (presentation
-  pacing only — `ended` itself stays `replayWordRun`'s fact); a rehydrated ended round seeds
-  every beat settled, and reduced motion zeroes the JS-timer holds (the global CSS rule
-  cannot collapse those).
+  The reveal beat rides `buildWordBoard`'s optional `reveal` — presentation pacing only,
+  which is why it is a parameter and not something the model derives: since #163 the run's
+  END is the deadline's fact, and the board is not on screen at all until this beat says so
+  (see the three-phase bullet above for the beat order).
   **The whole FIELD is drawn, censored until it is claimed** (decided 2026-08-05, restoring
   the `???` census after a day without it — the sparse variant that drew only found words
   and dashed the ground between them is gone, `.route-link.dashed` with it): every group of
@@ -313,22 +370,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
   re-check if it changes again: the window/prompt cap above, `.word-frame`'s `--wordw`, and
   `--promptw` (456, not 476). Verified after the change: all 156 words of a fully revealed
   field fit on one line at 320/360/390/430/900, none wrapping mid-word. **In HEIGHT it is the
-  opposite — the window takes everything left over** (decided 2026-08-05): the board IS this
-  screen, and every row of the line the player can see is a road's length made visible, where
-  the space around it says nothing. So `.game.word-game` cuts its own chrome — the HUD's row
-  reserved with 48px rather than 76 (clearing the fixed header while balancing its screen-top
-  inset against the gap before the board), and the three seams below it — which are
-  deliberately NOT equal (retuned 2026-08-06, superseding the two-even-seams version): the
-  PROMPT is what the player acts through, so it takes the room on BOTH of its sides
-  (`.game.word-game` above it, `.input-area.word-prompt` below), while the cross failure row
-  sits TIGHT against the keyboard (`.word-footer-play`, the smallest of the three) because it
-  reports on the guessing those keys do. Evenly spaced, the prompt read as one more band in a
-  stack of four; pushed to its two sides, it reads as the live line and the crosses read as a
-  status strip on the keys. Measured at 430px: 31 / 22 / 9. Earlier measured with the even
-  seams: 53% of
-  the viewport → 59% at 1440×900, and 45% → 52% on a 700px-tall one, which is where it
-  mattered (57% / 51% after this retune — the prompt bought its room from the board, on
-  purpose).
+  opposite — the window takes everything left over** (decided 2026-08-05): on the end screen
+  the board IS this screen, and every row of the line the player can see is a road's length
+  made visible, where the space around it says nothing. So `.game.word-game` cuts its own
+  chrome — the HUD's row reserved with 48px rather than 76 (clearing the fixed header while
+  balancing its screen-top inset against the gap before the board), and the seams below it:
+  the PROMPT is what the player acts through, so it takes the room on BOTH of its sides
+  (`.game.word-game` above it, `.input-area.word-prompt` below) rather than reading as one
+  more band in a stack. (The third seam this rule used to describe was the cross row's tight
+  gap against the keyboard; that row went with the strikes in #163, and the prompt now sits
+  directly on the tray.) Measured with the earlier even seams: 53% of the viewport → 59% at
+  1440×900, and 45% → 52% on a 700px-tall one, which is where it mattered — the prompt bought
+  its room from the board, on purpose.
   **ONE prompt for BOTH games, at a flat 24px, and a long guess CROPS ITS OWN HEAD**
   (decided 2026-08-06). `WordInput` is a single control doing the same job on both screens, so
   it has one size and one behaviour: `.word-input` is 24px everywhere, and the sentence game's
@@ -366,26 +419,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
   leaving two copies of the slack/bail-out/resize details to drift. `WordGame` re-reads the
   edges when the MODEL changes too: a claim adds rows and the run's end reveals the whole
   field, neither of which fires a scroll event.
-  **ONLY a CLAIM moves the board** (decided 2026-08-06, superseding "a counted guess"): a
-  strike used to scroll out to the near miss's own row on the trunk, which carries the player
-  AWAY from the field they are working on — as the answer to a FAILURE — and leaves them to
-  find their way back before the next guess. The move is the reward for a find; the cross row
-  and the floating rank already report a strike, and they report it without moving the ground.
-  An off-map miss has no row to move to and never scrolled. Verified by measuring a LANDMARK
-  ROW's on-screen position rather than `scrollTop`: a strike inserts a row above the view, so
-  the browser's scroll anchoring bumps `scrollTop` by that row's height precisely IN ORDER TO
-  hold the content still — reading `scrollTop` alone says "moved 40px" about a board that did
-  not move at all.
-  **The move itself runs on the APP's clock, not the browser's**
-  (decided 2026-08-05): `scrollIntoView({ behavior: 'smooth' })` times itself by the
-  DISTANCE travelled, and the field is ~150 rows, so a claim out at the far edge crawled for
-  the better part of a second while the next guess was already typeable. `WordGame` animates
-  `scrollTop` itself instead — `SCROLL_MIN_MS`/`SCROLL_MAX_MS`/`SCROLL_PX_PER_MS`, ease-out,
-  a rAF loop the next guess cancels mid-flight — so the whole board crosses in ~320ms and a
-  one-rank hop in ~140 (measured 2833px in 316ms, landing centred to the pixel). Reduced
-  motion sets `scrollTop` outright. The target is measured off RECTS, never `offsetTop`:
-  `.route-frame` is positioned, so it and not the scroller is the offsetParent (the trap the
-  route map's `offsetWithin` exists for). The end screen
+  **The board no longer SCROLLS ITSELF at all** (#163, 2026-08-08). It arrives already
+  parked at its bottom, on the terminus, and stays where the player puts it. The two
+  decisions that used to govern the live board are RETIRED with the board's live phase, not
+  reversed — recorded because the reasoning still applies to any future live route surface:
+  *only a CLAIM moved the board* (2026-08-06; a miss scrolling out to its own trunk row
+  carried the player AWAY from the field they were working on, as the answer to a FAILURE,
+  and the floating rank already reported it without moving the ground — verified by measuring
+  a LANDMARK ROW's on-screen position rather than `scrollTop`, since inserting a row above
+  the view makes the browser's scroll anchoring bump `scrollTop` by that row's height
+  precisely IN ORDER TO hold the content still), and *the move ran on the APP's clock*
+  (2026-08-05; `scrollIntoView({ behavior: 'smooth' })` times itself by the DISTANCE
+  travelled, so a claim at the far edge of a ~150-row field crawled for the better part of a
+  second while the next guess was already typeable). `SCROLL_MIN_MS`/`SCROLL_MAX_MS`/
+  `SCROLL_PX_PER_MS`, the focused rank and the rAF loop are all gone. The end screen
   (`components/WordEndScreen.tsx`) is the named `<n> WORDS/MOTS` count + SHARE via the
   v4 word token; **the score OG card repeats the in-game terminus — the accented display
   word in solved blue with its large blue square on the left — above the count and date**
@@ -397,18 +444,31 @@ it to the local store — see `packages/backend/AGENTS.md`).
   count is this screen's LAST beat, with no ruler colorize following it as in the sentence
   tray, so the number marks its own landing (never at 0, never on rehydration, collapsed
   under reduced motion). Identity is mode-addressed everywhere: `roundKeyForDay(day, lang,
-  'word')` = `w:` keys into the store's own `wordRounds` map (persist v6; `ensureWordRound`
-  resets on a republished different word), `lastMode` decides where `/` lands (like
+  'word')` = `w:` keys into the store's own `wordRounds` map (persist **v7** since #163;
+  `ensureWordRound` resets on a republished different word), `lastMode` decides where `/` lands (like
   `lastLang`; the header's Whippin mark opening the mode CHOOSER is the deliberate switch —
   see the chooser bullet) — but **only a LOADED artifact records it** (2026-08-06): unlike a
   language, a mode can be genuinely absent, since word artifacts are published per day and
   past days are not backfilled. Written on arrival instead, one tap of the toggle on a day
   with no word artifact pinned every later visit to a route showing NO PUZZLE TODAY and
   nothing else. Arrival lands where you last PLAYED, and a 404 is not play.
-  The archive/selector read word statuses via `wordStatusOf`
-  (ended = done-for-the-day gold; live = claimed/zone %). Word runs never touch the
-  streak, fire no new analytics events, and have no benchmark opponents (out of scope
-  per the issue).
+  **The store's v6 → v7 migration DROPS every pre-clock word round** (#163, the standing
+  no-back-compat rule): a v6 round recorded a strike run — three consecutive misses, no
+  clock — and there is no honest clock to invent for it. Nothing else moves: sentence
+  rounds, solved days and the mode preference all survive, because the retiming touched
+  none of them.
+  The archive/selector read word statuses via `wordStatusOf`, which takes `now` and reads
+  the round's own DEADLINE — never a stored flag, so a tab closed mid-run comes back to a
+  finished day (past deadline = done-for-the-day gold; live = claimed/zone %; not yet
+  started = nothing, since a fetched day still at its rules gate has not been played).
+  **A finished word run is DONE, not SOLVED** (decided 2026-08-08): `Status` carries both
+  kinds, they render as the SAME gold, and only the spoken status distinguishes them
+  (`srWordDone`, en "done" / fr « terminé ») — a timed-out run is finished, and calling it
+  solved would claim an achievement this mode does not have. The visual surfaces read
+  `isComplete(status)` so the strip (`Chooser`) and the calendar cell (`Archive`) do not
+  each restate the pair. Word runs never touch the streak, fire no new analytics events,
+  and have no benchmark opponents — and since #163 they never will, by decision (see the
+  no-bots note in the Word mode bullet).
 - **Route modal (#117, Part 3 of #115):** tapping a HOLE opens its neighborhood drawn as a
   journey. `game/route.ts` is the pure model (`buildRoute`, contract-tested) and
   `components/RouteModal.tsx` renders it; `Game` owns the open state so the guess prompt can
@@ -1242,7 +1302,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   it read as fixed chrome rather than as a status that happens to be tappable. Flags survive
   where the choice is actually MADE: the language screen's cards (`Flag.tsx`, now their only
   consumer). `globe.png` is a single-colour 15×15 sprite drawn at an exact 2× and **MASKED**
-  (`.globe-icon`, `background-color: currentColor` — the `.word-digit` technique), so it takes
+  (`.globe-icon`, `background-color: currentColor` — a single-colour sprite painted through a
+  CSS mask, the same technique the `.cal-ripple` sheet uses), so it takes
   the group's muted → `--fg` hover with the inline SVGs instead of being the one control that
   cannot. The **streak stat is NOT in the
   header** (moved back to the archive page 2026-07-21). **Any full-screen surface follows this

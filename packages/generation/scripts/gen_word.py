@@ -15,7 +15,7 @@ walk and group semantics (#104/#134/#146), the #133 explicit-form confirmation, 
 vectors (#119), the TOP_K group cap, the dq stamping and the slug-collision rule are
 literally the same code (gen_phrase.walk_secret is the shared per-secret pipeline).
 
-Exactly TWO things differ, both because there is no sentence:
+Exactly THREE things differ, all because there is no sentence:
 
   - No start word, so no `start_rank` to size the road zone. It is the flat
     top-ROAD_TOP (250) instead — deliberate: those groups ARE Word mode's playing
@@ -24,16 +24,20 @@ Exactly TWO things differ, both because there is no sentence:
     the client's CLAIM_ZONE restates it, and the two move together.
   - No `words` / `holes` / `start` / `start_rank`, and no `source`: a lone word has no
     attribution. The rank map is ONE flat map, not keyed by secret.
+  - Every group carries its corpus rarity, `freq` (#163) — see annotate_freq. A
+    sentence puzzle does not: nothing there consumes it, and those maps are already
+    ~500 KB gzipped.
 
 Schema (see WordPuzzle in packages/shared/src/types.ts):
 
     {"lang": "fr",
      "word": {"word": "phare", "slug": "phare"},
-     "ranks": {"<input-slug>": {"word": "<accented>", "rank": 12, "dq": 231, "road": 1}}}
+     "ranks": {"<input-slug>": {"word": "<accented>", "rank": 12, "dq": 231,
+                                "road": 1, "freq": 8412}}}
 
 The inner semantics are the sentence schema's rank-map semantics, unchanged: alias
-keys per group, word/rank/dq/road are GROUP properties, rank 0 = the word itself and
-carries no dq, dq on every rank >= 1 entry.
+keys per group, word/rank/dq/road/freq are GROUP properties, rank 0 = the word itself
+and carries no dq, dq on every rank >= 1 entry.
 
 Written to packages/generation/output/single-word/<lang>/<slug>.json (override the
 root with --out-dir). Unlike gen:phrase this does NOT rewrite web/public/vocab —
@@ -75,9 +79,52 @@ from gen_phrase import (CONFIG, GEN_OUTPUT, annotate_roads, die,  # noqa: E402
 from slug import slug  # noqa: E402
 
 
+def annotate_freq(rank_map, groups, forms_by_lemma, Vset, V):
+    """Stamp every group with `freq` — how common it is in the corpus (#163).
+
+    Word mode pays a claim in SECONDS scaled by the claimed group's rarity, and
+    rarity is orthogonal to the closeness the score already measures: it pays for
+    vocabulary depth rather than double-paying the find. The client cannot compute
+    it — it never sees the corpus — so the artifact ships it.
+
+    The value is a FREQUENCY RANK over the reduced vocabulary: 1 = the most frequent
+    word the game admits, larger = rarer. The reduced file preserves the source
+    embedding's frequency order (reduce_embedding streams it and keeps survivors in
+    place), so this is a READ of a position, not a computation — and the reduced
+    vocabulary is the right scale because it IS the existence set the player types
+    against. 1-based on purpose: a 0 would be indistinguishable from an absent field
+    to a JS consumer testing the value.
+
+    It is the group's MOST FREQUENT embedded form, not its representative's: a
+    player's sense of a lexeme's rarity is its commonest inflection (« privées » is
+    as rare as « privé » is common). A GROUP property like word/rank/dq/road, so it
+    is stamped by RANK — every alias key of a group therefore repeats its group's
+    value, and slug-collision resolution keeps the winning group's, both by
+    construction. Stamped BEFORE the agreement pass for the same reason the roads
+    are: a rewritten display inherits its group's value like any other key.
+
+    A group with no embedded form at all — only reachable through a borrowed vector
+    (#119), and then only at rank 0 — simply gets no `freq`. The field is optional
+    to every consumer, like `road`."""
+    freq_of = {form: i + 1 for i, form in enumerate(V)}
+    freq_by_rank = {}
+    for display, rank, claims, _clean, rep in groups:
+        forms = {form for lexeme in claims
+                 for form in forms_by_lemma.get(lexeme, ()) if form in Vset}
+        forms.update((display, rep))
+        ranks = [freq_of[form] for form in forms if form in freq_of]
+        if ranks:
+            freq_by_rank[rank] = min(ranks)
+    for entry in rank_map.values():
+        freq = freq_by_rank.get(entry["rank"])
+        if freq is not None:
+            entry["freq"] = freq
+    return rank_map
+
+
 def build_word_map(word, donor, cfg, kv, V, M, Vset, lemma_table, forms_by_lemma,
                    donors=None, forms=None, roads=True, reporter=None):
-    """One word's rank map AS SHIPPED: walked, dq-stamped, roaded, agreed.
+    """One word's rank map AS SHIPPED: walked, dq-stamped, roaded, priced, agreed.
 
     The sentence path's per-secret sequence with its two sentence-shaped steps
     removed. walk_secret settles the claim (#133 fires there, ahead of the walk) and
@@ -89,15 +136,18 @@ def build_word_map(word, donor, cfg, kv, V, M, Vset, lemma_table, forms_by_lemma
         IS the zone (annotate_roads' start_rank=None). Stamped BEFORE the agreement
         pass, exactly as in a sentence, so a rewritten form inherits its group's road
         like any other key.
+      - FREQ (#163), this artifact's own annotation: what Word mode's clock pays a
+        claim by. See annotate_freq — a sentence puzzle carries none.
       - AGREEMENT (#133/#134): the whole map agrees with the word's confirmed
         morphology. There is no start hint to alias afterwards — the display override
         a hole's start word gets (#119 addendum) has no counterpart here.
 
-    Returns the rank map. Mutated in place by both passes, like the sentence path."""
+    Returns the rank map. Mutated in place by every pass, like the sentence path."""
     merged, rank_map, groups = walk_secret(word, donor, cfg, kv, V, M, Vset,
                                            lemma_table, forms_by_lemma, donors, forms)
     annotate_roads(rank_map, merged, kv if roads else None, start_rank=None,
                    reps=group_reps(groups))
+    annotate_freq(rank_map, groups, forms_by_lemma, Vset, V)
     if forms is not None:
         forms.apply(rank_map, word, donors, lexemes=group_lexeme_map(groups))
     if reporter is not None:

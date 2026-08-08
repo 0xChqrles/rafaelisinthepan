@@ -962,8 +962,7 @@ button * {
    sitting at the same optical weight as the 27px calendar and "?" beside it.
    It is MASKED rather than drawn as an <img>: globe.png is one colour plus transparency, so
    painting the mask with `currentColor` puts it on the group's muted -> --fg hover with the
-   inline SVGs, which an <img> could only approximate with a filter. (The same technique as
-   .word-digit, which masks the digits sheet.) */
+   inline SVGs, which an <img> could only approximate with a filter. */
 .globe-icon {
   width: 30px;
   height: 30px;
@@ -3411,29 +3410,37 @@ button * {
   }
 }
 
-/* --- Word mode (#156): the second daily. The .game column is reused (HUD corner, a
-   middle that fills, the fixed-height tray); the middle here is the BOARD — the day's
-   neighborhood as the live route-map drawing (.route-frame reused wholesale, see
-   components/WordBoard) inside its own scroller — with the guess prompt between it and
-   the keyboard. --- */
+/* --- Word mode (#156, retimed by #163): the second daily. The .game column is reused (HUD
+   corner, a middle that fills, the fixed-height tray). The middle holds the day's WORD in
+   every phase — the terminus row of the route drawing, where every guess reports — and the
+   post-mortem's full board grows in ABOVE it when the clock dies, so the word itself never
+   moves between the run and the reveal. --- */
 
-/* The board IS this screen, so the chrome around it is cut to what it needs and the window
-   takes everything left over (decided 2026-08-05): the line runs ~150 rows and every one of
-   them the player can see is a road's length made visible, where the space around it says
-   nothing. The sentence screen keeps its own generous rhythm — there the PHRASE is the
-   content and the air around it is what makes it legible — so all of this is scoped to
-   `.word-game`.
-   The top reserve is 48px: enough to clear the fixed header while balancing the header's
-   screen-top inset against the gap before the board.
-   The three seams below the board are NOT equal, and that is the point (retuned 2026-08-06):
-   the PROMPT is what the player acts through, so it gets the room — a wide seam above it
-   (this gap) and a wide one under it (`.input-area.word-prompt`) — while the crosses sit
-   CLOSE to the keyboard they report on (`.word-footer-play`). Evenly spaced, the prompt read
-   as one more band in a stack of four; with the space pushed to its two sides it reads as the
-   live line and the crosses read as a status strip on top of the keys. */
+/* The top reserve is 48px: enough to clear the fixed header while balancing the header's
+   screen-top inset against the gap before the play area. The sentence screen keeps its own
+   generous rhythm — there the PHRASE is the content and the air around it is what makes it
+   legible — so all of this is scoped to `.word-game`.
+   The two seams around the PROMPT are deliberately the wide ones (retuned 2026-08-06): it is
+   what the player acts through, so it gets the room — this gap above it and
+   `.input-area.word-prompt`'s below — rather than reading as one more band in a stack.
+   `relative` + `isolation` make this the stacking context the score watermark's z-index:-1
+   stays inside (the watermark itself anchors tighter, to `.word-anchor` below) — the same
+   arrangement `.play` gives the sentence game's. */
 .game.word-game {
+  position: relative;
+  isolation: isolate;
   padding-top: 48px;
   gap: clamp(22px, 3.4vh, 36px);
+}
+/* The SCORE watermark's anchor: a full-width relative wrapper around ONLY the day's word, so
+   the big count centres on the word the run is about. Deliberately NOT isolated, for the
+   same reason `.phrase-anchor` is not: the watermark's z-index:-1 has to escape into
+   `.game.word-game`'s isolated context to paint behind ALL of the play content, where an
+   isolated anchor would be a stacking context and lift the whole subtree — watermark
+   included — above its siblings. */
+.word-anchor {
+  position: relative;
+  width: 100%;
 }
 /* Prompt + keyboard are one stable footer footprint. The Word result is much shorter than
    that pair, so putting it in `.tray` alone left the retired prompt's whole row plus the
@@ -3447,15 +3454,27 @@ button * {
 .word-footer > * {
   grid-area: 1 / 1;
 }
-/* The crosses→keyboard seam, deliberately the TIGHTEST of the three (2026-08-06): the row
-   reports on the guessing the keys do, so it belongs ON the keyboard rather than floating
-   between it and the prompt. What it gives up here is what the prompt's own two seams take. */
 .word-footer-play {
   min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: start;
   gap: clamp(6px, 1vh, 12px);
+}
+/* The pre-run GATE (#163): the rules, then START, occupying exactly the footprint the prompt
+   and keyboard will take — the button sits in a real `.tray`, whose height is the keyboard's
+   — so tapping START changes what the footer holds and not where anything is. Two short
+   lines, centred with the control they explain, at the prompt's own reading size rather than
+   the pixel font's: this is the one place in the game with a sentence to READ. */
+.word-rules {
+  width: 100%;
+  margin: 0;
+  font-family: var(--vt);
+  font-size: clamp(15px, 4vw, 20px);
+  line-height: 1.45;
+  text-align: center;
+  color: var(--muted);
+  text-wrap: balance;
 }
 .word-footer-result {
   z-index: 1;
@@ -3510,17 +3529,23 @@ button * {
 .input-area.word-prompt {
   gap: clamp(16px, 2.4vh, 24px);
 }
-/* The board's WINDOW: a non-scrolling frame around the scroller, which is what lets it wear
-   the shared TORN EDGES (`.scroll-torn`) — the line runs taller than the screen on any board
-   with a few claims on it, and an edge that simply ends would read as the end of the map. The
-   two boxes are the teaser's own structure, for the same reason (a pseudo-element inside a
-   scroller scrolls away with the content). */
+/* The WINDOW: a non-scrolling frame around the post-mortem's scroller, which is what lets it
+   wear the shared TORN EDGES (`.scroll-torn`) — the revealed line runs far taller than the
+   screen, and an edge that simply ends would read as the end of the map. The two boxes are
+   the teaser's own structure, for the same reason (a pseudo-element inside a scroller scrolls
+   away with the content).
+   `center` is what puts the word in the MIDDLE of the screen while it is alone there — the
+   gate and the run — and it needs no phase class to stop doing so: once `.word-cut` mounts it
+   is `flex: 1 1 0` and eats every spare pixel, which leaves the word pinned to the window's
+   bottom edge with the line running down into it. So the reveal moves the field in around a
+   word that does not move. */
 .word-window {
   flex: 1 1 0;
   min-height: 0;
   width: 100%;
   display: flex;
   flex-direction: column;
+  justify-content: center;
 }
 /* The board and its prompt share ONE COLUMN, capped at the line's own width (2026-08-05).
    The drawing is `min(430px, 100%)` and centres itself inside the scroller, so on a desktop
@@ -3532,10 +3557,12 @@ button * {
    when the left one went to 0 so the board's left edge lines up with the prompt's — see
    `.word-scroll`.) The prompt takes the same column
    because it belongs to the board: left-aligned against the page it sat a third of a screen
-   away from the line it answers. Both are no-ops on a phone, where the column is already
+   away from the line it answers. The GATE's rules take it too, for the same reason — they
+   answer the word above them. Both are no-ops on a phone, where the column is already
    narrower than the cap. */
 .word-window,
-.word-prompt {
+.word-prompt,
+.word-rules {
   max-width: calc(430px + 20px + 6px);
   align-self: center;
 }
@@ -3635,64 +3662,93 @@ button * {
   width: 100%;
 }
 
-/* The arcade header corner carries only the claim count (the score — higher is better
-   in this mode). The failure row belongs to the play controls below. */
-.word-hud {
-  display: flex;
-  align-items: center;
+/* The arcade header corner carries the CLOCK (#163) — the resource this mode is played
+   against, so it takes the spot the sentence game gives its progress counter. The SCORE is
+   not here: it is the watermark behind the word (`.word-anchor`), because it is the number
+   the end screen names.
+   Bigger than the sentence's counter on purpose: it is the one live number on the screen,
+   and the thing every claim visibly pays into. Tabular figures so a two-digit clock does not
+   twitch as the units turn. */
+.word-timer {
+  position: relative;
+  display: inline-block;
+  font-size: 34px;
+  line-height: 1;
+  letter-spacing: 1px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+  /* Same optical downshift as .topbar-title: the pixel glyphs sit high in the em box. */
+  transform: translateY(0.15em);
+  transition: color 0.25s linear;
   pointer-events: none;
 }
-.word-count {
-  display: inline-flex;
-  align-items: flex-start;
-  gap: 4px;
-  width: fit-content;
-  height: 28px;
+/* Before START the clock shows what a run is worth without having begun to spend it — a
+   preview, so it reads as chrome rather than as time already running out. */
+.word-timer.idle {
+  color: var(--muted);
 }
-.word-strikes {
-  display: flex;
-  gap: 20px;
-  align-self: center;
+/* The last stretch. `--danger` and a pulse rather than a ramp: the two the app already owns
+   mean PROGRESS and DISTANCE, and a clock is neither — borrowing one would have the number
+   speak a vocabulary it does not belong to.
+   The pulse stops AT ZERO (`.spent`), where it would otherwise beat under the whole result
+   screen: the alarm is about time running out, and once it has there is nothing left to warn
+   about — the red number is a statement, not a countdown. Being infinite, it is also the
+   kind of decoration reduced motion switches OFF rather than collapses. */
+.word-timer.warn {
+  color: var(--danger);
+  animation: timer-pulse 1s ease-in-out infinite;
 }
-/* cross-button.png is a 22x11 sheet of two square 11x11 frames: 0 the un-pressed button, 1 the
-   pressed red fail (the sprite bakes `--danger` #ff1f54 in, so nothing recolors it at
-   runtime).
-   Drawn at an exact 4x — 44px — like every other pixel sprite here: a fractional scale leaves
-   some source pixels a row wider than others, and `image-rendering: pixelated` cannot fix
-   that. `background-size` is the WHOLE sheet at that scale (two frames wide), so picking a
-   state is one frame's step in `background-position`.
-   Three crosses at a 20px gap are 172px, well inside the ~292px a 320px screen has, so the row
-   needs nothing responsive. It DID while STRIKES_TO_END was 5 (300px, which overflows), and
-   there the GAP paid for it and never the sprite — the crosses may not shrink, a fractional
-   scale being the one thing this sprite cannot survive. Past FOUR crosses that override has to
-   come back; see the note on STRIKES_TO_END. */
-.strike-pip {
-  display: block;
-  flex: 0 0 44px;
-  width: 44px;
-  height: 44px;
-  background-image: url('./assets/cross-button.png');
-  background-repeat: no-repeat;
-  background-size: 88px 44px;
-  background-position: 0 0;
-  image-rendering: pixelated;
+.word-timer.spent {
+  color: var(--danger);
+  animation: none;
 }
-.strike-pip.failed {
-  background-position: -44px 0;
+@media (prefers-reduced-motion: reduce) {
+  .word-timer.warn {
+    animation: none;
+  }
 }
-.word-digit {
-  display: block;
-  flex: 0 0 28px;
-  width: 28px;
-  height: 28px;
-  background-color: var(--fg);
-  image-rendering: pixelated;
-  -webkit-mask-image: url('./assets/digits.png');
-  mask-image: url('./assets/digits.png');
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  -webkit-mask-size: 280px 28px;
-  mask-size: 280px 28px;
-  -webkit-mask-position: var(--digit-x) 0;
-  mask-position: var(--digit-x) 0;
+@keyframes timer-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+/* The seconds a claim just bought, landing ON the clock: the other half of the mode's
+   feedback grammar (a float on the WORD is about the guess, a gain here is about your
+   time). It rises INTO the number in the solved-word gold and fades out under it, which is
+   the reading — time flowing into the clock — and it is keyed by the gain's id so two
+   claims in a row replay it instead of the second landing on a finished element.
+   `forwards` leaves it invisible rather than snapping back.
+   UNDER the clock rather than beside it: at 320px a `+5s` set to the right of a two-digit
+   number runs into the header's icon group (measured, 15px over). Below, it has the whole
+   empty top of the play area to itself at every width, and there is never a board there —
+   a gain only ever plays during a run, where the word sits centred far below. */
+.timer-gain {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  font-size: 0.5em;
+  white-space: nowrap;
+  color: var(--hole);
+  animation: timer-gain 0.9s ease-out forwards;
+}
+@keyframes timer-gain {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.7);
+  }
+  25% {
+    opacity: 1;
+    transform: translateY(0) scale(1.15);
+  }
+  45% {
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-12px) scale(1);
+  }
 }

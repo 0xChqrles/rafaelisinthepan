@@ -325,7 +325,7 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   `shared/src/types.ts` carries no `context`, and `SolvedCaption` renders only the kind tag +
   attribution.
 
-### Single-word artifact schema (#154, decided 2026-08-03)
+### Single-word artifact schema (#154, decided 2026-08-03; `freq` added by #163 on 2026-08-08)
 
 The SECOND puzzle type: one word and its ranked neighborhood, with no sentence around
 it. Produced by `packages/generation/scripts/gen_word.py` (`pnpm gen:word`), typed as
@@ -338,7 +338,8 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   "lang": "fr",
   "word": { "word": "phare", "slug": "phare" },   // accented display form + its slug
   "ranks": {                                       // ONE FLAT map — no per-secret keying
-    "<input-slug>": { "word": "<accented>", "rank": 12, "dq": 231, "road": 1 }, ...
+    "<input-slug>": { "word": "<accented>", "rank": 12,
+                      "dq": 231, "road": 1, "freq": 8412 }, ...
   }
 }
 ```
@@ -350,6 +351,24 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   word itself and carries **no `dq`**, every rank ≥ 1 entry carries one. Both commands
   run the **one shared per-secret pipeline** (`gen_phrase.walk_secret`), so a word's
   neighborhood can never differ by which game asked for it.
+- **`freq` — the group's CORPUS RARITY, this artifact's own annotation (#163, decided
+  2026-08-08).** The **1-based position, in the frequency-ordered reduced vocabulary, of
+  the group's MOST FREQUENT embedded form**: 1 = the commonest word the game admits,
+  larger = rarer. The reduced file preserves the source embedding's frequency order
+  (`reduce_embedding` streams it and keeps survivors in place), so this is a READ of a
+  position, not a computation — and the reduced vocabulary is the right scale because it
+  IS the existence set the player types against. The most frequent FORM, not the
+  representative: a player's sense of a lexeme's rarity is its commonest inflection. A
+  GROUP property like the rest, stamped by rank (`gen_word.annotate_freq`), so alias keys
+  repeat it and slug-collision resolution keeps the winning group's, both by construction.
+  Present on **every** entry the group can reach, **rank 0 included** — unlike `dq`, whose
+  absence there is about the scale being off at the terminus; a word has a frequency
+  wherever it sits. Absent only for a group with no embedded form at all (reachable only
+  through a borrowed vector, #119), so consumers treat it as OPTIONAL, like `road`.
+  **Emitted by `gen_word.py` ONLY** — a sentence puzzle carries none: nothing there
+  consumes it and those maps are already ~500 KB gzipped. **The WEB maps `freq` → bonus
+  seconds, never generation** (`web/src/game/wordGame.ts` `bonusSeconds`), so every tuning
+  iteration is a web-only constant change with no artifact republish.
 - **`ranks` is ONE FLAT map** (there is only one word to rank around, so nothing to key
   it by), and there is no `words` / `holes` / `start` / `start_rank`. **No `source`
   either:** attribution belongs to a quoted line, and a lone word quotes nobody.

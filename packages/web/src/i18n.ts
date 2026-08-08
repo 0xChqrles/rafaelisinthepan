@@ -42,9 +42,9 @@ const STRINGS = {
   // share card); the share text lowercases these.
   try: { en: 'TRY', fr: 'ESSAI' },
   tries: { en: 'TRIES', fr: 'ESSAIS' },
-  // ---- Word mode (#156): the second daily — claim the day's word's neighborhood until
-  // struck out. Its score unit is likewise NAMED (higher is better here, and "WORDS"
-  // says what was counted).
+  // ---- Word mode (#156, retimed by #163): the second daily — name the day's word's
+  // neighborhood against a countdown. Its score unit is likewise NAMED (higher is better
+  // here, and "WORDS" says what was counted).
   word: { en: 'WORD', fr: 'MOT' },
   words: { en: 'WORDS', fr: 'MOTS' },
   // The final score names the achievement, not just the unit. Kept separate because the
@@ -55,6 +55,24 @@ const STRINGS = {
   // public — on the board already).
   wordRepeat: { en: 'already played', fr: 'déjà joué' },
   wordItself: { en: "that's the word itself", fr: "c'est le mot lui-même" },
+  // The pre-run GATE (#163): the timer needs a start control anyway, and the control is
+  // where the rules belong — so this screen is also where a first-time player learns the
+  // game. TWO sentences, one idea each: what to do, and what buys more of it. Terse, in
+  // the app's show-don't-tell register, and NEITHER of them states a number — the clock's
+  // length is the HUD's to show and START_SECONDS is a tuning knob.
+  wordRulesGoal: {
+    en: 'Find words close to it before the clock runs out.',
+    fr: 'Trouve des mots proches avant la fin du chrono.',
+  },
+  wordRulesBonus: {
+    en: 'Every find adds time. Rare words add more.',
+    fr: 'Chaque mot ajoute du temps. Les rares davantage.',
+  },
+  wordStart: { en: 'START', fr: 'DÉPART' },
+  // A word run's day is FINISHED, never "solved" (decided 2026-08-08): the clock ran out,
+  // which is not an achievement the way a reconstructed sentence is. Visually it is the
+  // same gold as a solve; this is the distinction the reader hears.
+  srWordDone: { en: 'done', fr: 'terminé' },
   // The header's Whippin mark opens the mode CHOOSER (2026-08-06, replacing the toggle
   // whose label had to name the mode a tap landed on), and the chooser's two cards name
   // the dailies themselves. The card names are display forms — the CSS uppercases them,
@@ -304,32 +322,42 @@ export function srWordBoardWord(lang: string, word: string): string {
   return uiLang(lang) === 'fr' ? `mot du jour : ${word}` : `word of the day: ${word}`;
 }
 
-export function srWordClaim(lang: string, word: string, rank: number, total: number): string {
-  if (uiLang(lang) === 'fr') return `${word} trouvé (rang ${rank}) — ${total} mots`;
-  return `claimed ${word} (rank ${rank}) — ${total} words`;
-}
-
-export function srWordFailures(lang: string, strikes: number, max: number): string {
-  if (uiLang(lang) === 'fr') return `${strikes}/${max} fautes`;
-  return `${strikes}/${max} strikes`;
-}
-
-// A strike: `rank` is the near miss's rank (it teaches where the boundary is), or null
-// for an off-map miss. Names the run's end when this strike ends it.
-export function srWordStrike(
+// A CLAIM: what it was, where it sat, the running count — and the seconds it bought,
+// which the sighted player reads off the timer's own gain (#163).
+export function srWordClaim(
   lang: string,
-  rank: number | null,
-  strikes: number,
-  max: number,
-  ended: boolean,
+  word: string,
+  rank: number,
+  total: number,
+  gained: number,
 ): string {
+  if (uiLang(lang) === 'fr') {
+    return `${word} trouvé (rang ${rank}) — ${total} mots, +${gained} s`;
+  }
+  return `claimed ${word} (rank ${rank}) — ${total} words, +${gained}s`;
+}
+
+// A guess that claimed nothing: `rank` is a near miss's rank (it teaches where the zone
+// ends), or null for an off-map miss. It costs no time and no strike — the only price is
+// the seconds spent typing it — so there is nothing here to count.
+export function srWordMiss(lang: string, rank: number | null): string {
   const fr = uiLang(lang) === 'fr';
-  let what: string;
-  if (rank == null) what = fr ? 'raté' : 'miss';
-  else what = fr ? `trop loin : rang ${rank}` : `too far: rank ${rank}`;
-  const count = fr ? `faute ${strikes}/${max}` : `strike ${strikes}/${max}`;
-  const over = ended ? (fr ? ' — partie terminée' : ' — run over') : '';
-  return `${what} — ${count}${over}`;
+  if (rank == null) return fr ? 'raté' : 'miss';
+  return fr ? `trop loin : rang ${rank}` : `too far: rank ${rank}`;
+}
+
+// The clock, read on demand rather than announced: `role="timer"` is a live region that
+// defaults to OFF, which is the whole point — a number changing every second must never
+// be spoken every second.
+export function srWordClock(lang: string, seconds: number): string {
+  if (uiLang(lang) === 'fr') return `${seconds} secondes restantes`;
+  return `${seconds} seconds left`;
+}
+
+// The run's end, announced once when the clock reaches zero.
+export function srWordTimeUp(lang: string, total: number): string {
+  if (uiLang(lang) === 'fr') return `temps écoulé — ${total} mots`;
+  return `time up — ${total} words`;
 }
 
 // Screen-reader mirror of the standings lineup's meaningful events (#81) — the visual

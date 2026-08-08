@@ -36,6 +36,14 @@ export interface RankEntry {
   // the player travels, that word included, since they are put down ON a road. Behind
   // the departure, and out in the far field, the line is one trunk.
   road?: number;
+  // How COMMON the group is in the corpus (#163): the 1-based position of its most
+  // frequent embedded form in the frequency-ordered reduced vocabulary — 1 = the
+  // commonest word the game admits, larger = rarer. The group's commonest INFLECTION,
+  // not its representative: that is what a lexeme's rarity feels like to a player.
+  // Another GROUP property, so every alias key repeats it. Emitted by WORD artifacts
+  // only (gen_word.py) — Word mode pays a claim in seconds scaled by it, and a
+  // sentence puzzle has no consumer for it. Optional to every consumer, like `road`.
+  freq?: number;
 }
 
 // One word's whole ranked neighborhood: inputSlug -> { word, rank }. Every alias key
@@ -92,12 +100,13 @@ export interface Puzzle {
 //
 // The rank semantics are the sentence schema's, unchanged — rank 0 is the word itself
 // and carries no `dq`, every rank >= 1 entry carries one, and `word`/`rank`/`dq`/`road`
-// are GROUP properties shared by all of a group's alias keys. Two things differ,
-// both because there is no sentence: `ranks` is ONE flat map (nothing to key it by),
-// and `road` covers the flat top-`ROAD_TOP` (250) — with no start word there is no
-// departure to cut the zone at, and those groups are the whole playing field. That makes
-// the number Word mode's RANGE rather than a safety ceiling, which is why the client's
-// CLAIM_ZONE (web/src/game/wordGame.ts) restates it and the two move together.
+// are GROUP properties shared by all of a group's alias keys. Three things differ, all
+// because there is no sentence: `ranks` is ONE flat map (nothing to key it by);
+// `road` covers the flat top-`ROAD_TOP` (250) — with no start word there is no
+// departure to cut the zone at, and those groups are the whole playing field, which makes
+// the number Word mode's RANGE rather than a safety ceiling (the client's CLAIM_ZONE in
+// web/src/game/wordGame.ts restates it and the two move together); and every group
+// carries `freq`, the corpus rarity Word mode's clock pays a claim by (#163).
 //
 // No `words`/`holes`/`start`/`start_rank`, and no `source`: a lone word has no
 // attribution.
