@@ -61,10 +61,15 @@ export const MISS_COLOR = '#ff1f54';
 //
 //   scale  — font-size multiplier of `--hit-base`. STATIC: survives reduced motion.
 //   holdMs — extra time the label sits before it leaves. A DELAY: survives reduced motion.
-//   lift   — where it comes to rest above the word's centre, px. STATIC once it lands, and
-//            it has to grow with `scale`: these labels are WORDS, so at one fixed lift an
-//            ARCANE sat squarely on the word and hid it. The rare grades tower over the word
-//            instead of smothering it.
+//   lift   — where it comes to rest ABOVE the word's centre, px. Every grade clears the
+//            word entirely (decided 2026-08-09): the label is a WORD of its own and reading
+//            one word through another is reading neither, so the smallest lift here is the
+//            word's own half-height plus a margin, and it grows from there with `scale`.
+//            It also has to pay for the TILT, which is not obvious and was measured: a
+//            rotated box is taller than an upright one by half its WIDTH times the sine of
+//            the angle, and these labels are wide — an 8-character UNCOMMON at 8 degrees
+//            swings its corners ~13px lower than its upright height suggests, which is
+//            exactly enough to land back on the word.
 //   rise   — how far it drifts as it fades, px. Motion. Always well past `lift`.
 //   punch  — the pop's peak scale. Motion.
 //   shake  — multiplier on the word's own shake amplitude. Motion.
@@ -97,12 +102,28 @@ export interface RarityHitStyle {
 }
 
 export const RARITY_HIT: readonly RarityHitStyle[] = [
-  { scale: 1, holdMs: 0, lift: 16, rise: 44, punch: 1.25, shake: 0.6, wave: 0 }, // COMMON
-  { scale: 1.35, holdMs: 120, lift: 22, rise: 54, punch: 1.3, shake: 0.85, wave: 0 }, // UNCOMMON
-  { scale: 1.7, holdMs: 260, lift: 32, rise: 70, punch: 1.35, shake: 1.1, wave: 3 }, // RARE
-  { scale: 2.1, holdMs: 420, lift: 44, rise: 90, punch: 1.4, shake: 1.45, wave: 5 }, // OBSCURE
-  { scale: 2.6, holdMs: 600, lift: 58, rise: 112, punch: 1.45, shake: 1.9, wave: 8 }, // ARCANE
+  { scale: 1, holdMs: 0, lift: 54, rise: 96, punch: 1.25, shake: 0.6, wave: 0 }, // COMMON
+  { scale: 1.35, holdMs: 120, lift: 60, rise: 104, punch: 1.3, shake: 0.85, wave: 0 }, // UNCOMMON
+  { scale: 1.7, holdMs: 260, lift: 68, rise: 116, punch: 1.35, shake: 1.1, wave: 3 }, // RARE
+  { scale: 2.1, holdMs: 420, lift: 78, rise: 130, punch: 1.4, shake: 1.45, wave: 5 }, // OBSCURE
+  { scale: 2.6, holdMs: 600, lift: 90, rise: 148, punch: 1.45, shake: 1.9, wave: 8 }, // ARCANE
 ];
+
+// The label's resting TILT, in degrees (decided 2026-08-09). It leans a random way on every
+// hit — the sign is a coin flip and the amount lands somewhere in this band — so a run of
+// guesses reads as a stack of hand-thrown notes rather than one stamp printed over and over.
+// Small on purpose: the type is a pixel font and rotation is the one transform it cannot
+// survive much of (a diagonal edge on a glyph built out of squares reads as a rendering
+// fault long before it reads as an angle).
+export const HIT_TILT_MIN_DEG = 3;
+export const HIT_TILT_MAX_DEG = 8;
+
+// One roll. Called once per hit, in the submit handler, so a re-render never re-tilts a
+// label that is already on screen.
+export function rollHitTilt(): number {
+  const sign = Math.random() < 0.5 ? -1 : 1;
+  return sign * (HIT_TILT_MIN_DEG + Math.random() * (HIT_TILT_MAX_DEG - HIT_TILT_MIN_DEG));
+}
 
 // A miss is the quietest thing that can happen: it costs nothing but the seconds spent
 // typing it, so it lands at the bottom of the ladder — in red, saying MISS, which no size

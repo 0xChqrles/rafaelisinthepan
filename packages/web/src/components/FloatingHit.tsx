@@ -10,6 +10,7 @@ export const HIT_FADE_MS = 520;
 const DEFAULT_LIFT = 14; // px above the word's centre where the label comes to rest
 const DEFAULT_RISE = 42; // px the label drifts up as it fades
 const DEFAULT_PUNCH = 1.35; // the pop's peak scale
+const DEFAULT_TILT = 0; // degrees the label rests at — dead straight, as it always was
 
 // Floating indicator shown over a word on a guess. The SENTENCE game uses it for the
 // distance number (or "MISS") — see `.floating-hit` in index.css; `color` is supplied by
@@ -32,6 +33,7 @@ export default function FloatingHit({
   lift = DEFAULT_LIFT,
   rise = DEFAULT_RISE,
   punch = DEFAULT_PUNCH,
+  tilt = DEFAULT_TILT,
   onDone,
 }: {
   id: number; // identifies this hit so the parent can clear it (multi-hit safe)
@@ -50,6 +52,10 @@ export default function FloatingHit({
   lift?: number;
   rise?: number;
   punch?: number;
+  // The angle it comes to rest at. Word mode rolls a random one per hit; the entry and
+  // overshoot rotations stay RELATIVE to it, so a zero default reproduces the straight
+  // label the sentence game has always thrown.
+  tilt?: number;
   onDone?: (id: number) => void;
 }) {
   useEffect(() => {
@@ -67,6 +73,7 @@ export default function FloatingHit({
       | '--hit-lift'
       | '--hit-rise'
       | '--hit-punch'
+      | '--hit-tilt'
       | '--hit-len',
       string
     > = {
@@ -77,6 +84,7 @@ export default function FloatingHit({
     '--hit-lift': `${lift}px`,
     '--hit-rise': `${rise}px`,
     '--hit-punch': String(punch),
+    '--hit-tilt': `${tilt}deg`,
     // How many glyphs wide this is. The pixel font advances exactly 1em per glyph, so the
     // CSS can cap the size at what the column holds — the same arithmetic `fitWord` does,
     // and the reason a 2.6x ARCANE cannot run off a phone. Harmless where no surface

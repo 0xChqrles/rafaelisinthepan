@@ -29,8 +29,10 @@ import {
   rarityStep,
   replayWordRun,
   runMs,
+  tallyRarity,
   totalBonus,
   wordGuessKey,
+  zoneGroups,
 } from './wordGame';
 
 // A corpus to measure rarity against. Round, so a grade's `within` fraction reads straight
@@ -173,6 +175,36 @@ describe('bonusSeconds — what a claim pays the clock (#163)', () => {
 
   it('an unknown rarity pays the floor (freq is optional by contract)', () => {
     expect(bonusSeconds(undefined, CORPUS)).toBe(RARITY_LADDER[0].seconds);
+  });
+});
+
+describe('zoneGroups / tallyRarity — what the field holds, by grade', () => {
+  it('counts each zone GROUP once, however many aliases key it', () => {
+    // `tropicales`/`tropical` are one group and must not be two, exactly as they are one
+    // guess to `wordGuessKey`. The zone edge is included and everything past it is not.
+    const groups = zoneGroups(RANKS);
+    expect(groups.map((g) => g.rank)).toEqual([1, 2, CLAIM_ZONE]);
+  });
+
+  it('excludes the day\'s word itself — it is public, and never claimable', () => {
+    expect(zoneGroups(RANKS).some((g) => g.rank === 0)).toBe(false);
+  });
+
+  it('tallies a set of groups by grade, and the two halves count by ONE rule', () => {
+    // The readout is `found / total`, so the numerator and the denominator have to be
+    // counted the same way or the fraction lies: a run that claimed every group of a grade
+    // must read as complete.
+    const total = tallyRarity(zoneGroups(RANKS), CORPUS);
+    expect(total[RARITY_NAMES[0]]).toBe(2); // rank 1 (in grade 0) + rank CLAIM_ZONE (no freq)
+    expect(total[RARITY_NAMES[LAST]]).toBe(1); // rank 2
+    expect(Object.values(total).reduce((a, b) => a + b, 0)).toBe(zoneGroups(RANKS).length);
+
+    const found = tallyRarity(replayWordRun(RANKS, ['tropical', 'cocotier']).claimed, CORPUS);
+    expect(found[RARITY_NAMES[0]]).toBe(1);
+    expect(found[RARITY_NAMES[LAST]]).toBe(1);
+    for (const name of RARITY_NAMES) {
+      expect(found[name], `${name} found <= total`).toBeLessThanOrEqual(total[name]);
+    }
   });
 });
 

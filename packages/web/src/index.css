@@ -1235,10 +1235,15 @@ button * {
    that is not decoration: a rarity label is a WORD and the rarest are drawn at twice the
    base size, so at the default 14px an ARCANE sat squarely ON the word it was about and hid
    it. Bigger grades tower over it instead. */
+/* Every rotation is RELATIVE to `--hit-tilt`, the angle the label comes to rest at. Word
+   mode rolls that a random way per hit so a run of guesses reads as hand-thrown notes rather
+   than one stamp printed over and over; a zero default leaves the sentence game's label dead
+   straight, entering at -6deg and overshooting to +2 exactly as it always has. */
 @keyframes hit-pop-in {
   0% {
     opacity: 0;
-    transform: translate(-50%, calc(-50% + 4px)) scale(0.5) rotate(-6deg);
+    transform: translate(-50%, calc(-50% + 4px)) scale(0.5)
+      rotate(calc(var(--hit-tilt, 0deg) - 6deg));
   }
   /* The overshoot peaks 4px BELOW where it lands and settles up into it. Written as
      `lift - 4` rather than a flat 10px so the WHOLE trajectory rises with the grade: at the
@@ -1247,21 +1252,24 @@ button * {
   55% {
     opacity: 1;
     transform: translate(-50%, calc(-50% - var(--hit-lift, 14px) + 4px))
-      scale(var(--hit-punch, 1.35)) rotate(2deg);
+      scale(var(--hit-punch, 1.35)) rotate(calc(var(--hit-tilt, 0deg) + 2deg));
   }
   100% {
     opacity: 1;
-    transform: translate(-50%, calc(-50% - var(--hit-lift, 14px))) scale(1) rotate(0deg);
+    transform: translate(-50%, calc(-50% - var(--hit-lift, 14px))) scale(1)
+      rotate(var(--hit-tilt, 0deg));
   }
 }
 @keyframes hit-fade-out {
   0% {
     opacity: 1;
-    transform: translate(-50%, calc(-50% - var(--hit-lift, 14px))) scale(1);
+    transform: translate(-50%, calc(-50% - var(--hit-lift, 14px))) scale(1)
+      rotate(var(--hit-tilt, 0deg));
   }
   100% {
     opacity: 0;
-    transform: translate(-50%, calc(-50% - var(--hit-rise, 42px))) scale(0.86);
+    transform: translate(-50%, calc(-50% - var(--hit-rise, 42px))) scale(0.86)
+      rotate(var(--hit-tilt, 0deg));
   }
 }
 
@@ -3580,6 +3588,62 @@ button * {
    together are what give the prompt its room (see `.game.word-game`). */
 .input-area.word-prompt {
   gap: clamp(16px, 2.4vh, 24px);
+}
+
+/* The RUN's two ambient readouts, one on each side of the prompt (#163, 2026-08-09). Both
+   RESERVE their full footprint from the first frame and never grow: the day's word sits in
+   the flexible space above them, and a column that grew as the run filled it would walk the
+   word up the screen guess by guess. */
+
+/* Above the prompt, left-aligned with it: the last few finds, newest against the prompt and
+   older ones riding up and out. `flex-end` is what makes it a chat rather than a list — the
+   column fills from the bottom, so the newest line is always in the same place and the
+   oldest simply leaves through the top. `overflow: hidden` is what "just disappear" means. */
+.word-history {
+  width: 100%;
+  height: calc(5 * 1.45em);
+  font-family: var(--vt);
+  font-size: clamp(10px, 2.6vw, 13px);
+  line-height: 1.45;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: flex-start;
+  overflow: hidden;
+  pointer-events: none;
+}
+.history-line {
+  white-space: nowrap;
+  /* A new line arrives; the ones above it are already where they belong, so only the
+     newcomer animates (it is the only element that mounts). */
+  animation: history-in 0.22s ease-out;
+}
+.history-rank {
+  font-size: 0.7em;
+  margin-left: 2px;
+  vertical-align: super;
+}
+@keyframes history-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* Below the prompt: `found/total` per grade, commonest first, the COLOUR the only label.
+   It sits where the strike row used to and takes that row's tight seam against the keyboard
+   for the same reason — it reports on the guessing those keys do. */
+.word-tally {
+  width: 100%;
+}
+.tally-row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: clamp(6px, 2.4vw, 14px);
+  font-family: var(--press);
+  font-size: clamp(8px, 2.5vw, 11px);
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
 }
 /* The WINDOW: a non-scrolling frame around the post-mortem's scroller, which is what lets it
    wear the shared TORN EDGES (`.scroll-torn`) — the revealed line runs far taller than the

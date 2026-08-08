@@ -32,6 +32,7 @@ export interface WordHit {
   lift: number;
   rise: number;
   punch: number;
+  tilt: number; // degrees, rolled per hit — it leans a random way every time
   shake: number; // multiplier on the word's own shake
   wave: number; // the letter wave's amplitude in px; 0 below RARE, where there is no wave
   fadeDelayMs: number; // how long the label holds before it leaves — rarity buys hold too
@@ -102,6 +103,7 @@ export default function WordSubject({
             lift={hit.lift}
             rise={hit.rise}
             punch={hit.punch}
+            tilt={hit.tilt}
             startDelayMs={0}
             fadeDelayMs={hit.fadeDelayMs}
             onDone={onHitDone}

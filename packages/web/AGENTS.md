@@ -21,6 +21,8 @@
       game/wordGame.ts        Word mode's rules + economy (CLAIM_ZONE, the rarity ladder, the clock)
       components/rarity.ts    how a rarity grade LOOKS and how hard it lands (pinned colours + intensity)
       components/WordSubject.tsx  the day's word while the run is on: the word alone, centred
+      components/WordHistory.tsx  the last few claims, above the prompt, fading with age
+      components/WordTally.tsx    found/total per grade under the prompt, colour as the only label
       hooks/useCountdown.ts   the run's deadline, as a ticking clock (HUD) and as one flip (screen)
       game/scoring.ts         s(rank), holeProgress, computeProgress
       components/Phrase.tsx,Hole.tsx,WordInput.tsx,FloatingHit.tsx  rendering
@@ -329,6 +331,33 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (`--shake-amp` 1, `--wave-lift` 3px) — `word-shake` is shared by the sentence hole, this
   word AND the standings sprite, and `hole-wave` by the hole's ambient ripple, so only Word
   mode's own rules set them.
+  **The label sits ABOVE the word, at a random TILT** (decided 2026-08-09): every grade's
+  `lift` clears the word entirely — reading one word through another is reading neither —
+  and the label leans a coin-flip's worth of `HIT_TILT_MIN/MAX_DEG` (3–8°) each time, so a
+  run of guesses reads as hand-thrown notes rather than one stamp printed over and over.
+  Every rotation in the keyframes is RELATIVE to `--hit-tilt`, which defaults to 0 and keeps
+  the sentence game's label dead straight. **The lift pays for the tilt as well as the type,
+  and that is not obvious**: a rotated box is taller than an upright one by half its WIDTH
+  times the sine of the angle, and these labels are wide — an 8-character UNCOMMON at 8°
+  swings its corners ~13px lower than its height suggests, which was exactly enough to land
+  it back on the word (measured, then fixed).
+  **Two ambient readouts bracket the prompt during a run** (decided 2026-08-09), and both
+  RESERVE their full footprint from the first frame — the word sits in the flexible space
+  above them, and a column that grew as the run filled it would walk the word up the screen
+  guess by guess. Above it, `components/WordHistory`: the last five CLAIMS, newest against
+  the prompt, older ones riding up, fading, and gone — a chat, not a list, which is what
+  `justify-content: flex-end` + `overflow: hidden` buys. It is where the RANK went: the float
+  carries the grade now, but "how close was that one?" is a question a moment later, and a
+  log is where a moment later belongs, so each line is the word in its grade's colour with
+  its exponent. Below it, `components/WordTally`: `found/total` per grade, commonest first,
+  with **the COLOUR as the only label** — no names, no legend, since the five colours are
+  already the language the float speaks. A grade the day's zone does not contain is DROPPED
+  rather than shown as `0/0`: an English board often has no ARCANE group at all, and a
+  permanent `0/0` reads as a goal being failed rather than one the day never offered. Both
+  totals come from `zoneGroups`/`tallyRarity` (`game/wordGame.ts`), so the numerator and the
+  denominator are counted by ONE rule — a group is its RANK, once, however many aliases key
+  it. The history is decorative (every line was announced when it landed); the tally carries
+  an sr line, because a colour says nothing to a reader.
   **The rarity COLOURS are copies of existing ramp stops, measured, and pinned**
   (`components/rarity.ts` + `rarity.test.ts`, mirroring `LANE_COLORS`/`laneColors.test.ts`):
   `--muted` / progress-green / progress-cyan / heat-electric-violet / progress-pink, minimum

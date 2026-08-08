@@ -9,16 +9,26 @@ import {
   rarityOf,
   rarityStep,
   replayWordRun,
+  tallyRarity,
   totalBonus,
   wordGuessKey,
+  zoneGroups,
   RARITY_LADDER,
 } from '../game/wordGame';
-import { MISS_COLOR, MISS_HIT, RARITY_COLORS, RARITY_HIT } from '../components/rarity';
+import {
+  MISS_COLOR,
+  MISS_HIT,
+  RARITY_COLORS,
+  RARITY_HIT,
+  rollHitTilt,
+} from '../components/rarity';
 import { buildWordBoard } from '../game/wordBoard';
 import { canExtend } from '../game/keyboard';
 import useScrollEdges from '../hooks/useScrollEdges';
 import WordBoard, { WordTerminus } from '../components/WordBoard';
 import WordSubject, { type WordHit } from '../components/WordSubject';
+import WordTally from '../components/WordTally';
+import WordHistory from '../components/WordHistory';
 import WordTimer, { type TimeGain } from '../components/WordTimer';
 import CellDigits from '../components/CellDigits';
 import Button from '../components/Button';
@@ -147,6 +157,11 @@ function WordRound({
   // the run is over; that is the clock's, above.
   const run = useMemo(() => replayWordRun(ranks, tried), [ranks, tried]);
   const score = run.claimed.length;
+
+  // What today's field HOLDS, by grade — the denominator of the tally under the prompt.
+  // A property of the puzzle, so it is walked once per artifact and never per guess.
+  const zoneTally = useMemo(() => tallyRarity(zoneGroups(ranks), corpusSize), [ranks, corpusSize]);
+  const foundTally = useMemo(() => tallyRarity(run.claimed, corpusSize), [run.claimed, corpusSize]);
 
   // End presentation is transient, not persisted. A live run lets the clock's last moment
   // play out, then the field arrives and the prompt leaves, then the keyboard drops and
@@ -370,6 +385,7 @@ function WordRound({
         lift: style.lift,
         rise: style.rise,
         punch: style.punch,
+        tilt: rollHitTilt(),
         shake: style.shake,
         wave: style.wave,
         fadeDelayMs,
@@ -471,6 +487,13 @@ function WordRound({
             </>
           ) : (
             <>
+              {/* The run's two ambient readouts, bracketing the prompt: what the last few
+                  finds WERE above it, and how much of each grade is still out there below
+                  it. Both keep their footprint whatever they hold — the history is a
+                  fixed-height column and the tally a fixed row — so the word above never
+                  shifts as a run fills them. */}
+              <WordHistory claimed={run.claimed} corpusSize={corpusSize} />
+
               <div
                 className={`input-area word-prompt${promptExiting ? ' solving' : ''}${
                   showResults ? ' retired' : ''
@@ -488,6 +511,8 @@ function WordRound({
                   active={playing}
                 />
               </div>
+
+              <WordTally found={foundTally} total={zoneTally} lang={lang} />
 
               <div className={`tray${keyboardLeaving ? ' kb-leaving' : ''}`}>
                 {!showResults && (
