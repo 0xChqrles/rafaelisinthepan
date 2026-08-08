@@ -52,80 +52,40 @@ export const RARITY_COLORS: Record<Rarity, string> = {
 // Kept as a constant beside the grades so the reservation is stated where it is enforced.
 export const MISS_COLOR = '#ff1f54';
 
-// --- the intensity ---------------------------------------------------------------------
-// What makes ARCANE FEEL more than COMMON, as one table indexed by `rarityStep` rather than
-// five rules. Five channels, because two of them have to survive `prefers-reduced-motion`
-// on their own: that rule collapses DURATIONS but keeps DELAYS (see the reduced-motion note
-// in index.css), so a ladder built only out of movement would not exist at all for a player
-// who asked for none.
+// --- what a grade LOOKS like ------------------------------------------------------------
+// Two channels, and no more, because the feedback DOES NOT ANIMATE (2026-08-09): several
+// choreographies were tried on it — a pop, a stamp landing on the word, a shockwave through
+// the letters — and all were rejected, so the drop/rise/punch/shake/wave that fed them are
+// gone with them. What is left is what a grade IS on screen: how big, and how long.
 //
-//   scale  — font-size multiplier of `--hit-base`. STATIC: survives reduced motion.
-//   holdMs — how long it SITS ON THE WORD before leaving. A DELAY: survives reduced motion,
-//            and the channel that matters most, because the label's whole job is to be read.
-//   drop   — how far ABOVE the word it falls from, px. The label lands ON the word and rests
-//            there (decided 2026-08-09) — a grade is a verdict on the guess, not a footnote
-//            beside it — so this is where the stamp comes DOWN from, not where it stops.
-//   rise   — how far it flies when it leaves, straight up, px. Motion.
-//   shake  — multiplier on the word's own shake amplitude. Motion.
-//   wave   — the LETTER WAVE: the day's word ripples letter by letter, at this amplitude in
-//            px. 0 is off. It arrives at RARE and grows from there — the top half of the
-//            ladder does something the bottom half simply does not do, which reads as a
-//            different KIND of event rather than a louder one. It is also the only channel
-//            here that costs no width, which is what lets the ladder keep climbing on a
-//            phone (see the note on the size cap below).
+//   scale  — font-size multiplier of `--hit-base`.
+//   holdMs — how long the label stays before it goes.
 //
-// NOTHING HERE SCALES THE LABEL, and that is a rule rather than an omission (2026-08-09):
-// the type is a pixel font, and animating `scale` on it renders blurry intermediate frames
-// for the whole transition — the same reason every sprite in this app takes an exact integer
-// scale and never a fractional one. The label arrives at its final size and stays there; the
-// IMPACT is carried by what it does to the WORD (the shake and the shockwave), which is the
-// app's own grammar for a hit. `scale` below is a static type size, never a keyframe.
+// THE LADDER IS TUNED AGAINST THE WORD. The label sits on the day's word, which `fitWord`
+// draws at up to SUBJECT_PX (40), and it is a badge ON that word — so it stays clearly
+// SMALLER than it, desktop 18→30px and mobile 14→24px. Earlier cuts overshot in both
+// directions: one so small the grades barely differed, one where ARCANE matched the word and
+// swallowed it.
 //
-// THE LADDER IS TUNED AGAINST THE WORD (retuned 2026-08-09). The label lands ON the day's
-// word, which `fitWord` draws at up to SUBJECT_PX (40), and it is a STAMP on that word — so
-// it stays clearly smaller than it, topping out around three quarters. Two earlier cuts
-// overshot in both directions: one so small the grades barely differed, one where ARCANE
-// matched the word and swallowed it.
-//
-// The sizes are ALSO capped by the label's own width. A grade name is a WORD — `UNCOMMON` is
-// 8 characters, `OBSCURE` 7 — so `.rarity-hit` takes the SMALLER of `base x scale` and what
-// the column can hold, exactly as `fitWord` does for the route drawing's words. At these
-// sizes the cap no longer bites at any width; it stays as the guard that a future size bump
-// cannot silently run off a phone, and the ladder is tuned so that if it ever does bite the
-// ORDER still holds — a capped OBSCURE must never render smaller than an uncapped RARE.
+// The size is ALSO capped by the label's own width. A grade name is a WORD — `UNCOMMON` is 8
+// characters, `OBSCURE` 7 — so `.rarity-hit` takes the SMALLER of `base x scale` and what the
+// column can hold, exactly as `fitWord` does for the route drawing's words. At these sizes
+// the cap does not bite at any width; it stays as the guard that a future size bump cannot
+// silently run off a phone, and the ladder is tuned so that if it ever does bite the ORDER
+// still holds — a capped OBSCURE must never render smaller than an uncapped RARE.
 export interface RarityHitStyle {
   scale: number;
   holdMs: number;
-  drop: number;
-  rise: number;
-  shake: number;
-  wave: number;
 }
 
 export const RARITY_HIT: readonly RarityHitStyle[] = [
-  { scale: 1, holdMs: 220, drop: 20, rise: 90, shake: 0.6, wave: 0 }, // COMMON
-  { scale: 1.15, holdMs: 340, drop: 24, rise: 100, shake: 0.85, wave: 0 }, // UNCOMMON
-  { scale: 1.32, holdMs: 500, drop: 29, rise: 112, shake: 1.1, wave: 4 }, // RARE
-  { scale: 1.5, holdMs: 700, drop: 35, rise: 126, shake: 1.45, wave: 6 }, // OBSCURE
-  { scale: 1.68, holdMs: 950, drop: 42, rise: 142, shake: 1.9, wave: 9 }, // ARCANE
+  { scale: 1, holdMs: 700 }, // COMMON
+  { scale: 1.15, holdMs: 850 }, // UNCOMMON
+  { scale: 1.32, holdMs: 1050 }, // RARE
+  { scale: 1.5, holdMs: 1300 }, // OBSCURE
+  { scale: 1.68, holdMs: 1600 }, // ARCANE
 ];
 
-// The label's resting TILT, in degrees (decided 2026-08-09). It leans a random way on every
-// hit — the sign is a coin flip and the amount lands somewhere in this band — so a run of
-// guesses reads as a stack of hand-thrown notes rather than one stamp printed over and over.
-// SMALL on purpose, and narrowed to 2-5 degrees on 2026-08-09: the type is a pixel font and
-// rotation is the one transform it cannot survive much of — a diagonal edge on a glyph built
-// out of squares reads as a rendering fault long before it reads as an angle. Enough to say
-// "placed by hand", not enough to shred the glyphs.
-export const HIT_TILT_MIN_DEG = 2;
-export const HIT_TILT_MAX_DEG = 5;
-
-// One roll. Called once per hit, in the submit handler, so a re-render never re-tilts a
-// label that is already on screen.
-export function rollHitTilt(): number {
-  const sign = Math.random() < 0.5 ? -1 : 1;
-  return sign * (HIT_TILT_MIN_DEG + Math.random() * (HIT_TILT_MAX_DEG - HIT_TILT_MIN_DEG));
-}
 
 // A miss is the quietest thing that can happen: it costs nothing but the seconds spent
 // typing it, so it lands at the bottom of the ladder — in red, saying MISS, which no size

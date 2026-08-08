@@ -1146,37 +1146,28 @@ button * {
   display: inline-block;
   animation: word-shake 0.4s ease-in-out var(--hit-delay, 0ms);
 }
-/* A damped 5-5-4-4-2-2px oscillation with its rotation decaying to nothing. `--shake-amp`
-   scales the whole thing and DEFAULTS TO 1, which is load-bearing: three surfaces share
-   these keyframes — the sentence hole (`.hole-word.hit-shake`), Word mode's word
-   (`.word-subject-text.hit-shake`) and the standings sprite losing its lead
-   (`.lineup-sprite.hit`) — and only Word mode sets the variable, so the other two keep the
-   exact shake they have always had. Word mode spends it on RARITY (#163): an ARCANE find
-   hits the word visibly harder than a COMMON one. Transform-only, so no amplitude reflows
-   anything. */
 @keyframes word-shake {
   0%,
   100% {
     transform: translateX(0);
   }
   15% {
-    transform: translateX(calc(-5px * var(--shake-amp, 1))) rotate(calc(-2deg * var(--shake-amp, 1)));
+    transform: translateX(-5px) rotate(-2deg);
   }
   30% {
-    transform: translateX(calc(5px * var(--shake-amp, 1))) rotate(calc(2deg * var(--shake-amp, 1)));
+    transform: translateX(5px) rotate(2deg);
   }
   45% {
-    transform: translateX(calc(-4px * var(--shake-amp, 1)))
-      rotate(calc(-1.5deg * var(--shake-amp, 1)));
+    transform: translateX(-4px) rotate(-1.5deg);
   }
   60% {
-    transform: translateX(calc(4px * var(--shake-amp, 1))) rotate(calc(1.5deg * var(--shake-amp, 1)));
+    transform: translateX(4px) rotate(1.5deg);
   }
   75% {
-    transform: translateX(calc(-2px * var(--shake-amp, 1)));
+    transform: translateX(-2px);
   }
   90% {
-    transform: translateX(calc(2px * var(--shake-amp, 1)));
+    transform: translateX(2px);
   }
 }
 
@@ -1235,32 +1226,27 @@ button * {
   }
 }
 
-/* --- Word mode's RARITY LABEL (#163): the grade a claim earned, or MISS, STAMPED ONTO the
-   day's word. A different object from the float above and a deliberately different animation
-   (decided 2026-08-09): that one pops UP off the word and drifts away as a footnote to it,
-   which is right for a distance — a remark ABOUT the word. A grade is not a remark, it is a
-   VERDICT on the guess, so this one FALLS onto the word, SITS there long enough to be read,
-   and then leaves straight up.
+/* --- Word mode's RARITY LABEL (#163): the grade a claim earned, or MISS, shown on the day's
+   word.
 
-   IT NEVER SCALES, and that is the rule the first two cuts of this got wrong. The type is a
-   pixel font: animating `scale` on it renders blurry intermediate frames for the whole
-   transition, which is the same reason every sprite in this app takes an exact integer scale.
-   So the motion is TRANSLATE AND OPACITY ONLY, the label arrives at its final size, and the
-   IMPACT is carried by what it does to the WORD — the shake and the shockwave, both timed to
-   the landing. There is no border either: nothing in this app outlines type, and a knockout
-   ring made it read as a cheap sticker. What separates it from the word is that the word
-   stands down under it (see `word-dim`).
+   IT DOES NOT ANIMATE (decided 2026-08-09). Several choreographies were tried here — a pop,
+   a stamp falling onto the word, a shockwave through the word's letters — and every one was
+   rejected, so what is left is deliberately the plain thing: the label appears at its size,
+   its colour and its place, stays for as long as its grade earns, and goes. Two rules worth
+   keeping if motion is ever added back, because both were learned expensively: NOTHING IN
+   THIS APP OUTLINES TYPE (a knockout ring to separate the label from the word read as a
+   cheap sticker), and ANIMATING `scale` ON THE PIXEL FONT renders blurry intermediate frames
+   for the whole transition — the same reason every sprite here takes an exact integer scale.
 
-   `--hit-tilt` is the angle it lands at, rolled a random way per hit so a run of guesses
-   reads as hand-thrown notes rather than one stamp printed over and over — small, because
-   rotation is the other transform pixel type cannot take much of. `--hit-scale` multiplies
-   the surface's `--hit-base`, which is how the five grades differ in size, and that size is
-   CAPPED by what the column holds (the same arithmetic `fitWord` applies to the route
-   drawing's words, since the pixel font advances exactly 1em per glyph). --- */
+   `--hit-scale` multiplies the surface's `--hit-base`, which is how the five grades differ
+   in size, and that size is CAPPED by what the column holds (the same arithmetic `fitWord`
+   applies to the route drawing's words, since the pixel font advances exactly 1em per
+   glyph). --- */
 .rarity-hit {
   position: absolute;
   left: 50%;
   top: 50%;
+  transform: translate(-50%, -50%);
   font-family: var(--press);
   font-size: min(
     calc(var(--hit-base, 24px) * var(--hit-scale, 1)),
@@ -1268,37 +1254,6 @@ button * {
   );
   white-space: nowrap;
   pointer-events: none;
-  opacity: 0;
-  animation:
-    rarity-stamp var(--stamp-dur, 180ms) cubic-bezier(0.55, 0, 0.85, 0.4) forwards,
-    rarity-vanish 0.42s cubic-bezier(0.5, 0, 0.9, 0.35) var(--hit-fade-delay, 320ms) forwards;
-}
-/* Down onto the word, ACCELERATING the whole way and stopping dead. No settle, no rebound:
-   the recoil belongs to the thing that was hit, not to the thing that hit it. */
-@keyframes rarity-stamp {
-  0% {
-    opacity: 0;
-    transform: translate(-50%, calc(-50% - var(--hit-drop, 20px))) rotate(var(--hit-tilt, 0deg));
-  }
-  35% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 1;
-    transform: translate(-50%, -50%) rotate(var(--hit-tilt, 0deg));
-  }
-}
-/* Then straight up and out, accelerating away rather than drifting — the word is handed back
-   rather than slowly uncovered. */
-@keyframes rarity-vanish {
-  0% {
-    opacity: 1;
-    transform: translate(-50%, -50%) rotate(var(--hit-tilt, 0deg));
-  }
-  100% {
-    opacity: 0;
-    transform: translate(-50%, calc(-50% - var(--hit-rise, 90px))) rotate(var(--hit-tilt, 0deg));
-  }
 }
 
 /* --- prompt zone: input area ⇄ solved caption, no reserved heights ---
@@ -3864,73 +3819,23 @@ button * {
   font-family: var(--vt);
   line-height: 1.15;
   color: var(--accent);
-  /* The letters are boxes so the wave has something to ripple; keep the word one line. */
+  /* One line, whatever the word. */
   white-space: nowrap;
 }
-/* The word's own reaction to a guess, and the whole of it is timed to the moment the label
-   LANDS (`--impact-delay`), not to the moment it is thrown. Firing at mount was the other
-   half of what read as uncanny (2026-08-09): the word flinched, and then something hit it.
-   The shake is the sentence game's, at an amplitude the rarity sets (`--shake-amp` on
-   @keyframes word-shake, which defaults to 1 everywhere else). */
-.word-subject-text.hit-shake {
-  animation:
-    word-shake 0.4s ease-in-out var(--impact-delay, 0ms) both,
-    word-dim 0.2s cubic-bezier(0.7, 0, 1, 0.6) var(--impact-delay, 0ms) forwards,
-    word-undim 0.3s ease-out var(--hit-fade-delay, 320ms) forwards;
-}
-/* The word STANDS DOWN while the label is on it, and comes back as the label leaves. Two
-   words of the same size in the same place cannot both be read — a cyan RARE over the blue
-   day's word was measurably far apart in colour and still illegible — so this makes the
-   choice explicit instead of leaving them to fight, and it turns the label's exit into the
-   moment the word is handed back.
-   The fade is EASE-IN, and that is the whole trick: the word holds near full brightness
-   through the first half of its 200ms and only then drops away, which is exactly the window
-   the impact wave peaks in. Ghost it on contact and the shockwave the grade earned would
-   play on something nobody can see; ghost it just after, and both land.
-   Delays with short durations, so reduced motion keeps the timing and loses only the ramp:
-   the word still steps aside at the impact and returns at the exit. */
-@keyframes word-dim {
-  to {
-    opacity: var(--stamp-dim, 0.2);
-  }
-}
-@keyframes word-undim {
-  from {
-    opacity: var(--stamp-dim, 0.2);
-  }
-  to {
-    opacity: 1;
-  }
-}
-/* From RARE up, the letters are DRIVEN DOWN by the impact and spring back — a shockwave out
-   of the point of contact, not a ripple across the word. Two things make it read that way
-   rather than as an unrelated animation that happens to follow:
-   - it starts AT the impact, like the shake;
-   - `--ring` is each letter's distance from the CENTRE, not its index, so the middle letters
-     move first and the outer ones last. A left-to-right ripple has a direction and therefore
-     a source somewhere off to the left; a stamp lands in the middle.
-   Down rather than up, because that is where a thing falling on you pushes. */
-.word-subject-text.wave .hole-letter {
-  animation: word-impact var(--wave-dur, 260ms) cubic-bezier(0.3, 0, 0.2, 1)
-    calc(var(--impact-delay, 0ms) + var(--ring, 0) * var(--wave-step, 28ms)) both;
-}
-@keyframes word-impact {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  38% {
-    transform: translateY(var(--wave-lift, 3px));
-  }
+/* The word STEPS BACK while a grade is on it. Not a flourish and not a transition — the
+   label sits on top of it, and two words of the same size in the same place cannot both be
+   read (measured on the worst case, a cyan RARE over the blue day's word: at 0.45 and 0.32
+   they are mud, at 0.2 the label is clean). A plain state, on and off with the label. */
+.word-subject-text.stamped {
+  opacity: var(--stamp-dim, 0.2);
 }
 @media (max-width: 640px) {
   .word-frame {
     --wordw: calc(min(430px, 100vw - 20px - 28px) - var(--gutter) - var(--railw) - 18px);
   }
-  /* The page inset narrows to 14px a side here, and the float shrinks with it. The label is
-     a WORD, so its width is the constraint, and the widest moment is a rare grade at the
-     peak of its pop: at 320px (292px usable) ARCANE runs 6 x 13 x 2 = 156px, 265px at the
-     1.7 punch. The desktop base would have run it clean off the screen. */
+  /* The page inset narrows to 14px a side here, and the label shrinks with it: it is a WORD,
+     so its width is the constraint, and the desktop base would run the widest grades close
+     to the edge of a 320px screen. */
   .word-subject {
     --wordw: min(430px, calc(100vw - 28px));
   }

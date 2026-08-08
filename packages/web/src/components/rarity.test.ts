@@ -102,36 +102,22 @@ describe('rarity colours track the palette stops they were copied from', () => {
   });
 });
 
-// The other half of the presentation: a grade must not merely LOOK different, it must LAND
-// differently — the point of naming them at all. Asserted as a shape (monotonic, one row
-// per grade), never as five typed-out numbers, so the table stays a tuning knob.
-describe('rarity intensity escalates with the ladder', () => {
+// The other half of the presentation: a rarer grade must read as more. Since the feedback
+// does not animate (2026-08-09), that is carried by exactly two things — how big the label
+// is and how long it stays — and both are asserted as a SHAPE (monotonic, one row per
+// grade), never as typed-out numbers, so the table stays a tuning knob.
+describe('rarity presentation escalates with the ladder', () => {
   it('has one row per grade, indexed by rarityStep', () => {
     expect(RARITY_HIT).toHaveLength(RARITY_LADDER.length);
     for (const name of RARITY_NAMES) expect(RARITY_HIT[rarityStep(name)]).toBeDefined();
   });
 
-  it('every graded channel is strictly stronger at a rarer grade', () => {
-    for (const channel of ['scale', 'holdMs', 'drop', 'rise', 'shake'] as const) {
+  it('every channel is strictly stronger at a rarer grade', () => {
+    for (const channel of ['scale', 'holdMs'] as const) {
       const values = RARITY_HIT.map((row) => row[channel]);
       for (let i = 1; i < values.length; i += 1) {
         expect(values[i], `${channel} at step ${i}`).toBeGreaterThan(values[i - 1]);
       }
-    }
-  });
-
-  it('the letter WAVE is a threshold, not a dial: off at the bottom, on and growing above', () => {
-    // The wave is the one channel that is absent rather than quiet at the common end —
-    // which is the point of it. It makes the top of the ladder a different KIND of event
-    // instead of a louder one, and it is why the ladder can keep climbing on a phone: a
-    // ripple costs no width, where every other channel does.
-    const waves = RARITY_HIT.map((row) => row.wave);
-    expect(waves[0], 'the commonest grade does not ripple').toBe(0);
-    // Once it starts it never stops and never weakens.
-    const firstOn = waves.findIndex((w) => w > 0);
-    expect(firstOn).toBeGreaterThan(0);
-    for (let i = firstOn; i < waves.length; i += 1) {
-      expect(waves[i], `wave at step ${i}`).toBeGreaterThan(i === firstOn ? 0 : waves[i - 1]);
     }
   });
 
@@ -155,16 +141,6 @@ describe('rarity intensity escalates with the ladder', () => {
     rendered.forEach((size, i) => {
       expect(size * LABELS[i].length, `${LABELS[i]} width`).toBeLessThanOrEqual(ROOM + 0.001);
     });
-  });
-
-  it('keeps a channel that survives reduced motion', () => {
-    // The global reduced-motion rule collapses DURATIONS and keeps DELAYS, so a ladder
-    // built only out of movement would not exist for a player who asked for none. Size is
-    // static and the hold is a delay: between them the escalation always lands.
-    const [common] = RARITY_HIT;
-    const arcane = RARITY_HIT[RARITY_HIT.length - 1];
-    expect(arcane.scale).toBeGreaterThan(common.scale);
-    expect(arcane.holdMs).toBeGreaterThan(common.holdMs);
   });
 
   it('a MISS is the quietest thing that can land', () => {

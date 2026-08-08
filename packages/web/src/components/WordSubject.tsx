@@ -1,7 +1,6 @@
 import type { CSSProperties } from 'react';
 import RarityHit from './RarityHit';
 import { fitWord } from './routeDrawing';
-import { RARITY_IMPACT_MS } from './RarityHit';
 import { srWordBoardWord } from '../i18n';
 
 // The day's word while the run is on (#163): JUST THE WORD, centred, in the solved blue —
@@ -25,24 +24,17 @@ export const SUBJECT_PX = 40;
 // RARITY GRADE — the rank exponent is gone from play, because a timed run has no use for a
 // number it cannot act on, and the grade is the thing that just bought time. Anything
 // outside the claim zone reports MISS. Presentation state, owned by the screen.
+//
+// NONE OF IT ANIMATES (2026-08-09): the label appears, stays, and goes, and the word does
+// nothing but step back while it is there. Several choreographies were tried on this and
+// all were rejected; what is left is the plain baseline they were built on top of.
 export interface WordHit {
-  id: number; // monotonic, so a guess landing mid-hit restarts the animation
+  id: number; // monotonic, so a new guess replaces the one on screen
   label: string; // the rarity grade, or MISS
   color: string;
-  scale: number; // the intensity dimensions, straight off components/rarity.ts
-  drop: number;
-  rise: number;
-  tilt: number; // degrees, rolled per hit — it leans a random way every time
-  shake: number; // multiplier on the word's own shake
-  wave: number; // the letter wave's amplitude in px; 0 below RARE, where there is no wave
-  fadeDelayMs: number; // how long the label SITS on the word before leaving
+  scale: number; // the type size, straight off components/rarity.ts
+  holdMs: number; // how long it stays
 }
-
-// The letter wave's own clock, the sentence game's #129 numbers exactly: one letter's whole
-// up-and-down, and the gap between two consecutive letters. Handed to CSS rather than
-// repeated there, the way `Hole` hands down the same pair.
-const WAVE_LETTER_MS = 220;
-const WAVE_STEP_MS = 22;
 
 export default function WordSubject({
   word,
@@ -62,48 +54,16 @@ export default function WordSubject({
           day's word would be spoken nowhere for the whole game. */}
       <span className="sr-only">{srWordBoardWord(lang, word)}</span>
       <span className="hole-word-wrap" aria-hidden="true">
-        {/* Keyed per hit so a guess landing mid-shake restarts it (Hole's own trick) — which
-            is also what replays the letter wave, so neither needs a clock of its own. The
-            shake's amplitude and the wave's ride the grade; `--shake-amp` and `--wave-lift`
-            both default to what the sentence game uses, so the hole, the standings sprite
-            and the tutorial keep the exact motion they had. */}
+        {/* The word STEPS BACK while a grade is on it and returns when it goes. Not a
+            flourish — the label sits on top of it, and two words of the same size in the
+            same place cannot both be read (measured on the worst case, a cyan RARE over the
+            blue day's word: at 0.45 and 0.32 they are mud, at 0.2 the label is clean). It is
+            a STATE, not a transition: nothing here fades into it. */}
         <span
-          key={hit ? `word-${hit.id}` : 'word'}
-          className={`word-subject-text${hit ? ' hit-shake' : ''}${
-            hit && hit.wave > 0 ? ' wave' : ''
-          }`}
-          style={
-            {
-              fontSize: fitWord(word, SUBJECT_PX),
-              '--shake-amp': hit ? String(hit.shake) : undefined,
-              '--wave-lift': hit && hit.wave > 0 ? `${hit.wave}px` : undefined,
-              '--wave-dur': `${WAVE_LETTER_MS}ms`,
-              '--wave-step': `${WAVE_STEP_MS}ms`,
-              // Everything the word does waits for the label to actually LAND on it — and
-              // the word comes back when the label starts to LEAVE, which is the same
-              // instant the label's own vanish is delayed to.
-              '--impact-delay': `${RARITY_IMPACT_MS}ms`,
-              '--hit-fade-delay': hit ? `${hit.fadeDelayMs}ms` : undefined,
-            } as CSSProperties
-          }
+          className={`word-subject-text${hit ? ' stamped' : ''}`}
+          style={{ fontSize: fitWord(word, SUBJECT_PX) } as CSSProperties}
         >
-          {/* Split into per-letter boxes so the wave has something to move. The pixel font
-              is monospace and each box advances exactly as the glyph did, so the word
-              measures the same as plain text (the sentence game's holes are split the same
-              way, for its own animation).
-              `--ring` is the letter's distance from the CENTRE, which is what makes this a
-              shockwave out of the point of impact rather than a ripple travelling in from
-              one side. (`--i`, the plain index, is what the sentence game's ambient wave
-              uses; the two want different orders, so they carry different numbers.) */}
-          {Array.from(word, (letter, i) => (
-            <span
-              key={i}
-              className="hole-letter"
-              style={{ '--ring': Math.abs(i - (word.length - 1) / 2) } as CSSProperties}
-            >
-              {letter}
-            </span>
-          ))}
+          {word}
         </span>
         {hit && onHitDone && (
           <RarityHit
@@ -112,10 +72,7 @@ export default function WordSubject({
             label={hit.label}
             color={hit.color}
             scale={hit.scale}
-            drop={hit.drop}
-            rise={hit.rise}
-            tilt={hit.tilt}
-            fadeDelayMs={hit.fadeDelayMs}
+            holdMs={hit.holdMs}
             onDone={onHitDone}
           />
         )}

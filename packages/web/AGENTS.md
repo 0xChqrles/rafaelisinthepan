@@ -334,57 +334,34 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (`--shake-amp` 1, `--wave-lift` 3px) — `word-shake` is shared by the sentence hole, this
   word AND the standings sprite, and `hole-wave` by the hole's ambient ripple, so only Word
   mode's own rules set them.
-  **The label lands at a random TILT** (decided 2026-08-09): it leans a coin-flip's worth of
-  `HIT_TILT_MIN/MAX_DEG` (3–8°) each time, so a run of guesses reads as hand-thrown notes
-  rather than one stamp printed over and over. Every rotation in `rarity-stamp`/
-  `rarity-vanish` is relative to `--hit-tilt`.
-  **The whole beat was retimed on 2026-08-09** after the first cut read as uncanny. Four
-  things were wrong and each has a rule now:
-  - **The easing is PER KEYFRAME, not one curve over the whole stamp.** A falling object
-    accelerates and an impact decelerates, and no single cubic-bezier does both; the element
-    sets `linear` and each segment declares its own `animation-timing-function`.
-  - **The label is fully opaque well before it lands.** Fading in across the approach made it
-    materialise at the moment of contact, which is what read as ghostly.
-  - **EVERYTHING THE WORD DOES WAITS FOR THE IMPACT** (`--impact-delay`, exported as
-    `RARITY_IMPACT_MS` so the JS and the keyframe percentage cannot drift). Firing the shake
-    and the wave at mount meant the word flinched and THEN something hit it — which is what
-    "the wave seems to appear after the hit" was actually describing.
-  - **The wave is a SHOCKWAVE, not a ripple**: `--ring` is each letter's distance from the
-    CENTRE, so the middle moves first and the outer letters last, and the letters are driven
-    DOWN (where a thing falling on you pushes) rather than up. A left-to-right ripple has a
-    direction and so implies a source off to one side; a stamp lands in the middle. It has
-    its OWN keyframes (`word-impact`), which let the sentence game's ambient `hole-wave` go
-    back to its literal — one less shared animation, and `FloatingHit` with it.
-  **The label NEVER SCALES and NEVER wears a border** — both learned the hard way on
-  2026-08-09, and both are rules rather than preferences:
-  - Animating `scale` on the pixel font renders blurry intermediate frames for the whole
-    transition. It is the same reason every sprite here takes an exact integer scale, and it
-    is what made the stamp read as "utterly ugly" through two cuts of it. The motion is
-    TRANSLATE AND OPACITY ONLY; the impact is carried by what the label does to the WORD.
-    The fall accelerates the whole way and stops dead — no settle, no rebound, because the
-    recoil belongs to the thing that was hit, not the thing that hit it. (`punch` left the
-    intensity table with the scaling; nothing is left to overshoot.)
-  - **NOTHING in this app outlines type.** A knockout ring was tried to separate the label
-    from the word it covers and was rejected on sight: it is not the artistic direction, and
-    it read as a cheap sticker. What separates them is `word-dim` and nothing else, which is
-    why that value is load-bearing rather than cosmetic — measured on the worst case (cyan
-    RARE over the blue day's word), 0.45 and 0.32 are both mud and 0.2 is clean.
-  **The word STANDS DOWN under the label, and the fade is EASE-IN for a measured reason.**
-  Two words of the same size in the same place cannot both be read: a cyan RARE over the blue
-  day's word is 77 dE apart and still illegible superimposed, which is the limit of what a
-  colour measurement can tell you. So the word drops to `--stamp-dim` (0.2) on impact and
-  comes back as the label leaves — and because the fade is EASE-IN it holds near full
-  brightness through its first half, which is exactly the window the shockwave peaks in
-  (measured: 0.98 when the centre letter is at its lowest, 0.94 when the outer ones are,
-  ghosted by 500ms). Ghost it on contact and the wave the grade earned would play on
-  something nobody can see. The label also carries an eight-way hard KNOCKOUT ring in `--bg`
-  — no blur, the app has none anywhere — so it reads as a solid thing on top of the word
-  rather than tangling with it.
-  **The ladder is tuned AGAINST THE WORD** (retuned twice on 2026-08-09): the label lands on
-  a word `fitWord` draws at up to 40px, and it is a STAMP on that word, so it stays clearly
-  SMALLER than it — desktop 18→30px, mobile 14→24px. Two earlier cuts overshot in both
-  directions: one so small the grades barely differed, one where ARCANE matched the word and
-  swallowed it.
+  **THE FEEDBACK DOES NOT ANIMATE** (decided 2026-08-09, and it is a decision rather than an
+  omission). Several choreographies were built here and every one was rejected: a pop, a
+  stamp falling onto the word, a shockwave rippling out through the word's letters, each with
+  its own timing and its own escalation. What ships is the plain thing — the label appears at
+  its size, its colour and its place, stays for as long as its grade earns, and goes — so that
+  whatever motion is designed next starts from a baseline that is doing nothing.
+  Three things learned on the way, kept because they cost real iterations and the next attempt
+  should not pay for them again:
+  - **NOTHING IN THIS APP OUTLINES TYPE.** A hard knockout ring was added to separate the
+    label from the word beneath it and rejected on sight — it is not the artistic direction,
+    and it read as a cheap sticker.
+  - **ANIMATING `scale` ON THE PIXEL FONT is not available.** It renders blurry intermediate
+    frames for the whole transition, the same reason every sprite here takes an exact integer
+    scale. Rotation is nearly as bad past a few degrees.
+  - **The word must step back for the label to be readable at all.** They occupy the same
+    place, and two words of the same size superimposed are mud whatever their hue — a cyan
+    RARE over the blue day's word measures 77 dE apart and is illegible. `word-dim` (0.2,
+    measured against 0.45 and 0.32, both mud) is therefore load-bearing rather than
+    decorative, and it is a plain STATE with no transition on it.
+  What is left of the intensity table is what a grade IS on screen rather than how it moves:
+  `scale` and `holdMs`, both monotonic across the ladder and both pinned by `rarity.test.ts`.
+  **The ladder is tuned AGAINST THE WORD**: the label sits on a word `fitWord` draws at up to
+  40px and is a badge on it, so it stays clearly smaller — desktop 18→30px, mobile 14→24px.
+  Two earlier cuts overshot in both directions: one so small the grades barely differed, one
+  where ARCANE matched the word and swallowed it.
+  Everything the animations borrowed has been handed back: `word-shake`, `hole-wave` and
+  `FloatingHit` are byte-identical to what they were before #163, so the sentence board, the
+  tutorial and the standings sprite are untouched by any of it.
   **Two ambient readouts bracket the prompt during a run** (decided 2026-08-09), and both
   RESERVE their full footprint from the first frame — the word sits in the flexible space
   above them, and a column that grew as the run filled it would walk the word up the screen

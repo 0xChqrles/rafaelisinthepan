@@ -15,13 +15,7 @@ import {
   zoneGroups,
   RARITY_LADDER,
 } from '../game/wordGame';
-import {
-  MISS_COLOR,
-  MISS_HIT,
-  RARITY_COLORS,
-  RARITY_HIT,
-  rollHitTilt,
-} from '../components/rarity';
+import { MISS_COLOR, MISS_HIT, RARITY_COLORS, RARITY_HIT } from '../components/rarity';
 import { buildWordBoard } from '../game/wordBoard';
 import { canExtend } from '../game/keyboard';
 import useScrollEdges from '../hooks/useScrollEdges';
@@ -32,7 +26,6 @@ import WordHistory from '../components/WordHistory';
 import WordTimer, { type TimeGain } from '../components/WordTimer';
 import CellDigits from '../components/CellDigits';
 import Button from '../components/Button';
-import { RARITY_STAMP_MS, RARITY_VANISH_MS } from '../components/RarityHit';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import WordEndScreen from '../components/WordEndScreen';
@@ -59,14 +52,14 @@ import { prefersReducedMotion } from '../hooks/useScramble';
 
 // The ending plays in BEATS, like the sentence solve, instead of piling onto the frame
 // the clock died in. First the killing moment plays out on the surface the player was
-// looking at: the timer sits at 0 and the last guess's float finishes its whole run.
+// looking at: the timer sits at 0 and the last guess's label finishes its stay.
 //
-// This is the FLOOR of that beat, not its length. A rarity float holds longer the rarer
-// the grade (#163 — components/rarity.ts RARITY_HIT), so an ARCANE landing on the buzzer
-// outlives this by nearly a second; the screen tracks when the live float actually ends
-// and waits for the later of the two. Getting that wrong would cut the run's best moment
-// off mid-air to show the board.
-const WORD_END_HOLD_MS = RARITY_STAMP_MS + RARITY_VANISH_MS;
+// This is the FLOOR of that beat, not its length. A rarity label stays longer the rarer the
+// grade (#163 — components/rarity.ts RARITY_HIT), so an ARCANE landing on the buzzer
+// outlives this by a second; the screen tracks when the live one actually goes and waits
+// for the later of the two. Getting that wrong would cut the run's best moment short to
+// show the board.
+const WORD_END_HOLD_MS = 800;
 // Then the field arrives under the word and the prompt leaves; then the keyboard drops
 // and the result rises. This beat is what separates the reveal from the drop — it is the
 // board's own moment, with nothing else moving in it.
@@ -230,16 +223,14 @@ function WordRound({
   const [input, setInput] = useState('');
   const [invalidAt, setInvalidAt] = useState(0);
 
-  // The floating feedback on the day's word: every counted guess reports there — its
-  // RARITY GRADE, or MISS. A single target, so a single hit: no stagger, and the
-  // intro-length fade delay a lone sentence hit gets, plus whatever hold the grade buys.
-  // Free guesses (repeats, invalid words, the day's word itself) change no state and land
-  // no hit, exactly as they fire no floating number in the sentence game.
+  // The feedback on the day's word: every counted guess reports there — its RARITY GRADE,
+  // or MISS. Free guesses (repeats, invalid words, the day's word itself) change no state
+  // and show nothing, exactly as they float nothing in the sentence game.
   const [hit, setHit] = useState<WordHit | null>(null);
   const hitId = useRef(0);
-  // When the float currently in the air stops existing. The ending's first beat waits for
-  // it (see WORD_END_HOLD_MS) — a rarer grade holds longer, and the run's best find must
-  // not be cut off to make room for the board.
+  // When the label currently on screen goes. The ending's first beat waits for it (see
+  // WORD_END_HOLD_MS) — a rarer grade stays longer, and the run's best find must not be cut
+  // short to make room for the board.
   const hitEndsAt = useRef(0);
   const clearHit = useCallback((id: number) => {
     setHit((cur) => (cur && cur.id === id ? null : cur));
@@ -374,19 +365,13 @@ function WordRound({
       const grade = claimed ? rarityOf(claimed.freq, corpusSize) : null;
       const style = grade ? RARITY_HIT[rarityStep(grade)] : MISS_HIT;
       hitId.current += 1;
-      const fadeDelayMs = RARITY_STAMP_MS + style.holdMs;
-      hitEndsAt.current = Date.now() + fadeDelayMs + RARITY_VANISH_MS;
+      hitEndsAt.current = Date.now() + style.holdMs;
       setHit({
         id: hitId.current,
         label: grade ?? 'MISS',
         color: grade ? RARITY_COLORS[grade] : MISS_COLOR,
         scale: style.scale,
-        drop: style.drop,
-        rise: style.rise,
-        tilt: rollHitTilt(),
-        shake: style.shake,
-        wave: style.wave,
-        fadeDelayMs,
+        holdMs: style.holdMs,
       });
 
       if (claimed && grade) {
