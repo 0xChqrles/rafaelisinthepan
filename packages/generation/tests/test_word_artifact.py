@@ -9,9 +9,10 @@ Asserted against the schema in AGENTS.md, not against the implementation:
     carries NO `dq`, every rank >= 1 entry carries one, and word/rank/dq/road are
     GROUP properties every alias key of the group repeats;
   - `freq` (#163), this artifact's OWN annotation: the 1-based position, in the
-    frequency-ordered reduced vocabulary, of the group's MOST FREQUENT embedded
-    form — a group property like the rest, on every entry including rank 0, and
-    emitted by this command alone (a sentence puzzle has no consumer for it);
+    frequency-ordered EXISTENCE SET (distinct slugs, which is what the client loads),
+    of the group's MOST FREQUENT embedded form — a group property like the rest, on
+    every entry including rank 0, and emitted by this command alone (a sentence puzzle
+    has no consumer for it);
   - the ROAD ZONE is the flat top-`ROAD_TOP` (250). With no start word there is no
     departure to cut the zone at, and those groups are the whole playing field — as
     opposed to the sentence path, which stops its roads at the hole's departure. The
@@ -165,6 +166,25 @@ def test_freq_is_a_group_property_every_alias_key_repeats():
     assert rank_map["chien"] == rank_map["chiens"]
     assert rank_map["felin"] == rank_map["felins"]
     assert all("freq" in entry for entry in rank_map.values())
+
+
+def test_freq_ranks_the_existence_set_not_the_raw_forms():
+    """The consumer divides `freq` by the size of the existence set it loaded, so the
+    numerator has to count that same population. Two forms that FOLD TOGETHER are one
+    entry there and must be one rank here — otherwise the fraction is not a fraction,
+    and it is wrong by a language-dependent amount (measured 4.1% in fr, 0.0% in en)."""
+    # « coté » and « côté » are two reduced forms and ONE slug, so everything after them
+    # in frequency order shifts down by exactly one against a raw-form ranking.
+    vocab = ["chat", "coté", "côté", "chien", "chiens", "félin", "félins", "chats"]
+    rank_map = _word_map("chat", RANKING, KV, vocab=vocab)
+
+    # chat 1, cote 2 (both spellings), chien 3 — not 4, which is what counting raw
+    # forms would give.
+    assert rank_map["chat"]["freq"] == 1
+    assert rank_map["chien"]["freq"] == 3
+    # And no group can be ranked past the existence set it is a position in.
+    distinct = len({"chat", "cote", "chien", "chiens", "felin", "felins", "chats"})
+    assert all(entry["freq"] <= distinct for entry in rank_map.values())
 
 
 # --- the road zone: the flat top-ROAD_TOP, because there is no departure ---------

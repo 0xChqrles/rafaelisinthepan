@@ -87,13 +87,20 @@ def annotate_freq(rank_map, groups, forms_by_lemma, Vset, V):
     vocabulary depth rather than double-paying the find. The client cannot compute
     it — it never sees the corpus — so the artifact ships it.
 
-    The value is a FREQUENCY RANK over the reduced vocabulary: 1 = the most frequent
-    word the game admits, larger = rarer. The reduced file preserves the source
-    embedding's frequency order (reduce_embedding streams it and keeps survivors in
-    place), so this is a READ of a position, not a computation — and the reduced
-    vocabulary is the right scale because it IS the existence set the player types
-    against. 1-based on purpose: a 0 would be indistinguishable from an absent field
-    to a JS consumer testing the value.
+    The value is a FREQUENCY RANK over the EXISTENCE SET — the slugged, deduplicated
+    vocabulary written to web/public/vocab/<lang>.json — in frequency order: 1 = the
+    most frequent word the game admits, larger = rarer. The reduced file preserves the
+    source embedding's frequency order (reduce_embedding streams it and keeps survivors
+    in place), so this is a READ of a position, not a computation. 1-based on purpose: a
+    0 would be indistinguishable from an absent field to a JS consumer testing the value.
+
+    RANKED OVER SLUGS, not over raw forms, and that is load-bearing rather than tidy.
+    The consumer divides this by the size of the existence set it loaded, to get a
+    fraction of the corpus; if the numerator counted a population the denominator does
+    not, the fraction is not one. V holds every reduced form while the existence set
+    holds distinct SLUGS, and the two differ by exactly the accent/case collisions —
+    measured, 4.1% in fr against 0.0% in en, i.e. a language-dependent skew in the one
+    number that exists to make rarity mean the same thing in every language.
 
     It is the group's MOST FREQUENT embedded form, not its representative's: a
     player's sense of a lexeme's rarity is its commonest inflection (« privées » is
@@ -106,7 +113,16 @@ def annotate_freq(rank_map, groups, forms_by_lemma, Vset, V):
     A group with no embedded form at all — only reachable through a borrowed vector
     (#119), and then only at rank 0 — simply gets no `freq`. The field is optional
     to every consumer, like `road`."""
-    freq_of = {form: i + 1 for i, form in enumerate(V)}
+    # slug -> its 1-based place among distinct slugs in frequency order. Two forms that
+    # fold together are ONE entry in the existence set and so must be one rank here; the
+    # first (most frequent) occurrence names it, which is the same closest-wins rule the
+    # rank map resolves slug collisions by.
+    slug_rank = {}
+    for form in V:
+        key = slug(form)
+        if key and key not in slug_rank:
+            slug_rank[key] = len(slug_rank) + 1
+    freq_of = {form: slug_rank[slug(form)] for form in V if slug(form)}
     freq_by_rank = {}
     for display, rank, claims, _clean, rep in groups:
         forms = {form for lexeme in claims

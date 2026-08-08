@@ -4,11 +4,21 @@ import { fold, type WordPuzzle } from '@whippin/shared';
 import useVocab from '../hooks/useVocab';
 import { useDeadlinePassed } from '../hooks/useCountdown';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
-import { bonusSeconds, judgeWordGuess, replayWordRun, wordGuessKey } from '../game/wordGame';
+import {
+  judgeWordGuess,
+  rarityOf,
+  rarityStep,
+  replayWordRun,
+  totalBonus,
+  wordGuessKey,
+  RARITY_LADDER,
+} from '../game/wordGame';
+import { MISS_COLOR, MISS_HIT, RARITY_COLORS, RARITY_HIT } from '../components/rarity';
 import { buildWordBoard } from '../game/wordBoard';
 import { canExtend } from '../game/keyboard';
 import useScrollEdges from '../hooks/useScrollEdges';
-import WordBoard, { WordTerminus, type WordHit } from '../components/WordBoard';
+import WordBoard, { WordTerminus } from '../components/WordBoard';
+import WordSubject, { type WordHit } from '../components/WordSubject';
 import WordTimer, { type TimeGain } from '../components/WordTimer';
 import CellDigits from '../components/CellDigits';
 import Button from '../components/Button';
@@ -41,6 +51,12 @@ import { prefersReducedMotion } from '../hooks/useScramble';
 // The ending plays in BEATS, like the sentence solve, instead of piling onto the frame
 // the clock died in. First the killing moment plays out on the surface the player was
 // looking at: the timer sits at 0 and the last guess's float finishes its whole run.
+//
+// This is the FLOOR of that beat, not its length. A rarity float holds longer the rarer
+// the grade (#163 — components/rarity.ts RARITY_HIT), so an ARCANE landing on the buzzer
+// outlives this by nearly a second; the screen tracks when the live float actually ends
+// and waits for the later of the two. Getting that wrong would cut the run's best moment
+// off mid-air to show the board.
 const WORD_END_HOLD_MS = FLOATING_HIT_INTRO_MS + HIT_FADE_MS;
 // Then the field arrives under the word and the prompt leaves; then the keyboard drops
 // and the result rises. This beat is what separates the reveal from the drop — it is the
@@ -120,11 +136,17 @@ function WordRound({
   const ended = useDeadlinePassed(deadline);
   const playing = started && !ended;
 
-  // What the log MEANS — claims, the board's rows, the seconds bought. Pure, so a reload
-  // reproduces everything (the same contract as the sentence replay). What it does NOT
-  // say is whether the run is over; that is the clock's, above.
+  // The player's whole vocabulary — and the scale rarity is measured against (#163): a
+  // group's `freq` is a position in this list, so what counts as RARE is a fraction of it.
+  // Already loaded before a round can accept a single guess, which is what makes it usable
+  // as the economy's denominator at all.
+  const corpusSize = vocabSet.size;
+
+  // What the log MEANS — the claims, and the board's rows. Pure, so a reload reproduces
+  // everything (the same contract as the sentence replay). What it does NOT say is whether
+  // the run is over; that is the clock's, above.
   const run = useMemo(() => replayWordRun(ranks, tried), [ranks, tried]);
-  const score = run.claimedRanks.length;
+  const score = run.claimed.length;
 
   // End presentation is transient, not persisted. A live run lets the clock's last moment
   // play out, then the field arrives and the prompt leaves, then the keyboard drops and
@@ -144,8 +166,10 @@ function WordRound({
 
     setAnimateResults(true);
     // Reduced motion collapses the beats to their state changes — these are JS timers, so
-    // the global CSS rule cannot do it for them.
-    const holdMs = prefersReducedMotion() ? 0 : WORD_END_HOLD_MS;
+    // the global CSS rule cannot do it for them. Otherwise: the floor, or whatever is left
+    // of the float still in the air, whichever is longer.
+    const inFlight = Math.max(0, hitEndsAt.current - Date.now());
+    const holdMs = prefersReducedMotion() ? 0 : Math.max(WORD_END_HOLD_MS, inFlight);
     const settleMs = prefersReducedMotion() ? 0 : WORD_END_SETTLE_MS;
     const reveal = window.setTimeout(() => {
       setPostMortem(true);
@@ -168,8 +192,9 @@ function WordRound({
     return () => window.clearTimeout(id);
   }, [finishKeyboardExit, keyboardLeaving]);
 
-  // ONE model, mounted at two depths: the RUN renders its terminus row alone (the day's
-  // word, where every guess reports), the post-mortem renders the whole line above it.
+  // The board model. Only the POST-MORTEM draws it — the gate and the run show the bare
+  // word (WordSubject) and no line at all — but it is built throughout, because the screen
+  // refuses to render at all without a drawable one (see the `!board` guard below).
   const board = useMemo(
     () => buildWordBoard({ ranks, word: puzzle.word.word, tried, reveal: postMortem }),
     [ranks, puzzle.word.word, tried, postMortem],
@@ -191,13 +216,17 @@ function WordRound({
   const [input, setInput] = useState('');
   const [invalidAt, setInvalidAt] = useState(0);
 
-  // The floating hit on the day's word: every counted guess reports there — the rank it
-  // earned, or MISS — with the sentence game's own animation (a single target, so a single
-  // hit: no stagger, and the intro-length fade delay a lone sentence hit gets). Free
-  // guesses (repeats, invalid words, the day's word itself) change no state and land no
-  // hit, exactly as they fire no floating number in the sentence game.
+  // The floating feedback on the day's word: every counted guess reports there — its
+  // RARITY GRADE, or MISS. A single target, so a single hit: no stagger, and the
+  // intro-length fade delay a lone sentence hit gets, plus whatever hold the grade buys.
+  // Free guesses (repeats, invalid words, the day's word itself) change no state and land
+  // no hit, exactly as they fire no floating number in the sentence game.
   const [hit, setHit] = useState<WordHit | null>(null);
   const hitId = useRef(0);
+  // When the float currently in the air stops existing. The ending's first beat waits for
+  // it (see WORD_END_HOLD_MS) — a rarer grade holds longer, and the run's best find must
+  // not be cut off to make room for the board.
+  const hitEndsAt = useRef(0);
   const clearHit = useCallback((id: number) => {
     setHit((cur) => (cur && cur.id === id ? null : cur));
   }, []);
@@ -306,46 +335,57 @@ function WordRound({
       // bonus reaches the clock as the round's new deadline, not as a number this screen
       // adds up — and the store judges the submission against the clock as of now, so a
       // guess entered as the last second ran out lands or dies on one authority.
-      recordWordGuess(typed, (log) => {
+      const landed = recordWordGuess(typed, (log) => {
         const stored = replayWordRun(ranks, log);
-        return { claimed: stored.claimedRanks.length, bonus: stored.bonus };
+        return { claimed: stored.claimed.length, bonus: totalBonus(stored.claimed, corpusSize) };
       });
+      // NOTHING is reported unless the store took the guess. `playing` is a RENDERED value
+      // and the clock is wall-clock, so between the deadline and the re-render that
+      // notices it there is a window — small, but exactly the window a player racing a
+      // timer types in — where this handler still runs and the store correctly refuses.
+      // Showing the feedback anyway would float a grade, pay a `+21s` gain and announce
+      // "claimed …" for a find the run never took. The store checks the real clock at the
+      // instant of the write, and this defers to it.
+      if (!landed) return;
+
       // This render's own view of the same walk, for the feedback THIS guess speaks.
       const nextRun = replayWordRun(ranks, [...tried, typed]);
 
-      // Every counted guess lands its hit on the word. `judged` here is claim/near/miss —
-      // zero already returned above, and free guesses never reach this point.
+      // What the word says back. A claim names its GRADE; anything the run cannot claim
+      // says MISS in the app's red — a near miss and an off-map guess are the same event
+      // to a player racing a clock, and the exact distance of an unclaimable word is a
+      // number they can do nothing with. It survives where it still teaches: the
+      // post-mortem draws that guess on the trunk at its real rank.
+      const claimed = judged.kind === 'claim' ? judged.entry : null;
+      const grade = claimed ? rarityOf(claimed.freq, corpusSize) : null;
+      const style = grade ? RARITY_HIT[rarityStep(grade)] : MISS_HIT;
       hitId.current += 1;
+      const fadeDelayMs = FLOATING_HIT_INTRO_MS + style.holdMs;
+      hitEndsAt.current = Date.now() + fadeDelayMs + HIT_FADE_MS;
       setHit({
         id: hitId.current,
-        value: judged.kind === 'miss' ? 0 : judged.entry.rank,
-        miss: judged.kind === 'miss',
-        startDelayMs: 0,
-        fadeDelayMs: FLOATING_HIT_INTRO_MS,
+        label: grade ?? 'MISS',
+        color: grade ? RARITY_COLORS[grade] : MISS_COLOR,
+        scale: style.scale,
+        lift: style.lift,
+        rise: style.rise,
+        punch: style.punch,
+        shake: style.shake,
+        fadeDelayMs,
       });
 
-      if (judged.kind === 'claim') {
-        // The find's SECOND half of the feedback grammar: the rank floats on the word,
-        // the seconds land on the clock.
-        const seconds = bonusSeconds(judged.entry.freq);
+      if (claimed && grade) {
+        // The other half of the feedback grammar: the GRADE lands on the word, the
+        // SECONDS it bought land on the clock.
+        const seconds = RARITY_LADDER[rarityStep(grade)].seconds;
         gainId.current += 1;
         setGain({ id: gainId.current, seconds });
-        say(
-          srWordClaim(
-            lang,
-            judged.entry.word,
-            judged.entry.rank,
-            nextRun.claimedRanks.length,
-            seconds,
-          ),
-        );
+        say(srWordClaim(lang, claimed.word, grade, nextRun.claimed.length, seconds));
         return;
       }
-      // A ranked near miss shows its rank — it teaches where the zone ends — and an
-      // off-map guess has no rank to show. Neither costs anything but the time it took.
-      say(srWordMiss(lang, judged.kind === 'near' ? judged.entry.rank : null));
+      say(srWordMiss(lang));
     },
-    [playing, vocabSet, ranks, tried, recordWordGuess, lang, say],
+    [playing, vocabSet, corpusSize, ranks, tried, recordWordGuess, lang, say],
   );
 
   if (!board) {
@@ -355,7 +395,7 @@ function WordRound({
   }
 
   return (
-    <div className={`game word-game${playing ? ' word-running' : ''}`}>
+    <div className="game word-game">
       <div className="sr-only" role="status" aria-live="polite">
         {announce}
       </div>
@@ -392,7 +432,15 @@ function WordRound({
               <CellDigits value={score} />
             </div>
           )}
-          <WordTerminus model={board} hit={hit} onHitDone={clearHit} />
+          {/* Two halves of one word. Until the clock dies there is no line, so there is
+              nothing for a station to be the end OF: the word stands on its own, centred,
+              and every guess reports on it. The post-mortem brings the real terminus back
+              as what it is — the last stop of the revealed route. */}
+          {postMortem ? (
+            <WordTerminus model={board} />
+          ) : (
+            <WordSubject word={puzzle.word.word} lang={lang} hit={hit} onHitDone={clearHit} />
+          )}
         </div>
       </div>
 

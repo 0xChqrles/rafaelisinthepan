@@ -1141,28 +1141,37 @@ button * {
   display: inline-block;
   animation: word-shake 0.4s ease-in-out var(--hit-delay, 0ms);
 }
+/* A damped 5-5-4-4-2-2px oscillation with its rotation decaying to nothing. `--shake-amp`
+   scales the whole thing and DEFAULTS TO 1, which is load-bearing: three surfaces share
+   these keyframes — the sentence hole (`.hole-word.hit-shake`), Word mode's word
+   (`.word-subject-text.hit-shake`) and the standings sprite losing its lead
+   (`.lineup-sprite.hit`) — and only Word mode sets the variable, so the other two keep the
+   exact shake they have always had. Word mode spends it on RARITY (#163): an ARCANE find
+   hits the word visibly harder than a COMMON one. Transform-only, so no amplitude reflows
+   anything. */
 @keyframes word-shake {
   0%,
   100% {
     transform: translateX(0);
   }
   15% {
-    transform: translateX(-5px) rotate(-2deg);
+    transform: translateX(calc(-5px * var(--shake-amp, 1))) rotate(calc(-2deg * var(--shake-amp, 1)));
   }
   30% {
-    transform: translateX(5px) rotate(2deg);
+    transform: translateX(calc(5px * var(--shake-amp, 1))) rotate(calc(2deg * var(--shake-amp, 1)));
   }
   45% {
-    transform: translateX(-4px) rotate(-1.5deg);
+    transform: translateX(calc(-4px * var(--shake-amp, 1)))
+      rotate(calc(-1.5deg * var(--shake-amp, 1)));
   }
   60% {
-    transform: translateX(4px) rotate(1.5deg);
+    transform: translateX(calc(4px * var(--shake-amp, 1))) rotate(calc(1.5deg * var(--shake-amp, 1)));
   }
   75% {
-    transform: translateX(-2px);
+    transform: translateX(calc(-2px * var(--shake-amp, 1)));
   }
   90% {
-    transform: translateX(2px);
+    transform: translateX(calc(2px * var(--shake-amp, 1)));
   }
 }
 
@@ -1172,18 +1181,31 @@ button * {
    scramble, so the sentence reflows gradually instead of snapping, which is what lets the
    phrase wrap as natural prose with no forced <br/> per hole. */
 
-/* --- floating number ("hit"): the distance (or "MISS") that pops over a hole on a
-   guess. Anchored on the word's center (left/top 50% + translate -50%,-50%);
-   springs in with a slight tilt, then rises and dissipates. Two sequenced
-   animations (pop-in then fade-out) timed so the pop always finishes before the
-   synchronized batch fade-out begins. --- */
+/* --- floating "hit": what a guess says back, popped over the word it answers. The
+   SENTENCE game floats the distance (or "MISS"); WORD MODE floats the claim's RARITY GRADE
+   (#163). Anchored on the word's center (left/top 50% + translate -50%,-50%); springs in
+   with a slight tilt, then rises and dissipates. Two sequenced animations (pop-in then
+   fade-out) timed so the pop always finishes before the synchronized batch fade-out begins.
+
+   FOUR knobs come in from the component, and EVERY ONE defaults to what this did before
+   rarity existed, so the sentence board renders byte-identically: `--hit-scale` (a
+   multiplier on the surface's own `--hit-base` type size), `--hit-rise` (the fade's
+   travel), `--hit-punch` (the pop's overshoot) and the two delays. The values live in ONE
+   table beside the ladder they escalate with (components/rarity.ts RARITY_HIT) — nothing
+   here restates a grade.
+
+   `--hit-base` is the SURFACE's to set, not the float's: the sentence game wants one size
+   for a 2-3 character number, Word mode a much smaller one for an 8-character word like
+   UNCOMMON, and the mobile breakpoint has to shrink both. That is why the media query below
+   moves the BASE and not the font-size — a hard `font-size` there would clobber the scale
+   and flatten the whole ladder on every phone. --- */
 .floating-hit {
   position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
   font-family: var(--press);
-  font-size: 28px;
+  font-size: calc(var(--hit-base, 28px) * var(--hit-scale, 1));
   color: #fff;
   pointer-events: none;
   opacity: 0;
@@ -1191,28 +1213,39 @@ button * {
     hit-pop-in 0.32s cubic-bezier(0.22, 1.4, 0.4, 1) var(--hit-delay, 0ms) forwards,
     hit-fade-out 0.52s ease-in var(--hit-fade-delay, 320ms) forwards;
 }
+/* `--hit-lift` is where the label COMES TO REST above the word's centre. It appears in the
+   last frame of the pop and the first frame of the fade, and the two MUST read the same
+   value or the label visibly jumps at the handoff. It scales with the grade for a reason
+   that is not decoration: a rarity label is a WORD and the rarest are drawn at twice the
+   base size, so at the default 14px an ARCANE sat squarely ON the word it was about and hid
+   it. Bigger grades tower over it instead. */
 @keyframes hit-pop-in {
   0% {
     opacity: 0;
     transform: translate(-50%, calc(-50% + 4px)) scale(0.5) rotate(-6deg);
   }
+  /* The overshoot peaks 4px BELOW where it lands and settles up into it. Written as
+     `lift - 4` rather than a flat 10px so the WHOLE trajectory rises with the grade: at the
+     default lift of 14 this is exactly the 10px it always was, and at ARCANE's it keeps the
+     same shape instead of punching back down onto the word. */
   55% {
     opacity: 1;
-    transform: translate(-50%, calc(-50% - 10px)) scale(1.35) rotate(2deg);
+    transform: translate(-50%, calc(-50% - var(--hit-lift, 14px) + 4px))
+      scale(var(--hit-punch, 1.35)) rotate(2deg);
   }
   100% {
     opacity: 1;
-    transform: translate(-50%, calc(-50% - 14px)) scale(1) rotate(0deg);
+    transform: translate(-50%, calc(-50% - var(--hit-lift, 14px))) scale(1) rotate(0deg);
   }
 }
 @keyframes hit-fade-out {
   0% {
     opacity: 1;
-    transform: translate(-50%, calc(-50% - 14px)) scale(1);
+    transform: translate(-50%, calc(-50% - var(--hit-lift, 14px))) scale(1);
   }
   100% {
     opacity: 0;
-    transform: translate(-50%, calc(-50% - 42px)) scale(0.86);
+    transform: translate(-50%, calc(-50% - var(--hit-rise, 42px))) scale(0.86);
   }
 }
 
@@ -2841,9 +2874,11 @@ button * {
     min-width: 0;
   }
 
-  /* Floating hit / MISS scaled down to sit over the smaller hole words. */
+  /* Floating hit / MISS scaled down to sit over the smaller hole words. The BASE, never
+     `font-size` — a hard size here would override `--hit-scale` and flatten Word mode's
+     whole rarity ladder to one size on every phone. */
   .floating-hit {
-    font-size: 18px;
+    --hit-base: 18px;
   }
 
   .input-area {
@@ -3642,20 +3677,53 @@ button * {
 .word-terminus .route {
   padding: 0;
 }
-/* The guess's impact lands on the terminus word (the sentence game's own hit grammar): the
-   same shake, minus `.hole-word`'s inline-block — the route word is a flex row and keeps it. */
-.route-word.hit-shake {
-  animation: word-shake 0.4s ease-in-out var(--hit-delay, 0ms);
+/* The day's word during the GATE and the RUN (#163): just the word, centred, in the solved
+   blue. No node, no rail, no rank gutter — there is no line yet for it to be the end of, and
+   the post-mortem's `.word-terminus` is where it becomes a station again.
+   `--wordw` is what `fitWord` divides by, and here it is the WHOLE page column (the route
+   frame's is what survives the gutter and the rail), so a long word shrinks to fit rather
+   than ever breaking mid-word. `--hit-base` is this surface's float size: much smaller than
+   the sentence game's 28px, because the label is a WORD (`UNCOMMON` is 8 characters where a
+   distance is 2-3) and the rarest grades multiply it by two. */
+.word-subject {
+  --wordw: min(430px, calc(100vw - 48px));
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  text-align: center;
 }
-/* The hit anchors on the word alone. Inside the route grid the wrap is the body cell's only
-   content, so nothing needs its baseline — top-aligning it keeps the inline-block's strut from
-   adding phantom height under the 40px word row. */
-.route-body .hole-word-wrap {
-  vertical-align: top;
+/* Set ON THE FLOAT, not inherited from the surface — and that is not a style choice. A
+   custom property declared on the element itself BEATS an inherited one, and the mobile
+   breakpoint declares `--hit-base` on `.floating-hit`; inheriting from `.word-subject`
+   would lose to it and every grade would render at the sentence game's size. Measured
+   before the fix: an OBSCURE label 343px wide, clipped off a 320px screen. */
+.word-subject .floating-hit {
+  --hit-base: 17px;
+}
+.word-subject-text {
+  display: inline-block;
+  font-family: var(--vt);
+  line-height: 1.15;
+  color: var(--accent);
+}
+/* The guess's impact lands on the word (the sentence game's own hit grammar), at an
+   amplitude the rarity sets — see `--shake-amp` on @keyframes word-shake. */
+.word-subject-text.hit-shake {
+  animation: word-shake 0.4s ease-in-out;
 }
 @media (max-width: 640px) {
   .word-frame {
     --wordw: calc(min(430px, 100vw - 20px - 28px) - var(--gutter) - var(--railw) - 18px);
+  }
+  /* The page inset narrows to 14px a side here, and the float shrinks with it. The label is
+     a WORD, so its width is the constraint, and the widest moment is a rare grade at the
+     peak of its pop: at 320px (292px usable) ARCANE runs 6 x 13 x 2 = 156px, 265px at the
+     1.7 punch. The desktop base would have run it clean off the screen. */
+  .word-subject {
+    --wordw: min(430px, calc(100vw - 28px));
+  }
+  .word-subject .floating-hit {
+    --hit-base: 13px;
   }
 }
 .word-prompt {

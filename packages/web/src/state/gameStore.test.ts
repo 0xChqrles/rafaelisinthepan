@@ -168,6 +168,22 @@ describe('word rounds (#163) — ensureWordRound / startWordRun / recordWordGues
     expect(wordRound()).toMatchObject({ tried: ['mer'], claimed: 1, deadline: T0 + runMs(0) });
   });
 
+  // The screen decides what FEEDBACK to show from a rendered value, which lags the wall
+  // clock by up to a frame; the store decides what LANDS from `Date.now()` at the write.
+  // The two can only be reconciled by the store telling the caller what it did — without
+  // it, a guess entered in that window floats a rarity grade, pays a `+21s` clock gain and
+  // announces a claim the run never took.
+  it('REPORTS whether the guess landed, so the screen cannot celebrate a refused one', () => {
+    const { ensureWordRound, startWordRun, recordWordGuess } = useGameStore.getState();
+    ensureWordRound('w:5:fr', 'phare');
+    expect(recordWordGuess('mer', openRun), 'before START').toBe(false);
+    startWordRun();
+    expect(recordWordGuess('mer', openRun), 'a counted guess').toBe(true);
+    expect(recordWordGuess('mer', openRun), 'a repeat appends nothing').toBe(false);
+    vi.setSystemTime(T0 + runMs(0) + 1);
+    expect(recordWordGuess('tard', priced(5)), 'past the deadline').toBe(false);
+  });
+
   it('backgrounding the tab does not pause the clock — the deadline is wall-clock', () => {
     const { ensureWordRound, startWordRun, recordWordGuess } = useGameStore.getState();
     ensureWordRound('w:5:fr', 'phare');

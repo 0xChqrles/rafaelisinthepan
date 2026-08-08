@@ -1,10 +1,7 @@
 import { Fragment, useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { heatColor } from '@whippin/shared';
 import type { WordBoardModel } from '../game/wordBoard';
 import { SCRAMBLE_MS, useScramble } from '../hooks/useScramble';
-import FloatingHit from './FloatingHit';
-import { HIT_HEAT_CAP, rankHeatColor } from './Hole';
 import {
   ARRIVAL_PX,
   JUNCTION_H,
@@ -25,10 +22,11 @@ import {
 } from './routeDrawing';
 import { srRouteRoads, srRouteStop, srRouteOffMap, srWordBoardWord } from '../i18n';
 
-// Word mode's play surface (#156): the route drawing — lanes, dq-spaced stations, censored
-// unfound stops — as the PRIMARY, LIVE surface rather than a modal. The differences are the
-// mode's own: the center word is PUBLIC (the terminus is revealed from the first frame), there
-// is no departure and no "you are here", and the drawing changes under the player's claims.
+// Word mode's POST-MORTEM surface (#156, moved off the live phase by #163): the route
+// drawing — lanes, dq-spaced stations, censored unfound stops — as a full screen rather
+// than a modal. The differences from the sentence game's map are the mode's own: the center
+// word is PUBLIC, there is no departure and no "you are here", and what the player claimed
+// is distinguished from what was merely named when the clock died.
 //
 // Everything the drawing has in common with the daily game's route map — the geometry, the
 // frame variables, the shelf, the tail, the connector rule, the junctions and the station row
@@ -121,37 +119,21 @@ function StationWord({
   );
 }
 
-// A guess's feedback on the TERMINUS (#156): every counted guess lands the sentence game's
-// floating hit on the day's word — the rank it earned in that rank's heat colour, or MISS in
-// the coldest — so the one row that never leaves the screen is also where every answer
-// reports. Presentation state, owned by the screen (WordGame): the terminus only renders it.
-export interface WordHit {
-  id: number; // monotonic, so a guess landing mid-hit restarts the animation
-  value: number; // the guess's rank (unused when miss)
-  miss: boolean; // off-map -> "MISS" instead of a number
-  startDelayMs: number;
-  fadeDelayMs: number;
-}
-
-// The end of the line, as the board's own PINNED FOOTER — the day's word never leaves the
-// screen, so its row lives OUTSIDE the scroller (WordGame renders it under the window's cut),
-// where nothing can ever scroll behind it and it needs no masking background. (A sticky
-// in-scroller row was tried first, 2026-08-06: its opaque `--bg` box — invisible in the route
-// modal, whose dialog is flat `--bg` — read as a black patch stamped over this page's animated
-// waves.) Scrolled to the bottom, the line's merge link runs out of the scroller straight into
-// this row's rail; cut mid-field, the window's torn bottom rule lands on this row's top edge,
-// where the rail stub runs into it. Its own `.route-frame` re-derives the SAME frame vars from
-// the same model, so its grid lands on the line's columns (`.word-terminus` pads for the
-// scroller's right side + scrollbar).
-export function WordTerminus({
-  model,
-  hit = null,
-  onHitDone,
-}: {
-  model: WordBoardModel;
-  hit?: WordHit | null;
-  onHitDone?: (id: number) => void;
-}) {
+// The end of the line, as the board's own PINNED FOOTER. The board is the POST-MORTEM
+// (#163), so this row exists only there — the run itself shows the bare centred word
+// (components/WordSubject), which is why nothing here hosts a guess's feedback any more:
+// no guess can land while this is on screen.
+//
+// It lives OUTSIDE the scroller (WordGame renders it under the window's cut), where nothing
+// can ever scroll behind it and it needs no masking background. (A sticky in-scroller row
+// was tried first, 2026-08-06: its opaque `--bg` box — invisible in the route modal, whose
+// dialog is flat `--bg` — read as a black patch stamped over this page's animated waves.)
+// Scrolled to the bottom, the line's merge link runs out of the scroller straight into this
+// row's rail; cut mid-field, the window's torn bottom rule lands on this row's top edge,
+// where the rail stub runs into it. Its own `.route-frame` re-derives the SAME frame vars
+// from the same model, so its grid lands on the line's columns (`.word-terminus` pads for
+// the scroller's right side + scrollbar).
+export function WordTerminus({ model }: { model: WordBoardModel }) {
   const rankChars = rankGutterChars(model.maxRank);
   const trunkCentre = trunkX(model.lanes);
   // Decorative like the drawing above it: the board's sr mirror already announces the word.
@@ -166,29 +148,8 @@ export function WordTerminus({
           className="route-arrival route-found"
           style={{ '--node-x': `${trunkCentre}px` } as CSSProperties}
         >
-          {/* The wrap is sized to the WORD alone (the sentence game's own hit anchor), so
-              the floating number lands centred over the word, not over the whole cell. */}
-          <span className="hole-word-wrap">
-            {/* Keyed per hit so a guess landing mid-shake restarts it (Hole's own trick). */}
-            <span
-              key={hit ? `word-${hit.id}` : 'word'}
-              className={`route-word${hit ? ' hit-shake' : ''}`}
-              style={{ fontSize: fitWord(model.word, ARRIVAL_PX) }}
-            >
-              {model.word}
-            </span>
-            {hit && onHitDone && (
-              <FloatingHit
-                key={hit.id}
-                id={hit.id}
-                value={hit.value}
-                miss={hit.miss}
-                startDelayMs={hit.startDelayMs}
-                fadeDelayMs={hit.fadeDelayMs}
-                color={hit.miss ? heatColor(0) : rankHeatColor(hit.value, HIT_HEAT_CAP)}
-                onDone={onHitDone}
-              />
-            )}
+          <span className="route-word" style={{ fontSize: fitWord(model.word, ARRIVAL_PX) }}>
+            {model.word}
           </span>
         </RouteRow>
       </div>

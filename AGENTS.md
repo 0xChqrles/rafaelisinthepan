@@ -366,9 +366,15 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   wherever it sits. Absent only for a group with no embedded form at all (reachable only
   through a borrowed vector, #119), so consumers treat it as OPTIONAL, like `road`.
   **Emitted by `gen_word.py` ONLY** — a sentence puzzle carries none: nothing there
-  consumes it and those maps are already ~500 KB gzipped. **The WEB maps `freq` → bonus
-  seconds, never generation** (`web/src/game/wordGame.ts` `bonusSeconds`), so every tuning
-  iteration is a web-only constant change with no artifact republish.
+  consumes it and those maps are already ~500 KB gzipped. **The WEB maps `freq` → a named
+  RARITY GRADE and its bonus seconds, never generation** (`web/src/game/wordGame.ts`
+  `rarityOf` / `bonusSeconds`), so every tuning iteration is a web-only constant change
+  with no artifact republish. It reads the value as a **FRACTION OF THE CORPUS**, not as an
+  absolute rank — the vocabularies are very different sizes (en 75k, fr 128k), and measured
+  on real artifacts, absolute cutoffs put the average claim 55% apart between the two
+  languages. That is why the field ships as a raw position and the client owns the
+  denominator: the shipped number is a fact about the corpus, and what counts as rare is a
+  product decision the web is free to retune.
 - **`ranks` is ONE FLAT map** (there is only one word to rank around, so nothing to key
   it by), and there is no `words` / `holes` / `start` / `start_rank`. **No `source`
   either:** attribution belongs to a quoted line, and a lone word quotes nobody.

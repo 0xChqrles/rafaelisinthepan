@@ -64,9 +64,11 @@ const STRINGS = {
     en: 'Find words close to it before the clock runs out.',
     fr: 'Trouve des mots proches avant la fin du chrono.',
   },
+  // "Rarer", not "rare": RARE is now the name of one specific grade on screen, so the rule
+  // has to read as the general property rather than as a claim about that one grade.
   wordRulesBonus: {
-    en: 'Every find adds time. Rare words add more.',
-    fr: 'Chaque mot ajoute du temps. Les rares davantage.',
+    en: 'Every find adds time. Rarer words add more.',
+    fr: 'Chaque mot ajoute du temps. Plus il est rare, plus il en donne.',
   },
   wordStart: { en: 'START', fr: 'DÉPART' },
   // A word run's day is FINISHED, never "solved" (decided 2026-08-08): the clock ran out,
@@ -322,28 +324,30 @@ export function srWordBoardWord(lang: string, word: string): string {
   return uiLang(lang) === 'fr' ? `mot du jour : ${word}` : `word of the day: ${word}`;
 }
 
-// A CLAIM: what it was, where it sat, the running count — and the seconds it bought,
-// which the sighted player reads off the timer's own gain (#163).
+// A CLAIM: what it was, its RARITY GRADE, the running count, and the seconds it bought.
+// The grade replaces the rank the exponent used to carry (#163) — the same thing the
+// sighted player reads off the word — and the grade names stay untranslated, exactly as
+// they are on screen.
 export function srWordClaim(
   lang: string,
   word: string,
-  rank: number,
+  rarity: string,
   total: number,
   gained: number,
 ): string {
   if (uiLang(lang) === 'fr') {
-    return `${word} trouvé (rang ${rank}) — ${total} mots, +${gained} s`;
+    return `${word} trouvé — ${rarity}, ${total} mots, +${gained} s`;
   }
-  return `claimed ${word} (rank ${rank}) — ${total} words, +${gained}s`;
+  return `claimed ${word} — ${rarity}, ${total} words, +${gained}s`;
 }
 
-// A guess that claimed nothing: `rank` is a near miss's rank (it teaches where the zone
-// ends), or null for an off-map miss. It costs no time and no strike — the only price is
-// the seconds spent typing it — so there is nothing here to count.
-export function srWordMiss(lang: string, rank: number | null): string {
-  const fr = uiLang(lang) === 'fr';
-  if (rank == null) return fr ? 'raté' : 'miss';
-  return fr ? `trop loin : rang ${rank}` : `too far: rank ${rank}`;
+// A guess that claimed nothing, whether it was ranked just outside the zone or nowhere on
+// the map at all: the run cannot use it either way, and it costs only the seconds spent
+// typing it. The spoken twin of the MISS the word floats — the exact distance of an
+// unclaimable word is a number a player racing a clock can do nothing with, and it is kept
+// where it still teaches, on the post-mortem's trunk.
+export function srWordMiss(lang: string): string {
+  return uiLang(lang) === 'fr' ? 'raté' : 'miss';
 }
 
 // The clock, read on demand rather than announced: `role="timer"` is a live region that

@@ -245,7 +245,13 @@ interface GameState extends PersistedState {
   // deadline both describe exactly what is stored beside them. `replay` is the pure model
   // (game/wordGame.ts replayWordRun) closed over this puzzle's ranks — see WordRunCache
   // for why the store replays instead of being handed the numbers.
-  recordWordGuess: (typed: string, replay: (tried: string[]) => WordRunCache) => void;
+  //
+  // RETURNS whether the guess actually LANDED, and the caller owes it a check. The screen
+  // decides what to show from `playing`, which is a rendered value and therefore lags the
+  // real clock by up to a frame; this reads `Date.now()` at the instant of the write. Both
+  // must agree or the player is told they claimed something the run never took — a float,
+  // a `+21s` gain and a spoken "claimed …" for a guess that changed nothing.
+  recordWordGuess: (typed: string, replay: (tried: string[]) => WordRunCache) => boolean;
 
   // Count a valid guess on the active round. Deduped by the caller-supplied canonical
   // identity (#104: inflections of one word are ONE try — Game passes guessKey over the
@@ -428,39 +434,45 @@ export const useGameStore = create<GameState>()(
           };
         }),
 
-      recordWordGuess: (typed, replay) =>
-        set((s) => {
-          const key = s.activeWordKey;
-          if (!key) return {};
-          const round = s.wordRounds[key];
-          if (!round || round.startedAt === null || round.deadline === null) return {};
+      // Reads through `get()` rather than a `set` updater because it has to REPORT what it
+      // did. That is safe for the batched-submissions case the tests pin: zustand applies
+      // `set` synchronously, so a second call in the same tick already sees the first's
+      // log.
+      recordWordGuess: (typed, replay) => {
+        const s = get();
+        const key = s.activeWordKey;
+        if (!key) return false;
+        const round = s.wordRounds[key];
+        if (!round || round.startedAt === null || round.deadline === null) return false;
 
-          // The guess is judged against the deadline AS OF NOW — a guess in flight when
-          // the clock dies is dead — and against the deadline BEFORE this claim, so a
-          // claim cannot pay for the moment it arrived in. Past it the round is FROZEN,
-          // repairs included: re-pricing a finished run could hand it a later deadline
-          // and bring it back to life, and a run happened under the map it happened
-          // under.
-          if (Date.now() > round.deadline) return {};
+        // The guess is judged against the deadline AS OF NOW — a guess in flight when the
+        // clock dies is dead — and against the deadline BEFORE this claim, so a claim
+        // cannot pay for the moment it arrived in. Past it the round is FROZEN, repairs
+        // included: re-pricing a finished run could hand it a later deadline and bring it
+        // back to life, and a run happened under the map it happened under.
+        if (Date.now() > round.deadline) return false;
 
-          const startedAt = round.startedAt;
-          const price = (cache: WordRunCache) => ({
-            claimed: cache.claimed,
-            deadline: startedAt + runMs(cache.bonus),
-          });
-          if (round.tried.includes(typed)) {
-            // Nothing to append, but `tried` is authoritative and a same-word republish
-            // can have changed what the SAME log is worth — repair the cached half rather
-            // than leaving it describing an older rank map.
-            const current = price(replay(round.tried));
-            if (round.claimed === current.claimed && round.deadline === current.deadline) return {};
-            return { wordRounds: { ...s.wordRounds, [key]: { ...round, ...current } } };
+        const startedAt = round.startedAt;
+        const price = (cache: WordRunCache) => ({
+          claimed: cache.claimed,
+          deadline: startedAt + runMs(cache.bonus),
+        });
+        if (round.tried.includes(typed)) {
+          // Nothing to append, but `tried` is authoritative and a same-word republish can
+          // have changed what the SAME log is worth — repair the cached half rather than
+          // leaving it describing an older rank map.
+          const current = price(replay(round.tried));
+          if (round.claimed !== current.claimed || round.deadline !== current.deadline) {
+            set({ wordRounds: { ...s.wordRounds, [key]: { ...round, ...current } } });
           }
-          const tried = [...round.tried, typed];
-          return {
-            wordRounds: { ...s.wordRounds, [key]: { ...round, tried, ...price(replay(tried)) } },
-          };
-        }),
+          return false;
+        }
+        const tried = [...round.tried, typed];
+        set({
+          wordRounds: { ...s.wordRounds, [key]: { ...round, tried, ...price(replay(tried)) } },
+        });
+        return true;
+      },
 
       recordGuess: (typed, keyOf = (t) => t) =>
         set((s) => {

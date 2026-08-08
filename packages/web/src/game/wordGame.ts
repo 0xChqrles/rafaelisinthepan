@@ -39,34 +39,79 @@ export const CLAIM_ZONE = 250;
 // What the clock starts at, in seconds, when START is tapped.
 export const START_SECONDS = 60;
 
-// What EVERY claim pays, before rarity. The floor of the curve: finding anything at all
-// buys time, so a run of common finds still goes somewhere.
-export const CLAIM_BASE_SECONDS = 2;
+// The five NAMED rarity grades a claim can earn, commonest first. They are shown to the
+// player — on the word, as the float that used to be the rank exponent — and they are
+// UNTRANSLATED in every language, like MISS / YOU / DNF: one word per grade, identical
+// everywhere, so the ladder reads the same to everyone.
+export const RARITY_NAMES = ['COMMON', 'UNCOMMON', 'RARE', 'OBSCURE', 'ARCANE'] as const;
+export type Rarity = (typeof RARITY_NAMES)[number];
 
-// The rarity ladder, read off the claimed group's `freq` — its most frequent embedded
-// form's 1-based position in the reduced vocabulary (1 = the commonest word the game
-// admits, larger = rarer; see RankEntry.freq). Ordered COMMONEST FIRST; a claim pays the
-// `extra` of the first tier whose `upTo` it is within, and the last tier's `Infinity`
-// makes the ladder total.
+// The ladder itself. `within` is the fraction of the CORPUS a grade reaches: a group is
+// COMMON when its most frequent embedded form sits inside the commonest 10% of the words
+// the game knows, ARCANE when nothing shallower claims it. `seconds` is what that grade
+// pays the clock.
+//
+// TWO decisions are baked into this shape, both measured on real generated artifacts
+// (fr ocean/montagne, en ocean/mountain — 1000 zone groups):
+//
+//   1. RARITY IS RELATIVE TO THE CORPUS, not an absolute frequency rank. The two
+//      languages' vocabularies are very different sizes (en 75k, fr 128k), so the same
+//      absolute rank means very different things in them. Measured on the same artifacts
+//      with the same seconds ladder, absolute cutoffs pay an average claim 5.26s in en
+//      against 10.12s in fr — fr runs last 1.93x longer for no reason but the size of its
+//      dictionary. Dividing by the corpus size brings that to 1.47x and makes "rare" mean
+//      one thing in every language. It is also why `rarityOf` needs the corpus size at
+//      all: it is `vocabSet.size`, the existence set the round already loads before it can
+//      accept a single guess — and generation ranks `freq` over that SAME population
+//      (distinct slugs), so the division is a true fraction rather than one off by the
+//      accent collisions, which alone were 4.1% in fr against 0.0% in en.
+//   2. THE SECONDS ARE EXPONENTIAL, not linear — a geometric x1.5 ladder. Rarity should
+//      pay off, not merely tick up: ARCANE is a jackpot worth five COMMONs, which is what
+//      makes hunting for depth a real strategy against spamming short frequent words.
+//      The whole ladder is also worth about DOUBLE what a claim used to pay: the retired
+//      flat-base-plus-tier scheme averaged 3.34s a claim over real zones, this one 6.50s.
+//
+// The 1.47x that remains is NOT a tuning failure, and no cut set can remove it: en's
+// 250-word neighborhoods simply do not reach as far down their corpus as fr's (zone p98 at
+// 0.43 of the vocabulary against fr's 0.94). Cuts low enough to give en a real ARCANE hand
+// fr ~19% of every board as ARCANE. The cuts below therefore favour a healthy fr pyramid
+// and the doubling target, and en tops out at RARE in practice (measured mix: en
+// 59/29/12/1/0, fr 36/28/15/15/5). That is a product call to revisit with the tuning
+// sessions, not a bug to code around — the alternative measured is 0.08/0.18/0.34/0.55,
+// which makes all five reachable in en (52/28/16/4/1) at the cost of fr's shape.
 //
 // Rarity is the bonus axis because it is ORTHOGONAL to the score: a closeness-scaled
 // bonus would double-pay what the count already measures, where corpus rarity pays for
 // vocabulary depth. It is also the knob that keeps long words worth their typing cost in
 // a spam meta — rare words tend to be longer, so without it short common words dominate.
-export const RARITY_TIERS: readonly { upTo: number; extra: number }[] = [
-  { upTo: 3_000, extra: 0 }, // everyday vocabulary
-  { upTo: 15_000, extra: 1 },
-  { upTo: 60_000, extra: 2 },
-  { upTo: Infinity, extra: 3 }, // the deep tail
+export const RARITY_LADDER: readonly { name: Rarity; within: number; seconds: number }[] = [
+  { name: 'COMMON', within: 0.1, seconds: 4 },
+  { name: 'UNCOMMON', within: 0.22, seconds: 6 },
+  { name: 'RARE', within: 0.5, seconds: 9 },
+  { name: 'OBSCURE', within: 0.85, seconds: 14 },
+  { name: 'ARCANE', within: Infinity, seconds: 21 },
 ];
 
-// What one claim adds to the clock. `freq` is OPTIONAL by contract (an artifact
-// generated before #163 carries none), and an unknown rarity pays the base alone —
-// the run still works, it just stops rewarding depth.
-export function bonusSeconds(freq: number | undefined): number {
-  if (freq === undefined) return CLAIM_BASE_SECONDS;
-  const tier = RARITY_TIERS.find((t) => freq <= t.upTo);
-  return CLAIM_BASE_SECONDS + (tier?.extra ?? 0);
+// Where a group sits on the ladder. `freq` is OPTIONAL by contract (an artifact generated
+// before #163 carries none) and an unknown rarity is COMMON — the floor, never a windfall
+// for missing data. `corpusSize` is the language's whole vocabulary; a nonsensical one
+// falls to the same floor rather than dividing by zero.
+export function rarityOf(freq: number | undefined, corpusSize: number): Rarity {
+  if (freq === undefined || !(corpusSize > 0)) return RARITY_LADDER[0].name;
+  const within = freq / corpusSize;
+  return (RARITY_LADDER.find((grade) => within <= grade.within) ?? RARITY_LADDER[0]).name;
+}
+
+// A grade's position on the ladder, 0 (COMMON) .. 4 (ARCANE). The ONE number the
+// presentation scales its intensity by, so "ARCANE feels bigger than COMMON" is derived
+// from the ladder rather than restating it.
+export function rarityStep(rarity: Rarity): number {
+  return Math.max(0, RARITY_LADDER.findIndex((grade) => grade.name === rarity));
+}
+
+// What one claim adds to the clock.
+export function bonusSeconds(freq: number | undefined, corpusSize: number): number {
+  return RARITY_LADDER[rarityStep(rarityOf(freq, corpusSize))].seconds;
 }
 
 // The wall-clock LENGTH of a run whose claims have earned `bonus` seconds. The deadline
@@ -78,15 +123,20 @@ export function runMs(bonus: number): number {
 
 // The total time a run's claims are WORTH — bounded by construction, since the zone is
 // finite: a run cannot be infinite, and the field stays unclearable in practice.
-export function totalBonus(claimed: readonly RankEntry[]): number {
-  return claimed.reduce((sum, entry) => sum + bonusSeconds(entry.freq), 0);
+export function totalBonus(claimed: readonly RankEntry[], corpusSize: number): number {
+  return claimed.reduce((sum, entry) => sum + bonusSeconds(entry.freq, corpusSize), 0);
 }
 
 // What one submitted, vocab-valid guess IS, before dedup:
-//   claim — a zone group (1 <= rank <= CLAIM_ZONE): +1 word, +bonusSeconds on the clock.
+//   claim — a zone group (1 <= rank <= CLAIM_ZONE): +1 word, +bonusSeconds on the clock,
+//           and the word floats its RARITY GRADE.
 //   near  — ranked, but outside the zone: nothing gained and nothing lost but the time
-//           spent typing it. It still SHOWS its rank — that is the zone's teaching signal.
-//   miss  — off-map (beyond the TOP_K cap): the same, with no rank to show.
+//           spent typing it. It floats MISS, like an off-map guess: a timed run has no use
+//           for the exact distance of something it cannot claim, and the two outcomes are
+//           identical in every way that matters to the player. The rank survives where it
+//           still teaches — on the post-mortem board, where the guess rides the trunk at
+//           its real distance.
+//   miss  — off-map (beyond the TOP_K cap): the same, with no rank at all.
 //   zero  — the day's word itself (rank 0): free — it is public, on the board already.
 export type WordJudgement =
   | { kind: 'claim'; entry: RankEntry }
@@ -132,10 +182,11 @@ export interface CountedGuess {
 // `counted` rather than re-deriving the rules, so the score, the clock and the drawing
 // can never disagree about what the same log means.
 export interface WordRun {
-  // Ranks of the claimed zone groups, in claim order. Its length is the SCORE.
-  claimedRanks: number[];
-  // Seconds those claims bought, in total — the clock's whole extension (see runMs).
-  bonus: number;
+  // The claimed zone groups, in claim order. Its length is the SCORE, and the groups
+  // themselves are what the clock is priced from — the walk hands back WHAT was claimed
+  // and leaves the pricing to `totalBonus`, which is the only part that needs to know
+  // how big the corpus is.
+  claimed: RankEntry[];
   // Every counted guess, in order — the run as the player played it.
   counted: CountedGuess[];
 }
@@ -143,7 +194,6 @@ export interface WordRun {
 export function replayWordRun(ranks: WordRanks, tried: readonly string[]): WordRun {
   const seen = new Set<string>();
   const counted: CountedGuess[] = [];
-  const claimedRanks: number[] = [];
   const claimed: RankEntry[] = [];
   for (const typed of tried) {
     const key = wordGuessKey(ranks, typed);
@@ -152,10 +202,7 @@ export function replayWordRun(ranks: WordRanks, tried: readonly string[]): WordR
     const judged = judgeWordGuess(ranks, typed);
     if (judged.kind === 'zero') continue; // the word itself is free
     counted.push({ typed, judged });
-    if (judged.kind === 'claim') {
-      claimedRanks.push(judged.entry.rank);
-      claimed.push(judged.entry);
-    }
+    if (judged.kind === 'claim') claimed.push(judged.entry);
   }
-  return { claimedRanks, bonus: totalBonus(claimed), counted };
+  return { claimed, counted };
 }

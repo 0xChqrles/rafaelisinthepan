@@ -1,8 +1,11 @@
 // CONTRACT (#156 Word mode, retimed by #163 — decided 2026-08-08):
 //   - score = number of top-zone (CLAIM_ZONE = the #154 road zone, 250) groups claimed;
-//   - a claim also ADDS SECONDS to the clock, scaled by the claimed group's corpus
-//     rarity (`freq`): a flat CLAIM_BASE_SECONDS plus its RARITY_TIERS extra. Rarity
-//     feeds the CLOCK only, never the score — one resource, one number;
+//   - a claim also ADDS SECONDS to the clock, by the claimed group's RARITY GRADE — one of
+//     five named grades (COMMON..ARCANE) read off its `freq` as a fraction of the LANGUAGE'S
+//     WHOLE CORPUS, never an absolute frequency rank: the two languages' vocabularies are
+//     very different sizes, and absolute cutoffs made the same word mean different things in
+//     them. The seconds are EXPONENTIAL across the grades, so depth pays. Rarity feeds the
+//     CLOCK only, never the score — one resource, one number;
 //   - a near miss (ranked, outside the zone) and a miss (off-map) add nothing and cost
 //     nothing but the time spent typing. Nothing ends a run except the DEADLINE, which
 //     this module deliberately does not know: `replayWordRun` reports no `ended`;
@@ -16,23 +19,30 @@ import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import type { WordRanks } from '@whippin/shared';
 import {
-  CLAIM_BASE_SECONDS,
   CLAIM_ZONE,
-  RARITY_TIERS,
+  RARITY_LADDER,
+  RARITY_NAMES,
   START_SECONDS,
   bonusSeconds,
   judgeWordGuess,
+  rarityOf,
+  rarityStep,
   replayWordRun,
   runMs,
+  totalBonus,
   wordGuessKey,
 } from './wordGame';
 
-// The commonest and the rarest tier of the ladder, by their own declaration.
-const COMMONEST = RARITY_TIERS[0];
-const RAREST = RARITY_TIERS[RARITY_TIERS.length - 1];
-// A `freq` inside a tier: just under its ceiling, or well past the last one's.
-const inTier = (index: number): number =>
-  Number.isFinite(RARITY_TIERS[index].upTo) ? RARITY_TIERS[index].upTo : 10 ** 9;
+// A corpus to measure rarity against. Round, so a grade's `within` fraction reads straight
+// off a `freq` in the fixture below.
+const CORPUS = 100_000;
+// A `freq` that lands INSIDE grade `index`: just under its ceiling, or well past the last
+// grade's (which is unbounded by construction).
+const inGrade = (index: number): number =>
+  Number.isFinite(RARITY_LADDER[index].within)
+    ? Math.floor(RARITY_LADDER[index].within * CORPUS)
+    : CORPUS * 10;
+const LAST = RARITY_LADDER.length - 1;
 
 // A small map exercising every boundary: the word itself (rank 0, aliased), an aliased
 // zone group (rank 1), more zone groups, the LAST zone rank, the first rank past the
@@ -41,14 +51,17 @@ const inTier = (index: number): number =>
 const RANKS: WordRanks = {
   tropiques: { word: 'tropiques', rank: 0 },
   tropique: { word: 'tropiques', rank: 0 },
-  tropicales: { word: 'tropicales', rank: 1, dq: 255, road: 0, freq: inTier(0) },
-  tropical: { word: 'tropicales', rank: 1, dq: 255, road: 0, freq: inTier(0) },
-  cocotier: { word: 'cocotier', rank: 2, dq: 236, road: 1, freq: inTier(RARITY_TIERS.length - 1) },
+  tropicales: { word: 'tropicales', rank: 1, dq: 255, road: 0, freq: inGrade(0) },
+  tropical: { word: 'tropicales', rank: 1, dq: 255, road: 0, freq: inGrade(0) },
+  cocotier: { word: 'cocotier', rank: 2, dq: 236, road: 1, freq: inGrade(LAST) },
   lagon: { word: 'lagon', rank: CLAIM_ZONE, dq: 40, road: 1 }, // no freq: an older artifact
   sable: { word: 'sable', rank: CLAIM_ZONE + 1, dq: 39 },
   sables: { word: 'sable', rank: CLAIM_ZONE + 1, dq: 39 },
   neige: { word: 'neige', rank: 353, dq: 12 },
 };
+
+// What a log is worth, priced against the fixture's corpus.
+const bonusOf = (tried: string[]): number => totalBonus(replayWordRun(RANKS, tried).claimed, CORPUS);
 
 // The claimable zone is not a number this package gets to pick: the #154 artifact draws its
 // roads over generation's flat top-ROAD_TOP, and those groups ARE Word mode's playing field,
@@ -103,61 +116,93 @@ describe('wordGuessKey — group-level identity (#104)', () => {
   });
 });
 
-describe('bonusSeconds — what a claim pays the clock (#163)', () => {
-  it('every claim pays the base, and rarity only ever adds to it', () => {
-    expect(bonusSeconds(1)).toBe(CLAIM_BASE_SECONDS + COMMONEST.extra);
-    for (const tier of RARITY_TIERS) {
-      expect(bonusSeconds(Number.isFinite(tier.upTo) ? tier.upTo : 10 ** 9)).toBe(
-        CLAIM_BASE_SECONDS + tier.extra,
-      );
+describe('rarityOf — five named grades, measured against the CORPUS', () => {
+  it('names the five grades, commonest first, and the ladder is total', () => {
+    expect(RARITY_LADDER.map((g) => g.name)).toEqual([...RARITY_NAMES]);
+    // Ordered, so the "first grade it fits in" lookup is the right one...
+    const cuts = RARITY_LADDER.map((g) => g.within);
+    expect(cuts).toEqual([...cuts].sort((a, b) => a - b));
+    // ...and unbounded at the top, so no word can fall off the end ungraded.
+    expect(cuts[LAST]).toBe(Infinity);
+  });
+
+  it('a grade is a FRACTION of the corpus, so the same word grades alike in any language', () => {
+    // The identical position in two differently sized vocabularies is a different rarity;
+    // the identical FRACTION is the same one. That is the whole reason corpusSize is an
+    // argument — with absolute cutoffs, English and French zones graded ~55% apart.
+    const fraction = RARITY_LADDER[1].within;
+    for (const corpus of [50_000, 100_000, 400_000]) {
+      expect(rarityOf(Math.floor(fraction * corpus), corpus)).toBe(RARITY_NAMES[1]);
+      // Just past that fraction is the next grade up, at every corpus size.
+      expect(rarityOf(Math.ceil(fraction * corpus) + 1, corpus)).toBe(RARITY_NAMES[2]);
     }
   });
 
-  it('rarer is never worth less than commoner', () => {
-    const paid = RARITY_TIERS.map((_t, i) => bonusSeconds(inTier(i)));
-    expect(paid).toEqual([...paid].sort((a, b) => a - b));
-    // And the ladder actually climbs — a flat table would pass the check above.
-    expect(bonusSeconds(inTier(RARITY_TIERS.length - 1))).toBeGreaterThan(bonusSeconds(1));
+  it('grades every band, including the unbounded tail', () => {
+    for (let i = 0; i <= LAST; i += 1) {
+      expect(rarityOf(inGrade(i), CORPUS)).toBe(RARITY_NAMES[i]);
+      expect(rarityStep(RARITY_NAMES[i])).toBe(i);
+    }
   });
 
-  it('an unknown rarity pays the base alone (freq is optional by contract)', () => {
-    expect(bonusSeconds(undefined)).toBe(CLAIM_BASE_SECONDS);
+  it('an unknown or unusable rarity falls to the FLOOR, never a windfall', () => {
+    // `freq` is optional by contract (an artifact generated before #163 carries none), and
+    // a missing corpus must not divide by zero into a jackpot.
+    expect(rarityOf(undefined, CORPUS)).toBe(RARITY_NAMES[0]);
+    expect(rarityOf(500, 0)).toBe(RARITY_NAMES[0]);
+  });
+});
+
+describe('bonusSeconds — what a claim pays the clock (#163)', () => {
+  it('pays its grade, and rarer is always worth strictly more', () => {
+    const paid = RARITY_LADDER.map((_g, i) => bonusSeconds(inGrade(i), CORPUS));
+    expect(paid).toEqual(RARITY_LADDER.map((g) => g.seconds));
+    for (let i = 1; i <= LAST; i += 1) expect(paid[i]).toBeGreaterThan(paid[i - 1]);
   });
 
-  it('the ladder is total and ordered, so no freq falls through it', () => {
-    expect(RARITY_TIERS.map((t) => t.upTo)).toEqual(
-      [...RARITY_TIERS.map((t) => t.upTo)].sort((a, b) => a - b),
-    );
-    expect(RAREST.upTo).toBe(Infinity);
+  it('the ladder is EXPONENTIAL, not linear — depth pays off, it does not merely tick up', () => {
+    // The asked-for shape: each step MULTIPLIES. A linear ladder has constant differences,
+    // which is exactly what this rejects — every gap must be wider than the one below it,
+    // and the top must be a real jackpot rather than one more increment.
+    const paid = RARITY_LADDER.map((g) => g.seconds);
+    for (let i = 2; i <= LAST; i += 1) {
+      expect(paid[i] - paid[i - 1], `gap ${i}`).toBeGreaterThan(paid[i - 1] - paid[i - 2]);
+    }
+    expect(paid[LAST]).toBeGreaterThanOrEqual(4 * paid[0]);
+  });
+
+  it('an unknown rarity pays the floor (freq is optional by contract)', () => {
+    expect(bonusSeconds(undefined, CORPUS)).toBe(RARITY_LADDER[0].seconds);
   });
 });
 
 describe('replayWordRun — the score and the clock, from the log alone', () => {
   it('claims count; the score is the claim count', () => {
     const run = replayWordRun(RANKS, ['tropicales', 'cocotier']);
-    expect(run.claimedRanks).toEqual([1, 2]);
+    expect(run.claimed.map((e) => e.rank)).toEqual([1, 2]);
   });
 
-  it('the clock gets the SUM of the claims\' bonuses — rarity feeds it, not the score', () => {
+  it('the clock gets the SUM of the claims\' grades — rarity feeds it, not the score', () => {
     const run = replayWordRun(RANKS, ['tropicales', 'cocotier']);
-    // Two claims, one common and one deep in the tail: the score cannot tell them
-    // apart, the clock must.
-    expect(run.claimedRanks).toHaveLength(2);
-    expect(run.bonus).toBe(bonusSeconds(inTier(0)) + bonusSeconds(inTier(RARITY_TIERS.length - 1)));
-    expect(runMs(run.bonus)).toBe((START_SECONDS + run.bonus) * 1000);
+    // Two claims, one common and one deep in the tail: the SCORE cannot tell them apart
+    // (both are one word), the clock must.
+    expect(run.claimed).toHaveLength(2);
+    const bonus = totalBonus(run.claimed, CORPUS);
+    expect(bonus).toBe(RARITY_LADDER[0].seconds + RARITY_LADDER[LAST].seconds);
+    expect(runMs(bonus)).toBe((START_SECONDS + bonus) * 1000);
   });
 
-  it('a claim on a group with no freq still pays the base', () => {
+  it('a claim on a group with no freq still pays the floor', () => {
     const run = replayWordRun(RANKS, ['lagon']);
-    expect(run.claimedRanks).toEqual([CLAIM_ZONE]);
-    expect(run.bonus).toBe(CLAIM_BASE_SECONDS);
+    expect(run.claimed.map((e) => e.rank)).toEqual([CLAIM_ZONE]);
+    expect(bonusOf(['lagon'])).toBe(RARITY_LADDER[0].seconds);
   });
 
   it('near misses and misses buy nothing and cost nothing', () => {
     const run = replayWordRun(RANKS, ['sable', 'neige', 'guitare', 'violon']);
-    expect(run.claimedRanks).toEqual([]);
-    expect(run.bonus).toBe(0);
-    // They are still COUNTED — the board draws them, and they never repeat.
+    expect(run.claimed).toEqual([]);
+    expect(bonusOf(['sable', 'neige', 'guitare', 'violon'])).toBe(0);
+    // They are still COUNTED — the post-mortem board draws them, and they never repeat.
     expect(run.counted.map((g) => g.judged.kind)).toEqual(['near', 'near', 'miss', 'miss']);
   });
 
@@ -165,14 +210,14 @@ describe('replayWordRun — the score and the clock, from the log alone', () => 
     // 'tropical' repeats the claimed 'tropicales' group; 'sables' repeats the counted
     // near miss 'sable'.
     const run = replayWordRun(RANKS, ['tropicales', 'tropical', 'sable', 'sables']);
-    expect(run.claimedRanks).toEqual([1]);
-    expect(run.bonus).toBe(bonusSeconds(inTier(0)));
+    expect(run.claimed.map((e) => e.rank)).toEqual([1]);
+    expect(bonusOf(['tropicales', 'tropical', 'sable', 'sables'])).toBe(RARITY_LADDER[0].seconds);
     expect(run.counted).toHaveLength(2);
   });
 
   it('the day\'s word is free and skipped in the log', () => {
     const run = replayWordRun(RANKS, ['tropiques', 'cocotier']);
-    expect(run.claimedRanks).toEqual([2]);
+    expect(run.claimed.map((e) => e.rank)).toEqual([2]);
     expect(run.counted.map((g) => g.typed)).toEqual(['cocotier']);
   });
 
@@ -180,7 +225,7 @@ describe('replayWordRun — the score and the clock, from the log alone', () => 
     // Whatever the log holds, the walk keeps walking: the clock is wall-clock, so a
     // replay cannot know when time ran out (the round state does).
     const run = replayWordRun(RANKS, ['sable', 'neige', 'guitare', 'violon', 'tropicales']);
-    expect(run.claimedRanks).toEqual([1]); // the late claim happened
+    expect(run.claimed.map((e) => e.rank)).toEqual([1]); // the late claim happened
     expect(run).not.toHaveProperty('ended');
   });
 });

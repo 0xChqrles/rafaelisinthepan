@@ -18,7 +18,9 @@
                               (+ <lang>.word.json, the pruned #154 board it plays on)
       screens/Game.tsx        the guess loop, hole state (imports fold from @whippin/shared)
       screens/WordGame.tsx    Word mode's three phases: rules gate -> timed run -> post-mortem
-      game/wordGame.ts        Word mode's rules + economy (CLAIM_ZONE, the clock's tuning knobs)
+      game/wordGame.ts        Word mode's rules + economy (CLAIM_ZONE, the rarity ladder, the clock)
+      components/rarity.ts    how a rarity grade LOOKS and how hard it lands (pinned colours + intensity)
+      components/WordSubject.tsx  the day's word while the run is on: the word alone, centred
       hooks/useCountdown.ts   the run's deadline, as a ticking clock (HUD) and as one flip (screen)
       game/scoring.ts         s(rank), holeProgress, computeProgress
       components/Phrase.tsx,Hole.tsx,WordInput.tsx,FloatingHit.tsx  rendering
@@ -172,27 +174,58 @@ it to the local store — see `packages/backend/AGENTS.md`).
   honestly and we never miseducate what a model did, so this mode's comparison story is
   friends (a leaderboard, later), not AIs. That is a feature of the split, not a gap.
   **The economy is `game/wordGame.ts`, and every constant in it is a declared TUNING KNOB**
-  (the way `STRIKES_TO_END` was): `START_SECONDS` (**60**), `CLAIM_BASE_SECONDS` (**2**) and
-  the `RARITY_TIERS` ladder (3k / 15k / 60k / rest → +0/+1/+2/+3). Nothing restates them —
-  the HUD reads them and the tests DERIVE their expectations from them — so retuning after a
-  play session stays a one-line change. **The values are placeholders until played** (solo,
-  then beta testers); the margin question is whether an average claim's bonus roughly covers
-  the typing cost of the next guess on MOBILE, the slower device. Mis-tuned low, runs end in
-  90 seconds and feel unwinnable; high, every run exhausts the zone.
-  **Rarity is the bonus axis because it is ORTHOGONAL to the score:** a closeness-scaled
-  bonus would double-pay what the count already measures, where corpus rarity pays for
-  vocabulary depth — and since rare words tend to be longer, it is exactly the knob that
-  keeps long words worth their typing cost in a spam meta. `bonusSeconds(freq)` reads the
-  schema's optional `freq` (root `AGENTS.md`); an artifact without it pays the base alone.
+  (the way `STRIKES_TO_END` was): `START_SECONDS` (**60**) and the `RARITY_LADDER`. Nothing
+  restates them — the HUD reads them and the tests DERIVE their expectations from them — so
+  retuning after a play session stays a one-line change. **The values are placeholders until
+  played** (solo, then beta testers); the margin question is whether an average claim's bonus
+  roughly covers the typing cost of the next guess on MOBILE, the slower device. Mis-tuned
+  low, runs end in 90 seconds and feel unwinnable; high, every run exhausts the zone.
+  **FIVE NAMED RARITY GRADES, and they are the game's visible vocabulary** (decided
+  2026-08-08): `COMMON` / `UNCOMMON` / `RARE` / `OBSCURE` / `ARCANE`, **UNTRANSLATED in every
+  language** like MISS / YOU / DNF — one word per grade, identical everywhere. A claim's
+  grade is what floats on the word, and it is what pays the clock: **4 / 6 / 9 / 14 / 21
+  seconds, a geometric ×1.5 ladder**. EXPONENTIAL and not linear on purpose — rarity should
+  PAY OFF rather than tick up, and an ARCANE worth five COMMONs is what makes hunting depth a
+  real strategy against spamming short frequent words. (The ladder also roughly DOUBLES what
+  a claim used to be worth: measured over 1750 real zone groups, the retired 2/3/4/5 tiers
+  averaged 3.34s a claim against this ladder's 6.82s.)
+  **A grade is a FRACTION OF THE CORPUS, never an absolute frequency rank** (decided
+  2026-08-08, and the one part of this that is not a free knob): `rarityOf(freq, corpusSize)`
+  divides the shipped `freq` by `vocabSet.size` — the existence set the round already loads
+  before it can accept a guess — and the ladder's cuts are the commonest **10% / 22% / 50% /
+  85%** of the language. Absolute cutoffs were tried FIRST and measured on real generated
+  artifacts: en's vocabulary is 75k words and fr's 128k, so the same rank means very
+  different things in them, and on the SAME artifacts with the SAME seconds ladder an
+  average claim paid **5.26s in en against 10.12s in fr — fr runs lasting 1.93× longer for
+  no reason but the size of its dictionary**. Dividing by the corpus brings that to
+  **1.47×**. Both halves count the same population, which is why generation ranks `freq`
+  over DISTINCT SLUGS rather than raw forms (#163 fix): V and the existence set differ by
+  exactly the accent collisions, 4.1% in fr against 0.0% in en — a language-dependent skew in
+  the one number that exists to make rarity language-independent.
+  **The 1.47× that REMAINS is a product call, not a bug, and no cut set removes it:** en's
+  250-word neighborhoods do not reach as far down their corpus as fr's (zone p98 at 0.43 of
+  the vocabulary against fr's 0.94), so with these cuts an en board grades **59/29/12/1/0**
+  across the five where an fr board grades **36/28/15/15/5** — English players top out at
+  RARE in practice. Cuts low enough to give en a real ARCANE hand fr ~19% of every board as
+  ARCANE, so the shipped cuts favour fr's pyramid and the doubling target; the measured
+  alternative is **0.08/0.18/0.34/0.55**, which makes all five reachable in en (52/28/16/4/1)
+  at the cost of fr's shape. It is a true statement about the two embeddings (GloVe 6B vs
+  fastText cc.fr) and the tuning sessions are where it gets decided.
+  An artifact with no `freq` at all grades COMMON — the floor, never a windfall for missing
+  data.
   Rarity feeds the CLOCK only, never the score — one resource, one number. Total time is
   bounded by construction (`START_SECONDS` + the zone's summed bonuses), so no run is
   infinite and the zone stays unclearable in practice.
-  A claim is a valid vocab word, not already tried, ranked inside the zone. A **near miss**
-  (ranked, outside it) and a **miss** (off-map) add nothing and cost nothing but the time
-  spent — the near miss still floats its rank, which is the zone's teaching signal, and shows
-  the form the player TYPED (being off every road, per the naming rule in the route-map
-  bullet below). Not-in-vocab, group-level repeats (#104) and the day's word itself stay
-  free non-events.
+  A claim is a valid vocab word, not already tried, ranked inside the zone. **Anything the
+  run cannot claim floats `MISS`, in red — a near miss (ranked, just outside the zone) and an
+  off-map guess alike** (decided 2026-08-08, superseding the near miss's rank float). The
+  rank was justified as the zone's teaching signal, and it was the right call on a
+  contemplative board; on a clock it is a number the player can do nothing with, and the two
+  outcomes are identical in every way that matters to them — no time gained, no time lost but
+  the seconds spent typing. It survives where it still teaches: the post-mortem draws that
+  guess on the trunk at its real rank, showing the form the player TYPED (per the naming rule
+  in the route-map bullet below). `srWordMiss` says the same thing the screen does.
+  Not-in-vocab, group-level repeats (#104) and the day's word itself stay free non-events.
   The pure rules live in `game/wordGame.ts` (`judgeWordGuess` / `wordGuessKey` /
   `replayWordRun` / `bonusSeconds` / `runMs` — a round replays from its counted-guess log
   exactly like the sentence game), the board model in `game/wordBoard.ts` (a SIBLING of
@@ -238,14 +271,57 @@ it to the local store — see `packages/backend/AGENTS.md`).
   keyboard, the timer and the score, and **NO BOARD**: this is a fast game, and a live map
   to read is a contemplative surface pulling against the clock. **OVER** — the board
   arrives, revealed, as the post-mortem the run earned.
+  **During the GATE and the RUN the day's word is JUST THE WORD — centred, in the solved
+  blue, no node, no rail, no rank gutter** (`components/WordSubject`, decided 2026-08-08).
+  It is deliberately NOT the route drawing's terminus row: that row carries a square node and
+  a rail stub because it is the END OF A LINE, and none of that means anything while there is
+  no line. `WordTerminus` still mounts at the bottom of the revealed board, so the word is
+  the same word in two registers — a subject during the run, a station in the post-mortem —
+  and it is the reveal beat that swaps them. Two consequences worth knowing: the run's word
+  brings its own `--wordw` (the WHOLE page column, where the route frame's is what survives
+  the gutter and rail) so the shared `fitWord` still guarantees no mid-word break; and it
+  carries the word as REAL sr text (`srWordBoardWord`), which fixed a live accessibility hole
+  — the board's sr mirror is post-mortem-only and `WordTerminus` is `aria-hidden`, so before
+  this the day's word was spoken NOWHERE for the whole game. `WordTerminus` lost its hit
+  plumbing with the move: no guess can land while it is on screen.
   **The TIMER is the HUD and the SCORE is the watermark.** The clock takes the header's
   status corner (where the sentence game puts its progress counter) at 34px — the one live
   number on the screen — and the count becomes the big `CellDigits` watermark behind the
   word (`.word-anchor`, the standing watermark rule: what is displayed better later, since
   the count is this mode's end-screen headline). That split IS the mode's feedback grammar:
-  **a float on the WORD is about the guess** (its rank, or MISS, on the terminus row exactly
-  as before), **a gain on the TIMER is about your clock** — `+4s` in the solved-word gold,
-  keyed by a monotonic id so two claims in a row replay it. The gain sits UNDER the clock,
+  **a float on the WORD is about the guess** (its GRADE, or MISS), **a gain on the TIMER is
+  about your clock** — `+4s` in the solved-word gold, keyed by a monotonic id so two claims
+  in a row replay it.
+  **The float is the GRADE, and it lands harder the rarer it is** (decided 2026-08-08,
+  superseding the rank exponent). It is still ONE `FloatingHit` with one animation — the
+  sentence game must not acquire a rarity concept it does not have — so every new knob
+  (`label`, `scale`, `lift`, `rise`, `punch`) is optional and **defaults to exactly what the
+  float did before**, which is stated as named constants in the component rather than left
+  implicit in the CSS. Word mode's values live in ONE table indexed by `rarityStep`
+  (`components/rarity.ts` `RARITY_HIT`), so "ARCANE feels bigger than COMMON" is a data row,
+  not five rules. **Two of the five channels are load-bearing for a reason**: the global
+  reduced-motion rule collapses DURATIONS but KEEPS DELAYS, so a ladder built only out of
+  movement would not exist at all for a player who asked for none — `scale` is static and
+  `holdMs` is a delay, and between them the escalation always lands (`rarity.test.ts` pins
+  that). `lift` (where the label rests above the word) grows with the grade because these
+  labels are WORDS: at the sentence game's fixed 14px an ARCANE drawn at twice the base sat
+  squarely ON the word and hid it. The word's own shake rides `--shake-amp`, which
+  **defaults to 1** — `word-shake` is shared by the sentence hole, this word AND the
+  standings sprite, and only Word mode sets the variable.
+  **The rarity COLOURS are copies of existing ramp stops, measured, and pinned**
+  (`components/rarity.ts` + `rarity.test.ts`, mirroring `LANE_COLORS`/`laneColors.test.ts`):
+  `--muted` / progress-green / progress-cyan / heat-electric-violet / progress-pink, minimum
+  pairwise 36.99 dE. **RED IS RESERVED FOR MISS** — every grade clears 37+ dE from `--danger`,
+  wider than the lane set's own shipped 36.9, and the two can never co-occur anyway. Three
+  candidates were measured and REJECTED, and the reasons are worth keeping: progress-violet
+  is the intuitive "deep" pick for OBSCURE and FAILS legibility at 3.64:1 on `--bg` (indigo
+  at 3.00:1), gold-for-ARCANE IS `--hole` — which is the `+Ns` gain firing in the same beat —
+  and progress-blue for RARE sits 14.75 dE from `--accent`, the colour of the word the label
+  is drawn on top of.
+  **The `WORD_END_HOLD_MS` beat is a FLOOR, not a length** (2026-08-08): a rarer grade holds
+  longer, so an ARCANE landing on the buzzer outlives the old static 840ms by nearly a
+  second. The screen tracks when the live float actually ends and waits for the later of the
+  two, or the run's best moment gets cut off mid-air to make room for the board. The gain sits UNDER the clock,
   not beside it: measured at 320px, a `+5s` to the right of a two-digit number runs 15px
   into the header's icon group, where below it has the empty top of the play area to itself
   at every width (and a gain only ever plays during a run, where the word is centred far
@@ -285,8 +361,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   mirrors. (The ONE CSS
   difference stays: `.word-frame` re-derives `--wordw` minus the app's page inset, since the
   board lives in the page rather than a full-bleed dialog.)
-  **The TERMINUS never leaves the screen — as the board's PINNED FOOTER, not a sticky row —
-  and every counted guess lands its hit ON it** (both decided 2026-08-06). The day's word is
+  **The TERMINUS is the board's PINNED FOOTER, not a sticky row** (decided 2026-08-06). Its
+  other half — "and every counted guess lands its hit ON it", and "never leaves the screen" —
+  was retired by #163: the board is the post-mortem, so this row is only ever on screen when
+  no guess can land, and the run's word is `WordSubject`'s instead. The day's word is
   the whole game, so its row (`WordBoard.WordTerminus`) lives OUTSIDE the scroller, pinned
   under the window as the board's own footer: nothing ever scrolls behind it, so it needs no
   masking background at all. A sticky in-scroller row wearing the route map's "you are here"
@@ -307,13 +385,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   does too — via a MASK on the scroller (`.word-cut.more-down .word-scroll`), never a painted
   strip (a strip is a box over the waves again), and only while torn, since at the true bottom
   the merge link must run flush into the terminus's rail.
-  The HIT is the sentence game's own feedback grammar on the one row that is always
-  visible: every counted guess floats the rank it earned — `FloatingHit`, heat-coloured
-  under the same `HIT_HEAT_CAP`, plus the word shake (`.route-word.hit-shake`) — or MISS in
-  the coldest heat for an off-map miss; claims included. Free guesses (repeats, invalid
-  words, the day's word itself) land nothing, exactly as they float nothing in the sentence
-  game. A single target means a single hit: no stagger, and the lone-hit fade delay
-  (`FLOATING_HIT_INTRO_MS`). The hit state is `WordGame`'s; the terminus only renders it.
+  The HIT is the sentence game's own feedback grammar on the word that is always visible —
+  but since #163 it lands on `WordSubject`'s bare centred word, NOT on this row, which by
+  then is not on screen: a guess and the post-mortem board never coexist. Every counted
+  guess floats its rarity GRADE (or MISS) plus the word's shake; free guesses (repeats,
+  invalid words, the day's word itself) land nothing, exactly as they float nothing in the
+  sentence game. A single target means a single hit: no stagger, and the lone-hit fade delay
+  (`FLOATING_HIT_INTRO_MS`) plus whatever hold the grade buys. The hit state is `WordGame`'s.
   **Only a CLAIM scrambles its station** (decided 2026-08-06): the slot-machine reveal is the
   beat that says "you found this", and the run's END reveals the whole ~150-row field at once
   — 150 scrambles starting in one frame, each its own 40ms interval writing state for 650ms —
