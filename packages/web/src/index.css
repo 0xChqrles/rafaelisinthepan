@@ -1199,29 +1199,17 @@ button * {
    table beside the ladder they escalate with (components/rarity.ts RARITY_HIT) — nothing
    here restates a grade.
 
-   `--hit-base` is the SURFACE's to set, not the float's: the sentence game wants one size
-   for a 2-3 character number, Word mode another for an 8-character word like UNCOMMON, and
-   the mobile breakpoint has to shrink both. That is why the media query below moves the BASE
-   and not the font-size — a hard `font-size` there would clobber the scale and flatten the
-   whole ladder on every phone.
-
-   THE SIZE IS ALSO CAPPED BY WHAT THE COLUMN HOLDS, which is the same rule and the same
-   arithmetic `fitWord` applies to the route drawing's words: the pixel font advances exactly
-   1em per glyph, so `room / (glyphs x peak scale)` is the largest size that still fits at
-   the loudest frame of the pop. Without it a 2.6x ARCANE runs clean off a 320px screen.
-   `--hit-room` is declared by the surface and defaults to something no cap can bite through,
-   so every surface that does not declare one — which is all of them but Word mode's — is
-   sized by `base x scale` exactly as before. --- */
+   This one is the SENTENCE game's and the tutorial's, and it is exactly what it always was.
+   Word mode's grade label is a different object with a different animation — see
+   `.rarity-hit` below; the two were briefly one parameterised float and were split when the
+   animations diverged (#163, 2026-08-09). --- */
 .floating-hit {
   position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
   font-family: var(--press);
-  font-size: min(
-    calc(var(--hit-base, 28px) * var(--hit-scale, 1)),
-    calc(var(--hit-room, 10000px) / (var(--hit-len, 1) * var(--hit-punch, 1.35)))
-  );
+  font-size: var(--hit-base, 28px);
   color: #fff;
   pointer-events: none;
   opacity: 0;
@@ -1229,46 +1217,92 @@ button * {
     hit-pop-in 0.32s cubic-bezier(0.22, 1.4, 0.4, 1) var(--hit-delay, 0ms) forwards,
     hit-fade-out 0.52s ease-in var(--hit-fade-delay, 320ms) forwards;
 }
-/* `--hit-lift` is where the label COMES TO REST above the word's centre. It appears in the
-   last frame of the pop and the first frame of the fade, and the two MUST read the same
-   value or the label visibly jumps at the handoff. It scales with the grade for a reason
-   that is not decoration: a rarity label is a WORD and the rarest are drawn at twice the
-   base size, so at the default 14px an ARCANE sat squarely ON the word it was about and hid
-   it. Bigger grades tower over it instead. */
-/* Every rotation is RELATIVE to `--hit-tilt`, the angle the label comes to rest at. Word
-   mode rolls that a random way per hit so a run of guesses reads as hand-thrown notes rather
-   than one stamp printed over and over; a zero default leaves the sentence game's label dead
-   straight, entering at -6deg and overshooting to +2 exactly as it always has. */
 @keyframes hit-pop-in {
   0% {
     opacity: 0;
-    transform: translate(-50%, calc(-50% + 4px)) scale(0.5)
-      rotate(calc(var(--hit-tilt, 0deg) - 6deg));
+    transform: translate(-50%, calc(-50% + 4px)) scale(0.5) rotate(-6deg);
   }
-  /* The overshoot peaks 4px BELOW where it lands and settles up into it. Written as
-     `lift - 4` rather than a flat 10px so the WHOLE trajectory rises with the grade: at the
-     default lift of 14 this is exactly the 10px it always was, and at ARCANE's it keeps the
-     same shape instead of punching back down onto the word. */
   55% {
     opacity: 1;
-    transform: translate(-50%, calc(-50% - var(--hit-lift, 14px) + 4px))
-      scale(var(--hit-punch, 1.35)) rotate(calc(var(--hit-tilt, 0deg) + 2deg));
+    transform: translate(-50%, calc(-50% - 10px)) scale(1.35) rotate(2deg);
   }
   100% {
     opacity: 1;
-    transform: translate(-50%, calc(-50% - var(--hit-lift, 14px))) scale(1)
-      rotate(var(--hit-tilt, 0deg));
+    transform: translate(-50%, calc(-50% - 14px)) scale(1) rotate(0deg);
   }
 }
 @keyframes hit-fade-out {
   0% {
     opacity: 1;
-    transform: translate(-50%, calc(-50% - var(--hit-lift, 14px))) scale(1)
-      rotate(var(--hit-tilt, 0deg));
+    transform: translate(-50%, calc(-50% - 14px)) scale(1);
   }
   100% {
     opacity: 0;
-    transform: translate(-50%, calc(-50% - var(--hit-rise, 42px))) scale(0.86)
+    transform: translate(-50%, calc(-50% - 42px)) scale(0.86);
+  }
+}
+
+/* --- Word mode's RARITY LABEL (#163): the grade a claim earned, or MISS, STAMPED ONTO the
+   day's word. A different object from the float above and a deliberately different animation
+   (decided 2026-08-09): that one pops UP off the word and drifts away as a footnote to it,
+   which is right for a distance — a remark ABOUT the word. A grade is not a remark, it is a
+   VERDICT on the guess, so this one FALLS onto the word from above, lands squarely on it,
+   SITS there long enough to be read, and then leaves straight up.
+
+   Three things it reads that the other does not. `--hit-tilt` is the angle it lands at,
+   rolled a random way per hit, so a run of guesses reads as hand-thrown notes rather than one
+   stamp printed over and over. `--hit-scale` multiplies the surface's `--hit-base`, which is
+   how the five grades differ in size. And that size is CAPPED by what the column holds — the
+   same arithmetic `fitWord` applies to the route drawing's words, since the pixel font
+   advances exactly 1em per glyph — because a grade name is a WORD (`UNCOMMON` is 8
+   characters) and at the rarest scales the widest would run clean off a 320px screen. --- */
+.rarity-hit {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  font-family: var(--press);
+  font-size: min(
+    calc(var(--hit-base, 24px) * var(--hit-scale, 1)),
+    calc(var(--hit-room, 10000px) / (var(--hit-len, 1) * var(--hit-punch, 1.35)))
+  );
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  animation:
+    rarity-stamp 0.3s cubic-bezier(0.2, 0.9, 0.3, 1) forwards,
+    rarity-vanish 0.6s cubic-bezier(0.55, 0, 0.9, 0.35) var(--hit-fade-delay, 320ms) forwards;
+}
+/* Down onto the word, arriving oversized and settling back into itself — the weight of
+   something landing, not the spring of something popping out. The resting frame is a plain
+   `translate(-50%, -50%)`: dead centre ON the word, which is the whole point. */
+@keyframes rarity-stamp {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% - var(--hit-drop, 26px)))
+      scale(calc(var(--hit-punch, 1.35) * 1.25)) rotate(var(--hit-tilt, 0deg));
+  }
+  55% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(var(--hit-punch, 1.35)) rotate(var(--hit-tilt, 0deg));
+  }
+  78% {
+    transform: translate(-50%, -50%) scale(0.95) rotate(var(--hit-tilt, 0deg));
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1) rotate(var(--hit-tilt, 0deg));
+  }
+}
+/* Then straight up and out, ACCELERATING away rather than drifting — the word is handed
+   back rather than slowly uncovered. */
+@keyframes rarity-vanish {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1) rotate(var(--hit-tilt, 0deg));
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% - var(--hit-rise, 120px))) scale(0.8)
       rotate(var(--hit-tilt, 0deg));
   }
 }
@@ -2898,9 +2932,7 @@ button * {
     min-width: 0;
   }
 
-  /* Floating hit / MISS scaled down to sit over the smaller hole words. The BASE, never
-     `font-size` — a hard size here would override `--hit-scale` and flatten Word mode's
-     whole rarity ladder to one size on every phone. */
+  /* Floating hit / MISS scaled down to sit over the smaller hole words. */
   .floating-hit {
     --hit-base: 18px;
   }
@@ -3598,13 +3630,17 @@ button * {
 /* Above the prompt, left-aligned with it: the last few finds, newest against the prompt and
    older ones riding up and out. `flex-end` is what makes it a chat rather than a list — the
    column fills from the bottom, so the newest line is always in the same place and the
-   oldest simply leaves through the top. `overflow: hidden` is what "just disappear" means. */
+   oldest simply leaves through the top. `overflow: hidden` is what "just disappear" means.
+   The seam under it is its OWN margin rather than the footer's gap: the footer now stacks
+   four things with four different needs, and the history is the one that must stand clear of
+   the prompt (they are both text on the same left edge, and read as one block otherwise). */
 .word-history {
   width: 100%;
-  height: calc(5 * 1.45em);
+  height: calc(5 * 1.5em);
+  margin-bottom: clamp(14px, 2.4vh, 24px);
   font-family: var(--vt);
-  font-size: clamp(10px, 2.6vw, 13px);
-  line-height: 1.45;
+  font-size: clamp(14px, 4vw, 19px);
+  line-height: 1.5;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
@@ -3631,19 +3667,45 @@ button * {
 }
 
 /* Below the prompt: `found/total` per grade, commonest first, the COLOUR the only label.
-   It sits where the strike row used to and takes that row's tight seam against the keyboard
-   for the same reason — it reports on the guessing those keys do. */
+   It spans THE KEYBOARD'S OWN BOX and distributes the grades evenly across it, so the row
+   reads as a strip belonging to the keys rather than a ragged line under the prompt — which
+   means its width is a MIRROR of `.keyboard`'s and the two have to move together (the mobile
+   override below is the same full-bleed trick, for the same reason). Its top seam is its own
+   margin, matching the history's on the other side of the prompt, so the prompt sits in
+   clear air; the bottom seam stays the footer's tight gap, because this row reports on the
+   guessing those keys do. */
 .word-tally {
+  align-self: center;
   width: 100%;
+  max-width: 680px;
+  margin-top: clamp(14px, 2.4vh, 24px);
 }
 .tally-row {
   display: flex;
   flex-wrap: nowrap;
-  gap: clamp(6px, 2.4vw, 14px);
+  justify-content: space-between;
+  gap: 4px;
   font-family: var(--press);
-  font-size: clamp(8px, 2.5vw, 11px);
+  font-size: clamp(10px, 3vw, 13px);
   letter-spacing: 0;
   font-variant-numeric: tabular-nums;
+}
+
+/* Both readouts belong to the RUN. Once it is over they keep their box — the footer's height
+   is what holds the word above it still — and stop being drawn, because the result screen
+   rises over this exact space and a tally showing through the score reads as a fault. The
+   visibility is delayed by the fade so the opacity has something to animate. */
+.word-history,
+.word-tally {
+  transition: opacity 0.25s ease;
+}
+.word-history.retired,
+.word-tally.retired {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.25s ease,
+    visibility 0s 0.25s;
 }
 /* The WINDOW: a non-scrolling frame around the post-mortem's scroller, which is what lets it
    wear the shared TORN EDGES (`.scroll-torn`) — the revealed line runs far taller than the
@@ -3778,10 +3840,10 @@ button * {
    breakpoint declares `--hit-base` on `.floating-hit`; inheriting from `.word-subject`
    would lose to it and every grade would render at the sentence game's size. Measured
    before the fix: an OBSCURE label 343px wide, clipped off a 320px screen. */
-.word-subject .floating-hit {
+.word-subject .rarity-hit {
   --hit-base: 24px;
   /* What the grade label has to fit inside — the page column, which is what caps the
-     rarest grades on a narrow screen (see `.floating-hit`). The float is absolutely
+     rarest grades on a narrow screen (see `.rarity-hit`). The label is absolutely
      positioned and centred on the word, so it may run wider than `.word-window`'s own cap
      without clipping; the viewport is the real limit. */
   --hit-room: min(760px, calc(100vw - 48px));
@@ -3812,9 +3874,17 @@ button * {
   .word-subject {
     --wordw: min(430px, calc(100vw - 28px));
   }
-  .word-subject .floating-hit {
+  .word-subject .rarity-hit {
     --hit-base: 17px;
     --hit-room: calc(100vw - 28px);
+  }
+  /* The tally mirrors the KEYBOARD's box, and the keyboard goes full-bleed here — 10px past
+     the page inset on each side (see `.keyboard`). The two must move together or the strip
+     stops lining up with the keys it belongs to. */
+  .word-tally {
+    width: calc(100% + 20px);
+    max-width: calc(100% + 20px);
+    margin-inline: -10px;
   }
 }
 .word-prompt {

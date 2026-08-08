@@ -300,19 +300,22 @@ it to the local store — see `packages/backend/AGENTS.md`).
   pushed the help icon off the screen). `useCountdown` ticks at 50ms so the last digit does
   not stutter.
   **The float is the GRADE, and it lands harder the rarer it is** (decided 2026-08-08,
-  superseding the rank exponent). It is still ONE `FloatingHit` with one animation — the
-  sentence game must not acquire a rarity concept it does not have — so every new knob
-  (`label`, `scale`, `lift`, `rise`, `punch`, `--hit-len`) is optional and **defaults to
-  exactly what the float did before**, which is stated as named constants in the component
-  rather than left implicit in the CSS. Word mode's values live in ONE table indexed by
-  `rarityStep` (`components/rarity.ts` `RARITY_HIT`), so "ARCANE feels bigger than COMMON"
-  is a data row, not six rules. **Two of the channels are load-bearing for a reason**: the
-  global reduced-motion rule collapses DURATIONS but KEEPS DELAYS, so a ladder built only
-  out of movement would not exist at all for a player who asked for none — `scale` is static
-  and `holdMs` is a delay, and between them the escalation always lands (`rarity.test.ts`
-  pins that). `lift` (where the label rests above the word) grows with the grade because
-  these labels are WORDS: at the sentence game's fixed 14px an ARCANE sat squarely ON the
-  word and hid it.
+  superseding the rank exponent) — and it is **its own component with its own animation**,
+  `components/RarityHit` (decided 2026-08-09, superseding a parameterised `FloatingHit`).
+  The sentence game's float pops UP off the word and drifts away as a footnote to it, which
+  is right for a distance: a remark ABOUT the word. A grade is not a remark, it is a VERDICT
+  on the guess — so this one FALLS onto the word from above, lands squarely ON it, SITS there
+  long enough to be read, then leaves straight up. The two share the delay contract and the
+  unmount timer and nothing else, which is exactly why they are two: a float whose every
+  dimension is overridden is not being shared. `FloatingHit` is therefore byte-identical to
+  what it was before #163, and the sentence board and tutorial are untouched by construction.
+  Word mode's values live in ONE table indexed by `rarityStep` (`components/rarity.ts`
+  `RARITY_HIT`), so "ARCANE lands harder than COMMON" is a data row, not six rules. **Two of
+  the channels are load-bearing for a reason**: the global reduced-motion rule collapses
+  DURATIONS but KEEPS DELAYS, so a ladder built only out of movement would not exist at all
+  for a player who asked for none — `scale` is static and `holdMs` is a delay, and between
+  them the escalation always lands (`rarity.test.ts` pins that). `holdMs` is also the channel
+  that matters most on its own terms, since the label's whole job is to be read.
   **From RARE up the day's word RIPPLES** (decided 2026-08-08): the #129 letter wave, at an
   amplitude the grade sets (`--wave-lift`, 3/5/8px). It is a THRESHOLD channel, absent below
   RARE rather than merely quiet, so the top half of the ladder does something the bottom half
@@ -331,16 +334,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (`--shake-amp` 1, `--wave-lift` 3px) — `word-shake` is shared by the sentence hole, this
   word AND the standings sprite, and `hole-wave` by the hole's ambient ripple, so only Word
   mode's own rules set them.
-  **The label sits ABOVE the word, at a random TILT** (decided 2026-08-09): every grade's
-  `lift` clears the word entirely — reading one word through another is reading neither —
-  and the label leans a coin-flip's worth of `HIT_TILT_MIN/MAX_DEG` (3–8°) each time, so a
-  run of guesses reads as hand-thrown notes rather than one stamp printed over and over.
-  Every rotation in the keyframes is RELATIVE to `--hit-tilt`, which defaults to 0 and keeps
-  the sentence game's label dead straight. **The lift pays for the tilt as well as the type,
-  and that is not obvious**: a rotated box is taller than an upright one by half its WIDTH
-  times the sine of the angle, and these labels are wide — an 8-character UNCOMMON at 8°
-  swings its corners ~13px lower than its height suggests, which was exactly enough to land
-  it back on the word (measured, then fixed).
+  **The label lands at a random TILT** (decided 2026-08-09): it leans a coin-flip's worth of
+  `HIT_TILT_MIN/MAX_DEG` (3–8°) each time, so a run of guesses reads as hand-thrown notes
+  rather than one stamp printed over and over. Every rotation in `rarity-stamp`/
+  `rarity-vanish` is relative to `--hit-tilt`.
   **Two ambient readouts bracket the prompt during a run** (decided 2026-08-09), and both
   RESERVE their full footprint from the first frame — the word sits in the flexible space
   above them, and a column that grew as the run filled it would walk the word up the screen
@@ -351,13 +348,21 @@ it to the local store — see `packages/backend/AGENTS.md`).
   log is where a moment later belongs, so each line is the word in its grade's colour with
   its exponent. Below it, `components/WordTally`: `found/total` per grade, commonest first,
   with **the COLOUR as the only label** — no names, no legend, since the five colours are
-  already the language the float speaks. A grade the day's zone does not contain is DROPPED
-  rather than shown as `0/0`: an English board often has no ARCANE group at all, and a
-  permanent `0/0` reads as a goal being failed rather than one the day never offered. Both
+  already the language the float speaks. It spans **the KEYBOARD's own box** and spreads the
+  grades evenly across it, so it reads as a strip belonging to the keys rather than a ragged
+  line under the prompt; that width is a MIRROR of `.keyboard`'s, full-bleed override
+  included, and the two must move together. A grade the day's zone does not contain is
+  DROPPED rather than shown as `0/0`: an English board often has no ARCANE group at all, and
+  a permanent `0/0` reads as a goal being failed rather than one the day never offered. Both
   totals come from `zoneGroups`/`tallyRarity` (`game/wordGame.ts`), so the numerator and the
   denominator are counted by ONE rule — a group is its RANK, once, however many aliases key
   it. The history is decorative (every line was announced when it landed); the tally carries
   an sr line, because a colour says nothing to a reader.
+  **Both readouts go quiet on the reveal beat and LEAVE at the results** (2026-08-09): hidden
+  first, because the keyboard is still dropping through that beat and a footer collapsing
+  under it would drag the drop; then UNMOUNTED once the result rises, so the ~160px they were
+  reserving goes to the post-mortem board — which is the whole content of that screen, and
+  was measurably squeezed (320px: a 280px window became 378) while they held their space.
   **The rarity COLOURS are copies of existing ramp stops, measured, and pinned**
   (`components/rarity.ts` + `rarity.test.ts`, mirroring `LANE_COLORS`/`laneColors.test.ts`):
   `--muted` / progress-green / progress-cyan / heat-electric-violet / progress-pink, minimum

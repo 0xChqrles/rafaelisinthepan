@@ -33,7 +33,7 @@ import WordTimer, { type TimeGain } from '../components/WordTimer';
 import CellDigits from '../components/CellDigits';
 import Button from '../components/Button';
 import { FLOATING_HIT_INTRO_MS } from './Game';
-import { HIT_FADE_MS } from '../components/FloatingHit';
+import { RARITY_VANISH_MS } from '../components/RarityHit';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import WordEndScreen from '../components/WordEndScreen';
@@ -67,7 +67,7 @@ import { prefersReducedMotion } from '../hooks/useScramble';
 // outlives this by nearly a second; the screen tracks when the live float actually ends
 // and waits for the later of the two. Getting that wrong would cut the run's best moment
 // off mid-air to show the board.
-const WORD_END_HOLD_MS = FLOATING_HIT_INTRO_MS + HIT_FADE_MS;
+const WORD_END_HOLD_MS = FLOATING_HIT_INTRO_MS + RARITY_VANISH_MS;
 // Then the field arrives under the word and the prompt leaves; then the keyboard drops
 // and the result rises. This beat is what separates the reveal from the drop — it is the
 // board's own moment, with nothing else moving in it.
@@ -376,13 +376,13 @@ function WordRound({
       const style = grade ? RARITY_HIT[rarityStep(grade)] : MISS_HIT;
       hitId.current += 1;
       const fadeDelayMs = FLOATING_HIT_INTRO_MS + style.holdMs;
-      hitEndsAt.current = Date.now() + fadeDelayMs + HIT_FADE_MS;
+      hitEndsAt.current = Date.now() + fadeDelayMs + RARITY_VANISH_MS;
       setHit({
         id: hitId.current,
         label: grade ?? 'MISS',
         color: grade ? RARITY_COLORS[grade] : MISS_COLOR,
         scale: style.scale,
-        lift: style.lift,
+        drop: style.drop,
         rise: style.rise,
         punch: style.punch,
         tilt: rollHitTilt(),
@@ -491,8 +491,19 @@ function WordRound({
                   finds WERE above it, and how much of each grade is still out there below
                   it. Both keep their footprint whatever they hold — the history is a
                   fixed-height column and the tally a fixed row — so the word above never
-                  shifts as a run fills them. */}
-              <WordHistory claimed={run.claimed} corpusSize={corpusSize} />
+                  shifts as a run fills them.
+                  They go QUIET on the reveal beat and LEAVE ENTIRELY once the result rises:
+                  hidden first, because the keyboard is still dropping through that beat and
+                  a footer that collapsed under it would drag the drop; then unmounted, so
+                  the ~160px they were holding goes to the post-mortem board, which is the
+                  whole content of that screen. */}
+              {!showResults && (
+                <WordHistory
+                  claimed={run.claimed}
+                  corpusSize={corpusSize}
+                  retired={promptExiting}
+                />
+              )}
 
               <div
                 className={`input-area word-prompt${promptExiting ? ' solving' : ''}${
@@ -512,7 +523,14 @@ function WordRound({
                 />
               </div>
 
-              <WordTally found={foundTally} total={zoneTally} lang={lang} />
+              {!showResults && (
+                <WordTally
+                  found={foundTally}
+                  total={zoneTally}
+                  lang={lang}
+                  retired={promptExiting}
+                />
+              )}
 
               <div className={`tray${keyboardLeaving ? ' kb-leaving' : ''}`}>
                 {!showResults && (

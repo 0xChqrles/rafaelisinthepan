@@ -19,15 +19,20 @@ export default function WordTally({
   found,
   total,
   lang,
+  retired = false,
 }: {
   found: RarityTally;
   total: RarityTally;
   lang: string;
+  // The run is over. It stays MOUNTED so the footer keeps its height — the word above it
+  // must not move — but hidden, because the result screen rises over this exact space and
+  // a tally showing through the score reads as a rendering fault.
+  retired?: boolean;
 }) {
   const grades = RARITY_NAMES.filter((name) => total[name] > 0);
   if (grades.length === 0) return null;
   return (
-    <div className="word-tally">
+    <div className={`word-tally${retired ? ' retired' : ''}`}>
       {/* Decorative: the colour carries the grade, and a colour carries nothing to a reader.
           The sr line below says the same thing in words. */}
       <span aria-hidden="true" className="tally-row">

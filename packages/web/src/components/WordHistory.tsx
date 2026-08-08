@@ -22,15 +22,20 @@ const FAINTEST = 0.22;
 export default function WordHistory({
   claimed,
   corpusSize,
+  retired = false,
 }: {
   claimed: readonly RankEntry[];
   corpusSize: number;
+  // The run is over. It stays MOUNTED — the footer's height is what keeps the word above it
+  // still — but it has nothing left to say, and the result screen rises over this exact
+  // space.
+  retired?: boolean;
 }) {
   const recent = claimed.slice(-VISIBLE);
   return (
     // Decorative throughout: every one of these was announced when it landed
     // (`srWordClaim`), and a reader does not need the same find twice.
-    <div className="word-history" aria-hidden="true">
+    <div className={`word-history${retired ? ' retired' : ''}`} aria-hidden="true">
       {recent.map((entry, i) => (
         <span
           // The rank IS the group's identity (`wordGuessKey`), so it keys a line that must

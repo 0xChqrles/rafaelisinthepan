@@ -112,7 +112,7 @@ describe('rarity intensity escalates with the ladder', () => {
   });
 
   it('every graded channel is strictly stronger at a rarer grade', () => {
-    for (const channel of ['scale', 'holdMs', 'lift', 'rise', 'punch', 'shake'] as const) {
+    for (const channel of ['scale', 'holdMs', 'drop', 'rise', 'punch', 'shake'] as const) {
       const values = RARITY_HIT.map((row) => row[channel]);
       for (let i = 1; i < values.length; i += 1) {
         expect(values[i], `${channel} at step ${i}`).toBeGreaterThan(values[i - 1]);

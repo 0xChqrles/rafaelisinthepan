@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import FloatingHit from './FloatingHit';
+import RarityHit from './RarityHit';
 import { fitWord } from './routeDrawing';
 import { srWordBoardWord } from '../i18n';
 
@@ -29,13 +29,13 @@ export interface WordHit {
   label: string; // the rarity grade, or MISS
   color: string;
   scale: number; // the intensity dimensions, straight off components/rarity.ts
-  lift: number;
+  drop: number;
   rise: number;
   punch: number;
   tilt: number; // degrees, rolled per hit — it leans a random way every time
   shake: number; // multiplier on the word's own shake
   wave: number; // the letter wave's amplitude in px; 0 below RARE, where there is no wave
-  fadeDelayMs: number; // how long the label holds before it leaves — rarity buys hold too
+  fadeDelayMs: number; // how long the label SITS on the word before leaving
 }
 
 // The letter wave's own clock, the sentence game's #129 numbers exactly: one letter's whole
@@ -93,18 +93,16 @@ export default function WordSubject({
           ))}
         </span>
         {hit && onHitDone && (
-          <FloatingHit
+          <RarityHit
             key={hit.id}
             id={hit.id}
-            value={0}
             label={hit.label}
             color={hit.color}
             scale={hit.scale}
-            lift={hit.lift}
+            drop={hit.drop}
             rise={hit.rise}
             punch={hit.punch}
             tilt={hit.tilt}
-            startDelayMs={0}
             fadeDelayMs={hit.fadeDelayMs}
             onDone={onHitDone}
           />

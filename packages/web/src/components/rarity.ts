@@ -60,18 +60,13 @@ export const MISS_COLOR = '#ff1f54';
 // who asked for none.
 //
 //   scale  — font-size multiplier of `--hit-base`. STATIC: survives reduced motion.
-//   holdMs — extra time the label sits before it leaves. A DELAY: survives reduced motion.
-//   lift   — where it comes to rest ABOVE the word's centre, px. Every grade clears the
-//            word entirely (decided 2026-08-09): the label is a WORD of its own and reading
-//            one word through another is reading neither, so the smallest lift here is the
-//            word's own half-height plus a margin, and it grows from there with `scale`.
-//            It also has to pay for the TILT, which is not obvious and was measured: a
-//            rotated box is taller than an upright one by half its WIDTH times the sine of
-//            the angle, and these labels are wide — an 8-character UNCOMMON at 8 degrees
-//            swings its corners ~13px lower than its upright height suggests, which is
-//            exactly enough to land back on the word.
-//   rise   — how far it drifts as it fades, px. Motion. Always well past `lift`.
-//   punch  — the pop's peak scale. Motion.
+//   holdMs — how long it SITS ON THE WORD before leaving. A DELAY: survives reduced motion,
+//            and the channel that matters most, because the label's whole job is to be read.
+//   drop   — how far ABOVE the word it falls from, px. The label lands ON the word and rests
+//            there (decided 2026-08-09) — a grade is a verdict on the guess, not a footnote
+//            beside it — so this is where the stamp comes DOWN from, not where it stops.
+//   rise   — how far it flies when it leaves, straight up, px. Motion.
+//   punch  — the scale it arrives at, before settling to 1. Motion.
 //   shake  — multiplier on the word's own shake amplitude. Motion.
 //   wave   — the LETTER WAVE: the day's word ripples letter by letter, at this amplitude in
 //            px. 0 is off. It arrives at RARE and grows from there — the top half of the
@@ -94,7 +89,7 @@ export const MISS_COLOR = '#ff1f54';
 export interface RarityHitStyle {
   scale: number;
   holdMs: number;
-  lift: number;
+  drop: number;
   rise: number;
   punch: number;
   shake: number;
@@ -102,11 +97,11 @@ export interface RarityHitStyle {
 }
 
 export const RARITY_HIT: readonly RarityHitStyle[] = [
-  { scale: 1, holdMs: 0, lift: 54, rise: 96, punch: 1.25, shake: 0.6, wave: 0 }, // COMMON
-  { scale: 1.35, holdMs: 120, lift: 60, rise: 104, punch: 1.3, shake: 0.85, wave: 0 }, // UNCOMMON
-  { scale: 1.7, holdMs: 260, lift: 68, rise: 116, punch: 1.35, shake: 1.1, wave: 3 }, // RARE
-  { scale: 2.1, holdMs: 420, lift: 78, rise: 130, punch: 1.4, shake: 1.45, wave: 5 }, // OBSCURE
-  { scale: 2.6, holdMs: 600, lift: 90, rise: 148, punch: 1.45, shake: 1.9, wave: 8 }, // ARCANE
+  { scale: 1, holdMs: 220, drop: 26, rise: 110, punch: 1.25, shake: 0.6, wave: 0 }, // COMMON
+  { scale: 1.35, holdMs: 340, drop: 32, rise: 125, punch: 1.3, shake: 0.85, wave: 0 }, // UNCOMMON
+  { scale: 1.7, holdMs: 500, drop: 40, rise: 145, punch: 1.35, shake: 1.1, wave: 3 }, // RARE
+  { scale: 2.1, holdMs: 700, drop: 50, rise: 170, punch: 1.4, shake: 1.45, wave: 5 }, // OBSCURE
+  { scale: 2.6, holdMs: 950, drop: 62, rise: 200, punch: 1.45, shake: 1.9, wave: 8 }, // ARCANE
 ];
 
 // The label's resting TILT, in degrees (decided 2026-08-09). It leans a random way on every
