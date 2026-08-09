@@ -1101,7 +1101,8 @@ button * {
    phrase must not reflow or shift width — and staggered off the letter's index, with both
    numbers handed down from Hole so the JS that ends the wave and the CSS that draws it
    cannot disagree. */
-.hole-word.wave .hole-letter {
+.hole-word.wave .hole-letter,
+.word-subject-text.wave .hole-letter {
   animation: hole-wave var(--wave-dur, 300ms) ease-in-out calc(var(--i) * var(--wave-step, 40ms));
 }
 @keyframes hole-wave {
@@ -3794,7 +3795,12 @@ button * {
    the sentence game's 28px, because that label is a WORD (`UNCOMMON` is 8 characters where a
    distance is 2-3) and the rarest grades multiply it. */
 .word-subject {
-  --wordw: min(430px, calc(100vw - 48px));
+  /* 95% of the column, not all of it: the word BREATHES (see `word-breathe`), and at the
+     top of that breath its letters carry 0.045em of extra spacing each — which for a word
+     `fitWord` has already sized to fill the column exactly is a hair under 5% of overflow.
+     Reserving it here keeps that arithmetic in the one place that owns the column's width,
+     the same way the route frame's `--wordw` reserves 18px for a scrollbar it cannot see. */
+  --wordw: calc(min(430px, calc(100vw - 48px)) * 0.95);
   width: 100%;
   display: flex;
   justify-content: center;
@@ -3827,20 +3833,27 @@ button * {
    `rotate` / `translate`. The pivot is the letter's BOTTOM, so a lean reads as a card tipping
    in a hand rather than a glyph spinning in place.
    Both go on the INDEPENDENT transform properties, never into one `transform` string, and
-   that is load-bearing: the lift transitions on `translate` ALONE, so the lean does not have
-   to be restated in every frame of it — and `transform` stays free for anything a future
-   beat wants to compose on top. The transition is what makes the drawn letter drop as the
-   next one rises, with no second clock to keep them in step. */
+   that is load-bearing rather than tidy: it leaves `transform` free, which is exactly what
+   lets the letter WAVE — an ordinary transform animation, shared with the sentence game's
+   holes — ride ON TOP of the fan instead of flattening it for the length of a ripple. */
 .word-subject-text .hole-letter {
   transform-origin: 50% 100%;
-  transition: translate 0.3s ease-out;
 }
-/* And the whole hand breathes. Very subtly — this is the screen being alive while the player
-   thinks, not a thing to look at — on the WRAP so the word and the grade label on it move as
-   one object. An infinite decoration, so reduced motion switches it OFF rather than
-   collapsing it (the rule the timer's warning pulse follows). */
+/* And the whole hand BREATHES: it rises and, in the same breath, spreads. Very subtly — this
+   is the screen being alive while the player thinks, not a thing to look at.
+   TWO elements, ONE rhythm. The rise is on the WRAP so the word and any grade label on it
+   move as one object; the spread has to be on the TEXT, because letter-spacing is inherited
+   by the letters and would otherwise reach the label too. Same duration, same easing, both
+   started at mount, so they stay in phase without anything synchronising them.
+   The spread is the one thing here that changes the word's WIDTH, which is why
+   `.word-subject`'s `--wordw` reserves room for it — see there. Both are infinite
+   decorations, so reduced motion switches them OFF rather than collapsing them (the rule the
+   timer's warning pulse follows); the fan itself stays, being a posture and not motion. */
 .word-subject .hole-word-wrap {
   animation: word-float 3.6s ease-in-out infinite;
+}
+.word-subject-text {
+  animation: word-breathe 3.6s ease-in-out infinite;
 }
 @keyframes word-float {
   0%,
@@ -3848,17 +3861,22 @@ button * {
     transform: translateY(0);
   }
   50% {
-    transform: translateY(-2.5px);
+    transform: translateY(-3.25px);
+  }
+}
+@keyframes word-breathe {
+  0%,
+  100% {
+    letter-spacing: 0;
+  }
+  50% {
+    letter-spacing: 0.045em;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .word-subject .hole-word-wrap {
+  .word-subject .hole-word-wrap,
+  .word-subject-text {
     animation: none;
-  }
-  /* The lift still lands, it just lands at once — the fan itself is a posture, not motion,
-     and stays exactly as it is. */
-  .word-subject-text .hole-letter {
-    transition: none;
   }
 }
 /* The word STEPS BACK while a grade is on it. Not a flourish and not a transition — the
@@ -3876,7 +3894,7 @@ button * {
      so its width is the constraint, and the desktop base would run the widest grades close
      to the edge of a 320px screen. */
   .word-subject {
-    --wordw: min(430px, calc(100vw - 28px));
+    --wordw: calc(min(430px, calc(100vw - 28px)) * 0.95);
   }
   .word-subject .rarity-hit {
     --hit-base: 14px;

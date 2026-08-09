@@ -52,50 +52,61 @@ export interface WordHit {
 const FAN_DEG = 6;
 const FAN_ARC_PX = 3;
 
-// One letter at a time stands proud of the rest, as though it were the card about to be
-// drawn, and drops the moment another rises. It moves on this clock and NEVER twice to the
-// same letter, so the hand reads as being idly turned over rather than scanned left to
-// right — the reasoning that gave every sentence hole its own random wave clock (#129)
-// instead of one ripple travelling around the phrase.
-const DRAW_INTERVAL_MS = 750;
-const DRAW_LIFT_PX = 7;
+// Now and then the hand RIPPLES: #129's letter wave, the one the sentence game's holes run,
+// on the same random clock (decided 2026-08-09, replacing a single letter that rose every
+// 750ms as though it were about to be drawn). The four numbers are that wave's, restated
+// here rather than reached for inside `Hole` — importing half a component's internals is
+// not sharing it, and these are four literals against a coupling to a hole's `ticking`
+// state, which this surface has no equivalent of.
+const WAVE_LETTER_MS = 300;
+const WAVE_STEP_MS = 40;
+const WAVE_MIN_MS = 3_000;
+const WAVE_MAX_MS = 10_000;
+const waveDurationMs = (letters: number): number =>
+  WAVE_LETTER_MS + Math.max(0, letters - 1) * WAVE_STEP_MS;
 
-// Which letter is standing proud right now. `null` until the first tick, and never running
-// at all for a one-letter word (there is no hand to turn over) or under reduced motion.
-function useDrawnLetter(letters: number): number | null {
-  const [drawn, setDrawn] = useState<number | null>(null);
-  // The pick is read from a ref rather than from the state updater: an updater has to be
-  // PURE (React runs it twice under StrictMode), and this one rolls a die.
-  const current = useRef<number | null>(null);
+// Is the hand rippling right now? Two clocks, exactly as `Hole` runs them: one waits a fresh
+// random delay and starts a wave, the other ends it after its own length and re-arms the
+// first. Ending it in JS rather than on `animationend` keeps ONE owner of the two numbers
+// CSS is handed. Never for a one-letter word (nothing to ripple) or under reduced motion.
+function useLetterWave(letters: number): boolean {
+  const [waving, setWaving] = useState(false);
+  // Bumped by each finished wave, purely to re-arm the clock below with a fresh delay.
+  const [waveCount, setWaveCount] = useState(0);
 
   useEffect(() => {
-    current.current = null;
-    setDrawn(null);
     if (letters < 2 || prefersReducedMotion()) return undefined;
-    const id = window.setInterval(() => {
-      let next = Math.floor(Math.random() * letters);
-      if (next === current.current) next = (next + 1) % letters;
-      current.current = next;
-      setDrawn(next);
-    }, DRAW_INTERVAL_MS);
-    return () => window.clearInterval(id);
-  }, [letters]);
+    const id = window.setTimeout(
+      () => setWaving(true),
+      WAVE_MIN_MS + Math.random() * (WAVE_MAX_MS - WAVE_MIN_MS),
+    );
+    return () => window.clearTimeout(id);
+  }, [letters, waveCount]);
 
-  return drawn;
+  useEffect(() => {
+    if (!waving) return undefined;
+    const id = window.setTimeout(() => {
+      setWaving(false);
+      setWaveCount((n) => n + 1);
+    }, waveDurationMs(letters));
+    return () => window.clearTimeout(id);
+  }, [waving, letters]);
+
+  return waving;
 }
 
 // Where one letter of the fan sits: how far it leans, and how far it has fallen from the
-// middle — plus the lift, when it is the one being drawn. The lean and the drop go on the
-// INDEPENDENT transform properties (`rotate` / `translate`) rather than into one `transform`
-// string, so the lift can transition on `translate` alone without the lean having to be
-// re-stated in every frame of it.
-function letterStyle(index: number, letters: number, drawn: number | null): CSSProperties {
+// middle. Both go on the INDEPENDENT transform properties (`rotate` / `translate`) rather
+// than into one `transform` string, which is what lets the wave — an ordinary `transform`
+// animation — ride ON TOP of the fan instead of replacing it. `--i` is the letter's place in
+// the ripple's stagger.
+function letterStyle(index: number, letters: number): CSSProperties {
   // -1 at the first letter, +1 at the last, 0 in the middle.
   const t = letters < 2 ? 0 : (index / (letters - 1)) * 2 - 1;
-  const drop = t * t * FAN_ARC_PX - (index === drawn ? DRAW_LIFT_PX : 0);
   return {
     rotate: `${(t * FAN_DEG).toFixed(2)}deg`,
-    translate: `0 ${drop.toFixed(2)}px`,
+    translate: `0 ${(t * t * FAN_ARC_PX).toFixed(2)}px`,
+    '--i': index,
   } as CSSProperties;
 }
 
@@ -111,7 +122,7 @@ export default function WordSubject({
   onHitDone?: (id: number) => void;
 }) {
   const letters = [...word];
-  const drawn = useDrawnLetter(letters.length);
+  const waving = useLetterWave(letters.length);
 
   return (
     <div className="word-subject">
@@ -126,14 +137,22 @@ export default function WordSubject({
             blue day's word: at 0.45 and 0.32 they are mud, at 0.2 the label is clean). It is
             a STATE, not a transition: nothing here fades into it. */}
         <span
-          className={`word-subject-text${hit ? ' stamped' : ''}`}
-          style={{ fontSize: fitWord(word, SUBJECT_PX) } as CSSProperties}
+          className={`word-subject-text${hit ? ' stamped' : ''}${waving ? ' wave' : ''}`}
+          style={
+            {
+              fontSize: fitWord(word, SUBJECT_PX),
+              // Handed down rather than repeated in CSS, so the JS that ends the wave and
+              // the CSS that draws it cannot disagree about how long it is.
+              '--wave-dur': `${WAVE_LETTER_MS}ms`,
+              '--wave-step': `${WAVE_STEP_MS}ms`,
+            } as CSSProperties
+          }
         >
           {/* One box per letter, because the hand needs cards to fan. The pixel font is
               monospace and each box advances exactly as its glyph did, so the word measures
               the same as plain text and `fitWord`'s sizing is untouched. */}
           {letters.map((letter, i) => (
-            <span key={i} className="hole-letter" style={letterStyle(i, letters.length, drawn)}>
+            <span key={i} className="hole-letter" style={letterStyle(i, letters.length)}>
               {letter}
             </span>
           ))}

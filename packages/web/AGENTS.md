@@ -289,22 +289,33 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **The word is HELD, like a hand of playing cards** (decided 2026-08-09): the first letter
   leans left, the last leans right and everything between follows the same arc, with the
   outer letters falling away from the middle — the drop is what makes it a HAND rather than
-  skewed type, since cards splay from a pivot below and their outer ends dip. Every 750ms one
-  letter stands proud, as though it were the card about to be drawn, and drops the moment
-  another rises; it is never the same letter twice running, so the hand reads as idly turned
-  over rather than scanned left to right (the reasoning behind #129's per-hole wave clocks).
-  The whole hand also breathes, very subtly, on the WRAP so the word and any grade label on it
-  move as one object. `WordSubject` splits the word into `.hole-letter` boxes for this — the
-  pixel font is monospace, so the word measures exactly as plain text and `fitWord` is
-  untouched.
-  **The lean and the drop go on the INDEPENDENT transform properties** (`rotate` / `translate`),
-  never into one `transform` string, and that is load-bearing rather than tidy: the lift
-  transitions on `translate` ALONE, so the lean never has to be restated in a keyframe, and
-  `transform` stays free for anything a later beat composes on top. Under reduced motion the
-  float is switched OFF (an infinite decoration, the rule the timer's warning pulse follows)
-  and the lift lands instantly — but **the fan itself stays**, because it is a POSTURE and
-  not motion. All of this is the screen being alive while the player THINKS; it is
-  deliberately separate from the guess FEEDBACK, which does not animate at all (`RarityHit`).
+  skewed type, since cards splay from a pivot below and their outer ends dip. `WordSubject`
+  splits the word into `.hole-letter` boxes for this — the pixel font is monospace, so the
+  word measures exactly as plain text and `fitWord` is untouched.
+  **And the hand BREATHES: it rises and, in the same breath, spreads.** Two elements, one
+  rhythm — the rise on the WRAP so the word and any grade label on it move as one object, the
+  spread (`letter-spacing`) on the TEXT, since spacing is inherited and would otherwise reach
+  the label too. Same duration, same easing, both started at mount, so they stay in phase
+  with nothing synchronising them. The spread is the one thing here that changes the word's
+  WIDTH, which is why `.word-subject`'s `--wordw` reserves 5% for it — the same kind of
+  allowance the route frame's `--wordw` makes for a scrollbar it cannot see. Verified on the
+  worst case, a 25-letter French word at the top of its breath: 290px of the 292 a 320px
+  screen holds.
+  **Now and then the letters RIPPLE** — #129's wave, the sentence holes' own, on the same
+  random 3–10s clock (2026-08-09, replacing a single letter that rose every 750ms as though
+  about to be drawn). Its four numbers are restated in `WordSubject` rather than reached for
+  inside `Hole`: importing half a component's internals is not sharing it, and the
+  alternative was coupling to a hole's `ticking` state, which this surface has no equivalent
+  of.
+  **The lean and the drop go on the INDEPENDENT transform properties** (`rotate` /
+  `translate`), never into one `transform` string, and that is load-bearing rather than tidy:
+  it leaves `transform` free, which is exactly what lets the wave — an ordinary transform
+  animation — ride ON TOP of the fan instead of flattening it for the length of a ripple.
+  Under reduced motion the float, the breath and the ripple are all switched OFF (infinite
+  decorations, the rule the timer's warning pulse follows) — but **the fan itself stays**,
+  because it is a POSTURE and not motion. All of this is the screen being alive while the
+  player THINKS; it is deliberately separate from the guess FEEDBACK, which does not animate
+  at all (`RarityHit`).
   **The TIMER is the HUD and the SCORE is the watermark.** The clock takes the header's
   status corner (where the sentence game puts its progress counter) at 34px — the one live
   number on the screen — and the count becomes the big `CellDigits` watermark behind the
