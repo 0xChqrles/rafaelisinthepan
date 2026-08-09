@@ -351,11 +351,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
   it is a MASK, not an image — the sheet is pure white, so painting `currentColor` through it
   gives one sheet in five grade colours (the header globe's technique, for the same reason);
   it is at an EXACT INTEGER SCALE (5x = 180x230 desktop, 4x at ≤640px), the app's standing
-  pixel-art rule, which here also settles that `image-rendering` is unreliable on masks — at
-  an integer scale nearest and bilinear agree, so the frames stay crisp whatever the engine
-  does. That makes the SCALE the one dimension this can be tuned in, in whole steps and no
-  others, and it is why the size is FIXED rather than sized off the word (whose own type is a
-  `clamp()` landing on fractions, and a strike is an impact, not a property of what it hits);
+  pixel-art rule, **and it takes `image-rendering: pixelated` WITH it** — an earlier note here
+  claimed the integer scale made nearest sampling unnecessary, which is wrong: bilinear blends
+  neighbouring texels wherever a destination pixel misses a texel CENTRE, which at 5x is four
+  pixels in five. Measured on the rendered output, 51.5% of the ink was partial (a soft ring
+  round every edge) against 7.5% with `pixelated`. The whole-pixel `translate` is the other
+  half of the same point: a percentage drop resolved to -71.3px, and half a pixel of offset is
+  half a pixel of resampling on a sprite whose entire point is hard edges. That also makes the
+  SCALE the one dimension this can be tuned in, in whole steps and no others, and it is why
+  the size is FIXED rather than sized off the word (whose own type is a `clamp()` landing on
+  fractions, and a strike is an impact, not a property of what it hits);
   and it is DROPPED 19% of its own height below the word's centre, which is a property of the
   ART and was measured — the sheet's ink is top-weighted and only the first two frames carry
   real ink, so a box centred on the word puts the strike above it.
@@ -400,9 +405,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `FloatingHit` are byte-identical to what they were before #163, so the sentence board, the
   tutorial and the standings sprite are untouched by any of it.
   **Two ambient readouts bracket the prompt during a run** (decided 2026-08-09), and both
-  RESERVE their full footprint from the first frame — the word sits in the flexible space
-  above them, and a column that grew as the run filled it would walk the word up the screen
-  guess by guess. Above it, `components/WordHistory`: the last five CLAIMS, newest against
+  RESERVE their full footprint from the first frame — a column that grew as the run filled it
+  would walk the word up the screen guess by guess.
+  **They ride OUT OF FLOW, in `.word-readouts` pinned directly above the tray** (2026-08-09).
+  They sit exactly where they did and still never move; what changed is that they stop taking
+  height off the window above them, so **the day's word and its score watermark centre in the
+  band between the HEADER and the KEYBOARD** — the space the player is actually looking at.
+  In flow, those ~200px pushed the window's centre up with them and the word sat 126px high
+  (measured), reading as top-aligned rather than centred; out of flow it lands within ~10px of
+  the band's centre at every width. `bottom: 100%` puts the box's bottom edge on the tray's
+  top edge, and its `padding-bottom` restores the seam the flex gap used to give it. Above it, `components/WordHistory`: the last five CLAIMS, newest against
   the prompt, older ones riding up, fading, and gone — a chat, not a list, which is what
   `justify-content: flex-end` + `overflow: hidden` buys. It is where the RANK went: the float
   carries the grade now, but "how close was that one?" is a question a moment later, and a
