@@ -3956,6 +3956,32 @@ button * {
 .word-slash.mirrored {
   transform: translate(-50%, calc(-50% + 44px)) scaleX(-1);
 }
+/* The rarest two grades get the BURST instead of a cross (2026-08-09): `ultra-slash.png`, a
+   7-frame 71x66 sheet, at the stroke's own 5x (4x on a phone) — 355x330, which is the burst
+   filling the word's band rather than crossing the word, and the point.
+   It is drawn as an IMAGE, not as a mask: the sheet is authored in COLOUR — seven fully
+   opaque palette entries, one of them exactly OBSCURE's `#c834ff` — where `slash.png` is pure
+   white precisely so it can be painted in the grade's colour. Masking this one would flatten
+   all seven into one flat colour, which is most of what the art is. So the mask is dropped
+   and the currentColor fill with it; the GRADE is still told by the word's own colour under
+   it, and by the history line and the tally.
+   It is also CENTRED — no drop. That is not a different choice from the stroke's 19%, it is
+   the same rule reading a different sheet: the stroke's ink is top-weighted, this one's
+   centroid is y=33 of 66, dead centre (both measured off the art). */
+.word-slash.ultra {
+  width: 355px;
+  height: 330px;
+  transform: translate(-50%, -50%);
+  background-color: transparent;
+  background-image: url('./assets/ultra-slash.png');
+  background-repeat: no-repeat;
+  background-size: 700% 100%;
+  -webkit-mask-image: none;
+  mask-image: none;
+  animation:
+    ultra-frames var(--slash-ms, 350ms) steps(7, jump-none) var(--slash-delay, 0ms) both,
+    slash-show var(--slash-ms, 350ms) linear var(--slash-delay, 0ms);
+}
 @keyframes slash-frames {
   from {
     -webkit-mask-position: 0% 0%;
@@ -3964,6 +3990,14 @@ button * {
   to {
     -webkit-mask-position: 100% 0%;
     mask-position: 100% 0%;
+  }
+}
+@keyframes ultra-frames {
+  from {
+    background-position: 0% 0%;
+  }
+  to {
+    background-position: 100% 0%;
   }
 }
 @keyframes slash-show {
@@ -3986,6 +4020,19 @@ button * {
     -webkit-mask-position: 25% 0%;
     mask-position: 25% 0%;
   }
+  /* Same rule for the burst — and it needs its OWN `animation: none`, not the one above:
+     the base `.word-slash.ultra` declares the walk at a higher specificity, so it wins, the
+     global rule collapses its duration to nothing and the sheet lands on its LAST, near-empty
+     frame (21 ink pixels) with a `both` fill. Measured before the fix: `background-position:
+     100% 0%`, i.e. an ARCANE find showing almost nothing at all.
+     It holds the THIRD frame, not the fullest first: frame 1 is the impact flash, a solid
+     white disc that covers the word completely — right for 50ms, wrong to park on. Frame 3 is
+     the star at full spread with the word readable through it, which is what the burst LOOKS
+     like to anyone who sees it move. (`steps(7, jump-none)` walks k/6, so frame 3 is 33.3%.) */
+  .word-slash.ultra {
+    animation: none;
+    background-position: 33.3333% 0%;
+  }
 }
 @media (max-width: 640px) {
   .word-frame {
@@ -4004,6 +4051,12 @@ button * {
   }
   .word-slash.mirrored {
     transform: translate(-50%, calc(-50% + 35px)) scaleX(-1);
+  }
+  /* 4x here too: at 320px the page leaves 292px of column, which 355 would overrun. */
+  .word-slash.ultra {
+    width: 284px;
+    height: 264px;
+    transform: translate(-50%, -50%);
   }
   /* The keyboard goes full-bleed here — 10px past the page inset on each side (see
      `.keyboard`) — so the whole play column goes with it. */

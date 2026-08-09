@@ -23,9 +23,12 @@ import {
   SLASH_FRAME_MS,
   SLASH_MS,
   STRUCK_MS,
+  ULTRA_FRAMES,
+  ULTRA_MS,
+  ULTRA_SLASH_FROM,
   slashDelayMs,
-  slashDurationMs,
-  slashesFor,
+  strikeDurationMs,
+  strikeFor,
 } from './rarity';
 import { RARITY_NAMES } from '../game/wordGame';
 
@@ -118,19 +121,33 @@ describe('rarity colours track the palette stops they were copied from', () => {
 // word is struck — and it is asserted as a rule rather than a table of numbers, so the
 // threshold stays a knob.
 describe('the strike escalates with the ladder', () => {
-  it('cuts once at the common end and twice from the threshold up', () => {
-    const cuts = RARITY_NAMES.map((name) => slashesFor(name, RARITY_NAMES));
-    expect(cuts[0], 'the commonest grade is a single cut').toBe(1);
-    expect(cuts[cuts.length - 1], 'the rarest is a cross').toBe(2);
-    // Never fewer blows for a rarer find, at any grade.
-    for (let i = 1; i < cuts.length; i += 1) {
-      expect(cuts[i], `${RARITY_NAMES[i]}`).toBeGreaterThanOrEqual(cuts[i - 1]);
+  // A cut, then a cross, then the burst. Ranked as EVENTS rather than by how long they run:
+  // the burst spends less time on screen than the cross (350ms against 500) and is still the
+  // bigger thing, so duration must not be read as the escalation.
+  const step = (name: (typeof RARITY_NAMES)[number]) => {
+    const s = strikeFor(name, RARITY_NAMES);
+    return s.ultra ? 2 : s.blows - 1;
+  };
+
+  it('climbs cut -> cross -> burst, and never back down', () => {
+    const steps = RARITY_NAMES.map(step);
+    expect(steps[0], 'the commonest grade is a single cut').toBe(0);
+    expect(steps[steps.length - 1], 'the rarest is the burst').toBe(2);
+    // Never a smaller strike for a rarer find, at any grade.
+    for (let i = 1; i < steps.length; i += 1) {
+      expect(steps[i], `${RARITY_NAMES[i]}`).toBeGreaterThanOrEqual(steps[i - 1]);
     }
-    // And the threshold is where it says it is, rather than wherever an array happened to
-    // put it.
-    expect(slashesFor(DOUBLE_SLASH_FROM, RARITY_NAMES)).toBe(2);
-    const below = RARITY_NAMES[RARITY_NAMES.indexOf(DOUBLE_SLASH_FROM) - 1];
-    expect(slashesFor(below, RARITY_NAMES)).toBe(1);
+    // And each threshold is where it SAYS it is, rather than wherever an array happened to
+    // put it — including that the two never cross over (a grade cannot be both).
+    expect(strikeFor(DOUBLE_SLASH_FROM, RARITY_NAMES)).toEqual({ ultra: false, blows: 2 });
+    expect(strikeFor(ULTRA_SLASH_FROM, RARITY_NAMES).ultra).toBe(true);
+    const belowCross = RARITY_NAMES[RARITY_NAMES.indexOf(DOUBLE_SLASH_FROM) - 1];
+    expect(strikeFor(belowCross, RARITY_NAMES)).toEqual({ ultra: false, blows: 1 });
+    const belowBurst = RARITY_NAMES[RARITY_NAMES.indexOf(ULTRA_SLASH_FROM) - 1];
+    expect(strikeFor(belowBurst, RARITY_NAMES).ultra).toBe(false);
+    expect(RARITY_NAMES.indexOf(ULTRA_SLASH_FROM)).toBeGreaterThan(
+      RARITY_NAMES.indexOf(DOUBLE_SLASH_FROM),
+    );
   });
 
   it('the blows never share the screen, and the word lets go between them', () => {
@@ -144,17 +161,23 @@ describe('the strike escalates with the ladder', () => {
     // second blow exists to avoid.
     expect(STRUCK_MS).toBeLessThan(SLASH_MS);
     expect(STRUCK_MS).toBeGreaterThan(0);
-    // ...and the whole thing runs as long as the blows and the gaps it is made of. The
-    // ending beat waits for whatever is still in the air; if this under-reported, the last
-    // strike of a run would be cut off mid-swing to show the board.
-    expect(slashDurationMs(1)).toBe(SLASH_MS);
-    expect(slashDurationMs(2)).toBe(slashDelayMs(1) + SLASH_MS);
+    // The word must let go before the BURST ends too, or its one blow would hold the recoil
+    // and the colour for the sheet's whole dissipation.
+    expect(STRUCK_MS).toBeLessThan(ULTRA_MS);
+    // ...and the whole thing runs as long as the blows it is made of. The ending beat waits
+    // for whatever is still in the air; if this under-reported, the last strike of a run
+    // would be cut off mid-swing to show the board.
+    expect(strikeDurationMs({ ultra: false, blows: 1 })).toBe(SLASH_MS);
+    expect(strikeDurationMs({ ultra: false, blows: 2 })).toBe(slashDelayMs(1) + SLASH_MS);
+    expect(strikeDurationMs({ ultra: true, blows: 1 })).toBe(ULTRA_MS);
   });
 
-  it('the sheet is walked frame for frame', () => {
-    // The sprite has five frames at 50ms; if the constants and the sheet ever disagree the
-    // strike either stutters or ends early, and nothing else would catch it.
+  it('each sheet is walked frame for frame', () => {
+    // If a constant and its sheet ever disagree the strike either stutters or ends early, and
+    // nothing else would catch it. Both sheets run at ONE frame rate.
     expect(SLASH_MS).toBe(SLASH_FRAMES * SLASH_FRAME_MS);
     expect(SLASH_FRAMES).toBe(5);
+    expect(ULTRA_MS).toBe(ULTRA_FRAMES * SLASH_FRAME_MS);
+    expect(ULTRA_FRAMES).toBe(7);
   });
 });

@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import FloatingHit, { HIT_FADE_MS } from './FloatingHit';
 import WordSlash from './WordSlash';
-import { STRUCK_MS, slashDelayMs, slashDurationMs } from './rarity';
+import type { Strike } from './rarity';
+import { STRUCK_MS, slashDelayMs, strikeDurationMs } from './rarity';
 import { fitWord } from './routeDrawing';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { srWordBoardWord } from '../i18n';
@@ -28,7 +29,7 @@ export const SUBJECT_PX = 40;
 // nothing alike (decided 2026-08-09), which is the point: at a glance, before reading
 // anything, you know which one happened.
 //
-//   claim — the word is SLASHED, in the grade's colour, once or twice, and the word SHAKES.
+//   claim — the word is STRUCK — a cut, a cross, or the ultra burst — and it SHAKES.
 //           No text: a name has to be read, and a run against a clock has no time for that;
 //           the grade is written down anyway, in the history and the tally.
 //   miss  — the sentence game's MISS float, its own animation, and the word does NOT move.
@@ -36,7 +37,7 @@ export const SUBJECT_PX = 40;
 //
 // Presentation state, owned by the screen.
 export type WordHit =
-  | { id: number; kind: 'claim'; color: string; slashes: number }
+  | { id: number; kind: 'claim'; color: string; strike: Strike }
   | { id: number; kind: 'miss'; color: string };
 
 // The MISS float's own beat, the sentence game's lone-hit timing.
@@ -46,7 +47,7 @@ const MISS_HOLD_MS = 320;
 // whatever is still in the air when the clock dies.
 export function hitDurationMs(hit: WordHit): number {
   return hit.kind === 'claim'
-    ? slashDurationMs(hit.slashes)
+    ? strikeDurationMs(hit.strike)
     : MISS_HOLD_MS + HIT_FADE_MS;
 }
 
@@ -123,7 +124,7 @@ function useStrikeBlow(hit: WordHit | null): number | null {
   const [blow, setBlow] = useState<number | null>(null);
   const claim = hit?.kind === 'claim' ? hit : null;
   const id = claim?.id ?? null;
-  const blows = claim?.slashes ?? 0;
+  const blows = claim?.strike.blows ?? 0;
 
   useEffect(() => {
     if (id === null) {
@@ -225,7 +226,7 @@ export default function WordSubject({
               key={hit.id}
               id={hit.id}
               color={hit.color}
-              slashes={hit.slashes}
+              strike={hit.strike}
               onDone={onHitDone}
             />
           ) : (

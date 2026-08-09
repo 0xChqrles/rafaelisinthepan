@@ -16,7 +16,7 @@ import {
   RARITY_LADDER,
   RARITY_NAMES,
 } from '../game/wordGame';
-import { MISS_COLOR, RARITY_COLORS, slashesFor } from '../components/rarity';
+import { MISS_COLOR, RARITY_COLORS, strikeFor } from '../components/rarity';
 import { buildWordBoard } from '../game/wordBoard';
 import { canExtend } from '../game/keyboard';
 import useScrollEdges from '../hooks/useScrollEdges';
@@ -371,7 +371,7 @@ function WordRound({
             id: hitId.current,
             kind: 'claim',
             color: RARITY_COLORS[grade],
-            slashes: slashesFor(grade, RARITY_NAMES),
+            strike: strikeFor(grade, RARITY_NAMES),
           }
         : { id: hitId.current, kind: 'miss', color: MISS_COLOR };
       hitEndsAt.current = Date.now() + hitDurationMs(next);

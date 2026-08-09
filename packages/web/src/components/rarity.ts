@@ -65,13 +65,42 @@ export const SLASH_FRAMES = 5;
 export const SLASH_FRAME_MS = 50;
 export const SLASH_MS = SLASH_FRAMES * SLASH_FRAME_MS;
 
-// A rare find is struck TWICE, the second blow mirrored so the two cross. It is the same
-// escalation the seconds ladder makes, said in one gesture rather than five sizes: below the
-// threshold a find is a cut, at or above it a find is a cross.
-export const DOUBLE_SLASH_FROM: Rarity = 'RARE';
+// The rarest finds get their own art: `assets/ultra-slash.png`, a 7-frame 71x66 burst
+// (decided 2026-08-09). It is NOT a bigger version of the stroke and it is NOT drawn the
+// same way — where `slash.png` is pure white and painted through a mask in the grade's
+// colour, this sheet is authored IN COLOUR (seven fully opaque palette entries, one of them
+// exactly OBSCURE's `#c834ff`), so it is drawn as an IMAGE at its own palette. Masking it
+// would flatten all seven into one flat grade colour, which is most of what the art IS.
+// Its ink also sits vertically CENTRED (measured centroid y=33 of 66) where the stroke's is
+// top-weighted, so it needs none of the stroke's drop.
+export const ULTRA_FRAMES = 7;
+export const ULTRA_MS = ULTRA_FRAMES * SLASH_FRAME_MS;
 
-export function slashesFor(rarity: Rarity, order: readonly Rarity[]): number {
-  return order.indexOf(rarity) >= order.indexOf(DOUBLE_SLASH_FROM) ? 2 : 1;
+// The strike ESCALATES IN THREE STEPS, and the ladder is thresholds rather than a table, so
+// retuning where a step begins stays a one-line change:
+//   a CUT    — one stroke
+//   a CROSS  — two strokes, the second mirrored, from `DOUBLE_SLASH_FROM`
+//   a BURST  — the ultra sheet, one blow, from `ULTRA_SLASH_FROM`
+// The same escalation the seconds ladder makes, said in gestures rather than five sizes. The
+// burst is a step UP from the cross even though it spends less time on screen (350ms against
+// 500): what escalates is the EVENT — one blow, two blows, then something that is not a
+// stroke at all — not the duration, which is the art's own business.
+export const DOUBLE_SLASH_FROM: Rarity = 'RARE';
+export const ULTRA_SLASH_FROM: Rarity = 'OBSCURE';
+
+// What a claim's strike IS. `blows` is how many times the word is hit; `ultra` picks the
+// sheet. Presentation state — the screen builds one of these per claim and hands it down.
+export type Strike = { ultra: boolean; blows: number };
+
+export function strikeFor(rarity: Rarity, order: readonly Rarity[]): Strike {
+  const step = order.indexOf(rarity);
+  if (step >= order.indexOf(ULTRA_SLASH_FROM)) return { ultra: true, blows: 1 };
+  return { ultra: false, blows: step >= order.indexOf(DOUBLE_SLASH_FROM) ? 2 : 1 };
+}
+
+// How long ONE blow of this strike is on screen.
+export function blowMs(strike: Strike): number {
+  return strike.ultra ? ULTRA_MS : SLASH_MS;
 }
 
 // When blow `index` lands: the moment the one before it ends, with no pause between them
@@ -79,6 +108,7 @@ export function slashesFor(rarity: Rarity, order: readonly Rarity[]): number {
 // screen — that is what makes a cross read as being struck twice instead of once with a
 // thicker stroke — but the daylight that says so belongs to the WORD, not to the sprite: it
 // stops reacting a frame early (below), so the beat is there whether or not the art pauses.
+// Only a cross has a second blow, so this is always the stroke's length.
 export function slashDelayMs(index: number): number {
   return index * SLASH_MS;
 }
@@ -93,6 +123,6 @@ export const STRUCK_FRAMES = 4;
 export const STRUCK_MS = STRUCK_FRAMES * SLASH_FRAME_MS;
 
 // How long a strike is on screen, so the screen can hold its ending beat for one.
-export function slashDurationMs(slashes: number): number {
-  return slashDelayMs(Math.max(0, slashes - 1)) + SLASH_MS;
+export function strikeDurationMs(strike: Strike): number {
+  return slashDelayMs(Math.max(0, strike.blows - 1)) + blowMs(strike);
 }

@@ -363,15 +363,45 @@ it to the local store — see `packages/backend/AGENTS.md`).
   over. Measured with a 10ms in-page sampler, a cross: stroke and word together 0–192ms,
   **stroke alone 201–242**, together again 251–441, **stroke alone 451–492**, over at 501 —
   one unbroken stretch of stroke with two recoils in it. A single blow is the same shape
-  halved (0–198 / 199–248), and a MISS lands neither. (A screenshot cannot show those 50ms
+  halved (0–198 / 199–248), and a MISS lands neither. **A BURST takes the same treatment
+  unchanged**, which is what makes its extra frames read as dissipation: the word recoils for
+  its first four and rests through the remaining three (measured 0–189 struck, burst alone on
+  to 349). (A screenshot cannot show those 50ms
   windows — capture latency exceeds them — so it is a computed-style measurement, not a
   picture.) There
   is no text: a name has to be read, and a run against a clock has no time for that. The
   grade is still written down twice anyway, in the run's history and its tally, so nothing
-  is lost but a word to read mid-sprint. **From `DOUBLE_SLASH_FROM` (RARE) up the word is
-  struck TWICE, the second blow mirrored so the pair crosses** — the same escalation the
-  seconds ladder makes, said in one gesture instead of five sizes: below the threshold a find
-  is a cut, at or above it a find is a cross. The second blow starts the instant the first
+  is lost but a word to read mid-sprint. **The strike ESCALATES IN THREE STEPS** — a CUT (one stroke), a CROSS
+  (two, the second mirrored, from `DOUBLE_SLASH_FROM` = RARE), and a BURST (`ULTRA_SLASH_FROM`
+  = OBSCURE, so OBSCURE and ARCANE, added 2026-08-09 when the art arrived). The same
+  escalation the seconds ladder makes, said in gestures instead of five sizes. **What
+  escalates is the EVENT, not the duration:** the burst is a step UP from the cross while
+  spending LESS time on screen (350ms against 500) — one blow, two blows, then something that
+  is not a stroke at all — which is why `rarity.test.ts` ranks the three as steps rather than
+  by how long they run. Both thresholds are named constants, so moving where a step begins
+  stays a one-line change.
+  **The BURST is `assets/ultra-slash.png`, and it is drawn UNLIKE the stroke in two ways,
+  both read off the art rather than chosen:** it is 7 frames of 71x66 at the stroke's own
+  scales (5x = 355x330, 4x on a phone = 284x264, verified no page overflow at 320px), and —
+  - it is an **IMAGE in its own palette, not a mask in the grade's colour**. The sheet is
+    authored in colour: seven fully opaque entries, one of them exactly OBSCURE's `#c834ff`.
+    `slash.png` is pure white precisely so it CAN be tinted; masking this one would flatten
+    all seven into one flat colour, which is most of what the art is. The grade is still told
+    by the word's own colour under the burst, by the history line and by the tally — so
+    OBSCURE and ARCANE share a sprite and stay distinguishable.
+  - it is **CENTRED, with none of the stroke's 19% drop**. Not a different rule — the same
+    rule reading a different sheet: the stroke's ink is top-weighted, this one's measured
+    centroid is y=33 of 66, dead centre.
+  Two consequences worth knowing. Its frame walk is its own keyframes (`ultra-frames`, over
+  `background-position`) because the stroke's walks `mask-position`; and under reduced motion
+  it needs **its own `animation: none`**, not the stroke's — the base `.word-slash.ultra`
+  declares the walk at a higher specificity, so it won, the global rule collapsed its duration
+  to nothing, and the sheet landed on its LAST, near-empty frame with a `both` fill (measured:
+  `background-position: 100% 0%`, an ARCANE find showing almost nothing). It holds the THIRD
+  frame, not the fullest first: frame 1 is the impact flash, a solid white disc that covers
+  the word completely — right for 50ms, wrong to park on.
+  **The CROSS is unchanged:** below the burst's threshold a find is a cut, and at RARE it is
+  a cross. The second blow starts the instant the first
   ends — back to back, with NO pause between the strokes (2026-08-09, superseding first a
   110ms stagger that overlapped them and then a one-frame gap that separated them). Two
   strikes on screen at once read as one thick stroke, so they still never overlap; but what
