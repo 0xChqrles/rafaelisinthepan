@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import RarityHit from './RarityHit';
+import FloatingHit, { HIT_FADE_MS } from './FloatingHit';
+import WordSlash from './WordSlash';
+import { slashDurationMs } from './rarity';
 import { fitWord } from './routeDrawing';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { srWordBoardWord } from '../i18n';
@@ -22,20 +24,30 @@ import { srWordBoardWord } from '../i18n';
 // the whole page column, where the route frame's is what is left after the gutter and rail.
 export const SUBJECT_PX = 40;
 
-// Word mode's guess feedback (#163): what the player's word says back. A claim reports its
-// RARITY GRADE — the rank exponent is gone from play, because a timed run has no use for a
-// number it cannot act on, and the grade is the thing that just bought time. Anything
-// outside the claim zone reports MISS. Presentation state, owned by the screen.
+// Word mode's guess feedback (#163). The two outcomes are DIFFERENT EVENTS and they look
+// nothing alike (decided 2026-08-09), which is the point: at a glance, before reading
+// anything, you know which one happened.
 //
-// NONE OF IT ANIMATES (2026-08-09): the label appears, stays, and goes, and the word does
-// nothing but step back while it is there. Several choreographies were tried on this and
-// all were rejected; what is left is the plain baseline they were built on top of.
-export interface WordHit {
-  id: number; // monotonic, so a new guess replaces the one on screen
-  label: string; // the rarity grade, or MISS
-  color: string;
-  scale: number; // the type size, straight off components/rarity.ts
-  holdMs: number; // how long it stays
+//   claim — the word is SLASHED, in the grade's colour, once or twice, and the word SHAKES.
+//           No text: a name has to be read, and a run against a clock has no time for that;
+//           the grade is written down anyway, in the history and the tally.
+//   miss  — the sentence game's MISS float, its own animation, and the word does NOT move.
+//           Nothing was struck, so nothing recoils.
+//
+// Presentation state, owned by the screen.
+export type WordHit =
+  | { id: number; kind: 'claim'; color: string; slashes: number }
+  | { id: number; kind: 'miss'; color: string };
+
+// The MISS float's own beat, the sentence game's lone-hit timing.
+const MISS_HOLD_MS = 320;
+
+// How long a hit is on screen, whichever kind it is — the screen holds its ending beat for
+// whatever is still in the air when the clock dies.
+export function hitDurationMs(hit: WordHit): number {
+  return hit.kind === 'claim'
+    ? slashDurationMs(hit.slashes)
+    : MISS_HOLD_MS + HIT_FADE_MS;
 }
 
 // --- the word is HELD, like a hand of playing cards (decided 2026-08-09) -----------------
@@ -130,17 +142,22 @@ export default function WordSubject({
           by the sr mirror, but the board does not exist during the run, so without this the
           day's word would be spoken nowhere for the whole game. */}
       <span className="sr-only">{srWordBoardWord(lang, word)}</span>
-      <span className="hole-word-wrap" aria-hidden="true">
-        {/* The word STEPS BACK while a grade is on it and returns when it goes. Not a
-            flourish — the label sits on top of it, and two words of the same size in the
-            same place cannot both be read (measured on the worst case, a cyan RARE over the
-            blue day's word: at 0.45 and 0.32 they are mud, at 0.2 the label is clean). It is
-            a STATE, not a transition: nothing here fades into it. */}
+      {/* The wrap carries the word's SIZE, so the slash drawn over it can be measured in the
+          word's own em — and it carries the breathing, so the word and whatever is on it move
+          as one. */}
+      <span
+        className="hole-word-wrap"
+        aria-hidden="true"
+        style={{ fontSize: fitWord(word, SUBJECT_PX) } as CSSProperties}
+      >
+        {/* The word RECOILS from a strike and from nothing else: a claim shakes it, a MISS
+            leaves it alone, because nothing was struck. */}
         <span
-          className={`word-subject-text${hit ? ' stamped' : ''}${waving ? ' wave' : ''}`}
+          className={`word-subject-text${hit?.kind === 'claim' ? ' struck' : ''}${
+            waving ? ' wave' : ''
+          }`}
           style={
             {
-              fontSize: fitWord(word, SUBJECT_PX),
               // Handed down rather than repeated in CSS, so the JS that ends the wave and
               // the CSS that draws it cannot disagree about how long it is.
               '--wave-dur': `${WAVE_LETTER_MS}ms`,
@@ -157,17 +174,30 @@ export default function WordSubject({
             </span>
           ))}
         </span>
-        {hit && onHitDone && (
-          <RarityHit
-            key={hit.id}
-            id={hit.id}
-            label={hit.label}
-            color={hit.color}
-            scale={hit.scale}
-            holdMs={hit.holdMs}
-            onDone={onHitDone}
-          />
-        )}
+        {hit &&
+          onHitDone &&
+          (hit.kind === 'claim' ? (
+            <WordSlash
+              key={hit.id}
+              id={hit.id}
+              color={hit.color}
+              slashes={hit.slashes}
+              onDone={onHitDone}
+            />
+          ) : (
+            // The sentence game's own MISS float, unchanged and unparameterised — the same
+            // word, in the same red, with the same pop and rise it has everywhere else.
+            <FloatingHit
+              key={hit.id}
+              id={hit.id}
+              value={0}
+              miss
+              color={hit.color}
+              startDelayMs={0}
+              fadeDelayMs={MISS_HOLD_MS}
+              onDone={onHitDone}
+            />
+          ))}
       </span>
     </div>
   );

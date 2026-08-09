@@ -19,7 +19,8 @@
       screens/Game.tsx        the guess loop, hole state (imports fold from @whippin/shared)
       screens/WordGame.tsx    Word mode's three phases: rules gate -> timed run -> post-mortem
       game/wordGame.ts        Word mode's rules + economy (CLAIM_ZONE, the rarity ladder, the clock)
-      components/rarity.ts    how a rarity grade LOOKS and how hard it lands (pinned colours + intensity)
+      components/rarity.ts    a rarity grade's pinned colour, and how many times a find is struck
+      components/WordSlash.tsx    the slash a claim cuts the day's word with
       components/WordSubject.tsx  the day's word while the run is on: the word alone, centred
       components/WordHistory.tsx  the last few claims, above the prompt, fading with age
       components/WordTally.tsx    found/total per grade under the prompt, colour as the only label
@@ -314,8 +315,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   Under reduced motion the float, the breath and the ripple are all switched OFF (infinite
   decorations, the rule the timer's warning pulse follows) — but **the fan itself stays**,
   because it is a POSTURE and not motion. All of this is the screen being alive while the
-  player THINKS; it is deliberately separate from the guess FEEDBACK, which does not animate
-  at all (`RarityHit`).
+  player THINKS; it is deliberately separate from the guess FEEDBACK, which is what the
+  screen says back when they ACT (the slash, below).
   **The TIMER is the HUD and the SCORE is the watermark.** The clock takes the header's
   status corner (where the sentence game puts its progress counter) at 34px — the one live
   number on the screen — and the count becomes the big `CellDigits` watermark behind the
@@ -329,47 +330,49 @@ it to the local store — see `packages/backend/AGENTS.md`).
   icon group, and a three-digit clock plus a full-size `.0` does not fit it (measured: it
   pushed the help icon off the screen). `useCountdown` ticks at 50ms so the last digit does
   not stutter.
-  **The float is the GRADE, and it lands harder the rarer it is** (decided 2026-08-08,
-  superseding the rank exponent) — and it is **its own component with its own animation**,
-  `components/RarityHit` (decided 2026-08-09, superseding a parameterised `FloatingHit`).
-  The sentence game's float pops UP off the word and drifts away as a footnote to it, which
-  is right for a distance: a remark ABOUT the word. A grade is not a remark, it is a VERDICT
-  on the guess — so this one FALLS onto the word from above, lands squarely ON it, SITS there
-  long enough to be read, then leaves straight up. The two share the delay contract and the
-  unmount timer and nothing else, which is exactly why they are two: a float whose every
-  dimension is overridden is not being shared. `FloatingHit` is therefore byte-identical to
-  what it was before #163, and the sentence board and tutorial are untouched by construction.
-  Word mode's values live in ONE table indexed by `rarityStep` (`components/rarity.ts`
-  `RARITY_HIT`), so "ARCANE lands harder than COMMON" is a data row, not six rules. **Two of
-  the channels are load-bearing for a reason**: the global reduced-motion rule collapses
-  DURATIONS but KEEPS DELAYS, so a ladder built only out of movement would not exist at all
-  for a player who asked for none — `scale` is static and `holdMs` is a delay, and between
-  them the escalation always lands (`rarity.test.ts` pins that). `holdMs` is also the channel
-  that matters most on its own terms, since the label's whole job is to be read.
-  **From RARE up the day's word RIPPLES** (decided 2026-08-08): the #129 letter wave, at an
-  amplitude the grade sets (`--wave-lift`, 3/5/8px). It is a THRESHOLD channel, absent below
-  RARE rather than merely quiet, so the top half of the ladder does something the bottom half
-  does not — a different KIND of event, not a louder one. It is also the only channel that
-  costs NO WIDTH, which is what lets the sizes keep climbing on a phone. `WordSubject` splits
-  the word into `.hole-letter` boxes for it, exactly as `Hole` does.
-  **The grade's SIZE is capped by what the column holds**, the same arithmetic `fitWord`
-  applies to the route drawing: `min(base × scale, room / (glyphs × punch))`. A grade name is
-  a WORD — `UNCOMMON` is 8 characters — and at a 2.6× ARCANE the widest would run clean off a
-  320px screen at the peak of its pop. The cap only bites at the narrowest width and only on
-  the top two grades (measured at 320px: OBSCURE 35.7→29.8, ARCANE 44.2→33.6), and the ladder
-  is tuned so the ORDER survives it — a capped OBSCURE must never render smaller than an
-  uncapped RARE, which `rarity.test.ts` pins because it is exactly what a future size bump
-  would break silently.
-  Both the shake and the wave ride variables that **default to the sentence game's values**
-  (`--shake-amp` 1, `--wave-lift` 3px) — `word-shake` is shared by the sentence hole, this
-  word AND the standings sprite, and `hole-wave` by the hole's ambient ripple, so only Word
-  mode's own rules set them.
-  **THE FEEDBACK DOES NOT ANIMATE** (decided 2026-08-09, and it is a decision rather than an
-  omission). Several choreographies were built here and every one was rejected: a pop, a
-  stamp falling onto the word, a shockwave rippling out through the word's letters, each with
-  its own timing and its own escalation. What ships is the plain thing — the label appears at
-  its size, its colour and its place, stays for as long as its grade earns, and goes — so that
-  whatever motion is designed next starts from a baseline that is doing nothing.
+  **A CLAIM SLASHES THE WORD; A MISS DOES NOT TOUCH IT** (decided 2026-08-09). The two
+  outcomes are different EVENTS and look nothing alike, which is the point: before reading
+  anything you know which one happened.
+  A claim cuts the word with `assets/slash.png` — a 5-frame 36x46 sheet of a stroke landing
+  and dissipating, 50ms a frame — in the claimed grade's COLOUR, and the word SHAKES. There
+  is no text: a name has to be read, and a run against a clock has no time for that. The
+  grade is still written down twice anyway, in the run's history and its tally, so nothing
+  is lost but a word to read mid-sprint. **From `DOUBLE_SLASH_FROM` (RARE) up the word is
+  struck TWICE, the second blow mirrored so the pair crosses** — the same escalation the
+  seconds ladder makes, said in one gesture instead of five sizes: below the threshold a find
+  is a cut, at or above it a find is a cross.
+  A miss shows the SENTENCE game's `FloatingHit`, unparameterised — the same MISS, the same
+  red, the same pop and rise it has everywhere else — and **the word does not move**, because
+  nothing was struck, so nothing recoils.
+  **Three things about how the strike is drawn**, each of which was a decision:
+  it is a MASK, not an image — the sheet is pure white, so painting `currentColor` through it
+  gives one sheet in five grade colours (the header globe's technique, for the same reason);
+  it is at an EXACT INTEGER SCALE (4x desktop, 3x at ≤640px), the app's standing pixel-art
+  rule, which here also settles that `image-rendering` is unreliable on masks — at an integer
+  scale nearest and bilinear agree, so the frames stay crisp whatever the engine does, and it
+  is why the size is FIXED rather than sized off the word (whose own type is a `clamp()`
+  landing on fractions, and a strike is an impact, not a property of what it hits);
+  and it is DROPPED 19% of its own height below the word's centre, which is a property of the
+  ART and was measured — the sheet's ink is top-weighted and only the first two frames carry
+  real ink, so a box centred on the word puts the strike above it.
+  Two smaller mechanics worth keeping: the frame walk is `steps(5, jump-none)` over
+  `mask-position` 0→100%, which lands exactly on the five frames with no sixth position past
+  the end (where the LOOPING `.cal-ripple` needs its `n/(n-1)` overshoot instead); and the
+  second blow carries a zero-length `slash-show` animation whose `backwards` fill holds it at
+  opacity 0 through its delay, or it would sit on frame 1 — visible and stationary — waiting
+  its turn. Under reduced motion the walk would collapse to nothing, which for a sprite sheet
+  means the strike never appears at all, so a dedicated rule holds ONE frame instead.
+  The shake rides `--shake-amp`, which **defaults to the sentence game's 1** — `word-shake`
+  is shared by the sentence hole, this word AND the standings sprite, so only a surface that
+  sets the variable changes.
+  **What the strike REPLACED, and what that cost, is worth keeping**: a RARITY LABEL, the
+  grade's name stamped onto the word (`RarityHit`, deleted with it). Several choreographies
+  were built on that label and every one was rejected — a pop, a stamp falling onto the word,
+  a shockwave through the letters — and two rules were learned expensively enough to record
+  wherever type lands on type again: NOTHING IN THIS APP OUTLINES TYPE (a knockout ring to
+  separate the label from the word read as a cheap sticker), and ANIMATING `scale` ON THE
+  PIXEL FONT renders blurry intermediate frames for the whole transition, the same reason
+  every sprite here takes an exact integer scale.
   Three things learned on the way, kept because they cost real iterations and the next attempt
   should not pay for them again:
   - **NOTHING IN THIS APP OUTLINES TYPE.** A hard knockout ring was added to separate the

@@ -1185,9 +1185,9 @@ button * {
    synchronized batch fade-out begins.
 
    This is the SENTENCE game's and the tutorial's, and it is byte for byte what it always
-   was. Word mode's grade label is a different object with a different animation — see
-   `.rarity-hit` below; the two were briefly one parameterised float and were split when the
-   animations diverged (#163, 2026-08-09). --- */
+   was — and it is what Word mode shows on a MISS too (2026-08-09), unparameterised: the same
+   word, in the same red, with the same pop and rise it has everywhere else. A Word-mode CLAIM
+   is a different event entirely and does not come through here at all (`.word-slash`). --- */
 .floating-hit {
   position: absolute;
   left: 50%;
@@ -1227,35 +1227,13 @@ button * {
   }
 }
 
-/* --- Word mode's RARITY LABEL (#163): the grade a claim earned, or MISS, shown on the day's
-   word.
-
-   IT DOES NOT ANIMATE (decided 2026-08-09). Several choreographies were tried here — a pop,
-   a stamp falling onto the word, a shockwave through the word's letters — and every one was
-   rejected, so what is left is deliberately the plain thing: the label appears at its size,
-   its colour and its place, stays for as long as its grade earns, and goes. Two rules worth
-   keeping if motion is ever added back, because both were learned expensively: NOTHING IN
-   THIS APP OUTLINES TYPE (a knockout ring to separate the label from the word read as a
-   cheap sticker), and ANIMATING `scale` ON THE PIXEL FONT renders blurry intermediate frames
-   for the whole transition — the same reason every sprite here takes an exact integer scale.
-
-   `--hit-scale` multiplies the surface's `--hit-base`, which is how the five grades differ
-   in size, and that size is CAPPED by what the column holds (the same arithmetic `fitWord`
-   applies to the route drawing's words, since the pixel font advances exactly 1em per
-   glyph). --- */
-.rarity-hit {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  font-family: var(--press);
-  font-size: min(
-    calc(var(--hit-base, 24px) * var(--hit-scale, 1)),
-    calc(var(--hit-room, 10000px) / var(--hit-len, 1))
-  );
-  white-space: nowrap;
-  pointer-events: none;
-}
+/* Word mode's claim feedback used to be a RARITY LABEL here — the grade's name, shown on the
+   day's word. It was replaced by the SLASH (`.word-slash`, 2026-08-09): a name has to be
+   read, and a run against a clock has no time for that. Two rules it cost real work to learn
+   are worth keeping wherever type lands on type again: NOTHING IN THIS APP OUTLINES TYPE (a
+   knockout ring to separate the label from the word read as a cheap sticker), and ANIMATING
+   `scale` ON THE PIXEL FONT renders blurry intermediate frames for the whole transition —
+   the same reason every sprite here takes an exact integer scale. */
 
 /* --- prompt zone: input area ⇄ solved caption, no reserved heights ---
    The two occupants of the row under the sentence overlay in ONE grid cell, both
@@ -3806,20 +3784,6 @@ button * {
   justify-content: center;
   text-align: center;
 }
-/* The grade label's own type size, set on the LABEL rather than inherited from the surface.
-   Kept that way deliberately: a custom property declared on the element itself beats an
-   inherited one, so a rule elsewhere that ever declares `--hit-base` on the label would
-   silently win over `.word-subject` and flatten the whole ladder to one size — which is
-   exactly what the mobile breakpoint used to do, measured as an OBSCURE label 343px wide
-   clipped off a 320px screen. */
-.word-subject .rarity-hit {
-  --hit-base: 18px;
-  /* What the grade label has to fit inside — the page column, which is what caps the
-     rarest grades on a narrow screen (see `.rarity-hit`). The label is absolutely
-     positioned and centred on the word, so it may run wider than `.word-window`'s own cap
-     without clipping; the viewport is the real limit. */
-  --hit-room: min(760px, calc(100vw - 48px));
-}
 .word-subject-text {
   display: inline-block;
   font-family: var(--vt);
@@ -3849,11 +3813,24 @@ button * {
    `.word-subject`'s `--wordw` reserves room for it — see there. Both are infinite
    decorations, so reduced motion switches them OFF rather than collapsing them (the rule the
    timer's warning pulse follows); the fan itself stays, being a posture and not motion. */
+/* BOTH breathing animations ride the WRAP — the rise and the spread — which is not where the
+   spread naturally belongs (letter-spacing is a text property) but is where it has to be:
+   they must stay in phase, and one element with one start is the only way to guarantee that.
+   It also leaves `transform` free on the text below, which is what the strike's recoil needs.
+   letter-spacing is inherited, so the MISS label opts out of it explicitly. */
 .word-subject .hole-word-wrap {
-  animation: word-float 3.6s ease-in-out infinite;
+  animation:
+    word-float 3.6s ease-in-out infinite,
+    word-breathe 3.6s ease-in-out infinite;
 }
-.word-subject-text {
-  animation: word-breathe 3.6s ease-in-out infinite;
+.word-subject .floating-hit {
+  letter-spacing: normal;
+}
+/* The word RECOILS from a strike — and only from a strike. A MISS leaves it alone: nothing
+   was cut, so nothing flinches. The sentence game's own shake vocabulary, at its own
+   amplitude (`--shake-amp` defaults to 1, and this surface does not set it). */
+.word-subject-text.struck {
+  animation: word-shake 0.4s ease-in-out;
 }
 @keyframes word-float {
   0%,
@@ -3874,31 +3851,106 @@ button * {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .word-subject .hole-word-wrap,
-  .word-subject-text {
+  .word-subject .hole-word-wrap {
     animation: none;
   }
 }
-/* The word STEPS BACK while a grade is on it. Not a flourish and not a transition — the
-   label sits on top of it, and two words of the same size in the same place cannot both be
-   read (measured on the worst case, a cyan RARE over the blue day's word: at 0.45 and 0.32
-   they are mud, at 0.2 the label is clean). A plain state, on and off with the label. */
-.word-subject-text.stamped {
-  opacity: var(--stamp-dim, 0.2);
+
+/* --- the STRIKE: a claim cuts the word (#163, decided 2026-08-09) ------------------------
+   `assets/slash.png` is a 5-frame 36x46 sheet of a diagonal stroke landing and dissipating.
+   Two things about how it is drawn:
+
+   It is a MASK, not an image. The sheet is pure white, so painting `currentColor` through it
+   gives one sheet in five grade colours — the technique the header globe uses, for the same
+   reason. The colour comes down from `WordSlash` as the element's own `color`.
+
+   It is at an EXACT INTEGER SCALE (4x = 144x184), which is the app's standing rule for pixel
+   art and here it also settles a question: `image-rendering` is unreliable on masks, but at
+   an integer scale nearest and bilinear resampling agree, so the frames stay crisp whatever
+   the engine does. That is also why the size is FIXED rather than sized off the word — the
+   word's own type is a `clamp()` that lands on fractions, and a strike is an impact anyway,
+   not a property of what it hits.
+
+   `mask-size: 500%` lays all five frames across five element-widths and the animation walks
+   `mask-position` from one end to the other in `steps(5, jump-none)` — which lands exactly on
+   0/25/50/75/100% with no sixth position past the end, where the looping `.cal-ripple` needs
+   its `n/(n-1)` overshoot instead. */
+.word-slash {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 144px;
+  height: 184px;
+  /* NOT centred on the word — dropped 19% of its own height below centre, which is a
+     property of the ART and was measured rather than nudged. The sheet's ink is
+     top-weighted: the stroke enters at the frame's top-left and dissipates toward the
+     bottom-right, and only the first two frames carry real ink (the last three are wisps).
+     The visible sweep therefore centres around 31% of the box, so a box centred on the word
+     puts the strike ABOVE it. A percentage rather than pixels, so the offset follows the
+     box at every breakpoint. */
+  transform: translate(-50%, -31%);
+  background-color: currentColor;
+  -webkit-mask-image: url('./assets/slash.png');
+  mask-image: url('./assets/slash.png');
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 500% 100%;
+  mask-size: 500% 100%;
+  pointer-events: none;
+  /* Two animations, and the second is not decoration: with a delay on the frame walk, the
+     element would otherwise sit on frame 1 — visible, and stationary — until its turn came.
+     `slash-show` is a zero-length jump to full opacity that `backwards` fill holds at 0
+     through the delay, so the second blow is simply not there until it lands. */
+  animation:
+    slash-frames var(--slash-ms, 250ms) steps(5, jump-none) var(--slash-delay, 0ms) both,
+    slash-show 0ms step-start var(--slash-delay, 0ms) both;
+}
+/* The second blow crosses the first. */
+.word-slash.mirrored {
+  transform: translate(-50%, -31%) scaleX(-1);
+}
+@keyframes slash-frames {
+  from {
+    -webkit-mask-position: 0% 0%;
+    mask-position: 0% 0%;
+  }
+  to {
+    -webkit-mask-position: 100% 0%;
+    mask-position: 100% 0%;
+  }
+}
+@keyframes slash-show {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+/* The global rule would collapse the frame walk to nothing, which for a sprite sheet means
+   the strike never appears at all. Hold ONE frame instead — the fullest, second — for as
+   long as the component keeps it mounted: no motion, but the claim is still visibly struck.
+   (The rest of the claim's feedback does not depend on this: the clock gains, the history
+   logs the find in its colour and the tally counts it, all statically.) */
+@media (prefers-reduced-motion: reduce) {
+  .word-slash {
+    animation: none;
+    -webkit-mask-position: 25% 0%;
+    mask-position: 25% 0%;
+  }
 }
 @media (max-width: 640px) {
   .word-frame {
     --wordw: calc(min(430px, 100vw - 20px - 28px) - var(--gutter) - var(--railw) - 18px);
   }
-  /* The page inset narrows to 14px a side here, and the label shrinks with it: it is a WORD,
-     so its width is the constraint, and the desktop base would run the widest grades close
-     to the edge of a 320px screen. */
   .word-subject {
     --wordw: calc(min(430px, calc(100vw - 28px)) * 0.95);
   }
-  .word-subject .rarity-hit {
-    --hit-base: 14px;
-    --hit-room: calc(100vw - 28px);
+  /* The strike scales down with the screen: 3x rather than 4x, so it still crosses the
+     word without spanning a 320px column end to end. */
+  .word-slash {
+    width: 108px;
+    height: 138px;
   }
   /* The keyboard goes full-bleed here — 10px past the page inset on each side (see
      `.keyboard`) — so the whole play column goes with it. */

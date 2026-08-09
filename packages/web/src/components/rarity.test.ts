@@ -15,8 +15,17 @@
 
 import { describe, it, expect } from 'vitest';
 import { heatColor, progressColor } from '@whippin/shared';
-import { RARITY_COLORS, RARITY_HIT, MISS_COLOR, MISS_HIT } from './rarity';
-import { RARITY_LADDER, RARITY_NAMES, rarityStep } from '../game/wordGame';
+import {
+  RARITY_COLORS,
+  MISS_COLOR,
+  DOUBLE_SLASH_FROM,
+  SLASH_FRAMES,
+  SLASH_FRAME_MS,
+  SLASH_MS,
+  slashDurationMs,
+  slashesFor,
+} from './rarity';
+import { RARITY_NAMES } from '../game/wordGame';
 
 function hex(rgb: string): string {
   const [r, g, b] = rgb.match(/\d+/g)!.map(Number);
@@ -102,48 +111,37 @@ describe('rarity colours track the palette stops they were copied from', () => {
   });
 });
 
-// The other half of the presentation: a rarer grade must read as more. Since the feedback
-// does not animate (2026-08-09), that is carried by exactly two things — how big the label
-// is and how long it stays — and both are asserted as a SHAPE (monotonic, one row per
-// grade), never as typed-out numbers, so the table stays a tuning knob.
-describe('rarity presentation escalates with the ladder', () => {
-  it('has one row per grade, indexed by rarityStep', () => {
-    expect(RARITY_HIT).toHaveLength(RARITY_LADDER.length);
-    for (const name of RARITY_NAMES) expect(RARITY_HIT[rarityStep(name)]).toBeDefined();
-  });
-
-  it('every channel is strictly stronger at a rarer grade', () => {
-    for (const channel of ['scale', 'holdMs'] as const) {
-      const values = RARITY_HIT.map((row) => row[channel]);
-      for (let i = 1; i < values.length; i += 1) {
-        expect(values[i], `${channel} at step ${i}`).toBeGreaterThan(values[i - 1]);
-      }
+// The other half of the presentation: a rarer grade must read as more. Since the claim
+// feedback became a SLASH (2026-08-09) that is carried by ONE thing — how many times the
+// word is struck — and it is asserted as a rule rather than a table of numbers, so the
+// threshold stays a knob.
+describe('the strike escalates with the ladder', () => {
+  it('cuts once at the common end and twice from the threshold up', () => {
+    const cuts = RARITY_NAMES.map((name) => slashesFor(name, RARITY_NAMES));
+    expect(cuts[0], 'the commonest grade is a single cut').toBe(1);
+    expect(cuts[cuts.length - 1], 'the rarest is a cross').toBe(2);
+    // Never fewer blows for a rarer find, at any grade.
+    for (let i = 1; i < cuts.length; i += 1) {
+      expect(cuts[i], `${RARITY_NAMES[i]}`).toBeGreaterThanOrEqual(cuts[i - 1]);
     }
+    // And the threshold is where it says it is, rather than wherever an array happened to
+    // put it.
+    expect(slashesFor(DOUBLE_SLASH_FROM, RARITY_NAMES)).toBe(2);
+    const below = RARITY_NAMES[RARITY_NAMES.indexOf(DOUBLE_SLASH_FROM) - 1];
+    expect(slashesFor(below, RARITY_NAMES)).toBe(1);
   });
 
-  // The label is a WORD, and the rarest are drawn several times the base size, so the
-  // ladder can only climb as far as the narrowest column holds. `.rarity-hit` caps the
-  // size at `room / glyphs`; this pins the thing that cap can silently break —
-  // if two grades both cap, the rarer one must still render LARGER, or the ladder inverts
-  // on exactly the screens where it matters most.
-  it('survives its own width cap at 320px without inverting', () => {
-    const ROOM = 320 - 28; // the page inset a side, i.e. what `--hit-room` resolves to
-    const BASE = 14; // `.word-subject .rarity-hit` at the mobile breakpoint
-    const LABELS = [...RARITY_NAMES];
-    const rendered = RARITY_HIT.map((row, i) => Math.min(BASE * row.scale, ROOM / LABELS[i].length));
-    for (let i = 1; i < rendered.length; i += 1) {
-      expect(rendered[i], `${LABELS[i]} vs ${LABELS[i - 1]} at 320px`).toBeGreaterThan(
-        rendered[i - 1],
-      );
-    }
-    // And nothing overruns the screen. Nothing scales, so the resting width IS the widest
-    // the label ever gets.
-    rendered.forEach((size, i) => {
-      expect(size * LABELS[i].length, `${LABELS[i]} width`).toBeLessThanOrEqual(ROOM + 0.001);
-    });
+  it('a doubled strike outlasts a single one, and the screen can hold for it', () => {
+    // The ending beat waits for whatever is still in the air; if this ever returned the
+    // same length for both, the second blow would be cut off to show the board.
+    expect(slashDurationMs(2)).toBeGreaterThan(slashDurationMs(1));
+    expect(slashDurationMs(1)).toBe(SLASH_MS);
   });
 
-  it('a MISS is the quietest thing that can land', () => {
-    expect(MISS_HIT).toBe(RARITY_HIT[0]);
+  it('the sheet is walked frame for frame', () => {
+    // The sprite has five frames at 50ms; if the constants and the sheet ever disagree the
+    // strike either stutters or ends early, and nothing else would catch it.
+    expect(SLASH_MS).toBe(SLASH_FRAMES * SLASH_FRAME_MS);
+    expect(SLASH_FRAMES).toBe(5);
   });
 });

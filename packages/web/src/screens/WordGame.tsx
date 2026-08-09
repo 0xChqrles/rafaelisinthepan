@@ -14,13 +14,14 @@ import {
   wordGuessKey,
   zoneGroups,
   RARITY_LADDER,
+  RARITY_NAMES,
 } from '../game/wordGame';
-import { MISS_COLOR, MISS_HIT, RARITY_COLORS, RARITY_HIT } from '../components/rarity';
+import { MISS_COLOR, RARITY_COLORS, slashesFor } from '../components/rarity';
 import { buildWordBoard } from '../game/wordBoard';
 import { canExtend } from '../game/keyboard';
 import useScrollEdges from '../hooks/useScrollEdges';
 import WordBoard, { WordTerminus } from '../components/WordBoard';
-import WordSubject, { type WordHit } from '../components/WordSubject';
+import WordSubject, { hitDurationMs, type WordHit } from '../components/WordSubject';
 import WordTally from '../components/WordTally';
 import WordHistory from '../components/WordHistory';
 import WordTimer, { type TimeGain } from '../components/WordTimer';
@@ -52,12 +53,11 @@ import { prefersReducedMotion } from '../hooks/useScramble';
 
 // The ending plays in BEATS, like the sentence solve, instead of piling onto the frame
 // the clock died in. First the killing moment plays out on the surface the player was
-// looking at: the timer sits at 0 and the last guess's label finishes its stay.
+// looking at: the timer sits at 0 and the last guess's strike finishes landing.
 //
-// This is the FLOOR of that beat, not its length. A rarity label stays longer the rarer the
-// grade (#163 — components/rarity.ts RARITY_HIT), so an ARCANE landing on the buzzer
-// outlives this by a second; the screen tracks when the live one actually goes and waits
-// for the later of the two. Getting that wrong would cut the run's best moment short to
+// This is the FLOOR of that beat, not its length: a doubled slash runs longer than a single
+// one, so the screen tracks when whatever is in the air actually ends and waits for the
+// later of the two. Getting that wrong would cut the run's last strike off mid-swing to
 // show the board.
 const WORD_END_HOLD_MS = 800;
 // Then the field arrives under the word and the prompt leaves; then the keyboard drops
@@ -356,23 +356,26 @@ function WordRound({
       // This render's own view of the same walk, for the feedback THIS guess speaks.
       const nextRun = replayWordRun(ranks, [...tried, typed]);
 
-      // What the word says back. A claim names its GRADE; anything the run cannot claim
-      // says MISS in the app's red — a near miss and an off-map guess are the same event
-      // to a player racing a clock, and the exact distance of an unclaimable word is a
-      // number they can do nothing with. It survives where it still teaches: the
-      // post-mortem draws that guess on the trunk at its real rank.
+      // What the word says back — and the two answers are different EVENTS, not two
+      // spellings of one. A claim CUTS the word, in its grade's colour, twice from
+      // DOUBLE_SLASH_FROM up. Anything the run cannot claim says MISS in the app's red: a
+      // near miss and an off-map guess are the same thing to a player racing a clock, and
+      // the exact distance of an unclaimable word is a number they can do nothing with. It
+      // survives where it still teaches — the post-mortem draws that guess on the trunk at
+      // its real rank.
       const claimed = judged.kind === 'claim' ? judged.entry : null;
       const grade = claimed ? rarityOf(claimed.freq, corpusSize) : null;
-      const style = grade ? RARITY_HIT[rarityStep(grade)] : MISS_HIT;
       hitId.current += 1;
-      hitEndsAt.current = Date.now() + style.holdMs;
-      setHit({
-        id: hitId.current,
-        label: grade ?? 'MISS',
-        color: grade ? RARITY_COLORS[grade] : MISS_COLOR,
-        scale: style.scale,
-        holdMs: style.holdMs,
-      });
+      const next: WordHit = grade
+        ? {
+            id: hitId.current,
+            kind: 'claim',
+            color: RARITY_COLORS[grade],
+            slashes: slashesFor(grade, RARITY_NAMES),
+          }
+        : { id: hitId.current, kind: 'miss', color: MISS_COLOR };
+      hitEndsAt.current = Date.now() + hitDurationMs(next);
+      setHit(next);
 
       if (claimed && grade) {
         // The other half of the feedback grammar: the GRADE lands on the word, the
