@@ -33,6 +33,17 @@ const WIDTH_BUDGET = 0.88;
 // budgets would keep inflating the number toward the screen edges (at 3 the count
 // already grazed the top of a desktop screen).
 const MAX_K = 2;
+// The width budget is spent on at least TWO digits, whatever the number currently is
+// (decided 2026-08-09). Both watermarks count PLAY — tries, claims — so both cross 10
+// within the first minute, and the width cap is what bites on a phone: measured at 320px,
+// a one-digit count sized at k=2 and the same run's tenth guess dropped it to k=1, halving
+// the number mid-round. A watermark is the screen's fixed furniture; it must not resize
+// because the game went well. So the number is sized for the widest 2-digit value it could
+// become and merely rendered at whatever it is, which costs the 1..9 window some size and
+// buys a count that never moves again. Beyond two digits it does move (there is no honest
+// way to reserve for a number with no bound), but 99 -> 100 is a milestone, where 9 -> 10
+// is the tenth guess of every single round.
+const MIN_SIZED_DIGITS = 2;
 
 type Mask = { w: number; rows: Uint8Array };
 
@@ -114,12 +125,17 @@ export default function CellDigits({ value }: { value: number }) {
       const digits = Array.from(String(value), (c) => masks[Number(c)]);
       // Glyph-pixel width of the whole number, gaps included.
       const bits = digits.reduce((sum, m) => sum + m.w, 0) + GAP * (digits.length - 1);
+      // What the number is SIZED by: never fewer than MIN_SIZED_DIGITS of the widest glyph,
+      // so the scale is the same the moment the count grows into them. Only `k` reads this —
+      // the box below stays the real number's width, so it still centres on its own ink.
+      const widest = masks.reduce((max, m) => Math.max(max, m.w), 0);
+      const sized = Math.max(bits, MIN_SIZED_DIGITS * widest + GAP * (MIN_SIZED_DIGITS - 1));
       const k = Math.max(
         1,
         Math.min(
           MAX_K,
           Math.round((HEIGHT_BUDGET * window.innerHeight) / (GLYPH_ROWS * cell)),
-          Math.floor((WIDTH_BUDGET * window.innerWidth) / (bits * cell)),
+          Math.floor((WIDTH_BUDGET * window.innerWidth) / (sized * cell)),
         ),
       );
       const px = k * cell;

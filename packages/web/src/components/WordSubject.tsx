@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import FloatingHit, { HIT_FADE_MS } from './FloatingHit';
 import WordSlash from './WordSlash';
-import { SLASH_GAP_MS, SLASH_MS, slashDurationMs } from './rarity';
+import { SLASH_MS, slashDelayMs, slashDurationMs } from './rarity';
 import { fitWord } from './routeDrawing';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { srWordBoardWord } from '../i18n';
@@ -107,6 +107,41 @@ function useLetterWave(letters: number): boolean {
   return waving;
 }
 
+// --- what the word does WHILE it is being struck ------------------------------------------
+// It recoils and takes the strike's colour — and it does both PER BLOW, not for the length of
+// the strike (decided 2026-08-09). Between the two blows of a cross there is a beat where
+// nothing is on the word, and the word has to be untouched in it: a colour held across the
+// gap turns two hits into one long state, which is the reading the gap exists to prevent.
+//
+// So this returns WHICH blow is landing, or null in the daylight between them and after the
+// last — driven by the strike's own `slashDelayMs`/`SLASH_MS`, the numbers the slash itself is
+// drawn from, so the word and the stroke on it can never disagree about when a blow is on.
+// A miss lands no blow at all: nothing was struck, so nothing recoils.
+function useStrikeBlow(hit: WordHit | null): number | null {
+  const [blow, setBlow] = useState<number | null>(null);
+  const claim = hit?.kind === 'claim' ? hit : null;
+  const id = claim?.id ?? null;
+  const blows = claim?.slashes ?? 0;
+
+  useEffect(() => {
+    if (id === null) {
+      setBlow(null);
+      return undefined;
+    }
+    // The first blow lands in the same commit the strike mounts in, so it is set here rather
+    // than scheduled — a timer for 0ms would cost the recoil its first frame.
+    setBlow(0);
+    const timers: number[] = [];
+    for (let i = 0; i < blows; i += 1) {
+      if (i > 0) timers.push(window.setTimeout(() => setBlow(i), slashDelayMs(i)));
+      timers.push(window.setTimeout(() => setBlow(null), slashDelayMs(i) + SLASH_MS));
+    }
+    return () => timers.forEach((t) => window.clearTimeout(t));
+  }, [id, blows]);
+
+  return blow;
+}
+
 // Where one letter of the fan sits: how far it leans, and how far it has fallen from the
 // middle. Both go on the INDEPENDENT transform properties (`rotate` / `translate`) rather
 // than into one `transform` string, which is what lets the wave — an ordinary `transform`
@@ -135,6 +170,8 @@ export default function WordSubject({
 }) {
   const letters = [...word];
   const waving = useLetterWave(letters.length);
+  const blow = useStrikeBlow(hit);
+  const struck = blow !== null && hit?.kind === 'claim' ? hit : null;
 
   return (
     <div className="word-subject">
@@ -151,25 +188,17 @@ export default function WordSubject({
         style={{ fontSize: fitWord(word, SUBJECT_PX) } as CSSProperties}
       >
         {/* The word RECOILS from a strike and from nothing else: a claim shakes it, a MISS
-            leaves it alone, because nothing was struck. It recoils ONCE PER BLOW, on the
-            blows' own cadence — the shake's length IS the interval between them, so a double
-            strike shakes as the second lands rather than on some rhythm of its own — and it
-            takes the strike's COLOUR for as long as the strike is on it.
-            Keyed per hit so a claim landing while the last one is still playing restarts the
-            recoil instead of inheriting a run already half over (Hole's own trick). */}
+            leaves it alone, because nothing was struck. Both the recoil and the colour last
+            exactly ONE BLOW (see `useStrikeBlow`), so a cross hits, lets go, and hits again.
+            Keyed per BLOW so the second restarts the shake rather than inheriting a run
+            already over, and so a claim landing on top of another does too (Hole's trick). */}
         <span
-          key={hit?.kind === 'claim' ? `struck-${hit.id}` : 'word'}
-          className={`word-subject-text${hit?.kind === 'claim' ? ' struck' : ''}${
-            waving ? ' wave' : ''
-          }`}
+          key={struck ? `struck-${struck.id}-${blow}` : 'word'}
+          className={`word-subject-text${struck ? ' struck' : ''}${waving ? ' wave' : ''}`}
           style={
             {
-              ...(hit?.kind === 'claim'
-                ? {
-                    '--struck-c': hit.color,
-                    '--shake-ms': `${SLASH_MS + SLASH_GAP_MS}ms`,
-                    '--shake-count': hit.slashes,
-                  }
+              ...(struck
+                ? { '--struck-c': struck.color, '--shake-ms': `${SLASH_MS}ms` }
                 : null),
               // Handed down rather than repeated in CSS, so the JS that ends the wave and
               // the CSS that draws it cannot disagree about how long it is.

@@ -3861,9 +3861,12 @@ button * {
    still between them.
    It also wears the STRIKE'S COLOUR while the strike is on it, returning to the solved blue
    when it goes: a plain state, like everything else here, not a transition. */
+/* One BLOW: the recoil and the grade's colour, for exactly as long as a stroke is on the
+   word. `WordSubject` mounts this per blow, so a cross plays it twice with the strike's own
+   beat of daylight between them rather than holding one long state across both. */
 .word-subject-text.struck {
   color: var(--struck-c, var(--accent));
-  animation: word-shake var(--shake-ms, 0.4s) ease-in-out var(--shake-count, 1);
+  animation: word-shake var(--shake-ms, 0.4s) ease-in-out;
 }
 @keyframes word-float {
   0%,

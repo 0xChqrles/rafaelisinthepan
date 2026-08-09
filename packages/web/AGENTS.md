@@ -321,7 +321,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
   status corner (where the sentence game puts its progress counter) at 34px — the one live
   number on the screen — and the count becomes the big `CellDigits` watermark behind the
   word (`.word-anchor`, the standing watermark rule: what is displayed better later, since
-  the count is this mode's end-screen headline). That split IS the mode's feedback grammar:
+  the count is this mode's end-screen headline). **That watermark is sized for at least TWO
+  digits whatever it currently reads** (`MIN_SIZED_DIGITS`, decided 2026-08-09) — a rule of
+  the SHARED component, so the sentence game's try count gets it too. Both numbers count
+  play, so both cross 10 in the first minute, and the width budget is what bites on a phone:
+  measured at 320/375/430px, the count rendered 252px tall for claims 1–9 and **halved to
+  126 on the tenth**, mid-round. A watermark is the screen's fixed furniture; it must not
+  resize because the game went well. So `k` is computed from the widest 2-digit value the
+  number could become while the BOX stays the real number's width (it still centres on its
+  own ink) — which costs the 1–9 window some size and buys a count that never moves again.
+  Past two digits it does move, because there is no honest way to reserve for a number with
+  no bound; 99 → 100 is a milestone where 9 → 10 is the tenth guess of every single round.
+  Verified a no-op at 900px, where the width cap never bit in the first place. That split IS the mode's feedback grammar:
   **a float on the WORD is about the guess** (its GRADE, or MISS), **a gain on the TIMER is
   about your clock** — `+4s` in the solved-word gold, keyed by a monotonic id so two claims
   in a row replay it. The clock reads **`seconds.decisecond`** and goes `--danger` red for
@@ -334,14 +345,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
   outcomes are different EVENTS and look nothing alike, which is the point: before reading
   anything you know which one happened.
   A claim cuts the word with `assets/slash.png` — a 5-frame 36x46 sheet of a stroke landing
-  and dissipating, 50ms a frame — in the claimed grade's COLOUR, **and the word takes that
-  colour too for as long as the strike is on it**, returning to the solved blue when it goes.
-  The word also SHAKES, ONCE PER BLOW and on the blows' own cadence (2026-08-09): the shake's
-  duration IS the interval between two strikes and its iteration count is how many there are,
-  so a doubled strike recoils again exactly as the second lands. Iterations rather than two
-  animations because the same `@keyframes` name cannot be listed twice on one element — the
-  later declaration simply replaces the earlier — and rather than one long shake because two
-  recoils are what being struck twice looks like. There
+  and dissipating, 50ms a frame — in the claimed grade's COLOUR, **and while a stroke is on
+  the word the word RECOILS and takes that colour too**, returning to the solved blue when it
+  goes. **Both last exactly ONE BLOW, never the whole strike** (decided 2026-08-09): a cross
+  hits, LETS GO, and hits again, so the beat of daylight the second blow is built around is a
+  beat where nothing at all is on the word. Held across the gap instead, the colour turned two
+  hits into one long state — precisely the reading the gap exists to prevent — and the recoil
+  read as one rhythm of its own rather than as two impacts. `WordSubject.useStrikeBlow` owns
+  it: it returns WHICH blow is landing (null in the daylight and after the last) off the
+  strike's own `slashDelayMs`/`SLASH_MS`, so the word and the stroke on it cannot disagree
+  about when a blow is on, and the word is re-KEYED per blow so the second restarts the recoil
+  instead of inheriting a run already over. Measured with a 10ms in-page sampler: stroke and
+  word struck together 0–246ms, **neither 255–305ms**, both again 315–546ms, over at 555.
+  (A screenshot cannot show that window — capture latency exceeds its 55ms — so it is a
+  computed-style measurement, not a picture.) There
   is no text: a name has to be read, and a run against a clock has no time for that. The
   grade is still written down twice anyway, in the run's history and its tally, so nothing
   is lost but a word to read mid-sprint. **From `DOUBLE_SLASH_FROM` (RARE) up the word is
