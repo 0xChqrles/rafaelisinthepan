@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import FloatingHit, { HIT_FADE_MS } from './FloatingHit';
 import WordSlash from './WordSlash';
-import { SLASH_MS, slashDelayMs, slashDurationMs } from './rarity';
+import { STRUCK_MS, slashDelayMs, slashDurationMs } from './rarity';
 import { fitWord } from './routeDrawing';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { srWordBoardWord } from '../i18n';
@@ -114,8 +114,10 @@ function useLetterWave(letters: number): boolean {
 // gap turns two hits into one long state, which is the reading the gap exists to prevent.
 //
 // So this returns WHICH blow is landing, or null in the daylight between them and after the
-// last — driven by the strike's own `slashDelayMs`/`SLASH_MS`, the numbers the slash itself is
+// last — driven by the strike's own `slashDelayMs`/`STRUCK_MS`, the numbers the slash itself is
 // drawn from, so the word and the stroke on it can never disagree about when a blow is on.
+// It lets go a frame BEFORE the stroke does, which is where the beat between two hits comes
+// from now that the strokes themselves run back to back.
 // A miss lands no blow at all: nothing was struck, so nothing recoils.
 function useStrikeBlow(hit: WordHit | null): number | null {
   const [blow, setBlow] = useState<number | null>(null);
@@ -134,7 +136,7 @@ function useStrikeBlow(hit: WordHit | null): number | null {
     const timers: number[] = [];
     for (let i = 0; i < blows; i += 1) {
       if (i > 0) timers.push(window.setTimeout(() => setBlow(i), slashDelayMs(i)));
-      timers.push(window.setTimeout(() => setBlow(null), slashDelayMs(i) + SLASH_MS));
+      timers.push(window.setTimeout(() => setBlow(null), slashDelayMs(i) + STRUCK_MS));
     }
     return () => timers.forEach((t) => window.clearTimeout(t));
   }, [id, blows]);
@@ -198,7 +200,7 @@ export default function WordSubject({
           style={
             {
               ...(struck
-                ? { '--struck-c': struck.color, '--shake-ms': `${SLASH_MS}ms` }
+                ? { '--struck-c': struck.color, '--shake-ms': `${STRUCK_MS}ms` }
                 : null),
               // Handed down rather than repeated in CSS, so the JS that ends the wave and
               // the CSS that draws it cannot disagree about how long it is.

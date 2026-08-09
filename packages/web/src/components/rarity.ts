@@ -74,17 +74,23 @@ export function slashesFor(rarity: Rarity, order: readonly Rarity[]): number {
   return order.indexOf(rarity) >= order.indexOf(DOUBLE_SLASH_FROM) ? 2 : 1;
 }
 
-// One frame of daylight between blows. The second waits for the first to be gone — not
-// merely finished — so the two never share the screen: two strokes at once read as one thick
-// stroke, where two separated by a beat read as being struck twice, which is the whole thing
-// the second blow is there to say. One FRAME of gap rather than an invented number, because
-// that is the unit this animation is already counted in.
-export const SLASH_GAP_MS = SLASH_FRAME_MS;
-
-// When blow `index` lands.
+// When blow `index` lands: the moment the one before it ends, with no pause between them
+// (decided 2026-08-09, dropping a one-frame gap). The two strokes still never share the
+// screen — that is what makes a cross read as being struck twice instead of once with a
+// thicker stroke — but the daylight that says so belongs to the WORD, not to the sprite: it
+// stops reacting a frame early (below), so the beat is there whether or not the art pauses.
 export function slashDelayMs(index: number): number {
-  return index * (SLASH_MS + SLASH_GAP_MS);
+  return index * SLASH_MS;
 }
+
+// How long the WORD reacts to one blow — its recoil and the grade's colour on it. FOUR of the
+// stroke's five frames, so the last frame of every blow lands on a word already back to rest
+// (decided 2026-08-09). That is the whole beat between two hits now: the strokes run
+// continuously, and what separates them is the word letting go and being struck again. It
+// sits on the ART's own frame count rather than being an invented duration, because it is a
+// statement about which frames of the stroke the word is answering.
+export const STRUCK_FRAMES = 4;
+export const STRUCK_MS = STRUCK_FRAMES * SLASH_FRAME_MS;
 
 // How long a strike is on screen, so the screen can hold its ending beat for one.
 export function slashDurationMs(slashes: number): number {

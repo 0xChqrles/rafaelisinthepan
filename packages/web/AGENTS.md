@@ -347,29 +347,37 @@ it to the local store — see `packages/backend/AGENTS.md`).
   A claim cuts the word with `assets/slash.png` — a 5-frame 36x46 sheet of a stroke landing
   and dissipating, 50ms a frame — in the claimed grade's COLOUR, **and while a stroke is on
   the word the word RECOILS and takes that colour too**, returning to the solved blue when it
-  goes. **Both last exactly ONE BLOW, never the whole strike** (decided 2026-08-09): a cross
-  hits, LETS GO, and hits again, so the beat of daylight the second blow is built around is a
-  beat where nothing at all is on the word. Held across the gap instead, the colour turned two
-  hits into one long state — precisely the reading the gap exists to prevent — and the recoil
-  read as one rhythm of its own rather than as two impacts. `WordSubject.useStrikeBlow` owns
-  it: it returns WHICH blow is landing (null in the daylight and after the last) off the
-  strike's own `slashDelayMs`/`SLASH_MS`, so the word and the stroke on it cannot disagree
-  about when a blow is on, and the word is re-KEYED per blow so the second restarts the recoil
-  instead of inheriting a run already over. Measured with a 10ms in-page sampler: stroke and
-  word struck together 0–246ms, **neither 255–305ms**, both again 315–546ms, over at 555.
-  (A screenshot cannot show that window — capture latency exceeds its 55ms — so it is a
-  computed-style measurement, not a picture.) There
+  goes. **Both last exactly ONE BLOW, and a blow is the stroke's first FOUR
+  frames of five** (`STRUCK_FRAMES`/`STRUCK_MS`, decided 2026-08-09): a cross hits, LETS GO,
+  and hits again, so between two impacts there is a beat where nothing is happening to the
+  word. Held across both strokes instead, the colour turned two hits into one long state —
+  precisely the reading the second blow exists to prevent — and the recoil read as one rhythm
+  of its own rather than as two impacts. Stopping a frame SHORT is what buys that beat now
+  that the strokes run back to back: the last frame of every blow — the one where the stroke
+  is already dissipating — lands on a word that has returned to rest. It is stated in the
+  ART's own frames rather than as a duration, because it is a claim about which frames of the
+  stroke the word is answering. `WordSubject.useStrikeBlow` owns it: it returns WHICH blow is
+  landing (null in the daylight and after the last) off the strike's own
+  `slashDelayMs`/`STRUCK_MS`, so the word and the stroke on it cannot disagree, and the word
+  is re-KEYED per blow so the second restarts the recoil instead of inheriting a run already
+  over. Measured with a 10ms in-page sampler, a cross: stroke and word together 0–192ms,
+  **stroke alone 201–242**, together again 251–441, **stroke alone 451–492**, over at 501 —
+  one unbroken stretch of stroke with two recoils in it. A single blow is the same shape
+  halved (0–198 / 199–248), and a MISS lands neither. (A screenshot cannot show those 50ms
+  windows — capture latency exceeds them — so it is a computed-style measurement, not a
+  picture.) There
   is no text: a name has to be read, and a run against a clock has no time for that. The
   grade is still written down twice anyway, in the run's history and its tally, so nothing
   is lost but a word to read mid-sprint. **From `DOUBLE_SLASH_FROM` (RARE) up the word is
   struck TWICE, the second blow mirrored so the pair crosses** — the same escalation the
   seconds ladder makes, said in one gesture instead of five sizes: below the threshold a find
-  is a cut, at or above it a find is a cross. The second blow waits for the first to be GONE
-  — not merely finished — with one frame of daylight between them (2026-08-09, superseding a
-  110ms stagger that overlapped them): two strikes on screen at once read as one thick
-  stroke, where two separated by a beat read as being struck twice, which is the whole thing
-  the second one is there to say. The gap is one FRAME rather than an invented number,
-  because that is the unit this animation is already counted in.
+  is a cut, at or above it a find is a cross. The second blow starts the instant the first
+  ends — back to back, with NO pause between the strokes (2026-08-09, superseding first a
+  110ms stagger that overlapped them and then a one-frame gap that separated them). Two
+  strikes on screen at once read as one thick stroke, so they still never overlap; but what
+  makes a cross read as being struck TWICE rather than once for longer turned out not to need
+  a hole in the art — it is the WORD letting go, which it does a frame early either way (see
+  below). The strokes therefore run continuously and the beat lives where the recoil is.
   A miss shows the SENTENCE game's `FloatingHit`, unparameterised — the same MISS, the same
   red, the same pop and rise it has everywhere else — and **the word does not move**, because
   nothing was struck, so nothing recoils.

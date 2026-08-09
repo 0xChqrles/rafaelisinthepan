@@ -21,8 +21,8 @@ import {
   DOUBLE_SLASH_FROM,
   SLASH_FRAMES,
   SLASH_FRAME_MS,
-  SLASH_GAP_MS,
   SLASH_MS,
+  STRUCK_MS,
   slashDelayMs,
   slashDurationMs,
   slashesFor,
@@ -133,12 +133,17 @@ describe('the strike escalates with the ladder', () => {
     expect(slashesFor(below, RARITY_NAMES)).toBe(1);
   });
 
-  it('the blows never share the screen: each waits out the one before it, plus a beat', () => {
+  it('the blows never share the screen, and the word lets go between them', () => {
     // Two strikes at once read as one thick stroke, which is the opposite of what the second
-    // blow is for. So the second starts after the first has finished AND cleared...
+    // blow is for. So the second starts only once the first has finished...
     expect(slashDelayMs(0)).toBe(0);
-    expect(slashDelayMs(1)).toBe(SLASH_MS + SLASH_GAP_MS);
-    expect(SLASH_GAP_MS).toBeGreaterThan(0);
+    expect(slashDelayMs(1)).toBe(SLASH_MS);
+    // ...and the beat that makes a cross read as TWO hits rather than one long one belongs to
+    // the WORD, which stops reacting before its blow's stroke ends. Without this the recoil
+    // and the colour would run unbroken across both strokes, which is the one reading the
+    // second blow exists to avoid.
+    expect(STRUCK_MS).toBeLessThan(SLASH_MS);
+    expect(STRUCK_MS).toBeGreaterThan(0);
     // ...and the whole thing runs as long as the blows and the gaps it is made of. The
     // ending beat waits for whatever is still in the air; if this under-reported, the last
     // strike of a run would be cut off mid-swing to show the board.
