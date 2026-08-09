@@ -74,15 +74,19 @@ export function slashesFor(rarity: Rarity, order: readonly Rarity[]): number {
   return order.indexOf(rarity) >= order.indexOf(DOUBLE_SLASH_FROM) ? 2 : 1;
 }
 
-// When blow `index` lands. Each one waits for the one before it to FINISH (decided
-// 2026-08-09, superseding a 110ms stagger that overlapped them): two blows that share the
-// screen read as one thick stroke, where two that follow each other read as being struck
-// twice — which is the whole thing the second blow is there to say.
+// One frame of daylight between blows. The second waits for the first to be gone — not
+// merely finished — so the two never share the screen: two strokes at once read as one thick
+// stroke, where two separated by a beat read as being struck twice, which is the whole thing
+// the second blow is there to say. One FRAME of gap rather than an invented number, because
+// that is the unit this animation is already counted in.
+export const SLASH_GAP_MS = SLASH_FRAME_MS;
+
+// When blow `index` lands.
 export function slashDelayMs(index: number): number {
-  return index * SLASH_MS;
+  return index * (SLASH_MS + SLASH_GAP_MS);
 }
 
 // How long a strike is on screen, so the screen can hold its ending beat for one.
 export function slashDurationMs(slashes: number): number {
-  return slashes * SLASH_MS;
+  return slashDelayMs(Math.max(0, slashes - 1)) + SLASH_MS;
 }

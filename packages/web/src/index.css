@@ -3496,14 +3496,16 @@ button * {
   --play-key: min(var(--kb-key-max), calc((var(--play-box) - 9 * var(--kb-gap)) / 10));
   --play-w: calc(10 * var(--play-key) + 9 * var(--kb-gap));
 }
-/* Everything between the word and the keys — the history, the prompt, the tally, and at the
-   gate the rules — rides OUT OF FLOW directly above the tray (decided 2026-08-09). It still
-   sits exactly where it did and still never moves (every one of those has a fixed footprint
-   of its own); what changes is that it stops taking height off the window ABOVE it.
-   That is the whole point: the day's word and its score watermark centre in the band between
-   the HEADER and the KEYBOARD, which is the space the player is actually looking at. In flow,
-   these ~200px pushed the window's centre up with them and the word sat 126px high — measured
-   — reading as top-aligned rather than centred. */
+/* The HISTORY, and only the history, rides OUT OF FLOW — hanging above the prompt rather
+   than stacked on top of it (decided 2026-08-09). It sits exactly where it did and still
+   never moves (its height is fixed at five lines whatever it holds); what changes is that it
+   stops taking that height off the window above it.
+   The rule it follows: everything the player ACTS THROUGH — the prompt, the tally under it,
+   the keys — is in flow and owns its space, and the window fills what is left between the
+   HEADER and the PROMPT, with the day's word and its score watermark centred in that. A log
+   of what has already happened is not a control, so it hangs into the word's band instead of
+   pushing the word out of it. In flow it pushed the window's centre up with it and the word
+   read as top-aligned; given the whole band down to the KEYBOARD the word read as too low. */
 .word-readouts {
   position: absolute;
   left: 0;
@@ -3512,8 +3514,7 @@ button * {
   display: flex;
   flex-direction: column;
   align-items: start;
-  gap: clamp(6px, 1vh, 12px);
-  /* `bottom: 100%` puts the bottom edge ON the tray's top edge; this restores the seam the
+  /* `bottom: 100%` puts the bottom edge ON the prompt's top edge; this restores the seam the
      flex gap used to give it. */
   padding-bottom: clamp(6px, 1vh, 12px);
 }
@@ -3926,13 +3927,17 @@ button * {
   mask-size: 500% 100%;
   image-rendering: pixelated;
   pointer-events: none;
-  /* Two animations, and the second is not decoration: with a delay on the frame walk, the
-     element would otherwise sit on frame 1 — visible, and stationary — until its turn came.
-     `slash-show` is a zero-length jump to full opacity that `backwards` fill holds at 0
-     through the delay, so the second blow is simply not there until it lands. */
+  /* INVISIBLE unless an animation is actively running on it, which is what the second
+     animation buys and why it is not decoration. `slash-show` holds opacity 1 for exactly the
+     length of the frame walk and carries NO fill, so outside that window the element falls
+     back to this base 0 — before its delay, so a waiting second blow is not sitting on frame
+     1 in plain sight; and after its last frame, so the fifth frame gets its own 50ms and
+     leaves like every other one instead of holding until React unmounts the element (which
+     for the first of two blows meant it hung on screen through the whole of the second). */
+  opacity: 0;
   animation:
     slash-frames var(--slash-ms, 250ms) steps(5, jump-none) var(--slash-delay, 0ms) both,
-    slash-show 0ms step-start var(--slash-delay, 0ms) both;
+    slash-show var(--slash-ms, 250ms) linear var(--slash-delay, 0ms);
 }
 /* The second blow crosses the first. */
 .word-slash.mirrored {
@@ -3949,9 +3954,7 @@ button * {
   }
 }
 @keyframes slash-show {
-  from {
-    opacity: 0;
-  }
+  from,
   to {
     opacity: 1;
   }
@@ -3964,6 +3967,9 @@ button * {
 @media (prefers-reduced-motion: reduce) {
   .word-slash {
     animation: none;
+    /* The base opacity above is 0, which only the animation lifts — so with the animation
+       off it has to be lifted here, or the strike never appears at all. */
+    opacity: 1;
     -webkit-mask-position: 25% 0%;
     mask-position: 25% 0%;
   }

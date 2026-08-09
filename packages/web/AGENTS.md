@@ -340,10 +340,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   is lost but a word to read mid-sprint. **From `DOUBLE_SLASH_FROM` (RARE) up the word is
   struck TWICE, the second blow mirrored so the pair crosses** — the same escalation the
   seconds ladder makes, said in one gesture instead of five sizes: below the threshold a find
-  is a cut, at or above it a find is a cross. The second blow WAITS for the first to finish
-  rather than overlapping it (2026-08-09, superseding a 110ms stagger): two strikes sharing
-  the screen read as one thick stroke, where two that follow each other read as being struck
-  twice, which is the whole thing the second one is there to say.
+  is a cut, at or above it a find is a cross. The second blow waits for the first to be GONE
+  — not merely finished — with one frame of daylight between them (2026-08-09, superseding a
+  110ms stagger that overlapped them): two strikes on screen at once read as one thick
+  stroke, where two separated by a beat read as being struck twice, which is the whole thing
+  the second one is there to say. The gap is one FRAME rather than an invented number,
+  because that is the unit this animation is already counted in.
   A miss shows the SENTENCE game's `FloatingHit`, unparameterised — the same MISS, the same
   red, the same pop and rise it has everywhere else — and **the word does not move**, because
   nothing was struck, so nothing recoils.
@@ -366,10 +368,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   real ink, so a box centred on the word puts the strike above it.
   Two smaller mechanics worth keeping: the frame walk is `steps(5, jump-none)` over
   `mask-position` 0→100%, which lands exactly on the five frames with no sixth position past
-  the end (where the LOOPING `.cal-ripple` needs its `n/(n-1)` overshoot instead); and the
-  second blow carries a zero-length `slash-show` animation whose `backwards` fill holds it at
-  opacity 0 through its delay, or it would sit on frame 1 — visible and stationary — waiting
-  its turn. Under reduced motion the walk would collapse to nothing, which for a sprite sheet
+  the end (where the LOOPING `.cal-ripple` needs its `n/(n-1)` overshoot instead); and the strike is
+  INVISIBLE unless an animation is actively running on it — base `opacity: 0`, lifted for
+  exactly the frame walk's length by a `slash-show` animation carrying NO fill. That one rule
+  buys both ends: a waiting second blow is not sitting on frame 1 in plain sight, and the
+  FIFTH frame gets its own 50ms and leaves like every other one instead of holding until
+  React unmounts the element (which, for the first of two blows, meant it hung on screen
+  through the whole of the second). Under reduced motion the walk would collapse to nothing, which for a sprite sheet
   means the strike never appears at all, so a dedicated rule holds ONE frame instead.
   The shake rides `--shake-amp`, which **defaults to the sentence game's 1** — `word-shake`
   is shared by the sentence hole, this word AND the standings sprite, so only a surface that
@@ -407,14 +412,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **Two ambient readouts bracket the prompt during a run** (decided 2026-08-09), and both
   RESERVE their full footprint from the first frame — a column that grew as the run filled it
   would walk the word up the screen guess by guess.
-  **They ride OUT OF FLOW, in `.word-readouts` pinned directly above the tray** (2026-08-09).
-  They sit exactly where they did and still never move; what changed is that they stop taking
-  height off the window above them, so **the day's word and its score watermark centre in the
-  band between the HEADER and the KEYBOARD** — the space the player is actually looking at.
-  In flow, those ~200px pushed the window's centre up with them and the word sat 126px high
-  (measured), reading as top-aligned rather than centred; out of flow it lands within ~10px of
-  the band's centre at every width. `bottom: 100%` puts the box's bottom edge on the tray's
-  top edge, and its `padding-bottom` restores the seam the flex gap used to give it. Above it, `components/WordHistory`: the last five CLAIMS, newest against
+  **The HISTORY, and only the history, rides OUT OF FLOW** — `.word-readouts`, hanging above
+  the prompt rather than stacked on top of it (2026-08-09). The rule it follows: everything
+  the player ACTS THROUGH — the prompt, the tally under it, the keys — is in flow and owns its
+  space, and **the window fills what is left between the HEADER and the PROMPT, with the day's
+  word and its score watermark centred in that**. A log of what has already happened is not a
+  control, so it hangs into the word's band instead of pushing the word out of it. Both
+  extremes were built and rejected on sight: in flow the history pushed the window's centre up
+  with it and the word read as TOP-ALIGNED (measured 126px high); given the whole band down to
+  the KEYBOARD it read as TOO LOW. As shipped it lands within 8px of the header→prompt centre
+  at every width. `bottom: 100%` puts the box's bottom edge on the prompt's top edge, and its
+  `padding-bottom` restores the seam the flex gap used to give it. Above it, `components/WordHistory`: the last five CLAIMS, newest against
   the prompt, older ones riding up, fading, and gone — a chat, not a list, which is what
   `justify-content: flex-end` + `overflow: hidden` buys. It is where the RANK went: the float
   carries the grade now, but "how close was that one?" is a question a moment later, and a

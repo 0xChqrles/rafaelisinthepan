@@ -21,6 +21,7 @@ import {
   DOUBLE_SLASH_FROM,
   SLASH_FRAMES,
   SLASH_FRAME_MS,
+  SLASH_GAP_MS,
   SLASH_MS,
   slashDelayMs,
   slashDurationMs,
@@ -132,14 +133,15 @@ describe('the strike escalates with the ladder', () => {
     expect(slashesFor(below, RARITY_NAMES)).toBe(1);
   });
 
-  it('the blows do not overlap: each waits for the one before it to finish', () => {
-    // Two strikes sharing the screen read as one thick stroke, which is the opposite of
-    // what the second blow is for. So the second starts exactly where the first ends...
+  it('the blows never share the screen: each waits out the one before it, plus a beat', () => {
+    // Two strikes at once read as one thick stroke, which is the opposite of what the second
+    // blow is for. So the second starts after the first has finished AND cleared...
     expect(slashDelayMs(0)).toBe(0);
-    expect(slashDelayMs(1)).toBe(SLASH_MS);
-    // ...and the whole thing runs as long as the blows it is made of. The ending beat waits
-    // for whatever is still in the air; if this under-reported, the last strike of a run
-    // would be cut off mid-swing to show the board.
+    expect(slashDelayMs(1)).toBe(SLASH_MS + SLASH_GAP_MS);
+    expect(SLASH_GAP_MS).toBeGreaterThan(0);
+    // ...and the whole thing runs as long as the blows and the gaps it is made of. The
+    // ending beat waits for whatever is still in the air; if this under-reported, the last
+    // strike of a run would be cut off mid-swing to show the board.
     expect(slashDurationMs(1)).toBe(SLASH_MS);
     expect(slashDurationMs(2)).toBe(slashDelayMs(1) + SLASH_MS);
   });

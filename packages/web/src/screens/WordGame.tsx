@@ -460,13 +460,11 @@ function WordRound({
                keyboard will be, so tapping START changes what the footer holds and not
                where anything is. */
             <>
-              <div className="word-readouts">
-                <p className="word-rules">
-                  {t(lang, 'wordRulesGoal')}
-                  <br />
-                  {t(lang, 'wordRulesBonus')}
-                </p>
-              </div>
+              <p className="word-rules">
+                {t(lang, 'wordRulesGoal')}
+                <br />
+                {t(lang, 'wordRulesBonus')}
+              </p>
               <div className="tray">
                 <Button className="word-start" onClick={startWordRun}>
                   {t(lang, 'wordStart')}
@@ -485,45 +483,45 @@ function WordRound({
                   a footer that collapsed under it would drag the drop; then unmounted, so
                   the ~160px they were holding goes to the post-mortem board, which is the
                   whole content of that screen.
-                  They ride in `.word-readouts`, which is OUT OF FLOW above the keyboard —
-                  see the CSS: it is what leaves the whole band between the header and the
-                  keys to the word. */}
-              <div className="word-readouts">
-                {!showResults && (
+                  The HISTORY alone rides out of flow, hanging above the prompt
+                  (`.word-readouts`): it is a log of what has been, not a control, so the
+                  band it hangs into belongs to the word — see the CSS. */}
+              {!showResults && (
+                <div className="word-readouts">
                   <WordHistory
                     claimed={run.claimed}
                     corpusSize={corpusSize}
                     retired={promptExiting}
                   />
-                )}
-
-                <div
-                  className={`input-area word-prompt${promptExiting ? ' solving' : ''}${
-                    showResults ? ' retired' : ''
-                  }`}
-                  aria-hidden={promptExiting || showResults || undefined}
-                >
-                  <WordInput
-                    value={input}
-                    history={tried}
-                    onType={appendChar}
-                    onBackspace={deleteChar}
-                    onSubmit={submit}
-                    onReplace={replaceInput}
-                    invalidSignal={invalidAt}
-                    active={playing}
-                  />
                 </div>
+              )}
 
-                {!showResults && (
-                  <WordTally
-                    found={foundTally}
-                    total={zoneTally}
-                    lang={lang}
-                    retired={promptExiting}
-                  />
-                )}
+              <div
+                className={`input-area word-prompt${promptExiting ? ' solving' : ''}${
+                  showResults ? ' retired' : ''
+                }`}
+                aria-hidden={promptExiting || showResults || undefined}
+              >
+                <WordInput
+                  value={input}
+                  history={tried}
+                  onType={appendChar}
+                  onBackspace={deleteChar}
+                  onSubmit={submit}
+                  onReplace={replaceInput}
+                  invalidSignal={invalidAt}
+                  active={playing}
+                />
               </div>
+
+              {!showResults && (
+                <WordTally
+                  found={foundTally}
+                  total={zoneTally}
+                  lang={lang}
+                  retired={promptExiting}
+                />
+              )}
 
               <div className={`tray${keyboardLeaving ? ' kb-leaving' : ''}`}>
                 {!showResults && (
