@@ -69,15 +69,20 @@ export const SLASH_MS = SLASH_FRAMES * SLASH_FRAME_MS;
 // escalation the seconds ladder makes, said in one gesture rather than five sizes: below the
 // threshold a find is a cut, at or above it a find is a cross.
 export const DOUBLE_SLASH_FROM: Rarity = 'RARE';
-// Far enough behind the first that the two read as two blows rather than one thick one, near
-// enough that they are one event.
-export const SECOND_SLASH_DELAY_MS = 110;
 
 export function slashesFor(rarity: Rarity, order: readonly Rarity[]): number {
   return order.indexOf(rarity) >= order.indexOf(DOUBLE_SLASH_FROM) ? 2 : 1;
 }
 
+// When blow `index` lands. Each one waits for the one before it to FINISH (decided
+// 2026-08-09, superseding a 110ms stagger that overlapped them): two blows that share the
+// screen read as one thick stroke, where two that follow each other read as being struck
+// twice — which is the whole thing the second blow is there to say.
+export function slashDelayMs(index: number): number {
+  return index * SLASH_MS;
+}
+
 // How long a strike is on screen, so the screen can hold its ending beat for one.
 export function slashDurationMs(slashes: number): number {
-  return SLASH_MS + (slashes > 1 ? SECOND_SLASH_DELAY_MS : 0);
+  return slashes * SLASH_MS;
 }

@@ -340,18 +340,22 @@ it to the local store — see `packages/backend/AGENTS.md`).
   is lost but a word to read mid-sprint. **From `DOUBLE_SLASH_FROM` (RARE) up the word is
   struck TWICE, the second blow mirrored so the pair crosses** — the same escalation the
   seconds ladder makes, said in one gesture instead of five sizes: below the threshold a find
-  is a cut, at or above it a find is a cross.
+  is a cut, at or above it a find is a cross. The second blow WAITS for the first to finish
+  rather than overlapping it (2026-08-09, superseding a 110ms stagger): two strikes sharing
+  the screen read as one thick stroke, where two that follow each other read as being struck
+  twice, which is the whole thing the second one is there to say.
   A miss shows the SENTENCE game's `FloatingHit`, unparameterised — the same MISS, the same
   red, the same pop and rise it has everywhere else — and **the word does not move**, because
   nothing was struck, so nothing recoils.
   **Three things about how the strike is drawn**, each of which was a decision:
   it is a MASK, not an image — the sheet is pure white, so painting `currentColor` through it
   gives one sheet in five grade colours (the header globe's technique, for the same reason);
-  it is at an EXACT INTEGER SCALE (4x desktop, 3x at ≤640px), the app's standing pixel-art
-  rule, which here also settles that `image-rendering` is unreliable on masks — at an integer
-  scale nearest and bilinear agree, so the frames stay crisp whatever the engine does, and it
-  is why the size is FIXED rather than sized off the word (whose own type is a `clamp()`
-  landing on fractions, and a strike is an impact, not a property of what it hits);
+  it is at an EXACT INTEGER SCALE (5x = 180x230 desktop, 4x at ≤640px), the app's standing
+  pixel-art rule, which here also settles that `image-rendering` is unreliable on masks — at
+  an integer scale nearest and bilinear agree, so the frames stay crisp whatever the engine
+  does. That makes the SCALE the one dimension this can be tuned in, in whole steps and no
+  others, and it is why the size is FIXED rather than sized off the word (whose own type is a
+  `clamp()` landing on fractions, and a strike is an impact, not a property of what it hits);
   and it is DROPPED 19% of its own height below the word's centre, which is a property of the
   ART and was measured — the sheet's ink is top-weighted and only the first two frames carry
   real ink, so a box centred on the word puts the strike above it.

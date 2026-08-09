@@ -22,6 +22,7 @@ import {
   SLASH_FRAMES,
   SLASH_FRAME_MS,
   SLASH_MS,
+  slashDelayMs,
   slashDurationMs,
   slashesFor,
 } from './rarity';
@@ -131,11 +132,16 @@ describe('the strike escalates with the ladder', () => {
     expect(slashesFor(below, RARITY_NAMES)).toBe(1);
   });
 
-  it('a doubled strike outlasts a single one, and the screen can hold for it', () => {
-    // The ending beat waits for whatever is still in the air; if this ever returned the
-    // same length for both, the second blow would be cut off to show the board.
-    expect(slashDurationMs(2)).toBeGreaterThan(slashDurationMs(1));
+  it('the blows do not overlap: each waits for the one before it to finish', () => {
+    // Two strikes sharing the screen read as one thick stroke, which is the opposite of
+    // what the second blow is for. So the second starts exactly where the first ends...
+    expect(slashDelayMs(0)).toBe(0);
+    expect(slashDelayMs(1)).toBe(SLASH_MS);
+    // ...and the whole thing runs as long as the blows it is made of. The ending beat waits
+    // for whatever is still in the air; if this under-reported, the last strike of a run
+    // would be cut off mid-swing to show the board.
     expect(slashDurationMs(1)).toBe(SLASH_MS);
+    expect(slashDurationMs(2)).toBe(slashDelayMs(1) + SLASH_MS);
   });
 
   it('the sheet is walked frame for frame', () => {

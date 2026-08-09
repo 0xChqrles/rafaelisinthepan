@@ -3864,12 +3864,13 @@ button * {
    gives one sheet in five grade colours — the technique the header globe uses, for the same
    reason. The colour comes down from `WordSlash` as the element's own `color`.
 
-   It is at an EXACT INTEGER SCALE (4x = 144x184), which is the app's standing rule for pixel
-   art and here it also settles a question: `image-rendering` is unreliable on masks, but at
-   an integer scale nearest and bilinear resampling agree, so the frames stay crisp whatever
-   the engine does. That is also why the size is FIXED rather than sized off the word — the
-   word's own type is a `clamp()` that lands on fractions, and a strike is an impact anyway,
-   not a property of what it hits.
+   It is at an EXACT INTEGER SCALE (5x = 180x230 here, 4x = 144x184 on a phone), which is the
+   app's standing rule for pixel art and here it also settles a question: `image-rendering` is
+   unreliable on masks, but at an integer scale nearest and bilinear resampling agree, so the
+   frames stay crisp whatever the engine does. The scale is therefore the ONE dimension this
+   can be tuned in — there is no 4.5x — and that is also why the size is FIXED rather than
+   sized off the word: the word's own type is a `clamp()` that lands on fractions, and a
+   strike is an impact anyway, not a property of what it hits.
 
    `mask-size: 500%` lays all five frames across five element-widths and the animation walks
    `mask-position` from one end to the other in `steps(5, jump-none)` — which lands exactly on
@@ -3879,8 +3880,8 @@ button * {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 144px;
-  height: 184px;
+  width: 180px;
+  height: 230px;
   /* NOT centred on the word — dropped 19% of its own height below centre, which is a
      property of the ART and was measured rather than nudged. The sheet's ink is
      top-weighted: the stroke enters at the frame's top-left and dissipates toward the
@@ -3946,11 +3947,12 @@ button * {
   .word-subject {
     --wordw: calc(min(430px, calc(100vw - 28px)) * 0.95);
   }
-  /* The strike scales down with the screen: 3x rather than 4x, so it still crosses the
-     word without spanning a 320px column end to end. */
+  /* One integer step down here — 4x rather than 5x. At 320px the page leaves 292px of
+     column, and 5x would put a 180px stroke on it: still inside, but reading as a strike
+     the width of the screen rather than one that crosses the word. */
   .word-slash {
-    width: 108px;
-    height: 138px;
+    width: 144px;
+    height: 184px;
   }
   /* The keyboard goes full-bleed here — 10px past the page inset on each side (see
      `.keyboard`) — so the whole play column goes with it. */
