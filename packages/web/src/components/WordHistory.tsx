@@ -13,7 +13,7 @@ import { RARITY_COLORS } from './rarity';
 // a moment later — "how close was that one?" — and a log is where a moment later belongs.
 // So each line is the word in its grade's colour with its exponent beside it: the two facts
 // the float split between them, reunited once the guess is history.
-const VISIBLE = 5;
+const VISIBLE = 3;
 
 // How faded the OLDEST visible line is. The newest sits at full strength and the rest ramp
 // down to this, so age reads off the column without anything moving.
@@ -35,7 +35,14 @@ export default function WordHistory({
   return (
     // Decorative throughout: every one of these was announced when it landed
     // (`srWordClaim`), and a reader does not need the same find twice.
-    <div className={`word-history${retired ? ' retired' : ''}`} aria-hidden="true">
+    // The line count is handed to CSS rather than repeated there: the box RESERVES its full
+    // height from the first frame (or the word above it would walk up the screen as a run
+    // filled it), so the number of lines and the height that holds them have to be one fact.
+    <div
+      className={`word-history${retired ? ' retired' : ''}`}
+      style={{ '--history-lines': VISIBLE } as CSSProperties}
+      aria-hidden="true"
+    >
       {recent.map((entry, i) => (
         <span
           // The rank IS the group's identity (`wordGuessKey`), so it keys a line that must

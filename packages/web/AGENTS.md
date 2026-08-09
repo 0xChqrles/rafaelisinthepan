@@ -334,7 +334,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
   outcomes are different EVENTS and look nothing alike, which is the point: before reading
   anything you know which one happened.
   A claim cuts the word with `assets/slash.png` — a 5-frame 36x46 sheet of a stroke landing
-  and dissipating, 50ms a frame — in the claimed grade's COLOUR, and the word SHAKES. There
+  and dissipating, 50ms a frame — in the claimed grade's COLOUR, **and the word takes that
+  colour too for as long as the strike is on it**, returning to the solved blue when it goes.
+  The word also SHAKES, ONCE PER BLOW and on the blows' own cadence (2026-08-09): the shake's
+  duration IS the interval between two strikes and its iteration count is how many there are,
+  so a doubled strike recoils again exactly as the second lands. Iterations rather than two
+  animations because the same `@keyframes` name cannot be listed twice on one element — the
+  later declaration simply replaces the earlier — and rather than one long shake because two
+  recoils are what being struck twice looks like. There
   is no text: a name has to be read, and a run against a clock has no time for that. The
   grade is still written down twice anyway, in the run's history and its tally, so nothing
   is lost but a word to read mid-sprint. **From `DOUBLE_SLASH_FROM` (RARE) up the word is
@@ -422,7 +429,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   with it and the word read as TOP-ALIGNED (measured 126px high); given the whole band down to
   the KEYBOARD it read as TOO LOW. As shipped it lands within 8px of the header→prompt centre
   at every width. `bottom: 100%` puts the box's bottom edge on the prompt's top edge, and its
-  `padding-bottom` restores the seam the flex gap used to give it. Above it, `components/WordHistory`: the last five CLAIMS, newest against
+  `padding-bottom` restores the seam the flex gap used to give it. Above it, `components/WordHistory`: the last THREE claims, newest against
   the prompt, older ones riding up, fading, and gone — a chat, not a list, which is what
   `justify-content: flex-end` + `overflow: hidden` buys. It is where the RANK went: the float
   carries the grade now, but "how close was that one?" is a question a moment later, and a

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import FloatingHit, { HIT_FADE_MS } from './FloatingHit';
 import WordSlash from './WordSlash';
-import { slashDurationMs } from './rarity';
+import { SLASH_GAP_MS, SLASH_MS, slashDurationMs } from './rarity';
 import { fitWord } from './routeDrawing';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { srWordBoardWord } from '../i18n';
@@ -151,13 +151,26 @@ export default function WordSubject({
         style={{ fontSize: fitWord(word, SUBJECT_PX) } as CSSProperties}
       >
         {/* The word RECOILS from a strike and from nothing else: a claim shakes it, a MISS
-            leaves it alone, because nothing was struck. */}
+            leaves it alone, because nothing was struck. It recoils ONCE PER BLOW, on the
+            blows' own cadence — the shake's length IS the interval between them, so a double
+            strike shakes as the second lands rather than on some rhythm of its own — and it
+            takes the strike's COLOUR for as long as the strike is on it.
+            Keyed per hit so a claim landing while the last one is still playing restarts the
+            recoil instead of inheriting a run already half over (Hole's own trick). */}
         <span
+          key={hit?.kind === 'claim' ? `struck-${hit.id}` : 'word'}
           className={`word-subject-text${hit?.kind === 'claim' ? ' struck' : ''}${
             waving ? ' wave' : ''
           }`}
           style={
             {
+              ...(hit?.kind === 'claim'
+                ? {
+                    '--struck-c': hit.color,
+                    '--shake-ms': `${SLASH_MS + SLASH_GAP_MS}ms`,
+                    '--shake-count': hit.slashes,
+                  }
+                : null),
               // Handed down rather than repeated in CSS, so the JS that ends the wave and
               // the CSS that draws it cannot disagree about how long it is.
               '--wave-dur': `${WAVE_LETTER_MS}ms`,
