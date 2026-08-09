@@ -3822,6 +3822,45 @@ button * {
   /* One line, whatever the word. */
   white-space: nowrap;
 }
+/* The word is HELD LIKE A HAND OF CARDS (decided 2026-08-09): each letter leans by its place
+   in the word and the outer ones fall away, which `WordSubject` computes and hands down as
+   `rotate` / `translate`. The pivot is the letter's BOTTOM, so a lean reads as a card tipping
+   in a hand rather than a glyph spinning in place.
+   Both go on the INDEPENDENT transform properties, never into one `transform` string, and
+   that is load-bearing: the lift transitions on `translate` ALONE, so the lean does not have
+   to be restated in every frame of it — and `transform` stays free for anything a future
+   beat wants to compose on top. The transition is what makes the drawn letter drop as the
+   next one rises, with no second clock to keep them in step. */
+.word-subject-text .hole-letter {
+  transform-origin: 50% 100%;
+  transition: translate 0.3s ease-out;
+}
+/* And the whole hand breathes. Very subtly — this is the screen being alive while the player
+   thinks, not a thing to look at — on the WRAP so the word and the grade label on it move as
+   one object. An infinite decoration, so reduced motion switches it OFF rather than
+   collapsing it (the rule the timer's warning pulse follows). */
+.word-subject .hole-word-wrap {
+  animation: word-float 3.6s ease-in-out infinite;
+}
+@keyframes word-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2.5px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .word-subject .hole-word-wrap {
+    animation: none;
+  }
+  /* The lift still lands, it just lands at once — the fan itself is a posture, not motion,
+     and stays exactly as it is. */
+  .word-subject-text .hole-letter {
+    transition: none;
+  }
+}
 /* The word STEPS BACK while a grade is on it. Not a flourish and not a transition — the
    label sits on top of it, and two words of the same size in the same place cannot both be
    read (measured on the worst case, a cyan RARE over the blue day's word: at 0.45 and 0.32

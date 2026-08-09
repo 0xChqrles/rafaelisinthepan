@@ -1,6 +1,8 @@
+import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import RarityHit from './RarityHit';
 import { fitWord } from './routeDrawing';
+import { prefersReducedMotion } from '../hooks/useScramble';
 import { srWordBoardWord } from '../i18n';
 
 // The day's word while the run is on (#163): JUST THE WORD, centred, in the solved blue —
@@ -36,6 +38,67 @@ export interface WordHit {
   holdMs: number; // how long it stays
 }
 
+// --- the word is HELD, like a hand of playing cards (decided 2026-08-09) -----------------
+// The first letter leans left, the last leans right, and everything between follows the same
+// arc, so the day's word reads as something someone is HOLDING rather than something
+// printed. This is the ambient life of the run's screen — and it is deliberately separate
+// from the GUESS FEEDBACK, which does not animate at all (see RarityHit): one is what the
+// screen is doing while you think, the other is what it says back when you act.
+//
+// Two numbers describe the fan. The lean is the obvious one; the DROP is what makes it a
+// hand rather than skewed type — cards splay from a pivot below the hand, so their tops
+// spread and their outer ends fall away. Both are small: this is a pixel font, and rotation
+// is the transform it survives least of.
+const FAN_DEG = 6;
+const FAN_ARC_PX = 3;
+
+// One letter at a time stands proud of the rest, as though it were the card about to be
+// drawn, and drops the moment another rises. It moves on this clock and NEVER twice to the
+// same letter, so the hand reads as being idly turned over rather than scanned left to
+// right — the reasoning that gave every sentence hole its own random wave clock (#129)
+// instead of one ripple travelling around the phrase.
+const DRAW_INTERVAL_MS = 750;
+const DRAW_LIFT_PX = 7;
+
+// Which letter is standing proud right now. `null` until the first tick, and never running
+// at all for a one-letter word (there is no hand to turn over) or under reduced motion.
+function useDrawnLetter(letters: number): number | null {
+  const [drawn, setDrawn] = useState<number | null>(null);
+  // The pick is read from a ref rather than from the state updater: an updater has to be
+  // PURE (React runs it twice under StrictMode), and this one rolls a die.
+  const current = useRef<number | null>(null);
+
+  useEffect(() => {
+    current.current = null;
+    setDrawn(null);
+    if (letters < 2 || prefersReducedMotion()) return undefined;
+    const id = window.setInterval(() => {
+      let next = Math.floor(Math.random() * letters);
+      if (next === current.current) next = (next + 1) % letters;
+      current.current = next;
+      setDrawn(next);
+    }, DRAW_INTERVAL_MS);
+    return () => window.clearInterval(id);
+  }, [letters]);
+
+  return drawn;
+}
+
+// Where one letter of the fan sits: how far it leans, and how far it has fallen from the
+// middle — plus the lift, when it is the one being drawn. The lean and the drop go on the
+// INDEPENDENT transform properties (`rotate` / `translate`) rather than into one `transform`
+// string, so the lift can transition on `translate` alone without the lean having to be
+// re-stated in every frame of it.
+function letterStyle(index: number, letters: number, drawn: number | null): CSSProperties {
+  // -1 at the first letter, +1 at the last, 0 in the middle.
+  const t = letters < 2 ? 0 : (index / (letters - 1)) * 2 - 1;
+  const drop = t * t * FAN_ARC_PX - (index === drawn ? DRAW_LIFT_PX : 0);
+  return {
+    rotate: `${(t * FAN_DEG).toFixed(2)}deg`,
+    translate: `0 ${drop.toFixed(2)}px`,
+  } as CSSProperties;
+}
+
 export default function WordSubject({
   word,
   lang,
@@ -47,6 +110,9 @@ export default function WordSubject({
   hit?: WordHit | null;
   onHitDone?: (id: number) => void;
 }) {
+  const letters = [...word];
+  const drawn = useDrawnLetter(letters.length);
+
   return (
     <div className="word-subject">
       {/* The word is REAL TEXT here, not a decorative drawing: on the board it is announced
@@ -63,7 +129,14 @@ export default function WordSubject({
           className={`word-subject-text${hit ? ' stamped' : ''}`}
           style={{ fontSize: fitWord(word, SUBJECT_PX) } as CSSProperties}
         >
-          {word}
+          {/* One box per letter, because the hand needs cards to fan. The pixel font is
+              monospace and each box advances exactly as its glyph did, so the word measures
+              the same as plain text and `fitWord`'s sizing is untouched. */}
+          {letters.map((letter, i) => (
+            <span key={i} className="hole-letter" style={letterStyle(i, letters.length, drawn)}>
+              {letter}
+            </span>
+          ))}
         </span>
         {hit && onHitDone && (
           <RarityHit
