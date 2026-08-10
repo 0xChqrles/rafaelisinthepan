@@ -55,7 +55,7 @@ export const MISS_COLOR = '#ff1f54';
 // --- what a claim LOOKS like: the word is STRUCK ------------------------------------------
 // A find HITS the word (decided 2026-08-09, replacing the grade name that used to stamp onto
 // it). A name has to be read, and a run against a clock has no time for that; the grade is
-// still written down twice anyway, in the run's history and its tally. What the strike adds
+// still written down anyway, in the run's history. What the strike adds
 // is the moment.
 //
 // THREE SHEETS, in `assets/hits/`, all walked at ONE frame rate. Two of them are pure white

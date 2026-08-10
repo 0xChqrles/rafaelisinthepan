@@ -31,7 +31,7 @@ export const SUBJECT_PX = 40;
 //
 //   claim — the word is STRUCK — a cut, a cross, or the ultra burst — and it SHAKES.
 //           No text: a name has to be read, and a run against a clock has no time for that;
-//           the grade is written down anyway, in the history and the tally.
+//           the grade is written down anyway, in the run's history.
 //   miss  — the sentence game's MISS float, its own animation, and the word does NOT move.
 //           Nothing was struck, so nothing recoils.
 //

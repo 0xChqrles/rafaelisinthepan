@@ -8,7 +8,7 @@ import { blowDelayMs, strikeDurationMs } from './rarity';
 //
 // It REPLACED the grade name that used to stamp onto the word. A name had to be read; a
 // strike is felt, which is the right register for a game played against a clock — and the
-// grade itself is still written down, twice, in the run's history and its tally. What was
+// grade itself is still written down, in the run's history. What was
 // lost is a word to read mid-sprint; what was gained is a moment.
 //
 // The art is `assets/slash.png`, five 36x46 frames of a stroke landing and dissipating,

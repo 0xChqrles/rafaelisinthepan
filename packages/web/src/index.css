@@ -45,8 +45,8 @@
      renderer together. Smaller on narrow viewports (see the mobile media query). */
   --cell: 24px;
   /* The on-screen keyboard's key geometry. Here rather than on `.keyboard` because the ROW
-     width it produces (10 keys + 9 gaps) is mirrored by Word mode's rarity tally, which sits
-     under the keys and must be exactly as wide as they are. */
+     width it produces (10 keys + 9 gaps) is mirrored by Word mode's play column — the guess
+     prompt and the run's history — which must be exactly as wide as the keys. */
   --kb-gap: 6px;
   --kb-key-max: 46px;
 }
@@ -2655,7 +2655,7 @@ button * {
      size is capped at --kb-key-max but shrinks to fit 10 keys + gaps on narrow screens,
      derived from the row width so it never overflows.
      --kb-gap and --kb-key-max live on :root (2026-08-09) because the ROW width they
-     produce is not only the keyboard's business: Word mode's rarity tally spans the keys
+     produce is not only the keyboard's business: Word mode's play column spans the keys
      and has to compute the same number. They are declared once so it cannot drift. */
   --kb-key: min(var(--kb-key-max), calc((100% - 9 * var(--kb-gap)) / 10));
   align-self: center;
@@ -3482,8 +3482,8 @@ button * {
   flex-direction: column;
   align-items: start;
   gap: clamp(6px, 1vh, 12px);
-  /* THE PLAY COLUMN, and everything the player acts through lines up on it: the history, the
-     prompt and the tally are all exactly as wide as the KEYBOARD's row of keys and sit on its
+  /* THE PLAY COLUMN, and everything the player acts through lines up on it: the history and
+     the prompt are both exactly as wide as the KEYBOARD's row of keys and sit on its
      left edge (2026-08-09). They used to take the BOARD's column instead (430 + the
      scroller's side + its scrollbar = 456), which on a desktop left the prompt a few dozen
      pixels narrower than the keys under it — almost aligned, which reads worse than either
@@ -3498,10 +3498,10 @@ button * {
 }
 /* The HISTORY, and only the history, rides OUT OF FLOW — hanging above the prompt rather
    than stacked on top of it (decided 2026-08-09). It sits exactly where it did and still
-   never moves (its height is fixed at five lines whatever it holds); what changes is that it
+   never moves (its height is fixed at `--history-lines` whatever it holds); what changes is that it
    stops taking that height off the window above it.
-   The rule it follows: everything the player ACTS THROUGH — the prompt, the tally under it,
-   the keys — is in flow and owns its space, and the window fills what is left between the
+   The rule it follows: everything the player ACTS THROUGH — the prompt and the keys — is in
+   flow and owns its space, and the window fills what is left between the
    HEADER and the PROMPT, with the day's word and its score watermark centred in that. A log
    of what has already happened is not a control, so it hangs into the word's band instead of
    pushing the word out of it. In flow it pushed the window's centre up with it and the word
@@ -3519,8 +3519,7 @@ button * {
   padding-bottom: clamp(6px, 1vh, 12px);
 }
 .word-history,
-.word-prompt,
-.word-tally {
+.word-prompt {
   align-self: center;
   width: var(--play-w);
   margin-inline: var(--play-shift);
@@ -3637,38 +3636,14 @@ button * {
   }
 }
 
-/* Below the prompt: `found/total` per grade, commonest first, the COLOUR the only label.
-   It spans THE KEYBOARD'S OWN BOX and distributes the grades evenly across it, so the row
-   reads as a strip belonging to the keys rather than a ragged line under the prompt — which
-   means its width is a MIRROR of `.keyboard`'s and the two have to move together (the mobile
-   override below is the same full-bleed trick, for the same reason). Its top seam is its own
-   margin, matching the history's on the other side of the prompt, so the prompt sits in
-   clear air; the bottom seam stays the footer's tight gap, because this row reports on the
-   guessing those keys do. */
-.word-tally {
-  margin-top: clamp(14px, 2.4vh, 24px);
-}
-.tally-row {
-  display: flex;
-  flex-wrap: nowrap;
-  justify-content: space-between;
-  gap: 4px;
-  font-family: var(--press);
-  font-size: clamp(10px, 3vw, 13px);
-  letter-spacing: 0;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Both readouts belong to the RUN. Once it is over they keep their box — the footer's height
-   is what holds the word above it still — and stop being drawn, because the result screen
-   rises over this exact space and a tally showing through the score reads as a fault. The
-   visibility is delayed by the fade so the opacity has something to animate. */
-.word-history,
-.word-tally {
+/* The history belongs to the RUN. Once it is over it keeps its box — the footer's height is
+   what holds the word above it still — and stops being drawn, because the result screen rises
+   over this exact space and a log showing through the score reads as a fault. The visibility
+   is delayed by the fade so the opacity has something to animate. */
+.word-history {
   transition: opacity 0.25s ease;
 }
-.word-history.retired,
-.word-tally.retired {
+.word-history.retired {
   opacity: 0;
   visibility: hidden;
   transition:

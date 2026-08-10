@@ -350,17 +350,6 @@ export function srWordMiss(lang: string): string {
   return uiLang(lang) === 'fr' ? 'raté' : 'miss';
 }
 
-// The per-grade tally under the prompt. On screen the COLOUR is the only label; a colour
-// says nothing to a reader, so this says it in words — the grade names untranslated, as
-// they are everywhere else, and the counting in prose.
-export function srWordTally(
-  lang: string,
-  grades: { rarity: string; found: number; total: number }[],
-): string {
-  const fr = uiLang(lang) === 'fr';
-  const parts = grades.map((g) => `${g.rarity} ${g.found} ${fr ? 'sur' : 'of'} ${g.total}`);
-  return `${fr ? 'trouvés' : 'found'} — ${parts.join(', ')}`;
-}
 
 // The clock, read on demand rather than announced: `role="timer"` is a live region that
 // defaults to OFF, which is the whole point — a number changing every second must never

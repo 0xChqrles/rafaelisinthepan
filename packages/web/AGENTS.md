@@ -23,7 +23,6 @@
       components/WordSlash.tsx    the slash a claim cuts the day's word with
       components/WordSubject.tsx  the day's word while the run is on: the word alone, centred
       components/WordHistory.tsx  the last few claims, above the prompt, fading with age
-      components/WordTally.tsx    found/total per grade under the prompt, colour as the only label
       hooks/useCountdown.ts   the run's deadline, as a ticking clock (HUD) and as one flip (screen)
       game/scoring.ts         s(rank), holeProgress, computeProgress
       components/Phrase.tsx,Hole.tsx,WordInput.tsx,FloatingHit.tsx  rendering
@@ -371,7 +370,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   windows — capture latency exceeds them — so it is a computed-style measurement, not a
   picture.) There
   is no text: a name has to be read, and a run against a clock has no time for that. The
-  grade is still written down twice anyway, in the run's history and its tally, so nothing
+  grade is still written down anyway, in the run's history, so nothing
   is lost but a word to read mid-sprint. **The strike ESCALATES IN FOUR STEPS across the five grades**, and since 2026-08-10 that
   is THREE SHEETS, all in `assets/hits/`, all walked at one 50ms frame rate:
   a CUT (`slash.png`, one stroke — COMMON and UNCOMMON), a CROSS (the same sheet twice, the
@@ -482,28 +481,28 @@ it to the local store — see `packages/backend/AGENTS.md`).
   Everything the animations borrowed has been handed back: `word-shake`, `hole-wave` and
   `FloatingHit` are byte-identical to what they were before #163, so the sentence board, the
   tutorial and the standings sprite are untouched by any of it.
-  **Two ambient readouts bracket the prompt during a run** (decided 2026-08-09), and both
-  RESERVE their full footprint from the first frame — a column that grew as the run filled it
-  would walk the word up the screen guess by guess.
-  **The HISTORY, and only the history, rides OUT OF FLOW** — `.word-readouts`, hanging above
+  **ONE ambient readout sits above the prompt during a run** (decided 2026-08-09; a `found/total`
+  per-grade TALLY sat under it until it was removed 2026-08-10). It RESERVES its full footprint
+  from the first frame — a column that grew as the run filled it would walk the word up the
+  screen guess by guess.
+  **The history rides OUT OF FLOW** — `.word-readouts`, hanging above
   the prompt rather than stacked on top of it (2026-08-09). The rule it follows: everything
-  the player ACTS THROUGH — the prompt, the tally under it, the keys — is in flow and owns its
+  the player ACTS THROUGH — the prompt and the keys — is in flow and owns its
   space, and **the window fills what is left between the HEADER and the PROMPT, with the day's
   word and its score watermark centred in that**. A log of what has already happened is not a
   control, so it hangs into the word's band instead of pushing the word out of it. Both
   extremes were built and rejected on sight: in flow the history pushed the window's centre up
   with it and the word read as TOP-ALIGNED (measured 126px high); given the whole band down to
-  the KEYBOARD it read as TOO LOW. As shipped it lands within 8px of the header→prompt centre
-  at every width. `bottom: 100%` puts the box's bottom edge on the prompt's top edge, and its
+  the KEYBOARD it read as TOO LOW. As shipped it lands within 9px of the header→prompt centre
+  at every width (measured 6/7/9 at 320/430/1280). `bottom: 100%` puts the box's bottom edge on the prompt's top edge, and its
   `padding-bottom` restores the seam the flex gap used to give it. Above it, `components/WordHistory`: the last THREE claims, newest against
   the prompt, older ones riding up, fading, and gone — a chat, not a list, which is what
   `justify-content: flex-end` + `overflow: hidden` buys. It is where the RANK went: the float
   carries the grade now, but "how close was that one?" is a question a moment later, and a
   log is where a moment later belongs, so each line is the word in its grade's colour with
-  its exponent. Below it, `components/WordTally`: `found/total` per grade, commonest first,
-  with **the COLOUR as the only label** — no names, no legend, since the five colours are
-  already the language the float speaks.
-  **The HISTORY, the PROMPT and the TALLY are all exactly as wide as the KEYBOARD's row of
+  its exponent. It is DECORATIVE (aria-hidden): every line was
+  announced when it landed.
+  **The HISTORY and the PROMPT are both exactly as wide as the KEYBOARD's row of
   keys, and sit on its left edge** (`--play-w` on `.word-footer-play`, decided 2026-08-09).
   They used to take the BOARD's column instead (430 + the scroller's side + its scrollbar =
   456), which on a desktop left the prompt a few dozen pixels narrower than the keys under
@@ -515,16 +514,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
   follows the keyboard's full-bleed shift on a phone, or the prompt sits 10px inboard of the
   Q key it answers. Verified equal to the real key extents at 320/430/700/900/1200/1400. The
   board's own window keeps the 456 column: it draws a 430px line, and it is never on screen
-  at the same time as the prompt. A grade the day's zone does not contain is
-  DROPPED rather than shown as `0/0`: an English board often has no ARCANE group at all, and
-  a permanent `0/0` reads as a goal being failed rather than one the day never offered. Both
-  totals come from `zoneGroups`/`tallyRarity` (`game/wordGame.ts`), so the numerator and the
-  denominator are counted by ONE rule — a group is its RANK, once, however many aliases key
-  it. The history is decorative (every line was announced when it landed); the tally carries
-  an sr line, because a colour says nothing to a reader.
-  **Both readouts go quiet on the reveal beat and LEAVE at the results** (2026-08-09): hidden
+  at the same time as the prompt.
+  **The per-grade TALLY that used to sit under the prompt is GONE** (removed 2026-08-10 on the
+  user's call), and `WordTally`, `srWordTally`, `tallyRarity`, `zoneGroups` and `RarityTally`
+  went with it — nothing else consumed them, and the standing rule is to remove an obsolete
+  path rather than keep it for a use that has not been asked for. What it said is still said:
+  the strike names a claim's grade in the moment, and the history logs it. Two of its findings
+  are worth keeping in case a census returns — it counted a group by its RANK, once, however
+  many aliases key it (the identity `wordGuessKey` uses), and it DROPPED a grade the day's zone
+  does not contain rather than showing `0/0`, because an English board often has no ARCANE
+  group at all and a permanent `0/0` reads as a goal being failed rather than one the day never
+  offered.
+  **The history goes quiet on the reveal beat and LEAVES at the results** (2026-08-09): hidden
   first, because the keyboard is still dropping through that beat and a footer collapsing
-  under it would drag the drop; then UNMOUNTED once the result rises, so the ~160px they were
+  under it would drag the drop; then UNMOUNTED once the result rises, so the space it was
   reserving goes to the post-mortem board — which is the whole content of that screen, and
   was measurably squeezed (320px: a 280px window became 378) while they held their space.
   **The rarity COLOURS are copies of existing ramp stops, measured, and pinned**

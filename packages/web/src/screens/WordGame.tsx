@@ -9,10 +9,8 @@ import {
   rarityOf,
   rarityStep,
   replayWordRun,
-  tallyRarity,
   totalBonus,
   wordGuessKey,
-  zoneGroups,
   RARITY_LADDER,
   RARITY_NAMES,
 } from '../game/wordGame';
@@ -22,7 +20,6 @@ import { canExtend } from '../game/keyboard';
 import useScrollEdges from '../hooks/useScrollEdges';
 import WordBoard, { WordTerminus } from '../components/WordBoard';
 import WordSubject, { hitDurationMs, type WordHit } from '../components/WordSubject';
-import WordTally from '../components/WordTally';
 import WordHistory from '../components/WordHistory';
 import WordTimer, { type TimeGain } from '../components/WordTimer';
 import CellDigits from '../components/CellDigits';
@@ -150,10 +147,6 @@ function WordRound({
   const run = useMemo(() => replayWordRun(ranks, tried), [ranks, tried]);
   const score = run.claimed.length;
 
-  // What today's field HOLDS, by grade — the denominator of the tally under the prompt.
-  // A property of the puzzle, so it is walked once per artifact and never per guess.
-  const zoneTally = useMemo(() => tallyRarity(zoneGroups(ranks), corpusSize), [ranks, corpusSize]);
-  const foundTally = useMemo(() => tallyRarity(run.claimed, corpusSize), [run.claimed, corpusSize]);
 
   // End presentation is transient, not persisted. A live run lets the clock's last moment
   // play out, then the field arrives and the prompt leaves, then the keyboard drops and
@@ -473,15 +466,13 @@ function WordRound({
             </>
           ) : (
             <>
-              {/* The run's two ambient readouts, bracketing the prompt: what the last few
-                  finds WERE above it, and how much of each grade is still out there below
-                  it. Both keep their footprint whatever they hold — the history is a
-                  fixed-height column and the tally a fixed row — so the word above never
-                  shifts as a run fills them.
-                  They go QUIET on the reveal beat and LEAVE ENTIRELY once the result rises:
+              {/* The run's ambient readout, above the prompt: what the last few finds WERE.
+                  It keeps its footprint whatever it holds — a fixed-height column — so the
+                  word above never shifts as a run fills it.
+                  It goes QUIET on the reveal beat and LEAVES ENTIRELY once the result rises:
                   hidden first, because the keyboard is still dropping through that beat and
                   a footer that collapsed under it would drag the drop; then unmounted, so
-                  the ~160px they were holding goes to the post-mortem board, which is the
+                  the space it was holding goes to the post-mortem board, which is the
                   whole content of that screen.
                   The HISTORY alone rides out of flow, hanging above the prompt
                   (`.word-readouts`): it is a log of what has been, not a control, so the
@@ -514,14 +505,6 @@ function WordRound({
                 />
               </div>
 
-              {!showResults && (
-                <WordTally
-                  found={foundTally}
-                  total={zoneTally}
-                  lang={lang}
-                  retired={promptExiting}
-                />
-              )}
 
               <div className={`tray${keyboardLeaving ? ' kb-leaving' : ''}`}>
                 {!showResults && (

@@ -127,30 +127,6 @@ export function totalBonus(claimed: readonly RankEntry[], corpusSize: number): n
   return claimed.reduce((sum, entry) => sum + bonusSeconds(entry.freq, corpusSize), 0);
 }
 
-// How many of each grade a set of groups holds. Fed BOTH halves of the run's tally — what
-// the zone contains and what the player has taken out of it — so the two can never be
-// counted by different rules.
-export type RarityTally = Record<Rarity, number>;
-
-export function tallyRarity(groups: Iterable<RankEntry>, corpusSize: number): RarityTally {
-  const tally = Object.fromEntries(RARITY_NAMES.map((name) => [name, 0])) as RarityTally;
-  for (const group of groups) tally[rarityOf(group.freq, corpusSize)] += 1;
-  return tally;
-}
-
-// The claimable zone's groups, once each. The map is keyed by every alias of a group, and a
-// group is rank-unique, so the rank is what deduplicates — the same identity `wordGuessKey`
-// uses. Rank ascending, so anything drawn from this reads closest-first.
-export function zoneGroups(ranks: WordRanks): RankEntry[] {
-  const byRank = new Map<number, RankEntry>();
-  for (const key in ranks) {
-    const entry = ranks[key];
-    if (entry.rank === 0 || entry.rank > CLAIM_ZONE) continue;
-    if (!byRank.has(entry.rank)) byRank.set(entry.rank, entry);
-  }
-  return [...byRank.entries()].sort((a, b) => a[0] - b[0]).map(([, entry]) => entry);
-}
-
 // What one submitted, vocab-valid guess IS, before dedup:
 //   claim — a zone group (1 <= rank <= CLAIM_ZONE): +1 word, +bonusSeconds on the clock,
 //           and the word floats its RARITY GRADE.
