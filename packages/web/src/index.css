@@ -45,8 +45,8 @@
      renderer together. Smaller on narrow viewports (see the mobile media query). */
   --cell: 24px;
   /* The on-screen keyboard's key geometry. Here rather than on `.keyboard` because the ROW
-     width it produces (10 keys + 9 gaps) is mirrored by Word mode's play column — the guess
-     prompt and the run's history — which must be exactly as wide as the keys. */
+     width it produces (10 keys + 9 gaps) is mirrored by Word mode's guess prompt, which must
+     be exactly as wide as the keys. */
   --kb-gap: 6px;
   --kb-key-max: 46px;
 }
@@ -3481,9 +3481,17 @@ button * {
   display: flex;
   flex-direction: column;
   align-items: start;
-  gap: clamp(6px, 1vh, 12px);
-  /* THE PLAY COLUMN, and everything the player acts through lines up on it: the history and
-     the prompt are both exactly as wide as the KEYBOARD's row of keys and sit on its
+  /* The seam between the prompt and the keyboard under it (widened 2026-08-10 from
+     `clamp(6px, 1vh, 12px)`, which measured 7-9px). The tight one was chosen when this footer
+     stacked FOUR things — a history, the prompt, a tally, the tray — and had to keep them from
+     sprawling. It stacks two now, and the prompt is what the player acts through, so it takes
+     the room: this is the same wide seam it already has above it (`.game.word-game`) and
+     inside it (`.input-area.word-prompt`), so all three of its edges finally match. It opens
+     the GATE's rules->START seam by the same amount, which that screen wants for the same
+     reason — two sentences and the control they explain. */
+  gap: clamp(16px, 2.4vh, 24px);
+  /* THE PLAY COLUMN, and what the player acts through lines up on it: the prompt is
+     exactly as wide as the KEYBOARD's row of keys and sits on its
      left edge (2026-08-09). They used to take the BOARD's column instead (430 + the
      scroller's side + its scrollbar = 456), which on a desktop left the prompt a few dozen
      pixels narrower than the keys under it — almost aligned, which reads worse than either
@@ -3496,29 +3504,9 @@ button * {
   --play-key: min(var(--kb-key-max), calc((var(--play-box) - 9 * var(--kb-gap)) / 10));
   --play-w: calc(10 * var(--play-key) + 9 * var(--kb-gap));
 }
-/* The HISTORY, and only the history, rides OUT OF FLOW — hanging above the prompt rather
-   than stacked on top of it (decided 2026-08-09). It sits exactly where it did and still
-   never moves (its height is fixed at `--history-lines` whatever it holds); what changes is that it
-   stops taking that height off the window above it.
-   The rule it follows: everything the player ACTS THROUGH — the prompt and the keys — is in
-   flow and owns its space, and the window fills what is left between the
-   HEADER and the PROMPT, with the day's word and its score watermark centred in that. A log
-   of what has already happened is not a control, so it hangs into the word's band instead of
-   pushing the word out of it. In flow it pushed the window's centre up with it and the word
-   read as top-aligned; given the whole band down to the KEYBOARD the word read as too low. */
-.word-readouts {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: start;
-  /* `bottom: 100%` puts the bottom edge ON the prompt's top edge; this restores the seam the
-     flex gap used to give it. */
-  padding-bottom: clamp(6px, 1vh, 12px);
-}
-.word-history,
+/* The window fills what is left between the HEADER and the PROMPT, with the day's word and
+   its score watermark centred in that — everything the player ACTS THROUGH (the prompt, the
+   keys) is in flow below it and owns its space. */
 .word-prompt {
   align-self: center;
   width: var(--play-w);
@@ -3587,69 +3575,13 @@ button * {
 .word-footer-result .result-actions {
   flex: 0 0 auto;
 }
-/* Under the caret: the prompt's own lower seam. Wide, like the one above it — the two
-   together are what give the prompt its room (see `.game.word-game`). */
+/* INSIDE the prompt, under the caret: the seam to its own message line. Wide, like the two
+   around it (`.game.word-game` above, `.word-footer-play`'s gap below) — the three together
+   are what give the prompt its room. */
 .input-area.word-prompt {
   gap: clamp(16px, 2.4vh, 24px);
 }
 
-/* The RUN's two ambient readouts, one on each side of the prompt (#163, 2026-08-09). Both
-   RESERVE their full footprint from the first frame and never grow: the day's word sits in
-   the flexible space above them, and a column that grew as the run filled it would walk the
-   word up the screen guess by guess. */
-
-/* Above the prompt, left-aligned with it: the last few finds, newest against the prompt and
-   older ones riding up and out. `flex-end` is what makes it a chat rather than a list — the
-   column fills from the bottom, so the newest line is always in the same place and the
-   oldest simply leaves through the top. `overflow: hidden` is what "just disappear" means.
-   The seam under it is its OWN margin rather than the footer's gap: the footer now stacks
-   four things with four different needs, and the history is the one that must stand clear of
-   the prompt (they are both text on the same left edge, and read as one block otherwise). */
-.word-history {
-  height: calc(var(--history-lines, 3) * 1.5em);
-  margin-bottom: clamp(14px, 2.4vh, 24px);
-  font-family: var(--vt);
-  font-size: clamp(14px, 4vw, 19px);
-  line-height: 1.5;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  align-items: flex-start;
-  overflow: hidden;
-  pointer-events: none;
-}
-.history-line {
-  white-space: nowrap;
-  /* A new line arrives; the ones above it are already where they belong, so only the
-     newcomer animates (it is the only element that mounts). */
-  animation: history-in 0.22s ease-out;
-}
-.history-rank {
-  font-size: 0.7em;
-  margin-left: 2px;
-  vertical-align: super;
-}
-@keyframes history-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-}
-
-/* The history belongs to the RUN. Once it is over it keeps its box — the footer's height is
-   what holds the word above it still — and stops being drawn, because the result screen rises
-   over this exact space and a log showing through the score reads as a fault. The visibility
-   is delayed by the fade so the opacity has something to animate. */
-.word-history {
-  transition: opacity 0.25s ease;
-}
-.word-history.retired {
-  opacity: 0;
-  visibility: hidden;
-  transition:
-    opacity 0.25s ease,
-    visibility 0s 0.25s;
-}
 /* The WINDOW: a non-scrolling frame around the post-mortem's scroller, which is what lets it
    wear the shared TORN EDGES (`.scroll-torn`) — the revealed line runs far taller than the
    screen, and an edge that simply ends would read as the end of the map. The two boxes are

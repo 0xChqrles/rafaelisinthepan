@@ -54,9 +54,10 @@ export const MISS_COLOR = '#ff1f54';
 
 // --- what a claim LOOKS like: the word is STRUCK ------------------------------------------
 // A find HITS the word (decided 2026-08-09, replacing the grade name that used to stamp onto
-// it). A name has to be read, and a run against a clock has no time for that; the grade is
-// still written down anyway, in the run's history. What the strike adds
-// is the moment.
+// it). A name has to be read, and a run against a clock has no time for that. Since the run's
+// history and tally were removed (2026-08-10) the hit's COLOUR is the only place the grade is
+// said while the clock runs, together with the word taking that colour under it; the exponent
+// survives on the post-mortem board. What the strike adds is the moment.
 //
 // THREE SHEETS, in `assets/hits/`, all walked at ONE frame rate. Two of them are pure white
 // and drawn as a MASK painted in the grade's colour — the header globe's technique, and the

@@ -7,9 +7,9 @@ import { blowDelayMs, strikeDurationMs } from './rarity';
 // the claimed grade's colour.
 //
 // It REPLACED the grade name that used to stamp onto the word. A name had to be read; a
-// strike is felt, which is the right register for a game played against a clock — and the
-// grade itself is still written down, in the run's history. What was
-// lost is a word to read mid-sprint; what was gained is a moment.
+// strike is felt, which is the right register for a game played against a clock. Since the
+// run's history was removed (2026-08-10) the colour is the ONLY place the grade is said while
+// the clock runs; the post-mortem board is where a run gets read back.
 //
 // The art is `assets/slash.png`, five 36x46 frames of a stroke landing and dissipating,
 // drawn at an exact integer scale (see `.word-slash`). It is pure white, so it is used as a

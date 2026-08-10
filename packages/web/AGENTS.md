@@ -22,7 +22,6 @@
       components/rarity.ts    a rarity grade's pinned colour, and how many times a find is struck
       components/WordSlash.tsx    the slash a claim cuts the day's word with
       components/WordSubject.tsx  the day's word while the run is on: the word alone, centred
-      components/WordHistory.tsx  the last few claims, above the prompt, fading with age
       hooks/useCountdown.ts   the run's deadline, as a ticking clock (HUD) and as one flip (screen)
       game/scoring.ts         s(rank), holeProgress, computeProgress
       components/Phrase.tsx,Hole.tsx,WordInput.tsx,FloatingHit.tsx  rendering
@@ -370,8 +369,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   windows — capture latency exceeds them — so it is a computed-style measurement, not a
   picture.) There
   is no text: a name has to be read, and a run against a clock has no time for that. The
-  grade is still written down anyway, in the run's history, so nothing
-  is lost but a word to read mid-sprint. **The strike ESCALATES IN FOUR STEPS across the five grades**, and since 2026-08-10 that
+  grade is carried by the strike's COLOUR alone since the run's history was removed
+  (2026-08-10), and by the word taking that colour under it. **The strike ESCALATES IN FOUR STEPS across the five grades**, and since 2026-08-10 that
   is THREE SHEETS, all in `assets/hits/`, all walked at one 50ms frame rate:
   a CUT (`slash.png`, one stroke — COMMON and UNCOMMON), a CROSS (the same sheet twice, the
   second mirrored — RARE), a BURST (`burst.png` — OBSCURE) and the ULTRA star
@@ -481,55 +480,53 @@ it to the local store — see `packages/backend/AGENTS.md`).
   Everything the animations borrowed has been handed back: `word-shake`, `hole-wave` and
   `FloatingHit` are byte-identical to what they were before #163, so the sentence board, the
   tutorial and the standings sprite are untouched by any of it.
-  **ONE ambient readout sits above the prompt during a run** (decided 2026-08-09; a `found/total`
-  per-grade TALLY sat under it until it was removed 2026-08-10). It RESERVES its full footprint
-  from the first frame — a column that grew as the run filled it would walk the word up the
-  screen guess by guess.
-  **The history rides OUT OF FLOW** — `.word-readouts`, hanging above
-  the prompt rather than stacked on top of it (2026-08-09). The rule it follows: everything
-  the player ACTS THROUGH — the prompt and the keys — is in flow and owns its
-  space, and **the window fills what is left between the HEADER and the PROMPT, with the day's
-  word and its score watermark centred in that**. A log of what has already happened is not a
-  control, so it hangs into the word's band instead of pushing the word out of it. Both
-  extremes were built and rejected on sight: in flow the history pushed the window's centre up
-  with it and the word read as TOP-ALIGNED (measured 126px high); given the whole band down to
-  the KEYBOARD it read as TOO LOW. As shipped it lands within 9px of the header→prompt centre
-  at every width (measured 6/7/9 at 320/430/1280). `bottom: 100%` puts the box's bottom edge on the prompt's top edge, and its
-  `padding-bottom` restores the seam the flex gap used to give it. Above it, `components/WordHistory`: the last THREE claims, newest against
-  the prompt, older ones riding up, fading, and gone — a chat, not a list, which is what
-  `justify-content: flex-end` + `overflow: hidden` buys. It is where the RANK went: the float
-  carries the grade now, but "how close was that one?" is a question a moment later, and a
-  log is where a moment later belongs, so each line is the word in its grade's colour with
-  its exponent. It is DECORATIVE (aria-hidden): every line was
-  announced when it landed.
-  **The HISTORY and the PROMPT are both exactly as wide as the KEYBOARD's row of
-  keys, and sit on its left edge** (`--play-w` on `.word-footer-play`, decided 2026-08-09).
-  They used to take the BOARD's column instead (430 + the scroller's side + its scrollbar =
-  456), which on a desktop left the prompt a few dozen pixels narrower than the keys under
-  it — ALMOST aligned, which reads worse than either aligned or plainly not. The row is not
-  the keyboard's BOX either: `.keyboard` is capped at 680px but its keys are capped at 46px
-  each, so ten of them plus nine gaps come to 514px and centre inside that box. The column
-  therefore recomputes the row from `--kb-gap`/`--kb-key-max`, which moved to `:root` for
-  exactly this reason — the row width is no longer only the keyboard's business — and it
-  follows the keyboard's full-bleed shift on a phone, or the prompt sits 10px inboard of the
-  Q key it answers. Verified equal to the real key extents at 320/430/700/900/1200/1400. The
-  board's own window keeps the 456 column: it draws a 430px line, and it is never on screen
-  at the same time as the prompt.
-  **The per-grade TALLY that used to sit under the prompt is GONE** (removed 2026-08-10 on the
-  user's call), and `WordTally`, `srWordTally`, `tallyRarity`, `zoneGroups` and `RarityTally`
-  went with it — nothing else consumed them, and the standing rule is to remove an obsolete
-  path rather than keep it for a use that has not been asked for. What it said is still said:
-  the strike names a claim's grade in the moment, and the history logs it. Two of its findings
-  are worth keeping in case a census returns — it counted a group by its RANK, once, however
-  many aliases key it (the identity `wordGuessKey` uses), and it DROPPED a grade the day's zone
-  does not contain rather than showing `0/0`, because an English board often has no ARCANE
-  group at all and a permanent `0/0` reads as a goal being failed rather than one the day never
-  offered.
-  **The history goes quiet on the reveal beat and LEAVES at the results** (2026-08-09): hidden
-  first, because the keyboard is still dropping through that beat and a footer collapsing
-  under it would drag the drop; then UNMOUNTED once the result rises, so the space it was
-  reserving goes to the post-mortem board — which is the whole content of that screen, and
-  was measurably squeezed (320px: a 280px window became 378) while they held their space.
+  **The run's screen carries NO READOUTS AT ALL** (decided 2026-08-10, removing the last of
+  them). It briefly had two, bracketing the prompt — a guess HISTORY above it and a per-grade
+  `found/total` TALLY below — and both are gone, along with `WordHistory`, `WordTally`,
+  `srWordTally`, `tallyRarity`, `zoneGroups`, `RarityTally` and their CSS: nothing else
+  consumed any of it, and the standing rule is to remove an obsolete path rather than keep it
+  for a use nobody has asked for. What is left during a run is the word, its score watermark,
+  the clock, the prompt and the keys.
+  **Know the one thing that went with them.** The history was where the RANK lived: the float
+  carries a claim's GRADE and not its distance, on the reasoning that a timed run cannot act on
+  a number, and the log was the answer to "how close was that one?" a moment later. Nothing
+  answers that during a run now — the grade is carried by COLOUR alone, in the strike and in
+  the word under it, and the exponent survives only on the post-mortem board, which draws every
+  claim at its real rank once the clock dies. That is a deliberate trade for a bare screen, not
+  an oversight.
+  Two of the tally's findings are worth keeping in case a census ever returns: it counted a
+  group by its RANK, once, however many aliases key it (the identity `wordGuessKey` uses), and
+  it DROPPED a grade the day's zone does not contain rather than showing `0/0`, because an
+  English board often has no ARCANE group at all and a permanent `0/0` reads as a goal being
+  failed rather than one the day never offered.
+  **The PROMPT is exactly as wide as the KEYBOARD's row of keys and sits on its left edge**
+  (`--play-w` on `.word-footer-play`, decided 2026-08-09). It used to take the BOARD's column
+  instead (430 + the scroller's side + its scrollbar = 456), which on a desktop left it a few
+  dozen pixels narrower than the keys under it — ALMOST aligned, which reads worse than either
+  aligned or plainly not. The row is not the keyboard's BOX either: `.keyboard` is capped at
+  680px but its keys are capped at 46px each, so ten of them plus nine gaps come to 514px and
+  centre inside that box. The column therefore recomputes the row from `--kb-gap`/`--kb-key-max`,
+  which live on `:root` for exactly this reason — the row width is not only the keyboard's
+  business — and it follows the keyboard's full-bleed shift on a phone, or the prompt sits 10px
+  inboard of the Q key it answers. Verified equal to the real key extents at
+  320/430/700/900/1200/1400. The board's own window keeps the 456 column: it draws a 430px
+  line, and it is never on screen at the same time as the prompt.
+  **All three of the prompt's seams are now the WIDE one** (`.word-footer-play`'s gap widened
+  2026-08-10 from `clamp(6px, 1vh, 12px)`, which measured 7–9px, to the
+  `clamp(16px, 2.4vh, 24px)` it already had above and inside it — measured 17/19/21px at
+  320/430/1280). The tight seam was chosen when this footer stacked FOUR things and had to keep
+  them from sprawling; it stacks two, and the prompt is what the player acts through, so it
+  takes the room. It opens the GATE's rules→START seam by the same amount, which that screen
+  wants for the same reason.
+  **The word stays centred in what is left between the HEADER and the PROMPT**, with its score
+  watermark, and lands within 9px of that centre at every width (measured 6/7/9 at
+  320/430/1280). That survived both removals because the history hung OUT OF FLOW to begin
+  with — `.word-readouts` was absolute, so it never took height off the window above it. The
+  reason it hung there is worth keeping for the next thing that wants a place on this screen:
+  everything the player ACTS THROUGH is in flow and owns its space, and a log of what has
+  already happened is not a control. Both extremes were built and rejected on sight — in flow
+  the history pushed the window's centre up with it and the word read as TOP-ALIGNED (measured
+  126px high); given the whole band down to the KEYBOARD the word read as TOO LOW.
   **The rarity COLOURS are copies of existing ramp stops, measured, and pinned**
   (`components/rarity.ts` + `rarity.test.ts`, mirroring `LANE_COLORS`/`laneColors.test.ts`):
   `--muted` / progress-green / progress-cyan / heat-electric-violet / progress-pink, minimum

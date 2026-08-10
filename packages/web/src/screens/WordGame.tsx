@@ -20,7 +20,6 @@ import { canExtend } from '../game/keyboard';
 import useScrollEdges from '../hooks/useScrollEdges';
 import WordBoard, { WordTerminus } from '../components/WordBoard';
 import WordSubject, { hitDurationMs, type WordHit } from '../components/WordSubject';
-import WordHistory from '../components/WordHistory';
 import WordTimer, { type TimeGain } from '../components/WordTimer';
 import CellDigits from '../components/CellDigits';
 import Button from '../components/Button';
@@ -466,27 +465,6 @@ function WordRound({
             </>
           ) : (
             <>
-              {/* The run's ambient readout, above the prompt: what the last few finds WERE.
-                  It keeps its footprint whatever it holds — a fixed-height column — so the
-                  word above never shifts as a run fills it.
-                  It goes QUIET on the reveal beat and LEAVES ENTIRELY once the result rises:
-                  hidden first, because the keyboard is still dropping through that beat and
-                  a footer that collapsed under it would drag the drop; then unmounted, so
-                  the space it was holding goes to the post-mortem board, which is the
-                  whole content of that screen.
-                  The HISTORY alone rides out of flow, hanging above the prompt
-                  (`.word-readouts`): it is a log of what has been, not a control, so the
-                  band it hangs into belongs to the word — see the CSS. */}
-              {!showResults && (
-                <div className="word-readouts">
-                  <WordHistory
-                    claimed={run.claimed}
-                    corpusSize={corpusSize}
-                    retired={promptExiting}
-                  />
-                </div>
-              )}
-
               <div
                 className={`input-area word-prompt${promptExiting ? ' solving' : ''}${
                   showResults ? ' retired' : ''
