@@ -344,8 +344,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **A CLAIM SLASHES THE WORD; A MISS DOES NOT TOUCH IT** (decided 2026-08-09). The two
   outcomes are different EVENTS and look nothing alike, which is the point: before reading
   anything you know which one happened.
-  A claim cuts the word with `assets/slash.png` — a 5-frame 36x46 sheet of a stroke landing
-  and dissipating, 50ms a frame — in the claimed grade's COLOUR, **and while a stroke is on
+  A claim HITS the word with one of three sheets in `assets/hits/` (see the ladder below) —
+  the default being `slash.png`, a 5-frame 36x46 stroke landing and dissipating, 50ms a frame
+  — in the claimed grade's COLOUR wherever the sheet is a mask, **and while a stroke is on
   the word the word RECOILS and takes that colour too**, returning to the solved blue when it
   goes. **Both last exactly ONE BLOW, and a blow is the stroke's first FOUR
   frames of five** (`STRUCK_FRAMES`/`STRUCK_MS`, decided 2026-08-09): a cross hits, LETS GO,
@@ -371,37 +372,47 @@ it to the local store — see `packages/backend/AGENTS.md`).
   picture.) There
   is no text: a name has to be read, and a run against a clock has no time for that. The
   grade is still written down twice anyway, in the run's history and its tally, so nothing
-  is lost but a word to read mid-sprint. **The strike ESCALATES IN THREE STEPS** — a CUT (one stroke), a CROSS
-  (two, the second mirrored, from `DOUBLE_SLASH_FROM` = RARE), and a BURST (`ULTRA_SLASH_FROM`
-  = OBSCURE, so OBSCURE and ARCANE, added 2026-08-09 when the art arrived). The same
-  escalation the seconds ladder makes, said in gestures instead of five sizes. **What
-  escalates is the EVENT, not the duration:** the burst is a step UP from the cross while
-  spending LESS time on screen (350ms against 500) — one blow, two blows, then something that
-  is not a stroke at all — which is why `rarity.test.ts` ranks the three as steps rather than
-  by how long they run. Both thresholds are named constants, so moving where a step begins
-  stays a one-line change.
-  **The BURST is `assets/ultra-slash.png`, and it is drawn UNLIKE the stroke in two ways,
-  both read off the art rather than chosen:** it is 7 frames of 71x66 at the stroke's own
-  scales (5x = 355x330, 4x on a phone = 284x264, verified no page overflow at 320px), and —
-  - it is an **IMAGE in its own palette, not a mask in the grade's colour**. The sheet is
-    authored in colour: seven fully opaque entries, one of them exactly OBSCURE's `#c834ff`.
-    `slash.png` is pure white precisely so it CAN be tinted; masking this one would flatten
-    all seven into one flat colour, which is most of what the art is. The grade is still told
-    by the word's own colour under the burst, by the history line and by the tally — so
-    OBSCURE and ARCANE share a sprite and stay distinguishable.
-  - it is **CENTRED, with none of the stroke's 19% drop**. Not a different rule — the same
-    rule reading a different sheet: the stroke's ink is top-weighted, this one's measured
-    centroid is y=33 of 66, dead centre.
-  Two consequences worth knowing. Its frame walk is its own keyframes (`ultra-frames`, over
-  `background-position`) because the stroke's walks `mask-position`; and under reduced motion
-  it needs **its own `animation: none`**, not the stroke's — the base `.word-slash.ultra`
-  declares the walk at a higher specificity, so it won, the global rule collapsed its duration
-  to nothing, and the sheet landed on its LAST, near-empty frame with a `both` fill (measured:
-  `background-position: 100% 0%`, an ARCANE find showing almost nothing). It holds the THIRD
-  frame, not the fullest first: frame 1 is the impact flash, a solid white disc that covers
-  the word completely — right for 50ms, wrong to park on.
-  **The CROSS is unchanged:** below the burst's threshold a find is a cut, and at RARE it is
-  a cross. The second blow starts the instant the first
+  is lost but a word to read mid-sprint. **The strike ESCALATES IN FOUR STEPS across the five grades**, and since 2026-08-10 that
+  is THREE SHEETS, all in `assets/hits/`, all walked at one 50ms frame rate:
+  a CUT (`slash.png`, one stroke — COMMON and UNCOMMON), a CROSS (the same sheet twice, the
+  second mirrored — RARE), a BURST (`burst.png` — OBSCURE) and the ULTRA star
+  (`ultra-slash.png` — ARCANE). The same escalation the seconds ladder makes, said in gestures
+  instead of five sizes.
+  **The ladder is a TABLE indexed by grade** (`STRIKES`, `components/rarity.ts`) — the shape
+  `RARITY_COLORS` already has, complete by type — rather than the thresholds it started as:
+  with four distinct steps over five grades the thresholds had stopped compressing anything
+  and had become a per-grade table written the long way.
+  **What escalates is the EVENT, not the duration.** The burst is a step UP from the cross
+  while spending HALF its time on screen (250ms against 500), and the ultra is a step up again
+  at 350 — one blow, two blows, then two sheets that are not strokes at all. Reading intensity
+  off a clock would rank the ladder backwards, so `rarity.test.ts` weighs a strike as
+  (which sheet, then how many blows), where the ORDER OF `STRIKE_ARTS` is what says which
+  sheet is bigger.
+  **Two sheets are masks and one is an image, which is a property of the ART, not a
+  preference.** `slash.png` and `burst.png` are pure white, so they are painted through a CSS
+  mask in the grade's colour — the header globe's technique, and the reason one sheet serves
+  several grades. `ultra-slash.png` is authored IN COLOUR (seven fully opaque palette entries),
+  so it is drawn as an ordinary background image and ignores the grade: masking it would
+  flatten all seven into one flat colour, which is most of what the art is. It therefore also
+  needs its own frame-walk keyframes (`ultra-frames`, over `background-position`, where the
+  masked pair walk `mask-position`).
+  **Each sheet's geometry is MEASURED off its own ink**, at the app's exact integer scales
+  (5x, 4x at ≤640px), and the numbers differ because the art does:
+  - stroke 36x46 → 180x230 / 144x184, dropped 44px / 35px (its ink is top-weighted);
+  - burst 53x66 → 265x330 / 212x264, dropped 20px / 16px (its impact ink — frames 1–3, 90% of
+    it — centres at 44% of the frame's height, so a box centred on the word sits a touch high);
+  - ultra 71x66 → 355x330 / 284x264, NOT dropped at all (centroid y=33 of 66, dead centre).
+  Every offset is a whole pixel at both scales, for the reason the stroke's is: half a pixel of
+  offset is half a pixel of resampling on a sprite whose whole point is hard edges. Verified no
+  page overflow at 320px, where the widest of them spans x 18..302.
+  **Under reduced motion each sheet holds ONE frame**, and the ultra needs **its own
+  `animation: none`** rather than the stroke's: the base `.word-slash.ultra` declares the walk
+  at a higher specificity, so it won, the global rule collapsed its duration to nothing, and
+  the sheet landed on its LAST, near-empty frame with a `both` fill (measured:
+  `background-position: 100% 0%`, an ARCANE find showing almost nothing). It holds its THIRD
+  frame — frame 1 is the impact flash, a solid white disc that covers the word completely,
+  right for 50ms and wrong to park on. The masked pair hold their second, which is the fullest
+  frame of both. The second blow starts the instant the first
   ends — back to back, with NO pause between the strokes (2026-08-09, superseding first a
   110ms stagger that overlapped them and then a one-frame gap that separated them). Two
   strikes on screen at once read as one thick stroke, so they still never overlap; but what
@@ -414,8 +425,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **Three things about how the strike is drawn**, each of which was a decision:
   it is a MASK, not an image — the sheet is pure white, so painting `currentColor` through it
   gives one sheet in five grade colours (the header globe's technique, for the same reason);
-  it is at an EXACT INTEGER SCALE (5x = 180x230 desktop, 4x at ≤640px), the app's standing
-  pixel-art rule, **and it takes `image-rendering: pixelated` WITH it** — an earlier note here
+  it is at an EXACT INTEGER SCALE (the stroke 5x = 180x230 desktop, 4x at ≤640px), the app's
+  standing pixel-art rule, **and it takes `image-rendering: pixelated` WITH it** — an earlier note here
   claimed the integer scale made nearest sampling unnecessary, which is wrong: bilinear blends
   neighbouring texels wherever a destination pixel misses a texel CENTRE, which at 5x is four
   pixels in five. Measured on the rendered output, 51.5% of the ink was partial (a soft ring
@@ -428,8 +439,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   and it is DROPPED 19% of its own height below the word's centre, which is a property of the
   ART and was measured — the sheet's ink is top-weighted and only the first two frames carry
   real ink, so a box centred on the word puts the strike above it.
-  Two smaller mechanics worth keeping: the frame walk is `steps(5, jump-none)` over
-  `mask-position` 0→100%, which lands exactly on the five frames with no sixth position past
+  Two smaller mechanics worth keeping: the frame walk is `steps(<the sheet's frames>,
+  jump-none)` over `mask-position` (or `background-position`) 0→100%, which lands exactly on the five frames with no sixth position past
   the end (where the LOOPING `.cal-ripple` needs its `n/(n-1)` overshoot instead); and the strike is
   INVISIBLE unless an animation is actively running on it — base `opacity: 0`, lifted for
   exactly the frame walk's length by a `slash-show` animation carrying NO fill. That one rule

@@ -52,77 +52,89 @@ export const RARITY_COLORS: Record<Rarity, string> = {
 // Kept as a constant beside the grades so the reservation is stated where it is enforced.
 export const MISS_COLOR = '#ff1f54';
 
-// --- what a claim LOOKS like: a SLASH across the word ------------------------------------
-// A find CUTS the word (decided 2026-08-09, replacing the grade name that used to stamp onto
-// it). `assets/slash.png` is a 5-frame 36x46 sheet of a diagonal stroke that lands and
-// dissipates; it is drawn at an exact integer scale as a MASK painted in the grade's colour,
-// which is what the sheet's pure white is for — the same technique as the header globe.
+// --- what a claim LOOKS like: the word is STRUCK ------------------------------------------
+// A find HITS the word (decided 2026-08-09, replacing the grade name that used to stamp onto
+// it). A name has to be read, and a run against a clock has no time for that; the grade is
+// still written down twice anyway, in the run's history and its tally. What the strike adds
+// is the moment.
 //
-// The GRADE is now carried by the slash's colour alone, and it is not the only place it is
-// said: the run's history logs each find in its colour and the tally counts them by it. What
-// the strike adds is the moment.
-export const SLASH_FRAMES = 5;
+// THREE SHEETS, in `assets/hits/`, all walked at ONE frame rate. Two of them are pure white
+// and drawn as a MASK painted in the grade's colour — the header globe's technique, and the
+// reason one sheet serves several grades; the third is authored IN COLOUR and is drawn as an
+// IMAGE (see `.word-slash.ultra` in index.css, where the per-sheet geometry lives, each
+// number measured off its own art rather than picked).
 export const SLASH_FRAME_MS = 50;
-export const SLASH_MS = SLASH_FRAMES * SLASH_FRAME_MS;
 
-// The rarest finds get their own art: `assets/ultra-slash.png`, a 7-frame 71x66 burst
-// (decided 2026-08-09). It is NOT a bigger version of the stroke and it is NOT drawn the
-// same way — where `slash.png` is pure white and painted through a mask in the grade's
-// colour, this sheet is authored IN COLOUR (seven fully opaque palette entries, one of them
-// exactly OBSCURE's `#c834ff`), so it is drawn as an IMAGE at its own palette. Masking it
-// would flatten all seven into one flat grade colour, which is most of what the art IS.
-// Its ink also sits vertically CENTRED (measured centroid y=33 of 66) where the stroke's is
-// top-weighted, so it needs none of the stroke's drop.
-export const ULTRA_FRAMES = 7;
-export const ULTRA_MS = ULTRA_FRAMES * SLASH_FRAME_MS;
+export type StrikeArt = {
+  /** Modifier class on `.word-slash`; the base class IS the stroke, so it needs none. */
+  css: string;
+  frames: number;
+  /** One blow's length. Every sheet runs at `SLASH_FRAME_MS`, so this is never independent. */
+  ms: number;
+};
 
-// The strike ESCALATES IN THREE STEPS, and the ladder is thresholds rather than a table, so
-// retuning where a step begins stays a one-line change:
-//   a CUT    — one stroke
-//   a CROSS  — two strokes, the second mirrored, from `DOUBLE_SLASH_FROM`
-//   a BURST  — the ultra sheet, one blow, from `ULTRA_SLASH_FROM`
-// The same escalation the seconds ladder makes, said in gestures rather than five sizes. The
-// burst is a step UP from the cross even though it spends less time on screen (350ms against
-// 500): what escalates is the EVENT — one blow, two blows, then something that is not a
-// stroke at all — not the duration, which is the art's own business.
-export const DOUBLE_SLASH_FROM: Rarity = 'RARE';
-export const ULTRA_SLASH_FROM: Rarity = 'OBSCURE';
+const art = (css: string, frames: number): StrikeArt => ({
+  css,
+  frames,
+  ms: frames * SLASH_FRAME_MS,
+});
 
-// What a claim's strike IS. `blows` is how many times the word is hit; `ultra` picks the
-// sheet. Presentation state — the screen builds one of these per claim and hands it down.
-export type Strike = { ultra: boolean; blows: number };
+// A diagonal stroke that lands and dissipates. The default hit.
+export const SLASH_ART = art('', 5);
+// A wider, taller detonation — same white, same mask, so it also wears the grade's colour.
+export const BURST_ART = art('burst', 5);
+// The one coloured sheet: a violet-and-cyan star that scatters into shards.
+export const ULTRA_ART = art('ultra', 7);
 
-export function strikeFor(rarity: Rarity, order: readonly Rarity[]): Strike {
-  const step = order.indexOf(rarity);
-  if (step >= order.indexOf(ULTRA_SLASH_FROM)) return { ultra: true, blows: 1 };
-  return { ultra: false, blows: step >= order.indexOf(DOUBLE_SLASH_FROM) ? 2 : 1 };
+// Commonest first: THIS ORDER IS THE ESCALATION, and `rarity.test.ts` reads it as one.
+export const STRIKE_ARTS: readonly StrikeArt[] = [SLASH_ART, BURST_ART, ULTRA_ART];
+
+// What a claim's strike IS: which sheet, and how many times the word is hit with it.
+export type Strike = { art: StrikeArt; blows: number };
+
+// The ladder, indexed by grade like `RARITY_COLORS` above — one table, complete by type, so
+// adding or retuning a grade moves exactly one thing. It escalates in FOUR steps across the
+// five grades: a cut, a cross, a burst, and the ultra star. The same escalation the seconds
+// ladder makes, said in gestures rather than five sizes.
+//
+// **What escalates is the EVENT, not the duration.** The burst is a step up from the cross
+// while spending HALF the time on screen (250ms against 500), and the ultra is a step up
+// again at 350. Reading intensity off a clock would rank these backwards; the order of
+// `STRIKE_ARTS` is what says which is bigger, with the blow count breaking ties inside a
+// sheet.
+export const STRIKES: Record<Rarity, Strike> = {
+  COMMON: { art: SLASH_ART, blows: 1 },
+  UNCOMMON: { art: SLASH_ART, blows: 1 },
+  // Struck TWICE, the second blow mirrored so the pair crosses.
+  RARE: { art: SLASH_ART, blows: 2 },
+  OBSCURE: { art: BURST_ART, blows: 1 },
+  ARCANE: { art: ULTRA_ART, blows: 1 },
+};
+
+export function strikeFor(rarity: Rarity): Strike {
+  return STRIKES[rarity];
 }
 
-// How long ONE blow of this strike is on screen.
-export function blowMs(strike: Strike): number {
-  return strike.ultra ? ULTRA_MS : SLASH_MS;
+// When blow `index` of this strike lands: the moment the one before it ends, with NO pause
+// between them (2026-08-09, dropping a one-frame gap). Two strokes on screen at once read as
+// one thick stroke, so they still never overlap — but the daylight that says "struck twice"
+// belongs to the WORD, not to the sprite: it stops reacting a frame early (below), so the
+// beat is there whether or not the art pauses.
+export function blowDelayMs(strike: Strike, index: number): number {
+  return index * strike.art.ms;
 }
 
-// When blow `index` lands: the moment the one before it ends, with no pause between them
-// (decided 2026-08-09, dropping a one-frame gap). The two strokes still never share the
-// screen — that is what makes a cross read as being struck twice instead of once with a
-// thicker stroke — but the daylight that says so belongs to the WORD, not to the sprite: it
-// stops reacting a frame early (below), so the beat is there whether or not the art pauses.
-// Only a cross has a second blow, so this is always the stroke's length.
-export function slashDelayMs(index: number): number {
-  return index * SLASH_MS;
-}
-
-// How long the WORD reacts to one blow — its recoil and the grade's colour on it. FOUR of the
-// stroke's five frames, so the last frame of every blow lands on a word already back to rest
-// (decided 2026-08-09). That is the whole beat between two hits now: the strokes run
-// continuously, and what separates them is the word letting go and being struck again. It
-// sits on the ART's own frame count rather than being an invented duration, because it is a
-// statement about which frames of the stroke the word is answering.
+// How long the WORD reacts to one blow — its recoil and the grade's colour on it. FOUR frames,
+// which is one short of the shortest sheet, so the last frame of every blow lands on a word
+// already back at rest (decided 2026-08-09). That is the whole beat between two hits now: the
+// strokes run continuously, and what separates them is the word letting go and being struck
+// again. On a longer sheet the same rule is what makes the extra frames read as DISSIPATION.
+// Stated in the ART's own frames rather than as a duration, because it is a claim about which
+// frames of the hit the word is answering.
 export const STRUCK_FRAMES = 4;
 export const STRUCK_MS = STRUCK_FRAMES * SLASH_FRAME_MS;
 
 // How long a strike is on screen, so the screen can hold its ending beat for one.
 export function strikeDurationMs(strike: Strike): number {
-  return slashDelayMs(Math.max(0, strike.blows - 1)) + blowMs(strike);
+  return strike.blows * strike.art.ms;
 }

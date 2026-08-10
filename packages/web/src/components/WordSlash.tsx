@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import type { CSSProperties } from 'react';
 import type { Strike } from './rarity';
-import { blowMs, slashDelayMs, strikeDurationMs } from './rarity';
+import { blowDelayMs, strikeDurationMs } from './rarity';
 
 // Word mode's CLAIM feedback (#163, decided 2026-08-09): a slash across the day's word, in
 // the claimed grade's colour.
@@ -21,10 +21,9 @@ import { blowMs, slashDelayMs, strikeDurationMs } from './rarity';
 // twice instead of once with a thicker stroke. Both blows are still one event: this
 // component owns their shared lifetime and reports when the LAST of them is done.
 //
-// The rarest two grades get `assets/ultra-slash.png` INSTEAD of a cross (2026-08-09) — a
-// 7-frame burst, one blow, drawn as an IMAGE in its own palette rather than as a mask in the
-// grade's colour, because unlike the stroke that sheet is authored in colour (see `rarity`).
-// One component still: which sheet is a class, the lifetime and the frame walk are shared.
+// The two rarest grades get their own SHEET instead of a cross (2026-08-09): a wider
+// detonation at OBSCURE, the coloured star at ARCANE. One component still — which sheet is a
+// class, and the lifetime, the frame walk and the show/hide rule are shared by all three.
 export default function WordSlash({
   id,
   color,
@@ -32,12 +31,12 @@ export default function WordSlash({
   onDone,
 }: {
   id: number; // monotonic, so a new guess replaces the strike on screen
-  color: string; // the grade's colour — what the STROKE's mask is painted in (the burst
-  // carries its own palette and ignores this)
+  color: string; // the grade's colour — what a MASKED sheet is painted in (the coloured
+  // one carries its own palette and ignores this)
   strike: Strike;
   onDone?: (id: number) => void;
 }) {
-  const { ultra, blows } = strike;
+  const { art, blows } = strike;
 
   useEffect(() => {
     const t = setTimeout(() => onDone && onDone(id), strikeDurationMs(strike));
@@ -49,14 +48,14 @@ export default function WordSlash({
       {Array.from({ length: blows }, (_, i) => (
         <span
           key={i}
-          className={`word-slash${ultra ? ' ultra' : ''}${i > 0 ? ' mirrored' : ''}`}
+          className={`word-slash${art.css ? ` ${art.css}` : ''}${i > 0 ? ' mirrored' : ''}`}
           style={
             {
               color,
               // Both handed down rather than repeated in CSS, so the JS that ends the
               // strike and the CSS that draws it cannot disagree about how long it is.
-              '--slash-ms': `${blowMs(strike)}ms`,
-              '--slash-delay': `${slashDelayMs(i)}ms`,
+              '--slash-ms': `${art.ms}ms`,
+              '--slash-delay': `${blowDelayMs(strike, i)}ms`,
             } as CSSProperties
           }
         />

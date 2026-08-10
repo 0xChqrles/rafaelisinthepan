@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react';
 import FloatingHit, { HIT_FADE_MS } from './FloatingHit';
 import WordSlash from './WordSlash';
 import type { Strike } from './rarity';
-import { STRUCK_MS, slashDelayMs, strikeDurationMs } from './rarity';
+import { STRUCK_MS, blowDelayMs, strikeDurationMs } from './rarity';
 import { fitWord } from './routeDrawing';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { srWordBoardWord } from '../i18n';
@@ -115,8 +115,8 @@ function useLetterWave(letters: number): boolean {
 // gap turns two hits into one long state, which is the reading the gap exists to prevent.
 //
 // So this returns WHICH blow is landing, or null in the daylight between them and after the
-// last — driven by the strike's own `slashDelayMs`/`STRUCK_MS`, the numbers the slash itself is
-// drawn from, so the word and the stroke on it can never disagree about when a blow is on.
+// last — driven by the strike's own `blowDelayMs`/`STRUCK_MS`, the numbers the sheet itself is
+// drawn from, so the word and the hit on it can never disagree about when a blow is on.
 // It lets go a frame BEFORE the stroke does, which is where the beat between two hits comes
 // from now that the strokes themselves run back to back.
 // A miss lands no blow at all: nothing was struck, so nothing recoils.
@@ -124,7 +124,8 @@ function useStrikeBlow(hit: WordHit | null): number | null {
   const [blow, setBlow] = useState<number | null>(null);
   const claim = hit?.kind === 'claim' ? hit : null;
   const id = claim?.id ?? null;
-  const blows = claim?.strike.blows ?? 0;
+  const strike = claim?.strike ?? null;
+  const blows = strike?.blows ?? 0;
 
   useEffect(() => {
     if (id === null) {
@@ -136,11 +137,11 @@ function useStrikeBlow(hit: WordHit | null): number | null {
     setBlow(0);
     const timers: number[] = [];
     for (let i = 0; i < blows; i += 1) {
-      if (i > 0) timers.push(window.setTimeout(() => setBlow(i), slashDelayMs(i)));
-      timers.push(window.setTimeout(() => setBlow(null), slashDelayMs(i) + STRUCK_MS));
+      if (i > 0) timers.push(window.setTimeout(() => setBlow(i), blowDelayMs(strike!, i)));
+      timers.push(window.setTimeout(() => setBlow(null), blowDelayMs(strike!, i) + STRUCK_MS));
     }
     return () => timers.forEach((t) => window.clearTimeout(t));
-  }, [id, blows]);
+  }, [id, blows, strike]);
 
   return blow;
 }

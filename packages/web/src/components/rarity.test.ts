@@ -18,15 +18,13 @@ import { heatColor, progressColor } from '@whippin/shared';
 import {
   RARITY_COLORS,
   MISS_COLOR,
-  DOUBLE_SLASH_FROM,
-  SLASH_FRAMES,
+  BURST_ART,
+  SLASH_ART,
   SLASH_FRAME_MS,
-  SLASH_MS,
+  STRIKE_ARTS,
   STRUCK_MS,
-  ULTRA_FRAMES,
-  ULTRA_MS,
-  ULTRA_SLASH_FROM,
-  slashDelayMs,
+  ULTRA_ART,
+  blowDelayMs,
   strikeDurationMs,
   strikeFor,
 } from './rarity';
@@ -121,63 +119,66 @@ describe('rarity colours track the palette stops they were copied from', () => {
 // word is struck — and it is asserted as a rule rather than a table of numbers, so the
 // threshold stays a knob.
 describe('the strike escalates with the ladder', () => {
-  // A cut, then a cross, then the burst. Ranked as EVENTS rather than by how long they run:
-  // the burst spends less time on screen than the cross (350ms against 500) and is still the
-  // bigger thing, so duration must not be read as the escalation.
-  const step = (name: (typeof RARITY_NAMES)[number]) => {
-    const s = strikeFor(name, RARITY_NAMES);
-    return s.ultra ? 2 : s.blows - 1;
+  // How big a strike IS, as a pair ordered lexicographically: which sheet first, then how many
+  // blows of it. Ranked as EVENTS, never by how long they run — the burst spends HALF the
+  // cross's time on screen (250ms against 500) and is still the bigger thing, so reading
+  // intensity off a clock would rank the ladder backwards.
+  const weight = (name: (typeof RARITY_NAMES)[number]): [number, number] => {
+    const s = strikeFor(name);
+    return [STRIKE_ARTS.indexOf(s.art), s.blows];
   };
+  const atLeast = (a: [number, number], b: [number, number]) =>
+    a[0] > b[0] || (a[0] === b[0] && a[1] >= b[1]);
 
-  it('climbs cut -> cross -> burst, and never back down', () => {
-    const steps = RARITY_NAMES.map(step);
-    expect(steps[0], 'the commonest grade is a single cut').toBe(0);
-    expect(steps[steps.length - 1], 'the rarest is the burst').toBe(2);
-    // Never a smaller strike for a rarer find, at any grade.
-    for (let i = 1; i < steps.length; i += 1) {
-      expect(steps[i], `${RARITY_NAMES[i]}`).toBeGreaterThanOrEqual(steps[i - 1]);
+  it('never strikes a rarer find more softly', () => {
+    const w = RARITY_NAMES.map(weight);
+    // Every sheet is on the escalation, and the order of that list IS the ranking.
+    expect(w.every(([art]) => art >= 0)).toBe(true);
+    for (let i = 1; i < w.length; i += 1) {
+      expect(atLeast(w[i], w[i - 1]), `${RARITY_NAMES[i]} vs ${RARITY_NAMES[i - 1]}`).toBe(true);
     }
-    // And each threshold is where it SAYS it is, rather than wherever an array happened to
-    // put it — including that the two never cross over (a grade cannot be both).
-    expect(strikeFor(DOUBLE_SLASH_FROM, RARITY_NAMES)).toEqual({ ultra: false, blows: 2 });
-    expect(strikeFor(ULTRA_SLASH_FROM, RARITY_NAMES).ultra).toBe(true);
-    const belowCross = RARITY_NAMES[RARITY_NAMES.indexOf(DOUBLE_SLASH_FROM) - 1];
-    expect(strikeFor(belowCross, RARITY_NAMES)).toEqual({ ultra: false, blows: 1 });
-    const belowBurst = RARITY_NAMES[RARITY_NAMES.indexOf(ULTRA_SLASH_FROM) - 1];
-    expect(strikeFor(belowBurst, RARITY_NAMES).ultra).toBe(false);
-    expect(RARITY_NAMES.indexOf(ULTRA_SLASH_FROM)).toBeGreaterThan(
-      RARITY_NAMES.indexOf(DOUBLE_SLASH_FROM),
-    );
+    // The two ends, so the ladder cannot flatten into one gesture unnoticed.
+    expect(strikeFor(RARITY_NAMES[0]), 'the commonest grade is a single cut').toEqual({
+      art: SLASH_ART,
+      blows: 1,
+    });
+    expect(weight(RARITY_NAMES[RARITY_NAMES.length - 1])[0], 'the rarest wears the last sheet')
+      .toBe(STRIKE_ARTS.length - 1);
+    // And it really does climb — a table this small could go monotonic by being constant.
+    expect(new Set(RARITY_NAMES.map((n) => weight(n).join(':'))).size).toBeGreaterThan(2);
   });
 
   it('the blows never share the screen, and the word lets go between them', () => {
     // Two strikes at once read as one thick stroke, which is the opposite of what the second
     // blow is for. So the second starts only once the first has finished...
-    expect(slashDelayMs(0)).toBe(0);
-    expect(slashDelayMs(1)).toBe(SLASH_MS);
+    const cross = { art: SLASH_ART, blows: 2 };
+    expect(blowDelayMs(cross, 0)).toBe(0);
+    expect(blowDelayMs(cross, 1)).toBe(SLASH_ART.ms);
     // ...and the beat that makes a cross read as TWO hits rather than one long one belongs to
     // the WORD, which stops reacting before its blow's stroke ends. Without this the recoil
     // and the colour would run unbroken across both strokes, which is the one reading the
     // second blow exists to avoid.
-    expect(STRUCK_MS).toBeLessThan(SLASH_MS);
     expect(STRUCK_MS).toBeGreaterThan(0);
-    // The word must let go before the BURST ends too, or its one blow would hold the recoil
-    // and the colour for the sheet's whole dissipation.
-    expect(STRUCK_MS).toBeLessThan(ULTRA_MS);
+    // The word must let go before ANY sheet ends, or a blow would hold the recoil and the
+    // colour through the art's whole dissipation — which is what makes a longer sheet's extra
+    // frames read as dissipation in the first place.
+    for (const art of STRIKE_ARTS) expect(STRUCK_MS, `${art.css || 'slash'}`).toBeLessThan(art.ms);
     // ...and the whole thing runs as long as the blows it is made of. The ending beat waits
     // for whatever is still in the air; if this under-reported, the last strike of a run
     // would be cut off mid-swing to show the board.
-    expect(strikeDurationMs({ ultra: false, blows: 1 })).toBe(SLASH_MS);
-    expect(strikeDurationMs({ ultra: false, blows: 2 })).toBe(slashDelayMs(1) + SLASH_MS);
-    expect(strikeDurationMs({ ultra: true, blows: 1 })).toBe(ULTRA_MS);
+    expect(strikeDurationMs({ art: SLASH_ART, blows: 1 })).toBe(SLASH_ART.ms);
+    expect(strikeDurationMs({ art: SLASH_ART, blows: 2 })).toBe(2 * SLASH_ART.ms);
+    expect(strikeDurationMs({ art: ULTRA_ART, blows: 1 })).toBe(ULTRA_ART.ms);
   });
 
-  it('each sheet is walked frame for frame', () => {
-    // If a constant and its sheet ever disagree the strike either stutters or ends early, and
-    // nothing else would catch it. Both sheets run at ONE frame rate.
-    expect(SLASH_MS).toBe(SLASH_FRAMES * SLASH_FRAME_MS);
-    expect(SLASH_FRAMES).toBe(5);
-    expect(ULTRA_MS).toBe(ULTRA_FRAMES * SLASH_FRAME_MS);
-    expect(ULTRA_FRAMES).toBe(7);
+  it('every sheet is walked frame for frame, at one frame rate', () => {
+    // If a constant and its sheet ever disagree the hit either stutters or ends early, and
+    // nothing else would catch it. The frame COUNTS are the art's, stated here so a resized
+    // sheet has to come past this test.
+    for (const art of STRIKE_ARTS) expect(art.ms).toBe(art.frames * SLASH_FRAME_MS);
+    expect(SLASH_ART.frames).toBe(5);
+    expect(BURST_ART.frames).toBe(5);
+    expect(ULTRA_ART.frames).toBe(7);
+    expect(SLASH_FRAME_MS).toBe(50);
   });
 });

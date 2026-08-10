@@ -371,7 +371,7 @@ function WordRound({
             id: hitId.current,
             kind: 'claim',
             color: RARITY_COLORS[grade],
-            strike: strikeFor(grade, RARITY_NAMES),
+            strike: strikeFor(grade),
           }
         : { id: hitId.current, kind: 'miss', color: MISS_COLOR };
       hitEndsAt.current = Date.now() + hitDurationMs(next);

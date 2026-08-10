@@ -3892,9 +3892,12 @@ button * {
   }
 }
 
-/* --- the STRIKE: a claim cuts the word (#163, decided 2026-08-09) ------------------------
-   `assets/slash.png` is a 5-frame 36x46 sheet of a diagonal stroke landing and dissipating.
-   Two things about how it is drawn:
+/* --- the STRIKE: a claim hits the word (#163, decided 2026-08-09) ------------------------
+   `assets/hits/slash.png` is a 5-frame 36x46 sheet of a diagonal stroke landing and
+   dissipating — the DEFAULT hit. The rarest two grades take their own sheets from the same
+   folder (`.burst` / `.ultra` below), which is a class and a few numbers; everything else
+   here — the show/hide rule, the frame walk, the reduced-motion hold — is shared by all three.
+   Two things about how the default is drawn:
 
    It is a MASK, not an image. The sheet is pure white, so painting `currentColor` through it
    gives one sheet in five grade colours — the technique the header globe uses, for the same
@@ -3932,8 +3935,8 @@ button * {
      edges. Both halves of the translate are integers at both scales. */
   transform: translate(-50%, calc(-50% + 44px));
   background-color: currentColor;
-  -webkit-mask-image: url('./assets/slash.png');
-  mask-image: url('./assets/slash.png');
+  -webkit-mask-image: url('./assets/hits/slash.png');
+  mask-image: url('./assets/hits/slash.png');
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
   -webkit-mask-size: 500% 100%;
@@ -3956,15 +3959,31 @@ button * {
 .word-slash.mirrored {
   transform: translate(-50%, calc(-50% + 44px)) scaleX(-1);
 }
-/* The rarest two grades get the BURST instead of a cross (2026-08-09): `ultra-slash.png`, a
-   7-frame 71x66 sheet, at the stroke's own 5x (4x on a phone) — 355x330, which is the burst
-   filling the word's band rather than crossing the word, and the point.
-   It is drawn as an IMAGE, not as a mask: the sheet is authored in COLOUR — seven fully
-   opaque palette entries, one of them exactly OBSCURE's `#c834ff` — where `slash.png` is pure
-   white precisely so it can be painted in the grade's colour. Masking this one would flatten
-   all seven into one flat colour, which is most of what the art is. So the mask is dropped
-   and the currentColor fill with it; the GRADE is still told by the word's own colour under
-   it, and by the history line and the tally.
+/* OBSCURE gets the BURST instead of a cross (2026-08-09): `burst.png`, a 5-frame 53x66 sheet,
+   at the stroke's own 5x (4x on a phone) — 265x330, wider and taller than the stroke, which is
+   the escalation. It is pure white like the stroke, so it stays a MASK and wears the grade's
+   colour; only its geometry differs, and both numbers are measured off the art:
+   its size, and a +20px drop (+16 at 4x) because its impact ink — frames 1-3, which carry 90%
+   of it — centres at 44% of the frame's height rather than at 50%, so a box centred on the
+   word would sit a touch high. Whole pixels at both scales, for the same reason the stroke's
+   drop is: half a pixel of offset is half a pixel of resampling on a sprite whose whole point
+   is hard edges. Its frame count matches the stroke's, so it inherits the walk unchanged. */
+.word-slash.burst {
+  width: 265px;
+  height: 330px;
+  transform: translate(-50%, calc(-50% + 20px));
+  -webkit-mask-image: url('./assets/hits/burst.png');
+  mask-image: url('./assets/hits/burst.png');
+}
+/* ARCANE gets the ULTRA star (2026-08-09): `ultra-slash.png`, a
+   7-frame 71x66 sheet, at the stroke's own 5x (4x on a phone) — 355x330, the widest of the
+   three, filling the word's band rather than crossing the word, and the point.
+   It is the ONE sheet drawn as an IMAGE rather than as a mask: it is authored in COLOUR —
+   seven fully opaque palette entries — where the other two are pure white precisely so they
+   can be painted in the grade's colour. Masking this one would flatten all seven into one
+   flat colour, which is most of what the art is. So the mask is dropped and the currentColor
+   fill with it; the GRADE is still told by the word's own colour under it, and by the history
+   line and the tally.
    It is also CENTRED — no drop. That is not a different choice from the stroke's 19%, it is
    the same rule reading a different sheet: the stroke's ink is top-weighted, this one's
    centroid is y=33 of 66, dead centre (both measured off the art). */
@@ -3973,7 +3992,7 @@ button * {
   height: 330px;
   transform: translate(-50%, -50%);
   background-color: transparent;
-  background-image: url('./assets/ultra-slash.png');
+  background-image: url('./assets/hits/ultra-slash.png');
   background-repeat: no-repeat;
   background-size: 700% 100%;
   -webkit-mask-image: none;
@@ -4051,6 +4070,11 @@ button * {
   }
   .word-slash.mirrored {
     transform: translate(-50%, calc(-50% + 35px)) scaleX(-1);
+  }
+  .word-slash.burst {
+    width: 212px;
+    height: 264px;
+    transform: translate(-50%, calc(-50% + 16px));
   }
   /* 4x here too: at 320px the page leaves 292px of column, which 355 would overrun. */
   .word-slash.ultra {
