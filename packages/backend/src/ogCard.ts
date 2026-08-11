@@ -14,6 +14,7 @@ import {
   renderCardSvg,
   renderWordCardSvg,
   dateForDayNumber,
+  wordShareScore,
   type CardData,
   type ShareResult,
   type WordCardData,
@@ -52,8 +53,9 @@ export async function renderCardPng(data: CardData): Promise<Buffer> {
   return rasterize(renderCardSvg(data));
 }
 
-// Word mode's card (#156): same rasterizer, its own SVG (blue terminus + claim count + date,
-// no ruler). The display word travels in the v4 token, so this render stays self-contained.
+// Word mode's card (#156): same rasterizer, its own SVG (blue terminus + claim count + the
+// per-rarity chip row + date, no ruler). The display word and the rarity breakdown travel
+// in the word token, so this render stays self-contained.
 export async function renderWordCardPng(data: WordCardData): Promise<Buffer> {
   return rasterize(renderWordCardSvg(data));
 }
@@ -103,8 +105,10 @@ export function renderWordShareHtml(token: string, result: WordShareResult, base
     lang === 'fr'
       ? { one: 'mot', many: 'mots', play: 'Jouer à Whippin AI' }
       : { one: 'word', many: 'words', play: 'Play Whippin AI' };
-  const title = `Whippin AI ${dateForDayNumber(result.dayNumber)} — ${result.score} ${
-    result.score === 1 ? L.one : L.many
+  // The token stores the per-rarity breakdown; the headline's claim count is its sum.
+  const score = wordShareScore(result.counts);
+  const title = `Whippin AI ${dateForDayNumber(result.dayNumber)} — ${score} ${
+    score === 1 ? L.one : L.many
   }`;
   const gameUrl = `${base}/${lang}/word/${dateForDayNumber(result.dayNumber)}`;
   return sharePage(token, base, lang, title, gameUrl, L.play);

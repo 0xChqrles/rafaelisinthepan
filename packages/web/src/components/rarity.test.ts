@@ -15,8 +15,17 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
-import { heatColor, progressColor } from '@whippin/shared';
-import { RARITY_COLORS, MISS_COLOR, SLASH_ART, STRIKE_ARTS, STRUCK_MS, strikeFor } from './rarity';
+import { heatColor, progressColor, WORD_RARITY_COLORS } from '@whippin/shared';
+import {
+  RARITY_COLORS,
+  RARITY_EMOJI,
+  MISS_COLOR,
+  SLASH_ART,
+  STRIKE_ARTS,
+  STRUCK_MS,
+  rarityShareRow,
+  strikeFor,
+} from './rarity';
 import { RARITY_NAMES } from '../game/wordGame';
 
 function hex(rgb: string): string {
@@ -98,6 +107,13 @@ describe('rarity colours track the palette stops they were copied from', () => {
     }
   });
 
+  it("the OG card's chip palette is this ladder, pinned (the shared copy cannot drift)", () => {
+    // cardSvg.ts carries a one-way COPY of these colours (ladder order) so the share card
+    // can paint its chip row without importing the web; this is the identity that makes
+    // the copy safe — retune a grade here and the card's copy fails until it is re-copied.
+    expect(WORD_RARITY_COLORS).toEqual(RARITY_NAMES.map((name) => RARITY_COLORS[name]));
+  });
+
   it('the grades stay mutually distinguishable', () => {
     // OBSCURE and ARCANE are the pair that matters most and the pair most at risk — two
     // bright purples blur into one payoff colour at the float's size.
@@ -108,6 +124,21 @@ describe('rarity colours track the palette stops they were copied from', () => {
       }
     }
     expect(min).toBeGreaterThan(30);
+  });
+});
+
+// The share text's bead row: the breakdown as it travels in a text message. One bead +
+// count per grade CLAIMED, ladder order, zeroes omitted — and never the target's square.
+describe('the share text bead row', () => {
+  it('has exactly one bead per grade, and none is the 🟦 that marks the day\'s word', () => {
+    expect(Object.keys(RARITY_EMOJI).sort()).toEqual([...RARITY_NAMES].sort());
+    for (const name of RARITY_NAMES) expect(RARITY_EMOJI[name], name).not.toBe('🟦');
+  });
+
+  it('joins claimed grades commonest-first and omits the zero grades', () => {
+    expect(rarityShareRow([7, 3, 1, 1, 0])).toBe('⚪7 🟢3 🔵1 🟣1');
+    expect(rarityShareRow([0, 0, 2, 0, 1])).toBe('🔵2 🩷1');
+    expect(rarityShareRow([0, 0, 0, 0, 0])).toBe(''); // a scoreless run says nothing
   });
 });
 

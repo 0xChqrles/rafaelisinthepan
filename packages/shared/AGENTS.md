@@ -43,10 +43,15 @@
   browser and the Lambda; the token's product behavior and evolution rules are in the
   solved-result bullet of `packages/web/AGENTS.md`. Its leading VERSION field is a
   **format id in ONE namespace shared by both dailies**: v2 = the sentence result
-  (ruler trajectory + solve ticks), **v4 = Word mode's (#156) — the common header
-  (`version | lang | day | scoreLen | score`) plus the accented UTF-8 display word used
-  by its terminus-style OG card** (decided 2026-08-08; v3's score-only Word payload is
-  retired). A future sentence bump must SKIP a value already taken. Each format
+  (ruler trajectory + solve ticks), **v5 = Word mode's (#156) — the common
+  `version | lang | day` opening, then ONE claim count per rarity grade (commonest first,
+  `WORD_RARITY_GRADES` = 5; the claim count a surface names is DERIVED as their sum,
+  `wordShareScore`, never stored), then the accented UTF-8 display word used by its
+  terminus-style OG card** (decided 2026-08-11, superseding v4's single score so the
+  share surfaces can break the score down by rarity; v3 and v4 are retired). A future
+  sentence bump must SKIP a value already taken. The card's rarity chip row paints
+  `cardSvg.ts`'s `WORD_RARITY_COLORS` — a pinned one-way COPY of the web's
+  `RARITY_COLORS`, asserted identical by the web's `rarity.test.ts`. Each format
   has its own encode/decode pair, neither decodes the other, and
   `decodeLegacyShareTarget`'s "strictly older than the sentence version" rule keeps a
   malformed token of either shape at a flat 404 rather than a redirect.

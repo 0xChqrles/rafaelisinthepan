@@ -2,11 +2,12 @@
 // player's RUN RULER — one cell per counted try on the SHARED progress ramp (so the card
 // matches the on-screen ruler), a tick per solving try with the dropped hole's sentence
 // index under it — plus the score and the day's calendar date. Word mode instead repeats
-// its public terminus (accented blue word + blue square), then its claim count and date.
+// its public terminus (accented blue word + blue square), then its claim count, the
+// per-rarity chip row (one grade-coloured square + count per claimed grade), and the date.
 // Exact positions are cosmetic and not asserted; they get tuned against the rasterized PNG.
 
 import { describe, it, expect } from 'vitest';
-import { renderCardSvg, renderWordCardSvg, CARD_WIDTH } from './cardSvg';
+import { renderCardSvg, renderWordCardSvg, CARD_WIDTH, WORD_RARITY_COLORS } from './cardSvg';
 import { dateForDayNumber } from './day';
 import { progressColor } from './progressColor';
 
@@ -120,7 +121,7 @@ describe('renderCardSvg', () => {
 });
 
 describe('renderWordCardSvg', () => {
-  const data = { lang: 'fr', dayNumber: 20638, score: 12, word: 'forêt' };
+  const data = { lang: 'fr', dayNumber: 20638, counts: [7, 3, 1, 1, 0], word: 'forêt' };
 
   it('draws the accented word with the game terminus blue and a matching large square', () => {
     const svg = renderWordCardSvg(data);
@@ -129,10 +130,52 @@ describe('renderWordCardSvg', () => {
     expect(svg).not.toContain('foret');
   });
 
-  it('keeps the named score and calendar date below the word', () => {
+  it("names the claim count as the counts' sum, with the calendar date below", () => {
     const svg = renderWordCardSvg(data);
     expect(svg).toContain('12 MOTS');
     expect(svg).toContain(dateForDayNumber(data.dayNumber));
+  });
+
+  // A chip's SQUARE is the tell (COMMON's grey doubles as the date's muted text colour,
+  // so the raw hex alone cannot prove a chip's absence).
+  const chipSquare = (color: string) => new RegExp(`<rect[^>]+fill="${color}"`);
+
+  it('draws one chip per CLAIMED grade — its colour square + its count, zero grades omitted', () => {
+    const svg = renderWordCardSvg(data);
+    for (const [step, count] of data.counts.entries()) {
+      const color = WORD_RARITY_COLORS[step];
+      if (count > 0) {
+        expect(svg, color).toMatch(chipSquare(color));
+        expect(svg, color).toMatch(new RegExp(`<text[^>]+fill="${color}">${count}</text>`));
+      } else {
+        expect(svg, color).not.toMatch(chipSquare(color)); // an unclaimed grade draws nothing
+      }
+    }
+  });
+
+  it('draws no chip row at all for a scoreless run', () => {
+    const svg = renderWordCardSvg({ ...data, counts: [0, 0, 0, 0, 0] });
+    expect(svg).toContain('0 MOTS');
+    for (const color of WORD_RARITY_COLORS) expect(svg).not.toMatch(chipSquare(color));
+  });
+
+  it('pins the chip colours to the rarity ladder they were copied from', () => {
+    // One colour per grade, commonest first — pinned copies of the web's RARITY_COLORS
+    // (components/rarity.ts); the web's rarity.test.ts asserts the identity from its side,
+    // so this pins the shape and the exact values the card is allowed to speak.
+    expect(WORD_RARITY_COLORS).toEqual(['#c4c9d8', '#23dc91', '#2ad2eb', '#c834ff', '#ef4f97']);
+  });
+
+  it('keeps a forged token\'s huge counts inside the card (the row shrinks as one unit)', () => {
+    // Every decoded count fits 15 bits, so a hand-built token can declare five 32767s.
+    const svg = renderWordCardSvg({ ...data, counts: [32767, 32767, 32767, 32767, 32767] });
+    const chips = [...svg.matchAll(/<text x="(\d+)"[^>]*font-size="(\d+)"[^>]*fill="(#[0-9a-f]{6})">(\d+)<\/text>/g)]
+      .filter((m) => WORD_RARITY_COLORS.includes(m[3]));
+    expect(chips).toHaveLength(5);
+    for (const [, x, size, , count] of chips) {
+      // Press Start 2P advances 1em per glyph, so the count's right edge is x + digits × size.
+      expect(Number(x) + String(count).length * Number(size)).toBeLessThanOrEqual(CARD_WIDTH);
+    }
   });
 
   it('escapes the display word before interpolating it into the SVG', () => {

@@ -67,32 +67,58 @@ export interface CardData {
   solvedAt: (number | null)[]; // per distinct secret in sentence order -> the ticks
 }
 
-// Word mode's card (#156): the run has no trajectory to draw — the whole result is the
-// claim count — so the card is the game's public terminus (accented word + its large blue
-// square), the count with its unit named ("12 WORDS": higher is better here), and the day.
+// Word mode's card (#156): the run has no trajectory to draw — the result is the claim
+// count and, since the v5 token (2026-08-11), its PER-RARITY breakdown — so the card is
+// the game's public terminus (accented word + its large blue square), the count with its
+// unit named ("12 WORDS": higher is better here), the breakdown as a row of grade-coloured
+// chips, and the day.
 const WORD_UNITS: Record<string, { one: string; many: string }> = {
   en: { one: 'WORD', many: 'WORDS' },
   fr: { one: 'MOT', many: 'MOTS' },
 };
 
+// The rarity chip colours, commonest first (COMMON..ARCANE) — PINNED COPIES of the web's
+// RARITY_COLORS (web/src/components/rarity.ts), the same one-way copy the BG/FG/MUTED/
+// ACCENT palette above makes of :root. The web's rarity.test.ts asserts the two stay
+// identical, so a grade retune fails there instead of the card silently wearing a stale
+// ladder. A FIXED table of constants (never interpolated input), so the renderer's "no
+// text to escape" guarantee holds for the chip row.
+export const WORD_RARITY_COLORS: readonly string[] = [
+  '#c4c9d8', // COMMON
+  '#23dc91', // UNCOMMON
+  '#2ad2eb', // RARE
+  '#c834ff', // OBSCURE
+  '#ef4f97', // ARCANE
+];
+
 export interface WordCardData {
   lang: string;
   dayNumber: number; // drawn as its calendar date, like the sentence card
-  score: number; // top-zone words claimed before striking out
+  counts: readonly number[]; // claims per rarity grade, commonest first — their sum is the score
   word: string; // accented display form — never the slug
 }
 
-const WORD_ROW_Y = 195;
+const WORD_ROW_Y = 175;
 const WORD_MAX_SIZE = 76;
 const WORD_NODE_SIZE = 72;
 const WORD_NODE_GAP = 36;
+const WORD_SCORE_Y = 355;
+// The breakdown row: a colour square + its count per claimed grade. Sized as ONE unit —
+// every measure is a multiple of the chip size (Press Start 2P advances exactly 1em per
+// glyph), so the whole row shrinks together when a forged token's counts would overflow.
+const CHIP_ROW_Y = 458;
+const CHIP_MAX_SIZE = 44;
+const CHIP_TEXT_GAP = 0.45; // square -> count, in chip sizes
+const CHIP_SPACING = 1.5; // between chips, in chip sizes
+const WORD_DATE_Y = 555;
 
 function escapeSvgText(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-export function renderWordCardSvg({ lang, dayNumber, score, word }: WordCardData): string {
+export function renderWordCardSvg({ lang, dayNumber, counts, word }: WordCardData): string {
   const unit = WORD_UNITS[lang] ?? WORD_UNITS.en;
+  const score = counts.reduce((sum, n) => sum + n, 0);
   const cx = CARD_WIDTH / 2;
   // Press Start 2P advances exactly 1em per glyph once ligatures are disabled (the same
   // arithmetic as the in-game terminus). Keep the complete word on one line and center the
@@ -103,13 +129,41 @@ export function renderWordCardSvg({ lang, dayNumber, score, word }: WordCardData
   const lockupWidth = WORD_NODE_SIZE + WORD_NODE_GAP + glyphs * wordSize;
   const lockupX = (CARD_WIDTH - lockupWidth) / 2;
   const wordX = lockupX + WORD_NODE_SIZE + WORD_NODE_GAP;
+
+  // One chip per grade the run actually claimed, commonest first, zero grades omitted —
+  // the same row the share text's beads make. The whole row is centered as one lockup;
+  // positions are rounded so the crisp-edged squares land on whole pixels.
+  const chips = counts
+    .map((count, step) => ({ count, color: WORD_RARITY_COLORS[step] ?? MUTED }))
+    .filter((chip) => chip.count > 0);
+  let chipRow = '';
+  if (chips.length > 0) {
+    const units =
+      chips.reduce((sum, chip) => sum + 1 + CHIP_TEXT_GAP + String(chip.count).length, 0) +
+      CHIP_SPACING * (chips.length - 1);
+    const size = Math.min(CHIP_MAX_SIZE, Math.max(1, Math.floor((CARD_WIDTH - 2 * MARGIN) / units)));
+    let x = (CARD_WIDTH - units * size) / 2;
+    chipRow = chips
+      .map((chip) => {
+        const squareX = Math.round(x);
+        const countX = Math.round(x + size * (1 + CHIP_TEXT_GAP));
+        x += size * (1 + CHIP_TEXT_GAP + String(chip.count).length + CHIP_SPACING);
+        return (
+          `<rect x="${squareX}" y="${Math.round(CHIP_ROW_Y - size / 2)}" width="${size}" height="${size}" fill="${chip.color}" shape-rendering="crispEdges"/>` +
+          `<text x="${countX}" y="${CHIP_ROW_Y}" dy="0.16em" dominant-baseline="middle" font-family="${CARD_FONT}" font-size="${size}" fill="${chip.color}">${chip.count}</text>`
+        );
+      })
+      .join('');
+  }
+
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_WIDTH}" height="${CARD_HEIGHT}" viewBox="0 0 ${CARD_WIDTH} ${CARD_HEIGHT}">`,
     `<rect width="${CARD_WIDTH}" height="${CARD_HEIGHT}" fill="${BG}"/>`,
     `<rect x="${lockupX}" y="${WORD_ROW_Y - WORD_NODE_SIZE / 2}" width="${WORD_NODE_SIZE}" height="${WORD_NODE_SIZE}" fill="${ACCENT}" shape-rendering="crispEdges"/>`,
     `<text x="${wordX}" y="${WORD_ROW_Y}" dy="0.16em" dominant-baseline="middle" font-family="${CARD_FONT}" font-size="${wordSize}" font-variant-ligatures="none" fill="${ACCENT}">${escapeSvgText(word)}</text>`,
-    `<text x="${cx}" y="390" text-anchor="middle" font-family="${CARD_FONT}" font-size="76" fill="${FG}">${score} ${score === 1 ? unit.one : unit.many}</text>`,
-    `<text x="${cx}" y="470" text-anchor="middle" font-family="${CARD_FONT}" font-size="30" fill="${MUTED}">${dateForDayNumber(dayNumber)}</text>`,
+    `<text x="${cx}" y="${WORD_SCORE_Y}" text-anchor="middle" font-family="${CARD_FONT}" font-size="76" fill="${FG}">${score} ${score === 1 ? unit.one : unit.many}</text>`,
+    chipRow,
+    `<text x="${cx}" y="${WORD_DATE_Y}" text-anchor="middle" font-family="${CARD_FONT}" font-size="30" fill="${MUTED}">${dateForDayNumber(dayNumber)}</text>`,
     `</svg>`,
   ].join('');
 }

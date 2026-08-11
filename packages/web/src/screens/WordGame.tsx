@@ -8,10 +8,12 @@ import {
   bonusSeconds,
   judgeWordGuess,
   rarityOf,
+  rarityStep,
   replayWordRun,
   totalBonus,
   wordGuessKey,
   CLAIM_ZONE,
+  RARITY_NAMES,
 } from '../game/wordGame';
 import { MISS_COLOR, RARITY_COLORS, strikeFor } from '../components/rarity';
 import { buildWordBoard } from '../game/wordBoard';
@@ -158,6 +160,15 @@ function WordRound({
   // the run is over; that is the clock's, above.
   const run = useMemo(() => replayWordRun(ranks, tried), [ranks, tried]);
   const score = run.claimed.length;
+
+  // The claims broken down by grade, ladder order — what the end screen's share text, the
+  // share token and the OG card all carry. Derived from the same replay as the score, so
+  // the breakdown and the count can never disagree (their sum IS the score).
+  const rarityCounts = useMemo(() => {
+    const counts = RARITY_NAMES.map(() => 0);
+    for (const entry of run.claimed) counts[rarityStep(rarityOf(entry.freq, corpusSize))] += 1;
+    return counts;
+  }, [run, corpusSize]);
 
   // End presentation is transient, not persisted. A live run lets the clock's last moment
   // play out, then the field arrives and the prompt leaves, then the keyboard drops and
@@ -530,7 +541,7 @@ function WordRound({
         {showResults && !keyboardLeaving && (
           <div className="word-footer-result">
             <WordEndScreen
-              score={score}
+              counts={rarityCounts}
               dayNumber={dayNumber}
               lang={lang}
               word={puzzle.word.word}

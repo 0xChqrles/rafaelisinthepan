@@ -797,12 +797,24 @@ it to the local store — see `packages/backend/AGENTS.md`).
   second while the next guess was already typeable). `SCROLL_MIN_MS`/`SCROLL_MAX_MS`/
   `SCROLL_PX_PER_MS`, the focused rank and the rAF loop are all gone. The end screen
   (`components/WordEndScreen.tsx`) is the named `<n> WORDS/MOTS` count + SHARE via the
-  v4 word token; **the score OG card repeats the in-game terminus — the accented display
-  word in solved blue with its large blue square on the left — above the count and date**
-  (decided 2026-08-08; the token carries that display word so the preview is self-contained).
+  v5 word token — which carries the claims PER RARITY GRADE, ladder order; the screen
+  takes that breakdown (`counts`, computed by `WordGame` from the one replay) and DERIVES
+  the count as its sum, so the tally, the text, the token and the card speak one set of
+  numbers (decided 2026-08-11, superseding the v4 single-score token); **the score OG card
+  repeats the in-game terminus — the accented display word in solved blue with its large
+  blue square on the left — above the count, the rarity CHIP ROW (one grade-coloured
+  square + count per claimed grade, commonest first, zero grades omitted) and the date**
+  (terminus decided 2026-08-08, the chip row 2026-08-11; the token carries the display
+  word and the breakdown so the preview is self-contained).
   **The plain share text puts `🟦 <DISPLAY WORD IN LOCALE-AWARE UPPERCASE>` on its own
-  line, with one blank line between it and both the named score headline and URL**
-  (decided 2026-08-08; accents stay display accents, never a slug).
+  line with the rarity BEAD ROW directly under it — `⚪7 🟢3 🔵1 🟣1 🩷1`
+  (`RARITY_EMOJI`/`rarityShareRow` in `components/rarity.ts`: one bead + count per grade
+  claimed, commonest first, zeroes omitted, the whole line omitted on a scoreless run) —
+  and one blank line between that result block and both the named score headline and URL**
+  (word line decided 2026-08-08, bead row 2026-08-11; accents stay display accents, never
+  a slug). The beads are CIRCLES (plus the pink heart — no pink circle exists and red is
+  MISS's), never squares, so 🟦 stays the message's one square and keeps marking the
+  day's word.
   Its tally ends on a one-shot scale pop (`score-land`, 2026-08-07) — the
   count is this screen's LAST beat, with no ruler colorize following it as in the sentence
   tray, so the number marks its own landing (never at 0, never on rehydration, collapsed

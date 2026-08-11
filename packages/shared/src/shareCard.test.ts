@@ -12,6 +12,8 @@ import {
   decodeLegacyShareTarget,
   encodeWordResult,
   decodeWordResult,
+  wordShareScore,
+  WORD_RARITY_GRADES,
   type ShareResult,
 } from './shareCard';
 
@@ -221,23 +223,32 @@ describe('decodeLegacyShareTarget — where an OLD link should still land', () =
 });
 
 // Word mode's token (#156): its own format in the same version namespace — the common
-// result header plus the accented display word needed by the self-contained OG card.
+// `version | lang | day` opening, the claims PER RARITY GRADE (v5 — commonest first; the
+// claim count is DERIVED as their sum, never stored), then the accented display word
+// needed by the self-contained OG card.
 describe('encodeWordResult / decodeWordResult', () => {
-  const word = { lang: 'fr', dayNumber: 20638, score: 27, word: 'forêt' };
+  const word = { lang: 'fr', dayNumber: 20638, counts: [7, 3, 1, 1, 0], word: 'forêt' };
 
-  it('round-trips lang, dayNumber, score and the accented display word exactly', () => {
+  it('round-trips lang, dayNumber, the per-rarity counts and the accented display word', () => {
     expect(decodeWordResult(encodeWordResult(word))).toEqual(word);
-    expect(
-      decodeWordResult(encodeWordResult({ ...word, lang: 'en', score: 0, word: 'heart' })),
-    ).toEqual({
-      ...word,
-      lang: 'en',
-      score: 0,
-      word: 'heart',
-    });
+    const none = { ...word, lang: 'en', counts: [0, 0, 0, 0, 0], word: 'heart' };
+    expect(decodeWordResult(encodeWordResult(none))).toEqual(none);
   });
 
-  it('stays compact + URL-safe with the display word included', () => {
+  it("derives the claim count as the counts' sum — the two can never disagree", () => {
+    expect(wordShareScore(word.counts)).toBe(12);
+    expect(wordShareScore([0, 0, 0, 0, 0])).toBe(0);
+    const d = decodeWordResult(encodeWordResult(word));
+    expect(wordShareScore(d!.counts)).toBe(12);
+  });
+
+  it('refuses a breakdown that is not exactly one count per grade', () => {
+    expect(WORD_RARITY_GRADES).toBe(5);
+    expect(() => encodeWordResult({ ...word, counts: [12] })).toThrow(RangeError);
+    expect(() => encodeWordResult({ ...word, counts: [...word.counts, 0] })).toThrow(RangeError);
+  });
+
+  it('stays compact + URL-safe with the breakdown and display word included', () => {
     const token = encodeWordResult(word);
     expect(token).toMatch(/^[A-Za-z0-9_-]+$/);
     expect(token.length).toBeLessThanOrEqual(24);
