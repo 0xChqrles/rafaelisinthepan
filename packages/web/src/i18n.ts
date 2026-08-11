@@ -149,8 +149,8 @@ const STRINGS = {
     fr: 'Première partie ?',
   },
   inviteText: {
-    en: 'Learn how to play in 30 seconds.',
-    fr: 'Apprends à jouer en 30 secondes.',
+    en: 'Learn how to play in 60 seconds.',
+    fr: 'Apprends à jouer en 60 secondes.',
   },
   inviteTutorial: { en: 'TUTORIAL', fr: 'TUTORIEL' },
   inviteSkip: { en: 'SKIP', fr: 'PASSER' },
