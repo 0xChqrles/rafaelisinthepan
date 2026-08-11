@@ -1,5 +1,6 @@
-// The English onboarding script (#51, re-arced by #155). Edit THIS file (and the tut* copy
-// in i18n.ts) to change the onboarding — the components read everything from here.
+// The English onboarding script (#51, re-arced by #155; rarity ending 2026-08-11). Edit
+// THIS file (and the tut* copy in i18n.ts) to change the onboarding — the components read
+// everything from here.
 //
 // The board is a REAL neighborhood: `en.word.json` is the #154 single-word artifact for
 // OCEAN, pruned to what the tutorial needs. Regenerate it with (both from the REPO ROOT):
@@ -7,37 +8,29 @@
 //   pnpm gen:word ocean --lang en
 //   node packages/web/scripts/prune-word-map.mjs \
 //     --in packages/generation/output/single-word/en/ocean.json \
-//     --out packages/web/src/tutorial/scripts/en.word.json --keep forest
+//     --out packages/web/src/tutorial/scripts/en.word.json --top 150 --keep forest
 //
-// (the prune keeps the word, the road zone — generation's flat top-ROAD_TOP for a word
-// artifact — and the groups of the `--keep` words, which is how the "far" guess survives
-// being outside that zone).
+// (the prune keeps the word, the top-150 groups — the committed zone, sized so the mix
+// ladder and the free find have a real near field to play on — and the groups of the
+// `--keep` words, which is how the "far" guess survives being outside that zone).
 //
-// The committed map holds a 150-group road zone: it was generated before ROAD_TOP went
-// 150 -> 250 on 2026-08-07, and the prune copies whatever zone its input carries. Unlike fr,
-// re-running the recipe today CHANGES THE LESSON and needs a decision first, so it was left
-// alone: at 250 this neighborhood re-partitions into FOUR roads, 160/45/28/17 — the coast and
-// the planet fuse into one 160-group trunk, the named waters (atlantic, pacific,
-// mediterranean, archipelago) split off, and the planet (earth, equator, sky, moon, neptune)
-// comes back as a fourth. That needs a fourth line of theme copy (`tutTheme4`'s en string is
-// still the `the fourth` placeholder, since this map has only ever shipped three), and
-// scripts.test.ts fails until it gets one. It is also the shape the paragraph below rejects:
-// one dominant trunk plus smaller roads is why LIGHTHOUSE lost this slot in the first place.
+// The committed map predates #163's `freq` and still shows it: none of its entries carry
+// the field, which is fine — the tutorial's ladder teaches the GRADES, not this board's
+// data. It also predates 2026-08-11, when the semantic `road` fields were stripped from
+// the committed maps (the themes ending was their only reader; gen:word no longer emits
+// them at all).
 //
-// OCEAN was picked over LIGHTHOUSE, the first candidate, on ROUTE legibility: its
-// neighborhood splits into three well-populated roads a player can name at a glance — the
-// coastline (sea, waters, atlantic, shores), the ocean at planet scale (coral, arctic,
-// currents, antarctica, earth) and seafaring (vessel, ship, sail, voyage, whales) — where lighthouse's split
-// 135/15 and the small road reads as an outlier rather than a sense. Clarity beats en/fr
-// symmetry (#155), so the two languages do not share a word.
+// OCEAN was picked over LIGHTHOUSE, the first candidate, back when the ending taught the
+// map's roads; nothing in the current arc depends on how this neighborhood forks, so the
+// word simply stays. Clarity beats en/fr symmetry (#155) — the two languages do not share
+// a word.
 //
-// The arc: the scramble ladder walks OCEAN out to its 96th neighbor (port — the start word of
-// the board, inside generation's own 50-150 start band), then three gated guesses teach
-// distance (forest, 214: farther, hint stays), MISS (violin, which the real map does not rank
-// at all), and improvement (boat, 45: closer, hint moves). The player then finds their way
-// back to OCEAN with free typing, and taps the word they found — its THEMES take its place,
-// one cloud at a time, the routes teaser closes on the general principle, and PLAY ends the
-// lesson.
+// The arc: the scramble ladder walks OCEAN out to its 96th neighbor (port — the start word
+// of the board, inside generation's own 50-150 start band), then three gated guesses teach
+// distance (forest, 214: farther, hint stays), MISS (violin, which the real map does not
+// rank at all), and improvement (boat, 45: closer, hint moves). The player then finds
+// their way back to OCEAN with free typing, and the ending states the game's other core
+// concept — word RARITY, the five-grade ladder — before PLAY ends the lesson.
 //
 // scripts.test.ts replays this file and fails if an edit breaks the lesson arc.
 import type { WordPuzzle } from '@whippin/shared';
@@ -81,18 +74,9 @@ const script: TutorialScript = {
     { kind: 'guess', expect: 'violin', copyKey: 'tutGuessMiss' },
     { kind: 'guess', expect: 'boat', copyKey: 'tutGuessCloser' },
     { kind: 'find', target: word.slug, copyKey: 'tutFind', nudgeKey: 'tutFindNudge' },
-    // The ending: tap the word you found — its themes take its place, one cloud at a time.
-    // Theme 0 is the coast (sea, waters, atlantic, shores), theme 1 the planet (coral,
-    // arctic, currents, earth), theme 2 seafaring (vessel, ship, sail, voyage) — the map's
-    // road order, road 0 = rank 1.
-    {
-      kind: 'tap',
-      introCopyKey: 'tutThemesIntro',
-      tapCopyKey: 'tutTap',
-      clickCopyKey: 'tutClick',
-      themeCopyKeys: ['tutTheme1', 'tutTheme2', 'tutTheme3'],
-      closeCopyKey: 'tutThemes',
-    },
+    // The ending: the second core concept — every word has a RARITY, said over the five-
+    // grade ladder — then PLAY.
+    { kind: 'rarity', introCopyKey: 'tutRarityIntro', ladderCopyKey: 'tutRarity' },
   ],
 };
 

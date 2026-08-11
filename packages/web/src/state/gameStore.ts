@@ -173,6 +173,11 @@ interface PersistedState {
   // The onboarding tutorial (#51) has been completed or skipped. Global, not
   // per-language — the mechanic is the same in both.
   onboarded: boolean;
+  // The sentence game's one-time instructions gate has been passed (2026-08-11). Unlike
+  // Word mode's gate — whose START is mandatory because it starts the clock — the sentence
+  // gate exists only to state the rules, so it is shown ONCE ever, globally: the rules are
+  // the same in both languages and on every day.
+  sentenceRulesSeen: boolean;
   // Per-language SET of solved game days (ascending, deduped dayNumbers). The raw fact,
   // not the derived stat: the streak counters (current/best) are DERIVED from this at read
   // time (game/streak.ts), never persisted (#56). The day-set shape is what makes a future
@@ -207,6 +212,9 @@ interface GameState extends PersistedState {
 
   // Mark the onboarding tutorial as seen (finish AND skip both count — never re-nag).
   setOnboarded: () => void;
+
+  // Mark the sentence game's one-time instructions gate as passed (its PLAY tap).
+  markSentenceRulesSeen: () => void;
 
   // Record a solved game day for the streak (#56). No-op when `solvedDay` is already in
   // the set (re-solves / rehydration never double-count) OR when `solvedDay < activeDay -
@@ -306,6 +314,10 @@ function freshRound(initialHoles: RuntimeHole[]): RoundProgress {
 //     exist — so every one of them is DROPPED (the standing no-back-compat rule; the
 //     sentence rounds, the solved days and the streak are untouched). The cost is a
 //     device-local word history that predates the timer, which is pre-launch data.
+//   v8 adds `sentenceRulesSeen` (2026-08-11): the sentence game's one-time instructions
+//     gate. Older blobs get false — deliberately NOT grandfathered the way `onboarded`
+//     is, because the gate's third line teaches the history tap, which is newer than any
+//     existing player's play state; every player sees it exactly once.
 export function migratePersisted(persisted: unknown, version: number): PersistedState {
   if (version < 1) {
     return {
@@ -314,6 +326,7 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
       lastLang: null,
       lastMode: null,
       onboarded: false,
+      sentenceRulesSeen: false,
       solvedDays: {},
     };
   }
@@ -329,7 +342,8 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
   // run cannot be re-read as a clock (see the v7 note above).
   const wordRounds = version < 7 ? {} : (p.wordRounds ?? {});
   const lastMode = p.lastMode === 'word' || p.lastMode === 'sentence' ? p.lastMode : null;
-  return { rounds, wordRounds, lastLang, lastMode, onboarded, solvedDays };
+  const sentenceRulesSeen = p.sentenceRulesSeen === true;
+  return { rounds, wordRounds, lastLang, lastMode, onboarded, sentenceRulesSeen, solvedDays };
 }
 
 export const useGameStore = create<GameState>()(
@@ -340,6 +354,7 @@ export const useGameStore = create<GameState>()(
       lastLang: null,
       lastMode: null,
       onboarded: false,
+      sentenceRulesSeen: false,
       solvedDays: {},
       activeKey: null,
       activeWordKey: null,
@@ -361,6 +376,11 @@ export const useGameStore = create<GameState>()(
       setOnboarded: () => {
         if (get().onboarded) return;
         set({ onboarded: true });
+      },
+
+      markSentenceRulesSeen: () => {
+        if (get().sentenceRulesSeen) return;
+        set({ sentenceRulesSeen: true });
       },
 
       recordSolve: (lang, solvedDay, activeDay) => {
@@ -445,23 +465,37 @@ export const useGameStore = create<GameState>()(
         const round = s.wordRounds[key];
         if (!round || round.startedAt === null || round.deadline === null) return false;
 
-        // The guess is judged against the deadline AS OF NOW — a guess in flight when the
-        // clock dies is dead — and against the deadline BEFORE this claim, so a claim
-        // cannot pay for the moment it arrived in. Past it the round is FROZEN, repairs
-        // included: re-pricing a finished run could hand it a later deadline and bring it
-        // back to life, and a run happened under the map it happened under.
-        if (Date.now() > round.deadline) return false;
-
         const startedAt = round.startedAt;
         const price = (cache: WordRunCache) => ({
           claimed: cache.claimed,
           deadline: startedAt + runMs(cache.bonus),
         });
+
+        // The guess is judged against the deadline AS OF NOW — a guess in flight when the
+        // clock dies is dead — and against the deadline BEFORE this claim, so a claim
+        // cannot pay for the moment it arrived in. A deadline already spent in the stored
+        // round is FROZEN, repairs included: re-pricing it could move it later and bring a
+        // finished run back to life.
+        const now = Date.now();
+        if (now > round.deadline) return false;
+
+        // A same-word republish keeps the authoritative log but can change what its claims
+        // are worth. Check the deadline implied by the CURRENT map before appending: the
+        // stored deadline may still be live while the re-priced one is already spent, and
+        // a new claim must not buy its way back across that gap. This repair is safe here
+        // because the stored round was live at the start of the write; the guard above still
+        // prevents a genuinely finished persisted round from being revived.
+        const current = price(replay(round.tried));
+        if (now > current.deadline) {
+          if (round.claimed !== current.claimed || round.deadline !== current.deadline) {
+            set({ wordRounds: { ...s.wordRounds, [key]: { ...round, ...current } } });
+          }
+          return false;
+        }
         if (round.tried.includes(typed)) {
           // Nothing to append, but `tried` is authoritative and a same-word republish can
           // have changed what the SAME log is worth — repair the cached half rather than
           // leaving it describing an older rank map.
-          const current = price(replay(round.tried));
           if (round.claimed !== current.claimed || round.deadline !== current.deadline) {
             set({ wordRounds: { ...s.wordRounds, [key]: { ...round, ...current } } });
           }
@@ -528,7 +562,7 @@ export const useGameStore = create<GameState>()(
     {
       name: 'whippin-round',
       storage,
-      version: 7, // v7: word rounds are TIMED (#163 — see migratePersisted)
+      version: 8, // v8: the sentence gate's seen-once flag (see migratePersisted)
       migrate: migratePersisted,
       // Persist rounds (both modes'), last language/mode, the onboarding flag and the
       // solved-day sets; the active keys and the actions are transient. Each language's
@@ -539,6 +573,7 @@ export const useGameStore = create<GameState>()(
         lastLang: s.lastLang,
         lastMode: s.lastMode,
         onboarded: s.onboarded,
+        sentenceRulesSeen: s.sentenceRulesSeen,
         solvedDays: capAllSolvedDays(s.solvedDays),
       }),
     },

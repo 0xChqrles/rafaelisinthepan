@@ -1,22 +1,22 @@
-// The onboarding tutorial's script contract (#51, re-arced by #155). The WHOLE tutorial —
-// the board, the scripted guesses, the coach-mark sequence — is data in scripts/<lang>.ts.
-// Rewriting the onboarding later means editing those files (and the i18n copy keys they
-// reference): zero component changes. Per-step outcomes of a guess are NEVER encoded in the
-// steps — the Tutorial derives them from the board's rank map at runtime, exactly like the
-// real game, so a script edit cannot drift out of sync with its own ranks (scripts.test.ts
-// guards the intended lesson arc).
+// The onboarding tutorial's script contract (#51, re-arced by #155; ending re-arced again
+// 2026-08-11 — the CORE CONCEPTS arc). The WHOLE tutorial — the board, the scripted guesses,
+// the coach-mark sequence — is data in scripts/<lang>.ts. Rewriting the onboarding later
+// means editing those files (and the i18n copy keys they reference): zero component changes.
+// Per-step outcomes of a guess are NEVER encoded in the steps — the Tutorial derives them
+// from the board's rank map at runtime, exactly like the real game, so a script edit cannot
+// drift out of sync with its own ranks (scripts.test.ts guards the intended lesson arc).
 //
-// ONE board, one arc (#155, superseding the two-stage version): a single word and its REAL
-// neighborhood — the mix demo walks the secret out to the start word, three gated guesses
-// demonstrate distance / MISS / improvement, the player finds their way back, and then taps
-// the word they found — its THEMES then take its place, one cloud at a time, closing on the
-// routes teaser. The unguided bakery sentence that used to follow is gone: analytics said it
-// was widely skipped, its one lesson (a guess filling several holes) is discoverable in
-// play, and the ending it freed is the only place the game teaches ROUTES.
+// ONE board, one arc: a single word and its REAL neighborhood — the mix demo walks the
+// secret out to the start word, three gated guesses demonstrate distance / MISS /
+// improvement, the player finds their way back, and the ending states the game's OTHER core
+// concept: word RARITY, the five-grade ladder every mode speaks. The tutorial teaches the
+// concepts the modes share (semantic distance, rarity) and NOTHING mode-specific — each
+// mode's own rules live on that mode's pre-game gate (Word mode's gate screen, the sentence
+// game's one-time PLAY gate). The THEMES/routes ending this replaces (2026-08-11) taught the
+// semantic road clusters, which the game no longer draws anywhere.
 //
 // The board's ranks are a REAL generated neighborhood (a #154 single-word artifact, pruned —
-// see scripts/<lang>.ts). They have to be: the themes ARE the map's #115 roads, and the
-// hand-authored map this used to carry had none at all.
+// see scripts/<lang>.ts): the mix ladder and the free find play against real ranks.
 
 import type { Puzzle } from '@whippin/shared';
 import type { UiKey } from '../i18n';
@@ -52,32 +52,16 @@ export type TutorialStep =
   // board's map, or MISS) — but after 3 consecutive MISSes the prompt swaps to `nudgeKey` in
   // case they forgot the word.
   | { kind: 'find'; target: string; copyKey: UiKey; nudgeKey: UiKey }
-  // The ending (#155). It opens on TWO beats, one idea each: `introCopyKey` states the
-  // CLAIM — several themes can live inside one word — and the tray's NEXT advances it; then
-  // the word becomes TAPPABLE (the same button and the same ambient wave as a real round)
-  // under the gesture line, in the input device's own verb (`tapCopyKey` on a coarse
-  // pointer, `clickCopyKey` otherwise). The tap
-  // REPLACES the word with its THEMES, shown as clouds of words ONE AT A TIME (findings
-  // 2026-08-04 — first the route line, then one road at a time, finally clouds: the line
-  // was too much information at once, and a cloud of themed words with their exponents says
-  // "these belong together, this close" with nothing to decode): stage k is theme k's cloud
-  // alone, in that route's color, with `themeCopyKeys[k]` naming it; each NEXT THEME press
-  // swaps to the next cloud. `themeCopyKeys` is ordered by the map's road ids — road 0
-  // holds rank 1 — and must name every road the board's map actually ships
-  // (scripts.test.ts). After the last theme the close shows the ROUTES TEASER — the themes'
-  // colored lines with every near-field group riding them as stations, a glimpse of the map
-  // every word offers — `closeCopyKey` states the general
-  // principle, and the tray offers PLAY,
+  // The ending (2026-08-11, superseding the #155 themes tap): the game's SECOND core
+  // concept, word RARITY. Two beats, one idea each — the tutorial's own grammar:
+  // `introCopyKey` states the CLAIM (every word has a rarity) over the found word, and the
+  // tray's NEXT advances it; then the word gives way to the RARITY LADDER — the five grade
+  // names in their own colours, commonest first (RarityLadder) — while `ladderCopyKey`
+  // states what the ladder means (the rarer, the more precious). The tray then offers PLAY,
   // which ends the tutorial. There is no graduation screen, because there is no score to
-  // show.
-  | {
-      kind: 'tap';
-      introCopyKey: UiKey;
-      tapCopyKey: UiKey;
-      clickCopyKey: UiKey;
-      themeCopyKeys: UiKey[];
-      closeCopyKey: UiKey;
-    };
+  // show. What a grade PAYS is deliberately not here: that is Word mode's rule, and it
+  // lives on Word mode's own gate.
+  | { kind: 'rarity'; introCopyKey: UiKey; ladderCopyKey: UiKey };
 
 export interface TutorialScript {
   puzzle: Puzzle; // same schema as a real puzzle (parsePuzzle-valid)

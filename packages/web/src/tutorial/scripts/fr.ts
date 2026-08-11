@@ -1,6 +1,7 @@
-// The French onboarding script (#51, re-arced by #155) — same one-board lesson arc as en.ts
-// (see the header there). A French extra it teaches for free: accented display words are
-// typed UNACCENTED, which the find step forces (the ladder words float accented).
+// The French onboarding script (#51, re-arced by #155; rarity ending 2026-08-11) — same
+// one-board lesson arc as en.ts (see the header there). A French extra it teaches for
+// free: accented display words are typed UNACCENTED, which the find step forces (the
+// ladder words float accented).
 //
 // The board is a REAL neighborhood: `fr.word.json` is the #154 single-word artifact for
 // TROPIQUES, pruned to what the tutorial needs. Regenerate it with (both from the REPO ROOT):
@@ -8,35 +9,29 @@
 //   pnpm gen:word tropiques --lang fr --form tropiques=n:s
 //   node packages/web/scripts/prune-word-map.mjs \
 //     --in packages/generation/output/single-word/fr/tropiques.json \
-//     --out packages/web/src/tutorial/scripts/fr.word.json --keep neige
+//     --out packages/web/src/tutorial/scripts/fr.word.json --top 150 --keep neige
 //
-// The committed map holds a 150-group ROAD ZONE — it was generated before ROAD_TOP went
-// 150 -> 250 on 2026-08-07, and the prune copies whatever zone its input carries. Re-running
-// the recipe today therefore produces a LONGER board, and what that costs and does not cost
-// was measured rather than assumed: the lesson is untouched (the same four roads in the same
-// order, the same themes — climat / îles / globe / vacances — and every anchor the arc reads
-// off the map identical: soleil^12, ananas^97, lagon^22, neige^353, and every display form
-// over ranks 1..150 unchanged), while the embedded JSON goes 19.6 KB -> 35.2 KB for a screen
-// a player sees once. Regenerating is safe here; it is not free.
+// (the prune keeps the word, the top-150 groups — the committed zone — and the group of
+// the `--keep` word, the lesson's deliberately-outside "far" guess). The committed map
+// predates #163's `freq` (no entry carries it — fine, the ladder teaches the GRADES, not
+// this board's data) and had its semantic `road` fields stripped on 2026-08-11, when the
+// themes ending — their only reader — was replaced and gen:word stopped emitting them.
 //
-// TROPIQUES replaced PHARE on findings 2026-08-04: phare is a homonym (lighthouse /
-// headlight), so its routes read as two DEFINITIONS rather than as facets of one idea — and
-// the routes lesson is about facets. Tropiques has a single clear definition and four clear
-// routes: the climate (tropicales, climat, alizés, torride), the islands (cocotier,
-// caraïbe, palmier, lagon), the globe (équateur, hémisphère, sud) and the holiday feel
-// (soleil, farniente, bronzette, tong) — each nameable at a glance. The AGREEMENT is
-// singular (`--form tropiques=n:s`, findings 2026-08-04: plural-agreed neighbors read
-// oddly on a word board), while the word itself keeps its natural plural display —
-// « tropiques » is the rank-0 display either way.
+// TROPIQUES replaced PHARE on findings 2026-08-04, back when the ending taught the map's
+// roads (phare is a homonym and its routes read as two definitions). Nothing in the
+// current arc depends on how the neighborhood forks, so the word simply stays. The
+// AGREEMENT is singular (`--form tropiques=n:s`, findings 2026-08-04: plural-agreed
+// neighbors read oddly on a word board), while the word itself keeps its natural plural
+// display — « tropiques » is the rank-0 display either way.
 //
 // The arc: the scramble ladder walks TROPIQUES out to its 12th neighbor (soleil) and on to
 // its 97th (ananas — the start word, inside generation's own 50-150 start band, and
-// unmistakably tropical), then three gated guesses teach distance (neige, 353: farther, hint
-// stays — snow is INTUITIVELY the anti-tropics, climate-adjacent but far, on a READABLE
-// scale), MISS (guitare, which the real map does not rank at all), and improvement (lagon,
-// 22: closer, hint moves). The player then finds their way back to TROPIQUES, and taps the
-// word they found — its THEMES take its place, one cloud at a time, the routes teaser closes
-// on the general principle, and JOUER ends the lesson.
+// unmistakably tropical), then three gated guesses teach distance (neige, 353: farther,
+// hint stays — snow is INTUITIVELY the anti-tropics, climate-adjacent but far, on a
+// READABLE scale), MISS (guitare, which the real map does not rank at all), and
+// improvement (lagon, 22: closer, hint moves). The player then finds their way back to
+// TROPIQUES, and the ending states the game's other core concept — word RARITY, the
+// five-grade ladder — before JOUER ends the lesson.
 import type { WordPuzzle } from '@whippin/shared';
 import type { TutorialScript } from '../script';
 import artifact from './fr.word.json';
@@ -76,18 +71,9 @@ const script: TutorialScript = {
     { kind: 'guess', expect: 'guitare', copyKey: 'tutGuessMiss' },
     { kind: 'guess', expect: 'lagon', copyKey: 'tutGuessCloser' },
     { kind: 'find', target: word.slug, copyKey: 'tutFind', nudgeKey: 'tutFindNudge' },
-    // La fin : toucher le mot trouvé — ses thèmes prennent sa place, un nuage à la fois.
-    // Thème 0 : le climat (tropicales, climat, alizés) ; thème 1 : les îles (cocotier,
-    // palmier, lagon) ; thème 2 : le globe (équateur, hémisphère, sud) ; thème 3 : les
-    // vacances (soleil, farniente, tong) — ordre des routes de la carte, route 0 = rang 1.
-    {
-      kind: 'tap',
-      introCopyKey: 'tutThemesIntro',
-      tapCopyKey: 'tutTap',
-      clickCopyKey: 'tutClick',
-      themeCopyKeys: ['tutTheme1', 'tutTheme2', 'tutTheme3', 'tutTheme4'],
-      closeCopyKey: 'tutThemes',
-    },
+    // La fin : le second concept du jeu — chaque mot a une RARETÉ, dite sur l'échelle des
+    // cinq grades — puis JOUER.
+    { kind: 'rarity', introCopyKey: 'tutRarityIntro', ladderCopyKey: 'tutRarity' },
   ],
 };
 

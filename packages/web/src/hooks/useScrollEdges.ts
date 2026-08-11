@@ -2,9 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import type { RefObject } from 'react';
 
 // Which way a scroller still runs past its visible edges — the state behind the TORN
-// dashed rules a scrolling drawing wears on the side that continues (the onboarding's
-// routes teaser, #155, and Word mode's board, #156, which both draw a line taller than
-// its window and must not let an edge read as the end of the map).
+// dashed rules a scrolling drawing wears on the side that continues (Word mode's board,
+// #156 — and the onboarding's routes teaser, #155, until its 2026-08-11 retirement —
+// a line taller than its window must not let an edge read as the end of the map).
 //
 // Shared because the details are the whole of it, and two copies would drift:
 //   - the SLACK: a scrollport parked exactly on an edge reports a fractional remainder

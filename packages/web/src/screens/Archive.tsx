@@ -9,6 +9,7 @@ import { useGameStore, roundKeyForDay } from '../state/gameStore';
 import { isComplete, statusOf, wordStatusOf, srStatus, type Status } from '../state/status';
 import { currentStreak } from '../game/streak';
 import useToday from '../hooks/useToday';
+import { useDeadlineRefresh } from '../hooks/useCountdown';
 import streakSmall from '../assets/streak-small.png';
 import { t } from '../i18n';
 import {
@@ -99,6 +100,17 @@ export default function Archive({ lang, mode = 'sentence' }: { lang: LangCode; m
   );
 
   const cells = useMemo(() => monthGrid(current, weekStart), [current, weekStart]);
+  // Only visible cells need a wake-up. A live Word run can expire while its archive stays
+  // open; without this one-shot refresh, Date.now() would not make that cell turn done.
+  useDeadlineRefresh(
+    mode === 'word'
+      ? cells.map((date) =>
+          date === null
+            ? null
+            : wordRounds[roundKeyForDay(dayNumber(date), lang, 'word')]?.deadline,
+        )
+      : [],
+  );
 
   return (
     <div className="archive">

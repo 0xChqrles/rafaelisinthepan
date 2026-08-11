@@ -22,10 +22,11 @@ import SolvedScreen from '../components/SolvedScreen';
 import StandingsLineup from '../components/StandingsLineup';
 import LazyStreakDialog, { preloadStreakDialog } from '../components/LazyStreakDialog';
 import SolvedCaption from '../components/SolvedCaption';
-import RouteModal from '../components/RouteModal';
+import HistoryModal from '../components/HistoryModal';
+import CoachText from '../tutorial/CoachText';
 import LoadError from '../components/LoadError';
-import { buildRoute, hasRoute } from '../game/route';
-import { t, ariaExploreHole, srHoleResult, srModelAhead, srModelLead } from '../i18n';
+import { buildHistory } from '../game/history';
+import { t, ariaHoleHistory, srHoleResult, srModelAhead, srModelLead } from '../i18n';
 import { lineupModel, lineupEvents, hasDisplayEntries, displayEntries } from '../game/benchmark';
 import { track } from '../analytics';
 import { fold } from '@whippin/shared';
@@ -158,6 +159,8 @@ function Round({
 
   const ensureRound = useGameStore((s) => s.ensureRound);
   const recordGuess = useGameStore((s) => s.recordGuess);
+  const sentenceRulesSeen = useGameStore((s) => s.sentenceRulesSeen);
+  const markSentenceRulesSeen = useGameStore((s) => s.markSentenceRulesSeen);
   const improveHole = useGameStore((s) => s.improveHole);
   const syncProgress = useGameStore((s) => s.syncProgress);
   const recordSolve = useGameStore((s) => s.recordSolve);
@@ -243,6 +246,34 @@ function Round({
 
   const solved = holes.every((h) => h.rank === 0); // sentence discovered -> round over
   const allWordsResolved = solved && resolvedHoleIndices.size === holes.length;
+  // The one-time instructions GATE (2026-08-11): the mode's own rules, stated ONCE ever
+  // before the first sentence round — the phrase is on screen, but the keyboard, the prompt
+  // and the model characters hold back behind the instructions and PLAY. Word mode's gate
+  // is mandatory (its START starts the clock); this one exists only for the rules, so it is
+  // a persisted seen-once flag and never returns. Derived, not state: a round already in
+  // progress (or solved) has nothing left to teach, and PLAY closes it by setting the flag.
+  const gateOpen = !sentenceRulesSeen && !solved && guessCount === 0;
+  // The history-tap rule speaks the input device's own verb — the same coarse-pointer test
+  // as the streak hint and the retired tutorial gesture line.
+  const coarse = useMemo(
+    () =>
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(pointer: coarse)').matches,
+    [],
+  );
+  // The rules as ONE bulleted string: what the gate's dialog box types, and what the
+  // sr-only mirror states (the visible CoachText is aria-hidden, like every coach box).
+  const gateRules = useMemo(
+    () =>
+      [
+        t(lang, 'sentenceRulesGoal'),
+        t(lang, coarse ? 'sentenceRulesHistoryTap' : 'sentenceRulesHistoryClick'),
+      ]
+        .map((line) => `- ${line}`)
+        .join('\n'),
+    [lang, coarse],
+  );
   // Whether a lineup is on screen at all — a puzzle with no renderable opponents must
   // not leave the solved swap waiting on a teleport-out that will never play (#110).
   const hasLineup = hasDisplayEntries(benchmark);
@@ -539,30 +570,28 @@ function Round({
     syncProgress(progress);
   }, [progress, syncProgress]);
 
-  // --- route map (#117): each hole opens its own neighborhood, drawn as a journey ---
-  // Which holes have one, and under which number. Numbering is by DISTINCT secret in
+  // --- the hole HISTORY modal (2026-08-10, replacing the #117 route map): each hole opens
+  // the round's guess log ranked against its own secret. Numbering is by DISTINCT secret in
   // sentence order (1..3) — the same numbers the run ruler's ticks and the share row's
   // keycaps use — so two occurrences of one secret, which share a rank map, share a number.
-  // A hole whose secret carries no #115 geometry gets `null`: no map, hence no entry point
-  // at all (explicit decision — there is no degraded list view).
-  const routeNumbers = useMemo<(number | null)[]>(() => {
+  // A history needs no #115 geometry, so EVERY hole has one: the old hasRoute gate — and
+  // with it the last surface that could refuse a pre-#115 puzzle — is gone.
+  const holeNumbers = useMemo<number[]>(() => {
     const order: string[] = [];
     for (const h of puzzleHoles) if (!order.includes(h.secret.slug)) order.push(h.secret.slug);
-    return puzzleHoles.map((h) =>
-      hasRoute(ranks[h.secret.slug]) ? order.indexOf(h.secret.slug) + 1 : null,
-    );
-  }, [puzzleHoles, ranks]);
-  const [routeHole, setRouteHole] = useState<number | null>(null);
-  // The point the map zooms out of: the tapped word's centre, in viewport coordinates (the
+    return puzzleHoles.map((h) => order.indexOf(h.secret.slug) + 1);
+  }, [puzzleHoles]);
+  const [historyHole, setHistoryHole] = useState<number | null>(null);
+  // The point the modal zooms out of: the tapped word's centre, in viewport coordinates (the
   // dialog is fixed and fills the viewport, so they ARE its own box's). Null only if the hole
   // somehow isn't on screen, which falls back to a plain centre zoom.
-  const [routeOrigin, setRouteOrigin] = useState<{ x: number; y: number } | null>(null);
+  const [historyOrigin, setHistoryOrigin] = useState<{ x: number; y: number } | null>(null);
   // The solved sequence has played out and the sentence is the player's again — which is also
   // the state a REHYDRATED solve mounts straight into.
   const solvedSettled = resultsUp && (sourceRevealComplete || sourceRevealOverdue);
-  // Tapping a hole is available during normal play and on that settled screen, where the map
-  // becomes the post-mortem (terminus revealed, the whole neighborhood named) — never while the
-  // solving beats are running, which own the sentence.
+  // Tapping a hole is available during normal play and on that settled screen, where the
+  // history reads as the round's post-mortem (the solving guess leads it in the solved blue)
+  // — never while the solving beats are running, which own the sentence.
   //
   // `promptExiting` is what covers the START of those beats: the prompt leaves on the solving
   // submit while the holes are still resolving, so `solved` — which only follows the last word's
@@ -571,55 +600,55 @@ function Round({
   // be read as "the beats began" and `solvedSettled` has to be what ends them. Reading it as a
   // plain veto instead left every hole dead for the rest of the screen, and the post-mortem the
   // reveal was built for was reachable only by reloading the page.
-  const exploreDisabled = !solvedSettled && (promptExiting || solved);
+  const exploreDisabled = gateOpen || (!solvedSettled && (promptExiting || solved));
   // Stable for the round: the button wraps the hole for the WHOLE round or not at all, and
   // the gating above only disables it — unwrapping mid-round would remount the word while
   // its scramble is running. These are the buttons' DESCRIPTIONS, not their names: a hole is
   // named by the word and exponent it shows, which is the clue (see Hole/Phrase).
-  const exploreLabels = useMemo<(string | null)[]>(
-    () => routeNumbers.map((n) => (n === null ? null : ariaExploreHole(lang, n))),
-    [routeNumbers, lang],
+  const exploreLabels = useMemo<string[]>(
+    () => holeNumbers.map((n) => ariaHoleHistory(lang, n)),
+    [holeNumbers, lang],
   );
-  const routeModel = useMemo(() => {
-    if (routeHole === null) return null;
-    const hole = holes[routeHole];
-    const puzzleHole = puzzleHoles[routeHole];
-    const number = routeNumbers[routeHole];
-    if (!hole || !puzzleHole || number === null) return null;
-    return buildRoute({
-      rankMap: ranks[hole.secret],
+  const historyModel = useMemo(() => {
+    if (historyHole === null) return null;
+    const hole = holes[historyHole];
+    const puzzleHole = puzzleHoles[historyHole];
+    if (!hole || !puzzleHole) return null;
+    const rankMap = ranks[hole.secret];
+    if (!rankMap) return null;
+    return buildHistory({
+      rankMap,
       tried: history,
       hole,
       startRank: puzzleHole.start_rank,
       secretWord: puzzleHole.secret.word,
-      number,
     });
-  }, [routeHole, holes, puzzleHoles, ranks, history, routeNumbers]);
-  const closeRoute = useCallback(() => {
-    setRouteHole(null);
+  }, [historyHole, holes, puzzleHoles, ranks, history]);
+  const closeHistory = useCallback(() => {
+    setHistoryHole(null);
   }, []);
-  // Opening the map takes the WORD's position on screen, which is where it grows from:
+  // Opening takes the WORD's position on screen, which is where the modal grows from:
   // opening is a zoom out of the thing you tapped, the way a desktop window opens out of its
   // icon, so the full screen that lands reads as that word rather than as a screen that
-  // replaced it. Measured at the click (the word is on screen), never re-measured — the map
-  // covers the sentence anyway. `.hole-word-wrap` and not the button, so the origin is the
-  // word itself with the exponent excluded.
-  const openRoute = useCallback((index: number) => {
+  // replaced it. Measured at the click (the word is on screen), never re-measured — the
+  // modal covers the sentence anyway. `.hole-word-wrap` and not the button, so the origin is
+  // the word itself with the exponent excluded.
+  const openHistory = useCallback((index: number) => {
     const word = document
       .querySelector<HTMLElement>(`[data-hole-explore="${index}"]`)
       ?.querySelector('.hole-word-wrap');
     const box = word?.getBoundingClientRect();
-    setRouteOrigin(box ? { x: box.left + box.width / 2, y: box.top + box.height / 2 } : null);
-    setRouteHole(index);
+    setHistoryOrigin(box ? { x: box.left + box.width / 2, y: box.top + box.height / 2 } : null);
+    setHistoryHole(index);
   }, []);
 
   // --- #129: the ambient letter wave ---
   // EVERY hole runs its own clock (see Hole), so several words can stir at once and on their
   // own rhythms. All the round contributes is the one fact a hole cannot see for itself: that
-  // the SENTENCE is quiet. Guess feedback owns these words while it plays, and the map owns
-  // the screen while it is open, so the affordance stands down for both — and once the round
-  // is over, stillness is what "done" looks like.
-  const quiet = !solved && !promptExiting && routeHole === null && hits.length === 0;
+  // the SENTENCE is quiet. Guess feedback owns these words while it plays, and the history
+  // modal owns the screen while it is open, so the affordance stands down for both — and once
+  // the round is over, stillness is what "done" looks like.
+  const quiet = !gateOpen && !solved && !promptExiting && historyHole === null && hits.length === 0;
 
   const removeHit = useCallback((id: number) => {
     setHits((prev) => prev.filter((h) => h.id !== id));
@@ -817,7 +846,7 @@ function Round({
             onHoleResolved={markHoleResolved}
             exploreLabels={exploreLabels}
             exploreDisabled={exploreDisabled}
-            onExplore={openRoute}
+            onExplore={openHistory}
             quiet={quiet}
           />
         </div>
@@ -834,9 +863,9 @@ function Round({
         <div className="prompt-zone">
           <div
             className={`input-area${promptExiting ? ' solving' : ''}${
-              showResults ? ' retired' : ''
+              showResults || gateOpen ? ' retired' : ''
             }`}
-            aria-hidden={promptExiting || showResults || undefined}
+            aria-hidden={promptExiting || showResults || gateOpen || undefined}
           >
             <WordInput
               value={input}
@@ -846,9 +875,10 @@ function Round({
               onSubmit={submit}
               onReplace={replaceInput}
               invalidSignal={invalidAt}
-              // The route map covers the prompt: keystrokes must not build (or submit) a
-              // guess the player cannot see behind it.
-              active={!showResults && routeHole === null}
+              // The history modal covers the prompt: keystrokes must not build (or submit)
+              // a guess the player cannot see behind it. The gate holds it back the same
+              // way — the prompt arrives with the keyboard, on PLAY.
+              active={!showResults && historyHole === null && !gateOpen}
             />
             <p className="hint">{feedback?.text || ' '}</p>
           </div>
@@ -876,7 +906,9 @@ function Round({
           shifts between the solved beats. */}
       {hasLineup && (
         <div className="lineup-zone">
-          {!lineupGone && (
+          {/* The ZONE keeps its band through the gate (centering), but the characters wait
+              for PLAY: the gate is the screen without its opponents. */}
+          {!lineupGone && !gateOpen && (
             <StandingsLineup
               benchmark={benchmark}
               guessCount={guessCount}
@@ -900,9 +932,24 @@ function Round({
           showResults && !keyboardLeaving && !showStreakDialog && lineupGone
             ? ' tray-results'
             : ''
-        }`}
+        }${gateOpen ? ' tray-gate' : ''}`}
       >
-        {showResults && !keyboardLeaving && !showStreakDialog ? (
+        {gateOpen ? (
+          /* The GATE, in the keyboard's own footprint: the rules in the app's shared
+             dialog box (`.coach-rules` — the tutorial's coach, so one design says "this
+             is here to help" everywhere), bulleted, and the PLAY that dismisses them for
+             good — the tutorial's own full-width button, so the graduation and the gate
+             speak one language. */
+          <div className="rules-gate">
+            <p className="sr-only">{gateRules}</p>
+            <div className="coach-rules" aria-hidden="true">
+              <CoachText copy={gateRules} />
+            </div>
+            <button type="button" className="mix-btn" onClick={markSentenceRulesSeen}>
+              {t(lang, 'gatePlay')}
+            </button>
+          </div>
+        ) : showResults && !keyboardLeaving && !showStreakDialog ? (
           lineupGone ? (
             <SolvedScreen
               guessCount={guessCount}
@@ -943,10 +990,16 @@ function Round({
         <LazyStreakDialog lang={lang} solvedDay={dayNumber} onDismiss={dismissStreakDialog} />
       )}
 
-      {/* One hole's neighborhood as a journey (#117). Fully derived from (tried, ranks,
-          hole state), so a guess landing while it is open simply adds a stop. */}
-      {routeModel && (
-        <RouteModal model={routeModel} lang={lang} origin={routeOrigin} onClose={closeRoute} />
+      {/* One hole's guess history (2026-08-10, replacing the #117 route map). Fully derived
+          from (tried, ranks), so it survives a reload for free like everything else. */}
+      {historyModel && historyHole !== null && (
+        <HistoryModal
+          model={historyModel}
+          number={holeNumbers[historyHole]}
+          lang={lang}
+          origin={historyOrigin}
+          onClose={closeHistory}
+        />
       )}
     </div>
   );

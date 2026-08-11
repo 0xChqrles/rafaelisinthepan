@@ -1,25 +1,23 @@
 #!/usr/bin/env node
 // Prune a #154 single-word artifact down to what the onboarding tutorial embeds (#155).
 //
-// The tutorial plays on a REAL neighborhood — it has to, since the route map (#117) only
-// opens where the #115 geometry exists (`hasRoute` gates on the rank-1 group's `dq`), and
-// the hand-authored map it used before carried none. But a generated artifact is the whole
-// top-10 000 groups: ~20-25k alias keys, ~1-1.5 MB, and every byte of it would ship in the
-// main bundle for a screen a player sees once.
+// The tutorial plays on a REAL neighborhood — the mix ladder walks real ranks and the free
+// find step lands on real groups. But a generated artifact is the whole top-10 000 groups:
+// ~20-25k alias keys, ~1-1.5 MB, and every byte of it would ship in the main bundle for a
+// screen a player sees once.
 //
 // What the tutorial actually needs is small and exactly definable:
 //   - the word itself (rank 0);
-//   - the ROAD ZONE — every group generation stamped a `road` on, which for a word artifact
-//     is the flat top-ROAD_TOP (250 since 2026-08-07, 150 before it). That zone IS the map:
-//     `buildRoute` draws the near field out to the farthest road, so anything past it would
-//     be invisible anyway. Which means the ZONE IS WHATEVER THE INPUT ARTIFACT CARRIES, not
-//     whatever ROAD_TOP says today: the committed <lang>.word.json files were generated at
-//     150 and re-running the recipe now produces a longer board (see each script's header).
-//     This script neither imposes nor checks a size — it copies the roads it is handed;
+//   - the NEAR FIELD — every group of rank <= `--top` (the committed boards use 150: it
+//     comfortably contains the start band the mix demo lands in, and gives the free find a
+//     real neighborhood to type against). Until 2026-08-11 the zone was "whatever carries
+//     a `road`" — generation's flat clustering zone — because the ending stepped through
+//     the map's roads; that ending is retired, gen:word no longer emits roads at all, and
+//     the zone is now the explicit rank cut this flag states;
 //   - the scripted guided words (`--keep`), which are deliberately outside the zone: the
 //     "far" guess of the lesson has to rank FARTHER than the start word.
 // A kept word brings its whole GROUP (every alias key at that rank), because `word`/`rank`/
-// `dq`/`road` are group properties and half a group is not a thing the schema describes.
+// `dq`/`freq` are group properties and half a group is not a thing the schema describes.
 //
 // The board — which word, which start rank, which guided words — is declared ONCE, in
 // src/tutorial/scripts/<lang>.ts. This script takes it on the command line, the script file
@@ -30,7 +28,7 @@
 //   node packages/web/scripts/prune-word-map.mjs \
 //     --in packages/generation/output/single-word/en/ocean.json \
 //     --out packages/web/src/tutorial/scripts/en.word.json \
-//     --keep forest --keep boat
+//     --top 150 --keep forest
 
 import { readFileSync, writeFileSync } from 'node:fs';
 
@@ -43,6 +41,11 @@ function parseArgs(argv) {
       if (!value) throw new Error(`${flag} needs a path`);
       args[flag.slice(2)] = value;
       i += 1;
+    } else if (flag === '--top') {
+      const top = Number(value);
+      if (!Number.isInteger(top) || top < 1) throw new Error('--top needs a positive rank');
+      args.top = top;
+      i += 1;
     } else if (flag === '--keep') {
       if (!value) throw new Error('--keep needs a word');
       args.keep.push(value);
@@ -51,7 +54,7 @@ function parseArgs(argv) {
       throw new Error(`unknown argument: ${flag}`);
     }
   }
-  if (!args.in || !args.out) throw new Error('--in and --out are required');
+  if (!args.in || !args.out || !args.top) throw new Error('--in, --out and --top are required');
   return args;
 }
 
@@ -69,11 +72,10 @@ const keptRanks = new Set(
   }),
 );
 
-// Insertion order is the artifact's own, i.e. closest-first — which `hasRoute` relies on to
-// answer from the first rank-1 key it meets instead of walking the map.
+// Insertion order is the artifact's own, i.e. closest-first, which the embedded map keeps.
 const ranks = {};
 for (const [key, entry] of Object.entries(artifact.ranks)) {
-  if (entry.rank === 0 || entry.road !== undefined || keptRanks.has(entry.rank)) {
+  if (entry.rank <= args.top || keptRanks.has(entry.rank)) {
     ranks[key] = entry;
   }
 }

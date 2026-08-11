@@ -1,7 +1,7 @@
-// CONTRACT: the onboarding scripts (#51, re-arced by #155). The tutorial is data-driven —
-// the board and the scripted guesses live in scripts/<lang>.ts over a REAL generated
-// neighborhood (scripts/<lang>.word.json, a pruned #154 artifact), and both are meant to be
-// edited — so these tests guard what an edit must not break:
+// CONTRACT: the onboarding scripts (#51, re-arced by #155; rarity ending 2026-08-11). The
+// tutorial is data-driven — the board and the scripted guesses live in scripts/<lang>.ts
+// over a REAL generated neighborhood (scripts/<lang>.word.json, a pruned #154 artifact),
+// and both are meant to be edited — so these tests guard what an edit must not break:
 //
 //   The lesson arc, in order:
 //     - the scramble ladder exists: real neighbors at every rank up to the start word, so
@@ -11,14 +11,9 @@
 //       (shows a distance, changes nothing), the "miss" word is absent from the map (MISS,
 //       not INVALID), the "closer" word ranks CLOSER (the word moves), and the find target
 //       is the secret itself (rank 0);
-//     - it ENDS on the tap: the last step swaps the word for its THEMES, shown one cloud at
-//       a time — the one concept nothing else in the game teaches.
-//
-//   The board is a REAL map, which the ending depends on absolutely:
-//     - it must carry #115 roads, and more than one: the themes ARE the map's roads, and a
-//       board with a single road has nothing to step through;
-//     - every theme must be populated enough to fill a cloud, and the script must carry
-//       exactly one line of copy per theme the map actually ships.
+//     - it ENDS on the RARITY beats: the tutorial teaches the concepts the modes share
+//       (semantic distance, then the five-grade rarity ladder) and nothing mode-specific —
+//       each mode's own rules live on that mode's pre-game gate.
 //
 // Plus: the board stays byte-compatible with the real per-puzzle schema (parsePuzzle-valid —
 // it feeds the REAL game components) and every scripted word is a fold-stable slug the gated
@@ -46,12 +41,12 @@ for (const lang of ['en', 'fr'] as const) {
         .map((e) => [e.rank, e] as const),
     );
 
-    it('is ONE single-word board: mix, guided guesses, find, then the tap that ends it', () => {
+    it('is ONE single-word board: mix, guided guesses, find, then the rarity ending', () => {
       expect(puzzle.words).toHaveLength(1);
       expect(puzzle.holes).toHaveLength(1);
       expect(Object.keys(puzzle.ranks)).toEqual([hole.secret.slug]);
       expect(script.steps[0].kind).toBe('mix');
-      expect(script.steps.at(-1)?.kind).toBe('tap');
+      expect(script.steps.at(-1)?.kind).toBe('rarity');
       // Exactly one of each free step, in this order — the arc is not a set of steps.
       expect(script.steps.map((s) => s.kind)).toEqual([
         'mix',
@@ -59,7 +54,7 @@ for (const lang of ['en', 'fr'] as const) {
         'guess',
         'guess',
         'find',
-        'tap',
+        'rarity',
       ]);
     });
 
@@ -80,10 +75,7 @@ for (const lang of ['en', 'fr'] as const) {
           keys.add(s.nudgeKey);
         } else {
           keys.add(s.introCopyKey);
-          keys.add(s.tapCopyKey);
-          keys.add(s.clickCopyKey);
-          for (const k of s.themeCopyKeys) keys.add(k);
-          keys.add(s.closeCopyKey);
+          keys.add(s.ladderCopyKey);
         }
       }
       // [[w:word^rank]] claims a rank the map must still assign to that word, and
@@ -159,41 +151,9 @@ for (const lang of ['en', 'fr'] as const) {
         expect(map[miss.expect]).toBeUndefined(); // MISS, not INVALID
         expect(map[closer.expect].rank).toBeLessThan(hole.start_rank); // the word moves
         const find = script.steps.at(-2)!;
-        if (find.kind !== 'find') throw new Error('the find step must precede the tap');
+        if (find.kind !== 'find') throw new Error('the find step must precede the ending');
         expect(find.target).toBe(hole.secret.slug);
         expect(map[find.target].rank).toBe(0);
-      });
-    });
-
-    describe('the board is a REAL neighborhood — which is what makes the ending possible', () => {
-      const roads = new Set(
-        Object.values(map)
-          .filter((e) => e.road !== undefined)
-          .map((e) => e.road as number),
-      );
-
-      it('carries more than one road — the themes are the roads, and one is no lesson', () => {
-        expect(roads.size).toBeGreaterThanOrEqual(2);
-        // Contiguous ids from 0, because the clouds step through them by index.
-        expect([...roads].sort((a, b) => a - b)).toEqual([...roads.keys()].map((_, i) => i));
-      });
-
-      it('names every theme exactly once (one copy line per road the map ships)', () => {
-        // Fewer leaves a cloud arriving unexplained; more leaves copy no stage ever shows.
-        const tap = script.steps.at(-1)!;
-        if (tap.kind !== 'tap') throw new Error('the last step must be the tap');
-        expect(tap.themeCopyKeys).toHaveLength(roads.size);
-      });
-
-      it('every theme is populated enough to fill a cloud', () => {
-        for (const road of roads) {
-          const members = new Set(
-            Object.values(map)
-              .filter((e) => e.road === road)
-              .map((e) => e.rank),
-          );
-          expect(members.size).toBeGreaterThanOrEqual(10);
-        }
       });
     });
   });

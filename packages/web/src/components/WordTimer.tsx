@@ -1,6 +1,6 @@
 import useCountdown from '../hooks/useCountdown';
 import { START_SECONDS } from '../game/wordGame';
-import { srWordClock } from '../i18n';
+import { srWordClock, srWordClockIdle } from '../i18n';
 
 // Word mode's clock, as the HUD (#163). It is the resource the whole game is played
 // against, so it takes the header's status corner — where the sentence game shows its
@@ -52,12 +52,18 @@ export default function WordTimer({
   return (
     <span
       className={`word-timer${warn ? ' warn' : ''}${spent ? ' spent' : ''}${idle ? ' idle' : ''}`}
-      // A live region that defaults to OFF, which is exactly right: the clock must be
-      // readable on demand and must never be announced every second — let alone every
-      // tenth of one, which is why the label rounds to whole seconds where the display
-      // does not.
+      // A live region that must be OFF: the clock has to be readable on demand and never
+      // announced every second — let alone every tenth of one, which is why the label
+      // rounds to whole seconds where the display does not. `timer`'s implicit live value
+      // IS off, but it subclasses `status` (implicit polite) and AT that fall back to the
+      // superclass would speak every change for the whole run — one attribute removes the
+      // ambiguity. Idle, the label says what the number is: a preview of the run's
+      // length, not seconds already draining.
       role="timer"
-      aria-label={srWordClock(lang, Math.ceil(tenths / 10))}
+      aria-live="off"
+      aria-label={
+        idle ? srWordClockIdle(lang, START_SECONDS) : srWordClock(lang, Math.ceil(tenths / 10))
+      }
     >
       <span aria-hidden="true">{whole}</span>
       {/* The tenth rides SMALLER than the seconds, and that is width and not taste: the

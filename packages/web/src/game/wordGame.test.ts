@@ -1,5 +1,6 @@
 // CONTRACT (#156 Word mode, retimed by #163 — decided 2026-08-08):
-//   - score = number of top-zone (CLAIM_ZONE = the #154 road zone, 250) groups claimed;
+//   - score = number of top-zone (CLAIM_ZONE) groups claimed, and that COUNT is stated to
+//     the player on the gate — read off the constant, never spelled into the copy;
 //   - a claim also ADDS SECONDS to the clock, by the claimed group's RARITY GRADE — one of
 //     five named grades (COMMON..ARCANE) read off its `freq` as a fraction of the LANGUAGE'S
 //     WHOLE CORPUS, never an absolute frequency rank: the two languages' vocabularies are
@@ -15,7 +16,6 @@
 // economy stays the one-line change the module promises.
 // Asserted against the spec, not the implementation.
 
-import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import type { WordRanks } from '@whippin/shared';
 import {
@@ -32,6 +32,7 @@ import {
   totalBonus,
   wordGuessKey,
 } from './wordGame';
+import { t, tn } from '../i18n';
 
 // A corpus to measure rarity against. Round, so a grade's `within` fraction reads straight
 // off a `freq` in the fixture below.
@@ -51,35 +52,27 @@ const LAST = RARITY_LADDER.length - 1;
 const RANKS: WordRanks = {
   tropiques: { word: 'tropiques', rank: 0 },
   tropique: { word: 'tropiques', rank: 0 },
-  tropicales: { word: 'tropicales', rank: 1, dq: 255, road: 0, freq: inGrade(0) },
-  tropical: { word: 'tropicales', rank: 1, dq: 255, road: 0, freq: inGrade(0) },
-  cocotier: { word: 'cocotier', rank: 2, dq: 236, road: 1, freq: inGrade(LAST) },
-  lagon: { word: 'lagon', rank: CLAIM_ZONE, dq: 40, road: 1 }, // no freq: an older artifact
+  tropicales: { word: 'tropicales', rank: 1, dq: 255, freq: inGrade(0) },
+  tropical: { word: 'tropicales', rank: 1, dq: 255, freq: inGrade(0) },
+  cocotier: { word: 'cocotier', rank: 2, dq: 236, freq: inGrade(LAST) },
+  lagon: { word: 'lagon', rank: CLAIM_ZONE, dq: 40 }, // no freq: a borrowed-vector group
   sable: { word: 'sable', rank: CLAIM_ZONE + 1, dq: 39 },
   sables: { word: 'sable', rank: CLAIM_ZONE + 1, dq: 39 },
-  neige: { word: 'neige', rank: 353, dq: 12 },
+  // Well outside the zone but still ON the map — a far near miss. Derived like every other
+  // rank here: it was a literal 353 until 2026-08-11, when the zone widened past it and
+  // silently turned this fixture's far miss into a claim.
+  neige: { word: 'neige', rank: CLAIM_ZONE + 100, dq: 12 },
 };
 
 // What a log is worth, priced against the fixture's corpus.
 const bonusOf = (tried: string[]): number => totalBonus(replayWordRun(RANKS, tried).claimed, CORPUS);
 
-// The claimable zone is not a number this package gets to pick: the #154 artifact draws its
-// roads over generation's flat top-ROAD_TOP, and those groups ARE Word mode's playing field,
-// so CLAIM_ZONE is that constant restated in TypeScript. Nothing else couples them — retune
-// ROAD_TOP alone and the client refuses groups the board has drawn a road for, or draws a
-// field it will not let you claim. Cross-language, so it is asserted against the source of
-// truth the way the slug/fold fixture is.
-describe('CLAIM_ZONE — generation\'s road zone, in TypeScript', () => {
-  it('matches distances.py ROAD_TOP', () => {
-    const distances = readFileSync(
-      new URL('../../../generation/scripts/distances.py', import.meta.url),
-      'utf8',
-    );
-    const declared = /^ROAD_TOP = (\d+)$/m.exec(distances);
-    expect(declared, 'ROAD_TOP is no longer a plain literal in distances.py').not.toBeNull();
-    expect(Number(declared![1])).toBe(CLAIM_ZONE);
-  });
-});
+// CLAIM_ZONE used to be pinned to generation's ROAD_TOP by a cross-language test, because the
+// board could only draw the groups carrying a `road` — move one, and it drew lane-less stations
+// or refused to claim ones it had drawn. That coupling is GONE (2026-08-10): the lanes are
+// rarity grades now, generation ships no roads on a word artifact, and every rank up to TOP_K
+// carries the `dq` the drawing spaces its stations by. So the zone is this package's own tuning
+// knob, freely movable with no republish and nothing left to pin it to.
 
 describe('judgeWordGuess — the claim boundary', () => {
   it('a zone group is a claim, the zone edge included', () => {
@@ -146,7 +139,7 @@ describe('rarityOf — five named grades, measured against the CORPUS', () => {
   });
 
   it('an unknown or unusable rarity falls to the FLOOR, never a windfall', () => {
-    // `freq` is optional by contract (an artifact generated before #163 carries none), and
+    // `freq` is optional per entry by contract (a borrowed-vector group carries none), and
     // a missing corpus must not divide by zero into a jackpot.
     expect(rarityOf(undefined, CORPUS)).toBe(RARITY_NAMES[0]);
     expect(rarityOf(500, 0)).toBe(RARITY_NAMES[0]);
@@ -189,7 +182,11 @@ describe('replayWordRun — the score and the clock, from the log alone', () => 
     expect(run.claimed).toHaveLength(2);
     const bonus = totalBonus(run.claimed, CORPUS);
     expect(bonus).toBe(RARITY_LADDER[0].seconds + RARITY_LADDER[LAST].seconds);
-    expect(runMs(bonus)).toBe((START_SECONDS + bonus) * 1000);
+    // A bonus second is a REAL second of run: independent facts about runMs, not its
+    // formula restated (which proved nothing) — a run opens at START_SECONDS, and each
+    // second a claim buys is worth exactly 1000ms of deadline.
+    expect(runMs(0)).toBe(START_SECONDS * 1000);
+    expect(runMs(bonus) - runMs(0)).toBe(bonus * 1000);
   });
 
   it('a claim on a group with no freq still pays the floor', () => {
@@ -227,5 +224,30 @@ describe('replayWordRun — the score and the clock, from the log alone', () => 
     const run = replayWordRun(RANKS, ['sable', 'neige', 'guitare', 'violon', 'tropicales']);
     expect(run.claimed.map((e) => e.rank)).toEqual([1]); // the late claim happened
     expect(run).not.toHaveProperty('ended');
+  });
+});
+
+// The gate STATES the zone (user-decided 2026-08-11). The rule and the sentence that
+// announces it must not drift, so the copy carries a `{n}` placeholder and the screen
+// fills it from CLAIM_ZONE — a hardcoded number would go quietly wrong the first time the
+// zone moves, and a gate that lies about the field is worse than one that says nothing.
+describe('the gate names the claimable zone, in both languages', () => {
+  it('fills the count from CLAIM_ZONE rather than spelling it into the copy', () => {
+    for (const lang of ['en', 'fr']) {
+      const raw = t(lang, 'wordRulesGoal');
+      expect(raw, `${lang} must keep the placeholder`).toContain('{n}');
+      const shown = tn(lang, 'wordRulesGoal', CLAIM_ZONE);
+      expect(shown).toContain(String(CLAIM_ZONE));
+      expect(shown).not.toContain('{n}');
+    }
+  });
+
+  it('states the ZONE and nothing else — the timer already shows the seconds', () => {
+    for (const lang of ['en', 'fr']) {
+      const rules = [tn(lang, 'wordRulesGoal', CLAIM_ZONE), t(lang, 'wordRulesBonus')].join(' ');
+      // EXACTLY one number on the whole gate, and it is the zone's — which is also what
+      // proves the run's length is not stated here (START_SECONDS is the HUD's to show).
+      expect(rules.match(/\d+/g), lang).toEqual([String(CLAIM_ZONE)]);
+    }
   });
 });

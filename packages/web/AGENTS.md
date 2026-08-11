@@ -19,6 +19,7 @@
       screens/Game.tsx        the guess loop, hole state (imports fold from @whippin/shared)
       screens/WordGame.tsx    Word mode's three phases: rules gate -> timed run -> post-mortem
       game/wordGame.ts        Word mode's rules + economy (CLAIM_ZONE, the rarity ladder, the clock)
+      game/wordBoard.ts       Word mode's post-mortem board: the zone as stations on RARITY lanes
       components/rarity.ts    a rarity grade's pinned colour, and how many times a find is struck
       components/WordSlash.tsx    the slash a claim cuts the day's word with
       components/WordSubject.tsx  the day's word while the run is on: the word alone, centred
@@ -26,9 +27,12 @@
       game/scoring.ts         s(rank), holeProgress, computeProgress
       components/Phrase.tsx,Hole.tsx,WordInput.tsx,FloatingHit.tsx  rendering
       components/routeDrawing.tsx  THE route drawing: geometry, lanes, frame vars + the row
-                              parts (Junction/OffMapShelf/RouteTail/RouteLink/RouteRow/RouteWord).
-                              Owned by neither surface — RouteModal (#117) and WordBoard (#156)
-                              both compose it, so a change to the line changes every route.
+                              parts (Junction/OffMapShelf/RouteTail/RouteLink/RouteRow).
+                              WordBoard (#156) composes it (the #117 route map was its other
+                              consumer until 2026-08-10). It owns the SHAPE of a lane; the
+                              surface owns what a lane MEANS and passes the palette.
+      game/history.ts         a hole's guess log ranked against its secret (buildHistory)
+      components/HistoryModal.tsx  the hole tap's surface: your tries, closest first
       hooks/useShare.ts       how a RESULT leaves the app (native sheet -> clipboard + COPIED)
     public/                   served at site root (web assets + generated data)
       vocab/<lang>.json       full slugged reduced vocab (existence set) — fetched by the SPA
@@ -157,14 +161,26 @@ it to the local store — see `packages/backend/AGENTS.md`).
 
 - **Word mode (#156, the second daily; RETIMED by #163 on 2026-08-08):** one app, two faces
   — `/<lang>/word` (plus `/word/<date>` and `/word/archive`, same date rules) plays the day's
-  #154 artifact: the word is PUBLIC and the player claims its top-`CLAIM_ZONE` (**250** since
-  2026-08-07, was 150) groups **against a COUNTDOWN**; the score is the claim count.
-  **`CLAIM_ZONE` is the one constant here that is NOT this package's to pick alone:**
-  it restates generation's `ROAD_TOP` (`distances.py`), because the field the board draws is
-  the set of groups that carry a road — move one and the board grows lane-less stations, or
-  draws stations it will not let you claim. `wordGame.test.ts` reads the Python literal and
-  pins them together, and widening it means republishing every word artifact (one generated
-  at the old ceiling has roads only that far).
+  #154 artifact: the word is PUBLIC and the player claims its top-`CLAIM_ZONE` (**1000**
+  since 2026-08-11; 250 before it, 150 before that) groups **against a COUNTDOWN**; the score
+  is the claim count. **Since 2026-08-11 the number is also TOLD to the player**, on the
+  gate's first rule — see the gate bullet.
+  **`CLAIM_ZONE` IS this package's own tuning knob since 2026-08-10** — freely movable, with
+  no republish and no regeneration. Its only real ceiling is generation's `TOP_K` (10 000),
+  past which a rank has no entry to claim. **Two things SCALE with it**, neither a blocker
+  but both worth knowing before it moves again: the post-mortem board draws every zone group
+  as a station, so this is also the board's ROW COUNT (1000 rows since the widening — the
+  reveal's scrambles were already disabled, so the cost is DOM, not animation); and
+  `wordStatusOf` reads progress as claimed/zone, so the archive's and chooser's percentages
+  are proportionally smaller (a 25-claim run reads 3% where it read 10% — honest, since the
+  field is deliberately unclearable and is now four times more so). It used to be the one constant here that was NOT ours to
+  pick alone: it restated generation's `ROAD_TOP` (`distances.py`) and `wordGame.test.ts`
+  read the Python literal to pin them, because the field the board drew was exactly the set
+  of groups carrying a `road` — move one and the board grew lane-less stations, or drew
+  stations it would not let you claim. The board now draws one trunk and paints its station
+  words by RARITY (see the board bullet below), generation stamps a word artifact with no roads at all, and `dq` — what the drawing
+  actually spaces its stations by — runs to the map's own `TOP_K` edge. The pin is deleted
+  with the coupling.
   **The CLOCK replaced the strike system (#163).** Two dailies should be two games:
   Sentence mode is think slowly and beat the AI, Word mode is think fast and beat the clock.
   Everything the strikes legislated, the timer legislates for free — a repeat, an invalid
@@ -181,6 +197,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
   played** (solo, then beta testers); the margin question is whether an average claim's bonus
   roughly covers the typing cost of the next guess on MOBILE, the slower device. Mis-tuned
   low, runs end in 90 seconds and feel unwinnable; high, every run exhausts the zone.
+  **That claim has been EXERCISED and it held** (2026-08-11): the start went to 120 and every
+  rung doubled, then both were rolled back the same day — exactly the round trip
+  `STRIKES_TO_END` made at 5-and-back-to-3. Nothing moved in either direction: no test, no
+  component, no artifact, because the tests assert the ladder's SHAPE (ratios and ordering)
+  and a scalar leaves that alone. Two findings worth keeping for the next attempt: the
+  START value is a **width** decision as well as an economic one — at 120 the HUD reads three
+  digits from the very first frame where 60 reads two — and a scalar on the ladder cannot
+  change the balance BETWEEN grades, only how fast the whole run breathes. The open question
+  is what a claim is worth against its own typing cost, and only play answers it.
   **FIVE NAMED RARITY GRADES, and they are the game's visible vocabulary** (decided
   2026-08-08): `COMMON` / `UNCOMMON` / `RARE` / `OBSCURE` / `ARCANE`, **UNTRANSLATED in every
   language** like MISS / YOU / DNF — one word per grade, identical everywhere. A claim's
@@ -212,8 +237,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   alternative is **0.08/0.18/0.34/0.55**, which makes all five reachable in en (52/28/16/4/1)
   at the cost of fr's shape. It is a true statement about the two embeddings (GloVe 6B vs
   fastText cc.fr) and the tuning sessions are where it gets decided.
-  An artifact with no `freq` at all grades COMMON — the floor, never a windfall for missing
-  data.
+  An ENTRY with no `freq` (a borrowed-vector group) grades COMMON — the floor, never a
+  windfall for missing data — but an artifact with no `freq` ANYWHERE is a stale pre-#163
+  map that would silently halve the economy, and `parseWordPuzzle` refuses it at load (the
+  no-back-compat rule: a stale artifact is republished, never limped on).
   Rarity feeds the CLOCK only, never the score — one resource, one number. Total time is
   bounded by construction (`START_SECONDS` + the zone's summed bonuses), so no run is
   infinite and the zone stays unclearable in practice.
@@ -256,7 +283,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   game must not make the player wait on a keystroke. Both DERIVE from `Date.now()` at render
   rather than storing a countdown: the deadline appears in the same commit that starts the
   run, so a value only an effect could refresh would paint one frame reading zero — which is
-  the run's own end condition, and the whole ending would fire on the START tap.
+  the run's own end condition, and the whole ending would fire on the PLAY tap.
   **`replayWordRun` is the ONE walk of a word round** (2026-08-06): it returns the ordered
   `counted` guesses with their judgements plus the seconds they bought, and `buildWordBoard`
   sorts THOSE into claims / trunk stops / the misses shelf rather than re-deriving the dedup
@@ -264,11 +291,27 @@ it to the local store — see `packages/backend/AGENTS.md`).
   means. What it does NOT return is `ended`: that is the deadline's, and a log cannot see a
   wall clock (`WordBoardModel` lost its `ended` field with it).
   **The screen runs in THREE phases** (#163), each putting one thing in front of the player.
-  **GATE** — the day's word, the rules in two sentences, and START. A timer needs a start
+  **GATE** — the day's word, and the sentence gate's EXACT stack (user-decided
+  2026-08-11): two bulleted rules in the shared `.coach-rules` dialog over a full-width
+  PLAY (the sentence gate's own label, user-decided 2026-08-11 — one shared `gatePlay`
+  key), in `.rules-gate` on the tray's bottom edge (see the sentence gate bullet). A
+  timer needs a start
   control anyway, and the control is where the rules live, so this screen is Word mode's
   whole onboarding and no tutorial change was needed. The clock previews `START_SECONDS`
   greyed beside it, so the number teaches what it is before it starts moving; the copy
-  states no duration (that would restate a tuning knob). **RUN** — the word, the prompt, the
+  states no duration (the HUD is already saying it, and stating it twice would be
+  restating a tuning knob).
+  **The rules state EXACTLY ONE number, and it is the ZONE** (user-decided 2026-08-11,
+  superseding "neither rule states a number"): the goal line names how many words count.
+  "Find words close to it" gave the player nothing to aim at, where a count is a target
+  they can hold. **It is never SPELLED into the copy** — `wordRulesGoal` carries a `{n}`
+  placeholder that the screen fills from `CLAIM_ZONE` via `tn()`, so the rule and the
+  sentence announcing it cannot drift; a hardcoded "1000" would start lying the first time
+  the zone moved, and a gate that lies about the field is worse than one that says nothing.
+  `{n}` is the STRINGS table's only placeholder, which is what keeps the line in the
+  type-checked en+fr table (parity by compiler) rather than in a hand-written bilingual
+  function like the `sr*` helpers. `wordGame.test.ts` pins both halves: the placeholder
+  survives in both languages, and the gate's whole copy contains exactly one number. **RUN** — the word, the prompt, the
   keyboard, the timer and the score, and **NO BOARD**: this is a fast game, and a live map
   to read is a contemplative surface pulling against the clock. **OVER** — the board
   arrives, revealed, as the post-mortem the run earned.
@@ -346,46 +389,54 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the default being `slash.png`, a 5-frame 36x46 stroke landing and dissipating, 50ms a frame
   — in the claimed grade's COLOUR wherever the sheet is a mask, **and while a stroke is on
   the word the word RECOILS and takes that colour too**, returning to the solved blue when it
-  goes. **Both last exactly ONE BLOW, and a blow is the stroke's first FOUR
-  frames of five** (`STRUCK_FRAMES`/`STRUCK_MS`, decided 2026-08-09): a cross hits, LETS GO,
-  and hits again, so between two impacts there is a beat where nothing is happening to the
-  word. Held across both strokes instead, the colour turned two hits into one long state —
-  precisely the reading the second blow exists to prevent — and the recoil read as one rhythm
-  of its own rather than as two impacts. Stopping a frame SHORT is what buys that beat now
-  that the strokes run back to back: the last frame of every blow — the one where the stroke
-  is already dissipating — lands on a word that has returned to rest. It is stated in the
-  ART's own frames rather than as a duration, because it is a claim about which frames of the
-  stroke the word is answering. `WordSubject.useStrikeBlow` owns it: it returns WHICH blow is
-  landing (null in the daylight and after the last) off the strike's own
-  `slashDelayMs`/`STRUCK_MS`, so the word and the stroke on it cannot disagree, and the word
-  is re-KEYED per blow so the second restarts the recoil instead of inheriting a run already
-  over. Measured with a 10ms in-page sampler, a cross: stroke and word together 0–192ms,
-  **stroke alone 201–242**, together again 251–441, **stroke alone 451–492**, over at 501 —
-  one unbroken stretch of stroke with two recoils in it. A single blow is the same shape
-  halved (0–198 / 199–248), and a MISS lands neither. **A BURST takes the same treatment
-  unchanged**, which is what makes its extra frames read as dissipation: the word recoils for
-  its first four and rests through the remaining three (measured 0–189 struck, burst alone on
-  to 349). (A screenshot cannot show those 50ms
-  windows — capture latency exceeds them — so it is a computed-style measurement, not a
-  picture.) There
-  is no text: a name has to be read, and a run against a clock has no time for that. The
-  grade is carried by the strike's COLOUR alone since the run's history was removed
-  (2026-08-10), and by the word taking that colour under it. **The strike ESCALATES IN FOUR STEPS across the five grades**, and since 2026-08-10 that
-  is THREE SHEETS, all in `assets/hits/`, all walked at one 50ms frame rate:
-  a CUT (`slash.png`, one stroke — COMMON and UNCOMMON), a CROSS (the same sheet twice, the
-  second mirrored — RARE), a BURST (`burst.png` — OBSCURE) and the ULTRA star
-  (`ultra-slash.png` — ARCANE). The same escalation the seconds ladder makes, said in gestures
-  instead of five sizes.
-  **The ladder is a TABLE indexed by grade** (`STRIKES`, `components/rarity.ts`) — the shape
-  `RARITY_COLORS` already has, complete by type — rather than the thresholds it started as:
-  with four distinct steps over five grades the thresholds had stopped compressing anything
-  and had become a per-grade table written the long way.
-  **What escalates is the EVENT, not the duration.** The burst is a step UP from the cross
-  while spending HALF its time on screen (250ms against 500), and the ultra is a step up again
-  at 350 — one blow, two blows, then two sheets that are not strokes at all. Reading intensity
-  off a clock would rank the ladder backwards, so `rarity.test.ts` weighs a strike as
-  (which sheet, then how many blows), where the ORDER OF `STRIKE_ARTS` is what says which
-  sheet is bigger.
+  goes. **A strike is ONE BLOW of one sheet** (user-decided 2026-08-11, retiring the RARE
+  cross and the whole multi-blow machinery — `blows`, `blowDelayMs`, `useStrikeBlow`'s
+  per-blow choreography and its measured cross timings are gone), **and the blow is the
+  stroke's first FOUR frames of five** (`STRUCK_FRAMES`/`STRUCK_MS`, decided 2026-08-09):
+  stopping a frame SHORT is what makes a sheet's remaining frames read as dissipation over a
+  word already back at rest. It is stated in the ART's own frames rather than as a duration,
+  because it is a claim about which frames of the stroke the word is answering.
+  `WordSubject.useStruck` owns it — struck for `STRUCK_MS` from the hit's mount, keyed per
+  hit so a claim landing on another restarts the recoil. A MISS lands no blow. **The plain
+  slash lands RANDOMLY MIRRORED** (user-decided 2026-08-11, repurposing the cross's flip):
+  rolled once per hit in `WordSlash` — a state initializer, so a re-render cannot flip a
+  stroke mid-swing — and ONLY for `slash.png`: the burst and the ultra are near-symmetric
+  art with nothing to say backwards. There
+  is no text that PARKS: a name has to be read, and a run against a clock has no time for
+  that. The grade is carried by the strike's COLOUR, by the word taking that colour under
+  it — and, since 2026-08-10 (user-decided, superseding "colour alone"), by the hit's LOOT:
+  the claim knocks the guess's rank exponent and the grade's NAME off the word
+  (`components/WordLoot.tsx` + `.word-loot` in index.css), popping up and apart off the
+  impact like drops off a struck enemy, hanging, then falling away — in the air for 840ms,
+  never parked. The exponent wears the heat colour every other exponent wears (the shared
+  `rankHeatColor` at `HIT_HEAT_CAP`), the grade its `RARITY_COLORS` colour. The flight is
+  the parabola trick — an outer box drifting sideways linearly, an inner one rising
+  ease-out and falling ease-in — with NO `scale` (the pixel-font rule) and a fixed
+  `rotate` tilt. **The throw is ROLLED per hit** (user-decided 2026-08-10): which side
+  each piece takes (sometimes the exponent flies left, sometimes the grade does — always
+  opposite sides), which launches first, and a bounded jitter on each piece's distance,
+  height, drop and tilt (`--loot-j*` factors from `WordLoot`, multiplied into the CSS
+  geometry — never pixel values, so the ≤640px step-down keeps working; the jitter ceiling
+  is part of the 320px overflow sum commented in index.css). The pieces are EDGE-anchored
+  (a piece's whole box stays on its own side of its anchor), so they cannot overlap
+  whichever way the dice land — centred anchors measurably put `-5` on top of `ARCANE`
+  for the first half of the flight. Timing is handed from `WordLoot` to CSS as variables
+  (the `--slash-ms` rule); base geometry is per piece in CSS with a ≤640px step-down. The loot always outlives every sheet, so ITS
+  timer is what reports a claim's hit done (`hitDurationMs` = max of strike and loot, and
+  the ending's hold covers it); under reduced motion the global collapse leaves each piece
+  resting at its apex for the fall's kept delay — shown, held, gone, the floating numbers'
+  own degradation, no dedicated rule. **The strike ESCALATES IN THREE GESTURES across the
+  five grades** (user-decided 2026-08-11, retiring the RARE cross — RARE now takes the same
+  single cut as COMMON/UNCOMMON), all three sheets in `assets/hits/`, all walked at one 50ms
+  frame rate: a CUT (`slash.png` — COMMON, UNCOMMON, RARE), a BURST (`burst.png` — OBSCURE)
+  and the ULTRA star (`ultra-slash.png` — ARCANE). The same escalation the seconds ladder
+  makes, said in gestures instead of five sizes.
+  **The ladder is a TABLE indexed by grade** (`STRIKES`, `components/rarity.ts`, now mapping
+  a grade straight to its sheet) — the shape `RARITY_COLORS` already has, complete by type.
+  **What escalates is the EVENT, not the duration.** The burst is a step UP from the cut and
+  the ultra a step up again. Reading intensity off a clock would rank the ladder backwards,
+  so `rarity.test.ts` weighs a strike by its sheet's place in `STRIKE_ARTS`, whose ORDER is
+  what says which sheet is bigger.
   **Two sheets are masks and one is an image, which is a property of the ART, not a
   preference.** `slash.png` and `burst.png` are pure white, so they are painted through a CSS
   mask in the grade's colour — the header globe's technique, and the reason one sheet serves
@@ -410,13 +461,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `background-position: 100% 0%`, an ARCANE find showing almost nothing). It holds its THIRD
   frame — frame 1 is the impact flash, a solid white disc that covers the word completely,
   right for 50ms and wrong to park on. The masked pair hold their second, which is the fullest
-  frame of both. The second blow starts the instant the first
-  ends — back to back, with NO pause between the strokes (2026-08-09, superseding first a
-  110ms stagger that overlapped them and then a one-frame gap that separated them). Two
-  strikes on screen at once read as one thick stroke, so they still never overlap; but what
-  makes a cross read as being struck TWICE rather than once for longer turned out not to need
-  a hole in the art — it is the WORD letting go, which it does a frame early either way (see
-  below). The strokes therefore run continuously and the beat lives where the recoil is.
+  frame of both.
   A miss shows the SENTENCE game's `FloatingHit`, unparameterised — the same MISS, the same
   red, the same pop and rise it has everywhere else — and **the word does not move**, because
   nothing was struck, so nothing recoils.
@@ -447,9 +492,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   React unmounts the element (which, for the first of two blows, meant it hung on screen
   through the whole of the second). Under reduced motion the walk would collapse to nothing, which for a sprite sheet
   means the strike never appears at all, so a dedicated rule holds ONE frame instead.
-  The shake rides `--shake-amp`, which **defaults to the sentence game's 1** — `word-shake`
-  is shared by the sentence hole, this word AND the standings sprite, so only a surface that
-  sets the variable changes.
+  The shake is the shared `word-shake` — the sentence hole's, this word's AND the standings
+  sprite's, at one amplitude — and this surface hands down only its LENGTH (`--shake-ms` =
+  `STRUCK_MS`), so the JS that ends the recoil and the CSS that draws it cannot disagree.
   **What the strike REPLACED, and what that cost, is worth keeping**: a RARITY LABEL, the
   grade's name stamped onto the word (`RarityHit`, deleted with it). Several choreographies
   were built on that label and every one was rejected — a pop, a stamp falling onto the word,
@@ -489,11 +534,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the clock, the prompt and the keys.
   **Know the one thing that went with them.** The history was where the RANK lived: the float
   carries a claim's GRADE and not its distance, on the reasoning that a timed run cannot act on
-  a number, and the log was the answer to "how close was that one?" a moment later. Nothing
-  answers that during a run now — the grade is carried by COLOUR alone, in the strike and in
-  the word under it, and the exponent survives only on the post-mortem board, which draws every
-  claim at its real rank once the clock dies. That is a deliberate trade for a bare screen, not
-  an oversight.
+  a number, and the log was the answer to "how close was that one?" a moment later. Since
+  2026-08-10 the LOOT answers it in the moment itself — the rank and the grade's name fly off
+  the word for under a second (see the strike bullet above) — and the post-mortem board is
+  still the only place it can be READ BACK later, drawing every claim at its real rank once
+  the clock dies. The screen stays bare between guesses, which was the point of the removal.
   Two of the tally's findings are worth keeping in case a census ever returns: it counted a
   group by its RANK, once, however many aliases key it (the identity `wordGuessKey` uses), and
   it DROPPED a grade the day's zone does not contain rather than showing `0/0`, because an
@@ -516,7 +561,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `clamp(16px, 2.4vh, 24px)` it already had above and inside it — measured 17/19/21px at
   320/430/1280). The tight seam was chosen when this footer stacked FOUR things and had to keep
   them from sprawling; it stacks two, and the prompt is what the player acts through, so it
-  takes the room. It opens the GATE's rules→START seam by the same amount, which that screen
+  takes the room. It opens the GATE's rules→PLAY seam by the same amount, which that screen
   wants for the same reason.
   **The word stays centred in what is left between the HEADER and the PROMPT**, with its score
   watermark, and lands within 9px of that centre at every width (measured 6/7/9 at
@@ -544,7 +589,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   not beside it: measured at 320px, a `+5s` to the right of a two-digit number runs 15px
   into the header's icon group, where below it has the empty top of the play area to itself
   at every width (and a gain only ever plays during a run, where the word is centred far
-  below). The clock is `--fg`, goes `--danger` + a 1s pulse under `WARN_SECONDS` (10), and
+  below). The clock is `--fg`, goes `--danger` + a 1s pulse under
+  `WARN_SECONDS` (**20**, not the 10 this line claimed until 2026-08-11 — the code is
+  ground truth and `WordTimer` has read 20 throughout), and
   at ZERO goes `.spent` — red but STILL, because an alarm about time running out has nothing
   left to say once it has, and it would otherwise beat under the whole result screen. No
   heat/progress ramp is borrowed for it: those two mean DISTANCE and PROGRESS, and a clock
@@ -621,10 +668,35 @@ it to the local store — see `packages/backend/AGENTS.md`).
   which is why it is a parameter and not something the model derives: since #163 the run's
   END is the deadline's fact, and the board is not on screen at all until this beat says so
   (see the three-phase bullet above for the beat order).
+  **RARITY IS SAID IN THE WORD'S COLOUR, ON ONE TRUNK — the sentence route's exact drawing**
+  (user-decided 2026-08-11, superseding 2026-08-10's grade-per-lane fork; the grades had
+  replaced the artifact's semantic roads that day). Every zone station's word is painted in
+  its grade's own `RARITY_COLORS` colour (`--rarity-c`, set per station by WordBoard) — the
+  same colour the strike and the loot wore when the claim landed — where the sentence line
+  paints its stops gold; the drawing itself is the history line's: `routeFrameVars(1, …)`,
+  no junctions, no lane rails, the same `LEAP_H` (56) solid run into the terminus (the old
+  junction-aware `TEASER_MERGE_RUN`/`JX_STUB` arithmetic went with the fork), the same
+  shared `--word-gap` and 48px shelf air (both promoted to the shared drawing on user
+  review — "the gaps and sizings are not the same" — 2026-08-11), the terminus as
+  `RouteWord` in `route-found`'s solved BLUE (the colour rule is keyed on the `graded`
+  class per zone station, not on every station, exactly so the arrival's blue survives —
+  an unkeyed first cut painted the day's word `--fg`). The
+  post-mortem still answers *where were the expensive words?* — in the type now, the way
+  the sentence map says its zones. A station is NEVER colourless (COMMON is `rarityOf`'s
+  floor); what stays `--fg` on the trunk is the near misses, which belong to no grade.
+  `WordBoardModel` is UNCHANGED — it still grades every station and ships `grades` (ladder
+  order, only the grades the field holds), whose consumer is now the sr census:
+  `srWordRarities` states the field per grade and a named stop carries its grade
+  (`srRouteStop`'s `rarity`), the word's colour said in words; grade names stay
+  untranslated there as everywhere else. NOTE: this leaves `routeDrawing`'s whole lane
+  machinery (`Junction`, `laneX`, `laneColor`, `RouteRow`'s `onLane`, `RouteLink`'s
+  `lanes`, `LANE_COLORS` + `laneColors.test.ts`, the junction CSS) with NO consumer
+  anywhere — kept only because root `AGENTS.md` Discrepancy #4 (whether sentence roads
+  ever return) is still the user's open call.
   **The whole FIELD is drawn, censored until it is claimed** (decided 2026-08-05, restoring
   the `???` census after a day without it — the sparse variant that drew only found words
   and dashed the ground between them is gone, `.route-link.dashed` with it): every group of
-  the claimable zone is a station wearing the route map's fixed-width `???`, so each road
+  the claimable zone is a station wearing the route map's fixed-width `???`, so the line
   shows its real length and population — the one thing a list of your own words can never
   say — and a claim lands ON a stop that was already there rather than appearing out of
   nothing. The run's end reveals every word and turns the board into the post-mortem, where
@@ -634,16 +706,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   continues into words with no distance at all", which is true at the cold top end and
   nowhere else here — every rank between two stations is itself a station, so no connector
   hides ground. Consecutive ranks are one row apart (`LINK_MIN`) and only the sparse trunk
-  between far strikes keeps a proportional length, exactly as on the map. The merge→word
-  leap stays SOLID (the 2026-08-04 decision) **and runs the ONBOARDING TEASER's distance,
-  not the modal's**
-  (decided 2026-08-05): the map spends `LEAP_H` (56) there, which with the junction's own
-  stub and the arrival's half-row puts 90px between the bus and the word — 2.5× the
-  teaser's 36 — and on a board that is mostly unknown ground that stretch read as the line
-  trailing off rather than arriving. The teaser is the shape the routes were TAUGHT in, so
-  it is the one to match; the connector contributes only what the junction and the arrival
-  row do not already spend (`TEASER_MERGE_RUN`/`JX_STUB`/`ARRIVAL_HALF_HEAD` in
-  `WordBoard`, measured at 36px bus→node). The rank gutter fits the farthest row drawn,
+  between far strikes keeps a proportional length, exactly as on the map. The line's final
+  run into the word is SOLID at the sentence line's own `LEAP_H` (2026-08-11, superseding
+  the teaser-distance arithmetic the forked board needed — with the lanes gone the two
+  drawings share their arrival too). The rank gutter fits the farthest row drawn,
   which with the whole field on the line is the field's own outer edge until a near strike
   lands beyond it.
   **The window wears the teaser's TORN EDGES** (decided 2026-08-05): the line outruns the
@@ -741,7 +807,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   count is this screen's LAST beat, with no ruler colorize following it as in the sentence
   tray, so the number marks its own landing (never at 0, never on rehydration, collapsed
   under reduced motion). Identity is mode-addressed everywhere: `roundKeyForDay(day, lang,
-  'word')` = `w:` keys into the store's own `wordRounds` map (persist **v7** since #163;
+  'word')` = `w:` keys into the store's own `wordRounds` map (persist **v8** since the
+  sentence gate flag, 2026-08-11; the word rounds' own shape is v7's, #163;
   `ensureWordRound` resets on a republished different word), `lastMode` decides where `/` lands (like
   `lastLang`; the header's Whippin mark opening the mode CHOOSER is the deliberate switch —
   see the chooser bullet) — but **only a LOADED artifact records it** (2026-08-06): unlike a
@@ -766,356 +833,103 @@ it to the local store — see `packages/backend/AGENTS.md`).
   each restate the pair. Word runs never touch the streak, fire no new analytics events,
   and have no benchmark opponents — and since #163 they never will, by decision (see the
   no-bots note in the Word mode bullet).
-- **Route modal (#117, Part 3 of #115):** tapping a HOLE opens its neighborhood drawn as a
-  journey. `game/route.ts` is the pure model (`buildRoute`, contract-tested) and
-  `components/RouteModal.tsx` renders it; `Game` owns the open state so the guess prompt can
-  go inert behind it. **Entry point only where the geometry exists:** `hasRoute` gates on the
-  secret's rank-1 entry carrying `dq`, so every day published before #115 renders exactly as
-  before — no button, no degraded list view. (The onboarding tutorial plays on a REAL
-  generated board since #155; its ending shows that board's roads as THEME clouds in this
-  map's own lane colors — see the onboarding bullet.) The hole
-  becomes a `<button>` wrapping its existing spans; it is present for the WHOLE round or not
-  at all and the solved choreography only `disabled`s it, because unwrapping mid-round would
-  remount the word while its scramble is running. **That disabling covers the solving BEATS
-  only — a settled solved screen keeps every hole tappable** (fixed 2026-07-27), which is what
-  makes the reveal below reachable at all. `exploreDisabled` is therefore
-  `!solvedSettled && (promptExiting || solved)`: `promptExiting` catches the start of the beats
-  (the prompt leaves on the solving submit, while `solved` still trails the last word's settle)
-  but is NEVER reset on a fresh solve — it doubles as "the input is retired" — so reading it as
-  a plain veto left every hole dead for the rest of the screen, and the post-mortem was
-  reachable only by RELOADING (the rehydrated branch does reset it).
-  **Geometry — a LINE, not a to-scale map (redesigned 2026-07-26 on the user's call: the first
-  version was "impossible to understand"; the reference is an SNCF trip).** That version put
-  `dq` straight onto absolute positions over a 340svh band, which is faithful and unreadable:
-  dq's real shape is a steep near field and a very long cold tail (rank 1 = 255, the start word
-  ≈ 120, rank 10 000 = 0), so a linear map spends most of its height on emptiness — the
-  departure landed two screens below the destination with nothing between them, and you had to
-  scroll to find out where you were. The distance now lives in the **LENGTH OF THE CONNECTOR
-  between two stations** — but only where the line SKIPS ranks. **Consecutive ranks are one row
-  apart whatever their dq** (decided 2026-07-26): with every near-field group drawn, the rank
-  ladder already says they are adjacent, so a proportional connector there buys nothing and costs
-  one glaring outlier — dq pins rank 1 at the top of its scale, so 1 and 2 are always further apart
-  than any other pair of neighbours. Out on the trunk, where the player's guesses are sparse, the
-  length is the only thing carrying the distance and stays proportional
-  (`linkHeight`: `LINK_SPAN` px per full dq scale, floored at `LINK_MIN`
-  so neighbours never collide, capped at `LINK_MAX` so the cold tail cannot push the
-  destination off screen). That is the SAME information — dq differences are all dq means — and
-  on a real fr puzzle it took the map from **3.9 screens of mostly emptiness to ~1.0**. (It runs
-  ~5 screens again now that the full roads are drawn — see the near field below — but every row is
-  content: what was wrong with the first version was the empty space, not the length.)
-  **The run from the merge into the terminus is SOLID** (decided 2026-08-04, superseding the
-  dashed "identity leap"): the lanes JOIN at the converge junction and one solid line leads to
-  the word — the routes should visibly LEAD to it, and a broken trace read as the line not
-  quite reaching it. The cold end above the first station stays a broken trace (it is not a
-  distance), and is **cut to a WHOLE number of the dash unit** (`dashedRun`, fixed 2026-07-27):
-  the unit is 5px of line + 8px of nothing, declared once in `RouteModal` and handed to the
-  gradient as `--dash` / `--dash-period`, and a run is `n` units PLUS its closing dash. Any other
-  height cuts the last unit wherever it falls and the stub lands exactly where the trace meets the
-  solid rail — `TAIL_H` 34 ended on 3px of gap against the first station, which reads as a
-  rendering slip rather than a broken line. So its height is DERIVED (34 → 31), never typed
-  (`LEAP_H`, now solid, is a plain 56). `--route-band-h`,
-  the old lane geometry (`stopX`/`labelSide`/`laneNameFont`) and the axis contours are all gone
-  with it.
-  **The line is TRAVELLED, so it runs departure → arrival DOWN the page** (decided 2026-07-26):
-  the off-map words at the top, then the broken tail, every station reached farthest first, and
-  the word itself at the bottom. **The off-map shelf carries NO rule under it** (decided
-  2026-08-05, dropping `.route-break` from both surfaces): the tail's own broken trace begins
-  immediately below it, so a horizontal tear as well only fenced those words off from the
-  distance they are already outside of. It **opens with the CLOSEST word you have reached sitting at the
-  bottom edge**, a few pixels short of it (decided 2026-07-26): the ground you have covered fills the screen above it, and
-  what is still ahead — the words closer than yours, and the destination — waits just below the
-  fold. A solved hole has no "here", so it opens on the terminus instead. Measuring that row is
-  the subtle part and the reason it is done with an inline `position: static`: it is the STICKY
-  one, and a sticky box reports its PARKED position (offsetTop and its rect alike), so at
-  scrollTop 0 it has already pinned itself to the bottom and measuring it there just hands back
-  the viewport height. Suspending the stickiness for the read is safe because this is a layout
-  effect — a synchronous write-read-write before paint, none of which reaches the screen.
-  **`showModal()` is its OWN layout effect, and the FIRST one** (fixed 2026-07-27): a closed
-  `<dialog>` is `display: none`, so until it opens there are no boxes to measure and the row's
-  offsetTop/offsetHeight and the scrollport's clientHeight all read **0** — not a small error but
-  a total one. A natural position of 0 makes EVERY scroll offset test as "parked at the top", so
-  the torn separator sat under the row for the modal's whole life, and the opening scroll clamped
-  to the top of the line. **Dev could not show it:** StrictMode re-runs layout effects after
-  mount, by which point the dialog is open, so it only ever appeared in a build — check this one
-  with `pnpm build` + `vite preview`, not `pnpm dev`. The parked test also carries a
-  **1px `STICK_SLACK`**, because the opening view lands the row EXACTLY on the bottom threshold by
-  design and sub-pixel scrollTop would otherwise decide the separator by coin toss.
-  Every row lays out on the same three
-  columns — the rank in a right-aligned gutter (the "time"), the rail, then the word — which is
-  what makes the rail read as one unbroken line; each cell **names its grid column**, because an
-  item with a definite ROW span is auto-placed BEFORE the fully-auto ones and leaving them
-  implicit silently reorders the columns.
-  **The map carries NO labels** (decided 2026-07-26, superseding the `ARRIVÉE` / `VOUS ÊTES ICI` /
-  `DÉPART` / `ROUTES` tags tried the same day): every one of those is said by a node's size,
-  fill and lane instead, and the only string left on it is `routeOffMap` — the words above the
-  line have no node, no lane and no distance, so nothing about them can be read off the
-  drawing. It reads **MISSED, untranslated in both languages** (decided 2026-08-05,
-  superseding OFF THE MAP / HORS CARTE): those words are precisely the ones the round answered
-  with the floating `MISS`, which is itself untranslated wherever it appears (the tutorial's fr
-  copy included), so the shelf names them in vocabulary the player has already met instead of
-  describing where they sit — one label in every language, like `you` and `dnf`. Its
-  screen-reader mirror stays PROSE in the reader's own language (`srRouteOffMap`: "missed:" /
-  « manqués : »), the rule every sr helper here follows. The screen-reader mirror still names
-  all four in prose (`srRouteStop`), which is why dropping them costs no information. Fixed-width `???` is the ONE token for "you have not found
-  this word": the destination and every censored station wear it.
-  **What NAMES a stop depends on whether it is ON a road (decided 2026-08-06, and the rule for
-  EVERY mode that draws a route):** on a road, its group's canonical accented form — that station
-  was already drawn there, censored, before the player got near it, so naming it is the map naming
-  its own census, which is the whole point of showing the roads' real length and population. OFF
-  every road — out on the trunk — it is **the form the player TYPED**. Nothing was drawn there
-  before the guess landed, so the stop IS the guess, and answering `portes` with the group's
-  `porter` puts a word on the map that was never played, at a distance the player cannot account
-  for; the inflection being the closer one is exactly what makes it read as a correction rather
-  than as their own stop. It is the same rule the MISSED shelf has always followed, one step
-  closer in, and no more a "displayed slug" than the shelf is — on this game the input produces
-  folded slug characters only, so the typed form IS a display form (see `RouteModel.misses`).
-  A trunk stop nobody typed falls back to the canonical form, which is what the departure and a
-  `--no-roads` "you are here" take. Both surfaces obey it in their MODEL — `RouteStop.word`
-  (`game/route.ts`) and `WordOutsideStop.word` (`game/wordBoard.ts`) — so the drawing, the sr
-  mirror and any later view get it for free.
-  **The censored near field is the WHOLE of it** (decided 2026-07-26, superseding the top-5 band):
-  every group of it renders as a station with its word withheld, so each road shows its real
-  **length and population** — the one thing a list of your own guesses can never say. Its extent
-  is **entirely the DATA's**: the near field IS the road zone, and generation ends that at the
-  **DEPARTURE** — the line is a journey and it begins where the puzzle put you down, so anything
-  farther than the start word is behind you rather than ahead. That alone took a real fr map from
-  ~8 screens to ~5. The bound has **ONE owner** (decided 2026-07-26, superseding the same day's
-  first cut, where generation shipped a flat top-150 and `buildRoute` clipped it back here): the
-  side that stops SHIPPING the roads is the side that decides where they end, so this module just
-  reads `geometry.nearTop` and the clip is gone. The departure is **inside** the zone — you are
-  put down on a road, so the fork is drawn just before it and its station sits on a lane (muted
-  node, word dimmed to 62% in that lane's colour). The player's own guesses past it are still
-  stops — they simply ride the trunk. The censored list ends one rank inside the departure for
-  free, because the departure is itself a STOP and a stop is never listed twice. `APPROACH_TOP = 5` survives only as the FLOOR, for a
-  `--no-roads` map that has no near field to bound and would otherwise draw none at all.
-  **Solving REVEALS the whole neighborhood** (decided 2026-07-26): while the round is live a
-  censored station is a position and a lane and nothing else (`RouteHidden.word` is `null`); once
-  the hole is solved every one of them gives up its canonical form and the map becomes the
-  post-mortem — each word in its ROAD's colour, so a secret's distinct senses finally read off the
-  page, dimmed and on the small node so what you FOUND still stands apart from what was merely
-  there. **The sr mirror enumerates what has a WORD and counts what does not**: the player's stops
-  always, the revealed neighborhood once solved, and `srRouteRoads` ("100 stops across 3 roads
-  (56 / 25 / 19), 4 found") standing in for the censored ones — ~100 items of "rank 87, hidden"
-  would bury the words the player actually knows, and the count is what they say collectively.
-  **Every node is a FILLED square** — outline-only stops were removed the same day. What a stop
-  IS comes from size + fill: found `--fg` 15px, the handed-out departure `--muted` 15px with its
-  word at 62% opacity (the map's quietest station — you were GIVEN it), "you are here" `--hole`
-  gold 21px, an unfound approach station its own lane's colour at 11px, the terminus 23px
-  (`--accent` once solved).
-  **Roads are LANES of the rail, not a badge** (decided 2026-07-26, superseding the RER letters
-  tried the same day — a small letter beside the word was too weak to read): the rail is as wide
-  as the neighborhood has roads, a station sits on ITS road's lane, and the trunk forks into them
-  (`Junction`) coming in from the far field and merges back out of them into the word. That is
-  structural — you read a road off the shape of the line — and it makes the one fact a list
-  cannot state visible for free: **a road nobody has reached is a lane with NO stations on it.**
-  Both junctions keep the SAME fixed height, and the distance preceding the fork rides in front of
-  it as an ordinary trunk link rather than being folded into it: absorbed, it made the junction as
-  tall as whatever gap came before, leaving the first lane station far below the bus while the
-  merge at the other end hugged its last one. The two ends of the fork have to mirror each other —
-  15px from bus to station at both.
-  Lane centres live in `routeDrawing` (`LANE_X0`/`laneGap`) because the node positions and the
-  `--lane-lines` gradient that paints them must agree exactly — which is why EVERY consumer of a
-  lane position goes through `laneX(road, lanes)` / `trunkX(lanes)` rather than doing the
-  arithmetic itself. **Past `LANE_BUNDLE_FULL` (4) roads the bundle TIGHTENS instead of widening**
-  (decided 2026-08-07, when `ROAD_KS` went to 6): the rail takes its width from the WORD column,
-  and below ~360px there is none to give — at six lanes the rail ran 141px against 97, leaving
-  ~67px of word column on a 320px screen, where a 9-letter station wrapped mid-word
-  (`boisemen`/`t`). `fitWord` floors at `WORD_MIN_PX`, so past that floor the overflow has
-  nowhere to go, and mid-word breaks are the one thing that module exists to prevent. So the
-  lanes give way instead of the type: the bundle spans a constant `LANE_SPAN` whatever the road
-  count and only the gap closes (22px at ≤ 4, 16.5 at five, 13.2 at six — still 8px between 5px
-  lines). Verified at 320/430 with a synthetic 6-road board: six distinguishable lanes, no
-  mid-word wrap, no horizontal overflow.
-  Each lane is **as vivid as the
-  rest of the app** (decided 2026-07-26, superseding a first muted set — a metro line's whole
-  point is telling it from the next one at a glance): `LANE_COLORS` (one per road `ROAD_KS` can
-  emit — **6 since 2026-08-07**, and `laneColors.test.ts` reads `ROAD_KS` out of `distances.py`
-  to keep it that way, because a road past the last colour wraps around to lane 0's and draws
-  two roads identically) takes far-apart hues from the **progress ramp's own stops**
-  (`shared/progressColor.ts`) rather than inventing a palette, COPIED not imported, because that
-  ramp means "progress" and these mean "identity". Copied means nothing catches drift, so
-  `laneColors.test.ts` pins each hex to the stop it was taken from — pink 70, cyan 30, violet 90,
-  green 40 (added 2026-07-27 on review; it immediately caught the violet as `#883beb` where its
-  stop is `#883ceb`), then coral 60 and magenta 80. **The first four did not move**, so every map
-  that forks 4 ways or fewer renders exactly as before; only three ramp stops were left to choose
-  the new pair from, and it was MEASURED rather than eyeballed — coral + magenta hold a minimum
-  CIE76 ΔE of 36.9 across the whole set, where either pairing with indigo collapses to 15.3
-  (indigo sits on top of violet). That ΔE is also why magenta is admissible despite reading
-  "pinkish" in the abstract: against pink it is 40+. If a stop is ever retuned the guard fails,
-  and the choice gets made again
-  on purpose rather than the map quietly speaking a stale palette.
-  Pink leads, never cyan: lane A always holds
-  rank 1 and cyan is what the heat ramp paints a rank-1 number, so leading with it would imply a
-  rule that isn't one. Gold is "you" and blue is solved, so no lane may borrow either — and
-  `--rail` stays the ONE unsaturated line on the map, because the trunk is exactly the stretch
-  where no road has been identified. **A lane station's WORD is painted in its lane's colour too**
-  (`--lane-c`, set per station; `.on-lane`) — the road then reads off the type as well as off the
-  line, with nothing added — while a trunk word stays `--fg`, because above the fork there is no
-  road to name. An UNFOUND station's node takes the same colour: a dark node on a vivid lane reads
-  as the line being BROKEN, where the lane's own colour reads as a stop with no name on it yet.
-  **Being ON a road and the line FORKING are different questions** (decided 2026-08-07): `onLane`
-  is `road !== null` and nothing else, on BOTH surfaces. A neighborhood with a single honest facet
-  ships ONE road, and gating the colour on `forked` drew that entire board in the colourless trunk
-  treatment — a route rendered as if no route had been found. It is only the COLOUR at stake, since
-  `laneX(0, 1)` and `trunkX(1)` are the same point. `forked` still gates the JUNCTIONS, where it
-  belongs: one road has nothing to fork into, and drawing a fork would claim a structure the data
-  does not have — so a one-road board is a single coloured line with no junction at either end.
-  The real other side of the rule is `--no-roads`, where `road` is null: no road, so no colour.
-  `WordBoard.test.tsx` pins both directions, because "always colour it" is the tempting
-  simplification that breaks the second one. (The stricter road rules made single-road maps
-  common — `pain` and `vie` both fall to one.)
-  The junction **bus is painted in the lanes' colours, split at the trunk** (`busGradient`), not
-  in one neutral bar: a single grey bar at each end of a set of parallel lines reads as a frame
-  drawn AROUND them.
-  The caveat this bullet used to carry — a real fr puzzle forking into one big road plus a
-  1–2-group outlier, with the empty lane advertising that outlier as a whole road — is
-  **ANSWERED as of 2026-08-07 and no longer an open question**: generation now folds an
-  undersized cluster into its nearest neighbour before scoring the split
-  (`ROAD_MIN_FRACTION` + `ROAD_MIN_GROUPS`, rules in the root `AGENTS.md`), so a lane the
-  drawing paints always has a route's worth of stations on it. Nothing changed on this side —
-  the fix belongs to the side that decides what a road IS.
-  **Word sizes are computed, not measured:** Press Start 2P advances exactly **1em** per glyph
-  (measured — the retired `GLYPH_EM = 1.37` was wrong), so `fitWord` shrinks a long word to
-  `--wordw / length` rather than letting it break mid-word (`incontestableme/nt` reads as a
-  different word). `--wordw` is the one number the CSS has to guess at: it subtracts an **18px
-  allowance for a classic scrollbar**, which `100vw` cannot see and which would otherwise make the
-  real column narrower than the size fitWord picked. **The rank gutter, by contrast, is MEASURED,
-  not computed** (decided 2026-07-26): `.route` is ONE grid and every row a `subgrid` of it, so the
-  gutter track is a true `max-content` sized by the widest exponent actually rendered, across all
-  rows at once. Per-row grids cannot do that — each would fit its own rank and the rail would
-  zigzag — which is why the rows must be subgrid rather than repeat the template. `--gutter`
-  (`--rank-size × <widest exponent> + 10px`, set per-modal by RouteModal) survives for the two jobs
-  a measured track cannot do: it is the **fallback template** declared before `subgrid`, so a
-  browser without it degrades to a computed width instead of collapsing to one column, and it is
-  the NUMBER `--wordw` and the parked row's backgrounds need. It also keeps the responsive trick —
-  the char count is baked in as a literal while the cell size stays `--rank-size`, so the media
-  query shrinks both together (10px → 9px below 360px) without the component knowing: a 17-letter
-  word plus four wide roads genuinely does not fit a 320px screen otherwise. Verified no mid-word
-  break at 320/360/390/430/900.
-  **That `<widest exponent>` is the MAP's, never the LINE's** (decided 2026-08-06,
-  `rankGutterChars` in `routeDrawing`, fed by `RouteModel.maxRank` / `WordBoardModel.maxRank`).
-  It used to be the farthest station DRAWN, which is stable only until a guess lands farther
-  out than anything on the line: the track is `minmax(var(--gutter), max-content)`, so a
-  4-digit rank arriving on a word board whose field ends at 150 widened it and shoved the whole
-  drawing — rail, lanes and words — one glyph right, mid-round. An exponent is a REPORT on a
-  guess; it must not move the map the player is reading. Both geometries already walk every
-  entry, so the farthest rank costs nothing to carry, and being a property of the PUZZLE it
-  cannot change during a round. **Know the price:** generation caps every map at rank 10000, so
-  the reservation is in practice a constant **6 glyphs (70px)** — where a word board at rest
-  shows `-150` and would fit in 4 (50px). That is ~20px of gutter standing empty to hold one
-  rank value (10000 is the ONLY 5-digit rank; 9000 ranks have 4). Reserving 5 glyphs instead
-  would need the track to stop negotiating at all (a fixed `var(--gutter)`, letting a too-wide
-  exponent hang left into the margin rather than push the line) — considered and NOT done,
-  since it trades away the measured track's font-fallback safety.
-  **"You are here" is STICKY on both edges** (decided 2026-07-26): the line can run several
-  screens, and the one thing you always need while reading any part of it is where you stand, so
-  the `best` row carries `position: sticky` on BOTH offsets — scroll below it and it parks at the
-  top, scroll above it and it parks at the bottom, always at the edge it left by. It parks
-  `STICK_INSET` px SHORT of that edge rather than flush against it (flush reads as clipped), which
-  is one number in three places — the CSS offsets, the opening scroll and the parked test — so it
-  lives in `RouteModal` and reaches CSS as `--stick-inset`. A strip fills that margin on the edge
-  side: background, so no sliver of the rows sliding past shows through, carrying the lanes SOLID
-  so the line still runs all the way out to the edge instead of stopping short of it.
-  Its containing block is `.route`, i.e. the whole line, so it travels the entire map. Two things
-  follow: it needs an opaque `--bg` to stay legible over the rows it floats above (free
-  visually — the station draws its own cross-section of the rail, so the line still runs unbroken
-  through it), and **`.route-scroll` may carry no VERTICAL padding**, because a sticky offset
-  resolves against the scrollport's padding box and would park the row that far inside the real
-  edge; the line's breathing room lives on `.route` as content instead. A solved hole has no
-  `best`, so nothing sticks.
-  **A parked row shows the GAP it is hiding** (decided 2026-07-26): pinned, the row is drawn hard
-  against one it is nowhere near, with an unseen stretch of the line squeezed out between them, so
-  the side facing that skipped ground gets **a torn separator — the same dashes a scrolling
-  window's cut-off edge wears** (`.scroll-torn`), since both mean the map does not continue
-  straight through there. Below when parked at
-  the top, above when parked at the bottom, nothing when the row is simply where it lives (which
-  includes the opening view). **`--stick-inset` is the row's ONE margin, used on both of its
-  sides**: the same distance holds it off the screen edge and off the separator, so a parked row
-  sits centred in its own clearance instead of leaning toward one side; beyond the separator that
-  same margin again is what masks the rows really passing behind. The margin on the ROW's side
-  still carries the lanes, so the roads run out of the station and INTO the separator: cut short
-  they read as a second `--bg` margin, and the separator looks framed on both sides rather than
-  ending the line. Two more details that are not decoration — the dashes' gaps are `--bg` rather
-  than transparent (over scrolling content, transparent gaps show 3px slivers of what is
-  underneath), and the pseudo-element states
-  `box-sizing: content-box`, because the global `* { box-sizing: border-box }` does NOT match
-  pseudo-elements: `height` there is the SEPARATOR and the borders are the margins, and assuming
-  otherwise renders the whole band as one solid block.
-  Knowing it is parked needs a scroll listener — the map's ONE piece of scroll JS, and still not
-  motion: `readStuck` is arithmetic against `scrollTop` (asking the DOM would be circular, since a
-  sticky box reports the parked position either way), and `setStuck` bails out on an unchanged
-  value so the ~100-row list re-renders only on a transition. Its natural offset is re-measured
-  whenever the model changes, because a guess landing while the map is open can add rows above it
-  or make a different station the closest one.
-  **The header is the APP's, not a modal's** (decided 2026-07-26) — and since 2026-07-27 it is
-  the SHARED `ModalHeader` (see the app-header bullet below), which this map's own bar was
-  extracted into when the leaderboard adopted it. It reuses
-  `.topbar-inner` / `.topbar-left` / `.topbar-title` / `.topbar-right` / `.home-btn` wholesale,
-  so it cannot drift from the corner-chip policy — no band, no border, no background, the
-  hole's name top-left and one close control top-right. It sits **in flow** above an inner
-  `.route-scroll`, which is precisely what lets it paint nothing: with the scroller (not the
-  dialog) owning the overflow, no content can ever pass beneath the header, so none has to be
-  hidden behind a band. Tapping the space AROUND the line does nothing since 2026-07-27 (see
-  the modal-behaviour bullet): the close chip is the way out.
-  **The LINE has no motion; the OPENING does** (decided 2026-07-27, superseding "no motion at
-  all"): the map **zooms out of the word you tapped**, the way a desktop window opens out of its
-  icon — the whole dialog, opaque background included, scales from ~0 with its
-  `transform-origin` on that word's centre (`route-zoom`, 120ms — a tap opening a screen, not a
-  transition worth watching; 200ms was tried first). It is the transition INTO the
-  map, not part of the drawing: the screen that lands reads as that word opened rather than as a
-  new screen that replaced it, which is also part of what makes the entry point legible (#129).
-  `Game.openRoute` measures `.hole-word-wrap` inside the hole button at open time — the word,
-  exponent excluded — and passes the viewport point, which is the fixed full-screen dialog's own
-  coordinate space, so the CSS needs no arithmetic; a missing button falls back to dead centre.
-  **A transform cannot disturb what this modal measures on open** — the sticky row's natural
-  place and the opening scroll are read from `offsetTop`/`offsetHeight`/`clientHeight` in layout
-  effects before it ever paints — and that was verified rather than assumed: on a 4.2-screen map
-  the opening view is identical with the animation on and forced off.
-  **Closing RETRACTS into the same word** (decided 2026-07-27, superseding the unanimated close):
-  the map goes back where it came from, so the sentence underneath is somewhere you RETURNED to
-  rather than somewhere you were dropped. That means the dialog has to outlive the dismissal —
-  every route to a close (the X and **Escape**, whose `cancel` event is `preventDefault`ed
-  precisely because a native dialog would otherwise vanish on the spot — a backdrop tap is NOT
-  one of them since 2026-07-27, see the modal-behaviour bullet) only STARTS the exit; the real
-  `dialog.close()` waits on the animation's `animationend`, with a deadline behind it
-  (`EXIT_FALLBACK_MS`, in the shared `useModalDismiss` since both modals grew an animated
-  dismissal) so a lost event can never lock the player inside a modal. `route-zoom-out` is written out as its OWN keyframes rather than
-  `animation-direction: reverse` on the opening one: with the same `animation-name` a direction
-  change UPDATES the running animation instead of starting one, and the opening run has long
-  since finished — it would snap to its end state rather than play. It carries `forwards`, or the
-  dialog flashes back to full size for the frame between the animation ending and React
-  unmounting it. Reduced motion collapses both durations; the opening lands on the natural scale
-  and the close still completes. Still **no new analytics event** — the three-event invariant
-  stands.
-  **"You are here" is read off the HOLE, never off the guess log** (fixed 2026-07-27): a guess
-  deduped as a canonical duplicate never enters `tried` (`gameStore.recordGuess`) and can still
-  IMPROVE another hole, so the current group can be one the history does not mention. `buildRoute`
-  therefore looks the hole's own rank up and visits it as a stop; inferring it from the log and
-  falling back to the closest logged one put the marker on a word the player had moved past — a
-  rank-5 hole reading as its rank-104 departure, its current word censored `???` on the map while
-  the sentence showed it.
-  **The DEPARTURE is read off its stated RANK, never off the start word's slug** (fixed
-  2026-07-28, the same shape as the note above — `buildRoute` takes `startRank`, and
-  `hole.start.slug` now has no consumer at all). A slug is not an identity: `fold` drops accents,
-  so `côté` and `coté` share the key `cote`, and a shared key belongs to the CLOSER group. When a
-  hole prints an agreed form (#119) whose slug a closer group already owns, `alias_start_display`
-  deliberately DECLINES to re-key it — typing it really is the closer distance, and that call is
-  right and stays — so the shipped `start.slug` resolves to a group the player was never put down
-  on. Looking the departure up that way drew it at that group's rank AND, because a stop renders
-  with its word, NAMED it: on a board where nothing had been guessed, the map printed a rank-4
-  word and lifted it out of the censored near field. That is the one thing the censored field
-  exists to prevent, and the sentence's own exponent was right the whole time — `start_rank` is
-  stated, unambiguous, and already what the sentence, the score and the progress all use.
-  **The hole button is DESCRIBED, not LABELLED** (fixed 2026-07-27): an `aria-label` REPLACES the
-  content it wraps, and that content — the word and its exponent — IS the clue, so labelling the
-  button deleted it from the button and from the sentence a screen reader reads. The hint moved to
-  `aria-describedby`, pointing at an sr-only note `Phrase` renders OUTSIDE the `<p>` (inside it,
-  "Explore word 2" would interleave into the prose).
-  **A road id may never BE an array length** (fixed 2026-07-27): ids come off the network, so
-  `routeGeometry` allocates one lane per DISTINCT road present (`lanes`, ascending → generation's
-  contiguous ids are unchanged) instead of sizing by `max id + 1`, where a well-formed
-  `road: 4294967295` threw `RangeError`. `api.ts` caps the value too (`MAX_ROAD` 63) — generous on
-  purpose, since a rejected puzzle costs the whole day.
+- **Hole HISTORY modal (user-decided 2026-08-10, REPLACING the #117 route map):** tapping a
+  HOLE opens the round's own journey toward that hole's secret — the player's guesses as
+  stops on ONE line walking down to the hidden word. What the user retired is everything
+  that made the map unreadable and never helped anyone: the semantic road LANES, the
+  censored census of every unfound group, and the sticky "you are here" machinery. What
+  SURVIVED it — restored on review the same day, after a first cut as a flat sorted list
+  proved legible but empty ("no starting word, you had to read the exponents to infer the
+  order, no notion of reaching an unknown target") — is the map's SPINE: the journey
+  reading is the value, the roads were the noise. `game/history.ts` is the pure model
+  (`buildHistory`, contract-tested) and `components/HistoryModal.tsx` composes it out of
+  the shared `routeDrawing` parts, trunk only (`routeFrameVars(1, …)` — no junctions, no
+  lane colours).
+  **The line, top to bottom:** the MISSED shelf (off-map guesses, try order), the broken
+  tail out of the void, every ranked try as a stop FARTHEST FIRST with connector lengths
+  carrying the real `dq` distances (uniform `LINK_MIN` fallback on pre-#115 data — the
+  modal degrades instead of refusing, so the old `hasRoute` gate stays dead), then the
+  solid leap into the terminus: the fixed-width `???` while the hole is open, the accented
+  secret in solved blue once found. "You are here" keeps its gold node — read off the
+  HOLE's rank, never inferred from the log (the map's rule, kept for the map's reason: a
+  deduped guess can improve a hole without entering `tried`) — but the row no longer
+  sticks: the line is one screen in the common case, and the whole WebKit sticky-subgrid
+  workaround died with the map. Stops
+  show the form the player TYPED wherever a typed form reached them (canonical only for
+  the departure and an untyped "you are here"); rank 0 is never a stop — the solving guess
+  IS the terminus. It opens scrolled to the line's END; a line shorter than the screen
+  centres via auto margins on `.history-frame` inside the flex scroller (never
+  `justify-content: center`, which would clip a long line's head). An untouched hole is
+  already a meaningful view: the departure, the line, the `???` — the journey laid out
+  before anything is played, so there is no empty-state copy at all.
+  **SOLVING turns the line into the real POST-MORTEM: it NAMES the whole walked stretch**
+  (user-decided 2026-08-10) — every group from the secret out to the departure, including
+  the ones the player never reached (`HistoryStop.revealed`). Only that stretch: what lies
+  BEHIND the departure was never on the way, so nothing there is named that they did not
+  type themselves. A named group takes the app's own "named, not found" dress — the word
+  board's own distinction — dimmed word (the census's 0.55) and a small muted node, and it
+  keeps the walk's GOLD, so what the player actually HELD reads at full strength straight
+  out of a field that was there all along. They are named with the group's CANONICAL form:
+  nobody typed them, so there is no typed form to prefer. This is what the retired route
+  map's censored census was for, kept only where it earns its keep — the round is over, so
+  there is nothing left to leak — and it costs one walk of the alias-expanded map, cached
+  per rank map in `nearField` (which the departure and "you" now read from too, so an
+  unsolved open pays ONE pass where it used to pay two partial scans).
+  **THREE KINDS OF GUESS, told apart by the LINE itself — in COLOUR, never by reading
+  numbers** (user-asked polish, 2026-08-10, colour-coded on a second pass the same day:
+  brightness alone was "still not very obvious at first sight"; the final palette is the
+  user's own third pass): a stop FARTHER than the departure is `behind`
+  (`HistoryStop.behind`, model-derived — the journey runs departure → word, the doctrine
+  the road zone was cut by) and goes GREY — word at the census's own 0.55, small muted
+  node — with the CONNECTORS entering it (and entering the departure from behind
+  territory) staying the broken trace (`RouteLink broken`, heights `dashedRun`-snapped by
+  the caller). **From the departure down — the START WORD INCLUDED — the WORDS are GOLD**
+  (`--hole` — the sentence game's own grammar carried over: gold is the colour of the
+  words the player HOLDS, and every stop from the departure on is one of them;
+  `route-ahead`/`route-you` — the zone classes are EXCLUSIVE per stop, HistoryModal picks
+  one, so each zone owns its colour outright), the nodes staying the found stop's plain
+  `--fg`. **The DEPARTURE has NO station state of its own** (user-decided 2026-08-10,
+  superseding its muted node + 0.62 dim, and `route-departure` is deleted with the rule):
+  it renders EXACTLY as a valid guess does, because it is a word the player holds like any
+  other, and singling it out made the line's quietest stop out of the one it begins at.
+  What still says "the walk starts here" is structural and needs no per-stop dress — the
+  broken trace ends AT it, and everything above it is grey — so `HistoryStop.start`
+  survives in the MODEL alone, where the sr mirror and the dashed-connector boundary read
+  it. The CURRENT word alone gets the big gold square, its word in the same gold — the
+  hole as it looks in the sentence, transplanted onto the line. **The RAIL keeps its own `--rail` everywhere** (a green
+  journey stretch was tried and walked back the same day — the type and the nodes carry
+  the zones, the dashes still say where the walk begins, and the line stays the app's one
+  quiet rail). **The terminus node is the solved-word BLUE from the first frame**
+  (user-decided: the point to reach is a blue square — blue is what the secret wears once
+  won, so the `???` square says what it is before it is), and the word beside it joins it
+  in blue at the solve. The MISSED shelf's words wear the same computed `heatColor(0)` as
+  its heading, dimmed to the same 0.55 (`.route-miss` — a SHARED shelf, so Word mode's
+  post-mortem gets the one-voice red block too), and the shelf holds 48px off the line
+  (SHARED `.route-misses` since 2026-08-11, superseding the history-only override — on a
+  one-trunk line the shelf is the drawing's top neighbour and read as the first stop's
+  label at the retired lane-map's 26, and both drawings are one trunk now). So: red
+  and shelved = never on the map, grey on the dashes = behind where you started, gold from
+  the start word down = the words you hold, the gold square = where you stand, blue square
+  = the target. The rail-to-word gap is likewise the SHARED drawing's since 2026-08-11
+  (`--word-gap` 14px on `.route-frame`, paid by `.route-body` and subtracted from both
+  frames' `--wordw` — it started as this modal's own fix for words sitting on the trunk,
+  back when the shared drawing packed them for the word board's six-lane case). The sr mirror says the third
+  state in prose (`srRouteStop`'s `behind` — « derrière le départ » / "behind the
+  start"); "you" can never be behind, since a hole's rank only improves from its
+  `start_rank`.
+  **What survived as MODAL chrome:** the zoom out of the tapped word and the retraction
+  back into it (`history-zoom`/`history-zoom-out`, same measured-origin plumbing in
+  `Game.openHistory`), `useModalDismiss` + the shared `ModalHeader` above a `.pixel-scroll`
+  scroller, close chip + Escape as the only ways out, the solving-beats gating
+  (`exploreDisabled`, including the settled-solved-screen re-enable), and "the LINE has no
+  motion" — the only animation is the modal arriving and leaving. The title is `MOT n` /
+  `WORD n` (`holeTitle`, the ruler's numbering); the game's button hint is
+  `ariaHoleHistory` ("Your tries on word n") while the tutorial keeps `ariaExploreHole`
+  for its themes tap. The drawing is decorative with the sr-only prose mirror the map had
+  (`srRouteDestination`, `srRouteStop` with départ / vous êtes ici, `srRouteOffMap`).
+  **The entry point is UNGATED:** a history exists on every puzzle, so every hole is a
+  button (`game/route.ts`, `RouteModal.tsx` and their tests are deleted; `routeDrawing`
+  serves both this modal and Word mode's board, `DQ_MAX` moved into it).
 - **Route discoverability (#129, decided 2026-07-27):** #117 made every hole a button and
   nothing said so. Two fixes, both in the show-don't-tell grammar — no permanent chrome, no
   tooltip, no message band (all three considered and rejected the same day).
@@ -1139,13 +953,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
   around the sentence reads as a cursor pointing somewhere; several words breathing on separate
   rhythms read as the words being alive, which is the claim the affordance makes. The round
   contributes exactly ONE fact — `quiet`, the thing a hole cannot see for itself: no guess
-  feedback in flight, no map over the sentence, `promptExiting` false, not solved. Everything
-  else is the hole's own (`ticking`): its rank, its scramble, its hit, and whether it has a map
-  to open at all — the wave is an affordance for the TAP, so a hole with no #115 geometry never
-  ripples, and a hole locked at rank 0 never ripples in the game (`Hole.waveSolved`, default
-  false, is the ONE exception: the tutorial's ending waves its solved word, because there the
-  tap on that word IS the lesson — #155). A wave already in FLIGHT is cut when `ticking` drops, not merely when the hole's own
-  `busy` does: `quiet` also falls when the map opens over the sentence, and a wave left running
+  feedback in flight, no history modal over the sentence, `promptExiting` false, not solved.
+  Everything else is the hole's own (`ticking`): its rank, its scramble, its hit. (The wave
+  used to also gate on the hole HAVING a map — #115 geometry — because the map was what the
+  tap opened; since the history modal, 2026-08-10, every hole opens one, so that gate is
+  gone.) A hole locked at rank 0 never ripples (the tutorial's `waveSolved` exception was
+  deleted 2026-08-11 with the themes ending — no tap ends the lesson any more, so nothing
+  waves a solved word). A wave already in FLIGHT is cut when `ticking` drops, not merely when the hole's own
+  `busy` does: `quiet` also falls when the modal opens over the sentence, and a wave left running
   behind it shows its tail if the player closes quickly (both modal beats are 120ms, a wave up
   to 460ms). Reduced motion: the clock never starts.
   **The one-time auto-open is GONE (#155, decided 2026-08-03).** It was #129's guaranteed
@@ -1392,6 +1207,35 @@ it to the local store — see `packages/backend/AGENTS.md`).
   opens the sequence immediately with `N` as the PREVIOUS value (`?streak=9` → `9→10`),
   suppresses the first-visit invitation, and synthesizes its visual week without mutating
   persisted rounds/solved days; production builds ignore the parameter.
+- **The sentence game's one-time PLAY gate (user-decided 2026-08-11):** each mode explains
+  ITS OWN rules before the first round, once — the tutorial teaches only the shared core
+  concepts (semantic distance, word rarity). Word mode already had this by construction:
+  its GATE is mandatory because PLAY starts the clock (the button wears the sentence
+  gate's own PLAY label — one shared `gatePlay` key, user-decided 2026-08-11). The sentence game's gate exists
+  only for the instructions, so it is shown **ONCE ever** — a persisted global flag,
+  `sentenceRulesSeen` (store **v8**; older blobs get false, deliberately NOT grandfathered
+  the way `onboarded` is: the gate teaches the history tap, which is newer than any
+  existing play state, so every player sees it exactly once) — and PLAY
+  (`markSentenceRulesSeen`) is its whole job. On the gate the PHRASE is on screen but the
+  round holds back: the prompt lays out `retired` (invisible, inert, height reserved), the
+  lineup ZONE keeps its band with no characters in it, the holes are untappable and waveless
+  (`gateOpen` feeds `exploreDisabled` and vetoes `quiet`), and the TRAY holds the rules +
+  PLAY in the keyboard's own footprint (`.rules-gate` — renamed from `.sentence-gate`
+  when Word mode adopted the exact same stack the same day), so PLAY swaps what the tray
+  holds and moves nothing else. **The rules wear the app's ONE rules dress (user-decided
+  2026-08-11, second pass): `.coach-rules` — the tutorial's coach dialog, in flow and
+  sized to its copy (680px cap, the keyboard's own footprint, after "narrow for no reason"
+  desktop feedback) — typewritten by `CoachText`, as BULLETED lines, with an sr-only
+  plain-text mirror (the visible box is aria-hidden like every coach box). Both gates wear
+  it, so anything in this box reads as "here to help"; and PLAY is the tutorial's own
+  full-width `.mix-btn`, so the gate and the graduation speak one button.** TWO rules, one
+  idea each (`sentenceRulesGoal` / `sentenceRulesHistoryTap|Click`, the tap line in the
+  input device's own verb — the streak hint's coarse-pointer test): the goal and the
+  history tap. The famous-AI line was CUT on the same user review — the lineup on screen
+  already says it. The gate is DERIVED, not state: `!sentenceRulesSeen && !solved &&
+  guessCount === 0`, so a round already in progress (or solved, or rehydrated mid-play)
+  never shows it, and an unset flag re-offers it until PLAY is actually tapped. No
+  analytics event — the three-event invariant stands.
 - **Onboarding tutorial (#51, redesigned 2026-07-06):** the tutorial **never starts
   without an action**. A first visit (persisted `onboarded` unset) lands on an
   **invitation** (`tutorial/Invite.tsx`, standing in for the loading screen: "New to
@@ -1422,130 +1266,80 @@ it to the local store — see `packages/backend/AGENTS.md`).
   prompt (no after-panels); finally the player types back to the secret with the
   REAL vocabulary (`useVocab` loads in the tutorial), nudged with the answer after 3
   straight MISSes.
-  **It ENDS on the found word, teaching ROUTES (#155, decided 2026-08-03, superseding the
-  stage-2 bakery sentence; ending refined the same day on findings):** analytics and feedback
-  said the unguided second stage was widely skipped and the game is intuitive enough without
-  it — its one lesson (a guess filling several holes) is discoverable in play — so cutting it
-  freed the ending for the one concept nothing else teaches. Finding the word retires the
-  prompt and DROPS the keyboard out of the tray (the game's own `kb-drop`). **The ending then
-  opens on TWO beats, one idea each** (decided 2026-08-04): the CLAIM — "Plusieurs thèmes
-  peuvent exister à travers le même mot." (`tutThemesIntro`) — with the tray's NEXT as its
-  only control, and only once that is acknowledged the GESTURE — "Tu peux cliquer sur un mot
-  pour découvrir ses thèmes.", **in the input device's own verb** ("tap" on a coarse pointer,
-  "click" otherwise, the same `(pointer: coarse)` test as the streak hint,
-  `tutTap`/`tutClick`) — which is where the word starts running #129's ambient wave and
-  accepts a tap, the beat's only control. The claim is made before the evidence, and the
-  clouds are the evidence. **The tap REPLACES the word with its THEMES, shown as CLOUDS of
-  words ONE AT A TIME** (findings 2026-08-04, superseding first the inline route line and
-  then its one-road-at-a-time variant — the line was too much information at once, where a
-  cloud of themed words says "these belong together, this close" with nothing to decode):
-  `tutorial/ThemeCloud.tsx` renders one theme — the map's road — as a cloud of its closest
-  groups (capped at 12), words painted in that route's LANE color (imported from
-  `RouteModal.LANE_COLORS`, so the lesson speaks the identity the game's map uses later),
-  heat-ramp exponents on the board's own scale, type size falling with distance,
-  width-capped by fitWord-style arithmetic (VT323 advances exactly 1em/glyph — measured) and
-  HEIGHT-scaled to the viewport (the whole ramp shrinks on short screens so the view never
-  scrolls — findings 2026-08-04). **A cloud CONDENSES and disperses**: every word scales up
-  from nothing on its OWN random delay and scales back down the same way, so the cloud reads
-  as a handful of things belonging together rather than a paragraph swapped for another
-  (the delays are rolled once per cloud and are deliberately NOT index-derived — a
-  left-to-right sweep reads as a list being filled in). The leaving cloud keeps the stage
-  until it reports its last word gone (`onExited`, with `CLOUD_EXIT_FALLBACK_MS` as the
-  deadline behind a lost report — the winner cancels the loser), so two clouds never overlap
-  and the coach's next line arrives WITH its cloud; NEXT THEME is inert for that beat. Reduced motion
-  collapses the durations and keeps the delays, so the words still arrive one by one. Never two clouds at once: the coach names each from the
-  script's `themeCopyKeys` (`tutTheme1..4` — en names OCEAN's themes, fr TROPIQUES's;
-  scripts.test.ts pins the list's length to the map's real road count), each headed
-  **« Thème n/N : <name> »** (`themeHeading`, so the total comes from the board's real road
-  count and no string restates it) with **the theme's NAME wearing the cloud's color**
-  (CoachText's `[[t:]]` tag reads `--coach-theme-c`, set on the box by the Tutorial), a
-  NEXT/SUIVANT press (`tutNext`, the one "go on" label the whole ending uses)
-  swaps to the next — and each swap WAITS for the leaving cloud to report its last word gone
-  (`ThemeCloud.onExited`, an `animationend` count with a deadline behind it, never a guessed
-  duration, so nothing lands over a word still on screen). After the last theme the close
-  shows **the ROUTES TEASER**
-  (`tutorial/RoutesTeaser.tsx`: the themes' colored lines at the map's own lane rhythm,
-  carrying EVERY near-field group out to rank 100 as a station — heat-colored rank exponent
-  in a left gutter like the real map's, node on its lane, word beside it in the lane's
-  colour. It reads the way the real map reads: DOWN the page from the far field to the word,
-  so **`-1` sits at the BOTTOM**, and past the lanes' MERGE the WORD ITSELF closes the line —
-  the lanes elbow onto a bus and ONE SOLID trunk leads down into the word's node (the real
-  map's converge junction at the miniature's scale; solid since 2026-08-04, superseding the
-  dashed identity leap, same decision as the modal's), the terminus in solved blue on the
-  biggest node — so the routes visibly JOIN and LEAD to the word rather than running out
-  (added 2026-08-04). It opens parked at
-  that bottom, on the destination. It **SCROLLS** by drag/wheel; the chevrons that used to
-  flank it were removed 2026-08-04 (one affordance per gesture, and their column was width the
-  words needed at 320px), which also leaves the whole drawing decorative with nothing
-  focusable in it. Two things say the line goes on: the squared-off scrollbar, and **the
-  frame's own EDGES — whichever side still has line beyond it wears a TORN dashed rule**
-  (decided 2026-08-04), the route map's 9px-on/9px-off break meaning the same thing here, so
-  parked at the destination the top edge reads as cut off rather than as the end of the map
-  (bottom edge scrolled to the far field; both in between). The rules sit just **OUTSIDE the
-  window's edges**, never over it — inside, the tear covered the outermost station's row
-  instead of marking where the window cuts. That is why the teaser is TWO
-  boxes — a non-scrolling `.routes-teaser` frame around the `.teaser-scroll` scroller: a
-  background paints beneath the stations and a pseudo-element inside a scroller scrolls away
-  with them, so the rules can only live on a parent that stays put. **Both halves are SHARED
-  since 2026-08-05** — the rules are the `.scroll-torn` utility and the scroll state is
-  `hooks/useScrollEdges` — because Word mode's board (#156) needed the same edges and the
-  parts worth keeping in one place are the details (the sub-pixel slack, the bail-out on an
-  unchanged value, the resize listener). It **FILLS the play
-  area's free height** — flex-basis 0 + min-height 0 so it can never grow the page, and
-  deliberately NO max-height (a cap only opened a dead gap under the coach on tall screens,
-  findings 2026-08-04) — and its
-  width is DEFINITE, never
-  fit-content, because `.teaser-map` is an inline-size container whose `cqw` word sizing
-  would otherwise be circular. Its SCROLLBAR is the app's shared **`.pixel-scroll`** (defined
-  beside `.sr-only`, and worn by the route map's own `.route-scroll` too since 2026-08-04):
-  a flat rectangle in a flat channel, drawn with `::-webkit-scrollbar` — the standard
-  `scrollbar-width` / `scrollbar-color` are confined to a Firefox-only `@supports` block,
-  because since Chrome 121 either of them DISABLES those pseudo-elements and the standard bar
-  cannot be squared off. Any scroller that wants the app's bar opts in with the class; one
-  that does not is untouched. **VT323 advances exactly 1em per glyph** (measured; a 0.95
-  guess clipped the longest words) and the floor is the route map's own 8px)
-  under the general principle (`tutThemes` — "Chaque thème est un chemin sémantique
-  différent à suivre.") while the tray offers
-  **PLAY (`tutPlay`), which is the graduation**: `onDone`, no SolvedScreen (a lesson has no
-  score to show, so `SolvedScreen`'s tutorial `action` prop and its null `dayNumber` are gone
-  with it).
+  **It ENDS on word RARITY (user-decided 2026-08-11, superseding the #155 THEMES/routes
+  ending):** the tutorial teaches the CORE CONCEPTS the modes share — semantic distance
+  (the mix demo and the guided guesses) and word rarity — and nothing mode-specific: each
+  mode's own rules live on that mode's pre-game gate (Word mode's gate screen; the
+  sentence game's one-time PLAY gate, below). The themes/clouds/routes-teaser ending this
+  replaces taught the semantic road clusters, which the game no longer draws anywhere —
+  `tutorial/ThemeCloud.tsx`, `tutorial/RoutesTeaser.tsx`, the `tutTheme*`/`tutTap`/
+  `tutClick`/`tutThemes` copy, `themeHeading`, `ariaExploreHole`, CoachText's `[[t:]]` tag
+  and `Hole.waveSolved` (the solved-word wave existed only for that tap) are all deleted.
+  Finding the word retires the prompt and DROPS the keyboard out of the tray (the game's
+  own `kb-drop`, same `KB_EXIT_FALLBACK_MS` deadline behind its `animationend`). **The
+  ending then runs TWO beats, one idea each** (the tutorial's own grammar): the CLAIM —
+  « Une dernière chose : chaque mot a une rareté. » (`tutRarityIntro`) — over the found
+  word, with the tray's NEXT as its only control; then the word gives way to the **RARITY
+  LADDER** (`tutorial/RarityLadder.tsx`): the five grade names from `RARITY_NAMES`,
+  commonest at the top, each in its own `RARITY_COLORS` colour — the exact colour the
+  grade wears on the Word board's lanes, the strike and the loot — stepping UP in size as
+  they step down the ladder (static sizes, never an animated scale: the pixel font rule),
+  each rung rising in on its own delay (reduced motion collapses durations, keeps delays).
+  **Each rung carries one OBVIOUS example word** (user-decided 2026-08-11, second pass):
+  the ladder teaches by evidence — en house / twilight / obelisk / reliquary / apricity,
+  fr maison / crépuscule / alambic / cénotaphe / zinzolin (`tutRarityEx*`, hand-authored
+  per language for intuition, not measured against the corpus; palimpsest(e) was the
+  first OBSCURE pick both times and was swapped for LENGTH — see next) — in VT323 at ONE
+  size beside the ramping names, in the grade's colour. **The ladder is TWO ALIGNED
+  COLUMNS around one centred seam** (user-decided 2026-08-11, third pass): each rung is a
+  full-width 1fr/1fr grid — names right-aligned against the centre line, examples
+  left-aligned from it — so the gap's middle sits exactly on the centre of the (already
+  centred) tutorial column and the ladder reads as a table. The widest rung (OBSCURE + its
+  example) measures ~285px against a 320px screen's 292 budget (VT323 advances exactly
+  1em/glyph, so the mobile step-down in index.css is arithmetic — an example longer than
+  ~9 glyphs breaks the page inset there, which is what unseated palimpseste at 315px). The coach line states the CONCEPT and no
+  value — « Des mots de tous les jours aux mots presque oubliés. » (`tutRarity`; a first
+  cut said "the rarer, the more precious", which the user rejected as Word mode's framing:
+  a grade is only WORTH something where it pays the clock, and the tutorial teaches core
+  principles only) — and deliberately NOT what a grade pays: the seconds are Word mode's
+  rule, stated on its gate (`wordRulesBonus`). The grade names are the game's untranslated
+  vocabulary and come from `RARITY_NAMES`, never from a string; the ladder is decorative
+  (`role="img"`) with `srRarityLadder` + the names and examples as its accessible line.
+  The tray then offers **PLAY (`tutPlay`), which is the graduation**: `onDone`, no
+  SolvedScreen (a lesson has no score to show).
   **The ACTION BUTTON keeps ONE place for the whole lesson** (decided 2026-08-04): MIX, the
   ending's NEXT and PLAY are the same control in the same spot — parked against the tray's
   BOTTOM edge (`.mix-btn`'s `margin-top: auto`, which beats the tray's own centring), so the
   page's frame inset is its whole margin below and it sits the same distance from the bottom as
   from the left and right. That has to be stated as a rule because the tray's HEIGHT changes
   under it — the keyboard's full footprint while the word is on screen, the button's own height
-  once the clouds replace it — so a button centred in the tray drifted: measured 87px above the
-  bottom on the mix and claim beats against 24px on the themes (desktop), 54.5 against 14 on a
+  once the ladder replaces it — so a button centred in the tray drifted: measured 87px above the
+  bottom on the earlier beats against 24px on the final one (desktop), 54.5 against 14 on a
   phone, and the only control on screen jumped the moment the lesson moved on. On a phone the
   button carries its own +10px back to the 14px page inset (the same rule as
-  `.tray.tray-results`, and the reason that offset lives on the BUTTON rather than on the themes
-  tray's padding: the earlier beats need it inside a tray whose height must stay the
+  `.tray.tray-results`, and the reason that offset lives on the BUTTON rather than on the
+  ending tray's padding: the earlier beats need it inside a tray whose height must stay the
   keyboard's). The keyboard and the tray's transient loading/error lines keep the tray's
   centring — the auto margin moves the button only.
-  **From the clouds on, the TRAY stops reserving the keyboard's footprint** (`tutorial--themes`
-  on the root, decided 2026-08-04): the keyboard has dropped for good and the tray holds one
+  **From the ladder on, the TRAY stops reserving the keyboard's footprint** (`tutorial--ending`
+  on the root, decided 2026-08-04 as `tutorial--themes`, renamed with the re-arc): the
+  keyboard has dropped for good and the tray holds one
   button, so it shrinks to that button — which does NOT move it (it was already on the tray's
   bottom edge); only the space ABOVE it changes. The ~120px that
-  empty footprint held goes to the clouds and the routes map, which are
-  the screens short of height. It cannot start any EARLIER: while the word is still on screen
+  empty footprint held goes to the ladder's breathing room. It cannot start any EARLIER:
+  while the word is still on screen
   the tray's fixed height is exactly what keeps the word from moving between beats, so the
-  claim and gesture beats keep the full tray.
-  The daily game's `RouteModal` is untouched (its drawing lives in an internal
-  `RouteLine` on a `.route-frame` wrapper that owns the drawing's CSS variables — a #155
-  refactor kept for its cleanliness; nothing outside the modal renders it).
-  **The board's ranks are a REAL generated neighborhood, and have to be:** the themes ARE the
-  map's #115 roads — the hand-authored ~22-entry map this replaced carried none — and the
-  clouds step through them by road id. Each language embeds a #154
-  single-word artifact (`pnpm gen:word`) PRUNED to the word + the road zone + the guided
-  words, by `web/scripts/prune-word-map.mjs` — the exact command is recorded in each script's
-  header, and `scripts.test.ts` fails if board and map ever drift. **en = OCEAN, fr =
-  TROPIQUES**, both chosen on ROUTE legibility, and both a SINGLE definition (decided
-  2026-08-04): the routes lesson is about FACETS of one idea, so the board's word must not be
-  a homonym — PHARE (lighthouse / headlight) was replaced because its routes read as two
-  definitions, and LIGHTHOUSE had already lost to ocean on a 135/15 road split. Tropiques'
-  four roads — the climate, the islands, the globe, the holiday feel — are each nameable at a
-  glance; en/fr symmetry stays a non-goal.
+  claim beat keeps the full tray.
+  **The board's ranks are a REAL generated neighborhood:** the mix ladder walks real ranks
+  and the free find lands on real groups. Each language embeds a #154
+  single-word artifact (`pnpm gen:word`) PRUNED to the word + the top-150 near field + the
+  guided words, by `web/scripts/prune-word-map.mjs` (`--top` cuts the zone by RANK since
+  2026-08-11 — it used to select by `road !== undefined`, and the committed maps had their
+  now-unread `road` fields stripped the same day) — the exact command is recorded in each
+  script's header, and `scripts.test.ts` fails if board and map ever drift. **en = OCEAN,
+  fr = TROPIQUES** — both picked back when the ending taught the map's roads; nothing in
+  the current arc depends on how a neighborhood forks, so the words simply stay (en/fr
+  symmetry a standing non-goal).
   **The guided words obey two findings-decided rules (2026-08-03/04):** the far guess stays
   on a READABLE scale — same order of magnitude as the start word, ≤ 500, guarded by
   `scripts.test.ts` (fr `désert^1183` read as noise) — AND must make intuitive sense as a
@@ -1554,11 +1348,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   word should likewise be an INTUITIVE neighbor (fr's second stop is `soleil^12`; the fr
   board is agreed SINGULAR — `--form tropiques=n:s` — because plural-agreed neighbors read
   oddly on a word board, findings 2026-08-04). Coach
-  copy must fit the coach box's THREE lines at 320px — the routes and closer-guess strings
-  were cut to size for it, and the ending's claim + instruction were SPLIT into two beats
-  rather than trimmed into one (the box briefly went to four lines to hold the combined
-  sentence, 2026-08-04, and went back the same day once it was split: splitting the idea beat
-  growing the box).
+  copy must fit the coach box's THREE lines at 320px — split an idea into two beats before
+  growing the box (learned 2026-08-04, when the box briefly went to four lines and went
+  back the same day).
   Copy is deliberately terse throughout, no under-the-hood talk. The tutorial is
   **data-driven**:
   the board, guesses and steps live in `web/src/tutorial/scripts/{en,fr}.ts`
@@ -1642,9 +1434,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     53ms with the name broken, never 800.
   The hook must be the caller's FIRST hook, because it owns `showModal()` and a closed
   `<dialog>` is `display: none` — anything a modal measures on open would read a tree with no
-  boxes (the route map's opening scroll is exactly that hazard).
-  **Which exit each wears:** the route map RETRACTS INTO ITS WORD, because it belongs to that
-  word; the leaderboard is a **SHEET** — up from the bottom edge to full screen, back down on
+  boxes (the retired route map's opening scroll was exactly that hazard).
+  **Which exit each wears:** the history modal RETRACTS INTO ITS WORD, because it belongs to
+  that word (the rule the route map it replaced established); the leaderboard is a **SHEET** —
+  up from the bottom edge to full screen, back down on
   the way out — because a result screen belongs to nothing on the page. The sheet plays at
   EVERY width, not just phones: this dialog is full-screen on the desktop too, and a
   media-query-scoped exit would leave `animationend` unfired on desktop, where the close waits

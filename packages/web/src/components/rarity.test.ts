@@ -13,21 +13,10 @@
 //     `+Ns` clock gain that fires in the same beat).
 // Measured in CIE76 dE, the same measure the lane set's recorded 36.9 was taken with.
 
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { heatColor, progressColor } from '@whippin/shared';
-import {
-  RARITY_COLORS,
-  MISS_COLOR,
-  BURST_ART,
-  SLASH_ART,
-  SLASH_FRAME_MS,
-  STRIKE_ARTS,
-  STRUCK_MS,
-  ULTRA_ART,
-  blowDelayMs,
-  strikeDurationMs,
-  strikeFor,
-} from './rarity';
+import { RARITY_COLORS, MISS_COLOR, SLASH_ART, STRIKE_ARTS, STRUCK_MS, strikeFor } from './rarity';
 import { RARITY_NAMES } from '../game/wordGame';
 
 function hex(rgb: string): string {
@@ -53,10 +42,18 @@ function deltaE(a: string, b: string): number {
   return Math.hypot(l1 - l2, a1 - a2, b1 - b2);
 }
 
-// The reserved colours, straight out of index.css :root.
-const DANGER = '#ff1f54'; // MISS
-const ACCENT = '#2f7bff'; // the day's word, which the label floats ON
-const HOLE = '#ffc400'; // "you", and the +Ns clock gain fired in the same beat
+// The reserved colours, READ straight out of index.css :root — the way laneColors.test.ts
+// reads distances.py. A hand-copied hex checked against another hand-copy pins nothing: a
+// `--danger` retune has to fail HERE so the reservation gets re-decided on purpose.
+const rootCss = readFileSync(new URL('../index.css', import.meta.url), 'utf8');
+function rootVar(name: string): string {
+  const m = new RegExp(`^\\s*${name}: (#[0-9a-f]{6})`, 'm').exec(rootCss);
+  if (!m) throw new Error(`${name} is no longer a plain hex in index.css :root`);
+  return m[1];
+}
+const DANGER = rootVar('--danger'); // MISS
+const ACCENT = rootVar('--accent'); // the day's word, which the label floats ON
+const HOLE = rootVar('--hole'); // "you", and the +Ns clock gain fired in the same beat
 
 // Where each grade's hex was copied from. Anything not on a shared ramp is a CSS variable,
 // named here so the source is never a mystery.
@@ -79,8 +76,8 @@ describe('rarity colours track the palette stops they were copied from', () => {
     expect(RARITY_COLORS.RARE).toBe(hex(progressColor(30)));
     expect(RARITY_COLORS.OBSCURE).toBe(hex(heatColor(0.58)));
     expect(RARITY_COLORS.ARCANE).toBe(hex(progressColor(70)));
-    // COMMON is --muted, which lives in CSS; nothing to read it from, so it is stated.
-    expect(RARITY_COLORS.COMMON).toBe('#c4c9d8');
+    // COMMON is --muted, read from index.css like the reserved colours above.
+    expect(RARITY_COLORS.COMMON).toBe(rootVar('--muted'));
     expect(Object.keys(SOURCES)).toHaveLength(RARITY_NAMES.length);
   });
 
@@ -115,70 +112,43 @@ describe('rarity colours track the palette stops they were copied from', () => {
 });
 
 // The other half of the presentation: a rarer grade must read as more. Since the claim
-// feedback became a SLASH (2026-08-09) that is carried by ONE thing — how many times the
-// word is struck — and it is asserted as a rule rather than a table of numbers, so the
-// threshold stays a knob.
+// feedback became a SLASH (2026-08-09) that is carried by WHICH SHEET lands (a strike is
+// one blow of one sheet since 2026-08-11, when the RARE cross and the whole multi-blow
+// machinery retired on the user's call), and it is asserted as a rule rather than a table
+// of numbers, so the mapping stays a knob.
 describe('the strike escalates with the ladder', () => {
-  // How big a strike IS, as a pair ordered lexicographically: which sheet first, then how many
-  // blows of it. Ranked as EVENTS, never by how long they run — the burst spends HALF the
-  // cross's time on screen (250ms against 500) and is still the bigger thing, so reading
-  // intensity off a clock would rank the ladder backwards.
-  const weight = (name: (typeof RARITY_NAMES)[number]): [number, number] => {
-    const s = strikeFor(name);
-    return [STRIKE_ARTS.indexOf(s.art), s.blows];
-  };
-  const atLeast = (a: [number, number], b: [number, number]) =>
-    a[0] > b[0] || (a[0] === b[0] && a[1] >= b[1]);
+  // How big a strike IS: its sheet's place on the escalation. Ranked as EVENTS, never by
+  // how long they run — the burst spends half the old cross's time on screen and is still
+  // the bigger thing, so reading intensity off a clock would rank the ladder backwards.
+  const weight = (name: (typeof RARITY_NAMES)[number]): number =>
+    STRIKE_ARTS.indexOf(strikeFor(name));
 
   it('never strikes a rarer find more softly', () => {
     const w = RARITY_NAMES.map(weight);
     // Every sheet is on the escalation, and the order of that list IS the ranking.
-    expect(w.every(([art]) => art >= 0)).toBe(true);
+    expect(w.every((art) => art >= 0)).toBe(true);
     for (let i = 1; i < w.length; i += 1) {
-      expect(atLeast(w[i], w[i - 1]), `${RARITY_NAMES[i]} vs ${RARITY_NAMES[i - 1]}`).toBe(true);
+      expect(w[i] >= w[i - 1], `${RARITY_NAMES[i]} vs ${RARITY_NAMES[i - 1]}`).toBe(true);
     }
     // The two ends, so the ladder cannot flatten into one gesture unnoticed.
-    expect(strikeFor(RARITY_NAMES[0]), 'the commonest grade is a single cut').toEqual({
-      art: SLASH_ART,
-      blows: 1,
-    });
-    expect(weight(RARITY_NAMES[RARITY_NAMES.length - 1])[0], 'the rarest wears the last sheet')
+    expect(strikeFor(RARITY_NAMES[0]), 'the commonest grade is a single cut').toBe(SLASH_ART);
+    expect(weight(RARITY_NAMES[RARITY_NAMES.length - 1]), 'the rarest wears the last sheet')
       .toBe(STRIKE_ARTS.length - 1);
     // And it really does climb — a table this small could go monotonic by being constant.
-    expect(new Set(RARITY_NAMES.map((n) => weight(n).join(':'))).size).toBeGreaterThan(2);
+    expect(new Set(w).size).toBeGreaterThan(2);
   });
 
-  it('the blows never share the screen, and the word lets go between them', () => {
-    // Two strikes at once read as one thick stroke, which is the opposite of what the second
-    // blow is for. So the second starts only once the first has finished...
-    const cross = { art: SLASH_ART, blows: 2 };
-    expect(blowDelayMs(cross, 0)).toBe(0);
-    expect(blowDelayMs(cross, 1)).toBe(SLASH_ART.ms);
-    // ...and the beat that makes a cross read as TWO hits rather than one long one belongs to
-    // the WORD, which stops reacting before its blow's stroke ends. Without this the recoil
-    // and the colour would run unbroken across both strokes, which is the one reading the
-    // second blow exists to avoid.
+  it('the word lets go before the sheet ends', () => {
+    // The recoil and the colour last STRUCK_MS and no sheet is shorter: the blow ends on a
+    // word already back at rest, which is what makes a sheet's remaining frames read as
+    // dissipation rather than as the hit still happening.
     expect(STRUCK_MS).toBeGreaterThan(0);
-    // The word must let go before ANY sheet ends, or a blow would hold the recoil and the
-    // colour through the art's whole dissipation — which is what makes a longer sheet's extra
-    // frames read as dissipation in the first place.
     for (const art of STRIKE_ARTS) expect(STRUCK_MS, `${art.css || 'slash'}`).toBeLessThan(art.ms);
-    // ...and the whole thing runs as long as the blows it is made of. The ending beat waits
-    // for whatever is still in the air; if this under-reported, the last strike of a run
-    // would be cut off mid-swing to show the board.
-    expect(strikeDurationMs({ art: SLASH_ART, blows: 1 })).toBe(SLASH_ART.ms);
-    expect(strikeDurationMs({ art: SLASH_ART, blows: 2 })).toBe(2 * SLASH_ART.ms);
-    expect(strikeDurationMs({ art: ULTRA_ART, blows: 1 })).toBe(ULTRA_ART.ms);
   });
 
-  it('every sheet is walked frame for frame, at one frame rate', () => {
-    // If a constant and its sheet ever disagree the hit either stutters or ends early, and
-    // nothing else would catch it. The frame COUNTS are the art's, stated here so a resized
-    // sheet has to come past this test.
-    for (const art of STRIKE_ARTS) expect(art.ms).toBe(art.frames * SLASH_FRAME_MS);
-    expect(SLASH_ART.frames).toBe(5);
-    expect(BURST_ART.frames).toBe(5);
-    expect(ULTRA_ART.frames).toBe(7);
-    expect(SLASH_FRAME_MS).toBe(50);
-  });
+  // NOT tested: the frame counts, the frame rate, or `ms = frames * SLASH_FRAME_MS`. The
+  // counts and the rate are cosmetic tuning (the testing policy leaves them free to move),
+  // and the product is the `art()` factory's own definition — asserting it back proves
+  // nothing. What would be worth pinning — that a sheet's PNG really holds the declared
+  // frame count — cannot be read from here (the per-frame geometry lives in index.css).
 });

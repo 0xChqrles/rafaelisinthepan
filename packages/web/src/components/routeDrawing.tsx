@@ -1,31 +1,32 @@
 import type { CSSProperties, ReactNode, RefObject } from 'react';
 import { heatColor } from '@whippin/shared';
-import { DQ_MAX } from '../game/route';
 import { rankHeatColor, HIT_HEAT_CAP } from './Hole';
 import { t } from '../i18n';
 
-// The ROUTE DRAWING: the geometry and the row parts every surface that draws a
-// neighborhood as a line shares — the daily game's route map (`RouteModal`, #117) and Word
-// mode's board (`WordBoard`, #156), which is the same drawing made live and inverted.
+// The ROUTE DRAWING: the geometry and the row parts of a neighborhood drawn as a line,
+// shared by Word mode's post-mortem board (`WordBoard`, #156) and the sentence game's
+// hole-history modal (`HistoryModal`, which on 2026-08-10 replaced the #117 route map but
+// kept its trunk: a single line of the player's own stops walking down to the `???`
+// terminus). A detail of the line changed here changes on every route the app draws,
+// which is only true while there is one copy of it.
 //
-// It lives in its OWN module rather than in either surface (moved out of `RouteModal`
-// 2026-08-06): the board used to import the modal's exports, which made the modal the
-// owner of a vocabulary it only half-uses and left the second surface free to re-implement
-// the parts it did not import — which is exactly what happened to the off-map shelf, the
-// tail, the connector rule, the station row and the frame variables. Changing a detail of
-// the line — the tear's colour, a node's markup, the dash unit — has to change it on EVERY
-// route the app draws, and that is only true if there is one copy of it.
-//
-// What stays with a surface is what is genuinely its own: the modal's sticky "you are
-// here" plumbing, the board's censored field and its claim reveal (and its pinned terminus
-// footer, WordTerminus), and each one's screen-reader mirror (they narrate different
-// things).
+// What stays with a surface is what is genuinely its own: the board's censored field and
+// its claim reveal (and its pinned terminus footer, WordTerminus), the history's journey
+// model, and each one's screen-reader mirror.
+
+// The dq scale (#115): the rank-1 group is pinned at 255, the farthest kept group at 0,
+// per map. The affine normalization is lossless for a consumer that only reads RATIOS,
+// which is exactly what a connector's length is. (Lived in `game/route.ts` until the route
+// model went with its modal.)
+const DQ_MAX = 255;
 
 // --- distances ---------------------------------------------------------------------------
 // A connector carries the distance between the two stations it joins: `LINK_SPAN` px per full
 // dq scale, floored so two neighbours never collide and capped so the cold tail cannot push the
 // destination off screen. The floor and the cap are what make this a line and not a map.
-const LINK_MIN = 14;
+// The floor is exported: it is also the uniform spacing a surface falls back to where no dq
+// exists to carry a distance (the history modal on pre-#115 data).
+export const LINK_MIN = 14;
 const LINK_MAX = 92;
 const LINK_SPAN = 300;
 
@@ -60,34 +61,38 @@ const DASH_PERIOD = DASH + DASH_GAP;
 // unit wherever it happens to fall, and the stub lands exactly where the trace meets the solid
 // rail — a 3px sliver of gap against a station reads as a rendering slip, not as a broken line.
 // Snapped, both ends are clean: the run opens on a full dash and closes on one.
-const dashedRun = (px: number) =>
+// Exported: a surface that draws its own broken connectors (the history modal's
+// behind-the-departure stretch) must snap their heights by the same unit.
+export const dashedRun = (px: number) =>
   Math.max(1, Math.round((px - DASH) / DASH_PERIOD)) * DASH_PERIOD + DASH;
 
-// The run from the merge to the terminus: the lanes have JOINED, and one SOLID line leads to
-// the word (decided 2026-08-04, superseding the dashed "identity leap" — the routes should
-// visibly LEAD to the word, and a broken trace read as the line not quite reaching it).
-export const LEAP_H = 56;
 // The cold end of the line, above the first station: it always continues into the words that
 // have no distance at all, whether or not this round produced any. Not a distance, so not a
-// solid line — the ONE broken trace either surface draws.
+// solid line — the ONE broken trace the board draws.
 const TAIL_H = dashedRun(34); // 31
 // Where the trunk splits into lanes, and where they merge back into the word. Its own fixed
 // minimum, since it draws a shape rather than a gap.
 export const JUNCTION_H = 34;
-// How far short of the screen edge a sticky row parks — flush against it reads as clipped
-// rather than pinned. It is one number in three places (the CSS offsets, the opening scroll
-// and the parked test), so it is declared here and handed to CSS as `--stick-inset`.
-export const STICK_INSET = 8;
+// The clearance the word board's torn-edge mask keeps its content short of the cut by
+// (`.word-cut`), handed to CSS as `--stick-inset`. (Named for the route map's sticky row,
+// which parked this far off the screen edge; the map is gone, the clearance idiom stays.)
+const STICK_INSET = 8;
 
 // A word you have not found — a terminus still to be reached, or a censored station. FIXED
 // width: a placeholder that grew with the word would leak its length.
 export const UNKNOWN = '???';
 
 // --- lanes ---------------------------------------------------------------------------------
-// The roads (#115) are drawn as LANES of the rail, the way a metro line draws its branches:
-// which lane a station sits on is its road. That is structural — you read it from the shape of
-// the line, not from a badge — and it makes the one fact a list cannot state visible for free:
-// a road nobody has reached is a lane with NO stations on it.
+// A neighborhood's routes are drawn as LANES of the rail, the way a metro line draws its
+// branches: which lane a station sits on is which route it belongs to. That is structural —
+// you read it from the shape of the line, not from a badge — and it makes the one fact a list
+// cannot state visible for free: a route nobody has reached is a lane with NO stations on it.
+//
+// WHAT a lane means is the SURFACE's, not this module's (decided 2026-08-10, when Word mode's
+// board moved off semantic roads). The sentence map's lanes are the #115 road clusters; Word
+// mode's are the five RARITY GRADES (#163). Both draw the same line, so the geometry lives
+// here and the PALETTE is a parameter — `LANE_COLORS` is the default because the route map is
+// the surface that owns those hues, not because the drawing knows what a lane is.
 //
 // Geometry lives here because the node positions and the CSS gradient that paints the lines
 // have to agree exactly. Lane centres are `LANE_X0 + road * LANE_GAP`, so a LANE_W line is the
@@ -133,8 +138,8 @@ function laneGap(lanes: number): number {
 // magenta hold a minimum CIE76 ΔE of 36.9 across the whole set, where either pairing with
 // indigo collapses to 15.3 (indigo sits right on top of violet). ΔE is why magenta is here
 // despite reading "pinkish" in the abstract: against pink it is 40+, against violet 36.9.
-// (Also the identity the onboarding's theme clouds paint each theme in — tutorial/ThemeCloud
-// — so the colors a player meets in the lesson are the ones this map speaks later.)
+// (The onboarding's theme clouds used to paint each theme in these too, until the themes
+// ending was retired on 2026-08-11.)
 export const LANE_COLORS = ['#ef4f97', '#2ad2eb', '#883ceb', '#23dc91', '#ee674e', '#db24c8'];
 
 export function laneX(road: number, lanes: number): number {
@@ -146,21 +151,22 @@ export function trunkX(lanes: number): number {
   return LANE_X0 + ((lanes - 1) * laneGap(lanes)) / 2;
 }
 
-// The colour a station's node and word take: its own lane's, or the trunk's where no road has
-// been identified. A dark node on a vivid lane reads as the line being BROKEN, where the lane's
-// own colour reads as a stop with no name on it yet — which is what an unfound station is.
-export function laneColor(road: number | null): string {
-  return road === null ? 'var(--rail)' : LANE_COLORS[road % LANE_COLORS.length];
+// The colour a station's node and word take: its own lane's, or the trunk's where the station
+// belongs to no route at all. A dark node on a vivid lane reads as the line being BROKEN, where
+// the lane's own colour reads as a stop with no name on it yet — which is what an unfound
+// station is.
+export function laneColor(lane: number | null, colors: readonly string[] = LANE_COLORS): string {
+  return lane === null ? 'var(--rail)' : colors[lane % colors.length];
 }
 
 // The rail's lines, as one gradient: a hard-stop band per lane, in that lane's tint. Built here
 // (not in CSS) because the number of lanes is data — and because painting every lane in one
 // background is what lets a single element carry a whole cross-section of the line.
-function laneLines(lanes: number): string {
+function laneLines(lanes: number, colors: readonly string[]): string {
   const stops: string[] = [];
-  for (let road = 0; road < lanes; road += 1) {
-    const color = LANE_COLORS[road % LANE_COLORS.length];
-    const from = laneX(road, lanes) - LANE_W / 2;
+  for (let lane = 0; lane < lanes; lane += 1) {
+    const color = colors[lane % colors.length];
+    const from = laneX(lane, lanes) - LANE_W / 2;
     stops.push(`transparent ${from}px, ${color} ${from}px, ${color} ${from + LANE_W}px`);
     stops.push(`transparent ${from + LANE_W}px`);
   }
@@ -172,9 +178,9 @@ function laneLines(lanes: number): string {
 // a set of parallel lines reads as a frame drawn AROUND them, where two colored halves read as
 // what they are, the outer lanes turning in toward the trunk. With more than three roads the
 // inner lanes' elbows hide under the outer ones, which is what overlapping tracks do anyway.
-function busGradient(lanes: number, split: number): string {
-  const left = LANE_COLORS[0];
-  const right = LANE_COLORS[(lanes - 1) % LANE_COLORS.length];
+function busGradient(lanes: number, split: number, colors: readonly string[]): string {
+  const left = colors[0];
+  const right = colors[(lanes - 1) % colors.length];
   const at = `${(split * 100).toFixed(2)}%`;
   return `linear-gradient(90deg, ${left} 0 ${at}, ${right} ${at} 100%)`;
 }
@@ -202,7 +208,11 @@ export function rankGutterChars(maxRank: number): number {
 // variable, so the gutter tracks the responsive `--rank-size` without any calc having to divide
 // by a custom property. (`--gutter` is only the FALLBACK template — `.route` is one grid and
 // each row a subgrid of it, so the real gutter is `max-content` across every row at once.)
-export function routeFrameVars(lanes: number, rankChars: number): CSSProperties {
+export function routeFrameVars(
+  lanes: number,
+  rankChars: number,
+  colors: readonly string[] = LANE_COLORS,
+): CSSProperties {
   const railWidth = LANE_X0 * 2 + (lanes - 1) * laneGap(lanes);
   const trunk = trunkX(lanes);
   const busX = laneX(0, lanes) - LANE_W / 2;
@@ -213,8 +223,8 @@ export function routeFrameVars(lanes: number, rankChars: number): CSSProperties 
     '--trunk-x': `${trunk}px`,
     '--bus-x': `${busX}px`,
     '--bus-w': `${busW}px`,
-    '--bus-grad': busGradient(lanes, (trunk - busX) / busW),
-    '--lane-lines': laneLines(lanes),
+    '--bus-grad': busGradient(lanes, (trunk - busX) / busW, colors),
+    '--lane-lines': laneLines(lanes, colors),
     '--stick-inset': `${STICK_INSET}px`,
     // The dash unit the tail is cut to (see dashedRun): the gradient paints it, the height
     // counts it, so both read it from here.
@@ -234,10 +244,9 @@ const WORD_MIN_PX = 8;
 export function fitWord(word: string, max: number): string {
   return `clamp(${WORD_MIN_PX}px, calc(var(--wordw) / ${Math.max(1, word.length)}), ${max}px)`;
 }
-// Type sizes per station state: a terminus reads as a headline, "you are here" a step above the
-// rest of the line, everything else at the line's own size.
+// Type sizes per station state: a terminus reads as a headline, everything else at the
+// line's own size.
 export const ARRIVAL_PX = 24;
-export const HERE_PX = 17;
 export const STATION_PX = 15;
 
 // --- the parts ---------------------------------------------------------------------------
@@ -276,7 +285,11 @@ export function OffMapShelf({ lang, misses }: { lang: string; misses: string[] }
       <p className="route-shelf-head" style={{ color: heatColor(0) }}>
         {t(lang, 'routeOffMap')}
       </p>
-      <p className="route-misses">
+      {/* The words wear the same coldest heat, DIMMED (`.route-miss` opacity): they are the
+          shelf's own dead ends, one voice with the heading and the float, but quieter than a
+          label — so the shelf reads as one red block of "nothing here" at a glance instead of
+          a muted list that could pass for ordinary words (decided 2026-08-10). */}
+      <p className="route-misses" style={{ color: heatColor(0) }}>
         {misses.map((word) => (
           <span key={word} className="route-miss">
             {word}
@@ -294,8 +307,24 @@ export function RouteTail() {
 
 // The connector between two rows. `lanes` paints it in the roads' colours rather than the
 // trunk's — a link inside the forked stretch is as many lines as there are roads.
-export function RouteLink({ height, lanes = false }: { height: number; lanes?: boolean }) {
-  return <div className={`route-link${lanes ? ' lanes' : ''}`} style={{ height }} />;
+// `broken` draws it as the tail's dashed trace instead of a solid run — the history modal's
+// behind-the-departure stretch, where the line is not yet the journey. A broken height must
+// be `dashedRun`-snapped by the caller, or the last unit is cut wherever it falls.
+export function RouteLink({
+  height,
+  lanes = false,
+  broken = false,
+}: {
+  height: number;
+  lanes?: boolean;
+  broken?: boolean;
+}) {
+  return (
+    <div
+      className={`route-link${lanes ? ' lanes' : ''}${broken ? ' broken' : ''}`}
+      style={{ height }}
+    />
+  );
 }
 
 // One ROW of the line: the rank in its right-aligned gutter (the "time"), the rail with this

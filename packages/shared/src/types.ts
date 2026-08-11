@@ -37,12 +37,14 @@ export interface RankEntry {
   // the departure, and out in the far field, the line is one trunk.
   road?: number;
   // How COMMON the group is in the corpus (#163): the 1-based position of its most
-  // frequent embedded form in the frequency-ordered reduced vocabulary — 1 = the
-  // commonest word the game admits, larger = rarer. The group's commonest INFLECTION,
-  // not its representative: that is what a lexeme's rarity feels like to a player.
-  // Another GROUP property, so every alias key repeats it. Emitted by WORD artifacts
-  // only (gen_word.py) — Word mode pays a claim in seconds scaled by it, and a
-  // sentence puzzle has no consumer for it. Optional to every consumer, like `road`.
+  // frequent OWNED KEY among the DISTINCT SLUGS of the frequency-ordered reduced
+  // vocabulary — exactly the existence set the client loads, so `freq / vocabSet.size`
+  // is a true fraction. 1 = the commonest word the game admits, larger = rarer. The
+  // commonest thing a player can TYPE to claim the group — its commonest inflection,
+  // not its representative, and never a surface another group owns. Another GROUP
+  // property, so every alias key repeats it. Emitted by WORD artifacts only
+  // (gen_word.py) — Word mode pays a claim in seconds scaled by it, and a sentence
+  // puzzle has no consumer for it. Optional to every consumer, like `road`.
   freq?: number;
 }
 

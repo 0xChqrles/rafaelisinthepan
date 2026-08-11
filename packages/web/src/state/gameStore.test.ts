@@ -51,6 +51,7 @@ beforeEach(() => {
       lastLang: null,
       lastMode: null,
       onboarded: false,
+      sentenceRulesSeen: false,
       solvedDays: {},
       activeKey: null,
       activeWordKey: null,
@@ -156,6 +157,32 @@ describe('word rounds (#163) — ensureWordRound / startWordRun / recordWordGues
     expect(wordRound()).toMatchObject({ deadline: T0 + runMs(6), claimed: 2 });
   });
 
+  it('anchors the deadline to startedAt, never to the moment the claim landed', () => {
+    const { ensureWordRound, startWordRun, recordWordGuess } = useGameStore.getState();
+    ensureWordRound('w:5:fr', 'phare');
+    startWordRun();
+    // Mid-run — where a rolling-window regression (deadline = NOW + runMs) and the rule
+    // (deadline = STARTEDAT + runMs) disagree. Every other landing-guess test claims with
+    // the clock still at T0, where the two are the same number, so this is the one that
+    // pins the anchor. Halfway through the OPENING clock, derived, so the guess is still
+    // live whatever START_SECONDS is retuned to.
+    vi.setSystemTime(T0 + runMs(0) / 2);
+    expect(recordWordGuess('mer', priced(3))).toBe(true);
+    expect(wordRound().deadline).toBe(T0 + runMs(3));
+  });
+
+  it('the deadline millisecond itself is still play — over means STRICTLY after', () => {
+    const { ensureWordRound, startWordRun, recordWordGuess } = useGameStore.getState();
+    ensureWordRound('w:5:fr', 'phare');
+    startWordRun();
+    // Exactly AT the deadline: not over. One boundary, shared by this check,
+    // `wordStatusOf` and `useDeadlinePassed`, so no surface can disagree about the
+    // deadline's own millisecond.
+    vi.setSystemTime(T0 + runMs(0));
+    expect(recordWordGuess('juste', openRun)).toBe(true);
+    expect(wordRound()).toMatchObject({ tried: ['juste'] });
+  });
+
   it('a guess landing past the deadline is dead, however much time it would have bought', () => {
     const { ensureWordRound, startWordRun, recordWordGuess } = useGameStore.getState();
     ensureWordRound('w:5:fr', 'phare');
@@ -166,6 +193,11 @@ describe('word rounds (#163) — ensureWordRound / startWordRun / recordWordGues
     // Not appended — and the round is FROZEN, not merely closed to new guesses: a
     // re-price here could hand a finished run a later deadline and revive it.
     expect(wordRound()).toMatchObject({ tried: ['mer'], claimed: 1, deadline: T0 + runMs(0) });
+    // The freeze covers the REPEAT/repair path too — the one write that could revive a
+    // finished run without appending anything: a repeat priced richer by a republished
+    // map must not move a spent deadline either.
+    expect(recordWordGuess('mer', priced(30))).toBe(false);
+    expect(wordRound()).toMatchObject({ claimed: 1, deadline: T0 + runMs(0) });
   });
 
   // The screen decides what FEEDBACK to show from a rendered value, which lags the wall
@@ -212,6 +244,29 @@ describe('word rounds (#163) — ensureWordRound / startWordRun / recordWordGues
       deadline: T0 + runMs(2), // both guesses re-priced under the new map, not 3 + 1
       tried: ['mer', 'sel'],
       claimed: 2,
+    });
+  });
+
+  it('rejects a guess when a same-word republish shrinks the live deadline into the past', () => {
+    const { ensureWordRound, startWordRun, recordWordGuess } = useGameStore.getState();
+    ensureWordRound('w:5:fr', 'phare');
+    startWordRun();
+    recordWordGuess('mer', priced(30));
+    expect(wordRound()).toMatchObject({ deadline: T0 + runMs(30), tried: ['mer'] });
+
+    // The stored pre-publish clock still runs to `runMs(30)`. On the current map the
+    // retained log buys no bonus, so its real deadline is `runMs(0)`: a guess landing
+    // BETWEEN the two is already dead and cannot pay for the moment it arrived in.
+    // The instant is the midpoint of that window, DERIVED from the knobs — a literal
+    // wall-clock jump silently restates START_SECONDS and stops straddling the gap the
+    // moment it is retuned (which is exactly what the 60 -> 120 change did to it).
+    vi.setSystemTime(T0 + (runMs(0) + runMs(30)) / 2);
+    ensureWordRound('w:5:fr', 'phare');
+    expect(recordWordGuess('late', priced(0))).toBe(false);
+    expect(wordRound()).toMatchObject({
+      deadline: T0 + runMs(0),
+      tried: ['mer'],
+      claimed: 1,
     });
   });
 
@@ -274,6 +329,22 @@ describe('word rounds (#163) — ensureWordRound / startWordRun / recordWordGues
       tried: [],
       claimed: 0,
     });
+  });
+
+  it('caps the word-round map like the sentence map: oldest evicted, newest kept', () => {
+    const CAP = 800; // MAX_DAY_ROUNDS — one retention policy for both maps
+    const seeded: Record<string, ReturnType<typeof wordRound> & object> = {};
+    for (let day = 1; day <= CAP; day++) {
+      seeded[`w:${day}:fr`] = { word: 'phare', startedAt: T0, deadline: T0, tried: [], claimed: day };
+    }
+    useGameStore.setState({ wordRounds: seeded, activeWordKey: null }, false);
+
+    useGameStore.getState().ensureWordRound(`w:${CAP + 1}:fr`, 'foret');
+    const s = useGameStore.getState();
+    expect(Object.keys(s.wordRounds).length).toBe(CAP); // still capped
+    expect(s.wordRounds['w:1:fr']).toBeUndefined(); // oldest evicted
+    expect(s.wordRounds['w:2:fr']?.claimed).toBe(2); // next-oldest survives
+    expect(s.wordRounds[`w:${CAP + 1}:fr`]).toBeDefined(); // newest kept
   });
 });
 
@@ -595,6 +666,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       lastLang: null,
       lastMode: null,
       onboarded: false,
+      sentenceRulesSeen: false,
       solvedDays: {},
     });
   });
@@ -627,6 +699,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       lastLang: 'en',
       lastMode: null,
       onboarded: true,
+      sentenceRulesSeen: false,
       solvedDays: {},
     });
     expect('layout' in out).toBe(false);
@@ -642,6 +715,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       lastLang: 'fr',
       lastMode: null,
       onboarded: true,
+      sentenceRulesSeen: false,
       solvedDays: {},
     });
   });
@@ -663,6 +737,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       lastLang: 'fr',
       lastMode: null,
       onboarded: true,
+      sentenceRulesSeen: false,
       solvedDays,
     });
   });
@@ -708,6 +783,22 @@ describe('migratePersisted — persisted-blob upgrades', () => {
     );
     expect(kept.wordRounds).toEqual(wordRounds);
     expect(kept.lastMode).toBe('word');
+  });
+
+  // v7 -> v8 (2026-08-11): the sentence game's one-time instructions gate. Older blobs get
+  // false — deliberately NOT grandfathered like `onboarded`: the gate teaches the history
+  // tap, which is newer than any existing play state, so every player sees it exactly once.
+  it('v7 -> v8 defaults sentenceRulesSeen to false and keeps an explicit true', () => {
+    expect(
+      migratePersisted({ rounds: {}, lastLang: 'fr', onboarded: true, solvedDays: {} }, 7)
+        .sentenceRulesSeen,
+    ).toBe(false);
+    expect(
+      migratePersisted(
+        { rounds: {}, lastLang: 'fr', onboarded: true, sentenceRulesSeen: true, solvedDays: {} },
+        8,
+      ).sentenceRulesSeen,
+    ).toBe(true);
   });
 
   it('keeps an existing solvedDays across the upgrade (no backfill, but no data loss)', () => {

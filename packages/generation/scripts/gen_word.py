@@ -15,13 +15,14 @@ walk and group semantics (#104/#134/#146), the #133 explicit-form confirmation, 
 vectors (#119), the TOP_K group cap, the dq stamping and the slug-collision rule are
 literally the same code (gen_phrase.walk_secret is the shared per-secret pipeline).
 
-Exactly THREE things differ, all because there is no sentence:
+Exactly THREE things differ — two because there is no sentence, one because only
+Word mode consumes it:
 
-  - No start word, so no `start_rank` to size the road zone. It is the flat
-    top-ROAD_TOP (250) instead — deliberate: those groups ARE Word mode's playing
-    field, so the whole field gets its roads (distances.road_zone(None)). Which is
-    also why ROAD_TOP's value is Word mode's RANGE and not a mere safety ceiling:
-    the client's CLAIM_ZONE restates it, and the two move together.
+  - NO SEMANTIC ROADS, ever (decided 2026-08-10; the `--roads` opt-in retired
+    2026-08-11 with its one consumer, the tutorial's themes lesson). Word mode paints
+    each station word by RARITY on one trunk — the #163 grade a group's `freq` lands
+    in — so the semantic clustering the sentence map forks on has no consumer here,
+    and running it would ship a field nothing reads.
   - No `words` / `holes` / `start` / `start_rank`, and no `source`: a lone word has no
     attribution. The rank map is ONE flat map, not keyed by secret.
   - Every group carries its corpus rarity, `freq` (#163) — see annotate_freq. A
@@ -33,11 +34,11 @@ Schema (see WordPuzzle in packages/shared/src/types.ts):
     {"lang": "fr",
      "word": {"word": "phare", "slug": "phare"},
      "ranks": {"<input-slug>": {"word": "<accented>", "rank": 12, "dq": 231,
-                                "road": 1, "freq": 8412}}}
+                                "freq": 8412}}}
 
 The inner semantics are the sentence schema's rank-map semantics, unchanged: alias
-keys per group, word/rank/dq/road/freq are GROUP properties, rank 0 = the word itself
-and carries no dq, dq on every rank >= 1 entry.
+keys per group, word/rank/dq/freq are GROUP properties, rank 0 = the word itself and
+carries no dq, dq on every rank >= 1 entry.
 
 Written to packages/generation/output/single-word/<lang>/<slug>.json (override the
 root with --out-dir). Unlike gen:phrase this does NOT rewrite web/public/vocab —
@@ -72,14 +73,14 @@ for path in (ROOT, SCRIPT_DIR):
 # schema, never a second copy of the rules. prepare_run / report_run_adjustments are
 # the shared command scaffolding around walk_secret (#154), so the setup order and the
 # reporting channels cannot drift between the two commands either.
-from gen_phrase import (CONFIG, GEN_OUTPUT, annotate_roads, die,  # noqa: E402
-                        group_lexeme_map, group_reps, normalize, prepare_run,
+from gen_phrase import (CONFIG, GEN_OUTPUT, die,  # noqa: E402
+                        group_lexeme_map, normalize, prepare_run,
                         prompt_editable, prompt_lang, report_run_adjustments,
                         walk_secret)
 from slug import slug  # noqa: E402
 
 
-def annotate_freq(rank_map, groups, forms_by_lemma, Vset, V):
+def annotate_freq(rank_map, V):
     """Stamp every group with `freq` — how common it is in the corpus (#163).
 
     Word mode pays a claim in SECONDS scaled by the claimed group's rarity, and
@@ -102,17 +103,23 @@ def annotate_freq(rank_map, groups, forms_by_lemma, Vset, V):
     measured, 4.1% in fr against 0.0% in en, i.e. a language-dependent skew in the one
     number that exists to make rarity mean the same thing in every language.
 
-    It is the group's MOST FREQUENT embedded form, not its representative's: a
-    player's sense of a lexeme's rarity is its commonest inflection (« privées » is
-    as rare as « privé » is common). A GROUP property like word/rank/dq/road, so it
-    is stamped by RANK — every alias key of a group therefore repeats its group's
-    value, and slug-collision resolution keeps the winning group's, both by
-    construction. Stamped BEFORE the agreement pass for the same reason the roads
-    are: a rewritten display inherits its group's value like any other key.
+    A group's position is that of its most frequent OWNED KEY — the commonest thing a
+    player can actually TYPE to claim it. Not the representative alone (a player's
+    sense of a lexeme's rarity is its commonest inflection: « privées » is as rare as
+    « privé » is common), and not the whole paradigm either: a surface owned by
+    ANOTHER group is that group's key, and pricing this one by it would grade a rare
+    lexeme by a word that can never claim it (« boire » must not be COMMON because
+    « bois » is — « bois » claims the tree). The walk has already settled ownership
+    closest-first (#104/#134), so the pricing READS the rank map's keys instead of
+    re-deriving it from the paradigm. A GROUP property like word/rank/dq, stamped by
+    RANK — every alias key of a group therefore repeats its group's value, and
+    slug-collision resolution keeps the winning group's, both by construction.
+    Stamped BEFORE the agreement pass so a rewritten display inherits its group's
+    value like any other key.
 
-    A group with no embedded form at all — only reachable through a borrowed vector
-    (#119), and then only at rank 0 — simply gets no `freq`. The field is optional
-    to every consumer, like `road`."""
+    A group none of whose keys is in the existence set — the secret of a borrowed
+    vector (#119), whose slug embeds nothing — simply gets no `freq`. The field is
+    optional to every consumer."""
     # slug -> its 1-based place among distinct slugs in frequency order. Two forms that
     # fold together are ONE entry in the existence set and so must be one rank here; the
     # first (most frequent) occurrence names it, which is the same closest-wins rule the
@@ -122,15 +129,16 @@ def annotate_freq(rank_map, groups, forms_by_lemma, Vset, V):
         key = slug(form)
         if key and key not in slug_rank:
             slug_rank[key] = len(slug_rank) + 1
-    freq_of = {form: slug_rank[slug(form)] for form in V if slug(form)}
+    # Group-min over the group's OWNED keys, then stamped by rank so every alias key
+    # repeats it (rank IS the group: the flat map is rank-unique per group).
     freq_by_rank = {}
-    for display, rank, claims, _clean, rep in groups:
-        forms = {form for lexeme in claims
-                 for form in forms_by_lemma.get(lexeme, ()) if form in Vset}
-        forms.update((display, rep))
-        ranks = [freq_of[form] for form in forms if form in freq_of]
-        if ranks:
-            freq_by_rank[rank] = min(ranks)
+    for key, entry in rank_map.items():
+        position = slug_rank.get(key)
+        if position is None:
+            continue
+        rank = entry["rank"]
+        if rank not in freq_by_rank or position < freq_by_rank[rank]:
+            freq_by_rank[rank] = position
     for entry in rank_map.values():
         freq = freq_by_rank.get(entry["rank"])
         if freq is not None:
@@ -139,31 +147,27 @@ def annotate_freq(rank_map, groups, forms_by_lemma, Vset, V):
 
 
 def build_word_map(word, donor, cfg, kv, V, M, Vset, lemma_table, forms_by_lemma,
-                   donors=None, forms=None, roads=True, reporter=None):
-    """One word's rank map AS SHIPPED: walked, dq-stamped, roaded, priced, agreed.
+                   donors=None, forms=None, reporter=None):
+    """One word's rank map AS SHIPPED: walked, dq-stamped, priced, agreed.
 
     The sentence path's per-secret sequence with its two sentence-shaped steps
     removed. walk_secret settles the claim (#133 fires there, ahead of the walk) and
     builds the dq-stamped map; then:
 
-      - ROADS over the FLAT top-ROAD_TOP zone. A hole cuts the zone at its departure
-        because a fork farther out than the start word is a fork of a route nobody
-        walks; a lone word has no departure, so nothing cuts it short and the ceiling
-        IS the zone (annotate_roads' start_rank=None). Stamped BEFORE the agreement
-        pass, exactly as in a sentence, so a rewritten form inherits its group's road
-        like any other key.
       - FREQ (#163), this artifact's own annotation: what Word mode's clock pays a
-        claim by. See annotate_freq — a sentence puzzle carries none.
+        claim by, and — since 2026-08-10 — what its board paints each station word by. See
+        annotate_freq; a sentence puzzle carries none. There is NO road pass at all:
+        the semantic clustering is the sentence path's, and no word-artifact consumer
+        reads it (the `--roads` opt-in retired 2026-08-11 with the tutorial's themes
+        lesson, its only reader).
       - AGREEMENT (#133/#134): the whole map agrees with the word's confirmed
         morphology. There is no start hint to alias afterwards — the display override
         a hole's start word gets (#119 addendum) has no counterpart here.
 
     Returns the rank map. Mutated in place by every pass, like the sentence path."""
-    merged, rank_map, groups = walk_secret(word, donor, cfg, kv, V, M, Vset,
-                                           lemma_table, forms_by_lemma, donors, forms)
-    annotate_roads(rank_map, merged, kv if roads else None, start_rank=None,
-                   reps=group_reps(groups))
-    annotate_freq(rank_map, groups, forms_by_lemma, Vset, V)
+    _merged, rank_map, groups = walk_secret(word, donor, cfg, kv, V, M, Vset,
+                                            lemma_table, forms_by_lemma, donors, forms)
+    annotate_freq(rank_map, V)
     if forms is not None:
         forms.apply(rank_map, word, donors, lexemes=group_lexeme_map(groups))
     if reporter is not None:
@@ -212,9 +216,6 @@ def parse_args():
                         "forme fléchie garde son propre rang ; exige --no-inflect "
                         "quand la langue a une table de formes (l'accord est indexé "
                         "par les lexèmes du regroupement)")
-    p.add_argument("--no-roads", action="store_true",
-                   help="n'émet aucun champ `road` (#115) — les distances `dq` "
-                        "restent écrites (le score en dépend)")
     p.add_argument("--donor", action="append", metavar="MANQUANT=DONNEUR",
                    help="emprunte le vecteur d'une forme du même lemme quand le mot "
                         "est absent de l'embedding (#119), ex. --donor accoutumes="
@@ -278,8 +279,7 @@ def main():
     donor = run.donors.donor_for(target)
     rank_map = build_word_map(target, donor, cfg, run.kv, run.V, run.M, run.Vset,
                               run.lemma_table, run.forms_by_lemma, run.donors,
-                              run.forms, roads=not args.no_roads,
-                              reporter=run.reporter)
+                              run.forms, reporter=run.reporter)
 
     # #135 is a report only: printed once the map exists, before the file is written.
     run.reporter.print()

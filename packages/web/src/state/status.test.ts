@@ -75,6 +75,9 @@ describe('wordStatusOf — Word mode (#163), off the round\'s clock', () => {
     // The distinction is the mode's: a timed-out run is over, and calling it solved would
     // claim an achievement Word mode does not have. Visually both are gold.
     expect(wordStatusOf(wordRound({ claimed: 7 }), T0 + 60_001)).toEqual({ kind: 'done' });
+    // Over means STRICTLY after: at the deadline's own millisecond the run is still in
+    // play — the store still takes a guess there, and this must not already say done.
+    expect(wordStatusOf(wordRound({ claimed: 7 }), T0 + 60_000).kind).toBe('progress');
   });
 
   it('is read fresh against the CLOCK, so no stored flag can go stale', () => {

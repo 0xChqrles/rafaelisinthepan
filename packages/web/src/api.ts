@@ -208,5 +208,13 @@ export function parseWordPuzzle(data: unknown): WordPuzzle {
     }
     checkRankAnnotations(entry);
   }
+  // `freq` is optional PER ENTRY (a borrowed-vector group has no position to read) but a
+  // map carrying NONE is a pre-#163 artifact: every claim would silently grade at the
+  // COMMON floor and halve the run's economy with nothing anywhere looking wrong. The
+  // standing no-back-compat rule says a stale artifact is republished, never limped on —
+  // so it surfaces as the load failure it is.
+  if (!Object.values(ranks).some((entry) => isRecord(entry) && entry.freq !== undefined)) {
+    throw new Error('malformed word puzzle: no "freq" on any entry (pre-#163 artifact)');
+  }
   return data as unknown as WordPuzzle;
 }

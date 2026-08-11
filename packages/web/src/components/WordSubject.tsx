@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import FloatingHit, { HIT_FADE_MS } from './FloatingHit';
 import WordSlash from './WordSlash';
-import type { Strike } from './rarity';
-import { STRUCK_MS, blowDelayMs, strikeDurationMs } from './rarity';
+import WordLoot, { lootDurationMs } from './WordLoot';
+import type { Rarity } from '../game/wordGame';
+import type { StrikeArt } from './rarity';
+import { STRUCK_MS } from './rarity';
 import { fitWord } from './routeDrawing';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { srWordBoardWord } from '../i18n';
@@ -29,25 +31,29 @@ export const SUBJECT_PX = 40;
 // nothing alike (decided 2026-08-09), which is the point: at a glance, before reading
 // anything, you know which one happened.
 //
-//   claim — the word is STRUCK — a cut, a cross, or the ultra burst — and it SHAKES.
-//           No text: a name has to be read, and a run against a clock has no time for that.
-//           The grade is said by COLOUR, here and on the word; the board reads the run back.
+//   claim — the word is STRUCK — a cut, a cross, or the ultra burst — and it SHAKES; and
+//           the hit knocks LOOT out of it (`WordLoot`, 2026-08-10): the guess's rank
+//           exponent and its grade's name pop off the word and fall away, the run's one
+//           statement of either number. No text ever PARKS on the screen — the loot is in
+//           the air for under a second; the board still reads the run back at the end.
 //   miss  — the sentence game's MISS float, its own animation, and the word does NOT move.
-//           Nothing was struck, so nothing recoils.
+//           Nothing was struck, so nothing recoils and nothing drops.
 //
 // Presentation state, owned by the screen.
 export type WordHit =
-  | { id: number; kind: 'claim'; color: string; strike: Strike }
+  | { id: number; kind: 'claim'; color: string; strike: StrikeArt; rank: number; grade: Rarity }
   | { id: number; kind: 'miss'; color: string };
 
 // The MISS float's own beat, the sentence game's lone-hit timing.
 const MISS_HOLD_MS = 320;
 
 // How long a hit is on screen, whichever kind it is — the screen holds its ending beat for
-// whatever is still in the air when the clock dies.
+// whatever is still in the air when the clock dies. A claim's is the LATER of its strike
+// and its loot — in practice the loot, which outlives every sheet, and why the loot's
+// timer is the one that reports the claim done below.
 export function hitDurationMs(hit: WordHit): number {
   return hit.kind === 'claim'
-    ? strikeDurationMs(hit.strike)
+    ? Math.max(hit.strike.ms, lootDurationMs)
     : MISS_HOLD_MS + HIT_FADE_MS;
 }
 
@@ -55,8 +61,8 @@ export function hitDurationMs(hit: WordHit): number {
 // The first letter leans left, the last leans right, and everything between follows the same
 // arc, so the day's word reads as something someone is HOLDING rather than something
 // printed. This is the ambient life of the run's screen — and it is deliberately separate
-// from the GUESS FEEDBACK, which does not animate at all (see RarityHit): one is what the
-// screen is doing while you think, the other is what it says back when you act.
+// from the GUESS FEEDBACK (the strike and its loot, `WordSlash`/`WordLoot`): one is what
+// the screen is doing while you think, the other is what it says back when you act.
 //
 // Two numbers describe the fan. The lean is the obvious one; the DROP is what makes it a
 // hand rather than skewed type — cards splay from a pivot below the hand, so their tops
@@ -109,41 +115,31 @@ function useLetterWave(letters: number): boolean {
 }
 
 // --- what the word does WHILE it is being struck ------------------------------------------
-// It recoils and takes the strike's colour — and it does both PER BLOW, not for the length of
-// the strike (decided 2026-08-09). Between the two blows of a cross there is a beat where
-// nothing is on the word, and the word has to be untouched in it: a colour held across the
-// gap turns two hits into one long state, which is the reading the gap exists to prevent.
-//
-// So this returns WHICH blow is landing, or null in the daylight between them and after the
-// last — driven by the strike's own `blowDelayMs`/`STRUCK_MS`, the numbers the sheet itself is
-// drawn from, so the word and the hit on it can never disagree about when a blow is on.
-// It lets go a frame BEFORE the stroke does, which is where the beat between two hits comes
-// from now that the strokes themselves run back to back.
-// A miss lands no blow at all: nothing was struck, so nothing recoils.
-function useStrikeBlow(hit: WordHit | null): number | null {
-  const [blow, setBlow] = useState<number | null>(null);
-  const claim = hit?.kind === 'claim' ? hit : null;
-  const id = claim?.id ?? null;
-  const strike = claim?.strike ?? null;
-  const blows = strike?.blows ?? 0;
+// It recoils and takes the strike's colour — for the BLOW, not for the length of the sheet
+// (decided 2026-08-09; a strike is one blow since 2026-08-11, when the RARE cross retired).
+// It lets go a frame BEFORE the stroke ends (`STRUCK_MS`, one frame short of the shortest
+// sheet), which is what makes a longer sheet's remaining frames read as dissipation over a
+// word already back at rest. A miss lands no blow at all: nothing was struck, so nothing
+// recoils.
+function useStruck(hit: WordHit | null): boolean {
+  const [struck, setStruck] = useState(false);
+  const id = hit?.kind === 'claim' ? hit.id : null;
 
-  useEffect(() => {
+  // Layout effect, not a passive one, and that is the whole point of the hook: the blow
+  // must land BEFORE the strike's first frame paints. A passive effect runs after paint,
+  // so the sheet's opening frame showed over a word not yet recoiling — exactly the frame
+  // the recoil exists for. (A 0ms timer would cost the same frame for the same reason.)
+  useLayoutEffect(() => {
     if (id === null) {
-      setBlow(null);
+      setStruck(false);
       return undefined;
     }
-    // The first blow lands in the same commit the strike mounts in, so it is set here rather
-    // than scheduled — a timer for 0ms would cost the recoil its first frame.
-    setBlow(0);
-    const timers: number[] = [];
-    for (let i = 0; i < blows; i += 1) {
-      if (i > 0) timers.push(window.setTimeout(() => setBlow(i), blowDelayMs(strike!, i)));
-      timers.push(window.setTimeout(() => setBlow(null), blowDelayMs(strike!, i) + STRUCK_MS));
-    }
-    return () => timers.forEach((t) => window.clearTimeout(t));
-  }, [id, blows, strike]);
+    setStruck(true);
+    const t = window.setTimeout(() => setStruck(false), STRUCK_MS);
+    return () => window.clearTimeout(t);
+  }, [id]);
 
-  return blow;
+  return struck;
 }
 
 // Where one letter of the fan sits: how far it leans, and how far it has fallen from the
@@ -174,8 +170,7 @@ export default function WordSubject({
 }) {
   const letters = [...word];
   const waving = useLetterWave(letters.length);
-  const blow = useStrikeBlow(hit);
-  const struck = blow !== null && hit?.kind === 'claim' ? hit : null;
+  const struck = useStruck(hit) && hit?.kind === 'claim' ? hit : null;
 
   return (
     <div className="word-subject">
@@ -193,11 +188,10 @@ export default function WordSubject({
       >
         {/* The word RECOILS from a strike and from nothing else: a claim shakes it, a MISS
             leaves it alone, because nothing was struck. Both the recoil and the colour last
-            exactly ONE BLOW (see `useStrikeBlow`), so a cross hits, lets go, and hits again.
-            Keyed per BLOW so the second restarts the shake rather than inheriting a run
-            already over, and so a claim landing on top of another does too (Hole's trick). */}
+            exactly the BLOW (see `useStruck`), a frame short of the sheet. Keyed per hit so
+            a claim landing on top of another restarts the shake (Hole's trick). */}
         <span
-          key={struck ? `struck-${struck.id}-${blow}` : 'word'}
+          key={struck ? `struck-${struck.id}` : 'word'}
           className={`word-subject-text${struck ? ' struck' : ''}${waving ? ' wave' : ''}`}
           style={
             {
@@ -223,13 +217,18 @@ export default function WordSubject({
         {hit &&
           onHitDone &&
           (hit.kind === 'claim' ? (
-            <WordSlash
-              key={hit.id}
-              id={hit.id}
-              color={hit.color}
-              strike={hit.strike}
-              onDone={onHitDone}
-            />
+            <Fragment key={hit.id}>
+              {/* The strike does not report done — the loot always outlives it (see
+                  hitDurationMs), so the loot's timer is the claim's one lifetime. */}
+              <WordSlash id={hit.id} color={hit.color} art={hit.strike} />
+              <WordLoot
+                id={hit.id}
+                rank={hit.rank}
+                grade={hit.grade}
+                color={hit.color}
+                onDone={onHitDone}
+              />
+            </Fragment>
           ) : (
             // The sentence game's own MISS float, unchanged and unparameterised — the same
             // word, in the same red, with the same pop and rise it has everywhere else.

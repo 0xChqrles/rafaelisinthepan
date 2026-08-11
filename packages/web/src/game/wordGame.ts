@@ -17,16 +17,26 @@
 
 import type { RankEntry, WordRanks } from '@whippin/shared';
 
-// The claimable zone: the top-CLAIM_ZONE ranked groups — generation's flat road zone
-// (ROAD_TOP), which is Word mode's whole playing field (#154). This is a GAME RULE
-// mirroring the artifact's road zone, not the TOP_K map cap (which stays untested here:
-// off-map is simply "no entry").
+// The claimable zone: the top-CLAIM_ZONE ranked groups, Word mode's whole playing field.
+// A GAME RULE, not the TOP_K map cap (which stays untested here: off-map is simply "no
+// entry"). Widened 150 -> 250 on 2026-08-07 and 250 -> 1000 on 2026-08-11, both for a
+// longer run — and it is now STATED TO THE PLAYER, on the gate (i18n `wordRulesGoal`),
+// which reads the number off this constant rather than spelling it into the copy.
 //
-// It is NOT independently tunable: the field the board DRAWS is the set generation stamped
-// a road on, so this number and ROAD_TOP move together or the board grows lane-less
-// stations (wordGame.test.ts pins them). Widened 150 -> 250 on 2026-08-07 — a longer run,
-// and an artifact generated at the old ceiling must be regenerated to carry roads that far.
-export const CLAIM_ZONE = 250;
+// It IS independently tunable — since 2026-08-10, when the board's lanes became rarity
+// grades. It used to restate generation's ROAD_TOP, because the field the board drew was the
+// set generation had stamped a `road` on: move one alone and the board grew lane-less
+// stations, or refused to claim ones it had drawn. Nothing stamps the field any more — a lane
+// is read off `freq`, which every entry carries, and `dq` runs to the map's own TOP_K edge —
+// so this number can move on its own, and no artifact needs regenerating when it does.
+// The only real ceiling is generation's TOP_K (10 000): past it a rank simply has no entry.
+//
+// TWO things scale with it, neither of them a blocker but both worth knowing before it
+// moves again: the post-mortem board draws EVERY zone group as a station, so this is also
+// the board's row count; and `wordStatusOf` reads a run's progress as claimed/zone, so a
+// wider zone makes the archive's percentages proportionally smaller (which stays honest —
+// the field is deliberately unclearable, and now four times more so).
+export const CLAIM_ZONE = 1000;
 
 // ---- The economy (#163). Every constant below is a declared TUNING KNOB: nothing
 // restates them, the HUD reads them and the tests derive their expectations from them,
@@ -35,8 +45,19 @@ export const CLAIM_ZONE = 250;
 // answer: should an average claim's bonus roughly cover the typing cost of the next
 // guess on MOBILE, the slower device? Too low and every run ends inside 90 seconds and
 // reads as unwinnable; too high and every run exhausts the zone.
+//
+// The knob claim has been EXERCISED, and it held: on 2026-08-11 the start went to 120
+// and every rung of the ladder doubled, then both were rolled back the same day (the
+// STRIKES_TO_END pattern — see its own 5-and-back-to-3 note in the git history). Not one
+// test, component or artifact moved in either direction; the tests assert the ladder's
+// SHAPE — ratios and ordering — which a scalar leaves alone. Two things learned worth
+// keeping: the CLOCK's opening value is a WIDTH decision as well as an economic one (at
+// 120 the HUD reads three digits from the first frame, where 60 reads two), and a scalar
+// on the ladder cannot change the balance BETWEEN grades, only how fast the whole run
+// breathes. What the ladder is worth relative to a claim's typing cost is the real
+// question, and it is still open until the play sessions.
 
-// What the clock starts at, in seconds, when START is tapped.
+// What the clock starts at, in seconds, when PLAY is tapped.
 export const START_SECONDS = 60;
 
 // The five NAMED rarity grades a claim can earn, commonest first. They are shown to the
@@ -92,10 +113,11 @@ export const RARITY_LADDER: readonly { name: Rarity; within: number; seconds: nu
   { name: 'ARCANE', within: Infinity, seconds: 21 },
 ];
 
-// Where a group sits on the ladder. `freq` is OPTIONAL by contract (an artifact generated
-// before #163 carries none) and an unknown rarity is COMMON — the floor, never a windfall
-// for missing data. `corpusSize` is the language's whole vocabulary; a nonsensical one
-// falls to the same floor rather than dividing by zero.
+// Where a group sits on the ladder. `freq` is OPTIONAL by contract — a borrowed-vector
+// group (#119) has no corpus position to read (a WHOLE map without it is a stale pre-#163
+// artifact, and parseWordPuzzle refuses that at load) — and an unknown rarity is COMMON:
+// the floor, never a windfall for missing data. `corpusSize` is the language's whole
+// vocabulary; a nonsensical one falls to the same floor rather than dividing by zero.
 export function rarityOf(freq: number | undefined, corpusSize: number): Rarity {
   if (freq === undefined || !(corpusSize > 0)) return RARITY_LADDER[0].name;
   const within = freq / corpusSize;

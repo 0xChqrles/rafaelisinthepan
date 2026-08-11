@@ -357,9 +357,9 @@ describe('parseWordPuzzle (shape validation)', () => {
     lang: 'fr',
     word: { word: 'forêt', slug: 'foret' },
     ranks: {
-      foret: { word: 'forêt', rank: 0 },
-      bois: { word: 'bois', rank: 1, dq: 255, road: 0 },
-      arbre: { word: 'arbre', rank: 2, dq: 240, road: 1 },
+      foret: { word: 'forêt', rank: 0, freq: 812 },
+      bois: { word: 'bois', rank: 1, dq: 255, road: 0, freq: 64 },
+      arbre: { word: 'arbre', rank: 2, dq: 240, road: 1, freq: 230 },
     },
   });
 
@@ -390,7 +390,7 @@ describe('parseWordPuzzle (shape validation)', () => {
     expect(() => parseWordPuzzle(notZero)).toThrow(/rank 0/);
   });
 
-  it('rejects a malformed rank / dq / road on any entry', () => {
+  it('rejects a malformed rank / dq / road / freq on any entry', () => {
     const badRank = valid();
     (badRank.ranks.bois as { rank: unknown }).rank = -1;
     expect(() => parseWordPuzzle(badRank)).toThrow(/rank/);
@@ -400,16 +400,32 @@ describe('parseWordPuzzle (shape validation)', () => {
     const badRoad = valid();
     (badRoad.ranks.arbre as { road: unknown }).road = 4294967295;
     expect(() => parseWordPuzzle(badRoad)).toThrow(/road/);
+    // freq is 1-based on purpose: a 0 is indistinguishable from absent to a truthiness test.
+    const badFreq = valid();
+    (badFreq.ranks.bois as { freq: unknown }).freq = 0;
+    expect(() => parseWordPuzzle(badFreq)).toThrow(/freq/);
   });
 
-  // A rank entry with no dq/road is a legitimate pre-#115 shape; only a PRESENT one is checked.
+  // dq/road/freq are optional PER ENTRY (pre-#115 data; a borrowed-vector group has no
+  // corpus position) — only a PRESENT one is checked, as long as freq appears SOMEWHERE.
   it('accepts entries with no distance annotations', () => {
     const bare = {
       lang: 'en',
       word: { word: 'ocean', slug: 'ocean' },
-      ranks: { ocean: { word: 'ocean', rank: 0 }, sea: { word: 'sea', rank: 1 } },
+      ranks: { ocean: { word: 'ocean', rank: 0 }, sea: { word: 'sea', rank: 1, freq: 3 } },
     };
     expect(() => parseWordPuzzle(bare)).not.toThrow();
+  });
+
+  // A map with NO freq anywhere is a pre-#163 artifact: every claim would grade at the
+  // COMMON floor and silently halve the economy. The no-back-compat rule says a stale
+  // artifact is republished, never limped on — so it must fail loudly at load.
+  it('rejects an artifact with no freq on any entry (pre-#163)', () => {
+    const stale = valid();
+    for (const entry of Object.values(stale.ranks)) {
+      delete (entry as { freq?: unknown }).freq;
+    }
+    expect(() => parseWordPuzzle(stale)).toThrow(/freq/);
   });
 
   // The two dailies' bodies must not pass for each other: this is exactly what a cache-key

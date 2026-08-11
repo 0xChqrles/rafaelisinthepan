@@ -5,14 +5,13 @@ import useVocab from '../hooks/useVocab';
 import { useDeadlinePassed } from '../hooks/useCountdown';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
 import {
+  bonusSeconds,
   judgeWordGuess,
   rarityOf,
-  rarityStep,
   replayWordRun,
   totalBonus,
   wordGuessKey,
-  RARITY_LADDER,
-  RARITY_NAMES,
+  CLAIM_ZONE,
 } from '../game/wordGame';
 import { MISS_COLOR, RARITY_COLORS, strikeFor } from '../components/rarity';
 import { buildWordBoard } from '../game/wordBoard';
@@ -22,26 +21,28 @@ import WordBoard, { WordTerminus } from '../components/WordBoard';
 import WordSubject, { hitDurationMs, type WordHit } from '../components/WordSubject';
 import WordTimer, { type TimeGain } from '../components/WordTimer';
 import CellDigits from '../components/CellDigits';
-import Button from '../components/Button';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import WordEndScreen from '../components/WordEndScreen';
 import LoadError from '../components/LoadError';
-import { t, srWordClaim, srWordMiss, srWordTimeUp } from '../i18n';
+import CoachText from '../tutorial/CoachText';
+import { t, tn, srWordClaim, srWordMiss, srWordTimeUp } from '../i18n';
 import { prefersReducedMotion } from '../hooks/useScramble';
 
 // Word mode (#156, retimed by #163): the second daily on the same mechanic, inverted —
 // the word is SHOWN and the player names its neighborhood, fast, against a countdown.
 // The screen runs in THREE phases, and each one puts a different thing in front of you:
 //
-//   GATE — the day's word, the rules in two sentences, and START. The clock needs a start
+//   GATE — the day's word, two bulleted rules in the shared `.coach-rules` dialog, and
+//          PLAY. The clock needs a start
 //          control anyway, so the control is where the rules live; this screen is also
 //          the whole of Word mode's onboarding.
 //   RUN  — the word, the prompt, the keyboard, the TIMER and the score, and nothing else.
 //          The board does NOT render: this is a fast game, and a live map to read is a
 //          contemplative surface that pulls against the clock.
 //   OVER — the board arrives, revealed, as the post-mortem the run earned: the whole
-//          census, the claims, the roads, the MISSED shelf, above the count and SHARE.
+//          census, the claims coloured by RARITY (what each grade held and paid),
+//          the MISSED shelf, above the count and SHARE.
 //
 // The run's end is a DEADLINE, so it is the CLOCK that ends it and never a guess: an
 // interrupted run is a ruined run (no pause, by decision), and a guess in flight when the
@@ -110,6 +111,18 @@ function WordRound({
   // Identity of this round: (server day, language, MODE) — the word round can never
   // collide with the same day's sentence round (#156).
   const roundKey = useMemo(() => roundKeyForDay(dayNumber, lang, 'word'), [dayNumber, lang]);
+
+  // The gate's rules as ONE bulleted string: what its dialog box types, and what the
+  // sr-only mirror states (the visible CoachText is aria-hidden, like every coach box).
+  // The goal line names HOW MANY words count, read off `CLAIM_ZONE` rather than written
+  // into the copy — the rule and the sentence stating it cannot drift apart.
+  const gateRules = useMemo(
+    () =>
+      [tn(lang, 'wordRulesGoal', CLAIM_ZONE), t(lang, 'wordRulesBonus')]
+        .map((line) => `- ${line}`)
+        .join('\n'),
+    [lang],
+  );
   const ensureWordRound = useGameStore((s) => s.ensureWordRound);
   const startWordRun = useGameStore((s) => s.startWordRun);
   const recordWordGuess = useGameStore((s) => s.recordWordGuess);
@@ -145,7 +158,6 @@ function WordRound({
   // the run is over; that is the clock's, above.
   const run = useMemo(() => replayWordRun(ranks, tried), [ranks, tried]);
   const score = run.claimed.length;
-
 
   // End presentation is transient, not persisted. A live run lets the clock's last moment
   // play out, then the field arrives and the prompt leaves, then the keyboard drops and
@@ -195,8 +207,8 @@ function WordRound({
   // word (WordSubject) and no line at all — but it is built throughout, because the screen
   // refuses to render at all without a drawable one (see the `!board` guard below).
   const board = useMemo(
-    () => buildWordBoard({ ranks, word: puzzle.word.word, tried, reveal: postMortem }),
-    [ranks, puzzle.word.word, tried, postMortem],
+    () => buildWordBoard({ ranks, word: puzzle.word.word, tried, corpusSize, reveal: postMortem }),
+    [ranks, puzzle.word.word, tried, corpusSize, postMortem],
   );
 
   // The seconds a claim just bought, landing ON the timer. Same shape as the word's hit:
@@ -349,30 +361,36 @@ function WordRound({
       const nextRun = replayWordRun(ranks, [...tried, typed]);
 
       // What the word says back — and the two answers are different EVENTS, not two
-      // spellings of one. A claim CUTS the word, in its grade's colour, twice from
-      // DOUBLE_SLASH_FROM up. Anything the run cannot claim says MISS in the app's red: a
-      // near miss and an off-map guess are the same thing to a player racing a clock, and
-      // the exact distance of an unclaimable word is a number they can do nothing with. It
-      // survives where it still teaches — the post-mortem draws that guess on the trunk at
-      // its real rank.
+      // spellings of one. A claim STRIKES the word in its grade's colour and knocks its
+      // LOOT out of it — the guess's rank exponent and the grade's name, popping off the
+      // word and falling away (WordLoot). Anything the run cannot claim says MISS in the
+      // app's red: a near miss and an off-map guess are the same thing to a player racing
+      // a clock, and the exact distance of an unclaimable word is a number they can do
+      // nothing with. It survives where it still teaches — the post-mortem draws that
+      // guess on the trunk at its real rank.
       const claimed = judged.kind === 'claim' ? judged.entry : null;
       const grade = claimed ? rarityOf(claimed.freq, corpusSize) : null;
       hitId.current += 1;
-      const next: WordHit = grade
-        ? {
-            id: hitId.current,
-            kind: 'claim',
-            color: RARITY_COLORS[grade],
-            strike: strikeFor(grade),
-          }
-        : { id: hitId.current, kind: 'miss', color: MISS_COLOR };
+      const next: WordHit =
+        claimed && grade
+          ? {
+              id: hitId.current,
+              kind: 'claim',
+              color: RARITY_COLORS[grade],
+              strike: strikeFor(grade),
+              rank: claimed.rank,
+              grade,
+            }
+          : { id: hitId.current, kind: 'miss', color: MISS_COLOR };
       hitEndsAt.current = Date.now() + hitDurationMs(next);
       setHit(next);
 
       if (claimed && grade) {
         // The other half of the feedback grammar: the GRADE lands on the word, the
-        // SECONDS it bought land on the clock.
-        const seconds = RARITY_LADDER[rarityStep(grade)].seconds;
+        // SECONDS it bought land on the clock — priced by `bonusSeconds`, the SAME
+        // derivation the store's re-pricing walks through (`totalBonus`), so the `+Ns`
+        // shown and the seconds credited can never disagree.
+        const seconds = bonusSeconds(claimed.freq, corpusSize);
         gainId.current += 1;
         setGain({ id: gainId.current, seconds });
         say(srWordClaim(lang, claimed.word, grade, nextRun.claimed.length, seconds));
@@ -439,7 +457,7 @@ function WordRound({
         </div>
       </div>
 
-      {/* One stable footer footprint across all three phases: the gate's rules + START,
+      {/* One stable footer footprint across all three phases: the gate's rules + PLAY,
           then prompt + keyboard, then the result overlaying that WHOLE area — its score
           fills the flexible space while Share stays on the keyboard tray's bottom edge.
           Keeping the retired play controls underneath prevents any state from resizing
@@ -447,22 +465,22 @@ function WordRound({
       <div className="word-footer">
         <div className="word-footer-play">
           {!started ? (
-            /* The GATE. Two sentences and the control that starts the clock: what to do,
-               and what buys more time to do it in. It sits exactly where the prompt and
-               keyboard will be, so tapping START changes what the footer holds and not
-               where anything is. */
-            <>
-              <p className="word-rules">
-                {t(lang, 'wordRulesGoal')}
-                <br />
-                {t(lang, 'wordRulesBonus')}
-              </p>
-              <div className="tray">
-                <Button className="word-start" onClick={startWordRun}>
-                  {t(lang, 'wordStart')}
-                </Button>
+            /* The GATE — the sentence gate's EXACT layout (user-decided 2026-08-11):
+               the rules in the shared `.coach-rules` dialog and a full-width PLAY,
+               stacked in `.rules-gate` on the tray's bottom edge, extra height rising
+               upward (`.tray.tray-gate`). What to do, and what buys more time to do it
+               in; tapping PLAY swaps the tray's contents for the prompt and keys. */
+            <div className="tray tray-gate">
+              <div className="rules-gate">
+                <p className="sr-only">{gateRules}</p>
+                <div className="coach-rules" aria-hidden="true">
+                  <CoachText copy={gateRules} />
+                </div>
+                <button type="button" className="mix-btn" onClick={startWordRun}>
+                  {t(lang, 'gatePlay')}
+                </button>
               </div>
-            </>
+            </div>
           ) : (
             <>
               <div
@@ -482,7 +500,6 @@ function WordRound({
                   active={playing}
                 />
               </div>
-
 
               <div className={`tray${keyboardLeaving ? ' kb-leaving' : ''}`}>
                 {!showResults && (
