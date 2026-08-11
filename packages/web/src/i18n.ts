@@ -368,6 +368,17 @@ export function srWordRarities(
     : `neighborhood: ${total} stops by rarity (${split}), ${found} found`;
 }
 
+// The END SCREEN's breakdown, the visible chip row said in words: each grade the run
+// claimed and its count, ladder order (zero grades are not on screen either). The grade
+// names are untranslated, exactly as they are on screen; the prose is the reader's own.
+export function srWordBreakdown(
+  lang: string,
+  perGrade: readonly { grade: string; count: number }[],
+): string {
+  const split = perGrade.map((g) => `${g.grade} ${g.count}`).join(', ');
+  return uiLang(lang) === 'fr' ? `par rareté : ${split}` : `by rarity: ${split}`;
+}
+
 // A CLAIM: what it was, its RARITY GRADE, the running count, and the seconds it bought.
 // The grade replaces the rank the exponent used to carry (#163) — the same thing the
 // sighted player reads off the word — and the grade names stay untranslated, exactly as

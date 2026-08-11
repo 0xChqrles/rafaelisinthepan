@@ -1,19 +1,23 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { dateForDayNumber } from '@whippin/shared';
-import { t } from '../i18n';
+import { t, srWordBreakdown } from '../i18n';
+import { RARITY_NAMES } from '../game/wordGame';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import useShare from '../hooks/useShare';
+import { RARITY_COLORS } from './rarity';
 import { wordShareText, wordShareUrl, wordShareScore } from '../game/share';
 import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 
 // Word mode's end-of-run screen (#156): the claim count with its unit NAMED (higher is
-// better here — "12 WORDS" says what was counted) plus SHARE, in the tray the keyboard
-// vacates — the same visual grammar as the sentence game's solved results, minus what a
-// word run does not have (no trajectory, no opponents). The share link carries the
-// word-mode token — the per-rarity claim counts plus the accented public word — so it
-// unfurls into the word card with its rarity chip row, and clicks through to the day's
-// word route. The screen takes the BREAKDOWN and derives the count from it,
-// so the tally, the text, the token and the card all speak from one set of numbers.
+// better here — "12 WORDS" says what was counted), its per-rarity CHIP ROW, plus SHARE,
+// in the tray the keyboard vacates — the same visual grammar as the sentence game's
+// solved results, minus what a word run does not have (no trajectory, no opponents). The
+// share link carries the word-mode token — the per-rarity claim counts plus the accented
+// public word — so it unfurls into the word card with its rarity chip row, and clicks
+// through to the day's word route. The screen takes the BREAKDOWN and derives the count
+// from it, so the tally, the chips, the text, the token and the card all speak from one
+// set of numbers.
 export default function WordEndScreen({
   counts,
   dayNumber,
@@ -56,14 +60,42 @@ export default function WordEndScreen({
   }, [animate, reduceMotion, resultsIn, score]);
   const shownScore = useAnimatedNumber(countTarget, !animate || reduceMotion ? 1 : SCORE_COUNT_MS);
 
-  // The tally is this screen's LAST beat — no ruler colorize follows it, as it does in the
-  // sentence tray — so the number itself marks the landing with a one-shot scale pop.
-  // Not at zero: there is no count to land, and a popping 0 celebrates nothing.
+  // The tally's landing marks itself with a one-shot scale pop — no ruler colorize
+  // follows it, as it does in the sentence tray; the BREAKDOWN below is what unpacks the
+  // number instead. Not at zero: there is no count to land, and a popping 0 celebrates
+  // nothing.
   const [landed, setLanded] = useState(false);
   useEffect(() => {
     if (!animate || reduceMotion || score === 0) return undefined;
     if (countTarget !== score) return undefined;
     const id = window.setTimeout(() => setLanded(true), SCORE_COUNT_MS);
+    return () => window.clearTimeout(id);
+  }, [animate, reduceMotion, countTarget, score]);
+
+  // The grades the run claimed, ladder order, zeroes absent — the OG card's chip row and
+  // the share text's bead row, on screen. One derivation for the whole row, so what the
+  // chips say is exactly what the message will.
+  const claimedGrades = useMemo(
+    () =>
+      RARITY_NAMES.map((grade, step) => ({ grade, count: counts[step] ?? 0 })).filter(
+        (g) => g.count > 0,
+      ),
+    [counts],
+  );
+
+  // The breakdown is the result's LAST beat: it unpacks the number the tally just landed,
+  // so it waits for that landing (the pop's own moment) and then each chip rises in on its
+  // own delay, commonest first. Under reduced motion the count lands immediately and the
+  // global rule collapses the chips' rise to its delays — the floating numbers' own
+  // degradation. A rehydrated result renders the row settled, replaying nothing.
+  const [breakdownIn, setBreakdownIn] = useState(() => !animate);
+  useEffect(() => {
+    if (!animate) {
+      setBreakdownIn(true);
+      return undefined;
+    }
+    if (countTarget !== score) return undefined;
+    const id = window.setTimeout(() => setBreakdownIn(true), reduceMotion ? 0 : SCORE_COUNT_MS);
     return () => window.clearTimeout(id);
   }, [animate, reduceMotion, countTarget, score]);
 
@@ -96,6 +128,24 @@ export default function WordEndScreen({
         <span className="solved-score-unit">
           {t(lang, score === 1 ? 'foundWord' : 'foundWords')}
         </span>
+        {claimedGrades.length > 0 && (
+          <span
+            className={`word-rarities${animate ? '' : ' settled'}`}
+            role="img"
+            aria-label={srWordBreakdown(lang, claimedGrades)}
+          >
+            {claimedGrades.map(({ grade, count }, step) => (
+              <span
+                key={grade}
+                className={`word-rarity${breakdownIn ? ' in' : ''}`}
+                style={{ '--step': step, color: RARITY_COLORS[grade] } as CSSProperties}
+              >
+                <i className="word-rarity-square" />
+                {count}
+              </span>
+            ))}
+          </span>
+        )}
       </span>
 
       <div className="result-actions">

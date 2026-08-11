@@ -828,10 +828,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
   can drift (it did, the first time). A grade's SCREEN presentation stays in
   `components/rarity.ts`; `game/` must not import from `components/` (the dependency runs
   the other way).
-  Its tally ends on a one-shot scale pop (`score-land`, 2026-08-07) — the
-  count is this screen's LAST beat, with no ruler colorize following it as in the sentence
-  tray, so the number marks its own landing (never at 0, never on rehydration, collapsed
-  under reduced motion). Identity is mode-addressed everywhere: `roundKeyForDay(day, lang,
+  Its tally lands on a one-shot scale pop (`score-land`, 2026-08-07 — never at 0, never on
+  rehydration, collapsed under reduced motion), and **the BREAKDOWN is the result's LAST
+  beat since 2026-08-11** (superseding "the count is the last beat"): the screen draws the
+  claims per grade under the unit — the OG card's chip row on screen (`.word-rarities`, a
+  coloured square + count per grade CLAIMED, commonest first, zeroes absent, each chip in
+  its `RARITY_COLORS` colour) — and once the count settles (the pop's own moment) each chip
+  rises in on its own delay via the tutorial ladder's `rung-in`, unpacking the number that
+  just landed. The row holds its layout space while invisible, so its arrival moves
+  nothing; a rehydrated result wears `.settled` and replays nothing; reduced motion
+  collapses the rise and keeps the delays (the floating numbers' degradation). It is
+  decorative (`role="img"`) with `srWordBreakdown` as its accessible line — grade names
+  untranslated, as everywhere. Identity is mode-addressed everywhere: `roundKeyForDay(day, lang,
   'word')` = `w:` keys into the store's own `wordRounds` map (persist **v8** since the
   sentence gate flag, 2026-08-11; the word rounds' own shape is v7's, #163;
   `ensureWordRound` resets on a republished different word), `lastMode` decides where `/` lands (like
