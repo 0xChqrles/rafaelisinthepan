@@ -1,4 +1,4 @@
-import { RARITY_NAMES, type Rarity } from '../game/wordGame';
+import type { Rarity } from '../game/wordGame';
 
 // How a rarity grade LOOKS and how hard it lands (#163). The ladder itself — the names,
 // the corpus fractions, the seconds — is the game's rule and lives in `game/wordGame.ts`;
@@ -53,31 +53,9 @@ export const RARITY_COLORS: Record<Rarity, string> = {
 // Kept as a constant beside the grades so the reservation is stated where it is enforced.
 export const MISS_COLOR = '#ff1f54';
 
-// --- how a grade travels in a TEXT MESSAGE ----------------------------------------------
-// The share text's BEAD for each grade: the emoji nearest the grade's colour above.
-// CIRCLES (plus the pink heart — Unicode has no pink circle, and red is reserved for
-// MISS), never squares: 🟦 is the share text's ONE square and it marks the day's word, so
-// the breakdown must not speak it. The loot convention reads for free here — green
-// uncommon, blue rare, purple epic — with the heart as the ladder's own flourish on the
-// rarest thing a run can turn up.
-export const RARITY_EMOJI: Record<Rarity, string> = {
-  COMMON: '⚪',
-  UNCOMMON: '🟢',
-  RARE: '🔵',
-  OBSCURE: '🟣',
-  ARCANE: '🩷',
-};
-
-// The bead row itself: one bead + its count per grade the run claimed, commonest first,
-// zero grades omitted — `⚪7 🟢3 🔵1 🩷1`. Takes the counts in ladder order (the share
-// token's own shape), returns '' for a scoreless run so the caller can drop the line.
-export function rarityShareRow(counts: readonly number[]): string {
-  return RARITY_NAMES.map((grade, step) =>
-    (counts[step] ?? 0) > 0 ? `${RARITY_EMOJI[grade]}${counts[step]}` : '',
-  )
-    .filter(Boolean)
-    .join(' ');
-}
+// A grade also has a TEXT-medium presentation — its share-text bead — and that one lives
+// with the share composition it belongs to (`game/share.ts` `RARITY_EMOJI`/`rarityRow`),
+// beside the sentence emoji row it is the analogue of, not here.
 
 // --- what a claim LOOKS like: the word is STRUCK ------------------------------------------
 // A find HITS the word (decided 2026-08-09, replacing the grade name that used to stamp onto

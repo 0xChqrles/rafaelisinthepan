@@ -19,12 +19,23 @@ import {
   rowMeans,
   shareText,
   shareUrl,
+  rarityRow,
+  wordShareText,
+  wordShareUrl,
+  RARITY_EMOJI,
   MIN_ROW_CELLS,
   MAX_ROW_CELLS,
   ROW_BREAKPOINTS,
 } from './share';
 import { computeProgress, guessKey } from './scoring';
-import { decodeResult, progressEmoji, type RankMap, type RuntimeHole } from '@whippin/shared';
+import { RARITY_NAMES } from './wordGame';
+import {
+  decodeResult,
+  decodeWordResult,
+  progressEmoji,
+  type RankMap,
+  type RuntimeHole,
+} from '@whippin/shared';
 
 // Visible glyphs in a row: a colored square is one code point, a keycap is three (digit +
 // VS16 + COMBINING ENCLOSING KEYCAP), so dropping the two combining marks counts cells.
@@ -387,5 +398,63 @@ describe('shareUrl — result packed into a /s/<token> link', () => {
     const url = shareUrl('https://whippin.ai', result);
     // Only the origin, the /s/ path, and a base64url token.
     expect(url).toMatch(/^https:\/\/whippin\.ai\/s\/[A-Za-z0-9_-]+$/);
+  });
+});
+
+// CONTRACT: Word mode's share (#156; the rarity breakdown 2026-08-11). The plain text is
+// the app's visit card, so its exact shape is asserted here rather than left to the
+// component: the headline, a blank line, the RESULT BLOCK (the day's word in locale-aware
+// uppercase with its bead row directly under it), a blank line, the link.
+describe('rarityRow — the breakdown as one line of beads', () => {
+  it('has exactly one bead per grade, and no two grades share one', () => {
+    expect(Object.keys(RARITY_EMOJI).sort()).toEqual([...RARITY_NAMES].sort());
+    // Two grades wearing one bead would make the row unreadable in the one place it has no
+    // colour key beside it — a message.
+    expect(new Set(RARITY_NAMES.map((n) => RARITY_EMOJI[n])).size).toBe(RARITY_NAMES.length);
+  });
+
+  it('reads commonest-first and omits the grades the run never claimed', () => {
+    expect(rarityRow([7, 3, 1, 1, 0])).toBe('⚪7 🟢3 🔵1 🟣1');
+    // A deep run opens on cyan — the SHAPE of the line is the shape of the hand.
+    expect(rarityRow([0, 0, 3, 4, 2])).toBe('🔵3 🟣4 🩷2');
+    expect(rarityRow([0, 0, 0, 0, 0])).toBe(''); // a scoreless run says nothing
+  });
+});
+
+describe('wordShareText — the message a word run leaves', () => {
+  const url = 'https://whippin.ai/s/TOKEN';
+  const headline = 'Whippin AI 2026-08-11 — 12 mots';
+
+  it('stacks headline / word + beads / link, blank-line separated', () => {
+    expect(wordShareText(headline, 'forêt', 'fr', [7, 3, 1, 1, 0], url)).toBe(
+      `${headline}\n\nFORÊT\n⚪7 🟢3 🔵1 🟣1\n\n${url}`,
+    );
+  });
+
+  it('uppercases the DISPLAY form by locale and never a slug (accents survive)', () => {
+    const text = wordShareText(headline, 'crépuscule', 'fr', [0, 0, 3, 4, 2], url);
+    expect(text).toContain('CRÉPUSCULE');
+    expect(text).not.toContain('crepuscule');
+    expect(text).not.toContain('CREPUSCULE');
+  });
+
+  it('carries no leading emoji on the word (the 🟦 was dropped 2026-08-11)', () => {
+    expect(wordShareText(headline, 'forêt', 'fr', [7, 0, 0, 0, 0], url)).not.toContain('🟦');
+  });
+
+  it('drops the bead LINE entirely on a scoreless run, never an empty one', () => {
+    const text = wordShareText(headline, 'ocean', 'en', [0, 0, 0, 0, 0], url);
+    expect(text).toBe(`${headline}\n\nOCEAN\n\n${url}`);
+    expect(text).not.toMatch(/\n\n\n/); // no hole where the row would have been
+  });
+});
+
+describe('wordShareUrl — the word result as a link', () => {
+  const result = { lang: 'fr', dayNumber: 20638, counts: [7, 3, 1, 1, 0], word: 'forêt' };
+
+  it('builds <origin>/s/<token> and the token round-trips the breakdown', () => {
+    const url = wordShareUrl('https://whippin.ai', result);
+    expect(url).toMatch(/^https:\/\/whippin\.ai\/s\/[A-Za-z0-9_-]+$/);
+    expect(decodeWordResult(url.slice('https://whippin.ai/s/'.length))).toEqual(result);
   });
 });

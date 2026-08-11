@@ -46,8 +46,7 @@
   (ruler trajectory + solve ticks), **v5 = Word mode's (#156) — the common
   `version | lang | day` opening, then ONE claim count per rarity grade (commonest first,
   `WORD_RARITY_GRADES` = 5; the claim count a surface names is DERIVED as their sum,
-  `wordShareScore`, never stored), then the accented UTF-8 display word used by its
-  terminus-style OG card** (decided 2026-08-11, superseding v4's single score so the
+  `wordShareScore`, never stored), then the accented UTF-8 display word its OG card draws** (decided 2026-08-11, superseding v4's single score so the
   share surfaces can break the score down by rarity; v3 and v4 are retired). A future
   sentence bump must SKIP a value already taken. The card's rarity chip row paints
   `cardSvg.ts`'s `WORD_RARITY_COLORS` — a pinned one-way COPY of the web's

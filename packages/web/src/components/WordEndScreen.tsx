@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { dateForDayNumber, encodeWordResult } from '@whippin/shared';
+import { dateForDayNumber } from '@whippin/shared';
 import { t } from '../i18n';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import useShare from '../hooks/useShare';
-import { rarityShareRow } from './rarity';
+import { wordShareText, wordShareUrl, wordShareScore } from '../game/share';
 import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 
 // Word mode's end-of-run screen (#156): the claim count with its unit NAMED (higher is
@@ -11,8 +11,8 @@ import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 // vacates — the same visual grammar as the sentence game's solved results, minus what a
 // word run does not have (no trajectory, no opponents). The share link carries the
 // word-mode token — the per-rarity claim counts plus the accented public word — so it
-// unfurls into the terminus-style word card with its rarity chip row, and clicks through
-// to the day's word route. The screen takes the BREAKDOWN and derives the count from it,
+// unfurls into the word card with its rarity chip row, and clicks through to the day's
+// word route. The screen takes the BREAKDOWN and derives the count from it,
 // so the tally, the text, the token and the card all speak from one set of numbers.
 export default function WordEndScreen({
   counts,
@@ -29,7 +29,7 @@ export default function WordEndScreen({
   // final state immediately, so revisiting a finished day never replays the celebration.
   animate?: boolean;
 }) {
-  const score = useMemo(() => counts.reduce((sum, n) => sum + n, 0), [counts]);
+  const score = useMemo(() => wordShareScore(counts), [counts]);
   const reduceMotion =
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -71,21 +71,16 @@ export default function WordEndScreen({
   // this screen only composes the word result's text.
   const { share, copied } = useShare();
 
+  // This screen owns only the LOCALIZED headline; the body's composition — the word, its
+  // bead row, the blank lines — is `game/share.ts`'s, next to the sentence twin it mirrors.
   const onShare = useCallback(async () => {
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    const url = `${origin}/s/${encodeWordResult({ lang, dayNumber, counts, word })}`;
+    const url = wordShareUrl(origin, { lang, dayNumber, counts, word });
     const unit = t(lang, score === 1 ? 'word' : 'words').toLowerCase();
     // The day is named by its calendar date, like every share surface (decided
     // 2026-08-03) — the same string the card draws and the link resolves to.
     const headline = `Whippin AI ${dateForDayNumber(dayNumber)} — ${score} ${unit}`;
-    // The result block: the public target set apart as its own line — solved-blue square,
-    // then its locale-aware uppercase DISPLAY form (accents kept — never the slug) — with
-    // the rarity bead row directly under it (one bead + count per grade claimed, commonest
-    // first, omitted entirely on a scoreless run), and a blank line on either side of the
-    // block before the URL.
-    const beads = rarityShareRow(counts);
-    const result = `🟦 ${word.toLocaleUpperCase(lang)}${beads ? `\n${beads}` : ''}`;
-    await share(`${headline}\n\n${result}\n\n${url}`);
+    await share(wordShareText(headline, word, lang, counts, url));
   }, [lang, dayNumber, counts, score, share, word]);
 
   return (

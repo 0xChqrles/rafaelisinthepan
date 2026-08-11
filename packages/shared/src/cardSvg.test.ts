@@ -1,9 +1,9 @@
 // CONTRACT (light): the share-card SVG (packages/shared/src/cardSvg.ts) must render the
 // player's RUN RULER — one cell per counted try on the SHARED progress ramp (so the card
 // matches the on-screen ruler), a tick per solving try with the dropped hole's sentence
-// index under it — plus the score and the day's calendar date. Word mode instead repeats
-// its public terminus (accented blue word + blue square), then its claim count, the
-// per-rarity chip row (one grade-coloured square + count per claimed grade), and the date.
+// index under it — plus the score and the day's calendar date. Word mode instead draws the
+// day's accented word alone in the solved blue, then its claim count, the per-rarity chip
+// row (one grade-coloured square + count per claimed grade), and the date.
 // Exact positions are cosmetic and not asserted; they get tuned against the rasterized PNG.
 
 import { describe, it, expect } from 'vitest';
@@ -123,11 +123,13 @@ describe('renderCardSvg', () => {
 describe('renderWordCardSvg', () => {
   const data = { lang: 'fr', dayNumber: 20638, counts: [7, 3, 1, 1, 0], word: 'forêt' };
 
-  it('draws the accented word with the game terminus blue and a matching large square', () => {
+  it('draws the accented word ALONE, in the game\'s solved blue — no node square', () => {
     const svg = renderWordCardSvg(data);
-    expect(svg).toMatch(/<rect[^>]+width="72"[^>]+height="72"[^>]+fill="#2f7bff"/);
     expect(svg).toMatch(/<text[^>]+fill="#2f7bff">forêt<\/text>/);
     expect(svg).not.toContain('foret');
+    // The in-game square marks the end of a LINE and this card draws none; the only
+    // rects left are the background and the rarity chips.
+    expect(svg).not.toMatch(/<rect[^>]+fill="#2f7bff"/);
   });
 
   it("names the claim count as the counts' sum, with the calendar date below", () => {

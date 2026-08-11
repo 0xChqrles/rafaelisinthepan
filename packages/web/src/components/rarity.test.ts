@@ -16,16 +16,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { heatColor, progressColor, WORD_RARITY_COLORS } from '@whippin/shared';
-import {
-  RARITY_COLORS,
-  RARITY_EMOJI,
-  MISS_COLOR,
-  SLASH_ART,
-  STRIKE_ARTS,
-  STRUCK_MS,
-  rarityShareRow,
-  strikeFor,
-} from './rarity';
+import { RARITY_COLORS, MISS_COLOR, SLASH_ART, STRIKE_ARTS, STRUCK_MS, strikeFor } from './rarity';
 import { RARITY_NAMES } from '../game/wordGame';
 
 function hex(rgb: string): string {
@@ -127,20 +118,8 @@ describe('rarity colours track the palette stops they were copied from', () => {
   });
 });
 
-// The share text's bead row: the breakdown as it travels in a text message. One bead +
-// count per grade CLAIMED, ladder order, zeroes omitted — and never the target's square.
-describe('the share text bead row', () => {
-  it('has exactly one bead per grade, and none is the 🟦 that marks the day\'s word', () => {
-    expect(Object.keys(RARITY_EMOJI).sort()).toEqual([...RARITY_NAMES].sort());
-    for (const name of RARITY_NAMES) expect(RARITY_EMOJI[name], name).not.toBe('🟦');
-  });
-
-  it('joins claimed grades commonest-first and omits the zero grades', () => {
-    expect(rarityShareRow([7, 3, 1, 1, 0])).toBe('⚪7 🟢3 🔵1 🟣1');
-    expect(rarityShareRow([0, 0, 2, 0, 1])).toBe('🔵2 🩷1');
-    expect(rarityShareRow([0, 0, 0, 0, 0])).toBe(''); // a scoreless run says nothing
-  });
-});
+// NOT here: a grade's share-text BEAD. That is the text medium's presentation and lives
+// with the composition that uses it (`game/share.ts`), tested in `share.test.ts`.
 
 // The other half of the presentation: a rarer grade must read as more. Since the claim
 // feedback became a SLASH (2026-08-09) that is carried by WHICH SHEET lands (a strike is
