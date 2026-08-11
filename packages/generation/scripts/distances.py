@@ -32,12 +32,14 @@ DQ_MAX = 255
 # author who hand-picks a start far outside the band, where it keeps the O(n^3)
 # clustering (and the shipped road fields) bounded.
 #
-# It is ALSO the whole zone of a start-less single-word artifact (#154) — see road_zone —
-# which is what actually sets this number: those groups are Word mode's playing field, and
-# the client's CLAIM_ZONE restates it (packages/web/src/game/wordGame.ts, pinned to this
-# literal by wordGame.test.ts). Raised 150 -> 250 on 2026-08-07 to give Word mode a longer
-# run; a sentence hole is unaffected, since its zone is its departure's rank and the band
-# tops out well below either value.
+# road_zone's start-less case (start_rank=None -> the flat top-ROAD_TOP) survives for a
+# caller with no departure, but since 2026-08-11 NO command takes it: gen_word never
+# clusters at all (Word mode lanes by RARITY, and the tutorial's themes lesson — the
+# `--roads` opt-in's one reader — is retired), so roads are the sentence path's alone.
+# This number no longer sets Word mode's range, and the web's CLAIM_ZONE no longer
+# restates it — that constant is the client's own game rule, free to move without a
+# republish (every rank up to TOP_K carries the `dq` the board draws by). Raised
+# 150 -> 250 on 2026-08-07, back when it did.
 ROAD_TOP = 250
 # Candidate cluster counts. Below ROAD_MIN_SILHOUETTE the neighborhood has no honest
 # split and gets ONE road (some words genuinely have a single facet, and forcing a split
@@ -145,10 +147,9 @@ def road_zone(start_rank, top=ROAD_TOP):
     roads, not on the trunk short of them, so the fork happens before the first station
     of the journey rather than after it. Never more than `top` — see ROAD_TOP.
 
-    A START-LESS artifact (a single word, #154) passes None: with no departure to stop
-    at, there is no stretch to cut short and the zone IS the ceiling — the top-`top`
-    groups are Word mode's whole playing field. That is the one case where ROAD_TOP
-    stops being a bound on the journey and becomes the journey.
+    (Until 2026-08-11 a start-less single-word artifact passed None here and took the
+    flat top-`top` zone; gen_word no longer clusters at all, so every caller has a
+    departure now.)
     """
     if start_rank is None:
         return top

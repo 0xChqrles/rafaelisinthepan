@@ -509,8 +509,8 @@ def annotate_roads(rmap, merged, kv, start_rank, reps=None):
     farther than the start word is behind them, so clustering it produced forks of a
     route nobody walks — road fields the client bounds away again at read time, and one
     shipped byte per key for nothing. road_zone (distances.py) owns that rule, ceiling
-    included — and its `start_rank=None` case, which a start-less single-word artifact
-    passes (#154), turns that ceiling into the flat top-ROAD_TOP zone.
+    included. (Its `start_rank=None` flat-zone case lost its one caller on 2026-08-11,
+    when gen_word stopped clustering entirely.)
 
     `reps` (rank-aligned, ranks 1..) are the groups' REPRESENTATIVE forms (#134):
     the vectors the ranking — and dq — were built from. They are what the roads

@@ -1,12 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
 import Phrase from '../components/Phrase';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import LoadError from '../components/LoadError';
-import { LANE_COLORS } from '../components/routeDrawing';
-import ThemeCloud from './ThemeCloud';
-import RoutesTeaser from './RoutesTeaser';
+import RarityLadder from './RarityLadder';
 import TopBar from '../components/TopBar';
 import { HIT_FADE_MS } from '../components/FloatingHit';
 import { RANK_MAX_MS, rankTransitionDuration } from '../components/Hole';
@@ -18,15 +15,15 @@ import { buildPrefixSet, canExtend } from '../game/keyboard';
 import useVocab from '../hooks/useVocab';
 import { fold } from '@whippin/shared';
 import type { HitState, Hole as PuzzleHole, RankEntry, RuntimeHole } from '@whippin/shared';
-import { ariaExploreHole, t, srHoleResult, themeHeading, type UiKey } from '../i18n';
+import { t, srHoleResult, type UiKey } from '../i18n';
 import { track } from '../analytics';
 import { scriptFor } from './scripts';
 
-// The onboarding tutorial (#51, re-arced by #155). Screen contract: EXPLANATIONS in the
-// top box (typewritten, in-game word styling), INTERACTIONS at the bottom (the mix button,
-// then the keyboard), the word in the middle. No NEXT, no SKIP button in the body (browser
-// navigation is the exit), no flag (the language was already chosen to get here) — the flow
-// advances by playing.
+// The onboarding tutorial (#51, re-arced by #155; rarity ending 2026-08-11). Screen
+// contract: EXPLANATIONS in the top box (typewritten, in-game word styling), INTERACTIONS
+// at the bottom (the mix button, then the keyboard), the word in the middle. No SKIP button
+// in the body (the header fast-forward is the exit), no flag (the language was already
+// chosen to get here) — the flow advances by playing.
 //
 //   ONE board, concept first. The secret is SHOWN (blue). MIX scrambles it to its 1st
 //   neighbor; MIX AGAIN and MIX EVEN MORE scramble to the 10th and to the START word (the
@@ -34,16 +31,16 @@ import { scriptFor } from './scripts';
 //   keyboard and three gated guesses show distance (farther, no move), MISS, and improvement,
 //   each rolling straight into the next prompt. Then the player types back to the secret with
 //   the real vocabulary (free exploration; a nudge reveals the word after 3 straight MISSes).
-//   Finding it ENDS the lesson on the one concept nothing else teaches: the word they found
-//   ENDS on the themes: the coach states the claim, NEXT hands over to the gesture line, the
-//   word then waves and its tap REPLACES it with its THEMES — one cloud of themed words at a
-//   time, in the route colors the game's map speaks — while the coach names each; the close
-//   is a glimpse of the route map (RoutesTeaser) under the general principle, and PLAY in the
-//   tray is the graduation. There is no score to show, so there is no screen for it.
+//   Finding it rolls into the ENDING — the game's other core concept, word RARITY: the coach
+//   states the claim over the found word, NEXT swaps the word for the five-grade ladder
+//   (RarityLadder) under the line that says what it means, and PLAY in the tray is the
+//   graduation. There is no score to show, so there is no screen for it. Mode-specific rules
+//   (the clock, the bots, the history tap) are deliberately NOT here: each mode's pre-game
+//   gate teaches its own.
 //
 // Everything that reacts is the real components with the real timing constants; the scripts
-// are data (./scripts/<lang>.ts) over a REAL generated neighborhood (a pruned #154 artifact),
-// which is what gives the themes their real roads. Deliberately NOT Round: Round is
+// are data (./scripts/<lang>.ts) over a REAL generated neighborhood (a pruned #154
+// artifact). Deliberately NOT Round: Round is
 // fused to the persisted store, and a tutorial round must never touch `rounds` (only the
 // `onboarded` flag changes, set by the caller via onDone).
 
@@ -58,13 +55,6 @@ const NUDGE_AFTER_MISSES = 3;
 // SCRAMBLE_MS); on the later presses the exponent ticks through the real intermediate ladder
 // ranks (>= 9 per segment, guarded by scripts.test.ts) while the letters churn.
 const MIX_SETTLE_MS = 500; // hold on a landing before the copy / next prompt
-
-// The DEADLINE behind the leaving cloud's own report (#155): the cloud tells us when its last
-// word has finished shrinking (ThemeCloud's `onExited`), and this only covers a report that
-// never lands — a renamed keyframe, a lost event. A generous multiple of the real beat
-// (~200ms), like the game's other exit deadlines: it must never cut a genuine exit short, and
-// it must never let a lost signal strand the player on a cloud that will not leave.
-const CLOUD_EXIT_FALLBACK_MS = 900;
 
 // The tutorial's ONE hole, at the board's start word — the same shape Game derives from a
 // real puzzle, so every component it feeds behaves identically.
@@ -139,8 +129,8 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
     setAnnounce(text + (announceFlip.current ? '' : '​'));
   }, []);
 
-  // Advance to the next step. The LAST step is the tap, which no guess can leave: only its
-  // PLAY ends the tutorial.
+  // Advance to the next step. The LAST step is the rarity ending, which no guess can
+  // leave: only its PLAY ends the tutorial.
   const advance = useCallback(() => {
     setPhase('idle');
     setStepIndex((i) => Math.min(i + 1, script.steps.length - 1));
@@ -232,7 +222,7 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
         setPhase('feedback');
         later(advance, settleMs);
       } else if (solves) {
-        // Finding it needs no comment either: it rolls into the tap that ends the tutorial.
+        // Finding it needs no comment either: it rolls into the ending.
         setPhase('feedback');
         later(advance, settleMs + 350);
       }
@@ -304,65 +294,16 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
     }, SCRAMBLE_MS + MIX_SETTLE_MS);
   }, [step, mixBusy, mixStop, ladder, later, advance]);
 
-  // --- the ending (#155): the found word gives way to its THEMES, one cloud at a time ---
-  // The button wraps the hole for the WHOLE tutorial (unwrapping it mid-round would remount
-  // the word while its scramble is running, exactly as in the game); only the tap STEP
-  // enables it. `quiet` lets the hole run its ambient wave then — the affordance for the tap
-  // the copy is asking for. The tap swaps the play area from the word to a CLOUD of one
-  // theme's words in that route's color (findings 2026-08-04, superseding both the inline
-  // route line and its one-road-at-a-time variant: the line was too much information at
-  // once); NEXT THEME swaps clouds — never two on screen — and after the last one the close
-  // shows the abstract routes teaser (the themes' colored lines, a glimpse of the game's
-  // map) while the coach states the general principle, and PLAY in the tray is the way out.
-  // The ending's first beat: the claim, before the word is offered. NEXT retires it, and only
-  // then does the word start waving and accept a tap — one idea, one affordance at a time.
-  const [claimMade, setClaimMade] = useState(false);
-  const [themesOpen, setThemesOpen] = useState(false);
-  const [themeStage, setThemeStage] = useState(0);
-  // The leaving beat: the cloud on screen scales away word by word, and only once IT reports
-  // the last word gone does the stage advance — so whatever comes next, the following cloud or
-  // the routes line, lands on a cleared screen, and the coach line (derived from the same
-  // stage) arrives with it. The button is inert while it plays, or a double press would skip a
-  // theme.
-  const [cloudExiting, setCloudExiting] = useState(false);
-  // Guards the race between the cloud's report and the deadline below: whichever lands first
-  // advances, the other is a no-op. The winner must also CANCEL the pending deadline —
-  // `exitClaimed` only covers one exit, and the next press re-arms it, so an uncancelled
-  // timer from an earlier press would fire mid-way through a LATER cloud's exit and advance
-  // the stage over words still shrinking.
-  const exitClaimed = useRef(false);
-  const exitDeadline = useRef<number | undefined>(undefined);
-  const openThemes = useCallback(() => {
-    setThemeStage(0);
-    setThemesOpen(true);
-  }, []);
-  const finishThemeExit = useCallback(() => {
-    if (exitClaimed.current) return;
-    exitClaimed.current = true;
-    window.clearTimeout(exitDeadline.current);
-    setCloudExiting(false);
-    setThemeStage((k) => k + 1);
-  }, []);
-  const nextTheme = useCallback(() => {
-    exitClaimed.current = false;
-    setCloudExiting(true);
-    exitDeadline.current = later(finishThemeExit, CLOUD_EXIT_FALLBACK_MS);
-  }, [later, finishThemeExit]);
+  // --- the ending (2026-08-11, superseding the #155 themes tap): word RARITY ---
+  // Two beats, one idea each. The CLAIM first — "every word has a rarity", stated over the
+  // found word once the keyboard has dropped, with the tray's NEXT as its only control —
+  // and then the LADDER: the word gives way to the five grade names in their own colours
+  // (RarityLadder) while the coach says what the ladder means, and PLAY ends the lesson.
+  const [ladderOpen, setLadderOpen] = useState(false);
   const finish = useCallback(() => {
     track('tutorial', { action: 'finish' });
     onDone();
   }, [onDone]);
-  // Every theme named -> the close. Reading the count off the MAP (not the script) keeps the
-  // stages honest to the board actually shipped; scripts.test.ts pins the script's copy list
-  // to the same count.
-  const themeCount = useMemo(() => {
-    const roads = new Set<number>();
-    for (const entry of Object.values(rankMap)) {
-      if (entry.road !== undefined) roads.add(entry.road);
-    }
-    return roads.size;
-  }, [rankMap]);
-  const themesDone = themeStage >= themeCount;
 
   // The keyboard leaves the way it does in a solved round: it drops out of the tray once
   // there is nothing left to type. The ending WAITS on its `animationend`: the claim's NEXT
@@ -370,40 +311,22 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
   // player with no way forward but the header fast-forward. Same signal as Game's identical
   // beat, so it carries the same deadline (KB_EXIT_FALLBACK_MS) — the genuine event lands
   // long before it, and firing after it is a no-op.
-  const tapping = step.kind === 'tap';
+  const ending = step.kind === 'rarity';
   const [kbGone, setKbGone] = useState(false);
   useEffect(() => {
-    if (tapping) later(() => setKbGone(true), KB_EXIT_FALLBACK_MS);
-  }, [tapping, later]);
-
-  // The nudge speaks the input device's own verb — "tap" only where the pointer actually
-  // taps, "click" everywhere else (the same coarse-pointer test the streak celebration's
-  // TAP/CLICK ANYWHERE hint uses; findings 2026-08-03).
-  const coarse = useMemo(
-    () =>
-      typeof window !== 'undefined' &&
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(pointer: coarse)').matches,
-    [],
-  );
+    if (ending) later(() => setKbGone(true), KB_EXIT_FALLBACK_MS);
+  }, [ending, later]);
 
   // The explanation currently in the top box. Mix stop copy overrides the step's standing
-  // copy; once the clouds replace the word, the theme on screen heads the box — « Thème n/N :
-  // <name> », numbered from the board's real theme count rather than from a string.
+  // copy; the ending's two beats each carry their own line.
   let coachKey: UiKey | null = null;
   let coachCopy: string | null = null;
   if (step.kind === 'mix') coachKey = mixCopy ?? step.copyKey;
   else if (step.kind === 'guess') coachKey = step.copyKey;
   else if (step.kind === 'find') {
     coachKey = missStreak >= NUDGE_AFTER_MISSES ? step.nudgeKey : step.copyKey;
-  } else if (step.kind === 'tap') {
-    if (!claimMade) coachKey = step.introCopyKey;
-    else if (!themesOpen) coachKey = coarse ? step.tapCopyKey : step.clickCopyKey;
-    else if (themesDone) coachKey = step.closeCopyKey;
-    else {
-      const nameKey = step.themeCopyKeys[Math.min(themeStage, step.themeCopyKeys.length - 1)];
-      coachCopy = themeHeading(lang, themeStage + 1, themeCount, t(lang, nameKey));
-    }
+  } else if (step.kind === 'rarity') {
+    coachKey = ladderOpen ? step.ladderCopyKey : step.introCopyKey;
   }
   if (coachKey) coachCopy = t(lang, coachKey);
 
@@ -414,15 +337,14 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
   }, [coachCopy, say]);
 
   const mixLabel = step.kind === 'mix' ? step.stops[Math.min(mixStop, step.stops.length - 1)] : null;
-  const exploreLabels = useMemo(() => [ariaExploreHole(lang, 1)], [lang]);
 
   return (
     // tutorial--word: the board is deliberately CLEAN — explanation on top, one big centered
     // word in the middle, the interaction at the bottom.
-    // tutorial--themes: the word has given way to the clouds/route map and the keyboard is
+    // tutorial--ending: the word has given way to the rarity ladder and the keyboard is
     // gone for good, so the tray drops the keyboard's reserved footprint and closes up around
-    // its one button — the height goes to the drawing, which is what needs it.
-    <div className={`game tutorial tutorial--word${themesOpen ? ' tutorial--themes' : ''}`}>
+    // its one button — the height goes to the ladder, which is what needs it.
+    <div className={`game tutorial tutorial--word${ladderOpen ? ' tutorial--ending' : ''}`}>
       <div className="sr-only" role="status" aria-live="polite">
         {announce}
       </div>
@@ -449,17 +371,9 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
       />
 
       {/* The top box: the current explanation, typewritten. Same background as the
-          app, surface border — a dialog, not a modal. While a theme cloud is on screen its
-          NAME in the copy wears the cloud's color ([[t:]] -> --coach-theme-c). */}
+          app, surface border — a dialog, not a modal. */}
       {coachCopy && (
-        <div
-          className="coach"
-          style={
-            themesOpen && !themesDone
-              ? ({ '--coach-theme-c': LANE_COLORS[themeStage % LANE_COLORS.length] } as CSSProperties)
-              : undefined
-          }
-        >
+        <div className="coach">
           <CoachText key={coachCopy} copy={coachCopy} />
         </div>
       )}
@@ -490,25 +404,10 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
               <p className="hint"> </p>
             </div>
           </>
-        ) : themesOpen && themesDone ? (
-          // The close: a glimpse of the route map every word offers — the themes' colored
-          // lines with a couple of their words riding them — under the general principle.
-          <RoutesTeaser
-            map={rankMap}
-            lanes={themeCount}
-            startRank={hole.start_rank}
-            word={hole.secret.word}
-          />
-        ) : themesOpen ? (
-          // The word gave way to one of its THEMES: a cloud of that theme's words in its
-          // route color. One at a time.
-          <ThemeCloud
-            map={rankMap}
-            road={themeStage}
-            startRank={hole.start_rank}
-            exiting={cloudExiting}
-            onExited={finishThemeExit}
-          />
+        ) : ladderOpen ? (
+          // The word gave way to the ending's display: the five rarity grades, in the
+          // colours they wear everywhere else in the game.
+          <RarityLadder lang={lang} />
         ) : (
           <>
             <Phrase
@@ -517,20 +416,11 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
               puzzleHoles={puzzle.holes}
               hits={hits}
               onHitDone={removeHit}
-              exploreLabels={exploreLabels}
-              exploreDisabled={!(tapping && claimMade)}
-              onExplore={openThemes}
-              quiet={tapping && claimMade && !themesOpen}
-              // The lesson ends ON the solved word: its wave is the affordance for the tap
-              // the coach is asking for, so the game's solved-holes-never-wave rule is
-              // inverted here and only here (see Hole.waveSolved). Inert outside the tap
-              // step, where `quiet` is false anyway.
-              waveSolved
             />
             {/* Once there is nothing left to type the prompt retires in place, the same way
                 the game's does on the solving submit: still laid out, so the word does not
                 move, but invisible and inert. */}
-            <div className={`input-area${tapping ? ' retired' : ''}`} aria-hidden={tapping || undefined}>
+            <div className={`input-area${ending ? ' retired' : ''}`} aria-hidden={ending || undefined}>
               <WordInput
                 value={input}
                 history={[]}
@@ -539,8 +429,8 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
                 onSubmit={submit}
                 onReplace={replaceInput}
                 invalidSignal={invalidAt}
-                // The tap step has nothing left to submit.
-                active={!tapping}
+                // The ending has nothing left to submit.
+                active={!ending}
               />
               <p className="hint">{feedback || ' '}</p>
             </div>
@@ -549,8 +439,8 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
       </div>
 
       {/* The bottom is for INTERACTIONS: the mix button, then the keyboard — which drops
-          away for the ending, leaving the word alone with the invitation to tap it. */}
-      <div className={`tray${tapping && !kbGone ? ' kb-leaving' : ''}`}>
+          away for the ending, leaving one button under the coach's line. */}
+      <div className={`tray${ending && !kbGone ? ' kb-leaving' : ''}`}>
         {step.kind === 'mix' ? (
           mixLabel && (
             <button type="button" className="mix-btn" onClick={pressMix} disabled={mixBusy}>
@@ -561,31 +451,25 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
           <LoadError message={t(lang, 'failedVocab')} lang={lang} onRetry={retryVocab} />
         ) : !vocab ? (
           <p className="status">{t(lang, 'loading')}</p>
-        ) : themesOpen ? (
-          // The theme stepper, then the graduation: NEXT swaps the clouds one at a time, and
-          // once every theme has spoken the same full-width interaction the mix button opened
-          // the lesson with closes it — PLAY.
-          <button
-            type="button"
-            className="mix-btn"
-            onClick={themesDone ? finish : nextTheme}
-            disabled={cloudExiting}
-          >
-            {t(lang, themesDone ? 'tutPlay' : 'tutNext')}
+        ) : ladderOpen ? (
+          // The graduation: the same full-width interaction the mix button opened the
+          // lesson with closes it — PLAY.
+          <button type="button" className="mix-btn" onClick={finish}>
+            {t(lang, 'tutPlay')}
           </button>
-        ) : kbGone && !claimMade ? (
+        ) : kbGone ? (
           // The claim's own beat: the keyboard has dropped and NEXT is the only thing on
           // screen, so the line above it is the only thing to read.
-          <button type="button" className="mix-btn" onClick={() => setClaimMade(true)}>
+          <button type="button" className="mix-btn" onClick={() => setLadderOpen(true)}>
             {t(lang, 'tutNext')}
           </button>
-        ) : kbGone ? null : (
+        ) : (
           <div
-            className={`kb-exit${tapping ? ' leaving' : ''}`}
+            className={`kb-exit${ending ? ' leaving' : ''}`}
             onAnimationEnd={(e) => {
               // Child animations (key shakes) bubble here too: only the wrapper's own
               // kb-drop end unmounts it.
-              if (tapping && e.target === e.currentTarget) setKbGone(true);
+              if (ending && e.target === e.currentTarget) setKbGone(true);
             }}
           >
             <Keyboard

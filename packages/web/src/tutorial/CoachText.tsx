@@ -9,9 +9,6 @@ import { heatColor } from '@whippin/shared';
 //   [[w:word^rank]]  a hint word — gold with its heat-colored exponent, like a hole
 //   [[m:word]]       a MISS word — the coldest heat color
 //   [[n:123]]        a bare number — its heat color
-//   [[t:name]]       a THEME's name — the theme's own route color, via `--coach-theme-c`
-//                    set by the caller on the box (#155: the coach names the cloud on
-//                    screen, and the name wears the cloud's color)
 // The FULL text is laid out from the first frame — every character rendered, the
 // unrevealed ones merely invisible — so the wrap points are final before the first
 // letter shows and a word being "typed" can never jump to the next line mid-word.
@@ -22,11 +19,10 @@ type Seg =
   | { kind: 'plain'; text: string }
   | { kind: 'blue'; text: string }
   | { kind: 'miss'; text: string }
-  | { kind: 'theme'; text: string }
   | { kind: 'word'; text: string; rank: number }
   | { kind: 'num'; text: string; rank: number };
 
-const TOKEN_RE = /\[\[([bwmnt]):([^\]]+)\]\]/g;
+const TOKEN_RE = /\[\[([bwmn]):([^\]]+)\]\]/g;
 
 export function parseRich(copy: string): Seg[] {
   const segs: Seg[] = [];
@@ -36,7 +32,6 @@ export function parseRich(copy: string): Seg[] {
     const [, tag, payload] = m;
     if (tag === 'b') segs.push({ kind: 'blue', text: payload });
     else if (tag === 'm') segs.push({ kind: 'miss', text: payload });
-    else if (tag === 't') segs.push({ kind: 'theme', text: payload });
     else if (tag === 'n') segs.push({ kind: 'num', text: payload, rank: Number(payload) });
     else {
       const [word, rank] = payload.split('^');
@@ -94,13 +89,6 @@ function renderSeg(s: Seg, budget: number, key: number) {
   if (s.kind === 'miss') {
     return (
       <span key={key} style={{ color: heatColor(0) }}>
-        {chars(s.text, budget)}
-      </span>
-    );
-  }
-  if (s.kind === 'theme') {
-    return (
-      <span key={key} className="rt-theme">
         {chars(s.text, budget)}
       </span>
     );

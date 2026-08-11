@@ -258,7 +258,11 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
 - **Every ranked group also carries its real geometry (`dq`, `road`) — #115, decided
   2026-07-25.** Ranks are dense and uniformly spaced by construction, so they erase the
   neighborhood's clumps and cliffs; cosine distance is only available at GENERATION time
-  (the client never sees vectors), so generation ships it:
+  (the client never sees vectors), so generation ships it. **NOTE (2026-08-10): the web's
+  route map was replaced by the guess-history modal, which still spaces its stops by `dq`
+  but reads `road` NOWHERE — a sentence puzzle's `road` fields currently ship with no
+  consumer at all** (whether gen_phrase should stop clustering is an open call — see
+  Discrepancies):
   - **`dq` — the quantized distance to the secret, one byte, per hole.** With `s1` = the
     rank-1 group's similarity and `smin` = the LAST kept group's,
     `dq = round(255 * (s − smin) / (s1 − smin))` → **rank 1 = 255, the farthest kept
@@ -281,10 +285,10 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
     `gen_phrase.annotate_roads`).
     `ROAD_TOP` survives only as the **ceiling** on that zone — the start band tops
     out at 150, well below its value, so it bites only on a start hand-picked outside the
-    band, where it keeps the clustering (and the shipped fields) bounded. **What SETS that
-    value is Word mode, not this path** (see the single-word artifact schema below): it is
-    the word game's range, raised 150 → 250 on 2026-08-07, which changes nothing for a
-    sentence hole other than how far a hand-picked far start may road. Deterministic average-linkage
+    band, where it keeps the clustering (and the shipped fields) bounded. Its value was
+    Word mode's (raised 150 → 250 on 2026-08-07) until **2026-08-10, when Word mode stopped
+    forking semantically at all** (see the single-word artifact schema below) — so it is a
+    plain ceiling again, and nothing outside this path reads it. Deterministic average-linkage
     agglomerative clustering over cosine distance, `k ∈ ROAD_KS` (`{2..6}` since
     2026-08-07), **falling back to ONE road (all `road: 0`) below `ROAD_MIN_SILHOUETTE`** —
     mandatory, because some neighborhoods genuinely have a single facet. Roads are numbered by
@@ -325,7 +329,7 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   `shared/src/types.ts` carries no `context`, and `SolvedCaption` renders only the kind tag +
   attribution.
 
-### Single-word artifact schema (#154, decided 2026-08-03)
+### Single-word artifact schema (#154, decided 2026-08-03; `freq` added by #163 on 2026-08-08)
 
 The SECOND puzzle type: one word and its ranked neighborhood, with no sentence around
 it. Produced by `packages/generation/scripts/gen_word.py` (`pnpm gen:word`), typed as
@@ -338,7 +342,8 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   "lang": "fr",
   "word": { "word": "phare", "slug": "phare" },   // accented display form + its slug
   "ranks": {                                       // ONE FLAT map — no per-secret keying
-    "<input-slug>": { "word": "<accented>", "rank": 12, "dq": 231, "road": 1 }, ...
+    "<input-slug>": { "word": "<accented>", "rank": 12,
+                      "dq": 231, "freq": 8412 }, ...   // never a `road`
   }
 }
 ```
@@ -346,26 +351,68 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
 - **The inner rank-map semantics are the sentence schema's, UNCHANGED** — same merge
   walk and group semantics (#104/#134/#146), same #133 explicit-form confirmation, same
   donor vectors (#119), same `TOP_K` group cap, same `dq`, same slug-collision rule:
-  alias keys per group, `word`/`rank`/`dq`/`road` are GROUP properties, rank 0 is the
-  word itself and carries **no `dq`**, every rank ≥ 1 entry carries one. Both commands
-  run the **one shared per-secret pipeline** (`gen_phrase.walk_secret`), so a word's
+  alias keys per group, and every annotation an artifact carries is a GROUP property;
+  rank 0 is the word itself and carries **no `dq`**, every rank ≥ 1 entry carries one.
+  Both commands run the **one shared per-secret pipeline** (`gen_phrase.walk_secret`), so a word's
   neighborhood can never differ by which game asked for it.
+- **`freq` — the group's CORPUS RARITY, this artifact's own annotation (#163, decided
+  2026-08-08).** The **1-based position, in the frequency-ordered EXISTENCE SET (distinct
+  slugs), of the group's MOST FREQUENT OWNED KEY**: 1 = the commonest word the game
+  admits, larger = rarer. The reduced file preserves the source embedding's frequency order
+  (`reduce_embedding` streams it and keeps survivors in place); `annotate_freq` walks that
+  order and the first occurrence of each slug fixes its existence-set position. This is a
+  READ of a position, not a computation, over the exact slugged + deduplicated population
+  written to `web/public/vocab/<lang>.json` and loaded into the browser's `vocabSet`.
+  The most frequent OWNED KEY — the commonest thing a player can TYPE to claim the group:
+  its commonest inflection rather than its representative (a lexeme's rarity is felt at
+  its commonest form), but never a surface another group owns — pricing `boire` by
+  `bois`'s position would grade a rare lexeme by a word that can only ever claim the
+  tree, and a min over unowned surfaces only ever errs CHEAPER. The walk has settled
+  ownership closest-first (#104/#134), so the pricing reads the rank map's keys. A
+  GROUP property like the rest, stamped by rank (`gen_word.annotate_freq`), so alias keys
+  repeat it and slug-collision resolution keeps the winning group's, both by construction.
+  Present on **every** entry the group can reach, **rank 0 included** — unlike `dq`, whose
+  absence there is about the scale being off at the terminus; a word has a frequency
+  wherever it sits. Absent only for a group with no key in the existence set (the secret
+  of a borrowed vector, #119, whose slug embeds nothing), so consumers treat it as
+  OPTIONAL — per entry: a map with NO `freq` anywhere is a stale pre-#163 artifact whose
+  every claim would silently grade at the COMMON floor, and the web REFUSES it at parse
+  (`parseWordPuzzle`) per the no-back-compat rule.
+  **Emitted by `gen_word.py` ONLY** — a sentence puzzle carries none: nothing there
+  consumes it and those maps are already ~500 KB gzipped. **The WEB maps `freq` → a named
+  RARITY GRADE and its bonus seconds, never generation** (`web/src/game/wordGame.ts`
+  `rarityOf` / `bonusSeconds`), so every tuning iteration is a web-only constant change
+  with no artifact republish. **Since 2026-08-10 the grade is also what the board says about
+  each station; since 2026-08-11 it says it in the station WORD'S COLOUR on one trunk**
+  (below), which is what let the semantic clustering leave this artifact entirely: one
+  shipped number now carries both what a claim PAYS and how its stop is painted. It reads
+  the value as a **FRACTION OF THE CORPUS**, not as an absolute rank — the vocabularies are
+  very different sizes (en 75k, fr 128k), and measured
+  on real artifacts, absolute cutoffs put the average claim 55% apart between the two
+  languages. That is why the field ships as a corpus position and the client owns the
+  denominator: the shipped number is a fact about the corpus, and what counts as rare is a
+  product decision the web is free to retune.
 - **`ranks` is ONE FLAT map** (there is only one word to rank around, so nothing to key
   it by), and there is no `words` / `holes` / `start` / `start_rank`. **No `source`
   either:** attribution belongs to a quoted line, and a lone word quotes nobody.
-- **`road` covers the FLAT top-`ROAD_TOP` (250 since 2026-08-07, was 150).** With no start
-  word there is no
-  departure to cut the zone at, so `ROAD_TOP` stops being merely the CEILING on a hole's
-  journey and becomes the zone itself — those groups are Word mode's playing field
-  (`distances.road_zone(None)`). This is the ONE deliberate difference from a sentence
-  hole's `start_rank`-sized zone. `--no-roads` still opts out; `dq` still cannot.
-  **Therefore `ROAD_TOP` is Word mode's RANGE, and the web's `CLAIM_ZONE`
-  (`web/src/game/wordGame.ts`) is that same number restated in TypeScript** — the field the
-  board draws is exactly the set that carries a road, so the two move TOGETHER or the board
-  grows lane-less stations (or refuses to claim ones it drew). `wordGame.test.ts` pins the
-  client constant to this file's literal; retuning the range means editing both, and
-  **regenerating every word artifact** — one produced at an older ceiling carries roads only
-  that far.
+- **NO `road` AT ALL (decided 2026-08-10; the `--roads` opt-in retired 2026-08-11 with
+  its one consumer).** Word mode's board draws one trunk and paints each station word by
+  **RARITY** — the `freq` grade above — so the semantic clustering has no consumer on a
+  word artifact, and generation does not run it: `gen_word` has no road pass and no flag.
+  (The opt-in existed for the
+  onboarding tutorial's THEMES lesson alone; on 2026-08-11 the user re-arced the tutorial
+  onto the rarity ladder and the lesson — the flag's only reader — went with it. The
+  committed tutorial maps had their `road` fields stripped the same day, and
+  `prune-word-map.mjs` now cuts its zone by RANK, `--top`, instead of by road presence.)
+  How that grade is presented is the WEB's (`web/src/game/wordBoard.ts`), and it needs
+  nothing else stamped: `freq` is already on every entry. `dq` still has no opt-out.
+  **Consequence, and it is a CONTRACT CHANGE: the web's `CLAIM_ZONE`
+  (`web/src/game/wordGame.ts`) NO LONGER RESTATES `ROAD_TOP` and is no longer pinned to
+  it.** It used to have to: the field the board drew was exactly the set carrying a road,
+  so moving one alone grew lane-less stations or refused to claim ones it had drawn.
+  Nothing stamps the field any more, and `dq` runs to the map's own `TOP_K` edge — so
+  Word mode's range is the client's own tuning knob, movable with **no republish** and no
+  regeneration. `wordGame.test.ts`'s cross-language pin is gone with the coupling.
 
 ### Day-addressed routing & the game day
 
@@ -564,3 +611,23 @@ the number that just landed.)*
    that **drops dashes** (`replace(/[^a-z]/g,'')`, contradicting the dash-keeping
    `fold()`), no slug/accents split, and a 2:00 timer. The validator validates the
    old shape. Decide: update them to the current schema or remove them.
+
+4. **A sentence puzzle's `road` fields have no consumer since 2026-08-10 — and since
+   2026-08-11 NOTHING in the app reads a road anywhere.** The route map — their only
+   web reader — was replaced by the guess-history modal, which still spaces its
+   journey by `dq` but reads no roads; the tutorial's themes lesson (the last road
+   reader, on its own embedded maps) was re-arced onto the rarity ladder on
+   2026-08-11, taking `gen_word`'s `--roads` opt-in with it. `gen_phrase` still runs
+   the clustering and ships the fields (plus the road-selection machinery in
+   `distances.py`); the web still carries `routeDrawing`'s whole LANE machinery —
+   `Junction`, `laneX`, `laneColor`, `LANE_COLORS` + `laneColors.test.ts`, the
+   junction CSS — with no consumer left either, since Word mode's board went
+   trunk-only the same day (rarity is said in the word's colour now). Decide: keep
+   shipping/keeping them (a future surface may want the facets back) or remove the
+   sentence pipeline's roads AND the web's lane drawing together. (`dq` stays either
+   way — the history line is spaced by it.)
+
+*(Resolved 2026-08-11: former discrepancy #5 — the tutorial teaching THEMES/routes the
+game no longer draws. The user re-arced the onboarding: the tutorial now teaches only
+the modes' shared core concepts (semantic distance, word rarity), and each mode's own
+rules moved onto that mode's pre-game gate.)*

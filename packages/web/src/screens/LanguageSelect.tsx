@@ -3,6 +3,7 @@ import Chooser, { ChooserCard } from '../components/Chooser';
 import { LANGS, pathForMode, resolveHomeLang } from '../langs';
 import { navigate } from '../routing';
 import useToday from '../hooks/useToday';
+import { useDeadlineRefresh } from '../hooks/useCountdown';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
 import { statusOf, wordStatusOf } from '../state/status';
 
@@ -23,6 +24,13 @@ export default function LanguageSelect() {
   // This screen has no puzzle to take a language from; its chrome follows the same
   // resolution as the `/` redirect (last played, else browser, else English).
   const uiLang = resolveHomeLang(lastLang, navigator.language);
+  // Both languages can have overlapping live runs. Wake for the first deadline; the hook
+  // then selects the next one, so each card becomes done at its own wall-clock end.
+  useDeadlineRefresh(
+    mode === 'word'
+      ? LANGS.map(({ code }) => wordRounds[roundKeyForDay(dayNumber, code, 'word')]?.deadline)
+      : [],
+  );
 
   return (
     <Chooser>

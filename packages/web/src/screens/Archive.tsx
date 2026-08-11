@@ -6,9 +6,10 @@ import { navigate } from '../routing';
 import { pathForMode, pathForDay, type LangCode, type Mode } from '../langs';
 import { FIRST_PUZZLE_DATE } from '../config';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
-import { statusOf, wordStatusOf, srStatus, type Status } from '../state/status';
+import { isComplete, statusOf, wordStatusOf, srStatus, type Status } from '../state/status';
 import { currentStreak } from '../game/streak';
 import useToday from '../hooks/useToday';
+import { useDeadlineRefresh } from '../hooks/useCountdown';
 import streakSmall from '../assets/streak-small.png';
 import { t } from '../i18n';
 import {
@@ -99,6 +100,17 @@ export default function Archive({ lang, mode = 'sentence' }: { lang: LangCode; m
   );
 
   const cells = useMemo(() => monthGrid(current, weekStart), [current, weekStart]);
+  // Only visible cells need a wake-up. A live Word run can expire while its archive stays
+  // open; without this one-shot refresh, Date.now() would not make that cell turn done.
+  useDeadlineRefresh(
+    mode === 'word'
+      ? cells.map((date) =>
+          date === null
+            ? null
+            : wordRounds[roundKeyForDay(dayNumber(date), lang, 'word')]?.deadline,
+        )
+      : [],
+  );
 
   return (
     <div className="archive">
@@ -219,11 +231,13 @@ function DayCell({
 }) {
   const day = Number(date.slice(8, 10));
   const dateObj = new Date(`${date}T00:00:00Z`);
-  // Reconstruction %: solved counts as 100, not-started as 0. Only an in-range day with
-  // progress is filled; disabled and 0% days keep the neutral surface + number color.
-  const pct = status.kind === 'solved' ? 100 : status.kind === 'progress' ? status.pct : 0;
+  // Reconstruction %: a finished day counts as 100, not-started as 0. Only an in-range
+  // day with progress is filled; disabled and 0% days keep the neutral surface + number
+  // color. A word run finished by its clock (#163) reads as complete here exactly like a
+  // solved sentence — the ripple says "done for the day", not "solved".
+  const pct = isComplete(status) ? 100 : status.kind === 'progress' ? status.pct : 0;
   const filled = inRange && pct > 0;
-  const solved = inRange && status.kind === 'solved';
+  const solved = inRange && isComplete(status);
   const className =
     'cal-day' +
     (inRange ? '' : ' cal-day-disabled') +

@@ -345,10 +345,12 @@ pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 distinct word
 #    sentence. -> packages/generation/output/single-word/<lang>/<slug>.json (--out-dir
 #    overrides the root). Every per-secret rule is gen_phrase's, imported not copied
 #    (walk_secret): merge walk, #133 form confirmation, #119 donors, TOP_K, dq,
-#    slug collisions. Two differences, both because there is no sentence — the road
-#    zone is the FLAT top-ROAD_TOP (250; no departure to cut it at) and the output has one flat
-#    `ranks` map with no words/holes/start/source. Unlike gen:phrase it does NOT
-#    rewrite web/public/vocab/<lang>.json (that is reduce's output).
+#    slug collisions. Three differences, all because there is no sentence — NO semantic
+#    roads, ever (Word mode paints station words by RARITY on one trunk; the `--roads` opt-in retired
+#    2026-08-11 with the tutorial's themes lesson, its only reader), every
+#    group carries `freq` (#163, this command only), and the output has one flat `ranks`
+#    map with no words/holes/start/source. Unlike gen:phrase it does NOT rewrite
+#    web/public/vocab/<lang>.json (that is reduce's output).
 pnpm gen:word phare --lang fr --form phare=n:s   # --form required per fr word off a TTY
 ```
 
@@ -366,9 +368,10 @@ output filename contains the three distinct secret slugs in sentence order.
 - All paths below are under `packages/`. **Tunables:** `TOP_N = 400000` (reduce),
   `TOP_K = 10000` / curator report window `PLAYABILITY_TOP = 150` (gen),
   start-rank band `50–150` (`start_word.py`),
-  `ROAD_TOP = 250` (the CEILING on a sentence hole's road zone, and the WHOLE zone of a
-  start-less word artifact — i.e. Word mode's range, raised from 150 on 2026-08-07; the
-  web's `CLAIM_ZONE` restates it and the two must move together) /
+  `ROAD_TOP = 250` (the CEILING on a sentence hole's road zone — the sentence path's
+  alone since 2026-08-11, when `gen_word`'s `--roads` opt-in retired with the tutorial's
+  themes lesson; it is **no longer Word mode's range and the web's `CLAIM_ZONE` no longer
+  restates it**, so this literal is now this package's alone) /
   `ROAD_KS = (2,3,4,5,6)` / `ROAD_MIN_SILHOUETTE = 0.05` /
   `ROAD_MIN_FRACTION = 0.04` with `ROAD_MIN_GROUPS = 4` under it — a road clears the LARGER
   of the two (`distances.py`). Note `PLAYABILITY_TOP` stayed at 150: it is
@@ -527,16 +530,32 @@ output filename contains the three distinct secret slugs in sentence order.
   (gitignored). Tests use the small fixture `tests/fixtures/dico.fr.txt`.
 - **Single-word artifacts (#154):** `gen_word.py` is a thin entry point over
   `gen_phrase`'s machinery — it imports `walk_secret` (claim → walk → keyed, dq-stamped
-  map), `annotate_roads`, and the shared command scaffolding `prepare_run` (flag
+  map) and the shared command scaffolding `prepare_run` (flag
   parsing → tables → the #134 gate → vectors → the three resolvers, one fail-fast
   order) and `report_run_adjustments` (donor/agreement/`*`-fallback/collision/--form
   reporting, parameterized on the command's wording), so neither the rules nor the
-  setup/reporting around them can drift; its own code is the flat road zone, the
-  artifact dict, the output path, a reject-early guard on multi-word/clitic input
-  (whitespace or apostrophes die with a clear "one word" error before the loads;
-  dashes stay legal) and the CLI. Measured on `phare` (fr): 10 000
+  setup/reporting around them can drift; its own code is `annotate_freq`,
+  the artifact dict, the output path, a reject-early guard on
+  multi-word/clitic input (whitespace or apostrophes die with a clear "one word" error
+  before the loads; dashes stay legal) and the CLI.
+  **Roads do not exist here at all (2026-08-11, retiring the `--roads` opt-in that had
+  superseded `--no-roads` on 2026-08-10):** Word mode paints its station words by RARITY
+  on one trunk,
+  so a word artifact has no consumer for the clustering — and the opt-in's one reader,
+  the onboarding tutorial's themes lesson (#155), was re-arced onto the rarity ladder
+  the same day, taking the flag with it. The tutorial's prune script
+  (`web/scripts/prune-word-map.mjs`) now cuts its zone by RANK (`--top`) instead of by
+  road presence, and the committed tutorial maps carry no road fields.
+  **`annotate_freq` (#163) lives HERE and not in `gen_phrase`** because it is
+  the one annotation only this artifact carries — `gen_phrase` must not grow a pass it
+  never calls. It is a plain min over the group's OWNED KEYS' positions among the
+  distinct slugs of `V` in frequency order (the existence set — never the whole
+  paradigm, whose shared surfaces belong to other groups), stamped by rank like `dq`
+  and BEFORE the agreement pass for the same reason, so a rewritten display inherits
+  its group's value.
+  The rule and the field's meaning are in the root `AGENTS.md`. Measured on `phare` (fr): 10 000
   ranked groups, 25 497 keys, ~1.5 MB raw — the same order as one sentence hole's map,
-  which is what it is. `--no-lemmas`/`--no-inflect`/`--no-roads`/`--donor`/`--form`
+  which is what it is. `--no-lemmas`/`--no-inflect`/`--donor`/`--form`
   behave exactly as on `gen:phrase`, including the off-TTY hard errors.
 - **Puzzles:** generated into `generation/output/word/<lang>/<kind>/<author>/<work>/`
   (#137; gitignored), then published to the store (`pnpm puzzle:publish`). They are no

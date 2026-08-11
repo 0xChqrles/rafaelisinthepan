@@ -8,8 +8,9 @@ import type { HitState, RuntimeHole } from '@whippin/shared';
 
 // The floating number ("hit") does not improve any hole: cap its heat at 150 so
 // the gradient stays meaningful. Above that, everything stays at the coldest color.
-// Exported: the route map (#117) colors a stop's exponent with the SAME cap, so the
-// number on the map is the color of the number that floated when it was guessed.
+// Exported: the history modal and the word board color their exponents with the SAME
+// cap, so a rank on either surface is the color of the number that floated when it was
+// guessed.
 export const HIT_HEAT_CAP = 150;
 
 // Keep the existing 520ms beat for a ten-rank transition below the cap, while making
@@ -70,30 +71,23 @@ export default function Hole({
   onResolved,
   explore,
   quiet = false,
-  waveSolved = false,
 }: {
   hole: RuntimeHole;
   hit: HitState | null;
   holeIndex: number;
   onHitDone: (id: number) => void;
   onResolved?: (index: number) => void;
-  // The route map's entry point (#117): the whole hole becomes one button. Present for the
-  // WHOLE round or not at all — a puzzle without the #115 geometry gets no affordance, and
-  // the choreography gates it with `disabled` rather than by unwrapping, which would remount
-  // the word mid-scramble. `hintId` points at the sr-only "explore" note Phrase renders
-  // OUTSIDE the sentence; see the button below for why it is a description and not a label.
+  // The history modal's entry point (2026-08-10, formerly the #117 route map's): the whole
+  // hole becomes one button. Present for the WHOLE round or not at all — the choreography
+  // gates it with `disabled` rather than by unwrapping, which would remount the word
+  // mid-scramble. `hintId` points at the sr-only "your tries" note Phrase renders OUTSIDE
+  // the sentence; see the button below for why it is a description and not a label.
   explore?: { hintId: string; disabled: boolean; onOpen: () => void };
-  // Is the SENTENCE quiet — no guess feedback in flight, no map over it, the round still being
-  // played? That is the one thing about the ambient wave (#129) a hole cannot see for itself,
-  // so the round supplies it and the hole owns everything else: its own clock, and whether it
-  // is personally free to ripple.
+  // Is the SENTENCE quiet — no guess feedback in flight, no modal over it, the round still
+  // being played? That is the one thing about the ambient wave (#129) a hole cannot see for
+  // itself, so the round supplies it and the hole owns everything else: its own clock, and
+  // whether it is personally free to ripple.
   quiet?: boolean;
-  // Let a SOLVED hole wave (#155). In the game a hole locked at rank 0 is done and never
-  // ripples — mid-round its neighbours still play, and advertising a finished word would pull
-  // the eye from them. The tutorial's ending is the ONE inversion of that: the lesson ends ON
-  // the solved word, whose tap is the very thing the wave exists to advertise. Only the
-  // tutorial passes this.
-  waveSolved?: boolean;
 }) {
   // Exponent rolls toward the current rank one rank step at a time (or snaps under
   // reduced motion, see rankTweenDuration). A solved hole visibly reaches 0, then removes
@@ -173,9 +167,9 @@ export default function Hole({
   // The wave, on this hole's OWN clock. It never competes with feedback: a hole
   // mid-choreography — a floating hit landing on it, its word churning through the
   // slot-machine scramble, or already locked at rank 0 — does not run the clock at all, and a
-  // wave in flight when a guess lands is cut. Nor does a hole with no map ripple: the wave is
+  // wave in flight when a guess lands is cut. Nor does a hole with no tap ripple: the wave is
   // an affordance for the tap, so advertising one that does nothing is worse than none.
-  const busy = hit !== null || jumble !== null || (hole.rank === 0 && !waveSolved);
+  const busy = hit !== null || jumble !== null || hole.rank === 0;
   const ticking = quiet && !busy && explore !== undefined && !explore.disabled;
   const [waving, setWaving] = useState(false);
   // Bumped by each finished wave, purely to re-arm the clock below with a fresh delay.
@@ -206,9 +200,9 @@ export default function Hole({
   }, [waving]);
 
   // Cut a wave already in flight the moment this hole stops being free to run one — which is
-  // `ticking`, not just its own `busy`: the round drops `quiet` when a guess lands AND when the
-  // map opens over the sentence, and a wave left running behind the modal shows its tail if the
-  // player closes quickly (both animations are ~120ms, the wave up to 460ms).
+  // `ticking`, not just its own `busy`: the round drops `quiet` when a guess lands AND when
+  // the history modal opens over the sentence, and a wave left running behind the modal shows
+  // its tail if the player closes quickly (both animations are ~120ms, the wave up to 460ms).
   useEffect(() => {
     if (!ticking) setWaving(false);
   }, [ticking]);

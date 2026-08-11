@@ -2,6 +2,7 @@ import Chooser, { ChooserCard } from '../components/Chooser';
 import { pathForMode, resolveHomeLang, type Mode } from '../langs';
 import { navigate } from '../routing';
 import useToday from '../hooks/useToday';
+import { useDeadlineRefresh } from '../hooks/useCountdown';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
 import { statusOf, wordStatusOf } from '../state/status';
 import { t } from '../i18n';
@@ -29,6 +30,10 @@ export default function ModeSelect() {
   // No puzzle to take a language from, so the chrome — and the language a card opens —
   // resolve exactly like the `/` redirect (last played, else browser, else English).
   const uiLang = resolveHomeLang(lastLang, navigator.language);
+  const wordRound = wordRounds[roundKeyForDay(dayNumber, uiLang, 'word')];
+  // Date.now() is not reactive: if this chooser stays open while the run expires, wake it
+  // once so the Word card moves from progress to done without a navigation or store write.
+  useDeadlineRefresh([wordRound?.deadline]);
 
   return (
     <Chooser>
@@ -40,7 +45,7 @@ export default function ModeSelect() {
           icon={<img className="chooser-card-icon mode-sprite" src={icon} alt="" draggable="false" />}
           status={
             mode === 'word'
-              ? wordStatusOf(wordRounds[roundKeyForDay(dayNumber, uiLang, 'word')])
+              ? wordStatusOf(wordRound)
               : statusOf(rounds[roundKeyForDay(dayNumber, uiLang)])
           }
           onClick={() => navigate(pathForMode(uiLang, mode))}

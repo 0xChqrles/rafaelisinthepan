@@ -7,6 +7,12 @@ export const HIT_FADE_MS = 520;
 // word is in the hole's rank map, or "MISS" when it was too far. It springs in,
 // then rises and fades out — see `.floating-hit` in index.css. `color` is supplied
 // by Hole (warm = heat of the distance, MISS = coldest heat).
+//
+// This is the SENTENCE game's (and the tutorial's) — and Word mode's MISS, which borrows
+// it unparameterised. Word mode's CLAIM feedback is a different event entirely — the
+// strike + its loot (`components/WordSlash` / `components/WordLoot`). The two feedbacks
+// were briefly one parameterised component (#163) and were split when the animations
+// diverged: sharing a float whose every dimension is overridden is not sharing it.
 export default function FloatingHit({
   id,
   value,
