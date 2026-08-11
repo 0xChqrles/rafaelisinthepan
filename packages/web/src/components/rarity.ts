@@ -53,6 +53,10 @@ export const RARITY_COLORS: Record<Rarity, string> = {
 // Kept as a constant beside the grades so the reservation is stated where it is enforced.
 export const MISS_COLOR = '#ff1f54';
 
+// A grade also has a TEXT-medium presentation — its share-text bead — and that one lives
+// with the share composition it belongs to (`game/share.ts` `RARITY_EMOJI`/`rarityRow`),
+// beside the sentence emoji row it is the analogue of, not here.
+
 // --- what a claim LOOKS like: the word is STRUCK ------------------------------------------
 // A find HITS the word (decided 2026-08-09, replacing the grade name that used to stamp onto
 // it). A name has to be read, and a run against a clock has no time for that — so nothing

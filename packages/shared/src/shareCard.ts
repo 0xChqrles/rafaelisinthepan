@@ -28,14 +28,23 @@
 const SHARE_VERSION = 2;
 
 // Word mode's token (#156) lives in the SAME version namespace — the version field is a
-// FORMAT id, and the word result is a different format: no trajectory or ticks, just the
-// common result header followed by the day's UTF-8 DISPLAY word. The card needs that word
-// to reproduce the game's blue terminus while remaining content-addressed by the token (no
-// puzzle-store lookup on an OG request). v3's score-only Word payload is retired; a future
-// sentence-format bump must skip both ids. decodeLegacyShareTarget's "strictly older than
-// the sentence version" rule keeps rejecting either one, so a malformed Word token still
-// 404s rather than earning a redirect.
-const WORD_SHARE_VERSION = 4;
+// FORMAT id, and the word result is a different format: no trajectory or ticks — the
+// common `version | lang | day` opening, ONE claim count PER RARITY GRADE (v5, decided
+// 2026-08-11: the share surfaces break the score down by rarity, and the OG card renders
+// from the token alone, so the breakdown must travel in it; the total claim count is
+// DERIVED as the counts' sum, never stored, so the two can never disagree), then the
+// day's UTF-8 DISPLAY word. The card needs that word to reproduce the game's blue
+// terminus while remaining content-addressed by the token (no puzzle-store lookup on an
+// OG request). v3 (score only) and v4 (score + word, no breakdown) are retired; a future
+// sentence-format bump must skip all three ids. decodeLegacyShareTarget's "strictly older
+// than the sentence version" rule keeps rejecting them, so a superseded or malformed Word
+// token still 404s rather than earning a redirect.
+const WORD_SHARE_VERSION = 5;
+
+// How many rarity counts a word token carries — the web's ladder order, commonest first
+// (COMMON..ARCANE). The COUNT of grades is this codec's contract; what a grade MEANS
+// (its name, threshold, colour) stays the consumers' own tuning.
+export const WORD_RARITY_GRADES = 5;
 
 // --- field widths ------------------------------------------------------------------------
 const VERSION_BITS = 4;
@@ -213,26 +222,39 @@ export function encodeResult(r: ShareResult): string {
 }
 
 // --- Word mode (#156) ---------------------------------------------------------------------
-// One daily word, claims until struck out: the gameplay result is the CLAIM COUNT, followed
-// by the day's display word solely so the OG card can reproduce the public blue terminus.
-// Encoded/decoded by its own pair rather than a mode bit inside the sentence token, so
-// neither format pays for the other's fields.
+// One daily word, claims until the clock dies: the gameplay result is the CLAIM COUNT
+// BROKEN DOWN BY RARITY GRADE, followed by the day's display word solely so the OG card can
+// reproduce the public blue terminus. Encoded/decoded by its own pair rather than a mode
+// bit inside the sentence token, so neither format pays for the other's fields.
 export interface WordShareResult {
   lang: string; // 2-letter code; drives the click-through redirect (/<lang>/word/<date>)
   dayNumber: number; // the puzzle's stable ID (server-owned day), shown as its calendar date
-  score: number; // top-zone groups claimed before the run ended
+  counts: readonly number[]; // claims per rarity grade, commonest first (WORD_RARITY_GRADES entries)
   word: string; // accented display form — never the slug
 }
 
+// The claim count IS the counts' sum — derived wherever a surface names it, never stored,
+// so the headline and the breakdown cannot disagree.
+export function wordShareScore(counts: readonly number[]): number {
+  return counts.reduce((sum, n) => sum + n, 0);
+}
+
 export function encodeWordResult(r: WordShareResult): string {
+  if (r.counts.length !== WORD_RARITY_GRADES) {
+    throw new RangeError(`Word share carries exactly ${WORD_RARITY_GRADES} rarity counts.`);
+  }
   const w = new BitWriter();
   w.write(WORD_SHARE_VERSION, VERSION_BITS);
   w.write(Math.max(0, SHARE_LANGS.indexOf(r.lang)), LANG_BITS); // unknown -> 0 (en)
   w.write(clamp(Math.round(r.dayNumber) - ID_EPOCH, 0, (1 << DAY_BITS) - 1), DAY_BITS);
-  const score = clamp(Math.round(r.score), 0, SCORE_MAX);
-  const scoreLen = bitLength(score);
-  w.write(scoreLen, SCORE_LEN_BITS);
-  w.write(score, scoreLen);
+  // Each count in the score field's own variable-length scheme: a grade the run never
+  // claimed costs 4 bits, so the common case (a couple of grades hit) stays short.
+  for (const raw of r.counts) {
+    const count = clamp(Math.round(raw), 0, SCORE_MAX);
+    const len = bitLength(count);
+    w.write(len, SCORE_LEN_BITS);
+    w.write(count, len);
+  }
 
   const word = new TextEncoder().encode(r.word);
   if (!isXmlText(r.word) || word.length > WORD_MAX_BYTES) {
@@ -255,8 +277,11 @@ export function decodeWordResult(token: string): WordShareResult | null {
     const lang = SHARE_LANGS[rd.read(LANG_BITS)];
     if (!lang) return null;
     const dayNumber = rd.read(DAY_BITS) + ID_EPOCH;
-    const scoreLen = rd.read(SCORE_LEN_BITS);
-    const score = scoreLen === 0 ? 0 : rd.read(scoreLen);
+    const counts: number[] = [];
+    for (let i = 0; i < WORD_RARITY_GRADES; i += 1) {
+      const len = rd.read(SCORE_LEN_BITS);
+      counts.push(len === 0 ? 0 : rd.read(len));
+    }
     const wordLength = rd.read(WORD_LEN_BITS);
     if (wordLength === 0) return null;
     const wordBytes = new Uint8Array(wordLength);
@@ -265,7 +290,7 @@ export function decodeWordResult(token: string): WordShareResult | null {
     if (!isXmlText(word)) return null;
     // Only the final byte's padding bits (0..7) may remain.
     if (rd.remainingBits >= 8) return null;
-    return { lang, dayNumber, score, word };
+    return { lang, dayNumber, counts, word };
   } catch {
     return null; // bit overrun (truncated token)
   }

@@ -3459,6 +3459,45 @@ button * {
 .word-footer-result .solved-score-unit {
   font-size: clamp(11px, 1.5vh, 14px);
 }
+/* The tally's BREAKDOWN (2026-08-11): the claims per rarity grade — the OG card's chip
+   row and the share text's bead row, on screen. One chip per grade CLAIMED (a coloured
+   square + its count, both in the grade's own RARITY_COLORS colour, set inline), commonest
+   first, zero grades absent. It is the beat AFTER the landing: once the count settles (the
+   pop's own moment) each chip rises in on its own delay — the tutorial ladder's `rung-in`
+   entrance, the app's one "list arriving" gesture — so the row reads as the number
+   unpacking. Reduced motion collapses the rise via the global rule and keeps the delays;
+   a rehydrated result wears `.settled` and replays nothing. */
+.word-rarities {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap; /* five 2-digit chips still fit 320px, but never let a forgery overflow */
+  gap: clamp(14px, 2.6vw, 22px);
+  margin-top: clamp(6px, 1.2vh, 12px); /* a seam above the score's own rhythm: detail, not headline */
+  font-size: clamp(14px, 2.2vh, 18px);
+  letter-spacing: 1px;
+}
+.word-rarity {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  opacity: 0;
+}
+.word-rarity.in {
+  animation: rung-in 200ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
+  animation-delay: calc(var(--step, 0) * 90ms);
+}
+.word-rarities.settled .word-rarity {
+  opacity: 1;
+  animation: none;
+}
+/* The chip's square: painted with currentColor, so a chip is ONE colour decision — the
+   same square-beside-the-count lockup the card draws, at the type's own scale. */
+.word-rarity-square {
+  width: 0.9em;
+  height: 0.9em;
+  background: currentColor;
+}
 .word-footer-result .result-actions {
   flex: 0 0 auto;
 }

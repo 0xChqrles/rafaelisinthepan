@@ -15,7 +15,7 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
-import { heatColor, progressColor } from '@whippin/shared';
+import { heatColor, progressColor, WORD_RARITY_COLORS } from '@whippin/shared';
 import { RARITY_COLORS, MISS_COLOR, SLASH_ART, STRIKE_ARTS, STRUCK_MS, strikeFor } from './rarity';
 import { RARITY_NAMES } from '../game/wordGame';
 
@@ -98,6 +98,13 @@ describe('rarity colours track the palette stops they were copied from', () => {
     }
   });
 
+  it("the OG card's chip palette is this ladder, pinned (the shared copy cannot drift)", () => {
+    // cardSvg.ts carries a one-way COPY of these colours (ladder order) so the share card
+    // can paint its chip row without importing the web; this is the identity that makes
+    // the copy safe — retune a grade here and the card's copy fails until it is re-copied.
+    expect(WORD_RARITY_COLORS).toEqual(RARITY_NAMES.map((name) => RARITY_COLORS[name]));
+  });
+
   it('the grades stay mutually distinguishable', () => {
     // OBSCURE and ARCANE are the pair that matters most and the pair most at risk — two
     // bright purples blur into one payoff colour at the float's size.
@@ -110,6 +117,9 @@ describe('rarity colours track the palette stops they were copied from', () => {
     expect(min).toBeGreaterThan(30);
   });
 });
+
+// NOT here: a grade's share-text BEAD. That is the text medium's presentation and lives
+// with the composition that uses it (`game/share.ts`), tested in `share.test.ts`.
 
 // The other half of the presentation: a rarer grade must read as more. Since the claim
 // feedback became a SLASH (2026-08-09) that is carried by WHICH SHEET lands (a strike is

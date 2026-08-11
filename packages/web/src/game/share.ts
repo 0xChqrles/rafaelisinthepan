@@ -7,12 +7,16 @@
 // (3..18 cells, see rowMeans) — a text message can't take a 62-emoji line.
 
 import { computeProgress } from './scoring';
+import { RARITY_NAMES, type Rarity } from './wordGame';
 import {
   encodeResult,
+  encodeWordResult,
   progressEmoji,
+  wordShareScore,
   type RankMap,
   type RuntimeHole,
   type ShareResult,
+  type WordShareResult,
 } from '@whippin/shared';
 
 // The ruler's two halves, replayed in ONE walk (they are the same walk: the same ordered
@@ -190,3 +194,63 @@ export function shareText(
 ): string {
   return `${headline}\n${emojiRow(trajectory, solvedAt)}\n\n${url}`;
 }
+
+// --- Word mode's share (#156; the rarity breakdown 2026-08-11) ---------------------------
+// The same job for the other daily, and it lives HERE for that reason: this module is where
+// a RESULT becomes the text and the link it travels as, for both modes. `rarityRow` below is
+// the exact analogue of `emojiRow` above — the run said in emoji, for a medium that has no
+// colour — so the two sit together rather than one hiding in a component.
+
+// A grade's BEAD: the emoji nearest the grade's screen colour (`components/rarity.ts`
+// `RARITY_COLORS`). ONE SHAPE for the whole ladder — circles — so the row reads as five
+// steps of one thing and the eye compares colours rather than sorting shapes. The pink
+// heart is the single exception, and only because Unicode offers no pink circle while red
+// stays reserved for MISS; it lands on the rarest grade, where a flourish is the right kind
+// of wrong. The loot convention rides along for free: green uncommon, blue rare, purple epic.
+export const RARITY_EMOJI: Record<Rarity, string> = {
+  COMMON: '⚪',
+  UNCOMMON: '🟢',
+  RARE: '🔵',
+  OBSCURE: '🟣',
+  ARCANE: '🩷',
+};
+
+// The breakdown as one line: a bead + its count per grade the run CLAIMED, commonest first,
+// zero grades omitted — `⚪7 🟢3 🔵1 🩷1`. Omitting the zeroes is what makes the row say
+// something: a deep run opens on cyan, and the shape of the line is the shape of the hand.
+// Takes the counts in ladder order (the share token's own shape) and returns '' for a
+// scoreless run, so the caller drops the line entirely rather than printing an empty one.
+export function rarityRow(counts: readonly number[]): string {
+  return RARITY_NAMES.map((grade, step) =>
+    (counts[step] ?? 0) > 0 ? `${RARITY_EMOJI[grade]}${counts[step]}` : '',
+  )
+    .filter(Boolean)
+    .join(' ');
+}
+
+export function wordShareUrl(origin: string, result: WordShareResult): string {
+  return `${origin}/s/${encodeWordResult(result)}`;
+}
+
+// Word mode's plain text: the headline, then the RESULT BLOCK — the day's word in
+// locale-aware uppercase (accents kept, never the slug) with its bead row directly under
+// it — then a blank line and the unfurling link. The word carries no leading emoji
+// (user-decided 2026-08-11): uppercase on its own line already sets it apart, and a bullet
+// on the one line that is not a list reads as a stray. Pure + i18n-free (the caller
+// localizes `headline`) like its sentence twin, so the composition is unit-testable and
+// the preview tooling renders the REAL string instead of a copy of it.
+export function wordShareText(
+  headline: string,
+  word: string,
+  lang: string,
+  counts: readonly number[],
+  url: string,
+): string {
+  const beads = rarityRow(counts);
+  const block = `${word.toLocaleUpperCase(lang)}${beads ? `\n${beads}` : ''}`;
+  return `${headline}\n\n${block}\n\n${url}`;
+}
+
+// The claim count a surface names is the breakdown's SUM — re-exported here so a caller
+// composing the headline reads it from the same module that composes the body.
+export { wordShareScore };

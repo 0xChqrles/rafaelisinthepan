@@ -33,6 +33,8 @@
                               surface owns what a lane MEANS and passes the palette.
       game/history.ts         a hole's guess log ranked against its secret (buildHistory)
       components/HistoryModal.tsx  the hole tap's surface: your tries, closest first
+      game/share.ts           what a RESULT says: both modes' share text + link (emoji row,
+                              rarity bead row, the composed messages)
       hooks/useShare.ts       how a RESULT leaves the app (native sheet -> clipboard + COPIED)
     public/                   served at site root (web assets + generated data)
       vocab/<lang>.json       full slugged reduced vocab (existence set) — fetched by the SPA
@@ -797,16 +799,47 @@ it to the local store — see `packages/backend/AGENTS.md`).
   second while the next guess was already typeable). `SCROLL_MIN_MS`/`SCROLL_MAX_MS`/
   `SCROLL_PX_PER_MS`, the focused rank and the rAF loop are all gone. The end screen
   (`components/WordEndScreen.tsx`) is the named `<n> WORDS/MOTS` count + SHARE via the
-  v4 word token; **the score OG card repeats the in-game terminus — the accented display
-  word in solved blue with its large blue square on the left — above the count and date**
-  (decided 2026-08-08; the token carries that display word so the preview is self-contained).
-  **The plain share text puts `🟦 <DISPLAY WORD IN LOCALE-AWARE UPPERCASE>` on its own
-  line, with one blank line between it and both the named score headline and URL**
-  (decided 2026-08-08; accents stay display accents, never a slug).
-  Its tally ends on a one-shot scale pop (`score-land`, 2026-08-07) — the
-  count is this screen's LAST beat, with no ruler colorize following it as in the sentence
-  tray, so the number marks its own landing (never at 0, never on rehydration, collapsed
-  under reduced motion). Identity is mode-addressed everywhere: `roundKeyForDay(day, lang,
+  v5 word token — which carries the claims PER RARITY GRADE, ladder order; the screen
+  takes that breakdown (`counts`, computed by `WordGame` from the one replay) and DERIVES
+  the count as its sum, so the tally, the text, the token and the card speak one set of
+  numbers (decided 2026-08-11, superseding the v4 single-score token); **the score OG card
+  draws the accented display word ALONE in solved blue — centred, NO node square
+  (user-decided 2026-08-11, superseding the 2026-08-08 terminus lockup: the in-game square
+  marks the end of a LINE and this card draws none, so it was a station badge with nothing
+  to be a station of; the colour already says the word is the target, and the freed column
+  sets a 25-letter word at 40px where the lockup left it 36) — above the count, the rarity
+  CHIP ROW (one grade-coloured square + count per claimed grade, commonest first, zero
+  grades omitted) and the date** (chip row 2026-08-11; the token carries the display word
+  and the breakdown so the preview is self-contained).
+  **The plain share text stacks the localized headline, a blank line, the RESULT BLOCK —
+  `<DISPLAY WORD IN LOCALE-AWARE UPPERCASE>` on its own line with the rarity BEAD ROW
+  directly under it, `⚪7 🟢3 🔵1 🟣1 🩷1` — a blank line, then the URL** (word line
+  2026-08-08, bead row 2026-08-11; accents stay display accents, never a slug). **The word
+  carries NO leading emoji** (user-decided 2026-08-11, dropping the 🟦 with the card's
+  square): uppercase on its own line already sets it apart, and a bullet on the one line
+  that is not a list reads as a stray. The beads are ONE SHAPE — circles — so the row reads
+  as five steps of one thing; the pink heart is the lone exception, since Unicode has no
+  pink circle and red stays MISS's. **The composition lives in `game/share.ts`
+  (`wordShareText`/`wordShareUrl`/`rarityRow`/`RARITY_EMOJI`), NOT in the component**: this
+  module is where a result becomes the text and link it travels as, for BOTH modes, and the
+  bead row is the exact analogue of the sentence `emojiRow` beside it. The screen owns only
+  the localized headline. That is also what lets `share.test.ts` assert the visit card's
+  exact string, and what lets preview tooling render the REAL message instead of a copy that
+  can drift (it did, the first time). A grade's SCREEN presentation stays in
+  `components/rarity.ts`; `game/` must not import from `components/` (the dependency runs
+  the other way).
+  Its tally lands on a one-shot scale pop (`score-land`, 2026-08-07 — never at 0, never on
+  rehydration, collapsed under reduced motion), and **the BREAKDOWN is the result's LAST
+  beat since 2026-08-11** (superseding "the count is the last beat"): the screen draws the
+  claims per grade under the unit — the OG card's chip row on screen (`.word-rarities`, a
+  coloured square + count per grade CLAIMED, commonest first, zeroes absent, each chip in
+  its `RARITY_COLORS` colour) — and once the count settles (the pop's own moment) each chip
+  rises in on its own delay via the tutorial ladder's `rung-in`, unpacking the number that
+  just landed. The row holds its layout space while invisible, so its arrival moves
+  nothing; a rehydrated result wears `.settled` and replays nothing; reduced motion
+  collapses the rise and keeps the delays (the floating numbers' degradation). It is
+  decorative (`role="img"`) with `srWordBreakdown` as its accessible line — grade names
+  untranslated, as everywhere. Identity is mode-addressed everywhere: `roundKeyForDay(day, lang,
   'word')` = `w:` keys into the store's own `wordRounds` map (persist **v8** since the
   sentence gate flag, 2026-08-11; the word rounds' own shape is v7's, #163;
   `ensureWordRound` resets on a republished different word), `lastMode` decides where `/` lands (like

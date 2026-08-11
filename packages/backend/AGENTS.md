@@ -53,10 +53,12 @@ pnpm backend:dev                # local server (GET /?lang=, /today) on :8787 ov
   `PuzzleStore.getWordPuzzle` in both store impls; `publish` detects the artifact type
   from the JSON shape (`holes` = sentence, `word` + flat `ranks` = word) and routes it
   to that key, and `inventory --mode word` probes the word buffer. The share routes
-  additionally decode Word mode's v4 token (`decodeWordResult`) into its own card
-  (`renderWordCardPng`) and share page. The token carries the accented display word, so
-  the card repeats the game's blue terminus word + large square without a store lookup;
-  its click-through lands on
+  additionally decode Word mode's v5 token (`decodeWordResult`) into its own card
+  (`renderWordCardPng`) and share page. The token carries the accented display word and
+  the per-rarity claim counts, so the card draws the day's word (alone, in the game's
+  solved blue — no node square since 2026-08-11) and its rarity chip row without a store
+  lookup (the page title's claim count is the counts' sum, `wordShareScore`); its
+  click-through lands on
   `/<lang>/word/<date>`.
 - **Puzzle responses are content-negotiated AT THE ORIGIN (#123/#124, decided
   2026-07-26).** A puzzle is megabytes of rank maps (#104's alias expansion roughly tripled
