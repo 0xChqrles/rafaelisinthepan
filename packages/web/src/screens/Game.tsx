@@ -591,7 +591,9 @@ function Round({
   const solvedSettled = resultsUp && (sourceRevealComplete || sourceRevealOverdue);
   // Tapping a hole is available during normal play and on that settled screen, where the
   // history reads as the round's post-mortem (the solving guess leads it in the solved blue)
-  // — never while the solving beats are running, which own the sentence.
+  // — never while the solving beats are running, which own the sentence. The rules GATE does
+  // NOT disable them: its own copy teaches the tap, so the gesture must work while the line
+  // that teaches it is on screen.
   //
   // `promptExiting` is what covers the START of those beats: the prompt leaves on the solving
   // submit while the holes are still resolving, so `solved` — which only follows the last word's
@@ -600,7 +602,7 @@ function Round({
   // be read as "the beats began" and `solvedSettled` has to be what ends them. Reading it as a
   // plain veto instead left every hole dead for the rest of the screen, and the post-mortem the
   // reveal was built for was reachable only by reloading the page.
-  const exploreDisabled = gateOpen || (!solvedSettled && (promptExiting || solved));
+  const exploreDisabled = !solvedSettled && (promptExiting || solved);
   // Stable for the round: the button wraps the hole for the WHOLE round or not at all, and
   // the gating above only disables it — unwrapping mid-round would remount the word while
   // its scramble is running. These are the buttons' DESCRIPTIONS, not their names: a hole is
@@ -647,8 +649,9 @@ function Round({
   // own rhythms. All the round contributes is the one fact a hole cannot see for itself: that
   // the SENTENCE is quiet. Guess feedback owns these words while it plays, and the history
   // modal owns the screen while it is open, so the affordance stands down for both — and once
-  // the round is over, stillness is what "done" looks like.
-  const quiet = !gateOpen && !solved && !promptExiting && historyHole === null && hits.length === 0;
+  // the round is over, stillness is what "done" looks like. The rules gate is NOT a veto:
+  // the holes are live under it (the gate teaches the tap), so the wave advertises them.
+  const quiet = !solved && !promptExiting && historyHole === null && hits.length === 0;
 
   const removeHit = useCallback((id: number) => {
     setHits((prev) => prev.filter((h) => h.id !== id));
