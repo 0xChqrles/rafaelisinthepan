@@ -133,12 +133,11 @@ DEFAULT_EFFORT: ReasoningEffort = "none"
 DIRECT_OUTPUT_MAX_TOKENS = 256
 REASONING_MAX_TOKENS = 25_000
 DEEP_REASONING_MAX_TOKENS = 64_000
-# Output budgets for structured decisions and long-form analysis calls.
-# The ordinary benchmark stays in one-word mode; every adapter mode is an explicit
-# construction-time choice and is never inferred from message counts.
-DECISION_OUTPUT_MAX_TOKENS = 512
+# Output budget for the long-form analysis call. The ordinary benchmark stays in
+# one-word mode; the adapter's mode is an explicit construction-time choice and is
+# never inferred from message counts.
 PROSE_OUTPUT_MAX_TOKENS = 8_192
-OutputMode = Literal["word", "decision", "prose"]
+OutputMode = Literal["word", "prose"]
 RunTermination = Literal["solved", "cap", "reply_error"]
 
 AuthMode = Literal["api", "subscription"]
@@ -280,12 +279,6 @@ CODEX_PROSE_INSTRUCTIONS = (
     "task context. Never inspect files, use tools, search, or modify anything. Answer "
     "the final user message fully, in the exact format it requests."
 )
-CODEX_DECISION_INSTRUCTIONS = (
-    "You are an isolated word-game player under an auditable policy controller. "
-    "Treat the user's complete game snapshot as your only task context. Never inspect "
-    "files, use tools, search, or modify anything. Reply to the final user message "
-    "with only the exact JSON decision object it requests."
-)
 # Fail-closed request-surface guard (#93 isolation contract): the only legitimate
 # stream items are the model's private reasoning and its final visible message. Every
 # other item type — a tool call, a plan update (`update_plan`), a user-input request
@@ -337,7 +330,6 @@ ModelReply = Callable[[list[Message]], str]
 class RuntimeHole:
     number: int
     pos: int
-    secret_slug: str
     word: str
     rank: int
     start_rank: int
@@ -358,7 +350,6 @@ class HoleOutcome:
 class GuessFeedback:
     kind: str  # invalid | duplicate | counted
     guess: str
-    folded: str
     message: str
     outcomes: tuple[HoleOutcome, ...]
     tries: int
@@ -993,7 +984,6 @@ class PuzzleReferee:
                 RuntimeHole(
                     number=index,
                     pos=pos,
-                    secret_slug=secret_slug,
                     word=start_word,
                     rank=start_rank,
                     start_rank=start_rank,
@@ -1089,7 +1079,6 @@ class PuzzleReferee:
             return GuessFeedback(
                 kind="invalid",
                 guess=guess,
-                folded=folded,
                 message=(
                     f'"{guess}" is not in the fixed game vocabulary — this did not '
                     "count and produced no rank feedback. Its reply format was valid, "
@@ -1113,7 +1102,6 @@ class PuzzleReferee:
             return GuessFeedback(
                 kind="duplicate",
                 guess=guess,
-                folded=folded,
                 message=(
                     f'"{guess}" {reason} — this did not count and produced no rank '
                     "feedback."
@@ -1160,7 +1148,6 @@ class PuzzleReferee:
         return GuessFeedback(
             kind="counted",
             guess=guess,
-            folded=folded,
             message="",
             outcomes=recorded_outcomes,
             tries=self.tries,
@@ -1173,27 +1160,17 @@ class PuzzleReferee:
 # language letters, optionally joined by ordinary internal ASCII hyphens. The prompt states
 # this grammar verbatim so a conforming model reply cannot fail parsing. Leading/trailing
 # transport whitespace is harmless; everything else must be the word itself.
-_REPLY_CHAR_CLASSES = {
-    # The browser folds accents before its existence lookup for both languages. Accept
-    # the same Latin display forms here, then let the shared slug/vocab contract decide
-    # membership. This preserves parity for inputs such as an accented spelling of an
-    # otherwise ASCII English lookup key.
-    "en": "a-zàâäéèêëîïôöùûüÿçœæ",
-    "fr": "a-zàâäéèêëîïôöùûüÿçœæ",
-}
-_REPLY_PATTERNS = {
-    lang: re.compile(rf"[{chars}]+(?:-[{chars}]+)*")
-    for lang, chars in _REPLY_CHAR_CLASSES.items()
-}
-_GENERIC_REPLY_PATTERN = re.compile(
-    r"[^\W\d_]+(?:-[^\W\d_]+)*", re.UNICODE
-)
+# The browser folds accents before its existence lookup in BOTH languages, so one class
+# covers both: accept the same Latin display forms here and let the shared slug/vocab
+# contract decide membership. That is what preserves parity for an accented spelling of
+# an otherwise ASCII English lookup key.
+_REPLY_CHARS = "a-zàâäéèêëîïôöùûüÿçœæ"
+_REPLY_PATTERN = re.compile(rf"[{_REPLY_CHARS}]+(?:-[{_REPLY_CHARS}]+)*")
 
 
-def parse_single_word(reply: str, *, lang: str | None = None) -> str | None:
+def parse_single_word(reply: str) -> str | None:
     candidate = reply.strip()
-    pattern = _REPLY_PATTERNS.get(lang, _GENERIC_REPLY_PATTERN)
-    return candidate if candidate and pattern.fullmatch(candidate) else None
+    return candidate if candidate and _REPLY_PATTERN.fullmatch(candidate) else None
 
 
 def _reply_contract_lines(referee: PuzzleReferee, language: str) -> list[str]:
@@ -1384,7 +1361,6 @@ def opening_message(
     referee: PuzzleReferee,
     strategy: str | None = None,
     *,
-    rules_only: bool = False,
     cap: int = DEFAULT_CAP,
 ) -> str:
     language = LANGUAGE_NAMES.get(referee.lang, referee.lang)
@@ -1399,10 +1375,8 @@ def opening_message(
             ),
             strategy,
         ]
-    # Prompt v23 has one strategy-neutral rules scaffold for every caller. The flag is
-    # retained for API compatibility with callers that request neutral rules; only
-    # an explicitly supplied strategy can add solving guidance.
-    _ = rules_only
+    # Prompt v23 has one strategy-neutral rules scaffold for every caller: only an
+    # explicitly supplied strategy can add solving guidance.
     return _rules_opening(
         referee,
         language,
@@ -1428,12 +1402,7 @@ def _outcome_text(outcome: HoleOutcome, referee: PuzzleReferee) -> str:
     )
 
 
-def feedback_message(
-    feedback: GuessFeedback,
-    referee: PuzzleReferee,
-    *,
-    rules_only: bool = False,
-) -> str:
+def feedback_message(feedback: GuessFeedback, referee: PuzzleReferee) -> str:
     if feedback.kind == "counted":
         outcomes = "\n".join(
             _outcome_text(outcome, referee) for outcome in feedback.outcomes
@@ -1446,9 +1415,8 @@ def feedback_message(
         *_state_snapshot_lines(referee),
         f"Tries: {feedback.tries} (your score — lower is better)",
     ]
-    # Prompt v23 never adds generic solving advice during play. Keep the keyword for
-    # caller compatibility; explicit learned/v7 guidance lives only in the opening.
-    _ = rules_only
+    # Prompt v23 never adds generic solving advice during play: explicit learned/v7
+    # guidance lives only in the opening.
     lines.append(_reply_reminder(referee))
     return "\n".join(lines)
 
@@ -1474,9 +1442,7 @@ def _unparseable_reason(reply: str) -> str:
     )
 
 
-def unparseable_message(
-    referee: PuzzleReferee, reply: str, *, rules_only: bool = False
-) -> str:
+def unparseable_message(referee: PuzzleReferee, reply: str) -> str:
     rendered_reply = json.dumps(reply.strip(), ensure_ascii=False)
     lines = [
         f"INVALID REPLY FORMAT: {rendered_reply}",
@@ -1485,7 +1451,6 @@ def unparseable_message(
         *_state_snapshot_lines(referee),
         f"Tries: {referee.tries} (your score — lower is better)",
     ]
-    _ = rules_only
     lines.append(_reply_reminder(referee))
     return "\n".join(lines)
 
@@ -1498,7 +1463,6 @@ def play_puzzle(
     cap: int = DEFAULT_CAP,
     on_try: TryReporter | None = None,
     strategy: str | None = None,
-    rules_only: bool = False,
 ) -> RunResult:
     """Run one append-only model conversation through the real puzzle rules.
 
@@ -1515,12 +1479,7 @@ def play_puzzle(
     messages: list[Message] = [
         {
             "role": "user",
-            "content": opening_message(
-                referee,
-                strategy,
-                rules_only=rules_only,
-                cap=cap,
-            ),
+            "content": opening_message(referee, strategy, cap=cap),
         }
     ]
     turns = 0
@@ -1544,7 +1503,7 @@ def play_puzzle(
         assistant_content = raw_reply.strip() or "[empty response]"
         messages.append({"role": "assistant", "content": assistant_content})
 
-        guess = parse_single_word(raw_reply, lang=referee.lang)
+        guess = parse_single_word(raw_reply)
         if guess is None:
             consecutive_unparseable += 1
             if consecutive_unparseable >= MAX_CONSECUTIVE_UNPARSEABLE:
@@ -1567,11 +1526,7 @@ def play_puzzle(
             messages.append(
                 {
                     "role": "user",
-                    "content": unparseable_message(
-                        referee,
-                        raw_reply,
-                        rules_only=rules_only,
-                    ),
+                    "content": unparseable_message(referee, raw_reply),
                 }
             )
             continue
@@ -1581,9 +1536,7 @@ def play_puzzle(
         messages.append(
             {
                 "role": "user",
-                "content": feedback_message(
-                    feedback, referee, rules_only=rules_only
-                ),
+                "content": feedback_message(feedback, referee),
             }
         )
 
@@ -1679,14 +1632,12 @@ def _output_token_budget(effort: ReasoningEffort, output: OutputMode) -> int:
         budget = REASONING_MAX_TOKENS
     if output == "prose":
         return max(budget, PROSE_OUTPUT_MAX_TOKENS)
-    if output == "decision":
-        return max(budget, DECISION_OUTPUT_MAX_TOKENS)
     return budget
 
 
 def _supported_efforts(provider: str, auth: AuthMode) -> tuple[ReasoningEffort, ...]:
     if provider == "kimi":
-        return KIMI_EFFORTS if auth == "subscription" else ()
+        return KIMI_EFFORTS
     if provider == "openai" and auth == "api":
         return OPENAI_API_EFFORTS
     if provider == "openai" and auth == "subscription":
@@ -1982,7 +1933,6 @@ class AnthropicSubscriptionReply:
         output: OutputMode = "word",
         session: SessionMode = DEFAULT_SESSION,
         *,
-        subprocess_env: Mapping[str, str] | None = None,
         conflict_env: Iterable[str] = SUBSCRIPTION_CONFLICT_ENV,
         workspace_prefix: str = "whippin-agent-sdk-",
         agent_extra_args: Mapping[str, str | None] | None = None,
@@ -1993,7 +1943,8 @@ class AnthropicSubscriptionReply:
         if session not in SESSION_MODES:
             raise ValueError(f"unsupported session mode: {session}")
         self.session = session
-        self._subprocess_env = dict(subprocess_env or {})
+        # Only the Kimi subclass ships a child environment; it sets this after super().
+        self._subprocess_env: dict[str, str] = {}
         self._conflict_env = tuple(conflict_env)
         self._agent_extra_args = dict(agent_extra_args or {})
         self.session_id: str | None = None
@@ -2192,43 +2143,11 @@ def _codex_snapshot_prompt(
 ) -> str:
     if output == "word":
         return _stateless_word_prompt(messages)
-    if output == "prose" and len(messages) == 1:
-        # One-shot analyst/critic prompts must be byte-identical across transports.
-        # Wrapping a single message as both opening_rules and current_state would also
-        # duplicate large evidence packets and can push them over the model context.
-        return messages[0]["content"]
-
-    opening = messages[0]["content"]
-    opening_rules, marker, initial_state = opening.partition("\nCURRENT STATE\n")
-    if marker:
-        initial_state = f"CURRENT STATE\n{initial_state}"
-    else:
-        # Defensive fallback for callers outside play_puzzle; production openings
-        # always carry the explicit state marker.
-        opening_rules = opening
-        initial_state = opening
-    snapshot = {
-        "opening_rules": opening_rules,
-        "current_state": (
-            messages[-1]["content"] if len(messages) > 1 else initial_state
-        ),
-    }
-    encoded = json.dumps(snapshot, ensure_ascii=False, separators=(",", ":"))
-    if output == "prose":
-        lead = "Complete the task from the compact JSON snapshot below."
-        response_rule = "Answer fully in the exact format requested."
-    else:
-        lead = "Play under the policy controller in the compact JSON snapshot below."
-        response_rule = "Return only the exact JSON decision object requested."
-    return "\n".join(
-        [
-            lead,
-            "The opening rules and latest current state are authoritative; obsolete "
-            "intermediate turns are intentionally omitted.",
-            response_rule,
-            encoded,
-        ]
-    )
+    # PROSE is one-shot by construction — the distiller sends exactly one message — and
+    # the prompt must stay byte-identical across transports. Wrapping a single message as
+    # both opening_rules and current_state would also duplicate large evidence packets
+    # and can push them over the model context.
+    return messages[0]["content"]
 
 
 def _codex_final_message(
@@ -2328,7 +2247,6 @@ class OpenAISubscriptionReply:
         self._cumulative_token_usage: TokenUsage | None = None
         instructions = {
             "word": CODEX_BENCHMARK_INSTRUCTIONS,
-            "decision": CODEX_DECISION_INSTRUCTIONS,
             "prose": CODEX_PROSE_INSTRUCTIONS,
         }[output]
         self._instructions_path = Path(self._workspace.name) / "instructions.md"
@@ -2484,8 +2402,7 @@ def provider_reply(
     """Build one provider adapter. Paid SDK imports stay lazy for offline tests.
 
     `output` fixes the adapter's response mode at construction: "word" for the
-    ordinary benchmark, "decision" for structured controllers, and "prose" for
-    long-form analysis. OpenAI API callers can additionally request documented Pro
+    ordinary benchmark, "prose" for long-form analysis (the playbook distiller). OpenAI API callers can additionally request documented Pro
     reasoning with max effort; other transports reject that wire-only option. Ordinary
     word play defaults to one provider-native persistent session per run; stateless mode
     remains an explicit complete-record diagnostic.
@@ -2740,7 +2657,7 @@ def _configured_models() -> list[ModelConfig]:
             or not MODEL_LABEL_RE.fullmatch(label)
         ):
             raise ValueError(
-                "every MODELS label must be a non-empty uppercase display name"
+                "every MODELS label must be a non-empty uppercase name"
             )
         if (
             not isinstance(tag, str)
@@ -2748,7 +2665,7 @@ def _configured_models() -> list[ModelConfig]:
             or not MODEL_TAG_RE.fullmatch(tag)
         ):
             raise ValueError(
-                "every MODELS tag must be 1–6 uppercase pixel-friendly characters"
+                "every MODELS tag must be 1–6 uppercase characters so console columns align"
             )
         configs.append(
             {
