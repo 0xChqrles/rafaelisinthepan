@@ -1,7 +1,7 @@
 // The progress-% ramp: colors the top progress bar, the language selector's % badge, and
-// every run ruler's per-try cells (each try's reconstruction %) — on the solved screen, in
-// the leaderboard, and on the backend-rendered share card, which is cross-cutting precisely
-// so the card matches the on-screen ruler exactly. Its plain-text twin `progressEmoji` lives
+// every run ruler's per-try cells (each try's reconstruction %) — on the solved screen and
+// on the backend-rendered share card, which is cross-cutting precisely so the card matches
+// the on-screen ruler exactly. Its plain-text twin `progressEmoji` lives
 // right below the stops, so the share text's emoji row can never drift from the ramp it
 // stands in for. The rank exponents use heat.ts instead — a single ramp was tried and
 // reverted (decided 2026-07-05). Both ramps share the one interpolator in ramp.ts.

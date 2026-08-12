@@ -24,6 +24,7 @@
 
 import { dateForDayNumber } from './day';
 import { progressColor } from './progressColor';
+import type { ShareResult, WordShareResult } from './shareCard';
 
 // Standard OG image size (Twitter/Slack/Discord `summary_large_image`).
 export const CARD_WIDTH = 1200;
@@ -59,13 +60,9 @@ const UNITS: Record<string, { one: string; many: string }> = {
   fr: { one: 'ESSAI', many: 'ESSAIS' },
 };
 
-export interface CardData {
-  lang: string; // 2-letter code; selects the try-count unit (en/fr), unknown -> en
-  dayNumber: number; // the server-owned day index — DRAWN as its calendar date (YYYY-MM-DD)
-  score: number;
-  trajectory: number[]; // reconstruction % (0..100) after each counted try -> the cells
-  solvedAt: (number | null)[]; // per distinct secret in sentence order -> the ticks
-}
+// What the card draws IS what the token carries, so the renderer takes the codec's own
+// result type rather than a second declaration of the same five fields.
+export type CardData = ShareResult;
 
 // Word mode's card (#156): the run has no trajectory to draw — the result is the claim
 // count and, since the v5 token (2026-08-11), its PER-RARITY breakdown — so the card is
@@ -96,12 +93,7 @@ export const WORD_RARITY_COLORS: readonly string[] = [
   '#ef4f97', // ARCANE
 ];
 
-export interface WordCardData {
-  lang: string;
-  dayNumber: number; // drawn as its calendar date, like the sentence card
-  counts: readonly number[]; // claims per rarity grade, commonest first — their sum is the score
-  word: string; // accented display form — never the slug
-}
+export type WordCardData = WordShareResult;
 
 const WORD_ROW_Y = 175;
 const WORD_MAX_SIZE = 76;

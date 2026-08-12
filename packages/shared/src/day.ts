@@ -10,12 +10,12 @@ export const TIME_ZONE = 'America/New_York';
 // Hour (local, 0-23) at which the active day rolls over to the NEXT calendar date.
 export const RESET_HOUR = 22;
 
-export interface DayOpts {
+interface DayOpts {
   timeZone?: string;
   resetHour?: number;
 }
 
-export interface ZonedParts {
+interface ZonedParts {
   year: number;
   month: number; // 1-12
   day: number; // 1-31
@@ -70,9 +70,9 @@ export function activeDate(instant: Date, opts: DayOpts = {}): string {
   return dateLabel(p.year, p.month, p.day, p.hour >= resetHour ? 1 : 0);
 }
 
-// Monotonic integer id for a "YYYY-MM-DD" date: whole days since the Unix epoch.
-// The unambiguous identifier remains the date string; this is a convenience for the
-// front (e.g. a "#NNN" badge). Routing (#6) may redefine it relative to a launch epoch.
+// Monotonic integer id for a "YYYY-MM-DD" date: whole days since the Unix epoch. The
+// unambiguous identifier remains the date string; this integer is the stable ID that
+// persisted rounds key on and that a share token carries.
 export function dayNumber(date: string): number {
   return Math.floor(Date.parse(`${date}T00:00:00Z`) / 86_400_000);
 }

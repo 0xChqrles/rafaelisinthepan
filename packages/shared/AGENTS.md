@@ -8,12 +8,15 @@
 ## File map
 
 ```
-  shared/                     cross-cutting TS consumed by web (pkg @whippin/shared)
+  shared/                     cross-cutting TS consumed by web + backend (pkg @whippin/shared)
     src/slug.ts               fold() — the slug/fold contract (byte-identical to slug())
     src/day.ts                the ONE 22:00-ET DST-correct game-day logic (client + server + publish)
     src/types.ts              per-puzzle schema types (Puzzle, Hole, RankMap, …)
     src/heat.ts               heatColor() — heat ramp (rank exponents + floating hits ONLY)
     src/progressColor.ts      progressColor() + progressEmoji() — progress ramp (progress bar, selector badge, run rulers incl. the card, share-text emoji row); shares ramp.ts
+    src/ramp.ts               the piecewise interpolator both ramps share (internal)
+    src/shareCard.ts          the share-token codec (both modes), browser + Lambda
+    src/cardSvg.ts            the OG card's SVG, rendered from a decoded token
     src/index.ts              re-exports
 ```
 

@@ -1,14 +1,14 @@
 // The cross-language slug contract. This JS fold() MUST stay byte-identical to the
-// Python slug() in packages/generation/scripts/gen_phrase.py: lowercase -> expand
+// Python slug() in packages/generation/scripts/slug.py: lowercase -> expand
 // ligatures (oe/ae) -> NFKD -> drop combining marks -> keep only [a-z] and '-' ->
 // collapse repeated dashes -> trim edge dashes. Accents are for DISPLAY; the slug is
 // for COMPARISON. Never fold/slug a displayed form, and never display a slug.
 
 // Ligatures that do NOT decompose under NFKD, so we expand them by hand
-// (matches gen_phrase.py slug()).
+// (matches slug.py's slug()).
 const LIGATURES: Record<string, string> = { œ: 'oe', æ: 'ae' };
 
-// Fold a guess to its slug: the same ASCII key gen_phrase.py uses for lookups
+// Fold a guess to its slug: the same ASCII key generation uses for lookups
 // (lowercase, ligatures expanded, accents removed, letters and INTERNAL dashes
 // only). Accents must be folded BEFORE stripping so "foret" keeps its letters; dashes
 // survive so "peut-etre" stays hyphenated. Byte-identical to the Python slug().

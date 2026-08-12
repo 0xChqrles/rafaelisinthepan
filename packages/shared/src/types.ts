@@ -1,5 +1,6 @@
-// Per-puzzle schema: one file = one self-contained playable sentence.
-// Produced by packages/generation/scripts/gen_phrase.py (see its slug() conventions).
+// The generated schemas both dailies play on — the sentence puzzle (gen_phrase.py) and
+// the #154 single-word artifact (gen_word.py) — plus the web's own runtime round types.
+// Keys are slugs, in the sense packages/generation/scripts/slug.py defines.
 
 // A displayed word plus its ASCII-folded lookup key (accents kept for display,
 // folded for comparison). slug == word is common but always carried explicitly.
@@ -42,11 +43,11 @@ export interface RankEntry {
   freq?: number;
 }
 
-// One word's whole ranked neighborhood: inputSlug -> { word, rank }. Every alias key
-// of a group appears here, carrying that group's values.
+// One word's whole ranked neighborhood: inputSlug -> RankEntry. Every alias key of a
+// group appears here, carrying that group's values.
 export type WordRanks = Record<string, RankEntry>;
 
-// ranks[secretSlug][inputSlug] -> { word, rank }
+// ranks[secretSlug][inputSlug] -> RankEntry
 export type RankMap = Record<string, WordRanks>;
 
 // What kind of piece the daily sentence comes from (#5). The known values are
