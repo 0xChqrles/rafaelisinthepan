@@ -16,7 +16,7 @@ without numpy/gensim.
 DQ_MAX = 255
 
 
-def quantize_dq(sims, dq_max=DQ_MAX):
+def quantize_dq(sims):
     """Quantize one secret's group similarities into per-rank `dq` bytes.
 
     `sims` are the cosine similarities of the ranked groups in closest-first order
@@ -24,12 +24,12 @@ def quantize_dq(sims, dq_max=DQ_MAX):
     by nature (its similarity is the degenerate 1.0). With s1 = the rank-1 similarity
     and smin = the last kept group's:
 
-        dq = round(dq_max * (s - smin) / (s1 - smin))     # rank 1 -> 255, last -> 0
+        dq = round(DQ_MAX * (s - smin) / (s1 - smin))     # rank 1 -> 255, last -> 0
 
     The per-hole affine normalization is deliberate and lossless for consumers: the
     scoring built on top uses only RATIOS of similarity differences, which an affine
-    map preserves exactly — so with rank 1 pinned at dq_max the client's journey ratio
-    is (dq - dq_start) / (dq_max - dq_start), no floats shipped. Resolution 1/255 is
+    map preserves exactly — so with rank 1 pinned at DQ_MAX the client's journey ratio
+    is (dq - dq_start) / (DQ_MAX - dq_start), no floats shipped. Resolution 1/255 is
     ~0.4% of the journey.
 
     Raises ValueError on a walk that cannot be quantized: similarities that are not
@@ -52,7 +52,7 @@ def quantize_dq(sims, dq_max=DQ_MAX):
             "flat neighborhood: the nearest and farthest kept groups have the same "
             f"similarity ({values[0]})"
         )
-    out = [round(dq_max * (s - values[-1]) / span) for s in values]
+    out = [round(DQ_MAX * (s - values[-1]) / span) for s in values]
     # The quantization is monotone on a non-increasing input, so this only fires if
     # the arithmetic above ever stops agreeing with the walk.
     for i in range(1, len(out)):

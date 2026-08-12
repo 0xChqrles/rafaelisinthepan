@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Shared, STDLIB-ONLY slug contract + the vocab existence-set writer.
 
-`slug()` lives here — imported by BOTH gen_phrase.py and reduce_embedding.py — so the
-two never keep divergent copies (a second copy would risk breaking the cross-language
-slug()==fold() contract). The module stays dependency-free (no gensim/numpy) so
+`slug()` lives here — imported by every script that needs the key (gen_phrase,
+gen_word, reduce_embedding, distances' callers…) — so no two keep divergent copies (a
+second copy would risk breaking the cross-language slug()==fold() contract). The module stays dependency-free (no gensim/numpy) so
 reduce_embedding, which only streams text and loads no vectors, can emit the vocab in
 the same pass without pulling heavy deps.
 """
@@ -47,7 +47,7 @@ def slug(word):
     Keeps internal dashes: lowercase -> expand ligatures -> NFKD -> drop combining
     marks -> keep only [a-z] and '-' -> collapse repeated dashes -> trim edges.
     été->ete, forêt->foret, œuf->oeuf, peut-être->peut-etre, arc-en-ciel->arc-en-ciel.
-    Stays byte-identical to the front-end fold() in src/screens/Game.tsx."""
+    Stays byte-identical to the front-end fold() in packages/shared/src/slug.ts."""
     w = _fold_to_ascii(word)
     w = _SLUG_STRIP.sub("", w)
     w = _SLUG_DASHES.sub("-", w)

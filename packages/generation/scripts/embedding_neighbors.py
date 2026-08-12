@@ -80,7 +80,7 @@ def build_matrix(kv, V):
     return M
 
 
-def closest(spec: EmbeddingSpec, word, kv, V, M, n=15000):
+def closest(spec: EmbeddingSpec, word, kv, V, M, n=None):
     """
     Rank V by proximity to `word`.
 

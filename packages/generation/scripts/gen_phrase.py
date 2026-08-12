@@ -210,25 +210,18 @@ def display_token(tok):
     return tok.lower()
 
 
-def locate_cores(token, target_slug, cfg):
-    """Find every matching word-core in one display token.
+def locate_core(token, target_slug, cfg):
+    """Find the first matching word-core in one display token, or ``None``.
 
-    Each result is ``(secret_display, prefix, suffix)``: the matched core (accents
+    The result is ``(secret_display, prefix, suffix)``: the matched core (accents
     kept, no punctuation) plus the display text before/after it. Apostrophes and
     punctuation are separators, so a secret can be located inside ``t'attends`` /
     ``rien,`` while the token stays intact for display.
     """
-    matches = []
     for m in cfg["core_re"].finditer(token):
         if slug(m.group()) == target_slug:
-            matches.append((m.group(), token[:m.start()], token[m.end():]))
-    return matches
-
-
-def locate_core(token, target_slug, cfg):
-    """Find the first matching word-core in a display token, or ``None``."""
-    matches = locate_cores(token, target_slug, cfg)
-    return matches[0] if matches else None
+            return (m.group(), token[:m.start()], token[m.end():])
+    return None
 
 
 def ws(display):
@@ -496,7 +489,7 @@ def annotate_rank_map(rmap, merged, secret=""):
 
 
 def build_puzzle_rank_map(secret_display, ranking, lemma_table, forms_by_lemma, Vset,
-                          top_k=TOP_K, secret_lemmas=None):
+                          secret_lemmas=None):
     """One secret's rank map AS SHIPPED: lexeme-ranked, keyed, dq-annotated.
 
     The one entry point both authoring paths use, so a puzzle can never be written
@@ -508,7 +501,7 @@ def build_puzzle_rank_map(secret_display, ranking, lemma_table, forms_by_lemma, 
     the whole point — the donor is the geometry source, so the dq scale is the one the
     borrowed vector describes."""
     merged, rmap, groups = build_merged_rank_map(
-        secret_display, ranking, lemma_table, forms_by_lemma, Vset, top_k,
+        secret_display, ranking, lemma_table, forms_by_lemma, Vset, TOP_K,
         secret_lemmas)
     annotate_rank_map(rmap, merged, secret=secret_display)
     return merged, rmap, groups
@@ -1400,8 +1393,8 @@ def alias_start_display(rank_map, start, display, start_rank):
     The hole shows `display` while the map is keyed on the band word, so without this
     key typing the very word printed in the hole could read MISS — which contradicts the
     rule that a displayed clue's distance is already known. Same slug as the band word
-    (an accent-only override): the entry is already there, nothing to add. Otherwise the
-    smallest-rank collision rule of build_rank_map / expand_aliases applies unchanged —
+    (an accent-only override): the entry is already there, nothing to add. Otherwise
+    build_merged_rank_map's smallest-rank collision rule applies unchanged —
     an existing closer entry keeps the key, and typing the hint still reads its true
     (closer) distance rather than a MISS.
 
@@ -2061,7 +2054,7 @@ class FormResolver:
                 die(f"la forme de « {secret} » doit être explicite hors mode "
                     f"interactif (#133 : jamais déduite, même sans ambiguïté).\n"
                     + (f"         Analyses connues :\n{listing}\n" if analyses
-                       else f"         Aucune analyse connue dans la table.\n")
+                       else "         Aucune analyse connue dans la table.\n")
                     + f"         Passe --form {secret}=TRAIT (ou "
                     f"{secret}=LEXÈME/TRAIT pour un trait partagé){example} — ou "
                     f"--no-inflect pour désactiver l'accord.")
@@ -2205,16 +2198,15 @@ class FormResolver:
                 if rank_map[key]["rank"] == rank:  # a reclaimed key belongs elsewhere now
                     rank_map[key]["word"] = form
             # The agreed spelling is one more KEY of the same group, so it inherits the
-            # group's geometry (#115) exactly like an expand_aliases alias does: an entry
-            # carrying a rank but no dq would drop that group off the route map, and
-            # typing the very form the hole prints would land on a station with no place.
+            # group's geometry (#115) like any other alias key: `dq` has no opt-out, and an
+            # entry carrying a rank but no distance is one every consumer of the map reads
+            # as unplottable.
             group = next((rank_map[k] for k in keys if rank_map[k]["rank"] == rank), None)
             if group is None:
                 # Every key this group had has been reclaimed by a closer one on an earlier
                 # pass, so the rank is no longer in the map at all. Keying the agreed form
                 # would RESURRECT it — and with nothing to inherit from, without dq: a rank
-                # that scores a hit in the game and cannot be drawn on its own route map
-                # (route.ts skips a dq-less entry, so it is neither a stop nor a miss).
+                # that scores a hit in the game and carries no distance to draw it by.
                 # `dq` has no opt-out, so the honest outcome is to leave the group gone.
                 continue
             rank_map[s] = {**group, "word": form}
@@ -2915,7 +2907,6 @@ def source_dir_segments(source):
 @dataclass(frozen=True)
 class PreparedRun:
     """Everything a generation command loads before its first walk (prepare_run)."""
-    cfg: dict
     explicit_forms: dict
     lemma_table: dict
     forms_by_lemma: dict
@@ -2926,6 +2917,25 @@ class PreparedRun:
     donors: DonorResolver
     forms: FormResolver
     reporter: PlayabilityReporter
+
+
+def add_shared_args(p):
+    """The flags BOTH commands take, worded identically (gen_phrase + gen_word).
+
+    Their per-secret pipeline is shared (walk_secret / prepare_run), so the switches
+    that steer it are declared once here rather than restated in each parser.
+    `--donor` and `--form` stay with each command: their help names what the command
+    holes (a sentence's secret, or the day's word)."""
+    p.add_argument("--lang", choices=("en", "fr"), default=None,
+                   help="langue en/fr (défaut : en en mode non interactif)")
+    p.add_argument("--no-lemmas", action="store_true",
+                   help="désactive le regroupement par lexème (#104/#134) — chaque "
+                        "forme fléchie garde son propre rang ; exige --no-inflect "
+                        "quand la langue a une table de formes (l'accord est indexé "
+                        "par les lexèmes du regroupement)")
+    p.add_argument("--no-inflect", action="store_true",
+                   help="désactive l'accord des mots affichés (#119/#133) — "
+                        "chaque mot garde sa forme de dictionnaire")
 
 
 def prepare_run(lang, interactive, args):
@@ -2979,7 +2989,7 @@ def prepare_run(lang, interactive, args):
                          typable=donors.typable)
     reporter = PlayabilityReporter(V, lemma_table, forms_by_lemma, kv,
                                    resolver=forms)
-    return PreparedRun(cfg, explicit_forms, lemma_table, forms_by_lemma, kv, V, M,
+    return PreparedRun(explicit_forms, lemma_table, forms_by_lemma, kv, V, M,
                        Vset, donors, forms, reporter)
 
 
@@ -3033,25 +3043,16 @@ def parse_args():
     p.add_argument("sentence", nargs="?", help="la phrase complète (sinon demandée)")
     # default=None (not "en") so main() can tell "flag omitted" from an explicit
     # choice, and prompt for it on a TTY while keeping the old "en" default off-TTY.
-    p.add_argument("--lang", choices=("en", "fr"), default=None,
-                   help="langue en/fr (défaut : en en mode non interactif)")
+    add_shared_args(p)
     p.add_argument("--words", nargs=3, metavar=("W1", "W2", "W3"),
                    help="exactement 3 mots distincts de la phrase ; chaque occurrence "
                         "d'un mot sélectionné devient un trou (sinon choisis via le "
                         "sélecteur interactif sur un terminal)")
     # Optional source metadata (#5); any flag given here is NOT re-prompted on a TTY.
-    p.add_argument("--no-lemmas", action="store_true",
-                   help="désactive le regroupement par lexème (#104/#134) — chaque "
-                        "forme fléchie garde son propre rang ; exige --no-inflect "
-                        "quand la langue a une table de formes (l'accord est indexé "
-                        "par les lexèmes du regroupement)")
     p.add_argument("--donor", action="append", metavar="MANQUANT=DONNEUR",
                    help="emprunte le vecteur d'une forme du même lemme pour un secret "
                         "absent de l'embedding (#119), ex. --donor accoutumes="
                         "accoutume ; répétable, requis hors mode interactif")
-    p.add_argument("--no-inflect", action="store_true",
-                   help="désactive l'accord des mots affichés (#119/#133) — "
-                        "chaque mot garde sa forme de dictionnaire")
     p.add_argument("--form", action="append", metavar="MOT=TRAIT",
                    help="trait morphologique du secret, auquel son voisinage s'accorde "
                         "(#133), ex. --form accoutumes=ind:pre:2s ; répétable, requis "

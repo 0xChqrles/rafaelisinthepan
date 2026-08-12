@@ -68,7 +68,7 @@ for path in (ROOT, SCRIPT_DIR):
 # schema, never a second copy of the rules. prepare_run / report_run_adjustments are
 # the shared command scaffolding around walk_secret (#154), so the setup order and the
 # reporting channels cannot drift between the two commands either.
-from gen_phrase import (CONFIG, GEN_OUTPUT, die,  # noqa: E402
+from gen_phrase import (CONFIG, GEN_OUTPUT, add_shared_args, die,  # noqa: E402
                         group_lexeme_map, normalize, prepare_run,
                         prompt_editable, prompt_lang, report_run_adjustments,
                         walk_secret)
@@ -201,20 +201,11 @@ def parse_args():
     )
     # word / --lang are optional: both are prompted on a TTY (see main()).
     p.add_argument("word", nargs="?", help="le mot (sinon demandé)")
-    p.add_argument("--lang", choices=("en", "fr"), default=None,
-                   help="langue en/fr (défaut : en en mode non interactif)")
-    p.add_argument("--no-lemmas", action="store_true",
-                   help="désactive le regroupement par lexème (#104/#134) — chaque "
-                        "forme fléchie garde son propre rang ; exige --no-inflect "
-                        "quand la langue a une table de formes (l'accord est indexé "
-                        "par les lexèmes du regroupement)")
+    add_shared_args(p)
     p.add_argument("--donor", action="append", metavar="MANQUANT=DONNEUR",
                    help="emprunte le vecteur d'une forme du même lemme quand le mot "
                         "est absent de l'embedding (#119), ex. --donor accoutumes="
                         "accoutume ; requis hors mode interactif")
-    p.add_argument("--no-inflect", action="store_true",
-                   help="désactive l'accord des mots affichés (#119/#133) — "
-                        "chaque mot garde sa forme de dictionnaire")
     p.add_argument("--form", action="append", metavar="MOT=TRAIT",
                    help="trait morphologique du mot, auquel son voisinage s'accorde "
                         "(#133), ex. --form phare=n:s ; requis hors mode interactif — "

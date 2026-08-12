@@ -406,7 +406,7 @@ output filename contains the three distinct secret slugs in sentence order.
   **Enter** commits the hovered occurrence's whole repeated-word group, then a **number +
   Enter** picks its shared start word (**Esc** cancels back to navigation, **Ctrl-C**
   aborts). Three distinct commits end it. The produced `holes`/`ranks` are **identical in
-  shape** to the `--words` path (`build_rank_map` + `_make_hole` are shared), with one hole
+  shape** to the `--words` path (`build_puzzle_rank_map` + `_make_hole` are shared), with one hole
   per group occurrence. `--words` (or off-TTY) **skips** the selector entirely
   (`holes_from_words`), so batch/CI is unaffected. Fewer than 3 distinct selectable words
   → clear error.

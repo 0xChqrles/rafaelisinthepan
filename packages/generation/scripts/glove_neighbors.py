@@ -4,9 +4,9 @@ English GloVe specifics for the sentence reconstruction game.
 Common embedding logic lives in scripts/embedding_neighbors.py. This file keeps the
 English-specific reduced-vector path, derived cache path, and vector format.
 
-Dependencies: pip install gensim numpy
+Dependencies: gensim + numpy, provisioned by uv (see the callers' PEP-723 headers).
 Expected file: embedding/en/glove.6B.300d_reduced.txt
-  (produced by `npm run reduce:en` from the raw glove.6B.300d.txt —
+  (produced by `pnpm reduce:en` from the raw glove.6B.300d.txt —
    https://nlp.stanford.edu/projects/glove/)
 """
 
@@ -32,7 +32,7 @@ SPEC = EmbeddingSpec(
     vectors_path=GLOVE_TXT,
     cache_path=CACHE,
     no_header=True,
-    missing_hint="Run `npm run reduce:en` first (needs the raw glove.6B.300d.txt).",
+    missing_hint="Run `pnpm reduce:en` first (needs the raw glove.6B.300d.txt).",
 )
 
 
@@ -44,16 +44,5 @@ def build_vocab(kv):
     return _build_vocab(SPEC, kv)
 
 
-def closest(word, kv, V, M, n=15000):
+def closest(word, kv, V, M, n=None):
     return _closest(SPEC, word, kv, V, M, n=n)
-
-
-if __name__ == "__main__":
-    kv = load_vectors()
-    V = build_vocab(kv)
-    M = build_matrix(kv, V)
-
-    target = "chair"
-    print(f"\n30 closest words to '{target}':")
-    for w, rank, sim in closest(target, kv, V, M, n=30):
-        print(f"  {rank:4d}  {w:20s}  {sim:.3f}")
