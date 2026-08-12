@@ -4,7 +4,6 @@
 // and asks for that date's puzzle in ONE fetch. The server only serves dates within
 // a ±1-day clock-skew window of its own active day.
 
-import { fold } from '@whippin/shared';
 import type { Puzzle, Word, WordPuzzle } from '@whippin/shared';
 
 // Base URL of the backend, configured at build time via VITE_API_BASE_URL.
@@ -96,12 +95,11 @@ function checkRankAnnotations(entry: Record<string, unknown>): void {
 // load-bearing fields the game actually reads here: on success return a typed Puzzle;
 // on a bad shape throw a descriptive Error the fetch hook turns into the error state.
 // Not exhaustive — it asserts the structure Game depends on (lang, words, each hole's
-// secret/start {word,slug} + start_rank, a ranks map for every secret, the optional
-// per-entry distance annotations (#115), and the optional player-facing benchmark
-// contract).
+// secret/start {word,slug} + start_rank, a ranks map for every secret, and the optional
+// per-entry distance annotations (#115)).
 export function parsePuzzle(data: unknown): Puzzle {
   if (!isRecord(data)) throw new Error('malformed puzzle: not an object');
-  const { lang, words, holes, ranks, benchmark } = data;
+  const { lang, words, holes, ranks } = data;
   if (typeof lang !== 'string') throw new Error('malformed puzzle: missing "lang"');
   if (!Array.isArray(words) || !words.every((w) => typeof w === 'string')) {
     throw new Error('malformed puzzle: "words" must be an array of strings');
@@ -133,53 +131,6 @@ export function parsePuzzle(data: unknown): Puzzle {
         throw new Error('malformed puzzle: "rank" must be a non-negative integer');
       }
       checkRankAnnotations(entry);
-    }
-  }
-  if (benchmark !== undefined) {
-    // Every tested model is recorded (variable length); the front end filters the display
-    // trio. Validate shape + uniqueness only, not membership in the display set.
-    if (!Array.isArray(benchmark) || benchmark.length === 0) {
-      throw new Error('malformed puzzle: "benchmark" must be a non-empty array');
-    }
-    const benchmarkModels = new Set<string>();
-    const benchmarkTags = new Set<string>();
-    for (const entry of benchmark) {
-      if (
-        !isRecord(entry) ||
-        typeof entry.model !== 'string' ||
-        entry.model.trim() !== entry.model ||
-        entry.model.length === 0 ||
-        typeof entry.label !== 'string' ||
-        entry.label.trim() !== entry.label ||
-        !/^[A-Z0-9][A-Z0-9 .-]*$/.test(entry.label) ||
-        typeof entry.tag !== 'string' ||
-        entry.tag.trim() !== entry.tag ||
-        !/^[A-Z0-9][A-Z0-9 -]{0,5}$/.test(entry.tag) ||
-        !(
-          entry.tries === null ||
-          (typeof entry.tries === 'number' && Number.isInteger(entry.tries) && entry.tries > 0)
-        ) ||
-        !Array.isArray(entry.run) ||
-        !entry.run.every(
-          (guess) => typeof guess === 'string' && guess.length > 0 && guess.trim() === guess,
-        )
-      ) {
-        throw new Error('malformed puzzle: bad "benchmark" entry');
-      }
-      const runSlugs = entry.run.map(fold);
-      if (
-        entry.run.length === 0 ||
-        runSlugs.some((guess) => guess.length === 0) ||
-        new Set(runSlugs).size !== runSlugs.length ||
-        (entry.tries !== null && entry.run.length !== entry.tries)
-      ) {
-        throw new Error('malformed puzzle: bad "benchmark" run');
-      }
-      benchmarkModels.add(entry.model);
-      benchmarkTags.add(entry.tag);
-    }
-    if (benchmarkModels.size !== benchmark.length || benchmarkTags.size !== benchmark.length) {
-      throw new Error('malformed puzzle: "benchmark" model and tag entries must be unique');
     }
   }
   return data as unknown as Puzzle;

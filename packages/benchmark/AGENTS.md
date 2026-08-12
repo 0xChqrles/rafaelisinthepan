@@ -50,9 +50,11 @@ pnpm forwards args straight to the script.
 #    repo-root-relative (packages/generation/output/...) or generation-package-relative
 #    (output/...).
 #    --in-place appends the full local lab artifact AND upserts the tested model's lean
-#    entry into the puzzle's variable-length benchmark array (any model — the front end
-#    filters the FABLE/KIMI/GPT-SOL display trio; a re-run replaces that model, a now-stale
-#    entry is pruned). It accepts only the canonical config: median + persistent + current
+#    entry into the puzzle's variable-length benchmark array (any model; a re-run replaces
+#    that model, a now-stale entry is pruned). Since 2026-08-12 the APP IGNORES that
+#    array (the benchmark display was removed — root AGENTS.md, schema section): the
+#    embedded records are lab data only.
+#    It accepts only the canonical config: median + persistent + current
 #    prompt + at least 3 odd runs — and --runs already defaults to 3 for EVERY model, so no
 #    selector (Kimi included) needs an explicit --runs 3. Both writes are file-locked, so
 #    overlapping runs for different models accumulate instead of clobbering each other.
@@ -89,8 +91,9 @@ pnpm bench:playbook:distill --model GPT-SOL --auth subscription [--dry-run]
   GPT-5.6 Sol (`gpt-5.6-sol`)** (decided 2026-07-20 on #81, confirmed 2026-07-22); Opus,
   Sonnet, Terra, and Luna are lab-only.
   The `display` flag is now documentation + a roster invariant only — `--in-place` records
-  EVERY tested model and the **front end** owns the display filter, so a lab-only model still
-  gets embedded (just not rendered). Ordinary play exposes `none|low|medium|high|xhigh|max`: GPT-5.6 API supports the full scale;
+  EVERY tested model, and since 2026-08-12 NO model is rendered anywhere: the app's
+  benchmark display was removed (root `AGENTS.md`, schema section), so every embedded
+  entry is lab data. Ordinary play exposes `none|low|medium|high|xhigh|max`: GPT-5.6 API supports the full scale;
   Codex-plan GPT supports `low` through `max`; Anthropic supports `none` through `max`.
   Kimi requires `--auth subscription` with the dedicated `KIMI_CODE_API_KEY`, rejects
   `none` (which would route away from K3), and maps `low→low`, `medium|high→high`, and
@@ -142,8 +145,7 @@ pnpm bench:playbook:distill --model GPT-SOL --auth subscription [--dry-run]
   **Both `--in-place` writes are guarded by `_exclusive_file_lock`** (an advisory `flock`
   on a sidecar `.<name>.lock`) spanning the read AND the write: the atomic replace alone
   only makes the final swap indivisible, so without the lock two overlapping runs both
-  edit the same snapshot and the second drops the first's record. The front end, not the
-  harness, filters the display trio. Local benchmark
+  edit the same snapshot and the second drops the first's record. Local benchmark
   output is gitignored and paid provider calls never run in tests/CI.
 - **Frozen neutral gameplay baseline (decided 2026-07-17).** Use prompt v21 at `medium`
   effort, without `--playbook`, for both Sonnet and GPT. Two direct same-puzzle stateless

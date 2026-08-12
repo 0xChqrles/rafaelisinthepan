@@ -1,9 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { dateForDayNumber, type BenchmarkResults } from '@whippin/shared';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { dateForDayNumber } from '@whippin/shared';
 import { shareText, shareUrl } from '../game/share';
-import { lineupModel, hasDisplayEntries } from '../game/benchmark';
-import RunRuler, { rulerStagger, type RunReplay } from './RunRuler';
-import LeaderboardDialog, { type LeaderboardRow } from './LeaderboardDialog';
+import RunRuler, { rulerStagger } from './RunRuler';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import useShare from '../hooks/useShare';
 import { t } from '../i18n';
@@ -14,10 +12,8 @@ import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 const NEUTRAL_HOLD_MS = 55;
 
 // Sentence-specific results only. The tray is the SAME compact stack at every breakpoint
-// and on every surface (decided 2026-07-25, superseding #110's inline leaderboard): the
-// named `<tries> TRIES` headline, the PLAYER's run ruler, then the actions — SHARE plus,
-// when displayed opponents exist, SEE MORE opening the full-screen LeaderboardDialog
-// (the race lives there, with room to grow into #82's deeper views). Player-level
+// and on every surface (decided 2026-07-25): the named `<tries> TRIES` headline, the
+// PLAYER's run ruler, then SHARE. Player-level
 // progression lives in StreakDialog, outside this layout. It belongs to a REAL solved day:
 // the onboarding tutorial used to borrow it with a null `dayNumber` and PLAY in SHARE's
 // slot, and stopped when its ending moved onto the route map (#155) — a lesson has no score
@@ -28,8 +24,6 @@ export default function SolvedScreen({
   solvedAt,
   dayNumber,
   lang,
-  benchmark,
-  runReplays,
   animate = true,
   startAnimation = true,
   onRisen,
@@ -39,8 +33,6 @@ export default function SolvedScreen({
   solvedAt?: (number | null)[]; // the player's solve moments (ruler ticks)
   dayNumber: number;
   lang: string; // packed into the share token (drives the link's click-through target)
-  benchmark?: BenchmarkResults; // offline opponents; shown only on this solved surface
-  runReplays?: Map<string, RunReplay>; // model id -> its replayed run
   // Rehydrated solves render their final result immediately. Fresh solves animate, with
   // startAnimation acting as the source/streak gate while this component stays mounted.
   animate?: boolean;
@@ -52,23 +44,6 @@ export default function SolvedScreen({
   // animate is false (rehydrated solves set their source states directly).
   onRisen?: () => void;
 }) {
-  // Leaderboard rows for the dialog (#110/#82): every entrant sorted by score
-  // (lineupModel's order — the player ahead on a tie, DNF last), with its own replayed
-  // run (opponents' come replayed from Game). null when no opponent displays.
-  const rows = useMemo<LeaderboardRow[] | null>(() => {
-    if (!hasDisplayEntries(benchmark)) return null;
-    return lineupModel(benchmark, guessCount, t(lang, 'you')).entrants.map(
-      (e) => ({
-        key: e.key,
-        tag: e.tag,
-        label: e.label,
-        tries: e.tries,
-        player: e.player,
-        trajectory: e.player ? trajectory : (runReplays?.get(e.key)?.trajectory ?? []),
-        solvedAt: e.player ? (solvedAt ?? []) : (runReplays?.get(e.key)?.solvedAt ?? []),
-      }),
-    );
-  }, [benchmark, guessCount, lang, runReplays, trajectory, solvedAt]);
   const reduceMotion =
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const n = Math.max(trajectory.length, 1);
@@ -146,13 +121,6 @@ export default function SolvedScreen({
     };
   }, [animate, rulerSpanMs, reduceMotion, resultsIn, rulerStartMs]);
 
-  // The SEE MORE leaderboard modal. Buttons are pointer-only app-wide, so closing leaves
-  // focus unset instead of restoring it to the trigger.
-  const [lbOpen, setLbOpen] = useState(false);
-  const closeLeaderboard = useCallback(() => {
-    setLbOpen(false);
-  }, []);
-
   // Delivery (native sheet / clipboard + the "COPIED" confirmation) is the shared hook's;
   // this screen only composes the sentence result's text.
   const { share, copied } = useShare();
@@ -193,16 +161,14 @@ export default function SolvedScreen({
       </span>
 
       {/* The player's own run ruler — the share card draws this same ruler from the v2
-          token. The race against the models lives behind SEE MORE (LeaderboardDialog). */}
+          token. */}
       <div className="run-ruler-frame" aria-hidden="true">
         <RunRuler
           trajectory={trajectory}
           solvedAt={solvedAt ?? []}
-          maxN={n}
           stagger={stagger}
           shown={rulerShown}
           colorized={rulerColorized}
-          solo
         />
       </div>
 
@@ -214,25 +180,7 @@ export default function SolvedScreen({
         >
           {copied ? t(lang, 'copied') : t(lang, 'share')}
         </button>
-        {rows && (
-          <button
-            type="button"
-            className="result-action"
-            onClick={() => setLbOpen(true)}
-          >
-            {t(lang, 'seeMore')}
-          </button>
-        )}
       </div>
-
-      {/* The ranking stays accessible without opening the modal. */}
-      {rows && (
-        <p className="sr-only">
-          {rows.map((row, i) => `${i + 1}. ${row.label} ${row.tries ?? t(lang, 'dnf')}`).join(' · ')}
-        </p>
-      )}
-
-      {rows && lbOpen && <LeaderboardDialog rows={rows} lang={lang} onClose={closeLeaderboard} />}
     </div>
   );
 }
