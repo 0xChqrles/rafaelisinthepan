@@ -492,8 +492,6 @@ publish/inventory/backend:dev (backend), dev/build (web), cdk synth/diff/deploy
     which stack — remember `shared`-like libs consumed by a stack must fan out to it),
     the per-stack deploy jobs, and the `workflow_dispatch` `stacks` options. A new
     deployable stack with no job/filter entry will silently never deploy.
-- The `.codex/skills/whippin-game/` skill + `validate_game_data.mjs` describe a
-  **superseded** schema (see Discrepancies).
 
 ---
 
@@ -512,23 +510,11 @@ batch. An improving hole's word/rank swap is deferred to the shared fade-out mom
 (`fadeDelayMs`) instead of firing immediately/staggered, so the exponent drop resolves
 the number that just landed.)*
 
-1. **Timer.** `README.md` and the `.codex` docs describe a 2:00 countdown that
-   freezes the score. The current code has **no timer** — a round ends only when all
-   holes are solved (shows "SOLVED!"). The recorded invariants don't mention a timer.
-   Decide: remove the stale timer references, or reintroduce a timer.
-
-2. **`README.md` `gen:phrase` example passes 2 words, not 3.** The example
-   `--words forêt ancienne` would fail: `gen_phrase.py` requires exactly 3
-   (`nargs=3`), and filenames are `<s1>_<s2>_<s3>.json`. Fix the README example.
-
-3. **`.codex/skills/whippin-game/` is entirely stale.** Its `SKILL.md`,
-   `references/game-contract.md`, and `scripts/validate_game_data.mjs` target a
-   superseded design: a single `public/game_data.json` with per-language
-   multi-phrase arrays, a non-existent `scripts/build_game_data.py`, plain integer
-   ranks (`ranks[secret][word] = int`, not `{word, rank}`), ASCII-only normalization
-   that **drops dashes** (`replace(/[^a-z]/g,'')`, contradicting the dash-keeping
-   `fold()`), no slug/accents split, and a 2:00 timer. The validator validates the
-   old shape. Decide: update them to the current schema or remove them.
+*(Resolved 2026-08-12: former discrepancies #1-#3 — the 2:00 timer prose, the README's
+2-word `gen:phrase` example, and the stale `.codex/skills/whippin-game`. The skill was
+DELETED (it targeted a design three schemas ago); the other two had already been fixed in
+the files themselves, leaving only these notes to retire. Sentence mode still has no
+timer; Word mode's clock (#163) is its own rule, not this one.)*
 
 *(Resolved 2026-08-12: former discrepancy #4 — a sentence puzzle's `road` fields with no
 consumer anywhere. The user decided to remove the clustering and the web's lane drawing

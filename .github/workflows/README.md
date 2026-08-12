@@ -46,7 +46,7 @@ and variables → Actions → Secrets):
 
 ```bash
 # one-time; needs the account cdk-bootstrapped in us-east-1 (npx cdk bootstrap)
-pnpm --filter @whippin/infra deploy WhippinDeployStack
+pnpm --filter @whippin/infra deploy:auth
 # → prints DeployRoleArn=arn:aws:iam::<ACCOUNT_ID>:role/whippin-github-deploy
 ```
 
@@ -66,13 +66,12 @@ this stack is human-deployed rather than run by CI). In short, the stack creates
 > the CI role deliberately can't create or edit IAM, so it can't provision its own
 > privileges. That's also why `deploy.yml` only targets the backend/web stacks.
 
-### 2. Web build base URL — variable `VITE_API_BASE_URL`
+### 2. Web build config
 
-The web deploy builds the SPA with `VITE_API_BASE_URL` **before** `cdk deploy` (WebStack
-uploads `dist/`). Set the repo **variable** `VITE_API_BASE_URL` (Settings → Secrets and
-variables → Actions → Variables) to the backend origin, e.g. `https://api.whippin.ai`.
-There is **no fallback** — if the variable is unset the web deploy fails fast rather than
-shipping a build pointed at the wrong origin.
+`VITE_API_BASE_URL` needs no repo variable: it is committed in
+`packages/web/.env.production`, the single source of truth for the value baked into the
+shipped bundle. The one optional repo **variable** is `VITE_PLAUSIBLE_DOMAIN` (#60) —
+unset means analytics stay inert.
 
 ### 3. Branch protection — required status check (manual, admin)
 

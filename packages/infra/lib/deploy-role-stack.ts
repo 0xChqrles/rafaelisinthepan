@@ -9,7 +9,7 @@ const GITHUB_OIDC_URL = 'https://token.actions.githubusercontent.com';
 const GITHUB_OIDC_DOMAIN = 'token.actions.githubusercontent.com';
 const AUDIENCE = 'sts.amazonaws.com';
 
-export interface DeployRoleStackProps extends StackProps {
+interface DeployRoleStackProps extends StackProps {
   // GitHub repo owner (a personal account name OR an org — GitHub treats both the same
   // in the OIDC subject `repo:<owner>/<repo>:…`) and the repo name whose Actions runs
   // may assume the deploy role.

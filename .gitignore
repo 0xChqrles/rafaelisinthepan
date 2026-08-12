@@ -34,9 +34,8 @@ packages/backend/.local-store
 packages/generation/output
 
 # ── Offline benchmark lab output (issue #80) ─────────────────
-# Full paid-run records (transcripts, transport, timing, token usage) stay local;
-# only the lean per-model entries are embedded in a puzzle before publish (the front
-# end filters the display trio).
+# Full paid-run session records (transcripts, transport, timing, token usage) stay
+# local: the harness is lab-only and never writes into a puzzle file.
 packages/benchmark/output
 
 # ── Embeddings (all excluded — too large for GitHub) ─────────

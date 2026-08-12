@@ -13,6 +13,8 @@
     bin/app.ts                CDK app entry — WhippinBackendStack + WhippinWebStack (cdk.json runs it via `npx tsx`)
     lib/backend-stack.ts      BackendStack: private S3 + Lambda(Fn URL) + CloudFront; opt api.<domain> (ACM+Route53); us-east-1
     lib/web-stack.ts          WebStack (#21): private S3 (SPA) + CloudFront(OAC) + ACM + Route53; apex; us-east-1
+    lib/deploy-role-stack.ts  DeployRoleStack (#33): GitHub OIDC provider + the CI deploy role; human-deployed
+    scripts/guard-local-deploy.mjs  blocks `deploy`/`deploy:app` outside CI (ALLOW_LOCAL_DEPLOY=1 to break glass)
     cdk.json                  CDK config (app command, context)
 ```
 
@@ -62,7 +64,7 @@
   in-stack, distribution alias + **A/AAAA**; `ApiUrl` = `https://api.<domain>`. CORS
   `allowedOrigin` **defaults to the site origin**
   `https://<domain>` (override `-c allowedOrigin=`). The CDK app also defines a sibling
-  `WebStack` (below) — pass a stack name to target one. **Both stacks pinned to `us-east-1`**
+  `WebStack` (below) — pass a stack name to target one. **All three stacks pinned to `us-east-1`**
   (the backend was migrated from `eu-west-1`; tear the old stack down — see infra README).
 - **Web hosting stack (#21):** `lib/web-stack.ts` `WebStack` (`WhippinWebStack`) — a sibling
   of `BackendStack`, independently deployable (`cdk deploy WhippinWebStack`), **pinned to
