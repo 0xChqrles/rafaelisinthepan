@@ -23,7 +23,7 @@ export interface HistoryStop {
   rank: number; // the group's rank — also its identity on this line
   // Position on the distance axis, for the connector lengths. Null on pre-#115 data that
   // carries no `dq` — the drawing then falls back to uniform spacing instead of refusing
-  // (the old map's hasRoute gate died with it: a history exists on every puzzle).
+  // to draw the line at all.
   dq: number | null;
   // How the stop is NAMED: the form the PLAYER TYPED wherever a typed form reached it —
   // their log, their words (answering `sables` with the group's `sable` reads as a

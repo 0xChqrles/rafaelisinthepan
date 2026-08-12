@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { Source } from '@whippin/shared';
+import { prefersReducedMotion } from '../hooks/useScramble';
 
 const TYPE_MS = 18;
 const CURSOR_HOLD_MS = 140;
@@ -66,10 +67,7 @@ export default function SolvedCaption({
     [attributionText, masked],
   );
   const total = kindChars.length + attributionChars.length;
-  const reduceMotion =
-    typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduceMotion = prefersReducedMotion();
   const [shown, setShown] = useState(() => (animate && !reduceMotion ? 0 : total));
 
   // Rewind DURING render, not in the effect below: `animate` turns on in the same commit

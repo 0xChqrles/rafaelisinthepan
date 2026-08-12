@@ -25,9 +25,9 @@ import { HIT_HEAT_CAP, rankHeatColor } from './Hole';
 //
 // TIMING lives here and is handed to CSS as variables, so the timer that ends the loot
 // and the animation that flies it cannot disagree.
-export const LOOT_RISE_MS = 340;
-export const LOOT_FALL_MS = 440;
-export const LOOT_STAGGER_MS = 60;
+const LOOT_RISE_MS = 340;
+const LOOT_FALL_MS = 440;
+const LOOT_STAGGER_MS = 60;
 export const lootDurationMs = LOOT_STAGGER_MS + LOOT_RISE_MS + LOOT_FALL_MS;
 
 const roll = (min: number, max: number) => min + Math.random() * (max - min);

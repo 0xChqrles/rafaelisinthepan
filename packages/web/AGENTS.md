@@ -12,7 +12,7 @@
     src/
       hooks/useVocab.ts       fetch+cache the per-language existence Set (once per session)
       hooks/usePuzzle.ts      fetch the client-computed day's puzzle from the backend
-      api.ts                  backend client: puzzleUrl/todayUrl, 404->NO PUZZLE
+      api.ts                  backend client: puzzleUrl/wordPuzzleUrl, 404->NO PUZZLE
       i18n.ts                 UI chrome strings (en+fr), t(lang, key); parity type-enforced
       tutorial/               onboarding (#51/#155): Tutorial.tsx + data scripts/<lang>.ts
                               (+ <lang>.word.json, the pruned #154 board it plays on)
@@ -1034,11 +1034,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   headline, the PLAYER's full-width **run ruler**, then SHARE. **The run RULER replaced the bucketed
   trajectory squares (decided 2026-07-25):** one continuous bar per run on the
   PROGRESS ramp (`components/RunRuler.tsx`), one cell per counted try colored
-  `progressColor` at that try's reconstruction % — the RAW `progressTrajectory`, no
+  `progressColor` at that try's reconstruction % — the RAW `replayRun` trajectory, no
   on-screen bucketing — with a white tick at each try that solved a secret and the
   hole's sentence index (1..3) under it; one guess dropping several secrets stacks its
-  indices under ONE shared tick (`solveTicks` in `web/src/game/share.ts` replays the
-  moments with the same rules as the trajectory). **The SHARE CARD draws the SAME
+  indices under ONE shared tick (`replayRun` in `web/src/game/share.ts` walks the run
+  once and returns the trajectory and the solve moments together). **The SHARE CARD draws the SAME
   ruler (decided 2026-07-25, superseding the bucketed-squares card):** the share token
   was bumped to **v2**, carrying the RAW per-try trajectory plus the solve moments
   instead of the `bucketMeans` squares, so `renderCardSvg` renders the on-screen ruler

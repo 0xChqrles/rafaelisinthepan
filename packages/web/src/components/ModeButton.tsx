@@ -15,7 +15,7 @@ export default function ModeButton({ lang }: { lang: string }) {
   return (
     <button
       type="button"
-      className="home-btn mode-btn"
+      className="home-btn"
       onClick={() => navigate(MODE_SELECT_PATH)}
       aria-label={t(lang, 'ariaChangeMode')}
     >

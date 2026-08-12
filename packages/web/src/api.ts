@@ -40,7 +40,7 @@ export function wordPuzzleUrl(lang: string, date: string, base: string = apiBase
 //   200 -> a puzzle to load;
 //   404 -> no puzzle for today/lang -> the graceful "NO PUZZLE TODAY" state (#14);
 //   anything else -> a real failure -> the "FAILED TO LOAD" error state.
-export type PuzzleOutcome = 'puzzle' | 'missing' | 'error';
+type PuzzleOutcome = 'puzzle' | 'missing' | 'error';
 export function puzzleOutcome(status: number): PuzzleOutcome {
   if (status === 404) return 'missing';
   if (status >= 200 && status < 300) return 'puzzle';

@@ -1,11 +1,10 @@
 // Word mode's rules (#156, retimed by #163): one daily word, its ranked neighborhood
-// public knowledge to win. The player CLAIMS words in the top zone of the #154 artifact
-// — against a COUNTDOWN, and the score is how many they claimed.
+// public knowledge to win. The player CLAIMS words in the top zone of the #154 artifact,
+// against a COUNTDOWN, and the score is how many they claimed.
 // Claiming all of it is deliberately impossible: the zone is the field, not the goal.
 //
 // The clock REPLACED the strike system (#163). Two dailies should be two games:
-// Sentence mode is think slowly and beat the AI, Word mode is think fast and beat the
-// clock. The timer also legislates everything the strikes used to — a repeat, an
+// Sentence mode is think slowly, Word mode is think fast and beat the clock. The timer also legislates everything the strikes used to — a repeat, an
 // invalid word or a far miss punishes itself, in the seconds it cost to type — so
 // there is no strike bookkeeping, no consecutive rule, and nothing here ends a run.
 //
@@ -157,7 +156,7 @@ export function totalBonus(claimed: readonly RankEntry[], corpusSize: number): n
 //           its real distance.
 //   miss  — off-map (beyond the TOP_K cap): the same, with no rank at all.
 //   zero  — the day's word itself (rank 0): free — it is public, on the board already.
-export type WordJudgement =
+type WordJudgement =
   | { kind: 'claim'; entry: RankEntry }
   | { kind: 'near'; entry: RankEntry }
   | { kind: 'miss' }
@@ -184,7 +183,7 @@ export function wordGuessKey(ranks: WordRanks, typed: string): string {
 // One guess that COUNTED, in submission order: what was typed and how it landed. Free
 // guesses (repeats, the day's word) are absent, so a consumer can partition this list
 // without knowing a single rule.
-export interface CountedGuess {
+interface CountedGuess {
   typed: string;
   judged: WordJudgement; // never 'zero' — the word itself is free
 }
@@ -200,7 +199,7 @@ export interface CountedGuess {
 // This is the ONE walk of a word round. The board (game/wordBoard.ts) draws itself from
 // `counted` rather than re-deriving the rules, so the score, the clock and the drawing
 // can never disagree about what the same log means.
-export interface WordRun {
+interface WordRun {
   // The claimed zone groups, in claim order. Its length is the SCORE, and the groups
   // themselves are what the clock is priced from — the walk hands back WHAT was claimed
   // and leaves the pricing to `totalBonus`, which is the only part that needs to know

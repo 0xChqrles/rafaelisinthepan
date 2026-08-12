@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { dateForDayNumber } from '@whippin/shared';
+import { prefersReducedMotion } from '../hooks/useScramble';
 import { t, srWordBreakdown } from '../i18n';
 import { RARITY_NAMES } from '../game/wordGame';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
@@ -34,8 +35,7 @@ export default function WordEndScreen({
   animate?: boolean;
 }) {
   const score = useMemo(() => wordShareScore(counts), [counts]);
-  const reduceMotion =
-    typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduceMotion = prefersReducedMotion();
 
   // First rise into the tray the keyboard vacated, then count the claimed words up from zero.
   const [resultsIn, setResultsIn] = useState(() => !animate);

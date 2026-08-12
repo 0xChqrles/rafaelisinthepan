@@ -41,8 +41,8 @@ function deltaE(a: string, b: string): number {
   return Math.hypot(l1 - l2, a1 - a2, b1 - b2);
 }
 
-// The reserved colours, READ straight out of index.css :root — the way laneColors.test.ts
-// reads distances.py. A hand-copied hex checked against another hand-copy pins nothing: a
+// The reserved colours, READ straight out of index.css :root. A hand-copied hex checked
+// against another hand-copy pins nothing: a
 // `--danger` retune has to fail HERE so the reservation gets re-decided on purpose.
 const rootCss = readFileSync(new URL('../index.css', import.meta.url), 'utf8');
 function rootVar(name: string): string {

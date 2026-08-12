@@ -4,10 +4,6 @@ import { rankHeatColor, rankTransitionDuration } from '../components/Hole';
 import { SCRAMBLE_MS, prefersReducedMotion, useScramble } from '../hooks/useScramble';
 import type { RankEntry } from '@whippin/shared';
 
-// Re-exported so the Tutorial can schedule the mix stop's explanation against the same
-// scramble duration the widget uses.
-export { SCRAMBLE_MS };
-
 // The mix demo's word (#51, stage 1). Tutorial owns WHICH ladder entry is showing;
 // this renders it with the real hole's markup, classes and heat ramp, so it is
 // visually indistinguishable from the game. It shares the game's slot-machine scramble

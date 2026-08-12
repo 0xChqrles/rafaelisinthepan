@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { ReactNode } from 'react';
 import { fold, type WordPuzzle } from '@whippin/shared';
 import useVocab from '../hooks/useVocab';
+import { KB_EXIT_FALLBACK_MS } from './Game';
 import { useDeadlinePassed } from '../hooks/useCountdown';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
 import {
@@ -63,8 +64,6 @@ const WORD_END_HOLD_MS = 800;
 // and the result rises. This beat is what separates the reveal from the drop — it is the
 // board's own moment, with nothing else moving in it.
 const WORD_END_SETTLE_MS = 320;
-// Like Sentence mode's fallback: a lost animationend must not strand an empty result tray.
-const KB_EXIT_FALLBACK_MS = 1_200;
 
 export default function WordGame({
   puzzle,

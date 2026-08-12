@@ -55,7 +55,7 @@ function firstWeekday({ year, month }: YearMonth): number {
 // 1 = Monday, …): a flat array with `null` leading pads so day 1 falls under its weekday
 // column, then one ISO date string per day. Trailing pads are unnecessary (the grid just
 // ends). Locale decides `weekStart`; the caller supplies it.
-export function monthGrid(ym: YearMonth, weekStart = 0): (string | null)[] {
+export function monthGrid(ym: YearMonth, weekStart: number): (string | null)[] {
   const lead = (firstWeekday(ym) - weekStart + 7) % 7;
   const cells: (string | null)[] = Array.from({ length: lead }, () => null);
   for (let day = 1; day <= daysInMonth(ym); day += 1) {

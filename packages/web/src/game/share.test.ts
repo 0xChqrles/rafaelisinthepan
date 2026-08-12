@@ -11,9 +11,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  progressTrajectory,
   replayRun,
-  solveTicks,
   emojiRow,
   rowCellCount,
   rowMeans,
@@ -53,37 +51,37 @@ function hole(secret: string, startRank: number): RuntimeHole {
   return { pos: 0, secret, word: secret, rank: startRank, startRank };
 }
 
-describe('progressTrajectory — replay the ordered guesses', () => {
+describe('replayRun().trajectory — replay the ordered guesses', () => {
   const ranks: RankMap = { a: mk(1000) };
   const fresh: RuntimeHole[] = [hole('a', 300)];
 
   it('has one value per counted guess, monotonic, ending at 100 when solved', () => {
-    const t = progressTrajectory(fresh, ranks, ['w200', 'w50', 'w0']);
+    const t = replayRun(fresh, ranks, ['w200', 'w50', 'w0']).trajectory;
     expect(t).toHaveLength(3);
     for (let i = 1; i < t.length; i++) expect(t[i]).toBeGreaterThanOrEqual(t[i - 1]);
     expect(t[t.length - 1]).toBeCloseTo(100, 9);
   });
 
   it('each value equals computeProgress at that hole rank (matches the live loop)', () => {
-    const t = progressTrajectory(fresh, ranks, ['w200', 'w50', 'w0']);
+    const t = replayRun(fresh, ranks, ['w200', 'w50', 'w0']).trajectory;
     expect(t[0]).toBeCloseTo(computeProgress([{ ...fresh[0], rank: 200 }], ranks), 9);
     expect(t[1]).toBeCloseTo(computeProgress([{ ...fresh[0], rank: 50 }], ranks), 9);
   });
 
   it('a guess worse than the current rank does not regress a hole', () => {
-    const t = progressTrajectory(fresh, ranks, ['w50', 'w200']);
+    const t = replayRun(fresh, ranks, ['w50', 'w200']).trajectory;
     expect(t[1]).toBe(t[0]);
   });
 
   it('a guess absent from a hole map (a MISS for it) leaves that hole untouched', () => {
-    const t = progressTrajectory(fresh, ranks, ['zzz']);
+    const t = replayRun(fresh, ranks, ['zzz']).trajectory;
     expect(t[0]).toBe(0);
   });
 
   it('advances several holes at once, averaging their progress', () => {
     const two: RankMap = { a: mk(1000), b: mk(1000) };
     const holes: RuntimeHole[] = [hole('a', 300), hole('b', 300)];
-    const t = progressTrajectory(holes, two, ['w0']);
+    const t = replayRun(holes, two, ['w0']).trajectory;
     expect(t[0]).toBeCloseTo(100, 9);
   });
 
@@ -94,32 +92,32 @@ describe('progressTrajectory — replay the ordered guesses', () => {
       { pos: 4, secret: 'chat', word: 'bête', rank: 300, startRank: 300 },
     ];
 
-    const trajectory = progressTrajectory(holes, ranks, ['w200', 'w0']);
+    const trajectory = replayRun(holes, ranks, ['w200', 'w0']).trajectory;
     expect(trajectory).toHaveLength(2);
     expect(trajectory[0]).toBeGreaterThan(0);
     expect(trajectory[1]).toBeCloseTo(100, 9);
   });
 });
 
-describe('solveTicks — solve moments per distinct secret, in sentence order', () => {
+describe('replayRun().solvedAt — solve moments per distinct secret, in sentence order', () => {
   it('records the 1-based try that solved each secret, in first-occurrence order', () => {
     // b's map only knows 'bb' (its secret): try 1 misses everything, try 2 solves b,
     // try 4 solves a — so the sentence-order result is [4, 2], not guess order.
     const ranks: RankMap = { a: mk(1000), b: { bb: { word: 'bb', rank: 0 } } };
     const holes: RuntimeHole[] = [hole('a', 300), { ...hole('b', 200), pos: 3 }];
-    expect(solveTicks(holes, ranks, ['zzz', 'bb', 'w50', 'w0'])).toEqual([4, 2]);
+    expect(replayRun(holes, ranks, ['zzz', 'bb', 'w50', 'w0']).solvedAt).toEqual([4, 2]);
   });
 
   it('one guess dropping several secrets gives each the SAME try (one shared tick)', () => {
     const ranks: RankMap = { a: mk(1000), b: mk(1000) };
     const holes: RuntimeHole[] = [hole('a', 300), { ...hole('b', 300), pos: 2 }];
-    expect(solveTicks(holes, ranks, ['w200', 'w0'])).toEqual([2, 2]);
+    expect(replayRun(holes, ranks, ['w200', 'w0']).solvedAt).toEqual([2, 2]);
   });
 
   it('a run that never solves a secret leaves null for it (DNF opponents)', () => {
     const ranks: RankMap = { a: mk(1000), b: mk(1000) };
     const holes: RuntimeHole[] = [hole('a', 300), { ...hole('b', 300), pos: 2 }];
-    expect(solveTicks(holes, ranks, ['w200', 'w100'])).toEqual([null, null]);
+    expect(replayRun(holes, ranks, ['w200', 'w100']).solvedAt).toEqual([null, null]);
   });
 
   it('a repeated secret is ONE entry: all its occurrences solve on the same guess', () => {
@@ -128,7 +126,7 @@ describe('solveTicks — solve moments per distinct secret, in sentence order', 
       { pos: 1, secret: 'chat', word: 'animal', rank: 300, startRank: 300 },
       { pos: 4, secret: 'chat', word: 'bête', rank: 300, startRank: 300 },
     ];
-    expect(solveTicks(holes, ranks, ['w200', 'w0'])).toEqual([2]);
+    expect(replayRun(holes, ranks, ['w200', 'w0']).solvedAt).toEqual([2]);
   });
 });
 
@@ -150,8 +148,8 @@ describe('replayRun — the cells and the ticks come out of ONE walk', () => {
     const holes: RuntimeHole[] = [hole('a', 300), { ...hole('b', 300), pos: 2 }];
     const tried = ['w200', 'w50', 'w0'];
     expect(replayRun(holes, ranks, tried)).toEqual({
-      trajectory: progressTrajectory(holes, ranks, tried),
-      solvedAt: solveTicks(holes, ranks, tried),
+      trajectory: replayRun(holes, ranks, tried).trajectory,
+      solvedAt: replayRun(holes, ranks, tried).solvedAt,
     });
   });
 

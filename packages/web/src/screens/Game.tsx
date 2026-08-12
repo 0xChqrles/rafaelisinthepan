@@ -38,16 +38,15 @@ import type {
   Source,
 } from '@whippin/shared';
 
-// Feedback shown under the input. Only INVALID words use it now (red shake +
-// "does not exist"); a valid-but-too-far guess gives per-hole "MISS" feedback
-// on the holes instead, so it needs no under-input message.
-type Feedback = { text: string };
+// Feedback shown under the input is one string. Only INVALID words use it now (red shake +
+// "does not exist"); a valid-but-too-far guess gives per-hole "MISS" feedback on the holes
+// instead, so it needs no under-input message.
 
 // When a guess impacts several holes, effect starts are staggered this many ms apart.
 // Floating distance/MISS feedback uses the same start stagger, then fades as one batch.
-// Exported: the onboarding Tutorial (#51) replays the same choreography with the same
-// numbers, so the scripted round feels exactly like the real one.
-export const STAGGER_MS = 200;
+// (The tutorial's board is ONE hole, so it staggers nothing — it takes the intro constant
+// below instead, which is what makes its single hit read like a real one.)
+const STAGGER_MS = 200;
 export const FLOATING_HIT_INTRO_MS = 320;
 
 const STREAK_AFTER_WORDS_MS = 300;
@@ -214,7 +213,7 @@ function Round({
   // id so it animates and clears independently. These are ephemeral UI, not persisted.
   const [hits, setHits] = useState<HitState[]>([]);
   const [invalidAt, setInvalidAt] = useState<number>(0); // timestamp signal -> input shake
-  const [feedback, setFeedback] = useState<Feedback | null>(null); // message under the input
+  const [feedback, setFeedback] = useState<string | null>(null); // message under the input
   const hitId = useRef<number>(0); // monotonic id source for floating hits
   const pendingTimers = useRef<number[]>([]); // deferred rank/word updates (fire as the hit fades)
 
@@ -520,8 +519,8 @@ function Round({
   // the round's guess log ranked against its own secret. Numbering is by DISTINCT secret in
   // sentence order (1..3) — the same numbers the run ruler's ticks and the share row's
   // keycaps use — so two occurrences of one secret, which share a rank map, share a number.
-  // A history needs no #115 geometry, so EVERY hole has one: the old hasRoute gate — and
-  // with it the last surface that could refuse a pre-#115 puzzle — is gone.
+  // A history needs no #115 geometry, so EVERY hole has one — a map with no `dq` draws on
+  // uniform spacing rather than refusing.
   const holeNumbers = useMemo<number[]>(() => {
     const order: string[] = [];
     for (const h of puzzleHoles) if (!order.includes(h.secret.slug)) order.push(h.secret.slug);
@@ -651,7 +650,7 @@ function Round({
         // typed word (do NOT clear) so the player can correct it; the next edit clears
         // the message.
         setInvalidAt(Date.now());
-        setFeedback({ text: t(lang, 'notAWord') });
+        setFeedback(t(lang, 'notAWord'));
         say(t(lang, 'notAWord'));
         return;
       }
@@ -804,7 +803,7 @@ function Round({
               // way — the prompt arrives with the keyboard, on PLAY.
               active={!showResults && historyHole === null && !gateOpen}
             />
-            <p className="hint">{feedback?.text || ' '}</p>
+            <p className="hint">{feedback || ' '}</p>
           </div>
           <div
             className={`caption-slot${showResults && sourceRevealStarted ? '' : ' pending'}`}

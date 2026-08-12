@@ -86,9 +86,9 @@ const art = (css: string, frames: number): StrikeArt => ({
 // A diagonal stroke that lands and dissipates. The default hit.
 export const SLASH_ART = art('', 5);
 // A wider, taller detonation — same white, same mask, so it also wears the grade's colour.
-export const BURST_ART = art('burst', 5);
+const BURST_ART = art('burst', 5);
 // The one coloured sheet: a violet-and-cyan star that scatters into shards.
-export const ULTRA_ART = art('ultra', 7);
+const ULTRA_ART = art('ultra', 7);
 
 // Commonest first: THIS ORDER IS THE ESCALATION, and `rarity.test.ts` reads it as one.
 export const STRIKE_ARTS: readonly StrikeArt[] = [SLASH_ART, BURST_ART, ULTRA_ART];
@@ -120,5 +120,5 @@ export function strikeFor(rarity: Rarity): StrikeArt {
 // word already back at rest (decided 2026-08-09): on a longer sheet the same rule is what
 // makes the extra frames read as DISSIPATION. Stated in the ART's own frames rather than as
 // a duration, because it is a claim about which frames of the hit the word is answering.
-export const STRUCK_FRAMES = 4;
+const STRUCK_FRAMES = 4;
 export const STRUCK_MS = STRUCK_FRAMES * SLASH_FRAME_MS;

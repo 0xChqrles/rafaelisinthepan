@@ -28,7 +28,7 @@ import type { UiKey } from '../i18n';
 // One stop of the mix demo: pressing the button (labelled `labelKey`) animates the word to
 // `rank` — a single shake+swap for the first stop, a fast roll through every ladder word for
 // the others — then `copyKey` (if any) becomes the explanation.
-export interface MixStop {
+interface MixStop {
   rank: number;
   labelKey: UiKey;
   copyKey?: UiKey;
@@ -56,7 +56,7 @@ export type TutorialStep =
   // `introCopyKey` states the CLAIM (every word has a rarity) over the found word, and the
   // tray's NEXT advances it; then the word gives way to the RARITY LADDER — the five grade
   // names in their own colours, commonest first (RarityLadder) — while `ladderCopyKey`
-  // states what the ladder means (the rarer, the more precious). The tray then offers PLAY,
+  // states what the ladder means. The tray then offers PLAY,
   // which ends the tutorial. There is no graduation screen, because there is no score to
   // show. What a grade PAYS is deliberately not here: that is Word mode's rule, and it
   // lives on Word mode's own gate.

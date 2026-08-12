@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode, RefObject } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { heatColor } from '@whippin/shared';
 import { rankHeatColor, HIT_HEAT_CAP } from './Hole';
 import { t } from '../i18n';
@@ -27,9 +27,9 @@ const DQ_MAX = 255;
 // A connector carries the distance between the two stations it joins: `LINK_SPAN` px per full
 // dq scale, floored so two neighbours never collide and capped so the cold tail cannot push the
 // destination off screen. The floor and the cap are what make this a line and not a map.
-// The floor is exported: it is also the uniform spacing a surface falls back to where no dq
-// exists to carry a distance (the history modal on pre-#115 data).
-export const LINK_MIN = 14;
+// The floor doubles as the uniform spacing `linkGap` falls back to where no dq exists to
+// carry a distance (the history modal on pre-#115 data).
+const LINK_MIN = 14;
 const LINK_MAX = 92;
 const LINK_SPAN = 300;
 
@@ -73,11 +73,6 @@ export const dashedRun = (px: number) =>
 // have no distance at all, whether or not this round produced any. Not a distance, so not a
 // solid line — the ONE broken trace the board draws.
 const TAIL_H = dashedRun(34); // 31
-// The clearance the word board's torn-edge mask keeps its content short of the cut by
-// (`.word-cut`), handed to CSS as `--stick-inset`. (Named for the route map's sticky row,
-// which parked this far off the screen edge; the map is gone, the clearance idiom stays.)
-const STICK_INSET = 8;
-
 // A word you have not found — a terminus still to be reached, or a censored station. FIXED
 // width: a placeholder that grew with the word would leak its length.
 export const UNKNOWN = '???';
@@ -116,7 +111,6 @@ export function routeFrameVars(rankChars: number): CSSProperties {
     '--gutter': `calc(var(--rank-size) * ${rankChars} + 10px)`,
     '--railw': `${TRUNK_X * 2}px`,
     '--trunk-x': `${TRUNK_X}px`,
-    '--stick-inset': `${STICK_INSET}px`,
     // The dash unit the tail is cut to (see dashedRun): the gradient paints it, the height
     // counts it, so both read it from here.
     '--dash': `${DASH}px`,
@@ -191,26 +185,20 @@ export function RouteLink({ height, broken = false }: { height: number; broken?:
 // row's node on it, then the word cell. All three name their grid column in CSS, which is what
 // makes the rail read as one unbroken line down the page.
 export function RouteRow({
-  rowRef,
   className = '',
   style,
   rank = null,
   children,
 }: {
-  // A surface's handle on a row it measures (the map's sticky "you are here").
-  rowRef?: RefObject<HTMLDivElement | null>;
   className?: string;
   style?: CSSProperties;
-  // The row's own distance: drawn as its heat-coloured exponent, and exposed as
-  // `data-route-rank` so a surface can find the row again without re-deriving its position.
-  // Null on the rows that have no distance of their own — a terminus.
+  // The row's own distance, drawn as its heat-coloured exponent. Null on the rows that
+  // have no distance of their own — a terminus.
   rank?: number | null;
   children?: ReactNode;
 }) {
   return (
     <div
-      ref={rowRef}
-      data-route-rank={rank ?? undefined}
       className={`route-station${className ? ` ${className}` : ''}`}
       style={style}
     >

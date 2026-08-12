@@ -1,4 +1,4 @@
-export interface StreakDigitSlot {
+interface StreakDigitSlot {
   from: string;
   to: string;
   changed: boolean;

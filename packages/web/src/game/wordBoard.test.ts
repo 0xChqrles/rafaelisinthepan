@@ -8,7 +8,7 @@
 
 import { describe, it, expect } from 'vitest';
 import type { WordRanks } from '@whippin/shared';
-import { buildWordBoard, hasWordBoard } from './wordBoard';
+import { buildWordBoard } from './wordBoard';
 import { CLAIM_ZONE, RARITY_LADDER, RARITY_NAMES } from './wordGame';
 
 // The two ranked groups OUTSIDE the claimable zone, positioned AGAINST the zone rather than
@@ -103,7 +103,6 @@ describe('buildWordBoard', () => {
       mot: { word: 'mot', rank: 0 },
       proche: { word: 'proche', rank: 1 }, // no dq — pre-#115-shaped data
     };
-    expect(hasWordBoard(bare)).toBe(false);
     expect(buildWordBoard({ ranks: bare, word: 'mot', tried: [], corpusSize: CORPUS })).toBeNull();
   });
 });
