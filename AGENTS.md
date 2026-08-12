@@ -23,7 +23,8 @@ A **pnpm-workspaces monorepo** (`pnpm-workspace.yaml`; pnpm pinned via the root
 packages/
   generation/   Python puzzle generation (uv): embeddings -> reduced vectors -> puzzles;
                 also writes the vocab existence set into web/public.
-  benchmark/    offline LLM puzzle benchmark harness (#68).
+  benchmark/    offline LLM puzzle benchmark harness (#68) — LAB-ONLY since 2026-08-12:
+                the app no longer displays model results (see the schema section).
   backend/      daily-puzzle backend (#2): ONE handler for Lambda + local serve;
                 puzzle store (S3/FS) + publish.
   infra/        AWS CDK app: backend (#3) + web hosting (#21) sibling stacks.
@@ -133,17 +134,7 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
     "kind": "book",                             //   book | movie | music | quote | poem | … (open set)
     "author": "Victor Hugo",
     "work": "Les Misérables"
-  },
-  "benchmark": [                                // OPTIONAL recorded models (#68/#80/#81);
-                                                 //   VARIABLE length; front end filters display
-    { "model": "claude-fable-5", "label": "CLAUDE FABLE", "tag": "FABLE",
-      "tries": 3, "run": ["bois", "arbre", "forêt"] },
-    { "model": "k3", "label": "KIMI K3", "tag": "KIMI",
-      "tries": 4, "run": ["nature", "bois", "arbre", "forêt"] },
-    { "model": "gpt-5.6-sol", "label": "GPT-5.6", "tag": "GPT",
-      "tries": null, "run": ["bois", "arbre", /* …full run through cap… */ "nature"] }
-    // may also carry lab-only models (OPUS/SONNET/TERRA/…); the client renders only display
-  ]                                              // null tries = DNF; its full run is kept
+  }
 }
 ```
 
@@ -170,43 +161,21 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   metadata is valid. Values are
   **display forms** (accents kept, never slugged); `kind` is an **open** union (known
   values documented, but a new kind is allowed). Consumed by the solved screen (#8).
-- **`benchmark` is fully OPTIONAL (#68, decided 2026-07-07; schema v2 decided
-  2026-07-12 on #68; VARIABLE-LENGTH recorded-set + client-side display filter decided
-  2026-07-20 on #81):** when
-  present, it is a **variable-length array of EVERY model tested with `--in-place`** (not a
-  fixed trio) — **unique `model` id and unique `tag` per entry**, and at least one entry.
-  **The display filter lives in the FRONT END, not the schema:** the client renders only its
-  fixed display trio — **FABLE (`claude-fable-5`), KIMI K3 (`k3`), and GPT-5.6 Sol
-  (`gpt-5.6-sol`)** (decided 2026-07-22, superseding the original Opus/Sonnet/GPT trio) —
-  and silently ignores any other recorded (lab-only) model, showing
-  whichever **subset** of the three is present (see the `web/src/game/benchmark.ts`
-  `DISPLAY_MODEL_IDS` canonical order → stable sprite). Every entry requires the exact
-  non-empty `model` id, an honest uppercase full-family `label` (`CLAUDE FABLE`, `KIMI K3`,
-  `GPT-5.6` — never ambiguous `CLAUDE`), an uppercase pixel-friendly `tag` of at most 6
-  characters (`FABLE`/`KIMI`/`GPT`), `tries` as a positive integer or `null` (DNF at the
-  counted-try cap), and `run` as the **selected run's counted display-form guesses in
-  submission order**. **`--in-place` upserts one model at a time** (a re-run replaces that
-  model's entry; a previously embedded entry that no longer replays the current
-  sentence/ranks is pruned) and accepts **only** the canonical config: **median selection,
-  persistent session, the current prompt version, and at least `MIN_IN_PLACE_RUNS` (3)
-  odd runs** (`--runs` has ONE uniform default of 3 for every model, so omitting it already satisfies
-  the gate — Kimi included; there is no per-provider run-count default). Both `--in-place`
-  writes — the lab artifact and the puzzle's benchmark array — take an **exclusive advisory
-  lock around the whole read-modify-write cycle**, so two overlapping runs accumulate
-  instead of the second silently dropping the first's record. `--selection median`
-  (default) keeps odd `N` runs sequential/cache-warm and reports the same actual median
-  score as full median-of-N (#95). With `k = (N + 1) / 2`, once `k` runs have solved, a
-  later run still unsolved at the k-th-smallest solved score stops as lab-only
-  `termination="upper_half"`, unless that score is the real cap — then it remains a genuine
-  `termination="cap"` DNF; once `N - k + 1` runs are genuine cap DNFs, remaining runs make
-  no provider calls and record lab-only `termination="dnf_majority"`. `N = 1` never prunes.
-  `--selection best` selects the lowest successful score. Run words retain accents
-  exactly as typed/validated and are folded only when replayed; a selected DNF keeps its
-  full cap-length run. Cost-pruned attempts (`upper_half`, `dnf_majority`, or best-mode
-  `cannot_beat_best`) can never be embedded as DNFs or scores; the selected representative
-  remains a genuine solved/cap run. The client can replay this list against the puzzle rank
-  maps; play scoring and share output stay unchanged. This model-score anchor superseded
-  #57's proposed `par` before `par` was implemented — there is no `par` schema field.
+- **`benchmark` was REMOVED from the schema (user-decided 2026-08-12).** From #68
+  through #81 a puzzle could embed recorded LLM runs and the front end rendered a
+  display trio (standings lineup mid-game, leaderboard dialog on the solved screen).
+  The user retired the feature: it took screen space, cost real money and curation time
+  per puzzle, and the planned comparison story is other players' scores ("you beat x%
+  of users", a separate future issue). The schema field, its TS types
+  (`BenchmarkEntry`/`BenchmarkResults`), the web's parse/display code and its sprite
+  assets are deleted; the client simply ignores a stray `benchmark` key on an
+  already-published puzzle. **`packages/benchmark` (llm_play.py) is KEPT as lab-only
+  tooling for "scientific" reading** — same decision: `--in-place` (the puzzle-JSON
+  embed) and the whole `--selection` median/best machinery are gone from the harness
+  too; every invocation appends its full session record to the package's `output/`
+  lab artifact instead, and nothing writes into a puzzle file. See its own `AGENTS.md`.
+  The removal does not resurrect #57's proposed `par` — there is still
+  no `par` schema field.
 - `ranks` is keyed by **secret slug**; the inner map is keyed by **input slug** →
   `{word, rank}`. The value carries the **canonical accented form** of its group (see
   below), which the front displays — not necessarily the typed form.

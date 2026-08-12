@@ -127,9 +127,7 @@ card, and the share text — because "SCORE" alone reads as points to maximize w
 lower is better; singular `TRY` at 1). Like the rest of the UI chrome the label is
 localized (fr: `ESSAIS`/`ESSAI`, decided 2026-07-06); the unit stays named in every
 language. The solved tray shows the named `<tries> TRIES` headline on EVERY surface
-(decided 2026-07-25, superseding #110's headline-omitted-next-to-the-table exception:
-the leaderboard moved behind SEE MORE into its own full-screen dialog, whose player row
-also carries the count). The share card/text always name the unit.
+(decided 2026-07-25). The share card/text always name the unit.
 
 ---
 
@@ -184,14 +182,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
   actually spaces its stations by — runs to the map's own `TOP_K` edge. The pin is deleted
   with the coupling.
   **The CLOCK replaced the strike system (#163).** Two dailies should be two games:
-  Sentence mode is think slowly and beat the AI, Word mode is think fast and beat the clock.
+  Sentence mode is think slowly, Word mode is think fast and beat the clock.
   Everything the strikes legislated, the timer legislates for free — a repeat, an invalid
   word or a far miss punishes itself in the seconds it cost to type — so `STRIKES_TO_END`,
   the consecutive rule, end-by-strikes, `WordFailures`, the crosses row, `assets/cross-button.png`
   and the `--strike-gap` responsive override are all GONE, along with `srWordFailures` /
-  `srWordStrike`. Word mode has **no bots and never will**: an LLM cannot play a timed game
-  honestly and we never miseducate what a model did, so this mode's comparison story is
-  friends (a leaderboard, later), not AIs. That is a feature of the split, not a gap.
+  `srWordStrike`. Neither mode shows bots (the sentence game's LLM benchmark display was
+  removed 2026-08-12 — see the solved-result bullet): the comparison story is other
+  players (a score percentile, later), not AIs.
   **The economy is `game/wordGame.ts`, and every constant in it is a declared TUNING KNOB**
   (the way `STRIKES_TO_END` was): `START_SECONDS` (**60**) and the `RARITY_LADDER`. Nothing
   restates them — the HUD reads them and the tests DERIVE their expectations from them — so
@@ -863,9 +861,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (`srWordDone`, en "done" / fr « terminé ») — a timed-out run is finished, and calling it
   solved would claim an achievement this mode does not have. The visual surfaces read
   `isComplete(status)` so the strip (`Chooser`) and the calendar cell (`Archive`) do not
-  each restate the pair. Word runs never touch the streak, fire no new analytics events,
-  and have no benchmark opponents — and since #163 they never will, by decision (see the
-  no-bots note in the Word mode bullet).
+  each restate the pair. Word runs never touch the streak and fire no new analytics
+  events.
 - **Hole HISTORY modal (user-decided 2026-08-10, REPLACING the #117 route map):** tapping a
   HOLE opens the round's own journey toward that hole's secret — the player's guesses as
   stops on ONE line walking down to the hidden word. What the user retired is everything
@@ -1044,20 +1041,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   card/title named the right day all along, as `#<dayNumber>` then and as that same date
   since 2026-08-03 — see the share-card bullet). The archive **must not touch streaks**
   (separate issue).
-- **Solved-result hierarchy (decided 2026-07-10; leaderboard variant 2026-07-24, #110;
-  SEE-MORE dialog 2026-07-25):** the solved tray is sentence-specific and the SAME
+- **Solved-result hierarchy (decided 2026-07-10; the LLM benchmark display — standings
+  lineup, leaderboard dialog, SEE MORE — was REMOVED on 2026-08-12, user-decided: the
+  comparison story will be other players' scores, not recorded model runs):** the solved
+  tray is sentence-specific and the SAME
   compact stack at every breakpoint and on every surface: the named `<tries> TRIES`
-  headline, the PLAYER's full-width **run ruler**, then the actions — SHARE plus, when
-  displayed opponents exist, **SEE MORE** (i18n `seeMore`, fr `VOIR PLUS`). **The
-  leaderboard no longer renders inline in the tray (decided 2026-07-25, superseding
-  #110's inline table — too much information in the tray on mobile):** SEE MORE opens
-  `LeaderboardDialog`, a borderless full-screen native dialog on the SOLID app
-  background (the animated noise never plays under it) with generous row rhythm. It
-  wears the shared `ModalHeader` and rises as a **SHEET** from the bottom edge
-  (`sheet-up` / `sheet-down`, 2026-07-27 — see the modal-behaviour bullet); it is
-  closed by its header X or Escape, **never by a backdrop tap**, and closing leaves focus
-  unset. This dialog is the planned home of the deeper result views (#82): per-row
-  runs, tested words, per-hole word lists. **The run RULER replaced the bucketed
+  headline, the PLAYER's full-width **run ruler**, then SHARE. **The run RULER replaced the bucketed
   trajectory squares (decided 2026-07-25):** one continuous bar per run on the
   PROGRESS ramp (`components/RunRuler.tsx`), one cell per counted try colored
   `progressColor` at that try's reconstruction % — the RAW `progressTrajectory`, no
@@ -1122,47 +1111,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
   under a shared tick), so the row can reach `MAX_ROW_CELLS + 2`; and since the final try
   always solves, a finished run ALWAYS ends on a keycap (a 3-try perfect game is exactly
   `1️⃣2️⃣3️⃣`, no color at all). `solvedAt` is optional — without it the row is the plain ramp.
-  In the DIALOG's table:
-  one row per entrant sorted by score (player ahead on a tie, DNF last, `lineupModel`
-  order) — medal, tag, the entrant's run replayed into its ruler, count (DNF muted).
-  **Leaderboard rulers share ONE scale (decided 2026-07-25):** each bar's width is
-  proportional to its tries over the longest **SOLVED** run on the table, so lengths and
-  solve moments compare straight down the column. Solved, not longest: a DNF's run is not
-  a score — it ends at the harness's counted-try cap (`DEFAULT_CAP` 300) — so scaling to it
-  would squeeze every real bar, the player's included, into a few pixels. A DNF simply
-  overflows the scale and the ruler's own `min(…, 1)` fills its row, which reads right: it
-  ran the longest and still didn't finish. The colorize wave is paced separately, by the
-  longest run of ALL, since it has to sweep every cell ON SCREEN within its span: its
-  per-cell delay comes from
-  `rulerStagger(maxN, reduceMotion)`, which returns **0 under reduced motion** — the
+  The ruler's colorize wave paces its
+  per-cell delay with
+  `rulerStagger(n, reduceMotion)`, which returns **0 under reduced motion** — the
   global CSS rule collapses animation/transition DURATIONS but not DELAYS, so the ramp
   would otherwise still crawl across the bar for over a second for someone who asked for
-  no motion. **On mobile the tag stacks ABOVE its bar's
-  left edge (decided 2026-07-25)** — `.lb-main`, `display: contents` on desktop — so
-  the table tightens to medal | tag-over-ruler | count and the bars get the width.
-  **The table is MONOCHROME except the run rulers** (decided 2026-07-24): tags are
-  muted (the player's alone in fg), counts neutral — identity colors belong to the
-  characters, and the rulers are the single color voice — **plus the placement-medal
-  column (decided 2026-07-25):** each row leads with its 15×15 pixel-art medal sprite
-  (`assets/medals/1-4.png`, rendered at an exact 2×), drawn on the HEAT ramp's four
-  anchor stops — 1 hot cyan → 4 cold crimson — not classic podium metals. **The
-  PLAYER's tag alone is the solved-word gold** (decided 2026-07-24, replacing a
-  tried-and-dropped accent row border), and it reads **"YOU" in EVERY language** — the
-  `you` i18n key is deliberately untranslated (fr included; decided 2026-07-24), one
-  universal tag across lineup + leaderboard. Rows are **NOT interactive** — an inline
-  tap-to-unfold run viewer was tried and removed (too noisy); the run viewer arrives
-  with #82, on this dialog. The table is decorative (aria-hidden) with an sr-only
-  ranking line carrying the accessible result (also present in the tray, so the
-  ranking needs no modal). The lineup does NOT persist past the
-  solve: after the keyboard drops, its characters teleport OUT one tick apart (their
-  dissolve + shared-flash strips), and only once the last is gone do the results rise
-  into the tray (reduced motion or missing strips skip straight there). Both exit beats
-  hand the tray back through a signal the DOM has to produce (the keyboard's own
-  `animationend`, the lineup's tick clock), and the tray renders NOTHING until they
-  arrive — so each carries a **deadline** (`KB_EXIT_FALLBACK_MS` / `LINEUP_EXIT_FALLBACK_MS`
+  no motion. The keyboard's exit beat
+  hands the tray back through a signal the DOM has to produce (its own
+  `animationend`), and the tray renders NOTHING until it
+  arrives — so it carries a **deadline** (`KB_EXIT_FALLBACK_MS`
   in `Game.tsx`), a generous multiple of the real duration, cancelled by the genuine
   signal. A lost signal must never be able to strand the player on an empty tray. **The
-  SOURCE reveal is the third such signal and now carries the same deadline**
+  SOURCE reveal is the second such signal and carries the same kind of deadline**
   (`SOURCE_REVEAL_FALLBACK_MS`, 6s, added 2026-08-03): it gates `solvedSettled`, whose one
   consumer is `exploreDisabled`, so a report that never lands used to leave every hole
   untappable for the rest of the screen — the post-mortem reachable only by RELOADING, with
@@ -1175,26 +1135,25 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `visibilitychange`): the beat it backstops is paced by a frame and an interval, both of which
   the browser suspends or throttles while the tab is hidden, where a plain timer would keep full
   speed — so a wall-clock deadline could outrun a beat that had barely started and hand the holes
-  back over a citation still typing. The other two deadlines are still wall-clock; they gate the
-  tray rather than the sentence, and were left as they are. On a
-  streak solve these exit beats do NOT play hidden behind the celebration — keyboard and lineup
-  hold still under the modal and the drop + teleport-out start at its dismissal; the
-  source types only after the leaderboard has risen (decided 2026-07-24). **The sentence
-  must NOT move between the solved beats (decided 2026-07-24):** the lineup renders
-  inside a `.lineup-zone` band that keeps its height for the whole round — through the
-  exit and on rehydrated solves — and the tray's height is FIXED to the keyboard's
-  (taller solved content overflows into the empty band, never grows the tray), so
+  back over a citation still typing. The keyboard's deadline is still wall-clock; it gates the
+  tray rather than the sentence, and was left as it is. On a
+  streak solve the exit beat does NOT play hidden behind the celebration — the keyboard
+  holds still under the modal and the drop starts at its dismissal; the
+  source types only after the results have risen (decided 2026-07-24). **The sentence
+  must NOT move between the solved beats (decided 2026-07-24):** the tray's height is
+  FIXED to the keyboard's
+  (taller solved content overflows into the space above, never grows the tray), so
   .play's centering never shifts the phrase. **Fresh-solve sequence (decided 2026-07-10):** the
   solving submit immediately sends the prompt left while fading it out, in the same render
   that launches the final hole-hit feedback. The next stage waits until EVERY `Hole` reports
   its final secret rendered after its final settle animation completes — never a
   guessed timeout — so multi-word or throttled animation cannot be covered mid-resolution.
   A fresh active-day solve then holds the fully resolved sentence for 300ms before mounting
-  the streak modal. **The solved beats run STREAK → keyboard-drop + teleport-out →
+  the streak modal. **The solved beats run STREAK → keyboard-drop →
   results rise → SOURCE (decided 2026-07-24, #110 — reversing the 2026-07-10
   source-before-results order):** once the modal has completely dismissed (including its
   exit fade) — or immediately after the final holes settle on archive / no-streak play —
-  the exit beats play, the results rise into the tray, and only once the risen stack
+  the exit beat plays, the results rise into the tray, and only once the risen stack
   reports itself in place does the optional sentence source type quickly, letter by
   letter, with a trailing `_` (tally/colorize choreography continues beneath it; no
   metadata skips the typewriter). **The citation is MOUNTED for the whole round but
@@ -1251,7 +1210,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   existing play state, so every player sees it exactly once) — and PLAY
   (`markSentenceRulesSeen`) is its whole job. On the gate the PHRASE is on screen but the
   round holds back: the prompt lays out `retired` (invisible, inert, height reserved), the
-  lineup ZONE keeps its band with no characters in it, the holes are untappable and waveless
+  holes are untappable and waveless
   (`gateOpen` feeds `exploreDisabled` and vetoes `quiet`), and the TRAY holds the rules +
   PLAY in the keyboard's own footprint (`.rules-gate` — renamed from `.sentence-gate`
   when Word mode adopted the exact same stack the same day), so PLAY swaps what the tray
@@ -1264,8 +1223,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   full-width `.mix-btn`, so the gate and the graduation speak one button.** TWO rules, one
   idea each (`sentenceRulesGoal` / `sentenceRulesHistoryTap|Click`, the tap line in the
   input device's own verb — the streak hint's coarse-pointer test): the goal and the
-  history tap. The famous-AI line was CUT on the same user review — the lineup on screen
-  already says it. The gate is DERIVED, not state: `!sentenceRulesSeen && !solved &&
+  history tap. The famous-AI line was CUT on the same user review (and the standings
+  lineup it referred to was removed outright on 2026-08-12 with the benchmark display).
+  The gate is DERIVED, not state: `!sentenceRulesSeen && !solved &&
   guessCount === 0`, so a round already in progress (or solved, or rehydrated mid-play)
   never shows it, and an unset flag re-offers it until PLAY is actually tapped. No
   analytics event — the three-event invariant stands.
@@ -1432,17 +1392,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   same row** rather than inventing chrome, and since 2026-07-27 there is ONE component for it:
   **`components/ModalHeader.tsx`** — the app's row (`.topbar-inner` / `.topbar-left` /
   `.topbar-title` / `.topbar-right` / `.home-btn`) with a title and one close chip, minus the
-  flag (switching language out from under a modal would navigate the screen away). The route
-  map (#117) and the leaderboard (#110) both wear it; the leaderboard's own X floated in the
-  corner until then, so the app had two full-screen modals with two different dismissal chromes.
+  flag (switching language out from under a modal would navigate the screen away). The
+  history modal wears it (as the route map and the leaderboard dialog did before their
+  removals).
   **A modal adopting it owes it the structure that lets it paint nothing**: the header sits IN
-  FLOW above a scroller that owns the overflow (`.lb-scroll` / `.route-scroll`), so no content
-  can pass beneath it and no band is needed — the DIALOG must not scroll. Two consequences for
-  the leaderboard: its padding moved from the dialog to the scroller (padding on the dialog sits
-  outside the scroll and clips the table on a short viewport), and its backdrop-dismiss test
-  gained the scroller, which is now most of the backdrop. The dialog is named by a new i18n key
-  `leaderboard` (en LEADERBOARD / fr CLASSEMENT) rather than `seeMore`, which names the button's
-  ACTION, not the surface. The **StreakDialog deliberately does NOT take this header** — the
+  FLOW above a scroller that owns the overflow, so no content
+  can pass beneath it and no band is needed — the DIALOG must not scroll.
+  The **StreakDialog deliberately does NOT take this header** — the
   celebration has nothing focusable by decision, and a close chip would be the first thing on it.
 - **How a modal opens and closes — `hooks/useModalDismiss.ts` (decided 2026-07-27).** Three
   rules, shared so two modals cannot drift, and the StreakDialog is the standing exception to
@@ -1469,12 +1425,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `<dialog>` is `display: none` — anything a modal measures on open would read a tree with no
   boxes (the retired route map's opening scroll was exactly that hazard).
   **Which exit each wears:** the history modal RETRACTS INTO ITS WORD, because it belongs to
-  that word (the rule the route map it replaced established); the leaderboard is a **SHEET** —
-  up from the bottom edge to full screen, back down on
-  the way out — because a result screen belongs to nothing on the page. The sheet plays at
-  EVERY width, not just phones: this dialog is full-screen on the desktop too, and a
-  media-query-scoped exit would leave `animationend` unfired on desktop, where the close waits
-  on it.
+  that word (the rule the route map it replaced established). (The retired leaderboard
+  dialog's SHEET exit — up from the bottom edge, back down on the way out, at every width —
+  went with it on 2026-08-12; a future full-screen result surface should take that shape
+  back up.)
   The game's right group holds the **archive calendar icon** and help `?` (#55); the tutorial
   puts "TUTORIAL" in the left chip and the skip fast-forward in the right group. The globe
   ALWAYS opens the language screen; the Whippin mark is opt-in (`TopBar`'s `modeChooser`)

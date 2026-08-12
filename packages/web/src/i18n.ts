@@ -92,17 +92,8 @@ const STRINGS = {
   ariaChangeMode: { en: 'Change game mode', fr: 'Changer de mode de jeu' },
   modeSentence: { en: 'Sentence', fr: 'Phrase' },
   modeWord: { en: 'Word', fr: 'Mot' },
-  // Deliberately NOT translated (decided 2026-07-24): "YOU" is universal enough, and one
-  // label keeps the player's tag identical across languages (lineup + leaderboard).
-  you: { en: 'YOU', fr: 'YOU' },
-  dnf: { en: 'DNF', fr: 'DNF' },
   share: { en: 'SHARE', fr: 'PARTAGER' },
   copied: { en: 'COPIED', fr: 'COPIÉ' },
-  // Solved tray → the full leaderboard dialog (decided 2026-07-25).
-  seeMore: { en: 'SEE MORE', fr: 'VOIR PLUS' },
-  // That dialog's NAME, in its shared modal header and as its aria-label (2026-07-27). The
-  // button that opens it says SEE MORE, which names an action, not the surface it lands on.
-  leaderboard: { en: 'LEADERBOARD', fr: 'CLASSEMENT' },
   ariaClose: { en: 'close', fr: 'fermer' },
   // ---- route modal (#117): a hole's neighborhood drawn as a LINE you travel. The line
   // teaches by SHAPE — the terminus, "you are here", the departure and the roads are all
@@ -116,8 +107,8 @@ const STRINGS = {
   // CARTE): these words are exactly the ones the round answered with the floating `MISS`,
   // which is itself untranslated everywhere it appears (the tutorial's fr copy says MISS
   // too), so the shelf now names them in the vocabulary the player already met rather than
-  // describing where they sit. Untranslated like `you` and `dnf` for the same reason — one
-  // label, identical in every language.
+  // describing where they sit. Untranslated for the same reason MISS is — one label,
+  // identical in every language.
   routeOffMap: { en: 'MISSED', fr: 'MISSED' },
   // The streak celebration's ending hint: pure "what to do" — the whole screen dismisses,
   // so naming a "why" (continue/close — continue to WHAT? the game is done) would only
@@ -237,8 +228,7 @@ const STRINGS = {
   // clock), this one exists only for the instructions, so it is shown ONCE ever (the
   // persisted `sentenceRulesSeen` flag) and PLAY is its whole job. TWO rules, one idea
   // each — the goal and the history tap, the tap line in the input device's own verb (the
-  // tapAnywhere/clickAnywhere pattern); the AI-opponents line was cut on user review the
-  // same day (the lineup on screen says it). Rendered as BULLETS in the shared rules box
+  // tapAnywhere/clickAnywhere pattern). Rendered as BULLETS in the shared rules box
   // (the tutorial's coach dialog — see `.coach-rules`).
   sentenceRulesGoal: {
     en: 'Some words were swapped out. Guess the originals.',
@@ -425,17 +415,4 @@ export function srWordClockIdle(lang: string, seconds: number): string {
 export function srWordTimeUp(lang: string, total: number): string {
   if (uiLang(lang) === 'fr') return `temps écoulé — ${total} mots`;
   return `time up — ${total} words`;
-}
-
-// Screen-reader mirror of the standings lineup's meaningful events (#81) — the visual
-// lineup is decorative. Full model labels, never the compact tags. `srModelLead` is the
-// lead loss (the best model catches the player); `srModelAhead` a later pass.
-export function srModelLead(lang: string, label: string, tries: number): string {
-  if (uiLang(lang) === 'fr') return `${label} prend la tête à ${tries}`;
-  return `${label} takes the lead at ${tries}`;
-}
-
-export function srModelAhead(lang: string, label: string, tries: number): string {
-  if (uiLang(lang) === 'fr') return `${label} devant à ${tries}`;
-  return `${label} ahead at ${tries}`;
 }

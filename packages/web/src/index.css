@@ -553,9 +553,6 @@ button * {
      reserve this SAME height (.tray min-height), so swapping the keyboard for the results
      never reflows the layout nor leaves an empty hole. Mirrors .kb-key / .keyboard. */
   --kb-h: calc(3 * clamp(42px, 6.4vh, 54px) + 2 * 6px);
-  /* The lineup band's height, shared by .lineup-track and its reserving .lineup-zone —
-     the zone outlives the characters (#110), so the sentence above never shifts. */
-  --lineup-h: 112px;
 }
 
 /* The centered play region between the fixed HUD and the keyboard. It grows to fill
@@ -588,7 +585,7 @@ button * {
 
 /* Bottom zone: the keyboard while playing, the solved results once solved. The height is
    FIXED to the keyboard's (#110: fixed, not a min — solved content a few px taller must
-   overflow into the empty lineup band above, NEVER grow the tray, or .play's centering
+   overflow into the space above, NEVER grow the tray, or .play's centering
    moves the sentence between the solved beats), so the bottom edge and everything above
    stay put when the keyboard is replaced by the results — no reflow, no empty gap. */
 .tray {
@@ -603,7 +600,7 @@ button * {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 /* Results in the tray (#110): anchored to the BOTTOM, so solved content taller than the
-   keyboard rises INTO the empty lineup band above (with justify-content: center the
+   keyboard rises INTO the empty space above (with justify-content: center the
    overflow would split and push the share action under the screen edge instead). */
 .tray.tray-results {
   justify-content: flex-end;
@@ -646,7 +643,7 @@ button * {
 }
 /* The rules can outgrow the keyboard's footprint on a phone, so the gate takes the
    solved results' own answer (`.tray.tray-results`): anchor to the tray's BOTTOM and let
-   the extra height rise upward — into the sentence game's empty lineup band, or word
+   the extra height rise upward — into the sentence game's open play area, or word
    mode's open window — never below the screen, where it put the button out of reach. The
    tray's height never changes, so the button still swaps the keyboard in without moving
    the content above. */
@@ -658,197 +655,6 @@ button * {
     /* Past its own height + the safe-area pad, so the last row fully leaves the clip. */
     transform: translateY(calc(100% + env(safe-area-inset-bottom, 0px) + 8px));
   }
-}
-
-/* --- standings lineup (#81): the player + the 3 benchmark opponents standing side by
-   side between the input area and the keyboard, sorted by tries ascending (best far
-   left). Position encodes ORDER only — uniform 25% slots; the numbers below carry the
-   distances. Slots are absolutely positioned and slid by transform, so a standings
-   change is a slide exchange between live elements (React keys keep node identity).
-   Its height comes out of .play's flexible space, never the
-   keyboard's. Decorative (aria-hidden); Round mirrors its events into the live
-   region. --- */
-/* The lineup's LAYOUT SLOT, rendered for the whole round on a benchmarked puzzle —
-   including the solved state and rehydrated solves, where the characters are gone
-   (#110, decided 2026-07-24): the band keeps its height when the lineup inside
-   unmounts, so .play's flexible centering never moves the sentence mid-sequence. */
-.lineup-zone {
-  width: 100%;
-  height: var(--lineup-h);
-  display: flex;
-  justify-content: center;
-}
-.lineup {
-  width: 100%;
-  max-width: 680px; /* match the keyboard it stands above */
-  user-select: none;
-  pointer-events: none;
-}
-.lineup-track {
-  position: relative;
-  height: var(--lineup-h);
-}
-.lineup-slot {
-  position: absolute;
-  top: 0;
-  left: 0;
-  /* Divide the track by the entrant count (--n, set on .lineup-track): the row stays
-     edge-to-edge whether the player faces one opponent or the full display trio. */
-  width: calc(100% / var(--n, 4));
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  transform: translateX(calc(var(--i) * 100%));
-  transition: transform 0.35s ease-in-out;
-}
-/* Pixel characters (hand-drawn spritesheets under assets/characters/; the sheets VARY
-   in size per model): each renders at an exact INTEGER 2x of its OWN grid (zoom on the
-   natural size — a shared fixed box + object-fit would scale a smaller sheet
-   fractionally and blur it). The box stays a fixed 64px with the art BOTTOM-aligned,
-   so every character stands on the same baseline while the name row above keeps its
-   alignment (a taller 2x sheet, like fable's 70px, overflows upward into the tag gap
-   rather than growing the row). Character motion is always DRAWN frames (spritesheets
-   CSS-stepped, .lineup-idle below), never synthesized transforms. */
-.lineup-sprite {
-  height: 64px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-}
-/* Losing the lead lands like a hit: the same shake vocabulary as a struck hole word.
-   The shake rides the outer span while the idle frames play on the inner one, so the
-   two never fight. */
-.lineup-sprite.hit {
-  animation: word-shake 0.4s ease-in-out;
-}
-/* Teleport swap: the exchange is VISIBLE — at the end of the dissolve, the characters
-   collapsed into spheres, the slots take their new positions and this FAST transition
-   slides them across during the shared flash (--swap-ms, set by StandingsLineup to the
-   flash's exact duration), so the two orbs are seen quickly trading places before they
-   materialize. (StandingsLineup sets the class for the whole teleport.) */
-.lineup-teleporting .lineup-slot {
-  transition: transform var(--swap-ms, 0.18s) ease-in-out;
-}
-/* One 42x53 teleport strip cell (JS steps backgroundPositionX per tick), at the idle
-   sprites' 2x zoom and standing on the same flex-end baseline. Taller than the 64px
-   sprite box on purpose — the beam rises above the character and overflows upward;
-   flex: none keeps the 84px rendered width from being squeezed on quarter-row phone
-   slots (~80px), where it just overflows 2 transparent px per side. */
-.lineup-effect {
-  width: 42px;
-  height: 53px;
-  flex: none;
-  zoom: 2;
-  image-rendering: pixelated;
-  background-repeat: no-repeat;
-}
-/* Idle spritesheets, played the .cal-ripple way — background-size fits ONE frame
-   (frames x 100%) and steps(N) walks background-position-x (end value 100% x N/(N-1)
-   so the last frame lands on 100% and the loop wraps cleanly) at each character's own
-   frame pace, 2x zoom on the shared flex-end baseline. One sizing class per character (the sheets
-   vary in frame geometry AND count — the URL registry is IDLE_SHEETS in
-   StandingsLineup; keep both in sync). Standalone infinite decorations, so reduced
-   motion disables them outright (frame 0 stands still) rather than letting the global
-   rule collapse them. */
-.lineup-idle {
-  flex: none;
-  zoom: 2;
-  image-rendering: pixelated;
-  background-repeat: no-repeat;
-}
-/* player-idle.png: 176x31 = 8 frames of 22x31. */
-.lineup-idle.player {
-  width: 22px;
-  height: 31px;
-  background-size: 800% 100%;
-  animation: idle-8 0.8s steps(8) infinite;
-}
-/* fable-idle.png: 128x35 = 4 frames of 32x35, at 200ms per frame. */
-.lineup-idle.fable {
-  width: 32px;
-  height: 35px;
-  background-size: 400% 100%;
-  animation: idle-4 0.8s steps(4) infinite;
-}
-/* kimi-idle.png: 112x31 = 4 frames of 28x31, at 200ms per frame. */
-.lineup-idle.kimi {
-  width: 28px;
-  height: 31px;
-  background-size: 400% 100%;
-  animation: idle-4 0.8s steps(4) infinite;
-}
-/* gpt-idle.png: 128x32 = 4 frames of 32x32, at a slower 200ms per frame. */
-.lineup-idle.gpt {
-  width: 32px;
-  height: 32px;
-  background-size: 400% 100%;
-  animation: idle-4 0.8s steps(4) infinite;
-}
-@keyframes idle-8 {
-  to {
-    background-position-x: calc(100% * 8 / 7);
-  }
-}
-@keyframes idle-4 {
-  to {
-    background-position-x: calc(100% * 4 / 3);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .lineup-idle {
-    animation: none;
-  }
-}
-/* Caption split around the character (mobile-first: a slot is a QUARTER of the row —
-   at 320px that's ~73px — so the name and the number each get their own line rather
-   than fighting for width side by side): the name sits ABOVE the sprite wearing the
-   character's identity color (--slot-color, set per slot by StandingsLineup; it matches
-   the outline drawn into the sprite art), the brighter number below carries the live
-   distance. */
-.lineup-tag {
-  font-size: 12px;
-  letter-spacing: 1px;
-  color: var(--slot-color, var(--muted));
-  font-family: var(--press);
-  text-shadow: none;
-}
-/* A teleporting character travels nameless: the tag vanishes for the whole trip and
-   snaps back when it ends — visibility, not display, so the column never reflows. */
-.lineup-tag.teleporting {
-  visibility: hidden;
-}
-/* A changed try count LANDS (the floating hit numbers' vocabulary, not a silent swap):
-   the span is keyed by its value, so each change remounts it and replays the pop. */
-.lineup-score {
-  font-size: 18px;
-  color: var(--fg);
-  font-family: var(--press);
-  text-shadow: none;
-  margin-top: 6px; /* extra breath between the character's feet and its count */
-  animation: score-pop 0.25s ease-out;
-}
-@keyframes score-pop {
-  from {
-    transform: scale(1.6);
-  }
-  to {
-    transform: scale(1);
-  }
-}
-/* A DNF opponent is out of the race: its "score" recedes to the muted tag color so the
-   live numbers keep the contrast. */
-.lineup-score.dnf {
-  color: var(--muted);
-}
-/* Solved exit (#110, decided 2026-07-24): once the keyboard has dropped, the characters
-   teleport OUT one tick apart, left to right. A departing slot travels nameless AND
-   scoreless — its tag and count vanish with its first dissolve frame (visibility, not
-   display, so nothing reflows); past its last flash frame the slot renders empty until
-   the whole lineup unmounts and the leaderboard table takes the standings story. */
-.lineup-slot.exiting .lineup-tag,
-.lineup-slot.exiting .lineup-score {
-  visibility: hidden;
 }
 
 /* --- Floating app header (redesigned 2026-07-21): NO band, NO border — the old opaque
@@ -1508,20 +1314,13 @@ button * {
 /* Run ruler (decided 2026-07-24, replacing the bucketed squares): one continuous bar on
    the PROGRESS ramp, one flat cell per counted try (the raw trajectory — each cell is
    progressColor at that try's reconstruction %, no bucketing on screen), with
-   a white tick at each solving try and the dropped hole's sentence index under it. Width
-   is RELATIVE — calc'd from --n over --max-n (the longest SOLVED run on the surface) — so
-   on the leaderboard every bar shares one scale and solve moments align down the table.
-   The min() clamp is what a DNF rides on: its run ends at the harness's counted-try cap
-   rather than at a score, so it overflows the scale and simply fills the row.
+   a white tick at each solving try and the dropped hole's sentence index under it.
    The padding-bottom reserves the tick-number lane so rows keep their rhythm. */
 .run-ruler {
-  width: calc(min(var(--n) / var(--max-n), 1) * 100%);
-  /* Symmetric block padding: the bottom lane holds the tick numbers, the matching top
-     keeps the BAR (not the box) on the row's center line next to its tag and count. */
-  padding: 15px 0;
-}
-.run-ruler.solo {
   width: 100%;
+  /* Symmetric block padding: the bottom lane holds the tick numbers, the matching top
+     keeps the BAR (not the box) on the row's center line. */
+  padding: 15px 0;
 }
 .run-ruler-frame {
   width: 100%;
@@ -1579,81 +1378,13 @@ button * {
   line-height: 1;
   color: var(--fg);
 }
-/* Leaderboard table (#110; moved into the full-screen LeaderboardDialog behind the
-   tray's SEE MORE, decided 2026-07-25): one row per entrant sorted by score, its medal,
-   tag, its own replayed run as a ruler, its count on the right (DNF muted). One grid,
-   shared columns, so medals, tags, rulers, and counts each align down the table. Sized
-   GENEROUSLY — it owns a whole quiet screen now. */
-.leaderboard {
-  display: grid;
-  grid-template-columns: max-content max-content minmax(0, 1fr) max-content;
-  column-gap: clamp(12px, 3vw, 22px);
-  /* Row rhythm comes from .lb-row's block padding, NOT row-gap: the collapsed run
-     panels are zero-height grid rows, and a row-gap would still surround them. */
-  align-items: center;
-  width: 100%;
-  max-width: 520px;
-}
-/* One entrant row. Subgrid keeps its cells on the table's shared columns; the block
-   padding gives the table its row rhythm. NOT interactive for now — the run viewer
-   arrives with #82, on this dialog. */
-.lb-row {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: subgrid;
-  align-items: center;
-  padding: clamp(8px, 1.8vh, 16px) 0;
-}
-/* The table is MONOCHROME except the run rulers (decided 2026-07-24): identity colors
-   belong to the characters, and with them gone the tags + counts stay neutral so the
-   rulers are the single color voice. The ONE exception is the player's YOU tag in the
-   solved-word gold (decided 2026-07-24, replacing a tried-and-dropped row border) —
-   your row is found by the word, not by a frame. */
-/* Placement medal, first column: 15×15 pixel-art sprites (assets/medals/1-4.png) drawn
-   on the heat ramp's four anchor stops (1 hot cyan → 4 cold crimson), at an exact 2×. */
-.lb-medal {
-  display: block;
-  width: 30px;
-  height: 30px;
-  image-rendering: pixelated;
-}
-/* Tag + ruler wrapper: transparent to the desktop subgrid (its children keep their own
-   columns); the mobile block restyles it into a stacked tag-above-bar column. */
-.lb-main {
-  display: contents;
-}
-.lb-tag {
-  font-family: var(--press);
-  font-size: 12px;
-  letter-spacing: 1px;
-  color: var(--muted);
-  text-shadow: none;
-}
-.lb-tag.player {
-  color: var(--hole);
-}
-.lb-score {
-  font-family: var(--press);
-  font-size: 18px;
-  color: var(--fg);
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  text-shadow: none;
-}
-.lb-score.dnf {
-  color: var(--muted);
-}
-/* Actions row: SHARE (primary, first) beside SEE MORE when opponents exist; wraps on
-   the narrowest screens instead of overflowing. */
+/* Actions row: SHARE. */
 .result-actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: 12px;
 }
-/* The full leaderboard behind SEE MORE (decided 2026-07-25): the native dialog IS the
-   borderless full-screen surface, on the SOLID app background — the animated noise
-   never plays underneath — so the table finally has room and quiet. */
 /* ---- the shared modal header (ModalHeader), worn by every full-screen dialog ----
    NOT a modal chrome of its own: it reuses the app's own corner-chip row wholesale
    (`.topbar-inner` / `.topbar-left` / `.topbar-title` / `.topbar-right` / `.home-btn`, see
@@ -1661,8 +1392,7 @@ button * {
    background, the surface's name top-left and one control top-right, directly on the backdrop.
    All these rules add is `--hud-height` (declared on `.topbar`, which this row is not
    inside), keeping the row out of the scroller's flex growth, and the muted-until-touched
-   close. Extracted from the route map's own bar 2026-07-27, when the leaderboard stopped
-   floating its own X in the corner. */
+   close. Extracted from the route map's own bar 2026-07-27. */
 .modal-bar {
   --hud-height: clamp(38px, 5vh, 46px);
   flex: none;
@@ -1674,79 +1404,6 @@ button * {
   color: var(--fg);
 }
 
-/* Header row above, scroller below — the shape every modal wearing `.modal-bar` owes it (see
-   ModalHeader): with the SCROLLER owning the overflow, nothing can pass under the header, so
-   the header needs nothing painted behind it. The dialog itself must not scroll. */
-.lb-dialog[open] {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  width: 100%;
-  max-width: none;
-  height: 100%;
-  max-height: none;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  outline: 0;
-  background: var(--bg);
-  color: var(--fg);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-.lb-dialog::backdrop {
-  background: transparent;
-}
-/* It arrives as a SHEET: up from the bottom edge, straight to full screen (decided
-   2026-07-27). The route map is the exception — it zooms out of the word you tapped, because
-   it belongs to that word; a result screen belongs to nothing on the page, so it comes from
-   the edge instead. Applied at every width rather than only on phones: this dialog is
-   full-screen on the desktop too, so one motion covers both — and a media-query-scoped exit
-   would leave `animationend` unfired on desktop, where the close waits on it.
-
-   Pure translate, no fade: an opaque sheet covering the screen has nothing to fade from. Down
-   is quicker than up, the way a dismissal should be, and carries `forwards` so the sheet holds
-   off-screen for the frame between the animation ending and React unmounting it. */
-.lb-dialog[open] {
-  animation: sheet-up 200ms cubic-bezier(0.22, 0.68, 0.36, 1);
-}
-.lb-dialog[open].closing {
-  animation: sheet-down 160ms ease-in forwards;
-  pointer-events: none;
-}
-@keyframes sheet-up {
-  from {
-    transform: translateY(100%);
-  }
-  to {
-    transform: translateY(0);
-  }
-}
-@keyframes sheet-down {
-  from {
-    transform: translateY(0);
-  }
-  to {
-    transform: translateY(100%);
-  }
-}
-/* The scrollport, which also carries the frame's breathing room — padding on the DIALOG would
-   sit outside the scroll and clip the table on a short viewport. */
-.lb-scroll {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  padding: 8px 20px 24px;
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-/* Auto margins center the frame but collapse on short viewports so nothing clips. */
-.lb-dialog-frame {
-  width: min(520px, 100%);
-  margin: auto;
-}
-
 /* ===================== route map (issue #117) ===================== */
 /* A hole's guess HISTORY (user-decided 2026-08-10, replacing the #117 route map — the drawn
    neighborhood was rarely meaningful in practice, so the modal now answers the one question a
@@ -1756,7 +1413,7 @@ button * {
    of numbers the route map's "time" column taught, running hot to cold down the page — then
    the word AS TYPED. MISS closes the list in the coldest heat, exactly the word that floated
    over the hole when those guesses landed; the solving guess leads it in the solved-word blue.
-   Full-screen native dialog on the SOLID app background like the leaderboard. The LIST has no
+   Full-screen native dialog on the SOLID app background. The LIST has no
    motion of its own past its entrance — the zoom below is about the transition into the modal,
    and the cascade is about arrival, not about the list. */
 .history-dialog[open] {
@@ -2896,45 +2553,14 @@ button * {
     margin-bottom: -24px;
   }
   /* The solved results DON'T hug the 4px keyboard gap: unlike the keyboard they sit on
-     the 14px page inset, so their bottom gap matches the leaderboard's side margin —
-     the same thin frame on all three sides (decided 2026-07-24). +10px over the
-     keyboard's 4px = 14px. */
+     the 14px page inset — the same thin frame on all three sides (decided 2026-07-24).
+     +10px over the keyboard's 4px = 14px. */
   .tray.tray-results {
     padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
   }
   /* Word mode's overlaid result shares the sentence tray's 14px phone-bottom frame. */
   .game.word-game .word-footer-result {
     padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
-  }
-
-  /* Leaderboard on a phone: four side-by-side columns don't fit, and the tag column is
-     the worst waste — it moves ABOVE the bar's left edge (.lb-main stacks), so the
-     table tightens to medal | tag-over-ruler | count and the bar gets the freed width. */
-  .leaderboard {
-    grid-template-columns: max-content minmax(0, 1fr) max-content;
-  }
-  .lb-main {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    min-width: 0;
-    width: 100%;
-  }
-  .lb-main .run-ruler {
-    /* Stacked under its tag the bar needs no centering top lane — just room for the
-       tick overhang. */
-    padding-top: 4px;
-  }
-
-  /* Standings lineup (#81): the SAME 2x characters as desktop (they fit a quarter-row
-     even at 320px), just a tighter column gap to reclaim a little
-     vertical space; the height comes out of .play's flexible gap. The band var keeps
-     the reserving .lineup-zone in lockstep with the track. */
-  .game {
-    --lineup-h: 110px;
-  }
-  .lineup-slot {
-    gap: 5px;
   }
 
   /* Archive: the centering column carries over from the base rule; just clear the
@@ -2957,11 +2583,10 @@ button * {
   }
 }
 
-/* Very short viewports (older/smaller phones ≤600px tall, e.g. 320x568): the 3x lineup
-   (96px characters) + keyboard + 2-line sentence don't all fit that height, so tighten the
-   game's vertical rhythm — the flex gaps between the HUD, play area, lineup, and keyboard —
+/* Very short viewports (older/smaller phones ≤600px tall, e.g. 320x568): tighten the
+   game's vertical rhythm — the flex gaps between the HUD, play area, and keyboard —
    to keep the keyboard on-screen WITHOUT downgrading the pixel art. Height-based so a tall
-   narrow phone (which fits 3x fine) is untouched. */
+   narrow phone is untouched. */
 @media (max-height: 600px) {
   .game {
     gap: 8px;

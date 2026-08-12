@@ -70,30 +70,12 @@ export interface Source {
   work?: string; // the piece's title
 }
 
-// Offline LLM opponent result (#68/#80). The full label is used on the solved screen;
-// the short tag is used by compact race UI. `run` is the selected median run's counted
-// display-form guesses in submission order. Null tries means the model hit the curator's
-// counted-try cap without solving (DNF); its full run is still retained.
-export interface BenchmarkEntry {
-  model: string;
-  label: string;
-  tag: string;
-  tries: number | null;
-  run: string[];
-}
-
-// Every model tested with `--in-place` is recorded here (variable length, unique model +
-// tag). The front end owns the display filter and shows only its display trio (FABLE,
-// KIMI K3, GPT-5.6); the rest ride along for the archive/lab without being rendered.
-export type BenchmarkResults = BenchmarkEntry[];
-
 export interface Puzzle {
   lang: string;
   words: string[]; // full sentence, accents kept
   holes: Hole[]; // one per selected occurrence, sorted by pos ascending
   ranks: RankMap; // keyed by secret slug, then input slug
   source?: Source; // optional origin metadata (#5), shown on the solved screen (#8)
-  benchmark?: BenchmarkResults; // optional tested-model results; front end filters display (#68/#80/#81)
 }
 
 // The second puzzle type: ONE word and its ranked neighborhood, with no sentence

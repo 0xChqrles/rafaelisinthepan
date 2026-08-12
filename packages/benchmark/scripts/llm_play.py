@@ -51,78 +51,64 @@ sys.path.insert(0, str(GENERATION_SCRIPTS_DIR))
 from slug import slug  # noqa: E402
 
 
-# Curator-editable benchmark roster. `--in-place` records EVERY tested model into the
-# puzzle's `benchmark` array; the front end owns the display filter and shows only the three
-# `display` models (FABLE, KIMI K3, GPT-5.6). The flag here is kept in sync as documentation
-# and a roster invariant, but no longer gates what `--in-place` writes. Full labels are
-# honest model family names for the solved screen, while tags are compact pixel-friendly
-# strip forms.
+# Curator-editable benchmark roster. Results are lab records only (the app's benchmark
+# display was removed 2026-08-12): every session is appended in full to the puzzle's
+# `output/<puzzle>.bench.json` artifact and nothing is written back into the puzzle.
+# Full labels are honest model family names; tags are compact console forms.
 MODELS = [
     {
         "provider": "anthropic",
         "model_id": "claude-opus-4-8",
         "label": "CLAUDE OPUS",
         "tag": "OPUS",
-        "display": False,
     },
     {
         "provider": "anthropic",
         "model_id": "claude-sonnet-5",
         "label": "CLAUDE SONNET",
         "tag": "SONNET",
-        "display": False,
     },
     {
         "provider": "openai",
         "model_id": "gpt-5.6-sol",
         "label": "GPT-5.6",
         "tag": "GPT",
-        "display": True,
     },
     {
         "provider": "openai",
         "model_id": "gpt-5.6-terra",
         "label": "GPT-5.6 TERRA",
         "tag": "TERRA",
-        "display": False,
     },
     {
         "provider": "openai",
         "model_id": "gpt-5.6-luna",
         "label": "GPT-5.6 LUNA",
         "tag": "LUNA",
-        "display": False,
     },
     {
         "provider": "anthropic",
         "model_id": "claude-fable-5",
         "label": "CLAUDE FABLE",
         "tag": "FABLE",
-        "display": True,
     },
     {
         "provider": "kimi",
         "model_id": "k3",
         "label": "KIMI K3",
         "tag": "KIMI",
-        "display": True,
     },
 ]
-DISPLAY_MODEL_COUNT = 3
 
 # Bump whenever the opening rules or turn-feedback scaffold changes materially. Results
 # are attributable to a model id plus this prompt version and the CLI's printed effort.
 PROMPT_VERSION = "23"
 
 DEFAULT_CAP = 300
-MIN_IN_PLACE_RUNS = 3
-DEFAULT_RUNS = MIN_IN_PLACE_RUNS
+DEFAULT_RUNS = 1
 SessionMode = Literal["persistent", "stateless"]
 SESSION_MODES: tuple[SessionMode, ...] = ("persistent", "stateless")
 DEFAULT_SESSION: SessionMode = "persistent"
-SelectionMode = Literal["median", "best"]
-SELECTION_MODES: tuple[SelectionMode, ...] = ("median", "best")
-DEFAULT_SELECTION: SelectionMode = "median"
 MAX_CONSECUTIVE_UNPARSEABLE = 5
 MAX_NONCOUNTING_REPLIES = 5
 TOKEN_USAGE_SCHEMA_VERSION = 1
@@ -153,19 +139,7 @@ DEEP_REASONING_MAX_TOKENS = 64_000
 DECISION_OUTPUT_MAX_TOKENS = 512
 PROSE_OUTPUT_MAX_TOKENS = 8_192
 OutputMode = Literal["word", "decision", "prose"]
-MedianPruneReason = Literal["upper_half", "dnf_majority"]
-MEDIAN_PRUNE_REASONS: tuple[MedianPruneReason, ...] = (
-    "upper_half",
-    "dnf_majority",
-)
-RunTermination = Literal[
-    "solved",
-    "cap",
-    "cannot_beat_best",
-    "upper_half",
-    "dnf_majority",
-    "reply_error",
-]
+RunTermination = Literal["solved", "cap", "reply_error"]
 
 AuthMode = Literal["api", "subscription"]
 AUTH_MODES: tuple[AuthMode, ...] = ("api", "subscription")
@@ -338,7 +312,6 @@ class ModelConfig(TypedDict):
     model_id: str
     label: str
     tag: str
-    display: bool
 
 
 class TokenUsage(TypedDict):
@@ -402,8 +375,8 @@ class TryProgress:
 
 @dataclass(frozen=True)
 class RunResult:
-    # None is never embedded for a cost-pruned run. `termination` distinguishes those
-    # censored attempts from genuine cap DNFs.
+    # None = the run did not solve (a genuine cap DNF, or an aborted reply_error run —
+    # `termination` tells them apart).
     tries: int | None
     counted_tries: int
     turns: int
@@ -417,23 +390,10 @@ class RunResult:
     raw_provider_token_usage: tuple[dict[str, Any], ...] = ()
 
 
-MedianPrunePredicate = Callable[[int], MedianPruneReason | None]
-
-
 @dataclass(frozen=True)
 class ModelSummary:
     config: ModelConfig
     results: tuple[RunResult, ...]
-    selection: SelectionMode
-    selected_run_index: int
-
-    @property
-    def selected_run(self) -> RunResult:
-        return self.results[self.selected_run_index]
-
-    @property
-    def tries(self) -> int | None:
-        return self.selected_run.tries
 
     @property
     def turns(self) -> int:
@@ -450,19 +410,6 @@ class ModelSummary:
     @property
     def run_tried_words(self) -> tuple[tuple[str, ...], ...]:
         return tuple(result.tried_words for result in self.results)
-
-    def benchmark_entry(self) -> dict[str, Any]:
-        if self.selected_run.termination not in ("solved", "cap"):
-            raise ValueError(
-                "an incomplete or cost-pruned run cannot be embedded"
-            )
-        return {
-            "model": self.config["model_id"],
-            "label": self.config["label"],
-            "tag": self.config["tag"],
-            "tries": self.tries,
-            "run": list(self.selected_run.tried_words),
-        }
 
 
 class IncompleteRunError(RuntimeError):
@@ -1552,8 +1499,6 @@ def play_puzzle(
     on_try: TryReporter | None = None,
     strategy: str | None = None,
     rules_only: bool = False,
-    best_score_to_beat: int | None = None,
-    median_prune: MedianPrunePredicate | None = None,
 ) -> RunResult:
     """Run one append-only model conversation through the real puzzle rules.
 
@@ -1563,38 +1508,9 @@ def play_puzzle(
     """
     if not _is_int(cap) or cap <= 0:
         raise ValueError("cap must be a positive integer")
-    if best_score_to_beat is not None and (
-        not _is_int(best_score_to_beat) or best_score_to_beat <= 0
-    ):
-        raise ValueError("best score to beat must be a positive integer")
-    if best_score_to_beat is not None and median_prune is not None:
-        raise ValueError("best and median pruning cannot be combined")
     referee = PuzzleReferee(puzzle, vocab)
     if referee.solved:
         raise ValueError("puzzle starts solved; no benchmark can be played")
-
-    def current_median_prune_reason(
-        live_tries: int,
-    ) -> MedianPruneReason | None:
-        if median_prune is None:
-            return None
-        reason = median_prune(live_tries)
-        if reason is not None and reason not in MEDIAN_PRUNE_REASONS:
-            raise ValueError(f"unsupported median prune reason: {reason}")
-        return reason
-
-    initial_prune = current_median_prune_reason(0)
-    if initial_prune is not None:
-        return RunResult(
-            tries=None,
-            counted_tries=0,
-            turns=0,
-            duration=0.0,
-            tried_words=(),
-            conversation=(),
-            turn_token_usage=(),
-            termination=initial_prune,
-        )
 
     messages: list[Message] = [
         {
@@ -1718,54 +1634,6 @@ def play_puzzle(
                 conversation=tuple(message.copy() for message in messages),
                 turn_token_usage=tuple(turn_token_usage),
                 termination="solved",
-                raw_provider_token_usage=tuple(raw_provider_token_usage),
-            )
-        # A median upper-half bound equal to the cap saves no calls. Preserve this
-        # genuine cap DNF for audit rather than mislabeling it as censored. Best-mode
-        # ordering remains unchanged: its incumbent stop is a separate contract.
-        if median_prune is not None and feedback.tries >= cap:
-            return RunResult(
-                tries=None,
-                counted_tries=feedback.tries,
-                turns=turns,
-                duration=time.monotonic() - started,
-                tried_words=tuple(referee.tried_words),
-                conversation=tuple(message.copy() for message in messages),
-                turn_token_usage=tuple(turn_token_usage),
-                termination="cap",
-                raw_provider_token_usage=tuple(raw_provider_token_usage),
-            )
-        median_prune_reason_now = current_median_prune_reason(
-            feedback.tries
-        )
-        if median_prune_reason_now is not None:
-            return RunResult(
-                tries=None,
-                counted_tries=feedback.tries,
-                turns=turns,
-                duration=time.monotonic() - started,
-                tried_words=tuple(referee.tried_words),
-                conversation=tuple(message.copy() for message in messages),
-                turn_token_usage=tuple(turn_token_usage),
-                termination=median_prune_reason_now,
-                raw_provider_token_usage=tuple(raw_provider_token_usage),
-            )
-        # In best mode a run that is still unsolved at the incumbent score cannot tie
-        # or beat it: solving now was checked above, and another counted guess would be
-        # strictly worse. Preserve the paid prefix as a censored lab run and stop.
-        if (
-            best_score_to_beat is not None
-            and feedback.tries >= best_score_to_beat
-        ):
-            return RunResult(
-                tries=None,
-                counted_tries=feedback.tries,
-                turns=turns,
-                duration=time.monotonic() - started,
-                tried_words=tuple(referee.tried_words),
-                conversation=tuple(message.copy() for message in messages),
-                turn_token_usage=tuple(turn_token_usage),
-                termination="cannot_beat_best",
                 raw_provider_token_usage=tuple(raw_provider_token_usage),
             )
         if feedback.tries >= cap:
@@ -2814,83 +2682,6 @@ def provider_reply(
     raise ValueError(f"unsupported provider: {provider}")
 
 
-def median_prune_reason(
-    finalized_results: Sequence[RunResult],
-    live_tries: int,
-    *,
-    total_runs: int,
-) -> MedianPruneReason | None:
-    """Return a safe median-only stop reason for the current sequential run.
-
-    A solved-score bound can stop only the live run, after its solve check. A cap-DNF
-    majority fixes the median at DNF and lets every not-yet-started run stop at zero.
-    Cost-pruned results never count as genuine cap DNFs.
-    """
-    if not _is_int(total_runs) or total_runs <= 0 or total_runs % 2 == 0:
-        raise ValueError("total median runs must be a positive odd integer")
-    if not _is_int(live_tries) or live_tries < 0:
-        raise ValueError("live tries must be a non-negative integer")
-    if len(finalized_results) > total_runs:
-        raise ValueError("finalized runs cannot exceed total runs")
-    if total_runs == 1 or len(finalized_results) == total_runs:
-        return None
-
-    median_count = (total_runs + 1) // 2
-    dnf_count = sum(
-        result.termination == "cap" for result in finalized_results
-    )
-    if dnf_count >= total_runs - median_count + 1:
-        return "dnf_majority"
-
-    solved_scores = sorted(
-        result.tries
-        for result in finalized_results
-        if result.tries is not None
-    )
-    if (
-        len(solved_scores) >= median_count
-        and live_tries >= solved_scores[median_count - 1]
-    ):
-        return "upper_half"
-    return None
-
-
-def _selection_order(
-    item: tuple[int, RunResult],
-) -> tuple[float, int, int, int]:
-    index, result = item
-    return (
-        math.inf if result.tries is None else result.tries,
-        0 if result.termination in ("solved", "cap") else 1,
-        result.turns,
-        index,
-    )
-
-
-def select_median_run(results: Sequence[RunResult]) -> int:
-    """Return the actual median run's original index under the contract ordering."""
-    if not results:
-        raise ValueError("cannot select the median of zero runs")
-    if len(results) % 2 == 0:
-        raise ValueError("run count must be odd so the median is an actual run")
-    ordered = sorted(enumerate(results), key=_selection_order)
-    return ordered[(len(results) - 1) // 2][0]
-
-
-def select_best_run(results: Sequence[RunResult]) -> int:
-    """Return the lowest success, or a stable full-cap DNF when none succeeded."""
-    if not results:
-        raise ValueError("cannot select the best of zero runs")
-    return min(
-        enumerate(results),
-        key=lambda item: (
-            math.inf if item[1].tries is None else item[1].tries,
-            item[1].turns,
-            item[0],
-        ),
-    )[0]
-
-
 def benchmark_model(
     config: ModelConfig,
     puzzle: dict[str, Any],
@@ -2901,25 +2692,12 @@ def benchmark_model(
     runs: int,
     on_try: ModelTryReporter | None = None,
     playbook: str | None = None,
-    selection: SelectionMode = DEFAULT_SELECTION,
 ) -> ModelSummary:
     if not _is_int(runs) or runs <= 0:
         raise ValueError("runs must be a positive integer")
-    if selection not in SELECTION_MODES:
-        raise ValueError(f"unsupported run selection mode: {selection}")
-    if selection == "median" and runs % 2 == 0:
-        raise ValueError("runs must be odd so the median is an actual run")
     try:
         results: list[RunResult] = []
         for run_number in range(1, runs + 1):
-            incumbent_best = min(
-                (
-                    result.tries
-                    for result in results
-                    if result.tries is not None
-                ),
-                default=None,
-            )
             reporter = None
             if on_try is not None:
 
@@ -2927,21 +2705,6 @@ def benchmark_model(
                     update: TryProgress, current_run: int = run_number
                 ) -> None:
                     on_try(current_run, update)
-
-            median_pruner: MedianPrunePredicate | None = None
-            if selection == "median":
-                finalized_results = tuple(results)
-
-                def should_prune_median(
-                    live_tries: int,
-                ) -> MedianPruneReason | None:
-                    return median_prune_reason(
-                        finalized_results,
-                        live_tries,
-                        total_runs=runs,
-                    )
-
-                median_pruner = should_prune_median
 
             results.append(
                 play_puzzle(
@@ -2951,71 +2714,13 @@ def benchmark_model(
                     cap=cap,
                     on_try=reporter,
                     strategy=playbook,
-                    best_score_to_beat=(
-                        incumbent_best
-                        if selection == "best"
-                        else None
-                    ),
-                    median_prune=median_pruner,
                 )
             )
     finally:
         close = getattr(model_reply, "close", None)
         if callable(close):
             close()
-    return ModelSummary(
-        config=config,
-        results=tuple(results),
-        selection=selection,
-        selected_run_index=(
-            select_median_run(results)
-            if selection == "median"
-            else select_best_run(results)
-        ),
-    )
-
-
-def assert_benchmark_entry_consistent(
-    puzzle: dict[str, Any],
-    vocab: Iterable[str],
-    entry: Mapping[str, Any],
-    *,
-    cap: int,
-) -> None:
-    """Hard-fail before embed if the distilled run cannot reproduce its score/state."""
-    run = entry.get("run")
-    stored_tries = entry.get("tries")
-    if not isinstance(run, list) or not all(isinstance(word, str) for word in run):
-        raise ValueError("benchmark consistency: run must be an array of strings")
-    if stored_tries is not None and (
-        not _is_int(stored_tries) or stored_tries <= 0
-    ):
-        raise ValueError("benchmark consistency: tries must be positive or null")
-
-    referee = PuzzleReferee(puzzle, vocab)
-    for word in run:
-        if referee.solved:
-            raise ValueError(
-                "benchmark consistency: run contains guesses after the puzzle was solved"
-            )
-        feedback = referee.submit(word)
-        if feedback.kind != "counted":
-            raise ValueError(
-                "benchmark consistency: run contains an invalid or folded-duplicate guess"
-            )
-
-    if stored_tries is None:
-        if referee.solved or referee.tries != cap:
-            raise ValueError(
-                "benchmark consistency: DNF run must remain unsolved at the counted-try cap"
-            )
-        return
-    if not referee.solved or referee.tries != stored_tries:
-        state = "solved" if referee.solved else "unsolved"
-        raise ValueError(
-            "benchmark consistency: replay score/state mismatch "
-            f"(stored={stored_tries}, replayed={referee.tries}, {state})"
-        )
+    return ModelSummary(config=config, results=tuple(results))
 
 
 def _configured_models() -> list[ModelConfig]:
@@ -3025,7 +2730,6 @@ def _configured_models() -> list[ModelConfig]:
         model_id = raw.get("model_id")
         label = raw.get("label")
         tag = raw.get("tag")
-        display = raw.get("display")
         if provider not in PROVIDER_ENV:
             raise ValueError(f"unsupported provider in MODELS: {provider!r}")
         if not isinstance(model_id, str) or not model_id.strip():
@@ -3046,20 +2750,13 @@ def _configured_models() -> list[ModelConfig]:
             raise ValueError(
                 "every MODELS tag must be 1–6 uppercase pixel-friendly characters"
             )
-        if not isinstance(display, bool):
-            raise ValueError("every MODELS entry needs a boolean display flag")
         configs.append(
             {
                 "provider": provider,
                 "model_id": model_id,
                 "label": label,
                 "tag": tag,
-                "display": display,
             }
-        )
-    if sum(config["display"] for config in configs) != DISPLAY_MODEL_COUNT:
-        raise ValueError(
-            f"MODELS must select exactly {DISPLAY_MODEL_COUNT} display entries"
         )
     if len({config["model_id"] for config in configs}) != len(configs):
         raise ValueError("MODELS model_id values must be unique")
@@ -3191,7 +2888,7 @@ def _exclusive_file_lock(path: Path):
 
     `_write_json_atomic` makes the final replace atomic, but every caller here first READS
     the file, edits the parsed object, then writes it back — and a benchmark run takes
-    minutes, so two `--in-place` runs for different models routinely overlap. Without a lock
+    minutes, so two runs for different models routinely overlap. Without a lock
     both read the same bytes and the second replace silently discards the first's record.
     The lock is held on a sidecar `.<name>.lock` (never the data file itself, which
     `os.replace` swaps out from under any descriptor), so the read and the write sit inside
@@ -3264,7 +2961,6 @@ def _lab_session(
     for index, result in enumerate(summary.results, start=1):
         run: dict[str, Any] = {
             "index": index,
-            "selected": index - 1 == summary.selected_run_index,
             "guesses": list(result.tried_words),
             "tries": result.tries,
             "counted_tries": result.counted_tries,
@@ -3305,11 +3001,7 @@ def _lab_session(
         "effective_provider_effort": effective_effort,
         "label": config["label"],
         "tag": config["tag"],
-        "display": config["display"],
-        "selection": summary.selection,
-        "selected_run": summary.selected_run_index + 1,
         "duration": summary.duration,
-        "benchmark_entry": summary.benchmark_entry(),
         "runs": runs,
     }
     total_usage = _aggregate_token_usage(
@@ -3321,7 +3013,6 @@ def _lab_session(
     )
     if total_usage is not None:
         record["token_usage"] = total_usage
-    record[f"{summary.selection}_run"] = summary.selected_run_index + 1
     if playbook_sha256 is not None:
         record["playbook_sha256"] = playbook_sha256
     return record
@@ -3341,8 +3032,8 @@ def write_lab_artifact(
 ) -> tuple[Path, dict[str, Any]]:
     """Append one complete model session to the puzzle's unpublished lab record.
 
-    The read and the write are one locked critical section: overlapping `--in-place` runs
-    for different models otherwise both append to the same start-of-cycle snapshot and the
+    The read and the write are one locked critical section: overlapping runs for
+    different models otherwise both append to the same start-of-cycle snapshot and the
     second replace drops the first's session.
     """
     directory = BENCHMARK_OUTPUT_DIR if output_dir is None else output_dir
@@ -3385,126 +3076,6 @@ def write_lab_artifact(
     return path, artifact
 
 
-def _model_roster_index(model_id: Any) -> int:
-    """Stable roster position for deterministic on-disk ordering; unknown ids sort last."""
-    for index, config in enumerate(_configured_models()):
-        if config["model_id"] == model_id:
-            return index
-    return len(MODELS)
-
-
-def _sort_benchmark_entries(
-    entries: Iterable[Mapping[str, Any]],
-) -> list[dict[str, Any]]:
-    """Roster order keeps the embedded array deterministic across per-model upserts."""
-    return sorted(
-        (dict(entry) for entry in entries),
-        key=lambda entry: (
-            _model_roster_index(entry.get("model")),
-            str(entry.get("model")),
-        ),
-    )
-
-
-def benchmark_entry_replays(
-    puzzle: Mapping[str, Any], vocab: Iterable[str], raw_entry: Any
-) -> bool:
-    """True when a lean display entry is well-shaped AND still replays this puzzle.
-
-    Used to keep only the previously embedded entries that survive a sentence/ranks edit
-    when a new model is upserted; a stale entry is dropped rather than shipped broken.
-    """
-    if not isinstance(raw_entry, dict):
-        return False
-    required = {"model", "label", "tag", "tries", "run"}
-    if not required.issubset(raw_entry):
-        return False
-    model_id = raw_entry["model"]
-    label = raw_entry["label"]
-    tag = raw_entry["tag"]
-    tries = raw_entry["tries"]
-    run = raw_entry["run"]
-    if (
-        not isinstance(model_id, str)
-        or not model_id
-        or model_id != model_id.strip()
-        or not isinstance(label, str)
-        or label != label.strip()
-        or not MODEL_LABEL_RE.fullmatch(label)
-        or not isinstance(tag, str)
-        or tag != tag.strip()
-        or not MODEL_TAG_RE.fullmatch(tag)
-        or (tries is not None and (not _is_int(tries) or tries <= 0))
-        or not isinstance(run, list)
-        or not run
-        or not all(
-            isinstance(word, str) and word and word == word.strip() for word in run
-        )
-        or (tries is not None and len(run) != tries)
-    ):
-        return False
-    try:
-        # A DNF's complete run ends exactly at its original cap, so its length is
-        # sufficient to reconstruct that cap even though the lean payload omits it.
-        replay_cap = len(run) if tries is None else DEFAULT_CAP
-        assert_benchmark_entry_consistent(puzzle, vocab, raw_entry, cap=replay_cap)
-    except ValueError:
-        return False
-    return True
-
-
-def upsert_benchmark_entry(
-    puzzle: Mapping[str, Any],
-    vocab: Iterable[str],
-    entry: Mapping[str, Any],
-) -> tuple[list[dict[str, Any]], list[str]]:
-    """Return (new roster-ordered benchmark list, dropped-stale model ids) for `entry`.
-
-    Any existing entry for the same model is replaced by the fresh run; every OTHER existing
-    entry is kept only if it still replays the current puzzle, so a sentence/ranks edit
-    silently prunes what it invalidated instead of shipping a broken run.
-    """
-    existing = puzzle.get("benchmark")
-    kept: list[dict[str, Any]] = []
-    dropped: list[str] = []
-    if isinstance(existing, list):
-        for raw in existing:
-            if isinstance(raw, dict) and raw.get("model") == entry["model"]:
-                continue  # replaced by the fresh run
-            if benchmark_entry_replays(puzzle, vocab, raw):
-                kept.append(dict(raw))
-            else:
-                model_id = raw.get("model") if isinstance(raw, dict) else None
-                dropped.append(model_id if isinstance(model_id, str) else "<malformed>")
-    return _sort_benchmark_entries([*kept, dict(entry)]), dropped
-
-
-def write_benchmark(
-    path: Path,
-    puzzle: dict[str, Any],
-    entries: Sequence[Mapping[str, Any]] | None,
-) -> None:
-    """Embed a variable-length benchmark array (unique model + tag) or drop the field.
-
-    The array holds EVERY tested model; the front end owns the display filter. `None`
-    removes the field entirely (byte-compatible with a puzzle that never had one).
-    """
-    if entries is None:
-        puzzle.pop("benchmark", None)
-    else:
-        if not entries:
-            raise ValueError("benchmark payload must contain at least one entry")
-        copied = [dict(entry) for entry in entries]
-        model_ids = {entry.get("model") for entry in copied}
-        if len(model_ids) != len(copied) or None in model_ids:
-            raise ValueError("benchmark payload model entries must be unique")
-        tags = {entry.get("tag") for entry in copied}
-        if len(tags) != len(copied) or None in tags:
-            raise ValueError("benchmark payload tag entries must be unique")
-        puzzle["benchmark"] = copied
-    _write_json_atomic(path, puzzle)
-
-
 def _positive_int(value: str) -> int:
     parsed = int(value)
     if parsed <= 0:
@@ -3539,7 +3110,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "--effort": f"Valid values: {', '.join(EFFORT_LEVELS)}.",
             "--auth": f"Valid values: {', '.join(AUTH_MODES)}.",
             "--session": f"Valid values: {', '.join(SESSION_MODES)}.",
-            "--selection": f"Valid values: {', '.join(SELECTION_MODES)}.",
         },
         description="Make one configured LLM play a Whippin puzzle offline and report its score.",
     )
@@ -3561,19 +3131,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=_positive_int,
         default=DEFAULT_RUNS,
         help=(
-            "run count for the selected model; median selection requires an odd count "
+            "how many full runs to play and record for the selected model "
             f"(default: {DEFAULT_RUNS})"
-        ),
-    )
-    parser.add_argument(
-        "--selection",
-        choices=SELECTION_MODES,
-        default=DEFAULT_SELECTION,
-        help=(
-            "saved representative run: actual median, or lowest successful best; "
-            "sequential median runs prune only provable upper-half tails or after a "
-            "cap-DNF majority; best prunes later attempts once they cannot beat the incumbent "
-            f"(default: {DEFAULT_SELECTION})"
         ),
     )
     parser.add_argument(
@@ -3612,32 +3171,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "hash-verified final_playbook is injected"
         ),
     )
-    parser.add_argument(
-        "--in-place",
-        action="store_true",
-        help=(
-            "append the full lab artifact and upsert this model's result into the "
-            f"puzzle's optional benchmark array (requires median selection, persistent "
-            f"session and at least {MIN_IN_PLACE_RUNS} odd runs at the current prompt)"
-        ),
-    )
     args = parser.parse_args(argv)
     try:
         args.model_config = select_model(args.model)
     except ValueError as exc:
         parser.error(str(exc))
-    if args.selection == "median" and args.runs % 2 == 0:
-        parser.error("--runs must be odd so the median is an actual run")
-    # `--in-place` writes the shipped, replay-valid record, so it accepts only the canonical
-    # benchmark configuration: the actual-median representative over the default run count,
-    # from one native session per run. (The run is always at the current prompt version.)
-    if args.in_place:
-        if args.selection != "median":
-            parser.error("--in-place requires --selection median")
-        if args.session != "persistent":
-            parser.error("--in-place requires --session persistent")
-        if args.runs < MIN_IN_PLACE_RUNS:
-            parser.error(f"--in-place requires at least {MIN_IN_PLACE_RUNS} runs")
     try:
         _validate_provider_effort(args.model_config["provider"], args.auth, args.effort)
     except ValueError as exc:
@@ -3706,7 +3244,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"model={config['model_id']} transport={_transport_name(config, args.auth)} "
         f"auth={args.auth} session={args.session} requested_effort={args.effort} "
         f"effective_provider_effort={effective_effort} cap={args.cap} runs={args.runs} "
-        f"selection={args.selection} token_usage_schema={TOKEN_USAGE_SCHEMA_VERSION} "
+        f"token_usage_schema={TOKEN_USAGE_SCHEMA_VERSION} "
         f"playbook={playbook_sha256 or 'none'}",
         flush=True,
     )
@@ -3765,7 +3303,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             runs=args.runs,
             on_try=print_try,
             playbook=playbook,
-            selection=args.selection,
         )
     except Exception as exc:
         print(
@@ -3773,8 +3310,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 1
-    score = "DNF" if summary.tries is None else f"{summary.tries} tries"
-    selected_label = f"{summary.selection}_run"
     total_usage = _aggregate_token_usage(
         [
             usage
@@ -3788,79 +3323,35 @@ def main(argv: Sequence[str] | None = None) -> int:
         else "unreported"
     )
     print(
-        f"{config['tag']:<8} {score:>9}  "
-        f"{selected_label}={summary.selected_run_index + 1}  "
+        f"{config['tag']:<8} runs={summary.runs}  "
         f"turns={summary.turns}  duration={summary.duration:.1f}s  "
         f"token_usage={usage_text}  model={config['model_id']}"
     )
     for run_number, result in enumerate(summary.results, start=1):
         run_label = f"run={run_number} " if summary.runs > 1 else ""
+        score = "DNF" if result.tries is None else f"{result.tries} tries"
         words_json = json.dumps(result.tried_words, ensure_ascii=False)
-        prune_note = ""
-        if result.termination == "upper_half":
-            prune_note = (
-                " termination=upper_half cost_pruned=true "
-                f"stopped_at={result.counted_tries} score>{result.counted_tries}"
-            )
-        elif result.termination == "dnf_majority":
-            prune_note = (
-                " termination=dnf_majority cost_pruned=true median=DNF"
-            )
-        print(
-            f"{config['tag']:<8} {run_label}tried={words_json}{prune_note}"
+        print(f"{config['tag']:<8} {run_label}{score}  tried={words_json}")
+
+    # The lab artifact IS the product: the harness exists for offline analysis, so
+    # every session is appended in full, unconditionally.
+    try:
+        artifact_path, _artifact = write_lab_artifact(
+            args.puzzle,
+            summary,
+            cap=args.cap,
+            effort=args.effort,
+            auth=args.auth,
+            session=args.session,
+            playbook_sha256=playbook_sha256,
         )
-
-    if args.in_place:
-        try:
-            entry = summary.benchmark_entry()
-            # This assertion intentionally precedes BOTH output writes: a replay mismatch
-            # must never reach the lean puzzle payload or the durable lab record.
-            assert_benchmark_entry_consistent(puzzle, vocab, entry, cap=args.cap)
-            artifact_path, _artifact = write_lab_artifact(
-                args.puzzle,
-                summary,
-                cap=args.cap,
-                effort=args.effort,
-                auth=args.auth,
-                session=args.session,
-                playbook_sha256=playbook_sha256,
-            )
-            print(f"Wrote lab artifact -> {artifact_path}")
-
-            # Re-read the puzzle from disk RIGHT BEFORE upserting, inside the lock that
-            # also covers the write. `puzzle` was loaded once at process start, but a
-            # concurrent in-place run for ANOTHER model may have embedded its entry since
-            # then — benchmark runs take minutes, so two models started close together each
-            # load the file before the other writes. Upserting onto the stale start-of-run
-            # copy would silently clobber the sibling, leaving only the last writer; taking
-            # the lock around read+write makes the whole cycle exclusive, so overlapping
-            # runs accumulate instead of racing.
-            with _exclusive_file_lock(args.puzzle):
-                latest = load_puzzle(args.puzzle)
-                # Guard the re-read: if the file was regenerated to a different puzzle
-                # mid-run, our entry will not replay it — fail loudly rather than
-                # overwrite the new puzzle.
-                assert_benchmark_entry_consistent(latest, vocab, entry, cap=args.cap)
-
-                # Record EVERY tested model in the puzzle; the front end owns the display
-                # filter. Upsert this run over any prior entry for the same model, and prune
-                # any previously embedded entry that no longer replays the current puzzle.
-                # The median/persistent/current-prompt/at-least-3-run gate is enforced in
-                # parse_args.
-                entries, dropped = upsert_benchmark_entry(latest, vocab, entry)
-                write_benchmark(args.puzzle, latest, entries)
-            for stale in dropped:
-                print(f"Dropped stale benchmark entry ({stale}); it no longer replays")
-            noun = "model" if len(entries) == 1 else "models"
-            print(
-                f"Wrote {config['tag']} benchmark ({len(entries)} {noun}) -> {args.puzzle}"
-            )
-        except Exception as exc:
-            print(
-                f"error: could not persist {config['tag']} benchmark: {exc}",
-                file=sys.stderr,
-            )
-            return 1
+    except Exception as exc:
+        print(
+            f"error: could not persist {config['tag']} lab artifact: {exc}",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"Wrote lab artifact -> {artifact_path}")
     return 0
 
 
