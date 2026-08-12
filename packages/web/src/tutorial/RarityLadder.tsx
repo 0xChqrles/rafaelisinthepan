@@ -5,7 +5,7 @@ import { t, type UiKey } from '../i18n';
 
 // The tutorial's ending display (2026-08-11, replacing the themes clouds/routes teaser):
 // the game's five rarity grades as a LADDER, commonest at the top, each name in the exact
-// colour it wears everywhere else — the Word board's lanes, the strike, the loot. The names
+// colour it wears everywhere else — the Word board's stations, the strike, the loot. The names
 // are the game's own untranslated vocabulary (COMMON..ARCANE, like MISS / YOU / DNF);
 // beside each, an OBVIOUS example word (user-decided 2026-08-11) — the ladder teaches by
 // evidence, house down to apricity — hand-authored per language in i18n.

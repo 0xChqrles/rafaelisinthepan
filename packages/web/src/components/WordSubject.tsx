@@ -11,7 +11,7 @@ import { prefersReducedMotion } from '../hooks/useScramble';
 import { srWordBoardWord } from '../i18n';
 
 // The day's word while the run is on (#163): JUST THE WORD, centred, in the solved blue —
-// no node, no rail, no rank gutter, no lane. Word mode is a fast game and the board is now
+// no node, no rail, no rank gutter. Word mode is a fast game and the board is now
 // its post-mortem, so during the gate and the run there is exactly one thing on the screen
 // and this is it.
 //

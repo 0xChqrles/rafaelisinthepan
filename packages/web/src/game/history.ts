@@ -4,9 +4,9 @@
 // This replaced the route map (user-decided 2026-08-10, retiring #117), then took the
 // map's SPINE back the same day on review: a flat sorted list was legible but said
 // nothing — no starting word, no direction you could feel, no target being reached. What
-// was retired stays retired (the semantic roads, the censored census of every unfound
-// group, the sticky "you are here" machinery — the parts that never helped anyone); what
-// returns is the journey reading those parts were buried in: the START word the puzzle
+// was retired stays retired (the censored census of every unfound group, the sticky "you
+// are here" machinery — the parts that never helped anyone); what returns is the journey
+// reading those parts were buried in: the START word the puzzle
 // handed out, the guesses as stops spaced by their REAL distance (`dq`), and the `???`
 // terminus that says the whole game in one token.
 //
@@ -35,8 +35,8 @@ export interface HistoryStop {
   start: boolean; // the departure: the start word the puzzle handed out
   best: boolean; // "you are here": the hole's current closest word
   // FARTHER than the departure: a guess that went backwards from where the puzzle put the
-  // player down. The journey runs departure → word (the doctrine the road zone was cut
-  // by: anything farther than the start is behind you), so the drawing quiets these and
+  // player down. The journey runs departure → word (anything farther than the start is
+  // behind you), so the drawing quiets these and
   // hangs them on the broken trace — real stops, just not steps of the walk. Never true
   // of the departure itself or of "you" (a hole's rank only ever improves from its
   // start_rank, so the current position cannot sit behind it).

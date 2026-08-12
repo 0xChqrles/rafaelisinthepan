@@ -32,12 +32,11 @@
 - `src/heat.ts` (heat ramp: rank exponents + floating hits ONLY) and
   `src/progressColor.ts` (progress ramp + `progressEmoji`) are DIFFERENT ramps with
   different meanings — never borrow one for the other's job (they share `ramp.ts`).
-  Two web palettes are pinned COPIES of stops from them, which is a different thing
+  One web palette is a pinned COPY of stops from them, which is a different thing
   from borrowing a ramp: the value is taken once and frozen under its own meaning,
   and a test pins each hex to the stop it came from so a retune of the ramp fails
-  loudly instead of silently respeaking a stale palette. Those are the route map's
-  lane colours (`laneColors.test.ts`) and Word mode's rarity grades
-  (`rarity.test.ts`, #163) — the latter copies from BOTH ramps, since what it needed
+  loudly instead of silently respeaking a stale palette. That is Word mode's rarity
+  grades (`rarity.test.ts`, #163) — it copies from BOTH ramps, since what it needed
   was five readable, far-apart, non-red colours and neither ramp alone has them.
 - `src/shareCard.ts` is the share-token codec, running byte-identically in the
   browser and the Lambda; the token's product behavior and evolution rules are in the

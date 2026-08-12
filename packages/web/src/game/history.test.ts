@@ -11,7 +11,7 @@
 //     departure → word, so a backwards guess is a stop but not a step of the walk;
 //   - SOLVING names the whole walked stretch (departure → word), flagging what the player
 //     never reached as `revealed`; a live hole names nothing it has not been to;
-//   - what stays retired: no roads, no censored census while the round is LIVE.
+//   - what stays retired: no censored census while the round is LIVE.
 // Asserted against the spec, not the implementation.
 
 import { describe, it, expect } from 'vitest';

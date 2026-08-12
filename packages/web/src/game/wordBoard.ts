@@ -8,15 +8,10 @@
 // changes the drawing.
 //
 // **RARITY is the thing the board says about the field besides distance** (decided
-// 2026-08-10, replacing the artifact's semantic roads; carried by the WORD's COLOUR on
-// one trunk since 2026-08-11, when the user retired the grade-per-lane fork for the
-// sentence route's exact drawing). A cluster is a fact about the embedding, and knowing
-// which facet a word you already claimed belongs to changes nothing you can do. The grade
-// does — it is what the claim PAID (#163) — so the post-mortem answers "where were the
-// expensive words?" in the colours the run's strikes and loot already taught. It also
-// costs generation nothing: `freq` is already on every entry, so `gen_word` stopped
-// clustering altogether (and since 2026-08-11 has no road pass left at all — the
-// tutorial's themes lesson, the `--roads` opt-in's one reader, was retired with it).
+// 2026-08-10; carried by the WORD's COLOUR on one trunk since 2026-08-11 — the sentence
+// route's exact drawing). The grade is what the claim PAID (#163), so the post-mortem
+// answers "where were the expensive words?" in the colours the run's strikes and loot
+// already taught. It costs generation nothing: `freq` is already on every entry.
 
 import type { RankEntry, WordRanks } from '@whippin/shared';
 import { CLAIM_ZONE, RARITY_NAMES, rarityOf, replayWordRun, type Rarity } from './wordGame';
@@ -36,13 +31,10 @@ import { CLAIM_ZONE, RARITY_NAMES, rarityOf, replayWordRun, type Rarity } from '
 export interface WordStation {
   rank: number;
   dq: number;
-  // The station's RARITY GRADE (decided 2026-08-10, replacing the artifact's semantic
-  // `road`) — its colour on the line. The grade is the thing the board says about the field
-  // besides distance, and rarity is what this mode is actually played on — it is what a
-  // claim is PAID by, so a grade is a price bracket the player can aim at, where a semantic
-  // cluster was a fact about the embedding they could do nothing with. It also needs no
-  // clustering to ship: `freq` is already on every entry (#163), which is why gen_word
-  // stopped emitting roads entirely.
+  // The station's RARITY GRADE (decided 2026-08-10) — its colour on the line. Rarity is
+  // what this mode is actually played on: it is what a claim is PAID by, so a grade is a
+  // price bracket the player can aim at. It needs nothing extra shipped either — `freq` is
+  // already on every entry (#163).
   //
   // Never null: `rarityOf` floors at COMMON, so every station carries exactly one grade
   // even on an artifact carrying no `freq` at all (which then draws all-common).
@@ -70,7 +62,7 @@ export interface WordBoardModel {
   // actually holds. A grade the zone does not contain is not listed, the same call the
   // retired per-grade tally made: an English board often has no ARCANE group at all, and a
   // permanently absent grade advertises a bracket nobody can reach. Never empty (COMMON is
-  // the floor). Since the lanes retired (2026-08-11) its consumer is the sr census.
+  // the floor). Its consumer is the sr census.
   grades: Rarity[];
   stations: WordStation[]; // the zone, rank ascending (1 first)
   outside: WordOutsideStop[]; // ranked near misses, rank ascending

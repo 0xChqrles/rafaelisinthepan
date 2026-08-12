@@ -14,10 +14,6 @@ Asserted against the schema in AGENTS.md, not against the implementation:
     claim it, never a surface another group owns — a group property like the rest, on
     every entry including rank 0, and emitted by this command alone (a sentence puzzle
     has no consumer for it);
-  - NO `road`, ever (2026-08-10; the `--roads` opt-in retired 2026-08-11 with the
-    tutorial's themes lesson, its only consumer). Word mode paints station words by
-    RARITY on one trunk, so a word artifact ships no semantic clustering at all — the road rules
-    are the sentence path's alone (test_distances.py);
   - the rank map is the SAME artifact the sentence pipeline builds for that secret.
     Both commands walk through gen_phrase.walk_secret, so a word's neighborhood can
     never differ by which game asked for it.
@@ -116,18 +112,6 @@ def test_alias_keys_of_a_group_repeat_their_group_values():
     assert rank_map["felin"]["dq"] == 0
 
 
-def test_no_semantic_roads_are_emitted_but_dq_stays():
-    """Word mode paints station words by RARITY on one trunk (#163), so a word
-    artifact has no consumer for semantic clustering and never runs it — no opt-in remains
-    (the tutorial's themes lesson, `--roads`' one reader, retired 2026-08-11). `dq`
-    has no opt-out — the drawing spaces its stations by it, and scoring depends on
-    it."""
-    rank_map = _word_map("chat", RANKING, KV)
-
-    assert all("road" not in entry for entry in rank_map.values())
-    assert rank_map["chien"]["dq"] == 255 and rank_map["felin"]["dq"] == 0
-
-
 # --- freq: the group's corpus rarity, what Word mode's clock pays by (#163) ------
 
 # The reduced vocabulary in FREQUENCY order. Built so that one group's commonest
@@ -224,10 +208,9 @@ def test_the_rank_map_is_the_one_the_sentence_pipeline_builds(monkeypatch):
 
     Drives the sentence path end to end (holes_from_words) and the word path
     (build_word_map) over the same vocabulary and the same walk, then compares the
-    maps key by key. Roads are off on the sentence side too (a word artifact never
-    has them), so the walks compare clean. `freq` is the one annotation only the
-    word path stamps: it is asserted here as absent from the sentence map and
-    stripped from the word map before the comparison.
+    maps key by key. `freq` is the one annotation only the word path stamps: it is
+    asserted here as absent from the sentence map and stripped from the word map
+    before the comparison.
     """
     module = _Embedding(RANKING)
     cfg = dict(gen_phrase.CONFIG["fr"], module=module)
@@ -239,7 +222,7 @@ def test_the_rank_map_is_the_one_the_sentence_pipeline_builds(monkeypatch):
     _holes, ranks = gen_phrase.holes_from_words(
         ["chat", "noir", "dort"], words, cfg, "fr",
         kv=KV, V=list(VSET), M=object(), Vset=VSET,
-        lemma_table=TABLE, forms_by_lemma=FORMS, roads=False)
+        lemma_table=TABLE, forms_by_lemma=FORMS)
 
     word_map = _word_map("chat", RANKING, KV)
 

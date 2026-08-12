@@ -71,10 +71,9 @@ FORMS = gen_phrase.invert_lemmas(TABLE)
 VOCAB = ["jardin", "doucement", "vermine", "accoutumé", "accoutumés", "accoutume",
          "accoutumer", "chante", "amuse", "amuser", "amusés"]
 VSET = set(VOCAB)
-# The walk is stubbed, but the road clustering (#115) reads the vectors of the groups
-# ahead of the departure, so the fake embedding has to be subscriptable. The coordinates
-# are arbitrary: what the donor contract cares about is WHICH word the walk started from,
-# not where it landed.
+# The walk is stubbed, but generation still hands the embedding around, so the fake one
+# has to be subscriptable. The coordinates are arbitrary: what the donor contract cares
+# about is WHICH word the walk started from, not where it landed.
 KV = {w: [float(i + 1), 1.0, 0.0] for i, w in enumerate(VOCAB)}
 
 SENTENCE = "tu t'accoutumes doucement au jardin."
@@ -153,13 +152,10 @@ def test_borrowed_ranks_are_the_donors_own_ranks(monkeypatch):
 
     # Everything past the secret's own group is exactly what a map built directly on
     # the donor would hold: the substitution moves the walk's origin, nothing else.
-    merged, donor_map, _groups = gen_phrase.build_puzzle_rank_map(
+    _merged, donor_map, _groups = gen_phrase.build_puzzle_rank_map(
         "accoutume", RANKINGS["accoutume"], TABLE, FORMS, VSET)
-    # The stub starts every hole on "vermine", the rank-1 group, so the road zone is
-    # exactly it (#115 cuts the roads from the departure in).
-    gen_phrase.annotate_roads(donor_map, merged, KV, start_rank=1)
     far = {k: v for k, v in ranks["accoutumes"].items() if v["rank"] > 0}
-    # identical entry for entry — the borrowed geometry (#115 dq/road) included.
+    # identical entry for entry — the borrowed geometry (#115 dq) included.
     assert far == {k: v for k, v in donor_map.items() if v["rank"] > 0}
     assert {k: (v["word"], v["rank"]) for k, v in far.items()} == {
         "vermine": ("vermine", 1), "jardin": ("jardin", 2)}
@@ -571,7 +567,7 @@ def test_start_display_override_moves_the_form_not_the_rank(monkeypatch):
     assert band["word"] == "amuse" and band["rank"] == 1
     # ...and typing the word printed in the hole reads its distance, not a MISS: the
     # alias is the same GROUP, so it carries the band word's rank AND its geometry
-    # (#115 dq/road) — only the displayed form moves.
+    # (#115 dq) — only the displayed form moves.
     assert ranks["doucement"]["amuses"] == {**band, "word": "amuses"}
     # Entrée kept the band word for the two holes that did not need an override.
     assert [h["start"]["word"] for h in holes
@@ -668,12 +664,11 @@ def test_selector_asks_for_the_display_form_too(monkeypatch):
     assert [h["start"]["word"] for h in holes[1:]] == ["amuse", "amuse"]
 
 
-def test_selector_stamps_the_geometry_when_it_commits_a_start(monkeypatch):
-    """#115's roads cannot be stamped until the start word is known, so BOTH selection
-    paths have to do it once they have one. The --words path is covered by the geometry
-    tests (test_distances.py); this covers the selector, whose call site is otherwise
-    reachable only through the raw-mode loop — and a start committed there without the
-    call ships a road-less puzzle that draws as a single trunk with no error anywhere."""
+def test_selector_ships_the_geometry_on_every_hole_it_commits(monkeypatch):
+    """#115's `dq` has no opt-out, so BOTH selection paths must ship it. The --words
+    path is covered by the geometry tests (test_distances.py); this covers the
+    selector, whose holes are otherwise reachable only through the raw-mode loop — and
+    a distance-less map scores nothing with no error anywhere."""
     import os
     import termios
     import tty
@@ -703,10 +698,6 @@ def test_selector_stamps_the_geometry_when_it_commits_a_start(monkeypatch):
 
     for hole in holes:
         rmap = ranks[hole["secret"]["slug"]]
-        start_rank = hole["start_rank"]
         # dq has no opt-out: every ranked group carries it, the secret none.
         assert all("dq" in e for e in rmap.values() if e["rank"] != 0)
         assert "dq" not in rmap[hole["secret"]["slug"]]
-        # And the roads cover the journey — the departure included, nothing behind it.
-        assert all("road" in e for e in rmap.values() if 1 <= e["rank"] <= start_rank)
-        assert not any("road" in e for e in rmap.values() if e["rank"] > start_rank)

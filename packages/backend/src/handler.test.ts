@@ -62,7 +62,7 @@ const WORD_PUZZLE: WordPuzzle = {
   word: { word: 'forêt', slug: 'foret' },
   ranks: {
     foret: { word: 'forêt', rank: 0 },
-    bois: { word: 'bois', rank: 1, dq: 255, road: 0 },
+    bois: { word: 'bois', rank: 1, dq: 255 },
   },
 };
 

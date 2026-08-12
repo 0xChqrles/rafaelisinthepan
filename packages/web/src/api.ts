@@ -55,33 +55,18 @@ function isWord(v: unknown): v is Word {
   return isRecord(v) && typeof v.word === 'string' && typeof v.slug === 'string';
 }
 
-// A road id is an index into the route view's lanes, and the front stays agnostic of how many
-// roads generation may cut — but not INFINITELY so, because this parse is the only thing between
-// the network and a number the drawing has to size itself by. `road: 4294967295` is a
-// well-formed non-negative integer and nothing downstream could do anything sane with it, so the
-// ceiling sits far above any clustering that could plausibly ship (ROAD_KS tops out at 4 today,
-// leaving 16× of headroom) and far below a value that could hurt. Generous on purpose: a puzzle
-// rejected here fails the whole DAY, which must never be the price of a cosmetic knob moving.
-const MAX_ROAD = 63;
-
 // The optional group annotations on a rank entry (#115 distances, #163 rarity). They are
-// group properties generation adds — every puzzle published before them carries none, so
-// ABSENT stays valid — but a PRESENT one must be well formed: scoring, the route view and
-// Word mode's clock read them as numbers, so a string or an out-of-range value would
-// corrupt them silently. `freq` is the one whose damage would be invisible rather than
-// visual: it buys SECONDS, and a NaN reaching the deadline arithmetic ends a run instantly
-// or never. Its upper end is deliberately unbounded — it is a vocabulary position, and an
-// implausibly large one simply lands in the rarest bonus tier.
+// group properties generation adds — a rank-0 entry carries no `dq` and a borrowed-vector
+// group no `freq`, so ABSENT stays valid — but a PRESENT one must be well formed: scoring,
+// the history line and Word mode's clock read them as numbers, so a string or an
+// out-of-range value would corrupt them silently. `freq` is the one whose damage would be
+// invisible rather than visual: it buys SECONDS, and a NaN reaching the deadline arithmetic
+// ends a run instantly or never. Its upper end is deliberately unbounded — it is a
+// vocabulary position, and an implausibly large one simply lands in the rarest bonus tier.
 function checkRankAnnotations(entry: Record<string, unknown>): void {
-  const { dq, road, freq } = entry;
+  const { dq, freq } = entry;
   if (dq !== undefined && (typeof dq !== 'number' || !Number.isInteger(dq) || dq < 0 || dq > 255)) {
     throw new Error('malformed puzzle: "dq" must be an integer 0-255');
-  }
-  if (
-    road !== undefined &&
-    (typeof road !== 'number' || !Number.isInteger(road) || road < 0 || road > MAX_ROAD)
-  ) {
-    throw new Error(`malformed puzzle: "road" must be an integer 0-${MAX_ROAD}`);
   }
   if (freq !== undefined && (typeof freq !== 'number' || !Number.isInteger(freq) || freq < 1)) {
     throw new Error('malformed puzzle: "freq" must be a positive integer');
@@ -139,7 +124,7 @@ export function parsePuzzle(data: unknown): Puzzle {
 // Runtime shape check for Word mode's fetched artifact (#154/#156) — the same job as
 // parsePuzzle for the same reason: a truncated/wrong body must surface as the error
 // state, never crash the board mid-render. Asserts the load-bearing structure: lang, the
-// public word {word, slug}, and the ONE flat rank map with well-formed rank/dq/road/freq
+// public word {word, slug}, and the ONE flat rank map with well-formed rank/dq/freq
 // on every entry.
 export function parseWordPuzzle(data: unknown): WordPuzzle {
   if (!isRecord(data)) throw new Error('malformed word puzzle: not an object');

@@ -125,7 +125,7 @@ import glove_neighbors as gn
 from build_forms import (CITATION_FEATURE, FORM_LANGS, feature_pos, forms_path,
                          load_forms)  # fr word-group inventory (#132/#146)
 from build_lemmas import lemmas_path, load_lemmas  # en form→lemma table (#104)
-from distances import cluster_roads, quantize_dq, road_zone  # dq / road annotations (#115)
+from distances import quantize_dq  # dq annotations (#115)
 from slug import path_slug, slug, write_vocab  # slug/fold contract, dir names, vocab
 from start_word import pick_start, start_band
 
@@ -407,8 +407,8 @@ def build_merged_rank_map(secret_display, ranking, lemma_table, forms_by_lemma, 
       rmap:   {slug: {word, rank}} — every owned key of every surviving group;
       groups: [(display, rank, claims, clean, rep)] — the secret at rank 0 first;
               a neighbour claims exactly its own word group, and `rep` is the
-              form whose VECTOR ranked it (what the roads must cluster, even when
-              the display fell back to another owned form)."""
+              form whose VECTOR ranked it (which can differ from the display when
+              that fell back to another owned form)."""
     if secret_lemmas is None:
         secret_lemmas = claimed_lemmas(lemmas_of(secret_display, lemma_table))
     secret_lemmas = tuple(secret_lemmas)
@@ -465,15 +465,9 @@ def build_merged_rank_map(secret_display, ranking, lemma_table, forms_by_lemma, 
 
 # --- Distance annotations (#115) ------------------------------------------------
 # Ranks are uniformly spaced by construction, so they carry no geometry. `dq` (the
-# quantized cosine distance to the secret) and `road` (which cluster of the travelled
-# neighborhood a group sits in) restore it. Both are GROUP properties computed from
-# the vectors already in hand at generation time — the client never sees vectors —
-# and both ride along on every key of a group, aliases included.
-#
-# They are stamped in TWO passes because they know different things. `dq` is a property
-# of the walk alone, so it lands with the map itself; `road` describes the stretch the
-# player travels, which does not exist until the START word is chosen — see
-# annotate_roads.
+# quantized cosine distance to the secret) restores it. It is a GROUP property computed
+# from the vectors already in hand at generation time — the client never sees vectors —
+# and it rides along on every key of a group, aliases included.
 
 def annotate_rank_map(rmap, merged, secret=""):
     """Stamp a built rank map with each group's `dq`.
@@ -501,54 +495,18 @@ def annotate_rank_map(rmap, merged, secret=""):
     return rmap
 
 
-def annotate_roads(rmap, merged, kv, start_rank, reps=None):
-    """Stamp the departure and every group closer than it with its `road`.
-
-    Called once the hole's start word is known, because that is what the roads
-    describe: the journey, from where the player is put down in to the word. Everything
-    farther than the start word is behind them, so clustering it produced forks of a
-    route nobody walks — road fields the client bounds away again at read time, and one
-    shipped byte per key for nothing. road_zone (distances.py) owns that rule, ceiling
-    included. (Its `start_rank=None` flat-zone case lost its one caller on 2026-08-11,
-    when gen_word stopped clustering entirely.)
-
-    `reps` (rank-aligned, ranks 1..) are the groups' REPRESENTATIVE forms (#134):
-    the vectors the ranking — and dq — were built from. They are what the roads
-    must cluster too; a group's display can be a fallback onto another owned form
-    (its representative's slug taken by a closer group), and clustering that form's
-    vector would describe a word the geometry never ranked. Without `reps` the
-    merged display forms are used — correct whenever display == representative.
-
-    Same rank-keyed stamping as annotate_rank_map, so every alias of a group gets its
-    group's road for free. Skipped without a `kv` (--no-roads, or a caller that has no
-    vectors): `road` is optional to every consumer, unlike `dq`.
-    """
-    zone = road_zone(start_rank)
-    if kv is None or zone < 1:
-        return rmap
-    words = reps[:zone] if reps is not None else [w for w, _r, _s in merged[:zone]]
-    vectors = [kv[w] for w in words]
-    road_by_rank = {r + 1: road for r, road in enumerate(cluster_roads(vectors))}
-    for entry in rmap.values():
-        road = road_by_rank.get(entry["rank"])
-        if road is not None:
-            entry["road"] = road
-    return rmap
-
-
 def build_puzzle_rank_map(secret_display, ranking, lemma_table, forms_by_lemma, Vset,
                           top_k=TOP_K, secret_lemmas=None):
     """One secret's rank map AS SHIPPED: lexeme-ranked, keyed, dq-annotated.
 
     The one entry point both authoring paths use, so a puzzle can never be written
     with a structurally correct but distance-less map. build_merged_rank_map stays the
-    purely structural builder underneath it (#104/#134). Roads are the second pass,
-    once the start word exists (annotate_roads).
+    purely structural builder underneath it (#104/#134).
 
     `ranking` may have been walked from a DONOR's vector (#119) while `secret_display`
     stays the true sentence form: the similarities are the donor's either way, which is
-    the whole point — the donor is the geometry source, so the dq scale and the roads
-    are the ones the borrowed vector describes."""
+    the whole point — the donor is the geometry source, so the dq scale is the one the
+    borrowed vector describes."""
     merged, rmap, groups = build_merged_rank_map(
         secret_display, ranking, lemma_table, forms_by_lemma, Vset, top_k,
         secret_lemmas)
@@ -566,13 +524,6 @@ def group_lexeme_map(groups):
     holds the true sentence form."""
     return {rank: claims[0] for _w, rank, claims, _clean, _rep in groups
             if rank and len(claims) == 1}
-
-
-def group_reps(groups):
-    """The representative forms, rank-aligned (ranks 1..) — annotate_roads' input:
-    the roads must cluster the vectors the ranking was built from, not a display
-    that may have fallen back to another owned form."""
-    return [rep for _w, rank, _claims, _clean, rep in groups if rank]
 
 
 def _percentile_rank(values, fraction):
@@ -1100,9 +1051,7 @@ def walk_secret(secret, donor, cfg, kv, V, M, Vset, lemma_table, forms_by_lemma,
     The per-secret pipeline, in the one order that is load-bearing: settle what
     group 0 CLAIMS first (#133/#134 — the answer is the author's, so the question
     fires before any ranking), then walk from the geometry source, then assemble and
-    dq-stamp the map. Roads are deliberately NOT here: they need a zone, and what
-    bounds it differs between a sentence hole (its departure, chosen after this) and
-    a lone word (the flat ceiling) — see annotate_roads.
+    dq-stamp the map.
 
     Shared by every authoring path so none of them can reorder the pipeline: a
     sentence hole (holes_from_words), and a single-word artifact (gen_word, #154).
@@ -1457,9 +1406,9 @@ def alias_start_display(rank_map, start, display, start_rank):
     (closer) distance rather than a MISS.
 
     The new key is an alias of the band word's GROUP, so it inherits that group's `dq`
-    and `road` (#115) like any other alias — without them the departure would carry a
-    rank but no position, and a consumer plotting the neighborhood would drop the one
-    stop the hole actually shows."""
+    (#115) like any other alias — without it the departure would carry a rank but no
+    position, and a consumer plotting the neighborhood would drop the one stop the hole
+    actually shows."""
     s = slug(display)
     if s == slug(start):
         return rank_map
@@ -1467,9 +1416,8 @@ def alias_start_display(rank_map, start, display, start_rank):
     if existing is None or start_rank < existing["rank"]:
         band = rank_map.get(slug(start), {})
         entry = {"word": display, "rank": start_rank}
-        for field in ("dq", "road"):
-            if field in band:
-                entry[field] = band[field]
+        if "dq" in band:
+            entry["dq"] = band["dq"]
         rank_map[s] = entry
     return rank_map
 
@@ -2391,7 +2339,7 @@ def _read_key(fd):
 
 def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                              lemma_table, forms_by_lemma, donors=None, forms=None,
-                             roads=True, reporter=None):
+                             reporter=None):
     """Pick three distinct secret groups on a TTY; return holes sorted by position.
 
     Full-screen loop: ←/→ move between the sentence's selectable content words (see
@@ -2435,8 +2383,7 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
 
     # Per-secret neighbor data, computed lazily on first hover and cached: the merged
     # rank map (lemma groups collapsed, aliases expanded), the start-word band on the
-    # MERGED ranks, display->merged-rank (0 = secret), and the merged walk itself —
-    # the roads need it again at commit time, once the start word bounds them (#115).
+    # MERGED ranks, and display->merged-rank (0 = secret).
     cache = {}
 
     def donor_of(secret):
@@ -2468,7 +2415,7 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                 rbd.setdefault(w, r + 1)
             entry = {"ranking": ranking, "claim": claim,
                      "rank_map": rank_map, "band": start_band(secret, merged),
-                     "rbd": rbd, "merged": merged, "groups": groups}
+                     "rbd": rbd, "groups": groups}
             cache[secret_slug] = entry
         return entry
 
@@ -2545,8 +2492,7 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
         behind.
 
         The agreement pass runs here (the form itself was confirmed before the band,
-        so feature_for answers from its cache): it needs the roads stamped first, so
-        a rewritten form inherits its group's road like any other key."""
+        so feature_for answers from its cache)."""
         termios.tcsetattr(fd, termios.TCSADRAIN, saved)
         try:
             agreed = forms.apply(entry["rank_map"], secret, donors,
@@ -2634,14 +2580,9 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                     numbuf = numbuf[:-1]
                 elif key == "ENTER":
                     if numbuf.isdigit() and 1 <= int(numbuf) <= len(band):
-                        rank_map, merged = entry["rank_map"], entry["merged"]
+                        rank_map = entry["rank_map"]
                         start = band[int(numbuf) - 1][0]
                         start_rank = rbd[start]
-                        # The departure is what bounds the roads (#115), so they are cut
-                        # HERE rather than on hover — which also keeps navigation free of
-                        # the clustering for words that are never committed.
-                        annotate_roads(rank_map, merged, kv if roads else None,
-                                       start_rank, reps=group_reps(entry["groups"]))
                         # Same last questions as the --words path: agree what this hole
                         # can display with the sentence, then let the author name the
                         # start word's own form (#119 addendum + addendum 2).
@@ -2721,7 +2662,7 @@ def filename_slugs_from_holes(holes):
 
 def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
                      lemma_table, forms_by_lemma, donors=None, forms=None,
-                     roads=True, reporter=None):
+                     reporter=None):
     """Resolve three distinct ``--words`` selectors into all matching holes.
 
     Matching is slug-based. Each selected slug gets one ranking and one start hint, then
@@ -2796,12 +2737,6 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
         ranks[target_slug] = rank_map
         start = choose_start(canonical_secret, merged, rank_map, rank_by_display)
         start_rank = rank_map[slug(start)]["rank"]
-        # The roads only exist once the departure does: they cover the journey from it
-        # in to the secret, the start word itself included (#115). Before the agreement
-        # pass, so a group rewritten there inherits its road like any other of the
-        # group's keys.
-        annotate_roads(rank_map, merged, kv if roads else None, start_rank,
-                       reps=group_reps(groups))
         # Agree the whole map with the sentence (#133), the start word included — it
         # is just the rank == start_rank group. Realization is keyed by each group's
         # LEXEME (#134), which the walk just settled.
@@ -3110,9 +3045,6 @@ def parse_args():
                         "forme fléchie garde son propre rang ; exige --no-inflect "
                         "quand la langue a une table de formes (l'accord est indexé "
                         "par les lexèmes du regroupement)")
-    p.add_argument("--no-roads", action="store_true",
-                   help="n'émet aucun champ `road` (#115) — les distances `dq` "
-                        "restent écrites (le score en dépend)")
     p.add_argument("--donor", action="append", metavar="MANQUANT=DONNEUR",
                    help="emprunte le vecteur d'une forme du même lemme pour un secret "
                         "absent de l'embedding (#119), ex. --donor accoutumes="
@@ -3193,12 +3125,11 @@ def main():
     if words_arg is not None:
         holes, ranks = holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
                                         lemma_table, forms_by_lemma, donors, forms,
-                                        roads=not args.no_roads, reporter=reporter)
+                                        reporter=reporter)
     else:
         holes, ranks = select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                                                 lemma_table, forms_by_lemma, donors,
-                                                forms, roads=not args.no_roads,
-                                                reporter=reporter)
+                                                forms, reporter=reporter)
 
     # #135 is a report only: print after every selected map exists (and after raw
     # mode has restored the terminal), before metadata/file authoring continues.

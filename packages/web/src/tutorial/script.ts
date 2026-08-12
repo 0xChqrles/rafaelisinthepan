@@ -12,8 +12,7 @@
 // concept: word RARITY, the five-grade ladder every mode speaks. The tutorial teaches the
 // concepts the modes share (semantic distance, rarity) and NOTHING mode-specific — each
 // mode's own rules live on that mode's pre-game gate (Word mode's gate screen, the sentence
-// game's one-time PLAY gate). The THEMES/routes ending this replaces (2026-08-11) taught the
-// semantic road clusters, which the game no longer draws anywhere.
+// game's one-time PLAY gate).
 //
 // The board's ranks are a REAL generated neighborhood (a #154 single-word artifact, pruned —
 // see scripts/<lang>.ts): the mix ladder and the free find play against real ranks.

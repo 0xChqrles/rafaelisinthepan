@@ -95,14 +95,14 @@ const STRINGS = {
   share: { en: 'SHARE', fr: 'PARTAGER' },
   copied: { en: 'COPIED', fr: 'COPIÉ' },
   ariaClose: { en: 'close', fr: 'fermer' },
-  // ---- route modal (#117): a hole's neighborhood drawn as a LINE you travel. The line
-  // teaches by SHAPE — the terminus, "you are here", the departure and the roads are all
-  // said by a node's size, colour and lane — so it carries no labels at all (the tags
-  // ARRIVAL / YOU ARE HERE / START / ROADS were removed 2026-07-26). The screen-reader
-  // mirror still names every one of them: see `srRouteStop` below, which spells them out
-  // in prose rather than depending on any of this. The ONE string left is the heading over
-  // the words above the line — guesses that earned no rank at all, so they have no node, no
-  // lane and no distance to be read off, and nothing about them can be read off the drawing.
+  // ---- the route drawing (#117): a hole's neighborhood drawn as a LINE you travel. The
+  // line teaches by SHAPE — the terminus, "you are here" and the departure are all said by
+  // a node's size and colour — so it carries no labels at all (the tags ARRIVAL / YOU ARE
+  // HERE / START were removed 2026-07-26). The screen-reader mirror still names every one
+  // of them: see `srRouteStop` below, which spells them out in prose rather than depending
+  // on any of this. The ONE string left is the heading over the words above the line —
+  // guesses that earned no rank at all, so they have no node and no distance to be read
+  // off, and nothing about them can be read off the drawing.
   // It reads MISSED in BOTH languages (decided 2026-08-05, superseding OFF THE MAP / HORS
   // CARTE): these words are exactly the ones the round answered with the floating `MISS`,
   // which is itself untranslated everywhere it appears (the tutorial's fr copy says MISS
@@ -302,10 +302,8 @@ export function srRouteStop(
   stop: {
     rank: number;
     word: string | null;
-    road: string | null;
-    // Word mode's lanes are RARITY GRADES (2026-08-10), so a stop there is named by its
-    // grade the way a sentence stop is named by its road. Untranslated like the grades are
-    // everywhere else on screen — one word per grade, identical in every language.
+    // What the word board says in a station word's COLOUR (#163). Untranslated like the
+    // grades are everywhere else on screen — one word per grade, identical in every language.
     rarity?: string;
     start?: boolean;
     best?: boolean;
@@ -318,8 +316,6 @@ export function srRouteStop(
   const parts = [fr ? `rang ${stop.rank}` : `rank ${stop.rank}`];
   parts.push(stop.word ?? (fr ? 'caché' : 'hidden'));
   if (stop.rarity) parts.push(stop.rarity);
-  // A lane titled by the very word being announced would only repeat it.
-  if (stop.road && stop.road !== stop.word) parts.push(fr ? `route ${stop.road}` : `road ${stop.road}`);
   if (stop.start) parts.push(fr ? 'départ' : 'start');
   if (stop.best) parts.push(fr ? 'vous êtes ici' : 'you are here');
   if (stop.behind) parts.push(fr ? 'derrière le départ' : 'behind the start');
@@ -340,12 +336,11 @@ export function srWordBoardWord(lang: string, word: string): string {
   return uiLang(lang) === 'fr' ? `mot du jour : ${word}` : `word of the day: ${word}`;
 }
 
-// The board's census, the route map's `srRouteRoads` said in this mode's own terms: since
-// 2026-08-10 its lanes are RARITY GRADES, so what the sighted player reads off the colours is
-// how the field is DISTRIBUTED across the ladder — where the expensive words were. Stated as a
-// count for the same reason the map states its roads that way: a few hundred items of "rank 87,
-// hidden" would bury the words the player actually knows. The grade names are untranslated,
-// exactly as they are on screen; the prose around them is the reader's own language.
+// The board's census: what the sighted player reads off the station words' colours is how the
+// field is DISTRIBUTED across the rarity ladder — where the expensive words were. Stated as a
+// count rather than item by item: a few hundred entries of "rank 87, hidden" would bury the
+// words the player actually knows. The grade names are untranslated, exactly as they are on
+// screen; the prose around them is the reader's own language.
 export function srWordRarities(
   lang: string,
   perGrade: readonly { grade: string; count: number }[],

@@ -18,10 +18,9 @@
 
 :root {
   --bg: #0a0b12;
-  /* The route line's own colour: trunk, junction bus and the tail's dashes, which is why
-     it lives here rather than on `.route-frame` where it started.
-     Deliberately the ONE unsaturated line on the map: the trunk is the stretch where no road
-     has been identified, so it reads as the far field the lanes fork out of. */
+  /* The route line's own colour: the trunk and the tail's dashes, which is why it lives
+     here rather than on `.route-frame` where it started. Deliberately the ONE unsaturated
+     line on the drawing — the words and the nodes carry every colour it says anything with. */
   --rail: #48528a;
   --surface: #1d2138;
   --surface-hover: #2c3358;
@@ -1456,16 +1455,13 @@ button * {
      fallback; the media query below is what makes it responsive without the component knowing. */
   --rank-size: 10px;
   --gutter: calc(var(--rank-size) * 5 + 10px);
-  /* Air between the rail and the words, SHARED by every route the app draws (promoted from
-     `.history-frame` on 2026-08-11, when Word mode's board went trunk-only and the six-lane
-     worst case this used to be packed for stopped existing): both frames subtract it from
-     their `--wordw`, or fitWord sizes a long word to a column wider than the real one. */
+  /* Air between the rail and the words, SHARED by every route the app draws: both frames
+     subtract it from their `--wordw`, or fitWord sizes a long word to a column wider than
+     the real one. */
   --word-gap: 14px;
-  /* Every line on the map — trunk, lane, junction, leap, tail — is this thick. Kept in one
-     place because RouteModal's `--lane-lines` gradient paints the lanes at the same width, and
-     the two must not drift. */
+  /* Every line on a route — trunk, leap, tail — is this thick. */
   --line-w: 5px;
-  /* Set per-modal by RouteModal from the road count; these are the one-lane fallbacks. */
+  /* Set per-frame by routeFrameVars; these are the fallbacks. */
   --railw: 31px;
   --trunk-x: 15.5px;
   /* The word column's width, so RouteModal can size a long word to FIT it (see fitWord). The
@@ -1584,8 +1580,8 @@ button * {
    part of the same journey — and take the app's own "named, not found" dress, the word
    board's own distinction: the word dimmed to the census's 0.55 and the node small and
    muted. So what the player actually HELD reads at full strength straight out of a field
-   that was there all along. Scoped to this modal, since the word board's `route-revealed`
-   is its own lane-coloured rule. */
+   that was there all along. Scoped to this modal: the word board's `route-revealed` dresses
+   its own stations. */
 .history-frame .route-revealed .route-word {
   opacity: 0.55;
 }
@@ -1645,12 +1641,6 @@ button * {
   margin-left: calc(var(--trunk-x) - var(--line-w) / 2);
   background: var(--rail);
 }
-/* Between two stations inside the fork, every lane runs on. */
-.route-link.lanes::before {
-  width: 100%;
-  margin-left: 0;
-  background: var(--lane-lines);
-}
 /* The cold end above the first station: not a distance, so not a solid line — the broken
    trace (the leap into the word joined the solid rail on 2026-08-04: the routes should
    visibly LEAD to the word). `.broken` is the history modal's behind-the-departure stretch
@@ -1692,7 +1682,7 @@ button * {
   white-space: nowrap;
 }
 /* The rail spans the WHOLE station (a tagged one is two lines tall) so the line never breaks;
-   the node is placed on the first line's midline, on its own lane. */
+   the node is placed on the first line's midline. */
 .route-rail {
   position: relative;
   grid-column: 2;
@@ -1708,16 +1698,10 @@ button * {
   bottom: var(--line-bottom, 0);
   background: var(--rail);
 }
-.route-rail.lanes::before {
-  left: 0;
-  transform: none;
-  width: 100%;
-  background: var(--lane-lines);
-}
 /* Every node is a FILLED square — no outline-only stops. What a stop IS comes from its size and
    its fill: a word you found (bright), the one you were handed (muted), where you are now (gold,
-   biggest), one you have not found (its own lane's colour, small, so it swells the line instead
-   of punching a hole in it). */
+   biggest), one you have not found (small, so it swells the line instead of punching a hole in
+   it). */
 .route-node {
   position: absolute;
   left: var(--node-x, var(--trunk-x));
@@ -1746,8 +1730,7 @@ button * {
   /* Past fitWord's floor, breaking is still better than overflowing the dialog. */
   overflow-wrap: anywhere;
 }
-/* Word mode's post-mortem (trunk-only since 2026-08-11, when the rarity lanes retired): a
-   station says its GRADE in its own TYPE — the word painted in the rarity's colour
+/* Word mode's post-mortem: a station says its GRADE in its own TYPE — the word painted in the rarity's colour
    (`--rarity-c`, set with `.graded` per zone station by WordBoard), the vocabulary the
    run's strikes and loot already taught. Keyed on the CLASS, not on every station, so the
    terminus keeps `.route-found`'s solved blue and a gradeless near miss stays `--fg`. */
@@ -1780,50 +1763,6 @@ button * {
   100% {
     transform: scale(1);
   }
-}
-
-/* --- the fork, and the merge into the word --- */
-/* Orthogonal only: a trunk stub, a bus across the lanes, then the lanes themselves. Reusing
-   .route-station gives it the same three columns, so the shape lands under the rail for free. */
-.route-junction .route-rail::before {
-  display: none;
-}
-.jx-trunk {
-  position: absolute;
-  left: var(--trunk-x);
-  transform: translateX(-50%);
-  width: var(--line-w);
-  top: 0;
-  height: 14px;
-  background: var(--rail);
-}
-.jx-bus {
-  position: absolute;
-  left: var(--bus-x);
-  width: var(--bus-w);
-  top: 14px;
-  height: var(--line-w);
-  background: var(--bus-grad, var(--rail));
-}
-.jx-lanes {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: calc(14px + var(--line-w));
-  bottom: 0;
-  background: var(--lane-lines);
-}
-.route-junction.converge .jx-trunk {
-  top: auto;
-  bottom: 0;
-}
-.route-junction.converge .jx-bus {
-  top: auto;
-  bottom: 14px;
-}
-.route-junction.converge .jx-lanes {
-  top: 0;
-  bottom: calc(14px + var(--line-w));
 }
 
 /* --- the end of the line --- */
@@ -1936,9 +1875,8 @@ button * {
   text-shadow: none;
 }
 .route-misses {
-  /* 48, not the retired lane-map's 26: on a one-trunk line the shelf is the drawing's top
-     neighbour, and at 26px it read as the first stop's label (2026-08-10's history finding,
-     shared since 2026-08-11 — both drawings are one trunk now). */
+  /* 48: the shelf is the drawing's top neighbour, and at 26px it read as the first stop's
+     label (2026-08-10's history finding, shared by both drawings since 2026-08-11). */
   margin: 0 0 48px;
   display: flex;
   flex-wrap: wrap;
@@ -1958,8 +1896,8 @@ button * {
   opacity: 0.55;
 }
 
-/* A very narrow phone with three or four wide roads leaves the word column genuinely short, so
-   the rank ladder gives some of its width back rather than letting fitWord bottom out on its
+/* A very narrow phone leaves the word column genuinely short, so the rank ladder gives some
+   of its width back rather than letting fitWord bottom out on its
    floor and break a long word in half. One cell smaller is enough — and because the gutter is
    `--rank-size` times the widest exponent, it follows on its own. */
 @media (max-width: 360px) {
@@ -2711,8 +2649,8 @@ button * {
 
 /* The tutorial's ending display (2026-08-11, replacing the theme clouds / routes teaser):
    the five RARITY GRADES as a ladder, commonest at the top. Each rung wears its grade's own
-   colour (set inline from RARITY_COLORS — the same table the Word board's lanes, the strike
-   and the loot read) and steps up in size as it steps down in the ladder: rarer is bigger,
+   colour (set inline from RARITY_COLORS — the same table the Word board's stations, the
+   strike and the loot read) and steps up in size as it steps down in the ladder: rarer is bigger,
    which says "more precious" with no copy. STATIC sizes, never an animated scale — the
    pixel font renders animated scaling blurry (the app's standing rule) — and the entrance
    is a small rise+fade per rung on its own delay, so the ladder reads top to bottom.
