@@ -57,7 +57,7 @@ function die(msg: string): never {
   process.exit(1);
 }
 
-export interface PublishPlan {
+interface PublishPlan {
   day: string; // the GAME DAY this puzzle is served as (22:00-ET day of #2/#6)
   key: string; // storeKey(day, lang, mode) — the SAME key the readers GetObject/readFile
   target: { kind: 'local' } | { kind: 's3'; bucket: string };

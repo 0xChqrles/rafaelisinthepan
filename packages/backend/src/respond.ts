@@ -55,12 +55,6 @@ export interface FnUrlResult {
   isBase64Encoded?: boolean;
 }
 
-export interface ErrorBody {
-  error: string; // machine-readable code, e.g. "not_found"
-  message: string; // human-readable detail
-  [extra: string]: unknown;
-}
-
 // CORS headers so the web origin can read responses. `origin` is configured (set to
 // the web origin in prod; "*" by default). `Vary: Origin` keeps the CDN honest when a
 // specific origin is echoed.
@@ -99,7 +93,7 @@ function withVary(existing: string | undefined, field: string): string {
   return [...fields, field].join(', ');
 }
 
-export type ContentEncoding = 'br' | 'gzip';
+type ContentEncoding = 'br' | 'gzip';
 
 // Pick the best encoding the client actually accepts, or null for none.
 //

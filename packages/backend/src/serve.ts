@@ -55,6 +55,6 @@ server.listen(PORT, () => {
   console.log(`[backend] local puzzle server on http://localhost:${PORT}`);
   console.log(`[backend]   store:  ${STORE_ROOT}`);
   console.log(`[backend]   origin: ${ALLOWED_ORIGIN}`);
-  console.log(`[backend]   GET /?lang=<xx>  GET /today  GET /s/<token>  GET /og/<token>.png`);
+  console.log(`[backend]   GET /?lang=<xx>&date=<YYYY-MM-DD>[&mode=word]  GET /today  GET /s/<token>  GET /og/<token>.png`);
   console.log(`[backend] point the front at it: VITE_API_BASE_URL=http://localhost:${PORT}`);
 });

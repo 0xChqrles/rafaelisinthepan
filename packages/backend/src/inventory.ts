@@ -16,8 +16,9 @@
 import { access } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { activeDate } from '@whippin/shared';
+import { activeDate, dateForDayNumber, dayNumber } from '@whippin/shared';
 import { defaultLocalStoreRoot, isValidDate, storeKey, type PuzzleMode } from './layout';
+import { isNotFound } from './store';
 import { STACK_REGION, stackOutputs } from './stack';
 
 const DEFAULT_DAYS = 14;
@@ -90,13 +91,10 @@ function parseArgs(argv: string[]): Args {
   return args;
 }
 
-const pad = (n: number) => String(n).padStart(2, '0');
-
 // The next `n` GAME days starting at (and INCLUDING) `startDate` — plain calendar dates,
-// since a game day IS a calendar date (day.ts). Pure + deterministic, so it is unit-tested
-// against the shared day logic. UTC arithmetic on the date label is offset-free (like
-// day.ts's own `dateLabel`), so DST never shifts a boundary here; JS date overflow rolls
-// month/year for us.
+// since a game day IS a calendar date. Walked with the shared `dayNumber` /
+// `dateForDayNumber` pair (day.ts), which is the same offset-free UTC arithmetic the day
+// logic itself uses, so DST never shifts a boundary here.
 export function upcomingDays(startDate: string, n: number): string[] {
   if (!isValidDate(startDate)) {
     throw new Error(`invalid start date "${startDate}" (expected YYYY-MM-DD)`);
@@ -104,12 +102,9 @@ export function upcomingDays(startDate: string, n: number): string[] {
   if (!Number.isInteger(n) || n < 1) {
     throw new Error(`day count must be a positive integer (got ${n})`);
   }
-  const [y, mo, d] = startDate.split('-').map(Number);
+  const start = dayNumber(startDate);
   const out: string[] = [];
-  for (let i = 0; i < n; i++) {
-    const dt = new Date(Date.UTC(y, mo - 1, d + i));
-    out.push(`${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())}`);
-  }
+  for (let i = 0; i < n; i++) out.push(dateForDayNumber(start + i));
   return out;
 }
 
@@ -118,7 +113,7 @@ export function upcomingDays(startDate: string, n: number): string[] {
 // in-memory one.
 export type Probe = (date: string, lang: string) => Promise<boolean>;
 
-export interface Summary {
+interface Summary {
   present: Record<string, Record<string, boolean>>; // present[date][lang]
   fullyCovered: number; // days where EVERY lang exists
   total: number; // = days.length
@@ -183,12 +178,6 @@ function renderTable(days: string[], langs: string[], present: Summary['present'
 function renderSummary(s: Summary): string {
   const gap = s.firstGap ? ` — first gap: ${s.firstGap.date} (${s.firstGap.lang})` : '';
   return `buffer: ${s.fullyCovered}/${s.total} days fully covered${gap}`;
-}
-
-// A missing HeadObject surfaces as NotFound (or a bare 404) — treat as "no puzzle" -> false.
-function isNotFound(err: unknown): boolean {
-  const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
-  return e.name === 'NotFound' || e.name === 'NoSuchKey' || e.$metadata?.httpStatusCode === 404;
 }
 
 async function main() {

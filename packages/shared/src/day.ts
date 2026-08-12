@@ -10,11 +10,6 @@ export const TIME_ZONE = 'America/New_York';
 // Hour (local, 0-23) at which the active day rolls over to the NEXT calendar date.
 export const RESET_HOUR = 22;
 
-interface DayOpts {
-  timeZone?: string;
-  resetHour?: number;
-}
-
 interface ZonedParts {
   year: number;
   month: number; // 1-12
@@ -61,13 +56,11 @@ function dateLabel(year: number, month: number, day: number, addDays = 0): strin
   return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
 }
 
-// The active puzzle date ("YYYY-MM-DD") for `instant`. Before resetHour local it is
-// today's NY date; at/after resetHour it is tomorrow's (the next date's puzzle is live).
-export function activeDate(instant: Date, opts: DayOpts = {}): string {
-  const timeZone = opts.timeZone ?? TIME_ZONE;
-  const resetHour = opts.resetHour ?? RESET_HOUR;
-  const p = zonedParts(instant, timeZone);
-  return dateLabel(p.year, p.month, p.day, p.hour >= resetHour ? 1 : 0);
+// The active puzzle date ("YYYY-MM-DD") for `instant`. Before RESET_HOUR local it is
+// today's NY date; at/after it, tomorrow's (the next date's puzzle is live).
+export function activeDate(instant: Date): string {
+  const p = zonedParts(instant);
+  return dateLabel(p.year, p.month, p.day, p.hour >= RESET_HOUR ? 1 : 0);
 }
 
 // Monotonic integer id for a "YYYY-MM-DD" date: whole days since the Unix epoch. The
@@ -86,26 +79,20 @@ export function dateForDayNumber(n: number): string {
   return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
 }
 
-// Offset (minutes, east-positive) of `timeZone` from UTC at `instant`, DST-correct.
-function offsetMinutes(instant: Date, timeZone: string): number {
-  const p = zonedParts(instant, timeZone);
+// Offset (minutes, east-positive) of TIME_ZONE from UTC at `instant`, DST-correct.
+function offsetMinutes(instant: Date): number {
+  const p = zonedParts(instant);
   const asUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
   return (asUtc - instant.getTime()) / 60_000;
 }
 
 // The UTC instant of local wall-clock (year, month, day, hour:00:00) in `timeZone`.
 // DST-correct via a one-step offset refinement around the target instant.
-function zonedTimeToUtc(
-  year: number,
-  month: number,
-  day: number,
-  hour: number,
-  timeZone: string,
-): Date {
+function zonedTimeToUtc(year: number, month: number, day: number, hour: number): Date {
   const naive = Date.UTC(year, month - 1, day, hour, 0, 0);
-  let offset = offsetMinutes(new Date(naive), timeZone);
+  let offset = offsetMinutes(new Date(naive));
   let utc = naive - offset * 60_000;
-  const refined = offsetMinutes(new Date(utc), timeZone);
+  const refined = offsetMinutes(new Date(utc));
   if (refined !== offset) {
     offset = refined;
     utc = naive - offset * 60_000;
@@ -113,20 +100,18 @@ function zonedTimeToUtc(
   return new Date(utc);
 }
 
-// The next instant at which the active day flips (the next local resetHour:00).
-export function nextResetAt(instant: Date, opts: DayOpts = {}): Date {
-  const timeZone = opts.timeZone ?? TIME_ZONE;
-  const resetHour = opts.resetHour ?? RESET_HOUR;
-  const p = zonedParts(instant, timeZone);
+// The next instant at which the active day flips (the next local RESET_HOUR:00).
+export function nextResetAt(instant: Date): Date {
+  const p = zonedParts(instant);
   // Before today's reset -> today's reset; at/after it -> tomorrow's.
-  const target = dateLabel(p.year, p.month, p.day, p.hour >= resetHour ? 1 : 0);
+  const target = dateLabel(p.year, p.month, p.day, p.hour >= RESET_HOUR ? 1 : 0);
   const [y, m, d] = target.split('-').map(Number);
-  return zonedTimeToUtc(y, m, d, resetHour, timeZone);
+  return zonedTimeToUtc(y, m, d, RESET_HOUR);
 }
 
 // Whole seconds from `instant` until the next active-day flip (>= 0). Used to set the
 // CDN cache lifetime so cached puzzles expire exactly at the daily boundary.
-export function secondsUntilNextReset(instant: Date, opts: DayOpts = {}): number {
-  const ms = nextResetAt(instant, opts).getTime() - instant.getTime();
+export function secondsUntilNextReset(instant: Date): number {
+  const ms = nextResetAt(instant).getTime() - instant.getTime();
   return Math.max(0, Math.floor(ms / 1000));
 }

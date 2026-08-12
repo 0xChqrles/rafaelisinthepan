@@ -1,14 +1,7 @@
 import { type S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import type { Puzzle, WordPuzzle } from '@whippin/shared';
-import type { PuzzleStore } from './store';
+import { isNotFound, type PuzzleStore } from './store';
 import { storeKey, type PuzzleMode } from './layout';
-
-// A missing S3 object surfaces as NoSuchKey (or a bare 404 status). Treat any of these
-// as "no puzzle" -> null, never a throw/500.
-function isNotFound(err: unknown): boolean {
-  const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
-  return e.name === 'NoSuchKey' || e.name === 'NotFound' || e.$metadata?.httpStatusCode === 404;
-}
 
 // S3 layout (shared with the local store via `layout.storeKey`):
 // s3://<bucket>/<YYYY-MM-DD>.<lang>.json          — the sentence puzzle

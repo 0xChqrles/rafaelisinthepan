@@ -1,5 +1,5 @@
 // Runtime configuration, read from the Lambda's environment (set by the CDK stack, #3).
-export interface Config {
+interface Config {
   bucket: string;
   allowedOrigin: string;
   // Canonical site origin (the apex, e.g. https://whippin.ai) for the share card's absolute
