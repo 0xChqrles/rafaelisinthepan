@@ -27,18 +27,15 @@ from llm_play import (
     DEFAULT_AUTH,
     DEFAULT_EFFORT,
     DEFAULT_RUNS,
-    DEFAULT_SELECTION,
     DEFAULT_SESSION,
     DECISION_OUTPUT_MAX_TOKENS,
     DIRECT_OUTPUT_MAX_TOKENS,
-    DISPLAY_MODEL_COUNT,
     EFFORT_LEVELS,
     KIMI_CODE_BASE_URL,
     KIMI_EFFORT_MAP,
     KIMI_SUBPROCESS_CONFLICT_ENV,
     MAX_CONSECUTIVE_UNPARSEABLE,
     MAX_NONCOUNTING_REPLIES,
-    MIN_IN_PLACE_RUNS,
     MODELS,
     OPENAI_API_EFFORTS,
     OPENAI_SUBSCRIPTION_CONFLICT_ENV,
@@ -46,7 +43,6 @@ from llm_play import (
     PROVIDER_ENV,
     PROSE_OUTPUT_MAX_TOKENS,
     REASONING_MAX_TOKENS,
-    SELECTION_MODES,
     SESSION_MODES,
     TOKEN_USAGE_SCHEMA_VERSION,
     ModelSummary,
@@ -54,26 +50,19 @@ from llm_play import (
     PuzzleReferee,
     RunResult,
     UnparseableReplyError,
-    assert_benchmark_entry_consistent,
-    benchmark_entry_replays,
     benchmark_model,
     feedback_message,
     load_playbook_profile,
     main,
-    median_prune_reason,
     parse_args,
     parse_single_word,
     play_puzzle,
     provider_reply,
     resolve_puzzle_path,
-    select_best_run,
-    select_median_run,
     select_model,
-    upsert_benchmark_entry,
     validate_anthropic_subscription_auth,
     validate_kimi_subscription_auth,
     validate_openai_subscription_auth,
-    write_benchmark,
     write_lab_artifact,
     fcntl,
     _exclusive_file_lock,
@@ -338,66 +327,51 @@ OPENAI_MODELS = [config for config in MODELS if config["provider"] == "openai"]
 KIMI_MODELS = [config for config in MODELS if config["provider"] == "kimi"]
 
 
-def test_supported_model_roster_marks_fable_kimi_gpt_as_the_display_trio():
+def test_supported_model_roster_names_every_lab_model():
     assert MODELS == [
         {
             "provider": "anthropic",
             "model_id": "claude-opus-4-8",
             "label": "CLAUDE OPUS",
             "tag": "OPUS",
-            "display": False,
         },
         {
             "provider": "anthropic",
             "model_id": "claude-sonnet-5",
             "label": "CLAUDE SONNET",
             "tag": "SONNET",
-            "display": False,
         },
         {
             "provider": "openai",
             "model_id": "gpt-5.6-sol",
             "label": "GPT-5.6",
             "tag": "GPT",
-            "display": True,
         },
         {
             "provider": "openai",
             "model_id": "gpt-5.6-terra",
             "label": "GPT-5.6 TERRA",
             "tag": "TERRA",
-            "display": False,
         },
         {
             "provider": "openai",
             "model_id": "gpt-5.6-luna",
             "label": "GPT-5.6 LUNA",
             "tag": "LUNA",
-            "display": False,
         },
         {
             "provider": "anthropic",
             "model_id": "claude-fable-5",
             "label": "CLAUDE FABLE",
             "tag": "FABLE",
-            "display": True,
         },
         {
             "provider": "kimi",
             "model_id": "k3",
             "label": "KIMI K3",
             "tag": "KIMI",
-            "display": True,
         },
     ]
-    # The front end shows exactly these three; every other roster model is recorded too
-    # (`--in-place` embeds any model) but stays hidden by the client-side filter.
-    assert {config["model_id"] for config in MODELS if config["display"]} == {
-        "claude-fable-5",
-        "k3",
-        "gpt-5.6-sol",
-    }
-    assert sum(config["display"] for config in MODELS) == DISPLAY_MODEL_COUNT == 3
     assert KIMI_MODELS == [MODELS[6]]
     assert PROVIDER_ENV == {
         "anthropic": "ANTHROPIC_API_KEY",
@@ -780,7 +754,7 @@ def test_anthropic_subscription_word_adapter_resumes_one_native_session_per_run(
         reply(continued)
         == "forest"
     )
-    # A new one-message transcript is a new median run, never a resumed attempt.
+    # A new one-message transcript is a new run, never a resumed attempt.
     assert reply([{"role": "user", "content": "opening again"}]) == "forest"
     assert os.environ["ANTHROPIC_API_KEY"] == "must-not-be-used"
     assert os.environ["KIMI_CODE_API_KEY"] == "must-not-enter-claude"
@@ -2131,8 +2105,7 @@ def test_cli_defaults_to_api_and_accepts_shared_effort_and_auth_levels():
     assert defaults.effort == DEFAULT_EFFORT
     assert defaults.auth == DEFAULT_AUTH
     assert defaults.session == DEFAULT_SESSION == "persistent"
-    assert defaults.runs == DEFAULT_RUNS == MIN_IN_PLACE_RUNS == 3
-    assert defaults.selection == DEFAULT_SELECTION == "median"
+    assert defaults.runs == DEFAULT_RUNS == 1
     for effort in EFFORT_LEVELS:
         assert (
             parse_args(["puzzle.json", "--model", "OPUS", "--effort", effort]).effort
@@ -2163,45 +2136,17 @@ def test_cli_defaults_to_api_and_accepts_shared_effort_and_auth_levels():
         ]
     )
     # Kimi shares the ONE uniform run default — no per-provider divergence.
-    assert kimi.runs == DEFAULT_RUNS == MIN_IN_PLACE_RUNS == 3
+    assert kimi.runs == DEFAULT_RUNS == 1
 
 
-def test_cli_requires_odd_median_runs_but_best_accepts_any_positive_count(capsys):
-    for runs in (0, 2, 8):
-        with pytest.raises(SystemExit):
-            parse_args(
-                ["puzzle.json", "--model", "OPUS", "--runs", str(runs)]
-            )
-    error = capsys.readouterr().err
-    assert "must be odd so the median is an actual run" in error
-
+def test_cli_accepts_any_positive_run_count():
     for runs in (1, 2, 8):
         args = parse_args(
-            [
-                "puzzle.json",
-                "--model",
-                "OPUS",
-                "--selection",
-                "best",
-                "--runs",
-                str(runs),
-            ]
+            ["puzzle.json", "--model", "OPUS", "--runs", str(runs)]
         )
-        assert args.selection == "best"
         assert args.runs == runs
     with pytest.raises(SystemExit):
-        parse_args(
-            [
-                "puzzle.json",
-                "--model",
-                "OPUS",
-                "--selection",
-                "best",
-                "--runs",
-                "0",
-            ]
-        )
-    assert SELECTION_MODES == ("median", "best")
+        parse_args(["puzzle.json", "--model", "OPUS", "--runs", "0"])
 
 
 @pytest.mark.parametrize("legacy_flag", ["--anthropic-auth", "--openai-auth"])
@@ -2318,7 +2263,6 @@ def test_cli_model_flag_without_value_lists_every_valid_model(capsys):
         ("--effort", EFFORT_LEVELS),
         ("--auth", AUTH_MODES),
         ("--session", SESSION_MODES),
-        ("--selection", SELECTION_MODES),
     ],
 )
 def test_cli_choice_flag_without_value_lists_every_valid_value(
@@ -2364,51 +2308,6 @@ def test_puzzle_path_accepts_repo_and_generation_relative_forms(monkeypatch, tmp
     assert resolve_puzzle_path(Path("output/word/fr/puzzle.json")) == puzzle_path
 
 
-def test_write_benchmark_embeds_a_variable_length_array_and_preserves_file_mode(tmp_path):
-    path = tmp_path / "puzzle.json"
-    source = puzzle()
-    source["source"] = {"work": "L'été"}
-    entries = [
-        {
-            "model": "claude-opus-4-8",
-            "label": "CLAUDE OPUS",
-            "tag": "OPUS",
-            "tries": 12,
-            "run": ["forest"],
-        },
-        {
-            "model": "gpt-5.6-sol",
-            "label": "GPT-5.6",
-            "tag": "GPT",
-            "tries": None,
-            "run": ["cold", "other"],
-        },
-    ]
-    path.write_text(json.dumps(source, ensure_ascii=False), encoding="utf-8")
-    os.chmod(path, 0o640)
-
-    # Any number of tested models embed (the front end owns the display filter), not a
-    # fixed trio; two here.
-    write_benchmark(path, source, entries)
-    written = json.loads(path.read_text(encoding="utf-8"))
-    assert written["benchmark"] == entries
-    assert written["source"]["work"] == "L'été"
-    assert os.stat(path).st_mode & 0o777 == 0o640
-
-    # A single-model array is valid; an empty array is not.
-    write_benchmark(path, source, entries[:1])
-    assert json.loads(path.read_text(encoding="utf-8"))["benchmark"] == entries[:1]
-    with pytest.raises(ValueError, match="at least one entry"):
-        write_benchmark(path, source, [])
-
-    # Duplicate model / tag entries are still rejected.
-    with pytest.raises(ValueError, match="model entries must be unique"):
-        write_benchmark(path, source, [entries[0], entries[0]])
-
-    write_benchmark(path, source, None)
-    assert "benchmark" not in json.loads(path.read_text(encoding="utf-8"))
-
-
 def make_run(
     tries,
     *,
@@ -2434,157 +2333,6 @@ def make_run(
         ),
         raw_provider_token_usage=tuple(raw_token_usage),
     )
-
-
-def test_median_prune_has_no_upper_bound_before_k_runs_solve():
-    finalized = [
-        make_run(4, turns=4),
-        make_run(9, turns=9),
-        make_run(None, turns=20, termination="cap"),
-    ]
-
-    assert (
-        median_prune_reason(finalized, 300, total_runs=5) is None
-    )
-
-
-def test_median_prune_stops_at_the_kth_smallest_solved_score():
-    finalized = [
-        make_run(11, turns=11),
-        make_run(5, turns=5),
-        make_run(8, turns=8),
-    ]
-
-    assert median_prune_reason(finalized, 10, total_runs=5) is None
-    assert (
-        median_prune_reason(finalized, 11, total_runs=5)
-        == "upper_half"
-    )
-
-
-def test_median_prune_bound_tightens_when_more_runs_solve():
-    first_three_solves = [
-        make_run(15, turns=15),
-        make_run(4, turns=4),
-        make_run(9, turns=9),
-    ]
-    with_later_solve = [*first_three_solves, make_run(6, turns=6)]
-
-    assert (
-        median_prune_reason(first_three_solves, 9, total_runs=5) is None
-    )
-    assert (
-        median_prune_reason(with_later_solve, 9, total_runs=5)
-        == "upper_half"
-    )
-
-
-def test_median_prune_short_circuits_only_after_a_cap_dnf_majority():
-    two_dnfs = [
-        make_run(None, turns=20, termination="cap"),
-        make_run(None, turns=21, termination="cap"),
-    ]
-    three_dnfs = [
-        *two_dnfs,
-        make_run(None, turns=22, termination="cap"),
-    ]
-
-    assert median_prune_reason(two_dnfs, 0, total_runs=5) is None
-    assert (
-        median_prune_reason(three_dnfs, 0, total_runs=5)
-        == "dnf_majority"
-    )
-
-
-def test_single_median_run_never_prunes():
-    assert median_prune_reason([], 300, total_runs=1) is None
-    assert (
-        median_prune_reason(
-            [make_run(None, turns=300, termination="cap")],
-            300,
-            total_runs=1,
-        )
-        is None
-    )
-
-
-def test_median_selection_returns_an_actual_run_with_dnf_last_and_stable_ties():
-    score_order = [
-        make_run(10, turns=4),
-        make_run(30, turns=5),
-        make_run(20, turns=6),
-    ]
-    assert select_median_run(score_order) == 2
-
-    dnf_last = [
-        make_run(10, turns=4),
-        make_run(None, turns=1),
-        make_run(20, turns=6),
-    ]
-    assert select_median_run(dnf_last) == 2
-
-    fewer_turns_breaks_score_ties = [
-        make_run(10, turns=4),
-        make_run(20, turns=8),
-        make_run(20, turns=3),
-    ]
-    assert select_median_run(fewer_turns_breaks_score_ties) == 2
-
-    earlier_index_breaks_full_ties = [
-        make_run(10, turns=4),
-        make_run(20, turns=3),
-        make_run(20, turns=3),
-    ]
-    assert select_median_run(earlier_index_breaks_full_ties) == 1
-
-    with pytest.raises(ValueError, match="odd"):
-        select_median_run(score_order[:2])
-
-
-def test_upper_half_pruning_preserves_the_fully_run_median():
-    fully_run = [
-        make_run(6, turns=6),
-        make_run(14, turns=14),
-        make_run(9, turns=9),
-        make_run(25, turns=25),
-        make_run(18, turns=18),
-    ]
-    cost_pruned = [
-        *fully_run[:3],
-        make_run(None, turns=14, termination="upper_half"),
-        make_run(None, turns=14, termination="upper_half"),
-    ]
-
-    assert select_median_run(fully_run) == 1
-    assert select_median_run(cost_pruned) == 1
-
-
-def test_best_selection_returns_the_lowest_success_with_stable_ties():
-    score_order = [
-        make_run(10, turns=4),
-        make_run(None, turns=1),
-        make_run(20, turns=6),
-    ]
-    assert select_best_run(score_order) == 0
-
-    fewer_turns_breaks_score_ties = [
-        make_run(10, turns=4),
-        make_run(10, turns=3),
-        make_run(20, turns=1),
-    ]
-    assert select_best_run(fewer_turns_breaks_score_ties) == 1
-
-    earlier_index_breaks_full_ties = [
-        make_run(10, turns=3),
-        make_run(10, turns=3),
-    ]
-    assert select_best_run(earlier_index_breaks_full_ties) == 0
-
-    all_dnf = [make_run(None, turns=5), make_run(None, turns=3)]
-    assert select_best_run(all_dnf) == 1
-
-    with pytest.raises(ValueError, match="zero"):
-        select_best_run([])
 
 
 class ScriptedModel:
@@ -2626,7 +2374,7 @@ def test_run_result_collects_each_normalized_turn_usage():
     )
 
 
-def test_benchmark_model_persists_the_selected_median_runs_counted_display_forms():
+def test_benchmark_model_records_every_runs_counted_display_forms():
     model = ScriptedModel(
         [
             "forest",
@@ -2645,259 +2393,23 @@ def test_benchmark_model_persists_the_selected_median_runs_counted_display_forms
         MODELS[0], puzzle(), VOCAB, model, cap=300, runs=3
     )
 
-    assert summary.selection == "median"
-    assert summary.selected_run_index == 1
-    assert summary.tries == 3
-    assert summary.benchmark_entry() == {
-        "model": "claude-opus-4-8",
-        "label": "CLAUDE OPUS",
-        "tag": "OPUS",
-        "tries": 3,
-        "run": ["shared", "forest", "ocean"],
-    }
+    # No selection: every run is played in full and recorded as-is.
+    assert summary.runs == 3
+    assert [result.tries for result in summary.results] == [2, 3, 4]
+    assert [result.termination for result in summary.results] == [
+        "solved",
+        "solved",
+        "solved",
+    ]
+    assert summary.run_tried_words == (
+        ("forest", "ocean"),
+        ("shared", "forest", "ocean"),
+        ("cold", "other", "forest", "ocean"),
+    )
 
-    with pytest.raises(ValueError, match="odd"):
+    with pytest.raises(ValueError, match="positive"):
         benchmark_model(
-            MODELS[0], puzzle(), VOCAB, ScriptedModel([]), cap=300, runs=2
-        )
-
-
-def test_median_mode_prunes_a_later_provable_upper_half_run(tmp_path):
-    model = ScriptedModel(
-        [
-            # The first two sequential runs establish median upper bound 3.
-            "forest",
-            "ocean",
-            "shared",
-            "forest",
-            "ocean",
-            # The last run is still unsolved at 3 and makes no fourth call.
-            "cold",
-            "other",
-            "forest",
-        ]
-    )
-
-    summary = benchmark_model(
-        MODELS[0], puzzle(), VOCAB, model, cap=300, runs=3
-    )
-
-    assert summary.selected_run_index == 1
-    assert summary.tries == 3
-    assert [result.counted_tries for result in summary.results] == [2, 3, 3]
-    assert [result.termination for result in summary.results] == [
-        "solved",
-        "solved",
-        "upper_half",
-    ]
-    assert summary.results[2].tries is None
-    assert summary.results[2].tried_words == ("cold", "other", "forest")
-    assert len(model.calls) == 8
-    assert summary.benchmark_entry()["run"] == ["shared", "forest", "ocean"]
-
-    _, artifact = write_lab_artifact(
-        tmp_path / "forest_ocean.json",
-        summary,
-        cap=300,
-        effort="medium",
-        auth="api",
-        output_dir=tmp_path / "lab",
-    )
-    pruned_run = artifact["sessions"][0]["runs"][2]
-    assert pruned_run["tries"] is None
-    assert pruned_run["counted_tries"] == 3
-    assert pruned_run["termination"] == "upper_half"
-
-
-def test_median_mode_preserves_a_bound_equal_to_cap_as_a_real_dnf():
-    model = ScriptedModel(
-        [
-            # Three solves establish a median bound equal to cap=2.
-            "forest",
-            "ocean",
-            "forest",
-            "ocean",
-            "forest",
-            "ocean",
-            # These runs receive no early pruning and must remain genuine cap DNFs.
-            "cold",
-            "other",
-            "cold",
-            "other",
-        ]
-    )
-
-    summary = benchmark_model(
-        MODELS[0], puzzle(), VOCAB, model, cap=2, runs=5
-    )
-
-    assert [result.counted_tries for result in summary.results] == [2, 2, 2, 2, 2]
-    assert [result.termination for result in summary.results] == [
-        "solved",
-        "solved",
-        "solved",
-        "cap",
-        "cap",
-    ]
-    assert len(model.calls) == 10
-
-
-def test_median_mode_dnf_majority_skips_every_remaining_provider_call():
-    model = ScriptedModel(["cold", "other", "cold", "other"])
-
-    summary = benchmark_model(
-        MODELS[0], puzzle(), VOCAB, model, cap=2, runs=3
-    )
-
-    assert summary.tries is None
-    assert [result.counted_tries for result in summary.results] == [2, 2, 0]
-    assert [result.termination for result in summary.results] == [
-        "cap",
-        "cap",
-        "dnf_majority",
-    ]
-    assert summary.results[2].conversation == ()
-    assert len(model.calls) == 4
-    # The censored placeholder stays lab-only; the representative is a genuine,
-    # complete cap DNF whose run can still be replayed and embedded.
-    assert summary.selected_run.termination == "cap"
-    assert summary.benchmark_entry()["run"] == ["cold", "other"]
-
-
-@pytest.mark.parametrize("termination", ["cannot_beat_best", "upper_half", "dnf_majority"])
-def test_cost_pruned_run_can_never_be_embedded(termination):
-    summary = ModelSummary(
-        config=MODELS[0],
-        results=(
-            make_run(
-                None,
-                turns=2,
-                words=("cold", "other"),
-                termination=termination,
-            ),
-        ),
-        selection="median",
-        selected_run_index=0,
-    )
-
-    with pytest.raises(ValueError, match="cost-pruned"):
-        summary.benchmark_entry()
-
-
-def test_best_mode_prunes_only_after_a_run_cannot_beat_the_incumbent():
-    model = ScriptedModel(
-        [
-            # Run 1 establishes a best score of 3.
-            "shared",
-            "forest",
-            "ocean",
-            # Run 2 is unsolved at 3 and stops before consuming another reply.
-            "cold",
-            "other",
-            "shared",
-            # Run 3 improves the incumbent to 2.
-            "forest",
-            "ocean",
-            # Run 4 is unsolved at 2 and stops there.
-            "cold",
-            "other",
-        ]
-    )
-
-    summary = benchmark_model(
-        MODELS[0],
-        puzzle(),
-        VOCAB,
-        model,
-        cap=300,
-        runs=4,
-        selection="best",
-    )
-
-    assert summary.selection == "best"
-    assert summary.selected_run_index == 2
-    assert summary.tries == 2
-    assert [result.counted_tries for result in summary.results] == [3, 3, 2, 2]
-    assert [result.termination for result in summary.results] == [
-        "solved",
-        "cannot_beat_best",
-        "solved",
-        "cannot_beat_best",
-    ]
-    assert len(model.calls) == 10
-    assert summary.benchmark_entry()["run"] == ["forest", "ocean"]
-
-
-def test_best_pruning_preserves_a_solve_on_the_incumbent_number():
-    tied_model = ScriptedModel(["forest", "ocean"])
-    tied = play_puzzle(
-        puzzle(),
-        VOCAB,
-        tied_model,
-        best_score_to_beat=2,
-    )
-    ordinary_model = ScriptedModel(["forest", "ocean"])
-    play_puzzle(puzzle(), VOCAB, ordinary_model)
-    pruned = play_puzzle(
-        puzzle(),
-        VOCAB,
-        ScriptedModel(["cold", "other", "forest"]),
-        best_score_to_beat=2,
-    )
-
-    assert tied.tries == 2
-    assert tied.termination == "solved"
-    # Selection is orchestration only: it does not change the model's game prompt.
-    assert tied_model.calls[0] == ordinary_model.calls[0]
-    assert pruned.tries is None
-    assert pruned.counted_tries == 2
-    assert pruned.tried_words == ("cold", "other")
-    assert pruned.termination == "cannot_beat_best"
-
-
-def test_best_mode_runs_to_the_real_cap_until_a_successful_incumbent_exists():
-    model = ScriptedModel(["cold", "other", "cold", "other"])
-
-    summary = benchmark_model(
-        MODELS[0],
-        puzzle(),
-        VOCAB,
-        model,
-        cap=2,
-        runs=2,
-        selection="best",
-    )
-
-    assert summary.tries is None
-    assert len(model.calls) == 4
-    assert [result.counted_tries for result in summary.results] == [2, 2]
-    assert [result.termination for result in summary.results] == ["cap", "cap"]
-
-
-def test_embed_consistency_replays_score_and_solved_or_dnf_state():
-    solved_entry = {
-        "model": "claude-opus-4-8",
-        "label": "CLAUDE OPUS",
-        "tag": "OPUS",
-        "tries": 2,
-        "run": ["forest", "ocean"],
-    }
-    assert_benchmark_entry_consistent(puzzle(), VOCAB, solved_entry, cap=300)
-
-    dnf_entry = {**solved_entry, "tries": None, "run": ["cold", "other"]}
-    assert_benchmark_entry_consistent(puzzle(), VOCAB, dnf_entry, cap=2)
-
-    with pytest.raises(ValueError, match="score/state mismatch"):
-        assert_benchmark_entry_consistent(
-            puzzle(), VOCAB, {**solved_entry, "tries": 3}, cap=300
-        )
-    with pytest.raises(ValueError, match="folded-duplicate"):
-        assert_benchmark_entry_consistent(
-            puzzle(), VOCAB, {**solved_entry, "run": ["sharéd", "shared"]}, cap=300
-        )
-    with pytest.raises(ValueError, match="DNF run"):
-        assert_benchmark_entry_consistent(
-            puzzle(), VOCAB, {**solved_entry, "tries": None}, cap=2
+            MODELS[0], puzzle(), VOCAB, ScriptedModel([]), cap=300, runs=0
         )
 
 
@@ -2933,8 +2445,6 @@ def test_raw_lab_artifact_keeps_all_runs_transcripts_transport_and_token_usage(
             ),
             make_run(4, turns=4, words=("cold", "other", "forest", "ocean")),
         ),
-        selection="median",
-        selected_run_index=1,
     )
 
     artifact_path, artifact = write_lab_artifact(
@@ -2961,15 +2471,12 @@ def test_raw_lab_artifact_keeps_all_runs_transcripts_transport_and_token_usage(
     assert session["effort"] == "medium"
     assert session["requested_effort"] == "medium"
     assert session["effective_provider_effort"] == "medium"
-    assert session["selection"] == "median"
-    assert session["selected_run"] == 2
-    assert session["median_run"] == 2
     assert session["duration"] == 4.0
     assert session["token_usage"] == standardized_usage(
         15, 3, cached_input_tokens=2
     )
     assert len(session["runs"]) == 3
-    assert [run["selected"] for run in session["runs"]] == [False, True, False]
+    assert [run["index"] for run in session["runs"]] == [1, 2, 3]
     selected = session["runs"][1]
     assert selected["guesses"] == ["shared", "forest", "ocean"]
     assert selected["tries"] == 3
@@ -2984,15 +2491,12 @@ def test_raw_lab_artifact_keeps_all_runs_transcripts_transport_and_token_usage(
     )
     assert selected["turn_token_usage"] == list(usage)
     assert selected["raw_provider_token_usage"] == list(raw_usage)
-    assert session["benchmark_entry"]["run"] == ["shared", "forest", "ocean"]
 
     transports = [(MODELS[1], "api", "api"), (MODELS[2], "subscription", "codex_cli")]
     for index, (config, auth, expected_transport) in enumerate(transports, start=1):
         summary = ModelSummary(
             config=config,
             results=(make_run(2 + index, turns=2, words=("forest", "ocean")),),
-            selection="median",
-            selected_run_index=0,
         )
         _, artifact = write_lab_artifact(
             puzzle_path,
@@ -3016,8 +2520,6 @@ def test_raw_lab_artifact_keeps_all_runs_transcripts_transport_and_token_usage(
                 token_usage=({"input_tokens": 31, "output_tokens": 4},),
             ),
         ),
-        selection="median",
-        selected_run_index=0,
     )
     _, artifact = write_lab_artifact(
         puzzle_path,
@@ -3037,16 +2539,12 @@ def test_raw_lab_artifact_keeps_all_runs_transcripts_transport_and_token_usage(
     assert kimi_session["effective_provider_effort"] == "high"
     assert kimi_session["prompt_version"] == PROMPT_VERSION
     assert kimi_session["cap"] == 300
-    assert kimi_session["selection"] == "median"
     assert kimi_session["duration"] == 3.5
     assert kimi_session["token_usage"] == standardized_usage(31, 4)
-    assert kimi_session["display"] is True
 
     lab_only = ModelSummary(
         config=MODELS[3],
         results=(make_run(9, turns=9, words=("other",)),),
-        selection="median",
-        selected_run_index=0,
     )
     _, artifact = write_lab_artifact(
         puzzle_path,
@@ -3057,201 +2555,9 @@ def test_raw_lab_artifact_keeps_all_runs_transcripts_transport_and_token_usage(
         output_dir=output_dir,
         timestamp="2026-07-12T16:00:00Z",
     )
-    # The lab record annotates each session with its display flag (a lab-only model here);
-    # the front end, not this artifact, decides what actually ships.
-    assert artifact["sessions"][-1]["display"] is False
     assert artifact["sessions"][-1]["model_id"] == "gpt-5.6-terra"
 
 
-def test_upsert_benchmark_entry_records_any_model_and_prunes_stale_entries():
-    source = puzzle()
-    # A previously embedded entry that still replays, plus one that is well-shaped but no
-    # longer solves this puzzle (its run never reaches the secrets). The upsert keeps the
-    # first and prunes the second rather than shipping a broken run.
-    good = {
-        "model": "claude-fable-5",
-        "label": "CLAUDE FABLE",
-        "tag": "FABLE",
-        "tries": 2,
-        "run": ["forest", "ocean"],
-    }
-    stale = {
-        "model": "claude-sonnet-5",
-        "label": "CLAUDE SONNET",
-        "tag": "SONNET",
-        "tries": 2,
-        "run": ["cold", "other"],
-    }
-    source["benchmark"] = [good, stale]
-
-    fresh = {
-        "model": "gpt-5.6-sol",
-        "label": "GPT-5.6",
-        "tag": "GPT",
-        "tries": 3,
-        "run": ["shared", "forest", "ocean"],
-    }
-    entries, dropped = upsert_benchmark_entry(source, VOCAB, fresh)
-
-    assert dropped == ["claude-sonnet-5"]
-    # Roster order (gpt-sol=2 before fable=5) makes the on-disk array deterministic.
-    assert [entry["model"] for entry in entries] == ["gpt-5.6-sol", "claude-fable-5"]
-    assert good in entries and fresh in entries
-    assert not benchmark_entry_replays(source, VOCAB, stale)
-
-    # Re-running an already-recorded model replaces its entry instead of duplicating it.
-    source["benchmark"] = entries
-    replaced = {**fresh, "tries": 4, "run": ["cold", "shared", "forest", "ocean"]}
-    entries2, dropped2 = upsert_benchmark_entry(source, VOCAB, replaced)
-    assert dropped2 == []
-    assert sum(entry["model"] == "gpt-5.6-sol" for entry in entries2) == 1
-    assert next(e for e in entries2 if e["model"] == "gpt-5.6-sol")["tries"] == 4
-
-
-def test_in_place_requires_median_persistent_and_minimum_run_count(capsys):
-    ok = parse_args(["puzzle.json", "--model", "OPUS", "--in-place"])
-    assert ok.in_place is True
-    assert ok.runs == DEFAULT_RUNS == MIN_IN_PLACE_RUNS == 3
-
-    # Roster-wide invariant: --runs has ONE default for every model, so the canonical
-    # gate is satisfied by omitting it — including for Kimi, whose in-place ergonomics
-    # must not diverge from the rest. Guards against reintroducing a per-provider default.
-    kimi_in_place = parse_args(
-        ["puzzle.json", "--model", "KIMI", "--auth", "subscription",
-         "--effort", "low", "--in-place"]
-    )
-    assert kimi_in_place.runs == DEFAULT_RUNS == MIN_IN_PLACE_RUNS == 3
-
-    for runs in (3, 5, 7):
-        accepted = parse_args(
-            ["puzzle.json", "--model", "OPUS", "--runs", str(runs), "--in-place"]
-        )
-        assert accepted.runs == runs
-
-    with pytest.raises(SystemExit):
-        parse_args(
-            ["puzzle.json", "--model", "OPUS", "--selection", "best",
-             "--runs", "5", "--in-place"]
-        )
-    assert "--in-place requires --selection median" in capsys.readouterr().err
-
-    with pytest.raises(SystemExit):
-        parse_args(
-            ["puzzle.json", "--model", "OPUS", "--session", "stateless", "--in-place"]
-        )
-    assert "--in-place requires --session persistent" in capsys.readouterr().err
-
-    with pytest.raises(SystemExit):
-        parse_args(["puzzle.json", "--model", "OPUS", "--runs", "1", "--in-place"])
-    assert "--in-place requires at least 3 runs" in capsys.readouterr().err
-
-
-def test_in_place_cli_embeds_every_tested_model_and_prunes_stale_entries(
-    monkeypatch, tmp_path, capsys
-):
-    # A legacy/malformed entry for a model we will NOT re-run first: the first upsert must
-    # prune it (it can no longer replay) rather than ship it.
-    puzzle_path = tmp_path / "puzzle.json"
-    source = puzzle()
-    source["benchmark"] = [{"model": "claude-opus-4-8", "label": "OPUS", "tries": 4}]
-    puzzle_path.write_text(json.dumps(source), encoding="utf-8")
-    lab_dir = tmp_path / "lab"
-    monkeypatch.setattr("llm_play.BENCHMARK_OUTPUT_DIR", lab_dir)
-    monkeypatch.setattr("llm_play.load_vocab", lambda _lang: VOCAB)
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-    # benchmark_model reuses one reply model across all runs of a call, so supply enough
-    # scripted replies for the default 3 solving runs (forest, ocean each).
-    monkeypatch.setattr(
-        "llm_play.provider_reply",
-        lambda *_args, **_kwargs: ScriptedModel(["forest", "ocean"] * 3),
-    )
-
-    def run(selector):
-        # No --runs: exercises the default (3) that --in-place requires.
-        assert main([str(puzzle_path), "--model", selector, "--in-place"]) == 0
-        return json.loads(puzzle_path.read_text(encoding="utf-8"))["benchmark"]
-
-    # SONNET is a lab-only model, yet it is recorded immediately; the malformed opus entry
-    # that no longer replays is pruned in the same write.
-    after_sonnet = run("SONNET")
-    assert [entry["model"] for entry in after_sonnet] == ["claude-sonnet-5"]
-    assert "Dropped stale benchmark entry (claude-opus-4-8)" in capsys.readouterr().out
-
-    # Display and lab-only models accumulate side by side, roster-ordered.
-    run("GPT-SOL")  # display
-    run("FABLE")  # display
-    embedded = run("GPT-TERRA")  # lab-only, still recorded
-    assert [entry["model"] for entry in embedded] == [
-        "claude-sonnet-5",
-        "gpt-5.6-sol",
-        "gpt-5.6-terra",
-        "claude-fable-5",
-    ]
-    assert all(entry["tries"] == 2 for entry in embedded)
-    assert all(entry["run"] == ["forest", "ocean"] for entry in embedded)
-
-    # Re-running an already-recorded model replaces its entry instead of duplicating it.
-    re_embedded = run("GPT-SOL")
-    assert [entry["model"] for entry in re_embedded] == [
-        "claude-sonnet-5",
-        "gpt-5.6-sol",
-        "gpt-5.6-terra",
-        "claude-fable-5",
-    ]
-
-    artifact = json.loads((lab_dir / "puzzle.bench.json").read_text(encoding="utf-8"))
-    assert len(artifact["sessions"]) == 5
-    assert artifact["sessions"][-1]["model_id"] == "gpt-5.6-sol"
-
-
-def test_in_place_reload_merges_a_concurrent_sibling_write(
-    monkeypatch, tmp_path, capsys
-):
-    # Regression: two in-place runs that overlap in wall-clock. Each benchmark run takes
-    # minutes, so a sibling model's run can finish — writing its entry to the puzzle — AFTER
-    # this run loaded the file but BEFORE it writes. The embed must merge against the LATEST
-    # on-disk benchmark (like the lab artifact does), not clobber the sibling with only the
-    # last writer's entry. Here the sibling write is injected mid-run via provider_reply.
-    puzzle_path = tmp_path / "puzzle.json"
-    puzzle_path.write_text(json.dumps(puzzle()), encoding="utf-8")  # no benchmark yet
-    monkeypatch.setattr("llm_play.BENCHMARK_OUTPUT_DIR", tmp_path / "lab")
-    monkeypatch.setattr("llm_play.load_vocab", lambda _lang: VOCAB)
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-
-    sibling = {
-        "model": "claude-sonnet-5",
-        "label": "CLAUDE SONNET",
-        "tag": "SONNET",
-        "tries": 2,
-        "run": ["forest", "ocean"],
-    }
-
-    # provider_reply is called once per run; on the first call, simulate the concurrent
-    # sibling run landing its entry on disk after our load, then return the play model.
-    injected = {"done": False}
-
-    def reply_with_concurrent_write(*_args, **_kwargs):
-        if not injected["done"]:
-            current = json.loads(puzzle_path.read_text(encoding="utf-8"))
-            current["benchmark"] = [sibling]
-            puzzle_path.write_text(json.dumps(current), encoding="utf-8")
-            injected["done"] = True
-        return ScriptedModel(["forest", "ocean"] * 5)
-
-    monkeypatch.setattr("llm_play.provider_reply", reply_with_concurrent_write)
-
-    assert main([str(puzzle_path), "--model", "FABLE", "--in-place"]) == 0
-    embedded = json.loads(puzzle_path.read_text(encoding="utf-8"))["benchmark"]
-    # The stale start-of-run copy had no benchmark; only a fresh re-read preserves the
-    # sibling. Roster order puts sonnet before fable.
-    assert [entry["model"] for entry in embedded] == [
-        "claude-sonnet-5",
-        "claude-fable-5",
-    ]
-
-
-@pytest.mark.skipif(fcntl is None, reason="advisory file locks are POSIX-only")
 def test_exclusive_file_lock_serializes_whole_read_modify_write_cycles(tmp_path):
     # Re-reading before the write narrows the clobber window but does not close it: two
     # runs can still interleave BETWEEN the re-read and the atomic replace. The lock is
@@ -3654,81 +2960,43 @@ def test_cli_prints_counted_words_in_order_for_each_run(monkeypatch, tmp_path, c
     assert main([str(path), "--model", "OPUS", "--runs", "3"]) == 0
 
     output = capsys.readouterr().out
-    assert "selection=median" in output
-    assert "median_run=2" in output
+    assert "runs=3" in output
     assert 'OPUS     run=1 try=1 word="forest" progress=50.00%' in output
     assert 'OPUS     run=1 try=2 word="ocean" progress=100.00%' in output
     assert 'OPUS     run=2 try=3 word="ocean" progress=100.00%' in output
     assert 'OPUS     run=3 try=3 word="ocean" progress=100.00%' in output
-    assert 'OPUS     run=1 tried=["forest", "ocean"]' in output
-    assert 'OPUS     run=2 tried=["shared", "forest", "ocean"]' in output
-    assert 'OPUS     run=3 tried=["cold", "forest", "ocean"]' in output
+    assert 'OPUS     run=1 2 tries  tried=["forest", "ocean"]' in output
+    assert 'OPUS     run=2 3 tries  tried=["shared", "forest", "ocean"]' in output
+    assert 'OPUS     run=3 3 tries  tried=["cold", "forest", "ocean"]' in output
+    assert "Wrote lab artifact ->" in output
 
 
-def test_cli_labels_a_median_cost_prune_separately_from_a_real_dnf(
-    monkeypatch, tmp_path, capsys
-):
+def test_cli_always_appends_the_lab_artifact(monkeypatch, tmp_path, capsys):
     path = tmp_path / "puzzle.json"
     path.write_text(json.dumps(puzzle()), encoding="utf-8")
-    model = ScriptedModel(
-        [
-            "forest",
-            "ocean",
-            "shared",
-            "forest",
-            "ocean",
-            "cold",
-            "other",
-            "forest",
-        ]
-    )
+    source_bytes = path.read_bytes()
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setattr("llm_play.load_vocab", lambda _lang: VOCAB)
-    monkeypatch.setattr("llm_play.provider_reply", lambda *_args, **_kwargs: model)
-
-    assert main([str(path), "--model", "OPUS", "--runs", "3"]) == 0
-
-    output = capsys.readouterr().out
-    assert "3 tries  median_run=2" in output
-    assert (
-        'run=3 tried=["cold", "other", "forest"] '
-        "termination=upper_half cost_pruned=true stopped_at=3 score>3"
-        in output
-    )
-    assert len(model.calls) == 8
-
-
-def test_cli_best_selection_prunes_a_dominated_run_and_reports_the_best(
-    monkeypatch, tmp_path, capsys
-):
-    path = tmp_path / "puzzle.json"
-    path.write_text(json.dumps(puzzle()), encoding="utf-8")
-    model = ScriptedModel(["forest", "ocean", "cold", "other", "forest"])
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    monkeypatch.setattr("llm_play.load_vocab", lambda _lang: VOCAB)
-    monkeypatch.setattr("llm_play.provider_reply", lambda *_args, **_kwargs: model)
-
-    assert (
-        main(
-            [
-                str(path),
-                "--model",
-                "OPUS",
-                "--runs",
-                "2",
-                "--selection",
-                "best",
-            ]
-        )
-        == 0
+    monkeypatch.setattr("llm_play.BENCHMARK_OUTPUT_DIR", tmp_path / "lab")
+    monkeypatch.setattr(
+        "llm_play.provider_reply",
+        lambda *_args, **_kwargs: ScriptedModel(["forest", "ocean"]),
     )
 
-    output = capsys.readouterr().out
-    assert "selection=best" in output
-    assert "2 tries  best_run=1" in output
-    assert 'OPUS     run=1 tried=["forest", "ocean"]' in output
-    assert 'OPUS     run=2 tried=["cold", "other"]' in output
-    assert len(model.calls) == 4
+    assert main([str(path), "--model", "OPUS"]) == 0
+
+    artifact_path = tmp_path / "lab" / "puzzle.bench.json"
+    assert "Wrote lab artifact ->" in capsys.readouterr().out
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert artifact["schema_version"] == 1
+    assert artifact["puzzle"] == "puzzle.json"
+    [session] = artifact["sessions"]
+    assert session["model_id"] == "claude-opus-4-8"
+    [run] = session["runs"]
+    assert run["tries"] == 2
+    assert run["guesses"] == ["forest", "ocean"]
+    # The scientific record is the ONLY write: the puzzle file itself stays untouched.
+    assert path.read_bytes() == source_bytes
 
 
 def test_cli_openai_subscription_uses_plan_without_api_key(

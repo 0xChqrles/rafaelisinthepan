@@ -35,7 +35,7 @@ pnpm forwards args straight to the script.
 #    Claude.ai / saved ChatGPT Codex-plan access, or Kimi Code with KIMI_CODE_API_KEY.
 #    GPT API runs allow the documented
 #    none|low|medium|high|xhigh|max; ordinary Codex-plan play supports
-#    low|medium|high|xhigh|max. Kimi K3 is a display model, requires subscription auth,
+#    low|medium|high|xhigh|max. Kimi K3 requires subscription auth,
 #    rejects none, and maps medium/high -> high plus xhigh/max -> max. --session
 #    persistent|stateless defaults to persistent: one native provider conversation per
 #    run is the primary product benchmark; stateless reconstructs the complete public
@@ -43,23 +43,16 @@ pnpm forwards args straight to the script.
 #    is prompt v21 at medium effort with NO --playbook. The current harness is prompt v23;
 #    do not mix its results into v21 comparisons. --playbook remains an experimental loader only;
 #    the static-corpus playbooks are paused and must not be used for benchmark scores.
-#    --selection median|best chooses the saved representative (default median). Median
-#    requires odd sequential --runs and cost-prunes only provable upper-half tails or after
-#    a cap-DNF majority (one run never prunes); best accepts any positive count and stops an
-#    unsolved later run once its tries equal the incumbent best score. Puzzle paths may be
-#    repo-root-relative (packages/generation/output/...) or generation-package-relative
-#    (output/...).
-#    --in-place appends the full local lab artifact AND upserts the tested model's lean
-#    entry into the puzzle's variable-length benchmark array (any model; a re-run replaces
-#    that model, a now-stale entry is pruned). Since 2026-08-12 the APP IGNORES that
-#    array (the benchmark display was removed — root AGENTS.md, schema section): the
-#    embedded records are lab data only.
-#    It accepts only the canonical config: median + persistent + current
-#    prompt + at least 3 odd runs — and --runs already defaults to 3 for EVERY model, so no
-#    selector (Kimi included) needs an explicit --runs 3. Both writes are file-locked, so
-#    overlapping runs for different models accumulate instead of clobbering each other.
-pnpm bench:puzzle <puzzle.json> --model MODEL [--playbook <model>.playbook.json] [--effort LEVEL] [--auth api|subscription] [--session persistent|stateless] [--cap N] [--runs N] [--selection median|best] [--in-place]
-KIMI_CODE_API_KEY=... pnpm bench:puzzle <puzzle.json> --model KIMI --auth subscription --effort medium --in-place
+#    --runs N plays N full runs (default 1); every run is recorded as-is — there is no
+#    representative selection and no cost pruning (the median/best machinery and the
+#    --in-place puzzle embed were removed 2026-08-12: results are for scientific reading,
+#    not the app). Puzzle paths may be repo-root-relative
+#    (packages/generation/output/...) or generation-package-relative (output/...).
+#    EVERY invocation appends its complete session (all runs, transcripts, token usage)
+#    to output/<puzzle>.bench.json — file-locked, so overlapping runs for different
+#    models accumulate instead of clobbering each other. The puzzle JSON is never written.
+pnpm bench:puzzle <puzzle.json> --model MODEL [--playbook <model>.playbook.json] [--effort LEVEL] [--auth api|subscription] [--session persistent|stateless] [--cap N] [--runs N]
+KIMI_CODE_API_KEY=... pnpm bench:puzzle <puzzle.json> --model KIMI --auth subscription --effort medium
 
 # 5. PAUSED EXPERIMENT: bootstrap one model's playbook from all 92 static French puzzles
 #    (#88). Do not run this for normal benchmark production. Each real
@@ -86,14 +79,13 @@ pnpm bench:playbook:distill --model GPT-SOL --auth subscription [--dry-run]
   and replays folded-vocab existence, unique-try scoring, broadcast rank/MISS feedback,
   strict improvement, solved locks, and the counted-try cap. The singular `--model`
   accepts the seven-model roster's friendly selector (`OPUS`, `SONNET`, `FABLE`, `GPT-SOL`,
-  `GPT-TERRA`, `GPT-LUNA`, `KIMI`) or exact id; each invocation runs exactly one model. The
-  **display trio** (`display: true`) is **FABLE (`claude-fable-5`), KIMI K3 (`k3`), and
-  GPT-5.6 Sol (`gpt-5.6-sol`)** (decided 2026-07-20 on #81, confirmed 2026-07-22); Opus,
-  Sonnet, Terra, and Luna are lab-only.
-  The `display` flag is now documentation + a roster invariant only — `--in-place` records
-  EVERY tested model, and since 2026-08-12 NO model is rendered anywhere: the app's
-  benchmark display was removed (root `AGENTS.md`, schema section), so every embedded
-  entry is lab data. Ordinary play exposes `none|low|medium|high|xhigh|max`: GPT-5.6 API supports the full scale;
+  `GPT-TERRA`, `GPT-LUNA`, `KIMI`) or exact id; each invocation runs exactly one model.
+  **The harness is a lab instrument only (user-decided 2026-08-12):** the app's benchmark
+  display was removed (root `AGENTS.md`, schema section), and with it went the roster's
+  `display` flag, the `--selection median|best` machinery (representative selection and
+  every cost-pruning path), and `--in-place` (the puzzle-JSON embed). Nothing ever writes
+  into a puzzle file; every invocation appends its complete session to the lab artifact
+  (below). Ordinary play exposes `none|low|medium|high|xhigh|max`: GPT-5.6 API supports the full scale;
   Codex-plan GPT supports `low` through `max`; Anthropic supports `none` through `max`.
   Kimi requires `--auth subscription` with the dedicated `KIMI_CODE_API_KEY`, rejects
   `none` (which would route away from K3), and maps `low→low`, `medium|high→high`, and
@@ -104,7 +96,7 @@ pnpm bench:playbook:distill --model GPT-SOL --auth subscription [--dry-run]
   settings, skills, agents, plugins, or slash commands; inherited Claude credentials,
   config, and endpoint/model overrides are removed for the subprocess and restored on
   success or failure. Console output and raw lab sessions record requested + effective
-  effort, provider/model/transport/auth/session, prompt/cap/selection, duration, and
+  effort, provider/model/transport/auth/session, prompt/cap, duration, and
   **canonical token-usage schema v1** (decided 2026-07-19); token-aware transports also
   print each counted turn's canonical usage immediately. Its fixed fields are inclusive
   `input_tokens`, the `cached_input_tokens` and `cache_write_input_tokens` subsets,
@@ -129,23 +121,19 @@ pnpm bench:playbook:distill --model GPT-SOL --auth subscription [--dry-run]
   multi-step deduction; malformed prose is rejected, never truncated into a guess.
   `--playbook` accepts only a model/provider/prompt-matched,
   hash-verified `whippin_model_playbook` profile and injects its `final_playbook` under the
-  fixed rules as advice. `--selection median|best` defaults to median: median requires odd
-  sequential `--runs` (default 3 for EVERY model, Kimi included — decided 2026-07-22; no
-  per-provider run-count divergence), cost-prunes a later provable
-  upper-half run at the running median bound, and skips remaining calls after a cap-DNF
-  majority; best selects the lowest successful score and cost-prunes a later unsolved run
-  when it reaches that incumbent score. Kimi prints its counted-guess exposure and warns that
+  fixed rules as advice. `--runs N` plays N full runs (default 1, ONE uniform default for
+  every model — Kimi included, no per-provider divergence); every run is played to its
+  natural end (solve, cap DNF, or a bounded reply error) and recorded as-is — no
+  representative is chosen and no run is cost-pruned. Kimi prints its counted-guess
+  exposure and warns that
   non-counting turns add paid requests; `low` still uses adaptive thinking. Lab sessions
-  record the session mode, selected run, and each run's termination. `--in-place` records the
-  full local transcript/token usage AND upserts the tested model's replay-valid lean entry
-  into the puzzle's variable-length benchmark array (any model; a re-run replaces that model,
-  a now-stale sibling entry is pruned). It accepts only the canonical config — **median +
-  persistent + current prompt + at least `MIN_IN_PLACE_RUNS` (3) odd runs** — so results stay
-  comparable; the uniform `--runs` default already satisfies that gate for every model.
-  **Both `--in-place` writes are guarded by `_exclusive_file_lock`** (an advisory `flock`
+  record the session mode and each run's termination. **Every invocation appends its
+  complete session — all runs, transcripts, token usage — to
+  `output/<puzzle>.bench.json`** (`write_lab_artifact`), **guarded by
+  `_exclusive_file_lock`** (an advisory `flock`
   on a sidecar `.<name>.lock`) spanning the read AND the write: the atomic replace alone
   only makes the final swap indivisible, so without the lock two overlapping runs both
-  edit the same snapshot and the second drops the first's record. Local benchmark
+  edit the same snapshot and the second drops the first's session. Local benchmark
   output is gitignored and paid provider calls never run in tests/CI.
 - **Frozen neutral gameplay baseline (decided 2026-07-17).** Use prompt v21 at `medium`
   effort, without `--playbook`, for both Sonnet and GPT. Two direct same-puzzle stateless

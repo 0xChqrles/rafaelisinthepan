@@ -169,9 +169,12 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   of users", a separate future issue). The schema field, its TS types
   (`BenchmarkEntry`/`BenchmarkResults`), the web's parse/display code and its sprite
   assets are deleted; the client simply ignores a stray `benchmark` key on an
-  already-published puzzle. **`packages/benchmark` (llm_play.py, `--in-place` included)
-  is KEPT as lab-only tooling** — its records are for the curator, not the app; see its
-  own `AGENTS.md`. The removal does not resurrect #57's proposed `par` — there is still
+  already-published puzzle. **`packages/benchmark` (llm_play.py) is KEPT as lab-only
+  tooling for "scientific" reading** — same decision: `--in-place` (the puzzle-JSON
+  embed) and the whole `--selection` median/best machinery are gone from the harness
+  too; every invocation appends its full session record to the package's `output/`
+  lab artifact instead, and nothing writes into a puzzle file. See its own `AGENTS.md`.
+  The removal does not resurrect #57's proposed `par` — there is still
   no `par` schema field.
 - `ranks` is keyed by **secret slug**; the inner map is keyed by **input slug** →
   `{word, rank}`. The value carries the **canonical accented form** of its group (see
