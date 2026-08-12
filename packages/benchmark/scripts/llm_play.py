@@ -2487,7 +2487,7 @@ def provider_reply(
                 ]
             else:
                 request["messages"] = _provider_messages(messages, output)
-                # Append-only prose/decision conversations still use Anthropic's
+                # Append-only prose conversations still use Anthropic's
                 # automatic moving cache breakpoint on the last cacheable block.
                 request["cache_control"] = {"type": "ephemeral"}
             if effort == "none":

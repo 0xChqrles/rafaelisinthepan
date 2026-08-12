@@ -640,8 +640,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   would draw UNDER it — on the cut, the bottom rule lands exactly on the footer's top edge,
   where the terminus's rail stub runs into it, so a line severed mid-field wears the modal's
   parked-separator reading for free. **While torn, the content stops 8px SHORT of that rule**
-  (decided 2026-08-07): the modal's separator sits in a `--stick-inset` clearance, so this one
-  does too — via a MASK on the scroller (`.word-cut.more-down .word-scroll`), never a painted
+  (decided 2026-08-07): the old modal's parked separator kept the same 8px clearance, so this
+  one does too — via a MASK on the scroller (`.word-cut.more-down .word-scroll`), never a painted
   strip (a strip is a box over the waves again), and only while torn, since at the true bottom
   the merge link must run flush into the terminus's rail.
   The HIT is the sentence game's own feedback grammar on the word that is always visible —

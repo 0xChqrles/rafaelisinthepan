@@ -3151,9 +3151,9 @@ button * {
   flex-direction: column;
 }
 /* While the line is CUT, the content stops 8px SHORT of the torn rule: an empty band of bare
-   backdrop between the severed field and the dashes — the route map's own grammar for a parked
-   row, whose separator sits in a `--stick-inset` (8px) clearance rather than against the rows
-   it interrupts. Spoken here with a MASK, not a strip: painting the band would put a box over
+   backdrop between the severed field and the dashes — the old route map's grammar for a parked
+   row, whose separator kept an 8px clearance rather than sitting against the rows it
+   interrupted. Spoken here with a MASK, not a strip: painting the band would put a box over
    the animated waves, which is the thing this footer exists to avoid. Only while torn — at the
    true bottom the mask lifts, because the merge's last link must run flush out of the scroller
    into the terminus's rail below it. */
