@@ -126,8 +126,8 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
       "suffix": "" }                            // OPTIONAL display text after the blank
   ],
   "ranks": {                                    // keyed by SECRET slug
-    "foret": {                                  //   dq/road: OPTIONAL to consumers (#115)
-      "<input-slug>": { "word": "<accented>", "rank": 12, "dq": 231, "road": 1 }, ...
+    "foret": {                                  //   dq: OPTIONAL to consumers (#115)
+      "<input-slug>": { "word": "<accented>", "rank": 12, "dq": 231 }, ...
     }
   },
   "source": {                                   // OPTIONAL origin metadata (#5); ACCENTS KEPT
@@ -224,14 +224,10 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
   deliberately separate from the narrower group-0 claim.
 - **Rank semantics:** secret = `rank 0` (perfect); nearest word group = `1`; larger =
   farther. Alias keys share their group's rank.
-- **Every ranked group also carries its real geometry (`dq`, `road`) — #115, decided
+- **Every ranked group also carries its real geometry (`dq`) — #115, decided
   2026-07-25.** Ranks are dense and uniformly spaced by construction, so they erase the
   neighborhood's clumps and cliffs; cosine distance is only available at GENERATION time
-  (the client never sees vectors), so generation ships it. **NOTE (2026-08-10): the web's
-  route map was replaced by the guess-history modal, which still spaces its stops by `dq`
-  but reads `road` NOWHERE — a sentence puzzle's `road` fields currently ship with no
-  consumer at all** (whether gen_phrase should stop clustering is an open call — see
-  Discrepancies):
+  (the client never sees vectors), so generation ships it.
   - **`dq` — the quantized distance to the secret, one byte, per hole.** With `s1` = the
     rank-1 group's similarity and `smin` = the LAST kept group's,
     `dq = round(255 * (s − smin) / (s1 − smin))` → **rank 1 = 255, the farthest kept
@@ -241,55 +237,19 @@ accents. On the front, `fold()` is applied **only** to the player's raw keystrok
     `(dq − dq_start) / (255 − dq_start)` with no floats shipped. Present on **every rank
     ≥ 1 entry** of a newly generated puzzle; **the secret's own entry (rank 0) carries
     NONE** — the terminus is off-scale by nature. A flat span (`s1 == smin`) is a **hard
-    error**, never silent all-zero `dq`.
-  - **`road` — which cluster of the TRAVELLED neighborhood the group sits in.** The zone
-    is the groups **from the hole's start word IN to the secret** — ranks
-    `1 .. start_rank`, **the departure included** (decided 2026-07-26, superseding the
-    flat top-150 zone): the line is a journey and it begins where the puzzle put the
-    player down — **ON one of the roads**, so the start word carries one too and the fork
-    lands just before it — while a fork farther out than the departure is a fork of a
-    route nobody walks. Because the zone is the departure's rank, **`road` is per-HOLE
-    data, not a property of the secret's neighborhood alone**, and it cannot be stamped
-    until the start word is chosen (`distances.road_zone`,
-    `gen_phrase.annotate_roads`).
-    `ROAD_TOP` survives only as the **ceiling** on that zone — the start band tops
-    out at 150, well below its value, so it bites only on a start hand-picked outside the
-    band, where it keeps the clustering (and the shipped fields) bounded. Its value was
-    Word mode's (raised 150 → 250 on 2026-08-07) until **2026-08-10, when Word mode stopped
-    forking semantically at all** (see the single-word artifact schema below) — so it is a
-    plain ceiling again, and nothing outside this path reads it. Deterministic average-linkage
-    agglomerative clustering over cosine distance, `k ∈ ROAD_KS` (`{2..6}` since
-    2026-08-07), **falling back to ONE road (all `road: 0`) below `ROAD_MIN_SILHOUETTE`** —
-    mandatory, because some neighborhoods genuinely have a single facet. Roads are numbered by
-    their **closest member's rank**, so the road holding rank 1 is `road: 0`. `--no-roads`
-    skips them; **`dq` has no opt-out** — it is part of the schema.
-    **Two rules decide WHICH split ships (both decided 2026-08-07, when the wider zone broke
-    the old one):**
-    - **A road must hold at least `ROAD_MIN_FRACTION` (4%) of the zone AND never fewer than
-      `ROAD_MIN_GROUPS` (4) groups** — the larger of the two. A smaller cluster is
-      an outlier, not a route, and a lane drawn for it advertises a whole road nobody can
-      walk. Undersized clusters are **folded into their nearest neighbour** — never dropped,
-      every group still gets a road — **before the silhouette is read**, which is what removes
-      the metric's incentive to isolate one. The FRACTION is there because the zone is
-      `ROAD_TOP` for a word artifact but the DEPARTURE's rank for a sentence hole; the COUNT
-      is under it because the start band opens at rank 50 (`start_word.START_RANK_MIN`),
-      where 4% is TWO groups — the fraction alone admitted exactly the two-stop lane it was
-      written to forbid, and real fr neighborhoods at zone 50 took it. A lane reads as an
-      outlier at two stops whatever the zone is. From zone 100 up the fraction is the larger
-      of the two, so the count is a rule about the SHORT end of the sentence band only.
-    - **Mean silhouette is the HONESTY GATE, not the ranking: among the splits that clear it,
-      the one with the MOST roads wins** (ties → the smaller `k`). Ranking by silhouette does
-      not survive a zone this wide — measured over nine real neighborhoods at 250, the top
-      score went to `k=2` on eight, and seven of those were one trunk plus a 1–3 word
-      straggler. "Several roads lead to the word" is the product claim, so a 2-way cut of 250
-      groups says less than the 4-way one beside it at a marginally lower score.
-    **`ROAD_KS`'s ceiling is also a FRONT-END commitment:** it caps the road count, so the web
-    must be able to paint that many lanes (`LANE_COLORS`, pinned to it by `laneColors.test.ts`
-    — widen one without the other and two roads render in the same colour).
-  - Both are **GROUP properties**, like `word`/`rank`: every alias key of a lemma group
-    carries its group's values, and slug-collision resolution keeps the winning (closest)
-    group's. Both are **OPTIONAL to every consumer** (a `--no-roads` puzzle legitimately
-    ships no `road`).
+    error**, never silent all-zero `dq`. **`dq` has no opt-out** — it is part of the schema.
+  - It is a **GROUP property**, like `word`/`rank`: every alias key of a lemma group
+    carries its group's value, and slug-collision resolution keeps the winning (closest)
+    group's.
+  - **The semantic ROAD clustering that shipped beside it was REMOVED (user-decided
+    2026-08-12).** From #115 through 2026-08-11 every ranked group also carried a `road`
+    — which cluster of the travelled neighborhood it sat in — drawn by the route map as
+    coloured lanes. The map was replaced by the guess-history modal (2026-08-10) and the
+    tutorial's themes lesson by the rarity ladder (2026-08-11), which left the field with
+    no reader anywhere. The schema field, `distances.py`'s clustering (`cluster_roads`,
+    `road_zone`, the `ROAD_*` constants), `gen_phrase.annotate_roads` + `--no-roads`, and
+    the web's lane machinery are all deleted. A stray `road` key on an already-published
+    puzzle is simply ignored at parse.
 - **Slug collisions** (`côté`/`coté` → `cote`): keep the **smallest-rank** entry
   (built closest-first) and display its `word`. Resolved **silently** — generation
   prints no collision output.
@@ -312,7 +272,7 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   "word": { "word": "phare", "slug": "phare" },   // accented display form + its slug
   "ranks": {                                       // ONE FLAT map — no per-secret keying
     "<input-slug>": { "word": "<accented>", "rank": 12,
-                      "dq": 231, "freq": 8412 }, ...   // never a `road`
+                      "dq": 231, "freq": 8412 }, ...
   }
 }
 ```
@@ -364,24 +324,13 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
 - **`ranks` is ONE FLAT map** (there is only one word to rank around, so nothing to key
   it by), and there is no `words` / `holes` / `start` / `start_rank`. **No `source`
   either:** attribution belongs to a quoted line, and a lone word quotes nobody.
-- **NO `road` AT ALL (decided 2026-08-10; the `--roads` opt-in retired 2026-08-11 with
-  its one consumer).** Word mode's board draws one trunk and paints each station word by
-  **RARITY** — the `freq` grade above — so the semantic clustering has no consumer on a
-  word artifact, and generation does not run it: `gen_word` has no road pass and no flag.
-  (The opt-in existed for the
-  onboarding tutorial's THEMES lesson alone; on 2026-08-11 the user re-arced the tutorial
-  onto the rarity ladder and the lesson — the flag's only reader — went with it. The
-  committed tutorial maps had their `road` fields stripped the same day, and
-  `prune-word-map.mjs` now cuts its zone by RANK, `--top`, instead of by road presence.)
-  How that grade is presented is the WEB's (`web/src/game/wordBoard.ts`), and it needs
-  nothing else stamped: `freq` is already on every entry. `dq` still has no opt-out.
-  **Consequence, and it is a CONTRACT CHANGE: the web's `CLAIM_ZONE`
-  (`web/src/game/wordGame.ts`) NO LONGER RESTATES `ROAD_TOP` and is no longer pinned to
-  it.** It used to have to: the field the board drew was exactly the set carrying a road,
-  so moving one alone grew lane-less stations or refused to claim ones it had drawn.
-  Nothing stamps the field any more, and `dq` runs to the map's own `TOP_K` edge — so
-  Word mode's range is the client's own tuning knob, movable with **no republish** and no
-  regeneration. `wordGame.test.ts`'s cross-language pin is gone with the coupling.
+- **No semantic clustering (decided 2026-08-10).** Word mode's board draws one trunk and
+  paints each station word by **RARITY** — the `freq` grade above. How that grade is
+  presented is the WEB's (`web/src/game/wordBoard.ts`), and it needs nothing else stamped:
+  `freq` is already on every entry. `dq` still has no opt-out.
+  **The web's `CLAIM_ZONE` (`web/src/game/wordGame.ts`) is pinned to NOTHING in
+  generation:** `dq` runs to the map's own `TOP_K` edge, so Word mode's range is the
+  client's own tuning knob, movable with **no republish** and no regeneration.
 
 ### Day-addressed routing & the game day
 
@@ -543,8 +492,6 @@ publish/inventory/backend:dev (backend), dev/build (web), cdk synth/diff/deploy
     which stack — remember `shared`-like libs consumed by a stack must fan out to it),
     the per-stack deploy jobs, and the `workflow_dispatch` `stacks` options. A new
     deployable stack with no job/filter entry will silently never deploy.
-- The `.codex/skills/whippin-game/` skill + `validate_game_data.mjs` describe a
-  **superseded** schema (see Discrepancies).
 
 ---
 
@@ -563,38 +510,15 @@ batch. An improving hole's word/rank swap is deferred to the shared fade-out mom
 (`fadeDelayMs`) instead of firing immediately/staggered, so the exponent drop resolves
 the number that just landed.)*
 
-1. **Timer.** `README.md` and the `.codex` docs describe a 2:00 countdown that
-   freezes the score. The current code has **no timer** — a round ends only when all
-   holes are solved (shows "SOLVED!"). The recorded invariants don't mention a timer.
-   Decide: remove the stale timer references, or reintroduce a timer.
+*(Resolved 2026-08-12: former discrepancies #1-#3 — the 2:00 timer prose, the README's
+2-word `gen:phrase` example, and the stale `.codex/skills/whippin-game`. The skill was
+DELETED (it targeted a design three schemas ago); the other two had already been fixed in
+the files themselves, leaving only these notes to retire. Sentence mode still has no
+timer; Word mode's clock (#163) is its own rule, not this one.)*
 
-2. **`README.md` `gen:phrase` example passes 2 words, not 3.** The example
-   `--words forêt ancienne` would fail: `gen_phrase.py` requires exactly 3
-   (`nargs=3`), and filenames are `<s1>_<s2>_<s3>.json`. Fix the README example.
-
-3. **`.codex/skills/whippin-game/` is entirely stale.** Its `SKILL.md`,
-   `references/game-contract.md`, and `scripts/validate_game_data.mjs` target a
-   superseded design: a single `public/game_data.json` with per-language
-   multi-phrase arrays, a non-existent `scripts/build_game_data.py`, plain integer
-   ranks (`ranks[secret][word] = int`, not `{word, rank}`), ASCII-only normalization
-   that **drops dashes** (`replace(/[^a-z]/g,'')`, contradicting the dash-keeping
-   `fold()`), no slug/accents split, and a 2:00 timer. The validator validates the
-   old shape. Decide: update them to the current schema or remove them.
-
-4. **A sentence puzzle's `road` fields have no consumer since 2026-08-10 — and since
-   2026-08-11 NOTHING in the app reads a road anywhere.** The route map — their only
-   web reader — was replaced by the guess-history modal, which still spaces its
-   journey by `dq` but reads no roads; the tutorial's themes lesson (the last road
-   reader, on its own embedded maps) was re-arced onto the rarity ladder on
-   2026-08-11, taking `gen_word`'s `--roads` opt-in with it. `gen_phrase` still runs
-   the clustering and ships the fields (plus the road-selection machinery in
-   `distances.py`); the web still carries `routeDrawing`'s whole LANE machinery —
-   `Junction`, `laneX`, `laneColor`, `LANE_COLORS` + `laneColors.test.ts`, the
-   junction CSS — with no consumer left either, since Word mode's board went
-   trunk-only the same day (rarity is said in the word's colour now). Decide: keep
-   shipping/keeping them (a future surface may want the facets back) or remove the
-   sentence pipeline's roads AND the web's lane drawing together. (`dq` stays either
-   way — the history line is spaced by it.)
+*(Resolved 2026-08-12: former discrepancy #4 — a sentence puzzle's `road` fields with no
+consumer anywhere. The user decided to remove the clustering and the web's lane drawing
+together; `dq` stays, since the history line is spaced by it. See the schema bullet above.)*
 
 *(Resolved 2026-08-11: former discrepancy #5 — the tutorial teaching THEMES/routes the
 game no longer draws. The user re-arced the onboarding: the tutorial now teaches only

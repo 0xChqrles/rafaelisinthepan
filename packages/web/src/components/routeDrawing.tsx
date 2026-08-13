@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode, RefObject } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { heatColor } from '@whippin/shared';
 import { rankHeatColor, HIT_HEAT_CAP } from './Hole';
 import { t } from '../i18n';
@@ -13,6 +13,9 @@ import { t } from '../i18n';
 // What stays with a surface is what is genuinely its own: the board's censored field and
 // its claim reveal (and its pinned terminus footer, WordTerminus), the history's journey
 // model, and each one's screen-reader mirror.
+//
+// Both routes draw ONE trunk. What a station IS gets said in its dress — the board paints a
+// word in its rarity's colour, the history line tells its zones apart by node and brightness.
 
 // The dq scale (#115): the rank-1 group is pinned at 255, the farthest kept group at 0,
 // per map. The affine normalization is lossless for a consumer that only reads RATIOS,
@@ -24,9 +27,9 @@ const DQ_MAX = 255;
 // A connector carries the distance between the two stations it joins: `LINK_SPAN` px per full
 // dq scale, floored so two neighbours never collide and capped so the cold tail cannot push the
 // destination off screen. The floor and the cap are what make this a line and not a map.
-// The floor is exported: it is also the uniform spacing a surface falls back to where no dq
-// exists to carry a distance (the history modal on pre-#115 data).
-export const LINK_MIN = 14;
+// The floor doubles as the uniform spacing `linkGap` falls back to where no dq exists to
+// carry a distance (the history modal on pre-#115 data).
+const LINK_MIN = 14;
 const LINK_MAX = 92;
 const LINK_SPAN = 300;
 
@@ -70,128 +73,23 @@ export const dashedRun = (px: number) =>
 // have no distance at all, whether or not this round produced any. Not a distance, so not a
 // solid line — the ONE broken trace the board draws.
 const TAIL_H = dashedRun(34); // 31
-// Where the trunk splits into lanes, and where they merge back into the word. Its own fixed
-// minimum, since it draws a shape rather than a gap.
-export const JUNCTION_H = 34;
-// The clearance the word board's torn-edge mask keeps its content short of the cut by
-// (`.word-cut`), handed to CSS as `--stick-inset`. (Named for the route map's sticky row,
-// which parked this far off the screen edge; the map is gone, the clearance idiom stays.)
-const STICK_INSET = 8;
-
 // A word you have not found — a terminus still to be reached, or a censored station. FIXED
 // width: a placeholder that grew with the word would leak its length.
 export const UNKNOWN = '???';
 
-// --- lanes ---------------------------------------------------------------------------------
-// A neighborhood's routes are drawn as LANES of the rail, the way a metro line draws its
-// branches: which lane a station sits on is which route it belongs to. That is structural —
-// you read it from the shape of the line, not from a badge — and it makes the one fact a list
-// cannot state visible for free: a route nobody has reached is a lane with NO stations on it.
-//
-// WHAT a lane means is the SURFACE's, not this module's (decided 2026-08-10, when Word mode's
-// board moved off semantic roads). The sentence map's lanes are the #115 road clusters; Word
-// mode's are the five RARITY GRADES (#163). Both draw the same line, so the geometry lives
-// here and the PALETTE is a parameter — `LANE_COLORS` is the default because the route map is
-// the surface that owns those hues, not because the drawing knows what a lane is.
-//
-// Geometry lives here because the node positions and the CSS gradient that paints the lines
-// have to agree exactly. Lane centres are `LANE_X0 + road * LANE_GAP`, so a LANE_W line is the
-// band [x - LANE_W/2, x + LANE_W/2] and the rail column is exactly wide enough for the outer
-// two — the gradient's last band lands inside it and the next one falls outside, clipped.
-const LANE_GAP = 22;
-const LANE_X0 = 15.5;
-const LANE_W = 5;
-// Past this many roads the bundle TIGHTENS instead of widening (2026-08-07, when ROAD_KS went
-// to 6). The rail takes its width from the WORD column, and below ~360px there is none to
-// give: at six lanes the rail ran 141px against 97, which left ~67px of word column on a 320px
-// screen and wrapped a 9-letter station mid-word (`boisemen`/`t`) — fitWord floors at
-// WORD_MIN_PX, so past that floor the overflow has nowhere to go. Mid-word breaks are the one
-// thing that module exists to prevent, so the lanes give way instead of the type: the bundle
-// spans the same LANE_SPAN whatever the road count, and only the gap between lanes closes
-// (22px at <= 4 roads, 16.5 at five, 13.2 at six — still 8px of gap between 5px lines).
-const LANE_BUNDLE_FULL = 4;
-const LANE_SPAN = (LANE_BUNDLE_FULL - 1) * LANE_GAP;
-
-// The gap between two lane centres, for a rail of `lanes` roads. EVERY consumer of a lane
-// position goes through this, so the gradient that paints the lanes and the nodes that sit on
-// them cannot disagree about where a lane is — which is the whole reason the geometry lives in
-// one module (see the note above LANE_GAP).
-function laneGap(lanes: number): number {
-  return lanes <= LANE_BUNDLE_FULL ? LANE_GAP : LANE_SPAN / (lanes - 1);
-}
-// One color per lane, as vivid as the rest of the app — a metro line's whole point is that you
-// can tell it from the next one at a glance. The hues are lifted from the progress ramp's own
-// stops (`shared/progressColor.ts`), four of them far apart, so the map speaks the app's palette
-// instead of inventing one; they are COPIED rather than imported, because that ramp means
-// "progress" and these mean "identity". Ordered so the common 2- and 3-road cases get the
-// widest-apart hues, and pink (never cyan) leads: lane A always holds rank 1, and cyan is what
-// the heat ramp paints a rank-1 number, so leading with it would imply a rule that isn't one.
-// Gold is "you" and blue is solved, so no lane may borrow either. ROAD_KS caps roads at 6.
-// Exported for the drift guard in laneColors.test.ts, which pins each to the stop it was taken
-// from — pink 70, cyan 30, violet 90, green 40, coral 60, magenta 80. (That guard immediately
-// caught the violet as #883beb where its stop is #883ceb: a one-off in the transcription,
-// invisible on screen but exactly the kind of thing "copied, not imported" can hide forever.)
-//
-// Lanes 5 and 6 arrived 2026-08-07 with the widened ROAD_KS, and the FIRST FOUR ARE UNCHANGED
-// on purpose: every map that forks 4 ways or fewer renders exactly as it did. Only three ramp
-// stops were left to choose from, and the pair was measured rather than eyeballed — coral +
-// magenta hold a minimum CIE76 ΔE of 36.9 across the whole set, where either pairing with
-// indigo collapses to 15.3 (indigo sits right on top of violet). ΔE is why magenta is here
-// despite reading "pinkish" in the abstract: against pink it is 40+, against violet 36.9.
-// (The onboarding's theme clouds used to paint each theme in these too, until the themes
-// ending was retired on 2026-08-11.)
-export const LANE_COLORS = ['#ef4f97', '#2ad2eb', '#883ceb', '#23dc91', '#ee674e', '#db24c8'];
-
-export function laneX(road: number, lanes: number): number {
-  return LANE_X0 + road * laneGap(lanes);
-}
-
-// Where the trunk runs: the middle of the lane bundle, so the fork and the merge are symmetric.
-export function trunkX(lanes: number): number {
-  return LANE_X0 + ((lanes - 1) * laneGap(lanes)) / 2;
-}
-
-// The colour a station's node and word take: its own lane's, or the trunk's where the station
-// belongs to no route at all. A dark node on a vivid lane reads as the line being BROKEN, where
-// the lane's own colour reads as a stop with no name on it yet — which is what an unfound
-// station is.
-export function laneColor(lane: number | null, colors: readonly string[] = LANE_COLORS): string {
-  return lane === null ? 'var(--rail)' : colors[lane % colors.length];
-}
-
-// The rail's lines, as one gradient: a hard-stop band per lane, in that lane's tint. Built here
-// (not in CSS) because the number of lanes is data — and because painting every lane in one
-// background is what lets a single element carry a whole cross-section of the line.
-function laneLines(lanes: number, colors: readonly string[]): string {
-  const stops: string[] = [];
-  for (let lane = 0; lane < lanes; lane += 1) {
-    const color = colors[lane % colors.length];
-    const from = laneX(lane, lanes) - LANE_W / 2;
-    stops.push(`transparent ${from}px, ${color} ${from}px, ${color} ${from + LANE_W}px`);
-    stops.push(`transparent ${from + LANE_W}px`);
-  }
-  return `linear-gradient(90deg, ${stops.join(', ')})`;
-}
-
-// The junction's bus — the horizontal run the lanes elbow along to reach the trunk. Painted in
-// the LANES' colors, split at the trunk, not in one neutral bar: a single grey bar at each end of
-// a set of parallel lines reads as a frame drawn AROUND them, where two colored halves read as
-// what they are, the outer lanes turning in toward the trunk. With more than three roads the
-// inner lanes' elbows hide under the outer ones, which is what overlapping tracks do anyway.
-function busGradient(lanes: number, split: number, colors: readonly string[]): string {
-  const left = colors[0];
-  const right = colors[(lanes - 1) % colors.length];
-  const at = `${(split * 100).toFixed(2)}%`;
-  return `linear-gradient(90deg, ${left} 0 ${at}, ${right} ${at} 100%)`;
-}
+// --- the rail ------------------------------------------------------------------------------
+// Where the line runs across its column. The node positions and the CSS that paints the rail
+// have to agree exactly, so the geometry lives here: TRUNK_X is the trunk's centre, and the
+// rail column is exactly wide enough for the line drawn on it (`--line-w`, CSS's own).
+const TRUNK_X = 15.5;
 
 // How many glyphs the rank gutter has to hold: the exponent's digits plus its leading `-`.
 //
 // It takes the widest rank the MAP can ever produce, never the widest currently DRAWN (fixed
 // 2026-08-06). The gutter track is `minmax(var(--gutter), max-content)`, so sizing it to the
 // line as it stands means the first guess that lands a wider exponent — a 4-digit rank on a
-// board whose field ends at CLAIM_ZONE — widens the track and shoves the whole line, rail and lanes
-// and words, one glyph to the right. The exponent that arrives is a REPORT on a guess; it must
+// board whose field ends at CLAIM_ZONE — widens the track and shoves the whole line, rail and
+// words, one glyph to the right. The exponent that arrives is a REPORT on a guess; it must
 // not move the map the player is reading. Reserved up front the width is a property of the
 // puzzle, so it is fixed for the round and nothing shifts. It costs one glyph of gutter on a
 // board that never shows a wide rank, which is the whole price of the anticipation.
@@ -199,33 +97,20 @@ export function rankGutterChars(maxRank: number): number {
   return 1 + String(Math.max(1, Math.floor(maxRank))).length;
 }
 
-// Every CSS variable the drawing needs, for a line of `lanes` roads whose widest exponent is
-// `rankChars` glyphs wide. One function, so the two surfaces cannot compute a rail width, a bus
-// split or a dash unit differently — the rail column, the gradients that paint it and the
-// heights measured against it all derive from the same three numbers.
+// Every CSS variable the drawing needs, for a line whose widest exponent is `rankChars`
+// glyphs wide. One function, so the two surfaces cannot compute a rail width or a dash unit
+// differently — the rail column and the heights measured against it derive from the same
+// numbers.
 //
 // The rank gutter's char COUNT is baked in as a literal while the cell size stays a CSS
 // variable, so the gutter tracks the responsive `--rank-size` without any calc having to divide
 // by a custom property. (`--gutter` is only the FALLBACK template — `.route` is one grid and
 // each row a subgrid of it, so the real gutter is `max-content` across every row at once.)
-export function routeFrameVars(
-  lanes: number,
-  rankChars: number,
-  colors: readonly string[] = LANE_COLORS,
-): CSSProperties {
-  const railWidth = LANE_X0 * 2 + (lanes - 1) * laneGap(lanes);
-  const trunk = trunkX(lanes);
-  const busX = laneX(0, lanes) - LANE_W / 2;
-  const busW = (lanes - 1) * laneGap(lanes) + LANE_W;
+export function routeFrameVars(rankChars: number): CSSProperties {
   return {
     '--gutter': `calc(var(--rank-size) * ${rankChars} + 10px)`,
-    '--railw': `${railWidth}px`,
-    '--trunk-x': `${trunk}px`,
-    '--bus-x': `${busX}px`,
-    '--bus-w': `${busW}px`,
-    '--bus-grad': busGradient(lanes, (trunk - busX) / busW, colors),
-    '--lane-lines': laneLines(lanes, colors),
-    '--stick-inset': `${STICK_INSET}px`,
+    '--railw': `${TRUNK_X * 2}px`,
+    '--trunk-x': `${TRUNK_X}px`,
     // The dash unit the tail is cut to (see dashedRun): the gradient paints it, the height
     // counts it, so both read it from here.
     '--dash': `${DASH}px`,
@@ -253,23 +138,6 @@ export const STATION_PX = 15;
 // The rows every route is built out of. A surface composes them and supplies what is its own
 // (which rows exist, in what order, and what stands in the word cell); none of the markup or
 // the class grammar is written twice.
-
-// The trunk splitting into lanes (and, flipped, the lanes merging into the word). Orthogonal
-// only — a trunk stub, a bus across the lanes, then the lanes themselves. Unlabelled: the shape
-// IS the statement, and naming it added a word the map does not need.
-export function Junction({ height, converge }: { height: number; converge?: boolean }) {
-  return (
-    <div className={`route-station route-junction${converge ? ' converge' : ''}`} style={{ height }}>
-      <span className="route-rank" />
-      <span className="route-rail jx">
-        <i className="jx-trunk" />
-        <i className="jx-bus" />
-        <i className="jx-lanes" />
-      </span>
-      <span className="route-body" />
-    </div>
-  );
-}
 
 // ABOVE the line: the guesses that earned no rank at all. Beyond the top-K there is no distance
 // left to draw, and that IS the mechanic. It carries no rule under it (removed 2026-08-05): the
@@ -305,54 +173,32 @@ export function RouteTail() {
   return <div className="route-link tail" style={{ height: TAIL_H }} />;
 }
 
-// The connector between two rows. `lanes` paints it in the roads' colours rather than the
-// trunk's — a link inside the forked stretch is as many lines as there are roads.
-// `broken` draws it as the tail's dashed trace instead of a solid run — the history modal's
-// behind-the-departure stretch, where the line is not yet the journey. A broken height must
-// be `dashedRun`-snapped by the caller, or the last unit is cut wherever it falls.
-export function RouteLink({
-  height,
-  lanes = false,
-  broken = false,
-}: {
-  height: number;
-  lanes?: boolean;
-  broken?: boolean;
-}) {
-  return (
-    <div
-      className={`route-link${lanes ? ' lanes' : ''}${broken ? ' broken' : ''}`}
-      style={{ height }}
-    />
-  );
+// The connector between two rows. `broken` draws it as the tail's dashed trace instead of a
+// solid run — the history modal's behind-the-departure stretch, where the line is not yet the
+// journey. A broken height must be `dashedRun`-snapped by the caller, or the last unit is cut
+// wherever it falls.
+export function RouteLink({ height, broken = false }: { height: number; broken?: boolean }) {
+  return <div className={`route-link${broken ? ' broken' : ''}`} style={{ height }} />;
 }
 
 // One ROW of the line: the rank in its right-aligned gutter (the "time"), the rail with this
 // row's node on it, then the word cell. All three name their grid column in CSS, which is what
 // makes the rail read as one unbroken line down the page.
 export function RouteRow({
-  rowRef,
   className = '',
   style,
   rank = null,
-  onLane = false,
   children,
 }: {
-  // A surface's handle on a row it measures (the map's sticky "you are here").
-  rowRef?: RefObject<HTMLDivElement | null>;
   className?: string;
   style?: CSSProperties;
-  // The row's own distance: drawn as its heat-coloured exponent, and exposed as
-  // `data-route-rank` so a surface can find the row again without re-deriving its position.
-  // Null on the rows that have no distance of their own — a terminus, a junction.
+  // The row's own distance, drawn as its heat-coloured exponent. Null on the rows that
+  // have no distance of their own — a terminus.
   rank?: number | null;
-  onLane?: boolean;
   children?: ReactNode;
 }) {
   return (
     <div
-      ref={rowRef}
-      data-route-rank={rank ?? undefined}
       className={`route-station${className ? ` ${className}` : ''}`}
       style={style}
     >
@@ -366,7 +212,7 @@ export function RouteRow({
       >
         {rank === null ? null : `-${rank}`}
       </span>
-      <span className={`route-rail${onLane ? ' lanes' : ''}`}>
+      <span className="route-rail">
         <i className="route-node" />
       </span>
       <span className="route-body">{children}</span>

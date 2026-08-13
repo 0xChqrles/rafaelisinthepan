@@ -8,15 +8,20 @@ Daily sentence-reconstruction game. A **pnpm workspaces** monorepo.
 packages/
   web/         React + Vite + TypeScript front end (the game UI + static assets).
   generation/  Python embedding reduction + puzzle/vocab generation (run via uv).
-  benchmark/   Isolated Python LLM puzzle benchmark and provider dependencies.
-  shared/      Cross-cutting TypeScript consumed by web: the slug/fold contract
-               and the per-puzzle schema types.
+  benchmark/   Isolated Python LLM puzzle benchmark and provider dependencies (lab only).
+  backend/     Daily-puzzle backend: one handler for Lambda + local serve, the store, publish.
+  infra/       AWS CDK app: the backend and web-hosting stacks (plus the CI deploy role).
+  shared/      Cross-cutting TypeScript consumed by web AND bundled into the backend
+               Lambda: the slug/fold contract, the schema types, the game day, the
+               share-card codec.
 ```
 
 Authoritative agent / architecture guidance lives in **AGENTS.md** (`CLAUDE.md`
 is a symlink to it). The web app serves a single `public/` (under
 `packages/web/public`) that holds both its static assets (flags, font) and the
-generated `vocab/` + `word/` JSON produced by the generation package.
+generated `vocab/<lang>.json` existence set produced by the generation package.
+Puzzles are generation artifacts, published to the daily store and served by the
+backend — they never live under `public/`.
 
 ## Setup
 
@@ -49,14 +54,12 @@ pnpm reduce:fr         # embedding/fr/cc.fr.300.vec      -> cc.fr.300_reduced.ve
 pnpm reduce:en         # embedding/en/glove.6B.300d.txt  -> glove.6B.300d_reduced.txt
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--`)
 
-# LLM benchmark (packages/benchmark — Python via its own uv project)
+# LLM benchmark (packages/benchmark — Python via its own uv project; lab readings only)
 # Native persistent sessions are the product default; use --session stateless only
-# for fresh-turn complete-record diagnostics.
+# for fresh-turn complete-record diagnostics. --runs N repeats a full run (default 1).
 pnpm bench:puzzle <puzzle.json> --model OPUS
-pnpm bench:puzzle <puzzle.json> --model GPT-SOL --auth subscription --effort medium --runs 1
-pnpm bench:puzzle <puzzle.json> --model SONNET --auth subscription --effort medium --runs 1
-KIMI_CODE_API_KEY=... pnpm bench:puzzle <puzzle.json> --model KIMI --auth subscription --effort medium --runs 1
-pnpm bench:puzzle <puzzle.json> --model SONNET --auth subscription --effort medium --runs 7
+pnpm bench:puzzle <puzzle.json> --model SONNET --auth subscription --effort medium
+KIMI_CODE_API_KEY=... pnpm bench:puzzle <puzzle.json> --model KIMI --auth subscription --effort medium
 ```
 
 Generation splits its two outputs by purpose: **puzzles** land in

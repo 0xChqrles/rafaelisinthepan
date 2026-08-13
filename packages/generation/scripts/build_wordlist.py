@@ -3,7 +3,7 @@
 # dependencies = []
 # ///
 """
-Build the reference wordlist consumed by reduce_embedding.py's hors-dico rule (rule 5).
+Build the reference wordlist consumed by reduce_embedding.py's hors-dico rule (rule 3).
 
 For a language, this fetches the reference sources, takes their UNION (their gaps
 differ, so the union has better coverage than either alone), normalizes every entry the
@@ -43,7 +43,7 @@ import subprocess
 import sys
 import urllib.request
 
-import reduce_embedding as red  # CHAR_CLASS / token_pattern — one source for the token rule
+import reduce_embedding as red  # token_pattern — one source for the token rule
 
 WORDLIST_DIR = red.WORDLIST_DIR
 CACHE_DIR = os.path.join(WORDLIST_DIR, ".cache")

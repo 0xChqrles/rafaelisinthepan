@@ -28,7 +28,7 @@ export function currentStreak(days: number[], activeDay: number): number {
   return run;
 }
 
-export interface StreakTransition {
+interface StreakTransition {
   previous: number;
   next: number;
 }
@@ -44,18 +44,14 @@ export function streakTransition(days: number[], solvedDay: number): StreakTrans
 }
 
 // One cell of the weekly streak row (#74).
-export interface WeekCell {
+interface WeekCell {
   dayNumber: number;
   solved: boolean;
   isToday: boolean; // the active day (just solved on the solved screen)
   isFuture: boolean; // after the active day — not yet playable
 }
 
-export interface WeekView {
-  // Whether the current week is "clean so far" — no elapsed day on/after the player's
-  // first-ever solve is unsolved. Kept as a derived signal even though the celebration now
-  // always shows the row (including a restarted streak after a missed day).
-  clean: boolean;
+interface WeekView {
   cells: WeekCell[]; // exactly 7, Monday..Sunday
 }
 
@@ -67,44 +63,21 @@ function mondayIndex(dayNumber: number): number {
   return (dow + 6) % 7; // 0 = Mon … 6 = Sun
 }
 
-// The current week (the Monday..Sunday that contains `activeDay`, #74) as 7 cells, plus
-// whether it is "clean so far": every elapsed day (<= activeDay) that is on/after the
-// player's FIRST-ever solve is solved. Days BEFORE the first solve are ignored — a
-// mid-week newcomer still has a clean week (decided 2026-07-08). Pure over the day array,
-// like the counters, so it stays correct under any future set union.
+// The current week (the Monday..Sunday that contains `activeDay`, #74) as 7 cells. Pure
+// over the day array, like the counters, so it stays correct under any future set union.
 export function weekView(days: number[], activeDay: number): WeekView {
-  const sorted = normalize(days);
-  const solvedSet = new Set(sorted);
-  const firstSolve = sorted.length > 0 ? sorted[0] : Infinity;
+  const solvedSet = new Set(normalize(days));
   const weekStart = activeDay - mondayIndex(activeDay); // this week's Monday
-  let clean = true;
   const cells: WeekCell[] = [];
   for (let i = 0; i < 7; i++) {
     const d = weekStart + i;
-    const solved = solvedSet.has(d);
-    const isFuture = d > activeDay;
-    cells.push({ dayNumber: d, solved, isToday: d === activeDay, isFuture });
-    // A "miss" = an elapsed day, on/after the player's first solve, left unsolved.
-    if (!isFuture && d >= firstSolve && !solved) clean = false;
+    cells.push({
+      dayNumber: d,
+      solved: solvedSet.has(d),
+      isToday: d === activeDay,
+      isFuture: d > activeDay,
+    });
   }
-  return { clean, cells };
+  return { cells };
 }
 
-// The longest consecutive run ANYWHERE in the retained set, independent of the active day.
-// Empty set -> 0, a single day -> 1. NOTE: this is "best within retained history", not a
-// literally-forever best — solvedDays is bounded to the most recent MAX_SOLVED_DAYS per
-// language (gameStore), by the issue's derive-only + capped-set design (persisting a real
-// forever-best counter is exactly what that design refuses, since a counter can't merge
-// across devices). The cap is far beyond any reachable streak for years, so in practice
-// this IS the all-time best.
-export function bestStreak(days: number[]): number {
-  const sorted = normalize(days);
-  if (sorted.length === 0) return 0;
-  let best = 1;
-  let run = 1;
-  for (let i = 1; i < sorted.length; i++) {
-    run = sorted[i] - sorted[i - 1] === 1 ? run + 1 : 1;
-    if (run > best) best = run;
-  }
-  return best;
-}

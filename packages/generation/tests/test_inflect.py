@@ -967,19 +967,19 @@ def test_a_group_reclaimed_down_to_nothing_is_not_resurrected_without_geometry()
     # The reclaim above, pushed one step: the CLOSER group takes the farther group's only
     # key, so by the time the pass reaches that farther rank it has no entry left to read a
     # dq off. Keying its agreed form anyway would put a rank back on the board carrying no
-    # geometry — one that scores a hit in the game and cannot be drawn on its own route map
+    # geometry — one that scores a hit in the game and cannot be drawn on its own line
     # (a dq-less entry is neither a stop nor a miss there). `dq` has no opt-out, so the group
     # stays gone.
     rmap = {
         "amuses": {"word": "amuses", "rank": 0},
-        "lassés": {"word": "lassés", "rank": 1, "dq": 255, "road": 0},
-        "lasses": {"word": "marchait", "rank": 3, "dq": 200, "road": 0},
+        "lassés": {"word": "lassés", "rank": 1, "dq": 255},
+        "lasses": {"word": "marchait", "rank": 3, "dq": 200},
     }
     changed = _settled("ind:pre:2s").apply(
         rmap, "amuses", _donors(), lexemes={1: "lasser:v", 3: "marcher:v"})
 
     assert changed == {1: ("lassés", "lasses")}      # the closer rewrite still happens
-    assert rmap["lasses"] == {"word": "lasses", "rank": 1, "dq": 255, "road": 0}
+    assert rmap["lasses"] == {"word": "lasses", "rank": 1, "dq": 255}
     assert "marches" not in rmap                     # rank 3 is NOT keyed back into the map
     # The invariant this protects, stated directly: nothing ranked ships without its geometry.
     for key, entry in rmap.items():

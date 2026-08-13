@@ -12,25 +12,23 @@
     src/
       hooks/useVocab.ts       fetch+cache the per-language existence Set (once per session)
       hooks/usePuzzle.ts      fetch the client-computed day's puzzle from the backend
-      api.ts                  backend client: puzzleUrl/todayUrl, 404->NO PUZZLE
+      api.ts                  backend client: puzzleUrl/wordPuzzleUrl, 404->NO PUZZLE
       i18n.ts                 UI chrome strings (en+fr), t(lang, key); parity type-enforced
       tutorial/               onboarding (#51/#155): Tutorial.tsx + data scripts/<lang>.ts
                               (+ <lang>.word.json, the pruned #154 board it plays on)
       screens/Game.tsx        the guess loop, hole state (imports fold from @whippin/shared)
       screens/WordGame.tsx    Word mode's three phases: rules gate -> timed run -> post-mortem
       game/wordGame.ts        Word mode's rules + economy (CLAIM_ZONE, the rarity ladder, the clock)
-      game/wordBoard.ts       Word mode's post-mortem board: the zone as stations on RARITY lanes
+      game/wordBoard.ts       Word mode's post-mortem board: the zone as RARITY-graded stations
       components/rarity.ts    a rarity grade's pinned colour, and how many times a find is struck
       components/WordSlash.tsx    the slash a claim cuts the day's word with
       components/WordSubject.tsx  the day's word while the run is on: the word alone, centred
       hooks/useCountdown.ts   the run's deadline, as a ticking clock (HUD) and as one flip (screen)
       game/scoring.ts         s(rank), holeProgress, computeProgress
       components/Phrase.tsx,Hole.tsx,WordInput.tsx,FloatingHit.tsx  rendering
-      components/routeDrawing.tsx  THE route drawing: geometry, lanes, frame vars + the row
-                              parts (Junction/OffMapShelf/RouteTail/RouteLink/RouteRow).
-                              WordBoard (#156) composes it (the #117 route map was its other
-                              consumer until 2026-08-10). It owns the SHAPE of a lane; the
-                              surface owns what a lane MEANS and passes the palette.
+      components/routeDrawing.tsx  THE route drawing: geometry, frame vars + the row parts
+                              (OffMapShelf/RouteTail/RouteLink/RouteRow). Composed by
+                              WordBoard (#156) and HistoryModal; both draw one trunk.
       game/history.ts         a hole's guess log ranked against its secret (buildHistory)
       components/HistoryModal.tsx  the hole tap's surface: your tries, closest first
       game/share.ts           what a RESULT says: both modes' share text + link (emoji row,
@@ -173,14 +171,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   reveal's scrambles were already disabled, so the cost is DOM, not animation); and
   `wordStatusOf` reads progress as claimed/zone, so the archive's and chooser's percentages
   are proportionally smaller (a 25-claim run reads 3% where it read 10% — honest, since the
-  field is deliberately unclearable and is now four times more so). It used to be the one constant here that was NOT ours to
-  pick alone: it restated generation's `ROAD_TOP` (`distances.py`) and `wordGame.test.ts`
-  read the Python literal to pin them, because the field the board drew was exactly the set
-  of groups carrying a `road` — move one and the board grew lane-less stations, or drew
-  stations it would not let you claim. The board now draws one trunk and paints its station
-  words by RARITY (see the board bullet below), generation stamps a word artifact with no roads at all, and `dq` — what the drawing
-  actually spaces its stations by — runs to the map's own `TOP_K` edge. The pin is deleted
-  with the coupling.
+  field is deliberately unclearable and is now four times more so). It is pinned to nothing in generation: the board
+  paints its station words by RARITY (see the board bullet below) off `freq`, and `dq` —
+  what the drawing spaces its stations by — runs to the map's own `TOP_K` edge.
   **The CLOCK replaced the strike system (#163).** Two dailies should be two games:
   Sentence mode is think slowly, Word mode is think fast and beat the clock.
   Everything the strikes legislated, the timer legislates for free — a repeat, an invalid
@@ -573,10 +566,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the history pushed the window's centre up with it and the word read as TOP-ALIGNED (measured
   126px high); given the whole band down to the KEYBOARD the word read as TOO LOW.
   **The rarity COLOURS are copies of existing ramp stops, measured, and pinned**
-  (`components/rarity.ts` + `rarity.test.ts`, mirroring `LANE_COLORS`/`laneColors.test.ts`):
+  (`components/rarity.ts` + `rarity.test.ts`):
   `--muted` / progress-green / progress-cyan / heat-electric-violet / progress-pink, minimum
   pairwise 36.99 dE. **RED IS RESERVED FOR MISS** — every grade clears 37+ dE from `--danger`,
-  wider than the lane set's own shipped 36.9, and the two can never co-occur anyway. Three
+  and the two can never co-occur anyway. Three
   candidates were measured and REJECTED, and the reasons are worth keeping: progress-violet
   is the intuitive "deep" pick for OBSCURE and FAILS legibility at 3.64:1 on `--bg` (indigo
   at 3.00:1), gold-for-ARCANE IS `--hole` — which is the `+Ns` gain firing in the same beat —
@@ -615,7 +608,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   round seeds every beat settled, and reduced motion zeroes the JS-timer holds.
   **The drawing itself is `components/routeDrawing`** (extracted 2026-08-06, superseding
   "the board imports RouteModal's exported geometry helpers"): the geometry, the frame
-  variables, the shelf, the tail, the connector rule, the junctions and the station ROW are
+  variables, the shelf, the tail, the connector rule and the station ROW are
   one module belonging to neither surface. Importing half a component's internals is not
   sharing it — the modal ended up owning a vocabulary it only half-uses while the board
   re-implemented everything it had not imported, which is how the two came to hold separate
@@ -647,8 +640,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   would draw UNDER it — on the cut, the bottom rule lands exactly on the footer's top edge,
   where the terminus's rail stub runs into it, so a line severed mid-field wears the modal's
   parked-separator reading for free. **While torn, the content stops 8px SHORT of that rule**
-  (decided 2026-08-07): the modal's separator sits in a `--stick-inset` clearance, so this one
-  does too — via a MASK on the scroller (`.word-cut.more-down .word-scroll`), never a painted
+  (decided 2026-08-07): the old modal's parked separator kept the same 8px clearance, so this
+  one does too — via a MASK on the scroller (`.word-cut.more-down .word-scroll`), never a painted
   strip (a strip is a box over the waves again), and only while torn, since at the true bottom
   the merge link must run flush into the terminus's rail.
   The HIT is the sentence game's own feedback grammar on the word that is always visible —
@@ -669,13 +662,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   END is the deadline's fact, and the board is not on screen at all until this beat says so
   (see the three-phase bullet above for the beat order).
   **RARITY IS SAID IN THE WORD'S COLOUR, ON ONE TRUNK — the sentence route's exact drawing**
-  (user-decided 2026-08-11, superseding 2026-08-10's grade-per-lane fork; the grades had
-  replaced the artifact's semantic roads that day). Every zone station's word is painted in
+  (user-decided 2026-08-11). Every zone station's word is painted in
   its grade's own `RARITY_COLORS` colour (`--rarity-c`, set per station by WordBoard) — the
   same colour the strike and the loot wore when the claim landed — where the sentence line
-  paints its stops gold; the drawing itself is the history line's: `routeFrameVars(1, …)`,
-  no junctions, no lane rails, the same `LEAP_H` (56) solid run into the terminus (the old
-  junction-aware `TEASER_MERGE_RUN`/`JX_STUB` arithmetic went with the fork), the same
+  paints its stops gold; the drawing itself is the history line's: the same
+  `routeFrameVars`, the same `LEAP_H` (56) solid run into the terminus, the same
   shared `--word-gap` and 48px shelf air (both promoted to the shared drawing on user
   review — "the gaps and sizings are not the same" — 2026-08-11), the terminus as
   `RouteWord` in `route-found`'s solved BLUE (the colour rule is keyed on the `graded`
@@ -688,11 +679,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   order, only the grades the field holds), whose consumer is now the sr census:
   `srWordRarities` states the field per grade and a named stop carries its grade
   (`srRouteStop`'s `rarity`), the word's colour said in words; grade names stay
-  untranslated there as everywhere else. NOTE: this leaves `routeDrawing`'s whole lane
-  machinery (`Junction`, `laneX`, `laneColor`, `RouteRow`'s `onLane`, `RouteLink`'s
-  `lanes`, `LANE_COLORS` + `laneColors.test.ts`, the junction CSS) with NO consumer
-  anywhere — kept only because root `AGENTS.md` Discrepancy #4 (whether sentence roads
-  ever return) is still the user's open call.
+  untranslated there as everywhere else.
   **The whole FIELD is drawn, censored until it is claimed** (decided 2026-08-05, restoring
   the `???` census after a day without it — the sparse variant that drew only found words
   and dashed the ground between them is gone, `.route-link.dashed` with it): every group of
@@ -707,9 +694,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   nowhere else here — every rank between two stations is itself a station, so no connector
   hides ground. Consecutive ranks are one row apart (`LINK_MIN`) and only the sparse trunk
   between far strikes keeps a proportional length, exactly as on the map. The line's final
-  run into the word is SOLID at the sentence line's own `LEAP_H` (2026-08-11, superseding
-  the teaser-distance arithmetic the forked board needed — with the lanes gone the two
-  drawings share their arrival too). The rank gutter fits the farthest row drawn,
+  run into the word is SOLID at the sentence line's own `LEAP_H` (2026-08-11 — the two
+  drawings share their arrival). The rank gutter fits the farthest row drawn,
   which with the whole field on the line is the field's own outer edge until a near strike
   lands beyond it.
   **The window wears the teaser's TORN EDGES** (decided 2026-08-05): the line outruns the
@@ -734,8 +720,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `--promptw` (456, not 476). Verified after the change: all 156 words of a fully revealed
   field fit on one line at 320/360/390/430/900, none wrapping mid-word. **In HEIGHT it is the
   opposite — the window takes everything left over** (decided 2026-08-05): on the end screen
-  the board IS this screen, and every row of the line the player can see is a road's length
-  made visible, where the space around it says nothing. So `.game.word-game` cuts its own
+  the board IS this screen, and every row of the line the player can see is more of the
+  journey made visible, where the space around it says nothing. So `.game.word-game` cuts its own
   chrome — the HUD's row reserved with 48px rather than 76 (clearing the fixed header while
   balancing its screen-top inset against the gap before the board), and the seams below it:
   the PROMPT is what the player acts through, so it takes the room on BOTH of its sides
@@ -866,15 +852,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
 - **Hole HISTORY modal (user-decided 2026-08-10, REPLACING the #117 route map):** tapping a
   HOLE opens the round's own journey toward that hole's secret — the player's guesses as
   stops on ONE line walking down to the hidden word. What the user retired is everything
-  that made the map unreadable and never helped anyone: the semantic road LANES, the
-  censored census of every unfound group, and the sticky "you are here" machinery. What
+  that made the map unreadable and never helped anyone: the censored census of every
+  unfound group, and the sticky "you are here" machinery. What
   SURVIVED it — restored on review the same day, after a first cut as a flat sorted list
   proved legible but empty ("no starting word, you had to read the exponents to infer the
   order, no notion of reaching an unknown target") — is the map's SPINE: the journey
-  reading is the value, the roads were the noise. `game/history.ts` is the pure model
-  (`buildHistory`, contract-tested) and `components/HistoryModal.tsx` composes it out of
-  the shared `routeDrawing` parts, trunk only (`routeFrameVars(1, …)` — no junctions, no
-  lane colours).
+  reading is the value. `game/history.ts` is the pure model (`buildHistory`,
+  contract-tested) and `components/HistoryModal.tsx` composes it out of the shared
+  `routeDrawing` parts.
   **The line, top to bottom:** the MISSED shelf (off-map guesses, try order), the broken
   tail out of the void, every ranked try as a stop FARTHEST FIRST with connector lengths
   carrying the real `dq` distances (uniform `LINK_MIN` fallback on pre-#115 data — the
@@ -909,8 +894,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   numbers** (user-asked polish, 2026-08-10, colour-coded on a second pass the same day:
   brightness alone was "still not very obvious at first sight"; the final palette is the
   user's own third pass): a stop FARTHER than the departure is `behind`
-  (`HistoryStop.behind`, model-derived — the journey runs departure → word, the doctrine
-  the road zone was cut by) and goes GREY — word at the census's own 0.55, small muted
+  (`HistoryStop.behind`, model-derived — the journey runs departure → word, so anything
+  farther than the start is behind you) and goes GREY — word at the census's own 0.55, small muted
   node — with the CONNECTORS entering it (and entering the departure from behind
   territory) staying the broken trace (`RouteLink broken`, heights `dashedRun`-snapped by
   the caller). **From the departure down — the START WORD INCLUDED — the WORDS are GOLD**
@@ -937,13 +922,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   post-mortem gets the one-voice red block too), and the shelf holds 48px off the line
   (SHARED `.route-misses` since 2026-08-11, superseding the history-only override — on a
   one-trunk line the shelf is the drawing's top neighbour and read as the first stop's
-  label at the retired lane-map's 26, and both drawings are one trunk now). So: red
+  label at 26). So: red
   and shelved = never on the map, grey on the dashes = behind where you started, gold from
   the start word down = the words you hold, the gold square = where you stand, blue square
   = the target. The rail-to-word gap is likewise the SHARED drawing's since 2026-08-11
   (`--word-gap` 14px on `.route-frame`, paid by `.route-body` and subtracted from both
-  frames' `--wordw` — it started as this modal's own fix for words sitting on the trunk,
-  back when the shared drawing packed them for the word board's six-lane case). The sr mirror says the third
+  frames' `--wordw` — it started as this modal's own fix for words sitting on the trunk).
+  The sr mirror says the third
   state in prose (`srRouteStop`'s `behind` — « derrière le départ » / "behind the
   start"); "you" can never be behind, since a hole's rank only improves from its
   `start_rank`.
@@ -1049,11 +1034,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   headline, the PLAYER's full-width **run ruler**, then SHARE. **The run RULER replaced the bucketed
   trajectory squares (decided 2026-07-25):** one continuous bar per run on the
   PROGRESS ramp (`components/RunRuler.tsx`), one cell per counted try colored
-  `progressColor` at that try's reconstruction % — the RAW `progressTrajectory`, no
+  `progressColor` at that try's reconstruction % — the RAW `replayRun` trajectory, no
   on-screen bucketing — with a white tick at each try that solved a secret and the
   hole's sentence index (1..3) under it; one guess dropping several secrets stacks its
-  indices under ONE shared tick (`solveTicks` in `web/src/game/share.ts` replays the
-  moments with the same rules as the trajectory). **The SHARE CARD draws the SAME
+  indices under ONE shared tick (`replayRun` in `web/src/game/share.ts` walks the run
+  once and returns the trajectory and the solve moments together). **The SHARE CARD draws the SAME
   ruler (decided 2026-07-25, superseding the bucketed-squares card):** the share token
   was bumped to **v2**, carrying the RAW per-try trajectory plus the solve moments
   instead of the `bucketMeans` squares, so `renderCardSvg` renders the on-screen ruler
@@ -1264,7 +1249,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (the mix demo and the guided guesses) and word rarity — and nothing mode-specific: each
   mode's own rules live on that mode's pre-game gate (Word mode's gate screen; the
   sentence game's one-time PLAY gate, below). The themes/clouds/routes-teaser ending this
-  replaces taught the semantic road clusters, which the game no longer draws anywhere —
+  replaces taught the artifact's semantic clusters, which the game no longer draws —
   `tutorial/ThemeCloud.tsx`, `tutorial/RoutesTeaser.tsx`, the `tutTheme*`/`tutTap`/
   `tutClick`/`tutThemes` copy, `themeHeading`, `ariaExploreHole`, CoachText's `[[t:]]` tag
   and `Hole.waveSolved` (the solved-word wave existed only for that tap) are all deleted.
@@ -1275,7 +1260,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   word, with the tray's NEXT as its only control; then the word gives way to the **RARITY
   LADDER** (`tutorial/RarityLadder.tsx`): the five grade names from `RARITY_NAMES`,
   commonest at the top, each in its own `RARITY_COLORS` colour — the exact colour the
-  grade wears on the Word board's lanes, the strike and the loot — stepping UP in size as
+  grade wears on the Word board's stations, the strike and the loot — stepping UP in size as
   they step down the ladder (static sizes, never an animated scale: the pixel font rule),
   each rung rising in on its own delay (reduced motion collapses durations, keeps delays).
   **Each rung carries one OBVIOUS example word** (user-decided 2026-08-11, second pass):
@@ -1326,13 +1311,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **The board's ranks are a REAL generated neighborhood:** the mix ladder walks real ranks
   and the free find lands on real groups. Each language embeds a #154
   single-word artifact (`pnpm gen:word`) PRUNED to the word + the top-150 near field + the
-  guided words, by `web/scripts/prune-word-map.mjs` (`--top` cuts the zone by RANK since
-  2026-08-11 — it used to select by `road !== undefined`, and the committed maps had their
-  now-unread `road` fields stripped the same day) — the exact command is recorded in each
-  script's header, and `scripts.test.ts` fails if board and map ever drift. **en = OCEAN,
-  fr = TROPIQUES** — both picked back when the ending taught the map's roads; nothing in
-  the current arc depends on how a neighborhood forks, so the words simply stay (en/fr
-  symmetry a standing non-goal).
+  guided words, by `web/scripts/prune-word-map.mjs` (`--top` cuts the zone by RANK) — the
+  exact command is recorded in each script's header, and `scripts.test.ts` fails if board
+  and map ever drift. **en = OCEAN, fr = TROPIQUES** (en/fr symmetry a standing non-goal).
   **The guided words obey two findings-decided rules (2026-08-03/04):** the far guess stays
   on a READABLE scale — same order of magnitude as the start word, ≤ 500, guarded by
   `scripts.test.ts` (fr `désert^1183` read as noise) — AND must make intuitive sense as a

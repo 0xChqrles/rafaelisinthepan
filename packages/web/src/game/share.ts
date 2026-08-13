@@ -63,23 +63,6 @@ export function replayRun(freshHoles: RuntimeHole[], ranks: RankMap, tried: stri
   return { trajectory, solvedAt };
 }
 
-// The two halves on their own, for callers (and contract tests) that want just one.
-export function progressTrajectory(
-  freshHoles: RuntimeHole[],
-  ranks: RankMap,
-  tried: string[],
-): number[] {
-  return replayRun(freshHoles, ranks, tried).trajectory;
-}
-
-export function solveTicks(
-  freshHoles: RuntimeHole[],
-  ranks: RankMap,
-  tried: string[],
-): (number | null)[] {
-  return replayRun(freshHoles, ranks, tried).solvedAt;
-}
-
 // The shareable link: the result packed into a URL-safe token at `<origin>/s/<token>` (the
 // codec lives in @whippin/shared, so the backend decodes the same token to render the card).
 // Pasting the link unfurls into the OG image instead of a string of emoji.

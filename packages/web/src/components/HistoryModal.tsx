@@ -27,16 +27,15 @@ import useModalDismiss from '../hooks/useModalDismiss';
 // The first cut was a flat sorted list, and it was legible but said nothing: no starting
 // word, an ordering you had to read the exponents to infer, no sense of a target being
 // reached. So the map's SPINE returned — what stays retired is everything that made the
-// map unreadable and never helped: the semantic road lanes, the censored census of every
-// unfound group, the sticky "you are here" machinery. What is drawn now is only where the
+// map unreadable and never helped: the censored census of every unfound group, the sticky
+// "you are here" machinery. What is drawn now is only where the
 // player has BEEN, on the structure that says what it means:
 //
 //   - the MISSED shelf at the top, its words in the dimmed coldest heat — one red block of
 //     dead ends — then the broken tail: the void the line comes out of;
 //   - the BEHIND stretch (stops farther than the departure — guesses that went backwards):
 //     quiet words, small nodes, and the connectors STAY the broken trace, because the
-//     journey has not started yet — the same doctrine that cut the road zone at the
-//     departure ("anything farther than the start is behind you");
+//     journey has not started yet ("anything farther than the start is behind you");
 //   - the DEPARTURE (muted node, dimmed word — the one stop you were given, not one you
 //     earned) is where the line turns SOLID: from here down every stop is a step of the
 //     walk, full-bright, spaced by its REAL distance (`dq`), with the gold "you are here"
@@ -126,7 +125,7 @@ export default function HistoryModal({
       <ModalHeader lang={lang} title={title} onClose={beginClose} />
 
       <div className="history-scroll pixel-scroll" ref={scrollRef}>
-        <div className="route-frame history-frame" style={routeFrameVars(1, rankChars)}>
+        <div className="route-frame history-frame" style={routeFrameVars(rankChars)}>
           {/* The drawing is decorative; the sr-only list below carries the same content. */}
           <div className="route" aria-hidden="true">
             {/* Before the line even starts: the guesses that earned no rank at all. */}
@@ -188,7 +187,6 @@ export default function HistoryModal({
                 {srRouteStop(lang, {
                   rank: stop.rank,
                   word: stop.word,
-                  road: null,
                   start: stop.start,
                   best: stop.best,
                   behind: stop.behind,

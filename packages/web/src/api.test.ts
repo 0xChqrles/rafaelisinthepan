@@ -127,10 +127,10 @@ describe('parsePuzzle (shape validation)', () => {
     expect(parsePuzzle(p).source).toEqual(p.source);
   });
 
-  // Optional distance annotations (#115): dq/road are group properties generation adds
-  // to every ranked entry. Every puzzle published before them lacks them, so ABSENT
-  // stays valid; a PRESENT one must be a well-formed number.
-  it('accepts rank entries with and without dq/road (legacy puzzles stay valid)', () => {
+  // The optional distance annotation (#115): `dq` is a group property generation adds to
+  // every ranked entry. The secret's own entry (rank 0) carries none, so ABSENT stays
+  // valid; a PRESENT one must be a well-formed number.
+  it('accepts rank entries with and without dq', () => {
     const p = valid();
     expect('dq' in p.ranks.foret.bois).toBe(false);
     expect(parsePuzzle(p)).toEqual(p);
@@ -138,15 +138,15 @@ describe('parsePuzzle (shape validation)', () => {
     const annotated = valid();
     annotated.ranks = {
       foret: {
-        bois: { word: 'bois', rank: 87, dq: 231, road: 1 },
-        arbre: { word: 'arbre', rank: 3, dq: 250 }, // beyond the roads, dq alone
+        bois: { word: 'bois', rank: 87, dq: 231 },
+        arbre: { word: 'arbre', rank: 3, dq: 250 },
         foret: { word: 'forêt', rank: 0 }, // the secret: terminus, no annotations
       },
     } as typeof annotated.ranks;
     expect(parsePuzzle(annotated)).toEqual(annotated);
   });
 
-  it('rejects an out-of-range or non-numeric dq or road', () => {
+  it('rejects an out-of-range or non-numeric dq', () => {
     const bad = (entry: Record<string, unknown>) => ({
       ...valid(),
       ranks: { foret: { bois: { word: 'bois', rank: 87, ...entry } } },
@@ -155,16 +155,6 @@ describe('parsePuzzle (shape validation)', () => {
     expect(() => parsePuzzle(bad({ dq: -1 }))).toThrow(/dq/);
     expect(() => parsePuzzle(bad({ dq: 12.5 }))).toThrow(/dq/);
     expect(() => parsePuzzle(bad({ dq: 'x' }))).toThrow(/dq/);
-    expect(() => parsePuzzle(bad({ road: -1 }))).toThrow(/road/);
-    expect(() => parsePuzzle(bad({ road: 1.5 }))).toThrow(/road/);
-    expect(() => parsePuzzle(bad({ road: '0' }))).toThrow(/road/);
-    // A road id is an INDEX the route view draws a lane for, so it is bounded above as well:
-    // `4294967295` parses as a fine non-negative integer and is a number nothing downstream
-    // can do anything sane with. The ceiling stays far above any clustering that could ship —
-    // a puzzle rejected here costs the whole day.
-    expect(() => parsePuzzle(bad({ road: 4294967295 }))).toThrow(/road/);
-    expect(() => parsePuzzle(bad({ road: 64 }))).toThrow(/road/);
-    expect(parsePuzzle(bad({ road: 63 }))).toBeTruthy();
   });
 
   // `rank` is NOT optional: scoring and guess feedback read it as a number, and it is a
@@ -252,8 +242,8 @@ describe('parseWordPuzzle (shape validation)', () => {
     word: { word: 'forêt', slug: 'foret' },
     ranks: {
       foret: { word: 'forêt', rank: 0, freq: 812 },
-      bois: { word: 'bois', rank: 1, dq: 255, road: 0, freq: 64 },
-      arbre: { word: 'arbre', rank: 2, dq: 240, road: 1, freq: 230 },
+      bois: { word: 'bois', rank: 1, dq: 255, freq: 64 },
+      arbre: { word: 'arbre', rank: 2, dq: 240, freq: 230 },
     },
   });
 
@@ -284,23 +274,20 @@ describe('parseWordPuzzle (shape validation)', () => {
     expect(() => parseWordPuzzle(notZero)).toThrow(/rank 0/);
   });
 
-  it('rejects a malformed rank / dq / road / freq on any entry', () => {
+  it('rejects a malformed rank / dq / freq on any entry', () => {
     const badRank = valid();
     (badRank.ranks.bois as { rank: unknown }).rank = -1;
     expect(() => parseWordPuzzle(badRank)).toThrow(/rank/);
     const badDq = valid();
     (badDq.ranks.bois as { dq: unknown }).dq = 256;
     expect(() => parseWordPuzzle(badDq)).toThrow(/dq/);
-    const badRoad = valid();
-    (badRoad.ranks.arbre as { road: unknown }).road = 4294967295;
-    expect(() => parseWordPuzzle(badRoad)).toThrow(/road/);
     // freq is 1-based on purpose: a 0 is indistinguishable from absent to a truthiness test.
     const badFreq = valid();
     (badFreq.ranks.bois as { freq: unknown }).freq = 0;
     expect(() => parseWordPuzzle(badFreq)).toThrow(/freq/);
   });
 
-  // dq/road/freq are optional PER ENTRY (pre-#115 data; a borrowed-vector group has no
+  // dq/freq are optional PER ENTRY (rank 0 has no dq; a borrowed-vector group has no
   // corpus position) — only a PRESENT one is checked, as long as freq appears SOMEWHERE.
   it('accepts entries with no distance annotations', () => {
     const bare = {

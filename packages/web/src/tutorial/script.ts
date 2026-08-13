@@ -12,8 +12,7 @@
 // concept: word RARITY, the five-grade ladder every mode speaks. The tutorial teaches the
 // concepts the modes share (semantic distance, rarity) and NOTHING mode-specific — each
 // mode's own rules live on that mode's pre-game gate (Word mode's gate screen, the sentence
-// game's one-time PLAY gate). The THEMES/routes ending this replaces (2026-08-11) taught the
-// semantic road clusters, which the game no longer draws anywhere.
+// game's one-time PLAY gate).
 //
 // The board's ranks are a REAL generated neighborhood (a #154 single-word artifact, pruned —
 // see scripts/<lang>.ts): the mix ladder and the free find play against real ranks.
@@ -29,7 +28,7 @@ import type { UiKey } from '../i18n';
 // One stop of the mix demo: pressing the button (labelled `labelKey`) animates the word to
 // `rank` — a single shake+swap for the first stop, a fast roll through every ladder word for
 // the others — then `copyKey` (if any) becomes the explanation.
-export interface MixStop {
+interface MixStop {
   rank: number;
   labelKey: UiKey;
   copyKey?: UiKey;
@@ -57,7 +56,7 @@ export type TutorialStep =
   // `introCopyKey` states the CLAIM (every word has a rarity) over the found word, and the
   // tray's NEXT advances it; then the word gives way to the RARITY LADDER — the five grade
   // names in their own colours, commonest first (RarityLadder) — while `ladderCopyKey`
-  // states what the ladder means (the rarer, the more precious). The tray then offers PLAY,
+  // states what the ladder means. The tray then offers PLAY,
   // which ends the tutorial. There is no graduation screen, because there is no score to
   // show. What a grade PAYS is deliberately not here: that is Word mode's rule, and it
   // lives on Word mode's own gate.

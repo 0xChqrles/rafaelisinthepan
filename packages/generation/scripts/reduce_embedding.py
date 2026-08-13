@@ -86,7 +86,7 @@ STOPWORDS = {
     },
 }
 
-SAMPLE_CAP = 30  # number of examples kept per rule for the report
+SAMPLE_CAP = 12  # examples kept per rule — exactly what the report prints
 
 
 def token_pattern(lang):
@@ -259,7 +259,7 @@ def main():
     print(f"Gardés   : {kept_count}", file=sys.stderr)
     print(f"Filtrés  : {dropped}", file=sys.stderr)
     for name in reasons:
-        ex = ", ".join(samples[name][:12])
+        ex = ", ".join(samples[name])
         print(f"  - {name:14s}: {by_rule[name]:>8d}   ex : {ex}", file=sys.stderr)
     if kept_count < TOP_N:
         print(f"⚠ Source épuisée : seulement {kept_count:,} mots gardés, cap TOP_N "

@@ -121,7 +121,7 @@ export interface WordRoundProgress {
 // deadline may also describe an older rank map after a same-word republish, and only a
 // replay against the CURRENT map can repair it. The store owns the log, so the store
 // decides what it means; the callback carries the rank map it must not know.
-export interface WordRunCache {
+interface WordRunCache {
   claimed: number;
   bonus: number; // seconds the claims bought, summed (game/wordGame.ts replayWordRun)
 }
@@ -168,7 +168,7 @@ interface PersistedState {
   lastLang: string | null;
   // Last-played MODE (#156): arrival lands on it (like lastLang) — the `/` redirect
   // sends a word-mode player to /<lang>/word. Switching modes is a deliberate act
-  // (the header toggle); this only decides where "/" lands.
+  // (the header's Whippin mark opens the mode chooser); this only decides where "/" lands.
   lastMode: Mode | null;
   // The onboarding tutorial (#51) has been completed or skipped. Global, not
   // per-language — the mechanic is the same in both.
@@ -316,8 +316,8 @@ function freshRound(initialHoles: RuntimeHole[]): RoundProgress {
 //     device-local word history that predates the timer, which is pre-launch data.
 //   v8 adds `sentenceRulesSeen` (2026-08-11): the sentence game's one-time instructions
 //     gate. Older blobs get false — deliberately NOT grandfathered the way `onboarded`
-//     is, because the gate's third line teaches the history tap, which is newer than any
-//     existing player's play state; every player sees it exactly once.
+//     is, because the gate teaches the history tap, which is newer than any existing
+//     player's play state; every player sees it exactly once.
 export function migratePersisted(persisted: unknown, version: number): PersistedState {
   if (version < 1) {
     return {

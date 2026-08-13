@@ -6,8 +6,8 @@ import { FIRST_PUZZLE_DATE } from './config';
 // must be readable by the person who needs that language, so the list never
 // translates the names.
 export const LANGS = [
-  { code: 'en', label: 'English', native: 'English' },
-  { code: 'fr', label: 'French', native: 'Français' },
+  { code: 'en', native: 'English' },
+  { code: 'fr', native: 'Français' },
 ] as const;
 
 export type LangCode = (typeof LANGS)[number]['code'];
@@ -18,24 +18,12 @@ export function isLang(value: string | null | undefined): value is LangCode {
   return value != null && CODES.includes(value);
 }
 
-// The language encoded by a URL path (its first segment), or null for the picker /
-// any unknown path. Trailing slashes and extra segments are tolerated (/fr/ -> fr).
-export function langFromPath(pathname: string): LangCode | null {
-  const seg = pathname.replace(/^\/+/, '').split('/')[0];
-  return isLang(seg) ? seg : null;
-}
-
 // The two daily games (#156): the sentence puzzle, and Word mode — one word, claim its
-// neighborhood until struck out. One app, two faces: the mode is part of every identity
+// neighborhood against a countdown. One app, two faces: the mode is part of every identity
 // (URL, round key, share token), and the URL grammar gives Word mode its own segment —
 // sentence keeps /<lang> and /<lang>/<date>, Word mode lives under /<lang>/word.
 export type Mode = 'sentence' | 'word';
 const WORD_SEGMENT = 'word';
-
-// The canonical path for a language: /<lang>, or / for the picker (no/unknown lang).
-export function pathForLang(lang: string | null): string {
-  return isLang(lang) ? `/${lang}` : '/';
-}
 
 // A mode's home for a language: /<lang> (sentence) or /<lang>/word.
 export function pathForMode(lang: string | null, mode: Mode): string {

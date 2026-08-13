@@ -15,7 +15,7 @@ export const HIT_HEAT_CAP = 150;
 
 // Keep the existing 520ms beat for a ten-rank transition below the cap, while making
 // every individual rank step take the same 52ms. Large transitions stay responsive.
-export const RANK_STEP_MS = HIT_FADE_MS / 10;
+const RANK_STEP_MS = HIT_FADE_MS / 10;
 export const RANK_MAX_MS = 500;
 export function rankTransitionDuration(fromRank: number, toRank: number): number {
   return Math.min(

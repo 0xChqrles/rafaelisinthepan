@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
+import { prefersReducedMotion } from '../hooks/useScramble';
 import type { CSSProperties } from 'react';
 import { rankHeatColor } from '../components/Hole';
 import { heatColor } from '@whippin/shared';
@@ -8,7 +9,6 @@ import { heatColor } from '@whippin/shared';
 //   [[b:word]]       the secret/target — blue, the solved color
 //   [[w:word^rank]]  a hint word — gold with its heat-colored exponent, like a hole
 //   [[m:word]]       a MISS word — the coldest heat color
-//   [[n:123]]        a bare number — its heat color
 // The FULL text is laid out from the first frame — every character rendered, the
 // unrevealed ones merely invisible — so the wrap points are final before the first
 // letter shows and a word being "typed" can never jump to the next line mid-word.
@@ -19,12 +19,11 @@ type Seg =
   | { kind: 'plain'; text: string }
   | { kind: 'blue'; text: string }
   | { kind: 'miss'; text: string }
-  | { kind: 'word'; text: string; rank: number }
-  | { kind: 'num'; text: string; rank: number };
+  | { kind: 'word'; text: string; rank: number };
 
-const TOKEN_RE = /\[\[([bwmn]):([^\]]+)\]\]/g;
+const TOKEN_RE = /\[\[([bwm]):([^\]]+)\]\]/g;
 
-export function parseRich(copy: string): Seg[] {
+function parseRich(copy: string): Seg[] {
   const segs: Seg[] = [];
   let last = 0;
   for (const m of copy.matchAll(TOKEN_RE)) {
@@ -32,7 +31,6 @@ export function parseRich(copy: string): Seg[] {
     const [, tag, payload] = m;
     if (tag === 'b') segs.push({ kind: 'blue', text: payload });
     else if (tag === 'm') segs.push({ kind: 'miss', text: payload });
-    else if (tag === 'n') segs.push({ kind: 'num', text: payload, rank: Number(payload) });
     else {
       const [word, rank] = payload.split('^');
       segs.push({ kind: 'word', text: word, rank: Number(rank) });
@@ -93,13 +91,6 @@ function renderSeg(s: Seg, budget: number, key: number) {
       </span>
     );
   }
-  if (s.kind === 'num') {
-    return (
-      <span key={key} style={{ color: rankHeatColor(s.rank, TEXT_HEAT_SCALE) }}>
-        {chars(s.text, budget)}
-      </span>
-    );
-  }
   // Hint word: gold, then its exponent types on in the heat color of its rank. The
   // sup is always in the layout too, so even ITS reveal moves nothing.
   const rankStyle: CSSProperties & Record<'--rank-color', string> = {
@@ -119,10 +110,7 @@ export default function CoachText({ copy }: { copy: string }) {
   const segs = useMemo(() => parseRich(copy), [copy]);
   const total = segs.reduce((n, s) => n + segLen(s), 0);
   // Reduced motion: show the full text at once, no per-character reveal.
-  const reduced =
-    typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduced = prefersReducedMotion();
 
   const [shown, setShown] = useState(reduced ? total : 0);
   useEffect(() => {

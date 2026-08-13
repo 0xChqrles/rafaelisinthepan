@@ -229,28 +229,6 @@ def test_a_borrowed_secret_sharing_its_donors_slug_keeps_its_own_display():
     assert groups[0][0] == "abattît"
 
 
-def test_roads_cluster_the_representative_not_the_display_fallback():
-    # cote:nc displays «cotation» (its representative's slug belongs to the
-    # secret's «côtés») but it was RANKED by «cotes»' vector — the roads must
-    # cluster that vector. kv here does not even know the display form, so
-    # reading it would be a hard error, not a subtle one.
-    table = {"côté": ("côté:nc",), "côtés": ("côté:nc",),
-             "cotes": ("cote:nc",), "cotation": ("cote:nc",),
-             "taux": ("taux:nc",), "marée": ("marée:nc",),
-             "impôt": ("impôt:nc",)}
-    ranking = [("cotes", 0, .9), ("taux", 1, .8), ("marée", 2, .7),
-               ("impôt", 3, .6)]
-    merged, rmap, groups = _build(
-        "côté", ranking, table,
-        {"côté", "côtés", "cotes", "cotation", "taux", "marée", "impôt"})
-    assert rmap["cotation"]["rank"] == 1     # the display fell back...
-    kv = {"cotes": [1.0, 0.0, 0.0], "taux": [0.0, 1.0, 0.0],
-          "marée": [1.0, 0.1, 0.0], "impôt": [0.0, 0.9, 0.1]}
-    gen_phrase.annotate_roads(rmap, merged, kv, start_rank=4,
-                              reps=gen_phrase.group_reps(groups))
-    assert "road" in rmap["cotation"]        # ...and the geometry still lands
-
-
 def test_a_group_with_no_free_key_dissolves_and_consumes_no_rank():
     # Same collision, but cote:nc's every slug belongs to the secret's family:
     # nothing left to type, so the group never exists — no ghost rank shifts public.

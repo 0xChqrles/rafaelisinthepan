@@ -8,12 +8,15 @@
 ## File map
 
 ```
-  shared/                     cross-cutting TS consumed by web (pkg @whippin/shared)
+  shared/                     cross-cutting TS consumed by web + backend (pkg @whippin/shared)
     src/slug.ts               fold() — the slug/fold contract (byte-identical to slug())
     src/day.ts                the ONE 22:00-ET DST-correct game-day logic (client + server + publish)
     src/types.ts              per-puzzle schema types (Puzzle, Hole, RankMap, …)
     src/heat.ts               heatColor() — heat ramp (rank exponents + floating hits ONLY)
     src/progressColor.ts      progressColor() + progressEmoji() — progress ramp (progress bar, selector badge, run rulers incl. the card, share-text emoji row); shares ramp.ts
+    src/ramp.ts               the piecewise interpolator both ramps share (internal)
+    src/shareCard.ts          the share-token codec (both modes), browser + Lambda
+    src/cardSvg.ts            the OG card's SVG, rendered from a decoded token
     src/index.ts              re-exports
 ```
 
@@ -32,12 +35,11 @@
 - `src/heat.ts` (heat ramp: rank exponents + floating hits ONLY) and
   `src/progressColor.ts` (progress ramp + `progressEmoji`) are DIFFERENT ramps with
   different meanings — never borrow one for the other's job (they share `ramp.ts`).
-  Two web palettes are pinned COPIES of stops from them, which is a different thing
+  One web palette is a pinned COPY of stops from them, which is a different thing
   from borrowing a ramp: the value is taken once and frozen under its own meaning,
   and a test pins each hex to the stop it came from so a retune of the ramp fails
-  loudly instead of silently respeaking a stale palette. Those are the route map's
-  lane colours (`laneColors.test.ts`) and Word mode's rarity grades
-  (`rarity.test.ts`, #163) — the latter copies from BOTH ramps, since what it needed
+  loudly instead of silently respeaking a stale palette. That is Word mode's rarity
+  grades (`rarity.test.ts`, #163) — it copies from BOTH ramps, since what it needed
   was five readable, far-apart, non-red colours and neither ramp alone has them.
 - `src/shareCard.ts` is the share-token codec, running byte-identically in the
   browser and the Lambda; the token's product behavior and evolution rules are in the

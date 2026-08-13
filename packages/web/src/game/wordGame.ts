@@ -1,11 +1,10 @@
 // Word mode's rules (#156, retimed by #163): one daily word, its ranked neighborhood
-// public knowledge to win. The player CLAIMS words in the top zone — the road zone of
-// the #154 artifact — against a COUNTDOWN, and the score is how many they claimed.
+// public knowledge to win. The player CLAIMS words in the top zone of the #154 artifact,
+// against a COUNTDOWN, and the score is how many they claimed.
 // Claiming all of it is deliberately impossible: the zone is the field, not the goal.
 //
 // The clock REPLACED the strike system (#163). Two dailies should be two games:
-// Sentence mode is think slowly and beat the AI, Word mode is think fast and beat the
-// clock. The timer also legislates everything the strikes used to — a repeat, an
+// Sentence mode is think slowly, Word mode is think fast and beat the clock. The timer also legislates everything the strikes used to — a repeat, an
 // invalid word or a far miss punishes itself, in the seconds it cost to type — so
 // there is no strike bookkeeping, no consecutive rule, and nothing here ends a run.
 //
@@ -23,13 +22,10 @@ import type { RankEntry, WordRanks } from '@whippin/shared';
 // longer run — and it is now STATED TO THE PLAYER, on the gate (i18n `wordRulesGoal`),
 // which reads the number off this constant rather than spelling it into the copy.
 //
-// It IS independently tunable — since 2026-08-10, when the board's lanes became rarity
-// grades. It used to restate generation's ROAD_TOP, because the field the board drew was the
-// set generation had stamped a `road` on: move one alone and the board grew lane-less
-// stations, or refused to claim ones it had drawn. Nothing stamps the field any more — a lane
-// is read off `freq`, which every entry carries, and `dq` runs to the map's own TOP_K edge —
-// so this number can move on its own, and no artifact needs regenerating when it does.
-// The only real ceiling is generation's TOP_K (10 000): past it a rank simply has no entry.
+// It IS independently tunable: what the board draws a station by — `freq` for its colour,
+// `dq` for its spacing — is on every entry up to the map's own TOP_K edge, so this number
+// can move on its own and no artifact needs regenerating when it does. The only real
+// ceiling is generation's TOP_K (10 000): past it a rank simply has no entry.
 //
 // TWO things scale with it, neither of them a blocker but both worth knowing before it
 // moves again: the post-mortem board draws EVERY zone group as a station, so this is also
@@ -160,7 +156,7 @@ export function totalBonus(claimed: readonly RankEntry[], corpusSize: number): n
 //           its real distance.
 //   miss  — off-map (beyond the TOP_K cap): the same, with no rank at all.
 //   zero  — the day's word itself (rank 0): free — it is public, on the board already.
-export type WordJudgement =
+type WordJudgement =
   | { kind: 'claim'; entry: RankEntry }
   | { kind: 'near'; entry: RankEntry }
   | { kind: 'miss' }
@@ -187,7 +183,7 @@ export function wordGuessKey(ranks: WordRanks, typed: string): string {
 // One guess that COUNTED, in submission order: what was typed and how it landed. Free
 // guesses (repeats, the day's word) are absent, so a consumer can partition this list
 // without knowing a single rule.
-export interface CountedGuess {
+interface CountedGuess {
   typed: string;
   judged: WordJudgement; // never 'zero' — the word itself is free
 }
@@ -203,7 +199,7 @@ export interface CountedGuess {
 // This is the ONE walk of a word round. The board (game/wordBoard.ts) draws itself from
 // `counted` rather than re-deriving the rules, so the score, the clock and the drawing
 // can never disagree about what the same log means.
-export interface WordRun {
+interface WordRun {
   // The claimed zone groups, in claim order. Its length is the SCORE, and the groups
   // themselves are what the clock is priced from — the walk hands back WHAT was claimed
   // and leaves the pricing to `totalBonus`, which is the only part that needs to know

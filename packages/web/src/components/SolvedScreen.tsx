@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { dateForDayNumber } from '@whippin/shared';
+import { prefersReducedMotion } from '../hooks/useScramble';
 import { shareText, shareUrl } from '../game/share';
 import RunRuler, { rulerStagger } from './RunRuler';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
@@ -16,8 +17,7 @@ const NEUTRAL_HOLD_MS = 55;
 // PLAYER's run ruler, then SHARE. Player-level
 // progression lives in StreakDialog, outside this layout. It belongs to a REAL solved day:
 // the onboarding tutorial used to borrow it with a null `dayNumber` and PLAY in SHARE's
-// slot, and stopped when its ending moved onto the route map (#155) — a lesson has no score
-// to show, so it has no result screen either.
+// slot, and stopped because a lesson has no score to show.
 export default function SolvedScreen({
   guessCount,
   trajectory,
@@ -44,8 +44,7 @@ export default function SolvedScreen({
   // animate is false (rehydrated solves set their source states directly).
   onRisen?: () => void;
 }) {
-  const reduceMotion =
-    typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduceMotion = prefersReducedMotion();
   const n = Math.max(trajectory.length, 1);
   const stagger = rulerStagger(n, reduceMotion);
   const rulerStartMs = RESULTS_IN_MS + SCORE_COUNT_MS;

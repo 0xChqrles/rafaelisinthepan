@@ -28,7 +28,7 @@ Run from the repo root (`pnpm --filter @whippin/benchmark`); no `--` separator �
 pnpm forwards args straight to the script.
 
 ```bash
-# 4. Optionally benchmark the generated puzzle offline before publish. --model is required
+# Benchmark a generated puzzle offline, as a lab reading. --model is required
 #    and runs exactly one model. Missing API-provider keys skip with a warning; --effort applies
 #    one reasoning level (none|low|medium|high|xhigh|max; default none). --auth api
 #    (default) uses the selected provider's API key; --auth subscription uses authenticated
@@ -44,9 +44,7 @@ pnpm forwards args straight to the script.
 #    do not mix its results into v21 comparisons. --playbook remains an experimental loader only;
 #    the static-corpus playbooks are paused and must not be used for benchmark scores.
 #    --runs N plays N full runs (default 1); every run is recorded as-is — there is no
-#    representative selection and no cost pruning (the median/best machinery and the
-#    --in-place puzzle embed were removed 2026-08-12: results are for scientific reading,
-#    not the app). Puzzle paths may be repo-root-relative
+#    representative selection and no cost pruning. Puzzle paths may be repo-root-relative
 #    (packages/generation/output/...) or generation-package-relative (output/...).
 #    EVERY invocation appends its complete session (all runs, transcripts, token usage)
 #    to output/<puzzle>.bench.json — file-locked, so overlapping runs for different
@@ -54,7 +52,7 @@ pnpm forwards args straight to the script.
 pnpm bench:puzzle <puzzle.json> --model MODEL [--playbook <model>.playbook.json] [--effort LEVEL] [--auth api|subscription] [--session persistent|stateless] [--cap N] [--runs N]
 KIMI_CODE_API_KEY=... pnpm bench:puzzle <puzzle.json> --model KIMI --auth subscription --effort medium
 
-# 5. PAUSED EXPERIMENT: bootstrap one model's playbook from all 92 static French puzzles
+# PAUSED EXPERIMENT: bootstrap one model's playbook from all 92 static French puzzles
 #    (#88). Do not run this for normal benchmark production. Each real
 #    run makes exactly two resumable paid calls: unrestricted analyst, then independent
 #    critic/rewrite. Workflow-level ultra maps to Sonnet adaptive+max, Codex-plan GPT
@@ -123,8 +121,7 @@ pnpm bench:playbook:distill --model GPT-SOL --auth subscription [--dry-run]
   hash-verified `whippin_model_playbook` profile and injects its `final_playbook` under the
   fixed rules as advice. `--runs N` plays N full runs (default 1, ONE uniform default for
   every model — Kimi included, no per-provider divergence); every run is played to its
-  natural end (solve, cap DNF, or a bounded reply error) and recorded as-is — no
-  representative is chosen and no run is cost-pruned. Kimi prints its counted-guess
+  natural end (solve, cap DNF, or a bounded reply error) and recorded as-is. Kimi prints its counted-guess
   exposure and warns that
   non-counting turns add paid requests; `low` still uses adaptive thinking. Lab sessions
   record the session mode and each run's termination. **Every invocation appends its

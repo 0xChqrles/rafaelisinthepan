@@ -21,19 +21,18 @@ import {
 import { srWordRarities, srRouteStop, srRouteOffMap, srWordBoardWord } from '../i18n';
 
 // Word mode's POST-MORTEM surface (#156, moved off the live phase by #163): ONE trunk of
-// dq-spaced stations — the sentence route's exact drawing (user-decided 2026-08-11,
-// retiring the rarity LANES this board forked into until then) — as a full screen rather
-// than a modal. The differences from the sentence game's line are the mode's own: the
-// center word is PUBLIC, there is no departure and no "you are here", and what the player
-// claimed is distinguished from what was merely named when the clock died.
+// dq-spaced stations — the sentence route's exact drawing (user-decided 2026-08-11) — as a
+// full screen rather than a modal. The differences from the sentence game's line are the
+// mode's own: the center word is PUBLIC, there is no departure and no "you are here", and
+// what the player claimed is distinguished from what was merely named when the clock died.
 //
 // Everything the drawing has in common with the sentence game's history line — the
 // geometry, the frame variables, the shelf, the tail, the connector rule and the station
 // row itself — comes from `routeDrawing`, which owns it for both. A detail of the line
 // changed there changes it on every route the app draws; that is the point of the module.
 //
-// **RARITY is carried by the WORD's COLOUR, not by a lane** (user-decided 2026-08-11,
-// superseding 2026-08-10's grade-per-lane fork): every zone station's word is painted in
+// **RARITY is carried by the WORD's COLOUR** (user-decided 2026-08-11): every zone
+// station's word is painted in
 // its grade's own `RARITY_COLORS` colour — the same colour the strike and the loot wore
 // when the claim landed — where the sentence line paints its stops gold. The model still
 // grades every station and still ships `grades` (the sr census); only the drawing's answer
@@ -57,8 +56,7 @@ import { srWordRarities, srRouteStop, srRouteOffMap, srWordBoardWord } from '../
 // day's word closing the line at the bottom.
 
 // The final run into the terminus: the sentence line's own solid leap (HistoryModal spends
-// the same 56 there) — with the lanes gone the two drawings share their arrival too, and
-// the old junction-aware arithmetic (TEASER_MERGE_RUN/JX_STUB) went with the fork.
+// the same 56 there) — the two drawings share their arrival.
 const LEAP_H = 56;
 
 // One row of the line, farthest first: a group of the claimable FIELD — its word withheld
@@ -138,7 +136,7 @@ export function WordTerminus({ model }: { model: WordBoardModel }) {
   return (
     <div
       className="route-frame word-frame word-terminus"
-      style={routeFrameVars(1, rankChars)}
+      style={routeFrameVars(rankChars)}
       aria-hidden="true"
     >
       <div className="route">
@@ -177,7 +175,7 @@ export default function WordBoard({ model, lang }: { model: WordBoardModel; lang
   const rankChars = rankGutterChars(model.maxRank);
 
   return (
-    <div className="route-frame word-frame" style={routeFrameVars(1, rankChars)}>
+    <div className="route-frame word-frame" style={routeFrameVars(rankChars)}>
       {/* The drawing is decorative; the sr-only list below carries the same content. */}
       <div className="route" aria-hidden="true">
         {/* The off-map strikes, above the line and outside every distance it draws. */}
@@ -251,7 +249,6 @@ export default function WordBoard({ model, lang }: { model: WordBoardModel; lang
               {srRouteStop(lang, {
                 rank: row.rank,
                 word: row.word,
-                road: null,
                 rarity: row.zone ? row.rarity : undefined,
               })}
             </li>

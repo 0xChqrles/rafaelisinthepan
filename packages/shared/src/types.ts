@@ -1,5 +1,6 @@
-// Per-puzzle schema: one file = one self-contained playable sentence.
-// Produced by packages/generation/scripts/gen_phrase.py (see its slug() conventions).
+// The generated schemas both dailies play on — the sentence puzzle (gen_phrase.py) and
+// the #154 single-word artifact (gen_word.py) — plus the web's own runtime round types.
+// Keys are slugs, in the sense packages/generation/scripts/slug.py defines.
 
 // A displayed word plus its ASCII-folded lookup key (accents kept for display,
 // folded for comparison). slug == word is common but always carried explicitly.
@@ -25,17 +26,11 @@ export interface RankEntry {
   word: string;
   rank: number;
   // Real geometry the uniform ranks erase (#115), computed at generation time from the
-  // vectors the client never sees. Both are GROUP properties: every alias key of a
-  // lemma group carries its group's values, exactly like `word`/`rank`. Both are
-  // OPTIONAL — every puzzle published before #115 lacks them and must keep working.
+  // vectors the client never sees. A GROUP property: every alias key of a lemma group
+  // carries its group's value, exactly like `word`/`rank`.
   // Quantized distance to the secret, per hole: 255 at rank 1, 0 at the farthest kept
   // group. Absent on the secret's own entry (rank 0) — the terminus is off-scale.
   dq?: number;
-  // Which cluster of the neighborhood the group sits in (0 = the road holding rank 1).
-  // Only the groups from the hole's START WORD in to the secret carry one — the stretch
-  // the player travels, that word included, since they are put down ON a road. Behind
-  // the departure, and out in the far field, the line is one trunk.
-  road?: number;
   // How COMMON the group is in the corpus (#163): the 1-based position of its most
   // frequent OWNED KEY among the DISTINCT SLUGS of the frequency-ordered reduced
   // vocabulary — exactly the existence set the client loads, so `freq / vocabSet.size`
@@ -44,15 +39,15 @@ export interface RankEntry {
   // not its representative, and never a surface another group owns. Another GROUP
   // property, so every alias key repeats it. Emitted by WORD artifacts only
   // (gen_word.py) — Word mode pays a claim in seconds scaled by it, and a sentence
-  // puzzle has no consumer for it. Optional to every consumer, like `road`.
+  // puzzle has no consumer for it.
   freq?: number;
 }
 
-// One word's whole ranked neighborhood: inputSlug -> { word, rank }. Every alias key
-// of a group appears here, carrying that group's values.
+// One word's whole ranked neighborhood: inputSlug -> RankEntry. Every alias key of a
+// group appears here, carrying that group's values.
 export type WordRanks = Record<string, RankEntry>;
 
-// ranks[secretSlug][inputSlug] -> { word, rank }
+// ranks[secretSlug][inputSlug] -> RankEntry
 export type RankMap = Record<string, WordRanks>;
 
 // What kind of piece the daily sentence comes from (#5). The known values are
@@ -83,13 +78,9 @@ export interface Puzzle {
 // the onboarding tutorial and Word mode play on.
 //
 // The rank semantics are the sentence schema's, unchanged — rank 0 is the word itself
-// and carries no `dq`, every rank >= 1 entry carries one, and `word`/`rank`/`dq`/`road`
-// are GROUP properties shared by all of a group's alias keys. Three things differ, all
-// because there is no sentence: `ranks` is ONE flat map (nothing to key it by);
-// `road` covers the flat top-`ROAD_TOP` (250) — with no start word there is no
-// departure to cut the zone at, and those groups are the whole playing field, which makes
-// the number Word mode's RANGE rather than a safety ceiling (the client's CLAIM_ZONE in
-// web/src/game/wordGame.ts restates it and the two move together); and every group
+// and carries no `dq`, every rank >= 1 entry carries one, and `word`/`rank`/`dq` are
+// GROUP properties shared by all of a group's alias keys. Two things differ: `ranks` is
+// ONE flat map (nothing to key it by, since there is no sentence), and every group
 // carries `freq`, the corpus rarity Word mode's clock pays a claim by (#163).
 //
 // No `words`/`holes`/`start`/`start_rank`, and no `source`: a lone word has no

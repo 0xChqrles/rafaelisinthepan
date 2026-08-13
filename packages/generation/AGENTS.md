@@ -3,7 +3,7 @@
 > Package-scoped guidance. The root `AGENTS.md` applies here too and holds the
 > engineering principles, the CROSS-PACKAGE contracts this package produces for — the
 > slug()⇔fold() identity and the per-puzzle JSON schema (rank semantics, groups,
-> dq/road) — plus the testing policy and the issue/PR workflow. Read it first.
+> dq) — plus the testing policy and the issue/PR workflow. Read it first.
 
 Python scripts run via `uv`, wired through root `pnpm` scripts. Paths below are
 relative to `packages/generation/` unless prefixed.
@@ -26,7 +26,7 @@ relative to `packages/generation/` unless prefixed.
       glove_neighbors.py      en paths + derived .kv cache (thin wrapper over the above)
       french_neighbors.py     fr paths + derived .kv cache (thin wrapper)
       start_word.py           start/hint-word selection (rank band 50-150)
-      distances.py            stdlib-only: dq quantization + road clustering (#115)
+      distances.py            stdlib-only: dq quantization (#115)
       gen_phrase.py           one sentence -> one self-contained puzzle JSON; also owns the
                               per-secret pipeline (walk_secret) both entry points share
       gen_word.py             one word -> one single-word artifact JSON (#154); imports the
@@ -337,19 +337,15 @@ pnpm vocab:fr         # -> packages/web/public/vocab/fr.json
 #    word identities ranked by their homograph-free representative, and no-clean
 #    groups are surfaced in the playability report (#135, printed per secret on
 #    stdout, observation only). Every ranked group is annotated with its dq distance
-#    and, for the groups from the hole's start word in to the secret, its road cluster
-#    (#115); --no-roads drops the road fields, dq has no opt-out.
+#    (#115); dq has no opt-out.
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 distinct words; all occurrences hole (no `--`)
 
 # 4. Generate a SINGLE-WORD artifact (#154): one word + its ranked neighborhood, no
 #    sentence. -> packages/generation/output/single-word/<lang>/<slug>.json (--out-dir
 #    overrides the root). Every per-secret rule is gen_phrase's, imported not copied
 #    (walk_secret): merge walk, #133 form confirmation, #119 donors, TOP_K, dq,
-#    slug collisions. Three differences, all because there is no sentence — NO semantic
-#    roads, ever (Word mode paints station words by RARITY on one trunk; the `--roads` opt-in retired
-#    2026-08-11 with the tutorial's themes lesson, its only reader), every
-#    group carries `freq` (#163, this command only), and the output has one flat `ranks`
-#    map with no words/holes/start/source. Unlike gen:phrase it does NOT rewrite
+#    slug collisions. Two differences: every group carries `freq` (#163, this command
+#    only), and the output has one flat `ranks` map with no words/holes/start/source. Unlike gen:phrase it does NOT rewrite
 #    web/public/vocab/<lang>.json (that is reduce's output).
 pnpm gen:word phare --lang fr --form phare=n:s   # --form required per fr word off a TTY
 ```
@@ -367,53 +363,8 @@ output filename contains the three distinct secret slugs in sentence order.
 
 - All paths below are under `packages/`. **Tunables:** `TOP_N = 400000` (reduce),
   `TOP_K = 10000` / curator report window `PLAYABILITY_TOP = 150` (gen),
-  start-rank band `50–150` (`start_word.py`),
-  `ROAD_TOP = 250` (the CEILING on a sentence hole's road zone — the sentence path's
-  alone since 2026-08-11, when `gen_word`'s `--roads` opt-in retired with the tutorial's
-  themes lesson; it is **no longer Word mode's range and the web's `CLAIM_ZONE` no longer
-  restates it**, so this literal is now this package's alone) /
-  `ROAD_KS = (2,3,4,5,6)` / `ROAD_MIN_SILHOUETTE = 0.05` /
-  `ROAD_MIN_FRACTION = 0.04` with `ROAD_MIN_GROUPS = 4` under it — a road clears the LARGER
-  of the two (`distances.py`). Note `PLAYABILITY_TOP` stayed at 150: it is
+  start-rank band `50–150` (`start_word.py`). Note `PLAYABILITY_TOP` stayed at 150: it is
   a curator report window sized for a sentence hole's near field, not the word game's field.
-  `ROAD_KS` is also a front-end commitment — it caps the road count, and the web must have a
-  lane colour per road (see the root `AGENTS.md` road bullet).
-- **Road SELECTION was reworked with the wider zone (2026-08-07)** — the rules are in the
-  root `AGENTS.md`; what belongs here is the evidence, measured over nine real
-  neighborhoods. Before: at zone 250 the best-silhouette split was `k=2` on eight of nine,
-  and seven of those were a straggler cut — `ocean` 248/2, `vie` 249/1, `nuage` 247/3 — where
-  the same words at zone 150 had given `ocean` a legible 62/61/27. After (size floor + most
-  roads): `ocean` 4 roads 160/45/28/17, `éclipse` 4 roads 98/80/59/13, `nuage` 4 roads
-  124/56/46/24, `tropiques` its own 4 themes 113/107/17/13, `cochon` 139/111, `forêt`
-  238/12, and `pain`/`vie` ONE road — honest, since their only "split" was a 1–3 word
-  straggler.
-  **Re-measured on review, 2026-08-07**, with the count floor in and each word generated the
-  way a curator actually generates one (`--form <mot>=n:s`, so the #133 claim names group 0 —
-  that claim shifts every rank by one and therefore the clustering, which is why the run above
-  and this one disagree on some words; a `--no-inflect` measurement is NOT what ships):
-  `océan` **5** roads 108/52/61/14/15, `tropiques` 4 roads 107/113/13/17, `éclipse` 4 roads
-  13/79/103/55, `montagne` 3 roads 180/34/36, `neige` 3 roads 161/73/16, `nuage` 3 roads
-  142/53/55, `phare` 3 roads 98/81/71, `cochon` 2 roads 111/139, `forêt` 2 roads 238/12,
-  `pain` and `vie` ONE road each. Distribution over those eleven: 2×one, 2×two, 4×three,
-  2×four, 1×five; the smallest road anywhere is 12 groups, against a floor of 10. So **five
-  roads is OBSERVED data, not headroom** — an earlier note here claimed four was the ceiling
-  any real neighborhood reached, and `océan` alone disproves it. Six has not been seen; treat
-  `ROAD_KS`'s top as the bound it is, not as a prediction.
-  **The SENTENCE zone is the other half of that review, and it is where `ROAD_MIN_GROUPS`
-  came from.** The rework was measured at 250 only, but "most roads wins" applies to every
-  hole, and a hole's zone is its DEPARTURE's rank — the start band runs 50–150, where a 4%
-  floor is 2 to 6 groups. Re-clustered at zone 50 with the fraction alone, real merged fr
-  neighborhoods took exactly the lane the floor was written to forbid. (Instrument, so the
-  numbers are read for what they are: the 50 closest GROUPS of a generated artifact, their
-  shipped display forms looked back up in the vectors — the same population `annotate_roads`
-  is handed at `start_rank` 50, standing in for its representative forms rather than
-  replaying them exactly.) `phare`
-  7/19/**2**/11/9/**2** (six roads, two of them a pair), `neige` 34/**2**/8/6, `montagne`
-  30/18/**2**, `tropiques` 22/17/5/4/**2**. With the count floor: `phare` 9/19/11/11, `neige`
-  36/8/6, `montagne` 26/18/6, `tropiques` 22/19/5/4 — and at zone 100 and beyond every one of
-  them is byte-identical either way, because there the fraction is already the larger rule.
-  The old best-silhouette rule gave 49/1 or 20/30 on those same words, so this is not a
-  regression the rework introduced so much as the short end of the band it never looked at.
 - **Playability report (#135):** `build_playability_report` reads (never mutates)
   the final groups at ranks 1..`PLAYABILITY_TOP`; both `--words` and the raw-mode
   selector feed the same `PlayabilityReporter`, whose output is deferred until the
@@ -427,29 +378,11 @@ output filename contains the three distinct secret slugs in sentence order.
   the five largest representative-to-clean-form cosine distances — measured values,
   no quality verdict or cutoff.
 - **Distance annotations (#115):** `distances.py` is stdlib-only (pure arithmetic over
-  float sequences), so the contract tests keep running without numpy/gensim and the
-  ≤`ROAD_TOP`-point clustering costs a fraction of a second per secret (measured 0.34s at
-  250 points, against 0.11s at the 150 that preceded it). They are stamped in
-  **two passes, because they know different things**: `dq` is a property of the walk
-  alone, so `gen_phrase`'s `build_puzzle_rank_map` — the ONE entry point both authoring
-  paths use — wraps the structural `build_merged_rank_map` (#104) and stamps it onto
-  every entry by its rank; `road` describes the stretch the player travels, which does
-  not exist until the start word is picked, so each path calls `annotate_roads` right
-  after `choose_start` (and before the agreement pass, so a rewritten form inherits its
-  group's road like any other key). Both key off the entry's `rank` alone, which is what
-  makes "aliases share their group's values" true by construction. Deferring the roads
-  also takes the clustering off the interactive selector's hover path — it now runs only
-  for the words actually committed. Measured
-  on a real fr puzzle (`amer` / `plissés` / `grincement`, ~39k keys per secret):
-  **802 KB → 828 KB gzipped (+3.2%)**, raw 5.9 MB → 7.1 MB, and the map is otherwise
-  byte-identical. On that puzzle two secrets split into genuinely meaningful facets
-  (`amer` → figurative vs taste; `plissés` → participles vs garment nouns) while
-  `grincement` scored its BEST silhouette (0.19) on a degenerate 149/1 split — the
-  metric rewards isolating an outlier. **That open question was CLOSED on 2026-08-07**
-  by `ROAD_MIN_FRACTION` + `ROAD_MIN_GROUPS` (see the road-selection bullet above and the
-  rules in the root `AGENTS.md`): an undersized cluster is folded into its nearest
-  neighbour before the silhouette is read, so the 149/1 shape can no longer be scored,
-  let alone win.
+  float sequences), so the contract tests keep running without numpy/gensim. `dq` is a
+  property of the walk alone, so `gen_phrase`'s `build_puzzle_rank_map` — the ONE entry
+  point both authoring paths use — wraps the structural `build_merged_rank_map` (#104) and
+  stamps it onto every entry BY ITS RANK, which is what makes "aliases share their group's
+  values" true by construction.
 - **`gen_phrase` is fully interactive on a TTY (#5).** Anything not passed as a flag is
   prompted: the **sentence** (positional, now optional), **`--lang`**, and the optional
   **source metadata** — `--kind` (offers `KNOWN_KINDS` numbered, but free text is
@@ -473,7 +406,7 @@ output filename contains the three distinct secret slugs in sentence order.
   **Enter** commits the hovered occurrence's whole repeated-word group, then a **number +
   Enter** picks its shared start word (**Esc** cancels back to navigation, **Ctrl-C**
   aborts). Three distinct commits end it. The produced `holes`/`ranks` are **identical in
-  shape** to the `--words` path (`build_rank_map` + `_make_hole` are shared), with one hole
+  shape** to the `--words` path (`build_puzzle_rank_map` + `_make_hole` are shared), with one hole
   per group occurrence. `--words` (or off-TTY) **skips** the selector entirely
   (`holes_from_words`), so batch/CI is unaffected. Fewer than 3 distinct selectable words
   → clear error.
@@ -538,14 +471,6 @@ output filename contains the three distinct secret slugs in sentence order.
   the artifact dict, the output path, a reject-early guard on
   multi-word/clitic input (whitespace or apostrophes die with a clear "one word" error
   before the loads; dashes stay legal) and the CLI.
-  **Roads do not exist here at all (2026-08-11, retiring the `--roads` opt-in that had
-  superseded `--no-roads` on 2026-08-10):** Word mode paints its station words by RARITY
-  on one trunk,
-  so a word artifact has no consumer for the clustering — and the opt-in's one reader,
-  the onboarding tutorial's themes lesson (#155), was re-arced onto the rarity ladder
-  the same day, taking the flag with it. The tutorial's prune script
-  (`web/scripts/prune-word-map.mjs`) now cuts its zone by RANK (`--top`) instead of by
-  road presence, and the committed tutorial maps carry no road fields.
   **`annotate_freq` (#163) lives HERE and not in `gen_phrase`** because it is
   the one annotation only this artifact carries — `gen_phrase` must not grow a pass it
   never calls. It is a plain min over the group's OWNED KEYS' positions among the

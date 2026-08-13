@@ -18,16 +18,14 @@
 
 :root {
   --bg: #0a0b12;
-  /* The route line's own colour: trunk, junction bus and the tail's dashes, which is why
-     it lives here rather than on `.route-frame` where it started.
-     Deliberately the ONE unsaturated line on the map: the trunk is the stretch where no road
-     has been identified, so it reads as the far field the lanes fork out of. */
+  /* The route line's own colour: the trunk and the tail's dashes, which is why it lives
+     here rather than on `.route-frame` where it started. Deliberately the ONE unsaturated
+     line on the drawing — the words and the nodes carry every colour it says anything with. */
   --rail: #48528a;
   --surface: #1d2138;
   --surface-hover: #2c3358;
   --fg: #f4f4f2;
   --accent: #2f7bff;
-  --accent-dim: #6fa0ff;
   --danger: #ff1f54;
   --hole: #ffc400; /* vivid gold for holes */
   --muted: #c4c9d8;
@@ -878,7 +876,7 @@ button * {
   white-space: nowrap;
   color: var(--hole);
 }
-/* Since #117 a hole is a BUTTON: tapping it opens its neighborhood's route map. It wraps
+/* Since #117 a hole is a BUTTON: tapping it opens that hole's guess history. It wraps
    the word + exponent without restructuring them (the floating-hit/scramble choreography
    keys off that structure) and stays typographically invisible — the sentence reads
    exactly as before, so the gold word is still the only thing on screen. */
@@ -1404,7 +1402,7 @@ button * {
   color: var(--fg);
 }
 
-/* ===================== route map (issue #117) ===================== */
+/* ===================== the route drawing + history modal ===================== */
 /* A hole's guess HISTORY (user-decided 2026-08-10, replacing the #117 route map — the drawn
    neighborhood was rarely meaningful in practice, so the modal now answers the one question a
    player actually brings to it: what have I tried, and how close was each?).
@@ -1451,27 +1449,24 @@ button * {
      it recedes behind the words that ARE on the map. */
   --unfound: #3a4270;
   /* One Press Start cell is exactly 1em, so an exponent's width is its length times this — which
-     is why RouteModal can set `--gutter` to fit the widest rank the line actually shows (a fixed
+     is why `routeFrameVars` can set `--gutter` to fit the widest rank a line can show (a fixed
      one sized for the theoretical "-9970" left a dead column on most rounds). This is the
      fallback; the media query below is what makes it responsive without the component knowing. */
   --rank-size: 10px;
   --gutter: calc(var(--rank-size) * 5 + 10px);
-  /* Air between the rail and the words, SHARED by every route the app draws (promoted from
-     `.history-frame` on 2026-08-11, when Word mode's board went trunk-only and the six-lane
-     worst case this used to be packed for stopped existing): both frames subtract it from
-     their `--wordw`, or fitWord sizes a long word to a column wider than the real one. */
+  /* Air between the rail and the words, SHARED by every route the app draws: both frames
+     subtract it from their `--wordw`, or fitWord sizes a long word to a column wider than
+     the real one. */
   --word-gap: 14px;
-  /* Every line on the map — trunk, lane, junction, leap, tail — is this thick. Kept in one
-     place because RouteModal's `--lane-lines` gradient paints the lanes at the same width, and
-     the two must not drift. */
+  /* Every line on a route — trunk, leap, tail — is this thick. */
   --line-w: 5px;
-  /* Set per-modal by RouteModal from the road count; these are the one-lane fallbacks. */
+  /* Set per-frame by routeFrameVars; these are the fallbacks. */
   --railw: 31px;
   --trunk-x: 15.5px;
-  /* The word column's width, so RouteModal can size a long word to FIT it (see fitWord). The
+  /* The word column's width, so a route can size a long word to FIT it (see fitWord). The
      other two columns and the scroller's own padding are all known here, which is the only
      reason that arithmetic is possible without measuring anything. The 18px is the one thing it
-     canNOT know: a classic (non-overlay) scrollbar takes ~15-17px off `.route-scroll`'s client
+     canNOT know: a classic (non-overlay) scrollbar takes ~15-17px off the scroller's client
      width and `100vw` cannot see it, so without the allowance a long word gets sized to a column
      that turns out narrower and breaks mid-word — the one outcome fitWord exists to prevent.
      Platforms with overlay scrollbars just get slightly smaller long words. */
@@ -1584,8 +1579,8 @@ button * {
    part of the same journey — and take the app's own "named, not found" dress, the word
    board's own distinction: the word dimmed to the census's 0.55 and the node small and
    muted. So what the player actually HELD reads at full strength straight out of a field
-   that was there all along. Scoped to this modal, since the word board's `route-revealed`
-   is its own lane-coloured rule. */
+   that was there all along. Scoped to this modal: the word board's `route-revealed` dresses
+   its own stations. */
 .history-frame .route-revealed .route-word {
   opacity: 0.55;
 }
@@ -1645,12 +1640,6 @@ button * {
   margin-left: calc(var(--trunk-x) - var(--line-w) / 2);
   background: var(--rail);
 }
-/* Between two stations inside the fork, every lane runs on. */
-.route-link.lanes::before {
-  width: 100%;
-  margin-left: 0;
-  background: var(--lane-lines);
-}
 /* The cold end above the first station: not a distance, so not a solid line — the broken
    trace (the leap into the word joined the solid rail on 2026-08-04: the routes should
    visibly LEAD to the word). `.broken` is the history modal's behind-the-departure stretch
@@ -1692,7 +1681,7 @@ button * {
   white-space: nowrap;
 }
 /* The rail spans the WHOLE station (a tagged one is two lines tall) so the line never breaks;
-   the node is placed on the first line's midline, on its own lane. */
+   the node is placed on the first line's midline. */
 .route-rail {
   position: relative;
   grid-column: 2;
@@ -1708,16 +1697,10 @@ button * {
   bottom: var(--line-bottom, 0);
   background: var(--rail);
 }
-.route-rail.lanes::before {
-  left: 0;
-  transform: none;
-  width: 100%;
-  background: var(--lane-lines);
-}
 /* Every node is a FILLED square — no outline-only stops. What a stop IS comes from its size and
    its fill: a word you found (bright), the one you were handed (muted), where you are now (gold,
-   biggest), one you have not found (its own lane's colour, small, so it swells the line instead
-   of punching a hole in it). */
+   biggest), one you have not found (small, so it swells the line instead of punching a hole in
+   it). */
 .route-node {
   position: absolute;
   left: var(--node-x, var(--trunk-x));
@@ -1738,7 +1721,7 @@ button * {
   align-items: center;
   min-height: var(--head);
   font-family: var(--vt);
-  /* RouteModal sets the real size inline (fitWord): a word too long for `--wordw` shrinks to
+  /* The surface sets the real size inline (fitWord): a word too long for `--wordw` shrinks to
      fit instead of breaking mid-word. This is only the fallback if that never arrives. */
   font-size: 15px;
   line-height: 1.3;
@@ -1746,8 +1729,7 @@ button * {
   /* Past fitWord's floor, breaking is still better than overflowing the dialog. */
   overflow-wrap: anywhere;
 }
-/* Word mode's post-mortem (trunk-only since 2026-08-11, when the rarity lanes retired): a
-   station says its GRADE in its own TYPE — the word painted in the rarity's colour
+/* Word mode's post-mortem: a station says its GRADE in its own TYPE — the word painted in the rarity's colour
    (`--rarity-c`, set with `.graded` per zone station by WordBoard), the vocabulary the
    run's strikes and loot already taught. Keyed on the CLASS, not on every station, so the
    terminus keeps `.route-found`'s solved blue and a gradeless near miss stays `--fg`. */
@@ -1780,50 +1762,6 @@ button * {
   100% {
     transform: scale(1);
   }
-}
-
-/* --- the fork, and the merge into the word --- */
-/* Orthogonal only: a trunk stub, a bus across the lanes, then the lanes themselves. Reusing
-   .route-station gives it the same three columns, so the shape lands under the rail for free. */
-.route-junction .route-rail::before {
-  display: none;
-}
-.jx-trunk {
-  position: absolute;
-  left: var(--trunk-x);
-  transform: translateX(-50%);
-  width: var(--line-w);
-  top: 0;
-  height: 14px;
-  background: var(--rail);
-}
-.jx-bus {
-  position: absolute;
-  left: var(--bus-x);
-  width: var(--bus-w);
-  top: 14px;
-  height: var(--line-w);
-  background: var(--bus-grad, var(--rail));
-}
-.jx-lanes {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: calc(14px + var(--line-w));
-  bottom: 0;
-  background: var(--lane-lines);
-}
-.route-junction.converge .jx-trunk {
-  top: auto;
-  bottom: 0;
-}
-.route-junction.converge .jx-bus {
-  top: auto;
-  bottom: 14px;
-}
-.route-junction.converge .jx-lanes {
-  top: 0;
-  bottom: calc(14px + var(--line-w));
 }
 
 /* --- the end of the line --- */
@@ -1919,9 +1857,9 @@ button * {
 }
 /* --- off the map --- */
 /* ABOVE the line: the guesses that earned no rank at all. Beyond the top-K there is no
-   distance left to draw, and that IS the mechanic. Nothing rules them off (2026-08-05,
-   dropping `.route-break`) — the line's own broken tail runs immediately below, and a second
-   horizontal tear only fenced these words off from what they are already outside of. */
+   distance left to draw, and that IS the mechanic. Nothing rules them off — the line's own
+   broken tail runs immediately below, and a second horizontal tear only fenced these words
+   off from what they are already outside of. */
 .route-shelf-head {
   margin: 0 0 12px;
   font-family: var(--press);
@@ -1936,9 +1874,8 @@ button * {
   text-shadow: none;
 }
 .route-misses {
-  /* 48, not the retired lane-map's 26: on a one-trunk line the shelf is the drawing's top
-     neighbour, and at 26px it read as the first stop's label (2026-08-10's history finding,
-     shared since 2026-08-11 — both drawings are one trunk now). */
+  /* 48: the shelf is the drawing's top neighbour, and at 26px it read as the first stop's
+     label (2026-08-10's history finding, shared by both drawings since 2026-08-11). */
   margin: 0 0 48px;
   display: flex;
   flex-wrap: wrap;
@@ -1958,8 +1895,8 @@ button * {
   opacity: 0.55;
 }
 
-/* A very narrow phone with three or four wide roads leaves the word column genuinely short, so
-   the rank ladder gives some of its width back rather than letting fitWord bottom out on its
+/* A very narrow phone leaves the word column genuinely short, so the rank ladder gives some
+   of its width back rather than letting fitWord bottom out on its
    floor and break a long word in half. One cell smaller is enough — and because the gutter is
    `--rank-size` times the widest exponent, it follows on its own. */
 @media (max-width: 360px) {
@@ -2711,8 +2648,8 @@ button * {
 
 /* The tutorial's ending display (2026-08-11, replacing the theme clouds / routes teaser):
    the five RARITY GRADES as a ladder, commonest at the top. Each rung wears its grade's own
-   colour (set inline from RARITY_COLORS — the same table the Word board's lanes, the strike
-   and the loot read) and steps up in size as it steps down in the ladder: rarer is bigger,
+   colour (set inline from RARITY_COLORS — the same table the Word board's stations, the
+   strike and the loot read) and steps up in size as it steps down in the ladder: rarer is bigger,
    which says "more precious" with no copy. STATIC sizes, never an animated scale — the
    pixel font renders animated scaling blurry (the app's standing rule) — and the entrance
    is a small rise+fade per rung on its own delay, so the ladder reads top to bottom.
@@ -2855,7 +2792,7 @@ button * {
   /* The action button sits on the 14px page inset, not the keyboard's edge-to-edge hug, so
      like the solved results it gets +10px back over the keyboard's 4px bottom gap: bottom
      gap = side gap = 14px (the same rule as .tray.tray-results). On the BUTTON rather than
-     on the themes tray's padding, because the mix and claim beats need the very same offset
+     on the ending tray's padding, because the mix and claim beats need the very same offset
      inside a tray whose height is the keyboard's and has to stay exactly that. */
   .mix-btn {
     margin-bottom: 10px;
@@ -3177,7 +3114,7 @@ button * {
   /* The board is the screen behind a live prompt — rubber-banding the page under it while
      hunting the line would take the keyboard with it. */
   overscroll-behavior: contain;
-  /* Horizontal only, like .route-scroll — the line's breathing room is content, never a
+  /* Horizontal only — the line's breathing room is content, never a
      vertical padding (a sticky offset would resolve against it).
      The LEFT side is 0 (2026-08-06): the drawing is a left-aligned block — the rank gutter
      starts it and the words run off to the right — so an inset there just held the whole
@@ -3214,9 +3151,9 @@ button * {
   flex-direction: column;
 }
 /* While the line is CUT, the content stops 8px SHORT of the torn rule: an empty band of bare
-   backdrop between the severed field and the dashes — the route map's own grammar for a parked
-   row, whose separator sits in a `--stick-inset` (8px) clearance rather than against the rows
-   it interrupts. Spoken here with a MASK, not a strip: painting the band would put a box over
+   backdrop between the severed field and the dashes — the old route map's grammar for a parked
+   row, whose separator kept an 8px clearance rather than sitting against the rows it
+   interrupted. Spoken here with a MASK, not a strip: painting the band would put a box over
    the animated waves, which is the thing this footer exists to avoid. Only while torn — at the
    true bottom the mask lifts, because the merge's last link must run flush out of the scroller
    into the terminus's rail below it. */

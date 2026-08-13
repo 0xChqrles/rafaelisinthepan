@@ -4,9 +4,9 @@ French fastText specifics for the sentence reconstruction game.
 Common embedding logic lives in scripts/embedding_neighbors.py. This file keeps the
 French-specific reduced-vector path, derived cache path, and vector format.
 
-Dependencies: pip install gensim numpy
+Dependencies: gensim + numpy, provisioned by uv (see the callers' PEP-723 headers).
 Expected file: embedding/fr/cc.fr.300_reduced.vec
-  (produced by `npm run reduce:fr` from the raw cc.fr.300.vec —
+  (produced by `pnpm reduce:fr` from the raw cc.fr.300.vec —
    https://fasttext.cc/docs/en/crawl-vectors.html)
 """
 
@@ -32,7 +32,7 @@ SPEC = EmbeddingSpec(
     vectors_path=FASTTEXT_VEC,
     cache_path=CACHE,
     no_header=False,
-    missing_hint="Run `npm run reduce:fr` first (needs the raw cc.fr.300.vec).",
+    missing_hint="Run `pnpm reduce:fr` first (needs the raw cc.fr.300.vec).",
 )
 
 
@@ -44,16 +44,5 @@ def build_vocab(kv):
     return _build_vocab(SPEC, kv)
 
 
-def closest(word, kv, V, M, n=15000):
+def closest(word, kv, V, M, n=None):
     return _closest(SPEC, word, kv, V, M, n=n)
-
-
-if __name__ == "__main__":
-    kv = load_vectors()
-    V = build_vocab(kv)
-    M = build_matrix(kv, V)
-
-    target = "chaise"
-    print(f"\n30 closest words to '{target}':")
-    for w, rank, sim in closest(target, kv, V, M, n=30):
-        print(f"  {rank:4d}  {w:20s}  {sim:.3f}")

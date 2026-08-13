@@ -47,13 +47,12 @@ describe('WordBoard accessibility mirror', () => {
   });
 });
 
-// CONTRACT: rarity is said in the WORD's COLOUR on one trunk (user-decided 2026-08-11,
-// superseding 2026-08-10's grade-per-lane fork — the board is the sentence route's exact
-// drawing now). Every ZONE station carries its grade's `--rarity-c` (COMMON is the ladder's
-// floor, so a station can never be gradeless); a near miss out on the trunk belongs to no
-// grade and carries none.
+// CONTRACT: rarity is said in the WORD's COLOUR on one trunk (user-decided 2026-08-11 —
+// the board is the sentence route's exact drawing). Every ZONE station carries its grade's
+// `--rarity-c` (COMMON is the ladder's floor, so a station can never be gradeless); a near
+// miss out on the trunk belongs to no grade and carries none.
 describe('WordBoard rarity colours', () => {
-  it("paints a station in its own GRADE's colour, not the route map's lane hues", () => {
+  it("paints a station in its own GRADE's colour", () => {
     const markup = render({
       grades: [COMMON, RARE],
       stations: [
@@ -64,9 +63,6 @@ describe('WordBoard rarity colours', () => {
 
     expect(markup).toContain(RARITY_COLORS[COMMON]);
     expect(markup).toContain(RARITY_COLORS[RARE]);
-    // The fork is gone: no lane class, no junction — one trunk, like the sentence line.
-    expect(markup).not.toContain('on-lane');
-    expect(markup).not.toContain('route-junction');
   });
 
   it('leaves a near miss uncoloured — it belongs to no grade', () => {

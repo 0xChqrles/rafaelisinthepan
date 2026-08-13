@@ -25,7 +25,7 @@ const REPO_LOCKFILE = path.resolve(here, '..', '..', '..', 'pnpm-lock.yaml');
 // them next to the bundled index.mjs so the same `./assets/*` paths resolve in the Lambda.
 const LAMBDA_ASSETS = path.resolve(here, '..', '..', 'backend', 'src', 'assets');
 
-export interface BackendStackProps extends StackProps {
+interface BackendStackProps extends StackProps {
   // The exact web origin permitted to read the API via CORS. Defaults to "*".
   allowedOrigin?: string;
   // Registered apex domain with a Route53 hosted zone in this account (e.g. "whippin.ai").

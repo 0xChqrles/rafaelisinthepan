@@ -16,14 +16,10 @@
 //
 // The committed map predates #163's `freq` and still shows it: none of its entries carry
 // the field, which is fine — the tutorial's ladder teaches the GRADES, not this board's
-// data. It also predates 2026-08-11, when the semantic `road` fields were stripped from
-// the committed maps (the themes ending was their only reader; gen:word no longer emits
-// them at all).
+// data.
 //
-// OCEAN was picked over LIGHTHOUSE, the first candidate, back when the ending taught the
-// map's roads; nothing in the current arc depends on how this neighborhood forks, so the
-// word simply stays. Clarity beats en/fr symmetry (#155) — the two languages do not share
-// a word.
+// OCEAN was picked over LIGHTHOUSE, the first candidate. Clarity beats en/fr symmetry
+// (#155) — the two languages do not share a word.
 //
 // The arc: the scramble ladder walks OCEAN out to its 96th neighbor (port — the start word
 // of the board, inside generation's own 50-150 start band), then three gated guesses teach

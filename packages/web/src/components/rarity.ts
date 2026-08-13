@@ -7,16 +7,14 @@ import type { Rarity } from '../game/wordGame';
 // grade moves exactly one table and the compiler finds every hole.
 
 // --- the colours -----------------------------------------------------------------------
-// COPIED from the app's existing palettes, never invented — the same rule (and the same
-// method) as `LANE_COLORS`: take stops the app already uses and pin each hex to its source
-// so nothing drifts silently (`rarity.test.ts`, mirroring `laneColors.test.ts`).
+// COPIED from the app's existing palettes, never invented: take stops the app already uses
+// and pin each hex to its source so nothing drifts silently (`rarity.test.ts`).
 //
-// FOUR constraints, all MEASURED in CIE76 dE rather than eyeballed (the numbers below were
-// reproduced against the lane set's recorded 36.9 / 15.3 before any grade was judged):
+// FOUR constraints, all MEASURED in CIE76 dE rather than eyeballed:
 //
 //   - RED IS RESERVED FOR MISS. Every grade clears 37+ dE from `--danger`; ARCANE's pink is
-//     the closest at 37.75, which is still wider than the lane set's own 36.9 minimum, and
-//     the two can never co-occur — a guess is a claim or a miss, never both.
+//     the closest at 37.75, and the two can never co-occur — a guess is a claim or a miss,
+//     never both.
 //   - `--accent` blue is THE DAY'S WORD, which is the very thing the label floats on top of.
 //     Every grade clears 58+ dE from it. (Progress-ramp blue was the obvious "rare" pick
 //     and was rejected at 14.75 dE — an overlap, not a coexistence.)
@@ -88,9 +86,9 @@ const art = (css: string, frames: number): StrikeArt => ({
 // A diagonal stroke that lands and dissipates. The default hit.
 export const SLASH_ART = art('', 5);
 // A wider, taller detonation — same white, same mask, so it also wears the grade's colour.
-export const BURST_ART = art('burst', 5);
+const BURST_ART = art('burst', 5);
 // The one coloured sheet: a violet-and-cyan star that scatters into shards.
-export const ULTRA_ART = art('ultra', 7);
+const ULTRA_ART = art('ultra', 7);
 
 // Commonest first: THIS ORDER IS THE ESCALATION, and `rarity.test.ts` reads it as one.
 export const STRIKE_ARTS: readonly StrikeArt[] = [SLASH_ART, BURST_ART, ULTRA_ART];
@@ -122,5 +120,5 @@ export function strikeFor(rarity: Rarity): StrikeArt {
 // word already back at rest (decided 2026-08-09): on a longer sheet the same rule is what
 // makes the extra frames read as DISSIPATION. Stated in the ART's own frames rather than as
 // a duration, because it is a claim about which frames of the hit the word is answering.
-export const STRUCK_FRAMES = 4;
+const STRUCK_FRAMES = 4;
 export const STRUCK_MS = STRUCK_FRAMES * SLASH_FRAME_MS;

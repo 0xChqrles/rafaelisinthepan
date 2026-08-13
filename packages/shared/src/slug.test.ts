@@ -1,5 +1,5 @@
 // CONTRACT: fold() (JS/TS) MUST be byte-identical to slug() (Python,
-// packages/generation/scripts/gen_phrase.py). Both sides assert against the SAME
+// packages/generation/scripts/slug.py). Both sides assert against the SAME
 // fixed case table (packages/shared/fixtures/slug-cases.json) so the two languages
 // can never silently diverge. See packages/generation/tests/test_slug.py for the
 // Python half — if you add a case, add it to the shared JSON and BOTH stay locked.

@@ -1,4 +1,4 @@
-"""CONTRACT: `dq` + `road` annotations in rank maps (#115, AGENTS.md "Per-puzzle
+"""CONTRACT: the `dq` annotation in rank maps (#115, AGENTS.md "Per-puzzle
 JSON schema").
 
   - dq quantizes the group's cosine distance to the secret onto one byte, per hole:
@@ -7,18 +7,8 @@ JSON schema").
     DIFFERENCES survive it (that is what the client's journey ratio uses);
   - the secret's own entry (rank 0) carries NO dq — the terminus is off-scale;
   - a flat neighborhood (s1 == smin) is a HARD error, never silent all-zero dq;
-  - dq/road are GROUP properties: every alias key of a lemma group carries them, and
-    slug-collision resolution keeps the winning group's values;
-  - roads cluster the journey — the DEPARTURE and every group closer than it, the start
-    word included — deterministically, numbered by their closest member's rank (the road
-    holding rank 1 is road 0); ROAD_TOP is only the ceiling on that zone;
-  - a road must hold at least ROAD_MIN_FRACTION of the zone AND never fewer than
-    ROAD_MIN_GROUPS groups: a smaller cluster is an outlier, not a route, and is folded
-    into its nearest neighbour BEFORE scoring;
-  - among the splits that clear ROAD_MIN_SILHOUETTE, the one with the MOST roads wins —
-    silhouette is the honesty gate, not the ranking;
-  - a neighborhood with no honest split falls back to ONE road (all zeros);
-  - --no-roads emits no road field at all, dq is unaffected (scoring depends on it).
+  - dq is a GROUP property: every alias key of a lemma group carries it, and
+    slug-collision resolution keeps the winning group's value.
 
 Synthetic vectors only — never the real embeddings.
 """
@@ -78,183 +68,6 @@ def test_a_walk_that_is_not_closest_first_is_rejected():
         distances.quantize_dq([0.5, 0.8, 0.2])
 
 
-# --- roads: clustering the near neighborhood ------------------------------------
-
-def _cloud(center, n, spread=0.01):  # `spread` widens a facet from tight to diffuse
-    """n distinct unit-ish vectors bunched around `center` (deterministic, no rng)."""
-    out = []
-    for i in range(n):
-        v = list(center)
-        v[i % len(center)] += spread * (i + 1)
-        out.append(v)
-    return out
-
-
-def _two_clear_clusters():
-    # Two well-separated directions in 4-D: the silhouette of k=2 is unmistakable.
-    return _cloud([1.0, 0.0, 0.0, 0.0], 6) + _cloud([0.0, 1.0, 0.0, 0.0], 6)
-
-
-def test_roads_split_a_two_facet_neighborhood_and_number_by_closest_member():
-    roads = distances.cluster_roads(_two_clear_clusters())
-
-    assert len(set(roads)) == 2
-    assert roads[0] == 0  # the road holding rank 1 is always road 0
-    assert roads[:6] == [0] * 6
-    assert roads[6:] == [1] * 6
-    # Numbering follows the closest member: swapping which cluster leads swaps the ids.
-    swapped = distances.cluster_roads(
-        _cloud([0.0, 1.0, 0.0, 0.0], 6) + _cloud([1.0, 0.0, 0.0, 0.0], 6))
-    assert swapped[0] == 0 and swapped[6] == 1
-
-
-def test_roads_are_deterministic_across_runs():
-    vectors = _two_clear_clusters() + _cloud([0.0, 0.0, 1.0, 0.0], 6)
-    assert distances.cluster_roads(vectors) == distances.cluster_roads(vectors)
-
-
-def _structureless(n, dim=300):  # dim = the real embedding width
-    """n deterministic pseudo-random high-dimensional vectors: no facets to find, so
-    every k-split is arbitrary — the real shape of a single-facet neighborhood."""
-    out, state = [], 12345
-    for _ in range(n):
-        v = []
-        for _d in range(dim):
-            state = (1103515245 * state + 12345) % 2147483648
-            v.append(state / 2147483648 - 0.5)
-        out.append(v)
-    return out
-
-
-def test_the_road_zone_is_the_journey_from_the_departure_in():
-    # The roads describe the journey: ranks 1..start_rank, the DEPARTURE included — the
-    # player is put down on one of the roads, not on the trunk short of them.
-    assert distances.road_zone(60) == 60
-    assert distances.road_zone(150) == 150
-    assert distances.road_zone(1) == 1
-    # ROAD_TOP is the CEILING, for a start hand-picked far outside the 50-150 band.
-    assert distances.ROAD_TOP == 250
-    assert distances.road_zone(3000) == 250
-
-
-def test_an_outlier_is_folded_back_in_instead_of_becoming_its_own_road():
-    # Two real facets plus ONE straggler sitting slightly off on a third axis. A lane drawn
-    # for that straggler advertises a whole route with one stop on it, so the floor sends it
-    # back to whichever facet it is actually nearest — the map keeps two roads, not three,
-    # and every group still gets one (nothing is dropped by being absorbed).
-    vectors = _two_clear_clusters() + _cloud([0.0, 0.0, 1.0, 0.0], 1)
-    floor = max(distances.ROAD_MIN_GROUPS, math.ceil(len(vectors) * 0.2))
-    roads = distances.cluster_roads(vectors, min_fraction=0.2)
-
-    assert len(roads) == len(vectors)
-    assert len(set(roads)) == 2
-    assert min(roads.count(r) for r in set(roads)) >= floor
-
-
-def test_the_floor_is_a_FRACTION_of_the_zone_under_an_absolute_count():
-    # Two rules, and a road clears BOTH — max(count, fraction * zone). This asserts the
-    # FRACTION half, isolated by pinning the count out of the way, so what passes and fails
-    # here is the scaling and nothing else.
-    #
-    # It scales because the zone's size is not fixed — ROAD_TOP for a word artifact, the
-    # DEPARTURE's rank for a sentence hole. A pure count would let the same honest 2-facet
-    # split pass on a long zone and be swallowed on a short one.
-    small = distances.cluster_roads(_two_clear_clusters(), min_fraction=0.04, min_groups=2)
-    assert len(set(small)) == 2
-
-    # The SAME shape of split, one tenth the relative size, is not a split at all: two 6-group
-    # clusters inside a 120-group zone are 5% each, below a 20% floor, so both fold in.
-    padded = _two_clear_clusters() + _cloud([0.0, 0.0, 1.0, 0.0], 108)
-    assert len(set(distances.cluster_roads(padded, min_fraction=0.2, min_groups=2))) == 1
-
-
-def test_the_fractional_floor_rounds_UP_to_mean_at_least_the_fraction():
-    # Five groups are 19.2% of this zone: ordinary rounding would incorrectly preserve
-    # them as a road under a 20% floor. "At least" requires six, so they are absorbed.
-    vectors = (_cloud([1.0, 0.0, 0.0], 10)
-               + _cloud([0.0, 1.0, 0.0], 11)
-               + _cloud([0.0, 0.0, 1.0], 5))
-    roads = distances.cluster_roads(
-        vectors, ks=(3,), min_fraction=0.2, min_groups=2)
-
-    floor = math.ceil(len(vectors) * 0.2)
-    assert len(set(roads)) == 2
-    assert min(roads.count(r) for r in set(roads)) >= floor
-
-
-def test_a_lane_needs_A_HANDFUL_of_groups_however_short_the_zone_is():
-    # The COUNT half, at both shipped values. A fraction alone says nothing about what a lane
-    # LOOKS like, and the sentence game runs where that bites: its zone is the departure's
-    # rank, the start band OPENS at 50, and 4% of 50 is TWO groups — so for one day the floor
-    # admitted precisely the two-stop lane it was written to forbid, and real fr neighborhoods
-    # took it (`phare` at zone 50 shipped 7/19/2/11/9/2, two of those roads a pair).
-    #
-    # Same fixture, read twice: the fraction on its own leaves the pair standing as its own
-    # road, the count folds it back into the facet it is nearest.
-    vectors = _two_clear_clusters() + _cloud([0.0, 0.0, 1.0, 0.0], 2)
-    assert math.ceil(len(vectors) * distances.ROAD_MIN_FRACTION) < 2
-    assert len(set(distances.cluster_roads(vectors, min_groups=2))) == 3
-
-    roads = distances.cluster_roads(vectors)
-    assert len(set(roads)) == 2
-    assert min(roads.count(r) for r in set(roads)) >= distances.ROAD_MIN_GROUPS
-
-
-def test_the_most_roads_wins_even_when_a_coarser_split_scores_higher():
-    # Silhouette is the GATE, not the ranking — the whole reason the rule changed. The shape
-    # that forces the distinction is the one the real neighborhoods have: ONE tight cluster
-    # beside a diffuse mass that itself holds two loose facets. Merging those two costs the
-    # score almost nothing (they overlap), so the 2-way read outscores the 3-way one — and a
-    # 2-way cut still says less about where this word's routes go. Both are honest; the
-    # richer one ships.
-    vectors = (_cloud([1.0, 0.0, 0.0, 0.0], 10, spread=0.002)
-               + _cloud([0.0, 1.0, 0.35, 0.0], 14, spread=0.05)
-               + _cloud([0.0, 0.35, 1.0, 0.0], 14, spread=0.05))
-    roads = distances.cluster_roads(vectors, min_fraction=0.2)
-    assert len(set(roads)) == 3
-    assert roads[0] == 0  # numbering still follows the closest member
-
-    # The rule, stated as the comparison it makes: the shipped split really does score LOWER
-    # than the coarse one it beat. Without this the test would pass on a fixture where the
-    # two rankings happen to agree, proving nothing about which one is in force.
-    dist = distances._distance_matrix(vectors)
-    floor = math.ceil(len(vectors) * 0.2)
-    coarse = distances._absorb_small_roads(
-        dist, distances._linkage_labelings(dist, (2,))[2], floor)
-    assert len(set(coarse)) == 2
-    assert distances._silhouette(dist, coarse) > distances._silhouette(dist, roads)
-    # ...and it cleared the gate, which is the only bar it had to clear.
-    assert distances._silhouette(dist, roads) >= distances.ROAD_MIN_SILHOUETTE
-
-
-def test_equal_road_counts_keep_the_smaller_k_regardless_of_silhouette():
-    # Both candidate trees collapse to three surviving roads. The k=5 tree has a much
-    # higher silhouette, but the metric is only an honesty gate; the k=4 tree must ship.
-    angles = [-0.020798, 0.043811, 2.05546, 0.405627,
-              0.259583, -1.513905, -1.479063, -0.106956]
-    vectors = [[math.cos(angle), math.sin(angle)] for angle in angles]
-    dist = distances._distance_matrix(vectors)
-    labelings = distances._linkage_labelings(dist, (4, 5))
-    candidates = {
-        k: distances._absorb_small_roads(dist, labels, min_size=2)
-        for k, labels in labelings.items()
-    }
-
-    assert len(set(candidates[4])) == len(set(candidates[5])) == 3
-    assert distances._silhouette(dist, candidates[5]) > distances._silhouette(
-        dist, candidates[4])
-    assert distances.cluster_roads(vectors, ks=(4, 5), min_groups=2) == (
-        distances._renumber_by_first_appearance(candidates[4]))
-
-
-def test_one_road_fallback_when_no_split_is_honest():
-    # No facet to name: every group shares the trunk rather than being told a lie.
-    assert distances.cluster_roads(_structureless(60)) == [0] * 60
-    # The threshold is what decides it: a genuinely split cloud collapses to one road
-    # once the bar is raised above any achievable silhouette.
-    assert distances.cluster_roads(_two_clear_clusters(), min_silhouette=1.1) == [0] * 12
-
-
 # --- annotation on the shipped rank map -----------------------------------------
 
 TABLE = {
@@ -266,53 +79,29 @@ TABLE = {
 }
 FORMS = gen_phrase.invert_lemmas(TABLE)
 VSET = {"vermine", "vermines", "privé", "privée", "chien"}
-KV = {
-    "vermine": [1.0, 0.0, 0.0],
-    "vermines": [1.0, 0.01, 0.0],
-    "privée": [0.0, 1.0, 0.0],
-    "chien": [0.0, 0.0, 1.0],
-}
 
 
-def _long_map(n=300):
-    """A shipped rank map of `n` groups, with the vectors the roads need. Words are
-    letters-only so each one is its own slug key, and the two facets alternate so any
-    zone the clustering is handed has an honest split to find. The default runs PAST
-    ROAD_TOP, so the ceiling has ranks beyond it to leave unroaded."""
-    letters = "abcdefghijklmnopqrst"
-    words = [letters[i // 20] + letters[i % 20] for i in range(n)]
-    ranking = [(w, i, 0.9 - i * 0.001) for i, w in enumerate(words)]
-    kv = {w: [1.0, 0.0, 0.0] if i % 2 else [0.0, 1.0, 0.0] for i, w in enumerate(words)}
-    merged, rmap, _groups = gen_phrase.build_puzzle_rank_map("secret", ranking, {}, {},
-                                                         set(words))
-    return words, merged, rmap, kv
-
-
-def test_every_alias_key_of_a_group_carries_the_group_dq_and_road():
+def test_every_alias_key_of_a_group_carries_the_group_dq():
     ranking = [("privée", 0, 0.80), ("chien", 1, 0.40)]
-    merged, rmap, _groups = gen_phrase.build_puzzle_rank_map(
+    _merged, rmap, _groups = gen_phrase.build_puzzle_rank_map(
         "vermine", ranking, TABLE, FORMS, VSET)
-    gen_phrase.annotate_roads(rmap, merged, KV, start_rank=2)
 
     # privée is the walked canonical, privé an alias never seen in the walk: same group,
     # so the same rank AND the same annotations.
     assert rmap["privee"]["rank"] == rmap["prive"]["rank"] == 1
     assert rmap["prive"]["dq"] == rmap["privee"]["dq"] == 255
-    assert rmap["prive"]["road"] == rmap["privee"]["road"] == 0
     assert rmap["chien"]["dq"] == 0
 
 
-def test_the_secret_entry_carries_no_dq_and_no_road():
+def test_the_secret_entry_carries_no_dq():
     ranking = [("privée", 0, 0.80), ("chien", 1, 0.40)]
-    merged, rmap, _groups = gen_phrase.build_puzzle_rank_map(
+    _merged, rmap, _groups = gen_phrase.build_puzzle_rank_map(
         "vermine", ranking, TABLE, FORMS, VSET)
-    gen_phrase.annotate_roads(rmap, merged, KV, start_rank=2)
 
     # the secret and its own inflections all sit at rank 0 — the terminus, off-scale.
     for key in ("vermine", "vermines"):
         assert rmap[key]["rank"] == 0
         assert "dq" not in rmap[key]
-        assert "road" not in rmap[key]
 
 
 def test_slug_collision_keeps_the_winning_group_annotations():
@@ -325,41 +114,6 @@ def test_slug_collision_keeps_the_winning_group_annotations():
         "vermine", ranking, table, forms, {"côté", "coté", "chien"})
 
     assert rmap["cote"] == {"word": "côté", "rank": 1, "dq": 255}
-
-
-def test_roads_stop_at_the_departure():
-    # The line is a journey: it begins where the puzzle put the player down, so the
-    # roads cover the departure and everything ahead of it, and nothing behind.
-    words, merged, rmap, kv = _long_map()
-    gen_phrase.annotate_roads(rmap, merged, kv, start_rank=60)
-
-    assert "road" in rmap[words[0]]  # rank 1
-    assert "road" in rmap[words[59]]  # rank 60 IS the departure: it rides a road
-    assert "road" not in rmap[words[60]]  # rank 61: behind the player, one trunk
-    assert "road" not in rmap[words[149]]  # nothing out in the far field either
-    assert all("dq" in rmap[w] for w in words)  # dq has no such cutoff
-
-
-def test_the_road_ceiling_still_bounds_a_start_picked_outside_the_band():
-    # choose_start accepts any word of the map, so a hand-picked far start must not
-    # hand the clustering thousands of points (nor ship a road on each).
-    words, merged, rmap, kv = _long_map()
-    gen_phrase.annotate_roads(rmap, merged, kv, start_rank=3000)
-
-    top = distances.ROAD_TOP
-    assert "road" in rmap[words[top - 1]]  # the last rank of the ceiling
-    assert "road" not in rmap[words[top]]  # the first one past it
-
-
-def test_no_roads_flag_drops_roads_but_keeps_dq():
-    # --no-roads reaches annotate_roads as "no vectors to cluster with".
-    ranking = [("privée", 0, 0.80), ("chien", 1, 0.40)]
-    merged, rmap, _groups = gen_phrase.build_puzzle_rank_map(
-        "vermine", ranking, TABLE, FORMS, VSET)
-    gen_phrase.annotate_roads(rmap, merged, None, start_rank=2)
-
-    assert all("road" not in entry for entry in rmap.values())
-    assert rmap["privee"]["dq"] == 255 and rmap["chien"]["dq"] == 0
 
 
 def test_a_flat_walk_aborts_generation_instead_of_shipping_zero_distances(capsys):

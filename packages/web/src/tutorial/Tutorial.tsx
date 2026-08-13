@@ -9,9 +9,10 @@ import { HIT_FADE_MS } from '../components/FloatingHit';
 import { RANK_MAX_MS, rankTransitionDuration } from '../components/Hole';
 import SkipIcon from '../assets/icons/skip.svg?react';
 import { FLOATING_HIT_INTRO_MS, KB_EXIT_FALLBACK_MS } from '../screens/Game';
-import MixWord, { SCRAMBLE_MS } from './MixWord';
+import MixWord from './MixWord';
 import CoachText, { richToPlain } from './CoachText';
 import { buildPrefixSet, canExtend } from '../game/keyboard';
+import { SCRAMBLE_MS } from '../hooks/useScramble';
 import useVocab from '../hooks/useVocab';
 import { fold } from '@whippin/shared';
 import type { HitState, Hole as PuzzleHole, RankEntry, RuntimeHole } from '@whippin/shared';
@@ -35,7 +36,7 @@ import { scriptFor } from './scripts';
 //   states the claim over the found word, NEXT swaps the word for the five-grade ladder
 //   (RarityLadder) under the line that says what it means, and PLAY in the tray is the
 //   graduation. There is no score to show, so there is no screen for it. Mode-specific rules
-//   (the clock, the bots, the history tap) are deliberately NOT here: each mode's pre-game
+//   (the clock, the history tap) are deliberately NOT here: each mode's pre-game
 //   gate teaches its own.
 //
 // Everything that reacts is the real components with the real timing constants; the scripts
@@ -70,13 +71,13 @@ function freshHole(h: PuzzleHole): RuntimeHole[] {
   ];
 }
 
-// The header stays in place throughout: the flag (left) opens the language screen —
-// the SAME navigation as everywhere else; because the open-tutorial state is
-// transient store state, picking a language there lands back INTO the tutorial in
-// that language — the centre reads "TUTORIAL", and the right control is a
-// fast-forward that SKIPS the whole tutorial (`onDone`) — a header affordance, not a
-// "close this box" icon, so it can't be mistaken for dismissing the explanation
-// alone. `onDone` fires on both a natural finish (the map closing) and a skip.
+// The header stays in place throughout: the globe opens the language screen — the SAME
+// navigation as everywhere else; because the open-tutorial state is transient store
+// state, picking a language there lands back INTO the tutorial in that language — the
+// centre reads "TUTORIAL", and the right control is a fast-forward that SKIPS the whole
+// tutorial (`onDone`) — a header affordance, not a "close this box" icon, so it can't be
+// mistaken for dismissing the explanation alone. `onDone` fires on both a natural finish
+// and a skip.
 export default function Tutorial({ lang, onDone }: { lang: string; onDone: () => void }) {
   const script = useMemo(() => scriptFor(lang), [lang]);
   const { puzzle } = script;
@@ -350,7 +351,7 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
       </div>
 
       {/* The floating header: "TUTORIAL" in the top-left status chip — no progress
-          counter here, the tutorial keeps its chrome minimal — and flag + a
+          counter here, the tutorial keeps its chrome minimal — and the globe + a
           fast-forward that SKIPS the tutorial on the right. */}
       <TopBar
         lang={lang}

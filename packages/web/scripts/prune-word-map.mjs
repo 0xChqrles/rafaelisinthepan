@@ -10,10 +10,7 @@
 //   - the word itself (rank 0);
 //   - the NEAR FIELD — every group of rank <= `--top` (the committed boards use 150: it
 //     comfortably contains the start band the mix demo lands in, and gives the free find a
-//     real neighborhood to type against). Until 2026-08-11 the zone was "whatever carries
-//     a `road`" — generation's flat clustering zone — because the ending stepped through
-//     the map's roads; that ending is retired, gen:word no longer emits roads at all, and
-//     the zone is now the explicit rank cut this flag states;
+//     real neighborhood to type against);
 //   - the scripted guided words (`--keep`), which are deliberately outside the zone: the
 //     "far" guess of the lesson has to rank FARTHER than the start word.
 // A kept word brings its whole GROUP (every alias key at that rank), because `word`/`rank`/

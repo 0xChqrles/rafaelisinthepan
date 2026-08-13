@@ -14,7 +14,9 @@
 // where each secret dropped. v1 tokens (bucketed squares) decode to `null` — the payloads
 // are incompatible, and an old link is better 404'd than mis-drawn. The share text's emoji
 // row went raw with it (one emoji per try, same ramp), so the bounded 3..18 bucketed row and
-// its whole square-count curve are gone from the codebase.
+// its square-count curve are gone from the CODEC — the token carries the raw run, so nothing
+// here derives a cell count (the bounded row itself lives on in web/src/game/share.ts, which
+// summarises the same bar for a text message).
 //
 // The payload is BIT-packed (not byte-aligned), then base64url'd, to keep the URL short:
 //   version 4b | lang 2b | day 15b | scoreLen 4b | score <scoreLen>b
@@ -64,7 +66,7 @@ const MAX_TICKS = (1 << TICK_COUNT_BITS) - 1;
 const ID_EPOCH = 20000; // ~2024-10-04, comfortably before launch
 
 // Lang table — APPEND-ONLY (the index is stored). Unknown langs encode as 0 (en).
-export const SHARE_LANGS = ['en', 'fr'];
+const SHARE_LANGS = ['en', 'fr'];
 
 export interface ShareResult {
   lang: string; // 2-letter code; drives the click-through redirect, not shown on the card
@@ -304,7 +306,7 @@ export function decodeWordResult(token: string): WordShareResult | null {
 // STRICTLY older versions only. A CURRENT-version token that `decodeResult` rejected is
 // malformed, not legacy, and must keep 404-ing — otherwise a hand-crafted token would earn
 // a redirect instead of the flat refusal the codec promises.
-export interface LegacyShareTarget {
+interface LegacyShareTarget {
   version: number;
   lang: string;
   dayNumber: number;

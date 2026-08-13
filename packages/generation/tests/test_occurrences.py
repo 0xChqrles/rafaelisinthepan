@@ -14,8 +14,8 @@ import gen_phrase  # noqa: E402
 
 FR = gen_phrase.CONFIG["fr"]
 
-# Generation reads the neighbors' vectors to cut the roads between the departure and the
-# secret (#115), so the fake kv must answer for every word the fake walk returns.
+# Generation hands the embedding around even with the walk stubbed, so the fake kv must
+# answer for every word the fake walk returns.
 KV = {"indice": [1.0, 0.0, 0.0], "proche": [0.0, 1.0, 0.0]}
 
 

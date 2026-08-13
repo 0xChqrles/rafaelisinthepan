@@ -67,12 +67,9 @@ const RANKS: WordRanks = {
 // What a log is worth, priced against the fixture's corpus.
 const bonusOf = (tried: string[]): number => totalBonus(replayWordRun(RANKS, tried).claimed, CORPUS);
 
-// CLAIM_ZONE used to be pinned to generation's ROAD_TOP by a cross-language test, because the
-// board could only draw the groups carrying a `road` — move one, and it drew lane-less stations
-// or refused to claim ones it had drawn. That coupling is GONE (2026-08-10): the lanes are
-// rarity grades now, generation ships no roads on a word artifact, and every rank up to TOP_K
-// carries the `dq` the drawing spaces its stations by. So the zone is this package's own tuning
-// knob, freely movable with no republish and nothing left to pin it to.
+// CLAIM_ZONE is pinned to nothing: every rank up to TOP_K carries the `freq` the board
+// colours a station by and the `dq` it spaces one by, so the zone is this package's own
+// tuning knob, freely movable with no republish.
 
 describe('judgeWordGuess — the claim boundary', () => {
   it('a zone group is a claim, the zone edge included', () => {

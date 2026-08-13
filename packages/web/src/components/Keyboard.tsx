@@ -87,13 +87,13 @@ export default function Keyboard({
       {KEYBOARD_ROWS.map((row, rowIndex) => (
         // Rows are fixed; index is a stable key here.
         // eslint-disable-next-line react/no-array-index-key
-        <div className={`kb-row${rowIndex === lastRowIndex ? ' kb-row-last' : ''}`} key={rowIndex}>
+        <div className="kb-row" key={rowIndex}>
           {rowIndex === lastRowIndex && (
             <button
               type="button"
               aria-label={t(lang, 'ariaEnter')}
               aria-disabled={!enterActive}
-              className={`kb-key kb-control kb-enter kb-edge${enterActive ? '' : ' kb-greyed'}${
+              className={`kb-key kb-control kb-enter${enterActive ? '' : ' kb-greyed'}${
                 shake?.id === 'enter' ? ' kb-shake' : ''
               }`}
               onPointerDown={(e) => press(e, () => (enterActive ? onSubmit(input) : triggerShake('enter')))}
@@ -109,7 +109,7 @@ export default function Keyboard({
                 type="button"
                 aria-label={t(lang, 'ariaDash')}
                 aria-disabled={!dashActive}
-                className={`kb-key kb-dash${dashActive ? '' : ' kb-greyed'}${dashShaking ? ' kb-shake' : ''}`}
+                className={`kb-key${dashActive ? '' : ' kb-greyed'}${dashShaking ? ' kb-shake' : ''}`}
                 onPointerDown={(e) => press(e, () => (dashActive ? onType('-') : triggerShake('-')))}
                 onAnimationEnd={() => setShake((prev) => (prev?.id === '-' ? null : prev))}
               >
@@ -118,7 +118,7 @@ export default function Keyboard({
               <button
                 type="button"
                 aria-label={t(lang, 'ariaBackspace')}
-                className="kb-key kb-control kb-back kb-edge"
+                className="kb-key kb-control"
                 onPointerDown={(e) => press(e, onBackspace)}
               >
                 <BackIcon className="kb-icon" aria-hidden />

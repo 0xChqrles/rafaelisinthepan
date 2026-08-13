@@ -11,7 +11,7 @@ import { prefersReducedMotion } from '../hooks/useScramble';
 import { srWordBoardWord } from '../i18n';
 
 // The day's word while the run is on (#163): JUST THE WORD, centred, in the solved blue —
-// no node, no rail, no rank gutter, no lane. Word mode is a fast game and the board is now
+// no node, no rail, no rank gutter. Word mode is a fast game and the board is now
 // its post-mortem, so during the gate and the run there is exactly one thing on the screen
 // and this is it.
 //
@@ -25,13 +25,13 @@ import { srWordBoardWord } from '../i18n';
 // it may shrink but it may never break mid-word — holds here exactly as it does on every
 // route the app draws. `--wordw` is this surface's own (see `.word-subject` in index.css):
 // the whole page column, where the route frame's is what is left after the gutter and rail.
-export const SUBJECT_PX = 40;
+const SUBJECT_PX = 40;
 
 // Word mode's guess feedback (#163). The two outcomes are DIFFERENT EVENTS and they look
 // nothing alike (decided 2026-08-09), which is the point: at a glance, before reading
 // anything, you know which one happened.
 //
-//   claim — the word is STRUCK — a cut, a cross, or the ultra burst — and it SHAKES; and
+//   claim — the word is STRUCK — a cut, a burst, or the ultra star — and it SHAKES; and
 //           the hit knocks LOOT out of it (`WordLoot`, 2026-08-10): the guess's rank
 //           exponent and its grade's name pop off the word and fall away, the run's one
 //           statement of either number. No text ever PARKS on the screen — the loot is in

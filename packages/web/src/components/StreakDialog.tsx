@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { ComponentPropsWithRef, ComponentType } from 'react';
 import { animated, to, useReducedMotion, useSpring, useSprings } from '@react-spring/web';
+import { easeOutCubic } from '../hooks/useAnimatedNumber';
 import { useGameStore } from '../state/gameStore';
 import { streakTransition, weekView } from '../game/streak';
 import { streakDigitDelays, streakDigitSlots } from '../game/streakDigits';
@@ -28,7 +29,6 @@ const DIGIT_SETTLE_MS = 120; // rebound peak → rest back on the baseline
 const DIGIT_BOUNCE_EM = 0.1;
 const easeInQuad = (t: number) => t * t;
 const easeOutQuad = (t: number) => 1 - (1 - t) * (1 - t);
-const easeOutCubic = (t: number) => 1 - (1 - t) ** 3;
 const APPEAR_SPRING = { mass: 0.7, tension: 280, friction: 18 };
 // The tile animates TWO decoupled values — `flip` (rotation) and `lift` (height) — so it
 // can complete its half-turn WHILE airborne: phase 1 rises and fully flips it, a short
@@ -531,7 +531,7 @@ export default function StreakDialog({
                 </span>
               ))}
             </div>
-            <div className="streak-digit-layer streak-digit-new-layer">
+            <div className="streak-digit-layer">
               {slots.map((slot, index) => (
                 <span
                   className="streak-digit-slot"

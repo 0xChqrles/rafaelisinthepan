@@ -14,12 +14,10 @@
 // (the prune keeps the word, the top-150 groups — the committed zone — and the group of
 // the `--keep` word, the lesson's deliberately-outside "far" guess). The committed map
 // predates #163's `freq` (no entry carries it — fine, the ladder teaches the GRADES, not
-// this board's data) and had its semantic `road` fields stripped on 2026-08-11, when the
-// themes ending — their only reader — was replaced and gen:word stopped emitting them.
+// this board's data).
 //
-// TROPIQUES replaced PHARE on findings 2026-08-04, back when the ending taught the map's
-// roads (phare is a homonym and its routes read as two definitions). Nothing in the
-// current arc depends on how the neighborhood forks, so the word simply stays. The
+// TROPIQUES replaced PHARE on findings 2026-08-04 (phare is a homonym, and its
+// neighborhood read as two definitions at once). The
 // AGREEMENT is singular (`--form tropiques=n:s`, findings 2026-08-04: plural-agreed
 // neighbors read oddly on a word board), while the word itself keeps its natural plural
 // display — « tropiques » is the rank-0 display either way.

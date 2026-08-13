@@ -8,7 +8,7 @@
     "dev": "pnpm --filter @whippin/web dev",
     "build": "pnpm --filter @whippin/web build",
     "preview": "pnpm --filter @whippin/web preview",
-    "typecheck": "pnpm --filter @whippin/web typecheck",
+    "typecheck": "pnpm -r --if-present run typecheck",
     "wordlist:en": "pnpm --filter @whippin/generation wordlist:en",
     "wordlist:fr": "pnpm --filter @whippin/generation wordlist:fr",
     "lemmas:en": "pnpm --filter @whippin/generation lemmas:en",

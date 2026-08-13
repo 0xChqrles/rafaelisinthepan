@@ -36,13 +36,11 @@ export interface HandlerDeps {
   // Canonical site origin (apex) for the share card's absolute URLs (#8). When unset, the
   // share HTML falls back to the request origin (local dev).
   siteOrigin?: string;
-  timeZone?: string;
-  resetHour?: number;
 }
 
 // 404s expire quickly so a puzzle uploaded slightly late becomes playable soon
 // instead of being negatively cached until the next daily flip.
-const NOT_FOUND_MAX_AGE = 60;
+const NOT_FOUND_CACHE_CONTROL = 'public, max-age=60, s-maxage=60';
 
 // The puzzle URL is DATE-addressed (/?lang=&date=YYYY-MM-DD): the client computes the
 // active 22:00-ET day itself (shared day.ts) and asks for it by name, so a URL maps to
@@ -64,16 +62,10 @@ const LANG_RE = /^[a-z]{2}$/;
 // (the render only changes on a deploy), and messaging apps cache the preview on THEIR side
 // once unfurled — so a short origin TTL couldn't refresh an already-shared preview anyway.
 // Cache it hard; a render-changing deploy (a card redesign) is covered because the backend
-// deploy job now invalidates `/*` on the API distribution — it no longer needs the by-hand
-// invalidation this comment used to call for.
+// deploy job invalidates `/*` on the API distribution.
 const SHARE_MAX_AGE = 31_536_000;
 const OG_PNG_RE = /^\/og\/([A-Za-z0-9_-]+)\.png$/;
 const SHARE_RE = /^\/s\/([A-Za-z0-9_-]+)$/;
-
-function route(rawPath: string | undefined): 'today' | 'puzzle' {
-  const path = (rawPath ?? '/').replace(/\/+$/, '');
-  return path.endsWith('/today') ? 'today' : 'puzzle';
-}
 
 // Absolute origin of THIS request — the same host serves /s, /og and the SPA, so it is the
 // base for the OG image URL and the game redirect. Honors the CloudFront forwarded headers.
@@ -84,16 +76,9 @@ function requestOrigin(event: FnUrlEvent): string {
   return `${proto}://${host}`;
 }
 
-// Cache-Control aligned to the daily flip: used for the negative (404) TTL so a late upload
-// becomes playable soon instead of being negatively cached until the next 22:00 ET reset.
-function dailyCacheControl(ttl: number): string {
-  return `public, max-age=${ttl}, s-maxage=${ttl}`;
-}
-
 export function createHandler(deps: HandlerDeps) {
   const now = deps.now ?? (() => new Date());
   const origin = deps.allowedOrigin ?? '*';
-  const dayOpts = { timeZone: deps.timeZone ?? TIME_ZONE, resetHour: deps.resetHour ?? RESET_HOUR };
   const cors = corsHeaders(origin);
 
   return async function handler(event: FnUrlEvent): Promise<FnUrlResult> {
@@ -171,9 +156,9 @@ export function createHandler(deps: HandlerDeps) {
       }
 
       const instant = now();
-      const date = activeDate(instant, dayOpts);
+      const date = activeDate(instant);
 
-      if (route(event.rawPath) === 'today') {
+      if (rawPath.replace(/\/+$/, '').endsWith('/today')) {
         // /today is a DIAGNOSTIC: the server's view of the active day + reset info. The
         // client computes the day itself (shared day.ts) and no longer reads this in
         // normal play — it exists to debug clock-skew reports. `no-store` so it is
@@ -183,10 +168,10 @@ export function createHandler(deps: HandlerDeps) {
           {
             date,
             dayNumber: dayNumber(date),
-            timeZone: dayOpts.timeZone,
-            resetHour: dayOpts.resetHour,
-            nextResetAt: nextResetAt(instant, dayOpts).toISOString(),
-            secondsUntilNextReset: secondsUntilNextReset(instant, dayOpts),
+            timeZone: TIME_ZONE,
+            resetHour: RESET_HOUR,
+            nextResetAt: nextResetAt(instant).toISOString(),
+            secondsUntilNextReset: secondsUntilNextReset(instant),
           },
           { ...cors, 'Cache-Control': 'no-store' },
         );
@@ -218,8 +203,7 @@ export function createHandler(deps: HandlerDeps) {
 
       // The puzzle endpoint is DATE-addressed: the client computes the active 22:00-ET
       // day (shared day.ts) and names it explicitly, so what is served is exactly what
-      // was asked — the old /today->puzzle pair (and its flip race) is gone. A missing
-      // or malformed date is a protocol violation.
+      // was asked. A missing or malformed date is a protocol violation.
       const requestedDate = event.queryStringParameters?.date;
       if (!requestedDate || !isValidDate(requestedDate)) {
         return errorResponse(
@@ -241,7 +225,7 @@ export function createHandler(deps: HandlerDeps) {
           404,
           'not_found',
           `"${requestedDate}" is not released yet (active day: ${date}).`,
-          { ...cors, 'Cache-Control': dailyCacheControl(NOT_FOUND_MAX_AGE) },
+          { ...cors, 'Cache-Control': NOT_FOUND_CACHE_CONTROL },
           { date, lang },
         );
       }
@@ -256,7 +240,7 @@ export function createHandler(deps: HandlerDeps) {
           404,
           'not_found',
           `No ${mode === 'word' ? 'word puzzle' : 'puzzle'} for ${requestedDate} (${lang}).`,
-          { ...cors, 'Cache-Control': dailyCacheControl(NOT_FOUND_MAX_AGE) },
+          { ...cors, 'Cache-Control': NOT_FOUND_CACHE_CONTROL },
           { date: requestedDate, lang },
         );
       }

@@ -17,7 +17,7 @@ const here = path.dirname(fileURLToPath(import.meta.url)); // packages/infra/lib
 // synth time, so the build MUST run before `cdk deploy` (the README documents the order).
 const WEB_DIST = path.resolve(here, '..', '..', 'web', 'dist');
 
-export interface WebStackProps extends StackProps {
+interface WebStackProps extends StackProps {
   // The registered apex domain whose Route53 hosted zone lives in this account
   // (e.g. "chqrles.me"). When omitted, the stack still synthesizes — it just serves the
   // SPA on the default *.cloudfront.net domain with no ACM/Route53 (handy for a smoke

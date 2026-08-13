@@ -1,8 +1,7 @@
 // CONTRACT: Word mode's rarity grades are painted in colours COPIED from the app's own
-// palettes (#163) — the same rule, and the same kind of pin, as the route map's lane
-// colours. Copied means nothing catches drift if a ramp stop is retuned, which is what
-// this pins: each hex still names the stop it was taken from, so a retune fails here and
-// the choice gets made again on purpose instead of the ladder quietly speaking a stale
+// palettes (#163). Copied means nothing catches drift if a ramp stop is retuned, which is
+// what this pins: each hex still names the stop it was taken from, so a retune fails here
+// and the choice gets made again on purpose instead of the ladder quietly speaking a stale
 // palette.
 //
 // It also pins the two things that make the ladder MEAN anything, both of which a future
@@ -11,7 +10,7 @@
 //   - the grades must stay mutually distinguishable, and clear of the two colours the
 //     label is drawn next to (`--accent`, the day's word it floats on; `--hole`, the
 //     `+Ns` clock gain that fires in the same beat).
-// Measured in CIE76 dE, the same measure the lane set's recorded 36.9 was taken with.
+// Measured in CIE76 dE.
 
 import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
@@ -42,8 +41,8 @@ function deltaE(a: string, b: string): number {
   return Math.hypot(l1 - l2, a1 - a2, b1 - b2);
 }
 
-// The reserved colours, READ straight out of index.css :root — the way laneColors.test.ts
-// reads distances.py. A hand-copied hex checked against another hand-copy pins nothing: a
+// The reserved colours, READ straight out of index.css :root. A hand-copied hex checked
+// against another hand-copy pins nothing: a
 // `--danger` retune has to fail HERE so the reservation gets re-decided on purpose.
 const rootCss = readFileSync(new URL('../index.css', import.meta.url), 'utf8');
 function rootVar(name: string): string {
@@ -83,7 +82,7 @@ describe('rarity colours track the palette stops they were copied from', () => {
 
   it('RED stays reserved for MISS', () => {
     expect(MISS_COLOR).toBe(DANGER);
-    // The lane set's own shipped minimum is 36.9; every grade clears that against red.
+    // 36.9 is the separation the whole set was measured to hold; red is no exception.
     for (const name of RARITY_NAMES) {
       expect(deltaE(RARITY_COLORS[name], DANGER), `${name} vs MISS red`).toBeGreaterThan(36.9);
     }

@@ -8,7 +8,7 @@ AWS **CDK** app with three independent sibling stacks, each deployable on its ow
 - **`WhippinDeployStack`** (issue #33) — CI auth: the GitHub OIDC provider + the IAM role
   the Deploy workflow assumes. Deployed once by a human, not by CI (see below).
 
-Both stacks are **pinned to `us-east-1`** (CloudFront's ACM certs must live there, so the
+All three stacks are **pinned to `us-east-1`** (CloudFront's ACM certs must live there, so the
 certs stay in-stack with no cross-region reference). A single `-c domainName=<apex>` wires
 the custom domains: the **site** serves at the apex (`https://<domain>`) and the **API** at
 `https://api.<domain>` (a stable `VITE_API_BASE_URL`), with the backend's CORS origin
@@ -27,8 +27,11 @@ Provisions the backend (#2) so it is reproducible and deployable from one comman
   environment (set by the stack). Granted **read-only** S3 access; the Function URL is
   **IAM-auth** so only CloudFront can invoke it.
 - **CloudFront** — CDN in front of the Function URL via **Origin Access Control**. Cache
-  key = request path (`/` vs `/today`) + the `lang` query string; the origin's
-  `Cache-Control` (`s-maxage` aligned to the 22:00-ET daily flip) drives the TTL.
+  key = request path + the `lang`, `date` and `mode` query strings (the allowList in
+  `lib/backend-stack.ts` — with no origin request policy on that behavior, an unlisted
+  parameter never reaches the Lambda at all); the origin's `Cache-Control`
+  (`max-age=300, s-maxage=31536000`) drives the TTL, purged by
+  `pnpm puzzle:publish --s3` and by the backend deploy job.
 - **Custom API domain (optional)** — with `-c domainName=<apex>` the distribution serves at
   `api.<domain>` (override the label with `-c apiSubdomain=`): a DNS-validated ACM cert
   in-stack (this stack is in `us-east-1`) plus Route53 A/AAAA aliases. Without it the API
@@ -54,9 +57,10 @@ requires for its ACM cert — so the cert lives in-stack with no cross-region re
   `RemovalPolicy.DESTROY` + auto-delete: it holds only the current build (fully
   reproducible), so teardown is clean.
 - **CloudFront** — HTTPS (`REDIRECT_TO_HTTPS`), `CACHING_OPTIMIZED`, SPA fallback. The
-  build is uploaded by two `BucketDeployment`s: hashed `assets/*` get
-  `Cache-Control: public, max-age=31536000, immutable`; everything else (`index.html`,
-  vocab JSON, fonts) gets `no-cache`. Each deploy **invalidates `/*`**.
+  build is uploaded by three `BucketDeployment`s: hashed `assets/*` get
+  `Cache-Control: public, max-age=31536000, immutable`, `vocab/*` its own
+  stale-while-revalidate policy, and everything else (`index.html`, fonts) `no-cache`.
+  The last one **invalidates `/*`**.
 - **Custom domain (optional)** — pass `-c domainName=<apex>` (the Route53 hosted zone must
   already exist in the account). The site serves at the **apex** (`<domain>`) by default;
   pass `-c siteSubdomain=play` for `play.<domain>`. Without `domainName` the stack still
@@ -90,12 +94,12 @@ uses:
 
 ```bash
 # One-time, with YOUR AWS credentials (account must be `cdk bootstrap`-ed in us-east-1):
-pnpm --filter @whippin/infra deploy WhippinDeployStack
+pnpm --filter @whippin/infra deploy:auth
 # Copy the printed DeployRoleArn into the GitHub repo secret AWS_DEPLOY_ROLE_ARN.
 
 # Point it at a different repo / branch (the account's OIDC provider is imported by
 # default; add -c createOidcProvider=true only on an account that doesn't have one yet):
-pnpm --filter @whippin/infra deploy WhippinDeployStack \
+pnpm --filter @whippin/infra deploy:auth \
   -c githubOwner=me -c githubRepo=myrepo -c deployBranch=main
 ```
 
@@ -121,12 +125,12 @@ origin** (override with `-c allowedOrigin=`).
 
 ```bash
 # 1. Backend → api.<domain> (CORS defaults to https://<domain>).
-pnpm --filter @whippin/infra deploy WhippinBackendStack -c domainName=whippin.ai
+pnpm --filter @whippin/infra run deploy WhippinBackendStack -c domainName=whippin.ai
 # 2. Build the web. `VITE_API_BASE_URL` comes from the committed
 #    packages/web/.env.production (https://api.whippin.ai) — no inline env needed.
 pnpm build
 # 3. Deploy the site at the apex (uploads dist, invalidates CloudFront).
-pnpm --filter @whippin/infra deploy WhippinWebStack -c domainName=whippin.ai
+pnpm --filter @whippin/infra run deploy WhippinWebStack -c domainName=whippin.ai
 ```
 
 The ACM certs are DNS-validated against the `whippin.ai` hosted zone, so the first deploy of
@@ -136,18 +140,18 @@ each stack waits for the `CNAME` validation records it creates (a few minutes).
 
 Run from this package (or the repo root via `pnpm infra:*`). The app command in
 `cdk.json` runs the app through `npx tsx bin/app.ts`, so no compile step is needed. Pass a
-**stack name** to target one (omit it to act on both):
+**stack name** to target one (omit it to act on all three):
 
 ```bash
 pnpm --filter @whippin/infra synth      # synthesize CloudFormation (also `pnpm infra:synth` from root)
 pnpm --filter @whippin/infra diff       # diff against the deployed stack(s) (`pnpm infra:diff`)
-pnpm --filter @whippin/infra deploy      # deploy                            (`pnpm infra:deploy`)
+pnpm --filter @whippin/infra run deploy      # deploy                            (`pnpm infra:deploy`)
 pnpm --filter @whippin/infra destroy     # tear down (the puzzle bucket is RETAINed)
 pnpm --filter @whippin/infra typecheck   # tsc --noEmit
 
 # Target a single stack (args pass straight through to cdk):
-pnpm --filter @whippin/infra deploy WhippinBackendStack -c domainName=whippin.ai
-pnpm --filter @whippin/infra deploy WhippinWebStack     -c domainName=whippin.ai
+pnpm --filter @whippin/infra run deploy WhippinBackendStack -c domainName=whippin.ai
+pnpm --filter @whippin/infra run deploy WhippinWebStack     -c domainName=whippin.ai
 ```
 
 Deploying needs AWS credentials in the environment and a **bootstrapped** account/region
@@ -167,6 +171,7 @@ caching the result into `cdk.context.json`.
 | `PuzzleBucketName`       | the S3 bucket to publish puzzles into (`pnpm puzzle:publish --s3`).        |
 | `FunctionUrl`            | the Lambda Function URL (CloudFront origin; not called directly).         |
 | `DistributionDomainName` | the CloudFront default domain (Route53 alias target for `api.<domain>`).   |
+| `DistributionId`         | the distribution the deploy job and `puzzle:publish --s3` invalidate.      |
 
 **`WhippinWebStack`**
 
@@ -199,7 +204,7 @@ aws cloudformation wait stack-delete-complete --stack-name WhippinBackendStack -
 aws cloudformation delete-stack       --stack-name WhippinBackendStack --region us-east-1
 aws cloudformation wait stack-delete-complete --stack-name WhippinBackendStack --region us-east-1
 # 3. Now deploy fresh in us-east-1 (global names are free).
-pnpm --filter @whippin/infra deploy --all -c domainName=whippin.ai
+pnpm --filter @whippin/infra run deploy --all -c domainName=whippin.ai
 ```
 
 The old `eu-west-1` puzzle bucket is `RETAIN`ed, so step 1 leaves it behind — delete it

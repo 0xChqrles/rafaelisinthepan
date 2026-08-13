@@ -1,22 +1,15 @@
-// Word mode's BOARD model (#156): the day's neighborhood drawn as the route-map concept
-// (#117) — dq-spaced stations on one trunk — but inverted and live. The center word is
-// PUBLIC, there is no hidden destination, no departure and no "you are here": the whole
-// zone is the playing field, and a claim reveals its station.
-// `buildRoute` assumes a secret / start_rank / "you are here", so this is a SIBLING
-// model, not a parameter tweak — same derivation contract though: everything comes from
-// (ranks, ordered counted guesses), nothing new is persisted, and a guess landing simply
-// changes the drawing.
+// Word mode's BOARD model (#156): the day's neighborhood as dq-spaced stations on one
+// trunk, inverted against the sentence game's line. The center word is PUBLIC, there is
+// no hidden destination, no departure and no "you are here": the whole zone is the
+// playing field, and a claim reveals its station. Same derivation contract as the
+// sentence side: everything comes from (ranks, ordered counted guesses), nothing new is
+// persisted, and a guess landing simply changes the drawing.
 //
 // **RARITY is the thing the board says about the field besides distance** (decided
-// 2026-08-10, replacing the artifact's semantic roads; carried by the WORD's COLOUR on
-// one trunk since 2026-08-11, when the user retired the grade-per-lane fork for the
-// sentence route's exact drawing). A cluster is a fact about the embedding, and knowing
-// which facet a word you already claimed belongs to changes nothing you can do. The grade
-// does — it is what the claim PAID (#163) — so the post-mortem answers "where were the
-// expensive words?" in the colours the run's strikes and loot already taught. It also
-// costs generation nothing: `freq` is already on every entry, so `gen_word` stopped
-// clustering altogether (and since 2026-08-11 has no road pass left at all — the
-// tutorial's themes lesson, the `--roads` opt-in's one reader, was retired with it).
+// 2026-08-10; carried by the WORD's COLOUR on one trunk since 2026-08-11 — the sentence
+// route's exact drawing). The grade is what the claim PAID (#163), so the post-mortem
+// answers "where were the expensive words?" in the colours the run's strikes and loot
+// already taught. It costs generation nothing: `freq` is already on every entry.
 
 import type { RankEntry, WordRanks } from '@whippin/shared';
 import { CLAIM_ZONE, RARITY_NAMES, rarityOf, replayWordRun, type Rarity } from './wordGame';
@@ -29,20 +22,17 @@ import { CLAIM_ZONE, RARITY_NAMES, rarityOf, replayWordRun, type Rarity } from '
 // One group of the zone: a station wearing its grade's colour. `word` is null while unclaimed
 // and the field is still censored; a claim — or the reveal, which names the whole field
 // — gives the canonical accented form. A null-word group IS still drawn, wearing the
-// route map's fixed-width `???` (the census, restored 2026-08-05 after a day of drawing
+// drawing's fixed-width `???` (the census, restored 2026-08-05 after a day of drawing
 // only the found words): every rank of the zone is a station, which is what lets the line
 // show its real length and population, and what makes a claim land on a stop that was
 // already there rather than appear out of nothing.
-export interface WordStation {
+interface WordStation {
   rank: number;
   dq: number;
-  // The station's RARITY GRADE (decided 2026-08-10, replacing the artifact's semantic
-  // `road`) — its colour on the line. The grade is the thing the board says about the field
-  // besides distance, and rarity is what this mode is actually played on — it is what a
-  // claim is PAID by, so a grade is a price bracket the player can aim at, where a semantic
-  // cluster was a fact about the embedding they could do nothing with. It also needs no
-  // clustering to ship: `freq` is already on every entry (#163), which is why gen_word
-  // stopped emitting roads entirely.
+  // The station's RARITY GRADE (decided 2026-08-10) — its colour on the line. Rarity is
+  // what this mode is actually played on: it is what a claim is PAID by, so a grade is a
+  // price bracket the player can aim at. It needs nothing extra shipped either — `freq` is
+  // already on every entry (#163).
   //
   // Never null: `rarityOf` floors at COMMON, so every station carries exactly one grade
   // even on an artifact carrying no `freq` at all (which then draws all-common).
@@ -70,7 +60,7 @@ export interface WordBoardModel {
   // actually holds. A grade the zone does not contain is not listed, the same call the
   // retired per-grade tally made: an English board often has no ARCANE group at all, and a
   // permanently absent grade advertises a bracket nobody can reach. Never empty (COMMON is
-  // the floor). Since the lanes retired (2026-08-11) its consumer is the sr census.
+  // the floor). Its consumer is the sr census.
   grades: Rarity[];
   stations: WordStation[]; // the zone, rank ascending (1 first)
   outside: WordOutsideStop[]; // ranked near misses, rank ascending
@@ -83,12 +73,12 @@ export interface WordBoardModel {
 }
 
 // One pass over the (alias-expanded) flat map, cached per map object — the map is
-// immutable for the puzzle's lifetime, exactly like routeGeometry's cache.
+// immutable for the puzzle's lifetime.
 interface WordGeometry {
   zone: Map<number, RankEntry>; // rank -> its group, for every zone group carrying dq
-  // The rank-1 group carries dq, so there is a line to draw at all. Deliberately the SAME
-  // narrow gate as the route map's `hasRoute` and no stronger: `dq` is optional to every
-  // consumer by contract, so a zone group missing one is not malformed data to refuse —
+  // The rank-1 group carries dq, so there is a line to draw at all. Deliberately a NARROW
+  // gate and no stronger: `dq` is optional to every consumer by contract, so a zone group
+  // missing one is not malformed data to refuse —
   // it simply gets no station. Such a group stays CLAIMABLE (the rules read `rank`, not
   // geometry) and scores; it just has nothing on the board to reveal. That cannot happen
   // on a generated artifact, where every rank >= 1 carries a dq.
@@ -101,7 +91,7 @@ interface WordGeometry {
 
 const geometryCache = new WeakMap<WordRanks, WordGeometry>();
 
-export function wordGeometry(ranks: WordRanks): WordGeometry {
+function wordGeometry(ranks: WordRanks): WordGeometry {
   const cached = geometryCache.get(ranks);
   if (cached) return cached;
   const zone = new Map<number, RankEntry>();
@@ -121,12 +111,6 @@ export function wordGeometry(ranks: WordRanks): WordGeometry {
   };
   geometryCache.set(ranks, geometry);
   return geometry;
-}
-
-// Can this artifact be played on the drawn board at all? Same gate as the route map
-// (hasRoute) — see `plottable` for exactly what it does and does not promise.
-export function hasWordBoard(ranks: WordRanks): boolean {
-  return wordGeometry(ranks).plottable;
 }
 
 export function buildWordBoard({

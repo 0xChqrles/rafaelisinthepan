@@ -2,14 +2,13 @@
 // the zone renders as censored stations until claimed, a claim reveals its group's
 // canonical form, `reveal` names the WHOLE field (the post-mortem), near misses ride the
 // trunk showing the form the player TYPED, and off-map guesses land on the misses shelf.
-// RARITY IS THE STATION WORD'S COLOUR on one trunk (2026-08-11, superseding the previous
-// grade-per-lane fork): every zone station carries its grade, and `grades` lists only what
-// the field actually holds. The model states no `ended`: when a run is over is the DEADLINE's to say
+// RARITY IS THE STATION WORD'S COLOUR on one trunk (2026-08-11): every zone station
+// carries its grade, and `grades` lists only what the field actually holds. The model states no `ended`: when a run is over is the DEADLINE's to say
 // (#163), and the log cannot see a wall clock.
 
 import { describe, it, expect } from 'vitest';
 import type { WordRanks } from '@whippin/shared';
-import { buildWordBoard, hasWordBoard } from './wordBoard';
+import { buildWordBoard } from './wordBoard';
 import { CLAIM_ZONE, RARITY_LADDER, RARITY_NAMES } from './wordGame';
 
 // The two ranked groups OUTSIDE the claimable zone, positioned AGAINST the zone rather than
@@ -104,7 +103,6 @@ describe('buildWordBoard', () => {
       mot: { word: 'mot', rank: 0 },
       proche: { word: 'proche', rank: 1 }, // no dq — pre-#115-shaped data
     };
-    expect(hasWordBoard(bare)).toBe(false);
     expect(buildWordBoard({ ranks: bare, word: 'mot', tried: [], corpusSize: CORPUS })).toBeNull();
   });
 });
