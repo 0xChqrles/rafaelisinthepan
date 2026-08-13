@@ -9,9 +9,18 @@ import { describe, it, expect } from 'vitest';
 import {
   ENVELOPE_BUDGET_BYTES,
   LAMBDA_MAX_RESPONSE_BYTES,
+  corsHeaders,
   envelopeBytes,
   negotiateEncoding,
 } from './respond';
+
+describe('CORS headers', () => {
+  it('permits the payload hash required by CloudFront OAC for score POSTs', () => {
+    expect(corsHeaders('https://whippin.ai')['Access-Control-Allow-Headers']).toContain(
+      'X-Amz-Content-Sha256',
+    );
+  });
+});
 
 describe('negotiateEncoding — best coding the client actually accepts', () => {
   const cases: Array<[string | undefined, 'br' | 'gzip' | null, string]> = [

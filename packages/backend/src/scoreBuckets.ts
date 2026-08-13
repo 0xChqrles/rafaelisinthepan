@@ -24,9 +24,25 @@ export const WORD_SCORE_ZONE = WORD_CLAIM_ZONE;
 // Inclusive upper edges, fixed per MODE. Sentence is lower-is-better and deliberately
 // gives the competitive 3–60 range more resolution; Word is higher-is-better and gives
 // zero its own DNF band. The final edge covers every score the supported corpora/mode can
-// produce, so there is no overflow counter whose meaning could change later.
+// produce, so there is no overflow counter whose meaning could change later. Deriving only
+// that terminal edge from the pinned corpus ceilings makes a future vocabulary growth extend
+// the existing last band instead of silently rejecting scores or reinterpreting old counters.
 const SENTENCE_UPPER_EDGES = [
-  3, 5, 8, 12, 18, 25, 40, 60, 100, 200, 500, 1_000, 5_000, 20_000, 127_783,
+  3,
+  5,
+  8,
+  12,
+  18,
+  25,
+  40,
+  60,
+  100,
+  200,
+  500,
+  1_000,
+  5_000,
+  20_000,
+  Math.max(...Object.values(SENTENCE_SCORE_MAX_BY_LANG)),
 ] as const;
 const WORD_UPPER_EDGES = [0, 5, 10, 20, 35, 50, 75, 100, 150, 250, 400, 650, WORD_SCORE_ZONE] as const;
 

@@ -387,6 +387,11 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   and returns the UPDATED histogram so the caller's score is already included. GET is the
   read-only twin for solved revisits. The puzzle route's malformed-param and future +1-day
   guards apply; a population is never created for an unpublished puzzle.
+  **Production POST callers must SHA-256 the exact UTF-8 body bytes they send and put the
+  lowercase hex digest in `x-amz-content-sha256`.** The body must not be reserialized after
+  hashing. This is a hard CloudFront-OAC/Lambda-URL contract: Lambda rejects an unsigned
+  POST before the handler runs. The score behavior forwards the header and CORS allows it;
+  local `backend:dev` has no OAC and therefore cannot surface a missing hash.
 - **Score limits are gameplay limits, not a generic integer cap.** Sentence mode counts
   unique vocabulary-valid tries, so its ceiling is the language's existence-set size.
   Word mode counts claimed groups, so its ceiling is the distinct claimable ranks in that
@@ -401,8 +406,9 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   the anonymous aggregate item is retained.
 - `/scores` has its OWN zero-TTL CloudFront behavior because the histogram is live; it must
   never inherit the puzzle's year-long `s-maxage`. Its query allowList is exactly the three
-  parameters the handler reads (`lang`, `date`, `mode`), and its origin-request policy adds
-  CloudFront's trusted viewer address outside the cache key for HMAC dedup. Local
+  parameters the handler reads (`lang`, `date`, `mode`), and its origin-request policy
+  forwards both CloudFront's trusted viewer address (for HMAC dedup) and the viewer-supplied
+  `x-amz-content-sha256`, outside the cache key. Local
   `backend:dev` uses the same handler with an in-memory counter store and an explicitly
   local accept-all Turnstile verifier.
 

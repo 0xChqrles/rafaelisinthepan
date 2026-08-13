@@ -12,6 +12,7 @@
   infra/                      AWS CDK app: backend (#3) + web hosting (#21) sibling stacks (pkg @whippin/infra)
     bin/app.ts                CDK app entry — WhippinBackendStack + WhippinWebStack (cdk.json runs it via `npx tsx`)
     lib/backend-stack.ts      BackendStack: private S3 + DynamoDB + Lambda(Fn URL) + CloudFront; opt api.<domain>; us-east-1
+    lib/backend-stack.test.ts synthesized score-boundary contract (SSM names/IAM + OAC headers)
     lib/web-stack.ts          WebStack (#21): private S3 (SPA) + CloudFront(OAC) + ACM + Route53; apex; us-east-1
     lib/deploy-role-stack.ts  DeployRoleStack (#33): GitHub OIDC provider + the CI deploy role; human-deployed
     scripts/guard-local-deploy.mjs  blocks `deploy`/`deploy:app` outside CI (ALLOW_LOCAL_DEPLOY=1 to break glass)
@@ -51,12 +52,16 @@
   DynamoDB table (string `pk`, `expiresAt` TTL, `RETAIN`), with the Lambda limited to
   `GetItem`/`UpdateItem`; aggregate counters persist while HMAC-IP dedup items expire after
   48h. PITR is deliberately off because a backup would retain those pseudonymous items past
-  their privacy lifetime. `/scores` has a separate `scores*` behavior that allows writes, uses a zero-TTL cache
-  policy whose allowList is exactly `lang`/`date`/`mode`, and an origin-request policy that
-  adds `CloudFront-Viewer-Address` without keying on it. The Lambda receives the table name
-  and CloudFormation-resolved SSM SecureStrings (defaults
+  their privacy lifetime. `/scores` has a separate `scores*` behavior that allows writes,
+  uses a zero-TTL cache policy whose allowList is exactly `lang`/`date`/`mode`, and an
+  origin-request policy that
+  forwards `CloudFront-Viewer-Address` plus the viewer's `x-amz-content-sha256` without
+  keying on either. The latter is mandatory for OAC to sign a Lambda-URL POST. The Lambda
+  receives the table name and SSM SecureString PARAMETER NAMES (defaults
   `/whippin/turnstile-secret`, `/whippin/ip-hmac-secret`; override with the matching `-c`
-  contexts), so no secret value appears in source or the synthesized template.
+  contexts), reads both decrypted values with one runtime `GetParameters` call per cold
+  start, and has `ssm:GetParameters` only on those exact ARNs. No secret value appears in
+  source or the synthesized template.
   Outputs: `ApiUrl` (→ `VITE_API_BASE_URL`), `PuzzleBucketName` (#4 upload target),
   `ScoreTableName`, `FunctionUrl`, `DistributionDomainName`. Commands: `pnpm infra:synth` / `infra:diff` /
   `infra:deploy` (root) or `pnpm --filter @whippin/infra <synth|deploy|diff|destroy>`;

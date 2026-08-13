@@ -29,6 +29,24 @@ that provisions Lambda + Function URL + CloudFront + the bucket is issue #3.)
   `bucket` is the caller's band on POST and `null` on GET. Score responses are `no-store`.
   Missing/invalid Turnstile → 403; impossible score → 400; sixth submission for the same
   `(date, lang, mode, ipHash)` → 429 without changing a counter.
+
+  In production, serialize the body once, hash those exact UTF-8 bytes, and send the digest
+  as lowercase hexadecimal in `x-amz-content-sha256`. CloudFront's Lambda-URL OAC requires
+  this header before the handler can run:
+
+  ```ts
+  const body = JSON.stringify({ score, turnstileToken });
+  const bytes = new TextEncoder().encode(body);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  const payloadHash = [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+  await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-amz-content-sha256': payloadHash },
+    body,
+  });
+  ```
 - `GET /s/<token>` → the share page (OG meta) for a result token; `GET /og/<token>.png` →
   its card image.
 - `GET /today` → `{ date, dayNumber, timeZone, resetHour, nextResetAt,
@@ -69,8 +87,8 @@ S3 cannot drift apart.
 | --------------- | -------- | ------------------------------------------------ |
 | `PUZZLE_BUCKET` | yes      | S3 bucket holding the daily puzzles              |
 | `SCORE_TABLE`   | yes      | DynamoDB table holding aggregate + dedup items   |
-| `TURNSTILE_SECRET` | yes   | Cloudflare Turnstile server-side secret          |
-| `IP_HMAC_SECRET` | yes     | 32+ byte key used to HMAC client IPs (raw IPs are never stored) |
+| `TURNSTILE_SECRET_PARAMETER` | yes | SSM SecureString name for the Turnstile server secret |
+| `IP_HMAC_SECRET_PARAMETER` | yes | SSM SecureString name for the 32+ byte IP-HMAC key |
 | `ALLOWED_ORIGIN`| no       | CORS origin (the web origin in prod; `*` if unset) |
 | `SITE_ORIGIN`   | no       | canonical apex for the share card's absolute URLs (falls back to the request origin) |
 
@@ -125,6 +143,7 @@ no listing — and listable by a date prefix. The store root defaults to
 
 The local score store and accept-all Turnstile require no additional environment variables.
 POST still requires a nonempty `turnstileToken` field so the request contract stays real.
+The local server has no CloudFront OAC, so it does not require `x-amz-content-sha256`.
 
 ## Dev
 

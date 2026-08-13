@@ -37,6 +37,9 @@ describe('fixed score buckets (#169)', () => {
       }
     }
     expect(scoreRanges('word').at(-1)?.max).toBe(WORD_SCORE_ZONE);
+    expect(scoreRanges('sentence').at(-1)?.max).toBe(
+      Math.max(...Object.values(SENTENCE_SCORE_MAX_BY_LANG)),
+    );
   });
 
   it('assigns inclusive boundaries to exactly one bucket', () => {

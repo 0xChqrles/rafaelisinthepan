@@ -29,7 +29,8 @@ Provisions the backend (#2) so it is reproducible and deployable from one comman
   [`backend/src/index.ts`](../backend/src/index.ts) (`createHandler` over the S3 store),
   bundled with esbuild at synth time. Reads `PUZZLE_BUCKET` / `ALLOWED_ORIGIN` from the
   environment (set by the stack), plus score table/secret configuration. Granted
-  **read-only** S3 and only DynamoDB `GetItem`/`UpdateItem`; the Function URL is
+  **read-only** S3, only DynamoDB `GetItem`/`UpdateItem`, and SSM `GetParameters` on the two
+  exact SecureString ARNs; the Function URL is
   **IAM-auth** so only CloudFront can invoke it.
 - **CloudFront** — CDN in front of the Function URL via **Origin Access Control**. Cache
   key = request path + the `lang`, `date` and `mode` query strings (the allowList in
@@ -38,8 +39,10 @@ Provisions the backend (#2) so it is reproducible and deployable from one comman
   (`max-age=300, s-maxage=31536000`) drives the TTL, purged by
   `pnpm puzzle:publish --s3` and by the backend deploy job.
   `/scores` is a separate zero-TTL behavior: it allows POST, forwards exactly `lang`,
-  `date`, `mode`, and injects `CloudFront-Viewer-Address` outside the cache key for
-  server-side HMAC dedup. It cannot inherit the puzzle response's year-long cache.
+  `date`, `mode`, and forwards `CloudFront-Viewer-Address` plus the viewer-supplied
+  `x-amz-content-sha256` outside the cache key. The former feeds server-side HMAC dedup;
+  the latter is required for OAC to sign a Lambda-URL POST. It cannot inherit the puzzle
+  response's year-long cache.
 - **Custom API domain (optional)** — with `-c domainName=<apex>` the distribution serves at
   `api.<domain>` (override the label with `-c apiSubdomain=`): a DNS-validated ACM cert
   in-stack (this stack is in `us-east-1`) plus Route53 A/AAAA aliases. Without it the API
@@ -60,8 +63,10 @@ Provisions the backend (#2) so it is reproducible and deployable from one comman
 
 ### Score secrets
 
-The stack resolves two existing **SSM SecureString** parameters into Lambda's encrypted
-environment at deploy time. Their values never appear in source or `cdk synth` output.
+The stack puts only two existing **SSM SecureString parameter names** in the Lambda
+environment. At cold start, the entrypoint resolves both values with one decrypted
+`GetParameters` call and reuses them for that execution environment. Their values never
+appear in source, Lambda configuration, or `cdk synth` output.
 Create them once before the first score-enabled deploy:
 
 ```bash
