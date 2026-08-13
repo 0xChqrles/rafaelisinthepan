@@ -1,6 +1,6 @@
 // Runtime configuration, read from the Lambda's environment (set by the CDK stack, #3).
 // Secret VALUES never enter CloudFormation: the environment carries only Parameter Store
-// names, and the production entrypoint resolves both encrypted values once per cold start.
+// names, and the production entrypoint resolves both encrypted values together on first use.
 import { GetParametersCommand, type SSMClient } from '@aws-sdk/client-ssm';
 
 interface Config {

@@ -64,9 +64,10 @@ Provisions the backend (#2) so it is reproducible and deployable from one comman
 ### Score secrets
 
 The stack puts only two existing **SSM SecureString parameter names** in the Lambda
-environment. At cold start, the entrypoint resolves both values with one decrypted
-`GetParameters` call and reuses them for that execution environment. Their values never
-appear in source, Lambda configuration, or `cdk synth` output.
+environment. On first use, the entrypoint resolves both values with one decrypted
+`GetParameters` call and reuses a successful result for that execution environment. A
+failed read is discarded so the next invocation retries. Their values never appear in
+source, Lambda configuration, or `cdk synth` output.
 Create them once before the first score-enabled deploy:
 
 ```bash

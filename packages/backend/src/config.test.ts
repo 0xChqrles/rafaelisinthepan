@@ -26,7 +26,7 @@ describe('production score-secret configuration', () => {
     ).toThrow(/TURNSTILE_SECRET_PARAMETER/);
   });
 
-  it('loads both encrypted values with one GetParameters call at cold start', async () => {
+  it('loads both encrypted values with one GetParameters call', async () => {
     const send = vi.fn(async (command: unknown) => {
       expect(command).toBeInstanceOf(GetParametersCommand);
       return {

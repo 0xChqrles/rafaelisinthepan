@@ -49,7 +49,7 @@ interface BackendStackProps extends StackProps {
   // (og:image + game redirect, #8). The apex CloudFront routes /s/* and /og/* here.
   siteOrigin?: string;
   // Existing SSM SecureString parameters. The Lambda environment receives these names and
-  // resolves both encrypted values with one GetParameters call per cold start.
+  // resolves both encrypted values together on first use, caching only a successful read.
   turnstileSecretParameter?: string;
   ipHmacSecretParameter?: string;
 }
@@ -133,7 +133,8 @@ export class BackendStack extends Stack {
         SCORE_TABLE: scoreTable.tableName,
         // Names only: AWS::Lambda::Function environment properties do not support
         // CloudFormation's ssm-secure dynamic references. The entrypoint decrypts both at
-        // runtime, once per cold start, so no secret value enters this template.
+        // runtime on first use, caches success, and retries a failed read on the next
+        // invocation, so no secret value enters this template.
         TURNSTILE_SECRET_PARAMETER: turnstileSecretParameter,
         IP_HMAC_SECRET_PARAMETER: ipHmacSecretParameter,
         ALLOWED_ORIGIN: allowedOrigin,

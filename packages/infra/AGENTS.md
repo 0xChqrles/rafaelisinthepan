@@ -59,9 +59,9 @@
   keying on either. The latter is mandatory for OAC to sign a Lambda-URL POST. The Lambda
   receives the table name and SSM SecureString PARAMETER NAMES (defaults
   `/whippin/turnstile-secret`, `/whippin/ip-hmac-secret`; override with the matching `-c`
-  contexts), reads both decrypted values with one runtime `GetParameters` call per cold
-  start, and has `ssm:GetParameters` only on those exact ARNs. No secret value appears in
-  source or the synthesized template.
+  contexts), reads both decrypted values together on first use, caches a successful result,
+  retries a failed read on the next invocation, and has `ssm:GetParameters` only on those
+  exact ARNs. No secret value appears in source or the synthesized template.
   Outputs: `ApiUrl` (→ `VITE_API_BASE_URL`), `PuzzleBucketName` (#4 upload target),
   `ScoreTableName`, `FunctionUrl`, `DistributionDomainName`. Commands: `pnpm infra:synth` / `infra:diff` /
   `infra:deploy` (root) or `pnpm --filter @whippin/infra <synth|deploy|diff|destroy>`;

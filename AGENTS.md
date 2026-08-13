@@ -425,8 +425,8 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
 - **A failing invariant test is a real regression — fix the CODE, never weaken the test**
   to make it pass.
 - **Run `pnpm test` before a contract-touching task is done.** It runs Vitest (TS:
-  `packages/shared`, `packages/web`) and pytest (`packages/generation`,
-  `packages/benchmark`). The slug/fold
+  `packages/shared`, `packages/web`, `packages/backend`, `packages/infra`) and pytest
+  (`packages/generation`, `packages/benchmark`). The slug/fold
   case table is **one shared fixture** (`packages/shared/fixtures/slug-cases.json`)
   consumed by BOTH languages — add a case there, never on one side only.
 
@@ -477,7 +477,7 @@ literal `--` is passed through and breaks `gen_phrase.py`'s arg parsing).
 
 ```bash
 pnpm install     # installs all workspaces
-pnpm test        # invariant tests: Vitest (web + shared + backend) + pytest (generation + benchmark)
+pnpm test        # invariant tests: Vitest (web + shared + backend + infra) + pytest (generation + benchmark)
 pnpm typecheck   # tsc --noEmit
 ```
 

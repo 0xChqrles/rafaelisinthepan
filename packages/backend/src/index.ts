@@ -15,21 +15,33 @@ const s3 = new S3Client({});
 const dynamo = new DynamoDBClient({});
 const ssm = new SSMClient({});
 
-// Exactly one decrypted GetParameters call per Lambda execution environment. The promise
-// starts during cold-start module initialization and every invocation reuses its handler.
-const initializedHandler = loadScoreSecrets(ssm, config).then((secrets) =>
-  createHandler({
-    store: s3Store(s3, config.bucket),
-    allowedOrigin: config.allowedOrigin,
-    siteOrigin: config.siteOrigin,
-    scores: {
-      scoreStore: dynamoScoreStore(dynamo, config.scoreTable),
-      turnstile: turnstileVerifier(secrets.turnstileSecret),
-      ipHmacSecret: secrets.ipHmacSecret,
-    },
-  }),
-);
+type ProductionHandler = ReturnType<typeof createHandler>;
+
+// Initialize on the first invocation and cache only a successful attempt. Concurrent
+// invocations share the same request; a transient SSM failure is retried next time.
+let initializedHandler: Promise<ProductionHandler> | undefined;
+
+function initializeHandler(): Promise<ProductionHandler> {
+  initializedHandler ??= loadScoreSecrets(ssm, config)
+    .then((secrets) =>
+      createHandler({
+        store: s3Store(s3, config.bucket),
+        allowedOrigin: config.allowedOrigin,
+        siteOrigin: config.siteOrigin,
+        scores: {
+          scoreStore: dynamoScoreStore(dynamo, config.scoreTable),
+          turnstile: turnstileVerifier(secrets.turnstileSecret),
+          ipHmacSecret: secrets.ipHmacSecret,
+        },
+      }),
+    )
+    .catch((error: unknown) => {
+      initializedHandler = undefined;
+      throw error;
+    });
+  return initializedHandler;
+}
 
 export async function handler(event: FnUrlEvent): Promise<FnUrlResult> {
-  return (await initializedHandler)(event);
+  return (await initializeHandler())(event);
 }

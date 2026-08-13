@@ -25,7 +25,7 @@
       layout.ts               storeKey() — the <date>.<lang>.json key shared by readers + publish (#17/#4)
       serve.ts                local HTTP server: Function-URL⇄HTTP adapter over createHandler (#17)
       publish.ts              place a generated puzzle into local store (default) or S3 (#17/#4)
-      config.ts               env names + one cold-start decrypted SSM GetParameters read
+      config.ts               env names + one decrypted SSM GetParameters read
       index.ts                Lambda entrypoint (S3/Dynamo stores + async secret initialization)
     .local-store/<date>.<lang>.json  local puzzle store (gitignored) read by serve/fsStore
 ```
@@ -63,12 +63,13 @@ pnpm backend:dev                # local server (puzzles + /scores + /today) on :
   serve swaps in `memoryScoreStore`, a random per-process HMAC key and
   `localTurnstileVerifier`; restart clears local scores. Production config requires
   `SCORE_TABLE`, `TURNSTILE_SECRET_PARAMETER`, and `IP_HMAC_SECRET_PARAMETER` in addition
-  to the puzzle settings. `index.ts` resolves both SecureStrings with ONE decrypted SSM
-  `GetParameters` call per cold start and retains only their values in memory; the HMAC key
-  must contain 32+ bytes. Production POST also requires `x-amz-content-sha256`, the lowercase
-  hex SHA-256 of the exact UTF-8 body bytes: CloudFront OAC needs it before the handler can
-  run. The score behavior forwards it and CORS allows it; local serve has no OAC and cannot
-  verify this production-only boundary.
+  to the puzzle settings. On first use, `index.ts` resolves both SecureStrings with ONE
+  decrypted SSM `GetParameters` call and retains only their values in memory; a failed read
+  is discarded so the next invocation retries. The HMAC key must contain 32+ bytes.
+  Production POST also requires `x-amz-content-sha256`, the lowercase hex SHA-256 of the
+  exact UTF-8 body bytes: CloudFront OAC needs it before the handler can run. The score
+  behavior forwards it and CORS allows it; local serve has no OAC and cannot verify this
+  production-only boundary.
 
 - **Word mode's daily artifact (#154/#156):** the ONE puzzle endpoint also serves the
   single-word artifact under `mode=word` (`GET /?lang=&date=&mode=word`; absent/
