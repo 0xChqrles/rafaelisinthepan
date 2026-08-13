@@ -11,7 +11,7 @@
 ```
   infra/                      AWS CDK app: backend (#3) + web hosting (#21) sibling stacks (pkg @whippin/infra)
     bin/app.ts                CDK app entry — WhippinBackendStack + WhippinWebStack (cdk.json runs it via `npx tsx`)
-    lib/backend-stack.ts      BackendStack: private S3 + Lambda(Fn URL) + CloudFront; opt api.<domain> (ACM+Route53); us-east-1
+    lib/backend-stack.ts      BackendStack: private S3 + DynamoDB + Lambda(Fn URL) + CloudFront; opt api.<domain>; us-east-1
     lib/web-stack.ts          WebStack (#21): private S3 (SPA) + CloudFront(OAC) + ACM + Route53; apex; us-east-1
     lib/deploy-role-stack.ts  DeployRoleStack (#33): GitHub OIDC provider + the CI deploy role; human-deployed
     scripts/guard-local-deploy.mjs  blocks `deploy`/`deploy:app` outside CI (ALLOW_LOCAL_DEPLOY=1 to break glass)
@@ -47,8 +47,18 @@
   no CDN, was fine). The puzzle endpoint **requires `date`** (400 otherwise) and is served
   `max-age=300, s-maxage=31536000` (CDN holds it until `puzzle:publish --s3` invalidates);
   `/today` (diagnostic) is `no-store`; maxTtl = 365 days.
+  **Score collection (#169)** lives in this SAME stack: one on-demand, AWS-managed-encrypted
+  DynamoDB table (string `pk`, `expiresAt` TTL, `RETAIN`), with the Lambda limited to
+  `GetItem`/`UpdateItem`; aggregate counters persist while HMAC-IP dedup items expire after
+  48h. PITR is deliberately off because a backup would retain those pseudonymous items past
+  their privacy lifetime. `/scores` has a separate `scores*` behavior that allows writes, uses a zero-TTL cache
+  policy whose allowList is exactly `lang`/`date`/`mode`, and an origin-request policy that
+  adds `CloudFront-Viewer-Address` without keying on it. The Lambda receives the table name
+  and CloudFormation-resolved SSM SecureStrings (defaults
+  `/whippin/turnstile-secret`, `/whippin/ip-hmac-secret`; override with the matching `-c`
+  contexts), so no secret value appears in source or the synthesized template.
   Outputs: `ApiUrl` (→ `VITE_API_BASE_URL`), `PuzzleBucketName` (#4 upload target),
-  `FunctionUrl`, `DistributionDomainName`. Commands: `pnpm infra:synth` / `infra:diff` /
+  `ScoreTableName`, `FunctionUrl`, `DistributionDomainName`. Commands: `pnpm infra:synth` / `infra:diff` /
   `infra:deploy` (root) or `pnpm --filter @whippin/infra <synth|deploy|diff|destroy>`;
   deploy needs AWS creds + a bootstrapped account. **App deploys go through CI** (PR →
   `ci.yml` → merge → `deploy.yml`); `main` is branch-protected (enforce_admins, require

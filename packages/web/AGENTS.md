@@ -18,7 +18,7 @@
                               (+ <lang>.word.json, the pruned #154 board it plays on)
       screens/Game.tsx        the guess loop, hole state (imports fold from @whippin/shared)
       screens/WordGame.tsx    Word mode's three phases: rules gate -> timed run -> post-mortem
-      game/wordGame.ts        Word mode's rules + economy (CLAIM_ZONE, the rarity ladder, the clock)
+      game/wordGame.ts        Word mode's rules + economy (shared WORD_CLAIM_ZONE re-export, rarity ladder, clock)
       game/wordBoard.ts       Word mode's post-mortem board: the zone as RARITY-graded stations
       components/rarity.ts    a rarity grade's pinned colour, and how many times a find is struck
       components/WordSlash.tsx    the slash a claim cuts the day's word with
@@ -163,8 +163,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   since 2026-08-11; 250 before it, 150 before that) groups **against a COUNTDOWN**; the score
   is the claim count. **Since 2026-08-11 the number is also TOLD to the player**, on the
   gate's first rule — see the gate bullet.
-  **`CLAIM_ZONE` IS this package's own tuning knob since 2026-08-10** — freely movable, with
-  no republish and no regeneration. Its only real ceiling is generation's `TOP_K` (10 000),
+  **`CLAIM_ZONE` remains the WEB's product tuning knob since 2026-08-10**, freely movable
+  with no republish and no regeneration, but #169 made its numeric value a CLIENT/SERVER
+  contract: `shared/src/scores.ts` now owns `WORD_CLAIM_ZONE`, `wordGame.ts` re-exports it
+  under the existing name, and the backend uses the same value to reject impossible Word
+  scores. Moving it therefore requires a backend deploy, not an artifact regeneration. Its
+  only real ceiling is generation's `TOP_K` (10 000),
   past which a rank has no entry to claim. **Two things SCALE with it**, neither a blocker
   but both worth knowing before it moves again: the post-mortem board draws every zone group
   as a station, so this is also the board's ROW COUNT (1000 rows since the widening — the

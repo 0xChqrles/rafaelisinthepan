@@ -42,8 +42,10 @@ const BROTLI_QUALITY = 5;
 export interface FnUrlEvent {
   rawPath?: string;
   queryStringParameters?: Record<string, string | undefined> | null;
-  requestContext?: { http?: { method?: string } };
+  requestContext?: { http?: { method?: string; sourceIp?: string } };
   headers?: Record<string, string | undefined>;
+  body?: string | null;
+  isBase64Encoded?: boolean;
 }
 
 export interface FnUrlResult {
@@ -61,7 +63,7 @@ export interface FnUrlResult {
 export function corsHeaders(origin: string): Record<string, string> {
   return {
     'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
     Vary: 'Origin',
   };

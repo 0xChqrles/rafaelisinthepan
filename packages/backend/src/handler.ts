@@ -26,6 +26,7 @@ import {
 } from './respond';
 import { renderCardPng, renderShareHtml, renderWordCardPng, renderWordShareHtml } from './ogCard';
 import { isValidDate } from './layout';
+import { handleScores, type ScoreHandlerDeps } from './scores';
 import type { PuzzleStore } from './store';
 
 export interface HandlerDeps {
@@ -36,6 +37,9 @@ export interface HandlerDeps {
   // Canonical site origin (apex) for the share card's absolute URLs (#8). When unset, the
   // share HTML falls back to the request origin (local dev).
   siteOrigin?: string;
+  // Score collection (#169). Optional only so read-only handler/unit consumers that never
+  // touch /scores stay lightweight; production and the local server always provide it.
+  scores?: ScoreHandlerDeps;
 }
 
 // 404s expire quickly so a puzzle uploaded slightly late becomes playable soon
@@ -83,19 +87,22 @@ export function createHandler(deps: HandlerDeps) {
 
   return async function handler(event: FnUrlEvent): Promise<FnUrlResult> {
     const method = event.requestContext?.http?.method ?? 'GET';
+    const rawPath = event.rawPath ?? '/';
+    const normalizedPath = rawPath.replace(/\/+$/, '') || '/';
+    const isScoresRoute = normalizedPath === '/scores';
+    const routeHeaders = isScoresRoute ? { ...cors, 'Cache-Control': 'no-store' } : cors;
 
     // CORS preflight.
     if (method === 'OPTIONS') {
-      return { statusCode: 204, headers: { ...cors }, body: '' };
+      return { statusCode: 204, headers: { ...routeHeaders }, body: '' };
     }
-    if (method !== 'GET') {
-      return errorResponse(405, 'method_not_allowed', `Method ${method} not allowed.`, cors);
+    if ((isScoresRoute && method !== 'GET' && method !== 'POST') || (!isScoresRoute && method !== 'GET')) {
+      return errorResponse(405, 'method_not_allowed', `Method ${method} not allowed.`, routeHeaders);
     }
 
     try {
       // Share-card routes (issue #8) are keyed only on the token — no lang/day/store — so
       // they resolve BEFORE the puzzle logic (which would otherwise 400 on the missing lang).
-      const rawPath = event.rawPath ?? '/';
       const ogMatch = OG_PNG_RE.exec(rawPath);
       if (ogMatch) {
         const result = decodeResult(ogMatch[1]);
@@ -157,6 +164,11 @@ export function createHandler(deps: HandlerDeps) {
 
       const instant = now();
       const date = activeDate(instant);
+
+      if (isScoresRoute) {
+        if (!deps.scores) throw new Error('Score collection is not configured.');
+        return await handleScores(event, deps.store, deps.scores, date, instant, cors);
+      }
 
       if (rawPath.replace(/\/+$/, '').endsWith('/today')) {
         // /today is a DIAGNOSTIC: the server's view of the active day + reset info. The
@@ -284,7 +296,7 @@ export function createHandler(deps: HandlerDeps) {
       return response;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unexpected error.';
-      return errorResponse(500, 'internal_error', message, cors);
+      return errorResponse(500, 'internal_error', message, routeHeaders);
     }
   };
 }

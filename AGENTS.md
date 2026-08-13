@@ -378,6 +378,34 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   `pnpm build`; the frontend must not silently use its own origin as the backend.
   `usePuzzle` exposes `dayNumber` for persist (#7) / already-solved (#9).
 
+### Live score collection (#169, decided 2026-08-13)
+
+- The ONE backend handler also owns the anonymous daily histogram:
+  `GET|POST /scores?lang=<lang>&date=<YYYY-MM-DD>&mode=<sentence|word>`; unlike the
+  puzzle route, **`mode` is required**. POST takes `{ score, turnstileToken }`, verifies
+  Turnstile server-side, validates the score against that published daily/mode, records it,
+  and returns the UPDATED histogram so the caller's score is already included. GET is the
+  read-only twin for solved revisits. The puzzle route's malformed-param and future +1-day
+  guards apply; a population is never created for an unpublished puzzle.
+- **Score limits are gameplay limits, not a generic integer cap.** Sentence mode counts
+  unique vocabulary-valid tries, so its ceiling is the language's existence-set size.
+  Word mode counts claimed groups, so its ceiling is the distinct claimable ranks in that
+  artifact, bounded by the ONE shared `WORD_CLAIM_ZONE` constant
+  (`shared/src/scores.ts`, consumed by web + backend). The backend owns fixed, mode-specific
+  histogram edges; consumers render the ranges returned by the API rather than restating
+  edges that are already committed to stored counters.
+- POST dedups by `HMAC-SHA256(client IP, server secret)` and **never stores a raw IP**.
+  Up to **5** writes are allowed per `(date, lang, mode, ipHash)`; the dedup item expires
+  after 48 hours. Its conditional count update and the aggregate bucket's atomic `ADD` are
+  one DynamoDB transaction, so a capped/failing request cannot change just one half. Only
+  the anonymous aggregate item is retained.
+- `/scores` has its OWN zero-TTL CloudFront behavior because the histogram is live; it must
+  never inherit the puzzle's year-long `s-maxage`. Its query allowList is exactly the three
+  parameters the handler reads (`lang`, `date`, `mode`), and its origin-request policy adds
+  CloudFront's trusted viewer address outside the cache key for HMAC dedup. Local
+  `backend:dev` uses the same handler with an in-memory counter store and an explicitly
+  local accept-all Turnstile verifier.
+
 ---
 
 ## Testing

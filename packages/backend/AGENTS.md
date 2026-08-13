@@ -16,6 +16,12 @@
       handler.ts              createHandler() — the ONE day/404/CORS/Puzzle logic (Lambda + local)
       store.ts                PuzzleStore interface (date+lang -> Puzzle | null)
       s3Store.ts, fsStore.ts  store impls: S3 (prod) and local FS (#17), both read the same key
+      scores.ts               /scores GET+POST route: params, Turnstile, range, HMAC, response
+      scoreBuckets.ts         fixed per-mode ranges + puzzle-aware possible-score limits
+      scoreStore.ts           score storage contract; aggregate/dedup keys + 5/48h constants
+      dynamoScoreStore.ts     prod atomic transaction + strongly-consistent histogram read
+      memoryScoreStore.ts     process-local implementation for backend:dev/tests
+      turnstile.ts            Cloudflare Siteverify + explicit local accept-all verifier
       layout.ts               storeKey() — the <date>.<lang>.json key shared by readers + publish (#17/#4)
       serve.ts                local HTTP server: Function-URL⇄HTTP adapter over createHandler (#17)
       publish.ts              place a generated puzzle into local store (default) or S3 (#17/#4)
@@ -31,7 +37,7 @@
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
 pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output). Sentence puzzles AND #154 word artifacts (#156): the artifact type is detected from the file's SHAPE and routed to its own key.
 pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--mode sentence|word] [--ci]  # publish-buffer coverage (#61); --mode word probes the #156 word-artifact buffer; reports + exits 0 by default, --ci exits 1 on any (day,lang) gap for cron/CI
-pnpm backend:dev                # local server (GET /?lang=&date=[&mode=word], /today) on :8787 over the local store
+pnpm backend:dev                # local server (puzzles + /scores + /today) on :8787; FS puzzles, in-memory scores, local Turnstile accept-all
 ```
 
 ---
@@ -39,6 +45,24 @@ pnpm backend:dev                # local server (GET /?lang=&date=[&mode=word], /
 ## Current state / mutable
 
 *(Safe to update without touching the invariants above.)*
+
+- **Anonymous score collection (#169):** the ONE handler serves
+  `GET|POST /scores?lang=&date=&mode=sentence|word`; `mode` is mandatory. A successful
+  response is `{ buckets: [{ min, max, count }], total, bucket }`, inclusive ranges;
+  `bucket` is the submitted score's index on POST and `null` on GET (a revisiting client
+  already knows its persisted score). Every response is `no-store`. POST requires an
+  integer score + nonempty Turnstile token, uses one Cloudflare Siteverify call, reads the
+  published puzzle, and rejects an impossible score (sentence: 1..the exact committed
+  language vocab size; Word: 0..the artifact's distinct ranks inside shared
+  `WORD_CLAIM_ZONE`). It HMACs the trusted CloudFront viewer address and hands only the
+  digest to `ScoreStore`. `dynamoScoreStore` transactionally increments a conditional
+  5-count/48h-TTL dedup item and the aggregate bucket+total, using a hash of the one-use
+  token as DynamoDB's idempotency token; its following consistent read guarantees the
+  returned histogram includes the caller. The sixth write is a no-mutation 429. Local
+  serve swaps in `memoryScoreStore`, a random per-process HMAC key and
+  `localTurnstileVerifier`; restart clears local scores. Production config requires
+  `SCORE_TABLE`, `TURNSTILE_SECRET`, and a 32+ byte `IP_HMAC_SECRET` in addition to the
+  puzzle settings.
 
 - **Word mode's daily artifact (#154/#156):** the ONE puzzle endpoint also serves the
   single-word artifact under `mode=word` (`GET /?lang=&date=&mode=word`; absent/

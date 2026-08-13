@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // CDK app entrypoint. Provisions two independent sibling stacks: the daily-puzzle
-// backend (#3 — S3 bucket + Lambda(Fn URL) + CloudFront) and the web front hosting
+// backend (#3/#169 — S3 + DynamoDB + Lambda(Fn URL) + CloudFront) and the web front hosting
 // (#21 — private S3 + CloudFront + ACM + Route53). Run via `cdk synth` / `cdk deploy`
 // (cdk.json points the app command at `npx tsx bin/app.ts`); target one with
 // `cdk deploy WhippinBackendStack` / `cdk deploy WhippinWebStack`.
@@ -49,6 +49,11 @@ new BackendStack(app, 'WhippinBackendStack', {
   apiSubdomain,
   // Canonical site origin for the share card's absolute URLs (#8); the apex site host.
   siteOrigin: `https://${siteHost}`,
+  // Existing SSM SecureString names; override for another environment/account.
+  turnstileSecretParameter:
+    app.node.tryGetContext('turnstileSecretParameter') ?? '/whippin/turnstile-secret',
+  ipHmacSecretParameter:
+    app.node.tryGetContext('ipHmacSecretParameter') ?? '/whippin/ip-hmac-secret',
   env,
 });
 

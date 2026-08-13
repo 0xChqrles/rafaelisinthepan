@@ -6,23 +6,34 @@
 //
 // Run it with `pnpm backend:dev` (or `pnpm --filter @whippin/backend serve:local`)
 // and point the front at it via VITE_API_BASE_URL (e.g. http://localhost:8787).
+import { randomBytes } from 'node:crypto';
 import { createServer, type IncomingMessage } from 'node:http';
 import { createHandler } from './handler';
 import { fsStore } from './fsStore';
 import { defaultLocalStoreRoot } from './layout';
+import { memoryScoreStore } from './memoryScoreStore';
 import type { FnUrlEvent } from './respond';
+import { localTurnstileVerifier } from './turnstile';
 
 const PORT = Number(process.env.PORT ?? 8787);
 const STORE_ROOT = process.env.PUZZLE_STORE ?? defaultLocalStoreRoot();
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN ?? '*';
+const LOCAL_IP_HMAC_SECRET = randomBytes(32).toString('hex');
 
 const handler = createHandler({
   store: fsStore(STORE_ROOT),
   allowedOrigin: ALLOWED_ORIGIN,
+  scores: {
+    scoreStore: memoryScoreStore(),
+    // Explicitly local-only: the production entrypoint always wires real Siteverify.
+    turnstile: localTurnstileVerifier,
+    ipHmacSecret: LOCAL_IP_HMAC_SECRET,
+    allowSourceIp: true,
+  },
 });
 
 // Adapt a Node http request into the minimal Lambda Function URL event the handler reads.
-function toEvent(req: IncomingMessage): FnUrlEvent {
+async function toEvent(req: IncomingMessage): Promise<FnUrlEvent> {
   const url = new URL(req.url ?? '/', 'http://localhost');
   const query: Record<string, string> = {};
   for (const [k, v] of url.searchParams) query[k] = v;
@@ -30,17 +41,21 @@ function toEvent(req: IncomingMessage): FnUrlEvent {
   for (const [k, v] of Object.entries(req.headers)) {
     headers[k] = Array.isArray(v) ? v.join(', ') : v;
   }
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  const body = chunks.length ? Buffer.concat(chunks).toString('utf8') : undefined;
   return {
     rawPath: url.pathname,
     queryStringParameters: query,
-    requestContext: { http: { method: req.method } },
+    requestContext: { http: { method: req.method, sourceIp: req.socket.remoteAddress } },
     headers,
+    body,
   };
 }
 
 const server = createServer(async (req, res) => {
   try {
-    const result = await handler(toEvent(req));
+    const result = await handler(await toEvent(req));
     res.writeHead(result.statusCode, result.headers);
     // Binary responses (the OG PNG) come back base64-encoded, just like a Function URL.
     res.end(result.isBase64Encoded ? Buffer.from(result.body, 'base64') : result.body);
@@ -55,6 +70,8 @@ server.listen(PORT, () => {
   console.log(`[backend] local puzzle server on http://localhost:${PORT}`);
   console.log(`[backend]   store:  ${STORE_ROOT}`);
   console.log(`[backend]   origin: ${ALLOWED_ORIGIN}`);
-  console.log(`[backend]   GET /?lang=<xx>&date=<YYYY-MM-DD>[&mode=word]  GET /today  GET /s/<token>  GET /og/<token>.png`);
+  console.log(`[backend]   scores: in-memory; Turnstile accept-all (local only)`);
+  console.log(`[backend]   GET /?lang=<xx>&date=<YYYY-MM-DD>[&mode=word]  GET|POST /scores?lang=&date=&mode=`);
+  console.log(`[backend]   GET /today  GET /s/<token>  GET /og/<token>.png`);
   console.log(`[backend] point the front at it: VITE_API_BASE_URL=http://localhost:${PORT}`);
 });

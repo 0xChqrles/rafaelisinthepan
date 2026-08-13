@@ -11,6 +11,24 @@ that provisions Lambda + Function URL + CloudFront + the bucket is issue #3.)
   [`Puzzle`](../shared/src/types.ts) / [`WordPuzzle`](../shared/src/types.ts) shape.
   `404` (clean JSON error) when the day is unpublished or still in the future; `400` on a
   missing/malformed `date`, `lang` or `mode`.
+- `GET /scores?lang=<en|fr>&date=<YYYY-MM-DD>&mode=<sentence|word>` → the published
+  daily's live score histogram. `POST` to the same URL with
+  `{ "score": 12, "turnstileToken": "..." }` verifies Turnstile, validates the possible
+  score range, applies the five-per-HMAC-IP cap, increments the bucket, and returns the
+  updated histogram. `mode` is required here.
+
+  ```json
+  {
+    "buckets": [{ "min": 1, "max": 3, "count": 4 }],
+    "total": 4,
+    "bucket": 0
+  }
+  ```
+
+  Ranges are inclusive and the real response contains every fixed band for that mode.
+  `bucket` is the caller's band on POST and `null` on GET. Score responses are `no-store`.
+  Missing/invalid Turnstile → 403; impossible score → 400; sixth submission for the same
+  `(date, lang, mode, ipHash)` → 429 without changing a counter.
 - `GET /s/<token>` → the share page (OG meta) for a result token; `GET /og/<token>.png` →
   its card image.
 - `GET /today` → `{ date, dayNumber, timeZone, resetHour, nextResetAt,
@@ -50,14 +68,19 @@ S3 cannot drift apart.
 | var             | required | meaning                                          |
 | --------------- | -------- | ------------------------------------------------ |
 | `PUZZLE_BUCKET` | yes      | S3 bucket holding the daily puzzles              |
+| `SCORE_TABLE`   | yes      | DynamoDB table holding aggregate + dedup items   |
+| `TURNSTILE_SECRET` | yes   | Cloudflare Turnstile server-side secret          |
+| `IP_HMAC_SECRET` | yes     | 32+ byte key used to HMAC client IPs (raw IPs are never stored) |
 | `ALLOWED_ORIGIN`| no       | CORS origin (the web origin in prod; `*` if unset) |
 | `SITE_ORIGIN`   | no       | canonical apex for the share card's absolute URLs (falls back to the request origin) |
 
 ## Local harness (no AWS) — issue #17
 
 Run the **same `createHandler`** locally, swapping the S3 store for a filesystem store
-(`src/fsStore.ts`). The day boundary, 404-no-puzzle, CORS, and `Puzzle` shape are
-therefore identical to production — `src/serve.ts` is just a Function-URL ⇄ HTTP adapter.
+(`src/fsStore.ts`) and DynamoDB for an in-memory score store. The day boundary,
+404-no-puzzle, CORS, score validation/capping, and puzzle shapes are therefore identical
+to production — only Turnstile is an explicit local accept-all and score data resets when
+the process restarts. `src/serve.ts` remains a thin Function-URL ⇄ HTTP adapter.
 
 ```bash
 # 1. Generate a puzzle (writes it under its source: packages/generation/output/word/
@@ -99,6 +122,9 @@ no listing — and listable by a date prefix. The store root defaults to
 | `PUZZLE_STORE` | `.local-store`          | local store root read by `fsStore`        |
 | `ALLOWED_ORIGIN`| `*`                    | CORS origin                               |
 | `SITE_ORIGIN`  | request origin          | apex used for the share card's absolute URLs |
+
+The local score store and accept-all Turnstile require no additional environment variables.
+POST still requires a nonempty `turnstileToken` field so the request contract stays real.
 
 ## Dev
 
