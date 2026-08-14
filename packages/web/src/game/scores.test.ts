@@ -1,24 +1,21 @@
-// CONTRACT: the solved screen's percentile reading (#170) over the backend's histogram
-// (#169). The backend owns the bucket EDGES (this module only reads the inclusive ranges
-// the API returned); the WEB owns the reading — which bucket is the player's, which
-// direction is "worse" per mode, and which copy an N-sized population has earned:
-//   - low N stays count-based and honest ("first player today", "you and 4 others");
-//   - only PERCENT_MIN_TOTAL (a couple dozen) recorded scores earn "you beat x%";
-//   - sentence is lower-is-better (worse = MORE tries), word is higher-is-better
-//     (worse = FEWER claims); ties in the player's own bucket are never claimed beaten;
+// CONTRACT: the solved screen's STANDING (#170) over the backend's histogram (#169). The
+// backend owns the bucket EDGES (this module only reads the inclusive ranges the API
+// returned); the WEB owns the reading:
+//   - a score is located in the inclusive ranges (the GET path sends `bucket: null`);
+//   - RANK is competition ranking — everyone strictly ahead, plus one — so a whole band
+//     shares its rank, which is the only honest number at bucket granularity;
+//   - sentence is lower-is-better (ahead = FEWER tries), word is higher-is-better
+//     (ahead = MORE claims);
+//   - a TOP percentage needs PERCENT_MIN_TOTAL players, or it is false precision;
 //   - a finished round submits ONCE: only finished-and-not-yet-submitted rounds POST.
 
 import { describe, it, expect } from 'vitest';
 import type { ScoreHistogramBucket } from '@whippin/shared';
 import {
-  MAX_CHART_BANDS,
-  MAX_COLUMN_UNITS,
   PERCENT_MIN_TOTAL,
-  beatenCount,
   bucketIndexOf,
-  chartField,
-  chartUnits,
-  histogramCopy,
+  formatTopPct,
+  scoreStanding,
   shouldSubmitScore,
 } from './scores';
 
@@ -42,68 +39,85 @@ describe('bucketIndexOf', () => {
     expect(bucketIndexOf(b, 12)).toBe(3);
   });
 
-  it('returns null for a score no range holds — highlight nothing rather than lie', () => {
+  it('returns null for a score no range holds — say nothing rather than lie', () => {
     expect(bucketIndexOf(buckets([0, 0, 0, 0]), 13)).toBeNull();
     expect(bucketIndexOf(buckets([0, 0, 0, 0]), 0)).toBeNull();
   });
 });
 
-describe('beatenCount — which direction is worse', () => {
-  // Population: 5 in the best sentence band, 3 mid, 2 mid, 7 in the worst.
+describe('scoreStanding — rank is everyone strictly ahead, plus one', () => {
+  // Population: 5 in the best sentence band, 3, 2, then 7 in the worst. 17 players.
   const b = buckets([5, 3, 2, 7]);
 
-  it('sentence (tries, lower is better): worse = the buckets AFTER mine', () => {
-    expect(beatenCount('sentence', b, 1)).toBe(2 + 7);
-    expect(beatenCount('sentence', b, 0)).toBe(3 + 2 + 7);
-    expect(beatenCount('sentence', b, 3)).toBe(0);
+  it('sentence (tries, lower is better): the bands BEFORE mine are ahead', () => {
+    expect(scoreStanding('sentence', b, 17, 0)?.rank).toBe(1);
+    expect(scoreStanding('sentence', b, 17, 1)?.rank).toBe(6);
+    expect(scoreStanding('sentence', b, 17, 3)?.rank).toBe(11);
   });
 
-  it('word (claims, higher is better): worse = the buckets BEFORE mine', () => {
-    expect(beatenCount('word', b, 1)).toBe(5);
-    expect(beatenCount('word', b, 3)).toBe(5 + 3 + 2);
-    expect(beatenCount('word', b, 0)).toBe(0);
+  it('word (claims, higher is better): the bands AFTER mine are ahead', () => {
+    expect(scoreStanding('word', b, 17, 3)?.rank).toBe(1);
+    expect(scoreStanding('word', b, 17, 2)?.rank).toBe(8);
+    expect(scoreStanding('word', b, 17, 0)?.rank).toBe(13);
   });
 
-  it('never claims the player’s own bucket — ties are not beaten', () => {
-    expect(beatenCount('sentence', b, 1) + beatenCount('word', b, 1)).toBe(2 + 7 + 5);
+  it('a whole band SHARES its rank — a tie is never broken by invention', () => {
+    // Everyone in band 1 is 6th: the five ahead of them are ahead, the two beside them
+    // are not behind.
+    const mine = scoreStanding('sentence', b, 17, 1);
+    expect(mine).toEqual({ rank: 6, total: 17, topPct: null });
+  });
+
+  it('the only player today is first of one', () => {
+    expect(scoreStanding('sentence', buckets([1]), 1, 0)).toEqual({
+      rank: 1,
+      total: 1,
+      topPct: null,
+    });
+  });
+
+  it('never ranks anyone past the population it is drawn from', () => {
+    // A histogram whose counts outrun its own total (a stale read racing a write).
+    expect(scoreStanding('sentence', buckets([9, 9, 9, 9]), 4, 3)?.rank).toBe(4);
+  });
+
+  it('says nothing at all when there is no band, or no population', () => {
+    expect(scoreStanding('sentence', b, 17, null)).toBeNull();
+    expect(scoreStanding('sentence', buckets([]), 0, 0)).toBeNull();
   });
 });
 
-describe('histogramCopy — what N has earned', () => {
-  it('total 0 or 1 → "first player today" (the empty chart IS the come-back-later message)', () => {
-    expect(histogramCopy('sentence', buckets([1, 0, 0, 0]), 1, 0)).toEqual({ kind: 'first' });
-    expect(histogramCopy('word', buckets([0, 0, 0, 0]), 0, 2)).toEqual({ kind: 'first' });
+describe('scoreStanding — the TOP percentage', () => {
+  const big = (aheadCount: number, total: number) =>
+    scoreStanding('sentence', buckets([aheadCount, total - aheadCount]), total, 1);
+
+  it('needs a real population: below PERCENT_MIN_TOTAL there is no percentage', () => {
+    expect(big(4, PERCENT_MIN_TOTAL - 1)?.topPct).toBeNull();
   });
 
-  it('below PERCENT_MIN_TOTAL → honest count of the others', () => {
-    expect(histogramCopy('sentence', buckets([2, 0, 0, 0]), 2, 0)).toEqual({
-      kind: 'others',
-      others: 1,
-    });
-    const total = PERCENT_MIN_TOTAL - 1;
-    expect(histogramCopy('sentence', buckets([total, 0, 0, 0]), total, 0)).toEqual({
-      kind: 'others',
-      others: total - 1,
-    });
+  it('is rank over total once the population is big enough', () => {
+    const standing = big(4, PERCENT_MIN_TOTAL);
+    expect(standing?.rank).toBe(5);
+    expect(standing?.topPct).toBeCloseTo((100 * 5) / PERCENT_MIN_TOTAL, 10);
   });
 
-  it('at PERCENT_MIN_TOTAL and above → the percentile claim, over the OTHER players', () => {
-    // 25 recorded scores: me in the best band with 4 ties, 20 strictly worse.
-    const b = buckets([5, 20, 0, 0]);
-    expect(histogramCopy('sentence', b, 25, 0)).toEqual({
-      kind: 'percent',
-      pct: Math.round((100 * 20) / 24),
-    });
-    // Word flips the direction: same shape, me in the second band beats the first's 5.
-    expect(histogramCopy('word', b, 25, 1)).toEqual({
-      kind: 'percent',
-      pct: Math.round((100 * 5) / 24),
-    });
+  it('the issue’s own example: 5th of 59 is TOP 8.47%', () => {
+    const standing = big(4, 59);
+    expect(standing?.rank).toBe(5);
+    expect(formatTopPct(standing!.topPct!)).toBe('8.47');
+  });
+});
+
+describe('formatTopPct — at most two decimals, no machine zeros', () => {
+  it('keeps the digits that carry the claim', () => {
+    expect(formatTopPct((100 * 5) / 59)).toBe('8.47');
+    expect(formatTopPct(12.5)).toBe('12.5');
   });
 
-  it('falls back to the honest count when the player’s bucket is unknown', () => {
-    const b = buckets([30, 0, 0, 0]);
-    expect(histogramCopy('sentence', b, 30, null)).toEqual({ kind: 'others', others: 29 });
+  it('strips trailing zeros rather than printing 50.00', () => {
+    expect(formatTopPct(50)).toBe('50');
+    expect(formatTopPct(100)).toBe('100');
+    expect(formatTopPct(12.501)).toBe('12.5');
   });
 });
 
@@ -116,105 +130,5 @@ describe('shouldSubmitScore — the submit-once guard', () => {
     expect(shouldSubmitScore(false, false)).toBe(false);
     expect(shouldSubmitScore(true, true)).toBe(false);
     expect(shouldSubmitScore(false, true)).toBe(false);
-  });
-});
-
-// CONTRACT (#170, 2026-08-15): what the chart DRAWS. The API's bands run to the mode's
-// absolute ceiling, so the unreachable tail is merged into ONE final column labelled with
-// the last individually drawn band's max. Counts are only ever summed — never re-cut — and
-// the two legend labels are read off the bands themselves, never restated.
-describe('chartField — the drawn field and its two named ends', () => {
-  // The real sentence shape: 15 bands, the last three unreachable in practice.
-  const sentence = [3, 5, 8, 12, 18, 25, 40, 60, 100, 200, 500, 1_000, 5_000, 20_000, 127_783];
-  const band = (maxes: number[], counts: number[] = []) => {
-    let min = 1;
-    return maxes.map((max, i) => {
-      const range = { min, max, count: counts[i] ?? 0 };
-      min = max + 1;
-      return range;
-    });
-  };
-
-  it('merges the tail into one column and names the ends "3" and "+100"', () => {
-    const field = chartField(band(sentence), 0);
-    expect(field.counts).toHaveLength(MAX_CHART_BANDS);
-    expect(field.low).toBe('3');
-    expect(field.high).toBe('+100');
-  });
-
-  it('the merged column is the SUM of every band it swallowed — nothing is dropped', () => {
-    const counts = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
-    const field = chartField(band(sentence, counts), 0);
-    const tail = counts.slice(MAX_CHART_BANDS - 1).reduce((a, b) => a + b, 0);
-    expect(field.counts[MAX_CHART_BANDS - 1]).toBe(tail);
-    expect(field.counts.reduce((a, b) => a + b, 0)).toBe(counts.reduce((a, b) => a + b, 0));
-  });
-
-  it('a score anywhere in the tail lands on the column that now stands for it', () => {
-    expect(chartField(band(sentence), 12).you).toBe(MAX_CHART_BANDS - 1);
-    expect(chartField(band(sentence), 14).you).toBe(MAX_CHART_BANDS - 1);
-    // A band drawn in its own right keeps its own column.
-    expect(chartField(band(sentence), 4).you).toBe(4);
-    expect(chartField(band(sentence), null).you).toBeNull();
-  });
-
-  it('a field that already fits is drawn as-is, with no "+" on its end', () => {
-    const short = band([3, 5, 8], [1, 2, 3]);
-    const field = chartField(short, 1);
-    expect(field.counts).toEqual([1, 2, 3]);
-    expect(field.you).toBe(1);
-    expect(field.low).toBe('3');
-    expect(field.high).toBe('8');
-  });
-});
-
-// CONTRACT (#170, 2026-08-15): the FIELD IS ALWAYS THE SAME HEIGHT. Counts are normalized
-// against the field's own peak, so the tallest column reaches the top whatever the data —
-// four scores and four hundred draw the same shape — and the degenerate cases (one entry,
-// or none at all) give that single bar its full height rather than leaving a flat field.
-describe('chartUnits — the field is always the same height', () => {
-  const tallest = (u: number[]) => Math.max(...u);
-
-  it('the tallest column reaches the top, for any data', () => {
-    const fields: number[][] = [
-      [3],
-      [1, 1, 1],
-      [0, 0, 7, 0],
-      [2, 9, 21, 34, 27, 15, 8, 4, 2, 1],
-      [500, 1, 1],
-      [1, 1, 1, 1, 1, 1, 1, 1, 1, 999],
-    ];
-    for (const counts of fields) {
-      expect(tallest(chartUnits(counts, null))).toBe(MAX_COLUMN_UNITS);
-      expect(tallest(chartUnits(counts, 0))).toBe(MAX_COLUMN_UNITS);
-    }
-  });
-
-  it('ONE entry is the peak by definition, so its bar is full height', () => {
-    expect(chartUnits([0, 0, 1, 0], 2)).toEqual([0, 0, MAX_COLUMN_UNITS, 0]);
-    // …whoever it belongs to.
-    expect(chartUnits([0, 0, 1, 0], 0)).toEqual([1, 0, MAX_COLUMN_UNITS, 0]);
-  });
-
-  it('NO entries at all: the player’s marker is the field’s only entry, at full height', () => {
-    expect(chartUnits([0, 0, 0, 0], 1)).toEqual([0, MAX_COLUMN_UNITS, 0, 0]);
-  });
-
-  it('every non-empty band draws at least one brick, however small its share', () => {
-    const units = chartUnits([1000, 1, 0], null);
-    expect(units[0]).toBe(MAX_COLUMN_UNITS);
-    expect(units[1]).toBe(1);
-    expect(units[2]).toBe(0);
-  });
-
-  it('the player’s marker never inflates above what the population says', () => {
-    // A real crowd this player is not recorded in: one brick — visible, never a claim.
-    expect(chartUnits([40, 0, 5], 1)).toEqual([MAX_COLUMN_UNITS, 1, 1]);
-  });
-
-  it('no column is ever taller than the field', () => {
-    for (const counts of [[1, 2, 3], [0, 0, 0], [9, 9, 9, 9]]) {
-      for (const u of chartUnits(counts, 0)) expect(u).toBeLessThanOrEqual(MAX_COLUMN_UNITS);
-    }
   });
 });

@@ -5,7 +5,7 @@ import { prefersReducedMotion } from '../hooks/useScramble';
 import { shareText, shareUrl } from '../game/share';
 import type { ScorePlacement } from '../hooks/useScoreHistogram';
 import RunRuler, { rulerStagger } from './RunRuler';
-import ScoreChart from './ScoreChart';
+import ScoreRank from './ScoreRank';
 import SolvedCaption from './SolvedCaption';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import useShare from '../hooks/useShare';
@@ -21,7 +21,7 @@ import { SCORE_COUNT_MS } from './resultAnimation';
 //   PUZZLE — the GUESSED WORDS in the solved blue, popping in one by one (each still a
 //            button onto its own history line, with the ambient wave advertising the
 //            tap), and the SOURCE typed under them at its own small caption size.
-//   SCORE  — the named `<tries> TRIES` over its run ruler, the day's population chart,
+//   SCORE  — the named `<tries> TRIES` over its run ruler, the day's standing line,
 //            and SHARE, which belongs to it (user-decided 2026-08-14: sharing is what
 //            you do with a RESULT). The whole block sits on the screen's BOTTOM EDGE,
 //            which is what turns the seam between the two into real space rather than a
@@ -240,10 +240,9 @@ export default function SolvedScreen({
     };
   }, [animate, rulerSpanMs, reduceMotion, stageIn, rulerStartMs]);
 
-  // The population chart HEADS the score block since 2026-08-15, so it arrives WITH it —
-  // the reveal reads the way the stage is laid out, top to bottom, and a column that sits
-  // above the tally must not land after it. Its own internal beat still runs crowd-first,
-  // gold-after (see ScoreChart). The chart holds its layout slot from the start, so this
+  // The STANDING heads the score block since 2026-08-15, so it arrives WITH it — the
+  // reveal reads the way the stage is laid out, top to bottom, and a line sitting above
+  // the tally must not land after it. It holds its layout slot from the start, so this
   // changes when it appears, never where anything sits.
   const chartStart = scoreIn;
 
@@ -309,12 +308,12 @@ export default function SolvedScreen({
       {/* ---- the SCORE block, on the bottom edge: how the round went, and what you do
            with it. */}
       <div className={`solved-numbers${scoreIn ? ' in' : ''}`}>
-        {/* Where this run sits among the day's players (#170) — the crowd first, then
-            YOUR number and the run that made it, so SHARE ends up next to exactly what
-            the card it shares draws (user-decided 2026-08-15). Always mounted: the slot
-            reserves its footprint, so the chart arriving — or never arriving, on a silent
-            failure — moves nothing under it. */}
-        <ScoreChart
+        {/* Where this run stands among the day's players (#170) — the standing first,
+            then YOUR number and the run that made it, so SHARE ends up next to exactly
+            what the card it shares draws (user-decided 2026-08-15). Always mounted: the
+            slot reserves its footprint, so the line arriving — or never arriving, on a
+            silent failure — moves nothing under it. */}
+        <ScoreRank
           placement={placement}
           mode="sentence"
           lang={lang}

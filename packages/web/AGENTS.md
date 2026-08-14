@@ -1069,11 +1069,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
       `clamp(12px, 1.6vw, 15px)` gold attribution; it briefly led the stage typed big,
       and reads as what it has always been — the credit line beneath the puzzle's
       content. Only its ALIGNMENT follows the centred stage).
-    - **SCORE** (`.solved-numbers`) — the #170 population chart, then the named
+    - **SCORE** (`.solved-numbers`) — the #170 STANDING line, then the named
       `<tries> TRIES` headline over the run ruler, **then SHARE**, which belongs to this
       block (user-decided 2026-08-14, third pass: sharing is what you do with a RESULT).
-      **The chart leads and the score follows** (user-decided 2026-08-15): the crowd
-      first, then YOUR number and the run that made it, which puts SHARE directly under
+      **The standing leads and the score follows** (user-decided 2026-08-15): where you
+      placed, then YOUR number and the run that made it, which puts SHARE directly under
       exactly what the card it shares draws.
     - **The SEAM is SPACE, not a measured gap** (same decision): the SCORE block sits on
       the screen's BOTTOM EDGE and the PUZZLE block's `margin: auto 0` eats all the
@@ -1093,7 +1093,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     types once the last word lands, and the SCORE block arrives `CAPTION_LEAD_MS` (420ms)
     after that — the source's FIRST line, never its last character, so a long citation
     cannot hold the numbers back. Inside the block the beats keep reading top to bottom:
-    the CHART arrives WITH the block it now heads (`chartStart = scoreIn` — a column
+    the STANDING arrives WITH the block it now heads (`chartStart = scoreIn` — a line
     sitting above the tally must not land after it), the tally runs its
     `SCORE_COUNT_MS`, then the ruler shows and colorizes.
   - **Nothing that has landed ever moves:** both later blocks hold their layout box from
@@ -1254,9 +1254,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   opens the sequence immediately with `N` as the PREVIOUS value (`?streak=9` → `9→10`),
   suppresses the first-visit invitation, and synthesizes its visual week without mutating
   persisted rounds/solved days; production builds ignore the parameter.
-- **Solved-screen percentile histogram (#170, 2026-08-14):** both modes' result stacks show
-  where the finished score sits in the day's anonymous population (#169), between the mode's
-  own metrics and SHARE — the comparison story that replaced the removed LLM benchmark.
+- **Solved-screen STANDING (#170, 2026-08-14; the histogram it started as was retired
+  2026-08-15 — see below):** both modes' result stacks show where the finished score sits
+  in the day's anonymous population (#169), above the mode's own metrics and SHARE — the
+  comparison story that replaced the removed LLM benchmark.
   ONE rule for the round trip (`hooks/useScoreHistogram`): a FINISHED round that has not
   submitted POSTs its score once — carrying an invisible Turnstile token (`turnstile.ts`,
   the only module that knows Turnstile exists, the analytics.ts pattern; site key
@@ -1269,61 +1270,50 @@ it to the local store — see `packages/backend/AGENTS.md`).
   marked when the server ANSWERS (accepted or refused alike) and left unset on a
   transport/Turnstile failure so a later visit may retry — which is also what lets a Word
   run whose clock died with the tab closed submit on the revisit that finds it over. EVERY
-  failure is silent by decision: the solved screen simply shows no histogram, never an
-  error. **The chart is a field of QUANTIZED BRICK columns** (`components/ScoreChart`,
-  redesigned on user review 2026-08-14 — the first cut's smooth fractional-height bars and
-  its 8px min/max axis were "not as good as the rest of the app"): one column per range
-  the API returned (the backend owns the edges; never restate them), each column a stack
-  of whole 14×4 bricks, the anonymous
-  crowd in the census dim blue (a pinned COPY of the route drawing's `--unfound`, which is
-  scoped to `.route-frame` — the population is a field of players you have not met), the
-  player's band in the "you" GOLD, an empty band a 2px stub so the whole field reads even
-  when empty — an empty field with your gold tower on it IS the "you've just been early"
-  message. **THE FIELD IS ALWAYS THE SAME HEIGHT** (user-decided 2026-08-15,
-  `game/scores.ts` `chartUnits`, contract-tested): counts are normalized against the
-  field's OWN peak — never an absolute number of players — so the tallest column reaches
-  the top whatever the data, and a day with four scores draws the same shape as a day with
-  four hundred, which is what makes the shape readable at all. Any non-empty band draws at
-  least one brick, and no column ever exceeds `MAX_COLUMN_UNITS` (6). **The two degenerate
-  cases are what that rule is FOR:** ONE entry is the peak by definition, so it stands at
-  FULL height; and with NO entries at all the player's marker is the field's only entry
-  and gets the same full height, rather than a lone brick off the floor in a 34px box.
-  **The player's column is otherwise a MARKER, not a tally**: it always draws at least one
-  real brick, so a day whose recorded population does not contain you (a submission the
-  server refused, a GET that landed before your own write) still shows YOUR bar rather
-  than a grey stub where the gold belongs — but inside a real crowd it never inflates
-  itself above what the population says.
-  **The unreachable TAIL is merged into one `+N` column, and the field's two ends are
-  NAMED** (user-decided 2026-08-15, `game/scores.ts` `chartField`, contract-tested):
-  a sentence's last bands cover 1001..127783, which no player will ever occupy, so
-  drawing one column each spent half the field on permanently empty bands and left the
-  right end labelled with a meaningless number. At most `MAX_CHART_BANDS` (10) columns are
-  drawn; everything past the ninth is summed into the tenth, and the legend reads the
-  bands' own values — `3` and `+100` in sentence, `0` and `+150` in Word. This is a
-  RENDERING choice, not a restating of the edges (the root AGENTS.md rule): every count
-  still comes from the ranges the API returned, merging only ever ADDS them, and a score
-  anywhere in the tail lands on the column that now stands for it. Those two numbers are
-  the whole legend — the shape and the gold still carry the story.
-  Only the COPY adapts to N (`game/scores.ts` `histogramCopy`, contract-tested): total ≤ 1
-  → "first player today" (the one all-gold line), below `PERCENT_MIN_TOTAL` (25) → "you
-  and n others", above → "you beat x%" measured over the OTHER players with strictly-worse
-  buckets only (ties never claimed; worse = MORE tries in sentence, FEWER claims in word)
-  — uppercase, 10px muted, the value in the bar's own gold via the `{n}` split (ScoreChart
-  splits the localized line on the placeholder so the number can wear the colour without
-  the sentence being assembled in code; `scoreBeat`'s value arrives as "82%" so the sign
-  never separates). **The slot is fixed-height and ALWAYS mounted** (the `.word-rarities`
-  rule): the chart arriving — or never arriving — moves nothing under it, SHARE included
-  (verified: SHARE's box is pixel-identical across the beat). Its height is EXACTLY what
-  the plot + legend + copy measure (71px) — reserving a pixel more than that is a pixel
-  the shortest screen does not have: 9px of slack here was the whole of a 320×568
-  vertical overflow. **Arrival is the stack's
-  LAST beat**: after the ruler's colorize on the sentence's solved stage, after the rarity
-  breakdown's chips in Word mode's, the columns rise in left to right on `rung-in` (25ms
-  steps), the GOLD column lands after the whole field — the crowd first, then you — and
-  the copy speaks last. Reduced motion collapses the rises and keeps the delays;
-  rehydrated results render `.settled` and replay nothing. The hook still launches the
-  network round trip the moment the store reports the round finished, so the data is
-  waiting long before its beat.
+  failure is silent by decision: the solved screen simply shows no standing, never an
+  error. **What it shows is ONE LINE — the player's RANK** (`components/ScoreRank`,
+  user-decided 2026-08-15, replacing the brick histogram that replaced the first cut's
+  bars: "the histogram is actually ugly" — a field of bars asks to be decoded, where the
+  rank is the answer already given):
+
+  ```
+  RANK #5 OF 59   [ TOP 8.47% ]
+  ```
+
+  - **RANK is COMPETITION RANKING — everyone strictly ahead, plus one** (`game/scores.ts`
+    `scoreStanding`, contract-tested), so a whole band shares its rank. That is the only
+    honest number at bucket granularity — the API reports BANDS and never an order inside
+    one — and it is the convention every scoreboard already uses for a tie. Which
+    direction is "ahead" is the mode's: sentence counts tries (the bands BEFORE mine),
+    Word counts claims (the bands AFTER mine). The rank is clamped to the population, so
+    a stale read racing a write can never rank anyone past the field they stand in.
+  - **The RANK NUMBER is the headline**: 20px against the 10px words around it, in the
+    solved-word BLUE — the colour of what the round found. The words are `--muted`, and
+    the whole phrase hangs off ONE baseline (`.score-rank-text`), since centring 10px type
+    against a 20px number left it floating.
+  - **TOP is a FILLED BADGE** — gold ground, page-dark type, and the app's ONLY filled
+    chip, which is exactly why it carries weight. It has an EXPLICIT height with its ink
+    centred by flex: the pixel font overruns its own line box, so padding alone left the
+    glyph tops and tails outside the gold. (And never `calc(<length> + var(--text-shift))`
+    — that variable is a UNITLESS zero, which voids the whole declaration; the same trap
+    that silently zeroed `.word-input`'s padding.)
+  - **The badge appears only above `PERCENT_MIN_TOTAL` (25) recorded scores**: below that
+    the rank out of the count already says everything true, and a "TOP 33.33%" of three
+    players is false precision — the same threshold, and the same reasoning, the retired
+    adaptive copy line used. So the only player of the day simply reads `RANK #1 OF 1`.
+  - `formatTopPct` prints at most two decimals with trailing zeros stripped (`8.47`,
+    `12.5`, `50`): on a real population the leading digits are the whole claim, and
+    `50.00` reads as a machine talking.
+  - **The slot is fixed-height and ALWAYS mounted** (the `.word-rarities` rule): the line
+    arriving — or never arriving — moves nothing under it, SHARE included. It arrives on
+    the app's one `rung-in` gesture; a rehydrated result renders `.settled` and replays
+    nothing.
+  **REMOVED with it** (no-back-compat): the whole chart — `ScoreChart`, `chartField`,
+  `chartUnits`, `MAX_CHART_BANDS`, `MAX_COLUMN_UNITS`, the band-merging and its `+N`
+  legend, the `.score-field`/`.score-col`/`.score-brick`/`.score-stub`/`.score-plot`/
+  `.score-legend` CSS — and the N-adaptive copy line with it (`histogramCopy`,
+  `beatenCount`, `scoreFirst`/`scoreOther`/`scoreOthers`/`scoreBeat`): `TOP x%` and "you
+  beat x%" are the same claim inverted, and the rank says it once.
 - **The sentence game's one-time PLAY gate (user-decided 2026-08-11):** each mode explains
   ITS OWN rules before the first round, once — the tutorial teaches only the shared core
   concepts (semantic distance, word rarity). Word mode already had this by construction:

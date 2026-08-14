@@ -1525,125 +1525,66 @@ button * {
   line-height: 1;
   color: var(--fg);
 }
-/* ---- the percentile histogram (#170): the day's population on the solved screen. A
-   field of QUANTIZED BRICK columns, one per fixed score band (the ranges the API
-   returned — the backend owns the edges): the anonymous crowd in the census's dim blue
-   (a pinned copy of the route drawing's `--unfound`, under this surface's own meaning —
-   the population is a field of players you have not met), the player's own band in the
-   "you" GOLD (the route map's you-node grammar), and an empty band keeping a 2px stub so
-   the field's full width reads even when it is empty — an empty field with your gold
-   brick on it IS the "you've just been early" message. No axis, no legend: the shape and
-   the gold carry the story, and the ONE copy line under it makes the claim, its number in
-   the same gold as the bar it describes.
+/* ---- the day's STANDING (#170; user-decided 2026-08-15, replacing the brick histogram —
+   "the histogram is actually ugly"): ONE line saying where the player placed.
 
-   The SLOT is fixed-height and always mounted once the results are up (the
-   `.word-rarities` rule: hold the layout space while invisible), so the chart arriving —
-   or never arriving, on a silent failure — moves nothing around it. Bricks are whole
-   pixels on hard edges; nothing here draws a fractional height. */
+       RANK #5 OF 59   [ TOP 8.47% ]
+
+   The RANK NUMBER is the headline — twice the words around it and in the solved blue, the
+   colour of what the round found — and TOP is a filled STAMP beside it, gold with the
+   page's own background punched out of it, which is how an achievement reads here (no
+   other chip in the app is filled, which is exactly why this one carries weight). The
+   slot keeps a fixed height so the line's arrival moves nothing under it. */
 .score-slot {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: flex-end;
-  /* Exactly what the plot + its legend + the copy line measure (34 + 5 + 8 + 8 + 16):
-     the slot reserves the chart's footprint so its arrival moves nothing, and reserving
-     one pixel MORE than that is a pixel the shortest screen does not have — 9px of slack
-     here was the whole of a 320x568 overflow. */
-  height: 71px;
-}
-/* Field + its legend are ONE box, so the two end labels sit exactly on the outer columns
-   rather than on whatever width their own text happens to take. */
-.score-plot {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-.score-field {
-  display: flex;
-  align-items: flex-end;
   justify-content: center;
-  gap: 4px;
-  height: 34px; /* MAX_UNITS bricks of 4px + 2px seams */
-}
-/* The chart's ONLY numbers (user-decided 2026-08-15): what each end of the field is
-   worth — the best band's own ceiling, and the merged tail's `+N`. Small and muted: they
-   orient the field, they are not a readout. */
-.score-legend {
-  display: flex;
-  justify-content: space-between;
+  /* The badge is its OWN object beside the sentence, so it takes the wider seam; the
+     words and the number are one phrase and sit tighter (below). */
+  gap: 16px;
+  height: 34px;
+  margin: 0;
   font-family: var(--press);
-  font-size: 8px;
+}
+/* RANK #5 OF 59 reads as one line of type, so it hangs off ONE baseline — the number is
+   twice the height of the words, and centring them against it left them floating. */
+.score-rank-text {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.score-rank-label {
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--muted);
+}
+.score-rank-num {
+  font-size: 20px;
   line-height: 1;
   letter-spacing: 1px;
-  color: var(--muted);
+  color: var(--accent);
 }
-.score-col {
-  display: flex;
-  flex-direction: column-reverse; /* bricks stack from the ground up */
-  gap: 2px;
-  width: 14px;
-  opacity: 0;
-  /* The census colour (see the block comment): the route drawing scopes `--unfound` to
-     its own frame, so the value is pinned here rather than reached for. */
-  color: #3a4270;
-}
-.score-col.you {
-  color: var(--hole);
-}
-.score-brick {
-  height: 4px;
-  background: currentColor; /* one colour decision per column, the chip-square rule */
-}
-.score-stub {
-  height: 2px;
-  background: var(--surface-hover);
-}
-/* The arrival: columns rise in left to right on the app's one "list arriving" gesture
-   (`rung-in`), the gold column lands AFTER the whole field — the crowd first, then you —
-   and the copy line speaks last. Reduced motion collapses the rises via the global rule
-   and keeps the delays (the floating numbers' own degradation); a rehydrated result wears
-   `.settled` and replays nothing. */
-.score-col.in {
-  animation: rung-in 200ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
-  animation-delay: calc(var(--step, 0) * 25ms);
-}
-.score-col.you.in {
-  animation-delay: calc(var(--cols, 0) * 25ms + 160ms);
-}
-/* The legend belongs to the FIELD, so it arrives with the last of it. */
-.score-slot .score-legend {
-  animation: rung-in 200ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
-  animation-delay: calc(var(--cols, 0) * 25ms + 220ms);
-}
-.score-copy {
-  margin: 8px 0 0;
-  font-family: var(--press);
+/* The one FILLED badge in the app: gold ground, page-dark type — which is exactly why it
+   carries weight, since nothing else here is filled. Its height is EXPLICIT and the ink
+   is centred by flex: the pixel font overruns its own line box, so padding alone left the
+   glyph tops and tails outside the gold. (And never `calc(<len> + var(--text-shift))` —
+   that variable is a UNITLESS zero, which voids the whole declaration; the same trap that
+   silently zeroed `.word-input`'s padding.) */
+.score-top {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  background: var(--hole);
+  color: var(--bg);
   font-size: 10px;
-  line-height: 1.6;
+  line-height: 1;
   letter-spacing: 1px;
-  text-transform: uppercase;
-  color: var(--muted);
-  text-align: center;
-  opacity: 0;
 }
-.score-copy.in {
-  animation: rung-in 200ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
-  animation-delay: calc(var(--cols, 0) * 25ms + 400ms);
-}
-.score-copy strong {
-  font-weight: normal;
-  color: var(--hole);
-}
-/* Being first is the one all-gold line: there is no number to highlight, and the claim
-   is entirely about you. */
-.score-copy.gold {
-  color: var(--hole);
-}
-.score-slot.settled .score-col,
-.score-slot.settled .score-legend,
-.score-slot.settled .score-copy {
-  opacity: 1;
-  animation: none;
+/* The line arrives on the app's one "list arriving" gesture; a rehydrated result wears
+   `.settled` and replays nothing. */
+.score-slot.in {
+  animation: rung-in 220ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
 }
 
 /* Actions row: SHARE. */

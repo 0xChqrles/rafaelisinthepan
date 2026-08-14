@@ -8,7 +8,7 @@ import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import type { ScorePlacement } from '../hooks/useScoreHistogram';
 import useShare from '../hooks/useShare';
 import { RARITY_COLORS } from './rarity';
-import ScoreChart from './ScoreChart';
+import ScoreRank from './ScoreRank';
 import { wordShareText, wordShareUrl, wordShareScore } from '../game/share';
 import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 
@@ -172,10 +172,10 @@ export default function WordEndScreen({
         )}
       </span>
 
-      {/* Where this run sits among the day's players (#170). Always mounted: the slot
-          reserves its footprint, so the chart arriving — or never arriving, on a silent
+      {/* Where this run stands among the day's players (#170). Always mounted: the slot
+          reserves its footprint, so the line arriving — or never arriving, on a silent
           failure — moves nothing under it. */}
-      <ScoreChart
+      <ScoreRank
         placement={placement}
         mode="word"
         lang={lang}
