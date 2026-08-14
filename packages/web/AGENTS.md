@@ -1069,9 +1069,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
       `clamp(12px, 1.6vw, 15px)` gold attribution; it briefly led the stage typed big,
       and reads as what it has always been — the credit line beneath the puzzle's
       content. Only its ALIGNMENT follows the centred stage).
-    - **SCORE** (`.solved-numbers`) — the named `<tries> TRIES` headline over the run
-      ruler, the #170 population chart, **and SHARE**, which belongs to this block
-      (user-decided 2026-08-14, third pass: sharing is what you do with a RESULT).
+    - **SCORE** (`.solved-numbers`) — the #170 population chart, then the named
+      `<tries> TRIES` headline over the run ruler, **then SHARE**, which belongs to this
+      block (user-decided 2026-08-14, third pass: sharing is what you do with a RESULT).
+      **The chart leads and the score follows** (user-decided 2026-08-15): the crowd
+      first, then YOUR number and the run that made it, which puts SHARE directly under
+      exactly what the card it shares draws.
     - **The SEAM is SPACE, not a measured gap** (same decision): the SCORE block sits on
       the screen's BOTTOM EDGE and the PUZZLE block's `margin: auto 0` eats all the
       leftover height, centring it in what is left above. The taller the screen, the more
@@ -1089,8 +1092,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     is a long scale TRANSITION holding blurry frames for its whole length), the SOURCE
     types once the last word lands, and the SCORE block arrives `CAPTION_LEAD_MS` (420ms)
     after that — the source's FIRST line, never its last character, so a long citation
-    cannot hold the numbers back — its arrival starting the tally, then the ruler and the
-    chart on their existing beats.
+    cannot hold the numbers back. Inside the block the beats keep reading top to bottom:
+    the CHART arrives WITH the block it now heads (`chartStart = scoreIn` — a column
+    sitting above the tally must not land after it), the tally runs its
+    `SCORE_COUNT_MS`, then the ruler shows and colorizes.
   - **Nothing that has landed ever moves:** both later blocks hold their layout box from
     frame one (the source `visibility: hidden` — the retired prompt's own trick — the
     score block at `opacity: 0`), so the words keep the exact position they popped into
@@ -1274,7 +1279,21 @@ it to the local store — see `packages/backend/AGENTS.md`).
   scoped to `.route-frame` — the population is a field of players you have not met), the
   player's band in the "you" GOLD, an empty band a 2px stub so the whole field reads even
   when empty — an empty field with your gold tower on it IS the "you've just been early"
-  message. NO axis, no legend (show-don't-tell: the shape and the gold carry the story).
+  message. **The player's column is a MARKER, not a tally** (user-decided 2026-08-15): it
+  always draws at least one real brick, so a day whose recorded population does not
+  contain you (a submission the server refused, a GET that landed before your own write)
+  still shows YOUR bar rather than a grey stub where the gold belongs.
+  **The unreachable TAIL is merged into one `+N` column, and the field's two ends are
+  NAMED** (user-decided 2026-08-15, `game/scores.ts` `chartField`, contract-tested):
+  a sentence's last bands cover 1001..127783, which no player will ever occupy, so
+  drawing one column each spent half the field on permanently empty bands and left the
+  right end labelled with a meaningless number. At most `MAX_CHART_BANDS` (10) columns are
+  drawn; everything past the ninth is summed into the tenth, and the legend reads the
+  bands' own values — `3` and `+100` in sentence, `0` and `+150` in Word. This is a
+  RENDERING choice, not a restating of the edges (the root AGENTS.md rule): every count
+  still comes from the ranges the API returned, merging only ever ADDS them, and a score
+  anywhere in the tail lands on the column that now stands for it. Those two numbers are
+  the whole legend — the shape and the gold still carry the story.
   Only the COPY adapts to N (`game/scores.ts` `histogramCopy`, contract-tested): total ≤ 1
   → "first player today" (the one all-gold line), below `PERCENT_MIN_TOTAL` (25) → "you
   and n others", above → "you beat x%" measured over the OTHER players with strictly-worse
@@ -1284,7 +1303,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the sentence being assembled in code; `scoreBeat`'s value arrives as "82%" so the sign
   never separates). **The slot is fixed-height and ALWAYS mounted** (the `.word-rarities`
   rule): the chart arriving — or never arriving — moves nothing under it, SHARE included
-  (verified: SHARE's box is pixel-identical across the beat). **Arrival is the stack's
+  (verified: SHARE's box is pixel-identical across the beat). Its height is EXACTLY what
+  the plot + legend + copy measure (71px) — reserving a pixel more than that is a pixel
+  the shortest screen does not have: 9px of slack here was the whole of a 320×568
+  vertical overflow. **Arrival is the stack's
   LAST beat**: after the ruler's colorize on the sentence's solved stage, after the rarity
   breakdown's chips in Word mode's, the columns rise in left to right on `rung-in` (25ms
   steps), the GOLD column lands after the whole field — the crowd first, then you — and

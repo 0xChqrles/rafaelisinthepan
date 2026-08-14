@@ -1545,7 +1545,18 @@ button * {
   flex-direction: column;
   align-items: center;
   justify-content: flex-end;
-  height: 62px;
+  /* Exactly what the plot + its legend + the copy line measure (34 + 5 + 8 + 8 + 16):
+     the slot reserves the chart's footprint so its arrival moves nothing, and reserving
+     one pixel MORE than that is a pixel the shortest screen does not have — 9px of slack
+     here was the whole of a 320x568 overflow. */
+  height: 71px;
+}
+/* Field + its legend are ONE box, so the two end labels sit exactly on the outer columns
+   rather than on whatever width their own text happens to take. */
+.score-plot {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
 }
 .score-field {
   display: flex;
@@ -1553,6 +1564,18 @@ button * {
   justify-content: center;
   gap: 4px;
   height: 34px; /* MAX_UNITS bricks of 4px + 2px seams */
+}
+/* The chart's ONLY numbers (user-decided 2026-08-15): what each end of the field is
+   worth — the best band's own ceiling, and the merged tail's `+N`. Small and muted: they
+   orient the field, they are not a readout. */
+.score-legend {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--press);
+  font-size: 8px;
+  line-height: 1;
+  letter-spacing: 1px;
+  color: var(--muted);
 }
 .score-col {
   display: flex;
@@ -1587,8 +1610,13 @@ button * {
 .score-col.you.in {
   animation-delay: calc(var(--cols, 0) * 25ms + 160ms);
 }
+/* The legend belongs to the FIELD, so it arrives with the last of it. */
+.score-slot .score-legend {
+  animation: rung-in 200ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
+  animation-delay: calc(var(--cols, 0) * 25ms + 220ms);
+}
 .score-copy {
-  margin: 10px 0 0;
+  margin: 8px 0 0;
   font-family: var(--press);
   font-size: 10px;
   line-height: 1.6;
@@ -1612,6 +1640,7 @@ button * {
   color: var(--hole);
 }
 .score-slot.settled .score-col,
+.score-slot.settled .score-legend,
 .score-slot.settled .score-copy {
   opacity: 1;
   animation: none;

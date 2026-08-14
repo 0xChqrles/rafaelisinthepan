@@ -240,25 +240,12 @@ export default function SolvedScreen({
     };
   }, [animate, rulerSpanMs, reduceMotion, stageIn, rulerStartMs]);
 
-  // The population chart is the stack's LAST data beat (#170): it may begin arriving only
-  // once the ruler's colorize wave has finished — the player's own run first, the crowd
-  // after. The chart component holds its layout slot from the start, so this beat changes
-  // when it appears, never where anything sits.
-  const chartSpanMs = rulerStartMs + rulerSpanMs + NEUTRAL_HOLD_MS + 200;
-  const [chartStart, setChartStart] = useState(() => !animate);
-  useEffect(() => {
-    if (!animate) {
-      setChartStart(true);
-      return undefined;
-    }
-    if (!stageIn) return undefined;
-    if (reduceMotion) {
-      setChartStart(true);
-      return undefined;
-    }
-    const id = window.setTimeout(() => setChartStart(true), chartSpanMs);
-    return () => window.clearTimeout(id);
-  }, [animate, stageIn, reduceMotion, chartSpanMs]);
+  // The population chart HEADS the score block since 2026-08-15, so it arrives WITH it —
+  // the reveal reads the way the stage is laid out, top to bottom, and a column that sits
+  // above the tally must not land after it. Its own internal beat still runs crowd-first,
+  // gold-after (see ScoreChart). The chart holds its layout slot from the start, so this
+  // changes when it appears, never where anything sits.
+  const chartStart = scoreIn;
 
   // Delivery (native sheet / clipboard + the "COPIED" confirmation) is the shared hook's;
   // this screen only composes the sentence result's text.
@@ -322,6 +309,19 @@ export default function SolvedScreen({
       {/* ---- the SCORE block, on the bottom edge: how the round went, and what you do
            with it. */}
       <div className={`solved-numbers${scoreIn ? ' in' : ''}`}>
+        {/* Where this run sits among the day's players (#170) — the crowd first, then
+            YOUR number and the run that made it, so SHARE ends up next to exactly what
+            the card it shares draws (user-decided 2026-08-15). Always mounted: the slot
+            reserves its footprint, so the chart arriving — or never arriving, on a silent
+            failure — moves nothing under it. */}
+        <ScoreChart
+          placement={placement}
+          mode="sentence"
+          lang={lang}
+          animate={animate}
+          start={chartStart}
+        />
+
         {/* The primary sentence metric. The hidden final value reserves the count's width
             so its tally never moves the content below it. */}
         <span className="solved-score">
@@ -345,17 +345,6 @@ export default function SolvedScreen({
             colorized={rulerColorized}
           />
         </div>
-
-        {/* Where this run sits among the day's players (#170). Always mounted: the slot
-            reserves its footprint, so the chart arriving — or never arriving, on a silent
-            failure — moves nothing under it. */}
-        <ScoreChart
-          placement={placement}
-          mode="sentence"
-          lang={lang}
-          animate={animate}
-          start={chartStart}
-        />
 
         <div className="result-actions">
           <button

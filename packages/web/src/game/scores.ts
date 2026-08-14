@@ -69,3 +69,49 @@ export function histogramCopy(
 export function shouldSubmitScore(finished: boolean, submitted: boolean): boolean {
   return finished && !submitted;
 }
+
+// ---- what the CHART actually draws (user-decided 2026-08-15) --------------------------
+// The API's bands run to the mode's absolute ceiling — a sentence's last three cover
+// 1001..127783, which no player will ever occupy — so drawing one column each spent half
+// the field on bands that are permanently empty and left the right end labelled with a
+// number that means nothing. The web therefore MERGES the tail into one final band and
+// labels it `+<the last individually drawn band's max>`.
+//
+// This is a rendering choice, not a restating of the edges: every count still comes from
+// the ranges the API returned (the backend owns them), and merging only ever ADDS counts
+// together. Nothing here knows a bucket boundary — the labels are read off the bands.
+export const MAX_CHART_BANDS = 10;
+
+export interface ChartField {
+  // Counts to draw, left to right; the last one may be a merged tail.
+  counts: number[];
+  // The player's drawn column (their band, or the merged tail that swallowed it).
+  you: number | null;
+  // The two ends, named: the best band's own ceiling, and `+N` when a tail was merged.
+  low: string;
+  high: string;
+}
+
+export function chartField(
+  buckets: readonly ScoreHistogramBucket[],
+  bucket: number | null,
+): ChartField {
+  const low = String(buckets[0]?.max ?? 0);
+  if (buckets.length <= MAX_CHART_BANDS) {
+    return {
+      counts: buckets.map((b) => b.count),
+      you: bucket,
+      low,
+      high: String(buckets[buckets.length - 1]?.max ?? 0),
+    };
+  }
+  const drawn = buckets.slice(0, MAX_CHART_BANDS - 1);
+  const tail = buckets.slice(MAX_CHART_BANDS - 1);
+  return {
+    counts: [...drawn.map((b) => b.count), tail.reduce((n, b) => n + b.count, 0)],
+    // A score anywhere in the tail lands on the one column that now stands for it.
+    you: bucket === null ? null : Math.min(bucket, MAX_CHART_BANDS - 1),
+    low,
+    high: `+${drawn[drawn.length - 1].max}`,
+  };
+}

@@ -11,9 +11,11 @@
 import { describe, it, expect } from 'vitest';
 import type { ScoreHistogramBucket } from '@whippin/shared';
 import {
+  MAX_CHART_BANDS,
   PERCENT_MIN_TOTAL,
   beatenCount,
   bucketIndexOf,
+  chartField,
   histogramCopy,
   shouldSubmitScore,
 } from './scores';
@@ -112,5 +114,54 @@ describe('shouldSubmitScore — the submit-once guard', () => {
     expect(shouldSubmitScore(false, false)).toBe(false);
     expect(shouldSubmitScore(true, true)).toBe(false);
     expect(shouldSubmitScore(false, true)).toBe(false);
+  });
+});
+
+// CONTRACT (#170, 2026-08-15): what the chart DRAWS. The API's bands run to the mode's
+// absolute ceiling, so the unreachable tail is merged into ONE final column labelled with
+// the last individually drawn band's max. Counts are only ever summed — never re-cut — and
+// the two legend labels are read off the bands themselves, never restated.
+describe('chartField — the drawn field and its two named ends', () => {
+  // The real sentence shape: 15 bands, the last three unreachable in practice.
+  const sentence = [3, 5, 8, 12, 18, 25, 40, 60, 100, 200, 500, 1_000, 5_000, 20_000, 127_783];
+  const band = (maxes: number[], counts: number[] = []) => {
+    let min = 1;
+    return maxes.map((max, i) => {
+      const range = { min, max, count: counts[i] ?? 0 };
+      min = max + 1;
+      return range;
+    });
+  };
+
+  it('merges the tail into one column and names the ends "3" and "+100"', () => {
+    const field = chartField(band(sentence), 0);
+    expect(field.counts).toHaveLength(MAX_CHART_BANDS);
+    expect(field.low).toBe('3');
+    expect(field.high).toBe('+100');
+  });
+
+  it('the merged column is the SUM of every band it swallowed — nothing is dropped', () => {
+    const counts = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+    const field = chartField(band(sentence, counts), 0);
+    const tail = counts.slice(MAX_CHART_BANDS - 1).reduce((a, b) => a + b, 0);
+    expect(field.counts[MAX_CHART_BANDS - 1]).toBe(tail);
+    expect(field.counts.reduce((a, b) => a + b, 0)).toBe(counts.reduce((a, b) => a + b, 0));
+  });
+
+  it('a score anywhere in the tail lands on the column that now stands for it', () => {
+    expect(chartField(band(sentence), 12).you).toBe(MAX_CHART_BANDS - 1);
+    expect(chartField(band(sentence), 14).you).toBe(MAX_CHART_BANDS - 1);
+    // A band drawn in its own right keeps its own column.
+    expect(chartField(band(sentence), 4).you).toBe(4);
+    expect(chartField(band(sentence), null).you).toBeNull();
+  });
+
+  it('a field that already fits is drawn as-is, with no "+" on its end', () => {
+    const short = band([3, 5, 8], [1, 2, 3]);
+    const field = chartField(short, 1);
+    expect(field.counts).toEqual([1, 2, 3]);
+    expect(field.you).toBe(1);
+    expect(field.low).toBe('3');
+    expect(field.high).toBe('8');
   });
 });
