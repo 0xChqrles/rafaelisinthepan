@@ -5,8 +5,10 @@ import { prefersReducedMotion } from '../hooks/useScramble';
 import { t, srWordBreakdown } from '../i18n';
 import { RARITY_NAMES } from '../game/wordGame';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
+import type { ScorePlacement } from '../hooks/useScoreHistogram';
 import useShare from '../hooks/useShare';
 import { RARITY_COLORS } from './rarity';
+import ScoreChart from './ScoreChart';
 import { wordShareText, wordShareUrl, wordShareScore } from '../game/share';
 import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 
@@ -24,12 +26,16 @@ export default function WordEndScreen({
   dayNumber,
   lang,
   word,
+  placement = null,
   animate = true,
 }: {
   counts: readonly number[]; // claims per rarity grade, commonest first (ladder order)
   dayNumber: number;
   lang: string;
   word: string; // accented display form carried into the OG card
+  // The day's score population (#170), when the submit/fetch round trip landed. Null
+  // renders no chart and no message — the silent-degrade decision.
+  placement?: ScorePlacement | null;
   // A live run rises and tallies like the sentence result. Rehydrated runs render their
   // final state immediately, so revisiting a finished day never replays the celebration.
   animate?: boolean;
@@ -147,6 +153,10 @@ export default function WordEndScreen({
           </span>
         )}
       </span>
+
+      {/* Where this run sits among the day's players (#170) — rendered only when the
+          population actually came back; its absence is silent by decision. */}
+      {placement && <ScoreChart placement={placement} mode="word" lang={lang} />}
 
       <div className="result-actions">
         <button

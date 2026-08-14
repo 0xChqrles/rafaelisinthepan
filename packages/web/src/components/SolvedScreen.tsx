@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { dateForDayNumber } from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { shareText, shareUrl } from '../game/share';
+import type { ScorePlacement } from '../hooks/useScoreHistogram';
 import RunRuler, { rulerStagger } from './RunRuler';
+import ScoreChart from './ScoreChart';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import useShare from '../hooks/useShare';
 import { t } from '../i18n';
@@ -24,6 +26,7 @@ export default function SolvedScreen({
   solvedAt,
   dayNumber,
   lang,
+  placement = null,
   animate = true,
   startAnimation = true,
   onRisen,
@@ -33,6 +36,10 @@ export default function SolvedScreen({
   solvedAt?: (number | null)[]; // the player's solve moments (ruler ticks)
   dayNumber: number;
   lang: string; // packed into the share token (drives the link's click-through target)
+  // The day's score population (#170), when the submit/fetch round trip landed. Null —
+  // offline, rejected, over cap, unconfigured — renders NO chart and no message: the
+  // silent-degrade decision.
+  placement?: ScorePlacement | null;
   // Rehydrated solves render their final result immediately. Fresh solves animate, with
   // startAnimation acting as the source/streak gate while this component stays mounted.
   animate?: boolean;
@@ -170,6 +177,10 @@ export default function SolvedScreen({
           colorized={rulerColorized}
         />
       </div>
+
+      {/* Where this run sits among the day's players (#170) — rendered only when the
+          population actually came back; its absence is silent by decision. */}
+      {placement && <ScoreChart placement={placement} mode="sentence" lang={lang} />}
 
       <div className="result-actions">
         <button

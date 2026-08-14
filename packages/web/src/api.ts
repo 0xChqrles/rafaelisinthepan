@@ -4,7 +4,8 @@
 // and asks for that date's puzzle in ONE fetch. The server only serves dates within
 // a ±1-day clock-skew window of its own active day.
 
-import type { Puzzle, Word, WordPuzzle } from '@whippin/shared';
+import type { Puzzle, ScoreHistogram, Word, WordPuzzle } from '@whippin/shared';
+import type { Mode } from './langs';
 
 // Base URL of the backend, configured at build time via VITE_API_BASE_URL.
 // Trailing slashes are trimmed so callers can append paths cleanly. Empty when
@@ -153,4 +154,62 @@ export function parseWordPuzzle(data: unknown): WordPuzzle {
     throw new Error('malformed word puzzle: no "freq" on any entry (pre-#163 artifact)');
   }
   return data as unknown as WordPuzzle;
+}
+
+// The live score histogram (#169/#170): GET reads a day's population, POST records the
+// player's score and returns the population WITH it — one round trip on the happy path.
+// Unlike the puzzle route, `mode` is REQUIRED here.
+export function scoresUrl(lang: string, date: string, mode: Mode, base: string = apiBase()): string {
+  return `${requireApiBase(base)}/scores?lang=${encodeURIComponent(lang)}&date=${encodeURIComponent(
+    date,
+  )}&mode=${encodeURIComponent(mode)}`;
+}
+
+// Runtime shape check for the histogram response — the parsePuzzle contract: a truncated
+// or wrong-shaped body surfaces as a failure (silent, here), never as NaN bars.
+export function parseScoreHistogram(data: unknown): ScoreHistogram {
+  if (!isRecord(data)) throw new Error('malformed histogram: not an object');
+  const { buckets, total, bucket } = data;
+  if (typeof total !== 'number' || !Number.isInteger(total) || total < 0) {
+    throw new Error('malformed histogram: "total" must be a non-negative integer');
+  }
+  if (bucket !== null && (typeof bucket !== 'number' || !Number.isInteger(bucket))) {
+    throw new Error('malformed histogram: "bucket" must be an integer or null');
+  }
+  if (!Array.isArray(buckets) || buckets.length === 0) {
+    throw new Error('malformed histogram: "buckets" must be a non-empty array');
+  }
+  for (const b of buckets) {
+    if (
+      !isRecord(b) ||
+      typeof b.min !== 'number' ||
+      typeof b.max !== 'number' ||
+      typeof b.count !== 'number' ||
+      !Number.isInteger(b.count) ||
+      b.count < 0
+    ) {
+      throw new Error('malformed histogram: bad bucket entry');
+    }
+  }
+  return data as unknown as ScoreHistogram;
+}
+
+// Production POSTs cross CloudFront's OAC in front of the Lambda URL, which refuses an
+// unsigned body: the request must carry `x-amz-content-sha256`, the lowercase hex SHA-256
+// of the EXACT UTF-8 body bytes. Hash and send the same byte array — never reserialize
+// after hashing (the root AGENTS.md records this as a hard contract).
+export async function postScoreBody(
+  url: string,
+  body: { score: number; turnstileToken: string },
+): Promise<Response> {
+  const bytes = new TextEncoder().encode(JSON.stringify(body));
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  const hex = Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-amz-content-sha256': hex },
+    body: bytes,
+  });
 }

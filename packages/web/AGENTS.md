@@ -1188,6 +1188,30 @@ it to the local store — see `packages/backend/AGENTS.md`).
   opens the sequence immediately with `N` as the PREVIOUS value (`?streak=9` → `9→10`),
   suppresses the first-visit invitation, and synthesizes its visual week without mutating
   persisted rounds/solved days; production builds ignore the parameter.
+- **Solved-screen percentile histogram (#170, 2026-08-14):** both modes' result stacks show
+  where the finished score sits in the day's anonymous population (#169), between the mode's
+  own metrics and SHARE — the comparison story that replaced the removed LLM benchmark.
+  ONE rule for the round trip (`hooks/useScoreHistogram`): a FINISHED round that has not
+  submitted POSTs its score once — carrying an invisible Turnstile token (`turnstile.ts`,
+  the only module that knows Turnstile exists, the analytics.ts pattern; site key
+  `VITE_TURNSTILE_SITE_KEY`, .env.example ships Cloudflare's always-passing invisible TEST
+  key for local play, unset = submission silently disabled) and the `x-amz-content-sha256`
+  hash of the exact body bytes it sends (`api.postScoreBody` — the root AGENTS.md's OAC
+  contract) — and the POST's response IS the histogram (one round trip on the happy path);
+  a round already submitted GETs the read-only twin on revisits. The `scoreSubmitted` flag
+  persists ON the round (both round shapes, optional field — no store version bump), is
+  marked when the server ANSWERS (accepted or refused alike) and left unset on a
+  transport/Turnstile failure so a later visit may retry — which is also what lets a Word
+  run whose clock died with the tab closed submit on the revisit that finds it over. EVERY
+  failure is silent by decision: the solved screen simply shows no histogram, never an
+  error. The chart (`components/ScoreChart`) renders at ANY N — bars from the ranges the
+  API returned (the backend owns the edges; never restate them), the player's bucket in the
+  "you" GOLD, the field's two end values as the only axis — and only the COPY adapts to N
+  (`game/scores.ts` `histogramCopy`, contract-tested): total ≤ 1 → "first player today",
+  below `PERCENT_MIN_TOTAL` (25) → "you and n others", above → "you beat x%" measured over
+  the OTHER players with strictly-worse buckets only (ties never claimed; worse = MORE
+  tries in sentence, FEWER claims in word). The hook launches as soon as the store reports
+  the round finished, so the network runs behind the solving choreography.
 - **The sentence game's one-time PLAY gate (user-decided 2026-08-11):** each mode explains
   ITS OWN rules before the first round, once — the tutorial teaches only the shared core
   concepts (semantic distance, word rarity). Word mode already had this by construction:

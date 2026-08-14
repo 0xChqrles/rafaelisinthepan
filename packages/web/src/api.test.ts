@@ -10,7 +10,9 @@ import {
   wordPuzzleUrl,
   puzzleOutcome,
   parsePuzzle,
+  parseScoreHistogram,
   parseWordPuzzle,
+  scoresUrl,
 } from './api';
 
 describe('apiBase', () => {
@@ -319,5 +321,49 @@ describe('parseWordPuzzle (shape validation)', () => {
       ranks: { foret: { bois: { word: 'bois', rank: 12 } } },
     };
     expect(() => parseWordPuzzle(sentence)).toThrow(/word puzzle/);
+  });
+});
+
+// The live score endpoint (#169/#170): mode is REQUIRED on this route, and the response
+// is validated the way puzzles are — a wrong-shaped body must surface as a (silent)
+// failure, never as NaN bars on the solved screen.
+describe('scoresUrl', () => {
+  it('addresses the /scores route with lang, date and the REQUIRED mode', () => {
+    expect(scoresUrl('fr', '2026-08-14', 'sentence', 'https://api.example')).toBe(
+      'https://api.example/scores?lang=fr&date=2026-08-14&mode=sentence',
+    );
+    expect(scoresUrl('en', '2026-08-14', 'word', 'https://api.example')).toBe(
+      'https://api.example/scores?lang=en&date=2026-08-14&mode=word',
+    );
+  });
+
+  it('throws without a configured base (never a silent same-origin fetch)', () => {
+    expect(() => scoresUrl('fr', '2026-08-14', 'sentence', '')).toThrow(/VITE_API_BASE_URL/);
+  });
+});
+
+describe('parseScoreHistogram (shape validation)', () => {
+  const valid = () => ({
+    buckets: [
+      { min: 1, max: 3, count: 2 },
+      { min: 4, max: 5, count: 0 },
+    ],
+    total: 2,
+    bucket: 0,
+  });
+
+  it('accepts the POST shape (bucket set) and the GET shape (bucket null)', () => {
+    expect(parseScoreHistogram(valid()).total).toBe(2);
+    expect(parseScoreHistogram({ ...valid(), bucket: null }).bucket).toBeNull();
+  });
+
+  it('rejects non-objects, bad totals, bad buckets and bad bucket indexes', () => {
+    expect(() => parseScoreHistogram(null)).toThrow(/histogram/);
+    expect(() => parseScoreHistogram({ ...valid(), total: -1 })).toThrow(/total/);
+    expect(() => parseScoreHistogram({ ...valid(), total: 1.5 })).toThrow(/total/);
+    expect(() => parseScoreHistogram({ ...valid(), buckets: [] })).toThrow(/buckets/);
+    expect(() => parseScoreHistogram({ ...valid(), buckets: [{ min: 1, max: 3, count: -1 }] }))
+      .toThrow(/bucket/);
+    expect(() => parseScoreHistogram({ ...valid(), bucket: 'zero' })).toThrow(/bucket/);
   });
 });

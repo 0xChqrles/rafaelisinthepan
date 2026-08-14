@@ -4,6 +4,7 @@ import { fold, type WordPuzzle } from '@whippin/shared';
 import useVocab from '../hooks/useVocab';
 import { KB_EXIT_FALLBACK_MS } from './Game';
 import { useDeadlinePassed } from '../hooks/useCountdown';
+import useScoreHistogram from '../hooks/useScoreHistogram';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
 import {
   bonusSeconds,
@@ -127,6 +128,7 @@ function WordRound({
   const ensureWordRound = useGameStore((s) => s.ensureWordRound);
   const startWordRun = useGameStore((s) => s.startWordRun);
   const recordWordGuess = useGameStore((s) => s.recordWordGuess);
+  const markWordScoreSubmitted = useGameStore((s) => s.markWordScoreSubmitted);
 
   // Reconcile before paint, like the sentence round: a matching key playing the same
   // word rehydrates; a republished different word resets.
@@ -159,6 +161,20 @@ function WordRound({
   // the run is over; that is the clock's, above.
   const run = useMemo(() => replayWordRun(ranks, tried), [ranks, tried]);
   const score = run.claimed.length;
+
+  // The day's score population (#170): a run whose clock has died submits its claim count
+  // once — including a run that ended while the tab was closed, whose first submission
+  // happens on the revisit that finds it over — and the persisted scoreSubmitted flag
+  // turns every later visit into a read-only GET. Renders on the post-mortem only.
+  const placement = useScoreHistogram({
+    finished: ended,
+    submitted: live?.scoreSubmitted === true,
+    markSubmitted: markWordScoreSubmitted,
+    mode: 'word',
+    lang,
+    dayNumber,
+    score,
+  });
 
   // The claims broken down by grade, ladder order — what the end screen's share text, the
   // share token and the OG card all carry. Derived from the same replay as the score, so
@@ -544,6 +560,7 @@ function WordRound({
               dayNumber={dayNumber}
               lang={lang}
               word={puzzle.word.word}
+              placement={placement}
               animate={animateResults}
             />
           </div>

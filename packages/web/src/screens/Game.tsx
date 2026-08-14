@@ -11,6 +11,7 @@ import { computeProgress, guessKey } from '../game/scoring';
 import { replayRun, type RunReplay } from '../game/share';
 import { canExtend } from '../game/keyboard';
 import useVocab from '../hooks/useVocab';
+import useScoreHistogram from '../hooks/useScoreHistogram';
 import useToday from '../hooks/useToday';
 import { useGameStore, roundKeyForDay, holesMatchPuzzle } from '../state/gameStore';
 import Phrase from '../components/Phrase';
@@ -156,6 +157,7 @@ function Round({
   const improveHole = useGameStore((s) => s.improveHole);
   const syncProgress = useGameStore((s) => s.syncProgress);
   const recordSolve = useGameStore((s) => s.recordSolve);
+  const markScoreSubmitted = useGameStore((s) => s.markScoreSubmitted);
 
   // The client's active game day (local, DST-correct) — the streak's reference point. May
   // be dayNumber + 1 when an in-flight round is finished just past the 22:00 flip; the
@@ -238,6 +240,20 @@ function Round({
 
   const solved = holes.every((h) => h.rank === 0); // sentence discovered -> round over
   const allWordsResolved = solved && resolvedHoleIndices.size === holes.length;
+
+  // The day's score population (#170): a fresh solve POSTs this round's try count once
+  // (the persisted scoreSubmitted flag guards revisits, which GET instead), and the
+  // result renders on the solved screen only. Started as soon as the store reports the
+  // round solved, so the network round trip runs behind the solving choreography.
+  const placement = useScoreHistogram({
+    finished: solved,
+    submitted: live?.scoreSubmitted === true,
+    markSubmitted: markScoreSubmitted,
+    mode: 'sentence',
+    lang,
+    dayNumber,
+    score: guessCount,
+  });
   // The one-time instructions GATE (2026-08-11): the mode's own rules, stated ONCE ever
   // before the first sentence round — the phrase is on screen, but the keyboard and the
   // prompt hold back behind the instructions and PLAY. Word mode's gate
@@ -851,6 +867,7 @@ function Round({
             dayNumber={dayNumber}
             lang={lang}
             solvedAt={solvedAt}
+            placement={placement}
             animate={animateResults}
             startAnimation={!showStreakDialog && !deferResultsAnimation}
             onRisen={handleResultsRisen}

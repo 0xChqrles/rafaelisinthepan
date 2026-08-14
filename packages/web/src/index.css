@@ -1376,6 +1376,56 @@ button * {
   line-height: 1;
   color: var(--fg);
 }
+/* ---- the percentile histogram (#170): the day's population on the solved screen, one
+   bar per fixed score band (the ranges the API returned — the backend owns the edges).
+   The player's band wears the app's "you" GOLD (the route map's own grammar); every
+   band keeps a 2px stub at zero so the field's full width reads even when it is empty —
+   an empty chart with your bar marked IS the "you've just been early" message. The two
+   end values under it are the only axis: enough to orient the bands, no legend. */
+.score-chart {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  max-width: 340px; /* the run ruler's own column */
+}
+.score-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  width: 100%;
+  height: 44px;
+}
+.score-bar {
+  flex: 1 1 0;
+  height: max(calc(var(--h) * 100%), 2px);
+  background-color: var(--rail);
+  image-rendering: pixelated;
+}
+.score-bar.you {
+  background-color: var(--hole);
+  /* The player's own band must be visible even alone in an empty field. */
+  min-height: 6px;
+}
+.score-axis {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  font-family: var(--press);
+  font-size: 8px;
+  line-height: 1;
+  color: var(--muted);
+}
+.score-copy {
+  margin: 0;
+  font-family: var(--press);
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--muted);
+  text-align: center;
+}
+
 /* Actions row: SHARE. */
 .result-actions {
   display: flex;

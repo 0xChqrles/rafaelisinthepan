@@ -589,6 +589,52 @@ describe('syncProgress — cached per round for the selector badge', () => {
   });
 });
 
+// CONTRACT (#170): the submitted flag PERSISTS with its round, next to the solved state,
+// so a reload or a revisit can only ever read the histogram — never re-submit. One flag
+// per mode's round shape; both actions are idempotent and target their own active key.
+describe('score submission flags (#170) — markScoreSubmitted / markWordScoreSubmitted', () => {
+  it('marks the ACTIVE sentence round, once, and persists on the round itself', () => {
+    const { ensureRound, markScoreSubmitted } = useGameStore.getState();
+    ensureRound('d:5:fr', freshHoles());
+    expect(activeRound()?.scoreSubmitted).toBeUndefined();
+    markScoreSubmitted();
+    expect(activeRound()?.scoreSubmitted).toBe(true);
+    const before = useGameStore.getState().rounds;
+    markScoreSubmitted();
+    expect(useGameStore.getState().rounds).toBe(before); // idempotent — no churn
+  });
+
+  it('marks the ACTIVE word round without touching the sentence round', () => {
+    const { ensureRound, ensureWordRound, markWordScoreSubmitted } = useGameStore.getState();
+    ensureRound('d:5:fr', freshHoles());
+    ensureWordRound('w:5:fr', 'phare');
+    markWordScoreSubmitted();
+    const s = useGameStore.getState();
+    expect(s.wordRounds['w:5:fr'].scoreSubmitted).toBe(true);
+    expect(s.rounds['d:5:fr'].scoreSubmitted).toBeUndefined();
+  });
+
+  it('a round rehydrated under the same key keeps its flag (the revisit guard)', () => {
+    const { ensureRound, markScoreSubmitted } = useGameStore.getState();
+    ensureRound('d:5:fr', freshHoles());
+    markScoreSubmitted();
+    // The same puzzle reconciles again (a reload): the flag survives untouched.
+    useGameStore.getState().ensureRound('d:5:fr', freshHoles());
+    expect(activeRound()?.scoreSubmitted).toBe(true);
+    // A re-published different sentence resets the round — flag included.
+    const changed = freshHoles().map((h) => ({ ...h, secret: `${h.secret}-x` }));
+    useGameStore.getState().ensureRound('d:5:fr', changed);
+    expect(activeRound()?.scoreSubmitted).toBeUndefined();
+  });
+
+  it('is a no-op with no active round', () => {
+    const before = useGameStore.getState().rounds;
+    useGameStore.getState().markScoreSubmitted();
+    useGameStore.getState().markWordScoreSubmitted();
+    expect(useGameStore.getState().rounds).toBe(before);
+  });
+});
+
 describe('setLastLang — remembers the last valid language', () => {
   it('records a supported language and ignores anything else', () => {
     const { setLastLang } = useGameStore.getState();
