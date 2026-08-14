@@ -1039,9 +1039,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
     pixel-identical letter-boxed copy (same `.phrase`/`.word`/`.hole-group`/`.hole
     .resolved`/`.hole-letter` structure, so frame 0 matches to the pixel and the wrap
     points are the same wrap points), and every letter churns random glyphs on the
-    scramble's OWN 40ms tick, starting left to right 20ms apart, each for 2–5 frames
-    rolled ONCE at mount (a re-render can never re-roll a letter — the slash-flip rule),
-    then goes OUT. A dissolved letter keeps its box `visibility: hidden`
+    scramble's OWN 40ms tick, each for 2–5 frames, then goes OUT. **The erosion is
+    SCATTERED, and its length is a CONSTANT** (user-decided on review the same day,
+    superseding the first cut's 20ms left-to-right sweep, which read as a cursor deleting
+    the sentence): each letter draws its start uniformly from ONE fixed window
+    (`SPREAD_TICKS`, 720ms), so the order is random every time, "batches" fall out of the
+    uniform draw with no batching machinery, and a long sentence dissolves in exactly the
+    time a short one does — more letters simply go out per tick. Both dice are rolled
+    ONCE at mount (a re-render can never re-roll a letter — the slash-flip rule). A dissolved letter keeps its box `visibility: hidden`
     (`.hole-letter.gone`) — never an actual space, never removed — so the monospace
     advance holds every surviving letter exactly where it was: the sentence burns down IN
     PLACE, and nothing reflows until the whole area unmounts. The score watermark fades

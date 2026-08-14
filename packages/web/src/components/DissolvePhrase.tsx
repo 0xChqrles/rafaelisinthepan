@@ -2,12 +2,20 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { Hole as PuzzleHole } from '@whippin/shared';
 import { prefersReducedMotion, randomGlyphs } from '../hooks/useScramble';
 
-// The solved sentence's EXIT (user-decided 2026-08-14): once the solving beats have
-// played out, the sentence hands the screen to the result by dissolving through the
-// game's own word-transition language — each letter churns through random glyphs, then
-// goes out, left to right, until nothing is left. It is the slot-machine scramble run in
-// reverse: the same 40ms frame rate, the same random glyphs, but settling into ABSENCE
-// instead of into a word.
+// The solved sentence's EXIT (user-decided 2026-08-14; scattered on review the same
+// day): once the solving beats have played out, the sentence hands the screen to the
+// result by dissolving through the game's own word-transition language — each letter
+// churns through random glyphs, then goes out, until nothing is left. It is the
+// slot-machine scramble run in reverse: the same 40ms frame rate, the same random
+// glyphs, but settling into ABSENCE instead of into a word.
+//
+// The erosion is SCATTERED, not a wipe: each letter draws its start uniformly from ONE
+// fixed window, so the order is random every time (a first cut swept left to right,
+// which read as a cursor deleting the sentence rather than the sentence burning down —
+// the round-level wave scheduler's lesson, relearned). That single draw is also what
+// bounds the beat: the window is a constant, so a long sentence dissolves in exactly the
+// time a short one does — more letters just go out per tick, and "batches" fall out of
+// the uniform draw with no batching machinery at all.
 //
 // This component renders the resolved sentence with EXACTLY Phrase's structure and
 // classes (`.phrase`, `.word`, `.hole-group`, `.hole.resolved`, `.hole-letter`), so the
@@ -18,14 +26,14 @@ import { prefersReducedMotion, randomGlyphs } from '../hooks/useScramble';
 // reflow what remains. The sentence erodes IN PLACE; nothing moves until the parent
 // unmounts the whole area.
 
-// One letter starts this long after the letter before it (reading order) — the churn
-// travels the sentence the way the floating hits stagger across the holes.
-const STEP_MS = 20;
 // The scramble's own frame rate (useScramble's SCRAMBLE_TICK_MS): this is the same
 // churn, so it runs on the same clock.
 const TICK_MS = 40;
-// Each letter churns a random number of frames before going out — the randomness is what
-// makes the erosion read as the sentence burning down rather than as a wipe.
+// Every letter's start falls somewhere in this fixed window — the whole erosion's
+// length, independent of the sentence's. In ticks so a start is always a whole frame.
+const SPREAD_TICKS = 18; // 720ms
+// Each letter churns a random number of frames before going out — the second die that
+// keeps two letters starting together from ending together.
 const CHURN_MIN_TICKS = 2;
 const CHURN_MAX_TICKS = 5;
 // A breath after the last letter goes, so the empty stage registers before the result
@@ -60,22 +68,20 @@ export default function DissolvePhrase({
   puzzleHoles: PuzzleHole[];
   onDone: () => void;
 }) {
-  // The letter plan is rolled ONCE at mount (churn lengths are dice), so a re-render can
-  // never re-roll a letter mid-flight — the same rule that keeps a slash from flipping
-  // mid-swing.
+  // The letter plan is rolled ONCE at mount (both dice — start and churn length), so a
+  // re-render can never re-roll a letter mid-flight — the same rule that keeps a slash
+  // from flipping mid-swing.
   const tokens = useMemo<Token[]>(() => {
     const holeByPos = new Map(puzzleHoles.map((h) => [h.pos, h]));
-    let at = 0;
     const plan = (text: string): Letter[] =>
       Array.from(text).map((ch) => ({
         ch,
-        startTick: Math.round((at++ * STEP_MS) / TICK_MS),
+        startTick: Math.floor(Math.random() * SPREAD_TICKS),
         churnTicks:
           CHURN_MIN_TICKS + Math.floor(Math.random() * (CHURN_MAX_TICKS - CHURN_MIN_TICKS + 1)),
       }));
     return words.map((w, i) => {
       const space = i > 0;
-      if (space) at += 1; // the joining space paces the travel but never churns
       const hole = holeByPos.get(i);
       if (hole) {
         return {
