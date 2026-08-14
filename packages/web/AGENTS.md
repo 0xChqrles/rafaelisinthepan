@@ -1043,10 +1043,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     cursor deleting the sentence, per-letter scattered read as static — the word is the
     GAME's unit, and losing words one at a time reads as the round packing up its
     pieces): each word churns ALL its letters through random glyphs on the scramble's own
-    40ms tick for 3–7 frames, then goes out WHOLE — a hole's prefix/suffix churn and
+    40ms tick for 5–10 frames, then goes out WHOLE — a hole's prefix/suffix churn and
     leave with their word's group, on the group's one roll. **The order is SCATTERED and
-    the length is a CONSTANT (~1s all in)**: each word draws its start uniformly from ONE
-    fixed window (`SPREAD_TICKS`, 600ms), so the first words do not always go first,
+    the length is a CONSTANT (~2s all in — slowed from ~1s on review, "way too fast":
+    the exit should be watchable, not a blink)**: each word draws its start uniformly
+    from ONE fixed window (`SPREAD_TICKS`, 1200ms), so the first words do not always go first,
     "batches" fall out of the uniform draw with no batching machinery, and a long
     sentence dissolves in exactly the time a short one does — more words simply go out
     per tick. Both dice are rolled ONCE at mount (a re-render can never re-roll a word —

@@ -33,13 +33,16 @@ import { prefersReducedMotion, randomGlyphs } from '../hooks/useScramble';
 // churn, so it runs on the same clock.
 const TICK_MS = 40;
 // Every word's start falls somewhere in this fixed window — the erosion's length,
-// independent of the sentence's. In ticks so a start is always a whole frame.
-const SPREAD_TICKS = 15; // 600ms
+// independent of the sentence's. In ticks so a start is always a whole frame. Slowed on
+// review from 600ms ("way too fast"): the sentence is the player's last look at what
+// they rebuilt, and the exit should be watchable, not a blink.
+const SPREAD_TICKS = 30; // 1200ms
 // Each word churns a random number of frames before going out — the second die, which
-// keeps two words starting together from ending together. Window + longest churn + the
-// closing breath ≈ 1s, the beat's whole budget.
-const CHURN_MIN_TICKS = 3;
-const CHURN_MAX_TICKS = 7;
+// keeps two words starting together from ending together, long enough for a word's
+// flicker to register before it goes. Window + longest churn + the closing breath ≈ 2s,
+// the beat's whole budget.
+const CHURN_MIN_TICKS = 5;
+const CHURN_MAX_TICKS = 10;
 // A breath after the last word goes, so the empty stage registers before the result
 // builds on it.
 const DONE_HOLD_MS = 180;
