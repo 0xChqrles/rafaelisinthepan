@@ -21,9 +21,11 @@ import { SCORE_COUNT_MS } from './resultAnimation';
 //   PUZZLE — the GUESSED WORDS in the solved blue, popping in one by one (each still a
 //            button onto its own history line, with the ambient wave advertising the
 //            tap), and the SOURCE typed under them at its own small caption size.
-//   SCORE  — the named `<tries> TRIES` over its run ruler, then the day's population
-//            chart. SHARE stays parked on the bottom edge (the tutorial button's rule:
-//            the one action sits the page inset off the bottom, whatever is above it).
+//   SCORE  — the named `<tries> TRIES` over its run ruler, the day's population chart,
+//            and SHARE, which belongs to it (user-decided 2026-08-14: sharing is what
+//            you do with a RESULT). The whole block sits on the screen's BOTTOM EDGE,
+//            which is what turns the seam between the two into real space rather than a
+//            measured gap — the taller the screen, the more the split reads.
 //
 // The reveal reads the same way it is laid out, top to bottom, off ONE derived timeline:
 // every beat below is an absolute offset from the stage's arrival, so nothing waits on a
@@ -285,39 +287,41 @@ export default function SolvedScreen({
 
   return (
     <div className={`solved-stage${stageIn ? ' in' : ''}${animate ? '' : ' settled'}`}>
-      <div className="solved-stage-main">
-        {/* ---- the PUZZLE block: what the round was about. */}
-        <div className="solved-puzzle">
-          {/* The found words — the round's trophies, and still its buttons: each opens the
-              history line it walked, numbered as the ruler's ticks number them. They pop
-              in one by one; CSS counts them out off each word's own `--step`. */}
-          <div className="solved-words">
-            {words.map((entry) => (
-              <SolvedWord key={entry.number} entry={entry} shown={wordsIn} onExplore={onExplore} />
-            ))}
-          </div>
+      {/* ---- the PUZZLE block: what the round was about. Its auto margins take the
+           leftover height, which centres it above the score block and pins that block
+           to the bottom edge. */}
+      <div className="solved-puzzle">
+        {/* The found words — the round's trophies, and still its buttons: each opens the
+            history line it walked, numbered as the ruler's ticks number them. They pop
+            in one by one; CSS counts them out off each word's own `--step`. */}
+        <div className="solved-words">
           {words.map((entry) => (
-            <span key={entry.number} id={`solved-explore-${entry.number}`} className="sr-only">
-              {ariaHoleHistory(lang, entry.number)}
-            </span>
+            <SolvedWord key={entry.number} entry={entry} shown={wordsIn} onExplore={onExplore} />
           ))}
-
-          {/* The sentence's attribution, UNDER the words it belongs to and at its own
-              caption size — the small quote-style citation it has always been. A
-              source-less puzzle simply shows the words. */}
-          {hasSource && (
-            <div className={`solved-source${captionIn ? ' in' : ''}`}>
-              <SolvedCaption
-                source={source}
-                animate={animate && captionIn && !captionDone}
-                onComplete={finishCaption}
-              />
-            </div>
-          )}
         </div>
+        {words.map((entry) => (
+          <span key={entry.number} id={`solved-explore-${entry.number}`} className="sr-only">
+            {ariaHoleHistory(lang, entry.number)}
+          </span>
+        ))}
 
-        {/* ---- the SCORE block, across the seam: how the round went. */}
-        <div className={`solved-numbers${scoreIn ? ' in' : ''}`}>
+        {/* The sentence's attribution, UNDER the words it belongs to and at its own
+            caption size — the small quote-style citation it has always been. A
+            source-less puzzle simply shows the words. */}
+        {hasSource && (
+          <div className={`solved-source${captionIn ? ' in' : ''}`}>
+            <SolvedCaption
+              source={source}
+              animate={animate && captionIn && !captionDone}
+              onComplete={finishCaption}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* ---- the SCORE block, on the bottom edge: how the round went, and what you do
+           with it. */}
+      <div className={`solved-numbers${scoreIn ? ' in' : ''}`}>
         {/* The primary sentence metric. The hidden final value reserves the count's width
             so its tally never moves the content below it. */}
         <span className="solved-score">
@@ -352,17 +356,16 @@ export default function SolvedScreen({
           animate={animate}
           start={chartStart}
         />
-        </div>
-      </div>
 
-      <div className="result-actions">
-        <button
-          type="button"
-          className={`result-action${copied ? ' copied' : ''}`}
-          onClick={onShare}
-        >
-          {copied ? t(lang, 'copied') : t(lang, 'share')}
-        </button>
+        <div className="result-actions">
+          <button
+            type="button"
+            className={`result-action${copied ? ' copied' : ''}`}
+            onClick={onShare}
+          >
+            {copied ? t(lang, 'copied') : t(lang, 'share')}
+          </button>
+        </div>
       </div>
     </div>
   );

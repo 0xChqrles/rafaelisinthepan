@@ -1270,6 +1270,8 @@ button * {
   display: flex;
   flex-direction: column;
   align-items: center;
+  /* The seam's FLOOR only — see `.solved-puzzle`'s auto margins for the real thing. */
+  gap: clamp(28px, 5vh, 48px);
   opacity: 0;
   /* The stage rises the way the tray results always have (mirrored by resultAnimation). */
   transform: translateY(clamp(24px, 5vh, 44px));
@@ -1279,33 +1281,31 @@ button * {
   opacity: 1;
   transform: translateY(0);
 }
-.solved-stage-main {
-  margin: auto 0;
+.solved-puzzle,
+.solved-numbers {
   width: 100%;
   max-width: 680px; /* the keyboard's own cap — the result keeps the play column's width */
   display: flex;
   flex-direction: column;
   align-items: center;
-  /* THE SEAM (user-decided 2026-08-14): the one gap on this screen that is bigger than a
-     rhythm — it is what tells the PUZZLE block (what the round was about) from the SCORE
-     block (how it went). Roughly twice either block's internal gap, which is what makes it
-     read as a division rather than as more air. */
-  gap: clamp(34px, 6.5vh, 58px);
 }
-.solved-puzzle,
-.solved-numbers {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+/* THE SEAM is SPACE, not a measured gap (user-decided 2026-08-14, second pass): the SCORE
+   block sits on the screen's bottom edge and the PUZZLE block's auto margins eat all the
+   leftover height, centring it in what is left above. So the taller the screen, the more
+   the two blocks read as two — where a fixed gap gave the same 40-odd pixels on a phone
+   and on a desktop. The stage's own `gap` (below) is only the FLOOR, for a screen short
+   enough that there is no leftover height to hand out. */
+.solved-puzzle {
+  margin: auto 0;
+  gap: clamp(14px, 2.6vh, 22px);
 }
 /* The words and the credit line under them are ONE object: a tighter gap than the seam,
    so the citation reads as belonging to the words rather than as the next item down. */
-.solved-puzzle {
-  gap: clamp(14px, 2.6vh, 22px);
-}
 .solved-numbers {
   gap: clamp(18px, 3.4vh, 30px);
+  /* SHARE is part of this block (it is what you do with a RESULT), so the block carries
+     the page inset off the screen's bottom edge — the tutorial button's own rule. */
+  padding-bottom: 10px;
   opacity: 0;
   transform: translateY(10px);
   transition: opacity 0.25s ease-out, transform 0.25s ease-out;
@@ -1325,9 +1325,6 @@ button * {
 }
 .solved-stage .result-actions {
   width: 100%;
-  max-width: 680px;
-  /* The tutorial button's bottom-edge offset: the page inset is the margin below. */
-  padding: clamp(16px, 3vh, 28px) 0 10px;
 }
 /* The guessed words: the round's trophies in the solved blue, and still its buttons —
    each opens the history line it walked. Numbered as the ruler's ticks number them
@@ -2736,7 +2733,7 @@ button * {
   /* The solved stage's SHARE doesn't hug the 4px keyboard gap: unlike the keyboard it
      sits on the 14px page inset — the same thin frame on all three sides (decided
      2026-07-24; carried onto the stage 2026-08-14). +10px over the keyboard's 4px = 14px. */
-  .solved-stage .result-actions {
+  .solved-numbers {
     padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
   }
   /* Word mode's overlaid result shares the same 14px phone-bottom frame. */

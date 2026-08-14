@@ -1070,13 +1070,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
       and reads as what it has always been — the credit line beneath the puzzle's
       content. Only its ALIGNMENT follows the centred stage).
     - **SCORE** (`.solved-numbers`) — the named `<tries> TRIES` headline over the run
-      ruler, then the #170 population chart.
-    - **The SEAM is the one gap bigger than a rhythm** (`.solved-stage-main`'s
-      `clamp(34px, 6.5vh, 58px)`, ~2.5× either block's own gap — measured 43px against
-      17px at 375): a division, not more air.
-    SHARE stays parked on the BOTTOM edge (the tutorial button's rule: `margin: auto 0`
-    centers the main block, the action keeps the page inset below — +safe-area+10px on a
-    phone, the retired `.tray.tray-results` rule carried over).
+      ruler, the #170 population chart, **and SHARE**, which belongs to this block
+      (user-decided 2026-08-14, third pass: sharing is what you do with a RESULT).
+    - **The SEAM is SPACE, not a measured gap** (same decision): the SCORE block sits on
+      the screen's BOTTOM EDGE and the PUZZLE block's `margin: auto 0` eats all the
+      leftover height, centring it in what is left above. The taller the screen, the more
+      the two read as two — measured 33 / 99 / 175 / 202px at 320×568 / 375×667 / 390×844
+      / 1440×900, where the fixed gap it replaces gave the same ~43px everywhere. The
+      stage's own `gap` (`clamp(28px, 5vh, 48px)`) is only the FLOOR, for a screen too
+      short to have leftover height to hand out. The score block carries the page inset
+      off the bottom (+safe-area+10px on a phone — the retired `.tray.tray-results` rule,
+      now on the block that owns that edge).
   - **The reveal reads the way the stage is laid out, off ONE derived timeline** (every
     beat an absolute offset from the stage's arrival, so nothing waits on a signal that
     could be lost): the WORDS **pop in one by one, 200ms apart** (`solved-word-pop`, a
