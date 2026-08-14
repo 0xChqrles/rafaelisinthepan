@@ -1,52 +1,66 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { Hole as PuzzleHole } from '@whippin/shared';
-import { prefersReducedMotion, scrambleFrame, SCRAMBLE_MS } from '../hooks/useScramble';
+import { prefersReducedMotion, randomGlyphs } from '../hooks/useScramble';
 
-// The solved sentence's EXIT (user-decided 2026-08-14; word-sliced on review): once the
-// solving beats have played out, the sentence hands the screen to the result by playing
-// the game's OWN word-transition on every word — the slot-machine scramble (#102), with
-// the EMPTY STRING as the target. `scrambleFrame('', len, p)` is exactly the swap a hole
-// plays all round: the letters churn while the length interpolates down one letter at a
-// time, and the sentence re-wraps gradually around each shrinking word — the same
-// grammar, so the exit reads as one more transition, not a new effect.
+// The solved sentence's EXIT (user-decided 2026-08-14; re-sliced BY WORD on review the
+// same day): once the solving beats have played out, the sentence hands the screen to
+// the result by dissolving through the game's own word-transition language — WORD by
+// word, each one churning its letters through random glyphs, then going out whole, until
+// nothing is left. It is the slot-machine scramble run in reverse: the same 40ms frame
+// rate, the same random glyphs, but settling into ABSENCE instead of into a word. The
+// word is the unit because it is the GAME's unit — words are what the player guessed,
+// and the sentence losing them one at a time reads as the round packing up its pieces
+// (per-letter erosion was built first and read as noise: the sentence turned to static
+// everywhere at once instead of visibly losing words).
 //
-// WORDS are the unit, and each draws its start uniformly from ONE fixed window: the
-// order is random every time, "batches" of words fall out of the uniform draw with no
-// batching machinery, and the window being a constant is what bounds the beat — a long
-// sentence dissolves in exactly the time a short one does.
+// The order is SCATTERED, not a wipe: each word draws its start uniformly from ONE fixed
+// window, so the first words do not always go first (an earlier per-letter cut swept
+// left to right, which read as a cursor deleting the sentence). That single draw is also
+// what bounds the beat AND what makes "batches": the window is a constant (~1s all in,
+// whatever the sentence's length), and on a long sentence several words land on the same
+// tick and go out together — with no batching machinery at all.
 //
-// The first frame renders the resolved sentence with EXACTLY Phrase's structure and
-// classes (`.phrase`, `.word`, `.hole-group`, `.hole.resolved`, `.hole-word`,
-// `.hole-letter`), so the swap from the live Phrase to this one is pixel-identical —
-// same wrap, same colours, same shadows.
+// This component renders the resolved sentence with EXACTLY Phrase's structure and
+// classes (`.phrase`, `.word`, `.hole-group`, `.hole.resolved`, `.hole-letter`), so the
+// swap from the live Phrase to this one is pixel-identical on its first frame — same
+// wrap, same colours, same shadows. A dissolved word keeps its letter boxes with
+// `visibility: hidden` (`.gone`), never actual spaces: the pixel font is monospace, so
+// the advance is identical either way, and an invisible word can never collapse or
+// reflow what remains — the sentence keeps its global shape as it empties, right up to
+// the swap. Nothing moves until the parent unmounts the whole area.
 
-// The scramble's own frame rate (useScramble's SCRAMBLE_TICK_MS) and its own settle
-// length: this IS that animation, so it runs on that clock.
+// The scramble's own frame rate (useScramble's SCRAMBLE_TICK_MS): this is the same
+// churn, so it runs on the same clock.
 const TICK_MS = 40;
-const SETTLE_TICKS = Math.round(SCRAMBLE_MS / TICK_MS);
-// Every word's start falls somewhere in this fixed window — the erosion's spread,
-// independent of the sentence's length. In ticks so a start is always a whole frame.
-// Widened from 13 on user review ("disappears too fast"): with the scramble's own 650ms
-// settle after the last start, the whole exit now takes ~1.8s.
-const SPREAD_TICKS = 28; // 1120ms
+// Every word's start falls somewhere in this fixed window — the erosion's length,
+// independent of the sentence's. In ticks so a start is always a whole frame.
+const SPREAD_TICKS = 15; // 600ms
+// Each word churns a random number of frames before going out — the second die, which
+// keeps two words starting together from ending together. Window + longest churn + the
+// closing breath ≈ 1s, the beat's whole budget.
+const CHURN_MIN_TICKS = 3;
+const CHURN_MAX_TICKS = 7;
 // A breath after the last word goes, so the empty stage registers before the result
 // builds on it.
 const DONE_HOLD_MS = 180;
 
+// One word of the sentence — the dissolve's unit. A blanked word's display affixes (a
+// leading clitic like "t'", trailing punctuation) belong to their word's group on screen,
+// so they churn and go out WITH it, on the group's one roll.
 interface Token {
   key: number;
   // The joining space before this token (Phrase renders it outside the word span).
   space: boolean;
   secret: boolean;
-  // The token's display pieces — a plain word is one; a hole keeps its prefix / secret /
-  // suffix apart so each holds its own colour while it shrinks.
   prefix?: string;
-  word: string;
   suffix?: string;
-  // The tick this whole token starts scrambling out on (its pieces go together).
+  text: string;
+  // Ticks before this word starts churning, then how many churn frames it holds.
   startTick: number;
+  churnTicks: number;
 }
+
+type Phase = 'still' | 'churning' | 'gone';
 
 export default function DissolvePhrase({
   words,
@@ -57,48 +71,37 @@ export default function DissolvePhrase({
   puzzleHoles: PuzzleHole[];
   onDone: () => void;
 }) {
-  // The plan is rolled ONCE at mount, so a re-render can never re-roll a word
-  // mid-flight — the same rule that keeps a slash from flipping mid-swing.
+  // The word plan is rolled ONCE at mount (both dice — start and churn length), so a
+  // re-render can never re-roll a word mid-flight — the same rule that keeps a slash
+  // from flipping mid-swing.
   const tokens = useMemo<Token[]>(() => {
     const holeByPos = new Map(puzzleHoles.map((h) => [h.pos, h]));
     return words.map((w, i) => {
       const hole = holeByPos.get(i);
-      const startTick = Math.floor(Math.random() * SPREAD_TICKS);
-      return hole
-        ? {
-            key: i,
-            space: i > 0,
-            secret: true,
-            prefix: hole.prefix,
-            word: hole.secret.word,
-            suffix: hole.suffix,
-            startTick,
-          }
-        : { key: i, space: i > 0, secret: false, word: w, startTick };
+      return {
+        key: i,
+        space: i > 0,
+        secret: hole !== undefined,
+        prefix: hole?.prefix,
+        suffix: hole?.suffix,
+        text: hole ? hole.secret.word : w,
+        startTick: Math.floor(Math.random() * SPREAD_TICKS),
+        churnTicks:
+          CHURN_MIN_TICKS + Math.floor(Math.random() * (CHURN_MAX_TICKS - CHURN_MIN_TICKS + 1)),
+      };
     });
     // Static for the dissolve's lifetime: the sentence it erodes is the one it mounted with.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const lastTick = useMemo(
-    () => Math.max(0, ...tokens.map((t) => t.startTick + SETTLE_TICKS)),
+    () => Math.max(0, ...tokens.map((t) => t.startTick + t.churnTicks)),
     [tokens],
   );
 
   const [tick, setTick] = useState(0);
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
-
-  // The phrase sits vertically CENTERED in the play area, so a sentence that loses a
-  // wrap line mid-erosion would re-center — the surviving words jumping down each time a
-  // line empties. Pin the block to the height it mounted with (the full sentence — the
-  // first frame is untouched), measured once before paint: the words then erode inside a
-  // box that never moves, and the line-by-line reflow stays a HORIZONTAL story.
-  const phraseRef = useRef<HTMLParagraphElement>(null);
-  const [minHeight, setMinHeight] = useState<number | undefined>(undefined);
-  useLayoutEffect(() => {
-    setMinHeight(phraseRef.current?.getBoundingClientRect().height);
-  }, []);
 
   useEffect(() => {
     // Reduced motion: no churn, no erosion — the sentence simply yields the stage.
@@ -125,49 +128,43 @@ export default function DissolvePhrase({
     return () => window.clearTimeout(id);
   }, [tick, lastTick]);
 
-  // One piece's frame: the word-swap scramble toward '' — untouched before its token's
-  // start, gone past its settle. Letters render in Hole's own per-letter boxes, keyed by
-  // position, so churning frames replace glyphs in place.
-  const piece = (text: string, startTick: number) => {
-    const p = (tick - startTick) / SETTLE_TICKS;
-    const shown = p <= 0 ? text : scrambleFrame('', Array.from(text).length, p);
-    return Array.from(shown).map((ch, i) => (
-      <span key={i} className="hole-letter" style={{ '--i': i } as CSSProperties}>
-        {ch}
+  // One word's frame: itself, all letters churning together, or its invisible boxes.
+  const phaseOf = (t: Token): Phase => {
+    if (tick >= t.startTick + t.churnTicks) return 'gone';
+    return tick >= t.startTick ? 'churning' : 'still';
+  };
+  const letters = (text: string, phase: Phase) =>
+    Array.from(text).map((ch, i) => (
+      <span key={i} className={`hole-letter${phase === 'gone' ? ' gone' : ''}`}>
+        {phase === 'churning' ? randomGlyphs(1) : ch}
       </span>
     ));
-  };
 
   return (
     // Decorative from its first frame: the round is over, the solved announcement has
     // been spoken, and what erodes here is no longer content.
-    //
-    // Exactly Phrase's node structure — the joining space as a bare text node between
-    // the word spans — so the wrap points are the same wrap points; the spaces around a
-    // fully-gone word collapse, and the sentence closes up the way it always has around
-    // a shrinking word (#102).
-    <p
-      ref={phraseRef}
-      className="phrase"
-      style={minHeight !== undefined ? { minHeight } : undefined}
-      aria-hidden="true"
-    >
-      {tokens.map((t) => (
-        <Fragment key={t.key}>
-          {t.space ? ' ' : ''}
-          {t.secret ? (
-            <span className="hole-group">
-              {t.prefix && <span className="word">{piece(t.prefix, t.startTick)}</span>}
-              <span className="hole resolved">
-                <span className="hole-word">{piece(t.word, t.startTick)}</span>
+    <p className="phrase" aria-hidden="true">
+      {/* Exactly Phrase's node structure — the joining space as a bare text node between
+          the word spans — so the wrap points are the same wrap points. */}
+      {tokens.map((t) => {
+        const phase = phaseOf(t);
+        return (
+          <Fragment key={t.key}>
+            {t.space ? ' ' : ''}
+            {t.secret ? (
+              <span className="hole-group">
+                {t.prefix && <span className="word">{letters(t.prefix, phase)}</span>}
+                <span className="hole resolved">
+                  <span className="hole-word">{letters(t.text, phase)}</span>
+                </span>
+                {t.suffix && <span className="word">{letters(t.suffix, phase)}</span>}
               </span>
-              {t.suffix && <span className="word">{piece(t.suffix, t.startTick)}</span>}
-            </span>
-          ) : (
-            <span className="word">{piece(t.word, t.startTick)}</span>
-          )}
-        </Fragment>
-      ))}
+            ) : (
+              <span className="word">{letters(t.text, phase)}</span>
+            )}
+          </Fragment>
+        );
+      })}
     </p>
   );
 }
