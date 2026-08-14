@@ -580,6 +580,13 @@ button * {
   position: relative;
   width: 100%;
 }
+/* While the sentence dissolves (2026-08-14), its watermark fades with it: the count's
+   next appearance is the solved stage's own headline, and a big faint number outliving
+   the sentence it was printed behind would read as furniture left on an empty stage. */
+.phrase-anchor.dissolving .progress-background {
+  opacity: 0;
+  transition: opacity 900ms ease-out;
+}
 
 /* Bottom zone: the keyboard while playing, the solved results once solved. The height is
    FIXED to the keyboard's (#110: fixed, not a min — solved content a few px taller must
@@ -597,19 +604,14 @@ button * {
      last key row is never occluded (0 everywhere else). */
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
-/* Results in the tray (#110): anchored to the BOTTOM, so solved content taller than the
-   keyboard rises INTO the empty space above (with justify-content: center the
-   overflow would split and push the share action under the screen edge instead). */
-.tray.tray-results {
-  justify-content: flex-end;
-}
-/* Keyboard exit (#110): on a live solve the keyboard SLIDES DOWN out of the tray before
-   the results rise into the same fixed-height space (no reflow either way — .tray keeps
-   its min-height throughout). The wrapper exists only to carry this animation; its
-   flex/width mirror the tray so the keyboard centers exactly as it did unwrapped. The
-   tray clips ONLY while the drop plays (never in steady state, where clipping could
-   shave the bottom key row's focus outline). Reduced motion collapses the animation to
-   the instant swap via the global rule; animationend still fires, releasing the tray. */
+/* Keyboard exit (#110): on a live solve the keyboard SLIDES DOWN out of the tray (which
+   then sits empty under the dissolving sentence — since 2026-08-14 the sentence result
+   lives on the full-column .solved-stage, not in the tray). The wrapper exists only to
+   carry this animation; its flex/width mirror the tray so the keyboard centers exactly
+   as it did unwrapped. The tray clips ONLY while the drop plays (never in steady state,
+   where clipping could shave the bottom key row's focus outline). Reduced motion
+   collapses the animation to the instant swap via the global rule; animationend still
+   fires, releasing the tray. */
 .kb-exit {
   width: 100%;
   display: flex;
@@ -639,12 +641,11 @@ button * {
      PLAY 40px narrower than the tutorial's own button (measured before the fix). */
   padding: 0 0 10px;
 }
-/* The rules can outgrow the keyboard's footprint on a phone, so the gate takes the
-   solved results' own answer (`.tray.tray-results`): anchor to the tray's BOTTOM and let
-   the extra height rise upward — into the sentence game's open play area, or word
-   mode's open window — never below the screen, where it put the button out of reach. The
-   tray's height never changes, so the button still swaps the keyboard in without moving
-   the content above. */
+/* The rules can outgrow the keyboard's footprint on a phone, so the gate anchors to the
+   tray's BOTTOM and lets the extra height rise upward — into the sentence game's open
+   play area, or word mode's open window — never below the screen, where it put the
+   button out of reach. The tray's height never changes, so the button still swaps the
+   keyboard in without moving the content above. */
 .tray.tray-gate {
   justify-content: flex-end;
 }
@@ -924,6 +925,13 @@ button * {
 .hole-letter {
   display: inline-block;
 }
+/* A DISSOLVED letter (DissolvePhrase, 2026-08-14): the sentence's exit erodes letters
+   into absence, but the box stays — invisible, never removed and never an actual space —
+   so the pixel font's fixed advance keeps every surviving letter exactly where it was.
+   The sentence burns down in place; nothing reflows until the whole area unmounts. */
+.hole-letter.gone {
+  visibility: hidden;
+}
 /* The wave (#129): a hole ripples its letters, up then down in sequence. EVERY hole runs its
    own clock (Hole.tsx, 3–10s re-rolled per wave), so several words can be mid-wave at once —
    a single ripple travelling around the sentence reads as a cursor pointing somewhere, where
@@ -932,7 +940,8 @@ button * {
    numbers handed down from Hole so the JS that ends the wave and the CSS that draws it
    cannot disagree. */
 .hole-word.wave .hole-letter,
-.word-subject-text.wave .hole-letter {
+.word-subject-text.wave .hole-letter,
+.solved-word-text.wave .hole-letter {
   animation: hole-wave var(--wave-dur, 300ms) ease-in-out calc(var(--i) * var(--wave-step, 40ms));
 }
 @keyframes hole-wave {
@@ -1080,16 +1089,8 @@ button * {
 .prompt-zone > * {
   grid-area: 1 / 1;
 }
-.input-area.retired,
-.caption-slot.pending {
+.input-area.retired {
   visibility: hidden;
-}
-/* The caption centers vertically in whatever height the zone settles on (usually the
-   input row's, the taller of the two). */
-.caption-slot {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
 }
 
 /* --- input area --- */
@@ -1213,19 +1214,20 @@ button * {
    shifts), and the RESULTS take over the keyboard's footprint (.solved-results in .tray).
 */
 
-/* Caption: a quote-style citation under the reconstructed sentence, left-aligned to it.
-   Its height is natural — the .prompt-zone overlay (not a reserved min-height) is what
-   keeps the sentence still through the input→citation swap. */
+/* Caption: the quote-style citation, the solved stage's OPENING line since the
+   2026-08-14 redesign — centered and sized up, because the dissolved sentence handed it
+   the room. The kind tag stays the small blue chip over the attribution's gold. */
 .solved-caption {
   width: 100%;
   display: flex;
   flex-direction: column;
-  align-items: start;
-  gap: 10px;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
 }
 .solved-kind {
   font-family: var(--press);
-  font-size: 10px;
+  font-size: 12px;
   color: var(--accent);
   letter-spacing: 2px;
   text-transform: uppercase;
@@ -1234,8 +1236,9 @@ button * {
 .solved-attribution {
   margin: 0;
   font-family: var(--press);
-  font-size: clamp(12px, 1.6vw, 15px);
-  color: var(--hole); /* gold, tying it to the solved (gold) sentence above */
+  font-size: clamp(14px, 2.4vw, 18px);
+  line-height: 1.7;
+  color: var(--hole); /* gold — the colour of what the player holds */
   letter-spacing: 1px;
   padding-top: var(--text-shift);
 }
@@ -1252,9 +1255,102 @@ button * {
   animation: blink 0.55s steps(1) infinite;
 }
 
-/* Sentence result: one stable hierarchy in the keyboard's footprint at every viewport —
-   tries, the reconstruction trajectory, result action, then the optional AI ranking.
-   Player progression is deliberately outside this layout in .streak-dialog. */
+/* ---- the SOLVED STAGE (user-decided 2026-08-14): the sentence dissolves, and the
+   result takes the whole column the play area and tray used to split. Top to bottom:
+   the source (typed big), the guessed words (each still the history tap), the named
+   score over its run ruler, the population chart, and SHARE parked on the bottom edge —
+   the tutorial button's rule, so the one action sits the page inset off the bottom
+   whatever the content above it does. The main block centers in the leftover space via
+   its own auto margins (never justify-content, which would split the overflow). */
+.solved-stage {
+  flex: 1 1 auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  opacity: 0;
+  /* The stage rises the way the tray results always have (mirrored by resultAnimation). */
+  transform: translateY(clamp(24px, 5vh, 44px));
+  transition: opacity 0.25s ease-out, transform 0.25s ease-out;
+}
+.solved-stage.in {
+  opacity: 1;
+  transform: translateY(0);
+}
+.solved-stage-main {
+  margin: auto 0;
+  width: 100%;
+  max-width: 680px; /* the keyboard's own cap — the result keeps the play column's width */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(18px, 3.4vh, 30px);
+}
+.solved-stage .result-actions {
+  width: 100%;
+  max-width: 680px;
+  /* The tutorial button's bottom-edge offset: the page inset is the margin below. */
+  padding: clamp(16px, 3vh, 28px) 0 10px;
+}
+/* The guessed words: the round's trophies in the solved blue, and still its buttons —
+   each opens the history line it walked. Numbered as the ruler's ticks number them
+   (1..3, distinct secrets in sentence order), the number a small muted chip riding the
+   word the way a rank exponent rides a hole's. */
+.solved-words {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: baseline;
+  gap: 10px clamp(20px, 4.5vw, 40px);
+}
+.solved-word {
+  font-family: var(--vt);
+  font-size: clamp(26px, 6vw, 36px);
+  line-height: 1.2;
+  letter-spacing: 0;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  color: var(--accent);
+  cursor: pointer;
+  white-space: nowrap;
+  text-shadow: 2px 2px 0 black;
+  -webkit-tap-highlight-color: transparent;
+  opacity: 0;
+}
+/* The words arrive on the app's one "list arriving" gesture, left to right. */
+.solved-word.in {
+  animation: rung-in 200ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
+  animation-delay: calc(var(--step, 0) * 90ms);
+}
+/* The global `button *` flattening would strip the phrase's drop shadow here too. */
+.solved-word,
+.solved-word * {
+  text-shadow: 2px 2px 0 black;
+}
+/* The app's one interaction language: brighten on hover/press. */
+.solved-word:hover,
+.solved-word:active {
+  filter: brightness(1.35);
+}
+.solved-word-num {
+  font-family: var(--press);
+  font-size: 10px;
+  color: var(--muted);
+  margin-right: 7px;
+  vertical-align: super;
+}
+/* A rehydrated result replays nothing — the words are simply there (the score chart's
+   own settled rule). */
+.solved-stage.settled .solved-word {
+  opacity: 1;
+  animation: none;
+}
+
+/* Word mode's result: one stable hierarchy in the keyboard's footprint at every viewport
+   (the sentence result lived here too until the 2026-08-14 solved stage above took the
+   whole column). Player progression is deliberately outside this layout in .streak-dialog. */
 .solved-results {
   display: flex;
   flex-direction: column;
@@ -2581,13 +2677,13 @@ button * {
     min-height: calc(100dvh - 20px);
     margin-bottom: -24px;
   }
-  /* The solved results DON'T hug the 4px keyboard gap: unlike the keyboard they sit on
-     the 14px page inset — the same thin frame on all three sides (decided 2026-07-24).
-     +10px over the keyboard's 4px = 14px. */
-  .tray.tray-results {
+  /* The solved stage's SHARE doesn't hug the 4px keyboard gap: unlike the keyboard it
+     sits on the 14px page inset — the same thin frame on all three sides (decided
+     2026-07-24; carried onto the stage 2026-08-14). +10px over the keyboard's 4px = 14px. */
+  .solved-stage .result-actions {
     padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
   }
-  /* Word mode's overlaid result shares the sentence tray's 14px phone-bottom frame. */
+  /* Word mode's overlaid result shares the same 14px phone-bottom frame. */
   .game.word-game .word-footer-result {
     padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
   }

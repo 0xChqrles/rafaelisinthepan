@@ -27,45 +27,30 @@ function typedLine(chars: string[], shown: number, cursor: boolean) {
   );
 }
 
-// The solved sentence's attribution (issue #8), shown under the reconstructed phrase in
-// place of the input — a quote-style citation from the optional literary metadata (#5):
-// a kind tag and "— Author, Work". A fresh solve types the source after the streak screen;
-// every final character is present but hidden from frame one so line wrapping is stable.
-// The underscore occupies the next character's reserved slot, then disappears before the
-// result stack starts. Rehydrated solves render the complete source immediately.
+// The solved sentence's attribution (issue #8), the solved stage's opening line since the
+// 2026-08-14 redesign — a quote-style citation from the optional literary metadata (#5):
+// a kind tag and "— Author, Work", typed big at the top of the result the dissolved
+// sentence handed the screen to. Every final character is present but hidden from frame
+// one so line wrapping is stable; the underscore occupies the next character's reserved
+// slot. Rehydrated solves render the complete source immediately.
 //
-// `masked` is what lets the caption be MOUNTED for the whole round (it reserves the prompt
-// zone's height, so the input→citation swap never moves the sentence) without the citation
-// being READABLE before the solve: an unsolved round would otherwise carry "— Victor Hugo,
-// Les Misérables" in the DOM, one DevTools panel away, and the author of the sentence you
-// are reconstructing is a hint. Every non-space glyph is replaced; the citation is set in
-// the pixel font (monospace) and the spaces — its only wrap opportunities — are kept, so
-// the mask lays out to exactly the box the real text will.
-const MASK_CHAR = 'M';
-const veil = (text: string, masked: boolean) =>
-  masked ? text.replace(/\S/gu, MASK_CHAR) : text;
-
+// (The `masked` veil died with the redesign: the caption used to be MOUNTED for the whole
+// round to reserve the prompt zone's height, which is what put the author of an unsolved
+// sentence one DevTools panel away. It now mounts only WITH the solved stage, so there is
+// no unsolved DOM for the citation to leak into.)
 export default function SolvedCaption({
   source,
   animate = false,
-  masked = false,
   onComplete,
 }: {
   source?: Source;
   animate?: boolean;
-  masked?: boolean;
   onComplete?: () => void;
 }) {
   const attribution = [source?.author, source?.work].filter(Boolean).join(', ');
   const attributionText = attribution ? `— ${attribution}` : '';
-  const kindChars = useMemo(
-    () => Array.from(veil(source?.kind ?? '', masked)),
-    [source?.kind, masked],
-  );
-  const attributionChars = useMemo(
-    () => Array.from(veil(attributionText, masked)),
-    [attributionText, masked],
-  );
+  const kindChars = useMemo(() => Array.from(source?.kind ?? ''), [source?.kind]);
+  const attributionChars = useMemo(() => Array.from(attributionText), [attributionText]);
   const total = kindChars.length + attributionChars.length;
   const reduceMotion = prefersReducedMotion();
   const [shown, setShown] = useState(() => (animate && !reduceMotion ? 0 : total));
@@ -131,8 +116,7 @@ export default function SolvedCaption({
   const showCursor = animate && !reduceMotion && total > 0;
   const kindCursor = showCursor && (typingKind || attributionChars.length === 0);
   const attributionCursor = showCursor && !typingKind && attributionChars.length > 0;
-  // Empty while masked, so the sr-only mirror can never carry the citation either.
-  const accessibleText = masked ? '' : [source?.kind, attributionText].filter(Boolean).join('. ');
+  const accessibleText = [source?.kind, attributionText].filter(Boolean).join('. ');
 
   return (
     <div className="solved-caption">

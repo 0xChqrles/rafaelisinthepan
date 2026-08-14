@@ -1,90 +1,175 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { dateForDayNumber } from '@whippin/shared';
+import type { CSSProperties } from 'react';
+import { dateForDayNumber, type Source } from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { shareText, shareUrl } from '../game/share';
 import type { ScorePlacement } from '../hooks/useScoreHistogram';
 import RunRuler, { rulerStagger } from './RunRuler';
 import ScoreChart from './ScoreChart';
+import SolvedCaption from './SolvedCaption';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import useShare from '../hooks/useShare';
-import { t } from '../i18n';
+import { ariaHoleHistory, t } from '../i18n';
 import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 
-// Reveal choreography (this component mounts after the last hole has settled): the result
-// stack rises in, the score tallies, then the neutral run ruler colorizes in try order.
+// The sentence result, redesigned as the WHOLE screen (user-decided 2026-08-14): the
+// dissolved sentence hands over the full play column, and the result reads top to
+// bottom — the SOURCE (typed big, now that it has the room), the GUESSED WORDS in the
+// solved blue (each still a button onto its own history line — the same tap the holes
+// carried, with the same ambient wave advertising it), the named score over its run
+// ruler, the day's population chart, and SHARE parked on the bottom edge (the tutorial
+// button's rule: the one action sits the page inset off the bottom, whatever the content
+// above it does).
+//
+// The reveal is LAYERED, not chained: the stage rises once, the source types at its own
+// pace while the words rung-in beneath it, the score tallies, the ruler colorizes, and
+// the chart keeps its own last beat — so the whole result is standing in about the same
+// time the old tray took, with no beat waiting on a slower one it does not depend on.
+// Rehydrated solves render the final frame immediately and replay nothing.
 const NEUTRAL_HOLD_MS = 55;
+const WORDS_IN_STEP_MS = 90;
 
-// Sentence-specific results only. The tray is the SAME compact stack at every breakpoint
-// and on every surface (decided 2026-07-25): the named `<tries> TRIES` headline, the
-// PLAYER's run ruler, then SHARE. Player-level
-// progression lives in StreakDialog, outside this layout. It belongs to a REAL solved day:
-// the onboarding tutorial used to borrow it with a null `dayNumber` and PLAY in SHARE's
-// slot, and stopped because a lesson has no score to show.
+// The ambient wave (#129), restated for the solved words the way WordSubject restates it
+// for the day's word: importing half of Hole's internals is not sharing it. Same numbers,
+// same CSS animation, same "several clocks, wide random band" reasoning.
+const WAVE_LETTER_MS = 300;
+const WAVE_STEP_MS = 40;
+const WAVE_MIN_MS = 3_000;
+const WAVE_MAX_MS = 10_000;
+
+interface SolvedWordEntry {
+  word: string; // the accented secret, as the sentence displayed it
+  holeIndex: number; // the FIRST hole carrying this secret (the history modal's key)
+  number: number; // 1-based distinct-secret position — the ruler ticks' own numbering
+}
+
+// One guessed word: a button named by its own content (the hole-button rule — the word IS
+// what it shows), described by the sr hint, opening the history line it walked. Its
+// letters ripple on the word's own clock while the screen is idle — the same affordance
+// the holes wore, saying the same thing: this word can be tapped.
+function SolvedWord({
+  entry,
+  shown,
+  onExplore,
+}: {
+  entry: SolvedWordEntry;
+  shown: boolean;
+  onExplore: (holeIndex: number) => void;
+}) {
+  const letters = Array.from(entry.word);
+  const [waving, setWaving] = useState(false);
+  const [waveCount, setWaveCount] = useState(0);
+
+  useEffect(() => {
+    if (!shown || waving || prefersReducedMotion()) return undefined;
+    const id = window.setTimeout(
+      () => setWaving(true),
+      WAVE_MIN_MS + Math.random() * (WAVE_MAX_MS - WAVE_MIN_MS),
+    );
+    return () => window.clearTimeout(id);
+  }, [shown, waving, waveCount]);
+
+  useEffect(() => {
+    if (!waving) return undefined;
+    const id = window.setTimeout(() => {
+      setWaving(false);
+      setWaveCount((n) => n + 1);
+    }, WAVE_LETTER_MS + Math.max(0, letters.length - 1) * WAVE_STEP_MS);
+    return () => window.clearTimeout(id);
+    // Letter count is fixed for the word's lifetime; read when the wave starts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [waving]);
+
+  const waveStyle: CSSProperties & Record<string, string> = {};
+  if (waving) {
+    waveStyle['--wave-dur'] = `${WAVE_LETTER_MS}ms`;
+    waveStyle['--wave-step'] = `${WAVE_STEP_MS}ms`;
+  }
+
+  return (
+    <button
+      type="button"
+      className={`solved-word${shown ? ' in' : ''}`}
+      style={{ '--step': entry.number - 1 } as CSSProperties}
+      aria-describedby={`solved-explore-${entry.number}`}
+      data-hole-explore={entry.holeIndex}
+      onClick={() => onExplore(entry.holeIndex)}
+    >
+      <span className="solved-word-num" aria-hidden="true">
+        {entry.number}
+      </span>
+      {/* The wrap is what the history modal zooms out of (Game.openHistory measures it),
+          exactly as it measured a hole's word. */}
+      <span className="hole-word-wrap">
+        <span className={`solved-word-text${waving ? ' wave' : ''}`} style={waveStyle}>
+          {letters.map((ch, i) => (
+            <span key={i} className="hole-letter" style={{ '--i': i } as CSSProperties}>
+              {ch}
+            </span>
+          ))}
+        </span>
+      </span>
+    </button>
+  );
+}
+
 export default function SolvedScreen({
   guessCount,
   trajectory,
   solvedAt,
   dayNumber,
   lang,
+  source,
+  words,
+  onExplore,
   placement = null,
   animate = true,
-  startAnimation = true,
-  onRisen,
 }: {
   guessCount: number;
   trajectory: number[]; // reconstruction % after each counted guess (one per try)
   solvedAt?: (number | null)[]; // the player's solve moments (ruler ticks)
   dayNumber: number;
   lang: string; // packed into the share token (drives the link's click-through target)
-  // The day's score population (#170), when the submit/fetch round trip landed. Null —
-  // offline, rejected, over cap, unconfigured — renders NO chart and no message: the
-  // silent-degrade decision.
+  source?: Source;
+  words: SolvedWordEntry[]; // distinct secrets, sentence order — the ruler ticks' numbering
+  onExplore: (holeIndex: number) => void;
+  // The day's score population (#170); null renders the reserved empty slot (silent).
   placement?: ScorePlacement | null;
-  // Rehydrated solves render their final result immediately. Fresh solves animate, with
-  // startAnimation acting as the source/streak gate while this component stays mounted.
+  // Rehydrated solves render their final result immediately and replay nothing.
   animate?: boolean;
-  // A live active-day solve holds this at false while StreakDialog is open. No-dialog
-  // paths (archive, tutorial, and rehydration) use the immediate default.
-  startAnimation?: boolean;
-  // Fires once when the animated rise-in has finished — the solved sequence's cue for
-  // the SOURCE typewriter, its LAST beat (decided 2026-07-24). Never fires when
-  // animate is false (rehydrated solves set their source states directly).
-  onRisen?: () => void;
 }) {
   const reduceMotion = prefersReducedMotion();
   const n = Math.max(trajectory.length, 1);
   const stagger = rulerStagger(n, reduceMotion);
   const rulerStartMs = RESULTS_IN_MS + SCORE_COUNT_MS;
 
-  // Bring the whole result into place first, then tally its headline number. Keeping the
-  // component mounted but inert lets the streak dialog own the screen without allowing
-  // this sequence to finish invisibly underneath it.
-  const [resultsIn, setResultsIn] = useState(() => !animate);
+  // The stage rises once; every block's own beat hangs off this one flip.
+  const [stageIn, setStageIn] = useState(() => !animate);
   useEffect(() => {
     if (!animate) {
-      setResultsIn(true);
+      setStageIn(true);
       return undefined;
     }
-    if (!startAnimation) return undefined;
-    const raf = requestAnimationFrame(() => setResultsIn(true));
+    const raf = requestAnimationFrame(() => setStageIn(true));
     return () => cancelAnimationFrame(raf);
-  }, [animate, startAnimation]);
+  }, [animate]);
 
-  // Report the rise done exactly once per mount, RESULTS_IN_MS after it starts (at once
-  // under reduced motion — the transition is collapsed but the beat still advances).
-  const onRisenRef = useRef(onRisen);
+  // The source types from the stage's arrival; its completion only retires its own
+  // cursor (nothing downstream waits on it — the beats are layered, not chained).
+  const [captionDone, setCaptionDone] = useState(false);
+  const finishCaption = useCallback(() => setCaptionDone(true), []);
+
+  // The guessed words rung-in as the source starts speaking above them.
+  const [wordsIn, setWordsIn] = useState(() => !animate);
   useEffect(() => {
-    onRisenRef.current = onRisen;
-  });
-  useEffect(() => {
-    if (!animate || !resultsIn) return undefined;
-    if (reduceMotion) {
-      onRisenRef.current?.();
+    if (!animate) {
+      setWordsIn(true);
       return undefined;
     }
-    const id = window.setTimeout(() => onRisenRef.current?.(), RESULTS_IN_MS);
+    if (!stageIn) return undefined;
+    const id = window.setTimeout(() => setWordsIn(true), reduceMotion ? 0 : RESULTS_IN_MS);
     return () => window.clearTimeout(id);
-  }, [animate, resultsIn, reduceMotion]);
+  }, [animate, reduceMotion, stageIn]);
 
   const [countTarget, setCountTarget] = useState(() => (animate ? 0 : guessCount));
   useEffect(() => {
@@ -92,10 +177,10 @@ export default function SolvedScreen({
       setCountTarget(guessCount);
       return undefined;
     }
-    if (!resultsIn) return undefined;
+    if (!stageIn) return undefined;
     const id = window.setTimeout(() => setCountTarget(guessCount), reduceMotion ? 0 : RESULTS_IN_MS);
     return () => window.clearTimeout(id);
-  }, [animate, resultsIn, guessCount, reduceMotion]);
+  }, [animate, stageIn, guessCount, reduceMotion]);
   const shownScore = useAnimatedNumber(countTarget, !animate || reduceMotion ? 1 : SCORE_COUNT_MS);
 
   // After the score lands, reveal the neutral cells and then color them in try order.
@@ -110,7 +195,7 @@ export default function SolvedScreen({
       setRulerColorized(true);
       return undefined;
     }
-    if (!resultsIn) return undefined;
+    if (!stageIn) return undefined;
     if (reduceMotion) {
       setRulerShown(true);
       setRulerColorized(true);
@@ -125,7 +210,7 @@ export default function SolvedScreen({
       window.clearTimeout(show);
       window.clearTimeout(color);
     };
-  }, [animate, rulerSpanMs, reduceMotion, resultsIn, rulerStartMs]);
+  }, [animate, rulerSpanMs, reduceMotion, stageIn, rulerStartMs]);
 
   // The population chart is the stack's LAST data beat (#170): it may begin arriving only
   // once the ruler's colorize wave has finished — the player's own run first, the crowd
@@ -138,14 +223,14 @@ export default function SolvedScreen({
       setChartStart(true);
       return undefined;
     }
-    if (!resultsIn) return undefined;
+    if (!stageIn) return undefined;
     if (reduceMotion) {
       setChartStart(true);
       return undefined;
     }
     const id = window.setTimeout(() => setChartStart(true), chartSpanMs);
     return () => window.clearTimeout(id);
-  }, [animate, resultsIn, reduceMotion, chartSpanMs]);
+  }, [animate, stageIn, reduceMotion, chartSpanMs]);
 
   // Delivery (native sheet / clipboard + the "COPIED" confirmation) is the shared hook's;
   // this screen only composes the sentence result's text.
@@ -173,41 +258,66 @@ export default function SolvedScreen({
   }, [lang, dayNumber, guessCount, trajectory, solvedAt, share]);
 
   return (
-    <div className={`solved-results${resultsIn ? ' in' : ''}`}>
-      {/* The primary sentence metric. The hidden final value reserves the count's width
-          so its tally never moves the content below it. */}
-      <span className="solved-score">
-        <span className="solved-score-num">
-          <span className="solved-score-ghost" aria-hidden="true">
-            {guessCount}
-          </span>
-          <span className="solved-score-live">{Math.round(shownScore)}</span>
-        </span>
-        <span className="solved-score-unit">{t(lang, guessCount === 1 ? 'try' : 'tries')}</span>
-      </span>
+    <div className={`solved-stage${stageIn ? ' in' : ''}${animate ? '' : ' settled'}`}>
+      <div className="solved-stage-main">
+        {/* The sentence's attribution, typed big now that the sentence has yielded the
+            room. A source-less puzzle simply leads with the words. */}
+        {(source?.kind || source?.author || source?.work) && (
+          <SolvedCaption
+            source={source}
+            animate={animate && stageIn && !captionDone}
+            onComplete={finishCaption}
+          />
+        )}
 
-      {/* The player's own run ruler — the share card draws this same ruler from the v2
-          token. */}
-      <div className="run-ruler-frame" aria-hidden="true">
-        <RunRuler
-          trajectory={trajectory}
-          solvedAt={solvedAt ?? []}
-          stagger={stagger}
-          shown={rulerShown}
-          colorized={rulerColorized}
+        {/* The three found words — the round's trophies, and still its buttons: each opens
+            the history line it walked, numbered as the ruler's ticks number them. */}
+        <div className="solved-words">
+          {words.map((entry) => (
+            <SolvedWord key={entry.number} entry={entry} shown={wordsIn} onExplore={onExplore} />
+          ))}
+        </div>
+        {words.map((entry) => (
+          <span key={entry.number} id={`solved-explore-${entry.number}`} className="sr-only">
+            {ariaHoleHistory(lang, entry.number)}
+          </span>
+        ))}
+
+        {/* The primary sentence metric. The hidden final value reserves the count's width
+            so its tally never moves the content below it. */}
+        <span className="solved-score">
+          <span className="solved-score-num">
+            <span className="solved-score-ghost" aria-hidden="true">
+              {guessCount}
+            </span>
+            <span className="solved-score-live">{Math.round(shownScore)}</span>
+          </span>
+          <span className="solved-score-unit">{t(lang, guessCount === 1 ? 'try' : 'tries')}</span>
+        </span>
+
+        {/* The player's own run ruler — the share card draws this same ruler from the v2
+            token. */}
+        <div className="run-ruler-frame" aria-hidden="true">
+          <RunRuler
+            trajectory={trajectory}
+            solvedAt={solvedAt ?? []}
+            stagger={stagger}
+            shown={rulerShown}
+            colorized={rulerColorized}
+          />
+        </div>
+
+        {/* Where this run sits among the day's players (#170). Always mounted: the slot
+            reserves its footprint, so the chart arriving — or never arriving, on a silent
+            failure — moves nothing under it. */}
+        <ScoreChart
+          placement={placement}
+          mode="sentence"
+          lang={lang}
+          animate={animate}
+          start={chartStart}
         />
       </div>
-
-      {/* Where this run sits among the day's players (#170). Always mounted: the slot
-          reserves its footprint, so the chart arriving — or never arriving, on a silent
-          failure — moves nothing under it. */}
-      <ScoreChart
-        placement={placement}
-        mode="sentence"
-        lang={lang}
-        animate={animate}
-        start={chartStart}
-      />
 
       <div className="result-actions">
         <button
