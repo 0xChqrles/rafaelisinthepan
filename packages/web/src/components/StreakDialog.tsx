@@ -92,6 +92,13 @@ export default function StreakDialog({
   const dialogRef = useRef<HTMLDialogElement>(null);
   const dismissingRef = useRef(false);
   const mountedRef = useRef(false);
+  // A touch before the sequence has finished FAST-FORWARDS it to its final frame
+  // (user-decided 2026-08-14, replacing "every dismissal input is ignored until the hint
+  // lands"): the player who has seen the celebration before should not have to sit
+  // through it. The effect below assigns the real skip each run — it needs the run's own
+  // closure (the pending waits, the `skipped` flag) — and the handlers only ever call
+  // through this ref.
+  const skipRef = useRef<() => void>(() => {});
   const titleId = useId();
   const reducedMotion = useReducedMotion();
 
@@ -198,6 +205,7 @@ export default function StreakDialog({
     }
 
     let cancelled = false;
+    let skipped = false;
     const waitIds = new Set<number>();
     const resolveWaits = new Set<() => void>();
     const immediate = Boolean(reducedMotion);
@@ -213,7 +221,47 @@ export default function StreakDialog({
         id = window.setTimeout(finish, immediate ? 0 : ms);
         waitIds.add(id);
       });
-    const stopped = () => cancelled;
+    const stopped = () => cancelled || skipped;
+    const controllers = [
+      screenApi,
+      numberApi,
+      flameApi,
+      weekApi,
+      dayFlipApi,
+      dayWaveApi,
+      hintApi,
+      oldDigitApi,
+      newDigitApi,
+    ];
+
+    // FAST-FORWARD: abort the sequence exactly the way the teardown does (force every
+    // pending wait, stop every spring — the chain then falls through its own `stopped()`
+    // checks), and snap each controller to the final frame the sequence was heading for —
+    // the same values the reduced-motion branch writes. One extra state flip arms
+    // dismissal, so the NEXT touch is the tap-anywhere the hint advertises.
+    skipRef.current = () => {
+      if (stopped() || dismissingRef.current) return;
+      skipped = true;
+      waitIds.forEach((id) => window.clearTimeout(id));
+      resolveWaits.forEach((resolve) => resolve());
+      controllers.forEach((api) => api.stop());
+      screenApi.set({ opacity: 1 });
+      numberApi.set({ opacity: 1 });
+      flameApi.set({ opacity: 1, y: 0, scale: 1 });
+      weekApi.set({ opacity: 1, y: 0 });
+      dayFlipApi.set({ lift: 0, flip: 1 });
+      dayWaveApi.set(() => ({ scale: 1 }));
+      hintApi.set({ opacity: 1, y: 0, scale: 1 });
+      oldDigitApi.set((index) =>
+        slots[index].changed ? { opacity: 0, y: 1.05 } : { opacity: 1, y: 0 },
+      );
+      newDigitApi.set(() => ({ opacity: 1, y: 0 }));
+      setNumberFinal(true);
+      setFlameShown(true);
+      setDayComplete(true);
+      setHintMounted(true);
+      setDismissEnabled(true);
+    };
 
     // StrictMode replays effects in development, so reset every controller before opening.
     setNumberFinal(false);
@@ -400,8 +448,8 @@ export default function StreakDialog({
 
       // 7. The final beat: the ending hint ("tap/click anywhere" — pure what-to-do; the
       // game is done, so there is nothing to name as a why). Nothing here is focusable;
-      // dismissal arms only after its entrance has fully landed (click/tap/any key — see
-      // the dialog), so the instruction is visible before it can be acted on.
+      // dismissal arms once its entrance has fully landed — or immediately on a
+      // fast-forward (see skipRef), which jumps straight to this armed final frame.
       setHintMounted(true);
       await wait(20);
       if (stopped()) return;
@@ -420,17 +468,10 @@ export default function StreakDialog({
 
     return () => {
       cancelled = true;
+      skipRef.current = () => {};
       waitIds.forEach((id) => window.clearTimeout(id));
       resolveWaits.forEach((resolve) => resolve());
-      screenApi.stop();
-      numberApi.stop();
-      flameApi.stop();
-      weekApi.stop();
-      dayFlipApi.stop();
-      dayWaveApi.stop();
-      hintApi.stop();
-      oldDigitApi.stop();
-      newDigitApi.stop();
+      controllers.forEach((api) => api.stop());
       if (dialog.open) dialog.close();
     };
   }, [
@@ -461,36 +502,41 @@ export default function StreakDialog({
       onCancel={(event) => {
         event.preventDefault();
         if (dismissEnabled) dismiss();
+        else skipRef.current();
       }}
       onKeyDown={(event) => {
         // The modal has nothing focusable, so swallow Tab entirely — it can neither move
         // focus into the inert game behind nor onto a hint that would show a ring. Once the
         // ending hint is fully visible, any OTHER key dismisses (the arcade "press any
-        // key" idiom, the keyboard twin of tap-anywhere); before that, every dismissal
-        // input is ignored so the sequence and the hint entrance can finish. Escape is
-        // handled by onCancel and follows the same gate.
+        // key" idiom, the keyboard twin of tap-anywhere); BEFORE that, the same key
+        // FAST-FORWARDS the sequence to its final frame instead (user-decided 2026-08-14
+        // — an early touch skips the show, the touch after it leaves). Escape is handled
+        // by onCancel and follows the same two-step.
         if (event.key === 'Tab') {
           event.preventDefault();
           return;
         }
-        if (dismissEnabled && event.key !== 'Escape') dismiss();
-      }}
-      onClick={(event) => {
-        // Once the ending hint is fully visible, the WHOLE screen is the dismiss target
-        // (the hint says "anywhere" and must not lie). Before that, no click dismisses.
+        if (event.key === 'Escape') return;
         if (dismissEnabled) dismiss();
+        else skipRef.current();
+      }}
+      onClick={() => {
+        // Once the ending hint is fully visible, the WHOLE screen is the dismiss target
+        // (the hint says "anywhere" and must not lie). Before that, the same touch
+        // fast-forwards the celebration to its final frame.
+        if (dismissEnabled) dismiss();
+        else skipRef.current();
       }}
     >
       <h2 id={titleId} className="sr-only">
         {streak} {t(lang, 'dayStreak')}
       </h2>
 
-      <div
-        className="streak-sequence"
-        onClick={(event) => {
-          if (!dismissEnabled) event.stopPropagation();
-        }}
-      >
+      {/* Clicks bubble to the dialog everywhere — on the sequence's content included —
+          because a touch always means something now: fast-forward before the hint,
+          dismiss after it. (The stopPropagation shield this wrapper carried guarded the
+          old ignore-until-armed rule and went with it.) */}
+      <div className="streak-sequence">
         <div className="streak-flame-slot" aria-hidden="true">
           <AnimatedSpan
             className="streak-flame"

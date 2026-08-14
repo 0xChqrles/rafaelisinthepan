@@ -1203,8 +1203,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
   button, and nothing is auto-focused — so no focus ring ever appears and a stray Tab has
   nowhere to land (the modal traps focus; Tab is also swallowed). Once the hint appears the
   WHOLE modal dismisses — click/tap anywhere, ANY key (the "press any key" twin of
-  tap-anywhere), or Escape — but dismissal is completely disabled until the hint's entrance
-  finishes and it is fully visible. Every dismissal then fades the whole modal opacity over
+  tap-anywhere), or Escape. **A touch BEFORE that FAST-FORWARDS the celebration to its
+  final frame instantly** (user-decided 2026-08-14, replacing "every dismissal input is
+  ignored until the hint lands"): the same click/key/Escape aborts the staged sequence the
+  way the effect teardown does (pending waits forced, springs stopped — the async chain
+  falls through its own `stopped()` checks) and snaps every controller to the exact final
+  values the reduced-motion branch writes, hint armed included — so an early touch skips
+  the show and the touch after it leaves. The skip lives on a ref the effect reassigns
+  per run (it needs the run's own closure), and a touch always means something now, which
+  is why the sequence content no longer shields clicks with stopPropagation. Every
+  dismissal then fades the whole modal opacity over
   200ms before unmounting. **The solved screen then focuses NOTHING** (decided 2026-07-27,
   dropping the focus this dismissal used to hand to the result action): the celebration has no
   trigger to restore focus to, so the tray was taking it by default and SHARE arrived already
