@@ -1038,21 +1038,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
     (streak dismissed, keyboard dropped — `resultsUp`), the live Phrase swaps for a
     pixel-identical letter-boxed copy (same `.phrase`/`.word`/`.hole-group`/`.hole
     .resolved`/`.hole-letter` structure, so frame 0 matches to the pixel and the wrap
-    points are the same wrap points), and the sentence goes out **WORD BY WORD** (the
-    third slicing, user-decided on review 2026-08-14: per-letter left-to-right read as a
-    cursor deleting the sentence, per-letter scattered read as static — the word is the
-    GAME's unit, and losing words one at a time reads as the round packing up its
-    pieces): each word churns ALL its letters through random glyphs on the scramble's own
-    40ms tick for 5–10 frames, then goes out WHOLE — a hole's prefix/suffix churn and
-    leave with their word's group, on the group's one roll. **The order is SCATTERED and
-    the length is a CONSTANT (~2s all in — slowed from ~1s on review, "way too fast":
-    the exit should be watchable, not a blink)**: each word draws its start uniformly
-    from ONE fixed window (`SPREAD_TICKS`, 1200ms), so the first words do not always go first,
-    "batches" fall out of the uniform draw with no batching machinery, and a long
-    sentence dissolves in exactly the time a short one does — more words simply go out
-    per tick. Both dice are rolled ONCE at mount (a re-render can never re-roll a word —
-    the slash-flip rule). A dissolved word keeps its letter boxes `visibility: hidden`,
-    so the sentence keeps its global shape while it empties. A dissolved letter keeps its box `visibility: hidden`
+    points are the same wrap points), and every letter churns random glyphs on the
+    scramble's OWN 40ms tick, each for 2–5 frames, then goes OUT. **The erosion is
+    SCATTERED, and its length is a CONSTANT** (user-decided on review the same day,
+    superseding the first cut's 20ms left-to-right sweep, which read as a cursor deleting
+    the sentence): each letter draws its start uniformly from ONE fixed window
+    (`SPREAD_TICKS`, 720ms), so the order is random every time, "batches" fall out of the
+    uniform draw with no batching machinery, and a long sentence dissolves in exactly the
+    time a short one does — more letters simply go out per tick. Both dice are rolled
+    ONCE at mount (a re-render can never re-roll a letter — the slash-flip rule). A dissolved letter keeps its box `visibility: hidden`
     (`.hole-letter.gone`) — never an actual space, never removed — so the monospace
     advance holds every surviving letter exactly where it was: the sentence burns down IN
     PLACE, and nothing reflows until the whole area unmounts. The score watermark fades
@@ -1062,22 +1056,42 @@ it to the local store — see `packages/backend/AGENTS.md`).
     entirely; a rehydrated solve mounts `dissolved` and replays nothing.
   - **The solved STAGE then owns the full column** (`components/SolvedScreen`, rebuilt;
     the `.play`+`.tray` split does not render at all — nothing is left to reserve the
-    keyboard's footprint for). Top to bottom: the SOURCE typed big and centered (kind
-    chip over the gold attribution — sized up since the sentence yielded the room), the
-    DISTINCT GUESSED WORDS in the solved blue (VT323 at `clamp(26px, 6vw, 36px)`,
-    numbered 1..3 by the ruler-tick/model-title numbering, each still a BUTTON onto its
-    history line — same `data-hole-explore` + `.hole-word-wrap` zoom origin, never
-    disabled since they only exist after every beat that owned the sentence, and each
-    rippling the hole-wave on its own 3–10s clock as the tap affordance, numbers restated
-    per the WordSubject rule), then the named `<tries> TRIES` headline over the run
-    ruler, the #170 population chart, and SHARE parked on the BOTTOM edge (the tutorial
-    button's rule: `margin: auto 0` centers the main block, the action keeps the page
-    inset below — +safe-area+10px on a phone, the retired `.tray.tray-results` rule
-    carried over).
-  - **The reveal is LAYERED, not chained:** the stage rises once (the shared
-    `RESULTS_IN_MS` rise), the source types at its own pace while the words rung-in at
-    +250ms (90ms steps), the tally runs its `SCORE_COUNT_MS`, the ruler and the chart
-    keep their existing beats. Rehydrated solves render `.settled` and replay nothing.
+    keyboard's footprint for), **in TWO BLOCKS around one SEAM** (user-decided
+    2026-08-14, second pass — they answer different questions and ran together as one
+    undifferentiated column):
+    - **PUZZLE** (`.solved-puzzle`) — the DISTINCT GUESSED WORDS in the solved blue
+      (VT323 at `clamp(26px, 6vw, 36px)`, numbered 1..3 by the ruler-tick/modal-title
+      numbering, each still a BUTTON onto its history line — same `data-hole-explore` +
+      `.hole-word-wrap` zoom origin, never disabled since they only exist after every
+      beat that owned the sentence, and each rippling the hole-wave on its own 3–10s
+      clock as the tap affordance, numbers restated per the WordSubject rule) — and the
+      SOURCE **under them, at its own restored caption size** (10px kind chip over the
+      `clamp(12px, 1.6vw, 15px)` gold attribution; it briefly led the stage typed big,
+      and reads as what it has always been — the credit line beneath the puzzle's
+      content. Only its ALIGNMENT follows the centred stage).
+    - **SCORE** (`.solved-numbers`) — the named `<tries> TRIES` headline over the run
+      ruler, then the #170 population chart.
+    - **The SEAM is the one gap bigger than a rhythm** (`.solved-stage-main`'s
+      `clamp(34px, 6.5vh, 58px)`, ~2.5× either block's own gap — measured 43px against
+      17px at 375): a division, not more air.
+    SHARE stays parked on the BOTTOM edge (the tutorial button's rule: `margin: auto 0`
+    centers the main block, the action keeps the page inset below — +safe-area+10px on a
+    phone, the retired `.tray.tray-results` rule carried over).
+  - **The reveal reads the way the stage is laid out, off ONE derived timeline** (every
+    beat an absolute offset from the stage's arrival, so nothing waits on a signal that
+    could be lost): the WORDS **pop in one by one, 200ms apart** (`solved-word-pop`, a
+    300ms overshoot-and-settle — a scale on the pixel font is allowed exactly here, ONE
+    SHOT and fast, the `rank-pop`/`score-land` precedent; what the standing rule forbids
+    is a long scale TRANSITION holding blurry frames for its whole length), the SOURCE
+    types once the last word lands, and the SCORE block arrives `CAPTION_LEAD_MS` (420ms)
+    after that — the source's FIRST line, never its last character, so a long citation
+    cannot hold the numbers back — its arrival starting the tally, then the ruler and the
+    chart on their existing beats.
+  - **Nothing that has landed ever moves:** both later blocks hold their layout box from
+    frame one (the source `visibility: hidden` — the retired prompt's own trick — the
+    score block at `opacity: 0`), so the words keep the exact position they popped into
+    while everything else arrives under them (verified pixel-identical across the whole
+    beat, SHARE included). Rehydrated solves render `.settled` and replay nothing.
   - **REMOVED with the redesign** (no-back-compat rule, all were left without a
     consumer): the caption's `masked` veil and its prompt-zone overlay (the caption now
     mounts only WITH the stage, so an unsolved round's DOM never carries the author

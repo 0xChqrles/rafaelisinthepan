@@ -1214,20 +1214,22 @@ button * {
    shifts), and the RESULTS take over the keyboard's footprint (.solved-results in .tray).
 */
 
-/* Caption: the quote-style citation, the solved stage's OPENING line since the
-   2026-08-14 redesign — centered and sized up, because the dissolved sentence handed it
-   the room. The kind tag stays the small blue chip over the attribution's gold. */
+/* Caption: the quote-style citation, sitting UNDER the words it belongs to (user-decided
+   2026-08-14, second pass — it briefly led the stage, typed big; it reads as what it has
+   always been, the small credit line beneath the puzzle's own content). Its own caption
+   sizing is restored; only the alignment follows the centred stage. The kind tag stays the
+   small blue chip over the attribution's gold. */
 .solved-caption {
   width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 12px;
+  gap: 10px;
 }
 .solved-kind {
   font-family: var(--press);
-  font-size: 12px;
+  font-size: 10px;
   color: var(--accent);
   letter-spacing: 2px;
   text-transform: uppercase;
@@ -1236,8 +1238,8 @@ button * {
 .solved-attribution {
   margin: 0;
   font-family: var(--press);
-  font-size: clamp(14px, 2.4vw, 18px);
-  line-height: 1.7;
+  font-size: clamp(12px, 1.6vw, 15px);
+  line-height: 1.6;
   color: var(--hole); /* gold — the colour of what the player holds */
   letter-spacing: 1px;
   padding-top: var(--text-shift);
@@ -1284,7 +1286,42 @@ button * {
   display: flex;
   flex-direction: column;
   align-items: center;
+  /* THE SEAM (user-decided 2026-08-14): the one gap on this screen that is bigger than a
+     rhythm — it is what tells the PUZZLE block (what the round was about) from the SCORE
+     block (how it went). Roughly twice either block's internal gap, which is what makes it
+     read as a division rather than as more air. */
+  gap: clamp(34px, 6.5vh, 58px);
+}
+.solved-puzzle,
+.solved-numbers {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+/* The words and the credit line under them are ONE object: a tighter gap than the seam,
+   so the citation reads as belonging to the words rather than as the next item down. */
+.solved-puzzle {
+  gap: clamp(14px, 2.6vh, 22px);
+}
+.solved-numbers {
   gap: clamp(18px, 3.4vh, 30px);
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.25s ease-out, transform 0.25s ease-out;
+}
+.solved-numbers.in {
+  opacity: 1;
+  transform: translateY(0);
+}
+/* The citation lays out from frame one (so the words never move when it speaks) and is
+   simply hidden until its beat — the retired prompt's own trick. */
+.solved-source {
+  width: 100%;
+  visibility: hidden;
+}
+.solved-source.in {
+  visibility: visible;
 }
 .solved-stage .result-actions {
   width: 100%;
@@ -1319,10 +1356,29 @@ button * {
   -webkit-tap-highlight-color: transparent;
   opacity: 0;
 }
-/* The words arrive on the app's one "list arriving" gesture, left to right. */
+/* The words POP in, one by one, 200ms apart (user-decided 2026-08-14): the round's
+   trophies counted out. A scale on the pixel font is allowed exactly here — ONE-SHOT and
+   fast, the rank exponent's `rank-pop` and the tally's `score-land`; what the standing
+   rule forbids is a long scale TRANSITION, which holds blurry intermediate frames for its
+   whole length. Overshoot slightly past 1 and settle, so the word lands rather than
+   inflates. */
 .solved-word.in {
-  animation: rung-in 200ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
-  animation-delay: calc(var(--step, 0) * 90ms);
+  animation: solved-word-pop 300ms cubic-bezier(0.2, 1.5, 0.4, 1) both;
+  animation-delay: calc(var(--step, 0) * 200ms);
+}
+@keyframes solved-word-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.55);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1.14);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 /* The global `button *` flattening would strip the phrase's drop shadow here too. */
 .solved-word,

@@ -10,24 +10,35 @@ import SolvedCaption from './SolvedCaption';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import useShare from '../hooks/useShare';
 import { ariaHoleHistory, t } from '../i18n';
-import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
+import { SCORE_COUNT_MS } from './resultAnimation';
 
 // The sentence result, redesigned as the WHOLE screen (user-decided 2026-08-14): the
-// dissolved sentence hands over the full play column, and the result reads top to
-// bottom — the SOURCE (typed big, now that it has the room), the GUESSED WORDS in the
-// solved blue (each still a button onto its own history line — the same tap the holes
-// carried, with the same ambient wave advertising it), the named score over its run
-// ruler, the day's population chart, and SHARE parked on the bottom edge (the tutorial
-// button's rule: the one action sits the page inset off the bottom, whatever the content
-// above it does).
+// dissolved sentence hands over the full play column, and the result reads in TWO
+// BLOCKS, separated by a real seam (user-decided the same day) — first the PUZZLE, then
+// the SCORE, because they answer different questions and running them together read as
+// one undifferentiated column:
 //
-// The reveal is LAYERED, not chained: the stage rises once, the source types at its own
-// pace while the words rung-in beneath it, the score tallies, the ruler colorizes, and
-// the chart keeps its own last beat — so the whole result is standing in about the same
-// time the old tray took, with no beat waiting on a slower one it does not depend on.
+//   PUZZLE — the GUESSED WORDS in the solved blue, popping in one by one (each still a
+//            button onto its own history line, with the ambient wave advertising the
+//            tap), and the SOURCE typed under them at its own small caption size.
+//   SCORE  — the named `<tries> TRIES` over its run ruler, then the day's population
+//            chart. SHARE stays parked on the bottom edge (the tutorial button's rule:
+//            the one action sits the page inset off the bottom, whatever is above it).
+//
+// The reveal reads the same way it is laid out, top to bottom, off ONE derived timeline:
+// every beat below is an absolute offset from the stage's arrival, so nothing waits on a
+// signal that could be lost and a long citation cannot hold the numbers back.
 // Rehydrated solves render the final frame immediately and replay nothing.
 const NEUTRAL_HOLD_MS = 55;
-const WORDS_IN_STEP_MS = 90;
+// The words POP in one by one: 200ms apart, each a fast scale pop — the round's three
+// trophies arriving, counted out. Fast and ONE-SHOT, which is the only form a scale may
+// take on the pixel font (the rank exponent's `rank-pop` and the tally's `score-land`,
+// same reasoning): a long scale TRANSITION renders blurry intermediate frames for its
+// whole length, a 300ms hop lands before the eye can read one.
+const WORD_STEP_MS = 200;
+const WORD_POP_MS = 300;
+// The score block follows the source's FIRST line, not its last character.
+const CAPTION_LEAD_MS = 420;
 
 // The ambient wave (#129), restated for the solved words the way WordSubject restates it
 // for the day's word: importing half of Hole's internals is not sharing it. Same numbers,
@@ -141,7 +152,13 @@ export default function SolvedScreen({
   const reduceMotion = prefersReducedMotion();
   const n = Math.max(trajectory.length, 1);
   const stagger = rulerStagger(n, reduceMotion);
-  const rulerStartMs = RESULTS_IN_MS + SCORE_COUNT_MS;
+  const hasSource = Boolean(source?.kind || source?.author || source?.work);
+
+  // The ONE derived timeline (see the block comment): the words count themselves out,
+  // the source follows the last of them, and the score block arrives after the seam.
+  const wordsSpanMs = words.length ? (words.length - 1) * WORD_STEP_MS + WORD_POP_MS : 0;
+  const scoreStartMs = wordsSpanMs + (hasSource ? CAPTION_LEAD_MS : 140);
+  const rulerStartMs = scoreStartMs + SCORE_COUNT_MS;
 
   // The stage rises once; every block's own beat hangs off this one flip.
   const [stageIn, setStageIn] = useState(() => !animate);
@@ -154,33 +171,42 @@ export default function SolvedScreen({
     return () => cancelAnimationFrame(raf);
   }, [animate]);
 
-  // The source types from the stage's arrival; its completion only retires its own
-  // cursor (nothing downstream waits on it — the beats are layered, not chained).
+  // The words need no beat of their own: they pop the moment the stage is up, and CSS
+  // counts them out from each word's own index (`--step`).
+  const wordsIn = !animate || stageIn;
+
+  // The source types once the last word has landed; its completion only retires its own
+  // cursor — nothing downstream waits on it.
   const [captionDone, setCaptionDone] = useState(false);
   const finishCaption = useCallback(() => setCaptionDone(true), []);
-
-  // The guessed words rung-in as the source starts speaking above them.
-  const [wordsIn, setWordsIn] = useState(() => !animate);
+  const [captionIn, setCaptionIn] = useState(() => !animate);
   useEffect(() => {
     if (!animate) {
-      setWordsIn(true);
+      setCaptionIn(true);
       return undefined;
     }
     if (!stageIn) return undefined;
-    const id = window.setTimeout(() => setWordsIn(true), reduceMotion ? 0 : RESULTS_IN_MS);
+    const id = window.setTimeout(() => setCaptionIn(true), reduceMotion ? 0 : wordsSpanMs);
     return () => window.clearTimeout(id);
-  }, [animate, reduceMotion, stageIn]);
+  }, [animate, stageIn, reduceMotion, wordsSpanMs]);
+
+  // The SCORE block: the seam's other side. Its arrival is what starts the tally, so the
+  // number never counts behind a block that has not appeared yet.
+  const [scoreIn, setScoreIn] = useState(() => !animate);
+  useEffect(() => {
+    if (!animate) {
+      setScoreIn(true);
+      return undefined;
+    }
+    if (!stageIn) return undefined;
+    const id = window.setTimeout(() => setScoreIn(true), reduceMotion ? 0 : scoreStartMs);
+    return () => window.clearTimeout(id);
+  }, [animate, stageIn, reduceMotion, scoreStartMs]);
 
   const [countTarget, setCountTarget] = useState(() => (animate ? 0 : guessCount));
   useEffect(() => {
-    if (!animate) {
-      setCountTarget(guessCount);
-      return undefined;
-    }
-    if (!stageIn) return undefined;
-    const id = window.setTimeout(() => setCountTarget(guessCount), reduceMotion ? 0 : RESULTS_IN_MS);
-    return () => window.clearTimeout(id);
-  }, [animate, stageIn, guessCount, reduceMotion]);
+    if (scoreIn) setCountTarget(guessCount);
+  }, [scoreIn, guessCount]);
   const shownScore = useAnimatedNumber(countTarget, !animate || reduceMotion ? 1 : SCORE_COUNT_MS);
 
   // After the score lands, reveal the neutral cells and then color them in try order.
@@ -260,29 +286,38 @@ export default function SolvedScreen({
   return (
     <div className={`solved-stage${stageIn ? ' in' : ''}${animate ? '' : ' settled'}`}>
       <div className="solved-stage-main">
-        {/* The sentence's attribution, typed big now that the sentence has yielded the
-            room. A source-less puzzle simply leads with the words. */}
-        {(source?.kind || source?.author || source?.work) && (
-          <SolvedCaption
-            source={source}
-            animate={animate && stageIn && !captionDone}
-            onComplete={finishCaption}
-          />
-        )}
-
-        {/* The three found words — the round's trophies, and still its buttons: each opens
-            the history line it walked, numbered as the ruler's ticks number them. */}
-        <div className="solved-words">
+        {/* ---- the PUZZLE block: what the round was about. */}
+        <div className="solved-puzzle">
+          {/* The found words — the round's trophies, and still its buttons: each opens the
+              history line it walked, numbered as the ruler's ticks number them. They pop
+              in one by one; CSS counts them out off each word's own `--step`. */}
+          <div className="solved-words">
+            {words.map((entry) => (
+              <SolvedWord key={entry.number} entry={entry} shown={wordsIn} onExplore={onExplore} />
+            ))}
+          </div>
           {words.map((entry) => (
-            <SolvedWord key={entry.number} entry={entry} shown={wordsIn} onExplore={onExplore} />
+            <span key={entry.number} id={`solved-explore-${entry.number}`} className="sr-only">
+              {ariaHoleHistory(lang, entry.number)}
+            </span>
           ))}
-        </div>
-        {words.map((entry) => (
-          <span key={entry.number} id={`solved-explore-${entry.number}`} className="sr-only">
-            {ariaHoleHistory(lang, entry.number)}
-          </span>
-        ))}
 
+          {/* The sentence's attribution, UNDER the words it belongs to and at its own
+              caption size — the small quote-style citation it has always been. A
+              source-less puzzle simply shows the words. */}
+          {hasSource && (
+            <div className={`solved-source${captionIn ? ' in' : ''}`}>
+              <SolvedCaption
+                source={source}
+                animate={animate && captionIn && !captionDone}
+                onComplete={finishCaption}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* ---- the SCORE block, across the seam: how the round went. */}
+        <div className={`solved-numbers${scoreIn ? ' in' : ''}`}>
         {/* The primary sentence metric. The hidden final value reserves the count's width
             so its tally never moves the content below it. */}
         <span className="solved-score">
@@ -317,6 +352,7 @@ export default function SolvedScreen({
           animate={animate}
           start={chartStart}
         />
+        </div>
       </div>
 
       <div className="result-actions">
