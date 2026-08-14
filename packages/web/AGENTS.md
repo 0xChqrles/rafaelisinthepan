@@ -1046,11 +1046,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
     around each shrinking word the way it always has, and the exit reads as one more
     transition rather than a new effect (a hole's prefix/secret/suffix shrink as separate
     pieces, keeping their own colours, on one shared start). **Word starts are drawn
-    uniformly from ONE fixed window** (`SPREAD_TICKS`, 520ms, ahead of the scramble's own
-    `SCRAMBLE_MS` settle): random order every time, "batches" of words fall out of the
+    uniformly from ONE fixed window** (`SPREAD_TICKS`, 1120ms — widened from 520 on user
+    review, "too fast" — ahead of the scramble's own `SCRAMBLE_MS` settle, ~1.8s in all):
+    random order every time, "batches" of words fall out of the
     draw with no batching machinery, and the beat's length is a CONSTANT — a long
     sentence dissolves in exactly the time a short one does. The plan is rolled ONCE at
-    mount (a re-render can never re-roll a word — the slash-flip rule). The score
+    mount (a re-render can never re-roll a word — the slash-flip rule). **The phrase pins
+    the height it mounted with** (measured once before paint, set as its own min-height —
+    user-reported: the block is vertically centered, so losing a wrap line re-centered it
+    and the survivors jumped downward): the words erode inside a box that never moves,
+    and the reflow stays a horizontal story. The score
     watermark fades with it (`.phrase-anchor.dissolving`); the prompt zone stays laid out
     (retired, invisible) through the erosion. A 180ms breath after the last word, then
     `onDone` swaps the screen. Reduced motion skips the churn entirely; a rehydrated

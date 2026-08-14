@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { Hole as PuzzleHole } from '@whippin/shared';
 import { prefersReducedMotion, scrambleFrame, SCRAMBLE_MS } from '../hooks/useScramble';
@@ -27,7 +27,9 @@ const TICK_MS = 40;
 const SETTLE_TICKS = Math.round(SCRAMBLE_MS / TICK_MS);
 // Every word's start falls somewhere in this fixed window — the erosion's spread,
 // independent of the sentence's length. In ticks so a start is always a whole frame.
-const SPREAD_TICKS = 13; // 520ms
+// Widened from 13 on user review ("disappears too fast"): with the scramble's own 650ms
+// settle after the last start, the whole exit now takes ~1.8s.
+const SPREAD_TICKS = 28; // 1120ms
 // A breath after the last word goes, so the empty stage registers before the result
 // builds on it.
 const DONE_HOLD_MS = 180;
@@ -87,6 +89,17 @@ export default function DissolvePhrase({
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
 
+  // The phrase sits vertically CENTERED in the play area, so a sentence that loses a
+  // wrap line mid-erosion would re-center — the surviving words jumping down each time a
+  // line empties. Pin the block to the height it mounted with (the full sentence — the
+  // first frame is untouched), measured once before paint: the words then erode inside a
+  // box that never moves, and the line-by-line reflow stays a HORIZONTAL story.
+  const phraseRef = useRef<HTMLParagraphElement>(null);
+  const [minHeight, setMinHeight] = useState<number | undefined>(undefined);
+  useLayoutEffect(() => {
+    setMinHeight(phraseRef.current?.getBoundingClientRect().height);
+  }, []);
+
   useEffect(() => {
     // Reduced motion: no churn, no erosion — the sentence simply yields the stage.
     if (prefersReducedMotion()) {
@@ -133,7 +146,12 @@ export default function DissolvePhrase({
     // the word spans — so the wrap points are the same wrap points; the spaces around a
     // fully-gone word collapse, and the sentence closes up the way it always has around
     // a shrinking word (#102).
-    <p className="phrase" aria-hidden="true">
+    <p
+      ref={phraseRef}
+      className="phrase"
+      style={minHeight !== undefined ? { minHeight } : undefined}
+      aria-hidden="true"
+    >
       {tokens.map((t) => (
         <Fragment key={t.key}>
           {t.space ? ' ' : ''}
