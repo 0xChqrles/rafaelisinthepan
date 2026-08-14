@@ -316,3 +316,61 @@ describe('trusted client identity', () => {
     expect(first).toMatch(/^[a-f0-9]{64}$/);
   });
 });
+
+// CONTRACT (2026-08-15): the token hash is the idempotency key precisely BECAUSE a real
+// Turnstile token is single-use — one submission retried internally must never count
+// twice. A verifier whose tokens repeat (the local accept-all one: Cloudflare's test site
+// key hands out one dummy token forever) breaks that premise, so the local wiring declares
+// it and the handler keys on a fresh id instead. Without this, every local submission after
+// the first is waved through as a "replay" and a laptop's histogram reads zero forever.
+describe('POST /scores — idempotency keys and non-single-use tokens', () => {
+  const submit = (handler: ReturnType<typeof makeHandler>, score: number, token: string) =>
+    handler(
+      event({
+        method: 'POST',
+        body: { score, turnstileToken: token },
+        address: '203.0.113.9',
+      }),
+    );
+
+  it('treats a REPEATED token as one submission when tokens are single-use', async () => {
+    const handler = makeHandler();
+    await submit(handler, 2, 'same-token');
+    const second = await submit(handler, 2, 'same-token');
+    expect(second.statusCode).toBe(200);
+    // Accepted, but the replay changed nothing: still exactly one recorded score.
+    expect(parsed(second).total).toBe(1);
+  });
+
+  it('counts each submission when the verifier’s tokens are NOT single-use', async () => {
+    const handler = makeHandler({
+      scores: {
+        scoreStore: memoryScoreStore(() => NOW),
+        turnstile: { verify },
+        ipHmacSecret: 'a-secure-test-secret-with-at-least-32-bytes',
+        allowSourceIp: true,
+        singleUseTokens: false,
+      },
+    });
+    await submit(handler, 2, 'XXXX.DUMMY.TOKEN.XXXX');
+    const second = await submit(handler, 2, 'XXXX.DUMMY.TOKEN.XXXX');
+    expect(second.statusCode).toBe(200);
+    expect(parsed(second).total).toBe(2);
+  });
+
+  it('still caps a single HMAC-IP, whatever the tokens look like', async () => {
+    const handler = makeHandler({
+      scores: {
+        scoreStore: memoryScoreStore(() => NOW),
+        turnstile: { verify },
+        ipHmacSecret: 'a-secure-test-secret-with-at-least-32-bytes',
+        allowSourceIp: true,
+        singleUseTokens: false,
+      },
+    });
+    for (let i = 0; i < SCORE_SUBMISSION_LIMIT; i += 1) {
+      expect((await submit(handler, 2, 'dummy')).statusCode).toBe(200);
+    }
+    expect((await submit(handler, 2, 'dummy')).statusCode).toBe(429);
+  });
+});

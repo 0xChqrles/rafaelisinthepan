@@ -1,4 +1,4 @@
-import { createHash, createHmac } from 'node:crypto';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { isIP } from 'node:net';
 import { dayNumber, type ScoreHistogram } from '@whippin/shared';
 import { isValidDate } from './layout';
@@ -32,6 +32,14 @@ export interface ScoreHandlerDeps {
   // Only the direct local HTTP adapter is allowed to trust its socket peer. In Lambda,
   // requestContext.sourceIp is CloudFront's edge, not the viewer.
   allowSourceIp?: boolean;
+  // Are the verifier's tokens SINGLE-USE? A real Turnstile token is, which is what makes
+  // its hash a perfect idempotency key (see the increment below). The LOCAL accept-all
+  // verifier's are not — Cloudflare's always-passing test site key hands the browser the
+  // same dummy token on every challenge — so hashing it collapses every local submission
+  // of the day onto ONE key: the first is recorded and every later one is waved through
+  // as a replay, leaving a laptop's histogram permanently reading zero. Local serve sets
+  // this false and gets a fresh idempotency token per request instead.
+  singleUseTokens?: boolean;
 }
 
 function header(event: FnUrlEvent, name: string): string | undefined {
@@ -227,8 +235,14 @@ export async function handleScores(
     bucketCount: ranges.length,
     expiresAt: Math.floor(instant.getTime() / 1000) + SCORE_DEDUP_TTL_SECONDS,
     // DynamoDB ClientRequestToken permits 1–36 characters. This stores neither the
-    // Turnstile token nor another user-linked value.
-    requestToken: createHash('sha256').update(turnstileToken!).digest('hex').slice(0, 36),
+    // Turnstile token nor another user-linked value. Hashing the token is what makes a
+    // retry of ONE submission idempotent — sound exactly because a real token is
+    // single-use; where it is not (see `singleUseTokens`), a fresh id per request is the
+    // honest key, since two submissions carrying the same dummy token are two submissions.
+    requestToken:
+      deps.singleUseTokens === false
+        ? randomUUID()
+        : createHash('sha256').update(turnstileToken!).digest('hex').slice(0, 36),
   });
   if (!accepted) {
     return errorResponse(
