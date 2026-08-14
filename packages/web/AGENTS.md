@@ -1273,16 +1273,26 @@ it to the local store — see `packages/backend/AGENTS.md`).
   error. **The chart is a field of QUANTIZED BRICK columns** (`components/ScoreChart`,
   redesigned on user review 2026-08-14 — the first cut's smooth fractional-height bars and
   its 8px min/max axis were "not as good as the rest of the app"): one column per range
-  the API returned (the backend owns the edges; never restate them), each column at most
-  `MAX_UNITS` (6) whole 14×4 bricks (any non-empty band shows at least one), the anonymous
+  the API returned (the backend owns the edges; never restate them), each column a stack
+  of whole 14×4 bricks, the anonymous
   crowd in the census dim blue (a pinned COPY of the route drawing's `--unfound`, which is
   scoped to `.route-frame` — the population is a field of players you have not met), the
   player's band in the "you" GOLD, an empty band a 2px stub so the whole field reads even
   when empty — an empty field with your gold tower on it IS the "you've just been early"
-  message. **The player's column is a MARKER, not a tally** (user-decided 2026-08-15): it
-  always draws at least one real brick, so a day whose recorded population does not
-  contain you (a submission the server refused, a GET that landed before your own write)
-  still shows YOUR bar rather than a grey stub where the gold belongs.
+  message. **THE FIELD IS ALWAYS THE SAME HEIGHT** (user-decided 2026-08-15,
+  `game/scores.ts` `chartUnits`, contract-tested): counts are normalized against the
+  field's OWN peak — never an absolute number of players — so the tallest column reaches
+  the top whatever the data, and a day with four scores draws the same shape as a day with
+  four hundred, which is what makes the shape readable at all. Any non-empty band draws at
+  least one brick, and no column ever exceeds `MAX_COLUMN_UNITS` (6). **The two degenerate
+  cases are what that rule is FOR:** ONE entry is the peak by definition, so it stands at
+  FULL height; and with NO entries at all the player's marker is the field's only entry
+  and gets the same full height, rather than a lone brick off the floor in a 34px box.
+  **The player's column is otherwise a MARKER, not a tally**: it always draws at least one
+  real brick, so a day whose recorded population does not contain you (a submission the
+  server refused, a GET that landed before your own write) still shows YOUR bar rather
+  than a grey stub where the gold belongs — but inside a real crowd it never inflates
+  itself above what the population says.
   **The unreachable TAIL is merged into one `+N` column, and the field's two ends are
   NAMED** (user-decided 2026-08-15, `game/scores.ts` `chartField`, contract-tested):
   a sentence's last bands cover 1001..127783, which no player will ever occupy, so

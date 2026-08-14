@@ -12,10 +12,12 @@ import { describe, it, expect } from 'vitest';
 import type { ScoreHistogramBucket } from '@whippin/shared';
 import {
   MAX_CHART_BANDS,
+  MAX_COLUMN_UNITS,
   PERCENT_MIN_TOTAL,
   beatenCount,
   bucketIndexOf,
   chartField,
+  chartUnits,
   histogramCopy,
   shouldSubmitScore,
 } from './scores';
@@ -163,5 +165,56 @@ describe('chartField — the drawn field and its two named ends', () => {
     expect(field.you).toBe(1);
     expect(field.low).toBe('3');
     expect(field.high).toBe('8');
+  });
+});
+
+// CONTRACT (#170, 2026-08-15): the FIELD IS ALWAYS THE SAME HEIGHT. Counts are normalized
+// against the field's own peak, so the tallest column reaches the top whatever the data —
+// four scores and four hundred draw the same shape — and the degenerate cases (one entry,
+// or none at all) give that single bar its full height rather than leaving a flat field.
+describe('chartUnits — the field is always the same height', () => {
+  const tallest = (u: number[]) => Math.max(...u);
+
+  it('the tallest column reaches the top, for any data', () => {
+    const fields: number[][] = [
+      [3],
+      [1, 1, 1],
+      [0, 0, 7, 0],
+      [2, 9, 21, 34, 27, 15, 8, 4, 2, 1],
+      [500, 1, 1],
+      [1, 1, 1, 1, 1, 1, 1, 1, 1, 999],
+    ];
+    for (const counts of fields) {
+      expect(tallest(chartUnits(counts, null))).toBe(MAX_COLUMN_UNITS);
+      expect(tallest(chartUnits(counts, 0))).toBe(MAX_COLUMN_UNITS);
+    }
+  });
+
+  it('ONE entry is the peak by definition, so its bar is full height', () => {
+    expect(chartUnits([0, 0, 1, 0], 2)).toEqual([0, 0, MAX_COLUMN_UNITS, 0]);
+    // …whoever it belongs to.
+    expect(chartUnits([0, 0, 1, 0], 0)).toEqual([1, 0, MAX_COLUMN_UNITS, 0]);
+  });
+
+  it('NO entries at all: the player’s marker is the field’s only entry, at full height', () => {
+    expect(chartUnits([0, 0, 0, 0], 1)).toEqual([0, MAX_COLUMN_UNITS, 0, 0]);
+  });
+
+  it('every non-empty band draws at least one brick, however small its share', () => {
+    const units = chartUnits([1000, 1, 0], null);
+    expect(units[0]).toBe(MAX_COLUMN_UNITS);
+    expect(units[1]).toBe(1);
+    expect(units[2]).toBe(0);
+  });
+
+  it('the player’s marker never inflates above what the population says', () => {
+    // A real crowd this player is not recorded in: one brick — visible, never a claim.
+    expect(chartUnits([40, 0, 5], 1)).toEqual([MAX_COLUMN_UNITS, 1, 1]);
+  });
+
+  it('no column is ever taller than the field', () => {
+    for (const counts of [[1, 2, 3], [0, 0, 0], [9, 9, 9, 9]]) {
+      for (const u of chartUnits(counts, 0)) expect(u).toBeLessThanOrEqual(MAX_COLUMN_UNITS);
+    }
   });
 });

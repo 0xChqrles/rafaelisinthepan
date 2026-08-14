@@ -115,3 +115,30 @@ export function chartField(
     high: `+${drawn[drawn.length - 1].max}`,
   };
 }
+
+// ---- how TALL each drawn column is (user-decided 2026-08-15) --------------------------
+// A column is a stack of whole bricks, and the FIELD IS ALWAYS THE SAME HEIGHT: whatever
+// the data, the tallest column reaches the top. So the counts are normalized against the
+// field's own peak rather than against any absolute number of players — a day with four
+// scores and a day with four hundred draw the same shape, which is what makes the shape
+// readable at all.
+//
+// The two degenerate cases are what that rule is FOR:
+//   - one entry — it is the peak by definition, so it draws FULL height;
+//   - no entries at all (your submission was refused, or a GET landed before your own
+//     write) — the player's marker is then the field's only entry, and gets the same
+//     full-height treatment rather than sitting one brick off the floor.
+// Anywhere else the player's marker is a MARKER and not a tally: it draws at least one
+// real brick so "your score sits here" is always legible, but it never inflates itself
+// above what the population says.
+export const MAX_COLUMN_UNITS = 6;
+
+export function chartUnits(counts: readonly number[], you: number | null): number[] {
+  const peak = Math.max(0, ...counts);
+  return counts.map((count, index) => {
+    const mine = index === you;
+    if (peak === 0) return mine ? MAX_COLUMN_UNITS : 0;
+    if (count <= 0) return mine ? 1 : 0;
+    return Math.max(1, Math.ceil((count / peak) * MAX_COLUMN_UNITS));
+  });
+}

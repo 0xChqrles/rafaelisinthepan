@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { chartField, histogramCopy, type HistogramCopy } from '../game/scores';
+import { chartField, chartUnits, histogramCopy, type HistogramCopy } from '../game/scores';
 import type { ScorePlacement } from '../hooks/useScoreHistogram';
 import { t } from '../i18n';
 import type { Mode } from '../langs';
@@ -15,7 +15,9 @@ import type { Mode } from '../langs';
 // The counts are the RANGES THE API RETURNED (the backend owns the edges) with their
 // unreachable tail merged into one `+N` column — see `chartField`. Every column is
 // quantized to whole bricks — a bar of discrete cells, never a smooth anti-aliased
-// rectangle, because nothing in this app draws fractional pixels.
+// rectangle, because nothing in this app draws fractional pixels — and the FIELD IS
+// ALWAYS THE SAME HEIGHT, its tallest column reaching the top whatever the data
+// (`chartUnits`, which also gives a lone entry its full height).
 //
 // The component ALWAYS renders its fixed-height slot (the `.word-rarities` rule: hold the
 // layout space while invisible, so the chart's arrival moves NOTHING under it — SHARE
@@ -24,20 +26,6 @@ import type { Mode } from '../langs';
 // right (`rung-in`, the app's one "list arriving" gesture), the gold column lands after
 // the field, and the copy speaks last. A rehydrated result renders settled and replays
 // nothing; a failed round trip leaves the slot empty and silent by decision.
-
-// A column is at most this many bricks tall; the fullest band always reaches it and any
-// non-empty band shows at least one brick.
-const MAX_UNITS = 6;
-
-// The PLAYER's column is a MARKER, not a tally (user-decided 2026-08-15): it says "your
-// score sits here", so it always draws at least one real brick — including on a day whose
-// recorded population does not contain you (a submission the server refused, a GET that
-// landed before your own write). A grey 2px stub where the gold belongs is the one thing
-// this chart must never show: the whole point of an empty field is that YOUR bar is on it.
-function unitsOf(count: number, peak: number, you: boolean): number {
-  if (count <= 0) return you ? 1 : 0;
-  return Math.max(1, Math.ceil((count / peak) * MAX_UNITS));
-}
 
 // The copy line split around its highlighted value, so the number can wear the gold
 // without the localized sentence being assembled in code: the `{n}` placeholder marks
@@ -76,7 +64,9 @@ export default function ScoreChart({
 
   const { histogram, bucket } = placement;
   const { counts, you, low, high } = chartField(histogram.buckets, bucket);
-  const peak = Math.max(...counts, 1);
+  // How tall each column stands — the field's height is a constant, so the tallest of
+  // them always reaches the top (game/scores.ts, contract-tested).
+  const units = chartUnits(counts, you);
   const copy = histogramCopy(mode, histogram.buckets, histogram.total, bucket);
   const { before, strong, after } = copyParts(lang, copy);
 
@@ -88,23 +78,19 @@ export default function ScoreChart({
       {/* Decorative: the copy line below is the accessible reading of the same fact. */}
       <div className="score-plot" aria-hidden="true">
         <div className="score-field">
-          {counts.map((count, index) => {
-            const mine = index === you;
-            const units = unitsOf(count, peak, mine);
-            return (
-              <span
-                key={index}
-                className={`score-col${mine ? ' you' : ''} in`}
-                style={{ '--step': index } as CSSProperties}
-              >
-                {units === 0 ? (
-                  <i className="score-stub" />
-                ) : (
-                  Array.from({ length: units }, (_, u) => <i key={u} className="score-brick" />)
-                )}
-              </span>
-            );
-          })}
+          {units.map((bricks, index) => (
+            <span
+              key={index}
+              className={`score-col${index === you ? ' you' : ''} in`}
+              style={{ '--step': index } as CSSProperties}
+            >
+              {bricks === 0 ? (
+                <i className="score-stub" />
+              ) : (
+                Array.from({ length: bricks }, (_, u) => <i key={u} className="score-brick" />)
+              )}
+            </span>
+          ))}
         </div>
         {/* The field's two ends, named — the only numbers on the chart. The right one
             wears its `+` because that column is the merged tail (see chartField). */}
