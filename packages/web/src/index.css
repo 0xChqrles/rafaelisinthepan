@@ -1376,54 +1376,96 @@ button * {
   line-height: 1;
   color: var(--fg);
 }
-/* ---- the percentile histogram (#170): the day's population on the solved screen, one
-   bar per fixed score band (the ranges the API returned — the backend owns the edges).
-   The player's band wears the app's "you" GOLD (the route map's own grammar); every
-   band keeps a 2px stub at zero so the field's full width reads even when it is empty —
-   an empty chart with your bar marked IS the "you've just been early" message. The two
-   end values under it are the only axis: enough to orient the bands, no legend. */
-.score-chart {
+/* ---- the percentile histogram (#170): the day's population on the solved screen. A
+   field of QUANTIZED BRICK columns, one per fixed score band (the ranges the API
+   returned — the backend owns the edges): the anonymous crowd in the census's dim blue
+   (a pinned copy of the route drawing's `--unfound`, under this surface's own meaning —
+   the population is a field of players you have not met), the player's own band in the
+   "you" GOLD (the route map's you-node grammar), and an empty band keeping a 2px stub so
+   the field's full width reads even when it is empty — an empty field with your gold
+   brick on it IS the "you've just been early" message. No axis, no legend: the shape and
+   the gold carry the story, and the ONE copy line under it makes the claim, its number in
+   the same gold as the bar it describes.
+
+   The SLOT is fixed-height and always mounted once the results are up (the
+   `.word-rarities` rule: hold the layout space while invisible), so the chart arriving —
+   or never arriving, on a silent failure — moves nothing around it. Bricks are whole
+   pixels on hard edges; nothing here draws a fractional height. */
+.score-slot {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  width: 100%;
-  max-width: 340px; /* the run ruler's own column */
+  justify-content: flex-end;
+  height: 62px;
 }
-.score-bars {
+.score-field {
   display: flex;
   align-items: flex-end;
-  gap: 3px;
-  width: 100%;
-  height: 44px;
+  justify-content: center;
+  gap: 4px;
+  height: 34px; /* MAX_UNITS bricks of 4px + 2px seams */
 }
-.score-bar {
-  flex: 1 1 0;
-  height: max(calc(var(--h) * 100%), 2px);
-  background-color: var(--rail);
-  image-rendering: pixelated;
-}
-.score-bar.you {
-  background-color: var(--hole);
-  /* The player's own band must be visible even alone in an empty field. */
-  min-height: 6px;
-}
-.score-axis {
+.score-col {
   display: flex;
-  justify-content: space-between;
-  width: 100%;
-  font-family: var(--press);
-  font-size: 8px;
-  line-height: 1;
-  color: var(--muted);
+  flex-direction: column-reverse; /* bricks stack from the ground up */
+  gap: 2px;
+  width: 14px;
+  opacity: 0;
+  /* The census colour (see the block comment): the route drawing scopes `--unfound` to
+     its own frame, so the value is pinned here rather than reached for. */
+  color: #3a4270;
+}
+.score-col.you {
+  color: var(--hole);
+}
+.score-brick {
+  height: 4px;
+  background: currentColor; /* one colour decision per column, the chip-square rule */
+}
+.score-stub {
+  height: 2px;
+  background: var(--surface-hover);
+}
+/* The arrival: columns rise in left to right on the app's one "list arriving" gesture
+   (`rung-in`), the gold column lands AFTER the whole field — the crowd first, then you —
+   and the copy line speaks last. Reduced motion collapses the rises via the global rule
+   and keeps the delays (the floating numbers' own degradation); a rehydrated result wears
+   `.settled` and replays nothing. */
+.score-col.in {
+  animation: rung-in 200ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
+  animation-delay: calc(var(--step, 0) * 25ms);
+}
+.score-col.you.in {
+  animation-delay: calc(var(--cols, 0) * 25ms + 160ms);
 }
 .score-copy {
-  margin: 0;
+  margin: 10px 0 0;
   font-family: var(--press);
   font-size: 10px;
   line-height: 1.6;
+  letter-spacing: 1px;
+  text-transform: uppercase;
   color: var(--muted);
   text-align: center;
+  opacity: 0;
+}
+.score-copy.in {
+  animation: rung-in 200ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
+  animation-delay: calc(var(--cols, 0) * 25ms + 400ms);
+}
+.score-copy strong {
+  font-weight: normal;
+  color: var(--hole);
+}
+/* Being first is the one all-gold line: there is no number to highlight, and the claim
+   is entirely about you. */
+.score-copy.gold {
+  color: var(--hole);
+}
+.score-slot.settled .score-col,
+.score-slot.settled .score-copy {
+  opacity: 1;
+  animation: none;
 }
 
 /* Actions row: SHARE. */

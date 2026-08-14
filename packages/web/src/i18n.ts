@@ -99,10 +99,14 @@ const STRINGS = {
   // count-based and honest — an empty chart with your bucket marked already says "you've
   // just been early" — and only a real population (PERCENT_MIN_TOTAL, game/scores.ts)
   // earns the percentile claim. The chart carries the story; this line stays short.
+  // Every line with a value spells `{n}` in BOTH languages — ScoreChart splits on it so
+  // the number can wear the "you" gold without the sentence being assembled in code.
+  // scoreBeat's value arrives already suffixed ("82%"), so the percent sign never
+  // separates from its number.
   scoreFirst: { en: 'first player today', fr: 'premier joueur du jour' },
-  scoreOther: { en: 'you and 1 other', fr: 'toi et 1 autre' },
+  scoreOther: { en: 'you and {n} other', fr: 'toi et {n} autre' },
   scoreOthers: { en: 'you and {n} others', fr: 'toi et {n} autres' },
-  scoreBeat: { en: 'you beat {n}%', fr: 'tu bats {n}%' },
+  scoreBeat: { en: 'you beat {n}', fr: 'tu bats {n}' },
   ariaClose: { en: 'close', fr: 'fermer' },
   // ---- the route drawing (#117): a hole's neighborhood drawn as a LINE you travel. The
   // line teaches by SHAPE — the terminus, "you are here" and the departure are all said by

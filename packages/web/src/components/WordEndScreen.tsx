@@ -105,6 +105,24 @@ export default function WordEndScreen({
     return () => window.clearTimeout(id);
   }, [animate, reduceMotion, countTarget, score]);
 
+  // The population chart is this stack's LAST beat (#170): it may begin arriving once the
+  // rarity breakdown has unpacked the count (the chips' own stagger plus their rise). The
+  // chart holds its layout slot from the start, so the beat changes when it appears, never
+  // where SHARE sits.
+  const [chartStart, setChartStart] = useState(() => !animate);
+  useEffect(() => {
+    if (!animate) {
+      setChartStart(true);
+      return undefined;
+    }
+    if (countTarget !== score) return undefined;
+    const id = window.setTimeout(
+      () => setChartStart(true),
+      reduceMotion ? 0 : SCORE_COUNT_MS + claimedGrades.length * 90 + 300,
+    );
+    return () => window.clearTimeout(id);
+  }, [animate, reduceMotion, countTarget, score, claimedGrades.length]);
+
   // Delivery (native sheet / clipboard + the "COPIED" confirmation) is the shared hook's;
   // this screen only composes the word result's text.
   const { share, copied } = useShare();
@@ -154,9 +172,16 @@ export default function WordEndScreen({
         )}
       </span>
 
-      {/* Where this run sits among the day's players (#170) — rendered only when the
-          population actually came back; its absence is silent by decision. */}
-      {placement && <ScoreChart placement={placement} mode="word" lang={lang} />}
+      {/* Where this run sits among the day's players (#170). Always mounted: the slot
+          reserves its footprint, so the chart arriving — or never arriving, on a silent
+          failure — moves nothing under it. */}
+      <ScoreChart
+        placement={placement}
+        mode="word"
+        lang={lang}
+        animate={animate}
+        start={chartStart}
+      />
 
       <div className="result-actions">
         <button

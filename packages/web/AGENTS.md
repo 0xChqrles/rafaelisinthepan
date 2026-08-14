@@ -1204,14 +1204,33 @@ it to the local store — see `packages/backend/AGENTS.md`).
   transport/Turnstile failure so a later visit may retry — which is also what lets a Word
   run whose clock died with the tab closed submit on the revisit that finds it over. EVERY
   failure is silent by decision: the solved screen simply shows no histogram, never an
-  error. The chart (`components/ScoreChart`) renders at ANY N — bars from the ranges the
-  API returned (the backend owns the edges; never restate them), the player's bucket in the
-  "you" GOLD, the field's two end values as the only axis — and only the COPY adapts to N
-  (`game/scores.ts` `histogramCopy`, contract-tested): total ≤ 1 → "first player today",
-  below `PERCENT_MIN_TOTAL` (25) → "you and n others", above → "you beat x%" measured over
-  the OTHER players with strictly-worse buckets only (ties never claimed; worse = MORE
-  tries in sentence, FEWER claims in word). The hook launches as soon as the store reports
-  the round finished, so the network runs behind the solving choreography.
+  error. **The chart is a field of QUANTIZED BRICK columns** (`components/ScoreChart`,
+  redesigned on user review 2026-08-14 — the first cut's smooth fractional-height bars and
+  its 8px min/max axis were "not as good as the rest of the app"): one column per range
+  the API returned (the backend owns the edges; never restate them), each column at most
+  `MAX_UNITS` (6) whole 14×4 bricks (any non-empty band shows at least one), the anonymous
+  crowd in the census dim blue (a pinned COPY of the route drawing's `--unfound`, which is
+  scoped to `.route-frame` — the population is a field of players you have not met), the
+  player's band in the "you" GOLD, an empty band a 2px stub so the whole field reads even
+  when empty — an empty field with your gold tower on it IS the "you've just been early"
+  message. NO axis, no legend (show-don't-tell: the shape and the gold carry the story).
+  Only the COPY adapts to N (`game/scores.ts` `histogramCopy`, contract-tested): total ≤ 1
+  → "first player today" (the one all-gold line), below `PERCENT_MIN_TOTAL` (25) → "you
+  and n others", above → "you beat x%" measured over the OTHER players with strictly-worse
+  buckets only (ties never claimed; worse = MORE tries in sentence, FEWER claims in word)
+  — uppercase, 10px muted, the value in the bar's own gold via the `{n}` split (ScoreChart
+  splits the localized line on the placeholder so the number can wear the colour without
+  the sentence being assembled in code; `scoreBeat`'s value arrives as "82%" so the sign
+  never separates). **The slot is fixed-height and ALWAYS mounted** (the `.word-rarities`
+  rule): the chart arriving — or never arriving — moves nothing under it, SHARE included
+  (verified: SHARE's box is pixel-identical across the beat). **Arrival is the stack's
+  LAST beat**: after the ruler's colorize in the sentence tray, after the rarity
+  breakdown's chips in Word mode's, the columns rise in left to right on `rung-in` (25ms
+  steps), the GOLD column lands after the whole field — the crowd first, then you — and
+  the copy speaks last. Reduced motion collapses the rises and keeps the delays;
+  rehydrated results render `.settled` and replay nothing. The hook still launches the
+  network round trip the moment the store reports the round finished, so the data is
+  waiting long before its beat.
 - **The sentence game's one-time PLAY gate (user-decided 2026-08-11):** each mode explains
   ITS OWN rules before the first round, once — the tutorial teaches only the shared core
   concepts (semantic distance, word rarity). Word mode already had this by construction:
