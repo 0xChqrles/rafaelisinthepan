@@ -11,7 +11,8 @@
   shared/                     cross-cutting TS consumed by web + backend (pkg @whippin/shared)
     src/slug.ts               fold() — the slug/fold contract (byte-identical to slug())
     src/day.ts                the ONE 22:00-ET DST-correct game-day logic (client + server + publish)
-    src/types.ts              per-puzzle schema types (Puzzle, Hole, RankMap, …)
+    src/scores.ts             WORD_CLAIM_ZONE — Word score ceiling shared by web + backend
+    src/types.ts              shared puzzle + score-API schema types (Puzzle, Hole, ScoreHistogram, …)
     src/heat.ts               heatColor() — heat ramp (rank exponents + floating hits ONLY)
     src/progressColor.ts      progressColor() + progressEmoji() — progress ramp (progress bar, selector badge, run rulers incl. the card, share-text emoji row); shares ramp.ts
     src/ramp.ts               the piecewise interpolator both ramps share (internal)
@@ -32,6 +33,11 @@
   add a case there, never on one side only (root `AGENTS.md`, Testing).
 - `src/day.ts` is the ONE 22:00-ET DST-correct game-day definition (client + server
   + publish) — see the routing contract in the root `AGENTS.md`.
+- `src/scores.ts` owns `WORD_CLAIM_ZONE` across the web's Word rules and the backend's
+  #169 possible-score validation. The web may tune the field without regenerating an
+  artifact, but the server must move/deploy with it so a real score is never rejected and
+  an impossible one is never admitted. `web/game/wordGame.ts` re-exports it as
+  `CLAIM_ZONE` for its existing consumers.
 - `src/heat.ts` (heat ramp: rank exponents + floating hits ONLY) and
   `src/progressColor.ts` (progress ramp + `progressEmoji`) are DIFFERENT ramps with
   different meanings — never borrow one for the other's job (they share `ramp.ts`).

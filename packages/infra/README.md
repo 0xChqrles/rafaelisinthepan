@@ -21,10 +21,16 @@ Provisions the backend (#2) so it is reproducible and deployable from one comman
 - **S3 puzzle bucket** — private (all public access blocked, TLS enforced, encrypted).
   Holds `<YYYY-MM-DD>.<lang>.json` objects keyed by
   [`backend/src/layout.ts`](../backend/src/layout.ts). Upload target for #4.
+- **DynamoDB score table** — on-demand, encrypted, and retained on teardown.
+  One aggregate counter item per `(date, lang, mode)` is permanent; HMAC-IP dedup items
+  have an `expiresAt` TTL and disappear after 48 hours. PITR is intentionally disabled so
+  backups cannot extend the pseudonymous dedup data's lifetime. There are no indexes or scans.
 - **Lambda + Function URL** — runs the existing backend entrypoint
   [`backend/src/index.ts`](../backend/src/index.ts) (`createHandler` over the S3 store),
   bundled with esbuild at synth time. Reads `PUZZLE_BUCKET` / `ALLOWED_ORIGIN` from the
-  environment (set by the stack). Granted **read-only** S3 access; the Function URL is
+  environment (set by the stack), plus score table/secret configuration. Granted
+  **read-only** S3, only DynamoDB `GetItem`/`UpdateItem`, and SSM `GetParameters` on the two
+  exact SecureString ARNs; the Function URL is
   **IAM-auth** so only CloudFront can invoke it.
 - **CloudFront** — CDN in front of the Function URL via **Origin Access Control**. Cache
   key = request path + the `lang`, `date` and `mode` query strings (the allowList in
@@ -32,6 +38,11 @@ Provisions the backend (#2) so it is reproducible and deployable from one comman
   parameter never reaches the Lambda at all); the origin's `Cache-Control`
   (`max-age=300, s-maxage=31536000`) drives the TTL, purged by
   `pnpm puzzle:publish --s3` and by the backend deploy job.
+  `/scores` is a separate zero-TTL behavior: it allows POST, forwards exactly `lang`,
+  `date`, `mode`, and forwards `CloudFront-Viewer-Address` plus the viewer-supplied
+  `x-amz-content-sha256` outside the cache key. The former feeds server-side HMAC dedup;
+  the latter is required for OAC to sign a Lambda-URL POST. It cannot inherit the puzzle
+  response's year-long cache.
 - **Custom API domain (optional)** — with `-c domainName=<apex>` the distribution serves at
   `api.<domain>` (override the label with `-c apiSubdomain=`): a DNS-validated ACM cert
   in-stack (this stack is in `us-east-1`) plus Route53 A/AAAA aliases. Without it the API
@@ -40,10 +51,34 @@ Provisions the backend (#2) so it is reproducible and deployable from one comman
 
 ```
               ┌──────────────┐    OAC (SigV4)   ┌───────────────────┐  s3:GetObject  ┌────────────┐
- viewer  ───▶ │  CloudFront  │ ───────────────▶ │ Lambda (Fn URL,   │ ─────────────▶ │ S3 (private│
-  (HTTPS)     │  + cache     │                  │ IAM auth)         │                │  bucket)   │
-              └──────────────┘                  └───────────────────┘                └────────────┘
+ viewer  ───▶ │  CloudFront  │ ───────────────▶ │ Lambda (Fn URL,   │ ─────────────▶ │ S3 puzzles │
+  (HTTPS)     │ cache split  │                  │ IAM auth)         │ ───────┐        └────────────┘
+              └──────────────┘                  └───────────────────┘        │ Get/Update
+                                                                            ▼
+                                                                      ┌────────────┐
+                                                                      │ DynamoDB   │
+                                                                      │ scores     │
+                                                                      └────────────┘
 ```
+
+### Score secrets
+
+The stack puts only two existing **SSM SecureString parameter names** in the Lambda
+environment. On first use, the entrypoint resolves both values with one decrypted
+`GetParameters` call and reuses a successful result for that execution environment. A
+failed read is discarded so the next invocation retries. Their values never appear in
+source, Lambda configuration, or `cdk synth` output.
+Create them once before the first score-enabled deploy:
+
+```bash
+aws ssm put-parameter --region us-east-1 --type SecureString \
+  --name /whippin/turnstile-secret --value '<Cloudflare Turnstile secret>'
+aws ssm put-parameter --region us-east-1 --type SecureString \
+  --name /whippin/ip-hmac-secret --value "$(openssl rand -hex 32)"
+```
+
+Use `--overwrite` for an intentional rotation. Alternate parameter names can be supplied
+with `-c turnstileSecretParameter=/path -c ipHmacSecretParameter=/path`.
 
 ## `WhippinWebStack` (#21) — web front hosting
 
@@ -169,6 +204,7 @@ caching the result into `cdk.context.json`.
 | ------------------------ | ------------------------------------------------------------------------- |
 | `ApiUrl`                 | API base URL the web app calls — `https://api.<domain>` — set as `VITE_API_BASE_URL`. |
 | `PuzzleBucketName`       | the S3 bucket to publish puzzles into (`pnpm puzzle:publish --s3`).        |
+| `ScoreTableName`         | the DynamoDB table holding anonymous score counters + 48h dedup items.     |
 | `FunctionUrl`            | the Lambda Function URL (CloudFront origin; not called directly).         |
 | `DistributionDomainName` | the CloudFront default domain (Route53 alias target for `api.<domain>`).   |
 | `DistributionId`         | the distribution the deploy job and `puzzle:publish --s3` invalidate.      |

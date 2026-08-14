@@ -91,6 +91,24 @@ export interface WordPuzzle {
   ranks: WordRanks;
 }
 
+// One fixed score band returned by the backend's live histogram endpoint (#169).
+// Bounds are inclusive. The server owns them because changing a boundary changes which
+// DynamoDB counter a submission increments; consumers render the ranges they receive
+// rather than duplicating those committed edges.
+export interface ScoreHistogramBucket {
+  min: number;
+  max: number;
+  count: number;
+}
+
+export interface ScoreHistogram {
+  buckets: ScoreHistogramBucket[];
+  total: number;
+  // The submitted score's bucket on POST; null on the read-only GET. A revisiting client
+  // already knows its persisted score and can locate it in the inclusive ranges above.
+  bucket: number | null;
+}
+
 export interface RuntimeHole {
   pos: number;
   secret: string; // secret slug -> key into RankMap

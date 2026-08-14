@@ -14,7 +14,7 @@
 // is whether the run is over: that is a DEADLINE fact, wall-clock, held by the round
 // state (state/gameStore.ts). Rendering and persistence live elsewhere.
 
-import type { RankEntry, WordRanks } from '@whippin/shared';
+import { WORD_CLAIM_ZONE, type RankEntry, type WordRanks } from '@whippin/shared';
 
 // The claimable zone: the top-CLAIM_ZONE ranked groups, Word mode's whole playing field.
 // A GAME RULE, not the TOP_K map cap (which stays untested here: off-map is simply "no
@@ -32,7 +32,7 @@ import type { RankEntry, WordRanks } from '@whippin/shared';
 // the board's row count; and `wordStatusOf` reads a run's progress as claimed/zone, so a
 // wider zone makes the archive's percentages proportionally smaller (which stays honest —
 // the field is deliberately unclearable, and now four times more so).
-export const CLAIM_ZONE = 1000;
+export const CLAIM_ZONE = WORD_CLAIM_ZONE;
 
 // ---- The economy (#163). Every constant below is a declared TUNING KNOB: nothing
 // restates them, the HUD reads them and the tests derive their expectations from them,

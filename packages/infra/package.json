@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "test": "vitest run",
     "synth": "cdk synth",
     "deploy": "node scripts/guard-local-deploy.mjs && cdk deploy",
     "deploy:app": "node scripts/guard-local-deploy.mjs && cdk deploy WhippinBackendStack WhippinWebStack",

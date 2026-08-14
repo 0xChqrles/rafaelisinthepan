@@ -1,8 +1,17 @@
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Stack, type StackProps, Duration, CfnOutput, RemovalPolicy, Aws } from 'aws-cdk-lib';
+import {
+  Stack,
+  type StackProps,
+  Duration,
+  CfnOutput,
+  RemovalPolicy,
+  Aws,
+  ArnFormat,
+} from 'aws-cdk-lib';
 import type { Construct } from 'constructs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { NodejsFunction, OutputFormat } from 'aws-cdk-lib/aws-lambda-nodejs';
@@ -15,8 +24,8 @@ import * as targets from 'aws-cdk-lib/aws-route53-targets';
 import { NagSuppressions } from 'cdk-nag';
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // packages/infra/lib
-// The Lambda IS the backend package's existing entrypoint (createHandler over the S3
-// store); nothing is duplicated here. esbuild bundles it (and @whippin/shared)
+// The Lambda IS the backend package's existing entrypoint (createHandler over the S3 puzzle
+// store + DynamoDB score store); nothing is duplicated here. esbuild bundles it (and @whippin/shared)
 // at synth time; @aws-sdk/* is left external (provided by the Node runtime).
 const LAMBDA_ENTRY = path.resolve(here, '..', '..', 'backend', 'src', 'index.ts');
 const REPO_LOCKFILE = path.resolve(here, '..', '..', '..', 'pnpm-lock.yaml');
@@ -39,6 +48,10 @@ interface BackendStackProps extends StackProps {
   // Canonical site origin (apex, e.g. https://whippin.ai) for the share card's absolute URLs
   // (og:image + game redirect, #8). The apex CloudFront routes /s/* and /og/* here.
   siteOrigin?: string;
+  // Existing SSM SecureString parameters. The Lambda environment receives these names and
+  // resolves both encrypted values together on first use, caching only a successful read.
+  turnstileSecretParameter?: string;
+  ipHmacSecretParameter?: string;
 }
 
 export class BackendStack extends Stack {
@@ -46,6 +59,10 @@ export class BackendStack extends Stack {
     super(scope, id, props);
 
     const allowedOrigin = props.allowedOrigin ?? '*';
+    const turnstileSecretParameter =
+      props.turnstileSecretParameter ?? '/whippin/turnstile-secret';
+    const ipHmacSecretParameter =
+      props.ipHmacSecretParameter ?? '/whippin/ip-hmac-secret';
 
     // ── S3: the private puzzle bucket ─────────────────────────────────────────
     // Holds the `<YYYY-MM-DD>.<lang>.json` objects keyed by backend/src/layout.ts
@@ -70,6 +87,17 @@ export class BackendStack extends Stack {
       // puzzle irrecoverably. Noncurrent versions are pruned after 90 days to bound cost.
       versioned: true,
       lifecycleRules: [{ noncurrentVersionExpiration: Duration.days(90) }],
+    });
+
+    // ── DynamoDB: anonymous daily score histograms (#169) ────────────────────
+    // One aggregate item per (date, lang, mode), plus one short-lived HMAC-IP dedup item.
+    // Every access names its exact partition key; no scan or secondary index is needed.
+    const scoreTable = new dynamodb.Table(this, 'ScoreTable', {
+      partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      encryption: dynamodb.TableEncryption.AWS_MANAGED,
+      timeToLiveAttribute: 'expiresAt',
+      removalPolicy: RemovalPolicy.RETAIN,
     });
 
     // Explicit log group so CloudWatch logs don't accumulate forever (the implicit
@@ -102,6 +130,13 @@ export class BackendStack extends Stack {
       // Read by backend/src/config.ts at runtime.
       environment: {
         PUZZLE_BUCKET: bucket.bucketName,
+        SCORE_TABLE: scoreTable.tableName,
+        // Names only: AWS::Lambda::Function environment properties do not support
+        // CloudFormation's ssm-secure dynamic references. The entrypoint decrypts both at
+        // runtime on first use, caches success, and retries a failed read on the next
+        // invocation, so no secret value enters this template.
+        TURNSTILE_SECRET_PARAMETER: turnstileSecretParameter,
+        IP_HMAC_SECRET_PARAMETER: ipHmacSecretParameter,
         ALLOWED_ORIGIN: allowedOrigin,
         // Canonical apex for the share card's absolute URLs (#8); omitted (request-origin
         // fallback) when there is no custom domain.
@@ -132,6 +167,26 @@ export class BackendStack extends Stack {
     // Least-privilege: the Lambda may only READ puzzle objects (s3:GetObject). It never
     // writes (publishing is a separate step, #4) and the bucket is never public.
     bucket.grantRead(fn);
+    // The transaction contains two Update actions, and the response is one GetItem. AWS
+    // authorizes transactional actions through their underlying item permissions, so no
+    // Scan/Query/Put/Delete surface is needed.
+    scoreTable.grant(fn, 'dynamodb:GetItem', 'dynamodb:UpdateItem');
+    const parameterArn = (name: string) =>
+      this.formatArn({
+        service: 'ssm',
+        resource: 'parameter',
+        resourceName: name.replace(/^\/+/, ''),
+        arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
+      });
+    fn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['ssm:GetParameters'],
+        resources: [
+          parameterArn(turnstileSecretParameter),
+          parameterArn(ipHmacSecretParameter),
+        ],
+      }),
+    );
 
     // Function URL locked to IAM auth: only CloudFront (via the Origin Access Control
     // wired below) is granted lambda:InvokeFunctionUrl, so the URL is not openly callable.
@@ -189,6 +244,40 @@ export class BackendStack extends Stack {
       enableAcceptEncodingBrotli: true,
     });
 
+    // `/scores` is live data: zero TTL for GET and POST alike. The cache policy still owns
+    // the exact query allow-list because, without it, CloudFront strips those values before
+    // the Lambda sees them even when caching is disabled.
+    const scoreCachePolicy = new cloudfront.CachePolicy(this, 'ScoreCachePolicy', {
+      cachePolicyName: 'WhippinLiveScores',
+      comment: 'Live score histogram: forward lang/date/mode and never cache.',
+      queryStringBehavior: cloudfront.CacheQueryStringBehavior.allowList('lang', 'date', 'mode'),
+      headerBehavior: cloudfront.CacheHeaderBehavior.none(),
+      cookieBehavior: cloudfront.CacheCookieBehavior.none(),
+      minTtl: Duration.seconds(0),
+      defaultTtl: Duration.seconds(0),
+      maxTtl: Duration.seconds(0),
+    });
+
+    // Viewer address is generated by CloudFront from the actual connection and forwarded
+    // outside the cache key. The IAM-only Function URL makes it a trusted HMAC input; a
+    // viewer-supplied X-Forwarded-For chain is deliberately ignored by the handler. OAC
+    // cannot sign a POST to a Lambda URL without the exact viewer-computed body hash, so
+    // forward that header too (CORS exposes it, and #170's caller must supply it).
+    const scoreOriginRequestPolicy = new cloudfront.OriginRequestPolicy(
+      this,
+      'ScoreOriginRequestPolicy',
+      {
+        originRequestPolicyName: 'WhippinLiveScoresOrigin',
+        comment: 'Forward the trusted viewer address and required score POST payload hash.',
+        headerBehavior: cloudfront.OriginRequestHeaderBehavior.allowList(
+          'CloudFront-Viewer-Address',
+          'x-amz-content-sha256',
+        ),
+        queryStringBehavior: cloudfront.OriginRequestQueryStringBehavior.none(),
+        cookieBehavior: cloudfront.OriginRequestCookieBehavior.none(),
+      },
+    );
+
     // Security response headers for the API. CORS stays owned by the Lambda (it echoes the
     // configured origin + Vary), so this policy adds ONLY transport/sniffing hardening and
     // deliberately sets no CORS/CSP (CSP is a document concern, not a JSON API's).
@@ -209,6 +298,7 @@ export class BackendStack extends Stack {
       },
     });
 
+    const functionOrigin = origins.FunctionUrlOrigin.withOriginAccessControl(fnUrl);
     const distribution = new cloudfront.Distribution(this, 'PuzzleCdn', {
       comment: 'Whippin daily-puzzle API',
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100, // NA + EU (en/fr audience)
@@ -219,7 +309,7 @@ export class BackendStack extends Stack {
       defaultBehavior: {
         // OAC: CloudFront signs requests to the IAM-protected Function URL and is the
         // only principal allowed to invoke it.
-        origin: origins.FunctionUrlOrigin.withOriginAccessControl(fnUrl),
+        origin: functionOrigin,
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         // GET serves puzzles; OPTIONS is the CORS preflight the handler answers (204).
         allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
@@ -227,6 +317,20 @@ export class BackendStack extends Stack {
         cachePolicy,
         responseHeadersPolicy: apiHeaders,
         compress: true,
+      },
+      additionalBehaviors: {
+        // `scores*` also catches a harmless trailing slash; the handler still accepts only
+        // the exact normalized `/scores` route.
+        'scores*': {
+          origin: functionOrigin,
+          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+          cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
+          cachePolicy: scoreCachePolicy,
+          originRequestPolicy: scoreOriginRequestPolicy,
+          responseHeadersPolicy: apiHeaders,
+          compress: true,
+        },
       },
     });
 
@@ -270,7 +374,7 @@ export class BackendStack extends Stack {
         {
           id: 'AwsSolutions-IAM5',
           reason:
-            'bucket.grantRead grants s3:GetObject*/GetBucket* on <bucket>/* — the minimal read surface to fetch daily-puzzle objects by key (wildcard is on object keys, not extra actions).',
+            'S3 read access is scoped to the puzzle bucket/object keys. DynamoDB is scoped to this table with only GetItem/UpdateItem, and SSM GetParameters to the two exact secret-parameter ARNs; no index or parameter wildcard exists.',
         },
         {
           id: 'AwsSolutions-L1',
@@ -280,6 +384,13 @@ export class BackendStack extends Stack {
       ],
       true, // also apply to the function's generated role/policy (children)
     );
+    NagSuppressions.addResourceSuppressions(scoreTable, [
+      {
+        id: 'AwsSolutions-DDB3',
+        reason:
+          'PITR is intentionally disabled: this table co-locates 48-hour HMAC-IP dedup items, and backups would retain that pseudonymous data beyond the explicit privacy lifetime. Aggregate counters are anonymous and accept this recovery tradeoff.',
+      },
+    ]);
     NagSuppressions.addResourceSuppressions(distribution, [
       {
         id: 'AwsSolutions-CFR1',
@@ -288,7 +399,7 @@ export class BackendStack extends Stack {
       {
         id: 'AwsSolutions-CFR2',
         reason:
-          'No WAF: the sole origin is an IAM-auth Function URL reachable only via OAC, serving cacheable read-only JSON; WAF cost is unjustified for this surface.',
+          'No WAF: the origin is IAM-only via OAC; score writes require Turnstile, validate the puzzle-aware range, and cap HMAC-IP submissions atomically. WAF cost is unjustified at this scale.',
       },
       {
         id: 'AwsSolutions-CFR3',
@@ -312,6 +423,10 @@ export class BackendStack extends Stack {
     new CfnOutput(this, 'PuzzleBucketName', {
       description: 'S3 bucket holding the daily puzzles (upload target for #4).',
       value: bucket.bucketName,
+    });
+    new CfnOutput(this, 'ScoreTableName', {
+      description: 'DynamoDB table holding anonymous daily score counters and 48h dedup items.',
+      value: scoreTable.tableName,
     });
     new CfnOutput(this, 'FunctionUrl', {
       description: 'Lambda Function URL (CloudFront origin; not called by the web app directly).',
