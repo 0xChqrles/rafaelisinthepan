@@ -450,7 +450,7 @@ function Round({
   }, []);
 
   // The dissolve reporting itself finished is what swaps the screen: DissolvePhrase has
-  // eroded every letter (plus its own closing breath), and the solved stage may rise.
+  // scrambled every word out (plus its own closing breath), and the solved stage may rise.
   const finishDissolve = useCallback(() => {
     setDissolved(true);
   }, []);
@@ -723,8 +723,8 @@ function Round({
             {/* The sentence, through every phase that owns it: the live holes/hits while
                 playing, the fully resolved sentence through the solving beats — and then
                 its EXIT: once the keyboard has dropped (`resultsUp`), the live Phrase
-                hands its exact pixels to DissolvePhrase, which erodes them letter by
-                letter and reports done (the stage swap above). The wrapper anchors the
+                hands its exact pixels to DissolvePhrase, which scrambles every word out
+                to the empty string and reports done (the stage swap above). The wrapper anchors the
                 score watermark behind the phrase (z-index:-1 in .play's isolated stacking
                 context), printed on the background's 24px cells (CellDigits); it fades
                 with the dissolve — the count's next appearance is the stage's headline. */}

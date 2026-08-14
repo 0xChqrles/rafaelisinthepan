@@ -1033,27 +1033,28 @@ it to the local store — see `packages/backend/AGENTS.md`).
 - **The solved SCREEN (user-decided 2026-08-14, superseding the tray-stack layout — "the
   sentence takes way too much space on mobile"): the sentence DISSOLVES and the result
   takes the whole column.**
-  - **The sentence's exit is the game's own word-transition run to absence**
-    (`components/DissolvePhrase`): once the solving beats have handed the screen back
-    (streak dismissed, keyboard dropped — `resultsUp`), the live Phrase swaps for a
-    pixel-identical letter-boxed copy (same `.phrase`/`.word`/`.hole-group`/`.hole
-    .resolved`/`.hole-letter` structure, so frame 0 matches to the pixel and the wrap
-    points are the same wrap points), and every letter churns random glyphs on the
-    scramble's OWN 40ms tick, each for 2–5 frames, then goes OUT. **The erosion is
-    SCATTERED, and its length is a CONSTANT** (user-decided on review the same day,
-    superseding the first cut's 20ms left-to-right sweep, which read as a cursor deleting
-    the sentence): each letter draws its start uniformly from ONE fixed window
-    (`SPREAD_TICKS`, 720ms), so the order is random every time, "batches" fall out of the
-    uniform draw with no batching machinery, and a long sentence dissolves in exactly the
-    time a short one does — more letters simply go out per tick. Both dice are rolled
-    ONCE at mount (a re-render can never re-roll a letter — the slash-flip rule). A dissolved letter keeps its box `visibility: hidden`
-    (`.hole-letter.gone`) — never an actual space, never removed — so the monospace
-    advance holds every surviving letter exactly where it was: the sentence burns down IN
-    PLACE, and nothing reflows until the whole area unmounts. The score watermark fades
-    with it (`.phrase-anchor.dissolving`); the prompt zone stays laid out (retired,
-    invisible) through the erosion so the centered sentence never moves. A 180ms breath
-    after the last letter, then `onDone` swaps the screen. Reduced motion skips the churn
-    entirely; a rehydrated solve mounts `dissolved` and replays nothing.
+  - **The sentence's exit is the game's own word-transition, played to the EMPTY STRING**
+    (`components/DissolvePhrase`; word-sliced on user review 2026-08-14, superseding two
+    per-letter cuts the same day — a left-to-right sweep that read as a cursor deleting
+    the sentence, then a scattered per-letter burn whose hidden boxes held the layout
+    frozen): once the solving beats have handed the screen back (streak dismissed,
+    keyboard dropped — `resultsUp`), the live Phrase swaps for a pixel-identical copy
+    (same `.phrase`/`.word`/`.hole-group`/`.hole.resolved`/`.hole-letter` structure, so
+    frame 0 matches to the pixel), and every WORD plays `scrambleFrame('', len, p)` — the
+    exact #102 slot-machine swap a hole plays all round, letters churning while the
+    length interpolates down one letter at a time — so the sentence closes up gradually
+    around each shrinking word the way it always has, and the exit reads as one more
+    transition rather than a new effect (a hole's prefix/secret/suffix shrink as separate
+    pieces, keeping their own colours, on one shared start). **Word starts are drawn
+    uniformly from ONE fixed window** (`SPREAD_TICKS`, 520ms, ahead of the scramble's own
+    `SCRAMBLE_MS` settle): random order every time, "batches" of words fall out of the
+    draw with no batching machinery, and the beat's length is a CONSTANT — a long
+    sentence dissolves in exactly the time a short one does. The plan is rolled ONCE at
+    mount (a re-render can never re-roll a word — the slash-flip rule). The score
+    watermark fades with it (`.phrase-anchor.dissolving`); the prompt zone stays laid out
+    (retired, invisible) through the erosion. A 180ms breath after the last word, then
+    `onDone` swaps the screen. Reduced motion skips the churn entirely; a rehydrated
+    solve mounts `dissolved` and replays nothing.
   - **The solved STAGE then owns the full column** (`components/SolvedScreen`, rebuilt;
     the `.play`+`.tray` split does not render at all — nothing is left to reserve the
     keyboard's footprint for). Top to bottom: the SOURCE typed big and centered (kind
@@ -1169,7 +1170,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **The sentence must NOT move between the solved beats (decided 2026-07-24):** through
   the streak, the drop and the dissolve, the tray keeps the keyboard's fixed height and
   the retired prompt keeps its layout, so .play's centering never shifts the phrase — the
-  sentence holds perfectly still right up until it erodes in place. **Fresh-solve
+  sentence holds perfectly still right up until its words start scrambling out (the
+  gradual #102 reflow around a shrinking word is the one motion the erosion plays,
+  exactly as it played all round). **Fresh-solve
   sequence (decided 2026-07-10):** the
   solving submit immediately sends the prompt left while fading it out, in the same render
   that launches the final hole-hit feedback. The next stage waits until EVERY `Hole` reports

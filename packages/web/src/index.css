@@ -925,13 +925,6 @@ button * {
 .hole-letter {
   display: inline-block;
 }
-/* A DISSOLVED letter (DissolvePhrase, 2026-08-14): the sentence's exit erodes letters
-   into absence, but the box stays — invisible, never removed and never an actual space —
-   so the pixel font's fixed advance keeps every surviving letter exactly where it was.
-   The sentence burns down in place; nothing reflows until the whole area unmounts. */
-.hole-letter.gone {
-  visibility: hidden;
-}
 /* The wave (#129): a hole ripples its letters, up then down in sequence. EVERY hole runs its
    own clock (Hole.tsx, 3–10s re-rolled per wave), so several words can be mid-wave at once —
    a single ripple travelling around the sentence reads as a cursor pointing somewhere, where
