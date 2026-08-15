@@ -38,10 +38,13 @@ Provisions the backend (#2) so it is reproducible and deployable from one comman
   parameter never reaches the Lambda at all); the origin's `Cache-Control`
   (`max-age=300, s-maxage=31536000`) drives the TTL, purged by
   `pnpm puzzle:publish --s3` and by the backend deploy job.
-  `/scores` is a separate zero-TTL behavior: it allows POST, forwards exactly `lang`,
-  `date`, `mode`, and forwards `CloudFront-Viewer-Address` plus the viewer-supplied
-  `x-amz-content-sha256` outside the cache key. The former feeds server-side HMAC dedup;
-  the latter is required for OAC to sign a Lambda-URL POST. It cannot inherit the puzzle
+  `/scores` is a separate zero-TTL behavior: it allows POST, uses AWS's managed
+  `CachingDisabled` policy, and forwards exactly `lang`, `date`, `mode` through its origin
+  request policy outside the unused cache key. That policy uses CloudFront's Lambda-URL-safe
+  `allExcept: Host` header mode, which carries `CloudFront-Viewer-Address` plus the
+  viewer-supplied `x-amz-content-sha256`; explicitly allowlisting the reserved `x-amz-*`
+  header is rejected by CloudFront. The former feeds server-side HMAC dedup; the latter is
+  required for OAC to sign a Lambda-URL POST. This behavior cannot inherit the puzzle
   response's year-long cache.
 - **Custom API domain (optional)** — with `-c domainName=<apex>` the distribution serves at
   `api.<domain>` (override the label with `-c apiSubdomain=`): a DNS-validated ACM cert

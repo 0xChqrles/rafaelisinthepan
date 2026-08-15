@@ -12,7 +12,7 @@
   infra/                      AWS CDK app: backend (#3) + web hosting (#21) sibling stacks (pkg @whippin/infra)
     bin/app.ts                CDK app entry — WhippinBackendStack + WhippinWebStack (cdk.json runs it via `npx tsx`)
     lib/backend-stack.ts      BackendStack: private S3 + DynamoDB + Lambda(Fn URL) + CloudFront; opt api.<domain>; us-east-1
-    lib/backend-stack.test.ts synthesized score-boundary contract (SSM names/IAM + OAC headers)
+    lib/backend-stack.test.ts synthesized score-boundary contract (SSM names/IAM + deployable zero-cache/OAC policies)
     lib/web-stack.ts          WebStack (#21): private S3 (SPA) + CloudFront(OAC) + ACM + Route53; apex; us-east-1
     lib/deploy-role-stack.ts  DeployRoleStack (#33): GitHub OIDC provider + the CI deploy role; human-deployed
     scripts/guard-local-deploy.mjs  blocks `deploy`/`deploy:app` outside CI (ALLOW_LOCAL_DEPLOY=1 to break glass)
@@ -52,11 +52,14 @@
   DynamoDB table (string `pk`, `expiresAt` TTL, `RETAIN`), with the Lambda limited to
   `GetItem`/`UpdateItem`; aggregate counters persist while HMAC-IP dedup items expire after
   48h. PITR is deliberately off because a backup would retain those pseudonymous items past
-  their privacy lifetime. `/scores` has a separate `scores*` behavior that allows writes,
-  uses a zero-TTL cache policy whose allowList is exactly `lang`/`date`/`mode`, and an
-  origin-request policy that
-  forwards `CloudFront-Viewer-Address` plus the viewer's `x-amz-content-sha256` without
-  keying on either. The latter is mandatory for OAC to sign a Lambda-URL POST. The Lambda
+  their privacy lifetime. `/scores` has a separate `scores*` behavior that allows writes
+  and uses AWS's managed zero-TTL `CachingDisabled` policy. Its origin-request policy
+  forwards exactly the `lang`/`date`/`mode` queries outside the unused cache key and uses
+  CloudFront's `allExcept: Host` header mode — the AWS Lambda-URL pattern that carries both
+  `CloudFront-Viewer-Address` and the viewer's `x-amz-content-sha256`. CloudFront rejects
+  both a fully-zero custom cache policy with cache-key values and an origin allow-list that
+  explicitly names a reserved `x-amz-*` header, so neither narrower-looking representation
+  is deployable. The payload hash is mandatory for OAC to sign a Lambda-URL POST. The Lambda
   receives the table name and SSM SecureString PARAMETER NAMES (defaults
   `/whippin/turnstile-secret`, `/whippin/ip-hmac-secret`; override with the matching `-c`
   contexts), reads both decrypted values together on first use, caches a successful result,

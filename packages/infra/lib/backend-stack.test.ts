@@ -51,14 +51,38 @@ describe('score production boundary (#169)', () => {
     expect(serializedResources).not.toContain('*');
   });
 
-  it('forwards both the trusted viewer address and viewer-computed payload hash', () => {
+  it('uses a deployable zero-cache score behavior with exact query forwarding', () => {
+    const distributions = Object.values(template.findResources('AWS::CloudFront::Distribution'));
+    expect(distributions).toHaveLength(1);
+    const behaviors = distributions[0].Properties.DistributionConfig.CacheBehaviors as Record<
+      string,
+      unknown
+    >[];
+    const scores = behaviors.find(({ PathPattern }) => PathPattern === 'scores*');
+    expect(scores?.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
+
+    // CloudFront rejects custom cache policies with every TTL at zero when they also
+    // include cache-key values. Only the puzzle behavior should need a custom policy.
+    expect(Object.values(template.findResources('AWS::CloudFront::CachePolicy'))).toHaveLength(1);
+
     const policies = Object.values(
       template.findResources('AWS::CloudFront::OriginRequestPolicy'),
     );
     expect(policies).toHaveLength(1);
+    expect(policies[0].Properties.OriginRequestPolicyConfig.QueryStringsConfig).toEqual({
+      QueryStringBehavior: 'whitelist',
+      QueryStrings: ['lang', 'date', 'mode'],
+    });
+    expect(policies[0].Properties.OriginRequestPolicyConfig.CookiesConfig).toEqual({
+      CookieBehavior: 'none',
+    });
+
+    // AWS's Lambda-URL policy pattern: all viewer/generated CloudFront headers except
+    // Host. This carries x-amz-content-sha256 and CloudFront-Viewer-Address without
+    // illegally naming the reserved x-amz-* header in an allow-list.
     expect(policies[0].Properties.OriginRequestPolicyConfig.HeadersConfig).toEqual({
-      HeaderBehavior: 'whitelist',
-      Headers: ['CloudFront-Viewer-Address', 'x-amz-content-sha256'],
+      HeaderBehavior: 'allExcept',
+      Headers: ['Host'],
     });
   });
 });
