@@ -222,10 +222,10 @@ export default function SolvedScreen({
     if (!captionIn) return undefined;
     const id = window.setTimeout(
       () => setScoreIn(true),
-      captionDone ? SCORE_LEAD_MS : captionDurationMs(source) + CAPTION_FALLBACK_SLACK_MS,
+      captionDone ? SCORE_LEAD_MS : captionDurationMs(source, lang) + CAPTION_FALLBACK_SLACK_MS,
     );
     return () => window.clearTimeout(id);
-  }, [animate, stageIn, reduceMotion, hasSource, wordsSpanMs, captionIn, captionDone, source]);
+  }, [animate, stageIn, reduceMotion, hasSource, wordsSpanMs, captionIn, captionDone, source, lang]);
 
   const [countTarget, setCountTarget] = useState(() => (animate ? 0 : guessCount));
   useEffect(() => {
@@ -320,6 +320,7 @@ export default function SolvedScreen({
           <div className={`solved-source${captionIn ? ' in' : ''}`}>
             <SolvedCaption
               source={source}
+              lang={lang}
               animate={animate && captionIn && !captionDone}
               onComplete={finishCaption}
             />

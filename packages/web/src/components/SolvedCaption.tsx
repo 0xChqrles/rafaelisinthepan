@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { Source } from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
+import { t } from '../i18n';
 
 const TYPE_MS = 18;
 const CURSOR_HOLD_MS = 140;
@@ -10,19 +11,48 @@ const HIDDEN: CSSProperties = { visibility: 'hidden' };
 // The citation types as ONE run of characters across its lines, so the deadline the solved
 // stage holds behind the completion signal is derived from the same numbers the typewriter
 // runs on (see SolvedScreen's timeline).
-export function captionDurationMs(source?: Source): number {
-  const chars = sourceLines(source).reduce((n, line) => n + Array.from(line).length, 0);
+export function captionDurationMs(source: Source | undefined, lang: string): number {
+  const chars = sourceLines(source, lang).reduce((n, line) => n + Array.from(line.text).length, 0);
   return chars * TYPE_MS + CURSOR_HOLD_MS;
 }
 
-// The source, as the screen says it (user-decided 2026-08-15): KIND, AUTHOR, WORK — one
-// per line, in that order, and NOTHING more. No dash, no comma, no joining prose: three
-// facts, each on its own line, is what a credit block is. Every field is independently
-// optional in the schema (#5), so a partial source simply prints fewer lines.
-function sourceLines(source?: Source): string[] {
-  return [source?.kind, source?.author, source?.work].filter((line): line is string =>
-    Boolean(line),
-  );
+// The source as a CREDIT BLOCK (user-decided 2026-08-15, superseding three bare stacked
+// lines — and the `— Author, Work` run-on before them): the two names were the problem
+// both times. Stacked with nothing between them, `Victor Hugo` over `Les Misérables` is
+// two strings the reader has to guess the roles of; a comma said even less. So the block
+// says which is which, in three ways at once and no more words than one:
+//
+//        BOOK                the KIND tag, the small blue label it has always been
+//     Les Misérables         the WORK — the credit's headline: gold, and the biggest
+//                            type in the block
+//     BY Victor Hugo         the AUTHOR — muted, small, and named as a relationship
+//
+// The function word is what makes it unambiguous rather than merely ordered, and it earns
+// its place the way `OF` does in `RANK #5 OF 59`. The size and colour do the rest: gold is
+// the credit's content and muted is the line that qualifies it, so the eye lands on the
+// title first and reads the person as belonging to it.
+//
+// Every field is independently optional in the schema (#5), so a partial source simply
+// prints fewer lines — and a source with an author but NO work drops the function word and
+// gives the author the headline treatment, because a lone name is not a credit to anything
+// and `BY Victor Hugo` under nothing would be a sentence missing its subject.
+interface CaptionLine {
+  className: string;
+  text: string;
+}
+
+function sourceLines(source: Source | undefined, lang: string): CaptionLine[] {
+  const lines: CaptionLine[] = [];
+  if (source?.kind) lines.push({ className: 'solved-kind', text: source.kind });
+  if (source?.work) lines.push({ className: 'solved-work', text: source.work });
+  if (source?.author) {
+    lines.push(
+      source.work
+        ? { className: 'solved-by', text: `${t(lang, 'sourceBy')} ${source.author}` }
+        : { className: 'solved-work', text: source.author },
+    );
+  }
+  return lines;
 }
 
 function typedLine(chars: string[], shown: number, cursor: boolean) {
@@ -57,10 +87,12 @@ function typedLine(chars: string[], shown: number, cursor: boolean) {
 // there is no unsolved DOM for the citation to leak into.)
 export default function SolvedCaption({
   source,
+  lang,
   animate = false,
   onComplete,
 }: {
   source?: Source;
+  lang: string; // the credit's one function word is chrome, so it is localized
   animate?: boolean;
   onComplete?: () => void;
 }) {
@@ -68,13 +100,13 @@ export default function SolvedCaption({
   // in that run, so the cursor walks from line to line without any per-line scheduling.
   const lines = useMemo(() => {
     let start = 0;
-    return sourceLines(source).map((text, index) => {
-      const chars = Array.from(text);
-      const line = { chars, start, kind: index === 0 && Boolean(source?.kind) };
+    return sourceLines(source, lang).map((line) => {
+      const chars = Array.from(line.text);
+      const entry = { chars, start, className: line.className };
       start += chars.length;
-      return line;
+      return entry;
     });
-  }, [source]);
+  }, [source, lang]);
   const total = lines.reduce((n, line) => n + line.chars.length, 0);
   const reduceMotion = prefersReducedMotion();
   const [shown, setShown] = useState(() => (animate && !reduceMotion ? 0 : total));
@@ -139,7 +171,9 @@ export default function SolvedCaption({
   // last one, where it blinks out its hold.
   const typing = lines.findIndex((line) => visible < line.start + line.chars.length);
   const cursorLine = showCursor ? (typing === -1 ? lines.length - 1 : typing) : -1;
-  const accessibleText = sourceLines(source).join('. ');
+  const accessibleText = sourceLines(source, lang)
+    .map((line) => line.text)
+    .join('. ');
 
   return (
     <div className="solved-caption">
@@ -152,7 +186,7 @@ export default function SolvedCaption({
             // The lines are static display metadata in a fixed order.
             // eslint-disable-next-line react/no-array-index-key
             key={index}
-            className={line.kind ? 'solved-kind' : 'solved-attribution'}
+            className={line.className}
             aria-hidden={animate || undefined}
           >
             {typedLine(chars, lineShown, cursorLine === index)}

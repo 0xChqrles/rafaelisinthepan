@@ -1065,16 +1065,32 @@ it to the local store — see `packages/backend/AGENTS.md`).
       `.hole-word-wrap` zoom origin, never disabled since they only exist after every
       beat that owned the sentence, and each rippling the hole-wave on its own 3–10s
       clock as the tap affordance, numbers restated per the WordSubject rule) — and the
-      SOURCE **under them, at its own restored caption size** (10px kind chip over the
-      `clamp(12px, 1.6vw, 15px)` gold attribution; it briefly led the stage typed big,
-      and reads as what it has always been — the credit line beneath the puzzle's
-      content. Only its ALIGNMENT follows the centred stage). **The citation is THREE
-      LINES — KIND, AUTHOR, WORK, one per line, and nothing else** (user-decided
-      2026-08-15, replacing the `— Author, Work` run-on): three facts stacked is what a
-      credit block is, where the dash and comma were prose holding them together. Every
-      field is independently optional in the schema (#5), so a partial source simply
-      prints fewer lines; the two gold lines sit tighter to each other than the tag sits
-      to them, since they are one credit and the tag is a label on it.
+      SOURCE **under them, at its own caption size** — it briefly led the stage typed big,
+      and reads as what it has always been, the credit line beneath the puzzle's content;
+      only its ALIGNMENT follows the centred stage. **It is a CREDIT BLOCK, and it says
+      WHICH NAME IS WHICH** (user-decided 2026-08-15, superseding three bare stacked lines
+      the same day, and the `— Author, Work` run-on before them — the two names were the
+      problem every time: stacked with nothing between them they are two strings whose
+      roles the reader has to guess, and a comma said even less):
+
+      ```
+              BOOK              the KIND tag, the small blue label it has always been
+         Les Misérables         the WORK — the credit's headline: gold, `clamp(13px,
+                                1.8vw, 17px)`, the biggest type in the block
+         BY Victor Hugo         the AUTHOR — `--muted`, 10px, and named as a RELATIONSHIP
+      ```
+
+      Three signals at once and one word: the **function word** (`sourceBy` — en `BY`,
+      fr `DE`) makes the block unambiguous rather than merely ordered, earning its place
+      the way `OF` does in `RANK #5 OF 59`; **gold is the credit's content and muted is
+      the line that qualifies it**, so the eye lands on the title and reads the person as
+      belonging to it; and the **size** ranks them. The author line sits tighter to the
+      work than the block does to its tag — the caption's gap opens between the tag and
+      the credit, never inside it. Every field is independently optional in the schema
+      (#5), so a partial source prints fewer lines — and an author with **no work drops
+      the function word and takes the headline treatment**, because a lone name is not a
+      credit to anything and `BY Victor Hugo` under nothing is a sentence missing its
+      subject. The typewriter is unchanged: one character run across whatever lines exist.
     - **SCORE** (`.solved-numbers`) — the #170 STANDING line, then the named
       `<tries> TRIES` headline over the run ruler, **then SHARE**, which belongs to this
       block (user-decided 2026-08-14, third pass: sharing is what you do with a RESULT).

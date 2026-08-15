@@ -1238,19 +1238,31 @@ button * {
   text-transform: uppercase;
   padding-top: var(--text-shift);
 }
-.solved-attribution {
+/* The credit's HEADLINE — the work, or the author when there is no work to credit. Gold
+   (the caption's own colour) and the biggest type in the block, so the eye lands here
+   first and reads the muted line under it as belonging to this one. It stays well under
+   the guessed words above: this is the credit beneath the puzzle's content, not a fourth
+   trophy. */
+.solved-work {
   margin: 0;
   font-family: var(--press);
-  font-size: clamp(12px, 1.6vw, 15px);
-  line-height: 1.6;
-  color: var(--hole); /* gold — the colour of what the player holds */
+  font-size: clamp(13px, 1.8vw, 17px);
+  line-height: 1.5;
+  color: var(--hole);
   letter-spacing: 1px;
   padding-top: var(--text-shift);
 }
-/* Author and work are ONE credit: the caption's gap opens between the tag and the block,
-   not inside it. */
-.solved-attribution + .solved-attribution {
-  margin-top: -6px;
+/* The author, as a RELATIONSHIP rather than a second name: `BY Victor Hugo`, muted and
+   small. It belongs to the line above it, so it sits tighter to the work than the block
+   does to its tag — the caption's gap opens between the tag and the credit, not inside
+   the credit. */
+.solved-by {
+  margin: -4px 0 0;
+  font-family: var(--press);
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--muted);
+  letter-spacing: 1px;
 }
 .source-type-slot {
   position: relative;
