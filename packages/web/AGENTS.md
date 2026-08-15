@@ -1296,7 +1296,25 @@ it to the local store — see `packages/backend/AGENTS.md`).
     centred by flex: the pixel font overruns its own line box, so padding alone left the
     glyph tops and tails outside the gold. (And never `calc(<length> + var(--text-shift))`
     — that variable is a UNITLESS zero, which voids the whole declaration; the same trap
-    that silently zeroed `.word-input`'s padding.)
+    that silently zeroed `.word-input`'s padding.) Three details make it a stamp rather
+    than a clipped box (user-decided 2026-08-15, "very ugly"): the page's global
+    `text-shadow` is OFF on it — a drop shadow is legibility over the animated waves, and
+    inside a filled chip there is nothing to be legible against, so it only smears the type
+    against its own ground; the height is generous (28px around 10px type) rather than the
+    tightest box that fits; and the right inset is ONE PIXEL SHORT of the left, because
+    `letter-spacing` applies after the LAST glyph too and equal padding leaves the gold
+    reading off-centre around its own word.
+  - **Below 420px the whole line steps down** (9px labels, 16px number, 24px badge, tighter
+    gaps, 30px slot). Pixel type does not reflow, so the line is a fixed-width object, and
+    at full size an ordinary standing outran a 320px screen: `RANG #12 SUR 59` +
+    `TOP 20.34%` measures 334px against the 292px the page inset leaves, and `body` is
+    `overflow: hidden`, so the badge was CUT OFF rather than scrolled to. The step brings
+    that same line to 288px, taking the NUMBER down hardest (20px is the headline's luxury,
+    not its legibility) and the type to the 9px the route frame's rank gutter already uses
+    at these widths. The slot's reserved height steps down with it, so the empty slot and
+    the arrived line still measure the same thing. A four-digit population (`SUR 1024`)
+    still outruns 320px — a day this game has not had yet, and the answer then is the
+    line's copy, not another pixel of type.
   - **The badge appears at EVERY population size** (user-decided 2026-08-15, dropping the
     25-player `PERCENT_MIN_TOTAL` floor it shipped with the same day, and the constant with
     it): the standing is ONE line, and a player finishing on a quiet day should read the

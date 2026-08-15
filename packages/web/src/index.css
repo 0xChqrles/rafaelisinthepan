@@ -1569,18 +1569,59 @@ button * {
    is centred by flex: the pixel font overruns its own line box, so padding alone left the
    glyph tops and tails outside the gold. (And never `calc(<len> + var(--text-shift))` —
    that variable is a UNITLESS zero, which voids the whole declaration; the same trap that
-   silently zeroed `.word-input`'s padding.) */
+   silently zeroed `.word-input`'s padding.) The height IS the vertical padding here, and
+   it is generous on purpose: a chip crowding its own type reads as a clipped box rather
+   than as a stamp.
+   The right inset is ONE PIXEL SHORT of the left, which is not a typo — `letter-spacing`
+   is applied AFTER the last glyph too, so equal padding puts 1px more air on the right and
+   the gold reads off-centre around its own word.
+   And the page's global `text-shadow` is OFF: a dark drop shadow is legibility over the
+   animated waves, and inside a filled gold chip there is nothing to be legible against —
+   it only smears the type against its own ground. */
 .score-top {
   display: inline-flex;
   align-items: center;
-  height: 22px;
-  padding: 0 8px;
+  height: 28px;
+  padding: 0 9px 0 10px;
   background: var(--hole);
   color: var(--bg);
   font-size: 10px;
   line-height: 1;
   letter-spacing: 1px;
+  text-shadow: none;
 }
+/* NARROW PHONES: the line is a fixed-width object — pixel type does not reflow — and at
+   full size a perfectly ordinary standing outruns a 320px screen: `RANG #12 SUR 59` +
+   `TOP 20.34%` measures 334px against the 292px the page inset leaves, so the badge was
+   simply cut off (body is `overflow: hidden`, so it clips rather than scrolls). One step
+   down brings that same line to 288px. It shrinks the NUMBER hardest — 20px is the
+   headline's luxury, not its legibility — and takes the type to the 9px the route frame's
+   rank gutter already uses on these widths, which is this font's floor in the app.
+   The slot's reserved height steps down WITH it, so the empty slot and the arrived line
+   still measure the same thing. A four-digit population (`SUR 1024`) still outruns 320px;
+   that is a day this game has not had yet, and the fix then is the line's copy, not
+   another 1px of type. */
+@media (max-width: 420px) {
+  .score-slot {
+    gap: 10px;
+    height: 30px;
+  }
+  .score-rank-text {
+    gap: 6px;
+  }
+  .score-rank-label {
+    font-size: 9px;
+  }
+  .score-rank-num {
+    font-size: 16px;
+  }
+  .score-top {
+    height: 24px;
+    padding: 0 7px 0 8px;
+    font-size: 9px;
+  }
+}
+
 /* The line arrives on the app's one "list arriving" gesture; a rehydrated result wears
    `.settled` and replays nothing. */
 .score-slot.in {
