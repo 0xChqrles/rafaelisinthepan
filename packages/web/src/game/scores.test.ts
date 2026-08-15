@@ -6,12 +6,13 @@
 //     shares its rank, which is the only honest number at bucket granularity;
 //   - sentence is lower-is-better (ahead = FEWER tries), word is higher-is-better
 //     (ahead = MORE claims);
-//   - the TOP percentage is rank over total, at EVERY population size;
+//   - the TOP percentage is rank over total, and only above PERCENT_MIN_TOTAL players;
 //   - a finished round submits ONCE: only finished-and-not-yet-submitted rounds POST.
 
 import { describe, it, expect } from 'vitest';
 import type { ScoreHistogramBucket } from '@whippin/shared';
 import {
+  PERCENT_MIN_TOTAL,
   bucketIndexOf,
   formatTopPct,
   scoreStanding,
@@ -71,7 +72,7 @@ describe('scoreStanding — rank is everyone strictly ahead, plus one', () => {
     expect(scoreStanding('sentence', buckets([1]), 1, 0)).toEqual({
       rank: 1,
       total: 1,
-      topPct: 100,
+      topPct: null, // one player is not a field to be in the top of
     });
   });
 
@@ -96,18 +97,22 @@ describe('scoreStanding — the TOP percentage', () => {
     expect(standing?.topPct).toBeCloseTo((100 * 5) / 25, 10);
   });
 
-  it('is drawn at EVERY population size — a small field is still a field', () => {
-    // The 25-player floor the badge used to need is gone (user-decided 2026-08-15): the
-    // rank beside it already says how big the day is, so the percentage cannot mislead.
-    expect(big(0, 1)?.topPct).toBe(100);
-    expect(big(1, 3)?.topPct).toBeCloseTo((100 * 2) / 3, 10);
-    expect(big(4, 24)?.topPct).toBeCloseTo((100 * 5) / 24, 10);
+  it('needs MORE than PERCENT_MIN_TOTAL players, or it is arithmetic on a handful', () => {
+    expect(big(0, 1)?.topPct).toBeNull();
+    expect(big(1, 3)?.topPct).toBeNull();
+    expect(big(4, PERCENT_MIN_TOTAL)?.topPct).toBeNull();
+  });
+
+  it('is drawn from the very next player up', () => {
+    const standing = big(4, PERCENT_MIN_TOTAL + 1);
+    expect(standing?.rank).toBe(5);
+    expect(standing?.topPct).toBeCloseTo((100 * 5) / (PERCENT_MIN_TOTAL + 1), 10);
   });
 
   it('the issue’s own example: 5th of 59 is TOP 8.47%', () => {
     const standing = big(4, 59);
     expect(standing?.rank).toBe(5);
-    expect(formatTopPct(standing!.topPct)).toBe('8.47');
+    expect(formatTopPct(standing!.topPct!)).toBe('8.47');
   });
 });
 

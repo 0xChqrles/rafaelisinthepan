@@ -1377,15 +1377,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
     type sharing a baseline with much smaller type sits visibly HIGH against it. Whole
     pixels only, via `translate` rather than a margin: a fractional offset resamples pixel
     type (the sprites' integer-scale rule), and nothing may MOVE because of it.
-  - **The badge appears at EVERY population size** (user-decided 2026-08-15, dropping the
-    25-player `PERCENT_MIN_TOTAL` floor it shipped with the same day, and the constant with
-    it): the standing is ONE line, and a player finishing on a quiet day should read the
-    same line as one finishing on a busy one — a badge that comes and goes with the day's
-    turnout reads as a feature that failed rather than as a threshold being respected.
-    `rank / total` is honest at any size (it is exactly the fraction of today's recorded
-    scores standing at or above this one) and the rank beside it always says how big the
-    field is, so a small population can never be mistaken for a large one. The consequence
-    is deliberate: the only player of the day reads `RANK #1 OF 1  [TOP 100%]`.
+  - **The badge appears only above `PERCENT_MIN_TOTAL` (10) recorded scores**
+    (user-decided 2026-08-15, reinstating a floor after a day without one — the first cut
+    of the line had gated it at 25). Below that the rank out of the count already says
+    everything true, and `TOP 33.33%` of three players is arithmetic on a handful rather
+    than a standing. What the threshold gates is only the badge's CLAIM: the rank line
+    itself is honest at every size and always drawn, so the only player of the day reads
+    `RANK #1 OF 1` and nothing more. The line is SHORTER without the badge, which the
+    length estimate above reads off the badge actually drawn rather than assuming one.
   - `formatTopPct` prints at most two decimals with trailing zeros stripped (`8.47`,
     `12.5`, `50`): on a real population the leading digits are the whole claim, and
     `50.00` reads as a machine talking.

@@ -17,10 +17,10 @@ import type { Mode } from '../langs';
 // The RANK NUMBER is the line's headline — bigger than the words around it and in the
 // solved blue, the colour of what the round found — and the TOP badge is a filled stamp
 // beside it, gold on the app's own background, the way an achievement reads here. The
-// badge rides ALONG with the rank at every population size (user-decided 2026-08-15): the
-// line is one thing, and a player standing on a quiet day gets the same line as one
-// standing on a busy one. Its ground is the page's own foreground, not the gold — gold is
-// the colour of what the player HOLDS, and a standing is not held.
+// badge appears only above `PERCENT_MIN_TOTAL` recorded scores (user-decided 2026-08-15):
+// below that the rank out of the count already says everything true, and a percentage of a
+// handful of players is false precision. Its ground is the page's own foreground, not the
+// gold — gold is the colour of what the player HOLDS, and a standing is not held.
 //
 // The component ALWAYS renders its fixed-height slot (the `.word-rarities` rule: hold the
 // layout space while invisible), so the line arriving — or never arriving, on a silent
@@ -49,7 +49,10 @@ export default function ScoreRank({
 
   const rankLabel = t(lang, 'scoreRank');
   const ofLabel = tn(lang, 'scoreOf', standing.total);
-  const topLabel = `${t(lang, 'scoreTop')} ${formatTopPct(standing.topPct)}%`;
+  // Empty on a population too small for a percentage — which also shortens the line, so
+  // the length estimate below reads the badge that is actually drawn.
+  const topLabel =
+    standing.topPct === null ? '' : `${t(lang, 'scoreTop')} ${formatTopPct(standing.topPct)}%`;
   // A long standing steps the whole line down one size rather than running off a phone's
   // column (see `standingUnits`). The step is CSS's; this only says the line is long.
   const tight =
@@ -64,7 +67,7 @@ export default function ScoreRank({
         <span className="score-rank-num">#{standing.rank}</span>
         <span className="score-rank-label">{ofLabel}</span>
       </span>
-      <span className="score-top">{topLabel}</span>
+      {topLabel && <span className="score-top">{topLabel}</span>}
     </p>
   );
 }
