@@ -2,16 +2,10 @@
 // anonymous population (#169). The BACKEND owns the bucket edges — changing one changes
 // which DynamoDB counter a submission increments — so everything here reads the inclusive
 // ranges the API returned rather than restating them. What the WEB owns is the reading:
-// which bucket is the player's, how many players are strictly ahead of them, and whether
-// the population is big enough for a percentage to mean anything.
+// which bucket is the player's and how many players are strictly ahead of them.
 
 import type { ScoreHistogramBucket } from '@whippin/shared';
 import type { Mode } from '../langs';
-
-// Below this many recorded scores there is no TOP percentage: over a handful of players a
-// percentage is false precision ("TOP 33.33%" of three people says nothing), and the rank
-// out of the count already says everything true. "A couple dozen" per the issue.
-export const PERCENT_MIN_TOTAL = 25;
 
 // Locate a score in the API's inclusive ranges — the GET path, where the server returns
 // `bucket: null` because a revisiting client already knows its persisted score. Null for
@@ -33,9 +27,13 @@ export interface ScoreStanding {
   rank: number;
   // Recorded scores today, the player's own included.
   total: number;
-  // `rank / total` as a percentage, or null when the population is too small for one to
-  // mean anything (see PERCENT_MIN_TOTAL).
-  topPct: number | null;
+  // `rank / total` as a percentage. ALWAYS present (user-decided 2026-08-15, dropping the
+  // 25-player floor the badge used to need): the badge is the line's reward, and a player
+  // reading a standing on a quiet day should get the same line as one reading it on a busy
+  // one. The number is honest at any size — it says exactly what fraction of the day's
+  // recorded scores stands at or above this one — and the rank beside it already tells the
+  // reader how big the field is, so a small population can never be mistaken for a large.
+  topPct: number;
 }
 
 export function scoreStanding(
@@ -51,7 +49,7 @@ export function scoreStanding(
   // word counts claims (higher is better, so the bands AFTER mine are).
   const ahead = mode === 'word' ? buckets.slice(bucket + 1) : buckets.slice(0, bucket);
   const rank = Math.min(total, ahead.reduce((n, b) => n + b.count, 0) + 1);
-  return { rank, total, topPct: total >= PERCENT_MIN_TOTAL ? (100 * rank) / total : null };
+  return { rank, total, topPct: (100 * rank) / total };
 }
 
 // The TOP percentage as the badge prints it: at most two decimals, and no trailing zeros —

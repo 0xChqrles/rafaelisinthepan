@@ -12,9 +12,9 @@ import type { Mode } from '../langs';
 // The RANK NUMBER is the line's headline — bigger than the words around it and in the
 // solved blue, the colour of what the round found — and the TOP badge is a filled stamp
 // beside it, gold on the app's own background, the way an achievement reads here. The
-// badge appears only when the population is big enough for a percentage to mean anything
-// (`PERCENT_MIN_TOTAL`); below that the rank out of the count already says everything
-// true, and a "TOP 33.33%" of three players would be false precision.
+// badge rides ALONG with the rank at every population size (user-decided 2026-08-15): the
+// line is one thing, and a player standing on a quiet day gets the same line as one
+// standing on a busy one.
 //
 // The component ALWAYS renders its fixed-height slot (the `.word-rarities` rule: hold the
 // layout space while invisible), so the line arriving — or never arriving, on a silent
@@ -48,11 +48,9 @@ export default function ScoreRank({
         <span className="score-rank-num">#{standing.rank}</span>
         <span className="score-rank-label">{tn(lang, 'scoreOf', standing.total)}</span>
       </span>
-      {standing.topPct !== null && (
-        <span className="score-top">
-          {t(lang, 'scoreTop')} {formatTopPct(standing.topPct)}%
-        </span>
-      )}
+      <span className="score-top">
+        {t(lang, 'scoreTop')} {formatTopPct(standing.topPct)}%
+      </span>
     </p>
   );
 }
