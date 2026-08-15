@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { dateForDayNumber } from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { t, srWordBreakdown } from '../i18n';
 import { RARITY_NAMES } from '../game/wordGame';
@@ -9,7 +8,7 @@ import type { ScorePlacement } from '../hooks/useScoreHistogram';
 import useShare from '../hooks/useShare';
 import { RARITY_COLORS } from './rarity';
 import ScoreRank from './ScoreRank';
-import { wordShareText, wordShareUrl, wordShareScore } from '../game/share';
+import { shareHeadline, wordShareText, wordShareUrl, wordShareScore } from '../game/share';
 import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 
 // Word mode's end-of-run screen (#156): the claim count with its unit NAMED (higher is
@@ -123,9 +122,7 @@ export default function WordEndScreen({
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
     const url = wordShareUrl(origin, { lang, dayNumber, counts, word });
     const unit = t(lang, score === 1 ? 'word' : 'words').toLowerCase();
-    // The day is named by its calendar date, like every share surface (decided
-    // 2026-08-03) — the same string the card draws and the link resolves to.
-    const headline = `Whippin AI ${dateForDayNumber(dayNumber)} — ${score} ${unit}`;
+    const headline = shareHeadline(dayNumber, score, unit);
     await share(wordShareText(headline, word, lang, counts, url));
   }, [lang, dayNumber, counts, score, share, word]);
 

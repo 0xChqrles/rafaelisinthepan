@@ -7,7 +7,7 @@ import type { Rarity } from '../game/wordGame';
 import type { StrikeArt } from './rarity';
 import { STRUCK_MS } from './rarity';
 import { fitWord } from './routeDrawing';
-import { prefersReducedMotion } from '../hooks/useScramble';
+import useLetterWave, { WAVE_VARS } from '../hooks/useLetterWave';
 import { srWordBoardWord } from '../i18n';
 
 // The day's word while the run is on (#163): JUST THE WORD, centred, in the solved blue —
@@ -73,46 +73,9 @@ const FAN_ARC_PX = 3;
 
 // Now and then the hand RIPPLES: #129's letter wave, the one the sentence game's holes run,
 // on the same random clock (decided 2026-08-09, replacing a single letter that rose every
-// 750ms as though it were about to be drawn). The four numbers are that wave's, restated
-// here rather than reached for inside `Hole` — importing half a component's internals is
-// not sharing it, and these are four literals against a coupling to a hole's `ticking`
-// state, which this surface has no equivalent of.
-const WAVE_LETTER_MS = 300;
-const WAVE_STEP_MS = 40;
-const WAVE_MIN_MS = 3_000;
-const WAVE_MAX_MS = 10_000;
-const waveDurationMs = (letters: number): number =>
-  WAVE_LETTER_MS + Math.max(0, letters - 1) * WAVE_STEP_MS;
-
-// Is the hand rippling right now? Two clocks, exactly as `Hole` runs them: one waits a fresh
-// random delay and starts a wave, the other ends it after its own length and re-arms the
-// first. Ending it in JS rather than on `animationend` keeps ONE owner of the two numbers
-// CSS is handed. Never for a one-letter word (nothing to ripple) or under reduced motion.
-function useLetterWave(letters: number): boolean {
-  const [waving, setWaving] = useState(false);
-  // Bumped by each finished wave, purely to re-arm the clock below with a fresh delay.
-  const [waveCount, setWaveCount] = useState(0);
-
-  useEffect(() => {
-    if (letters < 2 || prefersReducedMotion()) return undefined;
-    const id = window.setTimeout(
-      () => setWaving(true),
-      WAVE_MIN_MS + Math.random() * (WAVE_MAX_MS - WAVE_MIN_MS),
-    );
-    return () => window.clearTimeout(id);
-  }, [letters, waveCount]);
-
-  useEffect(() => {
-    if (!waving) return undefined;
-    const id = window.setTimeout(() => {
-      setWaving(false);
-      setWaveCount((n) => n + 1);
-    }, waveDurationMs(letters));
-    return () => window.clearTimeout(id);
-  }, [waving, letters]);
-
-  return waving;
-}
+// 750ms as though it were about to be drawn). The scheduling is the SHARED hook's since
+// three surfaces came to want it; what stays here is this surface's own answer to "free to
+// ripple?" — never a one-letter word, since there is nothing to ripple.
 
 // --- what the word does WHILE it is being struck ------------------------------------------
 // It recoils and takes the strike's colour — for the BLOW, not for the length of the sheet
@@ -169,7 +132,7 @@ export default function WordSubject({
   onHitDone?: (id: number) => void;
 }) {
   const letters = [...word];
-  const waving = useLetterWave(letters.length);
+  const waving = useLetterWave(letters.length >= 2, letters.length);
   const struck = useStruck(hit) && hit?.kind === 'claim' ? hit : null;
 
   return (
@@ -200,8 +163,7 @@ export default function WordSubject({
                 : null),
               // Handed down rather than repeated in CSS, so the JS that ends the wave and
               // the CSS that draws it cannot disagree about how long it is.
-              '--wave-dur': `${WAVE_LETTER_MS}ms`,
-              '--wave-step': `${WAVE_STEP_MS}ms`,
+              ...WAVE_VARS,
             } as CSSProperties
           }
         >

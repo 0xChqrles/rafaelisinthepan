@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { Hole as PuzzleHole } from '@whippin/shared';
-import { prefersReducedMotion, randomGlyphs } from '../hooks/useScramble';
+import { SCRAMBLE_TICK_MS, prefersReducedMotion, randomGlyphs } from '../hooks/useScramble';
 
 // The solved sentence's EXIT (user-decided 2026-08-14; scattered on review the same
 // day): once the solving beats have played out, the sentence hands the screen to the
@@ -26,9 +26,9 @@ import { prefersReducedMotion, randomGlyphs } from '../hooks/useScramble';
 // reflow what remains. The sentence erodes IN PLACE; nothing moves until the parent
 // unmounts the whole area.
 
-// The scramble's own frame rate (useScramble's SCRAMBLE_TICK_MS): this is the same
-// churn, so it runs on the same clock.
-const TICK_MS = 40;
+// This is the same churn as the word swap's, so it runs on the same clock — the
+// scramble's own, imported rather than restated.
+const TICK_MS = SCRAMBLE_TICK_MS;
 // Every letter's start falls somewhere in this fixed window — the whole erosion's
 // length, independent of the sentence's. In ticks so a start is always a whole frame.
 const SPREAD_TICKS = 18; // 720ms
@@ -118,9 +118,17 @@ export default function DissolvePhrase({
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
 
+  // Read ONCE at mount, like the letter dice above, because two effects branch on it and
+  // they must reach the same answer. Read live, a setting flipped mid-erosion (an OS
+  // toggle, battery saver) put the two on opposite branches: the interval kept running
+  // while the completion effect skipped `onDone` believing the mount effect had already
+  // reported — leaving the player on a fully eroded, invisible sentence with no way
+  // forward, and this is the one solved beat with no deadline behind it.
+  const [reduceMotion] = useState(prefersReducedMotion);
+
   useEffect(() => {
     // Reduced motion: no churn, no erosion — the sentence simply yields the stage.
-    if (prefersReducedMotion()) {
+    if (reduceMotion) {
       const id = window.setTimeout(() => onDoneRef.current(), 0);
       return () => window.clearTimeout(id);
     }
@@ -134,14 +142,14 @@ export default function DissolvePhrase({
       });
     }, TICK_MS);
     return () => window.clearInterval(interval);
-  }, [lastTick]);
+  }, [lastTick, reduceMotion]);
 
   useEffect(() => {
     if (tick < lastTick) return undefined;
-    if (prefersReducedMotion()) return undefined; // the mount effect already reported
+    if (reduceMotion) return undefined; // the mount effect already reported
     const id = window.setTimeout(() => onDoneRef.current(), DONE_HOLD_MS);
     return () => window.clearTimeout(id);
-  }, [tick, lastTick]);
+  }, [tick, lastTick, reduceMotion]);
 
   // One letter's frame: itself, a churning glyph, or its own invisible box.
   const letter = (l: Letter, index: number) => {

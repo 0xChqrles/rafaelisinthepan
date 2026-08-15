@@ -178,9 +178,11 @@ export default function SolvedCaption({
   // last one, where it blinks out its hold.
   const typing = lines.findIndex((line) => visible < line.start + line.chars.length);
   const cursorLine = showCursor ? (typing === -1 ? lines.length - 1 : typing) : -1;
-  const accessibleText = sourceLines(source, lang)
-    .map((line) => line.text)
-    .join('. ');
+  // Derived from the memo above rather than re-deriving the source: the typewriter
+  // re-renders this component once per printed character, and a second independent call
+  // would both rebuild the lines dozens of times per solve and be free to drift from what
+  // the screen shows.
+  const accessibleText = lines.map((line) => line.chars.join('')).join('. ');
 
   return (
     <div className="solved-caption">

@@ -26,6 +26,7 @@
       hooks/useCountdown.ts   the run's deadline, as a ticking clock (HUD) and as one flip (screen)
       game/scoring.ts         s(rank), holeProgress, computeProgress
       components/Phrase.tsx,Hole.tsx,WordInput.tsx,FloatingHit.tsx  rendering
+      hooks/useLetterWave.ts  #129's ambient ripple, shared by every surface that waves
       components/routeDrawing.tsx  THE route drawing: geometry, frame vars + the row parts
                               (OffMapShelf/RouteTail/RouteLink/RouteRow). Composed by
                               WordBoard (#156) and HistoryModal; both draw one trunk.
@@ -342,10 +343,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   screen holds.
   **Now and then the letters RIPPLE** — #129's wave, the sentence holes' own, on the same
   random 3–10s clock (2026-08-09, replacing a single letter that rose every 750ms as though
-  about to be drawn). Its four numbers are restated in `WordSubject` rather than reached for
-  inside `Hole`: importing half a component's internals is not sharing it, and the
-  alternative was coupling to a hole's `ticking` state, which this surface has no equivalent
-  of.
+  about to be drawn). Its scheduling is `hooks/useLetterWave`'s, shared with the holes and
+  the solved stage since 2026-08-16 (it was restated here while there were two copies —
+  importing half a component's internals is not sharing it — but the third copy tipped it;
+  see the #129 bullet). What stays this surface's own is the `active` gate it passes:
+  never a one-letter word, since there is nothing to ripple.
   **The lean and the drop go on the INDEPENDENT transform properties** (`rotate` /
   `translate`), never into one `transform` string, and that is load-bearing rather than tidy:
   it leaves `transform` free, which is exactly what lets the wave — an ordinary transform
@@ -821,8 +823,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   pink circle and red stays MISS's. **The composition lives in `game/share.ts`
   (`wordShareText`/`wordShareUrl`/`rarityRow`/`RARITY_EMOJI`), NOT in the component**: this
   module is where a result becomes the text and link it travels as, for BOTH modes, and the
-  bead row is the exact analogue of the sentence `emojiRow` beside it. The screen owns only
-  the localized headline. That is also what lets `share.test.ts` assert the visit card's
+  bead row is the exact analogue of the sentence `emojiRow` beside it. **The headline's SHAPE
+  moved there too** (`shareHeadline`, 2026-08-16): it is one message format for both dailies,
+  and it was a template literal hand-copied into both result screens, where one mode's message
+  could quietly drift from the other's. Each screen still owns the only part that is genuinely
+  its own — its localized UNIT (tries against words). That is also what lets `share.test.ts` assert the visit card's
   exact string, and what lets preview tooling render the REAL message instead of a copy that
   can drift (it did, the first time). A grade's SCREEN presentation stays in
   `components/rarity.ts`; `game/` must not import from `components/` (the dependency runs
@@ -979,7 +984,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **EVERY hole owns its clock** (decided 2026-07-27, replacing a round-level scheduler that
   picked ONE hole at a time): each waits a fresh random `WAVE_MIN_MS`–`WAVE_MAX_MS` (3–10s,
   re-rolled per wave and whenever the sentence goes quiet again), so several words can stir at
-  once and the holes scatter on their own instead of being kept apart. A lone ripple travelling
+  once and the holes scatter on their own instead of being kept apart.
+  **That clock is `hooks/useLetterWave` since 2026-08-16, shared by all THREE surfaces that
+  wave** — the holes, Word mode's day word (`WordSubject`) and the solved stage's guessed
+  words (`SolvedScreen`). Two copies were a recorded decision; at three, retuning the band
+  or the stagger took three coordinated edits that nothing forced to agree, and the
+  scheduling itself is pure — two timers and a random band, knowing nothing about holes or
+  strikes. What each surface keeps is the one part they genuinely disagree on: `active`,
+  its own answer to "is this word free to ripple right now?" (a hole's `ticking`, a word's
+  letter count, a solved word's arrival). `WAVE_VARS` hands CSS the same two numbers the
+  hook ends a wave on. A lone ripple travelling
   around the sentence reads as a cursor pointing somewhere; several words breathing on separate
   rhythms read as the words being alive, which is the claim the affordance makes. The round
   contributes exactly ONE fact — `quiet`, the thing a hole cannot see for itself: no guess
@@ -1065,6 +1079,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
     invisible) through the erosion so the centered sentence never moves. A 180ms breath
     after the last letter, then `onDone` swaps the screen. Reduced motion skips the churn
     entirely; a rehydrated solve mounts `dissolved` and replays nothing.
+    **The reduced-motion preference is read ONCE at mount, like the letter dice** (fixed
+    2026-08-16): two effects branch on it, and read live they could disagree — a setting
+    flipped mid-erosion (an OS toggle, battery saver) left the interval running while the
+    completion effect skipped `onDone` believing the other had already reported, stranding
+    the player on a fully eroded, invisible sentence. This is the one solved beat with no
+    deadline behind it, so its two halves have to agree by construction.
   - **The solved STAGE then owns the full column** (`components/SolvedScreen`, rebuilt;
     the `.play`+`.tray` split does not render at all — nothing is left to reserve the
     keyboard's footprint for), **in TWO BLOCKS around one SEAM** (user-decided
@@ -1261,7 +1281,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   final holes settle on archive / no-streak play — the drop plays, the sentence dissolves,
   and the solved stage rises with its layered reveal (see the solved-screen bullet
   above). Rehydrated solves render the full stage immediately without
-  replaying the sequence. Player progression is separate:
+  replaying the sequence — EXCEPT under the dev `?streak=N` preview, which deliberately
+  opts one back into the choreography so the post-streak sequence can be watched. **That
+  replay is held at frame zero until the preview dismisses** (`SolvedScreen`'s `start`,
+  restored 2026-08-16): App owns the preview dialog, so this round never sees it in
+  `showStreakDialog`, and without the gate the whole reveal — words, citation, tally,
+  standing — plays under a full-screen modal and dismissal lands on a finished frame,
+  spending unseen the exact beats the harness exists to show. Player progression is separate:
   `StreakDialog` is a
   **borderless full-screen** native modal, opened only by a FRESH active-day
   unsolved→solved transition. Its staged animation uses `@react-spring/web` (v9 for React

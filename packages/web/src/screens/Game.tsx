@@ -718,6 +718,13 @@ function Round({
           onExplore={openHistory}
           placement={placement}
           animate={animateResults}
+          // The dev `?streak=N` preview (App owns that dialog, so this round never sees it
+          // in `showStreakDialog`) opens over an ALREADY-SOLVED day, where the stage is
+          // mounted from the first frame. Without this it would play its whole reveal —
+          // words, citation, tally, standing — under a full-screen modal, and dismissal
+          // would land on a finished frame: the exact choreography the harness exists to
+          // replay, spent unseen. The prop flips false on dismissal, which is the cue.
+          start={!deferResultsAnimation}
         />
       ) : (
         <>

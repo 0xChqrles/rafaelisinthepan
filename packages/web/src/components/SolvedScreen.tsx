@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { dateForDayNumber, type Source } from '@whippin/shared';
+import type { Source } from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
-import { shareText, shareUrl } from '../game/share';
+import { shareHeadline, shareText, shareUrl } from '../game/share';
 import type { ScorePlacement } from '../hooks/useScoreHistogram';
 import RunRuler, { rulerStagger } from './RunRuler';
 import ScoreRank from './ScoreRank';
 import SolvedCaption, { captionDurationMs } from './SolvedCaption';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
+import useLetterWave, { WAVE_VARS } from '../hooks/useLetterWave';
 import useShare from '../hooks/useShare';
 import { ariaHoleHistory, t } from '../i18n';
 import { SCORE_COUNT_MS } from './resultAnimation';
@@ -53,14 +54,6 @@ const WORDS_LEAD_MS = 140;
 // typewriter's intervals are merely THROTTLED on a hidden tab, never dropped.
 const CAPTION_FALLBACK_SLACK_MS = 4_000;
 
-// The ambient wave (#129), restated for the solved words the way WordSubject restates it
-// for the day's word: importing half of Hole's internals is not sharing it. Same numbers,
-// same CSS animation, same "several clocks, wide random band" reasoning.
-const WAVE_LETTER_MS = 300;
-const WAVE_STEP_MS = 40;
-const WAVE_MIN_MS = 3_000;
-const WAVE_MAX_MS = 10_000;
-
 interface SolvedWordEntry {
   word: string; // the accented secret, as the sentence displayed it
   holeIndex: number; // the FIRST hole carrying this secret (the history modal's key)
@@ -81,34 +74,11 @@ function SolvedWord({
   onExplore: (holeIndex: number) => void;
 }) {
   const letters = Array.from(entry.word);
-  const [waving, setWaving] = useState(false);
-  const [waveCount, setWaveCount] = useState(0);
-
-  useEffect(() => {
-    if (!shown || waving || prefersReducedMotion()) return undefined;
-    const id = window.setTimeout(
-      () => setWaving(true),
-      WAVE_MIN_MS + Math.random() * (WAVE_MAX_MS - WAVE_MIN_MS),
-    );
-    return () => window.clearTimeout(id);
-  }, [shown, waving, waveCount]);
-
-  useEffect(() => {
-    if (!waving) return undefined;
-    const id = window.setTimeout(() => {
-      setWaving(false);
-      setWaveCount((n) => n + 1);
-    }, WAVE_LETTER_MS + Math.max(0, letters.length - 1) * WAVE_STEP_MS);
-    return () => window.clearTimeout(id);
-    // Letter count is fixed for the word's lifetime; read when the wave starts.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [waving]);
-
-  const waveStyle: CSSProperties & Record<string, string> = {};
-  if (waving) {
-    waveStyle['--wave-dur'] = `${WAVE_LETTER_MS}ms`;
-    waveStyle['--wave-step'] = `${WAVE_STEP_MS}ms`;
-  }
+  // The word is free to ripple from the moment it has popped in — the shared clock (#129)
+  // the holes and the day's word run, saying here what it said on the hole this word came
+  // from: this can be tapped.
+  const waving = useLetterWave(shown, letters.length);
+  const waveStyle: CSSProperties & Record<string, string> = waving ? { ...WAVE_VARS } : {};
 
   return (
     <button
@@ -148,6 +118,7 @@ export default function SolvedScreen({
   onExplore,
   placement = null,
   animate = true,
+  start = true,
 }: {
   guessCount: number;
   trajectory: number[]; // reconstruction % after each counted guess (one per try)
@@ -161,6 +132,11 @@ export default function SolvedScreen({
   placement?: ScorePlacement | null;
   // Rehydrated solves render their final result immediately and replay nothing.
   animate?: boolean;
+  // Hold the WHOLE choreography at frame zero until the screen is actually the player's to
+  // look at. Every beat below hangs off `stageIn`, so gating that one flip gates all of
+  // them — which is the point: a reveal that plays under a full-screen modal is a reveal
+  // nobody sees, and what lands on dismissal is a finished frame.
+  start?: boolean;
 }) {
   const reduceMotion = prefersReducedMotion();
   const n = Math.max(trajectory.length, 1);
@@ -177,9 +153,10 @@ export default function SolvedScreen({
       setStageIn(true);
       return undefined;
     }
+    if (!start) return undefined;
     const raf = requestAnimationFrame(() => setStageIn(true));
     return () => cancelAnimationFrame(raf);
-  }, [animate]);
+  }, [animate, start]);
 
   // The words need no beat of their own: they pop the moment the stage is up, and CSS
   // counts them out from each word's own index (`--step`).
@@ -302,12 +279,10 @@ export default function SolvedScreen({
       trajectory,
       solvedAt: solvedAt ?? [],
     });
+    // This screen owns only its localized UNIT; the line's shape is share.ts's, shared
+    // with Word mode so the two modes' messages cannot drift apart.
     const unit = t(lang, guessCount === 1 ? 'try' : 'tries').toLowerCase();
-    // The day is named by its CALENDAR DATE, not the internal day index (decided
-    // 2026-08-03): a reader can date the sentence, and it is the same string the card
-    // draws and the shared link resolves to. dateForDayNumber is dayNumber's exact
-    // inverse, so this is still the server-owned game day, not the sharer's local date.
-    const headline = `Whippin AI ${dateForDayNumber(dayNumber)} — ${guessCount} ${unit}`;
+    const headline = shareHeadline(dayNumber, guessCount, unit);
     // The card (via the token) draws the run in full; the plain-text row is the bounded
     // summary of that SAME run — trajectory and solve moments both — so the link and its
     // fallback can't disagree.
