@@ -1068,7 +1068,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
       SOURCE **under them, at its own restored caption size** (10px kind chip over the
       `clamp(12px, 1.6vw, 15px)` gold attribution; it briefly led the stage typed big,
       and reads as what it has always been — the credit line beneath the puzzle's
-      content. Only its ALIGNMENT follows the centred stage).
+      content. Only its ALIGNMENT follows the centred stage). **The citation is THREE
+      LINES — KIND, AUTHOR, WORK, one per line, and nothing else** (user-decided
+      2026-08-15, replacing the `— Author, Work` run-on): three facts stacked is what a
+      credit block is, where the dash and comma were prose holding them together. Every
+      field is independently optional in the schema (#5), so a partial source simply
+      prints fewer lines; the two gold lines sit tighter to each other than the tag sits
+      to them, since they are one credit and the tag is a label on it.
     - **SCORE** (`.solved-numbers`) — the #170 STANDING line, then the named
       `<tries> TRIES` headline over the run ruler, **then SHARE**, which belongs to this
       block (user-decided 2026-08-14, third pass: sharing is what you do with a RESULT).
@@ -1084,15 +1090,22 @@ it to the local store — see `packages/backend/AGENTS.md`).
       short to have leftover height to hand out. The score block carries the page inset
       off the bottom (+safe-area+10px on a phone — the retired `.tray.tray-results` rule,
       now on the block that owns that edge).
-  - **The reveal reads the way the stage is laid out, off ONE derived timeline** (every
-    beat an absolute offset from the stage's arrival, so nothing waits on a signal that
-    could be lost): the WORDS **pop in one by one, 200ms apart** (`solved-word-pop`, a
-    300ms overshoot-and-settle — a scale on the pixel font is allowed exactly here, ONE
-    SHOT and fast, the `rank-pop`/`score-land` precedent; what the standing rule forbids
-    is a long scale TRANSITION holding blurry frames for its whole length), the SOURCE
-    types once the last word lands, and the SCORE block arrives `CAPTION_LEAD_MS` (420ms)
-    after that — the source's FIRST line, never its last character, so a long citation
-    cannot hold the numbers back. Inside the block the beats keep reading top to bottom:
+  - **The reveal reads the way the stage is laid out**, top to bottom: the WORDS **pop in
+    one by one, 200ms apart** (`solved-word-pop`, a 300ms overshoot-and-settle — a scale
+    on the pixel font is allowed exactly here, ONE SHOT and fast, the
+    `rank-pop`/`score-land` precedent; what the standing rule forbids is a long scale
+    TRANSITION holding blurry frames for its whole length), the SOURCE types once the last
+    word lands, and the SCORE block follows once that citation has **FINISHED PRINTING**
+    (user-decided 2026-08-15, superseding the fixed `CAPTION_LEAD_MS` 420ms lead off the
+    source's FIRST line): numbers arriving over a half-typed credit read as two things
+    happening at once, where waiting reads as one thing after another. That is the
+    screen's ONE signal-driven beat — it rides `SolvedCaption`'s own completion callback —
+    so it carries a DEADLINE behind it (`captionDurationMs(source)` + slack, the
+    `KB_EXIT_FALLBACK_MS` rule: a lost signal must never be able to stall the solved
+    sequence), and the deadline is derived from the typewriter's own numbers rather than
+    guessed. A source-less puzzle has no printing to wait for and its numbers follow the
+    words. Every other beat is still an absolute offset from the beat before it. Inside
+    the block the beats keep reading top to bottom:
     the STANDING arrives WITH the block it now heads (`chartStart = scoreIn` — a line
     sitting above the tally must not land after it), the tally runs its
     `SCORE_COUNT_MS`, then the ruler shows and colorizes.
@@ -1287,12 +1300,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
     direction is "ahead" is the mode's: sentence counts tries (the bands BEFORE mine),
     Word counts claims (the bands AFTER mine). The rank is clamped to the population, so
     a stale read racing a write can never rank anyone past the field they stand in.
-  - **The RANK NUMBER is the headline**: 20px against the 10px words around it, in the
+  - **The RANK NUMBER is the headline**: 24px against the 12px words around it, in the
     solved-word BLUE — the colour of what the round found. The words are `--muted`, and
-    the whole phrase hangs off ONE baseline (`.score-rank-text`), since centring 10px type
-    against a 20px number left it floating.
-  - **TOP is a FILLED BADGE** — gold ground, page-dark type, and the app's ONLY filled
-    chip, which is exactly why it carries weight. It has an EXPLICIT height with its ink
+    the whole phrase hangs off ONE baseline (`.score-rank-text`), since centring the small
+    type against the number left it floating. **A shared baseline is not yet a shared
+    LINE** (user-decided 2026-08-15): the pixel font reserves a gap under its glyphs and
+    that gap scales with the type, so the big number rides visually high off a baseline it
+    shares — it takes `translate: 0 2px` to put the ink back on one line, and the badge
+    `translate: 0 4px` for the same reason, more of it (its box is centred on the smallest
+    type on the line). Whole pixels, and a `translate` rather than a margin, so nothing
+    moves because of it.
+  - **TOP is a FILLED BADGE** — `--fg` ground, page-dark type (user-decided 2026-08-15,
+    superseding the gold ground: gold is the colour of what the player HOLDS, and a
+    percentile is not one of the round's words), and the app's ONLY filled chip, which is
+    exactly why it carries weight. It has an EXPLICIT height with its ink
     centred by flex: the pixel font overruns its own line box, so padding alone left the
     glyph tops and tails outside the gold. (And never `calc(<length> + var(--text-shift))`
     — that variable is a UNITLESS zero, which voids the whole declaration; the same trap
@@ -1304,12 +1325,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
     tightest box that fits; and the right inset is ONE PIXEL SHORT of the left, because
     `letter-spacing` applies after the LAST glyph too and equal padding leaves the gold
     reading off-centre around its own word.
-  - **Below 420px the whole line steps down** (9px labels, 16px number, 24px badge, tighter
-    gaps, 30px slot). Pixel type does not reflow, so the line is a fixed-width object, and
+  - **Below 420px the whole line steps down** (9px labels, 16px number, 26px badge, tighter
+    gaps and translates, 34px slot). Pixel type does not reflow, so the line is a fixed-width object, and
     at full size an ordinary standing outran a 320px screen: `RANG #12 SUR 59` +
-    `TOP 20.34%` measures 334px against the 292px the page inset leaves, and `body` is
+    `TOP 20.34%` measures 376px against the 292px the page inset leaves, and `body` is
     `overflow: hidden`, so the badge was CUT OFF rather than scrolled to. The step brings
-    that same line to 288px, taking the NUMBER down hardest (20px is the headline's luxury,
+    that same line to 290px, taking the NUMBER down hardest (20px is the headline's luxury,
     not its legibility) and the type to the 9px the route frame's rank gutter already uses
     at these widths. The slot's reserved height steps down with it, so the empty slot and
     the arrived line still measure the same thing. A four-digit population (`SUR 1024`)

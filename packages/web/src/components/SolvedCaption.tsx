@@ -7,6 +7,24 @@ const TYPE_MS = 18;
 const CURSOR_HOLD_MS = 140;
 const HIDDEN: CSSProperties = { visibility: 'hidden' };
 
+// The citation types as ONE run of characters across its lines, so the deadline the solved
+// stage holds behind the completion signal is derived from the same numbers the typewriter
+// runs on (see SolvedScreen's timeline).
+export function captionDurationMs(source?: Source): number {
+  const chars = sourceLines(source).reduce((n, line) => n + Array.from(line).length, 0);
+  return chars * TYPE_MS + CURSOR_HOLD_MS;
+}
+
+// The source, as the screen says it (user-decided 2026-08-15): KIND, AUTHOR, WORK — one
+// per line, in that order, and NOTHING more. No dash, no comma, no joining prose: three
+// facts, each on its own line, is what a credit block is. Every field is independently
+// optional in the schema (#5), so a partial source simply prints fewer lines.
+function sourceLines(source?: Source): string[] {
+  return [source?.kind, source?.author, source?.work].filter((line): line is string =>
+    Boolean(line),
+  );
+}
+
 function typedLine(chars: string[], shown: number, cursor: boolean) {
   return (
     <>
@@ -27,17 +45,16 @@ function typedLine(chars: string[], shown: number, cursor: boolean) {
   );
 }
 
-// The solved sentence's attribution (issue #8), the solved stage's opening line since the
-// 2026-08-14 redesign — a quote-style citation from the optional literary metadata (#5):
-// a kind tag and "— Author, Work", typed big at the top of the result the dissolved
-// sentence handed the screen to. Every final character is present but hidden from frame
-// one so line wrapping is stable; the underscore occupies the next character's reserved
-// slot. Rehydrated solves render the complete source immediately.
+// The solved sentence's attribution (issue #8), typed under the words it belongs to — the
+// optional literary metadata (#5) as a three-line credit block: the KIND tag over the
+// AUTHOR over the WORK. Every final character is present but hidden from frame one so line
+// wrapping is stable; the underscore occupies the next character's reserved slot.
+// Rehydrated solves render the complete source immediately.
 //
-// (The `masked` veil died with the redesign: the caption used to be MOUNTED for the whole
-// round to reserve the prompt zone's height, which is what put the author of an unsolved
-// sentence one DevTools panel away. It now mounts only WITH the solved stage, so there is
-// no unsolved DOM for the citation to leak into.)
+// (The `masked` veil died with the 2026-08-14 redesign: the caption used to be MOUNTED for
+// the whole round to reserve the prompt zone's height, which is what put the author of an
+// unsolved sentence one DevTools panel away. It now mounts only WITH the solved stage, so
+// there is no unsolved DOM for the citation to leak into.)
 export default function SolvedCaption({
   source,
   animate = false,
@@ -47,11 +64,18 @@ export default function SolvedCaption({
   animate?: boolean;
   onComplete?: () => void;
 }) {
-  const attribution = [source?.author, source?.work].filter(Boolean).join(', ');
-  const attributionText = attribution ? `— ${attribution}` : '';
-  const kindChars = useMemo(() => Array.from(source?.kind ?? ''), [source?.kind]);
-  const attributionChars = useMemo(() => Array.from(attributionText), [attributionText]);
-  const total = kindChars.length + attributionChars.length;
+  // One running character counter across the whole block: each line knows where it starts
+  // in that run, so the cursor walks from line to line without any per-line scheduling.
+  const lines = useMemo(() => {
+    let start = 0;
+    return sourceLines(source).map((text, index) => {
+      const chars = Array.from(text);
+      const line = { chars, start, kind: index === 0 && Boolean(source?.kind) };
+      start += chars.length;
+      return line;
+    });
+  }, [source]);
+  const total = lines.reduce((n, line) => n + line.chars.length, 0);
   const reduceMotion = prefersReducedMotion();
   const [shown, setShown] = useState(() => (animate && !reduceMotion ? 0 : total));
 
@@ -83,9 +107,9 @@ export default function SolvedCaption({
       // stack fully pressable and only the holes locked, which is the report this came from.
       // The deferral only has to leave this commit, never to land on a paint, so the frame was
       // buying nothing in exchange for that exposure. Whether a lost frame is what the reporter
-      // actually hit was NOT reproduced; `SOURCE_REVEAL_FALLBACK_MS` in `Game.tsx` is what
-      // guarantees the outcome either way. This just removes the one link in the chain that
-      // needed the page to be on screen.
+      // actually hit was NOT reproduced; the solved stage's own deadline is what guarantees the
+      // outcome either way. This just removes the one link in the chain that needed the page to
+      // be on screen.
       const id = window.setTimeout(() => onComplete?.(), 0);
       return () => window.clearTimeout(id);
     }
@@ -110,27 +134,31 @@ export default function SolvedCaption({
   }, [animate, onComplete, reduceMotion, shown, total]);
 
   const visible = animate ? shown : total;
-  const kindShown = Math.min(visible, kindChars.length);
-  const attributionShown = Math.max(0, visible - kindChars.length);
-  const typingKind = kindChars.length > 0 && visible < kindChars.length;
   const showCursor = animate && !reduceMotion && total > 0;
-  const kindCursor = showCursor && (typingKind || attributionChars.length === 0);
-  const attributionCursor = showCursor && !typingKind && attributionChars.length > 0;
-  const accessibleText = [source?.kind, attributionText].filter(Boolean).join('. ');
+  // The cursor sits on the line being typed — and, once the run is over, at the end of the
+  // last one, where it blinks out its hold.
+  const typing = lines.findIndex((line) => visible < line.start + line.chars.length);
+  const cursorLine = showCursor ? (typing === -1 ? lines.length - 1 : typing) : -1;
+  const accessibleText = sourceLines(source).join('. ');
 
   return (
     <div className="solved-caption">
       {animate && accessibleText && <span className="sr-only">{accessibleText}</span>}
-      {source?.kind && (
-        <span className="solved-kind" aria-hidden={animate || undefined}>
-          {typedLine(kindChars, kindShown, kindCursor)}
-        </span>
-      )}
-      {attribution && (
-        <p className="solved-attribution" aria-hidden={animate || undefined}>
-          {typedLine(attributionChars, attributionShown, attributionCursor)}
-        </p>
-      )}
+      {lines.map((line, index) => {
+        const chars = line.chars;
+        const lineShown = Math.min(Math.max(0, visible - line.start), chars.length);
+        return (
+          <p
+            // The lines are static display metadata in a fixed order.
+            // eslint-disable-next-line react/no-array-index-key
+            key={index}
+            className={line.kind ? 'solved-kind' : 'solved-attribution'}
+            aria-hidden={animate || undefined}
+          >
+            {typedLine(chars, lineShown, cursorLine === index)}
+          </p>
+        );
+      })}
     </div>
   );
 }

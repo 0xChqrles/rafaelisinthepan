@@ -6,7 +6,7 @@ import { shareText, shareUrl } from '../game/share';
 import type { ScorePlacement } from '../hooks/useScoreHistogram';
 import RunRuler, { rulerStagger } from './RunRuler';
 import ScoreRank from './ScoreRank';
-import SolvedCaption from './SolvedCaption';
+import SolvedCaption, { captionDurationMs } from './SolvedCaption';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import useShare from '../hooks/useShare';
 import { ariaHoleHistory, t } from '../i18n';
@@ -27,9 +27,14 @@ import { SCORE_COUNT_MS } from './resultAnimation';
 //            which is what turns the seam between the two into real space rather than a
 //            measured gap — the taller the screen, the more the split reads.
 //
-// The reveal reads the same way it is laid out, top to bottom, off ONE derived timeline:
-// every beat below is an absolute offset from the stage's arrival, so nothing waits on a
-// signal that could be lost and a long citation cannot hold the numbers back.
+// The reveal reads the same way it is laid out, top to bottom: the words count themselves
+// out, the source types under them, and the SCORE block follows once that citation has
+// FINISHED PRINTING (user-decided 2026-08-15, superseding the fixed 420ms lead off the
+// source's first line) — numbers arriving over a half-typed credit read as two things
+// happening at once, where waiting reads as one thing after another. That is the screen's
+// one signal-driven beat, so it carries a DEADLINE behind it (the `KB_EXIT_FALLBACK_MS`
+// rule: a lost signal must never be able to stall the solved sequence), derived from the
+// typewriter's own numbers. Everything else still hangs off an offset.
 // Rehydrated solves render the final frame immediately and replay nothing.
 const NEUTRAL_HOLD_MS = 55;
 // The words POP in one by one: 200ms apart, each a fast scale pop — the round's three
@@ -39,8 +44,14 @@ const NEUTRAL_HOLD_MS = 55;
 // whole length, a 300ms hop lands before the eye can read one.
 const WORD_STEP_MS = 200;
 const WORD_POP_MS = 300;
-// The score block follows the source's FIRST line, not its last character.
-const CAPTION_LEAD_MS = 420;
+// The breath between the citation's last character and the numbers arriving.
+const SCORE_LEAD_MS = 320;
+// A puzzle with no source has no printing to wait for, so its numbers follow the words.
+const WORDS_LEAD_MS = 140;
+// How long past the citation's own length the stage waits before giving up on the
+// completion signal and moving on anyway. Generous by design: it is a backstop, and the
+// typewriter's intervals are merely THROTTLED on a hidden tab, never dropped.
+const CAPTION_FALLBACK_SLACK_MS = 4_000;
 
 // The ambient wave (#129), restated for the solved words the way WordSubject restates it
 // for the day's word: importing half of Hole's internals is not sharing it. Same numbers,
@@ -156,11 +167,8 @@ export default function SolvedScreen({
   const stagger = rulerStagger(n, reduceMotion);
   const hasSource = Boolean(source?.kind || source?.author || source?.work);
 
-  // The ONE derived timeline (see the block comment): the words count themselves out,
-  // the source follows the last of them, and the score block arrives after the seam.
+  // The words count themselves out; everything after them is timed off the beat before it.
   const wordsSpanMs = words.length ? (words.length - 1) * WORD_STEP_MS + WORD_POP_MS : 0;
-  const scoreStartMs = wordsSpanMs + (hasSource ? CAPTION_LEAD_MS : 140);
-  const rulerStartMs = scoreStartMs + SCORE_COUNT_MS;
 
   // The stage rises once; every block's own beat hangs off this one flip.
   const [stageIn, setStageIn] = useState(() => !animate);
@@ -193,7 +201,9 @@ export default function SolvedScreen({
   }, [animate, stageIn, reduceMotion, wordsSpanMs]);
 
   // The SCORE block: the seam's other side. Its arrival is what starts the tally, so the
-  // number never counts behind a block that has not appeared yet.
+  // number never counts behind a block that has not appeared yet. It waits for the source
+  // to finish PRINTING — on the caption's own completion signal, with the derived deadline
+  // behind it — and, on a puzzle with no source, simply follows the words.
   const [scoreIn, setScoreIn] = useState(() => !animate);
   useEffect(() => {
     if (!animate) {
@@ -201,9 +211,21 @@ export default function SolvedScreen({
       return undefined;
     }
     if (!stageIn) return undefined;
-    const id = window.setTimeout(() => setScoreIn(true), reduceMotion ? 0 : scoreStartMs);
+    if (reduceMotion) {
+      setScoreIn(true);
+      return undefined;
+    }
+    if (!hasSource) {
+      const id = window.setTimeout(() => setScoreIn(true), wordsSpanMs + WORDS_LEAD_MS);
+      return () => window.clearTimeout(id);
+    }
+    if (!captionIn) return undefined;
+    const id = window.setTimeout(
+      () => setScoreIn(true),
+      captionDone ? SCORE_LEAD_MS : captionDurationMs(source) + CAPTION_FALLBACK_SLACK_MS,
+    );
     return () => window.clearTimeout(id);
-  }, [animate, stageIn, reduceMotion, scoreStartMs]);
+  }, [animate, stageIn, reduceMotion, hasSource, wordsSpanMs, captionIn, captionDone, source]);
 
   const [countTarget, setCountTarget] = useState(() => (animate ? 0 : guessCount));
   useEffect(() => {
@@ -223,22 +245,22 @@ export default function SolvedScreen({
       setRulerColorized(true);
       return undefined;
     }
-    if (!stageIn) return undefined;
+    if (!scoreIn) return undefined;
     if (reduceMotion) {
       setRulerShown(true);
       setRulerColorized(true);
       return undefined;
     }
-    const show = window.setTimeout(() => setRulerShown(true), rulerStartMs);
+    const show = window.setTimeout(() => setRulerShown(true), SCORE_COUNT_MS);
     const color = window.setTimeout(
       () => setRulerColorized(true),
-      rulerStartMs + rulerSpanMs + NEUTRAL_HOLD_MS,
+      SCORE_COUNT_MS + rulerSpanMs + NEUTRAL_HOLD_MS,
     );
     return () => {
       window.clearTimeout(show);
       window.clearTimeout(color);
     };
-  }, [animate, rulerSpanMs, reduceMotion, stageIn, rulerStartMs]);
+  }, [animate, rulerSpanMs, reduceMotion, scoreIn]);
 
   // The STANDING heads the score block since 2026-08-15, so it arrives WITH it — the
   // reveal reads the way the stage is laid out, top to bottom, and a line sitting above

@@ -1214,11 +1214,13 @@ button * {
    shifts), and the RESULTS take over the keyboard's footprint (.solved-results in .tray).
 */
 
-/* Caption: the quote-style citation, sitting UNDER the words it belongs to (user-decided
+/* Caption: the credit block, sitting UNDER the words it belongs to (user-decided
    2026-08-14, second pass — it briefly led the stage, typed big; it reads as what it has
    always been, the small credit line beneath the puzzle's own content). Its own caption
    sizing is restored; only the alignment follows the centred stage. The kind tag stays the
-   small blue chip over the attribution's gold. */
+   small blue chip over the attribution's gold — and since 2026-08-15 the block is THREE
+   LINES, kind over author over work, so the two gold lines sit tighter to each other than
+   the tag sits to them (they are one credit; the tag is a label on it). */
 .solved-caption {
   width: 100%;
   display: flex;
@@ -1228,6 +1230,7 @@ button * {
   gap: 10px;
 }
 .solved-kind {
+  margin: 0;
   font-family: var(--press);
   font-size: 10px;
   color: var(--accent);
@@ -1243,6 +1246,11 @@ button * {
   color: var(--hole); /* gold — the colour of what the player holds */
   letter-spacing: 1px;
   padding-top: var(--text-shift);
+}
+/* Author and work are ONE credit: the caption's gap opens between the tag and the block,
+   not inside it. */
+.solved-attribution + .solved-attribution {
+  margin-top: -6px;
 }
 .source-type-slot {
   position: relative;
@@ -1539,10 +1547,12 @@ button * {
   display: flex;
   align-items: center;
   justify-content: center;
-  /* The badge is its OWN object beside the sentence, so it takes the wider seam; the
-     words and the number are one phrase and sit tighter (below). */
-  gap: 16px;
-  height: 34px;
+  /* The badge is its OWN object beside the phrase, so it takes a wide seam — widened
+     again on review (user-decided 2026-08-15): a filled chip needs air around it or it
+     reads as attached to the word before it. The words and the number are one phrase and
+     sit tighter (below). */
+  gap: 26px;
+  height: 40px;
   margin: 0;
   font-family: var(--press);
 }
@@ -1554,15 +1564,20 @@ button * {
   gap: 8px;
 }
 .score-rank-label {
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 1px;
   color: var(--muted);
 }
 .score-rank-num {
-  font-size: 20px;
+  font-size: 24px;
   line-height: 1;
   letter-spacing: 1px;
   color: var(--accent);
+  /* The pixel font reserves a gap under its glyphs, and that gap scales with the type — so
+     a shared BASELINE leaves the big number visually riding above the small words beside
+     it. Two pixels down is what puts the ink back on one line. Whole pixels only, and a
+     `translate` rather than a margin: nothing may move because of it. */
+  translate: 0 2px;
 }
 /* The one FILLED badge in the app: gold ground, page-dark type — which is exactly why it
    carries weight, since nothing else here is filled. Its height is EXPLICIT and the ink
@@ -1581,14 +1596,17 @@ button * {
 .score-top {
   display: inline-flex;
   align-items: center;
-  height: 28px;
+  height: 30px;
   padding: 0 9px 0 10px;
-  background: var(--hole);
+  background: var(--fg);
   color: var(--bg);
   font-size: 10px;
   line-height: 1;
   letter-spacing: 1px;
   text-shadow: none;
+  /* Dropped onto the phrase's own line the way the number is (same reason, more of it: the
+     chip's box is centred on its type, and its type is the smallest on the line). */
+  translate: 0 4px;
 }
 /* NARROW PHONES: the line is a fixed-width object — pixel type does not reflow — and at
    full size a perfectly ordinary standing outruns a 320px screen: `RANG #12 SUR 59` +
@@ -1603,8 +1621,8 @@ button * {
    another 1px of type. */
 @media (max-width: 420px) {
   .score-slot {
-    gap: 10px;
-    height: 30px;
+    gap: 12px;
+    height: 34px;
   }
   .score-rank-text {
     gap: 6px;
@@ -1614,11 +1632,13 @@ button * {
   }
   .score-rank-num {
     font-size: 16px;
+    translate: 0 1px;
   }
   .score-top {
-    height: 24px;
+    height: 26px;
     padding: 0 7px 0 8px;
     font-size: 9px;
+    translate: 0 3px;
   }
 }
 
