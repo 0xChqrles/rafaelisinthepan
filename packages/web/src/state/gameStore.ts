@@ -280,10 +280,12 @@ interface GameState extends PersistedState {
   // word + lower rank.
   improveHole: (index: number, word: string, rank: number) => void;
 
-  // Mark the active round's score as submitted to the daily histogram (#170) — one per
-  // mode, each targeting its own active key. Idempotent: the flag only ever turns on.
-  markScoreSubmitted: () => void;
-  markWordScoreSubmitted: () => void;
+  // Mark THIS keyed round's score as submitted to the daily histogram (#170). The request
+  // can finish after navigation has changed the active round, so completion must carry the
+  // identity it started with rather than consulting activeKey at response time.
+  // Idempotent: the flag only ever turns on.
+  markScoreSubmitted: (key: string) => void;
+  markWordScoreSubmitted: (key: string) => void;
 
   // Cache the active round's reconstruction progress (for the selector badge). No-op
   // when unchanged so it never churns the store.
@@ -563,19 +565,15 @@ export const useGameStore = create<GameState>()(
           };
         }),
 
-      markScoreSubmitted: () =>
+      markScoreSubmitted: (key) =>
         set((s) => {
-          const key = s.activeKey;
-          if (!key) return {};
           const round = s.rounds[key];
           if (!round || round.scoreSubmitted === true) return {};
           return { rounds: { ...s.rounds, [key]: { ...round, scoreSubmitted: true } } };
         }),
 
-      markWordScoreSubmitted: () =>
+      markWordScoreSubmitted: (key) =>
         set((s) => {
-          const key = s.activeWordKey;
-          if (!key) return {};
           const round = s.wordRounds[key];
           if (!round || round.scoreSubmitted === true) return {};
           return { wordRounds: { ...s.wordRounds, [key]: { ...round, scoreSubmitted: true } } };

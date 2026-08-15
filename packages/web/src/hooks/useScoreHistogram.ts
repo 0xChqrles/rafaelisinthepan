@@ -23,6 +23,39 @@ export interface ScorePlacement {
   bucket: number | null;
 }
 
+// One browser-session conversation per round, shared across COMPONENT lifetimes. A ref
+// only survives StrictMode's effect replay; it does not survive a real unmount (opening
+// the archive/tutorial and coming back), while the fetch it started keeps running. The
+// map lets the new mount subscribe to that same promise instead of minting a second
+// Turnstile token and recording the score twice. Settled work is removed immediately:
+// a later revisit must perform the normal fresh GET, and a failed POST must stay
+// retryable on that revisit.
+const activeScoreFlights = new Map<string, Promise<ScorePlacement | null>>();
+
+// Exported for the submit-once contract test; callers still use the hook below.
+export function shareScoreFlight(
+  key: string,
+  start: () => Promise<ScorePlacement | null>,
+): Promise<ScorePlacement | null> {
+  const existing = activeScoreFlights.get(key);
+  if (existing) return existing;
+
+  const promise = (async () => {
+    try {
+      return await start();
+    } catch {
+      // Offline, blocked Turnstile, malformed body, missing config — all the same
+      // outcome: no histogram, no message.
+      return null;
+    }
+  })();
+  activeScoreFlights.set(key, promise);
+  void promise.then(() => {
+    if (activeScoreFlights.get(key) === promise) activeScoreFlights.delete(key);
+  });
+  return promise;
+}
+
 async function syncScore(
   submitted: boolean,
   markSubmitted: () => void,
@@ -73,41 +106,40 @@ export default function useScoreHistogram({
 }): ScorePlacement | null {
   const [placement, setPlacement] = useState<ScorePlacement | null>(null);
 
-  // The network conversation is started ONCE per finished round and cached as a promise,
-  // for two reasons the deps alone cannot cover: StrictMode's dev double-mount re-runs
-  // the effect (the second run must SUBSCRIBE to the first's request, not fire a second
-  // POST), and marking the submitted flag mid-flight re-renders the owner (the re-run
-  // must not chase its own POST with a redundant GET). `submitted` is therefore read at
-  // launch time, not from the deps.
-  const flight = useRef<{ key: string; promise: Promise<ScorePlacement | null> } | null>(null);
+  // `submitted` is read at launch time rather than placed in the deps: the successful
+  // POST marks it during this effect's own flight, and that re-render must not chase the
+  // POST with a redundant GET.
   const submittedRef = useRef(submitted);
   submittedRef.current = submitted;
+  const placementKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!finished) {
-      // A republished puzzle can reset the round under the same key; drop stale bars.
-      flight.current = null;
+      // A republished puzzle can reset the round under the same key; drop stale results.
+      placementKeyRef.current = null;
       setPlacement(null);
       return undefined;
     }
-    const key = `${mode}:${lang}:${dayNumber}:${score}`;
-    if (!flight.current || flight.current.key !== key) {
-      flight.current = {
-        key,
-        promise: syncScore(
-          submittedRef.current,
-          markSubmitted,
-          mode,
-          lang,
-          dateForDayNumber(dayNumber),
-          score,
-          // Offline, blocked Turnstile, malformed body, missing config — all the same
-          // outcome: no histogram, no message.
-        ).catch(() => null),
-      };
+    const operation = submittedRef.current ? 'get' : 'post';
+    const key = `${operation}:${mode}:${lang}:${dayNumber}:${score}`;
+    if (placementKeyRef.current !== key) {
+      placementKeyRef.current = key;
+      // A direct solved-round -> solved-round navigation must never show the previous
+      // day's standing while this day's request is in flight.
+      setPlacement(null);
     }
+    const promise = shareScoreFlight(key, () =>
+      syncScore(
+        submittedRef.current,
+        markSubmitted,
+        mode,
+        lang,
+        dateForDayNumber(dayNumber),
+        score,
+      ),
+    );
     let cancelled = false;
-    void flight.current.promise.then((result) => {
+    void promise.then((result) => {
       if (!cancelled && result) setPlacement(result);
     });
     return () => {

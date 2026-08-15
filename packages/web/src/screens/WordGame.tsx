@@ -129,6 +129,12 @@ function WordRound({
   const startWordRun = useGameStore((s) => s.startWordRun);
   const recordWordGuess = useGameStore((s) => s.recordWordGuess);
   const markWordScoreSubmitted = useGameStore((s) => s.markWordScoreSubmitted);
+  // The score request outlives this screen if the player navigates away. Keep its
+  // completion attached to the round that launched it, never the next active Word day.
+  const markThisWordScoreSubmitted = useCallback(
+    () => markWordScoreSubmitted(roundKey),
+    [markWordScoreSubmitted, roundKey],
+  );
 
   // Reconcile before paint, like the sentence round: a matching key playing the same
   // word rehydrates; a republished different word resets.
@@ -169,7 +175,7 @@ function WordRound({
   const placement = useScoreHistogram({
     finished: ended,
     submitted: live?.scoreSubmitted === true,
-    markSubmitted: markWordScoreSubmitted,
+    markSubmitted: markThisWordScoreSubmitted,
     mode: 'word',
     lang,
     dayNumber,

@@ -70,8 +70,14 @@ this stack is human-deployed rather than run by CI). In short, the stack creates
 
 `VITE_API_BASE_URL` needs no repo variable: it is committed in
 `packages/web/.env.production`, the single source of truth for the value baked into the
-shipped bundle. The one optional repo **variable** is `VITE_PLAUSIBLE_DOMAIN` (#60) —
-unset means analytics stay inert.
+shipped bundle. Web deploys read two repo **variables**:
+
+- `VITE_TURNSTILE_SITE_KEY` is **required** (#170): the public site key for the production
+  invisible Turnstile widget paired with the backend's `/whippin/turnstile-secret`.
+  `vite.config.ts` refuses every production build when it is unset, so production cannot
+  silently ship score collection disabled. Configure it with
+  `gh variable set VITE_TURNSTILE_SITE_KEY --body '<site-key>'`.
+- `VITE_PLAUSIBLE_DOMAIN` is optional (#60): unset means analytics stay inert.
 
 ### 3. Branch protection — required status check (manual, admin)
 

@@ -591,33 +591,52 @@ describe('syncProgress — cached per round for the selector badge', () => {
 
 // CONTRACT (#170): the submitted flag PERSISTS with its round, next to the solved state,
 // so a reload or a revisit can only ever read the histogram — never re-submit. One flag
-// per mode's round shape; both actions are idempotent and target their own active key.
+// per mode's round shape; both actions are idempotent and target the key captured when the
+// request started, even if navigation has made a different round active by completion.
 describe('score submission flags (#170) — markScoreSubmitted / markWordScoreSubmitted', () => {
-  it('marks the ACTIVE sentence round, once, and persists on the round itself', () => {
+  it('marks the keyed sentence round, once, and persists on the round itself', () => {
     const { ensureRound, markScoreSubmitted } = useGameStore.getState();
     ensureRound('d:5:fr', freshHoles());
     expect(activeRound()?.scoreSubmitted).toBeUndefined();
-    markScoreSubmitted();
+    markScoreSubmitted('d:5:fr');
     expect(activeRound()?.scoreSubmitted).toBe(true);
     const before = useGameStore.getState().rounds;
-    markScoreSubmitted();
+    markScoreSubmitted('d:5:fr');
     expect(useGameStore.getState().rounds).toBe(before); // idempotent — no churn
   });
 
-  it('marks the ACTIVE word round without touching the sentence round', () => {
+  it('marks the keyed word round without touching the sentence round', () => {
     const { ensureRound, ensureWordRound, markWordScoreSubmitted } = useGameStore.getState();
     ensureRound('d:5:fr', freshHoles());
     ensureWordRound('w:5:fr', 'phare');
-    markWordScoreSubmitted();
+    markWordScoreSubmitted('w:5:fr');
     const s = useGameStore.getState();
     expect(s.wordRounds['w:5:fr'].scoreSubmitted).toBe(true);
     expect(s.rounds['d:5:fr'].scoreSubmitted).toBeUndefined();
   });
 
+  it('marks the submitting round after navigation, not the newly active round', () => {
+    const { ensureRound, ensureWordRound, markScoreSubmitted, markWordScoreSubmitted } =
+      useGameStore.getState();
+    ensureRound('d:5:fr', freshHoles());
+    ensureRound('d:6:fr', freshHoles()); // active sentence round has moved on
+    markScoreSubmitted('d:5:fr');
+
+    ensureWordRound('w:5:fr', 'phare');
+    ensureWordRound('w:6:fr', 'océan'); // active Word round has moved on
+    markWordScoreSubmitted('w:5:fr');
+
+    const s = useGameStore.getState();
+    expect(s.rounds['d:5:fr'].scoreSubmitted).toBe(true);
+    expect(s.rounds['d:6:fr'].scoreSubmitted).toBeUndefined();
+    expect(s.wordRounds['w:5:fr'].scoreSubmitted).toBe(true);
+    expect(s.wordRounds['w:6:fr'].scoreSubmitted).toBeUndefined();
+  });
+
   it('a round rehydrated under the same key keeps its flag (the revisit guard)', () => {
     const { ensureRound, markScoreSubmitted } = useGameStore.getState();
     ensureRound('d:5:fr', freshHoles());
-    markScoreSubmitted();
+    markScoreSubmitted('d:5:fr');
     // The same puzzle reconciles again (a reload): the flag survives untouched.
     useGameStore.getState().ensureRound('d:5:fr', freshHoles());
     expect(activeRound()?.scoreSubmitted).toBe(true);
@@ -627,10 +646,10 @@ describe('score submission flags (#170) — markScoreSubmitted / markWordScoreSu
     expect(activeRound()?.scoreSubmitted).toBeUndefined();
   });
 
-  it('is a no-op with no active round', () => {
+  it('is a no-op for an unknown key', () => {
     const before = useGameStore.getState().rounds;
-    useGameStore.getState().markScoreSubmitted();
-    useGameStore.getState().markWordScoreSubmitted();
+    useGameStore.getState().markScoreSubmitted('d:999:fr');
+    useGameStore.getState().markWordScoreSubmitted('w:999:fr');
     expect(useGameStore.getState().rounds).toBe(before);
   });
 });

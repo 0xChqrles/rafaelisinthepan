@@ -220,11 +220,32 @@ export default function SolvedScreen({
       return () => window.clearTimeout(id);
     }
     if (!captionIn) return undefined;
-    const id = window.setTimeout(
-      () => setScoreIn(true),
-      captionDone ? SCORE_LEAD_MS : captionDurationMs(source, lang) + CAPTION_FALLBACK_SLACK_MS,
-    );
-    return () => window.clearTimeout(id);
+    if (captionDone) {
+      const id = window.setTimeout(() => setScoreIn(true), SCORE_LEAD_MS);
+      return () => window.clearTimeout(id);
+    }
+
+    // The typewriter advances on a short interval, which browsers throttle or suspend in
+    // a hidden tab. Its backstop therefore counts VISIBLE time too: a plain wall-clock
+    // timeout can expire while only a handful of letters have printed and reveal the
+    // numbers over a half-typed credit on return. The real completion signal normally
+    // wins; restarting the generous fallback when visibility returns only affects the
+    // lost-signal path it exists to rescue.
+    let id = 0;
+    const armFallback = () => {
+      window.clearTimeout(id);
+      if (document.visibilityState === 'hidden') return;
+      id = window.setTimeout(
+        () => setScoreIn(true),
+        captionDurationMs(source, lang) + CAPTION_FALLBACK_SLACK_MS,
+      );
+    };
+    armFallback();
+    document.addEventListener('visibilitychange', armFallback);
+    return () => {
+      window.clearTimeout(id);
+      document.removeEventListener('visibilitychange', armFallback);
+    };
   }, [animate, stageIn, reduceMotion, hasSource, wordsSpanMs, captionIn, captionDone, source, lang]);
 
   const [countTarget, setCountTarget] = useState(() => (animate ? 0 : guessCount));

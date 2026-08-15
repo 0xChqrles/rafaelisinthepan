@@ -142,7 +142,7 @@ containment — live in the root `AGENTS.md`.)
 
 ```bash
 pnpm dev        # dev server (set VITE_API_BASE_URL=http://localhost:8787 for the local backend)
-pnpm build      # production build -> packages/web/dist
+pnpm build      # production build -> packages/web/dist (requires VITE_TURNSTILE_SITE_KEY)
 pnpm typecheck  # tsc --noEmit
 ```
 
@@ -1138,9 +1138,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     so it carries a DEADLINE behind it (`captionDurationMs(source)` + slack, the
     `KB_EXIT_FALLBACK_MS` rule: a lost signal must never be able to stall the solved
     sequence), and the deadline is derived from the typewriter's own numbers rather than
-    guessed. A source-less puzzle has no printing to wait for and its numbers follow the
-    words. Every other beat is still an absolute offset from the beat before it. Inside
-    the block the beats keep reading top to bottom:
+    guessed. That backstop counts **VISIBLE time only**: the typewriter interval is
+    throttled/suspended with a hidden tab, so a wall-clock deadline could otherwise reveal
+    the numbers over a half-printed credit on return. A source-less puzzle has no printing
+    to wait for and its numbers follow the words. Every other beat is still an absolute
+    offset from the beat before it. Inside the block the beats keep reading top to bottom:
     the STANDING arrives WITH the block it now heads (`chartStart = scoreIn` — a line
     sitting above the tally must not land after it), the tally runs its
     `SCORE_COUNT_MS`, then the ruler shows and colorizes.
@@ -1310,14 +1312,19 @@ it to the local store — see `packages/backend/AGENTS.md`).
   submitted POSTs its score once — carrying an invisible Turnstile token (`turnstile.ts`,
   the only module that knows Turnstile exists, the analytics.ts pattern; site key
   `VITE_TURNSTILE_SITE_KEY`, .env.example ships Cloudflare's always-passing invisible TEST
-  key for local play, unset = submission silently disabled) and the `x-amz-content-sha256`
+  key for local play, while production's required GitHub repo variable is injected by
+  `deploy.yml` and `vite.config.ts` rejects an unset production build) and the
+  `x-amz-content-sha256`
   hash of the exact body bytes it sends (`api.postScoreBody` — the root AGENTS.md's OAC
   contract) — and the POST's response IS the histogram (one round trip on the happy path);
   a round already submitted GETs the read-only twin on revisits. The `scoreSubmitted` flag
   persists ON the round (both round shapes, optional field — no store version bump), is
   marked when the server ANSWERS (accepted or refused alike) and left unset on a
   transport/Turnstile failure so a later visit may retry — which is also what lets a Word
-  run whose clock died with the tab closed submit on the revisit that finds it over. EVERY
+  run whose clock died with the tab closed submit on the revisit that finds it over. The
+  completion is keyed to the round that launched it (never whichever round navigation made
+  active later), and an in-flight conversation is shared across real component remounts so
+  leaving for the archive/tutorial and returning cannot mint a second POST. EVERY
   failure is silent by decision: the solved screen simply shows no standing, never an
   error. **What it shows is ONE LINE — the player's RANK** (`components/ScoreRank`,
   user-decided 2026-08-15, replacing the brick histogram that replaced the first cut's

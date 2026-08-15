@@ -191,6 +191,9 @@ export function parseScoreHistogram(data: unknown): ScoreHistogram {
       throw new Error('malformed histogram: bad bucket entry');
     }
   }
+  if (bucket !== null && (bucket < 0 || bucket >= buckets.length)) {
+    throw new Error('malformed histogram: "bucket" index is outside "buckets"');
+  }
   return data as unknown as ScoreHistogram;
 }
 

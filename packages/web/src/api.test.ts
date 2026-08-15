@@ -365,5 +365,7 @@ describe('parseScoreHistogram (shape validation)', () => {
     expect(() => parseScoreHistogram({ ...valid(), buckets: [{ min: 1, max: 3, count: -1 }] }))
       .toThrow(/bucket/);
     expect(() => parseScoreHistogram({ ...valid(), bucket: 'zero' })).toThrow(/bucket/);
+    expect(() => parseScoreHistogram({ ...valid(), bucket: -1 })).toThrow(/bucket/);
+    expect(() => parseScoreHistogram({ ...valid(), bucket: 2 })).toThrow(/bucket/);
   });
 });

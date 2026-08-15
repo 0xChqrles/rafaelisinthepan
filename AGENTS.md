@@ -503,8 +503,11 @@ publish/inventory/backend:dev (backend), dev/build (web), cdk synth/diff/deploy
   long-lived keys) and deploys **only the changed stack(s)** via `dorny/paths-filter`
   (`shared`/`infra`/root-deps fan out to both; `generation` deploys nothing). Web deploy
   runs `pnpm build` (reads `VITE_API_BASE_URL` from the committed `.env.production` — the
-  single source of truth; only the optional `VITE_PLAUSIBLE_DOMAIN` analytics var is passed
-  via a repo variable, #60) before `cdk deploy WhippinWebStack`. `workflow_dispatch`
+  single source of truth; receives the **required public** `VITE_TURNSTILE_SITE_KEY` repo
+  variable, with `vite.config.ts` rejecting any production build that would silently ship
+  score collection disabled; and receives the optional `VITE_PLAUSIBLE_DOMAIN` analytics
+  repo variable, #60)
+  before `cdk deploy WhippinWebStack`. `workflow_dispatch`
   `stacks` input forces
   `changed`|`web`|`backend`|`all` (default `changed`).
   **The backend deploy INVALIDATES `/*` on the API distribution after `cdk deploy`**

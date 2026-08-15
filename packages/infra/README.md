@@ -103,7 +103,8 @@ requires for its ACM cert — so the cert lives in-stack with no cross-region re
   a credential-free smoke synth.
 
 > **Build before deploy.** `cdk deploy WhippinWebStack` zips `packages/web/dist` at synth
-> time, so run `pnpm build` first (with `VITE_API_BASE_URL` set, see *Wiring* below). If
+> time, so run `pnpm build` first (with `VITE_API_BASE_URL` and
+> `VITE_TURNSTILE_SITE_KEY` set, see *Wiring* below). If
 > `dist` is absent the stack still deploys but **skips the upload** with a warning.
 
 ## `WhippinDeployStack` (#33) — CI auth bootstrap
@@ -161,9 +162,9 @@ origin** (override with `-c allowedOrigin=`).
 ```bash
 # 1. Backend → api.<domain> (CORS defaults to https://<domain>).
 pnpm --filter @whippin/infra run deploy WhippinBackendStack -c domainName=whippin.ai
-# 2. Build the web. `VITE_API_BASE_URL` comes from the committed
-#    packages/web/.env.production (https://api.whippin.ai) — no inline env needed.
-pnpm build
+# 2. Build the web. `VITE_API_BASE_URL` comes from the committed .env.production;
+#    supply the public Turnstile site key (CI reads it from the required repo variable).
+VITE_TURNSTILE_SITE_KEY='<site-key>' pnpm build
 # 3. Deploy the site at the apex (uploads dist, invalidates CloudFront).
 pnpm --filter @whippin/infra run deploy WhippinWebStack -c domainName=whippin.ai
 ```

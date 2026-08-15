@@ -154,6 +154,12 @@ function Round({
   const syncProgress = useGameStore((s) => s.syncProgress);
   const recordSolve = useGameStore((s) => s.recordSolve);
   const markScoreSubmitted = useGameStore((s) => s.markScoreSubmitted);
+  // The POST may finish after this screen has left. Bind its completion to THIS round so
+  // it cannot mark whichever day happens to be active at response time.
+  const markThisScoreSubmitted = useCallback(
+    () => markScoreSubmitted(roundKey),
+    [markScoreSubmitted, roundKey],
+  );
 
   // The client's active game day (local, DST-correct) — the streak's reference point. May
   // be dayNumber + 1 when an in-flight round is finished just past the 22:00 flip; the
@@ -244,7 +250,7 @@ function Round({
   const placement = useScoreHistogram({
     finished: solved,
     submitted: live?.scoreSubmitted === true,
-    markSubmitted: markScoreSubmitted,
+    markSubmitted: markThisScoreSubmitted,
     mode: 'sentence',
     lang,
     dayNumber,
