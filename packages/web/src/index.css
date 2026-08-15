@@ -1217,10 +1217,8 @@ button * {
 /* Caption: the credit block, sitting UNDER the words it belongs to (user-decided
    2026-08-14, second pass — it briefly led the stage, typed big; it reads as what it has
    always been, the small credit line beneath the puzzle's own content). Its own caption
-   sizing is restored; only the alignment follows the centred stage. The kind tag stays the
-   small blue chip over the attribution's gold — and since 2026-08-15 the block is THREE
-   LINES, kind over author over work, so the two gold lines sit tighter to each other than
-   the tag sits to them (they are one credit; the tag is a label on it). */
+   sizing is restored; only the alignment follows the centred stage. Since 2026-08-15 it is
+   TWO lines — the work, then one muted phrase saying what it is and who it is by. */
 .solved-caption {
   width: 100%;
   display: flex;
@@ -1229,20 +1227,11 @@ button * {
   text-align: center;
   gap: 10px;
 }
-.solved-kind {
-  margin: 0;
-  font-family: var(--press);
-  font-size: 10px;
-  color: var(--accent);
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  padding-top: var(--text-shift);
-}
-/* The credit's HEADLINE — the work, or the author when there is no work to credit. Gold
-   (the caption's own colour) and the biggest type in the block, so the eye lands here
-   first and reads the muted line under it as belonging to this one. It stays well under
-   the guessed words above: this is the credit beneath the puzzle's content, not a fourth
-   trophy. */
+/* The credit's HEADLINE — the work, or whatever stands in for it when a source carries no
+   work (see SolvedCaption). Gold, the caption's own colour, and the biggest type in the
+   block, so the eye lands here first and reads the line under it as qualifying this one.
+   It stays well under the guessed words above: this is the credit beneath the puzzle's
+   content, not a fourth trophy. */
 .solved-work {
   margin: 0;
   font-family: var(--press);
@@ -1252,10 +1241,9 @@ button * {
   letter-spacing: 1px;
   padding-top: var(--text-shift);
 }
-/* The author, as a RELATIONSHIP rather than a second name: `BY Victor Hugo`, muted and
-   small. It belongs to the line above it, so it sits tighter to the work than the block
-   does to its tag — the caption's gap opens between the tag and the credit, not inside
-   the credit. */
+/* What the headline IS and who it is by — `BOOK by Victor Hugo` — as one muted phrase
+   rather than a stack of fields. It belongs to the line above it, so it sits tight under
+   it; the caption's gap opens between the credit and the words above, not inside it. */
 .solved-by {
   margin: -4px 0 0;
   font-family: var(--press);

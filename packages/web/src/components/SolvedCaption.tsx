@@ -16,43 +16,46 @@ export function captionDurationMs(source: Source | undefined, lang: string): num
   return chars * TYPE_MS + CURSOR_HOLD_MS;
 }
 
-// The source as a CREDIT BLOCK (user-decided 2026-08-15, superseding three bare stacked
-// lines — and the `— Author, Work` run-on before them): the two names were the problem
-// both times. Stacked with nothing between them, `Victor Hugo` over `Les Misérables` is
-// two strings the reader has to guess the roles of; a comma said even less. So the block
-// says which is which, in three ways at once and no more words than one:
+// The source as a CREDIT BLOCK (user-decided 2026-08-15, third pass — the shape is the
+// user's own): TWO lines, the work over one qualifying line that carries everything else.
 //
-//        BOOK                the KIND tag, the small blue label it has always been
-//     Les Misérables         the WORK — the credit's headline: gold, and the biggest
-//                            type in the block
-//     BY Victor Hugo         the AUTHOR — muted, small, and named as a relationship
+//     Les Misérables            the WORK — the credit's headline: gold, the biggest
+//                               type in the block
+//     BOOK by Victor Hugo       what it IS and who made it: muted, small, one phrase
 //
-// The function word is what makes it unambiguous rather than merely ordered, and it earns
-// its place the way `OF` does in `RANK #5 OF 59`. The size and colour do the rest: gold is
-// the credit's content and muted is the line that qualifies it, so the eye lands on the
-// title first and reads the person as belonging to it.
+// The two earlier cuts stacked the three fields as three peer lines (and before them a
+// `— Author, Work` run-on), which left the reader guessing which name was a person: a
+// separator only ever says "these are two things", never which is which. Here the LINE
+// ITSELF is the answer — one thing is named, and the line under it says what that thing is
+// and who it is by, as a phrase you read rather than a list you decode. The function word
+// (`sourceBy`) is what binds them, earning its place the way `OF` does in `RANK #5 OF 59`,
+// and gold-over-muted ranks them so the eye lands on the title first.
 //
-// Every field is independently optional in the schema (#5), so a partial source simply
-// prints fewer lines — and a source with an author but NO work drops the function word and
-// gives the author the headline treatment, because a lone name is not a credit to anything
-// and `BY Victor Hugo` under nothing would be a sentence missing its subject.
+// Every field is independently optional in the schema (#5), so the HEADLINE is simply the
+// first of work / author / kind that exists and the qualifier is whatever is left: an
+// author with no work takes the headline (a lone name is not a credit to anything, and
+// `by Victor Hugo` under nothing is a sentence missing its subject), and a source with
+// only a kind is just that word.
 interface CaptionLine {
   className: string;
   text: string;
 }
 
 function sourceLines(source: Source | undefined, lang: string): CaptionLine[] {
-  const lines: CaptionLine[] = [];
-  if (source?.kind) lines.push({ className: 'solved-kind', text: source.kind });
-  if (source?.work) lines.push({ className: 'solved-work', text: source.work });
-  if (source?.author) {
-    lines.push(
-      source.work
-        ? { className: 'solved-by', text: `${t(lang, 'sourceBy')} ${source.author}` }
-        : { className: 'solved-work', text: source.author },
-    );
-  }
-  return lines;
+  const kind = source?.kind ? source.kind.toLocaleUpperCase(lang) : '';
+  const headline = source?.work || source?.author || kind;
+  if (!headline) return [];
+
+  // Whatever the headline did not take, as one phrase. The author joins it only when the
+  // WORK is the headline — otherwise the author IS the headline.
+  const byline =
+    source?.work && source?.author ? `${t(lang, 'sourceBy')} ${source.author}` : '';
+  const qualifier = [headline === kind ? '' : kind, byline].filter(Boolean).join(' ');
+
+  return [
+    { className: 'solved-work', text: headline },
+    ...(qualifier ? [{ className: 'solved-by', text: qualifier }] : []),
+  ];
 }
 
 function typedLine(chars: string[], shown: number, cursor: boolean) {

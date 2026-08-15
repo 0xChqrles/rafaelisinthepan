@@ -102,12 +102,14 @@ const STRINGS = {
   scoreRank: { en: 'RANK', fr: 'RANG' },
   scoreOf: { en: 'OF {n}', fr: 'SUR {n}' },
   scoreTop: { en: 'TOP', fr: 'TOP' },
-  // The solved credit block's one function word (user-decided 2026-08-15): it names the
-  // relationship between the two names under the kind tag, which is the whole reason the
-  // block is legible — `Les Misérables` / `BY Victor Hugo` can only be read one way, where
-  // two stacked names could be read either. It is only drawn when BOTH a work and an
-  // author exist; a lone author is a name, not a credit, and stands on its own line.
-  sourceBy: { en: 'BY', fr: 'DE' },
+  // The solved credit block's one function word (user-decided 2026-08-15): it binds the
+  // author to the work in the line under it — `Les Misérables` / `BOOK by Victor Hugo` can
+  // only be read one way, where two stacked names could be read either. LOWERCASE, unlike
+  // every other string here: it is the one word in this app that is not a label but part
+  // of a phrase, and the KIND beside it is uppercased in code to keep that contrast. Drawn
+  // only when BOTH a work and an author exist; a lone author is a name, not a credit, and
+  // takes the headline itself.
+  sourceBy: { en: 'by', fr: 'de' },
   ariaClose: { en: 'close', fr: 'fermer' },
   // ---- the route drawing (#117): a hole's neighborhood drawn as a LINE you travel. The
   // line teaches by SHAPE — the terminus, "you are here" and the departure are all said by

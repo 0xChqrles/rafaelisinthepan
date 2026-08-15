@@ -1067,30 +1067,31 @@ it to the local store — see `packages/backend/AGENTS.md`).
       clock as the tap affordance, numbers restated per the WordSubject rule) — and the
       SOURCE **under them, at its own caption size** — it briefly led the stage typed big,
       and reads as what it has always been, the credit line beneath the puzzle's content;
-      only its ALIGNMENT follows the centred stage. **It is a CREDIT BLOCK, and it says
-      WHICH NAME IS WHICH** (user-decided 2026-08-15, superseding three bare stacked lines
-      the same day, and the `— Author, Work` run-on before them — the two names were the
-      problem every time: stacked with nothing between them they are two strings whose
-      roles the reader has to guess, and a comma said even less):
+      only its ALIGNMENT follows the centred stage. **It is a CREDIT BLOCK of TWO lines,
+      and the second one is a PHRASE** (user's own shape, 2026-08-15, superseding three
+      stacked fields the same day and the `— Author, Work` run-on before them):
 
       ```
-              BOOK              the KIND tag, the small blue label it has always been
          Les Misérables         the WORK — the credit's headline: gold, `clamp(13px,
                                 1.8vw, 17px)`, the biggest type in the block
-         BY Victor Hugo         the AUTHOR — `--muted`, 10px, and named as a RELATIONSHIP
+         BOOK by Victor Hugo    what it IS and who it is by — `--muted`, 10px, ONE phrase
       ```
 
-      Three signals at once and one word: the **function word** (`sourceBy` — en `BY`,
-      fr `DE`) makes the block unambiguous rather than merely ordered, earning its place
-      the way `OF` does in `RANK #5 OF 59`; **gold is the credit's content and muted is
-      the line that qualifies it**, so the eye lands on the title and reads the person as
-      belonging to it; and the **size** ranks them. The author line sits tighter to the
-      work than the block does to its tag — the caption's gap opens between the tag and
-      the credit, never inside it. Every field is independently optional in the schema
-      (#5), so a partial source prints fewer lines — and an author with **no work drops
-      the function word and takes the headline treatment**, because a lone name is not a
-      credit to anything and `BY Victor Hugo` under nothing is a sentence missing its
-      subject. The typewriter is unchanged: one character run across whatever lines exist.
+      The earlier cuts stacked the fields as peers, which left the reader guessing which
+      name was a person: a separator only ever says "these are two things", never which is
+      which. Here ONE thing is named and the line under it says what that thing is and who
+      made it — read, not decoded. The function word (`sourceBy`, en `by` / fr `de`) binds
+      them, earning its place the way `OF` does in `RANK #5 OF 59`; it is the app's ONE
+      lowercase string, because it is part of a phrase rather than a label, and the KIND
+      beside it is uppercased in code to keep that contrast. Gold over muted ranks the two,
+      so the eye lands on the title first. The qualifier sits tight under its headline —
+      the caption's gap opens between the credit and the words above, never inside it.
+      Every field is independently optional in the schema (#5), so the HEADLINE is the
+      first of work / author / kind that exists and the qualifier is whatever is left: an
+      author with no work takes the headline (a lone name is not a credit to anything, and
+      `by Victor Hugo` under nothing is a sentence missing its subject) with its kind alone
+      beneath it, and a source carrying only a kind is just that word. The typewriter is
+      unchanged: one character run across whatever lines exist.
     - **SCORE** (`.solved-numbers`) — the #170 STANDING line, then the named
       `<tries> TRIES` headline over the run ruler, **then SHARE**, which belongs to this
       block (user-decided 2026-08-14, third pass: sharing is what you do with a RESULT).
