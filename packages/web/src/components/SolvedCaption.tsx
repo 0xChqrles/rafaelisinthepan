@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { Source } from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
-import { t } from '../i18n';
+import { sourceKind, t } from '../i18n';
 
 const TYPE_MS = 18;
 const CURSOR_HOLD_MS = 140;
@@ -31,6 +31,10 @@ export function captionDurationMs(source: Source | undefined, lang: string): num
 // (`sourceBy`) is what binds them, earning its place the way `OF` does in `RANK #5 OF 59`,
 // and gold-over-muted ranks them so the eye lands on the title first.
 //
+// The KIND is said in the player's language (`sourceKind`) — it is the one part of a
+// source that is a CATEGORY rather than a name, so it translates where the work and the
+// author never could. Its set is open, so an unlisted kind prints as the puzzle wrote it.
+//
 // Every field is independently optional in the schema (#5), so the HEADLINE is simply the
 // first of work / author / kind that exists and the qualifier is whatever is left: an
 // author with no work takes the headline (a lone name is not a credit to anything, and
@@ -42,7 +46,7 @@ interface CaptionLine {
 }
 
 function sourceLines(source: Source | undefined, lang: string): CaptionLine[] {
-  const kind = source?.kind ? source.kind.toLocaleUpperCase(lang) : '';
+  const kind = source?.kind ? sourceKind(lang, source.kind) : '';
   const headline = source?.work || source?.author || kind;
   if (!headline) return [];
 

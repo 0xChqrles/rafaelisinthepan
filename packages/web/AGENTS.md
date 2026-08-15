@@ -1083,7 +1083,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
       made it — read, not decoded. The function word (`sourceBy`, en `by` / fr `de`) binds
       them, earning its place the way `OF` does in `RANK #5 OF 59`; it is the app's ONE
       lowercase string, because it is part of a phrase rather than a label, and the KIND
-      beside it is uppercased in code to keep that contrast. Gold over muted ranks the two,
+      beside it is uppercased in code to keep that contrast. **The KIND is LOCALIZED**
+      (user-decided 2026-08-15, `sourceKind` in `i18n.ts`): it is the one part of a source
+      that is a CATEGORY rather than a name, so it translates where the work and the author
+      never could — `LIVRE de Victor Hugo`. It lives OUTSIDE the `STRINGS` table because it
+      is not a UI key: `kind` is puzzle DATA and an explicitly OPEN set (#5), so the lookup
+      PASSES THROUGH anything unlisted, uppercased, exactly as the puzzle wrote it (one
+      published fr puzzle already carries a free-form `discours`). The five documented
+      kinds are the whole table — adding an invented one would claim generation emits it. Gold over muted ranks the two,
       so the eye lands on the title first. The qualifier sits tight under its headline —
       the caption's gap opens between the credit and the words above, never inside it.
       Every field is independently optional in the schema (#5), so the HEADLINE is the

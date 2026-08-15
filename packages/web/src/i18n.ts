@@ -268,6 +268,26 @@ export function t(lang: string, key: UiKey): string {
   return STRINGS[key][uiLang(lang)];
 }
 
+// The solved credit's KIND, localized. It lives OUTSIDE `STRINGS` because it is not a UI
+// key at all: `source.kind` is puzzle DATA and an explicitly OPEN set (#5 — generation may
+// emit a kind nobody has listed yet, and one published fr puzzle already carries a
+// free-form `discours`). So this is a lookup with a PASS-THROUGH, not a table the caller
+// must key into: a known kind is said in the player's language, and anything else prints
+// the value the puzzle carries. Uppercase either way — the kind is the label half of
+// `BOOK by Victor Hugo`, against that phrase's one lowercase word.
+const SOURCE_KINDS = {
+  book: { en: 'BOOK', fr: 'LIVRE' },
+  movie: { en: 'MOVIE', fr: 'FILM' },
+  music: { en: 'MUSIC', fr: 'MUSIQUE' },
+  quote: { en: 'QUOTE', fr: 'CITATION' },
+  poem: { en: 'POEM', fr: 'POÈME' },
+} satisfies Record<string, Record<UiLang, string>>;
+
+export function sourceKind(lang: string, kind: string): string {
+  const known = SOURCE_KINDS[kind.trim().toLowerCase() as keyof typeof SOURCE_KINDS];
+  return known ? known[uiLang(lang)] : kind.toLocaleUpperCase(uiLang(lang));
+}
+
 // The same lookup for a string carrying a COUNT (`{n}` — the table's one placeholder).
 // It exists so a number that lives in the code can be shown to the player WITHOUT being
 // written into the copy: the caller passes the constant, and retuning it moves the
