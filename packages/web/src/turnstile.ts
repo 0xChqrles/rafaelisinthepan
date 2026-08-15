@@ -4,6 +4,14 @@
 // nothing the player ever sees. The script loads lazily, on the first solve that needs a
 // token — never at startup — and every failure REJECTS quietly: the caller degrades to
 // "no histogram", never to an error in the player's face.
+//
+// **The site key MUST be provisioned as an INVISIBLE widget** — Cloudflare's default is
+// "Managed", which is not a stricter version of the same thing but a different widget: it
+// may escalate to an interactive challenge, and this one renders into a `display: none`
+// container with no path to the screen. That challenge would then sit unclickable until
+// the token times out, silently dropping the score of exactly the players Cloudflare
+// doubts, on every visit. Nothing in code can detect the widget type, so it is stated
+// here and beside the key in `.env.example` / the deploy docs.
 
 interface TurnstileApi {
   render: (
@@ -41,16 +49,24 @@ function loadTurnstile(): Promise<TurnstileApi> {
     const script = document.createElement('script');
     script.src = SCRIPT_SRC;
     script.async = true;
-    script.onload = () => {
-      if (window.turnstile) resolve(window.turnstile);
-      else reject(new Error('Turnstile script loaded without its API.'));
-    };
-    script.onerror = () => {
-      // A blocked script (offline, content blocker) must be retryable on a later solve.
+    // EVERY failed load clears the cached promise, not just the network one: a rejected
+    // promise left in `scriptPromise` disables score submission for the whole SESSION,
+    // since every later call short-circuits on the cache instead of trying a fresh load.
+    // The `window.turnstile` fast path above rescues only an API that defines LATE, never
+    // one that never defines at all.
+    const fail = (message: string) => {
       scriptPromise = null;
       script.remove();
-      reject(new Error('Turnstile script failed to load.'));
+      reject(new Error(message));
     };
+    script.onload = () => {
+      if (window.turnstile) resolve(window.turnstile);
+      // A 200 that carried no API: a truncated response, or a privacy extension serving a
+      // stub. A later solve may well get the real thing.
+      else fail('Turnstile script loaded without its API.');
+    };
+    // A blocked script (offline, content blocker) must be retryable on a later solve.
+    script.onerror = () => fail('Turnstile script failed to load.');
     document.head.appendChild(script);
   });
   return scriptPromise;

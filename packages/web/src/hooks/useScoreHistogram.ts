@@ -10,8 +10,9 @@ import type { Mode } from '../langs';
 // token, so the POST's response IS the histogram (one round trip on the happy path) —
 // and a round already submitted GETs the read-only twin on revisits. The submitted flag
 // is PERSISTED with the round (the caller owns it, next to the solved state, #7/#9), so
-// a reload can never re-submit; it is marked as soon as the server ANSWERS — accepted or
-// rejected, either way the conversation is over — while a transport/Turnstile failure
+// a reload can never re-submit; it is marked as soon as the server reaches a VERDICT —
+// accepted (2xx) or refused (4xx), either way the conversation is over — while anything
+// that is merely the backend failing (a 5xx, or a transport/Turnstile error that throws)
 // leaves it unset, so the next visit may try again.
 //
 // EVERY failure is silent by decision: the solved screen simply shows no histogram.
@@ -56,7 +57,8 @@ export function shareScoreFlight(
   return promise;
 }
 
-async function syncScore(
+// Exported for the settled-verdict contract test; callers still use the hook below.
+export async function syncScore(
   submitted: boolean,
   markSubmitted: () => void,
   mode: Mode,
@@ -70,10 +72,13 @@ async function syncScore(
       score,
       turnstileToken: token,
     });
-    // The server answered: accepted or refused, this round's submission is settled for
-    // good. (A thrown fetch never reaches this line, so a transient failure stays
-    // retryable on the next visit.)
-    markSubmitted();
+    // The server SETTLED this submission only if it reached a verdict: 2xx recorded the
+    // score, 4xx refused it (bad score, spent Turnstile token, over the cap) — either way
+    // the conversation is over and the round must never ask again. A 5xx is not a verdict:
+    // it is the backend failing, and burning the round's one submission on a cold start or
+    // a throttled write would lose that score for good, on a visit the player cannot
+    // repeat. So it stays retryable, exactly like the thrown fetch that never gets here.
+    if (response.status < 500) markSubmitted();
     if (!response.ok) return null;
     const histogram = parseScoreHistogram(await response.json());
     return { histogram, bucket: histogram.bucket };

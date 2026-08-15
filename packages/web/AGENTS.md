@@ -1313,14 +1313,26 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the only module that knows Turnstile exists, the analytics.ts pattern; site key
   `VITE_TURNSTILE_SITE_KEY`, .env.example ships Cloudflare's always-passing invisible TEST
   key for local play, while production's required GitHub repo variable is injected by
-  `deploy.yml` and `vite.config.ts` rejects an unset production build) and the
+  `deploy.yml` and `vite.config.ts` rejects an unset production build; **the production key
+  must be provisioned as an INVISIBLE widget, never Cloudflare's default "Managed"** — the
+  client renders into a hidden container, so a Managed key that escalates to an interactive
+  challenge can never be completed and silently drops the score of exactly the players
+  Cloudflare doubts. Nothing in code can detect the widget type, so it is a provisioning
+  rule, stated in `.env.example` and the workflows README. A failed script load NEVER
+  sticks: every rejection clears the cached module promise, since a rejected promise left
+  in it would disable submission for the whole session) and the
   `x-amz-content-sha256`
   hash of the exact body bytes it sends (`api.postScoreBody` — the root AGENTS.md's OAC
   contract) — and the POST's response IS the histogram (one round trip on the happy path);
   a round already submitted GETs the read-only twin on revisits. The `scoreSubmitted` flag
-  persists ON the round (both round shapes, optional field — no store version bump), is
-  marked when the server ANSWERS (accepted or refused alike) and left unset on a
-  transport/Turnstile failure so a later visit may retry — which is also what lets a Word
+  persists ON the round (both round shapes, optional field — no store version bump), and is
+  marked when the server reaches a **VERDICT** — accepted (2xx) or refused (4xx) alike,
+  either way the conversation is over. Anything that is merely the backend FAILING leaves it
+  unset so a later visit may retry: a transport/Turnstile error that throws, and **a 5xx
+  (corrected 2026-08-16 — the flag used to be set on any answer at all)**. That distinction
+  is load-bearing rather than pedantic: a round has ONE submission, the visit that spends it
+  cannot be repeated, and burning it on a cold start or a throttled write drops that score
+  from the day's population for good. It is also what lets a Word
   run whose clock died with the tab closed submit on the revisit that finds it over. The
   completion is keyed to the round that launched it (never whichever round navigation made
   active later), and an in-flight conversation is shared across real component remounts so
