@@ -1321,21 +1321,38 @@ it to the local store — see `packages/backend/AGENTS.md`).
     than a clipped box (user-decided 2026-08-15, "very ugly"): the page's global
     `text-shadow` is OFF on it — a drop shadow is legibility over the animated waves, and
     inside a filled chip there is nothing to be legible against, so it only smears the type
-    against its own ground; the height is generous (28px around 10px type) rather than the
+    against its own ground; the height is generous (30px around 10px type) rather than the
     tightest box that fits; and the right inset is ONE PIXEL SHORT of the left, because
-    `letter-spacing` applies after the LAST glyph too and equal padding leaves the gold
+    `letter-spacing` applies after the LAST glyph too and equal padding leaves the fill
     reading off-centre around its own word.
-  - **Below 420px the whole line steps down** (9px labels, 16px number, 26px badge, tighter
-    gaps and translates, 34px slot). Pixel type does not reflow, so the line is a fixed-width object, and
-    at full size an ordinary standing outran a 320px screen: `RANG #12 SUR 59` +
-    `TOP 20.34%` measures 376px against the 292px the page inset leaves, and `body` is
-    `overflow: hidden`, so the badge was CUT OFF rather than scrolled to. The step brings
-    that same line to 290px, taking the NUMBER down hardest (20px is the headline's luxury,
-    not its legibility) and the type to the 9px the route frame's rank gutter already uses
-    at these widths. The slot's reserved height steps down with it, so the empty slot and
-    the arrived line still measure the same thing. A four-digit population (`SUR 1024`)
-    still outruns 320px — a day this game has not had yet, and the answer then is the
-    line's copy, not another pixel of type.
+  - **The line is sized from ONE set of custom properties, in three tiers plus a trigger
+    that is not a width at all.** Pixel type does not reflow and `body` is
+    `overflow: hidden`, so a line that outruns its column is CUT OFF rather than scrolled
+    to — and the sizes the line is TUNED at (12px words, 24px number, 30px badge; the
+    user's own numbers, given for "the smallest devices") land within a few pixels of what
+    a 390px phone holds. So:
+    - **base** — the tuned set scaled up (14 / 28 / 36px), for real desktop room;
+    - **≤600px** — the tuned set itself. It reaches that high because a 430px handset only
+      leaves 402px of column and the scaled-up line wants ~430;
+    - **`.tight`** — the same step down, asked for by the CONTENT: `ScoreRank` estimates
+      the line's length in LABEL GLYPHS (`standingUnits` — the font is monospace, so a
+      glyph count IS a width, and the number counts double at twice the label size) and
+      marks it tight past `TIGHT_STANDING_UNITS`. `RANG #12 SUR 59` + `TOP 20.34%`
+      measures exactly the 362px a 390px screen leaves, and one more glyph would clip, so
+      the LONG line steps down and the common one keeps the big type;
+    - **≤380px** — every line steps down (9 / 16 / 24px): a 320px screen holds 292px,
+      which not even the short line fits at the tuned sizes.
+    The slot's reserved HEIGHT is the width tier's alone and never `.tight`'s — the empty
+    slot is reserved before the population has answered, so it cannot know whether the line
+    it holds space for will be a long one. A four-digit population (`SUR 1024`) still
+    outruns a 320px screen even stepped down; that is a day this game has not had yet, and
+    the answer then is the line's copy, not another pixel of type.
+  - **The number and the badge each ride a WHOLE PIXEL BAND below the shared baseline**
+    (user-decided 2026-08-15; 2px and 4px at the tuned sizes, scaled per tier). The pixel
+    font reserves descender room under every glyph and that band grows with the type, so
+    type sharing a baseline with much smaller type sits visibly HIGH against it. Whole
+    pixels only, via `translate` rather than a margin: a fractional offset resamples pixel
+    type (the sprites' integer-scale rule), and nothing may MOVE because of it.
   - **The badge appears at EVERY population size** (user-decided 2026-08-15, dropping the
     25-player `PERCENT_MIN_TOTAL` floor it shipped with the same day, and the constant with
     it): the standing is ONE line, and a player finishing on a quiet day should read the

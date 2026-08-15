@@ -1,4 +1,9 @@
-import { scoreStanding, formatTopPct } from '../game/scores';
+import {
+  scoreStanding,
+  formatTopPct,
+  standingUnits,
+  TIGHT_STANDING_UNITS,
+} from '../game/scores';
 import type { ScorePlacement } from '../hooks/useScoreHistogram';
 import { t, tn } from '../i18n';
 import type { Mode } from '../langs';
@@ -14,7 +19,8 @@ import type { Mode } from '../langs';
 // beside it, gold on the app's own background, the way an achievement reads here. The
 // badge rides ALONG with the rank at every population size (user-decided 2026-08-15): the
 // line is one thing, and a player standing on a quiet day gets the same line as one
-// standing on a busy one.
+// standing on a busy one. Its ground is the page's own foreground, not the gold — gold is
+// the colour of what the player HOLDS, and a standing is not held.
 //
 // The component ALWAYS renders its fixed-height slot (the `.word-rarities` rule: hold the
 // layout space while invisible), so the line arriving — or never arriving, on a silent
@@ -41,16 +47,24 @@ export default function ScoreRank({
     : null;
   if (standing === null || !(settled || start)) return <div className="score-slot" />;
 
+  const rankLabel = t(lang, 'scoreRank');
+  const ofLabel = tn(lang, 'scoreOf', standing.total);
+  const topLabel = `${t(lang, 'scoreTop')} ${formatTopPct(standing.topPct)}%`;
+  // A long standing steps the whole line down one size rather than running off a phone's
+  // column (see `standingUnits`). The step is CSS's; this only says the line is long.
+  const tight =
+    standingUnits(rankLabel, ofLabel, standing.rank, topLabel) >= TIGHT_STANDING_UNITS;
+
   return (
-    <p className={`score-slot score-rank${settled ? ' settled' : ' in'}`}>
+    <p
+      className={`score-slot score-rank${tight ? ' tight' : ''}${settled ? ' settled' : ' in'}`}
+    >
       <span className="score-rank-text">
-        <span className="score-rank-label">{t(lang, 'scoreRank')}</span>
+        <span className="score-rank-label">{rankLabel}</span>
         <span className="score-rank-num">#{standing.rank}</span>
-        <span className="score-rank-label">{tn(lang, 'scoreOf', standing.total)}</span>
+        <span className="score-rank-label">{ofLabel}</span>
       </span>
-      <span className="score-top">
-        {t(lang, 'scoreTop')} {formatTopPct(standing.topPct)}%
-      </span>
+      <span className="score-top">{topLabel}</span>
     </p>
   );
 }

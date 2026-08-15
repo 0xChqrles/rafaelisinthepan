@@ -67,3 +67,19 @@ export function formatTopPct(pct: number): string {
 export function shouldSubmitScore(finished: boolean, submitted: boolean): boolean {
   return finished && !submitted;
 }
+
+// The standing is FIXED-WIDTH TYPE — the pixel font does not reflow, and `body` is
+// `overflow: hidden`, so a line that outruns its column is CUT OFF rather than scrolled to.
+// A phone column holds the tuned sizes comfortably for a short standing and lands exactly
+// on the edge for a long one (`RANG #12 SUR 59  TOP 20.34%` measures 362px against the
+// 362px a 390px screen leaves), so the line asks for its own step down by LENGTH, in
+// addition to the width tiers in the CSS.
+//
+// The estimate is in LABEL GLYPHS: every character of the small type counts one, and the
+// rank number counts DOUBLE because it is set at twice the label size. That is all the
+// precision this needs — the font is monospace, so a glyph count IS a width.
+export const TIGHT_STANDING_UNITS = 26;
+
+export function standingUnits(rankLabel: string, ofLabel: string, rank: number, topLabel: string): number {
+  return rankLabel.length + ofLabel.length + topLabel.length + 2 * (String(rank).length + 1);
+}

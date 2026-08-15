@@ -1543,16 +1543,39 @@ button * {
    page's own background punched out of it, which is how an achievement reads here (no
    other chip in the app is filled, which is exactly why this one carries weight). The
    slot keeps a fixed height so the line's arrival moves nothing under it. */
+/* The STANDING line, sized from ONE set of custom properties so a tier is a list of
+   values rather than a second copy of the rules. Three tiers, and a fourth trigger that is
+   not a width at all:
+     - base            the desktop line, the tuned phone sizes scaled up;
+     - <= 600px        the sizes the line is actually TUNED at (user-decided 2026-08-15).
+                       It reaches this high because a 430px handset only leaves 402px of
+                       column and the scaled-up line wants ~430;
+     - .tight          the same step down, asked for by the CONTENT rather than the
+                       viewport — see ScoreRank: pixel type does not reflow, so a long
+                       standing (`RANG #12 SUR 59` + `TOP 20.34%` = 362px) lands exactly on
+                       a 390px phone's budget, and one more glyph would be CUT OFF (`body`
+                       is `overflow: hidden`, so it clips rather than scrolls). Stepping the
+                       long line down keeps the big type for the common one;
+     - <= 380px        every line steps down: a 320px screen holds 292px, which not even
+                       the short line fits at the tuned sizes. */
 .score-slot {
+  --rank-label: 14px;
+  --rank-num: 28px;
+  --rank-num-drop: 3px;
+  --top-h: 36px;
+  --top-size: 12px;
+  --top-pad: 12px;
+  --top-drop: 6px;
+  --rank-gap: 26px;
+  --slot-h: 48px;
+
   display: flex;
   align-items: center;
   justify-content: center;
-  /* The badge is its OWN object beside the phrase, so it takes a wide seam — widened
-     again on review (user-decided 2026-08-15): a filled chip needs air around it or it
-     reads as attached to the word before it. The words and the number are one phrase and
-     sit tighter (below). */
-  gap: 26px;
-  height: 40px;
+  /* The badge is its OWN object beside the sentence, so it takes the wider seam; the
+     words and the number are one phrase and sit tighter (below). */
+  gap: var(--rank-gap);
+  height: var(--slot-h);
   margin: 0;
   font-family: var(--press);
 }
@@ -1562,83 +1585,98 @@ button * {
   display: flex;
   align-items: baseline;
   gap: 8px;
+  white-space: nowrap;
 }
 .score-rank-label {
-  font-size: 12px;
+  font-size: var(--rank-label);
   letter-spacing: 1px;
   color: var(--muted);
 }
+/* The number rides a WHOLE PIXEL BAND below its own baseline (user-decided 2026-08-15).
+   The pixel font reserves descender room under every glyph, so type sharing a baseline
+   with much smaller type sits visibly HIGH against it — and the taller the type, the wider
+   that band, which is why the drop is per size. Always a WHOLE pixel: a fractional offset
+   resamples pixel type, the same rule the sprites take their integer scales for. */
 .score-rank-num {
-  font-size: 24px;
+  font-size: var(--rank-num);
   line-height: 1;
   letter-spacing: 1px;
   color: var(--accent);
-  /* The pixel font reserves a gap under its glyphs, and that gap scales with the type — so
-     a shared BASELINE leaves the big number visually riding above the small words beside
-     it. Two pixels down is what puts the ink back on one line. Whole pixels only, and a
-     `translate` rather than a margin: nothing may move because of it. */
-  translate: 0 2px;
+  translate: 0 var(--rank-num-drop);
 }
-/* The one FILLED badge in the app: gold ground, page-dark type — which is exactly why it
-   carries weight, since nothing else here is filled. Its height is EXPLICIT and the ink
-   is centred by flex: the pixel font overruns its own line box, so padding alone left the
-   glyph tops and tails outside the gold. (And never `calc(<len> + var(--text-shift))` —
-   that variable is a UNITLESS zero, which voids the whole declaration; the same trap that
-   silently zeroed `.word-input`'s padding.) The height IS the vertical padding here, and
-   it is generous on purpose: a chip crowding its own type reads as a clipped box rather
-   than as a stamp.
+/* The one FILLED badge in the app: PAGE-LIGHT ground, page-dark type (user-decided
+   2026-08-15, superseding the gold — gold is the colour of what the player HOLDS, and a
+   standing is not held; the plain foreground says "printed here" and leaves the blue rank
+   as the line's only colour), and the only filled chip anywhere, which is exactly why it
+   carries weight. Its height is EXPLICIT and the ink is centred by flex: the pixel font
+   overruns its own line box, so padding alone left the glyph tops and tails outside the
+   fill. (And never `calc(<len> + var(--text-shift))` — that variable is a UNITLESS zero,
+   which voids the whole declaration; the same trap that silently zeroed `.word-input`'s
+   padding.) The box is generous on purpose: a chip crowding its own type reads as a
+   clipped box rather than as a stamp. It rides below the line's middle for the number's
+   reason on a bigger object — what it sits beside hangs off a baseline, and a box centred
+   against that reads high.
    The right inset is ONE PIXEL SHORT of the left, which is not a typo — `letter-spacing`
    is applied AFTER the last glyph too, so equal padding puts 1px more air on the right and
-   the gold reads off-centre around its own word.
+   the fill reads off-centre around its own word.
    And the page's global `text-shadow` is OFF: a dark drop shadow is legibility over the
-   animated waves, and inside a filled gold chip there is nothing to be legible against —
-   it only smears the type against its own ground. */
+   animated waves, and inside a filled chip there is nothing to be legible against — it
+   only smears the type against its own ground. */
 .score-top {
   display: inline-flex;
   align-items: center;
-  height: 30px;
-  padding: 0 9px 0 10px;
+  height: var(--top-h);
+  padding: 0 calc(var(--top-pad) - 1px) 0 var(--top-pad);
   background: var(--fg);
   color: var(--bg);
-  font-size: 10px;
+  font-size: var(--top-size);
   line-height: 1;
   letter-spacing: 1px;
+  white-space: nowrap;
   text-shadow: none;
-  /* Dropped onto the phrase's own line the way the number is (same reason, more of it: the
-     chip's box is centred on its type, and its type is the smallest on the line). */
-  translate: 0 4px;
+  translate: 0 var(--top-drop);
 }
-/* NARROW PHONES: the line is a fixed-width object — pixel type does not reflow — and at
-   full size a perfectly ordinary standing outruns a 320px screen: `RANG #12 SUR 59` +
-   `TOP 20.34%` measures 334px against the 292px the page inset leaves, so the badge was
-   simply cut off (body is `overflow: hidden`, so it clips rather than scrolls). One step
-   down brings that same line to 288px. It shrinks the NUMBER hardest — 20px is the
-   headline's luxury, not its legibility — and takes the type to the 9px the route frame's
-   rank gutter already uses on these widths, which is this font's floor in the app.
-   The slot's reserved height steps down WITH it, so the empty slot and the arrived line
-   still measure the same thing. A four-digit population (`SUR 1024`) still outruns 320px;
-   that is a day this game has not had yet, and the fix then is the line's copy, not
-   another 1px of type. */
-@media (max-width: 420px) {
+@media (max-width: 600px) {
   .score-slot {
-    gap: 12px;
-    height: 34px;
+    --rank-label: 12px;
+    --rank-num: 24px;
+    --rank-num-drop: 2px;
+    --top-h: 30px;
+    --top-size: 10px;
+    --top-pad: 10px;
+    --top-drop: 4px;
+    --rank-gap: 20px;
+    --slot-h: 40px;
+  }
+  .score-slot.tight {
+    --rank-label: 9px;
+    --rank-num: 16px;
+    --rank-num-drop: 1px;
+    --top-h: 24px;
+    --top-size: 9px;
+    --top-pad: 8px;
+    --top-drop: 3px;
+    --rank-gap: 12px;
+    /* NOT --slot-h: the empty slot is reserved before the population has answered, so it
+       cannot know whether the line it is holding space for will be a tight one. The height
+       is the WIDTH tier's alone; only the type steps down. */
   }
   .score-rank-text {
     gap: 6px;
   }
-  .score-rank-label {
-    font-size: 9px;
-  }
-  .score-rank-num {
-    font-size: 16px;
-    translate: 0 1px;
-  }
-  .score-top {
-    height: 26px;
-    padding: 0 7px 0 8px;
-    font-size: 9px;
-    translate: 0 3px;
+}
+@media (max-width: 380px) {
+  .score-slot,
+  .score-slot.tight {
+    --rank-label: 9px;
+    --rank-num: 16px;
+    --rank-num-drop: 1px;
+    --top-h: 24px;
+    --top-size: 9px;
+    --top-pad: 8px;
+    --top-drop: 3px;
+    --rank-gap: 12px;
+    --slot-h: 32px;
   }
 }
 
