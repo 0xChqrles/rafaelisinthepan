@@ -41,11 +41,12 @@ Provisions the backend (#2) so it is reproducible and deployable from one comman
   `/scores` is a separate zero-TTL behavior: it allows POST, uses AWS's managed
   `CachingDisabled` policy, and forwards exactly `lang`, `date`, `mode` through its origin
   request policy outside the unused cache key. That policy uses CloudFront's Lambda-URL-safe
-  `allExcept: Host` header mode, which carries `CloudFront-Viewer-Address` plus the
-  viewer-supplied `x-amz-content-sha256`; explicitly allowlisting the reserved `x-amz-*`
-  header is rejected by CloudFront. The former feeds server-side HMAC dedup; the latter is
-  required for OAC to sign a Lambda-URL POST. This behavior cannot inherit the puzzle
-  response's year-long cache.
+  `allExcept: Host` header mode, which carries the viewer-supplied `x-amz-content-sha256`
+  (required for OAC to sign a Lambda-URL POST; explicitly allowlisting the reserved `x-amz-*`
+  header is rejected by CloudFront). That mode forwards viewer headers ONLY, so it cannot
+  deliver a CloudFront-GENERATED header — a viewer-request **CloudFront Function** stamps the
+  connecting address into `VIEWER_IP_HEADER` instead, which is what feeds the server-side
+  HMAC dedup. This behavior cannot inherit the puzzle response's year-long cache.
 - **Custom API domain (optional)** — with `-c domainName=<apex>` the distribution serves at
   `api.<domain>` (override the label with `-c apiSubdomain=`): a DNS-validated ACM cert
   in-stack (this stack is in `us-east-1`) plus Route53 A/AAAA aliases. Without it the API

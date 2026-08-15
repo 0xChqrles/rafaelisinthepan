@@ -1,6 +1,6 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { isIP } from 'node:net';
-import { dayNumber, type ScoreHistogram } from '@whippin/shared';
+import { VIEWER_IP_HEADER, dayNumber, type ScoreHistogram } from '@whippin/shared';
 import { isValidDate } from './layout';
 import {
   SENTENCE_SCORE_MAX_BY_LANG,
@@ -50,22 +50,15 @@ function header(event: FnUrlEvent, name: string): string | undefined {
   return undefined;
 }
 
-// CloudFront injects this as viewer-IP + source-port. The generated header is trusted in
-// production because the Function URL is IAM-locked to that distribution; a viewer cannot
-// call the origin around CloudFront. Local serve supplies requestContext.http.sourceIp.
+// The CDN's viewer-request function stamps CloudFront's own read of the TCP peer into
+// VIEWER_IP_HEADER, overwriting whatever the viewer sent under that name. It is trusted in
+// production because the Function URL is IAM-locked to that distribution, so a viewer
+// cannot reach this origin around CloudFront and hand it a header of their own; a
+// viewer-supplied X-Forwarded-For chain is deliberately read by nothing here. Local serve
+// has no CDN and supplies requestContext.http.sourceIp instead.
 export function clientIp(event: FnUrlEvent, allowSourceIp = false): string | null {
-  const viewer = header(event, 'cloudfront-viewer-address');
-  if (viewer) {
-    if (viewer.startsWith('[')) {
-      const closing = viewer.indexOf(']');
-      const candidate = closing > 1 ? viewer.slice(1, closing) : '';
-      if (isIP(candidate)) return candidate;
-    }
-    if (isIP(viewer)) return viewer;
-    const colon = viewer.lastIndexOf(':');
-    const candidate = colon > 0 ? viewer.slice(0, colon) : '';
-    if (isIP(candidate)) return candidate;
-  }
+  const viewer = header(event, VIEWER_IP_HEADER);
+  if (viewer && isIP(viewer)) return viewer;
 
   if (!allowSourceIp) return null;
   const source = event.requestContext?.http?.sourceIp;

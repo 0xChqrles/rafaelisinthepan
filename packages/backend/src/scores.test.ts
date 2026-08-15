@@ -3,7 +3,7 @@
 // and returns the live histogram with the caller's bucket.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Puzzle, ScoreHistogram, WordPuzzle } from '@whippin/shared';
+import { VIEWER_IP_HEADER, type Puzzle, type ScoreHistogram, type WordPuzzle } from '@whippin/shared';
 import { createHandler, type HandlerDeps } from './handler';
 import { memoryScoreStore } from './memoryScoreStore';
 import { scoreBucket, scoreRanges, WORD_SCORE_ZONE } from './scoreBuckets';
@@ -89,7 +89,7 @@ function event(options: {
     },
     requestContext: { http: { method: options.method ?? 'GET', sourceIp: '127.0.0.1' } },
     headers: options.address
-      ? { 'cloudfront-viewer-address': options.address, 'content-type': 'application/json' }
+      ? { [VIEWER_IP_HEADER]: options.address, 'content-type': 'application/json' }
       : { 'content-type': 'application/json' },
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
   };
@@ -161,7 +161,7 @@ describe('POST /scores', () => {
       event({
         method: 'POST',
         body: { score: 9, turnstileToken: 'token-1' },
-        address: '198.51.100.10:46532',
+        address: '198.51.100.10',
       }),
     );
     expect(response.statusCode).toBe(200);
@@ -249,7 +249,7 @@ describe('POST /scores', () => {
         event({
           method: 'POST',
           body: { score: 4, turnstileToken: `token-${index}` },
-          address: '198.51.100.20:40000',
+          address: '198.51.100.20',
         }),
       );
       expect(response.statusCode).toBe(200);
@@ -258,7 +258,7 @@ describe('POST /scores', () => {
       event({
         method: 'POST',
         body: { score: 4, turnstileToken: 'token-six' },
-        address: '198.51.100.20:40001',
+        address: '198.51.100.20',
       }),
     );
     expect(capped.statusCode).toBe(429);
@@ -269,7 +269,7 @@ describe('POST /scores', () => {
       event({
         method: 'POST',
         body: { score: 4, turnstileToken: 'other-ip' },
-        address: '198.51.100.21:40000',
+        address: '198.51.100.21',
       }),
     );
     expect(household.statusCode).toBe(200);
@@ -298,9 +298,12 @@ describe('POST /scores', () => {
 });
 
 describe('trusted client identity', () => {
-  it('normalizes CloudFront IPv4 and IPv6 viewer addresses and ignores spoofable forwarded chains', () => {
-    expect(clientIp(event({ address: '198.51.100.10:46532' }))).toBe('198.51.100.10');
-    expect(clientIp(event({ address: '[2001:db8::1]:46532' }))).toBe('2001:db8::1');
+  it('reads the CDN-stamped viewer address only, and ignores spoofable forwarded chains', () => {
+    expect(clientIp(event({ address: '198.51.100.10' }))).toBe('198.51.100.10');
+    expect(clientIp(event({ address: '2001:db8::1' }))).toBe('2001:db8::1');
+    // Anything that is not a bare address is no identity at all — never a partial parse.
+    expect(clientIp(event({ address: '198.51.100.10:46532' }))).toBeNull();
+    expect(clientIp(event({ address: 'not-an-ip' }))).toBeNull();
     const spoofed = event();
     spoofed.headers = { 'x-forwarded-for': '203.0.113.99' };
     expect(clientIp(spoofed)).toBeNull();
