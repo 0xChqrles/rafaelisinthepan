@@ -785,7 +785,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (2026-08-05; `scrollIntoView({ behavior: 'smooth' })` times itself by the DISTANCE
   travelled, so a claim at the far edge of a ~150-row field crawled for the better part of a
   second while the next guess was already typeable). `SCROLL_MIN_MS`/`SCROLL_MAX_MS`/
-  `SCROLL_PX_PER_MS`, the focused rank and the rAF loop are all gone. The end screen
+  `SCROLL_PX_PER_MS`, the focused rank and the rAF loop are all gone.
+  **The end screen is the SENTENCE result's stack, exactly** (user-decided 2026-08-15, "the
+  exact same layout and sizing"): the day's STANDING first, then the run's own number, then
+  SHARE on the tray's bottom edge — the shared `.solved-score` sizing and `.solved-numbers`'s
+  spacing, which is now stated ONCE on `.solved-results` and worn by both. The standing
+  arrives WITH the block (`chartStart = resultsIn`) for the sentence screen's reason: a line
+  sitting above the tally must not land after it. What this replaced: the count at
+  `clamp(52px, 10vh, 88px)` in a `flex: 1` region that centred it in whatever the tray had
+  spare, with the standing UNDER it — arcade weight, and a stack sharing only its action
+  baseline with the screen it was meant to rhyme with. The only word-specific thing left in
+  the stack is the rarity CHIP ROW, which the sentence result has no equivalent of (its
+  ruler is likewise the sentence's alone). The end screen
   (`components/WordEndScreen.tsx`) is the named `<n> WORDS/MOTS` count + SHARE via the
   v5 word token — which carries the claims PER RARITY GRADE, ladder order; the screen
   takes that breakdown (`counts`, computed by `WordGame` from the one replay) and DERIVES

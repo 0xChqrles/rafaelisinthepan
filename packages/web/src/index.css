@@ -1417,7 +1417,9 @@ button * {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: clamp(13px, 2.2vh, 18px);
+  /* The sentence result's own rhythm (`.solved-numbers`) — the two stacks are ONE layout
+     since 2026-08-15, so the spacing is stated once. */
+  gap: clamp(18px, 3.4vh, 30px);
   width: 100%;
   max-width: 680px; /* match the keyboard's max-width */
   opacity: 0;
@@ -3294,22 +3296,17 @@ button * {
   justify-content: center;
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
-/* Sentence mode's result stack ends on the tray's bottom edge. Word mode keeps that exact
-   action baseline, but its result has no ruler/opponents to occupy the space above Share:
-   make the score the flexible upper region and give the number the arcade-scale weight that
-   space can carry. The shared `.solved-results` entrance still moves the whole composition. */
+/* ONE result stack for BOTH modes (user-decided 2026-08-15, "the exact same layout and
+   sizing"): the standing, the number, then SHARE on the bottom edge — `.solved-numbers`'s
+   own rhythm and the shared `.solved-score` sizing, with nothing word-specific left but
+   the rarity chips the sentence result has no equivalent of. What this replaced: the
+   number at `clamp(52px, 10vh, 88px)` in a `flex: 1` region that centred it in whatever
+   the tray had spare — arcade weight, and a stack that shared only its action baseline
+   with the screen it was supposed to rhyme with. The shared `.solved-results` entrance
+   still moves the whole composition. */
 .word-footer-result .solved-results {
   height: 100%;
-  justify-content: flex-start;
-  gap: 0;
-}
-.word-footer-result .solved-score {
-  flex: 1 1 0;
-  justify-content: center;
-  gap: clamp(11px, 1.8vh, 16px);
-}
-.word-footer-result .solved-score-num {
-  font-size: clamp(52px, 10vh, 88px);
+  justify-content: flex-end;
 }
 /* The tally's landing: word mode's count is the result's LAST beat (no ruler colorize
    follows it, as in the sentence tray), so the number marks its own arrival with a
@@ -3327,9 +3324,6 @@ button * {
   100% {
     transform: scale(1);
   }
-}
-.word-footer-result .solved-score-unit {
-  font-size: clamp(11px, 1.5vh, 14px);
 }
 /* The tally's BREAKDOWN (2026-08-11): the claims per rarity grade — the OG card's chip
    row and the share text's bead row, on screen. One chip per grade CLAIMED (a coloured

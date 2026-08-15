@@ -14,8 +14,10 @@ import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 
 // Word mode's end-of-run screen (#156): the claim count with its unit NAMED (higher is
 // better here — "12 WORDS" says what was counted), its per-rarity CHIP ROW, plus SHARE,
-// in the tray the keyboard vacates — the same visual grammar as the sentence game's
-// solved results, minus what a word run does not have (no trajectory, no opponents). The
+// in the tray the keyboard vacates. Since 2026-08-15 it is not merely the same GRAMMAR as
+// the sentence result but the same STACK, at the same sizes (user-decided): the day's
+// standing, then the number, then SHARE, minus what a word run does not have (no
+// trajectory, no opponents). The
 // share link carries the word-mode token — the per-rarity claim counts plus the accented
 // public word — so it unfurls into the word card with its rarity chip row, and clicks
 // through to the day's word route. The screen takes the BREAKDOWN and derives the count
@@ -105,23 +107,11 @@ export default function WordEndScreen({
     return () => window.clearTimeout(id);
   }, [animate, reduceMotion, countTarget, score]);
 
-  // The population chart is this stack's LAST beat (#170): it may begin arriving once the
-  // rarity breakdown has unpacked the count (the chips' own stagger plus their rise). The
-  // chart holds its layout slot from the start, so the beat changes when it appears, never
-  // where SHARE sits.
-  const [chartStart, setChartStart] = useState(() => !animate);
-  useEffect(() => {
-    if (!animate) {
-      setChartStart(true);
-      return undefined;
-    }
-    if (countTarget !== score) return undefined;
-    const id = window.setTimeout(
-      () => setChartStart(true),
-      reduceMotion ? 0 : SCORE_COUNT_MS + claimedGrades.length * 90 + 300,
-    );
-    return () => window.clearTimeout(id);
-  }, [animate, reduceMotion, countTarget, score, claimedGrades.length]);
+  // The STANDING heads this stack, as it heads the sentence result's (2026-08-15, when the
+  // two were made one layout), so it arrives WITH the block: a line sitting ABOVE the tally
+  // must not land after it. It holds its layout slot from the start, so this changes when
+  // it appears, never where anything sits.
+  const chartStart = resultsIn;
 
   // Delivery (native sheet / clipboard + the "COPIED" confirmation) is the shared hook's;
   // this screen only composes the word result's text.
@@ -141,6 +131,19 @@ export default function WordEndScreen({
 
   return (
     <div className={`solved-results${resultsIn ? ' in' : ''}`}>
+      {/* Where this run stands among the day's players (#170) — FIRST, then the run's own
+          number, then SHARE: the sentence result's exact stack (user-decided 2026-08-15,
+          "the exact same layout and sizing"). Always mounted: the slot reserves its
+          footprint, so the line arriving — or never arriving, on a silent failure — moves
+          nothing under it. */}
+      <ScoreRank
+        placement={placement}
+        mode="word"
+        lang={lang}
+        animate={animate}
+        start={chartStart}
+      />
+
       <span className="solved-score">
         <span className={`solved-score-num${landed ? ' landed' : ''}`}>
           {/* Reserve the final width while the live number counts, matching Sentence mode. */}
@@ -171,17 +174,6 @@ export default function WordEndScreen({
           </span>
         )}
       </span>
-
-      {/* Where this run stands among the day's players (#170). Always mounted: the slot
-          reserves its footprint, so the line arriving — or never arriving, on a silent
-          failure — moves nothing under it. */}
-      <ScoreRank
-        placement={placement}
-        mode="word"
-        lang={lang}
-        animate={animate}
-        start={chartStart}
-      />
 
       <div className="result-actions">
         <button
