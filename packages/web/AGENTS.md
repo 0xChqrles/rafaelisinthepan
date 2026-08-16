@@ -13,6 +13,7 @@
       hooks/useVocab.ts       fetch+cache the per-language existence Set (once per session)
       hooks/usePuzzle.ts      fetch the client-computed day's puzzle from the backend
       api.ts                  backend client: puzzleUrl/wordPuzzleUrl, 404->NO PUZZLE
+      versionCheck.ts         stale-tab reload: __BUILD_ID__ vs /version.json on visibility flips
       i18n.ts                 UI chrome strings (en+fr), t(lang, key); parity type-enforced
       tutorial/               onboarding (#51/#155): Tutorial.tsx + data scripts/<lang>.ts
                               (+ <lang>.word.json, the pruned #154 board it plays on)
@@ -1841,3 +1842,22 @@ it to the local store — see `packages/backend/AGENTS.md`).
   success paths; `tutorial {action:'start'|'finish'|'skip'}` — invite accept / the ending's
   PLAY under the routes teaser (#155) / skip (fast-forward or invite SKIP). Plus automatic
   pageviews.
+- **Stale-tab auto-reload (user-decided 2026-08-16):** a deployed release must reach tabs
+  already open — an SPA loads its JS once, and the deploy's `prune: false` deliberately
+  keeps old chunks alive, so nothing ever forces a stale tab to refresh (and under the
+  no-back-compat rule a stale client can genuinely break on a schema change).
+  `vite.config.ts` stamps a PER-BUILD id into the bundle (`__BUILD_ID__` via `define`:
+  git commit + build timestamp — the commit alone under-identifies a bundle, since a
+  same-SHA redeploy with a rotated `VITE_` variable differs; a byte-identical redeploy
+  reloading tabs once is the accepted cost) and emits the same value as
+  `dist/version.json`, which lands in the infra `DeployRoot` no-cache set — published
+  LAST by an explicit dependency (`web-stack.ts`), so a reloading tab can never fetch an
+  index whose chunks are not uploaded yet. `src/versionCheck.ts` (prod-only, installed
+  from `main.tsx`) refetches it (`cache: 'no-store'`, 10s abort — a stalled request must
+  not pin the in-flight promise and kill the checker for the session) on BOTH
+  `visibilitychange` flips plus an hourly backstop interval and calls `location.reload()`
+  on mismatch — but ONLY at a flip or while hidden, never mid-play in a visible tab: a
+  mismatch found while visible waits for the next flip. Every failure is silent (offline
+  just retries on the next trigger). A reload is lossless: round state is persisted,
+  index.html is no-cache, and deploys invalidate `/*`. The choreography is
+  contract-tested (`versionCheck.test.ts`).

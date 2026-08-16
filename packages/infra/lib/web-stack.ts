@@ -222,7 +222,7 @@ export class WebStack extends Stack {
       // default 128 MB OOMs on this payload (multi-MB vocab JSON), so give it headroom.
       const memoryLimit = 512;
       // Hashed, content-addressed assets — safe to cache forever.
-      new s3deploy.BucketDeployment(this, 'DeployAssets', {
+      const deployAssets = new s3deploy.BucketDeployment(this, 'DeployAssets', {
         sources: [source],
         destinationBucket: bucket,
         prune: false,
@@ -236,7 +236,7 @@ export class WebStack extends Stack {
       // (served from cache while refreshed in the background) and stale-if-error adds
       // resilience; a deploy still invalidates '/*' below, and a briefly-stale existence set
       // is harmless (a brand-new word just isn't accepted until the background refresh).
-      new s3deploy.BucketDeployment(this, 'DeployVocab', {
+      const deployVocab = new s3deploy.BucketDeployment(this, 'DeployVocab', {
         sources: [source],
         destinationBucket: bucket,
         prune: false,
@@ -249,10 +249,11 @@ export class WebStack extends Stack {
         ],
         memoryLimit,
       });
-      // index.html and the remaining unhashed files (fonts, images) — always revalidate so a
-      // redeploy is picked up immediately. Excludes assets/* and vocab/* (handled above).
-      // This pass carries the CloudFront invalidation that purges all three sets.
-      new s3deploy.BucketDeployment(this, 'DeployRoot', {
+      // index.html and the remaining unhashed files (fonts, images, version.json) — always
+      // revalidate so a redeploy is picked up immediately. Excludes assets/* and vocab/*
+      // (handled above). This pass carries the CloudFront invalidation that purges all
+      // three sets.
+      const deployRoot = new s3deploy.BucketDeployment(this, 'DeployRoot', {
         sources: [source],
         destinationBucket: bucket,
         prune: false,
@@ -262,6 +263,11 @@ export class WebStack extends Stack {
         distributionPaths: ['/*'],
         memoryLimit,
       });
+      // The root set MUST publish LAST: version.json is what makes a stale tab reload
+      // (web/src/versionCheck.ts) and index.html names the new hashed chunks, so letting
+      // CloudFormation run this pass before DeployAssets opens a window where a reloading
+      // tab fetches an index whose chunks are not in the bucket yet — a blank page.
+      deployRoot.node.addDependency(deployAssets, deployVocab);
     } else {
       Annotations.of(this).addWarning(
         `No build at ${WEB_DIST} — run \`pnpm build\` (with VITE_API_BASE_URL set) before \`cdk deploy\`. ` +

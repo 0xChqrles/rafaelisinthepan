@@ -2,6 +2,10 @@
 // Types the `?react` SVG import (vite-plugin-svgr): `import Icon from './x.svg?react'`.
 /// <reference types="vite-plugin-svgr/client" />
 
+// The build this bundle was compiled from (vite.config.ts `define`, the git commit) —
+// compared against /version.json by versionCheck.ts to detect a stale tab after a deploy.
+declare const __BUILD_ID__: string;
+
 // Augment Vite's env typing with our build-time config.
 interface ImportMetaEnv {
   // Base URL of the daily-puzzle backend (Lambda Function URL behind CloudFront).
