@@ -861,8 +861,16 @@ button * {
   text-shadow: 2px 2px 0 black;
   padding-top: var(--text-shift);
 }
+/* A word never breaks internally — same policy as .hole. This is load-bearing for the
+   dissolve swap: DissolvePhrase letter-boxes every PLAIN word too, and adjacent
+   inline-block .hole-letter boxes are a soft-wrap opportunity, so without nowrap the
+   browser could rewrap the sentence mid-word on the swap's first frame (words cut in
+   half, lines repacked). It also closes the reverse gap: plain text breaks after a
+   hyphen where letter boxes under nowrap do not, so one shared rule is what keeps the
+   two renderers' wrap points identical. */
 .word {
   color: var(--fg);
+  white-space: nowrap;
 }
 
 /* A hole plus its display affixes (prefix/suffix) must stay together: never let a
@@ -1331,8 +1339,19 @@ button * {
 .solved-source.in {
   visibility: visible;
 }
+/* SHARE is the reveal's LAST beat (user-decided 2026-08-16): hidden IN PLACE — the row
+   keeps its footprint, so its arrival moves nothing — until the standing has landed, then
+   in on the app's one "list arriving" gesture. A rehydrated result shows it outright. */
 .solved-stage .result-actions {
   width: 100%;
+  opacity: 0;
+}
+.solved-stage .result-actions.in {
+  animation: rung-in 220ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
+}
+.solved-stage.settled .result-actions {
+  opacity: 1;
+  animation: none;
 }
 /* The guessed words: the round's trophies in the solved blue, and still its buttons —
    each opens the history line it walked. Numbered as the ruler's ticks number them

@@ -28,14 +28,18 @@ import { SCORE_COUNT_MS } from './resultAnimation';
 //            which is what turns the seam between the two into real space rather than a
 //            measured gap — the taller the screen, the more the split reads.
 //
-// The reveal reads the same way it is laid out, top to bottom: the words count themselves
+// The reveal runs words → source → score → rank → SHARE (user-decided 2026-08-16,
+// superseding "the standing arrives with the block it heads"): the words count themselves
 // out, the source types under them, and the SCORE block follows once that citation has
 // FINISHED PRINTING (user-decided 2026-08-15, superseding the fixed 420ms lead off the
 // source's first line) — numbers arriving over a half-typed credit read as two things
 // happening at once, where waiting reads as one thing after another. That is the screen's
 // one signal-driven beat, so it carries a DEADLINE behind it (the `KB_EXIT_FALLBACK_MS`
 // rule: a lost signal must never be able to stall the solved sequence), derived from the
-// typewriter's own numbers. Everything else still hangs off an offset.
+// typewriter's own numbers. Inside the score block the tally counts WHILE the ruler
+// colors — one beat saying one thing, "here is your run" — and only then the standing
+// lands, with SHARE as the reveal's closing beat: the screen ends on its action.
+// Everything else still hangs off an offset.
 // Rehydrated solves render the final frame immediately and replay nothing.
 const NEUTRAL_HOLD_MS = 55;
 // The words POP in one by one: 200ms apart, each a fast scale pop — the round's three
@@ -53,6 +57,12 @@ const WORDS_LEAD_MS = 140;
 // completion signal and moving on anyway. Generous by design: it is a backstop, and the
 // typewriter's intervals are merely THROTTLED on a hidden tab, never dropped.
 const CAPTION_FALLBACK_SLACK_MS = 4_000;
+// The reveal's closing beats: the standing waits out the tally-and-colorize beat plus a
+// breath, and SHARE waits out the standing's own rung-in plus another.
+const RANK_LEAD_MS = 260;
+// `.score-slot.in`'s rung-in — keep aligned with the CSS.
+const RANK_IN_MS = 220;
+const SHARE_LEAD_MS = 180;
 
 interface SolvedWordEntry {
   word: string; // the accented secret, as the sentence displayed it
@@ -231,7 +241,9 @@ export default function SolvedScreen({
   }, [scoreIn, guessCount]);
   const shownScore = useAnimatedNumber(countTarget, !animate || reduceMotion ? 1 : SCORE_COUNT_MS);
 
-  // After the score lands, reveal the neutral cells and then color them in try order.
+  // The ruler rides the tally (user-decided 2026-08-16, superseding "after the score
+  // lands"): the neutral cells sweep in the moment the block arrives and the color wave
+  // chases them a breath behind, so the bar colors WHILE the number counts — one beat.
   // The ruler always reserves its final footprint, so neither animation moves the
   // actions below it.
   const rulerSpanMs = Math.max(0, n - 1) * stagger;
@@ -244,27 +256,45 @@ export default function SolvedScreen({
       return undefined;
     }
     if (!scoreIn) return undefined;
+    setRulerShown(true);
     if (reduceMotion) {
-      setRulerShown(true);
       setRulerColorized(true);
       return undefined;
     }
-    const show = window.setTimeout(() => setRulerShown(true), SCORE_COUNT_MS);
-    const color = window.setTimeout(
-      () => setRulerColorized(true),
-      SCORE_COUNT_MS + rulerSpanMs + NEUTRAL_HOLD_MS,
+    const color = window.setTimeout(() => setRulerColorized(true), NEUTRAL_HOLD_MS);
+    return () => window.clearTimeout(color);
+  }, [animate, reduceMotion, scoreIn]);
+
+  // The reveal's closing beats (user-decided 2026-08-16): the STANDING lands only once
+  // the tally-and-colorize beat has settled, and SHARE once the standing's own rung-in
+  // has — the screen ends on its action. Both hold their layout space throughout (the
+  // rank's slot is always mounted, SHARE hides in place), so these flips change when
+  // each appears, never where anything sits.
+  const scoreBeatMs = Math.max(SCORE_COUNT_MS, NEUTRAL_HOLD_MS + rulerSpanMs);
+  const [rankIn, setRankIn] = useState(() => !animate);
+  const [shareIn, setShareIn] = useState(() => !animate);
+  useEffect(() => {
+    if (!animate) {
+      setRankIn(true);
+      setShareIn(true);
+      return undefined;
+    }
+    if (!scoreIn) return undefined;
+    if (reduceMotion) {
+      setRankIn(true);
+      setShareIn(true);
+      return undefined;
+    }
+    const rank = window.setTimeout(() => setRankIn(true), scoreBeatMs + RANK_LEAD_MS);
+    const share = window.setTimeout(
+      () => setShareIn(true),
+      scoreBeatMs + RANK_LEAD_MS + RANK_IN_MS + SHARE_LEAD_MS,
     );
     return () => {
-      window.clearTimeout(show);
-      window.clearTimeout(color);
+      window.clearTimeout(rank);
+      window.clearTimeout(share);
     };
-  }, [animate, rulerSpanMs, reduceMotion, scoreIn]);
-
-  // The STANDING heads the score block since 2026-08-15, so it arrives WITH it — the
-  // reveal reads the way the stage is laid out, top to bottom, and a line sitting above
-  // the tally must not land after it. It holds its layout slot from the start, so this
-  // changes when it appears, never where anything sits.
-  const chartStart = scoreIn;
+  }, [animate, reduceMotion, scoreIn, scoreBeatMs]);
 
   // Delivery (native sheet / clipboard + the "COPIED" confirmation) is the shared hook's;
   // this screen only composes the sentence result's text.
@@ -337,7 +367,7 @@ export default function SolvedScreen({
           mode="sentence"
           lang={lang}
           animate={animate}
-          start={chartStart}
+          start={rankIn}
         />
 
         {/* The primary sentence metric. The hidden final value reserves the count's width
@@ -364,7 +394,9 @@ export default function SolvedScreen({
           />
         </div>
 
-        <div className="result-actions">
+        {/* SHARE closes the reveal: hidden in place (footprint kept) until the standing
+            has landed. */}
+        <div className={`result-actions${shareIn ? ' in' : ''}`}>
           <button
             type="button"
             className={`result-action${copied ? ' copied' : ''}`}

@@ -77,7 +77,6 @@ function typedLine(chars: string[], shown: number, cursor: boolean) {
           </span>
         );
       })}
-      {cursor && shown >= chars.length && <span className="source-type-cursor">_</span>}
     </>
   );
 }
@@ -174,10 +173,12 @@ export default function SolvedCaption({
 
   const visible = animate ? shown : total;
   const showCursor = animate && !reduceMotion && total > 0;
-  // The cursor sits on the line being typed — and, once the run is over, at the end of the
-  // last one, where it blinks out its hold.
+  // The cursor sits on the line being typed, and goes WITH the last character's print: it
+  // only ever lives inside an unprinted character's reserved slot, never appended past the
+  // final one — a trailing underscore is one glyph the reserved layout never measured, so
+  // it could wrap a line that unwrapped when it blinked out.
   const typing = lines.findIndex((line) => visible < line.start + line.chars.length);
-  const cursorLine = showCursor ? (typing === -1 ? lines.length - 1 : typing) : -1;
+  const cursorLine = showCursor ? typing : -1;
   // Derived from the memo above rather than re-deriving the source: the typewriter
   // re-renders this component once per printed character, and a second independent call
   // would both rebuild the lines dozens of times per solve and be free to drift from what

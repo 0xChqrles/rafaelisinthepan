@@ -1162,10 +1162,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
     throttled/suspended with a hidden tab, so a wall-clock deadline could otherwise reveal
     the numbers over a half-printed credit on return. A source-less puzzle has no printing
     to wait for and its numbers follow the words. Every other beat is still an absolute
-    offset from the beat before it. Inside the block the beats keep reading top to bottom:
-    the STANDING arrives WITH the block it now heads (`chartStart = scoreIn` — a line
-    sitting above the tally must not land after it), the tally runs its
-    `SCORE_COUNT_MS`, then the ruler shows and colorizes.
+    offset from the beat before it. **Inside the block the reveal runs score → standing →
+    SHARE (user-decided 2026-08-16, superseding "the standing arrives with the block it
+    heads"):** the tally counts its `SCORE_COUNT_MS` WHILE the ruler sweeps in and
+    colorizes (the color wave one `NEUTRAL_HOLD_MS` behind the neutral cells) — one beat
+    saying "here is your run" — then the STANDING lands (`rankIn`, after the longer of the
+    two plus a breath), and SHARE closes the reveal once the standing's own rung-in has
+    played (`shareIn`): the screen ends on its action. The standing's slot was always
+    mounted; SHARE now also hides IN PLACE with its footprint kept
+    (`.solved-stage .result-actions`), so neither arrival moves anything.
   - **Nothing that has landed ever moves:** both later blocks hold their layout box from
     frame one (the source `visibility: hidden` — the retired prompt's own trick — the
     score block at `opacity: 0`), so the words keep the exact position they popped into
