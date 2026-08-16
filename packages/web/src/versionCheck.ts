@@ -10,13 +10,19 @@
 // WHEN matters more than how often. A reload must never yank a visibly active player,
 // so it is spent only on the visibility flips: returning to a dormant tab (the stale
 // bundle is about to talk to the backend again, and the player has not re-engaged yet)
-// or while the tab is hidden (a reload nobody can see). The hourly interval is only the
-// backstop that keeps an always-visible tab's staleness bounded — it checks, flags, and
-// lets the next flip spend the flag. Every failure is silent: offline or a mid-deploy
-// hiccup just waits for the next trigger.
+// or while the tab is hidden (a reload nobody can see). BOTH flips check — backgrounding
+// right after a deploy is the commonest hidden window. The hourly interval is the
+// backstop for a tab that never flips: it swaps a hidden tab on the spot, and for a
+// visible one it only raises the flag for the next flip to spend. Every failure is
+// silent: offline or a mid-deploy hiccup just waits for the next trigger.
 
 const VERSION_URL = '/version.json';
 const CHECK_INTERVAL_MS = 60 * 60 * 1000;
+// A request that neither resolves nor errors must not strand the in-flight promise
+// forever — every later trigger would join it and the checker would be dead for the
+// session (the turnstile.ts script-load rule). The abort rejects into the same silent
+// catch as any other failure, so the next trigger retries.
+const FETCH_TIMEOUT_MS = 10_000;
 
 export function installVersionCheck(current: string = __BUILD_ID__): void {
   let stale = false;
@@ -26,7 +32,10 @@ export function installVersionCheck(current: string = __BUILD_ID__): void {
     if (stale) return Promise.resolve();
     inFlight ??= (async () => {
       try {
-        const res = await fetch(VERSION_URL, { cache: 'no-store' });
+        const res = await fetch(VERSION_URL, {
+          cache: 'no-store',
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        });
         if (!res.ok) return;
         const body = (await res.json()) as { build?: unknown };
         if (typeof body.build === 'string' && body.build !== current) stale = true;
@@ -43,16 +52,20 @@ export function installVersionCheck(current: string = __BUILD_ID__): void {
     if (stale) location.reload();
   };
 
-  document.addEventListener('visibilitychange', () => {
-    // Either direction may spend a flag the interval already raised.
-    reloadIfStale();
-    if (document.visibilityState === 'visible') void check().then(reloadIfStale);
-  });
-
-  window.setInterval(() => {
+  // Visible tabs keep playing on the old build until a flip; a tab that is still hidden
+  // when the check resolves swaps now (one that returned meanwhile belongs to the
+  // visible path, which runs its own check on that flip).
+  const checkThenSwapHidden = () =>
     void check().then(() => {
-      // Visible tabs keep playing on the old build until a flip; hidden ones swap now.
       if (document.visibilityState === 'hidden') reloadIfStale();
     });
-  }, CHECK_INTERVAL_MS);
+
+  document.addEventListener('visibilitychange', () => {
+    // Either direction may spend a flag an earlier check already raised.
+    reloadIfStale();
+    if (document.visibilityState === 'visible') void check().then(reloadIfStale);
+    else checkThenSwapHidden();
+  });
+
+  window.setInterval(checkThenSwapHidden, CHECK_INTERVAL_MS);
 }

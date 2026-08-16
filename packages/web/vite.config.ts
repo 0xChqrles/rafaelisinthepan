@@ -8,16 +8,21 @@ import svgr from 'vite-plugin-svgr';
 
 // The build's identity, for stale-tab detection (src/versionCheck.ts): the bundle carries
 // it as `__BUILD_ID__` and the emitted `dist/version.json` names the same value — so an
-// open tab can ask whether its build is still the deployed one. The git commit, so
-// redeploying the same code never triggers a reload; the timestamp fallback only covers a
-// build outside a git checkout, where every rebuild honestly is a new build.
+// open tab can ask whether its build is still the deployed one. PER-BUILD, not the git
+// commit alone: the commit under-identifies a bundle (a same-SHA redeploy with a rotated
+// VITE_ variable is a different bundle under the same id, and its stale tabs would never
+// refresh). The commit stays in the id for human debuggability; the timestamp is what
+// makes it a build's. The cost — a redeploy of byte-identical code reloads open tabs
+// once, losslessly, at a safe moment — is accepted for an id with nothing to maintain.
 function buildId(): string {
+  const stamp = Date.now().toString(36);
   try {
-    return execSync('git rev-parse HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
+    const sha = execSync('git rev-parse HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
       .toString()
       .trim();
+    return `${sha}-${stamp}`;
   } catch {
-    return `local-${Date.now().toString(36)}`;
+    return `local-${stamp}`;
   }
 }
 

@@ -35,10 +35,9 @@ function harness(visibility: 'visible' | 'hidden' = 'visible') {
 }
 
 function servedBuild(build: unknown) {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async () => ({ ok: true, json: async () => ({ build }) })),
-  );
+  const mock = vi.fn(async () => ({ ok: true, json: async () => ({ build }) }));
+  vi.stubGlobal('fetch', mock);
+  return mock;
 }
 
 afterEach(() => {
@@ -48,10 +47,26 @@ afterEach(() => {
 describe('installVersionCheck', () => {
   it('reloads on tab-return when the deployed build differs', async () => {
     const h = harness('hidden');
-    servedBuild('new');
+    const fetchMock = servedBuild('new');
     installVersionCheck('old');
 
     h.flip('visible');
+    await h.settle();
+    expect(h.reload).toHaveBeenCalled();
+    // The abortable fetch is what keeps a stalled request from pinning the in-flight
+    // promise and disabling every later check for the session.
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/version.json',
+      expect.objectContaining({ cache: 'no-store', signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it('checks at backgrounding and swaps while the tab is hidden', async () => {
+    const h = harness('visible');
+    servedBuild('new');
+    installVersionCheck('old');
+
+    h.flip('hidden');
     await h.settle();
     expect(h.reload).toHaveBeenCalled();
   });

@@ -95,9 +95,14 @@
   `us-east-1`** (CloudFront's ACM cert must live there). Hosts the built SPA
   (`packages/web/dist`) on a **private** S3 bucket (`DESTROY` + auto-delete; build is
   reproducible) served only via **CloudFront + OAC** over HTTPS, with **SPA fallback**
-  (403/404 → `/index.html`, 200). Two `BucketDeployment`s split cache lifetimes (hashed
-  `assets/*` immutable-1yr, everything else `no-cache`) and **invalidate `/*`** on deploy —
-  so `pnpm build` must run **before** deploy (missing `dist` → warn + skip upload). Custom
+  (403/404 → `/index.html`, 200). Three `BucketDeployment`s split cache lifetimes (hashed
+  `assets/*` immutable-1yr, `vocab/*` SWR, everything else `no-cache`) and **invalidate
+  `/*`** on deploy — so `pnpm build` must run **before** deploy (missing `dist` → warn +
+  skip upload). **The root set (index.html + version.json) publishes LAST** — an explicit
+  `addDependency` on the other two, because `version.json` is the web's stale-tab reload
+  trigger (`web/src/versionCheck.ts`) and index.html names the new hashed chunks: without
+  the ordering, a tab reloading mid-deploy can fetch an index whose chunks are not in the
+  bucket yet. Custom
   domain comes from `-c domainName=<apex>` (**defaults to `whippin.ai`** in `bin/app.ts`): it
   looks up the existing Route53 zone (`fromLookup`), issues a DNS-validated **ACM** cert, sets
   the distribution alias to `<siteSubdomain>.<domain>` (`siteSubdomain` default **`""` = apex**;

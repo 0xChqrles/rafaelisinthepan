@@ -1846,13 +1846,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
   already open — an SPA loads its JS once, and the deploy's `prune: false` deliberately
   keeps old chunks alive, so nothing ever forces a stale tab to refresh (and under the
   no-back-compat rule a stale client can genuinely break on a schema change).
-  `vite.config.ts` stamps the git commit into the bundle (`__BUILD_ID__` via `define`)
-  and emits the same value as `dist/version.json`, which lands in the infra `DeployRoot`
-  no-cache set — no infra change. `src/versionCheck.ts` (prod-only, installed from
-  `main.tsx`) refetches it (`cache: 'no-store'`) on every `visibilitychange` plus an
-  hourly backstop interval and calls `location.reload()` on mismatch — but ONLY at a
-  visibility flip or while hidden, never mid-play in a visible tab: an interval-found
-  mismatch waits for the next flip. Every failure is silent (offline just retries on the
-  next trigger). A reload is lossless: round state is persisted, index.html is no-cache,
-  and deploys invalidate `/*`. The choreography is contract-tested
-  (`versionCheck.test.ts`).
+  `vite.config.ts` stamps a PER-BUILD id into the bundle (`__BUILD_ID__` via `define`:
+  git commit + build timestamp — the commit alone under-identifies a bundle, since a
+  same-SHA redeploy with a rotated `VITE_` variable differs; a byte-identical redeploy
+  reloading tabs once is the accepted cost) and emits the same value as
+  `dist/version.json`, which lands in the infra `DeployRoot` no-cache set — published
+  LAST by an explicit dependency (`web-stack.ts`), so a reloading tab can never fetch an
+  index whose chunks are not uploaded yet. `src/versionCheck.ts` (prod-only, installed
+  from `main.tsx`) refetches it (`cache: 'no-store'`, 10s abort — a stalled request must
+  not pin the in-flight promise and kill the checker for the session) on BOTH
+  `visibilitychange` flips plus an hourly backstop interval and calls `location.reload()`
+  on mismatch — but ONLY at a flip or while hidden, never mid-play in a visible tab: a
+  mismatch found while visible waits for the next flip. Every failure is silent (offline
+  just retries on the next trigger). A reload is lossless: round state is persisted,
+  index.html is no-cache, and deploys invalidate `/*`. The choreography is
+  contract-tested (`versionCheck.test.ts`).
