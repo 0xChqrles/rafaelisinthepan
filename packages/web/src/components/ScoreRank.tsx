@@ -12,7 +12,11 @@ import type { Mode } from '../langs';
 // (user-decided 2026-08-15, replacing the brick histogram: a field of bars asks to be
 // decoded, where the rank is the answer already given).
 //
-//     RANK #5 OF 59   [ TOP 8.47% ]
+//     RANK #6 OF 60   [ TOP 25% ]
+//
+// The two numbers deliberately measure different things (see `scoreStanding`): the rank is
+// competition ranking, so a whole band shares it, while TOP is the midpoint of that band.
+// Five players ahead and twenty sharing the bucket is 6th out of 60 AND top quarter.
 //
 // The RANK NUMBER is the line's headline — bigger than the words around it and in the
 // solved blue, the colour of what the round found — and the TOP badge is a filled stamp

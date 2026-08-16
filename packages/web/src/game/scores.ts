@@ -2,8 +2,9 @@
 // anonymous population (#169). The BACKEND owns the bucket edges — changing one changes
 // which DynamoDB counter a submission increments — so everything here reads the inclusive
 // ranges the API returned rather than restating them. What the WEB owns is the reading:
-// which bucket is the player's, how many players are strictly ahead of them, and whether
-// the population is big enough for a percentage to mean anything.
+// which bucket is the player's, how many players are strictly ahead of them, where the
+// midpoint of their shared bucket sits, and whether the population is big enough for a
+// percentage to mean anything.
 
 import type { ScoreHistogramBucket } from '@whippin/shared';
 import type { Mode } from '../langs';
@@ -36,9 +37,10 @@ export interface ScoreStanding {
   rank: number;
   // Recorded scores today, the player's own included.
   total: number;
-  // `rank / total` as a percentage — exactly what fraction of the day's recorded scores
-  // stands at or above this one — or NULL when the population is at or below
-  // `PERCENT_MIN_TOTAL` and a percentage would be false precision.
+  // Standard percentile-rank treatment for a tie: `(strictly ahead + half the shared
+  // bucket) / total`, as a percentage. NULL when the bucket is empty, or when the
+  // population is at or below `PERCENT_MIN_TOTAL` and a percentage would be false
+  // precision.
   topPct: number | null;
 }
 
@@ -54,8 +56,13 @@ export function scoreStanding(
   // better — sentence counts tries (lower is better, so the bands BEFORE mine are ahead),
   // word counts claims (higher is better, so the bands AFTER mine are).
   const ahead = mode === 'word' ? buckets.slice(bucket + 1) : buckets.slice(0, bucket);
-  const rank = Math.min(total, ahead.reduce((n, b) => n + b.count, 0) + 1);
-  return { rank, total, topPct: total > PERCENT_MIN_TOTAL ? (100 * rank) / total : null };
+  const aheadCount = ahead.reduce((n, b) => n + b.count, 0);
+  const bucketCount = buckets[bucket]?.count ?? 0;
+  const rank = Math.min(total, aheadCount + 1);
+  const midpoint = Math.min(total, aheadCount + bucketCount / 2);
+  const topPct =
+    total > PERCENT_MIN_TOTAL && bucketCount > 0 ? (100 * midpoint) / total : null;
+  return { rank, total, topPct };
 }
 
 // The TOP percentage as the badge prints it: at most two decimals, and no trailing zeros —

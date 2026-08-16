@@ -95,7 +95,7 @@ const STRINGS = {
   share: { en: 'SHARE', fr: 'PARTAGER' },
   copied: { en: 'COPIED', fr: 'COPIÉ' },
   // ---- the solved screen's STANDING (#170, user-decided 2026-08-15, replacing the
-  // population histogram): ONE line — `RANK #5 OF 59` with a `TOP 8.47%` badge beside it.
+  // population histogram): ONE line — `RANK #6 OF 60` with a `TOP 25%` badge beside it.
   // The rank NUMBER is drawn by the component (it wears its own size and colour), so the
   // words here are only what surrounds it. `TOP` is untranslated in every language, like
   // MISS and the rarity grades — one word, identical everywhere.

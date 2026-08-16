@@ -6,7 +6,7 @@
 //     shares its rank, which is the only honest number at bucket granularity;
 //   - sentence is lower-is-better (ahead = FEWER tries), word is higher-is-better
 //     (ahead = MORE claims);
-//   - the TOP percentage is rank over total, and only above PERCENT_MIN_TOTAL players;
+//   - TOP uses the midpoint of the shared bucket, and only above PERCENT_MIN_TOTAL players;
 //   - a finished round submits ONCE: only finished-and-not-yet-submitted rounds POST.
 
 import { describe, it, expect } from 'vitest';
@@ -65,7 +65,7 @@ describe('scoreStanding — rank is everyone strictly ahead, plus one', () => {
     // Everyone in band 1 is 6th: the five ahead of them are ahead, the two beside them
     // are not behind.
     const mine = scoreStanding('sentence', b, 17, 1);
-    expect(mine).toEqual({ rank: 6, total: 17, topPct: (100 * 6) / 17 });
+    expect(mine).toEqual({ rank: 6, total: 17, topPct: (100 * 6.5) / 17 });
   });
 
   it('the only player today is first of one', () => {
@@ -88,31 +88,55 @@ describe('scoreStanding — rank is everyone strictly ahead, plus one', () => {
 });
 
 describe('scoreStanding — the TOP percentage', () => {
-  const big = (aheadCount: number, total: number) =>
-    scoreStanding('sentence', buckets([aheadCount, total - aheadCount]), total, 1);
+  const big = (aheadCount: number, bucketCount: number, total: number) =>
+    scoreStanding(
+      'sentence',
+      buckets([aheadCount, bucketCount, total - aheadCount - bucketCount]),
+      total,
+      1,
+    );
 
-  it('is rank over total', () => {
-    const standing = big(4, 25);
-    expect(standing?.rank).toBe(5);
-    expect(standing?.topPct).toBeCloseTo((100 * 5) / 25, 10);
+  it('uses the midpoint of a shared bucket, independently of competition rank', () => {
+    // 5 players are ahead and 20 share this bucket: everyone is ranked 6th, while the
+    // bucket spans positions 6 through 25 and its percentile-rank midpoint is TOP 25%.
+    const standing = big(5, 20, 60);
+    expect(standing?.rank).toBe(6);
+    expect(standing?.topPct).toBe(25);
+  });
+
+  it('puts an all-tied field at TOP 50%', () => {
+    const standing = scoreStanding('sentence', buckets([60]), 60, 0);
+    expect(standing?.rank).toBe(1);
+    expect(standing?.topPct).toBe(50);
   });
 
   it('needs MORE than PERCENT_MIN_TOTAL players, or it is arithmetic on a handful', () => {
-    expect(big(0, 1)?.topPct).toBeNull();
-    expect(big(1, 3)?.topPct).toBeNull();
-    expect(big(4, PERCENT_MIN_TOTAL)?.topPct).toBeNull();
+    expect(big(0, 1, 1)?.topPct).toBeNull();
+    expect(big(1, 1, 3)?.topPct).toBeNull();
+    expect(big(4, 1, PERCENT_MIN_TOTAL)?.topPct).toBeNull();
   });
 
-  it('is drawn from the very next player up', () => {
-    const standing = big(4, PERCENT_MIN_TOTAL + 1);
+  it('starts at the midpoint of the first eligible single-player bucket', () => {
+    const standing = big(4, 1, PERCENT_MIN_TOTAL + 1);
     expect(standing?.rank).toBe(5);
-    expect(standing?.topPct).toBeCloseTo((100 * 5) / (PERCENT_MIN_TOTAL + 1), 10);
+    expect(standing?.topPct).toBeCloseTo((100 * 4.5) / (PERCENT_MIN_TOTAL + 1), 10);
   });
 
-  it('the issue’s own example: 5th of 59 is TOP 8.47%', () => {
-    const standing = big(4, 59);
+  it('a single-player bucket uses the same midpoint rule', () => {
+    const standing = big(4, 1, 59);
     expect(standing?.rank).toBe(5);
-    expect(formatTopPct(standing!.topPct!)).toBe('8.47');
+    expect(formatTopPct(standing!.topPct!)).toBe('7.63');
+  });
+
+  it('does not badge an empty hypothetical bucket', () => {
+    const standing = big(4, 0, 59);
+    expect(standing?.rank).toBe(5);
+    expect(standing?.topPct).toBeNull();
+  });
+
+  it('never prints above TOP 100% for an inconsistent stale snapshot', () => {
+    const standing = scoreStanding('sentence', buckets([9, 9, 9, 9]), 11, 3);
+    expect(standing?.topPct).toBe(100);
   });
 });
 

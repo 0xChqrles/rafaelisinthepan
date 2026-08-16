@@ -1370,7 +1370,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   rank is the answer already given):
 
   ```
-  RANK #5 OF 59   [ TOP 8.47% ]
+  RANK #6 OF 60   [ TOP 25% ]
   ```
 
   - **RANK is COMPETITION RANKING — everyone strictly ahead, plus one** (`game/scores.ts`
@@ -1380,6 +1380,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
     direction is "ahead" is the mode's: sentence counts tries (the bands BEFORE mine),
     Word counts claims (the bands AFTER mine). The rank is clamped to the population, so
     a stale read racing a write can never rank anyone past the field they stand in.
+  - **TOP uses the MIDPOINT of the shared bucket** (user-decided 2026-08-16):
+    `(strictly ahead + bucket count / 2) / total`, the standard percentile-rank treatment
+    for ties. It deliberately does NOT derive from the competition rank: with 5 ahead and
+    20 in the player's bucket out of 60, the honest claims are `RANK #6 OF 60` and
+    `TOP 25%`; an all-tied field is `TOP 50%`. An empty bucket carries no badge, and a
+    stale inconsistent snapshot is capped at 100%.
   - **The RANK NUMBER is the headline**: 24px against the 12px words around it, in the
     solved-word BLUE — the colour of what the round found. The words are `--muted`, and
     the whole phrase hangs off ONE baseline (`.score-rank-text`), since centring the small
