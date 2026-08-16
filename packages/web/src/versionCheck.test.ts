@@ -18,6 +18,10 @@ function harness(visibility: 'visible' | 'hidden' = 'visible') {
       intervals.push(fn);
       return 0;
     },
+    // Lazy wrappers so vi.useFakeTimers() (installed per test, after the harness)
+    // still intercepts the module's abort timer.
+    setTimeout: (fn: () => void, ms?: number) => setTimeout(fn, ms),
+    clearTimeout: (id: Parameters<typeof clearTimeout>[0]) => clearTimeout(id),
   });
   return {
     reload,
@@ -41,6 +45,8 @@ function servedBuild(build: unknown) {
 }
 
 afterEach(() => {
+  vi.clearAllTimers();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -100,6 +106,33 @@ describe('installVersionCheck', () => {
     h.flip('visible');
     await h.settle();
     expect(h.reload).toHaveBeenCalled();
+  });
+
+  it('aborts a stalled request so the next trigger can retry', async () => {
+    const h = harness('hidden');
+    // A fetch that never settles on its own — only the abort signal can end it.
+    const fetchMock = vi.fn(
+      (_url: string, opts: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          opts.signal.addEventListener('abort', () => reject(new Error('aborted')));
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    vi.useFakeTimers();
+    installVersionCheck('old');
+
+    h.flip('visible');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // Triggers while the request hangs join it instead of spawning another.
+    h.flip('hidden');
+    h.flip('visible');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // The abort timer fires, the hung promise rejects, and the checker is free again.
+    await vi.advanceTimersByTimeAsync(10_000);
+    h.flip('hidden');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(h.reload).not.toHaveBeenCalled();
   });
 
   it('a mismatch the interval finds never yanks a visible tab — the next flip spends it', async () => {

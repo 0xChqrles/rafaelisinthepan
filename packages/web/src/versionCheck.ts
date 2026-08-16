@@ -21,7 +21,10 @@ const CHECK_INTERVAL_MS = 60 * 60 * 1000;
 // A request that neither resolves nor errors must not strand the in-flight promise
 // forever — every later trigger would join it and the checker would be dead for the
 // session (the turnstile.ts script-load rule). The abort rejects into the same silent
-// catch as any other failure, so the next trigger retries.
+// catch as any other failure, so the next trigger retries. Hand-rolled controller +
+// timer, NOT AbortSignal.timeout(): that is Baseline 2024, above Vite 5's browser floor
+// (Chrome 87 / Firefox 78 / Safari 14), and there the missing API would throw before
+// fetch ever ran — silently disabling the checker on exactly those browsers.
 const FETCH_TIMEOUT_MS = 10_000;
 
 export function installVersionCheck(current: string = __BUILD_ID__): void {
@@ -31,10 +34,12 @@ export function installVersionCheck(current: string = __BUILD_ID__): void {
   const check = (): Promise<void> => {
     if (stale) return Promise.resolve();
     inFlight ??= (async () => {
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
       try {
         const res = await fetch(VERSION_URL, {
           cache: 'no-store',
-          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+          signal: controller.signal,
         });
         if (!res.ok) return;
         const body = (await res.json()) as { build?: unknown };
@@ -42,6 +47,7 @@ export function installVersionCheck(current: string = __BUILD_ID__): void {
       } catch {
         // Offline, or the file mid-swap during a deploy: the next trigger retries.
       } finally {
+        window.clearTimeout(timeout);
         inFlight = null;
       }
     })();
