@@ -33,6 +33,8 @@ declare global {
 }
 
 const SCRIPT_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+// A request that neither loads nor errors must not strand the cached promise forever.
+const SCRIPT_TIMEOUT_MS = 20_000;
 // A challenge that has not produced a token by then never will (the widget retries
 // internally); reject so the caller can give up silently.
 const TOKEN_TIMEOUT_MS = 20_000;
@@ -54,19 +56,42 @@ function loadTurnstile(): Promise<TurnstileApi> {
     // since every later call short-circuits on the cache instead of trying a fresh load.
     // The `window.turnstile` fast path above rescues only an API that defines LATE, never
     // one that never defines at all.
+    //
+    // This attempt settles ONCE. An aborted request can still deliver its error event after
+    // the timeout has already given up on it, and by then `scriptPromise` may hold a fresh
+    // attempt's promise — which a second `fail` would null out from under it. Nothing
+    // visible goes wrong today (the next call just builds a redundant script, and the
+    // window.turnstile fast path usually swallows even that), but the rule is what makes it
+    // safe to add state to these paths later.
+    let settled = false;
+    let timeout: number;
+    const done = () => {
+      settled = true;
+      window.clearTimeout(timeout);
+    };
     const fail = (message: string) => {
+      if (settled) return;
+      done();
       scriptPromise = null;
       script.remove();
       reject(new Error(message));
     };
     script.onload = () => {
-      if (window.turnstile) resolve(window.turnstile);
+      if (window.turnstile) {
+        if (settled) return;
+        done();
+        resolve(window.turnstile);
+      }
       // A 200 that carried no API: a truncated response, or a privacy extension serving a
       // stub. A later solve may well get the real thing.
       else fail('Turnstile script loaded without its API.');
     };
     // A blocked script (offline, content blocker) must be retryable on a later solve.
     script.onerror = () => fail('Turnstile script failed to load.');
+    timeout = window.setTimeout(
+      () => fail('Turnstile script timed out.'),
+      SCRIPT_TIMEOUT_MS,
+    );
     document.head.appendChild(script);
   });
   return scriptPromise;

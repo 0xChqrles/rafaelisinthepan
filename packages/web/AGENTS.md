@@ -1344,9 +1344,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   client renders into a hidden container, so a Managed key that escalates to an interactive
   challenge can never be completed and silently drops the score of exactly the players
   Cloudflare doubts. Nothing in code can detect the widget type, so it is a provisioning
-  rule, stated in `.env.example` and the workflows README. A failed script load NEVER
-  sticks: every rejection clears the cached module promise, since a rejected promise left
-  in it would disable submission for the whole session) and the
+  rule, stated in `.env.example` and the workflows README. A failed or stalled script load
+  NEVER sticks: load/error are joined by a 20-second script timeout, and every rejection
+  clears the cached module promise, since a rejected promise left in it would disable
+  submission for the whole session) and the
   `x-amz-content-sha256`
   hash of the exact body bytes it sends (`api.postScoreBody` — the root AGENTS.md's OAC
   contract) — and the POST's response IS the histogram (one round trip on the happy path);
