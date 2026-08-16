@@ -404,11 +404,30 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   after 48 hours. Its conditional count update and the aggregate bucket's atomic `ADD` are
   one DynamoDB transaction, so a capped/failing request cannot change just one half. Only
   the anonymous aggregate item is retained.
+- **The client IP the dedup hashes arrives in `VIEWER_IP_HEADER` (`shared/src/scores.ts`),
+  stamped by a CloudFront viewer-request FUNCTION — corrected 2026-08-16, superseding
+  "the origin-request policy forwards CloudFront's trusted viewer address".** That older
+  rule cannot be implemented: a /scores POST needs two things at the origin and NO single
+  header mode carries both.
+  - The viewer's `x-amz-content-sha256` (OAC cannot sign a Lambda-URL POST without it) can
+    never be named in an allow-list — CloudFront rejects the whole policy ("The parameter
+    Headers contains x-amz-content-sha256 that is not allowed", verified against the live
+    API) — so it only arrives via a mode that forwards viewer headers wholesale.
+  - `CloudFront-Viewer-Address` is a GENERATED header, which AWS adds only for the
+    allow-list and "all viewer headers + CloudFront headers" modes — never for `allExcept`,
+    documented as "all other HTTP headers IN VIEWER REQUESTS". The "+ CloudFront headers"
+    mode would carry both, but it also forwards the viewer Host, and Lambda validates the
+    SigV4 signature against the Function URL's own domain — breaking the POST it enables.
+  So the policy stays on `allExcept: Host` (AWS's Lambda-URL-safe mode) and the function
+  supplies the address as an ordinary viewer header that mode already carries. It is
+  unspoofable because the function OVERWRITES it from CloudFront's own read of the TCP
+  peer. **Three packages agree on that ONE header name**, which is why it lives in
+  `shared`: infra writes it, the backend reads it, and a drift is a 500 on every score
+  POST that no local run and no synthesized template can reproduce.
 - `/scores` has its OWN zero-TTL CloudFront behavior because the histogram is live; it must
   never inherit the puzzle's year-long `s-maxage`. Its query allowList is exactly the three
   parameters the handler reads (`lang`, `date`, `mode`), and its origin-request policy
-  forwards both CloudFront's trusted viewer address (for HMAC dedup) and the viewer-supplied
-  `x-amz-content-sha256`, outside the cache key. Local
+  carries the viewer-supplied `x-amz-content-sha256` outside the cache key. Local
   `backend:dev` uses the same handler with an in-memory counter store and an explicitly
   local accept-all Turnstile verifier.
 
@@ -503,8 +522,11 @@ publish/inventory/backend:dev (backend), dev/build (web), cdk synth/diff/deploy
   long-lived keys) and deploys **only the changed stack(s)** via `dorny/paths-filter`
   (`shared`/`infra`/root-deps fan out to both; `generation` deploys nothing). Web deploy
   runs `pnpm build` (reads `VITE_API_BASE_URL` from the committed `.env.production` — the
-  single source of truth; only the optional `VITE_PLAUSIBLE_DOMAIN` analytics var is passed
-  via a repo variable, #60) before `cdk deploy WhippinWebStack`. `workflow_dispatch`
+  single source of truth; receives the **required public** `VITE_TURNSTILE_SITE_KEY` repo
+  variable, with `vite.config.ts` rejecting any production build that would silently ship
+  score collection disabled; and receives the optional `VITE_PLAUSIBLE_DOMAIN` analytics
+  repo variable, #60)
+  before `cdk deploy WhippinWebStack`. `workflow_dispatch`
   `stacks` input forces
   `changed`|`web`|`backend`|`all` (default `changed`).
   **The backend deploy INVALIDATES `/*` on the API distribution after `cdk deploy`**

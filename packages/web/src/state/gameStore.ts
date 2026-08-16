@@ -22,6 +22,11 @@ export interface RoundProgress {
   // language WITHOUT re-loading its puzzle's rank map. Game recomputes and syncs it;
   // it is derived UI state, never the source of truth for scoring.
   progress: number;
+  // The round's score has been submitted to the anonymous daily histogram (#170) — set
+  // once the server ANSWERS the POST, accepted or refused. Guards revisits: a flagged
+  // round only ever GETs the read-only histogram, never re-submits. Optional so every
+  // pre-#170 persisted round stays valid with the flag simply unset.
+  scoreSubmitted?: boolean;
 }
 
 // The canonical round key: (server day, language, MODE — #156: the two dailies would
@@ -110,6 +115,9 @@ export interface WordRoundProgress {
   deadline: number | null;
   tried: string[];
   claimed: number;
+  // Same contract as RoundProgress.scoreSubmitted (#170): the finished run's claim count
+  // went to the daily histogram; revisits GET instead of re-submitting.
+  scoreSubmitted?: boolean;
 }
 
 // What a REPLAY of a word round's log makes of it — the two numbers the store needs to
@@ -271,6 +279,13 @@ interface GameState extends PersistedState {
   // A warm hit improved a hole on the active round: swap in its closer (accented)
   // word + lower rank.
   improveHole: (index: number, word: string, rank: number) => void;
+
+  // Mark THIS keyed round's score as submitted to the daily histogram (#170). The request
+  // can finish after navigation has changed the active round, so completion must carry the
+  // identity it started with rather than consulting activeKey at response time.
+  // Idempotent: the flag only ever turns on.
+  markScoreSubmitted: (key: string) => void;
+  markWordScoreSubmitted: (key: string) => void;
 
   // Cache the active round's reconstruction progress (for the selector badge). No-op
   // when unchanged so it never churns the store.
@@ -548,6 +563,20 @@ export const useGameStore = create<GameState>()(
               },
             },
           };
+        }),
+
+      markScoreSubmitted: (key) =>
+        set((s) => {
+          const round = s.rounds[key];
+          if (!round || round.scoreSubmitted === true) return {};
+          return { rounds: { ...s.rounds, [key]: { ...round, scoreSubmitted: true } } };
+        }),
+
+      markWordScoreSubmitted: (key) =>
+        set((s) => {
+          const round = s.wordRounds[key];
+          if (!round || round.scoreSubmitted === true) return {};
+          return { wordRounds: { ...s.wordRounds, [key]: { ...round, scoreSubmitted: true } } };
         }),
 
       syncProgress: (value) =>

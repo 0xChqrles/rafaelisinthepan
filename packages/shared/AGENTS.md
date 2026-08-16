@@ -11,7 +11,7 @@
   shared/                     cross-cutting TS consumed by web + backend (pkg @whippin/shared)
     src/slug.ts               fold() — the slug/fold contract (byte-identical to slug())
     src/day.ts                the ONE 22:00-ET DST-correct game-day logic (client + server + publish)
-    src/scores.ts             WORD_CLAIM_ZONE — Word score ceiling shared by web + backend
+    src/scores.ts             WORD_CLAIM_ZONE (web+backend) + VIEWER_IP_HEADER (infra+backend)
     src/types.ts              shared puzzle + score-API schema types (Puzzle, Hole, ScoreHistogram, …)
     src/heat.ts               heatColor() — heat ramp (rank exponents + floating hits ONLY)
     src/progressColor.ts      progressColor() + progressEmoji() — progress ramp (progress bar, selector badge, run rulers incl. the card, share-text emoji row); shares ramp.ts
@@ -33,6 +33,12 @@
   add a case there, never on one side only (root `AGENTS.md`, Testing).
 - `src/day.ts` is the ONE 22:00-ET DST-correct game-day definition (client + server
   + publish) — see the routing contract in the root `AGENTS.md`.
+- `src/scores.ts` also owns `VIEWER_IP_HEADER`, the header the CDN's viewer-request
+  function stamps the connecting address into and the ONLY client address the score handler
+  trusts (#169). It lives here because INFRA writes it and the BACKEND reads it, and a
+  drift is a 500 on every score POST that no local run can reproduce; the reason it is a
+  stamped header rather than CloudFront's own `CloudFront-Viewer-Address` is recorded in
+  the root `AGENTS.md`.
 - `src/scores.ts` owns `WORD_CLAIM_ZONE` across the web's Word rules and the backend's
   #169 possible-score validation. The web may tune the field without regenerating an
   artifact, but the server must move/deploy with it so a real score is never rejected and

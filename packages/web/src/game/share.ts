@@ -9,6 +9,7 @@
 import { computeProgress } from './scoring';
 import { RARITY_NAMES, type Rarity } from './wordGame';
 import {
+  dateForDayNumber,
   encodeResult,
   encodeWordResult,
   progressEmoji,
@@ -162,6 +163,19 @@ export function emojiRow(trajectory: number[], solvedAt: (number | null)[] = [])
     keycaps.set(cell, [...(keycaps.get(cell) ?? []), HOLE_KEYCAPS[hole]]);
   });
   return cells.map((pct, i) => keycaps.get(i)?.join('') ?? progressEmoji(pct)).join('');
+}
+
+// BOTH modes' share headline. The two screens each localize their own UNIT — tries against
+// words, and only they know which — but the shape of the line is one message format, so it
+// lives here with the rest of the composition rather than as a template literal hand-copied
+// into two components, where one mode's message could quietly drift from the other's.
+//
+// The day is named by its CALENDAR DATE, not the internal day index (decided 2026-08-03): a
+// reader can date the puzzle, and it is the same string the card draws and the shared link
+// resolves to. `dateForDayNumber` is `dayNumber`'s exact inverse, so this is still the
+// SERVER-owned game day, never the sharer's local date.
+export function shareHeadline(dayNumber: number, score: number, unit: string): string {
+  return `Whippin AI ${dateForDayNumber(dayNumber)} — ${score} ${unit}`;
 }
 
 // The shared/copied plain text: the headline, then the emoji row on its own line (attached

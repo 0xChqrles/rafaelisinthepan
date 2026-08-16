@@ -38,11 +38,15 @@ Provisions the backend (#2) so it is reproducible and deployable from one comman
   parameter never reaches the Lambda at all); the origin's `Cache-Control`
   (`max-age=300, s-maxage=31536000`) drives the TTL, purged by
   `pnpm puzzle:publish --s3` and by the backend deploy job.
-  `/scores` is a separate zero-TTL behavior: it allows POST, forwards exactly `lang`,
-  `date`, `mode`, and forwards `CloudFront-Viewer-Address` plus the viewer-supplied
-  `x-amz-content-sha256` outside the cache key. The former feeds server-side HMAC dedup;
-  the latter is required for OAC to sign a Lambda-URL POST. It cannot inherit the puzzle
-  response's year-long cache.
+  `/scores` is a separate zero-TTL behavior: it allows POST, uses AWS's managed
+  `CachingDisabled` policy, and forwards exactly `lang`, `date`, `mode` through its origin
+  request policy outside the unused cache key. That policy uses CloudFront's Lambda-URL-safe
+  `allExcept: Host` header mode, which carries the viewer-supplied `x-amz-content-sha256`
+  (required for OAC to sign a Lambda-URL POST; explicitly allowlisting the reserved `x-amz-*`
+  header is rejected by CloudFront). That mode forwards viewer headers ONLY, so it cannot
+  deliver a CloudFront-GENERATED header — a viewer-request **CloudFront Function** stamps the
+  connecting address into `VIEWER_IP_HEADER` instead, which is what feeds the server-side
+  HMAC dedup. This behavior cannot inherit the puzzle response's year-long cache.
 - **Custom API domain (optional)** — with `-c domainName=<apex>` the distribution serves at
   `api.<domain>` (override the label with `-c apiSubdomain=`): a DNS-validated ACM cert
   in-stack (this stack is in `us-east-1`) plus Route53 A/AAAA aliases. Without it the API
@@ -103,7 +107,8 @@ requires for its ACM cert — so the cert lives in-stack with no cross-region re
   a credential-free smoke synth.
 
 > **Build before deploy.** `cdk deploy WhippinWebStack` zips `packages/web/dist` at synth
-> time, so run `pnpm build` first (with `VITE_API_BASE_URL` set, see *Wiring* below). If
+> time, so run `pnpm build` first (with `VITE_API_BASE_URL` and
+> `VITE_TURNSTILE_SITE_KEY` set, see *Wiring* below). If
 > `dist` is absent the stack still deploys but **skips the upload** with a warning.
 
 ## `WhippinDeployStack` (#33) — CI auth bootstrap
@@ -161,9 +166,9 @@ origin** (override with `-c allowedOrigin=`).
 ```bash
 # 1. Backend → api.<domain> (CORS defaults to https://<domain>).
 pnpm --filter @whippin/infra run deploy WhippinBackendStack -c domainName=whippin.ai
-# 2. Build the web. `VITE_API_BASE_URL` comes from the committed
-#    packages/web/.env.production (https://api.whippin.ai) — no inline env needed.
-pnpm build
+# 2. Build the web. `VITE_API_BASE_URL` comes from the committed .env.production;
+#    supply the public Turnstile site key (CI reads it from the required repo variable).
+VITE_TURNSTILE_SITE_KEY='<site-key>' pnpm build
 # 3. Deploy the site at the apex (uploads dist, invalidates CloudFront).
 pnpm --filter @whippin/infra run deploy WhippinWebStack -c domainName=whippin.ai
 ```

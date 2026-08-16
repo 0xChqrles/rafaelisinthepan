@@ -149,11 +149,12 @@ jobs:
     if: needs.plan.outputs.web == 'true'
     runs-on: ubuntu-latest
     # VITE_API_BASE_URL is the committed single source of truth in packages/web/.env.production
-    # (loaded by `pnpm build`), so it is NOT passed here. Only the OPTIONAL analytics var is
-    # injected — unset ships the SPA with analytics inert (no script, every track() a no-op).
-    # Create the repo VARIABLE VITE_PLAUSIBLE_DOMAIN (e.g. whippin.ai) to enable it (#60).
+    # (loaded by `pnpm build`), so it is NOT passed here. Turnstile's PUBLIC production site
+    # key is a REQUIRED repo variable: unlike optional analytics, a missing value must stop
+    # deployment rather than silently ship score collection disabled (#170).
     env:
       VITE_PLAUSIBLE_DOMAIN: ${{ vars.VITE_PLAUSIBLE_DOMAIN }}
+      VITE_TURNSTILE_SITE_KEY: ${{ vars.VITE_TURNSTILE_SITE_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -170,7 +171,8 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # Must build BEFORE cdk deploy — WebStack uploads dist/. VITE_API_BASE_URL comes
-      # from the committed packages/web/.env.production.
+      # from the committed packages/web/.env.production; the Turnstile site key comes from
+      # the required repository variable (vite.config.ts refuses a production build without it).
       - name: Build SPA
         run: pnpm build
 

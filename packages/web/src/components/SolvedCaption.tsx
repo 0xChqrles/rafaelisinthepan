@@ -2,10 +2,65 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { Source } from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
+import { sourceKind, t } from '../i18n';
 
 const TYPE_MS = 18;
 const CURSOR_HOLD_MS = 140;
 const HIDDEN: CSSProperties = { visibility: 'hidden' };
+
+// The citation types as ONE run of characters across its lines, so the deadline the solved
+// stage holds behind the completion signal is derived from the same numbers the typewriter
+// runs on (see SolvedScreen's timeline).
+export function captionDurationMs(source: Source | undefined, lang: string): number {
+  const chars = sourceLines(source, lang).reduce((n, line) => n + Array.from(line.text).length, 0);
+  return chars * TYPE_MS + CURSOR_HOLD_MS;
+}
+
+// The source as a CREDIT BLOCK (user-decided 2026-08-15, third pass — the shape is the
+// user's own): TWO lines, the work over one qualifying line that carries everything else.
+//
+//     Les Misérables            the WORK — the credit's headline: gold, the biggest
+//                               type in the block
+//     BOOK by Victor Hugo       what it IS and who made it: muted, small, one phrase
+//
+// The two earlier cuts stacked the three fields as three peer lines (and before them a
+// `— Author, Work` run-on), which left the reader guessing which name was a person: a
+// separator only ever says "these are two things", never which is which. Here the LINE
+// ITSELF is the answer — one thing is named, and the line under it says what that thing is
+// and who it is by, as a phrase you read rather than a list you decode. The function word
+// (`sourceBy`) is what binds them, earning its place the way `OF` does in `RANK #5 OF 59`,
+// and gold-over-muted ranks them so the eye lands on the title first.
+//
+// The KIND is said in the player's language (`sourceKind`) — it is the one part of a
+// source that is a CATEGORY rather than a name, so it translates where the work and the
+// author never could. Its set is open, so an unlisted kind prints as the puzzle wrote it.
+//
+// Every field is independently optional in the schema (#5), so the HEADLINE is simply the
+// first of work / author / kind that exists and the qualifier is whatever is left: an
+// author with no work takes the headline (a lone name is not a credit to anything, and
+// `by Victor Hugo` under nothing is a sentence missing its subject), and a source with
+// only a kind is just that word.
+interface CaptionLine {
+  className: string;
+  text: string;
+}
+
+function sourceLines(source: Source | undefined, lang: string): CaptionLine[] {
+  const kind = source?.kind ? sourceKind(lang, source.kind) : '';
+  const headline = source?.work || source?.author || kind;
+  if (!headline) return [];
+
+  // Whatever the headline did not take, as one phrase. The author joins it only when the
+  // WORK is the headline — otherwise the author IS the headline.
+  const byline =
+    source?.work && source?.author ? `${t(lang, 'sourceBy')} ${source.author}` : '';
+  const qualifier = [headline === kind ? '' : kind, byline].filter(Boolean).join(' ');
+
+  return [
+    { className: 'solved-work', text: headline },
+    ...(qualifier ? [{ className: 'solved-by', text: qualifier }] : []),
+  ];
+}
 
 function typedLine(chars: string[], shown: number, cursor: boolean) {
   return (
@@ -22,51 +77,43 @@ function typedLine(chars: string[], shown: number, cursor: boolean) {
           </span>
         );
       })}
-      {cursor && shown >= chars.length && <span className="source-type-cursor">_</span>}
     </>
   );
 }
 
-// The solved sentence's attribution (issue #8), shown under the reconstructed phrase in
-// place of the input — a quote-style citation from the optional literary metadata (#5):
-// a kind tag and "— Author, Work". A fresh solve types the source after the streak screen;
-// every final character is present but hidden from frame one so line wrapping is stable.
-// The underscore occupies the next character's reserved slot, then disappears before the
-// result stack starts. Rehydrated solves render the complete source immediately.
+// The solved sentence's attribution (issue #8), typed under the words it belongs to — the
+// optional literary metadata (#5) as a three-line credit block: the KIND tag over the
+// AUTHOR over the WORK. Every final character is present but hidden from frame one so line
+// wrapping is stable; the underscore occupies the next character's reserved slot.
+// Rehydrated solves render the complete source immediately.
 //
-// `masked` is what lets the caption be MOUNTED for the whole round (it reserves the prompt
-// zone's height, so the input→citation swap never moves the sentence) without the citation
-// being READABLE before the solve: an unsolved round would otherwise carry "— Victor Hugo,
-// Les Misérables" in the DOM, one DevTools panel away, and the author of the sentence you
-// are reconstructing is a hint. Every non-space glyph is replaced; the citation is set in
-// the pixel font (monospace) and the spaces — its only wrap opportunities — are kept, so
-// the mask lays out to exactly the box the real text will.
-const MASK_CHAR = 'M';
-const veil = (text: string, masked: boolean) =>
-  masked ? text.replace(/\S/gu, MASK_CHAR) : text;
-
+// (The `masked` veil died with the 2026-08-14 redesign: the caption used to be MOUNTED for
+// the whole round to reserve the prompt zone's height, which is what put the author of an
+// unsolved sentence one DevTools panel away. It now mounts only WITH the solved stage, so
+// there is no unsolved DOM for the citation to leak into.)
 export default function SolvedCaption({
   source,
+  lang,
   animate = false,
-  masked = false,
   onComplete,
 }: {
   source?: Source;
+  lang: string; // the credit's one function word is chrome, so it is localized
   animate?: boolean;
-  masked?: boolean;
   onComplete?: () => void;
 }) {
-  const attribution = [source?.author, source?.work].filter(Boolean).join(', ');
-  const attributionText = attribution ? `— ${attribution}` : '';
-  const kindChars = useMemo(
-    () => Array.from(veil(source?.kind ?? '', masked)),
-    [source?.kind, masked],
-  );
-  const attributionChars = useMemo(
-    () => Array.from(veil(attributionText, masked)),
-    [attributionText, masked],
-  );
-  const total = kindChars.length + attributionChars.length;
+  // One running character counter across the whole block: each line knows where it starts
+  // in that run, so the cursor walks from line to line without any per-line scheduling.
+  const lines = useMemo(() => {
+    let start = 0;
+    return sourceLines(source, lang).map((line) => {
+      const chars = Array.from(line.text);
+      const entry = { chars, start, className: line.className };
+      start += chars.length;
+      return entry;
+    });
+  }, [source, lang]);
+  const total = lines.reduce((n, line) => n + line.chars.length, 0);
   const reduceMotion = prefersReducedMotion();
   const [shown, setShown] = useState(() => (animate && !reduceMotion ? 0 : total));
 
@@ -98,9 +145,9 @@ export default function SolvedCaption({
       // stack fully pressable and only the holes locked, which is the report this came from.
       // The deferral only has to leave this commit, never to land on a paint, so the frame was
       // buying nothing in exchange for that exposure. Whether a lost frame is what the reporter
-      // actually hit was NOT reproduced; `SOURCE_REVEAL_FALLBACK_MS` in `Game.tsx` is what
-      // guarantees the outcome either way. This just removes the one link in the chain that
-      // needed the page to be on screen.
+      // actually hit was NOT reproduced; the solved stage's own deadline is what guarantees the
+      // outcome either way. This just removes the one link in the chain that needed the page to
+      // be on screen.
       const id = window.setTimeout(() => onComplete?.(), 0);
       return () => window.clearTimeout(id);
     }
@@ -125,28 +172,37 @@ export default function SolvedCaption({
   }, [animate, onComplete, reduceMotion, shown, total]);
 
   const visible = animate ? shown : total;
-  const kindShown = Math.min(visible, kindChars.length);
-  const attributionShown = Math.max(0, visible - kindChars.length);
-  const typingKind = kindChars.length > 0 && visible < kindChars.length;
   const showCursor = animate && !reduceMotion && total > 0;
-  const kindCursor = showCursor && (typingKind || attributionChars.length === 0);
-  const attributionCursor = showCursor && !typingKind && attributionChars.length > 0;
-  // Empty while masked, so the sr-only mirror can never carry the citation either.
-  const accessibleText = masked ? '' : [source?.kind, attributionText].filter(Boolean).join('. ');
+  // The cursor sits on the line being typed, and goes WITH the last character's print: it
+  // only ever lives inside an unprinted character's reserved slot, never appended past the
+  // final one — a trailing underscore is one glyph the reserved layout never measured, so
+  // it could wrap a line that unwrapped when it blinked out.
+  const typing = lines.findIndex((line) => visible < line.start + line.chars.length);
+  const cursorLine = showCursor ? typing : -1;
+  // Derived from the memo above rather than re-deriving the source: the typewriter
+  // re-renders this component once per printed character, and a second independent call
+  // would both rebuild the lines dozens of times per solve and be free to drift from what
+  // the screen shows.
+  const accessibleText = lines.map((line) => line.chars.join('')).join('. ');
 
   return (
     <div className="solved-caption">
       {animate && accessibleText && <span className="sr-only">{accessibleText}</span>}
-      {source?.kind && (
-        <span className="solved-kind" aria-hidden={animate || undefined}>
-          {typedLine(kindChars, kindShown, kindCursor)}
-        </span>
-      )}
-      {attribution && (
-        <p className="solved-attribution" aria-hidden={animate || undefined}>
-          {typedLine(attributionChars, attributionShown, attributionCursor)}
-        </p>
-      )}
+      {lines.map((line, index) => {
+        const chars = line.chars;
+        const lineShown = Math.min(Math.max(0, visible - line.start), chars.length);
+        return (
+          <p
+            // The lines are static display metadata in a fixed order.
+            // eslint-disable-next-line react/no-array-index-key
+            key={index}
+            className={line.className}
+            aria-hidden={animate || undefined}
+          >
+            {typedLine(chars, lineShown, cursorLine === index)}
+          </p>
+        );
+      })}
     </div>
   );
 }

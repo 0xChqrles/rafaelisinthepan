@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react';
 import FloatingHit, { HIT_FADE_MS } from './FloatingHit';
 import { heatColor } from '@whippin/shared';
 import useAnimatedNumber, { linearEasing } from '../hooks/useAnimatedNumber';
+import useLetterWave, { WAVE_VARS } from '../hooks/useLetterWave';
 import { prefersReducedMotion, useScramble } from '../hooks/useScramble';
 import type { HitState, RuntimeHole } from '@whippin/shared';
 
@@ -43,24 +44,6 @@ export function rankHeatColor(rank: number, startRank: number) {
   const heat = 1 - Math.log(rank + 1) / Math.log(maxRank + 1);
   return heatColor(heat);
 }
-
-// The letter wave (#129): one letter's whole up-and-down, and the delay between two
-// consecutive letters. Both are handed to CSS as custom properties rather than repeated
-// there, so the animation and the JS that ends it read the same numbers.
-const WAVE_LETTER_MS = 300;
-const WAVE_STEP_MS = 40;
-function waveDurationMs(letters: number): number {
-  return WAVE_LETTER_MS + Math.max(0, letters - 1) * WAVE_STEP_MS;
-}
-
-// How long a hole waits between its own waves. EVERY hole runs this clock independently
-// (decided 2026-07-27, replacing a single round-level scheduler that picked one hole at a
-// time): a lone ripple travelling around the sentence reads as a cursor pointing somewhere,
-// while several words stirring on their own separate rhythms read as the words being alive —
-// which is the whole claim the affordance makes. The band is wide and re-rolled per wave, so
-// the holes drift apart on their own instead of needing to be kept apart.
-const WAVE_MIN_MS = 3_000;
-const WAVE_MAX_MS = 10_000;
 
 // A hole: "displayed_word^-current_rank" (ex: sailor^-87). Rank 0 = solved.
 export default function Hole({
@@ -169,43 +152,13 @@ export default function Hole({
   // slot-machine scramble, or already locked at rank 0 — does not run the clock at all, and a
   // wave in flight when a guess lands is cut. Nor does a hole with no tap ripple: the wave is
   // an affordance for the tap, so advertising one that does nothing is worse than none.
+  // `ticking` is this hole's own answer to "free to ripple?", and it is what the shared
+  // clock runs on — not just `busy`: the round drops `quiet` when a guess lands AND when the
+  // history modal opens over the sentence, and the hook cuts a wave in flight either way (a
+  // tail showing after a quickly-closed modal is worse than no wave at all).
   const busy = hit !== null || jumble !== null || hole.rank === 0;
   const ticking = quiet && !busy && explore !== undefined && !explore.disabled;
-  const [waving, setWaving] = useState(false);
-  // Bumped by each finished wave, purely to re-arm the clock below with a fresh delay.
-  const [waveCount, setWaveCount] = useState(0);
-
-  useEffect(() => {
-    if (!ticking || prefersReducedMotion()) return undefined;
-    const id = window.setTimeout(
-      () => setWaving(true),
-      WAVE_MIN_MS + Math.random() * (WAVE_MAX_MS - WAVE_MIN_MS),
-    );
-    return () => window.clearTimeout(id);
-    // Re-rolled whenever the sentence goes quiet again, so the holes also scatter after
-    // every guess rather than settling into lockstep off a shared start.
-  }, [ticking, waveCount]);
-
-  // The wave's own length — the last letter's delay plus its animation. Ending it in JS (and
-  // not on `animationend`) keeps ONE owner of the two numbers CSS is handed above.
-  useEffect(() => {
-    if (!waving) return undefined;
-    const id = window.setTimeout(() => {
-      setWaving(false);
-      setWaveCount((n) => n + 1);
-    }, waveDurationMs(letters.length));
-    return () => window.clearTimeout(id);
-    // The letter count is read when the wave STARTS: a scramble cannot begin mid-wave (it
-    // makes the hole busy, which cuts the wave on the next line).
-  }, [waving]);
-
-  // Cut a wave already in flight the moment this hole stops being free to run one — which is
-  // `ticking`, not just its own `busy`: the round drops `quiet` when a guess lands AND when
-  // the history modal opens over the sentence, and a wave left running behind the modal shows
-  // its tail if the player closes quickly (both animations are ~120ms, the wave up to 460ms).
-  useEffect(() => {
-    if (!ticking) setWaving(false);
-  }, [ticking]);
+  const waving = useLetterWave(ticking, letters.length);
 
   // The exponent sizes to its own content (no reserved width), so a following suffix
   // sits right after the number instead of after a gap left for the widest rank.
@@ -216,10 +169,7 @@ export default function Hole({
   // animation is built from — so the timing lives in ONE place (above) and CSS reads it.
   const wordStyle: CSSProperties & Record<string, string> = {};
   if (hit) wordStyle['--hit-delay'] = `${hit.startDelayMs}ms`;
-  if (waving) {
-    wordStyle['--wave-dur'] = `${WAVE_LETTER_MS}ms`;
-    wordStyle['--wave-step'] = `${WAVE_STEP_MS}ms`;
-  }
+  if (waving) Object.assign(wordStyle, WAVE_VARS);
 
   // The word + its exponent. The route button (below) wraps this whole group WITHOUT
   // touching it: the floating-hit/scramble choreography keys off this exact structure.

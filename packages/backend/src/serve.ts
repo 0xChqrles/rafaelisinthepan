@@ -29,6 +29,9 @@ const handler = createHandler({
     turnstile: localTurnstileVerifier,
     ipHmacSecret: LOCAL_IP_HMAC_SECRET,
     allowSourceIp: true,
+    // The accept-all verifier's tokens are not single-use (Cloudflare's test key repeats
+    // one dummy token), so they cannot be the idempotency key — see ScoreHandlerDeps.
+    singleUseTokens: false,
   },
 });
 

@@ -1,19 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { dateForDayNumber } from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { t, srWordBreakdown } from '../i18n';
 import { RARITY_NAMES } from '../game/wordGame';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
+import type { ScorePlacement } from '../hooks/useScoreHistogram';
 import useShare from '../hooks/useShare';
 import { RARITY_COLORS } from './rarity';
-import { wordShareText, wordShareUrl, wordShareScore } from '../game/share';
+import ScoreRank from './ScoreRank';
+import { shareHeadline, wordShareText, wordShareUrl, wordShareScore } from '../game/share';
 import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 
 // Word mode's end-of-run screen (#156): the claim count with its unit NAMED (higher is
 // better here — "12 WORDS" says what was counted), its per-rarity CHIP ROW, plus SHARE,
-// in the tray the keyboard vacates — the same visual grammar as the sentence game's
-// solved results, minus what a word run does not have (no trajectory, no opponents). The
+// in the tray the keyboard vacates. Since 2026-08-15 it is not merely the same GRAMMAR as
+// the sentence result but the same STACK, at the same sizes (user-decided): the day's
+// standing, then the number, then SHARE, minus what a word run does not have (no
+// trajectory, no opponents). The
 // share link carries the word-mode token — the per-rarity claim counts plus the accented
 // public word — so it unfurls into the word card with its rarity chip row, and clicks
 // through to the day's word route. The screen takes the BREAKDOWN and derives the count
@@ -24,12 +27,16 @@ export default function WordEndScreen({
   dayNumber,
   lang,
   word,
+  placement = null,
   animate = true,
 }: {
   counts: readonly number[]; // claims per rarity grade, commonest first (ladder order)
   dayNumber: number;
   lang: string;
   word: string; // accented display form carried into the OG card
+  // The day's score population (#170), when the submit/fetch round trip landed. Null
+  // renders no chart and no message — the silent-degrade decision.
+  placement?: ScorePlacement | null;
   // A live run rises and tallies like the sentence result. Rehydrated runs render their
   // final state immediately, so revisiting a finished day never replays the celebration.
   animate?: boolean;
@@ -99,6 +106,12 @@ export default function WordEndScreen({
     return () => window.clearTimeout(id);
   }, [animate, reduceMotion, countTarget, score]);
 
+  // The STANDING heads this stack, as it heads the sentence result's (2026-08-15, when the
+  // two were made one layout), so it arrives WITH the block: a line sitting ABOVE the tally
+  // must not land after it. It holds its layout slot from the start, so this changes when
+  // it appears, never where anything sits.
+  const chartStart = resultsIn;
+
   // Delivery (native sheet / clipboard + the "COPIED" confirmation) is the shared hook's;
   // this screen only composes the word result's text.
   const { share, copied } = useShare();
@@ -109,14 +122,25 @@ export default function WordEndScreen({
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
     const url = wordShareUrl(origin, { lang, dayNumber, counts, word });
     const unit = t(lang, score === 1 ? 'word' : 'words').toLowerCase();
-    // The day is named by its calendar date, like every share surface (decided
-    // 2026-08-03) — the same string the card draws and the link resolves to.
-    const headline = `Whippin AI ${dateForDayNumber(dayNumber)} — ${score} ${unit}`;
+    const headline = shareHeadline(dayNumber, score, unit);
     await share(wordShareText(headline, word, lang, counts, url));
   }, [lang, dayNumber, counts, score, share, word]);
 
   return (
     <div className={`solved-results${resultsIn ? ' in' : ''}`}>
+      {/* Where this run stands among the day's players (#170) — FIRST, then the run's own
+          number, then SHARE: the sentence result's exact stack (user-decided 2026-08-15,
+          "the exact same layout and sizing"). Always mounted: the slot reserves its
+          footprint, so the line arriving — or never arriving, on a silent failure — moves
+          nothing under it. */}
+      <ScoreRank
+        placement={placement}
+        mode="word"
+        lang={lang}
+        animate={animate}
+        start={chartStart}
+      />
+
       <span className="solved-score">
         <span className={`solved-score-num${landed ? ' landed' : ''}`}>
           {/* Reserve the final width while the live number counts, matching Sentence mode. */}

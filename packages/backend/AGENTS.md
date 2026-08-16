@@ -55,8 +55,11 @@ pnpm backend:dev                # local server (puzzles + /scores + /today) on :
   integer score + nonempty Turnstile token, uses one Cloudflare Siteverify call, reads the
   published puzzle, and rejects an impossible score (sentence: 1..the exact committed
   language vocab size; Word: 0..the artifact's distinct ranks inside shared
-  `WORD_CLAIM_ZONE`). It HMACs the trusted CloudFront viewer address and hands only the
-  digest to `ScoreStore`. `dynamoScoreStore` transactionally increments a conditional
+  `WORD_CLAIM_ZONE`). It HMACs the trusted client address — read from shared
+  `VIEWER_IP_HEADER`, which a CloudFront viewer-request function stamps (see the root
+  `AGENTS.md` for why the origin-request policy cannot carry it) — and hands only the digest
+  to `ScoreStore`. A value that is not a bare IP is no identity at all: `clientIp` returns
+  null and the POST fails rather than dedup a submission under a parsed fragment. `dynamoScoreStore` transactionally increments a conditional
   5-count/48h-TTL dedup item and the aggregate bucket+total, using a hash of the one-use
   token as DynamoDB's idempotency token; its following consistent read guarantees the
   returned histogram includes the caller. The sixth write is a no-mutation 429. Local

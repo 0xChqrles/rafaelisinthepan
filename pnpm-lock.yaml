@@ -55,6 +55,9 @@ importers:
       '@whippin/backend':
         specifier: workspace:*
         version: link:../backend
+      '@whippin/shared':
+        specifier: workspace:*
+        version: link:../shared
       aws-cdk-lib:
         specifier: ^2.214.0
         version: 2.260.0(constructs@10.6.0)

@@ -15,7 +15,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 // Keep this duration fixed: the settle is independent of the exponent/rank tween.
 // The tutorial uses it only to schedule its own mix-stage timing (see MixWord / Tutorial).
 export const SCRAMBLE_MS = 650;
-const SCRAMBLE_TICK_MS = 40;
+// The churn's frame rate. Exported for the same reason SCRAMBLE_MS is: DissolvePhrase runs
+// the SAME churn and is defined against this clock, and a comment claiming two literals
+// agree is not a thing that keeps them agreeing.
+export const SCRAMBLE_TICK_MS = 40;
 const GLYPHS = 'abcdefghijklmnopqrstuvwxyz';
 
 export function randomGlyphs(n: number): string {

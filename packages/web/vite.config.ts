@@ -16,6 +16,12 @@ export default defineConfig(({ command, mode }) => {
       'VITE_API_BASE_URL is required. Set it to the backend URL, e.g. http://localhost:8787.',
     );
   }
+  const turnstileSiteKey = env.VITE_TURNSTILE_SITE_KEY?.trim();
+  if (command === 'build' && mode === 'production' && !turnstileSiteKey) {
+    throw new Error(
+      'VITE_TURNSTILE_SITE_KEY is required for production builds; refusing to ship score collection disabled.',
+    );
+  }
 
   return {
     // svgr before react so `?react` SVG imports are transformed into components first.

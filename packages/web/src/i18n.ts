@@ -94,6 +94,22 @@ const STRINGS = {
   modeWord: { en: 'Word', fr: 'Mot' },
   share: { en: 'SHARE', fr: 'PARTAGER' },
   copied: { en: 'COPIED', fr: 'COPIÉ' },
+  // ---- the solved screen's STANDING (#170, user-decided 2026-08-15, replacing the
+  // population histogram): ONE line — `RANK #6 OF 60` with a `TOP 25%` badge beside it.
+  // The rank NUMBER is drawn by the component (it wears its own size and colour), so the
+  // words here are only what surrounds it. `TOP` is untranslated in every language, like
+  // MISS and the rarity grades — one word, identical everywhere.
+  scoreRank: { en: 'RANK', fr: 'RANG' },
+  scoreOf: { en: 'OF {n}', fr: 'SUR {n}' },
+  scoreTop: { en: 'TOP', fr: 'TOP' },
+  // The solved credit block's one function word (user-decided 2026-08-15): it binds the
+  // author to the work in the line under it — `Les Misérables` / `BOOK by Victor Hugo` can
+  // only be read one way, where two stacked names could be read either. LOWERCASE, unlike
+  // every other string here: it is the one word in this app that is not a label but part
+  // of a phrase, and the KIND beside it is uppercased in code to keep that contrast. Drawn
+  // only when BOTH a work and an author exist; a lone author is a name, not a credit, and
+  // takes the headline itself.
+  sourceBy: { en: 'by', fr: 'de' },
   ariaClose: { en: 'close', fr: 'fermer' },
   // ---- the route drawing (#117): a hole's neighborhood drawn as a LINE you travel. The
   // line teaches by SHAPE — the terminus, "you are here" and the departure are all said by
@@ -250,6 +266,26 @@ export type UiKey = keyof typeof STRINGS;
 
 export function t(lang: string, key: UiKey): string {
   return STRINGS[key][uiLang(lang)];
+}
+
+// The solved credit's KIND, localized. It lives OUTSIDE `STRINGS` because it is not a UI
+// key at all: `source.kind` is puzzle DATA and an explicitly OPEN set (#5 — generation may
+// emit a kind nobody has listed yet, and one published fr puzzle already carries a
+// free-form `discours`). So this is a lookup with a PASS-THROUGH, not a table the caller
+// must key into: a known kind is said in the player's language, and anything else prints
+// the value the puzzle carries. Uppercase either way — the kind is the label half of
+// `BOOK by Victor Hugo`, against that phrase's one lowercase word.
+const SOURCE_KINDS = {
+  book: { en: 'BOOK', fr: 'LIVRE' },
+  movie: { en: 'MOVIE', fr: 'FILM' },
+  music: { en: 'MUSIC', fr: 'MUSIQUE' },
+  quote: { en: 'QUOTE', fr: 'CITATION' },
+  poem: { en: 'POEM', fr: 'POÈME' },
+} satisfies Record<string, Record<UiLang, string>>;
+
+export function sourceKind(lang: string, kind: string): string {
+  const known = SOURCE_KINDS[kind.trim().toLowerCase() as keyof typeof SOURCE_KINDS];
+  return known ? known[uiLang(lang)] : kind.toLocaleUpperCase(uiLang(lang));
 }
 
 // The same lookup for a string carrying a COUNT (`{n}` — the table's one placeholder).

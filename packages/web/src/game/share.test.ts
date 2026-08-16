@@ -15,6 +15,7 @@ import {
   emojiRow,
   rowCellCount,
   rowMeans,
+  shareHeadline,
   shareText,
   shareUrl,
   rarityRow,
@@ -28,6 +29,7 @@ import {
 import { computeProgress, guessKey } from './scoring';
 import { RARITY_NAMES } from './wordGame';
 import {
+  dayNumber,
   decodeResult,
   decodeWordResult,
   progressEmoji,
@@ -339,6 +341,23 @@ describe('emojiRow — the bounded row in plain text (fallback where no card ima
   it('handles no guesses without throwing', () => {
     expect(emojiRow([])).toBe('');
     expect(emojiRow([], [1, 2, 3])).toBe('');
+  });
+});
+
+describe('shareHeadline — ONE line shape for both dailies', () => {
+  it('names the day by its CALENDAR DATE, never the internal index', () => {
+    const day = dayNumber('2026-08-11');
+    expect(shareHeadline(day, 12, 'mots')).toBe('Whippin AI 2026-08-11 — 12 mots');
+    // The index says nothing to a reader, and the archive URL the link resolves to spells
+    // the date — so the message has to spell it too.
+    expect(shareHeadline(day, 12, 'mots')).not.toContain(String(day));
+  });
+
+  it('gives the two modes the same line, differing only in the unit each localizes', () => {
+    const day = dayNumber('2026-08-11');
+    const sentence = shareHeadline(day, 3, 'essais');
+    const word = shareHeadline(day, 3, 'mots');
+    expect(sentence.replace('essais', '')).toBe(word.replace('mots', ''));
   });
 });
 

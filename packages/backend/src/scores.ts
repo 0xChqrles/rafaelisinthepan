@@ -1,6 +1,6 @@
-import { createHash, createHmac } from 'node:crypto';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { isIP } from 'node:net';
-import { dayNumber, type ScoreHistogram } from '@whippin/shared';
+import { VIEWER_IP_HEADER, dayNumber, type ScoreHistogram } from '@whippin/shared';
 import { isValidDate } from './layout';
 import {
   SENTENCE_SCORE_MAX_BY_LANG,
@@ -32,6 +32,14 @@ export interface ScoreHandlerDeps {
   // Only the direct local HTTP adapter is allowed to trust its socket peer. In Lambda,
   // requestContext.sourceIp is CloudFront's edge, not the viewer.
   allowSourceIp?: boolean;
+  // Are the verifier's tokens SINGLE-USE? A real Turnstile token is, which is what makes
+  // its hash a perfect idempotency key (see the increment below). The LOCAL accept-all
+  // verifier's are not — Cloudflare's always-passing test site key hands the browser the
+  // same dummy token on every challenge — so hashing it collapses every local submission
+  // of the day onto ONE key: the first is recorded and every later one is waved through
+  // as a replay, leaving a laptop's histogram permanently reading zero. Local serve sets
+  // this false and gets a fresh idempotency token per request instead.
+  singleUseTokens?: boolean;
 }
 
 function header(event: FnUrlEvent, name: string): string | undefined {
@@ -42,22 +50,15 @@ function header(event: FnUrlEvent, name: string): string | undefined {
   return undefined;
 }
 
-// CloudFront injects this as viewer-IP + source-port. The generated header is trusted in
-// production because the Function URL is IAM-locked to that distribution; a viewer cannot
-// call the origin around CloudFront. Local serve supplies requestContext.http.sourceIp.
+// The CDN's viewer-request function stamps CloudFront's own read of the TCP peer into
+// VIEWER_IP_HEADER, overwriting whatever the viewer sent under that name. It is trusted in
+// production because the Function URL is IAM-locked to that distribution, so a viewer
+// cannot reach this origin around CloudFront and hand it a header of their own; a
+// viewer-supplied X-Forwarded-For chain is deliberately read by nothing here. Local serve
+// has no CDN and supplies requestContext.http.sourceIp instead.
 export function clientIp(event: FnUrlEvent, allowSourceIp = false): string | null {
-  const viewer = header(event, 'cloudfront-viewer-address');
-  if (viewer) {
-    if (viewer.startsWith('[')) {
-      const closing = viewer.indexOf(']');
-      const candidate = closing > 1 ? viewer.slice(1, closing) : '';
-      if (isIP(candidate)) return candidate;
-    }
-    if (isIP(viewer)) return viewer;
-    const colon = viewer.lastIndexOf(':');
-    const candidate = colon > 0 ? viewer.slice(0, colon) : '';
-    if (isIP(candidate)) return candidate;
-  }
+  const viewer = header(event, VIEWER_IP_HEADER);
+  if (viewer && isIP(viewer)) return viewer;
 
   if (!allowSourceIp) return null;
   const source = event.requestContext?.http?.sourceIp;
@@ -227,8 +228,14 @@ export async function handleScores(
     bucketCount: ranges.length,
     expiresAt: Math.floor(instant.getTime() / 1000) + SCORE_DEDUP_TTL_SECONDS,
     // DynamoDB ClientRequestToken permits 1–36 characters. This stores neither the
-    // Turnstile token nor another user-linked value.
-    requestToken: createHash('sha256').update(turnstileToken!).digest('hex').slice(0, 36),
+    // Turnstile token nor another user-linked value. Hashing the token is what makes a
+    // retry of ONE submission idempotent — sound exactly because a real token is
+    // single-use; where it is not (see `singleUseTokens`), a fresh id per request is the
+    // honest key, since two submissions carrying the same dummy token are two submissions.
+    requestToken:
+      deps.singleUseTokens === false
+        ? randomUUID()
+        : createHash('sha256').update(turnstileToken!).digest('hex').slice(0, 36),
   });
   if (!accepted) {
     return errorResponse(
