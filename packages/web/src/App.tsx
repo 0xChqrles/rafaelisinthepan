@@ -8,6 +8,7 @@ import Archive from './screens/Archive';
 import Game from './screens/Game';
 import WordGame from './screens/WordGame';
 import TopBar from './components/TopBar';
+import DeviceFrame from './components/DeviceFrame';
 import LazyStreakDialog from './components/LazyStreakDialog';
 import LoadError from './components/LoadError';
 import NoPuzzle from './components/NoPuzzle';
@@ -25,6 +26,7 @@ import {
   type Mode,
 } from './langs';
 import { t } from './i18n';
+import useToday from './hooks/useToday';
 import { streakPreviewFromSearch } from './dev/streakPreview';
 // This route's own header controls (the two choosers are TopBar's). Decorative glyphs;
 // the buttons' aria-labels name their actions.
@@ -65,8 +67,14 @@ export default function App() {
     document.documentElement.lang = docLang;
   }, [docLang]);
 
+  // The frame's edition serial is the ACTIVE day's own index — today's number whatever
+  // screen is up (an archived day's date already reads in the header's date chip).
+  const editionDay = useToday();
+
   return (
     <div className="app">
+      {/* The viewport's own furniture (decorative, desktop-only) — under every screen. */}
+      <DeviceFrame lang={docLang} serial={editionDay} />
       {/* The living backdrop — every screen (game, archive, select, tutorial) sits on it. */}
       {route.view === 'select' && <LanguageSelect />}
       {route.view === 'modeSelect' && <ModeSelect />}

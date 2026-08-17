@@ -35,10 +35,11 @@ export default function ModeSelect() {
 
   return (
     <Chooser>
-      {MODES.map(({ mode, nameKey }) => (
+      {MODES.map(({ mode, nameKey }, i) => (
         <ChooserCard
           key={mode}
           name={t(uiLang, nameKey)}
+          tag={`0${i + 1}`}
           uiLang={uiLang}
           status={
             mode === 'word'

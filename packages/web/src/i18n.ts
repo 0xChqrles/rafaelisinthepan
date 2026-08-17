@@ -14,6 +14,9 @@ const uiLang = (lang: string): UiLang => (lang === 'fr' ? 'fr' : 'en');
 
 const STRINGS = {
   loading: { en: 'LOADING…', fr: 'CHARGEMENT…' },
+  // The device frame's tagline (DeviceFrame, 2026-08-18): the one line of copy on the
+  // viewport's own furniture.
+  frameTagline: { en: 'A DAILY WORD GAME', fr: 'UN JEU DE MOTS QUOTIDIEN' },
   failedPuzzle: { en: 'FAILED TO LOAD PUZZLE', fr: 'ÉCHEC DU CHARGEMENT DU PUZZLE' },
   failedVocab: { en: 'FAILED TO LOAD VOCABULARY', fr: 'ÉCHEC DU CHARGEMENT DU DICTIONNAIRE' },
   retry: { en: 'RETRY', fr: 'RÉESSAYER' },

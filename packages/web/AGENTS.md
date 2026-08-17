@@ -192,6 +192,38 @@ These are decided and verified against the code. Treat them as load-bearing.
     deliberately — it is the logo, and pixel is the brand. The BODY's global hard 2px
     text-shadow is gone; pixel surfaces that relied on it (floating hits, loot) carry
     their own, and the topbar wears a soft bloom shadow instead.
+  - **THE VIEWPORT IS AN INSTRUMENT (user-decided 2026-08-18, from the user's
+    /inspiration/modern board — "fresh and deep update"):** the content floats in the
+    middle while decorative furniture clings to the edges.
+    - **`components/DeviceFrame`** (mounted once in App, under every screen): four
+      corner BRACKETS — the board's focused-card selection frame drawn around the whole
+      app — a vertical `WHIPPIN AI ©2026` brand rail on the left edge, the localized
+      tagline (`frameTagline`, the STRINGS table) bottom-left, and the day's EDITION
+      SERIAL bottom-right (`N.<dayNumber>` — the interfaces.dev card's numbering, fed
+      the ACTIVE day via useToday). Decorative (aria-hidden, pointer-events none),
+      z-index 40 under the header's 60, covered by opaque dialogs, and DESKTOP ONLY
+      (hidden ≤640px — a phone's viewport is all content).
+    - **The KEYBOARD is a MACROPAD** (the board's Work Louder pad): every key is a dark
+      KEYCAP — top light, shaded bottom lip, drop shadow — that physically DEPRESSES on
+      press (translateY + shadow collapse); **ENTER is the pad's ONE coloured key**: the
+      whole cap takes the accent gradient exactly when the input is a real word
+      (`.kb-enter` vs `.kb-enter.kb-greyed`), so the board itself says "publishable".
+      On desktop the keys sit on a DEVICE PLATE with a faint cobalt edge-glow — drawn
+      OUT OF FLOW (`.keyboard::before`, inset past the keys) so `--kb-h` and the tray's
+      fixed height stay exactly the keys' own; the plate hides with the phone's
+      full-bleed keyboard. The keys' pixel glyphs and all key LOGIC are untouched.
+    - **The INVERTED SELECTION BOX is the one emphasis gesture** (the board's
+      highlighted headline word / selected list row): screen titles (`.topbar-title` —
+      ARCHIVE, TUTORIAL, the modal titles) are fg-filled chips with bg type; the result
+      action INVERTS on hover; the invite title's last word sits in an `.invite-mark`
+      box (Invite splits the localized copy on the final space, pulling one more token
+      in when the tail is bare punctuation — French's ` ?`).
+    - **The CHOOSER cards are MEMBER CARDS** (superseding the aura tiles the same day):
+      name bold left with an index TAG under it (a language's code EN/FR, a daily's
+      01/02 — the `tag` prop each screen passes), and a deterministic LED-CELL MOSAIC
+      on the right (`Chooser.cellsFor`, an FNV hash of the name; 8×3 cells lit in the
+      card's ink — cobalt/violet/orange by nth-child). Decorative; the aria-label
+      carries everything.
   - **The RUN RULER is a continuous GRADIENT FILAMENT (user-decided 2026-08-18,
     superseding the flat per-try cells):** RunRuler builds one linear-gradient stop per
     counted try — the same raw trajectory through the same `progressHeatColor` — drawn

@@ -334,36 +334,36 @@ button * {
   gap: 14px;
 }
 
-/* AURA CARDS (2026-08-18, the modern-chrome pass): each option is a rounded glass tile
-   carrying its own soft radial glow — the Séance-poster orbs as interface — under a
-   hairline rule. The glow rotates through the ground's own three inks by position
-   (cobalt, violet, orange), so the list reads as a small constellation rather than a
-   stack of identical tiles. Interaction stays the app's one language: brighten. */
+/* MEMBER CARDS (2026-08-18, the /inspiration/modern board — superseding the aura
+   tiles): each option is a flat dark card with its name set bold on the left, its index
+   tag under it, and a deterministic LED-cell MOSAIC on the right — the interfaces.dev
+   card's grid, lit in the card's own ink (cobalt, violet, orange by position).
+   Interaction stays the app's one language: brighten, border sharpens. */
 .chooser-card {
   position: relative;
   overflow: hidden; /* keeps the status strip inside the tile */
   display: flex;
   align-items: center;
-  justify-content: center; /* text-only cards since 2026-08-17 — the name IS the card */
-  padding: 26px 22px;
-  background:
-    radial-gradient(130% 160% at 18% -30%, rgba(24, 76, 244, 0.34), transparent 62%),
-    var(--glass);
+  justify-content: space-between;
+  text-align: left;
+  gap: 18px;
+  padding: 22px;
+  background: var(--glass);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   cursor: pointer;
   text-shadow: none;
   transition: filter 0.08s linear, border-color 0.12s linear;
 }
-.chooser-card:nth-child(2n) {
-  background:
-    radial-gradient(130% 160% at 85% -30%, rgba(139, 69, 234, 0.32), transparent 62%),
-    var(--glass);
+/* The card's INK, worn by its mosaic: the ground's own three glow colours by position. */
+.chooser-card .chooser-cells {
+  color: #4a6aff;
 }
-.chooser-card:nth-child(3n) {
-  background:
-    radial-gradient(130% 160% at 50% 130%, rgba(245, 129, 7, 0.22), transparent 62%),
-    var(--glass);
+.chooser-card:nth-child(2n) .chooser-cells {
+  color: #8b45ea;
+}
+.chooser-card:nth-child(3n) .chooser-cells {
+  color: var(--accent);
 }
 .chooser-card:hover {
   filter: brightness(1.2);
@@ -373,15 +373,47 @@ button * {
   filter: brightness(1.35);
 }
 
-/* The name is the headline of its own card: the mono at a medium weight. */
+.chooser-card-main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  min-width: 0;
+}
 .chooser-card-name {
   font-family: var(--ui);
-  font-size: clamp(19px, 2.8vh, 24px);
-  font-weight: 550;
+  font-size: clamp(19px, 2.8vh, 23px);
+  font-weight: 700;
   line-height: 1.1;
   letter-spacing: 0.02em;
   color: var(--fg);
   padding-top: var(--cap-shift);
+}
+/* The index tag: EN / FR, 01 / 02 — the member card's small print. */
+.chooser-card-tag {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  color: var(--fg);
+  opacity: 0.45;
+  font-variant-numeric: tabular-nums;
+}
+/* The LED mosaic: an 8×3 field of squares, the lit ones in the card's ink with a faint
+   self-glow, the dark ones barely-there sockets. */
+.chooser-cells {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(8, 8px);
+  grid-auto-rows: 8px;
+  gap: 3px;
+}
+.chooser-cells i {
+  background: rgba(244, 241, 232, 0.07);
+  border-radius: 1px;
+}
+.chooser-cells i.on {
+  background: currentColor;
+  box-shadow: 0 0 7px color-mix(in srgb, currentColor 60%, transparent);
 }
 
 /* Today's status strip (width + color set inline: % on the heat ramp, full gold
@@ -741,6 +773,87 @@ button * {
   }
 }
 
+/* ===================== the device frame (2026-08-18) ===================== */
+/* The viewport as an INSTRUMENT (the /inspiration/modern board): corner brackets — the
+   focused-card selection frame, drawn around the whole app — a vertical brand rail, the
+   tagline and the day's edition serial in the bottom corners. Content floats in the
+   middle; the furniture clings to the edges. Decorative (aria-hidden), never
+   interactive, DESKTOP ONLY: a phone's viewport is all content. Sits under the header
+   (z 40 < 60); opaque full-screen dialogs simply cover it. */
+.device-frame {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  font-family: var(--ui);
+  color: var(--fg);
+}
+.df-bracket {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid rgba(244, 241, 232, 0.3);
+}
+.df-tl {
+  top: 10px;
+  left: 10px;
+  border-right: 0;
+  border-bottom: 0;
+}
+.df-tr {
+  top: 10px;
+  right: 10px;
+  border-left: 0;
+  border-bottom: 0;
+}
+.df-bl {
+  bottom: 10px;
+  left: 10px;
+  border-right: 0;
+  border-top: 0;
+}
+.df-br {
+  bottom: 10px;
+  right: 10px;
+  border-left: 0;
+  border-top: 0;
+}
+/* The vertical brand rail, reading upward along the left edge. */
+.df-edge {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%) rotate(180deg);
+  writing-mode: vertical-rl;
+  font-size: 10px;
+  font-weight: 550;
+  letter-spacing: 0.14em;
+  opacity: 0.38;
+  white-space: nowrap;
+}
+.df-cap {
+  position: absolute;
+  bottom: 12px;
+  font-size: 10px;
+  font-weight: 550;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.38;
+  white-space: nowrap;
+}
+.df-cap-left {
+  left: 34px;
+}
+.df-cap-right {
+  right: 34px;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 640px) {
+  .device-frame {
+    display: none;
+  }
+}
+
 /* --- Floating app header (redesigned 2026-07-21): NO band, NO border — the old opaque
    56px bar + its full-width progress row read as heavy chrome against the fine pixel
    art, so the header is now two floating corner groups over the playfield, arcade-HUD
@@ -843,12 +956,20 @@ button * {
 /* The screen title ("ARCHIVE", "TUTORIAL") — lives in the top-LEFT status chip, the
    same corner the game gives its percentage (decided 2026-07-21; formerly absolutely
    centered). */
+/* A screen's NAME wears the board's one emphasis gesture — the INVERTED SELECTION BOX
+   (2026-08-18, the Zaki "Visuals." highlight / the portfolio's selected list row):
+   foreground ground, background type, dead sharp. Worn by ARCHIVE, TUTORIAL and the
+   modal titles alike (ModalHeader reuses this class). */
 .topbar-title {
-  font-size: clamp(13px, 2vh, 15px);
-  font-weight: 500;
+  font-size: clamp(12px, 1.9vh, 14px);
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--fg);
+  color: var(--bg);
+  background: var(--fg);
+  padding: 5px 9px 4px;
+  border-radius: var(--r-sm);
+  text-shadow: none;
   font-variant-numeric: tabular-nums;
 }
 
@@ -2487,14 +2608,15 @@ button * {
   text-shadow: none;
   transition: filter 0.08s linear, color 0.08s linear, border-color 0.12s linear;
 }
+/* Hover INVERTS — the selection-box gesture as the interaction language of the one
+   chrome action. */
 .result-action:hover {
-  border-color: var(--line-strong);
-}
-.result-action:hover {
-  filter: brightness(1.35);
+  background: var(--fg);
+  color: var(--bg);
+  border-color: var(--fg);
 }
 .result-action:active {
-  filter: brightness(1.5);
+  filter: brightness(1.2);
 }
 .result-action.copied {
   color: var(--accent);
@@ -2831,6 +2953,7 @@ button * {
      and has to compute the same number. They are declared once so it cannot drift. */
   --kb-key: min(var(--kb-key-max), calc((100% - 9 * var(--kb-gap)) / 10));
   align-self: center;
+  position: relative; /* anchors the desktop device plate (::before) */
   width: 100%;
   max-width: 680px;
   display: flex;
@@ -2840,6 +2963,28 @@ button * {
      selects no text. */
   user-select: none;
   touch-action: manipulation;
+}
+/* The DEVICE PLATE under the keys (2026-08-18, desktop only): a hairline slab with a
+   faint cobalt edge-glow — the macropad's glowing frame, said quietly. OUT OF FLOW
+   (::before, inset past the keys) so `--kb-h` and the tray's fixed height stay exactly
+   the keys' own; the plate borrows the surrounding gaps. Hidden on phones with the
+   full-bleed keyboard. */
+.keyboard::before {
+  content: '';
+  position: absolute;
+  inset: -10px -12px;
+  z-index: -1;
+  background: rgba(14, 16, 26, 0.55);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow:
+    0 0 52px -14px rgba(24, 76, 244, 0.5),
+    inset 0 0 30px rgba(0, 0, 0, 0.35);
+}
+@media (max-width: 640px) {
+  .keyboard::before {
+    display: none;
+  }
 }
 .kb-row {
   display: flex;
@@ -2860,15 +3005,30 @@ button * {
   font-size: clamp(11px, 2.2vw, 15px);
   text-transform: uppercase;
   color: var(--fg);
-  background: var(--surface-hover); /* secondary surface; flat, no border */
+  /* KEYCAPS since 2026-08-18 (the /inspiration/modern board's Work Louder macropad):
+     each key is a dark CAP — a faint top light, a shaded bottom lip, a drop under the
+     cap — and pressing it physically depresses it. Depth in shadows only: the face
+     stays flat and sharp. */
+  background: linear-gradient(180deg, #1f2233, #14161f);
   border: 0;
+  border-radius: var(--r-lg);
+  box-shadow:
+    inset 0 1px 0 rgba(244, 241, 232, 0.09),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.38),
+    0 2px 3px rgba(0, 0, 0, 0.45);
   cursor: pointer;
   text-shadow: none;
   touch-action: manipulation;
-  transition: filter 0.08s linear, color 0.08s linear;
+  transition: filter 0.08s linear, color 0.08s linear, transform 0.05s linear,
+    box-shadow 0.05s linear;
 }
 .kb-key:not(.kb-greyed):active {
-  filter: brightness(1.35);
+  filter: brightness(1.25);
+  transform: translateY(1.5px);
+  box-shadow:
+    inset 0 1px 0 rgba(244, 241, 232, 0.05),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+    0 0 0 rgba(0, 0, 0, 0);
 }
 /* Control keys (backspace, enter) are the SAME fixed size as letters, so the last row is a
    uniform row of keys that fits the keyboard width exactly (QWERTY's last row is 10 keys —
@@ -2877,8 +3037,24 @@ button * {
 .kb-control {
   color: var(--muted);
 }
+/* ENTER is the pad's ONE coloured key (the macropad's blue "Publish" cap, in the app's
+   accent): the whole CAP lights when the input is a real word — ready to fire — and
+   falls back to a dark cap while greyed, so the board itself says "publishable". */
 .kb-enter {
-  color: var(--accent);
+  color: var(--bg);
+  background: linear-gradient(180deg, #ffa03a, var(--accent));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.25),
+    0 2px 6px rgba(245, 130, 15, 0.4);
+}
+.kb-enter.kb-greyed {
+  color: var(--muted);
+  background: linear-gradient(180deg, #1f2233, #14161f);
+  box-shadow:
+    inset 0 1px 0 rgba(244, 241, 232, 0.09),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.38),
+    0 2px 3px rgba(0, 0, 0, 0.45);
 }
 /* Control-key glyph: an inline currentColor SVG. Sized by % of the key so it tracks the
    responsive key height (desktop + mobile) with no per-breakpoint rule; the viewBox keeps
@@ -3112,7 +3288,7 @@ button * {
     height: 44px;
   }
   .chooser-card {
-    padding: 16px 18px;
+    padding: 18px;
   }
 }
 
@@ -3435,18 +3611,25 @@ button * {
   margin-bottom: 34px;
   image-rendering: pixelated;
 }
-/* The first thing a new player ever reads: the mono at a medium weight asking a
-   friendly question, over one quieter line. */
+/* The first thing a new player ever reads: a bold statement with its LAST WORDS in the
+   board's inverted selection box (the Zaki-headline highlight, 2026-08-18). */
 .invite-title {
   margin: 0;
   font-family: var(--ui);
-  font-size: clamp(20px, 3.2vh, 27px);
-  font-weight: 550;
-  line-height: 1.3;
+  font-size: clamp(22px, 3.6vh, 30px);
+  font-weight: 700;
+  line-height: 1.35;
   letter-spacing: 0.02em;
   color: var(--fg);
   text-shadow: none;
   padding-top: var(--cap-shift);
+}
+.invite-mark {
+  background: var(--fg);
+  color: var(--bg);
+  padding: 0.04em 0.22em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }
 .invite-text {
   margin: 12px auto 0;

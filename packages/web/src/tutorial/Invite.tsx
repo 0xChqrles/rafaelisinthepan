@@ -4,6 +4,22 @@ import { t } from '../i18n';
 import logo from '../assets/logo-blue.png';
 import { preloadTutorial } from './LazyTutorial';
 
+// The title's LAST WORD wears the inverted highlight box (2026-08-18, the
+// /inspiration/modern board's selection-box gesture). Split on the final space —
+// pulling one more token in when the tail is bare punctuation (French sets a space
+// before `?`, and a highlighted lone question mark reads as a typo). Pure string
+// surgery on the localized copy, so a new language needs nothing.
+function splitHighlight(title: string): [string, string] {
+  const words = title.split(' ');
+  if (words.length < 2) return ['', title];
+  let take = 1;
+  if (/^[^\p{L}\p{N}]+$/u.test(words[words.length - 1]) && words.length > 2) take = 2;
+  return [
+    words.slice(0, words.length - take).join(' ') + ' ',
+    words.slice(words.length - take).join(' '),
+  ];
+}
+
 // The tutorial invitation (#51): the tutorial NEVER starts without an action. On a
 // first visit this screen stands where LOADING would (the day's puzzle keeps loading
 // behind it) and offers the choice once — TUTORIAL starts the guided round, SKIP
@@ -29,7 +45,15 @@ export default function Invite({
     <main className="invite" aria-labelledby="tutorial-invite-title">
       <img className="invite-logo" src={logo} alt="" draggable="false" />
       <h1 id="tutorial-invite-title" className="invite-title">
-        {t(lang, 'inviteTitle')}
+        {(() => {
+          const [head, mark] = splitHighlight(t(lang, 'inviteTitle'));
+          return (
+            <>
+              {head}
+              <span className="invite-mark">{mark}</span>
+            </>
+          );
+        })()}
       </h1>
       <p className="invite-text">{t(lang, 'inviteText')}</p>
 
