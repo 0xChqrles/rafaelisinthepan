@@ -17,6 +17,13 @@ import type { Mode } from '../langs';
 // CLAIM the badge makes.
 export const PERCENT_MIN_TOTAL = 10;
 
+// And a percentage needs a rank that does NOT already answer the question (user-decided
+// 2026-08-17). `RANK #6 OF 60` names an exact position a reader takes in at a glance; a
+// percentage beside it restates in blur what the number just said outright. From two digits
+// on, the rank stops being that legible — `#37 OF 412` is a position you have to place —
+// and the percentage is what carries the standing. So the badge starts at rank 10.
+export const PERCENT_MIN_RANK = 10;
+
 // Locate a score in the API's inclusive ranges — the GET path, where the server returns
 // `bucket: null` because a revisiting client already knows its persisted score. Null for
 // a score no range holds (a malformed histogram, or a stale score after an edge retune):
@@ -38,9 +45,9 @@ export interface ScoreStanding {
   // Recorded scores today, the player's own included.
   total: number;
   // Standard percentile-rank treatment for a tie: `(strictly ahead + half the shared
-  // bucket) / total`, as a percentage. NULL when the bucket is empty, or when the
-  // population is at or below `PERCENT_MIN_TOTAL` and a percentage would be false
-  // precision.
+  // bucket) / total`, as a percentage. NULL when the bucket is empty, when the population
+  // is at or below `PERCENT_MIN_TOTAL` and a percentage would be false precision, or when
+  // the rank is a single digit and has already said it (`PERCENT_MIN_RANK`).
   topPct: number | null;
 }
 
@@ -60,17 +67,23 @@ export function scoreStanding(
   const bucketCount = buckets[bucket]?.count ?? 0;
   const rank = Math.min(total, aheadCount + 1);
   const midpoint = Math.min(total, aheadCount + bucketCount / 2);
+  // The two floors overlap (a rank of 10 already implies nine players ahead) but they gate
+  // different claims: one asks whether there is a field, the other whether the percentage
+  // adds anything to the rank beside it.
   const topPct =
-    total > PERCENT_MIN_TOTAL && bucketCount > 0 ? (100 * midpoint) / total : null;
+    total > PERCENT_MIN_TOTAL && rank >= PERCENT_MIN_RANK && bucketCount > 0
+      ? (100 * midpoint) / total
+      : null;
   return { rank, total, topPct };
 }
 
-// The TOP percentage as the badge prints it: at most two decimals, and no trailing zeros —
-// `8.47`, `12.5`, `50`. Two decimals because on a real population the leading digits are
-// the whole story ("TOP 8" and "TOP 8.47" are different claims), and stripping the zeros
-// because `50.00` reads as a machine talking.
+// The TOP percentage as the badge prints it: at most ONE decimal, and no trailing zero —
+// `8.5`, `12.5`, `50` (user-decided 2026-08-17, from two decimals). A decimal because on a
+// real population the first one still carries a claim ("TOP 8" and "TOP 8.5" are different
+// standings); only one because the second is precision nobody reads, and stripping the
+// zero because `50.0` reads as a machine talking.
 export function formatTopPct(pct: number): string {
-  return String(Math.round(pct * 100) / 100);
+  return String(Math.round(pct * 10) / 10);
 }
 
 // Whether a finished round still owes the population its score. The flag persists with
@@ -86,7 +99,10 @@ export function shouldSubmitScore(finished: boolean, submitted: boolean): boolea
 // A phone column holds the tuned sizes comfortably for a short standing and lands exactly
 // on the edge for a long one (`RANG #12 SUR 59  TOP 20.34%` measures 362px against the
 // 362px a 390px screen leaves), so the line asks for its own step down by LENGTH, in
-// addition to the width tiers in the CSS.
+// addition to the width tiers in the CSS. That measurement calibrates UNITS to pixels and
+// so outlives the badge it was taken on: the one-decimal percentage is a glyph shorter,
+// which only means the same 26 units are now reached by a longer population
+// (`RANG #12 SUR 599  TOP 20.3%`).
 //
 // The estimate is in LABEL GLYPHS: every character of the small type counts one, and the
 // rank number counts DOUBLE because it is set at twice the label size. That is all the

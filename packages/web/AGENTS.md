@@ -1479,7 +1479,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   rank is the answer already given):
 
   ```
-  RANK #6 OF 60   [ TOP 25% ]
+  RANK #16 OF 100   [ TOP 25% ]
   ```
 
   - **RANK is COMPETITION RANKING — everyone strictly ahead, plus one** (`game/scores.ts`
@@ -1491,10 +1491,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     a stale read racing a write can never rank anyone past the field they stand in.
   - **TOP uses the MIDPOINT of the shared bucket** (user-decided 2026-08-16):
     `(strictly ahead + bucket count / 2) / total`, the standard percentile-rank treatment
-    for ties. It deliberately does NOT derive from the competition rank: with 5 ahead and
-    20 in the player's bucket out of 60, the honest claims are `RANK #6 OF 60` and
-    `TOP 25%`; an all-tied field is `TOP 50%`. An empty bucket carries no badge, and a
-    stale inconsistent snapshot is capped at 100%.
+    for ties. It deliberately does NOT derive from the competition rank: with 15 ahead and
+    20 in the player's bucket out of 100, the honest claims are `RANK #16 OF 100` and
+    `TOP 25%`. An empty bucket carries no badge, and a stale inconsistent snapshot is
+    capped at 100%. (The midpoint's own all-tied answer, 50%, is no longer reachable on
+    screen: an all-tied field ranks everyone #1, which the rank gate below silences.)
   - **The RANK NUMBER is the headline**: 24px against the 12px words around it, in the
     global ACCENT — the game's own word colour. The words are `--muted`, and
     the whole phrase hangs off ONE baseline (`.score-rank-text`), since centring the small
@@ -1505,21 +1506,26 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `translate: 0 4px` for the same reason, more of it (its box is centred on the smallest
     type on the line). Whole pixels, and a `translate` rather than a margin, so nothing
     moves because of it.
-  - **TOP is a FILLED BADGE** — `--fg` ground, page-dark type (user-decided 2026-08-15,
-    superseding the gold ground: gold is the colour of what the round REACHED, and a
-    percentile is not one of its words), and the app's ONLY filled chip, which is
-    exactly why it carries weight. It has an EXPLICIT height with its ink
-    centred by flex: the pixel font overruns its own line box, so padding alone left the
-    glyph tops and tails outside the gold. (And never `calc(<length> + var(--text-shift))`
-    — that variable is a UNITLESS zero, which voids the whole declaration; the same trap
-    that silently zeroed `.word-input`'s padding.) Three details make it a stamp rather
-    than a clipped box (user-decided 2026-08-15, "very ugly"): the page's global
-    `text-shadow` is OFF on it — a drop shadow is legibility over the animated waves, and
-    inside a filled chip there is nothing to be legible against, so it only smears the type
-    against its own ground; the height is generous (30px around 10px type) rather than the
-    tightest box that fits; and the right inset is ONE PIXEL SHORT of the left, because
-    `letter-spacing` applies after the LAST glyph too and equal padding leaves the fill
-    reading off-centre around its own word.
+  - **TOP is an OUTLINED BADGE — a 1px `--fg` rule around `--fg` type, no ground at all**
+    (user-decided 2026-08-17, superseding the filled chip: a solid block of foreground
+    beside the line shouted louder than the rank it qualifies, where an outline still
+    frames the claim as a stamp). The foreground on both the rule and the type is the kept
+    half of the earlier decision (2026-08-15, superseding the gold: gold is the colour of
+    what the round REACHED, and a percentile is not one of its words). **Nothing else in
+    the badge moved** — the padding, the explicit height, the drop and the type sizes are
+    all the filled version's, and `box-sizing: border-box` is what keeps them that way:
+    the rule is drawn INSIDE the same `--top-h` box rather than growing it. It has an
+    EXPLICIT height with its ink centred by flex: the pixel font overruns its own line
+    box, so padding alone left the glyph tops and tails outside the box. (And never
+    `calc(<length> + var(--text-shift))` — that variable is a UNITLESS zero, which voids
+    the whole declaration; the same trap that silently zeroed `.word-input`'s padding.)
+    Three details make it a stamp rather than a clipped box (user-decided 2026-08-15,
+    "very ugly"): the page's global `text-shadow` is OFF on it — a drop shadow is
+    legibility for type sitting on the page itself, and inside a framed chip it only
+    smears small type against its own frame; the height is generous (30px around 10px
+    type) rather than the tightest box that fits; and the right inset is ONE PIXEL SHORT
+    of the left, because `letter-spacing` applies after the LAST glyph too and equal
+    padding leaves the box reading off-centre around its own word.
   - **The line is sized from ONE set of custom properties, in three tiers plus a trigger
     that is not a width at all.** Pixel type does not reflow and `body` is
     `overflow: hidden`, so a line that outruns its column is CUT OFF rather than scrolled
@@ -1532,9 +1538,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     - **`.tight`** — the same step down, asked for by the CONTENT: `ScoreRank` estimates
       the line's length in LABEL GLYPHS (`standingUnits` — the font is monospace, so a
       glyph count IS a width, and the number counts double at twice the label size) and
-      marks it tight past `TIGHT_STANDING_UNITS`. `RANG #12 SUR 59` + `TOP 20.34%`
+      marks it tight past `TIGHT_STANDING_UNITS`. `RANG #12 SUR 599` + `TOP 20.3%`
       measures exactly the 362px a 390px screen leaves, and one more glyph would clip, so
-      the LONG line steps down and the common one keeps the big type;
+      the LONG line steps down and the common one keeps the big type (the measurement was
+      taken on the two-decimal badge, which is a glyph longer against a shorter
+      population — it calibrates UNITS to pixels, so it survives the one-decimal cut);
     - **≤380px** — every line steps down (9 / 16 / 24px): a 320px screen holds 292px,
       which not even the short line fits at the tuned sizes.
     The slot's reserved HEIGHT is the width tier's alone and never `.tight`'s — the empty
@@ -1548,17 +1556,25 @@ it to the local store — see `packages/backend/AGENTS.md`).
     type sharing a baseline with much smaller type sits visibly HIGH against it. Whole
     pixels only, via `translate` rather than a margin: a fractional offset resamples pixel
     type (the sprites' integer-scale rule), and nothing may MOVE because of it.
-  - **The badge appears only above `PERCENT_MIN_TOTAL` (10) recorded scores**
-    (user-decided 2026-08-15, reinstating a floor after a day without one — the first cut
-    of the line had gated it at 25). Below that the rank out of the count already says
-    everything true, and `TOP 33.33%` of three players is arithmetic on a handful rather
-    than a standing. What the threshold gates is only the badge's CLAIM: the rank line
+  - **The badge is gated TWICE, and both gates only ever silence it** — the rank line
     itself is honest at every size and always drawn, so the only player of the day reads
     `RANK #1 OF 1` and nothing more. The line is SHORTER without the badge, which the
     length estimate above reads off the badge actually drawn rather than assuming one.
-  - `formatTopPct` prints at most two decimals with trailing zeros stripped (`8.47`,
-    `12.5`, `50`): on a real population the leading digits are the whole claim, and
-    `50.00` reads as a machine talking.
+    - **above `PERCENT_MIN_TOTAL` (10) recorded scores** (user-decided 2026-08-15,
+      reinstating a floor after a day without one — the first cut of the line had gated it
+      at 25): below that, `TOP 33.33%` of three players is arithmetic on a handful rather
+      than a standing;
+    - **from `PERCENT_MIN_RANK` (10) on — a SINGLE-DIGIT rank carries no percentage**
+      (user-decided 2026-08-17): `RANK #6 OF 60` names an exact position a reader takes in
+      at a glance, and a percentage beside it restates in blur what the number already
+      said outright. From two digits on the rank stops being that legible and the
+      percentage is what carries the standing. The two floors overlap (rank 10 already
+      implies nine players ahead) but gate different claims: one asks whether there is a
+      field, the other whether the percentage adds anything to the rank beside it.
+  - `formatTopPct` prints at most ONE decimal with the trailing zero stripped (`8.5`,
+    `12.5`, `50`) — user-decided 2026-08-17, from two. On a real population the first
+    decimal still carries a claim; the second is precision nobody reads, and `50.0` reads
+    as a machine talking.
   - **The slot is fixed-height and ALWAYS mounted** (the `.word-rarities` rule): the line
     arriving — or never arriving — moves nothing under it, SHARE included. It arrives on
     the app's one `rung-in` gesture; a rehydrated result renders `.settled` and replays

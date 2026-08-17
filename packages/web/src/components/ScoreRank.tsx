@@ -12,19 +12,19 @@ import type { Mode } from '../langs';
 // (user-decided 2026-08-15, replacing the brick histogram: a field of bars asks to be
 // decoded, where the rank is the answer already given).
 //
-//     RANK #6 OF 60   [ TOP 25% ]
+//     RANK #16 OF 100   [ TOP 25% ]
 //
 // The two numbers deliberately measure different things (see `scoreStanding`): the rank is
 // competition ranking, so a whole band shares it, while TOP is the midpoint of that band.
-// Five players ahead and twenty sharing the bucket is 6th out of 60 AND top quarter.
+// Fifteen players ahead and twenty sharing the bucket is 16th out of 100 AND top quarter.
 //
 // The RANK NUMBER is the line's headline — bigger than the words around it and in the
-// accent gold — and the TOP badge is a filled stamp
-// beside it, gold on the app's own background, the way an achievement reads here. The
-// badge appears only above `PERCENT_MIN_TOTAL` recorded scores (user-decided 2026-08-15):
-// below that the rank out of the count already says everything true, and a percentage of a
-// handful of players is false precision. Its ground is the page's own foreground, not the
-// gold — gold is the colour of what the player HOLDS, and a standing is not held.
+// accent gold — and the TOP badge is an outlined stamp beside it, the page's own
+// foreground drawn as a 1px rule around foreground type. The badge is gated TWICE
+// (`scoreStanding`): above `PERCENT_MIN_TOTAL` recorded scores (user-decided 2026-08-15),
+// because a percentage of a handful of players is false precision — and from
+// `PERCENT_MIN_RANK` on (user-decided 2026-08-17), because a single-digit rank has already
+// said the same thing outright and better.
 //
 // The component ALWAYS renders its fixed-height slot (the `.word-rarities` rule: hold the
 // layout space while invisible), so the line arriving — or never arriving, on a silent
@@ -53,8 +53,9 @@ export default function ScoreRank({
 
   const rankLabel = t(lang, 'scoreRank');
   const ofLabel = tn(lang, 'scoreOf', standing.total);
-  // Empty on a population too small for a percentage — which also shortens the line, so
-  // the length estimate below reads the badge that is actually drawn.
+  // Empty on a population too small for a percentage, or on a rank that already says it —
+  // which also shortens the line, so the length estimate below reads the badge that is
+  // actually drawn.
   const topLabel =
     standing.topPct === null ? '' : `${t(lang, 'scoreTop')} ${formatTopPct(standing.topPct)}%`;
   // A long standing steps the whole line down one size rather than running off a phone's

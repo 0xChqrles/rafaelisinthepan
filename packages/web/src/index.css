@@ -1649,13 +1649,14 @@ button * {
 /* ---- the day's STANDING (#170; user-decided 2026-08-15, replacing the brick histogram —
    "the histogram is actually ugly"): ONE line saying where the player placed.
 
-       RANK #6 OF 60   [ TOP 25% ]
+       RANK #16 OF 100   [ TOP 25% ]
 
    The RANK NUMBER is the headline — twice the words around it and in the brand accent, the
-   colour of what the round found — and TOP is a filled STAMP beside it, gold with the
-   page's own background punched out of it, which is how an achievement reads here (no
-   other chip in the app is filled, which is exactly why this one carries weight). The
-   slot keeps a fixed height so the line's arrival moves nothing under it. */
+   colour of what the round found — and TOP is an OUTLINED stamp beside it: a 1px rule and
+   its type both in the page's own foreground, no ground at all (user-decided 2026-08-17,
+   superseding the filled chip). The badge only shows up beside a rank of TEN or more — a
+   single-digit rank already says the same thing better (`scoreStanding`). The slot keeps a
+   fixed height so the line's arrival moves nothing under it. */
 /* The STANDING line, sized from ONE set of custom properties so a tier is a list of
    values rather than a second copy of the rules. Three tiers, and a fourth trigger that is
    not a width at all:
@@ -1665,7 +1666,7 @@ button * {
                        column and the scaled-up line wants ~430;
      - .tight          the same step down, asked for by the CONTENT rather than the
                        viewport — see ScoreRank: pixel type does not reflow, so a long
-                       standing (`RANG #12 SUR 59` + `TOP 20.34%` = 362px) lands exactly on
+                       standing (`RANG #12 SUR 599` + `TOP 20.3%` = 362px) lands exactly on
                        a 390px phone's budget, and one more glyph would be CUT OFF (`body`
                        is `overflow: hidden`, so it clips rather than scrolls). Stepping the
                        long line down keeps the big type for the common one;
@@ -1717,13 +1718,15 @@ button * {
   color: var(--accent);
   translate: 0 var(--rank-num-drop);
 }
-/* The one FILLED badge in the app: PAGE-LIGHT ground, page-dark type (user-decided
-   2026-08-15, superseding the gold — gold is the colour of what the player HOLDS, and a
-   standing is not held; the plain foreground says "printed here" and leaves the blue rank
-   as the line's only colour), and the only filled chip anywhere, which is exactly why it
-   carries weight. Its height is EXPLICIT and the ink is centred by flex: the pixel font
+/* An OUTLINED badge: no ground at all, a 1px `--fg` rule around `--fg` type (user-decided
+   2026-08-17, superseding the filled stamp — a solid block of foreground beside the line
+   shouted louder than the rank it qualifies; the outline still frames the claim as a stamp
+   while leaving the accent rank as the line's only weight). The foreground is deliberately
+   kept on both the rule and the type (user-decided 2026-08-15, superseding the gold — gold
+   is the colour of what the player HOLDS, and a standing is not held).
+   Its height is EXPLICIT and the ink is centred by flex: the pixel font
    overruns its own line box, so padding alone left the glyph tops and tails outside the
-   fill. (And never `calc(<len> + var(--text-shift))` — that variable is a UNITLESS zero,
+   rule. (And never `calc(<len> + var(--text-shift))` — that variable is a UNITLESS zero,
    which voids the whole declaration; the same trap that silently zeroed `.word-input`'s
    padding.) The box is generous on purpose: a chip crowding its own type reads as a
    clipped box rather than as a stamp. It rides below the line's middle for the number's
@@ -1731,17 +1734,19 @@ button * {
    against that reads high.
    The right inset is ONE PIXEL SHORT of the left, which is not a typo — `letter-spacing`
    is applied AFTER the last glyph too, so equal padding puts 1px more air on the right and
-   the fill reads off-centre around its own word.
-   And the page's global `text-shadow` is OFF: a dark drop shadow is legibility over the
-   animated waves, and inside a filled chip there is nothing to be legible against — it
-   only smears the type against its own ground. */
+   the box reads off-centre around its own word. The padding is unchanged from the filled
+   version, and `box-sizing: border-box` is what keeps it that way: the rule is drawn
+   INSIDE the same `--top-h` box rather than growing it.
+   And the page's global `text-shadow` stays OFF, as it was under the fill: a drop shadow
+   is legibility for type sitting on the page itself, and inside a framed chip it only
+   smears small type against its own frame. */
 .score-top {
   display: inline-flex;
   align-items: center;
   height: var(--top-h);
   padding: 0 calc(var(--top-pad) - 1px) 0 var(--top-pad);
-  background: var(--fg);
-  color: var(--bg);
+  border: 1px solid var(--fg);
+  color: var(--fg);
   font-size: var(--top-size);
   line-height: 1;
   letter-spacing: 1px;
