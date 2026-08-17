@@ -1869,13 +1869,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   glyph, 3×/2× its native 22px — language-neutral, and the app's ONE in-app branding
   spot), NOT a "select language" title (the cards self-explain, and a title would
   have to guess the user's language on the screen where it is unknown). One **card**
-  per option — full-opacity art + its name — in a vertical list that scales to any number
-  of them, with the app's standard brighten-on-hover/press (no dimmed art). Languages show
-  a flag + the language's **native** name (`LANGS[].native`; never translated); modes show
-  the 7×7 sprite + a localized name (`modeSentence`/`modeWord`). Card art takes an exact
-  INTEGER scale — 2× for the 16×16 flags, 4× (`.mode-sprite`) for the 7×7 mode icons —
-  because a fractional one leaves some source pixels a row wider than others, which
-  `image-rendering: pixelated` cannot fix.
+  per option — the NAME alone, centred (user-decided 2026-08-17: the card art went with
+  the electric identity — the 16×16 flags and the 7×7 mode sprites are deleted, assets
+  included, and `Flag.tsx` with its last consumer) — in a vertical list that scales to
+  any number of them, with the app's standard brighten-on-hover/press. Languages show
+  the language's **native** name (`LANGS[].native`; never translated); modes a localized
+  name (`modeSentence`/`modeWord`).
   The old NEW/%/✓ badges are gone: today's status is a thin **strip on the card's
   bottom edge** — absent = not started, partial = progress on the progress
   ramp, full **gold** = solved / done for the day (the solved-word gold). The card's

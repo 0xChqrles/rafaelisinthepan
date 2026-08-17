@@ -39,17 +39,16 @@ function StatusStrip({ status }: { status: CardStatus }) {
   );
 }
 
-// One option. `icon` is the caller's own element (a flag, a mode sprite) so each chooser
-// keeps its own art without this component knowing what art means.
+// One option: just the NAME, centred (user-decided 2026-08-17, dropping the card art —
+// the flags and the 7×7 mode sprites went with the electric identity, and the names
+// self-explain), over the status strip on the bottom edge.
 export function ChooserCard({
   name,
-  icon,
   status,
   uiLang,
   onClick,
 }: {
   name: string;
-  icon: ReactNode;
   status: Status;
   // The chrome language for the spoken status — a chooser has no puzzle to take one from,
   // so its screen resolves it the same way the `/` redirect does.
@@ -63,7 +62,6 @@ export function ChooserCard({
       aria-label={`${name}${srStatus(uiLang, status)}`}
       onClick={onClick}
     >
-      {icon}
       <span className="chooser-card-name">{name}</span>
       <StatusStrip status={status} />
     </button>

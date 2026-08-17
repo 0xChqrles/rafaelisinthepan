@@ -280,7 +280,7 @@ button * {
   overflow: hidden; /* keeps the status strip inside the tile */
   display: flex;
   align-items: center;
-  gap: 20px;
+  justify-content: center; /* text-only cards since 2026-08-17 — the name IS the card */
   padding: 18px 22px;
   background: var(--surface-hover);
   border: 0;
@@ -293,21 +293,6 @@ button * {
 }
 .chooser-card:active {
   filter: brightness(1.35);
-}
-
-/* A card's option art at an exact INTEGER scale — a fractional one leaves some source
-   pixels a row wider than others, which `pixelated` cannot fix. The default fits the
-   16x16 flags at 2x (32px); the 7x7 mode sprites take their own 4x (28px), the nearest
-   integer scale to it, so the two choosers read at the same optical size. */
-.chooser-card-icon {
-  display: block;
-  width: 32px;
-  height: 32px;
-  image-rendering: pixelated;
-}
-.chooser-card-icon.mode-sprite {
-  width: 28px;
-  height: 28px;
 }
 
 .chooser-card-name {
@@ -2916,7 +2901,6 @@ button * {
   }
   .chooser-card {
     padding: 16px 18px;
-    gap: 16px;
   }
 }
 

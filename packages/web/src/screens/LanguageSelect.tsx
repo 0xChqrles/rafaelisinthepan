@@ -1,4 +1,3 @@
-import Flag from '../components/Flag';
 import Chooser, { ChooserCard } from '../components/Chooser';
 import { LANGS, pathForMode, resolveHomeLang } from '../langs';
 import { navigate } from '../routing';
@@ -9,8 +8,9 @@ import { statusOf, wordStatusOf } from '../state/status';
 
 // The language chooser (/select), reached from the header globe on every screen — the
 // game AND the tutorial (whose transient open-state survives the round-trip, so picking
-// a language returns into it). One card per language: full-opacity flag + the language's
-// NATIVE name, in a list that scales to any number of languages. The per-(day,lang)
+// a language returns into it). One card per language: the language's NATIVE name,
+// centred (the flags left with the card art, 2026-08-17 — Flag.tsx and the flag PNGs
+// deleted with their last consumer), in a list that scales to any number of languages. The per-(day,lang)
 // persist keeps each language's in-progress state, so switching needs no confirmation.
 // The screen itself is the shared `Chooser` — see it for the shell and the card.
 export default function LanguageSelect() {
@@ -39,7 +39,6 @@ export default function LanguageSelect() {
           key={code}
           name={native}
           uiLang={uiLang}
-          icon={<Flag code={code} className="chooser-card-icon" />}
           status={
             mode === 'word'
               ? wordStatusOf(wordRounds[roundKeyForDay(dayNumber, code, 'word')])
