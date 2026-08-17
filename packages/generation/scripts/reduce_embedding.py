@@ -25,15 +25,16 @@ of the embedding is).
 Rules (first one that matches = reason a word is dropped):
   1. single-letter  : the word is a single letter (counted by character, so "à"/"é" count as one)
   2. stopword       : function word
-  3. hors-dico      : the word is not in the language's reference wordlist
+  3. hors-dico      : the word is in neither the reference wordlist nor exact allowlist
 
-The hors-dico rule (rule 3) does the heavy lifting: it drops anything that is not an
-entry in wordlist/<lang>.txt.gz — which, since that list is lowercase and letters+hyphens
-only (see build_wordlist.py), subsumes what dedicated "uppercase" and "non-alphabet"
-rules used to do (an uppercase or digit/markup token simply isn't in the list). The two
-morphological rules that REMAIN are the ones hors-dico can't cover, because their targets
-ARE valid dictionary entries: single letters ("a".."z" ship in Hunspell/SCOWL) and
-stopwords. There is NO frequency exemption — hors-dico applies to every word.
+The hors-dico rule (rule 3) does the heavy lifting: it drops anything that is neither an
+entry in wordlist/<lang>.txt.gz nor an exact language-specific allowlist entry — which,
+since both sets are lowercase and letters+hyphens only, subsumes what dedicated
+"uppercase" and "non-alphabet" rules used to do (an uppercase or digit/markup token
+simply isn't in either set). The two morphological rules that REMAIN are the ones
+hors-dico can't cover, because their targets ARE valid dictionary entries: single letters
+("a".."z" ship in Hunspell/SCOWL) and stopwords. There is NO frequency exemption — the
+dictionary-or-allowlist check applies to every word.
 
 Format: if the source has a "<count> <dim>" header, the output has one too, recalculated
 to the number of surviving words. If the source has none (e.g. GloVe .txt), the output
@@ -84,6 +85,14 @@ STOPWORDS = {
         "elles", "nous", "vous", "je", "tu", "me", "te", "mon", "ma", "mes", "ton",
         "ta", "tes", "est", "sont", "était", "été", "être", "avoir", "comme", "mais",
     },
+}
+
+# Deliberate non-dictionary vocabulary, matched exactly against the raw embedding token.
+# Keep this narrow: it is an exception to hors-dico only, not to the earlier morphological
+# rules, and lowercase matching avoids retaining duplicate case variants from fastText.
+HORS_DICO_ALLOWLIST = {
+    "en": frozenset(),
+    "fr": frozenset({"rolex"}),
 }
 
 SAMPLE_CAP = 12  # examples kept per rule — exactly what the report prints
@@ -221,8 +230,11 @@ def main():
                     samples[rule].append(word)
                 continue
             # hors-dico (rule 3), applied LAST to EVERY survivor: reject words absent from
-            # the reference wordlist (no frequency exemption).
-            if dico is not None and word not in dico:
+            # both the reference wordlist and the language-specific exact allowlist (no
+            # frequency exemption).
+            if (dico is not None
+                    and word not in dico
+                    and word not in HORS_DICO_ALLOWLIST[args.lang]):
                 by_rule["hors-dico"] += 1
                 if len(samples["hors-dico"]) < SAMPLE_CAP:
                     samples["hors-dico"].append(word)

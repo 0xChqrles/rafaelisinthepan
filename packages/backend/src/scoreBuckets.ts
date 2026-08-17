@@ -13,7 +13,7 @@ export type ScoreMode = 'sentence' | 'word';
 // make the backend reject a newly possible score.
 export const SENTENCE_SCORE_MAX_BY_LANG: Readonly<Record<string, number>> = {
   en: 75_125,
-  fr: 127_783,
+  fr: 127_784,
 };
 
 // Word mode can claim at most the top 1,000 ranked groups. Kept server-side because it is

@@ -1,7 +1,7 @@
 """CONTRACT: reduce_embedding.py is the ONLY filter+cap stage (AGENTS.md "Pipeline").
 
   - rejection rules, in order: single-letter -> stopword -> hors-dico (rule 3, runs LAST
-    on EVERY survivor — no frequency exemption);
+    on EVERY survivor — exact language allowlist aside, no exemption);
   - the two morphological rules cover only what hors-dico can't (single letters and
     stopwords are valid dictionary entries); uppercase / non-alphabet tokens need no
     dedicated rule — they simply aren't in the lowercase, letters+hyphens wordlist, so
@@ -178,9 +178,9 @@ def test_hors_dico_rejects_noise_keeps_inflected_forms(monkeypatch, tmp_path):
         assert absent not in kept
 
 
-def test_hors_dico_applies_to_every_survivor_no_exemption(monkeypatch, tmp_path):
-    # Even the very FIRST (most frequent) out-of-dico token is rejected: there is no
-    # frequency exemption. gksudo leads the file yet is still dropped.
+def test_hors_dico_applies_to_every_non_allowlisted_survivor(monkeypatch, tmp_path):
+    # Even the very FIRST (most frequent) out-of-dico, non-allowlisted token is rejected:
+    # there is no frequency exemption. gksudo leads the file yet is still dropped.
     lines = [
         "gksudo 0 0\n",     # most frequent, absent -> STILL hors-dico rejected
         "forêt 0 0\n",      # in dico -> keep
@@ -190,6 +190,21 @@ def test_hors_dico_applies_to_every_survivor_no_exemption(monkeypatch, tmp_path)
     kept = _run_dico(monkeypatch, tmp_path, lines)
     assert kept == ["forêt", "chevaux"]
     assert "gksudo" not in kept
+
+
+def test_hors_dico_allowlist_keeps_only_the_exact_language_entry(monkeypatch, tmp_path):
+    # The French raw embedding contains several case variants. Only the deliberately
+    # allowlisted lowercase token survives; the exception neither folds nor lowercases.
+    lines = [
+        "Rolex 0 0\n",     # not an exact allowlist entry -> hors-dico
+        "rolex 0 0\n",     # absent from dico, explicitly allowlisted for fr -> keep
+        "gksudo 0 0\n",    # absent and not allowlisted -> hors-dico
+        "forêt 0 0\n",     # in dico -> keep
+    ]
+    assert _run_dico(monkeypatch, tmp_path, lines) == ["rolex", "forêt"]
+
+    # The exception is language-specific: the same custom dico does not admit it for en.
+    assert _run_dico(monkeypatch, tmp_path, ["rolex 0 0\n"], lang="en") == []
 
 
 def test_stopword_wins_over_hors_dico_which_runs_last(monkeypatch, tmp_path, capsys):
