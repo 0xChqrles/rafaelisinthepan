@@ -1005,13 +1005,21 @@ button * {
    word — the ink rendered as printed light, the Séance-poster read. ONE wide layer
    only, clear of the letterforms (the readability rule learned on the exponents), in em
    so it scales with each surface's own size. The `.phrase .hole-btn *` black shadow
-   would beat the bare class inside a hole button, so the boosted selector restates it
-   at winning specificity. */
+   would beat the bare class inside a hole button, so the boosted selectors restate it
+   at winning specificity — and the rule must reach the `.hole-letter` CHILDREN, not
+   just the word box: the glyphs all live in per-letter spans (the wave's structure),
+   and the button rules (`.phrase .hole-btn *` black, `button *` none) hit those
+   children DIRECTLY, which beats any inherited shadow regardless of specificity
+   (found when the first cut produced no visible glow at all). Stacked twice for
+   presence — two wide layers deepen the aura without touching the glyph edges. */
 .hole-word,
-.phrase .hole-btn .hole-word,
+.hole-word .hole-letter,
+.phrase .hole-btn .hole-word .hole-letter,
 .solved-word-text,
-.word-subject-text {
-  text-shadow: 0 0 0.4em currentColor;
+.solved-word-text .hole-letter,
+.word-subject-text,
+.word-subject-text .hole-letter {
+  text-shadow: 0 0 0.35em currentColor, 0 0 0.35em currentColor;
 }
 /* Rank decrease: the exponent rolls toward its new value (see useAnimatedNumber)
    and uses the same quick scale/unscale hop as the tutorial. */
