@@ -1030,17 +1030,21 @@ button * {
 }
 /* THE WORDS ARE PRINTED WITH A VERTICAL INK GRADIENT (user-decided 2026-08-17; pushed
    VIVID on review the same day — the first cut, currentColor 15% into 70%-black, was
-   invisible at word size): each glyph runs from a bright white-lifted tint at the top
-   into a clearly darker shade of the same ink at the bottom — the letter as a lit
-   object, the poster read. Driven by currentColor, so the pale draft, the inked solve
-   and the struck word's grade colour each derive their OWN tint and shade with no
-   per-state rules. Applied per LETTER (the wave's spans), which a VERTICAL gradient is
-   indifferent to — every letter spans the same rows, so the fade is identical across
-   them. `-webkit-text-fill-color: transparent` (not `color`) keeps currentColor alive
-   for the gradient itself, the glow above and the blank line. Guarded: without
-   background-clip support, transparent fill over an unclipped gradient would render
-   solid bars. */
-@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+   invisible at word size; the black bottom then read "just dark, quite ugly" on the pale
+   draft, same review): each glyph runs from a bright white-lifted tint at the top into
+   a DEEPER, MORE SATURATED shade of the same ink at the bottom — the letter as a lit
+   object, the poster read. The deep end is authored in OKLCH: lightness down, CHROMA UP,
+   hue held — a pale ink's "darker" is a richer blue, never the grey-slate that mixing
+   toward black produces (that is why it is not a color-mix). Driven by currentColor, so
+   the pale draft, the inked solve and the struck word's grade colour each derive their
+   OWN tint and shade with no per-state rules. Applied per LETTER (the wave's spans),
+   which a VERTICAL gradient is indifferent to — every letter spans the same rows, so
+   the fade is identical across them. `-webkit-text-fill-color: transparent` (not
+   `color`) keeps currentColor alive for the gradient itself, the glow above and the
+   blank line. Guarded on both features it needs: without background-clip support,
+   transparent fill over an unclipped gradient would render solid bars. */
+@supports ((-webkit-background-clip: text) or (background-clip: text)) and
+  (color: oklch(from red calc(l - 0.1) calc(c + 0.1) h)) {
   .hole-word .hole-letter,
   .solved-word-text .hole-letter,
   .word-subject-text .hole-letter {
@@ -1048,7 +1052,7 @@ button * {
       to bottom,
       color-mix(in srgb, currentColor 55%, white),
       currentColor 45%,
-      color-mix(in srgb, currentColor 55%, black)
+      oklch(from currentColor calc(l - 0.22) calc(c + 0.06) h)
     );
     -webkit-background-clip: text;
     background-clip: text;
