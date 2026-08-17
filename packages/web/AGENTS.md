@@ -1953,7 +1953,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     icons** (ISC; user-picked the same day) restated in the repo's own dress as the
     **`.ui-icon` stroke set** — `viewBox="0 0 24 24"`, `fill="none"`,
     `stroke="currentColor"`, `stroke-width="1.8"` (Lucide's 2 thinned to match the
-    hairline chrome), round caps/joins, in-file `width`/`height` (22px). A new chrome
+    hairline chrome), round caps/joins, in-file `width`/`height` (28px, sized against the 32px pixel mark beside them). A new chrome
     icon starts from the Lucide glyph of that name. PIXEL icons
     survive only on the PLAY surface: the on-screen keyboard's enter/back glyphs —
     orthogonal pixel art (integer grid, no diagonals, the 2026-07-08 rules), sized by

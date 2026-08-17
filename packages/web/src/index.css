@@ -217,7 +217,7 @@ button * {
 
 .status {
   font-family: var(--ui);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--accent);
   letter-spacing: 0.14em;
@@ -248,7 +248,7 @@ button * {
   max-width: 44ch;
   text-align: center;
   font-family: var(--ui);
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.6;
   color: var(--muted);
 }
@@ -417,7 +417,7 @@ button * {
 /* The name in the DISPLAY serif — the option is the headline of its own card. */
 .chooser-card-name {
   font-family: var(--display);
-  font-size: clamp(24px, 3.4vh, 30px);
+  font-size: clamp(28px, 4vh, 34px);
   line-height: 1.1;
   letter-spacing: 0.01em;
   color: var(--fg);
@@ -471,7 +471,7 @@ button * {
   image-rendering: pixelated;
 }
 .archive-streak-count {
-  font-size: 40px;
+  font-size: 46px;
   line-height: 1;
   font-variant-numeric: tabular-nums;
   /* Optical correction: the flame's visual mass sits low. */
@@ -492,7 +492,7 @@ button * {
   /* The month is the page's headline — the display serif, no uppercase: a serif shouts
      nothing (the locale's own capitalisation stands). */
   font-family: var(--display);
-  font-size: clamp(20px, 3vh, 24px);
+  font-size: clamp(24px, 3.6vh, 30px);
   letter-spacing: 0.01em;
   color: var(--fg);
   padding-top: var(--cap-shift);
@@ -533,7 +533,7 @@ button * {
   align-items: center;
   justify-content: center;
   font-family: var(--ui);
-  font-size: clamp(9px, 2vw, 11px);
+  font-size: clamp(11px, 2.4vw, 12px);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -603,7 +603,7 @@ button * {
 .cal-day-num {
   position: relative; /* above the ripple */
   z-index: 1;
-  font-size: clamp(12px, 2.75vw, 15px);
+  font-size: clamp(14px, 3.2vw, 17px);
   font-weight: 550;
   padding-top: var(--cap-shift);
   font-variant-numeric: tabular-nums;
@@ -887,7 +887,7 @@ button * {
    same corner the game gives its percentage (decided 2026-07-21; formerly absolutely
    centered). */
 .topbar-title {
-  font-size: clamp(11px, 1.7vh, 13px);
+  font-size: clamp(13px, 2vh, 15px);
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -933,7 +933,7 @@ button * {
    opposite. At 320px that leaves ~132px, so the mobile step below is 10px with no tracking
    (exactly 100px of ink) — measured at 320/360/390/430. */
 .puzzle-date {
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1;
   font-weight: 550;
   letter-spacing: 0.1em;
@@ -1462,7 +1462,7 @@ button * {
      accent: gold over muted is what ranks the two lines. */
   font-family: var(--display);
   font-style: italic;
-  font-size: clamp(20px, 2.6vw, 26px);
+  font-size: clamp(24px, 3.2vw, 32px);
   line-height: 1.35;
   color: var(--accent);
   letter-spacing: 0.01em;
@@ -1474,7 +1474,7 @@ button * {
 .solved-by {
   margin: -2px 0 0;
   font-family: var(--ui);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 550;
   line-height: 1.5;
   color: var(--muted);
@@ -1636,7 +1636,7 @@ button * {
 }
 .solved-word-num {
   font-family: var(--ui);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--muted);
   margin-right: 7px;
@@ -1692,7 +1692,7 @@ button * {
   position: relative;
   display: inline-block;
   font-family: var(--display);
-  font-size: clamp(44px, 6.4vh, 60px);
+  font-size: clamp(52px, 7.6vh, 72px);
   line-height: 1;
   color: var(--fg);
   font-variant-numeric: tabular-nums;
@@ -1706,7 +1706,7 @@ button * {
   text-align: right;
 }
 .solved-score-unit {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.22em;
   line-height: 1;
@@ -1806,7 +1806,7 @@ button * {
   align-items: center;
   gap: 2px;
   font-family: var(--ui);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 650;
   line-height: 1;
   color: var(--fg);
@@ -1838,12 +1838,12 @@ button * {
      - <= 380px        every line steps down: a 320px screen holds 292px, which not even
                        the short line fits at the tuned sizes. */
 .score-slot {
-  --rank-label: 13px;
-  --rank-num: 30px;
+  --rank-label: 16px;
+  --rank-num: 36px;
   --rank-num-drop: 1px;
-  --top-h: 32px;
-  --top-size: 11px;
-  --top-pad: 14px;
+  --top-h: 36px;
+  --top-size: 13px;
+  --top-pad: 16px;
   --top-drop: 0px;
   --rank-gap: 22px;
   --slot-h: 48px;
@@ -1913,23 +1913,23 @@ button * {
 }
 @media (max-width: 600px) {
   .score-slot {
-    --rank-label: 12px;
-    --rank-num: 26px;
+    --rank-label: 14px;
+    --rank-num: 30px;
     --rank-num-drop: 1px;
-    --top-h: 28px;
-    --top-size: 10px;
-    --top-pad: 12px;
+    --top-h: 32px;
+    --top-size: 12px;
+    --top-pad: 14px;
     --top-drop: 0px;
     --rank-gap: 18px;
     --slot-h: 40px;
   }
   .score-slot.tight {
-    --rank-label: 10px;
-    --rank-num: 19px;
+    --rank-label: 12px;
+    --rank-num: 22px;
     --rank-num-drop: 0px;
-    --top-h: 24px;
-    --top-size: 9px;
-    --top-pad: 10px;
+    --top-h: 26px;
+    --top-size: 10px;
+    --top-pad: 12px;
     --rank-gap: 12px;
     /* NOT --slot-h: the empty slot is reserved before the population has answered, so it
        cannot know whether the line it is holding space for will be a tight one. The height
@@ -1942,12 +1942,12 @@ button * {
 @media (max-width: 380px) {
   .score-slot,
   .score-slot.tight {
-    --rank-label: 10px;
-    --rank-num: 19px;
+    --rank-label: 12px;
+    --rank-num: 22px;
     --rank-num-drop: 0px;
-    --top-h: 24px;
-    --top-size: 9px;
-    --top-pad: 10px;
+    --top-h: 26px;
+    --top-size: 10px;
+    --top-pad: 12px;
     --top-drop: 0px;
     --rank-gap: 12px;
     --slot-h: 32px;
@@ -2518,15 +2518,15 @@ button * {
 .result-action {
   min-width: 180px;
   font-family: var(--ui);
-  font-size: clamp(12px, 1.6vh, 13px);
+  font-size: clamp(14px, 1.9vh, 16px);
   font-weight: 600;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--fg);
   background: var(--glass);
   border: 1px solid var(--line);
   border-radius: 999px;
-  padding: 14px 28px;
+  padding: 16px 32px;
   cursor: pointer;
   text-shadow: none;
   transition: filter 0.08s linear, color 0.08s linear, border-color 0.12s linear;
@@ -2659,7 +2659,7 @@ button * {
    lie about the target being local and show an unwanted focus ring. */
 .streak-hint {
   font-family: var(--ui);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -2763,7 +2763,7 @@ button * {
 .streak-label {
   margin: 0;
   font-family: var(--ui);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.24em;
   text-transform: uppercase;
@@ -2788,7 +2788,7 @@ button * {
 }
 .week-label {
   font-family: var(--ui);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   line-height: 1;
   color: var(--muted);
@@ -2968,10 +2968,10 @@ button * {
    top-light gradient on the stamp orange, and a soft orange bloom lifting it off the
    ground. Interaction stays brightness-only, the app's one language. */
 .btn-primary {
-  padding: 16px 30px;
-  font-size: clamp(13px, 1.8vh, 15px);
+  padding: 19px 30px;
+  font-size: clamp(16px, 2.2vh, 18px);
   font-weight: 650;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--bg);
   background: linear-gradient(180deg, #ffa03a, var(--accent));
@@ -2986,7 +2986,7 @@ button * {
 /* Secondary: simple text, no fill. */
 .btn-secondary {
   padding: calc(4px + var(--cap-shift)) 8px calc(4px - var(--cap-shift));
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -3073,7 +3073,7 @@ button * {
      tracking given back keeps the whole string beside the right group at 320px (the
      grotesk is proportional, so this is roomier than the pixel budget ever was). */
   .puzzle-date {
-    font-size: 11px;
+    font-size: 12px;
     letter-spacing: 0.04em;
   }
 
@@ -3210,8 +3210,9 @@ button * {
 .tutorial {
   max-width: 680px;
   /* Clear the floating chip row + coach box, so the centered word never rides under
-     them. Tracks the coach's height: 64px top + 3 lines + its padding + a breath. */
-  padding-top: 200px;
+     them. Tracks the coach's height: 64px top + 3 lines + its padding + a breath
+     (retuned with the 19px coach type, 2026-08-18). */
+  padding-top: 216px;
 }
 
 /* The concept stage is CLEAN: explanation on top, ONE big centered word in the
@@ -3251,12 +3252,12 @@ button * {
 .coach-text {
   margin: 0;
   font-family: var(--ui);
-  font-size: clamp(14px, 2vh, 16px);
-  line-height: 1.8;
+  font-size: clamp(16px, 2.4vh, 19px);
+  line-height: 1.7;
   /* EXACTLY three lines, top-aligned — the box is a fixed dialog window, not a
      balloon. Copy that wraps past three lines is a COPY bug (too much to read);
      the overflow clip makes that mistake visible instead of growing the box. */
-  height: 5.4em; /* 3 lines × line-height 1.8 */
+  height: 5.1em; /* 3 lines × line-height 1.7 */
   overflow: hidden;
   color: var(--fg);
   text-shadow: none;
@@ -3330,8 +3331,8 @@ button * {
   align-items: baseline;
   font-family: var(--ui);
   font-weight: 700;
-  /* 13 / 16 / 19 / 22 / 25px across the five steps. */
-  font-size: calc(13px + var(--step, 0) * 3px);
+  /* 15 / 18 / 21 / 24 / 27px across the five steps. */
+  font-size: calc(15px + var(--step, 0) * 3px);
   letter-spacing: 0.1em;
   animation: rung-in 200ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
   animation-delay: calc(var(--step, 0) * 140ms);
@@ -3383,16 +3384,16 @@ button * {
   width: 100%;
   max-width: 680px; /* the keyboard's max-width — same interaction footprint */
   font-family: var(--ui);
-  font-size: clamp(13px, 1.8vh, 15px);
+  font-size: clamp(16px, 2.2vh, 18px);
   font-weight: 650;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--bg);
   background: linear-gradient(180deg, #ffa03a, var(--accent));
   border: 0;
   border-radius: var(--r-md);
   box-shadow: 0 12px 36px -14px rgba(245, 130, 15, 0.55);
-  padding: 16px 30px;
+  padding: 19px 30px;
   cursor: pointer;
   text-shadow: none;
   transition: filter 0.08s linear, opacity 0.08s linear;
@@ -3433,7 +3434,7 @@ button * {
      at these sizes it measures ~286px against the 292 a 320px screen offers (VT323
      advances exactly 1em/glyph, so this is arithmetic, not hope). */
   .rarity-rung {
-    font-size: calc(12px + var(--step, 0) * 2px);
+    font-size: calc(13px + var(--step, 0) * 2px);
     column-gap: 10px;
   }
   .rarity-example {
@@ -3442,7 +3443,7 @@ button * {
     font-size: 14px;
   }
   .coach-text {
-    font-size: 12px; /* 3-line height scales with it (6em) */
+    font-size: 15px; /* 3-line height scales with it (5.1em) */
   }
   /* Clear the compact chip row + coach (56px top + 3 lines + its padding + a breath). */
   .tutorial {
@@ -3491,7 +3492,7 @@ button * {
   margin: 12px auto 0;
   max-width: 40ch;
   font-family: var(--ui);
-  font-size: 14px;
+  font-size: 17px;
   line-height: 1.6;
   color: var(--muted);
   text-shadow: none;
@@ -3508,7 +3509,7 @@ button * {
   width: 100%;
 }
 .invite-actions .btn-secondary {
-  font-size: 12px;
+  font-size: 14px;
 }
 
 @media (max-width: 640px) {
@@ -3687,7 +3688,7 @@ button * {
   gap: clamp(14px, 2.6vw, 22px);
   margin-top: clamp(6px, 1.2vh, 12px); /* a seam above the score's own rhythm: detail, not headline */
   font-family: var(--ui);
-  font-size: clamp(14px, 2.2vh, 17px);
+  font-size: clamp(16px, 2.4vh, 19px);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
