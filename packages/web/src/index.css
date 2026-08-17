@@ -1010,8 +1010,8 @@ button * {
    just the word box: the glyphs all live in per-letter spans (the wave's structure),
    and the button rules (`.phrase .hole-btn *` black, `button *` none) hit those
    children DIRECTLY, which beats any inherited shadow regardless of specificity
-   (found when the first cut produced no visible glow at all). Stacked twice for
-   presence — two wide layers deepen the aura without touching the glyph edges. */
+   (found when the first cut produced no visible glow at all). ONE wide layer — a
+   stacked double was tried and read as bloom, not a breath. */
 .hole-word,
 .hole-word .hole-letter,
 .phrase .hole-btn .hole-word .hole-letter,
@@ -1019,7 +1019,7 @@ button * {
 .solved-word-text .hole-letter,
 .word-subject-text,
 .word-subject-text .hole-letter {
-  text-shadow: 0 0 0.35em currentColor, 0 0 0.35em currentColor;
+  text-shadow: 0 0 0.3em currentColor;
 }
 /* Rank decrease: the exponent rolls toward its new value (see useAnimatedNumber)
    and uses the same quick scale/unscale hop as the tutorial. */
