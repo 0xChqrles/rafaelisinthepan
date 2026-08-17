@@ -68,7 +68,12 @@
      the peace the scale runs toward. */
   --hole: #aec1ff; /* the pale draft */
   --solve: #4a6aff; /* the cobalt ink — peace restored (poster-sampled family; the raw #184cf4 is a GLOW colour, too dim for text) */
-  --accent: #f5820f; /* the BRAND accent: the poster's own orange — chrome, rewards, the credit headline; never a scale value, never a word state */
+  /* The BRAND accent went VIOLET (user-decided 2026-08-18: the orange is gone — "keep
+     the blue/violet palette for all accent and actions"): the poster's violet orb
+     lifted to text contrast (≥4.5:1 on --bg), sitting clearly apart from the solve
+     cobalt, the pale hole blue, RARE's cyan and OBSCURE's pinker #b164f2. Chrome,
+     rewards, the credit headline; never a scale value, never a word state. */
+  --accent: #8f7bff;
   --danger: #f04e63;
   --muted: #b0aca4; /* warm grey — paper-toned */
   --flame: #4642e8; /* streak flame indigo — the sprite's body color (#74); milestone tiers swap it */
@@ -124,7 +129,7 @@ body {
      waves; the ambiance layers deepened the same day): a print GROUND built from three
      static layers — the fine HALFTONE DOT matrix (one soft paper dot per --cell), a faint
      cobalt SKY GLOW washing down from the top edge plus two faint corner ORBS — violet
-     and orange, the Séance poster's own inks, sampled (#184cf4 / #8b45ea / #f58107) —
+     and cobalt (the orange orb left with the orange accent, 2026-08-18) —
      and the poster-black ground. ONE halftone texture and the radial glows are the whole
      ambiance (user-tuned 2026-08-17: a film-grain overlay and an edge dot-vignette each
      lived here for a few hours and were both removed on review — the single dither plus
@@ -134,7 +139,7 @@ body {
       var(--cell),
     radial-gradient(120% 80% at 50% -20%, rgba(24, 76, 244, 0.16), transparent 62%),
     radial-gradient(70% 55% at 100% 105%, rgba(139, 69, 234, 0.10), transparent 70%),
-    radial-gradient(60% 50% at -5% 105%, rgba(245, 129, 7, 0.07), transparent 70%),
+    radial-gradient(60% 50% at -5% 105%, rgba(24, 76, 244, 0.09), transparent 70%),
     var(--bg);
   color: var(--fg);
   /* The CHROME face is the default (2026-08-18); every game surface pins the pixel font
@@ -3047,16 +3052,17 @@ button * {
 .kb-control {
   color: var(--muted);
 }
-/* ENTER is the pad's ONE coloured key (the macropad's blue "Publish" cap, in the app's
-   accent): the whole CAP lights when the input is a real word — ready to fire — and
-   falls back to a dark cap while greyed, so the board itself says "publishable". */
+/* ENTER is the pad's ONE coloured key — the macropad's blue "Publish" cap, literally:
+   the solve COBALT (submitting is the step toward solving). The whole CAP lights when
+   the input is a real word — ready to fire — and falls back to a dark cap while greyed,
+   so the board itself says "publishable". */
 .kb-enter {
-  color: var(--bg);
-  background: linear-gradient(180deg, #ffa03a, var(--accent));
+  color: var(--fg);
+  background: linear-gradient(180deg, #5f7cff, #3d5cf0);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.35),
-    inset 0 -2px 0 rgba(0, 0, 0, 0.25),
-    0 2px 6px rgba(245, 130, 15, 0.4);
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.3),
+    0 2px 8px rgba(74, 106, 255, 0.45);
 }
 .kb-enter.kb-greyed {
   color: var(--muted);
@@ -3108,25 +3114,39 @@ button * {
   border: 0;
   cursor: pointer;
 }
-/* Primary: the PAPER BLOCK (user-decided 2026-08-18, superseding the orange gradient
-   slab — "goofy"): the board's inverted selection box as the app's one big action —
-   foreground ground, background type, dead sharp. The accent is the TOUCH state: hover
-   floods the block orange, and pressing depresses it like a key. The keyboard's lit
-   ENTER cap stays the one resting patch of orange. */
+/* Primary: the DEVICE CARD (user-decided 2026-08-18, third button pass — the chooser's
+   member cards are "very nice", so the app's one big action speaks their language):
+   dark glass, hairline rule, bold mono — and a lit COBALT LED beside the label, the
+   card mosaic's own light saying "this one is armed". Hover brightens and the rule
+   sharpens (the cards' interaction); pressing depresses it like a key. */
 .btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
   padding: 18px 30px;
   font-size: clamp(15px, 2vh, 17px);
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--bg);
-  background: var(--fg);
-  border-radius: var(--r-sm);
+  color: var(--fg);
+  background: var(--glass);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg);
   text-shadow: none;
-  transition: background-color 0.1s linear, transform 0.05s linear;
+  transition: filter 0.08s linear, border-color 0.12s linear, transform 0.05s linear;
+}
+.btn-primary::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
+  background: var(--solve);
+  box-shadow: 0 0 10px rgba(74, 106, 255, 0.9);
 }
 .btn-primary:hover {
-  background: var(--accent);
+  filter: brightness(1.3);
+  border-color: var(--fg);
 }
 .btn-primary:active {
   transform: translateY(1.5px);
@@ -3530,26 +3550,41 @@ button * {
    on. `margin-top: auto` parks it against the tray's bottom edge in both. An auto margin
    beats the tray's own `justify-content`, so the keyboard and the transient loading/error
    lines keep the tray's centring — the button is the only thing this moves. */
+/* The tutorial's action is the same DEVICE CARD as .btn-primary (one big-action
+   design), full width; disabled unlights the LED. */
 .mix-btn {
   margin-top: auto;
   width: 100%;
   max-width: 680px; /* the keyboard's max-width — same interaction footprint */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
   font-family: var(--ui);
   font-size: clamp(15px, 2vh, 17px);
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--bg);
-  background: var(--fg);
-  border: 0;
-  border-radius: var(--r-sm);
+  color: var(--fg);
+  background: var(--glass);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg);
   padding: 18px 30px;
   cursor: pointer;
   text-shadow: none;
-  transition: background-color 0.1s linear, transform 0.05s linear;
+  transition: filter 0.08s linear, border-color 0.12s linear, transform 0.05s linear;
 }
-.mix-btn:hover {
-  background: var(--accent);
+.mix-btn::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
+  background: var(--solve);
+  box-shadow: 0 0 10px rgba(74, 106, 255, 0.9);
+}
+.mix-btn:hover:not(:disabled) {
+  filter: brightness(1.3);
+  border-color: var(--fg);
 }
 .mix-btn:active:not(:disabled) {
   transform: translateY(1.5px);
@@ -3557,6 +3592,10 @@ button * {
 .mix-btn:disabled {
   opacity: 0.6;
   cursor: default;
+}
+.mix-btn:disabled::before {
+  background: var(--surface-hover);
+  box-shadow: none;
 }
 /* The ladder ending: the tray holds ONE button and the keyboard has dropped for good, so it
    stops reserving the keyboard's footprint and shrinks to the button. The page's own frame

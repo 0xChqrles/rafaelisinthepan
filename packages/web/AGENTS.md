@@ -112,12 +112,16 @@ These are decided and verified against the code. Treat them as load-bearing.
     mode's day word, the OG card's word, the tutorial's `[[b:]]` secret (`.rt-target`) —
     and done-for-the-day strips/cells. The pale hole is strongly legible on `--bg`; the
     blank line and exponent carry the rest of the unresolved-state distinction.
-  - **the ACCENT is STAMP ORANGE** — `--accent` #f5820f (the Séance poster's own orange,
-    sampled;
-    it was gold until the weird end claimed the yellows): the chrome (prompt caret,
-    enter key, loading status, COPIED), the `+Ns` gain, the history "you are here"
-    node, the streak, `.btn-primary`, the source credit's headline, the standing's rank
-    number. Never a scale value, never a word state.
+  - **the ACCENT is POSTER VIOLET** — `--accent` #8f7bff (user-decided 2026-08-18,
+    REMOVING the stamp orange outright — "keep the blue/violet palette for all accent
+    and actions"; the hex is the ground's violet orb lifted to text contrast, chosen
+    clear of the solve cobalt, the pale hole blue, RARE's cyan and OBSCURE's pinker
+    #b164f2): the chrome (prompt caret, loading status, COPIED), the `+Ns` gain, the
+    history "you are here" node, the streak, the source credit's headline, the
+    standing's rank number. The keyboard's ENTER cap is the one exception, lit in a
+    COBALT gradient (the macropad's "Publish" blue — submitting is the step toward the
+    solve); the ground's old orange corner orb went cobalt with the accent. Never a
+    scale value, never a word state.
   The palette tests pin the required legibility and reservations around MISS, solve,
   danger and the rarity ladder; retune those relationships deliberately, never by a
   copied stale hex.
@@ -134,9 +138,9 @@ These are decided and verified against the code. Treat them as load-bearing.
   - the fine HALFTONE DOT matrix (one soft paper dot per `--cell`, replacing the
     graph-paper grid lines);
   - a COBALT SKY GLOW washing down from the top edge plus two faint corner ORBS (violet
-    lower-right, orange lower-left) — the poster's own inks, sampled: #184cf4 cobalt,
-    #8b45ea violet, #f58107 orange. The raw poster cobalt is deliberately a GLOW-only
-    colour (3.2:1 — too dim for text; `--solve` is its text-safe sibling);
+    lower-right, cobalt lower-left — the orange orb left with the orange accent,
+    2026-08-18): #184cf4 cobalt, #8b45ea violet. The raw poster cobalt is deliberately a
+    GLOW-only colour (3.2:1 — too dim for text; `--solve` is its text-safe sibling);
   That is the WHOLE ambiance: ONE halftone texture plus the radial glows (user-tuned
   2026-08-17 — a film-grain overlay and then an edge halftone dot-vignette each shipped
   and were both removed on review; the single dither and the gradients are the look, and
@@ -206,8 +210,9 @@ These are decided and verified against the code. Treat them as load-bearing.
     - **The KEYBOARD is a MACROPAD** (the board's Work Louder pad): every key is a dark
       KEYCAP — top light, shaded bottom lip, drop shadow — that physically DEPRESSES on
       press (translateY + shadow collapse); **ENTER is the pad's ONE coloured key**: the
-      whole cap takes the accent gradient exactly when the input is a real word
-      (`.kb-enter` vs `.kb-enter.kb-greyed`), so the board itself says "publishable".
+      whole cap takes a COBALT gradient — the macropad's "Publish" blue — exactly when
+      the input is a real word (`.kb-enter` vs `.kb-enter.kb-greyed`), so the board
+      itself says "publishable".
       On desktop the keys sit on a DEVICE PLATE with a faint cobalt edge-glow — drawn
       OUT OF FLOW (`.keyboard::before`, inset past the keys) so `--kb-h` and the tray's
       fixed height stay exactly the keys' own; the plate hides with the phone's
@@ -219,11 +224,13 @@ These are decided and verified against the code. Treat them as load-bearing.
       treatment) are fg-filled chips with bg type; the result action INVERTS on hover;
       the invite title's last word sits in an `.invite-mark` box (Invite splits the
       localized copy on the final space, pulling one more token in when the tail is
-      bare punctuation — French's ` ?`). **The PRIMARY BUTTONS are PAPER BLOCKS**
-      (user-decided 2026-08-18, superseding the orange gradient slab — "goofy"): the
-      selection box as the app's one big action, with the ACCENT as the TOUCH state
-      (hover floods the block orange, pressing depresses it); the keyboard's lit ENTER
-      cap stays the one resting patch of orange. The frame's tagline is the universal
+      bare punctuation — French's ` ?`). **The PRIMARY BUTTONS are DEVICE CARDS**
+      (user-decided 2026-08-18, fourth button pass — the orange slab was "goofy", the
+      paper block "still off", the chooser cards "very nice"): the member card's own
+      dress as the app's one big action — dark glass, `--line-strong` hairline, bold
+      mono, and a lit COBALT LED square before the label (`::before`; a disabled MIX
+      unlights it). Hover brightens and the rule sharpens; pressing depresses. The
+      keyboard's lit cobalt ENTER cap is the one resting patch of colour. The frame's tagline is the universal
       `MADE WITH <3` (user-picked, replacing the localized "a daily word game" — the
       `frameTagline` key is gone), and `.app`'s desktop side padding is 52px so content
       clears the frame's vertical rail. Coach copy is 16px at weight 350 (14px on
