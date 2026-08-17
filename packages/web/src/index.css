@@ -1010,8 +1010,11 @@ button * {
    just the word box: the glyphs all live in per-letter spans (the wave's structure),
    and the button rules (`.phrase .hole-btn *` black, `button *` none) hit those
    children DIRECTLY, which beats any inherited shadow regardless of specificity
-   (found when the first cut produced no visible glow at all). ONE wide layer — a
-   stacked double was tried and read as bloom, not a breath. */
+   (found when the first cut produced no visible glow at all). ONE wide layer at 30%
+   ALPHA via color-mix — CALIBRATED, not eyeballed (2026-08-17): full-strength
+   currentColor lifted the band hugging the ink by 3.3/255 and was rejected twice as way
+   too much; 20% measured 0.34, indistinguishable from off. 30% sits at ~a quarter of
+   the rejected strength — present, soft, and the glyph edges stay crisp. */
 .hole-word,
 .hole-word .hole-letter,
 .phrase .hole-btn .hole-word .hole-letter,
@@ -1019,7 +1022,7 @@ button * {
 .solved-word-text .hole-letter,
 .word-subject-text,
 .word-subject-text .hole-letter {
-  text-shadow: 0 0 0.3em currentColor;
+  text-shadow: 0 0 0.3em color-mix(in srgb, currentColor 30%, transparent);
 }
 /* Rank decrease: the exponent rolls toward its new value (see useAnimatedNumber)
    and uses the same quick scale/unscale hop as the tutorial. */
