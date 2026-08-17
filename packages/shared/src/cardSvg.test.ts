@@ -125,11 +125,11 @@ describe('renderWordCardSvg', () => {
 
   it('draws the accented word ALONE, in the game\'s accent — no node square', () => {
     const svg = renderWordCardSvg(data);
-    expect(svg).toMatch(/<text[^>]+fill="#4f6dff">forêt<\/text>/);
+    expect(svg).toMatch(/<text[^>]+fill="#4a6aff">forêt<\/text>/);
     expect(svg).not.toContain('foret');
     // The in-game square marks the end of a LINE and this card draws none; the only
     // rects left are the background and the rarity chips.
-    expect(svg).not.toMatch(/<rect[^>]+fill="#4f6dff"/);
+    expect(svg).not.toMatch(/<rect[^>]+fill="#4a6aff"/);
   });
 
   it("names the claim count as the counts' sum, with the calendar date below", () => {

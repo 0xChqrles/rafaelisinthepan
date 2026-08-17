@@ -21,20 +21,22 @@
 // Each stop carries its own plain-text stand-in (see `progressEmoji` at the bottom).
 // Unicode has no grey square that reads neutral, so ⬜ carries the drained middle.
 const CALM_STOPS: { v: number; color: [number, number, number] }[] = [
-  { v: 0, color: [244, 72, 58] }, // #f4483a vivid red — the WEIRD terminus, and MISS
-  { v: 0.22, color: [245, 181, 46] }, // #f5b52e vivid amber
-  { v: 0.45, color: [240, 112, 127] }, // #f0707f vivid coral — the weirdness warming strange
-  { v: 0.7, color: [224, 127, 212] }, // #e07fd4 vivid rose-orchid — uncanny, almost settled
-  { v: 1, color: [79, 109, 255] }, // #4f6dff the cobalt — peace (the web's --solve: a solved word lands exactly on the scale's calm terminus)
+  { v: 0, color: [255, 61, 46] }, // #ff3d2e red — the WEIRD terminus, and MISS
+  { v: 0.22, color: [255, 176, 30] }, // #ffb01e amber
+  { v: 0.45, color: [255, 95, 120] }, // #ff5f78 coral — the weirdness warming strange
+  { v: 0.7, color: [242, 97, 226] }, // #f261e2 orchid — uncanny, almost settled
+  { v: 1, color: [74, 106, 255] }, // #4a6aff the cobalt — peace (the web's --solve: a solved word lands exactly on the scale's calm terminus)
 ];
 
 // The gradient's WEIRD terminus — and MISS's colour, ONE constant by the standing rule
 // ("stop the gradient once you reach the MISS colour", 2026-08-17): a MISS is maximally
 // weird — beyond the top-K, no rank at all — and the cap below collapses every far rank
 // onto the same terminus, so a 100-away exponent and a MISS differ only by their label.
-// The red is vivid on the dark ground (5.5:1 measured), a sibling of the timer's
-// `--danger` (22.5 dE — deliberately family: red means "nothing here" again).
-export const MISS_COLOR = '#f4483a';
+// The red is vivid on the dark ground (5.6:1 measured), a sibling of the timer's
+// `--danger` (30.9 dE — deliberately family: red means "nothing here" again). The whole
+// stop set was pushed to FULL chroma on user review 2026-08-17 ("more vivid") — the
+// glowy exponents (see the web's .hole-rank text-shadow) are what these inks feed.
+export const MISS_COLOR = '#ff3d2e';
 
 function mix(a: number, b: number, t: number) {
   return Math.round(a + (b - a) * t);

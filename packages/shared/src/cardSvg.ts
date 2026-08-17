@@ -37,7 +37,7 @@ export const CARD_HEIGHT = 630;
 const BG = '#08090f';
 const FG = '#f4f1e8';
 const MUTED = '#b0aca4';
-const SOLVE = '#4f6dff';
+const SOLVE = '#4a6aff';
 
 const CARD_FONT = 'Press Start 2P';
 

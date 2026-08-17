@@ -48,7 +48,7 @@ const contrastOnBg = (color: string) =>
 describe('the weird→calm gradient', () => {
   it('terminates exactly ON the MISS colour at the weird end', () => {
     expect(heatColor(0)).toBe(hexToRgbString(MISS_COLOR));
-    expect(heatColor(0)).toBe('rgb(244, 72, 58)'); // #f4483a vivid red
+    expect(heatColor(0)).toBe('rgb(255, 61, 46)'); // #ff3d2e red
   });
 
   it('weird is RED, calm is a BLUE — the metaphor two poles', () => {
@@ -56,7 +56,7 @@ describe('the weird→calm gradient', () => {
     expect(wr).toBeGreaterThan(wb); // red: warm, blue-poor
     const [cr, , cb] = rgb(heatColor(1));
     expect(cb).toBeGreaterThan(cr); // cobalt: blue-led
-    expect(heatColor(1)).toBe('rgb(79, 109, 255)'); // #4f6dff — the web's --solve cobalt
+    expect(heatColor(1)).toBe('rgb(74, 106, 255)'); // #4a6aff — the web's --solve cobalt
   });
 
   it('drains monotonically from the amber on: blueness only ever rises toward calm', () => {

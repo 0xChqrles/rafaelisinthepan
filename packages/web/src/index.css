@@ -37,7 +37,7 @@
      cobalt. The ink is also the gradient's calm terminus, so a solve lands exactly on
      the peace the scale runs toward. */
   --hole: #aec1ff; /* the pale draft */
-  --solve: #4f6dff; /* the cobalt ink — peace restored (poster-sampled family; the raw #184cf4 is a GLOW colour, too dim for text) */
+  --solve: #4a6aff; /* the cobalt ink — peace restored (poster-sampled family; the raw #184cf4 is a GLOW colour, too dim for text) */
   --accent: #f5820f; /* the BRAND accent: the poster's own orange — chrome, rewards, the credit headline; never a scale value, never a word state */
   --danger: #f04e63;
   --muted: #b0aca4; /* warm grey — paper-toned */
@@ -997,6 +997,17 @@ button * {
   margin-left: 1px;
   color: var(--rank-color);
   vertical-align: super;
+}
+/* THE EXPONENTS GLOW (user-decided 2026-08-17): a soft currentColor bloom — the vivid
+   ink stops rendered as printed light, the Séance-poster read — instead of the page's
+   hard black drop shadow. In em so the halo scales with each exponent's own size (a
+   10px gutter rank blooms half as far as a 24px sup). The `.phrase .hole-btn *` black
+   shadow would beat the bare class inside a hole button, so the boosted selector
+   restates it at winning specificity. */
+.hole-rank,
+.route-rank,
+.phrase .hole-btn .hole-rank {
+  text-shadow: 0 0 0.5em currentColor, 0 0 0.15em currentColor;
 }
 /* Rank decrease: the exponent rolls toward its new value (see useAnimatedNumber)
    and uses the same quick scale/unscale hop as the tutorial. */
