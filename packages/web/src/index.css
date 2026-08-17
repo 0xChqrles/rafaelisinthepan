@@ -1,6 +1,6 @@
 /* ============================================================
    Whippin AI — pixel art where you PLAY, modern chrome everywhere else
-   Fonts: Press Start 2P (the game), Space Grotesk (the chrome), Instrument Serif (display)
+   Fonts: Press Start 2P (the game), Azeret Mono (everything else)
    ============================================================ */
 
 /* ALL fonts are self-hosted (no Google Fonts request): the type IS the visual identity,
@@ -9,14 +9,15 @@
    backend's share card embeds the pixel face (ogCard assets), so the game words on screen
    and on the card stay in lockstep.
 
-   THE TYPE SYSTEM IS THREE VOICES (user-decided 2026-08-18):
+   THE TYPE SYSTEM IS TWO VOICES (user-decided 2026-08-18, third pass — the serif and
+   the grotesk both retired for ONE chrome face):
    - PIXEL (Press Start 2P) is reserved for what the player PLAYS: the sentence and its
      holes, Word mode's day word, the route drawings, the prompt, the keyboard, the
      hit/loot feedback and the score watermark. Nothing else wears it.
-   - UI (Space Grotesk, variable) is the chrome: header, labels, buttons, dates, the clock,
-     standings, calendars, coach copy. Real tabular figures for everything that ticks.
-   - DISPLAY (Instrument Serif) is the poster voice — the Séance-poster serif over the
-     aura gradients: chooser names, the credit headline, the big result numbers. */
+   - MONO (Azeret Mono, variable 100-900) is everything else — the moodboard's own
+     mono-caption voice, a natural cousin of the pixel grid, tabular by construction.
+     Hierarchy comes from WEIGHT, not from families and not from colour: light for the
+     big numbers, medium for names and labels, bold for actions. */
 @font-face {
   font-family: 'Press Start 2P';
   font-style: normal;
@@ -25,61 +26,21 @@
   src: url('./assets/fonts/PressStart2P.woff2') format('woff2');
 }
 @font-face {
-  font-family: 'Space Grotesk';
+  font-family: 'Azeret Mono';
   font-style: normal;
-  font-weight: 300 700;
+  font-weight: 100 900;
   font-display: swap;
-  src: url('./assets/fonts/space-grotesk-latin.woff2') format('woff2');
+  src: url('./assets/fonts/azeret-mono-latin.woff2') format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
     U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
     U+FEFF, U+FFFD;
 }
 @font-face {
-  font-family: 'Space Grotesk';
+  font-family: 'Azeret Mono';
   font-style: normal;
-  font-weight: 300 700;
+  font-weight: 100 900;
   font-display: swap;
-  src: url('./assets/fonts/space-grotesk-latin-ext.woff2') format('woff2');
-  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
-    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113,
-    U+2C60-2C7F, U+A720-A7FF;
-}
-@font-face {
-  font-family: 'Instrument Serif';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url('./assets/fonts/instrument-serif-latin.woff2') format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
-    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
-    U+FEFF, U+FFFD;
-}
-@font-face {
-  font-family: 'Instrument Serif';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url('./assets/fonts/instrument-serif-latin-ext.woff2') format('woff2');
-  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
-    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113,
-    U+2C60-2C7F, U+A720-A7FF;
-}
-@font-face {
-  font-family: 'Instrument Serif';
-  font-style: italic;
-  font-weight: 400;
-  font-display: swap;
-  src: url('./assets/fonts/instrument-serif-latin-italic.woff2') format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
-    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
-    U+FEFF, U+FFFD;
-}
-@font-face {
-  font-family: 'Instrument Serif';
-  font-style: italic;
-  font-weight: 400;
-  font-display: swap;
-  src: url('./assets/fonts/instrument-serif-latin-ext-italic.woff2') format('woff2');
+  src: url('./assets/fonts/azeret-mono-latin-ext.woff2') format('woff2');
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
     U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113,
     U+2C60-2C7F, U+A720-A7FF;
@@ -113,22 +74,21 @@
   --flame: #4642e8; /* streak flame indigo — the sprite's body color (#74); milestone tiers swap it */
 
   --pixel-font: 'Press Start 2P', monospace;
-  /* The chrome voice and the display voice (2026-08-18). `--ui` carries every label,
-     button, number and body of copy that is not part of the game surface; `--display`
-     is the poster serif for the few moments that deserve a headline. Space Grotesk over
-     Inter (user-decided the same day — Inter "has absolutely no soul"): its Space-Mono
-     ancestry and cut terminals sit exactly between the stamp lettering, the pixel game
-     and the serif. */
-  --ui: 'Space Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --display: 'Instrument Serif', Georgia, serif;
+  /* THE one chrome voice (user-decided 2026-08-18, third pass — Azeret Mono replacing
+     both Space Grotesk and the Instrument Serif display face): every label, button,
+     number, headline and body of copy that is not part of the game surface. A monospace
+     is tabular by construction, so everything that ticks is stable for free; what used
+     to be the serif's display register is said in WEIGHT now (light numbers, medium
+     names, bold actions). */
+  --ui: 'Azeret Mono', ui-monospace, 'SF Mono', monospace;
 
   /* The modern chrome kit (2026-08-18): one radius scale, one hairline, one glass
      surface — every non-game box derives from these so the chrome reads as one design.
-     (Radii walked DOWN a step on user review the same day: the first cut read too
-     round.) */
-  --r-sm: 7px;
-  --r-md: 11px;
-  --r-lg: 14px;
+     THE DESIGN STAYS SHARP (user-decided 2026-08-18, third pass): 4px is the absolute
+     radius ceiling — no pills, no soft corners anywhere, the stamp read. */
+  --r-sm: 2px;
+  --r-md: 3px;
+  --r-lg: 4px;
   --line: rgba(244, 241, 232, 0.12);
   --line-strong: rgba(244, 241, 232, 0.4);
   --glass: rgba(16, 18, 30, 0.62);
@@ -178,13 +138,12 @@ body {
     var(--bg);
   color: var(--fg);
   /* The CHROME face is the default (2026-08-18); every game surface pins the pixel font
-     itself. Slightly positive optical sizing for the dark ground: the grotesk at weight
-     400 thins out over the glows, so the app-wide resting weight is 430. */
+     itself. */
   font-family: var(--ui);
-  font-weight: 430;
-  /* Never synthesize: the pixel face and the display serif ship ONE weight each, and a
-     faux bold smears exactly the way a fractional pixel scale does. Space Grotesk is
-     variable, so every real weight the chrome asks for exists. */
+  font-weight: 400;
+  /* Never synthesize: the pixel face ships ONE weight, and a faux bold smears exactly
+     the way a fractional pixel scale does. Azeret Mono is variable, so every real
+     weight the chrome asks for exists. */
   font-synthesis: none;
   /* Press Start 2P ships fi/fl (and other) ligatures that render NARROWER than two
      cells, so the font is not truly fixed-width by default. That breaks every monospace
@@ -220,7 +179,7 @@ button * {
   font-size: 15px;
   font-weight: 600;
   color: var(--accent);
-  letter-spacing: 0.14em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   padding-top: var(--cap-shift);
 }
@@ -250,7 +209,8 @@ button * {
   font-family: var(--ui);
   font-size: 16px;
   line-height: 1.6;
-  color: var(--muted);
+  color: var(--fg);
+  opacity: 0.85;
 }
 
 /* Visually hidden but still announced: the screen-reader live region mirroring the
@@ -274,8 +234,7 @@ button * {
 }
 .pixel-scroll::-webkit-scrollbar-thumb {
   background: var(--surface-hover);
-  /* Rounded since the modern-chrome pass (2026-08-18): the scrollbar is chrome, not play. */
-  border-radius: 999px;
+  border-radius: 0;
 }
 .pixel-scroll::-webkit-scrollbar-thumb:hover {
   background: var(--muted);
@@ -414,12 +373,13 @@ button * {
   filter: brightness(1.35);
 }
 
-/* The name in the DISPLAY serif — the option is the headline of its own card. */
+/* The name is the headline of its own card: the mono at a medium weight. */
 .chooser-card-name {
-  font-family: var(--display);
-  font-size: clamp(28px, 4vh, 34px);
+  font-family: var(--ui);
+  font-size: clamp(19px, 2.8vh, 24px);
+  font-weight: 550;
   line-height: 1.1;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.02em;
   color: var(--fg);
   padding-top: var(--cap-shift);
 }
@@ -432,7 +392,6 @@ button * {
   left: 0;
   bottom: 0;
   height: 3px;
-  border-radius: 0 999px 999px 0;
 }
 
 /* ===================== archive calendar (issue #55) ===================== */
@@ -461,7 +420,7 @@ button * {
   justify-content: center;
   gap: 12px;
   margin-bottom: 28px;
-  font-family: var(--display);
+  font-family: var(--ui);
   color: var(--fg);
 }
 .archive-streak-flame {
@@ -471,7 +430,8 @@ button * {
   image-rendering: pixelated;
 }
 .archive-streak-count {
-  font-size: 46px;
+  font-size: 38px;
+  font-weight: 300;
   line-height: 1;
   font-variant-numeric: tabular-nums;
   /* Optical correction: the flame's visual mass sits low. */
@@ -489,11 +449,12 @@ button * {
 .cal-month {
   flex: 1;
   text-align: center;
-  /* The month is the page's headline — the display serif, no uppercase: a serif shouts
-     nothing (the locale's own capitalisation stands). */
-  font-family: var(--display);
-  font-size: clamp(24px, 3.6vh, 30px);
-  letter-spacing: 0.01em;
+  /* The month is the page's headline: the mono at a medium weight, the locale's own
+     capitalisation standing. */
+  font-family: var(--ui);
+  font-size: clamp(16px, 2.5vh, 20px);
+  font-weight: 550;
+  letter-spacing: 0.04em;
   color: var(--fg);
   padding-top: var(--cap-shift);
 }
@@ -507,12 +468,13 @@ button * {
   background: transparent;
   border: 0;
   border-radius: var(--r-sm);
-  color: var(--muted);
+  color: var(--fg);
+  opacity: 0.8;
   cursor: pointer;
-  transition: color 0.08s linear, filter 0.08s linear;
+  transition: opacity 0.08s linear;
 }
 .cal-arrow:hover:not([disabled]) {
-  color: var(--fg);
+  opacity: 1;
 }
 .cal-arrow[disabled] {
   opacity: 0.26;
@@ -534,10 +496,11 @@ button * {
   justify-content: center;
   font-family: var(--ui);
   font-size: clamp(11px, 2.4vw, 12px);
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  font-weight: 500;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--fg);
+  opacity: 0.7;
   padding-bottom: 2px;
 }
 
@@ -824,12 +787,11 @@ button * {
 /* The header's right controls: the game's "?" help (replays the tutorial) and the
    tutorial's fast-forward (skip) — both inline pixel-art icons. Buttons don't inherit
    color, so the muted tint is explicit; both brighten to --fg on hover. */
+/* ONE ink for the chrome (user-decided 2026-08-18, third pass): the icons sit in the
+   page's own foreground — hierarchy is weight and the .home-btn opacity lift, never a
+   second grey. */
 .help-btn,
 .topbar-skip {
-  color: var(--muted);
-}
-.help-btn:hover,
-.topbar-skip:hover {
   color: var(--fg);
 }
 /* Icon policy (revised 2026-08-18 with the modern chrome): TWO icon families, one per
@@ -875,11 +837,6 @@ button * {
 .lang-btn,
 .archive-btn,
 .archive-close {
-  color: var(--muted);
-}
-.lang-btn:hover,
-.archive-btn:hover,
-.archive-close:hover {
   color: var(--fg);
 }
 
@@ -888,10 +845,10 @@ button * {
    centered). */
 .topbar-title {
   font-size: clamp(13px, 2vh, 15px);
-  font-weight: 600;
-  letter-spacing: 0.16em;
+  font-weight: 500;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--fg);
   font-variant-numeric: tabular-nums;
 }
 
@@ -935,9 +892,9 @@ button * {
 .puzzle-date {
   font-size: 15px;
   line-height: 1;
-  font-weight: 550;
-  letter-spacing: 0.1em;
-  color: var(--muted);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--fg);
   font-variant-numeric: tabular-nums;
 }
 /* --- giant score watermark, always behind the play content --- */
@@ -1457,15 +1414,14 @@ button * {
    content, not a fourth trophy. */
 .solved-work {
   margin: 0;
-  /* The credit's headline is the app's one EDITORIAL moment — the work's title in the
-     display serif, italic, the way a title is set in print (2026-08-18). Still the
-     accent: gold over muted is what ranks the two lines. */
-  font-family: var(--display);
-  font-style: italic;
-  font-size: clamp(24px, 3.2vw, 32px);
-  line-height: 1.35;
+  /* The credit's headline: the mono at semibold — the biggest chrome type on the stage —
+     still the accent, since gold over the quiet line beneath is what ranks the two. */
+  font-family: var(--ui);
+  font-size: clamp(17px, 2.3vw, 22px);
+  font-weight: 600;
+  line-height: 1.4;
   color: var(--accent);
-  letter-spacing: 0.01em;
+  letter-spacing: 0.03em;
   padding-top: var(--text-shift);
 }
 /* What the headline IS and who it is by — `BOOK by Victor Hugo` — as one muted phrase
@@ -1475,10 +1431,11 @@ button * {
   margin: -2px 0 0;
   font-family: var(--ui);
   font-size: 13px;
-  font-weight: 550;
+  font-weight: 400;
   line-height: 1.5;
-  color: var(--muted);
-  letter-spacing: 0.1em;
+  color: var(--fg);
+  opacity: 0.8;
+  letter-spacing: 0.04em;
 }
 .source-type-slot {
   position: relative;
@@ -1637,8 +1594,9 @@ button * {
 .solved-word-num {
   font-family: var(--ui);
   font-size: 13px;
-  font-weight: 600;
-  color: var(--muted);
+  font-weight: 500;
+  color: var(--fg);
+  opacity: 0.7;
   margin-right: 7px;
   vertical-align: super;
 }
@@ -1686,13 +1644,14 @@ button * {
 }
 /* A hidden ghost of the final count reserves the exact width (incl. letter-spacing, which
    `ch` units miss); the live tally is overlaid right-aligned, so counting never reflows.
-   The NUMBER is a display-serif headline (2026-08-18) — the result said in the poster
-   voice — over the unit as a small tracked UI label. */
+   The NUMBER is a big LIGHT-weight headline (2026-08-18) over the unit as a small
+   tracked label — weight contrast, the mono system's display register. */
 .solved-score-num {
   position: relative;
   display: inline-block;
-  font-family: var(--display);
-  font-size: clamp(52px, 7.6vh, 72px);
+  font-family: var(--ui);
+  font-size: clamp(44px, 6.6vh, 60px);
+  font-weight: 275;
   line-height: 1;
   color: var(--fg);
   font-variant-numeric: tabular-nums;
@@ -1707,10 +1666,11 @@ button * {
 }
 .solved-score-unit {
   font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.22em;
+  font-weight: 500;
+  letter-spacing: 0.16em;
   line-height: 1;
-  color: var(--muted);
+  color: var(--fg);
+  opacity: 0.8;
 }
 /* Run ruler — ONE CONTINUOUS GRADIENT since the modern-chrome pass (user-decided
    2026-08-18, superseding the flat per-try cells): the run is still the raw trajectory —
@@ -1745,7 +1705,7 @@ button * {
 .run-bloom {
   position: absolute;
   inset: -3px -2px;
-  border-radius: 999px;
+  border-radius: var(--r-lg);
   background: var(--run-gradient, var(--surface-hover));
   filter: blur(12px);
   opacity: 0;
@@ -1760,8 +1720,8 @@ button * {
 .run-fill {
   position: absolute;
   inset: 0;
-  border-radius: 999px;
-  clip-path: inset(0 100% 0 0 round 999px);
+  border-radius: var(--r-md);
+  clip-path: inset(0 100% 0 0 round var(--r-md));
   transition: clip-path var(--sweep-ms, 0ms) linear;
 }
 .run-track {
@@ -1771,10 +1731,10 @@ button * {
   background: var(--run-gradient, var(--surface-hover));
 }
 .run-ruler.shown .run-track {
-  clip-path: inset(0 0 0 0 round 999px);
+  clip-path: inset(0 0 0 0 round var(--r-md));
 }
 .run-ruler.colorized .run-fill {
-  clip-path: inset(0 0 0 0 round 999px);
+  clip-path: inset(0 0 0 0 round var(--r-md));
 }
 /* A solve moment: the pin sits on the RIGHT edge of the solving try's slice (the state
    after that guess), overhanging the bar like a ruler mark; it fades in when the
@@ -1786,7 +1746,6 @@ button * {
   bottom: -4px;
   left: calc(var(--at) / var(--n) * 100%);
   width: 2px;
-  border-radius: 999px;
   transform: translateX(-50%);
   background-color: var(--fg);
   box-shadow: 0 0 8px rgba(244, 241, 232, 0.55);
@@ -1869,9 +1828,9 @@ button * {
 }
 .score-rank-label {
   font-size: var(--rank-label);
-  font-weight: 550;
-  letter-spacing: 0.1em;
-  color: var(--muted);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: var(--fg);
 }
 /* The number rides a WHOLE PIXEL BAND below its own baseline (user-decided 2026-08-15).
    The pixel font reserves descender room under every glyph, so type sharing a baseline
@@ -1893,20 +1852,20 @@ button * {
    2026-08-15, superseding the gold — gold is the colour of what the player HOLDS, and a
    standing is not held); the rule itself softened to `--line-strong` so the frame stamps
    rather than glares. Height stays EXPLICIT with the ink flex-centred, and the drops
-   (`--top-drop`, `--rank-num-drop`) survive as small optical trims — the grotesk sits ON its
-   baseline, so they are near zero where the pixel font needed whole bands. */
+   (`--top-drop`, `--rank-num-drop`) survive as small optical trims — the chrome face sits
+   ON its baseline, so they are near zero where the pixel font needed whole bands. */
 .score-top {
   display: inline-flex;
   align-items: center;
   height: var(--top-h);
   padding: 0 var(--top-pad);
   border: 1px solid var(--line-strong);
-  border-radius: 999px;
+  border-radius: var(--r-md);
   color: var(--fg);
   font-size: var(--top-size);
   font-weight: 600;
   line-height: 1;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.04em;
   white-space: nowrap;
   text-shadow: none;
   translate: 0 var(--top-drop);
@@ -1980,9 +1939,6 @@ button * {
   flex: none;
 }
 .modal-close {
-  color: var(--muted);
-}
-.modal-close:hover {
   color: var(--fg);
 }
 
@@ -2520,12 +2476,12 @@ button * {
   font-family: var(--ui);
   font-size: clamp(14px, 1.9vh, 16px);
   font-weight: 600;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--fg);
   background: var(--glass);
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--r-lg);
   padding: 16px 32px;
   cursor: pointer;
   text-shadow: none;
@@ -2598,14 +2554,15 @@ button * {
   justify-content: center;
   gap: 20px;
 }
-/* The number in the DISPLAY serif (2026-08-18): the celebration's headline in the poster
-   voice. The wheel slots narrow with it — Instrument Serif's digits advance ~0.5em where
-   the pixel glyphs were a full em — so the number stays one close-set figure. */
+/* The number in the mono at a LIGHT weight (2026-08-18): the celebration's headline.
+   The wheel slots match the mono's exact 0.6em digit advance, so the number reads as one
+   close-set figure. */
 .streak-digits {
   position: relative;
   height: 1em;
-  font-family: var(--display);
-  font-size: 84px;
+  font-family: var(--ui);
+  font-weight: 300;
+  font-size: 76px;
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
@@ -2621,7 +2578,7 @@ button * {
 .streak-digit-slot {
   position: relative;
   display: block;
-  width: 0.55em;
+  width: 0.6em;
   height: 1.44em;
   overflow: hidden;
 }
@@ -2634,8 +2591,8 @@ button * {
   will-change: transform, opacity;
   /* Transparent by default so the flame glow (below) eases in as a COLOR fade when the
      flame arrives — `text-shadow: none` would pop instead of transitioning. (A soft glow
-     since 2026-08-18: the old hard 6px offset was the pixel identity's; under the serif
-     the flame CASTS LIGHT instead.) */
+     since 2026-08-18: the old hard 6px offset was the pixel identity's; the flame CASTS
+     LIGHT instead.) */
   text-shadow: 0 0 32px transparent;
   transition: text-shadow 260ms ease-out;
 }
@@ -2660,10 +2617,10 @@ button * {
 .streak-hint {
   font-family: var(--ui);
   font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.18em;
+  font-weight: 500;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--fg);
   padding: 14px 20px; /* keeps the pulsing text off the tile row above it */
   cursor: pointer;
 }
@@ -2764,10 +2721,11 @@ button * {
   margin: 0;
   font-family: var(--ui);
   font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.24em;
+  font-weight: 500;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--fg);
+  opacity: 0.8;
 }
 
 /* The Monday-based weekly streak row (#74): 7 flat pixel squares (the streak dialog's
@@ -2789,9 +2747,9 @@ button * {
 .week-label {
   font-family: var(--ui);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1;
-  color: var(--muted);
+  color: var(--fg);
   opacity: 0.55;
 }
 .week-cell.today .week-label {
@@ -2971,7 +2929,7 @@ button * {
   padding: 19px 30px;
   font-size: clamp(16px, 2.2vh, 18px);
   font-weight: 650;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--bg);
   background: linear-gradient(180deg, #ffa03a, var(--accent));
@@ -2987,14 +2945,15 @@ button * {
 .btn-secondary {
   padding: calc(4px + var(--cap-shift)) 8px calc(4px - var(--cap-shift));
   font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
+  font-weight: 500;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   background: transparent;
-  color: var(--muted);
+  color: var(--fg);
+  opacity: 0.7;
 }
 .btn-secondary:hover {
-  color: var(--fg);
+  opacity: 1;
 }
 
 /* ===================== mobile / small screens ===================== */
@@ -3071,10 +3030,10 @@ button * {
   }
   /* Ten glyphs of date against a phone's header corner: a step down and most of the
      tracking given back keeps the whole string beside the right group at 320px (the
-     grotesk is proportional, so this is roomier than the pixel budget ever was). */
+     mono advances 0.6em/glyph against the pixel font's full em, so the budget holds). */
   .puzzle-date {
     font-size: 12px;
-    letter-spacing: 0.04em;
+    letter-spacing: 0;
   }
 
   /* The sentence: a touch smaller so a hole + its exponent near the right edge still fits
@@ -3333,7 +3292,7 @@ button * {
   font-weight: 700;
   /* 15 / 18 / 21 / 24 / 27px across the five steps. */
   font-size: calc(15px + var(--step, 0) * 3px);
-  letter-spacing: 0.1em;
+  letter-spacing: 0.04em;
   animation: rung-in 200ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
   animation-delay: calc(var(--step, 0) * 140ms);
 }
@@ -3386,7 +3345,7 @@ button * {
   font-family: var(--ui);
   font-size: clamp(16px, 2.2vh, 18px);
   font-weight: 650;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--bg);
   background: linear-gradient(180deg, #ffa03a, var(--accent));
@@ -3476,14 +3435,15 @@ button * {
   margin-bottom: 34px;
   image-rendering: pixelated;
 }
-/* The first thing a new player ever reads leads in the display serif — the poster voice
-   asking a friendly question — over one quiet UI line. */
+/* The first thing a new player ever reads: the mono at a medium weight asking a
+   friendly question, over one quieter line. */
 .invite-title {
   margin: 0;
-  font-family: var(--display);
-  font-size: clamp(30px, 4.6vh, 40px);
-  line-height: 1.2;
-  letter-spacing: 0.01em;
+  font-family: var(--ui);
+  font-size: clamp(20px, 3.2vh, 27px);
+  font-weight: 550;
+  line-height: 1.3;
+  letter-spacing: 0.02em;
   color: var(--fg);
   text-shadow: none;
   padding-top: var(--cap-shift);
@@ -3492,9 +3452,10 @@ button * {
   margin: 12px auto 0;
   max-width: 40ch;
   font-family: var(--ui);
-  font-size: 17px;
+  font-size: 16px;
   line-height: 1.6;
-  color: var(--muted);
+  color: var(--fg);
+  opacity: 0.8;
   text-shadow: none;
 }
 .invite-actions {
@@ -3537,8 +3498,8 @@ button * {
     margin-bottom: 16px;
   }
   .invite-title {
-    font-size: 26px;
-    line-height: 1.2;
+    font-size: 19px;
+    line-height: 1.3;
   }
   .invite-text {
     margin-top: 6px;
@@ -3706,15 +3667,14 @@ button * {
   opacity: 1;
   animation: none;
 }
-/* The chip's mark: painted with currentColor, so a chip is ONE colour decision. A round
-   BEAD since 2026-08-18 with a soft self-glow — the share text's own bead row
-   (⚪🟢🔵…), on screen. */
+/* The chip's mark: painted with currentColor, so a chip is ONE colour decision — the
+   same square-beside-the-count lockup the card draws, with a soft self-glow. SQUARE:
+   the sharp read (2026-08-18, third pass), and the card's own shape. */
 .word-rarity-square {
-  width: 0.75em;
-  height: 0.75em;
-  border-radius: 50%;
+  width: 0.8em;
+  height: 0.8em;
   background: currentColor;
-  box-shadow: 0 0 10px color-mix(in srgb, currentColor 55%, transparent);
+  box-shadow: 0 0 10px color-mix(in srgb, currentColor 45%, transparent);
 }
 .word-footer-result .result-actions {
   flex: 0 0 auto;
@@ -4297,8 +4257,8 @@ button * {
 .word-timer {
   position: relative;
   display: inline-block;
-  font-size: 32px;
-  font-weight: 650;
+  font-size: 30px;
+  font-weight: 500;
   line-height: 1;
   letter-spacing: 0;
   /* REAL tabular figures at last (2026-08-18): the digits cannot twitch as they
@@ -4328,9 +4288,10 @@ button * {
   }
 }
 /* Before START the clock shows what a run is worth without having begun to spend it — a
-   preview, so it reads as chrome rather than as time already running out. */
+   preview, so it reads as chrome rather than as time already running out. Dimmed
+   foreground, never a second grey (the one-ink rule). */
 .word-timer.idle {
-  color: var(--muted);
+  opacity: 0.55;
 }
 /* The last stretch. `--danger` and a pulse rather than a ramp: the two the app already owns
    mean PROGRESS and DISTANCE, and a clock is neither — borrowing one would have the number

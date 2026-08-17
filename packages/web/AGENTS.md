@@ -145,9 +145,12 @@ These are decided and verified against the code. Treat them as load-bearing.
   rarity ladder is authored as a VIVID INK set (`components/rarity.ts` — same hue walk,
   thresholds re-measured in `rarity.test.ts`). Still ELECTRIC, pending an art repaint: the baked pixel
   art (logo-blue.png, the mode sprite, the streak flame, ultracode.png).
-- **THE TYPE SYSTEM IS THREE VOICES — PIXEL ONLY WHERE YOU PLAY (user-decided
-  2026-08-18, closing the redesign's deferred fonts half).** All faces self-hosted
-  (`assets/fonts/`, latin + latin-ext subsets so French accents never fall back).
+- **THE TYPE SYSTEM IS TWO VOICES — PIXEL ONLY WHERE YOU PLAY (user-decided
+  2026-08-18, closing the redesign's deferred fonts half; walked from three voices to
+  two on the user's same-day reviews — Inter "no soul" → Space Grotesk, then the grotesk
+  AND the Instrument Serif display face both retired for ONE mono).** All faces
+  self-hosted (`assets/fonts/`, latin + latin-ext subsets so French accents never fall
+  back).
   - **PIXEL (Press Start 2P)** is reserved for the PLAY surfaces: the sentence and its
     holes, Word mode's day word, the route drawings entire (words, rank gutters, MISSED
     shelf), the prompt/input and its hint, the keyboard (keys + its `.kb-icon` pixel
@@ -157,34 +160,38 @@ These are decided and verified against the code. Treat them as load-bearing.
     route `--gutter` arithmetic, MixWord's ch reservations and CellDigits' grid all sit
     on surfaces that stayed pixel. The coach text's inline `[[b:]]`/`[[w:]]` words are
     pixel at 0.82em INSIDE modern copy — game words quoted in chrome.
-  - **UI (Space Grotesk variable, `--ui`)** is the body default and all chrome: header
-    (title/date and Word mode's clock — real `tabular-nums`, verified by measurement),
-    buttons, coach copy, the standing line, calendar numerals, streak labels/hint,
-    rarity chip counts, statuses. Space Grotesk over Inter on the user's same-day review
-    (Inter "has absolutely no soul"): its Space-Mono ancestry and cut terminals sit
-    between the stamp lettering, the pixel game and the serif. Resting body weight 430;
-    `font-synthesis: none` app-wide (the pixel face and the serif ship one weight each —
-    a faux bold smears like a fractional scale). `ScoreRank.standingUnits` still counts
-    glyphs as if monospace, which is now a CONSERVATIVE width estimate — it can only
-    step the line down early, never clip.
-  - **DISPLAY (Instrument Serif, `--display`)** is the poster voice, used sparingly:
-    chooser card names, the invite title, the archive month + streak count, the solved
-    credit HEADLINE (italic — the one editorial moment), both result-count numbers, and
-    the streak celebration's digits (whose wheel slots narrowed from 1em to 0.55em with
-    the face).
-  - **The modern chrome KIT** rides three token groups on `:root` — radii
-    (`--r-sm/md/lg`), hairlines (`--line`/`--line-strong`), glass (`--glass`) — worn by
-    every non-game box: aura-gradient chooser cards (cobalt/violet/orange by nth-child),
-    glass coach dialogs (both gates + the tutorial), gradient-and-bloom primary buttons,
-    pill result actions and the pill TOP badge, rounded calendar cells and week tiles.
+  - **MONO (Azeret Mono variable 100-900, `--ui`)** is EVERYTHING else — body default,
+    header (title/date and Word mode's clock), buttons, coach copy, the standing line,
+    calendar, streak, rarity chip counts, statuses, and every moment the retired serif
+    used to headline (chooser names, the invite title, the credit headline, the big
+    result numbers, the streak digits, whose wheel slots are the mono's exact 0.6em
+    advance). A monospace is tabular by construction, so everything that ticks is stable
+    for free, and `ScoreRank.standingUnits`'s glyphs-as-width estimate is literally true
+    again. **Hierarchy is said in WEIGHT, never in families: light (275-300) for the big
+    numbers, medium (500-550) for names and labels, bold (600-700) for actions**; resting
+    body weight 400; `font-synthesis: none` app-wide (the pixel face ships one weight — a
+    faux bold smears like a fractional scale).
+  - **The modern chrome KIT rides three token groups on `:root`** — radii
+    (`--r-sm/md/lg` = 2/3/4px), hairlines (`--line`/`--line-strong`), glass (`--glass`) —
+    worn by every non-game box: aura-gradient chooser cards (cobalt/violet/orange by
+    nth-child), glass coach dialogs (both gates + the tutorial), gradient-and-bloom
+    primary buttons, the outlined TOP badge, glass result actions, calendar cells and
+    week tiles. **THE DESIGN STAYS SHARP (user-decided 2026-08-18): 4px is the absolute
+    radius ceiling — no pills, no circles anywhere in the chrome** (the SHARE pill, the
+    TOP-badge pill, the rounded scrollbar thumb and the round rarity bead of the first
+    cut are all squared back off; the run ruler's filament rounds at 3px).
+    **ONE INK (user-decided the same day): chrome text and ICONS are `--fg`** — `--muted`
+    survives only on GAME surfaces (the route drawing's dresses, the keyboard's control
+    keys, the watermark) — with hierarchy carried by weight and opacity, never by a
+    second grey; `--accent` keeps exactly its recorded accent roles.
     The HEADER's icons are the LUCIDE stroke set as `.ui-icon`s (user-picked 2026-08-18:
     calendar, circle-help, x, fast-forward, and LANGUAGES — the 文/A translation mark —
-    for the language control, replacing the globe; 24-grid, 1.8px, currentColor;
-    globe.png and the standalone `.pixel-icon` class are deleted); the Whippin mark
-    stays the header's ONE pixel artifact, deliberately — it is the logo, and pixel is
-    the brand. The BODY's global hard 2px text-shadow is gone;
-    pixel surfaces that relied on it (floating hits, loot) carry their own, and the
-    topbar wears a soft bloom shadow instead.
+    for the language control, replacing the globe; 24-grid, 1.8px, currentColor, 28px
+    in-file size against the 32px pixel mark; globe.png and the standalone `.pixel-icon`
+    class are deleted); the Whippin mark stays the header's ONE pixel artifact,
+    deliberately — it is the logo, and pixel is the brand. The BODY's global hard 2px
+    text-shadow is gone; pixel surfaces that relied on it (floating hits, loot) carry
+    their own, and the topbar wears a soft bloom shadow instead.
   - **The RUN RULER is a continuous GRADIENT FILAMENT (user-decided 2026-08-18,
     superseding the flat per-try cells):** RunRuler builds one linear-gradient stop per
     counted try — the same raw trajectory through the same `progressHeatColor` — drawn
