@@ -1044,8 +1044,8 @@ button * {
   .word-subject-text .hole-letter {
     background-image: linear-gradient(
       to bottom,
-      currentColor 15%,
-      color-mix(in srgb, currentColor 70%, black)
+      currentColor 10%,
+      color-mix(in srgb, currentColor 45%, black)
     );
     -webkit-background-clip: text;
     background-clip: text;
