@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import type { CSSProperties } from 'react';
 import type { Rarity } from '../game/wordGame';
-import { HIT_HEAT_CAP, rankHeatColor } from './Hole';
+import { HIT_HEAT_CAP, rankHeatColor } from '@whippin/shared';
 
 // The LOOT a claim knocks out of the day's word (decided 2026-08-10): the guess's rank
 // exponent and its rarity grade pop off the struck word like drops off a hit enemy — up
@@ -74,7 +74,7 @@ export default function WordLoot({
     {
       key: 'exp',
       css: `word-loot-exp ${flight.expLeft ? 'word-loot-to-left' : 'word-loot-to-right'}`,
-      text: `-${rank}`,
+      text: String(rank),
       color: rankHeatColor(rank, HIT_HEAT_CAP),
       delay: flight.expFirst ? 0 : LOOT_STAGGER_MS,
       dice: flight.exp,

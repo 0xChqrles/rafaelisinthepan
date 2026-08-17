@@ -1,6 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { heatColor } from '@whippin/shared';
-import { rankHeatColor, HIT_HEAT_CAP } from './Hole';
+import { HIT_HEAT_CAP, MISS_COLOR, rankHeatColor } from '@whippin/shared';
 import { t } from '../i18n';
 
 // The ROUTE DRAWING: the geometry and the row parts of a neighborhood drawn as a line,
@@ -83,7 +82,8 @@ export const UNKNOWN = '???';
 // rail column is exactly wide enough for the line drawn on it (`--line-w`, CSS's own).
 const TRUNK_X = 15.5;
 
-// How many glyphs the rank gutter has to hold: the exponent's digits plus its leading `-`.
+// How many glyphs the rank gutter has to hold: the exponent's digits, and nothing else —
+// the app dropped the leading `-` on 2026-08-16, which took a whole cell off every gutter.
 //
 // It takes the widest rank the MAP can ever produce, never the widest currently DRAWN (fixed
 // 2026-08-06). The gutter track is `minmax(var(--gutter), max-content)`, so sizing it to the
@@ -94,7 +94,7 @@ const TRUNK_X = 15.5;
 // puzzle, so it is fixed for the round and nothing shifts. It costs one glyph of gutter on a
 // board that never shows a wide rank, which is the whole price of the anticipation.
 export function rankGutterChars(maxRank: number): number {
-  return 1 + String(Math.max(1, Math.floor(maxRank))).length;
+  return String(Math.max(1, Math.floor(maxRank))).length;
 }
 
 // Every CSS variable the drawing needs, for a line whose widest exponent is `rankChars`
@@ -147,17 +147,20 @@ export function OffMapShelf({ lang, misses }: { lang: string; misses: string[] }
   if (misses.length === 0) return null;
   return (
     <div className="route-shelf">
-      {/* In the heat ramp's COLDEST colour — the exact one the floating `MISS` wears when a
-          guess is too far to rank (`heatColor(0)`, computed rather than copied, so the two can
-          never drift). The heading names the same outcome, so it says it in the same voice. */}
-      <p className="route-shelf-head" style={{ color: heatColor(0) }}>
+      {/* In MISS's cold blue — the ramp's own cold terminus, and the exact colour the
+          floating `MISS` wears when a guess is too far to rank (the ONE `MISS_COLOR`
+          constant, so the two can never drift). The shelf sits at the TOP of a line that
+          runs cold-top to hot-bottom, so the frozen block above the broken tail is where
+          the thermometer bottoms out. The heading names the same outcome, so it says it
+          in the same voice. */}
+      <p className="route-shelf-head" style={{ color: MISS_COLOR }}>
         {t(lang, 'routeOffMap')}
       </p>
-      {/* The words wear the same coldest heat, DIMMED (`.route-miss` opacity): they are the
+      {/* The words wear the same cold blue, DIMMED (`.route-miss` opacity): they are the
           shelf's own dead ends, one voice with the heading and the float, but quieter than a
-          label — so the shelf reads as one red block of "nothing here" at a glance instead of
-          a muted list that could pass for ordinary words (decided 2026-08-10). */}
-      <p className="route-misses" style={{ color: heatColor(0) }}>
+          label — so the shelf reads as one frozen block of "nothing here" at a glance instead
+          of a muted list that could pass for ordinary words (decided 2026-08-10). */}
+      <p className="route-misses" style={{ color: MISS_COLOR }}>
         {misses.map((word) => (
           <span key={word} className="route-miss">
             {word}
@@ -210,7 +213,7 @@ export function RouteRow({
             : ({ '--rank-color': rankHeatColor(rank, HIT_HEAT_CAP) } as CSSProperties)
         }
       >
-        {rank === null ? null : `-${rank}`}
+        {rank === null ? null : rank}
       </span>
       <span className="route-rail">
         <i className="route-node" />

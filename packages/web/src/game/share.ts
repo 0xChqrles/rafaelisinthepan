@@ -132,8 +132,9 @@ export function rowMeans(trajectory: number[]): number[] {
 // Sentence-position keycaps, one per hole (1..3): digit + VS16 + COMBINING ENCLOSING KEYCAP.
 const HOLE_KEYCAPS = ['1️⃣', '2️⃣', '3️⃣'];
 
-// The run in plain text: the bounded row above, on the SAME progress ramp as the ruler
-// (`progressEmoji` sits with the ramp stops in @whippin/shared, so the two can't drift).
+// The run in plain text: the bounded row above, on the SAME heat ramp as the ruler
+// (`progressEmoji` sits with the ramp stops in @whippin/shared — each stop carrying its own
+// emoji — so the two can't drift).
 // This is the fallback where no card image renders — SMS, forwarded or plain-text messages,
 // preview-less clients.
 //

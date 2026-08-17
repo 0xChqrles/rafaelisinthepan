@@ -1,21 +1,16 @@
-// CONTRACT: Word mode's rarity grades are painted in colours COPIED from the app's own
-// palettes (#163). Copied means nothing catches drift if a ramp stop is retuned, which is
-// what this pins: each hex still names the stop it was taken from, so a retune fails here
-// and the choice gets made again on purpose instead of the ladder quietly speaking a stale
-// palette.
-//
-// It also pins the two things that make the ladder MEAN anything, both of which a future
-// colour edit could silently break:
-//   - RED IS RESERVED FOR MISS. No grade may drift into it.
-//   - the grades must stay mutually distinguishable, and clear of the two colours the
-//     label is drawn next to (`--accent`, the day's word it floats on; `--hole`, the
-//     `+Ns` clock gain that fires in the same beat).
-// Measured in CIE76 dE.
+// CONTRACT: Word mode's rarity grades are the MUTED LADDER authored for the calm
+// redesign (2026-08-17). What this pins is the two things that make the ladder MEAN
+// anything, both of which a future colour edit could silently break:
+//   - THE MISS COLOUR IS NO GRADE'S (the reservation red carried until 2026-08-17).
+//   - the grades must stay mutually distinguishable, and clear of the colours the label
+//     is drawn next to (`--accent`, the day's word it floats on; `--danger`, the timer).
+// Measured in CIE76 dE — thresholds re-measured for the muted world, which compresses
+// distances by nature (~25 replaces the electric set's ~33-37).
 
 import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
-import { heatColor, progressColor, WORD_RARITY_COLORS } from '@whippin/shared';
-import { RARITY_COLORS, MISS_COLOR, SLASH_ART, STRIKE_ARTS, STRUCK_MS, strikeFor } from './rarity';
+import { MISS_COLOR, WORD_RARITY_COLORS, heatColor } from '@whippin/shared';
+import { RARITY_COLORS, SLASH_ART, STRIKE_ARTS, STRUCK_MS, strikeFor } from './rarity';
 import { RARITY_NAMES } from '../game/wordGame';
 
 function hex(rgb: string): string {
@@ -51,17 +46,17 @@ function rootVar(name: string): string {
   return m[1];
 }
 const DANGER = rootVar('--danger'); // MISS
-const ACCENT = rootVar('--accent'); // the day's word, which the label floats ON
-const HOLE = rootVar('--hole'); // "you", and the +Ns clock gain fired in the same beat
+const SOLVE = rootVar('--solve'); // the ink blue: the day's word and every solved word
 
-// Where each grade's hex was copied from. Anything not on a shared ramp is a CSS variable,
-// named here so the source is never a mystery.
+// Where each grade comes from: the muted ladder is AUTHORED for the calm palette (no
+// longer copies of ramp stops — those ramps are gone), keeping the electric set's hue
+// walk so a returning player's intuition survives. COMMON alone tracks a live source.
 const SOURCES: Record<string, string> = {
   COMMON: '--muted',
-  UNCOMMON: 'progress stop 40 (green)',
-  RARE: 'progress stop 30 (cyan)',
-  OBSCURE: 'heat stop 0.58 (electric violet)',
-  ARCANE: 'progress stop 70 (pink)',
+  UNCOMMON: 'authored: mint-green ink',
+  RARE: 'authored: sky-cyan ink',
+  OBSCURE: 'authored: violet ink',
+  ARCANE: 'authored: magenta ink',
 };
 
 describe('rarity colours track the palette stops they were copied from', () => {
@@ -69,31 +64,56 @@ describe('rarity colours track the palette stops they were copied from', () => {
     expect(Object.keys(RARITY_COLORS).sort()).toEqual([...RARITY_NAMES].sort());
   });
 
-  it('each grade still names its source stop', () => {
-    // If a ramp stop is retuned, this fails and the choice is made again on purpose.
-    expect(RARITY_COLORS.UNCOMMON).toBe(hex(progressColor(40)));
-    expect(RARITY_COLORS.RARE).toBe(hex(progressColor(30)));
-    expect(RARITY_COLORS.OBSCURE).toBe(hex(heatColor(0.58)));
-    expect(RARITY_COLORS.ARCANE).toBe(hex(progressColor(70)));
-    // COMMON is --muted, read from index.css like the reserved colours above.
+  it('each grade still names its source', () => {
+    // COMMON is the ONE live source — --muted, read from index.css like the reserved
+    // colours above, so a retune fails here and the choice is made again on purpose.
     expect(RARITY_COLORS.COMMON).toBe(rootVar('--muted'));
+    // The other four are authored hexes (see SOURCES), pinned here so a hand-edit of one
+    // is still a deliberate act.
+    expect(RARITY_COLORS.UNCOMMON).toBe('#4ed48d');
+    expect(RARITY_COLORS.RARE).toBe('#3fc6e8');
+    expect(RARITY_COLORS.OBSCURE).toBe('#b164f2');
+    expect(RARITY_COLORS.ARCANE).toBe('#f04ea6');
     expect(Object.keys(SOURCES)).toHaveLength(RARITY_NAMES.length);
   });
 
-  it('RED stays reserved for MISS', () => {
-    expect(MISS_COLOR).toBe(DANGER);
-    // 36.9 is the separation the whole set was measured to hold; red is no exception.
+  it('MISS is the gradient\'s own WEIRD TERMINUS — the red the scale stops on', () => {
+    // The standing rule (2026-08-17): the gradient terminates exactly ON the MISS colour —
+    // one constant, living with the scale in @whippin/shared, pinned identical here.
+    expect(hex(heatColor(0))).toBe(MISS_COLOR);
+    // And it must stay LEGIBLE: MISS is critical feedback text.
+    const bg = rootVar('--bg');
+    const rel = (h: string) => {
+      const lin = (v: number) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+      const [r, g, b] = [1, 3, 5].map((i) => lin(parseInt(h.slice(i, i + 2), 16) / 255));
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const contrast = (a: string, b: string) =>
+      (Math.max(rel(a), rel(b)) + 0.05) / (Math.min(rel(a), rel(b)) + 0.05);
+    expect(contrast(MISS_COLOR, bg)).toBeGreaterThan(5);
+    // A red MISS floats over the cobalt day word in Word mode and the pale-draft
+    // holes in the sentence — measured 125 and 100 dE.
+    expect(deltaE(MISS_COLOR, SOLVE)).toBeGreaterThan(50);
+    expect(deltaE(MISS_COLOR, rootVar('--hole'))).toBeGreaterThan(50);
+  });
+
+  it('the MISS colour is no grade\'s (the reservation red used to carry)', () => {
+    // A float shows a grade name OR MISS, same slot same size, seconds apart — the two
+    // must never read as one colour. 30 is the muted world's re-measured bar.
     for (const name of RARITY_NAMES) {
-      expect(deltaE(RARITY_COLORS[name], DANGER), `${name} vs MISS red`).toBeGreaterThan(36.9);
+      expect(deltaE(RARITY_COLORS[name], MISS_COLOR), `${name} vs MISS`).toBeGreaterThan(30);
+    }
+    // Red stayed on screen (the timer's warning, the invalid shake): re-measured at 30+.
+    for (const name of RARITY_NAMES) {
+      expect(deltaE(RARITY_COLORS[name], DANGER), `${name} vs danger red`).toBeGreaterThan(30);
     }
   });
 
   it('no grade collides with the colours it is rendered beside', () => {
     for (const name of RARITY_NAMES) {
-      // The label floats ON the day's word, drawn in --accent.
-      expect(deltaE(RARITY_COLORS[name], ACCENT), `${name} vs the day's word`).toBeGreaterThan(30);
-      // The +Ns clock gain fires in the SAME beat as the label, in --hole gold.
-      expect(deltaE(RARITY_COLORS[name], HOLE), `${name} vs the clock gain`).toBeGreaterThan(30);
+      // The label floats ON the day's word, drawn in the solve ink. 25 is the muted
+      // world's bar (OBSCURE's violet the closest at 25.3, measured).
+      expect(deltaE(RARITY_COLORS[name], SOLVE), `${name} vs the day's word`).toBeGreaterThan(25);
     }
   });
 
@@ -105,15 +125,15 @@ describe('rarity colours track the palette stops they were copied from', () => {
   });
 
   it('the grades stay mutually distinguishable', () => {
-    // OBSCURE and ARCANE are the pair that matters most and the pair most at risk — two
-    // bright purples blur into one payoff colour at the float's size.
+    // OBSCURE and ARCANE are the pair most at risk — two muted purples blur into one
+    // payoff colour at the float's size. 25 is the muted world's bar (25.5 measured).
     let min = Infinity;
     for (let i = 0; i < RARITY_NAMES.length; i += 1) {
       for (let j = i + 1; j < RARITY_NAMES.length; j += 1) {
         min = Math.min(min, deltaE(RARITY_COLORS[RARITY_NAMES[i]], RARITY_COLORS[RARITY_NAMES[j]]));
       }
     }
-    expect(min).toBeGreaterThan(30);
+    expect(min).toBeGreaterThan(25);
   });
 });
 

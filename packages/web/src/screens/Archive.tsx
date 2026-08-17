@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { activeDate, dayNumber, progressColor } from '@whippin/shared';
+import { activeDate, dayNumber, progressHeatColor } from '@whippin/shared';
 import TopBar from '../components/TopBar';
 import { navigate } from '../routing';
 import { pathForMode, pathForDay, type LangCode, type Mode } from '../langs';
@@ -206,7 +206,7 @@ export default function Archive({ lang, mode = 'sentence' }: { lang: LangCode; m
 }
 
 // One day: a flat key that navigates to that day's game when in range, disabled (dimmed)
-// otherwise. A day with any reconstruction (>0%) is FILLED with its progress-ramp color
+// otherwise. A day with any reconstruction (>0%) is FILLED with its heat-ramp color
 // (solved = 100%), and its number is drawn in the app background color so it reads on the
 // fill; disabled and not-started/0% days stay the neutral surface. A SOLVED day also
 // carries the shading ripple — an `ultracode.png` 12-frame sprite animated in CSS
@@ -254,7 +254,7 @@ function DayCell({
       onClick={() => inRange && navigate(pathForDay(lang, date, mode))}
       // Only the fill color is dynamic (per-day %); the bg-colored number is static CSS
       // (.cal-day-filled). Neutral days pass no style, so the surface default stands.
-      style={filled ? ({ background: progressColor(pct) } as CSSProperties) : undefined}
+      style={filled ? ({ background: progressHeatColor(pct) } as CSSProperties) : undefined}
     >
       {/* A solved day ripples (motion differentiates it from an in-progress day). */}
       {solved && <span className="cal-ripple" aria-hidden="true" />}

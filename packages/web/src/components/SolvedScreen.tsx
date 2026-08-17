@@ -19,7 +19,7 @@ import { SCORE_COUNT_MS } from './resultAnimation';
 // the SCORE, because they answer different questions and running them together read as
 // one undifferentiated column:
 //
-//   PUZZLE — the GUESSED WORDS in the solved blue, popping in one by one (each still a
+//   PUZZLE — the GUESSED WORDS in the solve blue, popping in one by one (each still a
 //            button onto its own history line, with the ambient wave advertising the
 //            tap), and the SOURCE typed under them at its own small caption size.
 //   SCORE  — the named `<tries> TRIES` over its run ruler, the day's standing line,

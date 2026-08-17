@@ -7,49 +7,44 @@ import type { Rarity } from '../game/wordGame';
 // grade moves exactly one table and the compiler finds every hole.
 
 // --- the colours -----------------------------------------------------------------------
-// COPIED from the app's existing palettes, never invented: take stops the app already uses
-// and pin each hex to its source so nothing drifts silently (`rarity.test.ts`).
+// THE INK LADDER (authored 2026-08-17 with the stamp-ink retune — the first calm cut
+// went dusty and read "almost creepy"): five printed-ink tones keeping the electric
+// set's hue walk (neutral → green → cyan → violet → pink) so a returning player's ladder
+// intuition survives, at riso saturations that sit in the ink world without going neon.
 //
-// FOUR constraints, all MEASURED in CIE76 dE rather than eyeballed:
+// Constraints RE-MEASURED for this set (`rarity.test.ts` pins the minimums):
 //
-//   - RED IS RESERVED FOR MISS. Every grade clears 37+ dE from `--danger`; ARCANE's pink is
-//     the closest at 37.75, and the two can never co-occur — a guess is a claim or a miss,
-//     never both.
-//   - `--accent` blue is THE DAY'S WORD, which is the very thing the label floats on top of.
-//     Every grade clears 58+ dE from it. (Progress-ramp blue was the obvious "rare" pick
-//     and was rejected at 14.75 dE — an overlap, not a coexistence.)
-//   - `--hole` gold is "you" AND the `+Ns` clock gain that fires in the SAME beat as this
-//     label. Every grade clears 90+ dE. (Orange, the loot convention's legendary tier, was
-//     rejected at 33.92.)
-//   - LEGIBILITY: the label renders at the float's small pixel size, so 4.5:1 on `--bg` is
-//     the bar. Progress-ramp violet — the intuitive "deep" pick for OBSCURE — FAILS it at
-//     3.64:1, and indigo at 3.00:1; the heat ramp's electric violet clears at 5.04 and is
-//     the only readable purple in the whole inventory.
-//
-// The set's minimum pairwise separation is 36.99 dE, and the hue runs monotonically around
-// the wheel (green → cyan → violet → pink), stopping deliberately short of MISS's red — so
-// the ladder reads as an escalation and no two grades blur into one payoff colour.
+//   - THE MISS COLOUR IS NO GRADE'S: MISS is the gradient's weird-terminus RED
+//     (`MISS_COLOR`, @whippin/shared — back to red when the scale grew past the yellow),
+//     and every grade clears 34+ dE from it.
+//   - `--solve` is THE DAY'S WORD, the very thing the label floats on top of: every
+//     grade clears 25+ (OBSCURE's violet the closest at 26.8).
+//   - the timer's `--danger` red: every grade clears 30+ (ARCANE the closest at 37).
+//   - LEGIBILITY on `--bg`: every grade ≥4.9:1 (OBSCURE was walked up from a 3.5:1
+//     deep violet — the same trap the electric set documented).
 export const RARITY_COLORS: Record<Rarity, string> = {
-  // --muted: the app's own quiet voice, and the only near-neutral in the inventory. It
-  // reads as "no grade awarded", which is what COMMON means.
-  COMMON: '#c4c9d8',
-  // progress-ramp green: the first chromatic step off the grey, and the loot ladder every
-  // player already carries in from elsewhere.
-  UNCOMMON: '#23dc91',
-  // progress-ramp cyan: the blue-family colour that keeps its distance from the solved blue
-  // the label is drawn over.
-  RARE: '#2ad2eb',
-  // heat-ramp electric violet: deep and hidden, and the ladder's biggest lightness drop —
-  // where it visibly leaves the everyday half.
-  OBSCURE: '#c834ff',
-  // progress-ramp pink: the loudest identity colour the app owns, for the rarest thing a
-  // run can turn up.
-  ARCANE: '#ef4f97',
+  // --muted itself: the quiet voice, "no grade awarded", which is what COMMON means.
+  COMMON: '#b0aca4',
+  // mint-green ink — the first chromatic step off the grey.
+  UNCOMMON: '#4ed48d',
+  // sky-cyan ink — the blue family, held clear of the cobalt the label floats over.
+  RARE: '#3fc6e8',
+  // violet ink — deep and hidden, pushed magenta-ward to clear both the cobalt day word
+  // and the gradient's rose-orchid middle.
+  OBSCURE: '#b164f2',
+  // magenta ink — the loudest tone on the ladder.
+  ARCANE: '#f04ea6',
 };
 
-// MISS wears the app's danger red — the one colour this ladder is not allowed to borrow.
-// Kept as a constant beside the grades so the reservation is stated where it is enforced.
-export const MISS_COLOR = '#ff1f54';
+// MISS's colour LIVES WITH THE RAMP now (`MISS_COLOR` in @whippin/shared's heat.ts,
+// user-decided 2026-08-17 in two steps: first off-scale cold — the below-window blue,
+// electrified, replacing `--danger` red — then, hours later, the ramp was extended to
+// CONTINUE past its magenta into that blue and STOP exactly ON it, which made MISS the
+// ramp's own cold terminus: `heatColor(0) === MISS_COLOR`, one constant, so it moved to
+// where the terminus is defined). What stays HERE is the reservation the grades owe it —
+// no grade may near the MISS colour (33+ dE, `rarity.test.ts`) — and the split it bought:
+// red = INVALID/danger (doesn't count; the shake, the timer), cold = valid but NOTHING
+// THERE (counts as a try).
 
 // A grade also has a TEXT-medium presentation — its share-text bead — and that one lives
 // with the share composition it belongs to (`game/share.ts` `RARITY_EMOJI`/`rarityRow`),

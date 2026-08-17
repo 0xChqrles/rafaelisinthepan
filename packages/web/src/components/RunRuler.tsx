@@ -1,11 +1,17 @@
 import type { CSSProperties } from 'react';
-import { progressColor } from '@whippin/shared';
+import { progressHeatColor } from '@whippin/shared';
 
 // A run's RULER (replacing the bucketed squares, decided 2026-07-24): one fixed bar,
-// one cell per counted try colored on the PROGRESS ramp (progressColor — each try's
-// cell IS the progress bar's color at that reconstruction %), no bucketing — with
-// a white tick at each try that dropped a secret and the hole's sentence index (1..3)
-// under it. A guess that drops several secrets stacks its indices under ONE tick.
+// one cell per counted try, no bucketing — with a white tick at each try that dropped a
+// secret and the hole's sentence index (1..3) under it. A guess that drops several secrets
+// stacks its indices under ONE tick.
+//
+// The cells are coloured on the HEAT ramp since 2026-08-16 (user-decided, retiring the
+// progress palette; the ramp itself is the iron bow since 2026-08-17): a try's
+// reconstruction % is read STRAIGHT as heat, so the bar runs the kept iron window's whole
+// length — cold violet-magenta at the start, through crimson and orange, to the hot yellow
+// a rank-0 exponent wears on the solving try — the same ramp every rank in the round was
+// coloured on.
 export default function RunRuler({
   trajectory,
   solvedAt,
@@ -42,7 +48,7 @@ export default function RunRuler({
             className="run-cell"
             style={
               {
-                '--cell-color': progressColor(pct),
+                '--cell-color': progressHeatColor(pct),
                 '--show-delay': `${Math.round(i * stagger)}ms`,
                 '--color-delay': `${Math.round(i * stagger)}ms`,
               } as CSSProperties &

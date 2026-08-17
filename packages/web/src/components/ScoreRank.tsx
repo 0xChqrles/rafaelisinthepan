@@ -19,7 +19,7 @@ import type { Mode } from '../langs';
 // Five players ahead and twenty sharing the bucket is 6th out of 60 AND top quarter.
 //
 // The RANK NUMBER is the line's headline — bigger than the words around it and in the
-// solved blue, the colour of what the round found — and the TOP badge is a filled stamp
+// accent gold — and the TOP badge is a filled stamp
 // beside it, gold on the app's own background, the way an achievement reads here. The
 // badge appears only above `PERCENT_MIN_TOTAL` recorded scores (user-decided 2026-08-15):
 // below that the rank out of the count already says everything true, and a percentage of a

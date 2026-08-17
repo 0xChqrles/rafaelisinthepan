@@ -36,7 +36,7 @@ interface MixStop {
 
 export type TutorialStep =
   // The mix demo: the board's single hole shows its SECRET in blue; each press walks it
-  // further out (stops, e.g. -1 -> -10 -> -100), teaching the neighbor ladder. The last stop
+  // further out (stops, e.g. 1 -> 10 -> 100), teaching the neighbor ladder. The last stop
   // must land on the start word (rank = start_rank) — the demo IS the explanation of where
   // start words come from. The ladder is derived from the board's own rank map (one entry per
   // group, rank <= start_rank). After the last stop the button gives way to the keyboard and

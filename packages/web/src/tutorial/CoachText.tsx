@@ -1,14 +1,13 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import type { CSSProperties } from 'react';
-import { rankHeatColor } from '../components/Hole';
-import { heatColor } from '@whippin/shared';
+import { MISS_COLOR, rankHeatColor } from '@whippin/shared';
 
 // The tutorial's explanation text (#51): typewritten like a game dialog, with inline
 // markup so words LOOK like what they are in-game:
-//   [[b:word]]       the secret/target — blue, the solved color
-//   [[w:word^rank]]  a hint word — gold with its heat-colored exponent, like a hole
-//   [[m:word]]       a MISS word — the coldest heat color
+//   [[b:word]]       the secret/target — the brand accent, like every game word
+//   [[w:word^rank]]  a hint word — the accent with its heat-colored exponent, like a hole
+//   [[m:word]]       a MISS word — the ramp's cold-terminus blue, the float's own colour
 // The FULL text is laid out from the first frame — every character rendered, the
 // unrevealed ones merely invisible — so the wrap points are final before the first
 // letter shows and a word being "typed" can never jump to the next line mid-word.
@@ -44,14 +43,14 @@ function parseRich(copy: string): Seg[] {
 // The screen-reader equivalent: markup stripped, exponents spelled out.
 export function richToPlain(copy: string): string {
   return parseRich(copy)
-    .map((s) => (s.kind === 'word' ? `${s.text} -${s.rank}` : s.text))
+    .map((s) => (s.kind === 'word' ? `${s.text} ${s.rank}` : s.text))
     .join('');
 }
 
-// Typewriter budget of a segment: its characters, plus the exponent ("-200") for a
+// Typewriter budget of a segment: its characters, plus the exponent ("200") for a
 // hint word so the number types on after the word.
 function segLen(s: Seg): number {
-  return s.text.length + (s.kind === 'word' ? String(s.rank).length + 1 : 0);
+  return s.text.length + (s.kind === 'word' ? String(s.rank).length : 0);
 }
 
 const TYPE_MS = 18; // per character — brisk, game-dialog pace
@@ -79,20 +78,20 @@ function renderSeg(s: Seg, budget: number, key: number) {
   if (s.kind === 'plain') return <Fragment key={key}>{chars(s.text, budget)}</Fragment>;
   if (s.kind === 'blue') {
     return (
-      <span key={key} className="rt-blue">
+      <span key={key} className="rt-target">
         {chars(s.text, budget)}
       </span>
     );
   }
   if (s.kind === 'miss') {
     return (
-      <span key={key} style={{ color: heatColor(0) }}>
+      <span key={key} style={{ color: MISS_COLOR }}>
         {chars(s.text, budget)}
       </span>
     );
   }
-  // Hint word: gold, then its exponent types on in the heat color of its rank. The
-  // sup is always in the layout too, so even ITS reveal moves nothing.
+  // Hint word: the brand accent with its heat-coloured exponent, exactly as a hole reads
+  // in-game. The sup is always in the layout too, so even ITS reveal moves nothing.
   const rankStyle: CSSProperties & Record<'--rank-color', string> = {
     '--rank-color': rankHeatColor(s.rank, TEXT_HEAT_SCALE),
   };
@@ -100,7 +99,7 @@ function renderSeg(s: Seg, budget: number, key: number) {
     <span key={key} className="rt-word">
       {chars(s.text, budget)}
       <sup className="hole-rank" style={rankStyle}>
-        {chars(`-${s.rank}`, budget - s.text.length)}
+        {chars(String(s.rank), budget - s.text.length)}
       </sup>
     </span>
   );

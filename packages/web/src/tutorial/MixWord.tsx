@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { rankHeatColor, rankTransitionDuration } from '../components/Hole';
+import { rankTransitionDuration } from '../components/Hole';
+import { rankHeatColor } from '@whippin/shared';
 import { SCRAMBLE_MS, prefersReducedMotion, useScramble } from '../hooks/useScramble';
 import type { RankEntry } from '@whippin/shared';
 
@@ -14,10 +15,10 @@ import type { RankEntry } from '@whippin/shared';
 // EVERY press MIXES the word the same way (the slot-machine scramble): its letters
 // cycle through random glyphs and settle left-to-right into the new word. The
 // exponent is handled with care:
-//   - first mix (blue secret -> -1): no exponent yet — it pops in 200ms AFTER the
+//   - first mix (gold secret -> 1): no exponent yet — it pops in 200ms AFTER the
 //     letters settle;
 //   - later mixes: the exponent stays on and TICKS through the real intermediate
-//     ladder ranks while the letters churn (-2, -3 … -10), landing exactly as the
+//     ladder ranks while the letters churn (2, 3 … 10), landing exactly as the
 //     letters settle, then does its pop a beat later;
 //   - its slot always reserves the LANDING rank's width (monospace font, ch units),
 //     so neither the ticking digits nor the entrance ever shift the centered word.
@@ -30,7 +31,7 @@ export default function MixWord({
   startRank,
   ladder,
 }: {
-  secret: string; // display form shown solved-blue before any mix
+  secret: string; // display form shown resolved (accent, no blank line) before any mix
   entry: RankEntry | null; // the mix's LANDING entry (Tutorial sets it per press)
   startRank: number; // heat scale (the ladder's final landing rank)
   ladder: RankEntry[]; // real neighbors, rank ascending — the exponent's tick path
@@ -95,7 +96,7 @@ export default function MixWord({
 
   // The exponent's slot: rendered whenever there IS an entry, hidden (not
   // unrendered) until its first entrance, and always as wide as the LANDING rank
-  // ("-100" = 4ch in this monospace font) — so ticking digits and the entrance
+  // ("100" = 3ch in this monospace font) — so ticking digits and the entrance
   // never shift the centered word.
   const supHidden = !supIn;
   const shownRank = tickRank ?? entry?.rank ?? 0;
@@ -105,7 +106,7 @@ export default function MixWord({
     ? {
         '--rank-color': rankHeatColor(shownRank, startRank),
         visibility: supHidden ? 'hidden' : undefined,
-        minWidth: `${String(entry.rank).length + 1}ch`,
+        minWidth: `${String(entry.rank).length}ch`,
       }
     : undefined;
 
@@ -113,6 +114,10 @@ export default function MixWord({
     <p className="phrase">
       <span className={`hole${entry ? '' : ' resolved'}`}>
         <span className="hole-word-wrap">
+          {/* The word is the flat brand accent like every hole (the live-heat word was
+              rejected on screen, 2026-08-17); the exponent alone carries the temperature,
+              and the open-blank line under an unresolved word comes from the shared hole
+              CSS — the demo IS a hole, so it wears the blank too. */}
           <span className="hole-word">{jumble ?? (entry ? entry.word : secret)}</span>
         </span>
         {entry && (
@@ -122,7 +127,7 @@ export default function MixWord({
             className={`hole-rank${pop > 0 && !supHidden ? ' rank-pop' : ''}`}
             style={rankStyle}
           >
-            -{shownRank}
+            {shownRank}
           </sup>
         )}
       </span>

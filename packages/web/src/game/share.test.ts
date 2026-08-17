@@ -252,13 +252,14 @@ describe('rowMeans — the trajectory collapsed into rowCellCount buckets', () =
 
   it('PINS the last cell to the solving try, never its bucket mean', () => {
     // The reason the bounded row was briefly retired: a 61-try grind plateaus at 70 and
-    // solves on its last guess, so the final bucket's MEAN is ~70 and the row closed on 🟥 —
-    // a finished game that reads unfinished. The pin makes the last cell the real ending.
+    // solves on its last guess, so the final bucket's MEAN is ~74 and the row closed on
+    // the drained 🟪 — a finished game that reads unfinished. The pin makes the last cell
+    // the real ending, which on this scale is the calm the solve actually restored.
     const grind = [...Array(60).fill(70), 100];
     const cells = rowMeans(grind);
     expect(cells).toHaveLength(rowCellCount(61)); // 10
     expect(cells[cells.length - 1]).toBe(100);
-    expect([...emojiRow(grind)].pop()).toBe('🟪');
+    expect([...emojiRow(grind)].pop()).toBe('🟦');
   });
 
   it('handles no guesses without throwing', () => {
@@ -272,26 +273,26 @@ describe('emojiRow — the bounded row in plain text (fallback where no card ima
     i < 3 ? 12 : i < 8 ? 33 : i < 14 ? 48 : i < 58 ? 61 : i < 61 ? 78 : 100,
   );
 
-  it('walks the same PROGRESS ramp as the ruler, not a second palette', () => {
+  it('walks the same WEIRD→CALM scale as the ruler, not a second palette', () => {
     // 3 tries -> 3 cells, so this row is one emoji per try and each band shows plainly. The
     // bands themselves are contract-tested against the ramp in @whippin/shared.
-    expect(emojiRow([10, 50, 90])).toBe('🟦🟨🟪');
-    expect(emojiRow([10, 50, 90])).toBe([10, 50, 90].map(progressEmoji).join(''));
+    expect(emojiRow([5, 40, 90])).toBe('🟥🟨🟦');
+    expect(emojiRow([5, 40, 90])).toBe([5, 40, 90].map(progressEmoji).join(''));
   });
 
   it('ends on the ramp top when there are no solve moments to mark', () => {
-    expect([...emojiRow([100])].pop()).toBe('🟪');
-    expect([...emojiRow([0])].pop()).toBe('🟦');
+    expect([...emojiRow([100])].pop()).toBe('🟦');
+    expect([...emojiRow([0])].pop()).toBe('🟥');
   });
 
   it('replaces a solving cell with that hole SENTENCE-POSITION keycap', () => {
     // The row carries the ruler's ticks: the cell holding the try that dropped a secret
     // shows the hole's number instead of its ramp color, so the row tells the ORDER the
     // sentence was cracked, not just how the reconstruction moved.
-    expect(emojiRow(GRIND, [14, 58, 62])).toBe('🟦🟩1️⃣🟧🟧🟧🟧🟧🟧2️⃣3️⃣');
+    expect(emojiRow(GRIND, [14, 58, 62])).toBe('🟨🟨1️⃣🟪🟪🟪🟪🟪🟪2️⃣3️⃣');
     // The digit is the hole's position in the SENTENCE, not the order it fell — the same
     // run with the solves reversed puts 3️⃣ where 1️⃣ was.
-    expect(emojiRow(GRIND, [62, 58, 14])).toBe('🟦🟩3️⃣🟧🟧🟧🟧🟧🟧1️⃣2️⃣');
+    expect(emojiRow(GRIND, [62, 58, 14])).toBe('🟨🟨3️⃣🟪🟪🟪🟪🟪🟪1️⃣2️⃣');
   });
 
   it('keeps EVERY keycap when several secrets fall inside one cell', () => {
@@ -300,7 +301,7 @@ describe('emojiRow — the bounded row in plain text (fallback where no card ima
     expect(emojiRow([33, 67, 100], [1, 2, 3])).toBe('1️⃣2️⃣3️⃣');
     // 5 tries -> 4 cells: the last cell holds tries 4 AND 5, so it shows both keycaps in
     // sentence order (the same order the ruler stacks them under one shared tick).
-    expect(emojiRow([20, 40, 55, 70, 100], [3, 5, 4])).toBe('🟦🟩1️⃣2️⃣3️⃣');
+    expect(emojiRow([20, 40, 55, 70, 100], [3, 5, 4])).toBe('🟨🟨1️⃣2️⃣3️⃣');
   });
 
   it('marks nothing for a secret the run never solved', () => {

@@ -5,8 +5,8 @@ import { t } from '../i18n';
 // A device-local play status for one (day, lang), read straight from the persisted round
 // map WITHOUT loading the puzzle. Shared by the language selector (today's status per
 // card) and the archive calendar (#55, each day cell's status) so the two speak the same
-// visual language: absent = not started, finished = gold, in progress = a % on the
-// progress ramp. Statuses are local to this device — that is expected and fine.
+// visual language: absent = not started, finished = gold, in progress = a % on the app's
+// one heat ramp. Statuses are local to this device — that is expected and fine.
 //
 // FINISHED has two words for two games (#163): a sentence is SOLVED, a word run whose
 // clock ran out is DONE — it is finished, not solved, and calling it solved would claim

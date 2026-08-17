@@ -281,7 +281,7 @@ def main():
                       if entry["rank"]}.items())[:5]
     if nearest:
         print("  plus proches : "
-              + ", ".join(f"{w}^-{r}" for r, w in nearest))
+              + ", ".join(f"{w}^{r}" for r, w in nearest))
     # Substitutions, agreement, #134's curator marks and --form typo warnings — the
     # shared reporting block (#154). A lone word is not a secret, so it is named
     # plainly, and an unused --form named another word rather than another hole.

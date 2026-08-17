@@ -203,7 +203,7 @@ export default function WordBoard({ model, lang }: { model: WordBoardModel; lang
                   // read by the `.word-frame` rules in index.css). A near miss out on the
                   // trunk has no grade and stays the drawing's own --fg; the class — not a
                   // rule over every station — is what lets the terminus keep route-found's
-                  // solved blue.
+                  // solve blue.
                   row.zone ? 'graded' : '',
                   censored ? 'route-unknown' : '',
                   revealed ? 'route-unknown route-revealed' : '',

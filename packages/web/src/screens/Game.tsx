@@ -17,7 +17,7 @@ import { useGameStore, roundKeyForDay, holesMatchPuzzle } from '../state/gameSto
 import Phrase from '../components/Phrase';
 import DissolvePhrase from '../components/DissolvePhrase';
 import CellDigits from '../components/CellDigits';
-import ProgressCounter from '../components/ProgressCounter';
+import PuzzleDate from '../components/PuzzleDate';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import SolvedScreen from '../components/SolvedScreen';
@@ -59,8 +59,8 @@ export const KB_EXIT_FALLBACK_MS = 1_200;
 
 // Wrapper: drives the single puzzle. Loads the language's fixed vocabulary
 // (existence set + keyboard prefix set) before playing — existence is decided by it,
-// not by ranks. GameRoute supplies the actual app-header renderer; once the round has
-// computed its progress, that counter is rendered into the header's left slot.
+// not by ranks. GameRoute supplies the actual app-header renderer; the round puts the
+// day's DATE in the header's left slot (2026-08-16, replacing the progress counter).
 export default function Game({
   puzzle,
   dayNumber,
@@ -298,16 +298,20 @@ function Round({
     return () => window.clearTimeout(id);
   }, [dayNumber, isActiveDay, roundKey, solved]);
 
-  // Reconstruction progress (0–100): how much of the sentence is rebuilt. Drives the
-  // header's colored counter. Distinct from the guess-count performance number.
+  // Reconstruction progress (0–100): how much of the sentence is rebuilt. NO LONGER SHOWN
+  // during the round (user-decided 2026-08-16 — the header names the day instead); it is
+  // still computed, and still the one number the round is measured by: it is cached on the
+  // persisted round for the archive/chooser badges, and the per-try trajectory below is
+  // what colours the run ruler at the end. Distinct from the guess-count performance number.
   const progress = useMemo<number>(() => computeProgress(holes, ranks), [holes, ranks]);
 
-  // The status belongs to TopBar's actual left group, not to the game body. A layout
-  // effect updates that slot before paint and clears it when this round leaves.
+  // The header's left slot belongs to TopBar's actual left group, not to the game body. A
+  // layout effect fills it before paint and clears it when this round leaves. It holds WHICH
+  // DAY this is — fixed for the round, so this runs once per day rather than per guess.
   useLayoutEffect(() => {
-    onHeaderLeftChange(<ProgressCounter value={progress} />);
+    onHeaderLeftChange(<PuzzleDate dayNumber={dayNumber} />);
     return () => onHeaderLeftChange(null);
-  }, [onHeaderLeftChange, progress]);
+  }, [onHeaderLeftChange, dayNumber]);
 
   // This round replayed: the per-guess reconstruction-% trajectory (the run ruler's cells,
   // and what the share token carries) plus the solve moments (its ticks), from ONE walk of

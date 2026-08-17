@@ -169,7 +169,7 @@ const STRINGS = {
   // (~60 chars incl. exponents at the mobile width), it is too much: cut it — or split
   // it into two beats, which is what the ending's claim and its instruction became.
   // Copy uses CoachText's inline markup so words LOOK like what they are in-game:
-  // [[b:secret]] blue, [[w:hint^rank]] gold + heat exponent, [[m:miss]] coldest heat.
+  // [[b:secret]] blue, [[w:hint^rank]] gold + heat exponent, [[m:miss]] MISS's cold blue.
   tutMixIntro: {
     en: 'Welcome to Whippin AI, please start by mixing this word.',
     fr: 'Bienvenue sur Whippin AI, commence par mélanger ce mot.',

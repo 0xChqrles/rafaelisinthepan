@@ -1,15 +1,15 @@
 // CONTRACT (light): the share-card SVG (packages/shared/src/cardSvg.ts) must render the
-// player's RUN RULER — one cell per counted try on the SHARED progress ramp (so the card
+// player's RUN RULER — one cell per counted try on the SHARED heat ramp (so the card
 // matches the on-screen ruler), a tick per solving try with the dropped hole's sentence
 // index under it — plus the score and the day's calendar date. Word mode instead draws the
-// day's accented word alone in the solved blue, then its claim count, the per-rarity chip
+// day's accented word alone in the global accent, then its claim count, the per-rarity chip
 // row (one grade-coloured square + count per claimed grade), and the date.
 // Exact positions are cosmetic and not asserted; they get tuned against the rasterized PNG.
 
 import { describe, it, expect } from 'vitest';
 import { renderCardSvg, renderWordCardSvg, CARD_WIDTH, WORD_RARITY_COLORS } from './cardSvg';
 import { dateForDayNumber } from './day';
-import { progressColor } from './progressColor';
+import { progressHeatColor } from './heat';
 
 describe('renderCardSvg', () => {
   const data = {
@@ -26,9 +26,9 @@ describe('renderCardSvg', () => {
     expect(rects).toHaveLength(1 + data.trajectory.length + 3); // bg + 6 cells + 3 ticks
   });
 
-  it('colors each cell with the SHARED progress ramp (matches the on-screen ruler)', () => {
+  it('colors each cell with the SHARED heat ramp (matches the on-screen ruler)', () => {
     const svg = renderCardSvg(data);
-    for (const pct of data.trajectory) expect(svg).toContain(`fill="${progressColor(pct)}"`);
+    for (const pct of data.trajectory) expect(svg).toContain(`fill="${progressHeatColor(pct)}"`);
   });
 
   it('marks each solved secret with its sentence index (1..3), in sentence order', () => {
@@ -123,13 +123,13 @@ describe('renderCardSvg', () => {
 describe('renderWordCardSvg', () => {
   const data = { lang: 'fr', dayNumber: 20638, counts: [7, 3, 1, 1, 0], word: 'forêt' };
 
-  it('draws the accented word ALONE, in the game\'s solved blue — no node square', () => {
+  it('draws the accented word ALONE, in the game\'s accent — no node square', () => {
     const svg = renderWordCardSvg(data);
-    expect(svg).toMatch(/<text[^>]+fill="#2f7bff">forêt<\/text>/);
+    expect(svg).toMatch(/<text[^>]+fill="#4f6dff">forêt<\/text>/);
     expect(svg).not.toContain('foret');
     // The in-game square marks the end of a LINE and this card draws none; the only
     // rects left are the background and the rarity chips.
-    expect(svg).not.toMatch(/<rect[^>]+fill="#2f7bff"/);
+    expect(svg).not.toMatch(/<rect[^>]+fill="#4f6dff"/);
   });
 
   it("names the claim count as the counts' sum, with the calendar date below", () => {
@@ -165,7 +165,7 @@ describe('renderWordCardSvg', () => {
     // One colour per grade, commonest first — pinned copies of the web's RARITY_COLORS
     // (components/rarity.ts); the web's rarity.test.ts asserts the identity from its side,
     // so this pins the shape and the exact values the card is allowed to speak.
-    expect(WORD_RARITY_COLORS).toEqual(['#c4c9d8', '#23dc91', '#2ad2eb', '#c834ff', '#ef4f97']);
+    expect(WORD_RARITY_COLORS).toEqual(['#b0aca4', '#4ed48d', '#3fc6e8', '#b164f2', '#f04ea6']);
   });
 
   it('keeps a forged token\'s huge counts inside the card (the row shrinks as one unit)', () => {

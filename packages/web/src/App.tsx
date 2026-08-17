@@ -8,7 +8,6 @@ import Archive from './screens/Archive';
 import Game from './screens/Game';
 import WordGame from './screens/WordGame';
 import TopBar from './components/TopBar';
-import BackgroundWaves from './components/BackgroundWaves';
 import LazyStreakDialog from './components/LazyStreakDialog';
 import LoadError from './components/LoadError';
 import NoPuzzle from './components/NoPuzzle';
@@ -69,7 +68,6 @@ export default function App() {
   return (
     <div className="app">
       {/* The living backdrop — every screen (game, archive, select, tutorial) sits on it. */}
-      <BackgroundWaves />
       {route.view === 'select' && <LanguageSelect />}
       {route.view === 'modeSelect' && <ModeSelect />}
       {route.view === 'archive' && <Archive lang={route.lang} mode={route.mode} />}
