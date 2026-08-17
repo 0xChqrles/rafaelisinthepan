@@ -124,7 +124,7 @@ export default function Archive({ lang, mode = 'sentence' }: { lang: LangCode; m
             aria-label={t(lang, 'ariaBackToToday')}
             onClick={() => navigate(pathForMode(lang, mode))}
           >
-            <CloseIcon className="pixel-icon" aria-hidden />
+            <CloseIcon className="ui-icon" aria-hidden />
           </button>
         }
       />
@@ -152,7 +152,7 @@ export default function Archive({ lang, mode = 'sentence' }: { lang: LangCode; m
             disabled={!canPrev}
             onClick={() => canPrev && step(-1)}
           >
-            {'<'}
+            {'‹'}
           </button>
           <span className="cal-month">{monthTitle}</span>
           <button
@@ -163,7 +163,7 @@ export default function Archive({ lang, mode = 'sentence' }: { lang: LangCode; m
             disabled={!canNext}
             onClick={() => canNext && step(1)}
           >
-            {'>'}
+            {'›'}
           </button>
         </div>
 

@@ -201,7 +201,7 @@ function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: st
         aria-label={t(lang, 'ariaArchive')}
         onClick={() => navigate(pathForArchive(lang, mode))}
       >
-        <CalendarIcon className="pixel-icon" aria-hidden />
+        <CalendarIcon className="ui-icon" aria-hidden />
       </button>
       {/* Replays the onboarding tutorial (#51) on demand — one tap, out of the way. */}
       <button
@@ -210,7 +210,7 @@ function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: st
         aria-label={t(lang, 'ariaHelp')}
         onClick={() => openTutorial('replay')}
       >
-        <QuestionIcon className="pixel-icon" aria-hidden />
+        <QuestionIcon className="ui-icon" aria-hidden />
       </button>
     </>
   );

@@ -19,9 +19,11 @@ export default function ModeButton({ lang }: { lang: string }) {
       onClick={() => navigate(MODE_SELECT_PATH)}
       aria-label={t(lang, 'ariaChangeMode')}
     >
-      {/* Drawn, not masked (unlike .globe-icon): the mark is COLOURED art in the app's
-          blue, so painting it with currentColor would flatten it to chrome grey. The
-          .home-btn opacity/brightness hover carries its affordance instead. */}
+      {/* The one PIXEL artifact left in the modern header (2026-08-18): the mark is the
+          app's logo, and the pixel identity is the game's brand. Drawn, not masked: it is
+          COLOURED art in the app's blue, so painting it with currentColor would flatten
+          it to chrome grey. The .home-btn opacity/brightness hover carries its
+          affordance instead. */}
       <img className="mode-icon" src={whippinIcon} alt="" aria-hidden="true" draggable="false" />
     </button>
   );

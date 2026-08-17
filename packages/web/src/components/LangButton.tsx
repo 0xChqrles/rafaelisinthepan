@@ -1,6 +1,7 @@
 import { navigate } from '../routing';
 import { SELECT_PATH } from '../langs';
 import { t } from '../i18n';
+import GlobeIcon from '../assets/icons/globe.svg?react';
 
 // The language control at the left of the app header's action group: it opens the language
 // screen — a route, not a modal, and the ONE language-switching gesture everywhere (game and
@@ -20,10 +21,7 @@ export default function LangButton({ lang }: { lang: string }) {
       onClick={() => navigate(SELECT_PATH)}
       aria-label={t(lang, 'ariaChangeLanguage')}
     >
-      {/* Masked rather than drawn: globe.png is a single-colour glyph, so painting it with
-          `currentColor` lets it take the header's muted -> --fg hover like the inline SVG
-          icons beside it, instead of being the one control in the group that cannot. */}
-      <span className="pixel-icon globe-icon" aria-hidden="true" />
+      <GlobeIcon className="ui-icon" aria-hidden />
     </button>
   );
 }

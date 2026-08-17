@@ -1,19 +1,88 @@
 /* ============================================================
-   Whippin AI — understated pixel art, flat UI
-   Font: Press Start 2P
+   Whippin AI — pixel art where you PLAY, modern chrome everywhere else
+   Fonts: Press Start 2P (the game), Inter (the chrome), Instrument Serif (display)
    ============================================================ */
 
-/* Self-hosted (no Google Fonts request): the pixel font IS the visual identity, so it
-   must not depend on a third-party origin (render-blocking @import, tracking, one more
-   failure mode). Vite hashes the file into assets/* -> immutable CDN caching. The
-   backend's share card embeds the same face (ogCard assets), so on-screen and card
-   typography stay in lockstep. */
+/* ALL fonts are self-hosted (no Google Fonts request): the type IS the visual identity,
+   so it must not depend on a third-party origin (render-blocking @import, tracking, one
+   more failure mode). Vite hashes the files into assets/* -> immutable CDN caching. The
+   backend's share card embeds the pixel face (ogCard assets), so the game words on screen
+   and on the card stay in lockstep.
+
+   THE TYPE SYSTEM IS THREE VOICES (user-decided 2026-08-18):
+   - PIXEL (Press Start 2P) is reserved for what the player PLAYS: the sentence and its
+     holes, Word mode's day word, the route drawings, the prompt, the keyboard, the
+     hit/loot feedback and the score watermark. Nothing else wears it.
+   - UI (Inter, variable) is the chrome: header, labels, buttons, dates, the clock,
+     standings, calendars, coach copy. Real tabular figures for everything that ticks.
+   - DISPLAY (Instrument Serif) is the poster voice — the Séance-poster serif over the
+     aura gradients: chooser names, the credit headline, the big result numbers. */
 @font-face {
   font-family: 'Press Start 2P';
   font-style: normal;
   font-weight: 400;
   font-display: swap;
   src: url('./assets/fonts/PressStart2P.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./assets/fonts/inter-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
+    U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./assets/fonts/inter-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113,
+    U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/instrument-serif-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
+    U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/instrument-serif-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113,
+    U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/instrument-serif-latin-italic.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
+    U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/instrument-serif-latin-ext-italic.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113,
+    U+2C60-2C7F, U+A720-A7FF;
 }
 
 :root {
@@ -44,8 +113,20 @@
   --flame: #4642e8; /* streak flame indigo — the sprite's body color (#74); milestone tiers swap it */
 
   --pixel-font: 'Press Start 2P', monospace;
-  --press: var(--pixel-font);
-  --vt: var(--pixel-font);
+  /* The chrome voice and the display voice (2026-08-18). `--ui` carries every label,
+     button, number and body of copy that is not part of the game surface; `--display`
+     is the poster serif for the few moments that deserve a headline. */
+  --ui: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --display: 'Instrument Serif', Georgia, serif;
+
+  /* The modern chrome kit (2026-08-18): one radius scale, one hairline, one glass
+     surface — every non-game box derives from these so the chrome reads as one design. */
+  --r-sm: 10px;
+  --r-md: 16px;
+  --r-lg: 22px;
+  --line: rgba(244, 241, 232, 0.12);
+  --line-strong: rgba(244, 241, 232, 0.4);
+  --glass: rgba(16, 18, 30, 0.62);
 
   --cap-shift: 0;
   --text-shift: 0;
@@ -91,16 +172,27 @@ body {
     radial-gradient(60% 50% at -5% 105%, rgba(245, 129, 7, 0.07), transparent 70%),
     var(--bg);
   color: var(--fg);
-  font-family: var(--vt);
+  /* The CHROME face is the default (2026-08-18); every game surface pins the pixel font
+     itself. Slightly positive optical sizing for the dark ground: Inter at weight 400
+     thins out over the glows, so the app-wide resting weight is 430. */
+  font-family: var(--ui);
+  font-weight: 430;
+  /* Never synthesize: the pixel face and the display serif ship ONE weight each, and a
+     faux bold smears exactly the way a fractional pixel scale does. Inter is variable,
+     so every real weight the chrome asks for exists. */
+  font-synthesis: none;
   /* Press Start 2P ships fi/fl (and other) ligatures that render NARROWER than two
      cells, so the font is not truly fixed-width by default. That breaks every monospace
      assumption in the app — most visibly the slot-machine scramble (its churning random
      glyphs never form those pairs, so the width jitters as the target's ligatures resolve)
      and MixWord's ch-based exponent-width reservation. Disabling ligatures (inherited by
-     the whole tree) makes every glyph exactly one cell. */
+     the whole tree) makes every glyph exactly one cell. Inter loses nothing it needs. */
   font-variant-ligatures: none;
   overflow: hidden;
-  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45);
+  /* No global hard shadow any more (2026-08-18): the 2px offset was the pixel identity's,
+     and under the modern chrome it read as dirt. The pixel GAME surfaces declare their own
+     hard shadow where they always did; chrome floating over the glows (the header) carries
+     a soft one locally. */
 }
 
 button,
@@ -118,10 +210,12 @@ button * {
 }
 
 .status {
-  font-family: var(--press);
-  font-size: 12px;
+  font-family: var(--ui);
+  font-size: 13px;
+  font-weight: 600;
   color: var(--accent);
-  letter-spacing: 1px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   padding-top: var(--cap-shift);
 }
 .status.error {
@@ -145,13 +239,12 @@ button * {
    that did not happen), so it never reads like a scheduled day off. */
 .no-puzzle-note {
   margin: 0;
-  max-width: 36ch;
+  max-width: 44ch;
   text-align: center;
-  font-family: var(--press);
-  font-size: 11px;
-  line-height: 1.9;
+  font-family: var(--ui);
+  font-size: 14px;
+  line-height: 1.6;
   color: var(--muted);
-  letter-spacing: 1px;
 }
 
 /* Visually hidden but still announced: the screen-reader live region mirroring the
@@ -175,7 +268,8 @@ button * {
 }
 .pixel-scroll::-webkit-scrollbar-thumb {
   background: var(--surface-hover);
-  border-radius: 0;
+  /* Rounded since the modern-chrome pass (2026-08-18): the scrollbar is chrome, not play. */
+  border-radius: 999px;
 }
 .pixel-scroll::-webkit-scrollbar-thumb:hover {
   background: var(--muted);
@@ -275,42 +369,64 @@ button * {
   gap: 14px;
 }
 
+/* AURA CARDS (2026-08-18, the modern-chrome pass): each option is a rounded glass tile
+   carrying its own soft radial glow — the Séance-poster orbs as interface — under a
+   hairline rule. The glow rotates through the ground's own three inks by position
+   (cobalt, violet, orange), so the list reads as a small constellation rather than a
+   stack of identical tiles. Interaction stays the app's one language: brighten. */
 .chooser-card {
   position: relative;
   overflow: hidden; /* keeps the status strip inside the tile */
   display: flex;
   align-items: center;
   justify-content: center; /* text-only cards since 2026-08-17 — the name IS the card */
-  padding: 18px 22px;
-  background: var(--surface-hover);
-  border: 0;
+  padding: 26px 22px;
+  background:
+    radial-gradient(130% 160% at 18% -30%, rgba(24, 76, 244, 0.34), transparent 62%),
+    var(--glass);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
   cursor: pointer;
   text-shadow: none;
-  transition: filter 0.08s linear;
+  transition: filter 0.08s linear, border-color 0.12s linear;
+}
+.chooser-card:nth-child(2n) {
+  background:
+    radial-gradient(130% 160% at 85% -30%, rgba(139, 69, 234, 0.32), transparent 62%),
+    var(--glass);
+}
+.chooser-card:nth-child(3n) {
+  background:
+    radial-gradient(130% 160% at 50% 130%, rgba(245, 129, 7, 0.22), transparent 62%),
+    var(--glass);
 }
 .chooser-card:hover {
   filter: brightness(1.2);
+  border-color: var(--line-strong);
 }
 .chooser-card:active {
   filter: brightness(1.35);
 }
 
+/* The name in the DISPLAY serif — the option is the headline of its own card. */
 .chooser-card-name {
-  font-family: var(--press);
-  font-size: clamp(13px, 2vh, 16px);
-  letter-spacing: 2px;
-  text-transform: uppercase;
+  font-family: var(--display);
+  font-size: clamp(24px, 3.4vh, 30px);
+  line-height: 1.1;
+  letter-spacing: 0.01em;
   color: var(--fg);
   padding-top: var(--cap-shift);
 }
 
 /* Today's status strip (width + color set inline: % on the heat ramp, full gold
-   when solved). Decorative — the card's aria-label speaks the status. */
+   when solved). Decorative — the card's aria-label speaks the status. Rounded and
+   lifted off the card's bottom rule so it reads as a progress filament, not a border. */
 .chooser-strip {
   position: absolute;
   left: 0;
   bottom: 0;
-  height: 4px;
+  height: 3px;
+  border-radius: 0 999px 999px 0;
 }
 
 /* ===================== archive calendar (issue #55) ===================== */
@@ -337,9 +453,9 @@ button * {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 12px;
   margin-bottom: 28px;
-  font-family: var(--press);
+  font-family: var(--display);
   color: var(--fg);
 }
 .archive-streak-flame {
@@ -349,11 +465,11 @@ button * {
   image-rendering: pixelated;
 }
 .archive-streak-count {
-  font-size: 28px;
+  font-size: 40px;
   line-height: 1;
   font-variant-numeric: tabular-nums;
-  /* Optical correction: the flame's visual mass sits low, the pixel glyphs high. */
-  transform: translateY(4px);
+  /* Optical correction: the flame's visual mass sits low. */
+  transform: translateY(2px);
 }
 
 /* Month navigation, clamped to [first puzzle month, current month] — the ‹ › ends dim
@@ -367,20 +483,24 @@ button * {
 .cal-month {
   flex: 1;
   text-align: center;
-  font-family: var(--press);
-  font-size: clamp(12px, 1.8vh, 15px);
-  letter-spacing: 1px;
-  text-transform: uppercase;
+  /* The month is the page's headline — the display serif, no uppercase: a serif shouts
+     nothing (the locale's own capitalisation stands). */
+  font-family: var(--display);
+  font-size: clamp(20px, 3vh, 24px);
+  letter-spacing: 0.01em;
   color: var(--fg);
   padding-top: var(--cap-shift);
 }
 .cal-arrow {
   flex: none;
-  padding: 6px 10px;
-  font-family: var(--press);
-  font-size: clamp(14px, 2.4vh, 18px);
+  padding: 2px 14px 6px;
+  font-family: var(--ui);
+  font-size: clamp(22px, 3.2vh, 26px);
+  font-weight: 400;
+  line-height: 1;
   background: transparent;
   border: 0;
+  border-radius: var(--r-sm);
   color: var(--muted);
   cursor: pointer;
   transition: color 0.08s linear, filter 0.08s linear;
@@ -406,8 +526,11 @@ button * {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: var(--press);
-  font-size: clamp(8px, 2vw, 10px);
+  font-family: var(--ui);
+  font-size: clamp(9px, 2vw, 11px);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--muted);
   padding-bottom: 2px;
 }
@@ -426,8 +549,9 @@ button * {
   padding: 0;
   background: var(--surface-hover);
   border: 0;
+  border-radius: var(--r-sm);
   color: var(--fg);
-  font-family: var(--press);
+  font-family: var(--ui);
   cursor: pointer;
   text-shadow: none;
   transition: filter 0.08s linear;
@@ -455,7 +579,8 @@ button * {
   position: absolute;
   inset: 0;
   z-index: 2;
-  border: 3px solid var(--fg);
+  border: 2px solid var(--fg);
+  border-radius: inherit;
   pointer-events: none;
 }
 /* Filled (>0% reconstruction): the fill color is inline (per-day % on the heat ramp);
@@ -472,7 +597,8 @@ button * {
 .cal-day-num {
   position: relative; /* above the ripple */
   z-index: 1;
-  font-size: clamp(11.5px, 2.75vw, 15px);
+  font-size: clamp(12px, 2.75vw, 15px);
+  font-weight: 550;
   padding-top: var(--cap-shift);
   font-variant-numeric: tabular-nums;
 }
@@ -660,7 +786,10 @@ button * {
   left: 0;
   right: 0;
   z-index: 60;
-  font-family: var(--press);
+  font-family: var(--ui);
+  /* The chrome's soft legibility shadow: the corners still sit directly on the glows,
+     but the modern face wants a bloom, not the pixel identity's hard 2px offset. */
+  text-shadow: 0 2px 14px rgba(8, 9, 15, 0.9);
   pointer-events: none;
 }
 .topbar-inner {
@@ -697,21 +826,23 @@ button * {
 .topbar-skip:hover {
   color: var(--fg);
 }
-/* Icon policy: a standalone pixel-art icon carries its OWN display size — the SVG's
-   `width`/`height` (= 3× its viewBox), right next to the viewBox in the .svg file, is the
-   single source of truth for its size. So the CSS here only sets shared rendering, never a
-   size. Every control icon's "pixel" is 3 screen px, keeping pixel art crisp + uniform in
-   weight. The streak micro-stat's flame and the responsive keyboard glyphs are
-   intentionally sized by their own component classes instead. */
-.pixel-icon {
+/* Icon policy (revised 2026-08-18 with the modern chrome): TWO icon families, one per
+   voice. `.ui-icon` is the CHROME set — 24-grid stroke icons (1.8px, round caps,
+   currentColor, no fill) — worn by every header/modal control; it keeps its size IN the
+   .svg file (width/height beside the viewBox), so an icon's size stays a single source
+   of truth. The PIXEL icons survive only where the surface is a PLAY surface: the
+   keyboard's enter/backspace glyphs, which carry their own `.kb-icon` sizing +
+   crispEdges (the old standalone `.pixel-icon` class left with its last consumer). */
+.ui-icon {
   display: block;
-  shape-rendering: crispEdges;
 }
 
-/* The header's Whippin mark (the mode chooser's glyph): the 16x16 sprite at an exact 2x,
-   the same 32px the flag used to take in this row. Drawn, not masked — unlike .globe-icon
-   it is COLOURED art, so it keeps its blue and takes .home-btn's opacity/brightness hover
-   rather than the group's currentColor tint. */
+/* The header's Whippin mark (the mode chooser's glyph): the 16x16 sprite at an exact 2x.
+   Deliberately the ONE pixel artifact left in the modern header (2026-08-18): it is the
+   app's LOGO, and the pixel identity is the game's brand — the mark carries it the way an
+   enamel pin sits on a suit. Drawn, not masked: it is COLOURED art, so it keeps its blue
+   and takes .home-btn's opacity/brightness hover rather than the group's currentColor
+   tint. */
 .mode-icon {
   display: block;
   width: 32px;
@@ -733,9 +864,8 @@ button * {
   pointer-events: auto;
 }
 /* The language globe, the game header's archive entry and the archive's back-to-today
-   control: currentColor glyphs, muted -> fg on hover like the "?" and skip. The globe is a
-   masked PNG rather than an inline SVG (see .globe-icon) but takes currentColor the same
-   way, so the whole right group brightens together. */
+   control: currentColor stroke glyphs, muted -> fg on hover like the "?" and skip, so the
+   whole right group brightens together. */
 .lang-btn,
 .archive-btn,
 .archive-close {
@@ -751,14 +881,12 @@ button * {
    same corner the game gives its percentage (decided 2026-07-21; formerly absolutely
    centered). */
 .topbar-title {
-  font-size: clamp(12px, 1.8vh, 14px);
-  letter-spacing: 1px;
+  font-size: clamp(11px, 1.7vh, 13px);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
-  /* Optical correction: Press Start glyphs sit high in their em box (empty descender
-     row), so flex-centering reads shifted UP next to the right chip's icons — nudge
-     down ~0.15em (the same correction the streak counts carry). */
-  transform: translateY(0.15em);
 }
 
 /* Logo doubles as the home button, sitting at the left of the HUD beside the bar.
@@ -773,34 +901,22 @@ button * {
   padding: 0;
   background: transparent;
   border: 0;
+  border-radius: var(--r-sm);
   cursor: pointer;
   overflow: hidden;
   opacity: 0.85;
-  transition: opacity 0.12s ease, filter 0.12s ease;
+  transition: opacity 0.12s ease, filter 0.12s ease, background-color 0.12s ease;
 }
 .home-btn:hover {
   opacity: 1;
   filter: brightness(1.2);
+  /* A whisper of a chip under the hovered control — modern chrome's hover, without
+     breaking the no-band header (nothing paints until touched). */
+  background-color: rgba(244, 241, 232, 0.06);
 }
-/* The header's language control (2026-08-06, replacing the current puzzle's flag): the
-   15x15 globe at an exact 2x (30px), centered in the square .home-btn box by its flex — an
-   integer scale, never stretched to the box (a fractional fill would blur the grid), and
-   sitting at the same optical weight as the 27px calendar and "?" beside it.
-   It is MASKED rather than drawn as an <img>: globe.png is one colour plus transparency, so
-   painting the mask with `currentColor` puts it on the group's muted -> --fg hover with the
-   inline SVGs, which an <img> could only approximate with a filter. */
-.globe-icon {
-  width: 30px;
-  height: 30px;
-  background-color: currentColor;
-  -webkit-mask-image: url('./assets/icons/globe.png');
-  mask-image: url('./assets/icons/globe.png');
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  -webkit-mask-size: 30px 30px;
-  mask-size: 30px 30px;
-  image-rendering: pixelated;
-}
+/* (The masked globe.png died with the pixel header, 2026-08-18: the language control is a
+   `.ui-icon` stroke globe now, inheriting the group's muted -> --fg hover like every other
+   inline SVG in the row.) */
 
 /* WHICH DAY is being played (user-decided 2026-08-16, replacing the reconstruction-%
    counter that held this corner): the day's calendar date, spelled the way every other
@@ -813,11 +929,10 @@ button * {
 .puzzle-date {
   font-size: 13px;
   line-height: 1;
-  letter-spacing: 1px;
+  font-weight: 550;
+  letter-spacing: 0.1em;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
-  /* Same optical downshift as .topbar-title: the pixel glyphs sit high in the em box. */
-  transform: translateY(0.15em);
 }
 /* --- giant score watermark, always behind the play content --- */
 .progress-background {
@@ -849,7 +964,7 @@ button * {
 /* --- sentence --- */
 .phrase {
   margin: 0;
-  font-family: var(--vt);
+  font-family: var(--pixel-font);
   font-size: clamp(18px, 3.2vw, 30px);
   line-height: 1.5;
   text-align: left;
@@ -1131,9 +1246,12 @@ button * {
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  font-family: var(--press);
+  /* Feedback ON a game word speaks the game's own voice — pixel, like the word it lands
+     on. The hard shadow moved here from body when the global one went (2026-08-18). */
+  font-family: var(--pixel-font);
   font-size: 28px;
   color: #fff;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.5);
   pointer-events: none;
   opacity: 0;
   animation:
@@ -1229,7 +1347,7 @@ button * {
   /* Never wider than the column it sits in — that bound is what `.wi-text` crops against. */
   max-width: 100%;
   padding: calc(4px + var(--text-shift)) 8px calc(4px - var(--text-shift));
-  font-family: var(--vt);
+  font-family: var(--pixel-font);
   font-size: 24px;
   color: var(--fg);
   /* No native <input> to focus (issue #36): input comes from the on-screen keyboard
@@ -1300,7 +1418,7 @@ button * {
 .hint {
   margin: 0;
   min-height: 24px;
-  font-family: var(--vt);
+  font-family: var(--pixel-font);
   font-size: 20px;
   color: var(--danger);
   letter-spacing: 0.5px;
@@ -1333,23 +1451,28 @@ button * {
    content, not a fourth trophy. */
 .solved-work {
   margin: 0;
-  font-family: var(--press);
-  font-size: clamp(13px, 1.8vw, 17px);
-  line-height: 1.5;
+  /* The credit's headline is the app's one EDITORIAL moment — the work's title in the
+     display serif, italic, the way a title is set in print (2026-08-18). Still the
+     accent: gold over muted is what ranks the two lines. */
+  font-family: var(--display);
+  font-style: italic;
+  font-size: clamp(20px, 2.6vw, 26px);
+  line-height: 1.35;
   color: var(--accent);
-  letter-spacing: 1px;
+  letter-spacing: 0.01em;
   padding-top: var(--text-shift);
 }
 /* What the headline IS and who it is by — `BOOK by Victor Hugo` — as one muted phrase
    rather than a stack of fields. It belongs to the line above it, so it sits tight under
    it; the caption's gap opens between the credit and the words above, not inside it. */
 .solved-by {
-  margin: -4px 0 0;
-  font-family: var(--press);
-  font-size: 10px;
+  margin: -2px 0 0;
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 550;
   line-height: 1.5;
   color: var(--muted);
-  letter-spacing: 1px;
+  letter-spacing: 0.1em;
 }
 .source-type-slot {
   position: relative;
@@ -1456,7 +1579,7 @@ button * {
   gap: 10px clamp(20px, 4.5vw, 40px);
 }
 .solved-word {
-  font-family: var(--vt);
+  font-family: var(--pixel-font);
   font-size: clamp(26px, 6vw, 36px);
   line-height: 1.2;
   letter-spacing: 0;
@@ -1506,8 +1629,9 @@ button * {
   filter: brightness(1.35);
 }
 .solved-word-num {
-  font-family: var(--press);
-  font-size: 10px;
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 600;
   color: var(--muted);
   margin-right: 7px;
   vertical-align: super;
@@ -1550,17 +1674,19 @@ button * {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 9px;
-  font-family: var(--press);
-  letter-spacing: 2px;
+  gap: 8px;
+  font-family: var(--ui);
   font-variant-numeric: tabular-nums;
 }
 /* A hidden ghost of the final count reserves the exact width (incl. letter-spacing, which
-   `ch` units miss); the live tally is overlaid right-aligned, so counting never reflows. */
+   `ch` units miss); the live tally is overlaid right-aligned, so counting never reflows.
+   The NUMBER is a display-serif headline (2026-08-18) — the result said in the poster
+   voice — over the unit as a small tracked UI label. */
 .solved-score-num {
   position: relative;
   display: inline-block;
-  font-size: clamp(30px, 4.6vh, 40px);
+  font-family: var(--display);
+  font-size: clamp(44px, 6.4vh, 60px);
   line-height: 1;
   color: var(--fg);
   font-variant-numeric: tabular-nums;
@@ -1574,16 +1700,25 @@ button * {
   text-align: right;
 }
 .solved-score-unit {
-  font-size: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
   line-height: 1;
   color: var(--muted);
 }
-/* Run ruler (decided 2026-07-24, replacing the bucketed squares): one continuous bar on
-   the app's one HEAT ramp (2026-08-16), one flat cell per counted try (the raw trajectory —
-   each cell is progressHeatColor at that try's reconstruction %, the % read straight as
-   heat, no bucketing on screen), with
-   a white tick at each solving try and the dropped hole's sentence index under it.
-   The padding-bottom reserves the tick-number lane so rows keep their rhythm. */
+/* Run ruler — ONE CONTINUOUS GRADIENT since the modern-chrome pass (user-decided
+   2026-08-18, superseding the flat per-try cells): the run is still the raw trajectory —
+   RunRuler builds a linear-gradient with one stop per counted try, each at that try's
+   progressHeatColor — but the bar renders it as a smooth rounded filament with its own
+   BLOOM underneath (the aura read: the journey as a strip of light, red weirdness
+   resolving into cobalt calm). Nothing informational was dropped: the solve markers and
+   their sentence indices survive, restyled as glowing pins.
+
+   The reveal keeps the old two-beat semantics with new gestures: `.shown` WIPES the
+   neutral track in left-to-right, `.colorized` chases it with the gradient (both are
+   clip-path transitions over `--sweep-ms`, which RunRuler derives from the same stagger
+   the old per-cell delays used — so resultAnimation's timeline is untouched, and reduced
+   motion still collapses the sweep via the global transition rule). */
 .run-ruler {
   width: 100%;
   /* Symmetric block padding: the bottom lane holds the tick numbers, the matching top
@@ -1596,36 +1731,59 @@ button * {
 }
 .run-bar {
   position: relative;
-  display: flex;
-  height: 16px;
+  height: 10px;
 }
-.run-cell {
-  flex: 1 1 0;
-  image-rendering: pixelated;
+/* The bloom: the same gradient, blurred wide and dimmed, sitting under the bar. It
+   arrives WITH the colorize beat (opacity, not a wipe — a blurred edge cannot read a
+   wipe anyway). */
+.run-bloom {
+  position: absolute;
+  inset: -3px -2px;
+  border-radius: 999px;
+  background: var(--run-gradient, var(--surface-hover));
+  filter: blur(12px);
   opacity: 0;
-  background-color: var(--surface-hover);
-  transition:
-    opacity 1ms linear var(--show-delay, 0ms),
-    background-color 1ms linear var(--color-delay, 0ms);
+  transition: opacity 700ms ease var(--sweep-ms, 0ms);
 }
-.run-ruler.shown .run-cell {
-  opacity: 1;
+.run-ruler.colorized .run-bloom {
+  opacity: 0.45;
 }
-.run-ruler.colorized .run-cell {
-  background-color: var(--cell-color);
+/* The neutral track and the gradient fill: two stacked rounded layers, each revealed by
+   its own left-to-right clip wipe. */
+.run-track,
+.run-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  clip-path: inset(0 100% 0 0 round 999px);
+  transition: clip-path var(--sweep-ms, 0ms) linear;
 }
-/* A solve moment: the tick sits on the RIGHT edge of the solving try's cell (the state
+.run-track {
+  background: var(--surface-hover);
+}
+.run-fill {
+  background: var(--run-gradient, var(--surface-hover));
+}
+.run-ruler.shown .run-track {
+  clip-path: inset(0 0 0 0 round 999px);
+}
+.run-ruler.colorized .run-fill {
+  clip-path: inset(0 0 0 0 round 999px);
+}
+/* A solve moment: the pin sits on the RIGHT edge of the solving try's slice (the state
    after that guess), overhanging the bar like a ruler mark; it fades in when the
-   colorize wave reaches its column. Several secrets dropped by one guess stack their
-   indices vertically under the single shared tick. */
+   colorize wipe reaches its column. Several secrets dropped by one guess stack their
+   indices vertically under the single shared pin. */
 .run-tick {
   position: absolute;
-  top: -3px;
-  bottom: -3px;
+  top: -4px;
+  bottom: -4px;
   left: calc(var(--at) / var(--n) * 100%);
   width: 2px;
+  border-radius: 999px;
   transform: translateX(-50%);
   background-color: var(--fg);
+  box-shadow: 0 0 8px rgba(244, 241, 232, 0.55);
   opacity: 0;
   transition: opacity 1ms linear var(--tick-delay, 0ms);
 }
@@ -1634,15 +1792,16 @@ button * {
 }
 .run-tick-nums {
   position: absolute;
-  top: calc(100% + 2px);
+  top: calc(100% + 4px);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  font-family: var(--press);
+  font-family: var(--ui);
   font-size: 10px;
+  font-weight: 650;
   line-height: 1;
   color: var(--fg);
 }
@@ -1673,14 +1832,14 @@ button * {
      - <= 380px        every line steps down: a 320px screen holds 292px, which not even
                        the short line fits at the tuned sizes. */
 .score-slot {
-  --rank-label: 14px;
-  --rank-num: 28px;
-  --rank-num-drop: 3px;
-  --top-h: 36px;
-  --top-size: 12px;
-  --top-pad: 12px;
-  --top-drop: 6px;
-  --rank-gap: 26px;
+  --rank-label: 13px;
+  --rank-num: 30px;
+  --rank-num-drop: 1px;
+  --top-h: 32px;
+  --top-size: 11px;
+  --top-pad: 14px;
+  --top-drop: 0px;
+  --rank-gap: 22px;
   --slot-h: 48px;
 
   display: flex;
@@ -1691,7 +1850,8 @@ button * {
   gap: var(--rank-gap);
   height: var(--slot-h);
   margin: 0;
-  font-family: var(--press);
+  font-family: var(--ui);
+  font-variant-numeric: tabular-nums;
 }
 /* RANK #5 OF 59 reads as one line of type, so it hangs off ONE baseline — the number is
    twice the height of the words, and centring them against it left them floating. */
@@ -1703,7 +1863,8 @@ button * {
 }
 .score-rank-label {
   font-size: var(--rank-label);
-  letter-spacing: 1px;
+  font-weight: 550;
+  letter-spacing: 0.1em;
   color: var(--muted);
 }
 /* The number rides a WHOLE PIXEL BAND below its own baseline (user-decided 2026-08-15).
@@ -1713,43 +1874,33 @@ button * {
    resamples pixel type, the same rule the sprites take their integer scales for. */
 .score-rank-num {
   font-size: var(--rank-num);
+  font-weight: 700;
   line-height: 1;
-  letter-spacing: 1px;
+  letter-spacing: 0;
   color: var(--accent);
   translate: 0 var(--rank-num-drop);
 }
-/* An OUTLINED badge: no ground at all, a 1px `--fg` rule around `--fg` type (user-decided
-   2026-08-17, superseding the filled stamp — a solid block of foreground beside the line
-   shouted louder than the rank it qualifies; the outline still frames the claim as a stamp
-   while leaving the accent rank as the line's only weight). The foreground is deliberately
-   kept on both the rule and the type (user-decided 2026-08-15, superseding the gold — gold
-   is the colour of what the player HOLDS, and a standing is not held).
-   Its height is EXPLICIT and the ink is centred by flex: the pixel font
-   overruns its own line box, so padding alone left the glyph tops and tails outside the
-   rule. (And never `calc(<len> + var(--text-shift))` — that variable is a UNITLESS zero,
-   which voids the whole declaration; the same trap that silently zeroed `.word-input`'s
-   padding.) The box is generous on purpose: a chip crowding its own type reads as a
-   clipped box rather than as a stamp. It rides below the line's middle for the number's
-   reason on a bigger object — what it sits beside hangs off a baseline, and a box centred
-   against that reads high.
-   The right inset is ONE PIXEL SHORT of the left, which is not a typo — `letter-spacing`
-   is applied AFTER the last glyph too, so equal padding puts 1px more air on the right and
-   the box reads off-centre around its own word. The padding is unchanged from the filled
-   version, and `box-sizing: border-box` is what keeps it that way: the rule is drawn
-   INSIDE the same `--top-h` box rather than growing it.
-   And the page's global `text-shadow` stays OFF, as it was under the fill: a drop shadow
-   is legibility for type sitting on the page itself, and inside a framed chip it only
-   smears small type against its own frame. */
+/* An OUTLINED badge — a PILL since the modern-chrome pass (2026-08-18): a hairline rule
+   around foreground type, no ground at all (the outline decision is 2026-08-17's — a
+   filled block shouted louder than the rank it qualifies — the pill radius and the
+   hairline are the modern kit's). The foreground stays on the type (user-decided
+   2026-08-15, superseding the gold — gold is the colour of what the player HOLDS, and a
+   standing is not held); the rule itself softened to `--line-strong` so the frame stamps
+   rather than glares. Height stays EXPLICIT with the ink flex-centred, and the drops
+   (`--top-drop`, `--rank-num-drop`) survive as small optical trims — Inter sits ON its
+   baseline, so they are near zero where the pixel font needed whole bands. */
 .score-top {
   display: inline-flex;
   align-items: center;
   height: var(--top-h);
-  padding: 0 calc(var(--top-pad) - 1px) 0 var(--top-pad);
-  border: 1px solid var(--fg);
+  padding: 0 var(--top-pad);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
   color: var(--fg);
   font-size: var(--top-size);
+  font-weight: 600;
   line-height: 1;
-  letter-spacing: 1px;
+  letter-spacing: 0.1em;
   white-space: nowrap;
   text-shadow: none;
   translate: 0 var(--top-drop);
@@ -1757,23 +1908,22 @@ button * {
 @media (max-width: 600px) {
   .score-slot {
     --rank-label: 12px;
-    --rank-num: 24px;
-    --rank-num-drop: 2px;
-    --top-h: 30px;
+    --rank-num: 26px;
+    --rank-num-drop: 1px;
+    --top-h: 28px;
     --top-size: 10px;
-    --top-pad: 10px;
-    --top-drop: 4px;
-    --rank-gap: 20px;
+    --top-pad: 12px;
+    --top-drop: 0px;
+    --rank-gap: 18px;
     --slot-h: 40px;
   }
   .score-slot.tight {
-    --rank-label: 9px;
-    --rank-num: 16px;
-    --rank-num-drop: 1px;
+    --rank-label: 10px;
+    --rank-num: 19px;
+    --rank-num-drop: 0px;
     --top-h: 24px;
     --top-size: 9px;
-    --top-pad: 8px;
-    --top-drop: 3px;
+    --top-pad: 10px;
     --rank-gap: 12px;
     /* NOT --slot-h: the empty slot is reserved before the population has answered, so it
        cannot know whether the line it is holding space for will be a tight one. The height
@@ -1786,13 +1936,13 @@ button * {
 @media (max-width: 380px) {
   .score-slot,
   .score-slot.tight {
-    --rank-label: 9px;
-    --rank-num: 16px;
-    --rank-num-drop: 1px;
+    --rank-label: 10px;
+    --rank-num: 19px;
+    --rank-num-drop: 0px;
     --top-h: 24px;
     --top-size: 9px;
-    --top-pad: 8px;
-    --top-drop: 3px;
+    --top-pad: 10px;
+    --top-drop: 0px;
     --rank-gap: 12px;
     --slot-h: 32px;
   }
@@ -2099,7 +2249,10 @@ button * {
   align-items: center;
   justify-content: flex-end;
   padding-right: 10px;
-  font-family: var(--press);
+  /* The route DRAWING is a game surface, one voice throughout: pixel ranks beside pixel
+     words (the modal's chrome above it is the modern header's). Also load-bearing: the
+     `--gutter` arithmetic assumes the pixel font's exact 1em-per-glyph advance. */
+  font-family: var(--pixel-font);
   /* The rank IS the "time" column: one face, one size, right-aligned, so the numbers stack
      into a ladder you can read down. In the heat the SAME number wore when it floated over
      the hole. */
@@ -2149,7 +2302,7 @@ button * {
   display: flex;
   align-items: center;
   min-height: var(--head);
-  font-family: var(--vt);
+  font-family: var(--pixel-font);
   /* The surface sets the real size inline (fitWord): a word too long for `--wordw` shrinks to
      fit instead of breaking mid-word. This is only the fallback if that never arrives. */
   font-size: 15px;
@@ -2310,7 +2463,8 @@ button * {
    off from what they are already outside of. */
 .route-shelf-head {
   margin: 0 0 12px;
-  font-family: var(--press);
+  /* Part of the game drawing, like the ranks: pixel. */
+  font-family: var(--pixel-font);
   font-size: 16px;
   letter-spacing: 2px;
   /* Only the FALLBACK: both drawings set MISS's weird red inline — the one
@@ -2329,7 +2483,7 @@ button * {
   flex-wrap: wrap;
   justify-content: center;
   gap: 10px 16px;
-  font-family: var(--vt);
+  font-family: var(--pixel-font);
   font-size: 14px;
   /* Only the FALLBACK — OffMapShelf sets MISS's weird red inline, the same
      `MISS_COLOR` as the heading, so the shelf speaks in one voice (2026-08-10,
@@ -2353,20 +2507,26 @@ button * {
   }
 }
 
-/* Result action: the same flat key language as the keyboard it replaces. */
+/* Result action: a modern glass pill — the result is the hero, the action is quietly
+   available beside it (chrome, since 2026-08-18). */
 .result-action {
-  min-width: 164px;
-  font-family: var(--press);
-  font-size: clamp(11px, 1.55vh, 13px);
-  letter-spacing: 2px;
+  min-width: 180px;
+  font-family: var(--ui);
+  font-size: clamp(12px, 1.6vh, 13px);
+  font-weight: 600;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--fg);
-  background: var(--surface-hover);
-  border: 0;
-  padding: 14px 26px;
+  background: var(--glass);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 14px 28px;
   cursor: pointer;
   text-shadow: none;
-  transition: filter 0.08s linear, color 0.08s linear;
+  transition: filter 0.08s linear, color 0.08s linear, border-color 0.12s linear;
+}
+.result-action:hover {
+  border-color: var(--line-strong);
 }
 .result-action:hover {
   filter: brightness(1.35);
@@ -2432,11 +2592,14 @@ button * {
   justify-content: center;
   gap: 20px;
 }
+/* The number in the DISPLAY serif (2026-08-18): the celebration's headline in the poster
+   voice. The wheel slots narrow with it — Instrument Serif's digits advance ~0.5em where
+   the pixel glyphs were a full em — so the number stays one close-set figure. */
 .streak-digits {
   position: relative;
   height: 1em;
-  font-family: var(--press);
-  font-size: 72px;
+  font-family: var(--display);
+  font-size: 84px;
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
@@ -2452,7 +2615,7 @@ button * {
 .streak-digit-slot {
   position: relative;
   display: block;
-  width: 1em;
+  width: 0.55em;
   height: 1.44em;
   overflow: hidden;
 }
@@ -2463,9 +2626,11 @@ button * {
   align-items: center;
   justify-content: center;
   will-change: transform, opacity;
-  /* Transparent by default so the flame shadow (below) eases in as a COLOR fade when the
-     flame arrives — `text-shadow: none` would pop instead of transitioning. */
-  text-shadow: 0px 4px transparent;
+  /* Transparent by default so the flame glow (below) eases in as a COLOR fade when the
+     flame arrives — `text-shadow: none` would pop instead of transitioning. (A soft glow
+     since 2026-08-18: the old hard 6px offset was the pixel identity's; under the serif
+     the flame CASTS LIGHT instead.) */
+  text-shadow: 0 0 32px transparent;
   transition: text-shadow 260ms ease-out;
 }
 .streak-digit-old {
@@ -2475,21 +2640,23 @@ button * {
 .streak-number-block.final .streak-digit-old {
   color: var(--fg);
 }
-/* When the flame appears (JS adds `flamed`), the settled number drops a flame-indigo pixel
-   shadow — the flame's light casting off the digits. Applied to the whole new number: the
+/* When the flame appears (JS adds `flamed`), the settled number takes a flame-indigo
+   GLOW — the flame's light cast onto the digits. Applied to the whole new number: the
    changed digits plus the unchanged ones (faded-out old digits are opacity 0, so their
-   shadow stays invisible). */
+   glow stays invisible). */
 .streak-number-block.flamed .streak-digit {
-  text-shadow: 0px 6px var(--flame);
+  text-shadow: 0 0 32px var(--flame);
 }
 /* The ending hint — arcade "press any key / tap anywhere" idiom: muted pulsing text, no
    chrome. It is NON-interactive (a plain element, nothing focusable in the celebration);
    the whole modal dismisses on click/tap/any key, so a boxed, focusable button would both
    lie about the target being local and show an unwanted focus ring. */
 .streak-hint {
-  font-family: var(--press);
-  font-size: 11px;
-  letter-spacing: 2px;
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
   color: var(--muted);
   padding: 14px 20px; /* keeps the pulsing text off the tile row above it */
   cursor: pointer;
@@ -2589,9 +2756,11 @@ button * {
 /* The small "DAY STREAK" label under the number. */
 .streak-label {
   margin: 0;
-  font-family: var(--press);
-  font-size: 10px;
-  letter-spacing: 2px;
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
   color: var(--muted);
 }
 
@@ -2612,8 +2781,9 @@ button * {
   width: 30px;
 }
 .week-label {
-  font-family: var(--press);
-  font-size: 12px;
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 600;
   line-height: 1;
   color: var(--muted);
   opacity: 0.55;
@@ -2627,6 +2797,7 @@ button * {
   width: 30px;
   height: 30px;
   background: var(--surface);
+  border-radius: var(--r-sm);
   image-rendering: pixelated;
   transform-origin: center;
   will-change: transform;
@@ -2647,6 +2818,7 @@ button * {
   position: absolute;
   inset: 0;
   display: block;
+  border-radius: var(--r-sm);
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
 }
@@ -2680,7 +2852,7 @@ button * {
     height: 82px;
   }
   .streak-digits {
-    font-size: 64px;
+    font-size: 72px;
   }
 }
 
@@ -2718,7 +2890,9 @@ button * {
   align-items: center;
   justify-content: center;
   padding: 0;
-  font-family: var(--press);
+  /* The keyboard is a play surface (user-decided 2026-08-18: pixel stays exactly where
+     the player ACTS — sentence, words, keys, hits). */
+  font-family: var(--pixel-font);
   font-size: clamp(11px, 2.2vw, 15px);
   text-transform: uppercase;
   color: var(--fg);
@@ -2780,19 +2954,23 @@ button * {
 
 /* --- buttons --- */
 .btn {
-  font-family: var(--press);
+  font-family: var(--ui);
   border: 0;
   cursor: pointer;
 }
-/* Primary: the same flat gold action as the tutorial's MIX button — dark text,
-   compact pixel type, and a brightness-only interaction. */
+/* Primary: the accent action, modern-chrome dress (2026-08-18) — rounded, a slight
+   top-light gradient on the stamp orange, and a soft orange bloom lifting it off the
+   ground. Interaction stays brightness-only, the app's one language. */
 .btn-primary {
   padding: 16px 30px;
-  font-size: clamp(13px, 1.9vh, 16px);
-  letter-spacing: 2px;
+  font-size: clamp(13px, 1.8vh, 15px);
+  font-weight: 650;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--bg);
-  background: var(--accent);
+  background: linear-gradient(180deg, #ffa03a, var(--accent));
+  border-radius: var(--r-md);
+  box-shadow: 0 12px 36px -14px rgba(245, 130, 15, 0.55);
   text-shadow: none;
   transition: filter 0.08s linear, opacity 0.08s linear;
 }
@@ -2802,8 +2980,10 @@ button * {
 /* Secondary: simple text, no fill. */
 .btn-secondary {
   padding: calc(4px + var(--cap-shift)) 8px calc(4px - var(--cap-shift));
-  font-size: 14px;
-  letter-spacing: 1px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   background: transparent;
   color: var(--muted);
 }
@@ -2883,11 +3063,12 @@ button * {
     width: calc(100vw - 24px);
     height: 48px;
   }
-  /* Ten glyphs of date against a phone's header corner: drop to 10px and give the tracking
-     back, which is what makes the whole string fit beside the right group at 320px. */
+  /* Ten glyphs of date against a phone's header corner: a step down and most of the
+     tracking given back keeps the whole string beside the right group at 320px (Inter
+     is proportional, so this is roomier than the pixel budget ever was). */
   .puzzle-date {
-    font-size: 10px;
-    letter-spacing: 0;
+    font-size: 11px;
+    letter-spacing: 0.04em;
   }
 
   /* The sentence: a touch smaller so a hole + its exponent near the right edge still fits
@@ -3044,6 +3225,9 @@ button * {
    line. (It was four for a day, while the themes ending carried its claim and its
    instruction in ONE line; splitting that into two beats gave the third line back.
    What the invariant protects is the FIXED height — the word below must never move.) */
+/* The coach is a modern GLASS dialog since 2026-08-18: rounded, hairline rule, blurred
+   glass over the glows — the box itself now says "chrome here to help" while the game
+   words inside it stay pixel (below). */
 .coach {
   position: fixed;
   top: 64px; /* below the floating chip row (both stages — no bar row anymore) */
@@ -3051,31 +3235,40 @@ button * {
   transform: translateX(-50%);
   z-index: 120;
   width: min(560px, calc(100vw - 32px));
-  background: var(--bg);
-  border: 3px solid var(--surface);
-  padding: 16px 18px;
+  background: var(--glass);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  padding: 16px 20px;
 }
 .coach-text {
   margin: 0;
-  font-family: var(--press);
-  font-size: clamp(13px, 2vh, 16px);
-  line-height: 2;
+  font-family: var(--ui);
+  font-size: clamp(14px, 2vh, 16px);
+  line-height: 1.8;
   /* EXACTLY three lines, top-aligned — the box is a fixed dialog window, not a
      balloon. Copy that wraps past three lines is a COPY bug (too much to read);
      the overflow clip makes that mistake visible instead of growing the box. */
-  height: 6em; /* 3 lines × line-height 2 */
+  height: 5.4em; /* 3 lines × line-height 1.8 */
   overflow: hidden;
   color: var(--fg);
   text-shadow: none;
 }
-/* Rich inline words in the explanations — they look like what they are in-game: a hint
-   word is told from the target by its colour pair (draft vs ink) and its heat-colored
-   exponent (the sup reuses .hole-rank). No open-blank line in the lesson (user-decided
-   2026-08-17): the coach's words are props, not blanks to fill. */
+/* Rich inline words in the explanations — they look like what they are in-game, which
+   since the type split means they are PIXEL words inline in modern copy: a hint word is
+   told from the target by its colour pair (draft vs ink) and its heat-colored exponent
+   (the sup reuses .hole-rank). Slightly smaller than the copy so the pixel em box sits on
+   the Inter line. No open-blank line in the lesson (user-decided 2026-08-17): the coach's
+   words are props, not blanks to fill. */
 .rt-target {
+  font-family: var(--pixel-font);
+  font-size: 0.82em;
   color: var(--solve);
 }
 .rt-word {
+  font-family: var(--pixel-font);
+  font-size: 0.82em;
   color: var(--hole);
   white-space: nowrap;
 }
@@ -3088,9 +3281,12 @@ button * {
 .coach-rules {
   align-self: center;
   width: min(680px, 100%);
-  background: var(--bg);
-  border: 3px solid var(--surface);
-  padding: 16px 18px;
+  background: var(--glass);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  padding: 16px 20px;
 }
 .coach-rules .coach-text {
   height: auto;
@@ -3126,11 +3322,11 @@ button * {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   column-gap: 12px;
   align-items: baseline;
-  font-family: var(--press);
+  font-family: var(--ui);
+  font-weight: 700;
   /* 13 / 16 / 19 / 22 / 25px across the five steps. */
   font-size: calc(13px + var(--step, 0) * 3px);
-  letter-spacing: 2px;
-  text-shadow: 2px 2px 0 black;
+  letter-spacing: 0.1em;
   animation: rung-in 200ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
   animation-delay: calc(var(--step, 0) * 140ms);
 }
@@ -3144,8 +3340,11 @@ button * {
    name, ONE size (the ramp is the names'). Sized against the longest shipped example at
    the 320px budget (see the mobile step-down below). */
 .rarity-example {
-  font-family: var(--vt);
+  font-family: var(--pixel-font);
   font-style: normal;
+  /* The pixel face has ONE weight; without this the rung's 700 would synthesize a smeared
+     faux bold on the example. */
+  font-weight: 400;
   font-size: 19px;
   letter-spacing: 0;
   opacity: 0.9;
@@ -3177,13 +3376,16 @@ button * {
   margin-top: auto;
   width: 100%;
   max-width: 680px; /* the keyboard's max-width — same interaction footprint */
-  font-family: var(--press);
-  font-size: clamp(13px, 1.9vh, 16px);
-  letter-spacing: 2px;
+  font-family: var(--ui);
+  font-size: clamp(13px, 1.8vh, 15px);
+  font-weight: 650;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--bg);
-  background: var(--accent);
+  background: linear-gradient(180deg, #ffa03a, var(--accent));
   border: 0;
+  border-radius: var(--r-md);
+  box-shadow: 0 12px 36px -14px rgba(245, 130, 15, 0.55);
   padding: 16px 30px;
   cursor: pointer;
   text-shadow: none;
@@ -3267,24 +3469,24 @@ button * {
   margin-bottom: 34px;
   image-rendering: pixelated;
 }
+/* The first thing a new player ever reads leads in the display serif — the poster voice
+   asking a friendly question — over one quiet UI line. */
 .invite-title {
   margin: 0;
-  font-family: var(--press);
-  font-size: clamp(15px, 2.3vh, 19px);
-  line-height: 1.7;
-  letter-spacing: 1px;
-  text-transform: uppercase;
+  font-family: var(--display);
+  font-size: clamp(30px, 4.6vh, 40px);
+  line-height: 1.2;
+  letter-spacing: 0.01em;
   color: var(--fg);
   text-shadow: none;
   padding-top: var(--cap-shift);
 }
 .invite-text {
   margin: 12px auto 0;
-  max-width: 34ch;
-  font-family: var(--press);
-  font-size: 11px;
-  line-height: 1.9;
-  letter-spacing: 0.5px;
+  max-width: 40ch;
+  font-family: var(--ui);
+  font-size: 14px;
+  line-height: 1.6;
   color: var(--muted);
   text-shadow: none;
 }
@@ -3300,8 +3502,7 @@ button * {
   width: 100%;
 }
 .invite-actions .btn-secondary {
-  font-size: 11px;
-  letter-spacing: 2px;
+  font-size: 12px;
 }
 
 @media (max-width: 640px) {
@@ -3329,12 +3530,12 @@ button * {
     margin-bottom: 16px;
   }
   .invite-title {
-    font-size: 15px;
-    line-height: 1.5;
+    font-size: 26px;
+    line-height: 1.2;
   }
   .invite-text {
     margin-top: 6px;
-    line-height: 1.7;
+    line-height: 1.5;
   }
   .invite-actions {
     margin-top: 20px;
@@ -3479,8 +3680,10 @@ button * {
   flex-wrap: wrap; /* five 2-digit chips still fit 320px, but never let a forgery overflow */
   gap: clamp(14px, 2.6vw, 22px);
   margin-top: clamp(6px, 1.2vh, 12px); /* a seam above the score's own rhythm: detail, not headline */
-  font-size: clamp(14px, 2.2vh, 18px);
-  letter-spacing: 1px;
+  font-family: var(--ui);
+  font-size: clamp(14px, 2.2vh, 17px);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 .word-rarity {
   display: inline-flex;
@@ -3496,12 +3699,15 @@ button * {
   opacity: 1;
   animation: none;
 }
-/* The chip's square: painted with currentColor, so a chip is ONE colour decision — the
-   same square-beside-the-count lockup the card draws, at the type's own scale. */
+/* The chip's mark: painted with currentColor, so a chip is ONE colour decision. A round
+   BEAD since 2026-08-18 with a soft self-glow — the share text's own bead row
+   (⚪🟢🔵…), on screen. */
 .word-rarity-square {
-  width: 0.9em;
-  height: 0.9em;
+  width: 0.75em;
+  height: 0.75em;
+  border-radius: 50%;
   background: currentColor;
+  box-shadow: 0 0 10px color-mix(in srgb, currentColor 55%, transparent);
 }
 .word-footer-result .result-actions {
   flex: 0 0 auto;
@@ -3646,7 +3852,7 @@ button * {
 }
 .word-subject-text {
   display: inline-block;
-  font-family: var(--vt);
+  font-family: var(--pixel-font);
   line-height: 1.15;
   color: var(--solve);
   /* One line, whatever the word. */
@@ -3905,7 +4111,10 @@ button * {
   position: absolute;
   left: 50%;
   top: 50%;
-  font-family: var(--press);
+  /* Loot is hit feedback on the game word: pixel, with the hard shadow the global body
+     rule used to provide (2026-08-18). */
+  font-family: var(--pixel-font);
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.5);
   line-height: 1;
   white-space: nowrap;
   /* The wrap's breathing animates letter-spacing, which inherits — same opt-out as the
@@ -4081,13 +4290,14 @@ button * {
 .word-timer {
   position: relative;
   display: inline-block;
-  font-size: 34px;
+  font-size: 32px;
+  font-weight: 650;
   line-height: 1;
-  letter-spacing: 1px;
+  letter-spacing: 0;
+  /* REAL tabular figures at last (Inter, 2026-08-18): the digits cannot twitch as they
+     turn, which the pixel face only approximated by being monospace. */
   font-variant-numeric: tabular-nums;
   color: var(--fg);
-  /* Same optical downshift as .topbar-title: the pixel glyphs sit high in the em box. */
-  transform: translateY(0.15em);
   transition: color 0.25s linear;
   pointer-events: none;
 }
@@ -4096,6 +4306,10 @@ button * {
    so the eye reads the value off the big glyphs and the motion off the small one. */
 .word-timer .timer-dec {
   font-size: 0.55em;
+  font-weight: 550;
+  /* Dimmed via opacity, never a fixed colour: the warn/spent states recolour the whole
+     clock and the tenth must go with it. */
+  opacity: 0.75;
 }
 /* The mobile size lives HERE, immediately after the rule it overrides, and not up in the
    stylesheet's shared mobile block — the two have equal specificity, so a media query
@@ -4103,7 +4317,7 @@ button * {
    did, and a clock past 100 seconds then ran into the header's icon group.) */
 @media (max-width: 640px) {
   .word-timer {
-    font-size: 24px;
+    font-size: 23px;
   }
 }
 /* Before START the clock shows what a run is worth without having begun to spend it — a
@@ -4161,6 +4375,7 @@ button * {
   left: 0;
   top: 100%;
   font-size: 0.5em;
+  font-weight: 650;
   white-space: nowrap;
   color: var(--accent);
   opacity: 0;

@@ -144,11 +144,52 @@ These are decided and verified against the code. Treat them as load-bearing.
   `--fg` is stamp paper #f4f1e8, `--muted` warm grey, `--danger` an ink red; Word mode's
   rarity ladder is authored as a VIVID INK set (`components/rarity.ts` — same hue walk,
   thresholds re-measured in `rarity.test.ts`). Still ELECTRIC, pending an art repaint: the baked pixel
-  art (logo-blue.png, the mode sprite, the streak flame, ultracode.png). NEW FONTS are
-  the deferred half of the redesign: every layout measurement assumes Press Start 2P's
-  exact 1em-per-glyph advance (fitWord, the rank gutters, the standing line's glyph
-  budget, MixWord's ch reservations, CellDigits' grid), so a typeface change is its own
-  pass.
+  art (logo-blue.png, the mode sprite, the streak flame, ultracode.png).
+- **THE TYPE SYSTEM IS THREE VOICES — PIXEL ONLY WHERE YOU PLAY (user-decided
+  2026-08-18, closing the redesign's deferred fonts half).** All faces self-hosted
+  (`assets/fonts/`, latin + latin-ext subsets so French accents never fall back).
+  - **PIXEL (Press Start 2P)** is reserved for the PLAY surfaces: the sentence and its
+    holes, Word mode's day word, the route drawings entire (words, rank gutters, MISSED
+    shelf), the prompt/input and its hint, the keyboard (keys + its `.kb-icon` pixel
+    enter/backspace), the floating hits, the loot, the strike sheets, the CellDigits
+    watermark, the solved screen's word trophies, the rarity ladder's EXAMPLE words, and
+    MixWord. **Every monospace layout assumption therefore still holds** — fitWord, the
+    route `--gutter` arithmetic, MixWord's ch reservations and CellDigits' grid all sit
+    on surfaces that stayed pixel. The coach text's inline `[[b:]]`/`[[w:]]` words are
+    pixel at 0.82em INSIDE modern copy — game words quoted in chrome.
+  - **UI (Inter variable, `--ui`)** is the body default and all chrome: header
+    (title/date and Word mode's clock — real `tabular-nums` at last), buttons, coach
+    copy, the standing line, calendar numerals, streak labels/hint, rarity chip counts,
+    statuses. Resting body weight 430; `font-synthesis: none` app-wide (the pixel face
+    and the serif ship one weight each — a faux bold smears like a fractional scale).
+    `ScoreRank.standingUnits` still counts glyphs as if monospace, which is now a
+    CONSERVATIVE width estimate — it can only step the line down early, never clip.
+  - **DISPLAY (Instrument Serif, `--display`)** is the poster voice, used sparingly:
+    chooser card names, the invite title, the archive month + streak count, the solved
+    credit HEADLINE (italic — the one editorial moment), both result-count numbers, and
+    the streak celebration's digits (whose wheel slots narrowed from 1em to 0.55em with
+    the face).
+  - **The modern chrome KIT** rides three token groups on `:root` — radii
+    (`--r-sm/md/lg`), hairlines (`--line`/`--line-strong`), glass (`--glass`) — worn by
+    every non-game box: aura-gradient chooser cards (cobalt/violet/orange by nth-child),
+    glass coach dialogs (both gates + the tutorial), gradient-and-bloom primary buttons,
+    pill result actions and the pill TOP badge, rounded calendar cells and week tiles.
+    The HEADER's icons are a stroke `.ui-icon` set (calendar/question/close/skip/globe —
+    24-grid, 1.8px, currentColor; globe.png and the standalone `.pixel-icon` class are
+    deleted); the Whippin mark stays the header's ONE pixel artifact, deliberately — it
+    is the logo, and pixel is the brand. The BODY's global hard 2px text-shadow is gone;
+    pixel surfaces that relied on it (floating hits, loot) carry their own, and the
+    topbar wears a soft bloom shadow instead.
+  - **The RUN RULER is a continuous GRADIENT FILAMENT (user-decided 2026-08-18,
+    superseding the flat per-try cells):** RunRuler builds one linear-gradient stop per
+    counted try — the same raw trajectory through the same `progressHeatColor` — drawn
+    as a rounded bar with a blurred bloom copy beneath. The two reveal beats keep their
+    timeline as clip-path wipes (`shown` wipes the neutral track, `colorized` chases it
+    with the gradient) over `--sweep-ms` = n × the same stagger the per-cell delays
+    used, so `resultAnimation` and `rulerStagger`'s reduced-motion zero are untouched.
+    Solve ticks survive as glowing pins with their sentence indices. The OG card still
+    rasterizes per-cell rects — same data, same colours, stepped instead of smooth —
+    aligning it is its own pass.
 - **A RANK IS WRITTEN BARE — no leading minus, anywhere (user-decided 2026-08-16).** A rank
   is a DISTANCE, and a distance is not negative; `sailor^87`, not `sailor^-87`. This is the
   app's ONE way of writing a rank, so it holds on every surface that shows one: the hole's
@@ -1893,31 +1934,24 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `vite-plugin-svgr` — `import Icon from '../assets/icons/name.svg?react'` (the `?react`
   query is what returns a component; a plain import would return a URL string). Rendering the
   SVG **into the DOM** (not via `<img src>`) is what lets it inherit color, so:
-  - **Icons paint with `fill="currentColor"`** and carry **no hardcoded color** — the SVG
-    root sets `fill="currentColor"` once and every child inherits it. Color/greyed/theme
-    states then come **only** from the consuming element's CSS `color` (e.g. the control
-    keys' `.kb-control` / `.kb-enter` / `.kb-greyed`). Never bake a hex/`fill` into an icon
-    meant to tint with its surroundings.
+  - **Icons paint with `currentColor`** (`fill` for the pixel glyphs, `stroke` for the
+    chrome set) and carry **no hardcoded color** — the SVG root declares it once and every
+    child inherits it. Color/greyed/theme states then come **only** from the consuming
+    element's CSS `color` (e.g. the control keys' `.kb-control` / `.kb-enter` /
+    `.kb-greyed`). Never bake a hex into an icon meant to tint with its surroundings.
   - **Strip the editor cruft.** Keep only `xmlns`, `viewBox`, the `width`/`height` size (see
     below), `fill="currentColor"`, and the shape elements. **Remove** the `<?xml …?>` prolog
     and `id`/`data-name` (Illustrator layer junk). This is what "remove the useless
     attributes" means for any new icon.
-  - **Every icon is orthogonal PIXEL ART** (decided 2026-07-08) — shapes on an integer grid
-    with only horizontal/vertical edges (rects, or a path of `v`/`h` moves), NO diagonals —
-    so it renders crisp at integer scale. Rendered with `shape-rendering: crispEdges`
-    (shared in the `.pixel-icon` CSS class, not per icon).
-  - **Size lives in the SVG, at EXACTLY 3× the viewBox** (decided 2026-07-08, revised from
-    "size in CSS"). The `.svg` sets its own `width`/`height` = `3N × 3M` **px** for a
-    `viewBox="0 0 N M"`, **right next to the viewBox** — so an icon's size is a single source
-    of truth in one file, not split into a CSS rule in another folder. CSS (`.pixel-icon`)
-    only sets shared rendering (`display: block; shape-rendering: crispEdges`), never a size,
-    so a new icon needs **no** CSS: author the `.svg` with its px `width`/`height` and give
-    the element `className="pixel-icon"`. Every icon's "pixel" is then 3 screen px — crisp,
-    uniform in weight, integer-scaled (×3 vs ×2 is purely a size choice; both are crisp — ×3
-    suits the small header viewBoxes, giving ~18–27px). **The ONE exception is the on-screen
-    keyboard's control glyphs** (`.kb-icon`, enter/back): their `.svg`s carry NO `width`/
-    `height` and `.kb-icon` sizes them in CSS (`height: 30%; width: auto`), because the keys
-    shrink on narrow phones and a fixed 3× would overflow.
+  - **TWO icon families since 2026-08-18, one per type voice.** CHROME icons (header +
+    modal controls: calendar, question, close, skip, globe) are the **`.ui-icon` stroke
+    set** — `viewBox="0 0 24 24"`, `fill="none"`, `stroke="currentColor"`,
+    `stroke-width="1.8"`, round caps/joins, in-file `width`/`height` (22px). PIXEL icons
+    survive only on the PLAY surface: the on-screen keyboard's enter/back glyphs —
+    orthogonal pixel art (integer grid, no diagonals, the 2026-07-08 rules), sized by
+    `.kb-icon` in CSS (`height: 30%`) because the keys shrink on narrow phones. The
+    standalone `.pixel-icon` class and the 3×-viewBox sizing rule left with their last
+    chrome consumer; an icon's size stays IN its `.svg`, one source of truth.
   - **Accessibility:** the SVG is **decorative** — pass `aria-hidden` on the component and
     let the surrounding `<button>`'s `aria-label` name the control.
   The type for `?react` imports comes from the `vite-plugin-svgr/client` reference in
