@@ -6,12 +6,14 @@
 //     shares its rank, which is the only honest number at bucket granularity;
 //   - sentence is lower-is-better (ahead = FEWER tries), word is higher-is-better
 //     (ahead = MORE claims);
-//   - TOP uses the midpoint of the shared bucket, and only above PERCENT_MIN_TOTAL players;
+//   - TOP uses the midpoint of the shared bucket, and only above PERCENT_MIN_TOTAL players
+//     AND from PERCENT_MIN_RANK on (a single-digit rank has already said it);
 //   - a finished round submits ONCE: only finished-and-not-yet-submitted rounds POST.
 
 import { describe, it, expect } from 'vitest';
 import type { ScoreHistogramBucket } from '@whippin/shared';
 import {
+  PERCENT_MIN_RANK,
   PERCENT_MIN_TOTAL,
   bucketIndexOf,
   formatTopPct,
@@ -63,9 +65,9 @@ describe('scoreStanding — rank is everyone strictly ahead, plus one', () => {
 
   it('a whole band SHARES its rank — a tie is never broken by invention', () => {
     // Everyone in band 1 is 6th: the five ahead of them are ahead, the two beside them
-    // are not behind.
+    // are not behind. (No percentage beside it: a single-digit rank has already said it.)
     const mine = scoreStanding('sentence', b, 17, 1);
-    expect(mine).toEqual({ rank: 6, total: 17, topPct: (100 * 6.5) / 17 });
+    expect(mine).toEqual({ rank: 6, total: 17, topPct: null });
   });
 
   it('the only player today is first of one', () => {
@@ -97,56 +99,72 @@ describe('scoreStanding — the TOP percentage', () => {
     );
 
   it('uses the midpoint of a shared bucket, independently of competition rank', () => {
-    // 5 players are ahead and 20 share this bucket: everyone is ranked 6th, while the
-    // bucket spans positions 6 through 25 and its percentile-rank midpoint is TOP 25%.
-    const standing = big(5, 20, 60);
-    expect(standing?.rank).toBe(6);
+    // 15 players are ahead and 20 share this bucket: everyone is ranked 16th, while the
+    // bucket spans positions 16 through 35 and its percentile-rank midpoint is TOP 25%.
+    const standing = big(15, 20, 100);
+    expect(standing?.rank).toBe(16);
     expect(standing?.topPct).toBe(25);
   });
 
-  it('puts an all-tied field at TOP 50%', () => {
+  it('a single-player bucket uses the same midpoint rule', () => {
+    const standing = big(14, 1, 59);
+    expect(standing?.rank).toBe(15);
+    expect(formatTopPct(standing!.topPct!)).toBe('24.6'); // 100 * 14.5 / 59
+  });
+
+  it('says nothing beside a SINGLE-DIGIT rank — that rank has already said it', () => {
+    // One band apart in the same field: 9th carries no percentage, 10th does.
+    const ninth = big(PERCENT_MIN_RANK - 2, 20, 100);
+    expect(ninth?.rank).toBe(PERCENT_MIN_RANK - 1);
+    expect(ninth?.topPct).toBeNull();
+
+    const tenth = big(PERCENT_MIN_RANK - 1, 20, 100);
+    expect(tenth?.rank).toBe(PERCENT_MIN_RANK);
+    expect(tenth?.topPct).toBe(19); // 100 * (9 + 10) / 100
+  });
+
+  it('an all-tied field is FIRST of its own count, and says nothing more', () => {
+    // The midpoint would be 50%, but everyone in an all-tied field ranks 1st, so the
+    // percentage is gated by the rank before it can be claimed.
     const standing = scoreStanding('sentence', buckets([60]), 60, 0);
     expect(standing?.rank).toBe(1);
-    expect(standing?.topPct).toBe(50);
+    expect(standing?.topPct).toBeNull();
   });
 
   it('needs MORE than PERCENT_MIN_TOTAL players, or it is arithmetic on a handful', () => {
-    expect(big(0, 1, 1)?.topPct).toBeNull();
-    expect(big(1, 1, 3)?.topPct).toBeNull();
-    expect(big(4, 1, PERCENT_MIN_TOTAL)?.topPct).toBeNull();
-  });
+    // Ranked 10th in a field of exactly 10: past the RANK floor, still short of the
+    // population one, which is why the two are separate gates.
+    const short = scoreStanding('sentence', buckets([9, 1]), PERCENT_MIN_TOTAL, 1);
+    expect(short?.rank).toBe(PERCENT_MIN_RANK);
+    expect(short?.topPct).toBeNull();
 
-  it('starts at the midpoint of the first eligible single-player bucket', () => {
-    const standing = big(4, 1, PERCENT_MIN_TOTAL + 1);
-    expect(standing?.rank).toBe(5);
-    expect(standing?.topPct).toBeCloseTo((100 * 4.5) / (PERCENT_MIN_TOTAL + 1), 10);
-  });
-
-  it('a single-player bucket uses the same midpoint rule', () => {
-    const standing = big(4, 1, 59);
-    expect(standing?.rank).toBe(5);
-    expect(formatTopPct(standing!.topPct!)).toBe('7.63');
+    // One player more and the same standing is a claim.
+    const enough = scoreStanding('sentence', buckets([9, 1, 1]), PERCENT_MIN_TOTAL + 1, 1);
+    expect(enough?.rank).toBe(PERCENT_MIN_RANK);
+    expect(enough?.topPct).toBeCloseTo((100 * 9.5) / (PERCENT_MIN_TOTAL + 1), 10);
   });
 
   it('does not badge an empty hypothetical bucket', () => {
-    const standing = big(4, 0, 59);
-    expect(standing?.rank).toBe(5);
+    const standing = big(14, 0, 59);
+    expect(standing?.rank).toBe(15);
     expect(standing?.topPct).toBeNull();
   });
 
   it('never prints above TOP 100% for an inconsistent stale snapshot', () => {
     const standing = scoreStanding('sentence', buckets([9, 9, 9, 9]), 11, 3);
+    expect(standing?.rank).toBe(11);
     expect(standing?.topPct).toBe(100);
   });
 });
 
-describe('formatTopPct — at most two decimals, no machine zeros', () => {
-  it('keeps the digits that carry the claim', () => {
-    expect(formatTopPct((100 * 5) / 59)).toBe('8.47');
+describe('formatTopPct — at most ONE decimal, no machine zeros', () => {
+  it('keeps the one digit that carries the claim, and drops the rest', () => {
+    expect(formatTopPct((100 * 5) / 59)).toBe('8.5'); // 8.4745…
     expect(formatTopPct(12.5)).toBe('12.5');
+    expect(formatTopPct(20.34)).toBe('20.3');
   });
 
-  it('strips trailing zeros rather than printing 50.00', () => {
+  it('strips the trailing zero rather than printing 50.0', () => {
     expect(formatTopPct(50)).toBe('50');
     expect(formatTopPct(100)).toBe('100');
     expect(formatTopPct(12.501)).toBe('12.5');
