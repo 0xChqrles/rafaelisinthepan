@@ -944,15 +944,17 @@ button * {
    word's width through every scramble. Scoped under `.hole`: the solved screen's words
    reuse `.hole-word-wrap` and must never grow a blank — and the TUTORIAL none at all
    (below): MixWord's demo hole is a lesson prop, not a blank to fill. The line HUGS the
-   word: flush under the wrap box (user-tuned 2026-08-17, walked in from -6 then -4 —
-   at -4 a wrapped sentence's blank touched the line below), spanning just the 2px under
-   the box edge, inside the line's own gap at every size. */
+   word: INSIDE the wrap box's bottom edge (user-tuned 2026-08-17, walked in from -6
+   through -4 and -2 — the pixel font sits high in its em box with a near-empty descender
+   row, so even flush-under-the-box read closer to the next line than to its own word;
+   riding the box's last 2px puts it against the ink, and the rare descender tail simply
+   crosses it). */
 .hole .hole-word-wrap::after {
   content: '';
   position: absolute;
   left: 0;
   right: 0;
-  bottom: -2px;
+  bottom: 0;
   height: 2px;
   background: repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 8px);
   opacity: 0.55;
@@ -2170,7 +2172,7 @@ button * {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: -2px;
+  bottom: 0;
   height: 2px;
   background: repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 8px);
   opacity: 0.55;
