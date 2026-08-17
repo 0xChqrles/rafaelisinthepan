@@ -59,13 +59,17 @@ These are decided and verified against the code. Treat them as load-bearing.
   **survivors**: it keeps passing words until `TOP_N = 400000` have PASSED, then stops
   reading. Order is **filter-THEN-cap** → output has exactly `TOP_N` words (or fewer + a
   warning if the source is exhausted), *not* "200k minus rejects".
-- **`hors-dico` is rule 3, applied LAST to EVERY survivor** (#38): drop a word that is not
-  in the language's versioned reference wordlist `wordlist/<lang>.txt.gz`. It compares the
-  **pre-slug** token (lowercase, accents kept). Because that list is lowercase and
-  letters+hyphens only (built by `build_wordlist.py` via `token_pattern`), hors-dico
+- **`hors-dico` is rule 3, applied LAST to EVERY survivor** (#38): drop a word that is
+  neither in the language's versioned reference wordlist `wordlist/<lang>.txt.gz` nor its
+  exact, language-specific `HORS_DICO_ALLOWLIST` entry (`fr: rolex`, decided 2026-08-16).
+  It compares the **pre-slug** token (lowercase, accents kept); the allowlist does not fold
+  or lowercase an embedding token, so case variants remain excluded. Because both sets are
+  lowercase and letters+hyphens only (the wordlist is built by `build_wordlist.py` via
+  `token_pattern`), hors-dico
   **subsumes the old `uppercase` and `non-alphabet` rules** — an uppercase / digit / markup
-  token simply isn't in the list — so those two rules were removed. There is **NO frequency
-  exemption**: even the single most frequent token is dropped if it isn't a dictionary word.
+  token simply isn't in either set — so those two rules were removed. There is **NO
+  frequency exemption**: even the single most frequent token is dropped if it is in neither
+  the dictionary nor the exact allowlist.
   The wordlist is built offline (Lexique/SCOWL ∪ Hunspell); the pipeline only **reads** the
   committed file, and a **missing** wordlist is a hard error (skip only with `--no-dico`).
 - **The two morphological rules that remain (`single-letter`, `stopword`) exist precisely
@@ -266,7 +270,8 @@ Consequences that are load-bearing:
 - **Don't re-add `uppercase` / `non-alphabet` rules** — hors-dico subsumes them (the
   wordlist is lowercase + letters/hyphens only), and **don't drop `single-letter` /
   `stopword`**, which it can't (their targets are valid dictionary entries).
-- **Don't re-introduce a frequency exemption** — hors-dico applies to every survivor.
+- **Don't re-introduce a frequency exemption** — the dictionary-or-exact-allowlist check
+  applies to every survivor; keep the deliberate allowlist narrow and language-specific.
 - **Don't move `hors-dico` before the morphological rules** — it runs LAST so report
   attribution stays clean.
 - **Don't silently skip a missing hors-dico wordlist** — error out (use `--no-dico` to
