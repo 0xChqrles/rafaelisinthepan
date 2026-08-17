@@ -171,7 +171,10 @@ button * {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  /* The sides clear the device frame's vertical rail (2026-08-18: the sentence sat
+     against the WHIPPIN rail on mid-size screens). The mobile block narrows this back
+     down along with the frame it clears. */
+  padding: 24px 52px;
 }
 
 .status {
@@ -1010,12 +1013,19 @@ button * {
    ten glyphs plus the group's own 24px of padding have to clear the four 38px controls
    opposite. At 320px that leaves ~132px, so the mobile step below is 10px with no tracking
    (exactly 100px of ink) — measured at 320/360/390/430. */
+/* The date wears the same inverted chip as the screen titles (user-decided 2026-08-18:
+   "generalize this for the date") — the header's left corner is ONE treatment on every
+   screen. */
 .puzzle-date {
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  color: var(--fg);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--bg);
+  background: var(--fg);
+  padding: 5px 9px 4px;
+  border-radius: var(--r-sm);
+  text-shadow: none;
   font-variant-numeric: tabular-nums;
 }
 /* --- giant score watermark, always behind the play content --- */
@@ -3098,24 +3108,28 @@ button * {
   border: 0;
   cursor: pointer;
 }
-/* Primary: the accent action, modern-chrome dress (2026-08-18) — rounded, a slight
-   top-light gradient on the stamp orange, and a soft orange bloom lifting it off the
-   ground. Interaction stays brightness-only, the app's one language. */
+/* Primary: the PAPER BLOCK (user-decided 2026-08-18, superseding the orange gradient
+   slab — "goofy"): the board's inverted selection box as the app's one big action —
+   foreground ground, background type, dead sharp. The accent is the TOUCH state: hover
+   floods the block orange, and pressing depresses it like a key. The keyboard's lit
+   ENTER cap stays the one resting patch of orange. */
 .btn-primary {
-  padding: 19px 30px;
-  font-size: clamp(16px, 2.2vh, 18px);
-  font-weight: 650;
-  letter-spacing: 0.04em;
+  padding: 18px 30px;
+  font-size: clamp(15px, 2vh, 17px);
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--bg);
-  background: linear-gradient(180deg, #ffa03a, var(--accent));
-  border-radius: var(--r-md);
-  box-shadow: 0 12px 36px -14px rgba(245, 130, 15, 0.55);
+  background: var(--fg);
+  border-radius: var(--r-sm);
   text-shadow: none;
-  transition: filter 0.08s linear, opacity 0.08s linear;
+  transition: background-color 0.1s linear, transform 0.05s linear;
 }
 .btn-primary:hover {
-  filter: brightness(1.12);
+  background: var(--accent);
+}
+.btn-primary:active {
+  transform: translateY(1.5px);
 }
 /* Secondary: simple text, no fill. */
 .btn-secondary {
@@ -3210,6 +3224,7 @@ button * {
   .puzzle-date {
     font-size: 12px;
     letter-spacing: 0;
+    padding: 4px 7px 3px;
   }
 
   /* The sentence: a touch smaller so a hole + its exponent near the right edge still fits
@@ -3387,7 +3402,8 @@ button * {
 .coach-text {
   margin: 0;
   font-family: var(--ui);
-  font-size: clamp(16px, 2.4vh, 19px);
+  font-size: 16px;
+  font-weight: 350;
   line-height: 1.7;
   /* EXACTLY three lines, top-aligned — the box is a fixed dialog window, not a
      balloon. Copy that wraps past three lines is a COPY bug (too much to read);
@@ -3519,22 +3535,24 @@ button * {
   width: 100%;
   max-width: 680px; /* the keyboard's max-width — same interaction footprint */
   font-family: var(--ui);
-  font-size: clamp(16px, 2.2vh, 18px);
-  font-weight: 650;
-  letter-spacing: 0.04em;
+  font-size: clamp(15px, 2vh, 17px);
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--bg);
-  background: linear-gradient(180deg, #ffa03a, var(--accent));
+  background: var(--fg);
   border: 0;
-  border-radius: var(--r-md);
-  box-shadow: 0 12px 36px -14px rgba(245, 130, 15, 0.55);
-  padding: 19px 30px;
+  border-radius: var(--r-sm);
+  padding: 18px 30px;
   cursor: pointer;
   text-shadow: none;
-  transition: filter 0.08s linear, opacity 0.08s linear;
+  transition: background-color 0.1s linear, transform 0.05s linear;
 }
 .mix-btn:hover {
-  filter: brightness(1.12);
+  background: var(--accent);
+}
+.mix-btn:active:not(:disabled) {
+  transform: translateY(1.5px);
 }
 .mix-btn:disabled {
   opacity: 0.6;
@@ -3578,7 +3596,8 @@ button * {
     font-size: 14px;
   }
   .coach-text {
-    font-size: 15px; /* 3-line height scales with it (5.1em) */
+    font-size: 14px; /* 3-line height scales with it (5.1em); the phone column is the
+                        copy budget's own tuning width */
   }
   /* Clear the compact chip row + coach (56px top + 3 lines + its padding + a breath). */
   .tutorial {

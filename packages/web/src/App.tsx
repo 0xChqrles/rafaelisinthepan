@@ -74,7 +74,7 @@ export default function App() {
   return (
     <div className="app">
       {/* The viewport's own furniture (decorative, desktop-only) — under every screen. */}
-      <DeviceFrame lang={docLang} serial={editionDay} />
+      <DeviceFrame serial={editionDay} />
       {/* The living backdrop — every screen (game, archive, select, tutorial) sits on it. */}
       {route.view === 'select' && <LanguageSelect />}
       {route.view === 'modeSelect' && <ModeSelect />}

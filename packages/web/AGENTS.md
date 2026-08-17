@@ -214,10 +214,20 @@ These are decided and verified against the code. Treat them as load-bearing.
       full-bleed keyboard. The keys' pixel glyphs and all key LOGIC are untouched.
     - **The INVERTED SELECTION BOX is the one emphasis gesture** (the board's
       highlighted headline word / selected list row): screen titles (`.topbar-title` —
-      ARCHIVE, TUTORIAL, the modal titles) are fg-filled chips with bg type; the result
-      action INVERTS on hover; the invite title's last word sits in an `.invite-mark`
-      box (Invite splits the localized copy on the final space, pulling one more token
-      in when the tail is bare punctuation — French's ` ?`).
+      ARCHIVE, TUTORIAL, the modal titles) AND the sentence game's date chip
+      (`.puzzle-date`, user-decided 2026-08-18: the header's left corner is ONE
+      treatment) are fg-filled chips with bg type; the result action INVERTS on hover;
+      the invite title's last word sits in an `.invite-mark` box (Invite splits the
+      localized copy on the final space, pulling one more token in when the tail is
+      bare punctuation — French's ` ?`). **The PRIMARY BUTTONS are PAPER BLOCKS**
+      (user-decided 2026-08-18, superseding the orange gradient slab — "goofy"): the
+      selection box as the app's one big action, with the ACCENT as the TOUCH state
+      (hover floods the block orange, pressing depresses it); the keyboard's lit ENTER
+      cap stays the one resting patch of orange. The frame's tagline is the universal
+      `MADE WITH <3` (user-picked, replacing the localized "a daily word game" — the
+      `frameTagline` key is gone), and `.app`'s desktop side padding is 52px so content
+      clears the frame's vertical rail. Coach copy is 16px at weight 350 (14px on
+      phones).
     - **The CHOOSER cards are MEMBER CARDS** (superseding the aura tiles the same day):
       name bold left with an index TAG under it (a language's code EN/FR, a daily's
       01/02 — the `tag` prop each screen passes), and a deterministic LED-CELL MOSAIC
@@ -1992,8 +2002,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
     icons** (ISC; user-picked the same day) restated in the repo's own dress as the
     **`.ui-icon` stroke set** — `viewBox="0 0 24 24"`, `fill="none"`,
     `stroke="currentColor"`, `stroke-width="1.8"` (Lucide's 2 thinned to match the
-    hairline chrome), round caps/joins, in-file `width`/`height` (28px, sized against the 32px pixel mark beside them). A new chrome
-    icon starts from the Lucide glyph of that name. PIXEL icons
+    hairline chrome), **SQUARE caps and MITER joins** (user-decided 2026-08-18 — the
+    round defaults read "goofy" against the sharp chrome; the calendar's rect lost its
+    rx, the circled ? became a bare sharp ?, fast-forward became double chevrons),
+    in-file `width`/`height` (28px, sized against the 32px pixel mark beside them). A
+    new chrome icon starts from the Lucide glyph of that name, squared off the same
+    way. PIXEL icons
     survive only on the PLAY surface: the on-screen keyboard's enter/back glyphs —
     orthogonal pixel art (integer grid, no diagonals, the 2026-07-08 rules), sized by
     `.kb-icon` in CSS (`height: 30%`) because the keys shrink on narrow phones. The
