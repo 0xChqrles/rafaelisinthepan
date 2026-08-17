@@ -1028,6 +1028,30 @@ button * {
 .word-subject-text .hole-letter {
   text-shadow: 0 0 0.3em color-mix(in srgb, currentColor 30%, transparent);
 }
+/* THE WORDS ARE PRINTED WITH A VERTICAL INK GRADIENT (user-decided 2026-08-17): each
+   glyph fades from its state colour into a darker shade of the same ink toward the
+   bottom — the letter as a lit object, the poster read. Driven by currentColor, so the
+   pale draft, the inked solve and the struck word's grade colour each derive their OWN
+   darker end with no per-state rules. Applied per LETTER (the wave's spans), which a
+   VERTICAL gradient is indifferent to — every letter spans the same rows, so the fade
+   is identical across them. `-webkit-text-fill-color: transparent` (not `color`) keeps
+   currentColor alive for the gradient itself, the glow above and the blank line.
+   Guarded: without background-clip support, transparent fill over an unclipped gradient
+   would render solid bars. */
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .hole-word .hole-letter,
+  .solved-word-text .hole-letter,
+  .word-subject-text .hole-letter {
+    background-image: linear-gradient(
+      to bottom,
+      currentColor 15%,
+      color-mix(in srgb, currentColor 70%, black)
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+}
 /* Rank decrease: the exponent rolls toward its new value (see useAnimatedNumber)
    and uses the same quick scale/unscale hop as the tutorial. */
 .hole-rank.rank-pop {
