@@ -1,11 +1,10 @@
-// CONTRACT: Word mode's rarity grades are the MUTED LADDER authored for the calm
+// CONTRACT: Word mode's rarity grades are the stamp-ink ladder authored for the calm
 // redesign (2026-08-17). What this pins is the two things that make the ladder MEAN
 // anything, both of which a future colour edit could silently break:
 //   - THE MISS COLOUR IS NO GRADE'S (the reservation red carried until 2026-08-17).
 //   - the grades must stay mutually distinguishable, and clear of the colours the label
-//     is drawn next to (`--accent`, the day's word it floats on; `--danger`, the timer).
-// Measured in CIE76 dE — thresholds re-measured for the muted world, which compresses
-// distances by nature (~25 replaces the electric set's ~33-37).
+//     is drawn next to (`--solve`, the day's word it floats on; `--danger`, the timer).
+// Measured in CIE76 dE; the thresholds below pin those perceptual separations.
 
 import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
@@ -45,7 +44,7 @@ function rootVar(name: string): string {
   if (!m) throw new Error(`${name} is no longer a plain hex in index.css :root`);
   return m[1];
 }
-const DANGER = rootVar('--danger'); // MISS
+const DANGER = rootVar('--danger'); // timer warning and invalid feedback
 const SOLVE = rootVar('--solve'); // the ink blue: the day's word and every solved word
 
 // Where each grade comes from: the muted ladder is AUTHORED for the calm palette (no
@@ -59,7 +58,7 @@ const SOURCES: Record<string, string> = {
   ARCANE: 'authored: magenta ink',
 };
 
-describe('rarity colours track the palette stops they were copied from', () => {
+describe('rarity colours stay authored for the stamp-ink palette', () => {
   it('there is exactly one colour per grade', () => {
     expect(Object.keys(RARITY_COLORS).sort()).toEqual([...RARITY_NAMES].sort());
   });

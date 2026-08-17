@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { HIT_HEAT_CAP, MISS_COLOR, rankHeatColor } from '@whippin/shared';
+import { MISS_COLOR, rankHeatColor } from '@whippin/shared';
 import { t } from '../i18n';
 
 // The ROUTE DRAWING: the geometry and the row parts of a neighborhood drawn as a line,
@@ -147,18 +147,16 @@ export function OffMapShelf({ lang, misses }: { lang: string; misses: string[] }
   if (misses.length === 0) return null;
   return (
     <div className="route-shelf">
-      {/* In MISS's cold blue — the ramp's own cold terminus, and the exact colour the
+      {/* In MISS's weird red — the ramp's own weird terminus, and the exact colour the
           floating `MISS` wears when a guess is too far to rank (the ONE `MISS_COLOR`
-          constant, so the two can never drift). The shelf sits at the TOP of a line that
-          runs cold-top to hot-bottom, so the frozen block above the broken tail is where
-          the thermometer bottoms out. The heading names the same outcome, so it says it
-          in the same voice. */}
+          constant, so the two can never drift). The shelf sits above the broken tail,
+          outside the ranked line. The heading names the same outcome in the same voice. */}
       <p className="route-shelf-head" style={{ color: MISS_COLOR }}>
         {t(lang, 'routeOffMap')}
       </p>
-      {/* The words wear the same cold blue, DIMMED (`.route-miss` opacity): they are the
+      {/* The words wear the same red, DIMMED (`.route-miss` opacity): they are the
           shelf's own dead ends, one voice with the heading and the float, but quieter than a
-          label — so the shelf reads as one frozen block of "nothing here" at a glance instead
+          label — so the shelf reads as one block of "nothing here" at a glance instead
           of a muted list that could pass for ordinary words (decided 2026-08-10). */}
       <p className="route-misses" style={{ color: MISS_COLOR }}>
         {misses.map((word) => (
@@ -210,7 +208,7 @@ export function RouteRow({
         style={
           rank === null
             ? undefined
-            : ({ '--rank-color': rankHeatColor(rank, HIT_HEAT_CAP) } as CSSProperties)
+            : ({ '--rank-color': rankHeatColor(rank) } as CSSProperties)
         }
       >
         {rank === null ? null : rank}

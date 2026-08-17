@@ -18,8 +18,7 @@
 //
 // heat in [0,1]: 0 = weird (far — the MISS terminus), 1 = calm (near the goal / solved).
 
-// Each stop carries its own plain-text stand-in (see `progressEmoji` at the bottom).
-// Unicode has no grey square that reads neutral, so ⬜ carries the drained middle.
+// `progressEmoji` below carries the same broad weird→calm sequence in plain text.
 const CALM_STOPS: { v: number; color: [number, number, number] }[] = [
   { v: 0, color: [255, 61, 46] }, // #ff3d2e red — the WEIRD terminus, and MISS
   { v: 0.22, color: [255, 176, 30] }, // #ffb01e amber
@@ -66,30 +65,30 @@ export function heatColor(heat: number) {
 // The gradient STOPS at the 100 exponent (user-decided 2026-08-17): a guess 1000 away and
 // a guess 100 away are the same level of weird — past 100 there is no "weirder" left to
 // say, and the floating number does not improve any hole anyway. And that level IS the
-// MISS mustard: the cap collapses every far rank onto the gradient's weird terminus. It
+// MISS red: the cap collapses every far rank onto the gradient's weird terminus. It
 // is the app's ABSOLUTE rank scale: the floating hits, every route row's exponent, a
-// claim's loot and the run ruler all read a rank against it, so a rank is the same colour
-// wherever it is drawn. (Lives here rather than in the web because the share card renders
-// the same bar inside the Lambda and cannot import a component.)
+// claim's loot and every tutorial example read a rank against it, so a rank is the same
+// colour wherever it is drawn. The scale lives here so callers cannot choose their own
+// denominator and make an identical rank change colour between surfaces.
 export const HIT_HEAT_CAP = 100;
 
 // Rank -> [0 weird .. 1 calm] (rank 0 = solved = calm). Logarithmic: the colour changes
-// quickly near the goal (low ranks) and slowly far away. A rank past `startRank` goes
-// negative here and heatColor's clamp holds it at the weird terminus — which is exactly
-// the cap rule above. Internal — a rank is coloured through `rankHeatColor`.
-function rankHeat(rank: number, startRank: number): number {
-  const maxRank = Math.max(1, startRank || rank || 1);
-  return 1 - Math.log(rank + 1) / Math.log(maxRank + 1);
+// quickly near the goal (low ranks) and slowly far away. A rank past HIT_HEAT_CAP goes
+// negative here and heatColor's clamp holds it at the weird terminus. Internal — a rank
+// is coloured through `rankHeatColor`.
+function rankHeat(rank: number): number {
+  return 1 - Math.log(rank + 1) / Math.log(HIT_HEAT_CAP + 1);
 }
 
-// rgb() colour of a rank's exponent — the one way the app colours a distance.
-export function rankHeatColor(rank: number, startRank: number) {
-  return heatColor(rankHeat(rank, startRank));
+// rgb() colour of a rank's exponent — the one way the app colours a distance. The fixed
+// cap is deliberately not a parameter: rank 50 must mean the same thing everywhere.
+export function rankHeatColor(rank: number) {
+  return heatColor(rankHeat(rank));
 }
 
 // --- a PROGRESS % on the same scale ----------------------------------------------------
-// A reconstruction % (0..100) read STRAIGHT onto the scale: 0% is the weird mustard and
-// 100% the calm periwinkle — the same colour a rank-0 exponent wears, so a finished run
+// A reconstruction % (0..100) read STRAIGHT onto the scale: 0% is the weird red and
+// 100% the calm cobalt — the same colour a rank-0 exponent wears, so a finished run
 // ends on the peace the game restored.
 //
 // It maps LINEARLY (user-decided 2026-08-16, on the built thing rather than on paper). The

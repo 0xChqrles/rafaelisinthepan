@@ -396,7 +396,7 @@ function WordRound({
       // spellings of one. A claim STRIKES the word in its grade's colour and knocks its
       // LOOT out of it — the guess's rank exponent and the grade's name, popping off the
       // word and falling away (WordLoot). Anything the run cannot claim says MISS in the
-      // ramp's cold-terminus blue: a near miss and an off-map guess are the same thing to a player racing
+      // ramp's weird-terminus red: a near miss and an off-map guess are the same thing to a player racing
       // a clock, and the exact distance of an unclaimable word is a number they can do
       // nothing with. It survives where it still teaches — the post-mortem draws that
       // guess on the trunk at its real rank.

@@ -2,7 +2,7 @@
 // player's RUN RULER — one cell per counted try on the SHARED heat ramp (so the card
 // matches the on-screen ruler), a tick per solving try with the dropped hole's sentence
 // index under it — plus the score and the day's calendar date. Word mode instead draws the
-// day's accented word alone in the global accent, then its claim count, the per-rarity chip
+// day's accented word alone in the solve cobalt, then its claim count, the per-rarity chip
 // row (one grade-coloured square + count per claimed grade), and the date.
 // Exact positions are cosmetic and not asserted; they get tuned against the rasterized PNG.
 

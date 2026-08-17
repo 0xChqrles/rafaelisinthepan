@@ -7,8 +7,8 @@
 //     MISS_COLOR — one constant — and the 100-exponent cap collapses every far rank onto
 //     that terminus, so a 100-away guess and a MISS share the colour and only the label
 //     differs (the structural rules that survived the iron bow);
-//   - the calm end is a BLUE and the weird end is a YELLOW — peace is blue, weird is
-//     yellow, the metaphor's two poles — and everything between stays legible on `--bg`;
+//   - the calm end is COBALT and the weird end is RED — peace and weirdness are the
+//     metaphor's two poles — and everything between stays legible on `--bg`;
 //   - a reconstruction % reads STRAIGHT onto the scale (2026-08-16), so the run ruler
 //     (screen AND share card) spends the whole gradient and ends on the rank-0 calm;
 //   - `progressEmoji` is the scale's plain-text twin — the share text's row must read as
@@ -89,12 +89,19 @@ describe('the rank scale stops at the 100 exponent — on the MISS colour itself
   });
 
   it('a guess 1000 away, a guess 100 away and a MISS are the same level of weird', () => {
-    expect(rankHeatColor(1000, HIT_HEAT_CAP)).toBe(rankHeatColor(100, HIT_HEAT_CAP));
-    expect(rankHeatColor(100, HIT_HEAT_CAP)).toBe(hexToRgbString(MISS_COLOR));
+    expect(rankHeatColor(1000)).toBe(rankHeatColor(100));
+    expect(rankHeatColor(100)).toBe(hexToRgbString(MISS_COLOR));
+  });
+
+  it('owns one absolute logarithmic denominator for every caller', () => {
+    const rank = 50;
+    expect(rankHeatColor(rank)).toBe(
+      heatColor(1 - Math.log(rank + 1) / Math.log(HIT_HEAT_CAP + 1)),
+    );
   });
 
   it('rank 0 is the calm end — the colour a solve lands on', () => {
-    expect(rankHeatColor(0, HIT_HEAT_CAP)).toBe(heatColor(1));
+    expect(rankHeatColor(0)).toBe(heatColor(1));
   });
 });
 
@@ -110,7 +117,7 @@ describe('a progress % is the scale, read straight', () => {
     expect(progressHeatColor(100)).toBe(heatColor(1));
     // The calm end is what a rank-0 exponent wears: a finished run ends on the peace it
     // restored.
-    expect(progressHeatColor(100)).toBe(rankHeatColor(0, HIT_HEAT_CAP));
+    expect(progressHeatColor(100)).toBe(rankHeatColor(0));
   });
 
   it('clamps outside 0..100 instead of running off the scale', () => {

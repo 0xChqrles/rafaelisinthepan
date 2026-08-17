@@ -5,9 +5,9 @@ import { MISS_COLOR, rankHeatColor } from '@whippin/shared';
 
 // The tutorial's explanation text (#51): typewritten like a game dialog, with inline
 // markup so words LOOK like what they are in-game:
-//   [[b:word]]       the secret/target — the brand accent, like every game word
-//   [[w:word^rank]]  a hint word — the accent with its heat-colored exponent, like a hole
-//   [[m:word]]       a MISS word — the ramp's cold-terminus blue, the float's own colour
+//   [[b:word]]       the secret/target — the solve cobalt
+//   [[w:word^rank]]  a hint word — the pale hole word with its rank-coloured exponent
+//   [[m:word]]       a MISS word — the ramp's weird red terminus, like the float
 // The FULL text is laid out from the first frame — every character rendered, the
 // unrevealed ones merely invisible — so the wrap points are final before the first
 // letter shows and a word being "typed" can never jump to the next line mid-word.
@@ -55,10 +55,6 @@ function segLen(s: Seg): number {
 
 const TYPE_MS = 18; // per character — brisk, game-dialog pace
 
-// Numbers are colored on the same board scale as the demo (both boards' start words sit
-// around rank 100): a "far" rank lands past the cold end, exactly like a far float in-game.
-const TEXT_HEAT_SCALE = 100;
-
 const HIDDEN: CSSProperties = { visibility: 'hidden' };
 
 // Every character is ALWAYS rendered — hidden until the budget reaches it — so the
@@ -90,10 +86,10 @@ function renderSeg(s: Seg, budget: number, key: number) {
       </span>
     );
   }
-  // Hint word: the brand accent with its heat-coloured exponent, exactly as a hole reads
+  // Hint word: the pale hole colour with its heat-coloured exponent, exactly as a hole reads
   // in-game. The sup is always in the layout too, so even ITS reveal moves nothing.
   const rankStyle: CSSProperties & Record<'--rank-color', string> = {
-    '--rank-color': rankHeatColor(s.rank, TEXT_HEAT_SCALE),
+    '--rank-color': rankHeatColor(s.rank),
   };
   return (
     <span key={key} className="rt-word">

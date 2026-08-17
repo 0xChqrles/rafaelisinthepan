@@ -36,15 +36,9 @@ export const RARITY_COLORS: Record<Rarity, string> = {
   ARCANE: '#f04ea6',
 };
 
-// MISS's colour LIVES WITH THE RAMP now (`MISS_COLOR` in @whippin/shared's heat.ts,
-// user-decided 2026-08-17 in two steps: first off-scale cold — the below-window blue,
-// electrified, replacing `--danger` red — then, hours later, the ramp was extended to
-// CONTINUE past its magenta into that blue and STOP exactly ON it, which made MISS the
-// ramp's own cold terminus: `heatColor(0) === MISS_COLOR`, one constant, so it moved to
-// where the terminus is defined). What stays HERE is the reservation the grades owe it —
-// no grade may near the MISS colour (33+ dE, `rarity.test.ts`) — and the split it bought:
-// red = INVALID/danger (doesn't count; the shake, the timer), cold = valid but NOTHING
-// THERE (counts as a try).
+// MISS's red lives with the ramp (`MISS_COLOR` in @whippin/shared's heat.ts), because it
+// is exactly the weird terminus: `heatColor(0) === MISS_COLOR`. What stays HERE is the
+// reservation the grades owe it — no grade may near the MISS colour (`rarity.test.ts`).
 
 // A grade also has a TEXT-medium presentation — its share-text bead — and that one lives
 // with the share composition it belongs to (`game/share.ts` `RARITY_EMOJI`/`rarityRow`),

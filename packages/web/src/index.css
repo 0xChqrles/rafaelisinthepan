@@ -506,11 +506,15 @@ button * {
     background-position-x: calc(100% * 12 / 11); /* frame 11 lands on 100%; endpoint wraps */
   }
 }
-/* Motion is a progressive enhancement: reduced-motion users get the solid base fill
-   (solved still reads as its color + the aria-label), never a frozen frame. */
+/* Motion is a progressive enhancement: reduced-motion users get the solid cobalt base
+   fill, never a frozen frame. The small solved-day number switches to --bg so the static
+   pairing keeps normal-text contrast; the animated ripple needs --fg over its dark frames. */
 @media (prefers-reduced-motion: reduce) {
   .cal-ripple {
     display: none;
+  }
+  .cal-day.cal-day-solved {
+    color: var(--bg);
   }
 }
 
@@ -880,7 +884,7 @@ button * {
 /* Since #117 a hole is a BUTTON: tapping it opens that hole's guess history. It wraps
    the word + exponent without restructuring them (the floating-hit/scramble choreography
    keys off that structure) and stays typographically invisible — the sentence reads
-   exactly as before, so the gold word is still the only thing on screen. */
+   exactly as before, so the pale hole word is still the only thing on screen. */
 .hole-btn {
   font: inherit;
   color: inherit;
@@ -1797,8 +1801,8 @@ button * {
 
    One list, closest first: the rank in a right-aligned heat-coloured gutter — the same ladder
    of numbers the route map's "time" column taught, running hot to cold down the page — then
-   the word AS TYPED. MISS closes the list in its off-scale cold blue, exactly the word that floated
-   over the hole when those guesses landed; the solving guess leads it in the brand accent.
+   the word AS TYPED. MISS closes the list in its weird red, exactly the word that floated
+   over the hole when those guesses landed; the solving guess leads it in the solve cobalt.
    Full-screen native dialog on the SOLID app background. The LIST has no
    motion of its own past its entrance — the zoom below is about the transition into the modal,
    and the cascade is about arrival, not about the list. */
@@ -1978,9 +1982,9 @@ button * {
   height: 11px;
   background: var(--muted);
 }
-/* The point to reach is a BLUE SQUARE from the first frame (user-decided 2026-08-10): blue
-   is the app's solved-word colour, and the terminus IS the word to get — the square says
-   so before it is won, and the word beside it joins it in gold at the solve
+/* The point to reach is a COBALT SQUARE from the first frame (user-decided 2026-08-10):
+   cobalt is the app's solved-word colour, and the terminus IS the word to get — the square says
+   so before it is won, and the word beside it joins it in cobalt at the solve
    (`.route-found`). */
 .history-frame .route-arrival .route-node {
   background: var(--solve);
@@ -2188,7 +2192,7 @@ button * {
   background: repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 8px);
   opacity: 0.55;
 }
-/* Found: the accented secret in the accent the game's words wear, and the terminus lights up with it —
+/* Found: the accented secret in the solve cobalt, and the terminus lights up with it —
    the same line then reads as the post-mortem of the route taken. */
 .route-found .route-word {
   color: var(--solve);
@@ -2273,7 +2277,7 @@ button * {
   font-family: var(--press);
   font-size: 16px;
   letter-spacing: 2px;
-  /* Only the FALLBACK: both drawings set MISS's off-scale cold blue inline — the one
+  /* Only the FALLBACK: both drawings set MISS's weird red inline — the one
      the floating `MISS` wears — so the heading says "missed" in the voice the round
      already answered these words in. The ONE `MISS_COLOR` constant there, never a hex
      copied down here, so the two cannot drift. */
@@ -2291,7 +2295,7 @@ button * {
   gap: 10px 16px;
   font-family: var(--vt);
   font-size: 14px;
-  /* Only the FALLBACK — OffMapShelf sets MISS's off-scale cold blue inline, the same
+  /* Only the FALLBACK — OffMapShelf sets MISS's weird red inline, the same
      `MISS_COLOR` as the heading, so the shelf speaks in one voice (2026-08-10,
      superseding muted words that could pass for ordinary ones). */
   color: var(--muted);

@@ -15,7 +15,7 @@ import type { RankEntry } from '@whippin/shared';
 // EVERY press MIXES the word the same way (the slot-machine scramble): its letters
 // cycle through random glyphs and settle left-to-right into the new word. The
 // exponent is handled with care:
-//   - first mix (gold secret -> 1): no exponent yet — it pops in 200ms AFTER the
+//   - first mix (solved target -> 1): no exponent yet — it pops in 200ms AFTER the
 //     letters settle;
 //   - later mixes: the exponent stays on and TICKS through the real intermediate
 //     ladder ranks while the letters churn (2, 3 … 10), landing exactly as the
@@ -28,12 +28,10 @@ const EXPONENT_DELAY_MS = 200; // beat between the letters settling and the rank
 export default function MixWord({
   secret,
   entry,
-  startRank,
   ladder,
 }: {
-  secret: string; // display form shown resolved (accent, no blank line) before any mix
+  secret: string; // display form shown resolved (solve cobalt, no blank line) before any mix
   entry: RankEntry | null; // the mix's LANDING entry (Tutorial sets it per press)
-  startRank: number; // heat scale (the ladder's final landing rank)
   ladder: RankEntry[]; // real neighbors, rank ascending — the exponent's tick path
 }) {
   // In-flight state: the shared scramble owns the letter jumble (null = settled); the
@@ -104,7 +102,7 @@ export default function MixWord({
     | (CSSProperties & Record<'--rank-color', string>)
     | undefined = entry
     ? {
-        '--rank-color': rankHeatColor(shownRank, startRank),
+        '--rank-color': rankHeatColor(shownRank),
         visibility: supHidden ? 'hidden' : undefined,
         minWidth: `${String(entry.rank).length}ch`,
       }
@@ -114,10 +112,10 @@ export default function MixWord({
     <p className="phrase">
       <span className={`hole${entry ? '' : ' resolved'}`}>
         <span className="hole-word-wrap">
-          {/* The word is the flat brand accent like every hole (the live-heat word was
-              rejected on screen, 2026-08-17); the exponent alone carries the temperature,
-              and the open-blank line under an unresolved word comes from the shared hole
-              CSS — the demo IS a hole, so it wears the blank too. */}
+          {/* The word is the flat pale hole colour like every hole (the live-gradient word
+              was rejected on screen, 2026-08-17); the exponent alone carries the gradient.
+              The tutorial suppresses the shared open-blank line because this is a demo,
+              not a blank the player fills. */}
           <span className="hole-word">{jumble ?? (entry ? entry.word : secret)}</span>
         </span>
         {entry && (

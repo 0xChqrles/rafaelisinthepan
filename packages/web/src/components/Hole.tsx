@@ -1,17 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import FloatingHit, { HIT_FADE_MS } from './FloatingHit';
-import { HIT_HEAT_CAP, MISS_COLOR, rankHeatColor } from '@whippin/shared';
+import { MISS_COLOR, rankHeatColor } from '@whippin/shared';
 import useAnimatedNumber, { linearEasing } from '../hooks/useAnimatedNumber';
 import useLetterWave, { WAVE_VARS } from '../hooks/useLetterWave';
 import { prefersReducedMotion, useScramble } from '../hooks/useScramble';
 import type { HitState, RuntimeHole } from '@whippin/shared';
 
-// `rankHeatColor` and its `HIT_HEAT_CAP` scale live in @whippin/shared since 2026-08-16
-// (they used to live here): the run ruler paints a progress % as the exponent still to go,
-// and the share card renders that same bar in the Lambda, where no web component can be
-// imported. Everything that draws an exponent — this hole, the floating hit, the route
-// rows, a claim's loot, the tutorial — takes it from there.
+// `rankHeatColor` owns the app's absolute rank scale in @whippin/shared. Everything that
+// draws an exponent — this hole, the floating hit, route rows, loot and the tutorial —
+// takes it from there, so a rank cannot change colour between surfaces.
 
 // Keep the existing 520ms beat for a ten-rank transition below the cap, while making
 // every individual rank step take the same 52ms. Large transitions stay responsive.
@@ -153,14 +151,14 @@ export default function Hole({
   // The exponent sizes to its own content (no reserved width), so a following suffix
   // sits right after the number instead of after a gap left for the widest rank.
   const rankStyle: CSSProperties & Record<'--rank-color', string> = {
-    '--rank-color': rankHeatColor(shownRank, hole.startRank),
+    '--rank-color': rankHeatColor(shownRank),
   };
   // The word carries the hit's shake delay and, while it waves, the two numbers its letters'
   // animation is built from — so the timing lives in ONE place (above) and CSS reads it.
   //
-  // The word's COLOUR is the one global accent (user-decided 2026-08-17, third pass of the
-  // day — a word coloured by its own live heat was built and rejected on the screen: the
-  // exponent drowned in a word wearing its own colour). Temperature lives in the EXPONENT
+  // The word's COLOUR is the flat pale hole ink (user-decided 2026-08-17, third pass of the
+  // day — a word coloured by its own live gradient was built and rejected on the screen:
+  // the exponent drowned in a word wearing its own colour). The gradient lives in the EXPONENT
   // alone; what says "still a hole" is the word's DRESS — the dashed OPEN-BLANK line CSS
   // draws under an unresolved word (`.hole-word::after`), gone the moment `.resolved`
   // lands. So this component sets no colour at all any more.
@@ -192,13 +190,12 @@ export default function Hole({
             </span>
           ))}
         </span>
-        {/* Floating "damage"-style indicator: a distance number colored by the heatmap
-            (capped heat), or "MISS" in the ramp's own COLD TERMINUS when too far
-            (MISS_COLOR, user-decided 2026-08-17): the ramp runs down through blue and
-            STOPS on the MISS colour, and the cap collapses every rank past 100 onto that
+        {/* Floating "damage"-style indicator: a distance number coloured by the shared
+            rank scale, or "MISS" in the ramp's own weird red terminus when too far
+            (MISS_COLOR, user-decided 2026-08-17). The cap collapses every rank past 100 onto that
             same terminus — a 100-away exponent and a MISS share the colour, and only the
             label tells them apart. The float and the exponent are the round's ONLY
-            temperature surfaces on the board — the words wear the flat brand accent. */}
+            gradient surfaces on the board — the words wear the flat hole colour. */}
         {hit && (
           <FloatingHit
             key={hit.id}
@@ -207,7 +204,7 @@ export default function Hole({
             miss={hit.miss}
             startDelayMs={hit.startDelayMs}
             fadeDelayMs={hit.fadeDelayMs}
-            color={hit.miss ? MISS_COLOR : rankHeatColor(hit.value, HIT_HEAT_CAP)}
+            color={hit.miss ? MISS_COLOR : rankHeatColor(hit.value)}
             onDone={onHitDone}
           />
         )}

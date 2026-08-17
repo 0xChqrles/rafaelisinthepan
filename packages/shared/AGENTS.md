@@ -13,7 +13,7 @@
     src/day.ts                the ONE 22:00-ET DST-correct game-day logic (client + server + publish)
     src/scores.ts             WORD_CLAIM_ZONE (web+backend) + VIEWER_IP_HEADER (infra+backend)
     src/types.ts              shared puzzle + score-API schema types (Puzzle, Hole, ScoreHistogram, …)
-    src/heat.ts               the app's ONE ramp — the FLIR iron-bow polynomial's kept window: heatColor() + rankHeatColor()/HIT_HEAT_CAP (exponents, floating hits, loot, route rows) + progressHeatColor()/progressEmoji() (run rulers incl. the card, share-text emoji row, archive fills, chooser strips)
+    src/heat.ts               the app's ONE weird→calm stop gradient: heatColor() + fixed-cap rankHeatColor()/HIT_HEAT_CAP (exponents, floating hits, loot, route rows) + progressHeatColor()/progressEmoji() (run rulers incl. the card, share-text emoji row, archive fills, chooser strips)
     src/shareCard.ts          the share-token codec (both modes), browser + Lambda
     src/cardSvg.ts            the OG card's SVG, rendered from a decoded token
     src/index.ts              re-exports
@@ -45,9 +45,9 @@
 - **`src/heat.ts` is the app's ONE gradient, and it runs WEIRD → CALM (user-decided
   2026-08-17, the calm redesign — superseding the FLIR iron bow of the same day and the
   crimson→cyan heat stops before it).** Solving is RESTORING PEACE to a weird sentence:
-  the scale starts at vivid RED (#f4483a — the weird terminus, and MISS, red again by
+  the scale starts at vivid RED (#ff3d2e — the weird terminus, and MISS, red again by
   the user's call once the scale grew one step past the yellow) and runs through amber,
-  coral and a strange rose-orchid into the cobalt (#4f6dff — the web's `--solve`, so a
+  coral and a strange rose-orchid into the cobalt (#4a6aff — the web's `--solve`, so a
   solved word lands exactly on the scale's terminus). FULLY SATURATED stamp-ink chroma (the
   third cut of the day: dusty read "creepy", mid-saturation read "dull" — the
   /inspiration stamps are vivid inks, and the calm lives in the textures instead), every
@@ -59,8 +59,9 @@
   that ends on it); and the rank scale STOPS at the 100 exponent (`HIT_HEAT_CAP`) — a
   guess 1000 away, a guess 100 away and a MISS are the same level of weird, told apart
   only by their labels. `progressEmoji` walks 🟥 → 🟨 → 🟪 → 🟦 (weirdest, weird,
-  strange, calm; cuts at 15/45/75). `rankHeatColor`/`HIT_HEAT_CAP` live here rather than in the web because the
-  card renders the same bar inside the Lambda and cannot import a component.
+  strange, calm; cuts at 15/45/75). `rankHeatColor(rank)` owns that absolute logarithmic
+  100-rank scale internally — consumers never supply a per-hole or per-surface denominator,
+  so the same rank cannot change colour between renderers.
   One web palette used to be pinned COPIES of ramp stops; with the calm redesign Word
   mode's rarity ladder is AUTHORED instead (`rarity.test.ts` still pins its hexes and
   re-measured dE constraints, so a retune stays a deliberate act).

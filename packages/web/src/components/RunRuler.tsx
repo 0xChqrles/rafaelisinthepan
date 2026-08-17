@@ -6,12 +6,9 @@ import { progressHeatColor } from '@whippin/shared';
 // secret and the hole's sentence index (1..3) under it. A guess that drops several secrets
 // stacks its indices under ONE tick.
 //
-// The cells are coloured on the HEAT ramp since 2026-08-16 (user-decided, retiring the
-// progress palette; the ramp itself is the iron bow since 2026-08-17): a try's
-// reconstruction % is read STRAIGHT as heat, so the bar runs the kept iron window's whole
-// length — cold violet-magenta at the start, through crimson and orange, to the hot yellow
-// a rank-0 exponent wears on the solving try — the same ramp every rank in the round was
-// coloured on.
+// The cells use the shared weird→calm ramp: a try's reconstruction % reads STRAIGHT from
+// the red MISS terminus through amber, coral and orchid to the cobalt solve terminus. Rank
+// exponents use the same stops through their own fixed logarithmic mapping.
 export default function RunRuler({
   trajectory,
   solvedAt,

@@ -31,7 +31,7 @@ import useModalDismiss from '../hooks/useModalDismiss';
 // "you are here" machinery. What is drawn now is only where the
 // player has BEEN, on the structure that says what it means:
 //
-//   - the MISSED shelf at the top, its words in MISS's dimmed off-scale cold — one frozen
+//   - the MISSED shelf at the top, its words in MISS's dimmed weird red — one
 //     block of dead ends — then the broken tail: the void the line comes out of;
 //   - the BEHIND stretch (stops farther than the departure — guesses that went backwards):
 //     quiet words, small nodes, and the connectors STAY the broken trace, because the
@@ -39,15 +39,15 @@ import useModalDismiss from '../hooks/useModalDismiss';
 //   - the DEPARTURE (muted node, dimmed word — the one stop you were given, not one you
 //     earned) is where the line turns SOLID: from here down every stop is a step of the
 //     walk, full-bright in the pale hole blue, spaced by its REAL distance (`dq`), with
-//     the gold "you are here" node at the hole's current position (temperature lives in
-//     the gutter exponents alone — a live-heat word was tried and rejected on screen,
+//     the orange "you are here" node at the hole's current position (the gradient lives
+//     in the gutter exponents alone — a live-gradient word was tried and rejected on screen,
 //     2026-08-17);
 //   - the terminus: the fixed-width `???` on the big node, wearing the holes' own dashed
 //     OPEN-BLANK line — the unknown target the whole round is about — turning into the
 //     accented secret (blank gone) once found.
 //
 // So the three kinds of guess are told apart by the LINE itself, not by reading numbers:
-// frozen and shelved = never on the map, dim on the dashes = behind where you started,
+// red and shelved = never on the map, dim on the dashes = behind where you started,
 // bright on the solid rail = progress.
 //
 // It opens scrolled to the line's END, where "how close am I, what is left" lives, and

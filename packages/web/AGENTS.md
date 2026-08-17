@@ -62,18 +62,13 @@ These are decided and verified against the code. Treat them as load-bearing.
      - **Warm** (entry exists) → a transient rank **distance number** floats on the
        hole, in the heat color of that distance.
      - **Too far** → the **same** floating + word-shake animation, but it reads
-       **"MISS"** instead of a distance (no rank exists beyond top-K), in MISS's cold
-       blue — which since 2026-08-17 (third pass) is the RAMP'S OWN COLD TERMINUS: the
-       gradient continues past its magenta into the electrified below-window blue and
-       stops exactly ON the MISS colour, so `MISS_COLOR` (#4b4bff) lives with the ramp in
-       `@whippin/shared` and `heatColor(0)` IS it. A 100-away exponent therefore wears
-       the same colour as a MISS (the cap collapses every far rank onto the terminus) and
-       only the label differs — accepted as the point. Measured clear of everything it
-       can sit beside (`rarity.test.ts`): 37.1 dE from `--accent` (the global accent —
-       the very word a MISS floats over), 33.4 from OBSCURE's violet, 3.51:1 on `--bg`. Red =
-       INVALID/danger (the shake, the timer) and cold = valid-but-nothing-there are two
-       different colours, which they always were two different outcomes (MISS wore
-       `--danger` red until iron put red mid-ramp).
+       **"MISS"** instead of a distance (no rank exists beyond top-K), in the ramp's
+       weird red terminus. `MISS_COLOR` (#ff3d2e) lives with the ramp in
+       `@whippin/shared`, and `heatColor(0)` IS it. A 100-away exponent therefore wears
+       the same colour as a MISS (the fixed absolute cap collapses every farther rank
+       onto the terminus); only the label distinguishes them. The red remains distinct
+       from the timer/invalid `--danger` red and is legible on `--bg`, pinned by the heat
+       and rarity tests.
      - **Warm + improves** (entry's rank beats the hole's current rank) → the hole
        **additionally** swaps to the entry's **accented `word`** and lower `rank`,
        but **only when its floating number begins to fade out** (`fadeDelayMs`), so
@@ -98,8 +93,9 @@ These are decided and verified against the code. Treat them as load-bearing.
   - **weird/calm** is the ONE gradient (`@whippin/shared` heat.ts): vivid RED (the weird
     terminus — and MISS, red again by the user's call once the scale grew one step past
     the yellow) through amber, coral and a strange rose-orchid, settling into the
-    cobalt. The MISS red is a deliberate sibling of the timer's `--danger` (22.5 dE). The exponents, the floats, the run ruler,
-    the archive fills. No word ever wears a scale value (a live-heat held word was built
+    cobalt. The exponents, floats, run ruler and archive fills use it. Every rank renderer
+    calls `rankHeatColor(rank)`, whose fixed logarithmic `HIT_HEAT_CAP = 100` lives in
+    shared; a puzzle's start rank is never a colour denominator. No word ever wears a scale value (a live-heat held word was built
     and rejected on screen — the exponent drowned in a word wearing its own colour).
   - **hole/solve** is the WORD pair, one blue in two states: a HELD hole word is the
     PALE draft — `--hole` #aec1ff over its dashed OPEN-BLANK line
@@ -109,26 +105,22 @@ These are decided and verified against the code. Treat them as load-bearing.
     reuse it outside `.hole`, never grow a blank. The app's "not yet" dash vocabulary;
     the unfound `???` terminus wears it too — the TUTORIAL deliberately not at all,
     user-decided 2026-08-17: MixWord's demo hole and the coach text's hint words are
-    lesson props, not blanks to fill. It hugs the word at -4px, the closest whole pixel
-    clearing the pixel font's descender overflow) — and solving INKS IT IN:
-    `--solve` #4f6dff cobalt, blank gone. The ink IS the gradient's calm terminus, so a
+    lesson props, not blanks to fill. It sits at the wrap's bottom edge) — and solving
+    INKS IT IN: `--solve` #4a6aff cobalt, blank gone. The ink IS the gradient's calm terminus, so a
     solve lands exactly on the peace the scale runs toward. It paints everything
     reached: resolved holes, the solved screen's trophies, both termini found, Word
     mode's day word, the OG card's word, the tutorial's `[[b:]]` secret (`.rt-target`) —
-    and done-for-the-day strips/cells (moved OFF the accent when weird became yellow: a
-    warm "done" beside amber low-progress days read as more weirdness, where done =
-    peace is the metaphor's own word). Measured: the pair sits 52 dE apart, the pale
-    hole reads at 10.4:1 on `--bg`, clears MISS by ~90 and plain `--fg` words by 42 (the
-    blank line and the exponent carry the rest of that distinction).
+    and done-for-the-day strips/cells. The pale hole is strongly legible on `--bg`; the
+    blank line and exponent carry the rest of the unresolved-state distinction.
   - **the ACCENT is STAMP ORANGE** — `--accent` #f5820f (the Séance poster's own orange,
     sampled;
     it was gold until the weird end claimed the yellows): the chrome (prompt caret,
     enter key, loading status, COPIED), the `+Ns` gain, the history "you are here"
     node, the streak, `.btn-primary`, the source credit's headline, the standing's rank
     number. Never a scale value, never a word state.
-  Known residuals, accepted: accent orange vs the weird-terminus amber at 38.5 dE
-  (comfortable), danger red vs the gradient's coral mid at 16 (they never share a
-  surface closely — the timer lives in the header corner).
+  The palette tests pin the required legibility and reservations around MISS, solve,
+  danger and the rarity ladder; retune those relationships deliberately, never by a
+  copied stale hex.
   **The saturation level is the THIRD cut and it is the one that stuck** (user-iterated
   2026-08-17, same day): dusty print tones read "almost creepy", the mid-saturation inks
   still "dull/dead" — the /inspiration stamps are genuinely VIVID inks, so the palette
@@ -332,8 +324,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   bounded by construction (`START_SECONDS` + the zone's summed bonuses), so no run is
   infinite and the zone stays unclearable in practice.
   A claim is a valid vocab word, not already tried, ranked inside the zone. **Anything the
-  run cannot claim floats `MISS`, in the ramp's cold-terminus blue (`MISS_COLOR`; red
-  until 2026-08-17 — see the sentence loop's MISS bullet) — a near miss (ranked, just outside the
+  run cannot claim floats `MISS`, in the ramp's weird red terminus (`MISS_COLOR` — see
+  the sentence loop's MISS bullet) — a near miss (ranked, just outside the
   zone) and an off-map guess alike** (decided 2026-08-08, superseding the near miss's rank
   float). The
   rank was justified as the zone's teaching signal, and it was the right call on a
@@ -509,7 +501,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (`components/WordLoot.tsx` + `.word-loot` in index.css), popping up and apart off the
   impact like drops off a struck enemy, hanging, then falling away — in the air for 840ms,
   never parked. The exponent wears the heat colour every other exponent wears (the shared
-  `rankHeatColor` at `HIT_HEAT_CAP`), the grade its `RARITY_COLORS` colour. The flight is
+  `rankHeatColor(rank)`, whose absolute cap is internal), the grade its `RARITY_COLORS` colour. The flight is
   the parabola trick — an outer box drifting sideways linearly, an inner one rising
   ease-out and falling ease-in — with NO `scale` (the pixel-font rule) and a fixed
   `rotate` tilt. **The throw is ROLLED per hit** (user-decided 2026-08-10): which side
@@ -672,26 +664,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   already happened is not a control. Both extremes were built and rejected on sight — in flow
   the history pushed the window's centre up with it and the word read as TOP-ALIGNED (measured
   126px high); given the whole band down to the KEYBOARD the word read as TOO LOW.
-  **The rarity COLOURS are copies of existing ramp stops, measured, and pinned**
-  (`components/rarity.ts` + `rarity.test.ts`):
-  `--muted` / progress-green / progress-cyan / heat-electric-violet / progress-pink, minimum
-  pairwise 36.99 dE. **FOUR of the five have outlived their sources** (green/cyan/pink on
-  2026-08-16 with the progress palette's deletion; violet on 2026-08-17 when the heat ramp
-  became the iron bow and the electric-violet stop went with the old stops). Nothing moved —
-  retuning the ladder as a side effect of a decision about the ramp would be an accident,
-  not a choice — so those four are frozen hexes now, pinned as literals rather than against
-  a live stop, with the measured constraints below as what still guards them; only COMMON
-  tracks a live source (`--muted`). **THE MISS COLOUR IS NO GRADE'S** (the reservation red
-  carried until 2026-08-17, moved with MISS to the ramp's cold-terminus blue, which lives
-  in `@whippin/shared` beside the gradient that ends on it) — every grade
-  clears 33+ dE from `MISS_COLOR` (OBSCURE's violet the closest at 33.4), and the two can
-  never co-occur on one float anyway; the grades also still clear the danger red 37+, since
-  red stayed on screen as the timer's warning and the invalid shake. Three
-  candidates were measured and REJECTED, and the reasons are worth keeping: progress-violet
-  is the intuitive "deep" pick for OBSCURE and FAILS legibility at 3.64:1 on `--bg` (indigo
-  at 3.00:1), gold-for-ARCANE IS `--gold` — the day's word AND the `+Ns` gain firing in the same beat —
-  and progress-blue for RARE sits 14.75 dE from `--accent`, the colour of the word the label
-  is drawn on top of.
+  **The rarity COLOURS are an authored stamp-ink ladder, measured and pinned**
+  (`components/rarity.ts` + `rarity.test.ts`): COMMON tracks `--muted`; UNCOMMON, RARE,
+  OBSCURE and ARCANE are fixed mint, cyan, violet and magenta inks. They are not copies of
+  heat-ramp stops. **THE MISS COLOUR IS NO GRADE'S:** every grade stays perceptually clear
+  of `MISS_COLOR`, `--danger` and the cobalt `--solve` word it can be rendered beside;
+  the grades also remain mutually distinguishable. Those relationships and the exact
+  authored hexes are contract-tested, including the shared OG-card copy.
   **The `WORD_END_HOLD_MS` beat is a FLOOR, not a length** (2026-08-08): a rarer grade holds
   longer, so an ARCANE landing on the buzzer outlives the old static 840ms by nearly a
   second. The screen tracks when the live float actually ends and waits for the later of the
@@ -1032,8 +1011,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   territory) staying the broken trace (`RouteLink broken`, heights `dashedRun`-snapped by
   the caller). **From the departure down — the START WORD INCLUDED — the WORDS wear the
   pale hole blue** (2026-08-17 final palette: they are words the player HOLDS, in the
-  held-word colour; a live-heat word per stop was built between the uniform gold and
-  this, and rejected with the sentence's — temperature stays in the gutter exponents;
+  held-word colour; a live-gradient word per stop was built between the uniform accent and
+  this, and rejected with the sentence's — the gradient stays in the gutter exponents;
   `route-ahead`/`route-you` — the zone classes are EXCLUSIVE per stop, HistoryModal
   picks one, so each zone owns its dress outright), the nodes staying the found stop's
   plain `--fg`. **The DEPARTURE has NO station state of its own** (user-decided 2026-08-10,
@@ -1043,25 +1022,23 @@ it to the local store — see `packages/backend/AGENTS.md`).
   What still says "the walk starts here" is structural and needs no per-stop dress — the
   broken trace ends AT it, and everything above it is grey — so `HistoryStop.start`
   survives in the MODEL alone, where the sr mirror and the dashed-connector boundary read
-  it. The CURRENT word alone gets the BIG gold square — the "you" marker — its word in
-  the accent like the rest of the walk: the hole as it looks in the sentence,
+  it. The CURRENT word alone gets the BIG orange square — the `--accent` "you" marker —
+  while its word stays in the pale hole colour like the rest of the walk: the hole as it looks in the sentence,
   transplanted onto the line. **The RAIL keeps its own `--rail` everywhere** (a green
   journey stretch was tried and walked back the same day — the type and the nodes carry
   the zones, the dashes still say where the walk begins, and the line stays the app's one
-  quiet rail). **The terminus node is the ACCENT from the first frame**
-  (the point to reach is a square in the game-word colour — what the secret wears once
+  quiet rail). **The terminus node is the SOLVE cobalt from the first frame**
+  (the point to reach is a square in the solved-word colour — what the secret wears once
   won, so the `???` square says what it is before it is), and the word beside it joins
-  it, blank line gone, at the solve. The MISSED shelf's words wear the same `MISS_COLOR` cold-terminus
-  blue as its heading (see the front-loop MISS bullet — and the shelf sits at the TOP of a
-  line that runs cold-top to hot-bottom, so the frozen block above the broken tail is
-  where the thermometer bottoms out), dimmed to the same 0.55 (`.route-miss` —
+  it, blank line gone, at the solve. The MISSED shelf's words wear the same weird-red
+  `MISS_COLOR` as its heading (see the front-loop MISS bullet), dimmed to the same 0.55 (`.route-miss` —
   a SHARED shelf, so Word mode's post-mortem gets the one-voice frozen block too), and the
   shelf holds 48px off the line
   (SHARED `.route-misses` since 2026-08-11, superseding the history-only override — on a
   one-trunk line the shelf is the drawing's top neighbour and read as the first stop's
-  label at 26). So: frozen indigo
+  label at 26). So: red
   and shelved = never on the map, grey on the dashes = behind where you started, pale
-  hole blue from the start word down = the words you hold, the gold square = where you
+  hole blue from the start word down = the words you hold, the orange square = where you
   stand, the solve-blue square = the target (blank-lined until it is). The rail-to-word gap is likewise the SHARED drawing's since 2026-08-11
   (`--word-gap` 14px on `.route-frame`, paid by `.route-body` and subtracted from both
   frames' `--wordw` — it started as this modal's own fix for words sitting on the trunk).
@@ -1093,8 +1070,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   word WITHOUT pulsing the heat-ramp exponent the animation had to ride on
   `.hole-word-wrap` and animate COLOR, which meant `.hole-word` giving up its own `color` for
   `inherit` and a `.hole.tappable` class existing purely as that rule's hook. Both are gone
-  with it; `.hole-word` kept its own `color` — a `var(--gold)` fallback since 2026-08-17,
-  under the live heat Hole sets inline.
+  with it; `.hole-word` keeps its own flat `color: var(--hole)`. The shared gradient lives
+  on the exponent alone.
   The wave needs per-letter boxes, which did NOT exist — the scramble renders a plain
   string — so `Hole` now splits the word ONCE (`.hole-letter`, used by the resting word and
   the scramble's frames alike; measured against plain text: same height, +0.06px over 5
@@ -1149,8 +1126,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   404→`noPuzzle` path is reused as-is. The calendar reads each day's status from the
   **persisted rounds** (device-local) via the extracted `state/status.ts` `statusOf`
   (shared with the language selector). **Cell coloring (decided 2026-07-08):** a day with
-  any reconstruction (>0%) is FILLED with its `progressColor(pct)` (solved counts as
-  **100%** — the ramp top, NOT the language-card gold), and its number is drawn in `--bg`
+  any reconstruction (>0%) is FILLED with its `progressHeatColor(pct)` (solved counts as
+  **100%** — the calm cobalt ramp top), and its number is drawn in `--bg`
   so it reads on the fill; disabled and not-started/0% days keep the neutral surface +
   number color. **A SOLVED day also RIPPLES (decided 2026-07-08):** a shading wave, so a
   validated day is distinguishable from an in-progress one by MOTION, not only color. It
@@ -1159,7 +1136,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   1200% 100%` fits one frame to the square cell and `steps(12)` walks `background-position-x`
   (end value `100%×12/11` so frame 11 lands on 100% and loops cleanly), `image-rendering:
   pixelated` keeps it crisp. (Superseded the earlier hand-computed SVG-path ripple.)
-  Reduced-motion hides it → the static fill + aria-label carry the status.
+  Reduced-motion hides it; the static fill + aria-label carry the status, and the solved
+  day number switches from `--fg` to `--bg` so its small text keeps normal-text contrast
+  against the exposed cobalt fill.
   The calendar itself is **vertically centered** (`.archive` flex column, top padding
   clears the fixed header). **The live streak stat moved out of the archive body and into
   the shared `TopBar` (decided 2026-07-11):** immediately right of the language control it is
@@ -1315,26 +1294,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   hole's sentence index (1..3) under it; one guess dropping several secrets stacks its
   indices under ONE shared tick (`replayRun` in `web/src/game/share.ts` walks the run
   once and returns the trajectory and the solve moments together).
-  **The cells are painted on FLIR's IRON BOW thermal palette (user-decided 2026-08-17):** a
-  try's reconstruction % read straight as temperature, so the bar runs MISS-blue → violet →
-  magenta → crimson → orange → amber → yellow the way a thermal camera draws one — starting
-  on the very colour a MISS wears, since the ramp terminates on `MISS_COLOR` (2026-08-17,
-  third pass). The iron palette IS
-  the app's ONE heat ramp — "update the global heat palette, thus also the score bar" — so
-  the exponents, the floats, the loot and this bar are one readout (that superseded an
-  earlier bar-only draft of this bullet that kept iron off the rank exponents), and it stops
-  at the last saturated YELLOW, never the white-hot the full palette runs to. The
-  polynomial, its two window cuts and the 100-exponent cap live in `shared/src/heat.ts`
-  (and its AGENTS bullet).
-  **Two earlier cuts were built and looked at the same day, and both are worth knowing
-  because they were rejected on the SCREEN, not on paper:** the hand-picked progress palette
-  it replaces, and then the rank ramp itself, first read as the DISTANCE STILL TO GO
-  (`rankHeatColor(100 - n)` — truer to how the game talks about distance, but the rank curve
-  is steep near the goal, so ~25% to 100% landed in one orange-red band and the bar read as a
-  single colour with a cyan pip on the end) and then read straight as heat on the RETIRED
-  crimson→cyan stops (`heatColor(n / 100)` — a full spectrum, but a bar in the app's old
-  rank colours rather than a thermal readout; the READING survived and the ramp under it
-  became the thermal palette itself). The % ITSELF is no longer displayed anywhere during the round — the
+  **The cells use the app's ONE weird→calm gradient:** a try's reconstruction percentage
+  reads linearly through `progressHeatColor`, from the red MISS/weird terminus through
+  amber, coral and orchid to the cobalt solve/calm terminus. Rank surfaces share the same
+  stops but map distance logarithmically through `rankHeatColor(rank)`, whose absolute
+  `HIT_HEAT_CAP = 100` is internal; progress callers never use the rank curve, and rank
+  callers never choose a denominator. Both mappings live in `shared/src/heat.ts`.
+  The % ITSELF is no longer displayed anywhere during the round — the
   header names the day instead (see the app-header bullet) — so this bar, the emoji row and
   the archive/chooser badges are the only things it now speaks through. It is still computed
   every guess and still cached on the round by `syncProgress`. **The SHARE CARD draws the SAME
@@ -1366,13 +1332,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   every surface formats it with `dateForDayNumber`, `dayNumber`'s exact inverse, so this is
   still the SERVER-owned game day — never the reader's local date, which is what the old
   "never a date" note was guarding against.
-  **The plain-text EMOJI row is the SAME palette (decided 2026-07-25, onto iron bow with
-  the bar on 2026-08-16):** `progressEmoji` lives with the palette in `shared/src/iron.ts`
-  so the row and the ruler can't drift — THREE bands, 🟥 → 🟧 → 🟨, each the square NEAREST
-  the palette across that stretch, measured in dE against Twemoji's own swatches rather than
-  eyeballed. **Not four:** the palette tops out white-hot and ⬜ vanishes on the white
-  background half the messaging apps render on, so yellow is where the row stops (pinned by
-  a test — it is the kind of thing a future band edit would undo without noticing). **The row is BOUNDED to 3–18 cells (decided
+  **The plain-text EMOJI row is the SAME palette:** `progressEmoji` lives with the colour
+  mappings in `shared/src/heat.ts`, so the row and ruler cannot drift. It uses four coarse
+  bands, 🟥 → 🟨 → 🟪 → 🟦 (weirdest, weird, strange, calm), cut at
+  15/45/75 and pinned by tests. **The row is BOUNDED to 3–18 cells (decided
   2026-07-25, superseding the cell-for-cell row taken earlier the same day):** pasting 62
   emoji into a message is a wall, not a result, so the row is a SUMMARY of the bar where
   the ruler and the card draw every try. It restores the pre-#113 curve — `ROW_BREAKPOINTS`
@@ -1388,7 +1351,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   ruler's TICKS as KEYCAPS (decided 2026-07-25, superseding "the ticks are the one thing the
   row drops"):** a cell holding a try that dropped a secret renders as that hole's
   sentence-position keycap (`1️⃣`/`2️⃣`/`3️⃣`) INSTEAD of its ramp color, so the row shows the
-  ORDER the sentence was cracked — `🟧🟧1️⃣🟨🟨🟨🟨🟨🟨2️⃣3️⃣`. The bar puts a mark between two
+  ORDER the sentence was cracked — `🟨🟨1️⃣🟪🟪🟪🟦🟦🟦2️⃣3️⃣`. The bar puts a mark between two
   cells and numbers it underneath; a single line has neither, so the number takes the cell.
   Three consequences, all accepted: the solve cells lose their color; several secrets falling
   inside ONE cell show every keycap (in sentence order — the same order the ruler stacks them
