@@ -1,6 +1,6 @@
 /* ============================================================
    Whippin AI — pixel art where you PLAY, modern chrome everywhere else
-   Fonts: Press Start 2P (the game), Inter (the chrome), Instrument Serif (display)
+   Fonts: Press Start 2P (the game), Space Grotesk (the chrome), Instrument Serif (display)
    ============================================================ */
 
 /* ALL fonts are self-hosted (no Google Fonts request): the type IS the visual identity,
@@ -13,7 +13,7 @@
    - PIXEL (Press Start 2P) is reserved for what the player PLAYS: the sentence and its
      holes, Word mode's day word, the route drawings, the prompt, the keyboard, the
      hit/loot feedback and the score watermark. Nothing else wears it.
-   - UI (Inter, variable) is the chrome: header, labels, buttons, dates, the clock,
+   - UI (Space Grotesk, variable) is the chrome: header, labels, buttons, dates, the clock,
      standings, calendars, coach copy. Real tabular figures for everything that ticks.
    - DISPLAY (Instrument Serif) is the poster voice — the Séance-poster serif over the
      aura gradients: chooser names, the credit headline, the big result numbers. */
@@ -25,21 +25,21 @@
   src: url('./assets/fonts/PressStart2P.woff2') format('woff2');
 }
 @font-face {
-  font-family: 'Inter';
+  font-family: 'Space Grotesk';
   font-style: normal;
-  font-weight: 100 900;
+  font-weight: 300 700;
   font-display: swap;
-  src: url('./assets/fonts/inter-latin.woff2') format('woff2');
+  src: url('./assets/fonts/space-grotesk-latin.woff2') format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
     U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
     U+FEFF, U+FFFD;
 }
 @font-face {
-  font-family: 'Inter';
+  font-family: 'Space Grotesk';
   font-style: normal;
-  font-weight: 100 900;
+  font-weight: 300 700;
   font-display: swap;
-  src: url('./assets/fonts/inter-latin-ext.woff2') format('woff2');
+  src: url('./assets/fonts/space-grotesk-latin-ext.woff2') format('woff2');
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
     U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113,
     U+2C60-2C7F, U+A720-A7FF;
@@ -115,15 +115,20 @@
   --pixel-font: 'Press Start 2P', monospace;
   /* The chrome voice and the display voice (2026-08-18). `--ui` carries every label,
      button, number and body of copy that is not part of the game surface; `--display`
-     is the poster serif for the few moments that deserve a headline. */
-  --ui: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+     is the poster serif for the few moments that deserve a headline. Space Grotesk over
+     Inter (user-decided the same day — Inter "has absolutely no soul"): its Space-Mono
+     ancestry and cut terminals sit exactly between the stamp lettering, the pixel game
+     and the serif. */
+  --ui: 'Space Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --display: 'Instrument Serif', Georgia, serif;
 
   /* The modern chrome kit (2026-08-18): one radius scale, one hairline, one glass
-     surface — every non-game box derives from these so the chrome reads as one design. */
-  --r-sm: 10px;
-  --r-md: 16px;
-  --r-lg: 22px;
+     surface — every non-game box derives from these so the chrome reads as one design.
+     (Radii walked DOWN a step on user review the same day: the first cut read too
+     round.) */
+  --r-sm: 7px;
+  --r-md: 11px;
+  --r-lg: 14px;
   --line: rgba(244, 241, 232, 0.12);
   --line-strong: rgba(244, 241, 232, 0.4);
   --glass: rgba(16, 18, 30, 0.62);
@@ -173,20 +178,21 @@ body {
     var(--bg);
   color: var(--fg);
   /* The CHROME face is the default (2026-08-18); every game surface pins the pixel font
-     itself. Slightly positive optical sizing for the dark ground: Inter at weight 400
-     thins out over the glows, so the app-wide resting weight is 430. */
+     itself. Slightly positive optical sizing for the dark ground: the grotesk at weight
+     400 thins out over the glows, so the app-wide resting weight is 430. */
   font-family: var(--ui);
   font-weight: 430;
   /* Never synthesize: the pixel face and the display serif ship ONE weight each, and a
-     faux bold smears exactly the way a fractional pixel scale does. Inter is variable,
-     so every real weight the chrome asks for exists. */
+     faux bold smears exactly the way a fractional pixel scale does. Space Grotesk is
+     variable, so every real weight the chrome asks for exists. */
   font-synthesis: none;
   /* Press Start 2P ships fi/fl (and other) ligatures that render NARROWER than two
      cells, so the font is not truly fixed-width by default. That breaks every monospace
      assumption in the app — most visibly the slot-machine scramble (its churning random
      glyphs never form those pairs, so the width jitters as the target's ligatures resolve)
      and MixWord's ch-based exponent-width reservation. Disabling ligatures (inherited by
-     the whole tree) makes every glyph exactly one cell. Inter loses nothing it needs. */
+     the whole tree) makes every glyph exactly one cell. The chrome faces lose nothing
+     they need. */
   font-variant-ligatures: none;
   overflow: hidden;
   /* No global hard shadow any more (2026-08-18): the 2px offset was the pixel identity's,
@@ -1887,7 +1893,7 @@ button * {
    2026-08-15, superseding the gold — gold is the colour of what the player HOLDS, and a
    standing is not held); the rule itself softened to `--line-strong` so the frame stamps
    rather than glares. Height stays EXPLICIT with the ink flex-centred, and the drops
-   (`--top-drop`, `--rank-num-drop`) survive as small optical trims — Inter sits ON its
+   (`--top-drop`, `--rank-num-drop`) survive as small optical trims — the grotesk sits ON its
    baseline, so they are near zero where the pixel font needed whole bands. */
 .score-top {
   display: inline-flex;
@@ -3064,8 +3070,8 @@ button * {
     height: 48px;
   }
   /* Ten glyphs of date against a phone's header corner: a step down and most of the
-     tracking given back keeps the whole string beside the right group at 320px (Inter
-     is proportional, so this is roomier than the pixel budget ever was). */
+     tracking given back keeps the whole string beside the right group at 320px (the
+     grotesk is proportional, so this is roomier than the pixel budget ever was). */
   .puzzle-date {
     font-size: 11px;
     letter-spacing: 0.04em;
@@ -3259,7 +3265,7 @@ button * {
    since the type split means they are PIXEL words inline in modern copy: a hint word is
    told from the target by its colour pair (draft vs ink) and its heat-colored exponent
    (the sup reuses .hole-rank). Slightly smaller than the copy so the pixel em box sits on
-   the Inter line. No open-blank line in the lesson (user-decided 2026-08-17): the coach's
+   the chrome copy's line. No open-blank line in the lesson (user-decided 2026-08-17): the coach's
    words are props, not blanks to fill. */
 .rt-target {
   font-family: var(--pixel-font);
@@ -4294,7 +4300,7 @@ button * {
   font-weight: 650;
   line-height: 1;
   letter-spacing: 0;
-  /* REAL tabular figures at last (Inter, 2026-08-18): the digits cannot twitch as they
+  /* REAL tabular figures at last (2026-08-18): the digits cannot twitch as they
      turn, which the pixel face only approximated by being monospace. */
   font-variant-numeric: tabular-nums;
   color: var(--fg);

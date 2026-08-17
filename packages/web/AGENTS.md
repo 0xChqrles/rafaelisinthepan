@@ -157,13 +157,16 @@ These are decided and verified against the code. Treat them as load-bearing.
     route `--gutter` arithmetic, MixWord's ch reservations and CellDigits' grid all sit
     on surfaces that stayed pixel. The coach text's inline `[[b:]]`/`[[w:]]` words are
     pixel at 0.82em INSIDE modern copy — game words quoted in chrome.
-  - **UI (Inter variable, `--ui`)** is the body default and all chrome: header
-    (title/date and Word mode's clock — real `tabular-nums` at last), buttons, coach
-    copy, the standing line, calendar numerals, streak labels/hint, rarity chip counts,
-    statuses. Resting body weight 430; `font-synthesis: none` app-wide (the pixel face
-    and the serif ship one weight each — a faux bold smears like a fractional scale).
-    `ScoreRank.standingUnits` still counts glyphs as if monospace, which is now a
-    CONSERVATIVE width estimate — it can only step the line down early, never clip.
+  - **UI (Space Grotesk variable, `--ui`)** is the body default and all chrome: header
+    (title/date and Word mode's clock — real `tabular-nums`, verified by measurement),
+    buttons, coach copy, the standing line, calendar numerals, streak labels/hint,
+    rarity chip counts, statuses. Space Grotesk over Inter on the user's same-day review
+    (Inter "has absolutely no soul"): its Space-Mono ancestry and cut terminals sit
+    between the stamp lettering, the pixel game and the serif. Resting body weight 430;
+    `font-synthesis: none` app-wide (the pixel face and the serif ship one weight each —
+    a faux bold smears like a fractional scale). `ScoreRank.standingUnits` still counts
+    glyphs as if monospace, which is now a CONSERVATIVE width estimate — it can only
+    step the line down early, never clip.
   - **DISPLAY (Instrument Serif, `--display`)** is the poster voice, used sparingly:
     chooser card names, the invite title, the archive month + streak count, the solved
     credit HEADLINE (italic — the one editorial moment), both result-count numbers, and
@@ -174,10 +177,12 @@ These are decided and verified against the code. Treat them as load-bearing.
     every non-game box: aura-gradient chooser cards (cobalt/violet/orange by nth-child),
     glass coach dialogs (both gates + the tutorial), gradient-and-bloom primary buttons,
     pill result actions and the pill TOP badge, rounded calendar cells and week tiles.
-    The HEADER's icons are a stroke `.ui-icon` set (calendar/question/close/skip/globe —
-    24-grid, 1.8px, currentColor; globe.png and the standalone `.pixel-icon` class are
-    deleted); the Whippin mark stays the header's ONE pixel artifact, deliberately — it
-    is the logo, and pixel is the brand. The BODY's global hard 2px text-shadow is gone;
+    The HEADER's icons are the LUCIDE stroke set as `.ui-icon`s (user-picked 2026-08-18:
+    calendar, circle-help, x, fast-forward, and LANGUAGES — the 文/A translation mark —
+    for the language control, replacing the globe; 24-grid, 1.8px, currentColor;
+    globe.png and the standalone `.pixel-icon` class are deleted); the Whippin mark
+    stays the header's ONE pixel artifact, deliberately — it is the logo, and pixel is
+    the brand. The BODY's global hard 2px text-shadow is gone;
     pixel surfaces that relied on it (floating hits, loot) carry their own, and the
     topbar wears a soft bloom shadow instead.
   - **The RUN RULER is a continuous GRADIENT FILAMENT (user-decided 2026-08-18,
@@ -1944,9 +1949,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
     and `id`/`data-name` (Illustrator layer junk). This is what "remove the useless
     attributes" means for any new icon.
   - **TWO icon families since 2026-08-18, one per type voice.** CHROME icons (header +
-    modal controls: calendar, question, close, skip, globe) are the **`.ui-icon` stroke
-    set** — `viewBox="0 0 24 24"`, `fill="none"`, `stroke="currentColor"`,
-    `stroke-width="1.8"`, round caps/joins, in-file `width`/`height` (22px). PIXEL icons
+    modal controls: calendar, circle-help, x, fast-forward, languages) are **LUCIDE
+    icons** (ISC; user-picked the same day) restated in the repo's own dress as the
+    **`.ui-icon` stroke set** — `viewBox="0 0 24 24"`, `fill="none"`,
+    `stroke="currentColor"`, `stroke-width="1.8"` (Lucide's 2 thinned to match the
+    hairline chrome), round caps/joins, in-file `width`/`height` (22px). A new chrome
+    icon starts from the Lucide glyph of that name. PIXEL icons
     survive only on the PLAY surface: the on-screen keyboard's enter/back glyphs —
     orthogonal pixel art (integer grid, no diagonals, the 2026-07-08 rules), sized by
     `.kb-icon` in CSS (`height: 30%`) because the keys shrink on narrow phones. The
