@@ -10,7 +10,7 @@ import { fitWord } from './routeDrawing';
 import useLetterWave, { WAVE_VARS } from '../hooks/useLetterWave';
 import { srWordBoardWord } from '../i18n';
 
-// The day's word while the run is on (#163): JUST THE WORD, centred, in the solved blue —
+// The day's word while the run is on (#163): JUST THE WORD, centred, in the solve blue —
 // no node, no rail, no rank gutter. Word mode is a fast game and the board is now
 // its post-mortem, so during the gate and the run there is exactly one thing on the screen
 // and this is it.

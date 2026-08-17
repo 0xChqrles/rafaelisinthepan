@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { fold, type WordPuzzle } from '@whippin/shared';
+import { MISS_COLOR, fold, type WordPuzzle } from '@whippin/shared';
 import useVocab from '../hooks/useVocab';
 import { KB_EXIT_FALLBACK_MS } from './Game';
 import { useDeadlinePassed } from '../hooks/useCountdown';
@@ -17,7 +17,7 @@ import {
   CLAIM_ZONE,
   RARITY_NAMES,
 } from '../game/wordGame';
-import { MISS_COLOR, RARITY_COLORS, strikeFor } from '../components/rarity';
+import { RARITY_COLORS, strikeFor } from '../components/rarity';
 import { buildWordBoard } from '../game/wordBoard';
 import { canExtend } from '../game/keyboard';
 import useScrollEdges from '../hooks/useScrollEdges';
@@ -396,7 +396,7 @@ function WordRound({
       // spellings of one. A claim STRIKES the word in its grade's colour and knocks its
       // LOOT out of it — the guess's rank exponent and the grade's name, popping off the
       // word and falling away (WordLoot). Anything the run cannot claim says MISS in the
-      // app's red: a near miss and an off-map guess are the same thing to a player racing
+      // ramp's weird-terminus red: a near miss and an off-map guess are the same thing to a player racing
       // a clock, and the exact distance of an unclaimable word is a number they can do
       // nothing with. It survives where it still teaches — the post-mortem draws that
       // guess on the trunk at its real rank.

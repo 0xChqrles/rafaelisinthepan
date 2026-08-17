@@ -31,17 +31,20 @@ import useModalDismiss from '../hooks/useModalDismiss';
 // "you are here" machinery. What is drawn now is only where the
 // player has BEEN, on the structure that says what it means:
 //
-//   - the MISSED shelf at the top, its words in the dimmed coldest heat — one red block of
-//     dead ends — then the broken tail: the void the line comes out of;
+//   - the MISSED shelf at the top, its words in MISS's dimmed weird red — one
+//     block of dead ends — then the broken tail: the void the line comes out of;
 //   - the BEHIND stretch (stops farther than the departure — guesses that went backwards):
 //     quiet words, small nodes, and the connectors STAY the broken trace, because the
 //     journey has not started yet ("anything farther than the start is behind you");
 //   - the DEPARTURE (muted node, dimmed word — the one stop you were given, not one you
 //     earned) is where the line turns SOLID: from here down every stop is a step of the
-//     walk, full-bright, spaced by its REAL distance (`dq`), with the gold "you are here"
-//     node at the hole's current position;
-//   - the terminus: the fixed-width `???` on the big node — the unknown target the whole
-//     round is about — turning into the accented secret in solved blue once found.
+//     walk, full-bright in the pale hole blue, spaced by its REAL distance (`dq`), with
+//     the orange "you are here" node at the hole's current position (the gradient lives
+//     in the gutter exponents alone — a live-gradient word was tried and rejected on screen,
+//     2026-08-17);
+//   - the terminus: the fixed-width `???` on the big node, wearing the holes' own dashed
+//     OPEN-BLANK line — the unknown target the whole round is about — turning into the
+//     accented secret (blank gone) once found.
 //
 // So the three kinds of guess are told apart by the LINE itself, not by reading numbers:
 // red and shelved = never on the map, dim on the dashes = behind where you started,
@@ -149,7 +152,7 @@ export default function HistoryModal({
               // the LINE: the broken trace ends at it, and everything above it is grey.
               const zone = stop.best ? 'route-you' : stop.behind ? 'route-behind' : 'route-ahead';
               // ...plus one MODIFIER: a group the solve merely NAMED. It keeps its zone's
-              // gold and takes the app's own "named, not found" dress (the word board's
+              // colour and takes the app's own "named, not found" dress (the word board's
               // distinction) — dimmed word, small node — so what the player actually held
               // still stands out of the field that was always there.
               const dress = stop.revealed ? `${zone} route-revealed` : zone;
@@ -173,7 +176,7 @@ export default function HistoryModal({
             {/* The line's final run into the word: solid — the journey visibly LEADS there. */}
             <RouteLink height={LEAP_H} />
             {/* The end of the line. `???` while the hole is open — the unknown target the
-                whole round is about — the accented secret in the solved blue once found. */}
+                whole round is about — the accented secret, blank line gone, once found. */}
             <RouteRow className={`route-arrival${model.solved ? ' route-found' : ''}`}>
               <RouteWord word={model.secret ?? UNKNOWN} max={ARRIVAL_PX} />
             </RouteRow>

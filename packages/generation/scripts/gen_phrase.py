@@ -1325,9 +1325,9 @@ def choose_start(secret, ranking, rank_map, rank_by_display):
 
     band = start_band(secret, ranking)
     print(f"\nMot de départ pour « {secret} » "
-          f"(Entrée = {default}^-{rank_by_display[default]}) :")
+          f"(Entrée = {default}^{rank_by_display[default]}) :")
     for i, (w, _r) in enumerate(band, 1):
-        print(f"  {i}) {w}  ^-{rank_by_display[w]}")
+        print(f"  {i}) {w}  ^{rank_by_display[w]}")
 
     while True:
         try:
@@ -2529,7 +2529,7 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                 title = f"  Mots de départ pour « {secret} »"
                 if mode == "start":
                     title += numero + "  (Entrée valider · Échap annuler)"
-                cells = [f"{i:>3}) {w} ^-{rbd[w]}" for i, (w, _r) in enumerate(band, 1)]
+                cells = [f"{i:>3}) {w} ^{rbd[w]}" for i, (w, _r) in enumerate(band, 1)]
             sys.stdout.write(frame(cursor, title, cells, error))
             sys.stdout.flush()
             error = ""
@@ -3174,7 +3174,7 @@ def main():
     # --- Preview ---------------------------------------------------------------
     print(f"\nPhrase ({lang}) écrite dans {out_path} :")
     for h in holes:
-        print(f"  {h['start']['word']}^-{h['start_rank']} -> {h['secret']['word']}")
+        print(f"  {h['start']['word']}^{h['start_rank']} -> {h['secret']['word']}")
     # Substitutions, agreement, #134's curator marks and --form typo warnings — the
     # shared reporting block (#154), in the sentence path's own words.
     report_run_adjustments(donors, forms, run.explicit_forms, lang, args.no_inflect)

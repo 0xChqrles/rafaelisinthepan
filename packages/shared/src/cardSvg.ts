@@ -12,29 +12,32 @@
 //
 // The ruler is the SAME display as the solved screen's (web components/RunRuler.tsx), scaled
 // to the card (decided 2026-07-25, replacing the bucketed heat squares — the v2 token carries
-// the raw run): one cell per counted try on the shared PROGRESS ramp (progressColor, so the
-// card matches the on-screen bar exactly), a tick where each secret dropped, and that hole's
-// sentence index (1..3) under it. The share TEXT's emoji row summarises this same bar into a
-// bounded 3..18 cells on the same ramp (it has to fit a text message); the card draws every
-// try AND the ticks, so it stays the richer view.
+// the raw run): one cell per counted try on the shared HEAT ramp (progressHeatColor, so the
+// card matches the on-screen bar exactly — and since 2026-08-16 that is the game's one ramp,
+// each try's % read straight as heat), a tick where each secret dropped, and that hole's
+// sentence index (1..3) under it. The share TEXT's emoji row
+// summarises this same bar into a bounded 3..18 cells on the same ramp (it has to fit a text
+// message); the card draws every try AND the ticks, so it stays the richer view.
 //
 // Sentence-card strings are numeric fields plus fixed units. Word mode additionally carries
 // the day's accented display word in its token; that one value is XML-escaped before it is
 // interpolated into the SVG.
 
 import { dateForDayNumber } from './day';
-import { progressColor } from './progressColor';
+import { progressHeatColor } from './heat';
 import type { ShareResult, WordShareResult } from './shareCard';
 
 // Standard OG image size (Twitter/Slack/Discord `summary_large_image`).
 export const CARD_WIDTH = 1200;
 export const CARD_HEIGHT = 630;
 
-// Palette — mirrors :root in web/src/index.css (dark bg, off-white fg, muted grey).
-const BG = '#0a0b12';
-const FG = '#f4f4f2';
-const MUTED = '#c4c9d8';
-const ACCENT = '#2f7bff';
+// Palette — mirrors :root in web/src/index.css (the calm set, 2026-08-17: warm-paper fg
+// on the calm dark ground, and the SOLVE ink — the blue every solved word wears, the
+// card's day word included).
+const BG = '#08090f';
+const FG = '#f4f1e8';
+const MUTED = '#b0aca4';
+const SOLVE = '#4a6aff';
 
 const CARD_FONT = 'Press Start 2P';
 
@@ -66,7 +69,7 @@ export type CardData = ShareResult;
 
 // Word mode's card (#156): the run has no trajectory to draw — the result is the claim
 // count and, since the v5 token (2026-08-11), its PER-RARITY breakdown — so the card is
-// the day's word in the game's solved blue, the count with its unit named ("12 WORDS":
+// the day's word in the game's accent, the count with its unit named ("12 WORDS":
 // higher is better here), the breakdown as a row of grade-coloured chips, and the day.
 // **The word is the WORD ALONE, centred — no node square** (user-decided 2026-08-11,
 // superseding the terminus lockup): the in-game square marks the end of a LINE, and this
@@ -81,16 +84,16 @@ const WORD_UNITS: Record<string, { one: string; many: string }> = {
 
 // The rarity chip colours, commonest first (COMMON..ARCANE) — PINNED COPIES of the web's
 // RARITY_COLORS (web/src/components/rarity.ts), the same one-way copy the BG/FG/MUTED/
-// ACCENT palette above makes of :root. The web's rarity.test.ts asserts the two stay
+// SOLVE palette above makes of :root. The web's rarity.test.ts asserts the two stay
 // identical, so a grade retune fails there instead of the card silently wearing a stale
 // ladder. A FIXED table of constants (never interpolated input), so the renderer's "no
 // text to escape" guarantee holds for the chip row.
 export const WORD_RARITY_COLORS: readonly string[] = [
-  '#c4c9d8', // COMMON
-  '#23dc91', // UNCOMMON
-  '#2ad2eb', // RARE
-  '#c834ff', // OBSCURE
-  '#ef4f97', // ARCANE
+  '#b0aca4', // COMMON
+  '#4ed48d', // UNCOMMON
+  '#3fc6e8', // RARE
+  '#b164f2', // OBSCURE
+  '#f04ea6', // ARCANE
 ];
 
 export type WordCardData = WordShareResult;
@@ -153,7 +156,7 @@ export function renderWordCardSvg({ lang, dayNumber, counts, word }: WordCardDat
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_WIDTH}" height="${CARD_HEIGHT}" viewBox="0 0 ${CARD_WIDTH} ${CARD_HEIGHT}">`,
     `<rect width="${CARD_WIDTH}" height="${CARD_HEIGHT}" fill="${BG}"/>`,
-    `<text x="${cx}" y="${WORD_ROW_Y}" dy="0.16em" dominant-baseline="middle" text-anchor="middle" font-family="${CARD_FONT}" font-size="${wordSize}" font-variant-ligatures="none" fill="${ACCENT}">${escapeSvgText(word)}</text>`,
+    `<text x="${cx}" y="${WORD_ROW_Y}" dy="0.16em" dominant-baseline="middle" text-anchor="middle" font-family="${CARD_FONT}" font-size="${wordSize}" font-variant-ligatures="none" fill="${SOLVE}">${escapeSvgText(word)}</text>`,
     `<text x="${cx}" y="${WORD_SCORE_Y}" text-anchor="middle" font-family="${CARD_FONT}" font-size="76" fill="${FG}">${score} ${score === 1 ? unit.one : unit.many}</text>`,
     chipRow,
     `<text x="${cx}" y="${WORD_DATE_Y}" text-anchor="middle" font-family="${CARD_FONT}" font-size="30" fill="${MUTED}">${dateForDayNumber(dayNumber)}</text>`,
@@ -179,7 +182,7 @@ export function renderCardSvg({ lang, dayNumber, score, trajectory, solvedAt }: 
       const x = edge(i);
       const w = edge(i + 1) - x;
       if (w <= 0) return ''; // fully covered by a later try in the same column
-      return `<rect x="${x}" y="${BAR_Y}" width="${w}" height="${BAR_H}" fill="${progressColor(pct)}"/>`;
+      return `<rect x="${x}" y="${BAR_Y}" width="${w}" height="${BAR_H}" fill="${progressHeatColor(pct)}"/>`;
     })
     .join('');
 

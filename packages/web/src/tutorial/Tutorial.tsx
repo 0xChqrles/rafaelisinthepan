@@ -385,7 +385,6 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
             <MixWord
               secret={hole.secret.word}
               entry={mixAt >= 0 ? ladder[mixAt] : null}
-              startRank={hole.start_rank}
               ladder={ladder}
             />
             {/* Hidden input slot: the REAL prompt structure, invisible and inert,

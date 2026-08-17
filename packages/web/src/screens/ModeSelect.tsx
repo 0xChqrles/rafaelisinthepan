@@ -6,8 +6,6 @@ import { useDeadlineRefresh } from '../hooks/useCountdown';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
 import { statusOf, wordStatusOf } from '../state/status';
 import { t } from '../i18n';
-import sentenceIcon from '../assets/icons/sentence1.png';
-import wordIcon from '../assets/icons/word.png';
 
 // The game-mode chooser (/mode, #156), reached from the header's Whippin mark — the twin
 // of the language chooser, asked about the other axis. It replaced the header TOGGLE
@@ -17,9 +15,9 @@ import wordIcon from '../assets/icons/word.png';
 //
 // A card lands on the LAST-PLAYED LANGUAGE (the same rule the language cards use for the
 // mode): the two choosers each hold the other's axis fixed, so neither can strand you.
-const MODES: { mode: Mode; nameKey: 'modeSentence' | 'modeWord'; icon: string }[] = [
-  { mode: 'sentence', nameKey: 'modeSentence', icon: sentenceIcon },
-  { mode: 'word', nameKey: 'modeWord', icon: wordIcon },
+const MODES: { mode: Mode; nameKey: 'modeSentence' | 'modeWord' }[] = [
+  { mode: 'sentence', nameKey: 'modeSentence' },
+  { mode: 'word', nameKey: 'modeWord' },
 ];
 
 export default function ModeSelect() {
@@ -37,12 +35,11 @@ export default function ModeSelect() {
 
   return (
     <Chooser>
-      {MODES.map(({ mode, nameKey, icon }) => (
+      {MODES.map(({ mode, nameKey }) => (
         <ChooserCard
           key={mode}
           name={t(uiLang, nameKey)}
           uiLang={uiLang}
-          icon={<img className="chooser-card-icon mode-sprite" src={icon} alt="" draggable="false" />}
           status={
             mode === 'word'
               ? wordStatusOf(wordRound)

@@ -1,18 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import FloatingHit, { HIT_FADE_MS } from './FloatingHit';
-import { heatColor } from '@whippin/shared';
+import { MISS_COLOR, rankHeatColor } from '@whippin/shared';
 import useAnimatedNumber, { linearEasing } from '../hooks/useAnimatedNumber';
 import useLetterWave, { WAVE_VARS } from '../hooks/useLetterWave';
 import { prefersReducedMotion, useScramble } from '../hooks/useScramble';
 import type { HitState, RuntimeHole } from '@whippin/shared';
 
-// The floating number ("hit") does not improve any hole: cap its heat at 150 so
-// the gradient stays meaningful. Above that, everything stays at the coldest color.
-// Exported: the history modal and the word board color their exponents with the SAME
-// cap, so a rank on either surface is the color of the number that floated when it was
-// guessed.
-export const HIT_HEAT_CAP = 150;
+// `rankHeatColor` owns the app's absolute rank scale in @whippin/shared. Everything that
+// draws an exponent — this hole, the floating hit, route rows, loot and the tutorial —
+// takes it from there, so a rank cannot change colour between surfaces.
 
 // Keep the existing 520ms beat for a ten-rank transition below the cap, while making
 // every individual rank step take the same 52ms. Large transitions stay responsive.
@@ -34,18 +31,9 @@ function rankTweenDuration(fromRank: number, toRank: number): number {
   return prefersReducedMotion() ? 0 : rankTransitionDuration(fromRank, toRank);
 }
 
-// Hole heat: current rank -> [0 cold .. 1 hot] (rank 0 = solved = hot).
-// Logarithmic scale: color changes quickly near the goal (low ranks) and slowly
-// far away (the 100->150 gap weighs much less than 1->10).
-// Exported: the tutorial's scramble demo (#51) paints its exponent with the same
-// ramp so its word reads exactly like a real hole.
-export function rankHeatColor(rank: number, startRank: number) {
-  const maxRank = Math.max(1, startRank || rank || 1);
-  const heat = 1 - Math.log(rank + 1) / Math.log(maxRank + 1);
-  return heatColor(heat);
-}
-
-// A hole: "displayed_word^-current_rank" (ex: sailor^-87). Rank 0 = solved.
+// A hole: "displayed_word^current_rank" (ex: sailor^87). Rank 0 = solved. The exponent is
+// written WITHOUT a leading minus (user-decided 2026-08-16): it is a distance, and distances
+// are not negative — the app writes a rank the same bare way everywhere it shows one.
 export default function Hole({
   hole,
   hit,
@@ -74,7 +62,7 @@ export default function Hole({
 }) {
   // Exponent rolls toward the current rank one rank step at a time (or snaps under
   // reduced motion, see rankTweenDuration). A solved hole visibly reaches 0, then removes
-  // the exponent on the next frame so the decrease reads as -N -> ... -> 0 -> nothing.
+  // the exponent on the next frame so the decrease reads as N -> ... -> 0 -> nothing.
   const animatedRank = useAnimatedNumber(hole.rank, rankTweenDuration, linearEasing);
   const shownRank = Math.round(animatedRank);
   const [displayWord, setDisplayWord] = useState<string>(hole.word);
@@ -163,10 +151,17 @@ export default function Hole({
   // The exponent sizes to its own content (no reserved width), so a following suffix
   // sits right after the number instead of after a gap left for the widest rank.
   const rankStyle: CSSProperties & Record<'--rank-color', string> = {
-    '--rank-color': rankHeatColor(shownRank, hole.startRank),
+    '--rank-color': rankHeatColor(shownRank),
   };
   // The word carries the hit's shake delay and, while it waves, the two numbers its letters'
   // animation is built from — so the timing lives in ONE place (above) and CSS reads it.
+  //
+  // The word's COLOUR is the flat pale hole ink (user-decided 2026-08-17, third pass of the
+  // day — a word coloured by its own live gradient was built and rejected on the screen:
+  // the exponent drowned in a word wearing its own colour). The gradient lives in the EXPONENT
+  // alone; what says "still a hole" is the word's DRESS — the dashed OPEN-BLANK line CSS
+  // draws under an unresolved word (`.hole-word::after`), gone the moment `.resolved`
+  // lands. So this component sets no colour at all any more.
   const wordStyle: CSSProperties & Record<string, string> = {};
   if (hit) wordStyle['--hit-delay'] = `${hit.startDelayMs}ms`;
   if (waving) Object.assign(wordStyle, WAVE_VARS);
@@ -195,8 +190,12 @@ export default function Hole({
             </span>
           ))}
         </span>
-        {/* Floating "damage"-style indicator: a distance number colored by the
-            heatmap (capped heat), or "MISS" at the coldest color when too far. */}
+        {/* Floating "damage"-style indicator: a distance number coloured by the shared
+            rank scale, or "MISS" in the ramp's own weird red terminus when too far
+            (MISS_COLOR, user-decided 2026-08-17). The cap collapses every rank past 100 onto that
+            same terminus — a 100-away exponent and a MISS share the colour, and only the
+            label tells them apart. The float and the exponent are the round's ONLY
+            gradient surfaces on the board — the words wear the flat hole colour. */}
         {hit && (
           <FloatingHit
             key={hit.id}
@@ -205,7 +204,7 @@ export default function Hole({
             miss={hit.miss}
             startDelayMs={hit.startDelayMs}
             fadeDelayMs={hit.fadeDelayMs}
-            color={hit.miss ? heatColor(0) : rankHeatColor(hit.value, HIT_HEAT_CAP)}
+            color={hit.miss ? MISS_COLOR : rankHeatColor(hit.value)}
             onDone={onHitDone}
           />
         )}
@@ -219,7 +218,7 @@ export default function Hole({
           style={rankStyle}
           onAnimationEnd={() => setRankPopActive(false)}
         >
-          {shownRank === 0 ? '0' : `-${shownRank}`}
+          {shownRank}
         </sup>
       )}
     </>

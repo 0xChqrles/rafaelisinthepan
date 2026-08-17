@@ -17,18 +17,30 @@
 }
 
 :root {
-  --bg: #0a0b12;
+  /* THE STAMP-INK PALETTE (user-decided 2026-08-17, retuned the same day against the
+     /inspiration set — vintage offset stamps, riso posters — after the first calm cut
+     went dusty, "almost creepy"): the game is RESTORING PEACE to a weird sentence, and
+     the colours are real printed-ink chroma — cobalt, orange, salmon, orchid, amber — on
+     a dark ground with grain and halftone carrying the calm. The weird→calm gradient in
+     shared/heat.ts (amber → salmon → rose-orchid → cobalt) and, derived from it, the
+     word pair below. Every value measured on the ground (≥4.5:1). */
+  --bg: #08090f; /* poster black — sampled off the Séance sheet (its ground is #000; a whisper of navy keeps the glows breathing) */
   /* The route line's own colour: the trunk and the tail's dashes, which is why it lives
      here rather than on `.route-frame` where it started. Deliberately the ONE unsaturated
      line on the drawing — the words and the nodes carry every colour it says anything with. */
-  --rail: #48528a;
-  --surface: #1d2138;
-  --surface-hover: #2c3358;
-  --fg: #f4f4f2;
-  --accent: #2f7bff;
-  --danger: #ff1f54;
-  --hole: #ffc400; /* vivid gold for holes */
-  --muted: #c4c9d8;
+  --rail: #4a5578;
+  --surface: #161826;
+  --surface-hover: #222438;
+  --fg: #f4f1e8; /* stamp paper */
+  /* The word pair — ONE blue in two states (the user's own axes, 2026-08-17): a held
+     hole is the PALE DRAFT over its open-blank line, and solving INKS IT IN with the
+     cobalt. The ink is also the gradient's calm terminus, so a solve lands exactly on
+     the peace the scale runs toward. */
+  --hole: #aec1ff; /* the pale draft */
+  --solve: #4a6aff; /* the cobalt ink — peace restored (poster-sampled family; the raw #184cf4 is a GLOW colour, too dim for text) */
+  --accent: #f5820f; /* the BRAND accent: the poster's own orange — chrome, rewards, the credit headline; never a scale value, never a word state */
+  --danger: #f04e63;
+  --muted: #b0aca4; /* warm grey — paper-toned */
   --flame: #4642e8; /* streak flame indigo — the sprite's body color (#74); milestone tiers swap it */
 
   --pixel-font: 'Press Start 2P', monospace;
@@ -38,9 +50,10 @@
   --cap-shift: 0;
   --text-shift: 0;
 
-  /* The ONE graph-paper cell size: the body grid below, BackgroundWaves and CellDigits
-     all read it (the canvases via cellSize()), so changing it here re-tunes every cell
-     renderer together. Smaller on narrow viewports (see the mobile media query). */
+  /* The halftone dot matrix's period (the body ground below). It stopped being a shared
+     canvas contract on 2026-08-17: BackgroundWaves is deleted and the CellDigits
+     watermark sizes from the viewport alone now, so this tunes only the ground's dots.
+     Smaller on narrow viewports (see the mobile media query). */
   --cell: 24px;
   /* The on-screen keyboard's key geometry. Here rather than on `.keyboard` because the ROW
      width it produces (10 keys + 9 gaps) is mirrored by Word mode's guess prompt, which must
@@ -61,17 +74,22 @@ body,
 }
 
 body {
-  /* App-wide backdrop: the base color under a VERY subtle pixel grid (1px lines on a
-     --cell square, ~2.5% fg) — barely-there texture that reads as graph paper behind the
-     pixel art without competing with content (panels/keys paint over it). */
+  /* App-wide backdrop (2026-08-17, replacing the graph-paper grid + the animated Perlin
+     waves; the ambiance layers deepened the same day): a print GROUND built from three
+     static layers — the fine HALFTONE DOT matrix (one soft paper dot per --cell), a faint
+     cobalt SKY GLOW washing down from the top edge plus two faint corner ORBS — violet
+     and orange, the Séance poster's own inks, sampled (#184cf4 / #8b45ea / #f58107) —
+     and the poster-black ground. ONE halftone texture and the radial glows are the whole
+     ambiance (user-tuned 2026-08-17: a film-grain overlay and an edge dot-vignette each
+     lived here for a few hours and were both removed on review — the single dither plus
+     the gradients is the look). Static on purpose: the calm look has no ambient motion. */
   background:
-    linear-gradient(to bottom, rgba(244, 244, 242, 0.025) 1px, transparent 1px),
-    linear-gradient(to right, rgba(244, 244, 242, 0.025) 1px, transparent 1px),
+    radial-gradient(circle, rgba(244, 241, 232, 0.055) 1px, transparent 1.6px) 0 0 / var(--cell)
+      var(--cell),
+    radial-gradient(120% 80% at 50% -20%, rgba(24, 76, 244, 0.16), transparent 62%),
+    radial-gradient(70% 55% at 100% 105%, rgba(139, 69, 234, 0.10), transparent 70%),
+    radial-gradient(60% 50% at -5% 105%, rgba(245, 129, 7, 0.07), transparent 70%),
     var(--bg);
-  background-size:
-    var(--cell) var(--cell),
-    var(--cell) var(--cell),
-    auto;
   color: var(--fg);
   font-family: var(--vt);
   /* Press Start 2P ships fi/fl (and other) ligatures that render NARROWER than two
@@ -88,23 +106,6 @@ body {
 button,
 button * {
   text-shadow: none;
-}
-
-/* The animated backdrop (BackgroundWaves): faint Perlin waves lighting the SAME 24px
-   cells the graph-paper grid above outlines. Fixed at z-index -1 in the ROOT stacking
-   context, so it sits behind every screen — the score watermarks stay above it because
-   their z-index:-1 is scoped by their anchors' `isolation`. */
-.bg-waves {
-  position: fixed;
-  inset: 0;
-  /* A canvas is a REPLACED element: `inset: 0` alone does not stretch it — its display
-     size stays the intrinsic (dpr-scaled) backing-store size, rendering the field zoomed
-     by devicePixelRatio (3x3-cell blocks on a dpr-3 phone). Pin the display size to the
-     viewport so the drawn field lands on the --cell grid at every dpr. */
-  width: 100%;
-  height: 100%;
-  z-index: -1;
-  pointer-events: none;
 }
 
 .app {
@@ -247,7 +248,7 @@ button * {
    scales to any number of languages. Cards are flat surface tiles that BRIGHTEN on
    hover/press, the same interaction language as every key in the app (no dimmed
    flags, no badges). Today's status is the thin strip along a card's bottom edge:
-   absent = not started, partial = reconstruction % in the progress ramp, full GOLD =
+   absent = not started, partial = reconstruction % on the heat ramp, full GOLD =
    solved (the same gold as a solved word). */
 .chooser-screen {
   width: min(420px, 100%);
@@ -279,7 +280,7 @@ button * {
   overflow: hidden; /* keeps the status strip inside the tile */
   display: flex;
   align-items: center;
-  gap: 20px;
+  justify-content: center; /* text-only cards since 2026-08-17 — the name IS the card */
   padding: 18px 22px;
   background: var(--surface-hover);
   border: 0;
@@ -294,21 +295,6 @@ button * {
   filter: brightness(1.35);
 }
 
-/* A card's option art at an exact INTEGER scale — a fractional one leaves some source
-   pixels a row wider than others, which `pixelated` cannot fix. The default fits the
-   16x16 flags at 2x (32px); the 7x7 mode sprites take their own 4x (28px), the nearest
-   integer scale to it, so the two choosers read at the same optical size. */
-.chooser-card-icon {
-  display: block;
-  width: 32px;
-  height: 32px;
-  image-rendering: pixelated;
-}
-.chooser-card-icon.mode-sprite {
-  width: 28px;
-  height: 28px;
-}
-
 .chooser-card-name {
   font-family: var(--press);
   font-size: clamp(13px, 2vh, 16px);
@@ -318,7 +304,7 @@ button * {
   padding-top: var(--cap-shift);
 }
 
-/* Today's status strip (width + color set inline: % on the progress ramp, full gold
+/* Today's status strip (width + color set inline: % on the heat ramp, full gold
    when solved). Decorative — the card's aria-label speaks the status. */
 .chooser-strip {
   position: absolute;
@@ -330,7 +316,7 @@ button * {
 /* ===================== archive calendar (issue #55) ===================== */
 /* A month of playable past days under the app header (no progress-bar row). Day cells are
    flat keys like the language cards / keyboard — surface tiles that brighten on hover /
-   press — filled with the progress-ramp color (solved = 100%, and a solved day also
+   press — filled with the heat-ramp color (solved = 100%, and a solved day also
    ripples; see .cal-ripple), plain surface when not started. The calendar is centered
    vertically: .archive fills the app height as a flex column that centers .cal, with top
    padding so the centering region starts BELOW the fixed header (the TopBar inside is
@@ -428,7 +414,7 @@ button * {
 
 /* A day tile: a flat key that navigates to that day's game. Square (aspect-ratio) so the
    grid stays regular; the day number is centered. A day with progress is FILLED with its
-   progress-ramp color (set inline per-day, .cal-day-filled below); a neutral day keeps the
+   heat-ramp color (set inline per-day, .cal-day-filled below); a neutral day keeps the
    surface. */
 .cal-day {
   position: relative;
@@ -472,7 +458,7 @@ button * {
   border: 3px solid var(--fg);
   pointer-events: none;
 }
-/* Filled (>0% reconstruction): the fill color is inline (per-day % on the progress ramp);
+/* Filled (>0% reconstruction): the fill color is inline (per-day % on the heat ramp);
    the number is drawn in the app background so it reads on the fill. Compound selector so
    it beats the base .cal-day color. */
 .cal-day.cal-day-filled {
@@ -520,11 +506,15 @@ button * {
     background-position-x: calc(100% * 12 / 11); /* frame 11 lands on 100%; endpoint wraps */
   }
 }
-/* Motion is a progressive enhancement: reduced-motion users get the solid base fill
-   (solved still reads as its color + the aria-label), never a frozen frame. */
+/* Motion is a progressive enhancement: reduced-motion users get the solid cobalt base
+   fill, never a frozen frame. The small solved-day number switches to --bg so the static
+   pairing keeps normal-text contrast; the animated ripple needs --fg over its dark frames. */
 @media (prefers-reduced-motion: reduce) {
   .cal-ripple {
     display: none;
+  }
+  .cal-day.cal-day-solved {
+    color: var(--bg);
   }
 }
 
@@ -812,29 +802,35 @@ button * {
   image-rendering: pixelated;
 }
 
-/* The counter itself: pixel-font percentage, painted in the live progressColor(pct)
-   ramp value (inline style) — the number carries the amount, its color carries the
-   feel, together everything the old bar said. */
-.progress-counter {
-  font-size: 26px;
+/* WHICH DAY is being played (user-decided 2026-08-16, replacing the reconstruction-%
+   counter that held this corner): the day's calendar date, spelled the way every other
+   surface spells a day. It is CHROME, not a stat — `.topbar-title`'s muted weight and its
+   optical downshift, and none of the counter's live ramp colour.
+   Sized for the LEFT CORNER'S REAL BUDGET, which the counter's four glyphs never tested:
+   ten glyphs plus the group's own 24px of padding have to clear the four 38px controls
+   opposite. At 320px that leaves ~132px, so the mobile step below is 10px with no tracking
+   (exactly 100px of ink) — measured at 320/360/390/430. */
+.puzzle-date {
+  font-size: 13px;
   line-height: 1;
   letter-spacing: 1px;
+  color: var(--muted);
   font-variant-numeric: tabular-nums;
   /* Same optical downshift as .topbar-title: the pixel glyphs sit high in the em box. */
   transform: translateY(0.15em);
-  transition: color 0.25s linear;
 }
 /* --- giant score watermark, always behind the play content --- */
 .progress-background {
   /* absolute (not fixed) so it is anchored to its relative wrapper — .phrase-anchor,
      centered on the SENTENCE — never the viewport:
      the score scrolls with the content instead of drifting into empty space. The number
-     itself is a CellDigits canvas: digits printed on the page's 24px grid cells, sized
-     and grid-snapped by the component (it centers on this box and overflows it
-     symmetrically above and below, which is exactly "behind the sentence"). The
-     watermark opacity is baked into the canvas paint (CellDigits INK_ALPHA), NOT set
-     here: the ink cells are opaque underneath so they occlude the BackgroundWaves
-     field instead of letting crests wash through the number. */
+     itself is a CellDigits canvas, SIZED FROM THE VIEWPORT ALONE and carrying its own
+     HALO (2026-08-17 — the old grid-cell quantization and grid snapping served the
+     deleted Perlin field): it centers on this box and overflows it symmetrically, which
+     is exactly "behind the sentence", and the halo it paints is what fades the ground's
+     halftone dither out around the score. The watermark opacity is baked into the
+     canvas paint (CellDigits INK_ALPHA), NOT set here: the ink blocks are opaque
+     underneath so the dither can never show through a stroke. */
   position: absolute;
   inset: 0;
   z-index: -1;
@@ -888,7 +884,7 @@ button * {
 /* Since #117 a hole is a BUTTON: tapping it opens that hole's guess history. It wraps
    the word + exponent without restructuring them (the floating-hit/scramble choreography
    keys off that structure) and stays typographically invisible — the sentence reads
-   exactly as before, so the gold word is still the only thing on screen. */
+   exactly as before, so the pale hole word is still the only thing on screen. */
 .hole-btn {
   font: inherit;
   color: inherit;
@@ -924,6 +920,42 @@ button * {
 }
 .hole-word {
   color: var(--hole);
+}
+/* THE OPEN BLANK (user-decided 2026-08-17): a hole is a fill-in-the-blank, and the
+   dashed line under the held word is what SAYS so — the "not yet" said in the word's
+   DRESS, in the app's own dash vocabulary (the route's broken trace, the tail out of the
+   void) — and the line vanishes exactly when the word locks in (`.resolved`, below), so
+   a found word stands free. Sits below the pixel font's descender row.
+   It anchors to `.hole-word-wrap` — the STATIC box the floating hit also anchors to —
+   and NOT to `.hole-word`, deliberately (user-reported 2026-08-17): the hit-shake rides
+   `.hole-word`, and a line anchored there shook with the word. The wrap never moves and
+   is sized to the word, so the blank holds still under the shake and still follows the
+   word's width through every scramble. Scoped under `.hole`: the solved screen's words
+   reuse `.hole-word-wrap` and must never grow a blank — and the TUTORIAL none at all
+   (below): MixWord's demo hole is a lesson prop, not a blank to fill. The line HUGS the
+   word: INSIDE the wrap box's bottom edge (user-tuned 2026-08-17, walked in from -6
+   through -4 and -2 — the pixel font sits high in its em box with a near-empty descender
+   row, so even flush-under-the-box read closer to the next line than to its own word;
+   riding the box's last 2px puts it against the ink, and the rare descender tail simply
+   crosses it). */
+.hole .hole-word-wrap::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 8px);
+  opacity: 0.55;
+}
+.hole.resolved .hole-word-wrap::after {
+  display: none;
+}
+/* The tutorial teaches with the hole's own markup (MixWord) but its word is a DEMO, not
+   a blank the player fills — no open-blank line anywhere in the lesson (user-decided
+   2026-08-17; the coach text's hint words lost their mini-blank the same way). */
+.tutorial .hole-word-wrap::after {
+  display: none;
 }
 /* One letter of a hole's word. The word is ALWAYS drawn letter by letter (Hole splits it
    once, for the resting word and the scramble's frames alike) so the wave has something to
@@ -970,6 +1002,63 @@ button * {
   color: var(--rank-color);
   vertical-align: super;
 }
+/* THE GAME WORDS GLOW (user-decided 2026-08-17; it lived a moment on the exponents and
+   moved here the same day — the words carry the aura, the numbers stay dry): a soft
+   currentColor bloom on the hole word in BOTH its states (the pale draft and, via
+   currentColor, the inked solve), the solved screen's trophies and Word mode's day
+   word — the ink rendered as printed light, the Séance-poster read. ONE wide layer
+   only, clear of the letterforms (the readability rule learned on the exponents), in em
+   so it scales with each surface's own size. The `.phrase .hole-btn *` black shadow
+   would beat the bare class inside a hole button, so the boosted selectors restate it
+   at winning specificity — and the rule must reach the `.hole-letter` CHILDREN, not
+   just the word box: the glyphs all live in per-letter spans (the wave's structure),
+   and the button rules (`.phrase .hole-btn *` black, `button *` none) hit those
+   children DIRECTLY, which beats any inherited shadow regardless of specificity
+   (found when the first cut produced no visible glow at all). ONE wide layer at 30%
+   ALPHA via color-mix — CALIBRATED, not eyeballed (2026-08-17): full-strength
+   currentColor lifted the band hugging the ink by 3.3/255 and was rejected twice as way
+   too much; 20% measured 0.34, indistinguishable from off. 30% sits at ~a quarter of
+   the rejected strength — present, soft, and the glyph edges stay crisp. */
+.hole-word,
+.hole-word .hole-letter,
+.phrase .hole-btn .hole-word .hole-letter,
+.solved-word-text,
+.solved-word-text .hole-letter,
+.word-subject-text,
+.word-subject-text .hole-letter {
+  text-shadow: 0 0 0.3em color-mix(in srgb, currentColor 30%, transparent);
+}
+/* THE WORDS ARE PRINTED WITH A VERTICAL INK GRADIENT (user-decided 2026-08-17; pushed
+   VIVID on review the same day — the first cut, currentColor 15% into 70%-black, was
+   invisible at word size; the black bottom then read "just dark, quite ugly" on the pale
+   draft, same review): each glyph runs from a bright white-lifted tint at the top into
+   a DEEPER, MORE SATURATED shade of the same ink at the bottom — the letter as a lit
+   object, the poster read. The deep end is authored in OKLCH: lightness down, CHROMA UP,
+   hue held — a pale ink's "darker" is a richer blue, never the grey-slate that mixing
+   toward black produces (that is why it is not a color-mix). Driven by currentColor, so
+   the pale draft, the inked solve and the struck word's grade colour each derive their
+   OWN tint and shade with no per-state rules. Applied per LETTER (the wave's spans),
+   which a VERTICAL gradient is indifferent to — every letter spans the same rows, so
+   the fade is identical across them. `-webkit-text-fill-color: transparent` (not
+   `color`) keeps currentColor alive for the gradient itself, the glow above and the
+   blank line. Guarded on both features it needs: without background-clip support,
+   transparent fill over an unclipped gradient would render solid bars. */
+@supports ((-webkit-background-clip: text) or (background-clip: text)) and
+  (color: oklch(from red calc(l - 0.1) calc(c + 0.1) h)) {
+  .hole-word .hole-letter,
+  .solved-word-text .hole-letter,
+  .word-subject-text .hole-letter {
+    background-image: linear-gradient(
+      to bottom,
+      color-mix(in srgb, currentColor 55%, white),
+      currentColor 45%,
+      oklch(from currentColor calc(l - 0.22) calc(c + 0.06) h)
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+}
 /* Rank decrease: the exponent rolls toward its new value (see useAnimatedNumber)
    and uses the same quick scale/unscale hop as the tutorial. */
 .hole-rank.rank-pop {
@@ -986,8 +1075,10 @@ button * {
     transform: translateY(0) scale(1);
   }
 }
+/* PEACE RESTORED: the pale draft is INKED IN — the solve blue, the gradient's own calm
+   terminus — and the open-blank line goes with the weirdness. */
 .hole.resolved .hole-word {
-  color: var(--accent);
+  color: var(--solve);
 }
 /* Shake the hole word when a "hit" lands on it: reinforces impact. */
 .hole-word.hit-shake {
@@ -1245,7 +1336,7 @@ button * {
   font-family: var(--press);
   font-size: clamp(13px, 1.8vw, 17px);
   line-height: 1.5;
-  color: var(--hole);
+  color: var(--accent);
   letter-spacing: 1px;
   padding-top: var(--text-shift);
 }
@@ -1353,7 +1444,7 @@ button * {
   opacity: 1;
   animation: none;
 }
-/* The guessed words: the round's trophies in the solved blue, and still its buttons —
+/* The guessed words: the round's trophies in the brand accent, and still its buttons —
    each opens the history line it walked. Numbered as the ruler's ticks number them
    (1..3, distinct secrets in sentence order), the number a small muted chip riding the
    word the way a rank exponent rides a hole's. */
@@ -1373,7 +1464,7 @@ button * {
   border: 0;
   padding: 0;
   margin: 0;
-  color: var(--accent);
+  color: var(--solve);
   cursor: pointer;
   white-space: nowrap;
   text-shadow: 2px 2px 0 black;
@@ -1488,8 +1579,9 @@ button * {
   color: var(--muted);
 }
 /* Run ruler (decided 2026-07-24, replacing the bucketed squares): one continuous bar on
-   the PROGRESS ramp, one flat cell per counted try (the raw trajectory — each cell is
-   progressColor at that try's reconstruction %, no bucketing on screen), with
+   the app's one HEAT ramp (2026-08-16), one flat cell per counted try (the raw trajectory —
+   each cell is progressHeatColor at that try's reconstruction %, the % read straight as
+   heat, no bucketing on screen), with
    a white tick at each solving try and the dropped hole's sentence index under it.
    The padding-bottom reserves the tick-number lane so rows keep their rhythm. */
 .run-ruler {
@@ -1559,7 +1651,7 @@ button * {
 
        RANK #6 OF 60   [ TOP 25% ]
 
-   The RANK NUMBER is the headline — twice the words around it and in the solved blue, the
+   The RANK NUMBER is the headline — twice the words around it and in the brand accent, the
    colour of what the round found — and TOP is a filled STAMP beside it, gold with the
    page's own background punched out of it, which is how an achievement reads here (no
    other chip in the app is filled, which is exactly why this one carries weight). The
@@ -1740,8 +1832,8 @@ button * {
 
    One list, closest first: the rank in a right-aligned heat-coloured gutter — the same ladder
    of numbers the route map's "time" column taught, running hot to cold down the page — then
-   the word AS TYPED. MISS closes the list in the coldest heat, exactly the word that floated
-   over the hole when those guesses landed; the solving guess leads it in the solved-word blue.
+   the word AS TYPED. MISS closes the list in its weird red, exactly the word that floated
+   over the hole when those guesses landed; the solving guess leads it in the solve cobalt.
    Full-screen native dialog on the SOLID app background. The LIST has no
    motion of its own past its entrance — the zoom below is about the transition into the modal,
    and the cascade is about arrival, not about the list. */
@@ -1781,10 +1873,11 @@ button * {
   --unfound: #3a4270;
   /* One Press Start cell is exactly 1em, so an exponent's width is its length times this — which
      is why `routeFrameVars` can set `--gutter` to fit the widest rank a line can show (a fixed
-     one sized for the theoretical "-9970" left a dead column on most rounds). This is the
-     fallback; the media query below is what makes it responsive without the component knowing. */
+     one sized for the theoretical "9970" left a dead column on most rounds). This is the
+     fallback; the media query below is what makes it responsive without the component knowing.
+     Four cells, not five, since the exponent lost its leading `-` on 2026-08-16. */
   --rank-size: 10px;
-  --gutter: calc(var(--rank-size) * 5 + 10px);
+  --gutter: calc(var(--rank-size) * 4 + 10px);
   /* Air between the rail and the words, SHARED by every route the app draws: both frames
      subtract it from their `--wordw`, or fitWord sizes a long word to a column wider than
      the real one. */
@@ -1920,12 +2013,12 @@ button * {
   height: 11px;
   background: var(--muted);
 }
-/* The point to reach is a BLUE SQUARE from the first frame (user-decided 2026-08-10): blue
-   is the app's solved-word colour, and the terminus IS the word to get — the square says
-   so before it is won, and the word beside it joins it in blue at the solve
+/* The point to reach is a COBALT SQUARE from the first frame (user-decided 2026-08-10):
+   cobalt is the app's solved-word colour, and the terminus IS the word to get — the square says
+   so before it is won, and the word beside it joins it in cobalt at the solve
    (`.route-found`). */
 .history-frame .route-arrival .route-node {
-  background: var(--accent);
+  background: var(--solve);
 }
 /* ONE grid for the whole line, every row a `subgrid` of it — which is what lets the rank gutter be
    a true `max-content` FIT: the track is sized by the widest exponent actually rendered, measured
@@ -2063,7 +2156,7 @@ button * {
 /* Word mode's post-mortem: a station says its GRADE in its own TYPE — the word painted in the rarity's colour
    (`--rarity-c`, set with `.graded` per zone station by WordBoard), the vocabulary the
    run's strikes and loot already taught. Keyed on the CLASS, not on every station, so the
-   terminus keeps `.route-found`'s solved blue and a gradeless near miss stays `--fg`. */
+   terminus keeps `.route-found`'s brand accent and a gradeless near miss stays `--fg`. */
 .word-frame .route-station.graded .route-word {
   color: var(--rarity-c);
 }
@@ -2111,13 +2204,32 @@ button * {
 .route-arrival .route-word {
   color: var(--muted);
 }
-/* Found: the accented secret in the solved-word blue, and the terminus lights up with it —
+/* The unfound terminus wears the OPEN BLANK too: the `???` is the round's ultimate
+   fill-in-the-blank, so the dashed line under it says the same "not yet" the holes say —
+   and its removal at the solve is the arrival. */
+.route-arrival:not(.route-found) .route-word {
+  /* inline-block hugs the `???` — an inline span's absolute children anchor to the whole
+     line box, which ran the blank across the column. */
+  display: inline-block;
+  position: relative;
+}
+.route-arrival:not(.route-found) .route-word::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 8px);
+  opacity: 0.55;
+}
+/* Found: the accented secret in the solve cobalt, and the terminus lights up with it —
    the same line then reads as the post-mortem of the route taken. */
 .route-found .route-word {
-  color: var(--accent);
+  color: var(--solve);
 }
 .route-found .route-node {
-  background: var(--accent);
+  background: var(--solve);
 }
 
 /* --- station states --- */
@@ -2136,7 +2248,7 @@ button * {
 .route-you .route-node {
   width: 21px;
   height: 21px;
-  background: var(--hole);
+  background: var(--accent);
 }
 /* BEHIND the departure (history modal, 2026-08-10): a guess that went backwards from where
    the puzzle put the player down. A real stop — their word, their node — but not a step of
@@ -2196,10 +2308,10 @@ button * {
   font-family: var(--press);
   font-size: 16px;
   letter-spacing: 2px;
-  /* Only the FALLBACK: both drawings set the heat ramp's coldest colour inline — the one
+  /* Only the FALLBACK: both drawings set MISS's weird red inline — the one
      the floating `MISS` wears — so the heading says "missed" in the voice the round
-     already answered these words in. Computed there (`heatColor(0)`), never a hex copied
-     down here, so the two cannot drift. */
+     already answered these words in. The ONE `MISS_COLOR` constant there, never a hex
+     copied down here, so the two cannot drift. */
   color: var(--muted);
   text-align: center;
   text-shadow: none;
@@ -2214,8 +2326,8 @@ button * {
   gap: 10px 16px;
   font-family: var(--vt);
   font-size: 14px;
-  /* Only the FALLBACK — OffMapShelf sets the heat ramp's coldest colour inline, the same
-     computed `heatColor(0)` as the heading, so the shelf speaks in one voice (2026-08-10,
+  /* Only the FALLBACK — OffMapShelf sets MISS's weird red inline, the same
+     `MISS_COLOR` as the heading, so the shelf speaks in one voice (2026-08-10,
      superseding muted words that could pass for ordinary ones). */
   color: var(--muted);
 }
@@ -2675,7 +2787,7 @@ button * {
   letter-spacing: 2px;
   text-transform: uppercase;
   color: var(--bg);
-  background: var(--hole);
+  background: var(--accent);
   text-shadow: none;
   transition: filter 0.08s linear, opacity 0.08s linear;
 }
@@ -2766,8 +2878,11 @@ button * {
     width: calc(100vw - 24px);
     height: 48px;
   }
-  .progress-counter {
-    font-size: 20px;
+  /* Ten glyphs of date against a phone's header corner: drop to 10px and give the tracking
+     back, which is what makes the whole string fit beside the right group at 320px. */
+  .puzzle-date {
+    font-size: 10px;
+    letter-spacing: 0;
   }
 
   /* The sentence: a touch smaller so a hole + its exponent near the right edge still fits
@@ -2847,7 +2962,6 @@ button * {
   }
   .chooser-card {
     padding: 16px 18px;
-    gap: 16px;
   }
 }
 
@@ -2949,11 +3063,12 @@ button * {
   color: var(--fg);
   text-shadow: none;
 }
-/* Rich inline words in the explanations — they look like what they are in-game:
-   blue = the secret (solved color); .rt-word = a hint word, gold with its
-   heat-colored exponent (the sup reuses .hole-rank). */
-.rt-blue {
-  color: var(--accent);
+/* Rich inline words in the explanations — they look like what they are in-game: a hint
+   word is told from the target by its colour pair (draft vs ink) and its heat-colored
+   exponent (the sup reuses .hole-rank). No open-blank line in the lesson (user-decided
+   2026-08-17): the coach's words are props, not blanks to fill. */
+.rt-target {
+  color: var(--solve);
 }
 .rt-word {
   color: var(--hole);
@@ -3062,7 +3177,7 @@ button * {
   letter-spacing: 2px;
   text-transform: uppercase;
   color: var(--bg);
-  background: var(--hole);
+  background: var(--accent);
   border: 0;
   padding: 16px 30px;
   cursor: pointer;
@@ -3528,7 +3643,7 @@ button * {
   display: inline-block;
   font-family: var(--vt);
   line-height: 1.15;
-  color: var(--accent);
+  color: var(--solve);
   /* One line, whatever the word. */
   white-space: nowrap;
 }
@@ -3567,10 +3682,10 @@ button * {
    run for the BLOW's own length: `--shake-ms` is handed down by `WordSubject` (STRUCK_MS,
    a frame short of the shortest sheet), so the JS that ends the recoil and the CSS that
    draws it cannot disagree about how long a blow is.
-   It also wears the STRIKE'S COLOUR while the strike is on it, returning to the solved blue
+   It also wears the STRIKE'S COLOUR while the strike is on it, returning to the brand accent
    when it goes: a plain state, like everything else here, not a transition. */
 .word-subject-text.struck {
-  color: var(--struck-c, var(--accent));
+  color: var(--struck-c, var(--solve));
   animation: word-shake var(--shake-ms, 0.4s) ease-in-out;
 }
 @keyframes word-float {
@@ -4042,7 +4157,7 @@ button * {
   top: 100%;
   font-size: 0.5em;
   white-space: nowrap;
-  color: var(--hole);
+  color: var(--accent);
   opacity: 0;
   animation:
     timer-gain-in 0.4s ease-out forwards,

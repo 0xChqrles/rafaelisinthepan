@@ -13,9 +13,7 @@
     src/day.ts                the ONE 22:00-ET DST-correct game-day logic (client + server + publish)
     src/scores.ts             WORD_CLAIM_ZONE (web+backend) + VIEWER_IP_HEADER (infra+backend)
     src/types.ts              shared puzzle + score-API schema types (Puzzle, Hole, ScoreHistogram, …)
-    src/heat.ts               heatColor() — heat ramp (rank exponents + floating hits ONLY)
-    src/progressColor.ts      progressColor() + progressEmoji() — progress ramp (progress bar, selector badge, run rulers incl. the card, share-text emoji row); shares ramp.ts
-    src/ramp.ts               the piecewise interpolator both ramps share (internal)
+    src/heat.ts               the app's ONE weird→calm stop gradient: heatColor() + fixed-cap rankHeatColor()/HIT_HEAT_CAP (exponents, floating hits, loot, route rows) + progressHeatColor()/progressEmoji() (run rulers incl. the card, share-text emoji row, archive fills, chooser strips)
     src/shareCard.ts          the share-token codec (both modes), browser + Lambda
     src/cardSvg.ts            the OG card's SVG, rendered from a decoded token
     src/index.ts              re-exports
@@ -44,15 +42,29 @@
   artifact, but the server must move/deploy with it so a real score is never rejected and
   an impossible one is never admitted. `web/game/wordGame.ts` re-exports it as
   `CLAIM_ZONE` for its existing consumers.
-- `src/heat.ts` (heat ramp: rank exponents + floating hits ONLY) and
-  `src/progressColor.ts` (progress ramp + `progressEmoji`) are DIFFERENT ramps with
-  different meanings — never borrow one for the other's job (they share `ramp.ts`).
-  One web palette is a pinned COPY of stops from them, which is a different thing
-  from borrowing a ramp: the value is taken once and frozen under its own meaning,
-  and a test pins each hex to the stop it came from so a retune of the ramp fails
-  loudly instead of silently respeaking a stale palette. That is Word mode's rarity
-  grades (`rarity.test.ts`, #163) — it copies from BOTH ramps, since what it needed
-  was five readable, far-apart, non-red colours and neither ramp alone has them.
+- **`src/heat.ts` is the app's ONE gradient, and it runs WEIRD → CALM (user-decided
+  2026-08-17, the calm redesign — superseding the FLIR iron bow of the same day and the
+  crimson→cyan heat stops before it).** Solving is RESTORING PEACE to a weird sentence:
+  the scale starts at vivid RED (#ff3d2e — the weird terminus, and MISS, red again by
+  the user's call once the scale grew one step past the yellow) and runs through amber,
+  coral and a strange rose-orchid into the cobalt (#4a6aff — the web's `--solve`, so a
+  solved word lands exactly on the scale's terminus). FULLY SATURATED stamp-ink chroma (the
+  third cut of the day: dusty read "creepy", mid-saturation read "dull" — the
+  /inspiration stamps are vivid inks, and the calm lives in the textures instead), every
+  value ≥4.5:1 on the ground (pinned in `heat.test.ts`, along with the walk's monotonic
+  blueness). What survived the two earlier ramps is STRUCTURAL and
+  still holds: ONE gradient for everything (a % reads straight onto it, so the run ruler,
+  the card, the emoji row, the archive fills and the chooser strips can never drift);
+  the gradient TERMINATES exactly ON `MISS_COLOR` (which lives here, beside the scale
+  that ends on it); and the rank scale STOPS at the 100 exponent (`HIT_HEAT_CAP`) — a
+  guess 1000 away, a guess 100 away and a MISS are the same level of weird, told apart
+  only by their labels. `progressEmoji` walks 🟥 → 🟨 → 🟪 → 🟦 (weirdest, weird,
+  strange, calm; cuts at 15/45/75). `rankHeatColor(rank)` owns that absolute logarithmic
+  100-rank scale internally — consumers never supply a per-hole or per-surface denominator,
+  so the same rank cannot change colour between renderers.
+  One web palette used to be pinned COPIES of ramp stops; with the calm redesign Word
+  mode's rarity ladder is AUTHORED instead (`rarity.test.ts` still pins its hexes and
+  re-measured dE constraints, so a retune stays a deliberate act).
 - `src/shareCard.ts` is the share-token codec, running byte-identically in the
   browser and the Lambda; the token's product behavior and evolution rules are in the
   solved-result bullet of `packages/web/AGENTS.md`. Its leading VERSION field is a

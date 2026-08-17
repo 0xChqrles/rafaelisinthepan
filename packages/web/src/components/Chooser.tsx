@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { progressColor } from '@whippin/shared';
+import { progressHeatColor } from '@whippin/shared';
 import { isComplete, srStatus, type Status } from '../state/status';
 import type { Status as CardStatus } from '../state/status';
 // Bundled like the flags (small enough to inline as a data URI — no extra request).
@@ -18,7 +18,7 @@ import logo from '../assets/logo-blue.png';
 
 // Today's status, spoken in the game's own visual language instead of text badges: a
 // thin strip along the card's bottom edge. Absent = not started (NOTHING is the "new"
-// signal); partial = today's progress, tinted like the in-game counter; full GOLD =
+// signal); partial = today's progress, tinted on the app's one heat ramp; full GOLD =
 // done for the day, the same gold as a solved word — whether the day was SOLVED (a
 // sentence) or merely finished (a word run's clock, #163), which is a distinction only
 // the aria-label makes. Decorative — the card's aria-label carries the status for screen
@@ -32,24 +32,23 @@ function StatusStrip({ status }: { status: CardStatus }) {
       className="chooser-strip"
       style={{
         width: `${pct}%`,
-        background: complete ? 'var(--hole)' : progressColor(pct),
+        background: complete ? 'var(--solve)' : progressHeatColor(pct),
       }}
       aria-hidden="true"
     />
   );
 }
 
-// One option. `icon` is the caller's own element (a flag, a mode sprite) so each chooser
-// keeps its own art without this component knowing what art means.
+// One option: just the NAME, centred (user-decided 2026-08-17, dropping the card art —
+// the flags and the 7×7 mode sprites went with the electric identity, and the names
+// self-explain), over the status strip on the bottom edge.
 export function ChooserCard({
   name,
-  icon,
   status,
   uiLang,
   onClick,
 }: {
   name: string;
-  icon: ReactNode;
   status: Status;
   // The chrome language for the spoken status — a chooser has no puzzle to take one from,
   // so its screen resolves it the same way the `/` redirect does.
@@ -63,7 +62,6 @@ export function ChooserCard({
       aria-label={`${name}${srStatus(uiLang, status)}`}
       onClick={onClick}
     >
-      {icon}
       <span className="chooser-card-name">{name}</span>
       <StatusStrip status={status} />
     </button>
