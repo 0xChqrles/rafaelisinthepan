@@ -998,18 +998,20 @@ button * {
   color: var(--rank-color);
   vertical-align: super;
 }
-/* THE EXPONENTS GLOW (user-decided 2026-08-17): a soft currentColor bloom — the vivid
-   ink stops rendered as printed light, the Séance-poster read — instead of the page's
-   hard black drop shadow. ONE wide layer only (user-tuned same day: a second tight
-   0.15em layer sat right on the glyph edges and fuzzed the digits — the halo must never
-   cost readability, so the aura starts clear of the letterform). In em so it scales
-   with each exponent's own size (a 10px gutter rank blooms half as far as a 24px sup).
-   The `.phrase .hole-btn *` black shadow would beat the bare class inside a hole
-   button, so the boosted selector restates it at winning specificity. */
-.hole-rank,
-.route-rank,
-.phrase .hole-btn .hole-rank {
-  text-shadow: 0 0 0.45em currentColor;
+/* THE GAME WORDS GLOW (user-decided 2026-08-17; it lived a moment on the exponents and
+   moved here the same day — the words carry the aura, the numbers stay dry): a soft
+   currentColor bloom on the hole word in BOTH its states (the pale draft and, via
+   currentColor, the inked solve), the solved screen's trophies and Word mode's day
+   word — the ink rendered as printed light, the Séance-poster read. ONE wide layer
+   only, clear of the letterforms (the readability rule learned on the exponents), in em
+   so it scales with each surface's own size. The `.phrase .hole-btn *` black shadow
+   would beat the bare class inside a hole button, so the boosted selector restates it
+   at winning specificity. */
+.hole-word,
+.phrase .hole-btn .hole-word,
+.solved-word-text,
+.word-subject-text {
+  text-shadow: 0 0 0.4em currentColor;
 }
 /* Rank decrease: the exponent rolls toward its new value (see useAnimatedNumber)
    and uses the same quick scale/unscale hop as the tutorial. */
