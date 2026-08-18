@@ -1,21 +1,17 @@
 import type { CSSProperties } from 'react';
-import { progressHeatColor } from '@whippin/shared';
 
-// A run's RULER (replacing the bucketed squares, decided 2026-07-24; rendered as ONE
-// CONTINUOUS GRADIENT since 2026-08-18): still the raw trajectory, no bucketing — one
-// gradient stop per counted try at that try's progressHeatColor, drawn as a smooth
-// rounded bar with its own bloom — with a white pin at each try that dropped a secret
-// and the hole's sentence index (1..3) under it. A guess that drops several secrets
-// stacks its indices under ONE pin.
+// A run's RULER (bucketed squares -> per-try cells 2026-07-24 -> gradient filament ->
+// a FLAT RULE, user-decided 2026-08-18): one solid sharp bar, one tick at each try
+// that dropped a secret with the hole's sentence index (1..3) under it. A guess that
+// drops several secrets stacks its indices under ONE tick. The per-try heat colours
+// left with the gradient — the run's colour story lives in the share card's cells and
+// the emoji row now; on screen the ticks ARE the information.
 //
-// The stops use the shared weird→calm ramp: a try's reconstruction % reads STRAIGHT from
-// the red MISS terminus through amber, coral and orchid to the cobalt solve terminus. Rank
-// exponents use the same stops through their own fixed logarithmic mapping.
-//
-// The two reveal beats keep their old timeline: `shown` wipes the neutral track in,
-// `colorized` chases it with the gradient. Both wipes run `--sweep-ms` = n × the same
-// stagger the per-cell delays used, so the owning screen's choreography (resultAnimation)
-// needed no change, and rulerStagger's reduced-motion zero still collapses the sweep.
+// The two reveal beats keep their old timeline: `shown` wipes the bar in over
+// `--sweep-ms` = n × the same stagger the old per-cell delays used (so the owning
+// screen's choreography in resultAnimation needed no change, and rulerStagger's
+// reduced-motion zero still collapses the sweep), and `colorized` fades the ticks in
+// on their column delays.
 export default function RunRuler({
   trajectory,
   solvedAt,
@@ -30,16 +26,6 @@ export default function RunRuler({
   colorized: boolean;
 }) {
   const n = Math.max(trajectory.length, 1);
-  // One stop per try, placed at its slice's CENTER, so the gradient interpolates between
-  // tries instead of smearing the first and last into the bar's ends.
-  const gradient =
-    trajectory.length <= 1
-      ? `linear-gradient(90deg, ${progressHeatColor(trajectory[0] ?? 0)}, ${progressHeatColor(
-          trajectory[0] ?? 0,
-        )})`
-      : `linear-gradient(90deg, ${trajectory
-          .map((pct, i) => `${progressHeatColor(pct)} ${(((i + 0.5) / n) * 100).toFixed(2)}%`)
-          .join(', ')})`;
   // Group solve moments by try: one pin per solving guess, its hole indices stacked.
   const ticks: { at: number; holes: number[] }[] = [];
   solvedAt.forEach((at, i) => {
@@ -55,15 +41,12 @@ export default function RunRuler({
       style={
         {
           '--n': n,
-          '--run-gradient': gradient,
           '--sweep-ms': `${Math.round(n * stagger)}ms`,
         } as CSSProperties
       }
     >
       <div className="run-bar">
-        <span className="run-bloom" aria-hidden="true" />
         <span className="run-track" aria-hidden="true" />
-        <span className="run-fill" aria-hidden="true" />
         {ticks.map((tick) => (
           <span
             key={tick.at}

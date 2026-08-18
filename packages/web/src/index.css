@@ -1647,15 +1647,18 @@ button * {
    content, not a fourth trophy. */
 .solved-work {
   margin: 0;
-  /* The credit's headline: the mono at semibold — the biggest chrome type on the stage —
-     still the accent, since it over the quiet line beneath is what ranks the two. */
-  font-family: var(--ui);
-  font-size: clamp(17px, 2.3vw, 22px);
-  font-weight: 600;
-  text-transform: uppercase;
-  line-height: 1.4;
+  /* The credit speaks the PIXEL face (user-decided 2026-08-18): the source is the
+     puzzle's own content, not chrome — still the accent, since it over the quiet line
+     beneath is what ranks the two. */
+  font-family: var(--pixel-font);
+  font-size: clamp(14px, 1.9vw, 18px);
+  font-weight: 400;
+  /* NO all-caps here (user-decided 2026-08-18): the source is quoted content — the
+     work's own casing stands, and the KIND beside the author is uppercased in code,
+     which is what keeps the phrase contrast. */
+  line-height: 1.6;
   color: var(--accent);
-  letter-spacing: 0.03em;
+  letter-spacing: 0;
   padding-top: var(--text-shift);
 }
 /* What the headline IS and who it is by — `BOOK by Victor Hugo` — as one muted phrase
@@ -1663,14 +1666,13 @@ button * {
    it; the caption's gap opens between the credit and the words above, not inside it. */
 .solved-by {
   margin: -2px 0 0;
-  font-family: var(--ui);
-  font-size: 12px;
-  font-weight: 450;
-  line-height: 1.5;
-  text-transform: uppercase;
+  font-family: var(--pixel-font);
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.7;
   color: var(--fg);
   opacity: 0.8;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
 }
 .source-type-slot {
   position: relative;
@@ -1827,9 +1829,9 @@ button * {
   filter: brightness(1.35);
 }
 .solved-word-num {
-  font-family: var(--ui);
-  font-size: 13px;
-  font-weight: 500;
+  font-family: var(--pixel-font);
+  font-size: 10px;
+  font-weight: 400;
   color: var(--fg);
   opacity: 0.7;
   margin-right: 7px;
@@ -1907,19 +1909,14 @@ button * {
   color: var(--fg);
   opacity: 0.8;
 }
-/* Run ruler — ONE CONTINUOUS GRADIENT since the modern-chrome pass (user-decided
-   2026-08-18, superseding the flat per-try cells): the run is still the raw trajectory —
-   RunRuler builds a linear-gradient with one stop per counted try, each at that try's
-   progressHeatColor — but the bar renders it as a smooth rounded filament with its own
-   BLOOM underneath (the aura read: the journey as a strip of light, red weirdness
-   resolving into cobalt calm). Nothing informational was dropped: the solve markers and
-   their sentence indices survive, restyled as glowing pins.
-
-   The reveal keeps the old two-beat semantics with new gestures: `.shown` WIPES the
-   neutral track in left-to-right, `.colorized` chases it with the gradient (both are
-   clip-path transitions over `--sweep-ms`, which RunRuler derives from the same stagger
-   the old per-cell delays used — so resultAnimation's timeline is untouched, and reduced
-   motion still collapses the sweep via the global transition rule). */
+/* Run ruler — a FLAT RULE since 2026-08-18 (user-decided, superseding the gradient
+   filament): one solid bar, dead sharp, taller — a ruler, not a lightstrip — with the
+   solve TICKS and their sentence indices as the information (the per-try heat colours
+   left with the gradient; the run's colour story lives in the share card's cells and
+   the emoji row now). The reveal keeps its two beats: `.shown` wipes the bar in
+   left-to-right over `--sweep-ms` (RunRuler derives it from the same stagger the old
+   per-cell delays used, so resultAnimation and rulerStagger's reduced-motion zero are
+   untouched), `.colorized` fades the ticks in on their column delays. */
 .run-ruler {
   width: 100%;
   /* Symmetric block padding: the bottom lane holds the tick numbers, the matching top
@@ -1932,49 +1929,22 @@ button * {
 }
 .run-bar {
   position: relative;
-  height: 10px;
-}
-/* The bloom: the same gradient, blurred wide and dimmed, sitting under the bar. It
-   arrives WITH the colorize beat (opacity, not a wipe — a blurred edge cannot read a
-   wipe anyway). */
-.run-bloom {
-  position: absolute;
-  inset: -3px -2px;
-  border-radius: var(--r-lg);
-  background: var(--run-gradient, var(--surface-hover));
-  filter: blur(12px);
-  opacity: 0;
-  transition: opacity 700ms ease var(--sweep-ms, 0ms);
-}
-.run-ruler.colorized .run-bloom {
-  opacity: 0.45;
-}
-/* The neutral track and the gradient fill: two stacked rounded layers, each revealed by
-   its own left-to-right clip wipe. */
-.run-track,
-.run-fill {
-  position: absolute;
-  inset: 0;
-  border-radius: var(--r-md);
-  clip-path: inset(0 100% 0 0 round var(--r-md));
-  transition: clip-path var(--sweep-ms, 0ms) linear;
+  height: 16px;
 }
 .run-track {
+  position: absolute;
+  inset: 0;
   background: var(--surface-hover);
-}
-.run-fill {
-  background: var(--run-gradient, var(--surface-hover));
+  clip-path: inset(0 100% 0 0);
+  transition: clip-path var(--sweep-ms, 0ms) linear;
 }
 .run-ruler.shown .run-track {
-  clip-path: inset(0 0 0 0 round var(--r-md));
+  clip-path: inset(0 0 0 0);
 }
-.run-ruler.colorized .run-fill {
-  clip-path: inset(0 0 0 0 round var(--r-md));
-}
-/* A solve moment: the pin sits on the RIGHT edge of the solving try's slice (the state
-   after that guess), overhanging the bar like a ruler mark; it fades in when the
-   colorize wipe reaches its column. Several secrets dropped by one guess stack their
-   indices vertically under the single shared pin. */
+/* A solve moment: the tick sits on the RIGHT edge of the solving try's slice (the state
+   after that guess), overhanging the bar like a ruler mark; it fades in when its column
+   delay lands. Several secrets dropped by one guess stack their indices vertically
+   under the single shared tick. */
 .run-tick {
   position: absolute;
   top: -4px;
@@ -1983,7 +1953,6 @@ button * {
   width: 2px;
   transform: translateX(-50%);
   background-color: var(--fg);
-  box-shadow: 0 0 8px rgba(244, 241, 232, 0.55);
   opacity: 0;
   transition: opacity 1ms linear var(--tick-delay, 0ms);
 }
@@ -1999,9 +1968,9 @@ button * {
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  font-family: var(--ui);
-  font-size: 12px;
-  font-weight: 650;
+  font-family: var(--pixel-font);
+  font-size: 10px;
+  font-weight: 400;
   line-height: 1;
   color: var(--fg);
 }
@@ -2038,7 +2007,7 @@ button * {
   --top-h: 36px;
   --top-size: 13px;
   --top-pad: 16px;
-  --top-drop: 0px;
+  --top-drop: 4px;
   --rank-gap: 22px;
   --slot-h: 48px;
 
@@ -2061,10 +2030,12 @@ button * {
   gap: 8px;
   white-space: nowrap;
 }
+/* The whole line is PIXEL since 2026-08-18 — labels, number and badge in one face. */
 .score-rank-label {
+  font-family: var(--pixel-font);
   font-size: var(--rank-label);
   font-weight: 400;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
   color: var(--fg);
 }
 /* The number rides a WHOLE PIXEL BAND below its own baseline (user-decided 2026-08-15).
@@ -2101,10 +2072,11 @@ button * {
   border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
   color: var(--fg);
+  font-family: var(--pixel-font);
   font-size: var(--top-size);
-  font-weight: 600;
+  font-weight: 400;
   line-height: 1;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
   white-space: nowrap;
   text-shadow: none;
   translate: 0 var(--top-drop);
@@ -2117,7 +2089,7 @@ button * {
     --top-h: 32px;
     --top-size: 12px;
     --top-pad: 14px;
-    --top-drop: 0px;
+    --top-drop: 3px;
     --rank-gap: 18px;
     --slot-h: 40px;
   }

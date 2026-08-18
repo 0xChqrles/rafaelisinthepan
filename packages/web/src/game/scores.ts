@@ -105,12 +105,12 @@ export function shouldSubmitScore(finished: boolean, submitted: boolean): boolea
 // (`RANG #12 SUR 599  TOP 20.3%`).
 //
 // The estimate is in LABEL GLYPHS: every character of the small type counts one, and the
-// rank number counts TRIPLE (2026-08-18, from double): it is set in the PIXEL face now,
-// whose 1em-per-glyph advance at the rank size measures ~3 label glyphs of the mono.
-// That is all the precision this needs — both faces are monospace, so a glyph count IS
-// a width.
+// rank number counts DOUBLE — the whole line is the PIXEL face since 2026-08-18 (labels,
+// number and badge alike), so one unit is one label glyph at the pixel's 1em advance and
+// the rank digits weigh rank-size/label-size ≈ 2. That is all the precision this needs —
+// the face is monospace, so a glyph count IS a width.
 export const TIGHT_STANDING_UNITS = 26;
 
 export function standingUnits(rankLabel: string, ofLabel: string, rank: number, topLabel: string): number {
-  return rankLabel.length + ofLabel.length + topLabel.length + 3 * (String(rank).length + 1);
+  return rankLabel.length + ofLabel.length + topLabel.length + 2 * (String(rank).length + 1);
 }

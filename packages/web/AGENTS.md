@@ -162,22 +162,24 @@ These are decided and verified against the code. Treat them as load-bearing.
     shelf), the prompt/input and its hint, the keyboard (keys + its `.kb-icon` pixel
     enter/backspace), the floating hits, the loot, the strike sheets, the CellDigits
     watermark, the solved screen's word trophies, the rarity ladder's EXAMPLE words,
-    MixWord — and, since the same day's later pass, **every NUMBER the game itself
-    produced**: both result counts (`.solved-score-num`), the standing's rank number
-    (`.score-rank-num`, in the accent; `standingUnits` counts its digits TRIPLE now —
-    the pixel advance at rank size measures ~3 mono label glyphs) and the streak
-    celebration's digits (wheel slots back at the pixel 1em advance, and the flame's
-    HARD 6px indigo underprint restored — a soft glow clips square inside the
-    overflow-hidden slots). **Every monospace layout assumption therefore still holds** — fitWord, the
+    MixWord — and, since the same day's later passes, the whole SOLVED STACK's data:
+    both result counts (`.solved-score-num`), the ENTIRE standing line (labels, the
+    accent rank number AND the TOP badge — one face, so `standingUnits` is back to
+    rank-digits-count-DOUBLE with one unit = one label glyph), the SOURCE CREDIT (both
+    lines — the source is the puzzle's content, not chrome, and it is EXEMPT from the
+    all-caps chrome rule: quoted content keeps its own casing, the code-uppercased KIND
+    carrying the phrase contrast), the run ruler's tick numbers, the trophies'
+    superscript numbers, and the streak celebration's digits (wheel slots at the pixel
+    1em advance, the flame's HARD 6px indigo underprint restored — a soft glow clips
+    square inside the overflow-hidden slots). **Every monospace layout assumption therefore still holds** — fitWord, the
     route `--gutter` arithmetic, MixWord's ch reservations and CellDigits' grid all sit
     on surfaces that stayed pixel. The coach text's inline `[[b:]]`/`[[w:]]` words are
     pixel at 0.82em INSIDE modern copy — game words quoted in chrome.
   - **MONO (Azeret Mono variable 100-900, `--ui`)** is EVERYTHING else — body default,
     header (title/date and Word mode's clock), buttons, coach copy, the standing line,
     calendar, streak, rarity chip counts, statuses, and every moment the retired serif
-    used to headline (chooser names, the invite title, the credit headline — the big
-    result numbers and streak digits moved ON to the pixel face the same day, see
-    above). A monospace is tabular by construction, so everything that ticks is stable
+    used to headline (chooser names, the invite title — the credit, the result numbers
+    and the streak digits all moved ON to the pixel face the same day, see above). A monospace is tabular by construction, so everything that ticks is stable
     for free, and `ScoreRank.standingUnits`'s glyphs-as-width estimate is literally true
     again. **The chrome is ALL-CAPS (user-decided 2026-08-18) — every mono surface wears
     `text-transform: uppercase` EXCEPT the coach/dialog copy**, which stays sentence
@@ -265,16 +267,17 @@ These are decided and verified against the code. Treat them as load-bearing.
       on the right (`Chooser.cellsFor`, an FNV hash of the name; 8×3 cells lit in the
       card's ink — cobalt/violet/orange by nth-child). Decorative; the aria-label
       carries everything.
-  - **The RUN RULER is a continuous GRADIENT FILAMENT (user-decided 2026-08-18,
-    superseding the flat per-try cells):** RunRuler builds one linear-gradient stop per
-    counted try — the same raw trajectory through the same `progressHeatColor` — drawn
-    as a rounded bar with a blurred bloom copy beneath. The two reveal beats keep their
-    timeline as clip-path wipes (`shown` wipes the neutral track, `colorized` chases it
-    with the gradient) over `--sweep-ms` = n × the same stagger the per-cell delays
-    used, so `resultAnimation` and `rulerStagger`'s reduced-motion zero are untouched.
-    Solve ticks survive as glowing pins with their sentence indices. The OG card still
-    rasterizes per-cell rects — same data, same colours, stepped instead of smooth —
-    aligning it is its own pass.
+  - **The RUN RULER is a FLAT RULE (user-decided 2026-08-18, superseding the gradient
+    filament of the same day, which superseded the per-try cells):** one solid sharp
+    `--surface-hover` bar, 16px tall, no radius, no gradient, no bloom — the solve
+    TICKS and their pixel sentence indices are the information. **The per-try heat
+    colours left the on-screen ruler with the gradient**: the run's colour story lives
+    in the share card's cells and the emoji row (both unchanged — same
+    `progressHeatColor` data; the archive/chooser badges still read the ramp too). The
+    two reveal beats keep their timeline: `shown` wipes the bar in over `--sweep-ms` =
+    n × the same stagger the old per-cell delays used (resultAnimation and
+    `rulerStagger`'s reduced-motion zero untouched), `colorized` fades the ticks in on
+    their column delays.
 - **A RANK IS WRITTEN BARE — no leading minus, anywhere (user-decided 2026-08-16).** A rank
   is a DISTANCE, and a distance is not negative; `sailor^87`, not `sailor^-87`. This is the
   app's ONE way of writing a rank, so it holds on every surface that shows one: the hole's
