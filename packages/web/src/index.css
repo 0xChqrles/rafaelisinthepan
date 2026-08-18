@@ -1121,6 +1121,10 @@ button * {
   cursor: pointer;
   text-shadow: none;
   font-variant-numeric: tabular-nums;
+  /* One line always: at 320px the centred tabs squeeze the left grid track and the ISO
+     date wrapped at its hyphens (review 2026-08-18) — nowrap raises the track's
+     min-content to the whole string, which the band's budget holds (~283px of 320). */
+  white-space: nowrap;
   transition: background-color 0.1s linear;
 }
 .puzzle-date:hover {

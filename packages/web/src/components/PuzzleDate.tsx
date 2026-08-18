@@ -23,7 +23,9 @@ export default function PuzzleDate({
     <button
       type="button"
       className="puzzle-date"
-      aria-label={t(lang, 'ariaArchive')}
+      /* The date IS the button's state, so it stays in the accessible name (review
+         2026-08-18: a bare "Past puzzles" label hid which day is open). */
+      aria-label={`${date} — ${t(lang, 'ariaArchive')}`}
       onClick={() => navigate(pathForArchive(lang, mode))}
     >
       <time dateTime={date}>{date}</time>

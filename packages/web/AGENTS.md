@@ -1994,38 +1994,25 @@ it to the local store — see `packages/backend/AGENTS.md`).
   undated tab held open across the 22:00 flip therefore still keeps its fetched puzzle/day;
   the puzzle itself does not silently swap. The topbar is the extension point for future
   chrome (streaks, stats, …).
-- **The CHOOSER screen (language 2026-07-06; the MODE chooser was RETIRED 2026-08-18
+- **The CHOOSER screen (language, 2026-07-06; the MODE chooser was RETIRED 2026-08-18
   for the header's segmented tabs — `/mode` parses as an unknown path now, and
-  `screens/ModeSelect` + `components/ModeButton` are deleted; `Chooser`/`ChooserCard`
-  serve the language screen alone):** the app asks "which one
-  do you want to play?" twice — about the LANGUAGE (`/select`, the header globe) and about
-  the DAILY (`/mode`, the header Whippin mark) — and both are the SAME screen, so there is
-  ONE of it: `components/Chooser.tsx` holds the shell, the card and the status strip;
-  `screens/LanguageSelect.tsx` and `screens/ModeSelect.tsx` supply only what the options
-  are, what each is called, which art it wears and where a tap lands (`.chooser-*` in CSS,
-  renamed from `.lang-*` when the second one arrived). Both are ROUTES, never modals, and
-  both sit ABOVE `/<lang>` since neither is language- or mode-scoped.
-  Headed by the **logo** (the user-drawn
-  SVG mark since 2026-08-18, cobalt with its aura glow — language-neutral, and the app's
-  ONE in-app branding spot), NOT a "select language" title (the cards self-explain, and a title would
-  have to guess the user's language on the screen where it is unknown). One **card**
-  per option — the NAME alone, centred (user-decided 2026-08-17: the card art went with
-  the electric identity — the 16×16 flags and the 7×7 mode sprites are deleted, assets
-  included, and `Flag.tsx` with its last consumer) — in a vertical list that scales to
-  any number of them, with the app's standard brighten-on-hover/press. Languages show
-  the language's **native** name (`LANGS[].native`; never translated); modes a localized
-  name (`modeSentence`/`modeWord`).
-  The old NEW/%/✓ badges are gone: today's status is a thin **strip on the card's
-  bottom edge** — absent = not started, partial = progress on the progress
-  ramp, full **gold** = solved / done for the day (the solved-word gold). The card's
-  aria-label speaks the status.
-  **Each chooser holds the OTHER's axis fixed**, so neither can strand you: a language card
-  lands in the last-played MODE and reads that mode's status, and a mode card lands in the
-  last-played LANGUAGE and reads that language's. **The mode chooser replaced a header
-  TOGGLE** (decided 2026-08-06): a toggle had to show the mode you were NOT in — a thing to
-  decode rather than read — and could only ever flip between exactly two, where a chooser
-  shows both dailies side by side with today's progress on each and stays right when a
-  third arrives.
+  `screens/ModeSelect` + `components/ModeButton` are deleted):** the app asks "which
+  language do you want to play?" at `/select`, reached from the header's language chip —
+  a ROUTE, never a modal, sitting ABOVE `/<lang>` since it is not language-scoped.
+  `components/Chooser.tsx` holds the shell, the member card and the status strip;
+  `screens/LanguageSelect.tsx` supplies the options (built as ONE reusable pair when two
+  choosers existed, and kept that shape — a future chooser screen reuses it rather than
+  copying it).
+  Headed by the **logo** (the user-drawn SVG mark since 2026-08-18, cobalt with its aura
+  glow — language-neutral, and the app's ONE in-app branding spot), NOT a "select
+  language" title (the cards self-explain, and a title would have to guess the user's
+  language on the one screen where it is unknown). One MEMBER CARD per language (see the
+  instrument bullet above): the language's **native** name (`LANGS[].native`; never
+  translated) bold left, its code tag under it, the LED mosaic right. Today's status is
+  the thin **strip on the card's bottom edge** — absent = not started, partial =
+  progress on the ramp, full = solved / done for the day (the solve cobalt); the card's
+  aria-label speaks it. **A language card lands in the last-played MODE** and reads that
+  mode's status — the day the tap actually opens.
 - **UI chrome is localized + a11y'd (decided 2026-07-06):** `web/src/i18n.ts` holds every
   UI string in **en + fr** (`t(lang, key)`; the `satisfies` clause makes a missing
   translation a type error, so parity needs no test). Game screens resolve strings with
