@@ -12,6 +12,7 @@
     src/slug.ts               fold() — the slug/fold contract (byte-identical to slug())
     src/day.ts                the ONE 22:00-ET DST-correct game-day logic (client + server + publish)
     src/scores.ts             WORD_CLAIM_ZONE (web+backend) + VIEWER_IP_HEADER (infra+backend)
+    src/identity.ts           the #187 player key: secret format + publicId derivation (web+backend)
     src/types.ts              shared puzzle + score-API schema types (Puzzle, Hole, ScoreHistogram, …)
     src/heat.ts               the app's ONE weird→calm stop gradient: heatColor() + fixed-cap rankHeatColor()/HIT_HEAT_CAP (exponents, floating hits, loot, route rows) + progressHeatColor()/progressEmoji() (run rulers incl. the card, share-text emoji row, archive fills, chooser strips)
     src/shareCard.ts          the share-token codec (both modes), browser + Lambda
@@ -37,6 +38,11 @@
   drift is a 500 on every score POST that no local run can reproduce; the reason it is a
   stamped header rather than CloudFront's own `CloudFront-Viewer-Address` is recorded in
   the root `AGENTS.md`.
+- `src/identity.ts` is the ONE definition of the #187 player identity: the 32-hex secret
+  format the web generates/stores and the `publicId` derivation (first 10 bytes of
+  SHA-256(secret), base32) the backend keys every score row by. The web sends the secret,
+  the server derives — two implementations would fork one key into two identities, and
+  the derivation test pins a vector for exactly that reason.
 - `src/scores.ts` owns `WORD_CLAIM_ZONE` across the web's Word rules and the backend's
   #169 possible-score validation. The web may tune the field without regenerating an
   artifact, but the server must move/deploy with it so a real score is never rejected and

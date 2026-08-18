@@ -13,6 +13,7 @@
       hooks/useVocab.ts       fetch+cache the per-language existence Set (once per session)
       hooks/usePuzzle.ts      fetch the client-computed day's puzzle from the backend
       api.ts                  backend client: puzzleUrl/wordPuzzleUrl, 404->NO PUZZLE
+      identity.ts             the #187 player key: localStorage secret, generated on first need
       versionCheck.ts         stale-tab reload: __BUILD_ID__ vs /version.json on visibility flips
       i18n.ts                 UI chrome strings (en+fr), t(lang, key); parity type-enforced
       tutorial/               onboarding (#51/#155): Tutorial.tsx + data scripts/<lang>.ts
@@ -1595,7 +1596,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   submission for the whole session) and the
   `x-amz-content-sha256`
   hash of the exact body bytes it sends (`api.postScoreBody` — the root AGENTS.md's OAC
-  contract) — and the POST's response IS the histogram (one round trip on the happy path);
+  contract), plus the PLAYER KEY (#187, `src/identity.ts`): the localStorage secret
+  generated on this first need, sent in the body as the round's identity — the server
+  keys the day's one first-write-wins row by the publicId it derives from it — and the
+  POST's response IS the histogram (one round trip on the happy path);
   a round already submitted GETs the read-only twin on revisits. The `scoreSubmitted` flag
   persists ON the round (both round shapes, optional field — no store version bump), and is
   marked when the server reaches a **VERDICT** — accepted (2xx) or refused (4xx) alike,

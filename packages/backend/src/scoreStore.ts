@@ -1,4 +1,4 @@
-import type { ScoreMode } from './scoreBuckets';
+import type { ScoreMode } from './scoreLimits';
 
 export const SCORE_SUBMISSION_LIMIT = 5;
 export const SCORE_DEDUP_TTL_SECONDS = 48 * 60 * 60;
@@ -9,30 +9,48 @@ export interface ScoreKey {
   mode: ScoreMode;
 }
 
-export interface StoredHistogram {
-  buckets: number[];
-  total: number;
+// One recorded score per player per daily (#187): the row IS the population — the
+// histogram, the percentile and the future leaderboard (#190) are all reads of a day's
+// rows, so there is no second store to drift from.
+export interface ScoreRow {
+  publicId: string;
+  score: number;
 }
 
-export interface ScoreIncrement extends ScoreKey {
+// What one submission did:
+//   recorded — the row was written (and one IP allowance consumed);
+//   already_recorded — the player already has a row for this daily. First write wins:
+//     the daily cannot be replayed, so a second submission is never legitimate, and it
+//     consumes no IP allowance;
+//   capped — the hashed IP's volume allowance is exhausted; nothing changed.
+export type ScoreSubmitOutcome = 'recorded' | 'already_recorded' | 'capped';
+
+export interface ScoreSubmission extends ScoreKey {
+  publicId: string;
+  score: number;
+  submittedAt: string;
   ipHash: string;
-  bucket: number;
-  bucketCount: number;
   expiresAt: number;
   requestToken: string;
 }
 
 export interface ScoreStore {
-  get(key: ScoreKey, bucketCount: number): Promise<StoredHistogram>;
-  // The dedup cap and aggregate increment are one atomic decision. false means the IP's
-  // allowance is exhausted and no bucket changed.
-  increment(input: ScoreIncrement): Promise<boolean>;
+  // The whole day partition — small by construction (one row per player per daily).
+  list(key: ScoreKey): Promise<ScoreRow[]>;
+  // The per-IP allowance and the row's first-write-wins condition are one atomic
+  // decision: a refused submission (either outcome) changes neither item.
+  submit(input: ScoreSubmission): Promise<ScoreSubmitOutcome>;
 }
 
-export function aggregateKey(key: ScoreKey): string {
+// Partition of a daily's score rows; the sort key is the row's publicId.
+export function dayKey(key: ScoreKey): string {
   return `score#${key.date}#${key.lang}#${key.mode}`;
 }
 
+// The dedup item keeps its own partition so a day Query never reads allowance items.
 export function dedupKey(key: ScoreKey, ipHash: string): string {
   return `dedup#${key.date}#${key.lang}#${key.mode}#${ipHash}`;
 }
+
+// The table now has a composite key, so single items carry a constant sort key.
+export const DEDUP_SORT_KEY = 'dedup';

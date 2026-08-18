@@ -166,7 +166,9 @@ export function scoresUrl(lang: string, date: string, mode: Mode, base: string =
 }
 
 // Runtime shape check for the histogram response — the parsePuzzle contract: a truncated
-// or wrong-shaped body surfaces as a failure (silent, here), never as NaN bars.
+// or wrong-shaped body surfaces as a failure (silent, here), never as NaN bars. An EMPTY
+// bucket list is valid since #187 — the bands are derived from the day's recorded rows,
+// so a population of zero honestly has none.
 export function parseScoreHistogram(data: unknown): ScoreHistogram {
   if (!isRecord(data)) throw new Error('malformed histogram: not an object');
   const { buckets, total, bucket } = data;
@@ -176,8 +178,8 @@ export function parseScoreHistogram(data: unknown): ScoreHistogram {
   if (bucket !== null && (typeof bucket !== 'number' || !Number.isInteger(bucket))) {
     throw new Error('malformed histogram: "bucket" must be an integer or null');
   }
-  if (!Array.isArray(buckets) || buckets.length === 0) {
-    throw new Error('malformed histogram: "buckets" must be a non-empty array');
+  if (!Array.isArray(buckets)) {
+    throw new Error('malformed histogram: "buckets" must be an array');
   }
   for (const b of buckets) {
     if (
@@ -203,7 +205,7 @@ export function parseScoreHistogram(data: unknown): ScoreHistogram {
 // after hashing (the root AGENTS.md records this as a hard contract).
 export async function postScoreBody(
   url: string,
-  body: { score: number; turnstileToken: string },
+  body: { secret: string; score: number; turnstileToken: string },
 ): Promise<Response> {
   const bytes = new TextEncoder().encode(JSON.stringify(body));
   const digest = await crypto.subtle.digest('SHA-256', bytes);

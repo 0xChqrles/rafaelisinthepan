@@ -16,10 +16,11 @@
       handler.ts              createHandler() — the ONE day/404/CORS/Puzzle logic (Lambda + local)
       store.ts                PuzzleStore interface (date+lang -> Puzzle | null)
       s3Store.ts, fsStore.ts  store impls: S3 (prod) and local FS (#17), both read the same key
-      scores.ts               /scores GET+POST route: params, Turnstile, range, HMAC, response
-      scoreBuckets.ts         fixed per-mode ranges + puzzle-aware possible-score limits
-      scoreStore.ts           score storage contract; aggregate/dedup keys + 5/48h constants
-      dynamoScoreStore.ts     prod atomic transaction + strongly-consistent histogram read
+      scores.ts               /scores GET+POST route: params, auth (publicId), Turnstile,
+                              range, HMAC, derived histogram, response
+      scoreLimits.ts          puzzle-aware possible-score limits (per-mode ceilings)
+      scoreStore.ts           score storage contract; day/dedup keys + 5/48h constants
+      dynamoScoreStore.ts     prod atomic transaction + strongly-consistent day-partition Query
       memoryScoreStore.ts     process-local implementation for backend:dev/tests
       turnstile.ts            Cloudflare Siteverify + explicit local accept-all verifier
       layout.ts               storeKey() — the <date>.<lang>.json key shared by readers + publish (#17/#4)
@@ -47,23 +48,31 @@ pnpm backend:dev                # local server (puzzles + /scores + /today) on :
 
 *(Safe to update without touching the invariants above.)*
 
-- **Anonymous score collection (#169):** the ONE handler serves
+- **Score collection (#169; per-player rows + identity #187):** the ONE handler serves
   `GET|POST /scores?lang=&date=&mode=sentence|word`; `mode` is mandatory. A successful
-  response is `{ buckets: [{ min, max, count }], total, bucket }`, inclusive ranges;
-  `bucket` is the submitted score's index on POST and `null` on GET (a revisiting client
-  already knows its persisted score). Every response is `no-store`. POST requires an
-  integer score + nonempty Turnstile token, uses one Cloudflare Siteverify call, reads the
-  published puzzle, and rejects an impossible score (sentence: 1..the exact committed
-  language vocab size; Word: 0..the artifact's distinct ranks inside shared
-  `WORD_CLAIM_ZONE`). It HMACs the trusted client address — read from shared
-  `VIEWER_IP_HEADER`, which a CloudFront viewer-request function stamps (see the root
-  `AGENTS.md` for why the origin-request policy cannot carry it) — and hands only the digest
-  to `ScoreStore`. A value that is not a bare IP is no identity at all: `clientIp` returns
-  null and the POST fails rather than dedup a submission under a parsed fragment. `dynamoScoreStore` transactionally increments a conditional
-  5-count/48h-TTL dedup item and the aggregate bucket+total, using a hash of the one-use
-  token as DynamoDB's idempotency token; its following consistent read guarantees the
-  returned histogram includes the caller. The sixth write is a no-mutation 429. Local
-  serve swaps in `memoryScoreStore`, a random per-process HMAC key and
+  response is `{ buckets: [{ min, max, count }], total, bucket }`, inclusive ranges
+  **derived at read time from the day's per-player rows** (one exact ascending band per
+  distinct recorded score; an empty population is `buckets: []`); `bucket` is the
+  caller's RECORDED score's index on POST and `null` on GET (a revisiting client already
+  knows its persisted score). Every response is `no-store`. POST takes
+  `{ secret, score, turnstileToken }`: it authenticates by deriving the publicId from
+  the player key (shared `identity.ts` — a malformed key is a 400, nothing secret is
+  ever stored), requires an integer score + nonempty Turnstile token, uses one
+  Cloudflare Siteverify call, reads the published puzzle, and rejects an impossible
+  score (sentence: 1..the exact committed language vocab size; Word: 0..the artifact's
+  distinct ranks inside shared `WORD_CLAIM_ZONE`). It HMACs the trusted client address —
+  read from shared `VIEWER_IP_HEADER`, which a CloudFront viewer-request function stamps
+  (see the root `AGENTS.md` for why the origin-request policy cannot carry it) — and
+  hands only the digest to `ScoreStore`. A value that is not a bare IP is no identity at
+  all: `clientIp` returns null and the POST fails rather than dedup a submission under a
+  parsed fragment. `dynamoScoreStore` writes ONE transaction — the conditional
+  5-count/48h-TTL dedup update plus the first-write-wins conditional put of the
+  `(date, lang, mode, publicId)` row — using a hash of the one-use token as DynamoDB's
+  idempotency token; its following strongly-consistent day-partition Query guarantees
+  the returned histogram includes the caller. A second submission from the same player
+  is `already_recorded`: nothing changes, no allowance is consumed, and the 200 reports
+  the STORED row's standing. The sixth distinct-player write per IP is a no-mutation
+  429. Local serve swaps in `memoryScoreStore`, a random per-process HMAC key and
   `localTurnstileVerifier`; restart clears local scores. Production config requires
   `SCORE_TABLE`, `TURNSTILE_SECRET_PARAMETER`, and `IP_HMAC_SECRET_PARAMETER` in addition
   to the puzzle settings. On first use, `index.ts` resolves both SecureStrings with ONE

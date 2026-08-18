@@ -8,3 +8,4 @@ export * from './heat';
 export * from './cardSvg';
 export * from './day';
 export * from './scores';
+export * from './identity';

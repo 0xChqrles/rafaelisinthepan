@@ -1,74 +1,105 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  GetItemCommand,
+  QueryCommand,
   TransactWriteItemsCommand,
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
 import { dynamoScoreStore } from './dynamoScoreStore';
-import { SCORE_SUBMISSION_LIMIT, type ScoreIncrement, type ScoreKey } from './scoreStore';
+import { SCORE_SUBMISSION_LIMIT, type ScoreKey, type ScoreSubmission } from './scoreStore';
 
 const KEY: ScoreKey = { date: '2026-08-13', lang: 'fr', mode: 'word' };
-const INCREMENT: ScoreIncrement = {
+const SUBMISSION: ScoreSubmission = {
   ...KEY,
+  publicId: 'lfd5pqz5pa7zjm5u',
+  score: 12,
+  submittedAt: '2026-08-13T14:00:00.000Z',
   ipHash: 'abcdef0123456789',
-  bucket: 3,
-  bucketCount: 13,
   expiresAt: 1_800_000_000,
   requestToken: '0123456789abcdef0123456789abcdef0123',
 };
 
-describe('dynamoScoreStore', () => {
-  it('reads one aggregate item consistently and expands absent counters to zero', async () => {
+describe('dynamoScoreStore (#187)', () => {
+  it('reads the whole day partition consistently, following pagination', async () => {
+    const pages = [
+      {
+        Items: [{ sk: { S: 'player-a' }, score: { N: '4' } }],
+        LastEvaluatedKey: { pk: { S: 'cursor' } },
+      },
+      { Items: [{ sk: { S: 'player-b' }, score: { N: '9' } }] },
+    ];
     const send = vi.fn(async (command: unknown) => {
-      expect(command).toBeInstanceOf(GetItemCommand);
-      return { Item: { b0: { N: '2' }, b2: { N: '4' }, total: { N: '6' } } };
+      expect(command).toBeInstanceOf(QueryCommand);
+      return pages.shift()!;
     });
     const store = dynamoScoreStore({ send } as unknown as DynamoDBClient, 'scores');
-    await expect(store.get(KEY, 4)).resolves.toEqual({ buckets: [2, 0, 4, 0], total: 6 });
-    const input = (send.mock.calls[0][0] as GetItemCommand).input;
-    expect(input).toMatchObject({
+    await expect(store.list(KEY)).resolves.toEqual([
+      { publicId: 'player-a', score: 4 },
+      { publicId: 'player-b', score: 9 },
+    ]);
+    expect(send).toHaveBeenCalledTimes(2);
+    const first = (send.mock.calls[0][0] as QueryCommand).input;
+    expect(first).toMatchObject({
       TableName: 'scores',
       ConsistentRead: true,
-      Key: { pk: { S: 'score#2026-08-13#fr#word' } },
+      KeyConditionExpression: '#pk = :pk',
+      ExpressionAttributeValues: { ':pk': { S: 'score#2026-08-13#fr#word' } },
     });
+    expect(first.ExclusiveStartKey).toBeUndefined();
+    const second = (send.mock.calls[1][0] as QueryCommand).input;
+    expect(second.ExclusiveStartKey).toEqual({ pk: { S: 'cursor' } });
   });
 
-  it('atomically updates the capped dedup item and aggregate bucket in one transaction', async () => {
+  it('atomically writes the capped dedup item and the first-write-wins row in one transaction', async () => {
     const send = vi.fn(async (_command: unknown) => ({}));
     const store = dynamoScoreStore({ send } as unknown as DynamoDBClient, 'scores');
-    await expect(store.increment(INCREMENT)).resolves.toBe(true);
+    await expect(store.submit(SUBMISSION)).resolves.toBe('recorded');
 
     const command = send.mock.calls[0][0] as TransactWriteItemsCommand;
     expect(command).toBeInstanceOf(TransactWriteItemsCommand);
-    expect(command.input.ClientRequestToken).toBe(INCREMENT.requestToken);
+    expect(command.input.ClientRequestToken).toBe(SUBMISSION.requestToken);
     expect(command.input.TransactItems).toHaveLength(2);
-    const [dedup, aggregate] = command.input.TransactItems!;
+    const [dedup, row] = command.input.TransactItems!;
     expect(dedup.Update).toMatchObject({
       TableName: 'scores',
-      Key: { pk: { S: `dedup#2026-08-13#fr#word#${INCREMENT.ipHash}` } },
+      Key: {
+        pk: { S: `dedup#2026-08-13#fr#word#${SUBMISSION.ipHash}` },
+        sk: { S: 'dedup' },
+      },
       ConditionExpression: 'attribute_not_exists(#count) OR #count < :limit',
       ExpressionAttributeValues: {
         ':limit': { N: String(SCORE_SUBMISSION_LIMIT) },
-        ':expiresAt': { N: String(INCREMENT.expiresAt) },
+        ':expiresAt': { N: String(SUBMISSION.expiresAt) },
       },
     });
-    expect(aggregate.Update).toMatchObject({
-      Key: { pk: { S: 'score#2026-08-13#fr#word' } },
-      UpdateExpression: 'ADD #bucket :one, #total :one',
-      ExpressionAttributeNames: { '#bucket': 'b3', '#total': 'total' },
+    expect(row.Put).toMatchObject({
+      TableName: 'scores',
+      Item: {
+        pk: { S: 'score#2026-08-13#fr#word' },
+        sk: { S: SUBMISSION.publicId },
+        score: { N: '12' },
+        submittedAt: { S: SUBMISSION.submittedAt },
+      },
+      ConditionExpression: 'attribute_not_exists(pk)',
     });
   });
 
-  it('maps only the cap condition failure to false and rethrows operational cancellations', async () => {
-    const capped = vi.fn(async () => {
-      throw {
-        name: 'TransactionCanceledException',
-        CancellationReasons: [{ Code: 'ConditionalCheckFailed' }, { Code: 'None' }],
-      };
-    });
-    await expect(
-      dynamoScoreStore({ send: capped } as unknown as DynamoDBClient, 'scores').increment(INCREMENT),
-    ).resolves.toBe(false);
+  it('maps each condition failure to its outcome and rethrows operational cancellations', async () => {
+    const outcomes: Array<[reasons: { Code?: string }[], expected: string]> = [
+      // The IP allowance is exhausted; the row condition never evaluated against a row.
+      [[{ Code: 'ConditionalCheckFailed' }, { Code: 'None' }], 'capped'],
+      // The player already has a row: first write wins, no allowance consumed.
+      [[{ Code: 'None' }, { Code: 'ConditionalCheckFailed' }], 'already_recorded'],
+      // Both failed: the existing row is the truer, idempotent answer.
+      [[{ Code: 'ConditionalCheckFailed' }, { Code: 'ConditionalCheckFailed' }], 'already_recorded'],
+    ];
+    for (const [reasons, expected] of outcomes) {
+      const send = vi.fn(async () => {
+        throw { name: 'TransactionCanceledException', CancellationReasons: reasons };
+      });
+      await expect(
+        dynamoScoreStore({ send } as unknown as DynamoDBClient, 'scores').submit(SUBMISSION),
+      ).resolves.toBe(expected);
+    }
 
     const conflict = new Error('transaction conflict');
     Object.assign(conflict, {
@@ -79,7 +110,7 @@ describe('dynamoScoreStore', () => {
       throw conflict;
     });
     await expect(
-      dynamoScoreStore({ send: failing } as unknown as DynamoDBClient, 'scores').increment(INCREMENT),
+      dynamoScoreStore({ send: failing } as unknown as DynamoDBClient, 'scores').submit(SUBMISSION),
     ).rejects.toBe(conflict);
   });
 });

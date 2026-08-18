@@ -14,6 +14,7 @@ vi.mock('../api', () => ({
   parseScoreHistogram: (data: unknown) => data,
 }));
 vi.mock('../turnstile', () => ({ turnstileToken: async () => 'token' }));
+vi.mock('../identity', () => ({ playerSecret: () => '00112233445566778899aabbccddeeff' }));
 
 describe('shareScoreFlight — one pending conversation per round', () => {
   it('shares pending work across callers and releases it after settlement', async () => {
@@ -69,6 +70,15 @@ describe('syncScore — the round spends its one submission on a verdict only', 
     const { markSubmitted, placement } = await submit(200, histogram);
     expect(markSubmitted).toHaveBeenCalledOnce();
     expect(placement).toEqual({ histogram, bucket: 0 });
+  });
+
+  it('authenticates the POST with the player key (#187) beside the score and token', async () => {
+    await submit(200, { buckets: [], total: 0, bucket: null });
+    expect(postScoreBody).toHaveBeenLastCalledWith('https://api.test/scores', {
+      secret: '00112233445566778899aabbccddeeff',
+      score: 7,
+      turnstileToken: 'token',
+    });
   });
 
   it('marks it submitted when the server REFUSES it — a refusal is an answer', async () => {

@@ -1,6 +1,7 @@
 // The solved screen's STANDING (#170): where a finished round's score sits in the day's
-// anonymous population (#169). The BACKEND owns the bucket edges — changing one changes
-// which DynamoDB counter a submission increments — so everything here reads the inclusive
+// anonymous population (#169). The BACKEND owns the bands — since #187 it derives them
+// from the day's per-player rows at read time (one exact inclusive range per distinct
+// recorded score) — so everything here reads the inclusive
 // ranges the API returned rather than restating them. What the WEB owns is the reading:
 // which bucket is the player's, how many players are strictly ahead of them, where the
 // midpoint of their shared bucket sits, and whether the population is big enough for a
@@ -26,8 +27,8 @@ export const PERCENT_MIN_RANK = 10;
 
 // Locate a score in the API's inclusive ranges — the GET path, where the server returns
 // `bucket: null` because a revisiting client already knows its persisted score. Null for
-// a score no range holds (a malformed histogram, or a stale score after an edge retune):
-// the standing then simply isn't drawn rather than lying.
+// a score no range holds (a malformed histogram, or a local score the population never
+// recorded, #187): the standing then simply isn't drawn rather than lying.
 export function bucketIndexOf(buckets: readonly ScoreHistogramBucket[], score: number): number | null {
   const index = buckets.findIndex(({ min, max }) => score >= min && score <= max);
   return index < 0 ? null : index;

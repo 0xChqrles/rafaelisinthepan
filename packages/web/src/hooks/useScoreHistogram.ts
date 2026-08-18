@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { dateForDayNumber, type ScoreHistogram } from '@whippin/shared';
 import { parseScoreHistogram, postScoreBody, scoresUrl } from '../api';
 import { bucketIndexOf, shouldSubmitScore } from '../game/scores';
+import { playerSecret } from '../identity';
 import { turnstileToken } from '../turnstile';
 import type { Mode } from '../langs';
 
@@ -73,7 +74,10 @@ export async function syncScore(
 ): Promise<ScorePlacement | null> {
   if (shouldSubmitScore(true, submitted)) {
     const token = await turnstileToken();
+    // The player key (#187) authenticates the write: the server derives the publicId
+    // from it and keys the round's ONE first-write-wins row by that identity.
     const response = await postScoreBody(scoresUrl(lang, date, mode), {
+      secret: playerSecret(),
       score,
       turnstileToken: token,
     });

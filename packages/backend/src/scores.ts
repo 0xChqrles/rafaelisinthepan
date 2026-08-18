@@ -1,19 +1,22 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { isIP } from 'node:net';
-import { VIEWER_IP_HEADER, dayNumber, type ScoreHistogram } from '@whippin/shared';
+import {
+  VIEWER_IP_HEADER,
+  dayNumber,
+  isValidSecret,
+  publicIdFromSecret,
+  type ScoreHistogram,
+} from '@whippin/shared';
 import { isValidDate } from './layout';
 import {
   SENTENCE_SCORE_MAX_BY_LANG,
-  histogramBuckets,
-  scoreBucket,
-  scoreRanges,
   sentenceScoreMaximum,
   wordScoreMaximum,
-  type ScoreMode,
-} from './scoreBuckets';
+} from './scoreLimits';
 import {
   SCORE_DEDUP_TTL_SECONDS,
   type ScoreKey,
+  type ScoreRow,
   type ScoreStore,
 } from './scoreStore';
 import { errorResponse, json, type FnUrlEvent, type FnUrlResult } from './respond';
@@ -33,12 +36,12 @@ export interface ScoreHandlerDeps {
   // requestContext.sourceIp is CloudFront's edge, not the viewer.
   allowSourceIp?: boolean;
   // Are the verifier's tokens SINGLE-USE? A real Turnstile token is, which is what makes
-  // its hash a perfect idempotency key (see the increment below). The LOCAL accept-all
+  // its hash a perfect idempotency key (see the submission below). The LOCAL accept-all
   // verifier's are not — Cloudflare's always-passing test site key hands the browser the
   // same dummy token on every challenge — so hashing it collapses every local submission
   // of the day onto ONE key: the first is recorded and every later one is waved through
-  // as a replay, leaving a laptop's histogram permanently reading zero. Local serve sets
-  // this false and gets a fresh idempotency token per request instead.
+  // as a replay. Local serve sets this false and gets a fresh idempotency token per
+  // request instead.
   singleUseTokens?: boolean;
 }
 
@@ -78,12 +81,23 @@ function bodyOf(event: FnUrlEvent): unknown {
   return JSON.parse(body) as unknown;
 }
 
-function histogram(
-  mode: ScoreMode,
-  stored: { buckets: readonly number[]; total: number },
-  bucket: number | null,
-): ScoreHistogram {
-  return { buckets: histogramBuckets(mode, stored.buckets), total: stored.total, bucket };
+// The histogram is DERIVED from the day's per-player rows at read time (#187): one bucket
+// per distinct recorded score, ascending, each an exact inclusive range. The rows are a
+// strict superset of the retired bucket counters, so the response shape the solved screen
+// consumes (#170/#176/#180) is unchanged — only the numbers' origin moved. `own` locates
+// the caller's recorded score on POST; GET passes null (a revisiting client already knows
+// its persisted score and locates it in the ranges itself).
+export function derivedHistogram(rows: readonly ScoreRow[], own: number | null): ScoreHistogram {
+  const counts = new Map<number, number>();
+  for (const row of rows) counts.set(row.score, (counts.get(row.score) ?? 0) + 1);
+  const scores = [...counts.keys()].sort((a, b) => a - b);
+  const buckets = scores.map((score) => ({
+    min: score,
+    max: score,
+    count: counts.get(score)!,
+  }));
+  const index = own == null ? -1 : scores.indexOf(own);
+  return { buckets, total: rows.length, bucket: index < 0 ? null : index };
 }
 
 export async function handleScores(
@@ -138,6 +152,7 @@ export async function handleScores(
 
   const key: ScoreKey = { date, lang, mode };
   let score: number | undefined;
+  let secret: string | undefined;
   let turnstileToken: string | undefined;
   let remoteIp: string | null = null;
 
@@ -162,6 +177,18 @@ export async function handleScores(
       return errorResponse(400, 'bad_request', 'Body field "score" must be an integer.', responseHeaders);
     }
     score = body.score;
+    // Authentication without accounts (#187): possession of the secret is the proof of
+    // ownership. The server DERIVES the public identity from it below and stores nothing
+    // secret — a malformed key is no identity at all.
+    if (!isValidSecret(body.secret)) {
+      return errorResponse(
+        400,
+        'bad_request',
+        'Body field "secret" must be the 32-hex-character player key.',
+        responseHeaders,
+      );
+    }
+    secret = body.secret;
     if (
       typeof body.turnstileToken !== 'string' ||
       body.turnstileToken.length === 0 ||
@@ -197,10 +224,9 @@ export async function handleScores(
     );
   }
 
-  const ranges = scoreRanges(mode);
   if (method === 'GET') {
-    const stored = await deps.scoreStore.get(key, ranges.length);
-    return json(200, histogram(mode, stored, null), responseHeaders);
+    const rows = await deps.scoreStore.list(key);
+    return json(200, derivedHistogram(rows, null), responseHeaders);
   }
 
   // POST-only values were established above.
@@ -209,9 +235,8 @@ export async function handleScores(
     mode === 'word'
       ? wordScoreMaximum(wordPuzzle!)
       : sentenceScoreMaximum(lang, sentencePuzzle!);
-  const bucket = scoreBucket(mode, submittedScore);
   const minimum = mode === 'word' ? 0 : 1;
-  if (maximum == null || bucket == null || submittedScore < minimum || submittedScore > maximum) {
+  if (maximum == null || submittedScore < minimum || submittedScore > maximum) {
     return errorResponse(
       400,
       'invalid_score',
@@ -220,12 +245,14 @@ export async function handleScores(
     );
   }
 
+  const publicId = await publicIdFromSecret(secret!);
   const ipHash = hashClientIp(remoteIp!, deps.ipHmacSecret);
-  const accepted = await deps.scoreStore.increment({
+  const outcome = await deps.scoreStore.submit({
     ...key,
+    publicId,
+    score: submittedScore,
+    submittedAt: instant.toISOString(),
     ipHash,
-    bucket,
-    bucketCount: ranges.length,
     expiresAt: Math.floor(instant.getTime() / 1000) + SCORE_DEDUP_TTL_SECONDS,
     // DynamoDB ClientRequestToken permits 1–36 characters. This stores neither the
     // Turnstile token nor another user-linked value. Hashing the token is what makes a
@@ -237,7 +264,7 @@ export async function handleScores(
         ? randomUUID()
         : createHash('sha256').update(turnstileToken!).digest('hex').slice(0, 36),
   });
-  if (!accepted) {
+  if (outcome === 'capped') {
     return errorResponse(
       429,
       'submission_limit',
@@ -246,8 +273,14 @@ export async function handleScores(
     );
   }
 
-  // Strongly consistent in DynamoDB: this caller's committed increment is guaranteed to
-  // be present (and concurrent increments may already be present too).
-  const stored = await deps.scoreStore.get(key, ranges.length);
-  return json(200, histogram(mode, stored, bucket), responseHeaders);
+  // Strongly consistent: this caller's committed row is guaranteed present (and
+  // concurrent submissions may already be too). On `already_recorded` the FIRST write
+  // won, so the honest bucket is the STORED row's score — never the resubmission's,
+  // which changed nothing.
+  const rows = await deps.scoreStore.list(key);
+  const own =
+    outcome === 'recorded'
+      ? submittedScore
+      : rows.find((row) => row.publicId === publicId)?.score ?? null;
+  return json(200, derivedHistogram(rows, own), responseHeaders);
 }
