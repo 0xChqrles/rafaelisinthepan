@@ -28,8 +28,6 @@ import {
 import { t } from './i18n';
 import useToday from './hooks/useToday';
 import { streakPreviewFromSearch } from './dev/streakPreview';
-// This route's own header control. Decorative glyph; the button's aria-label names it.
-import QuestionIcon from './assets/icons/question.svg?react';
 
 export default function App() {
   const pathname = useLocation();
@@ -208,7 +206,9 @@ function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: st
         aria-label={t(lang, 'ariaHelp')}
         onClick={() => openTutorial('replay')}
       >
-        <QuestionIcon className="ui-icon" aria-hidden />
+        <span className="help-chip" aria-hidden="true">
+          ?
+        </span>
       </button>
     </>
   );

@@ -1023,6 +1023,14 @@ button * {
   letter-spacing: 0.1em;
   line-height: 1;
 }
+/* The help control is a bare `?` GLYPH (user-decided 2026-08-18, replacing the Lucide
+   circle-help — "terrible"): the mono's own question mark, the lang chip's sibling. */
+.help-chip {
+  font-family: var(--ui);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1;
+}
 /* The language chip and the contextual controls: one ink, the .home-btn opacity lift as
    the hover. */
 .lang-btn,
@@ -1034,19 +1042,17 @@ button * {
 /* The screen title ("ARCHIVE", "TUTORIAL") — lives in the top-LEFT status chip, the
    same corner the game gives its percentage (decided 2026-07-21; formerly absolutely
    centered). */
-/* A screen's NAME wears the board's one emphasis gesture — the INVERTED SELECTION BOX
-   (2026-08-18, the Zaki "Visuals." highlight / the portfolio's selected list row):
-   foreground ground, background type, dead sharp. Worn by ARCHIVE, TUTORIAL and the
+/* A screen's NAME as plain bold type (user-decided 2026-08-18, dropping the inverted
+   chip once the glass band arrived — a filled block INSIDE the band read heavy; the
+   inverted box stays the ACTIVE-TAB marker's alone). Worn by ARCHIVE, TUTORIAL and the
    modal titles alike (ModalHeader reuses this class). */
 .topbar-title {
   font-size: clamp(12px, 1.9vh, 14px);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--bg);
-  background: var(--fg);
-  padding: 5px 9px 4px;
-  border-radius: var(--r-sm);
+  color: var(--fg);
+  padding: 5px 4px 4px;
   text-shadow: none;
   font-variant-numeric: tabular-nums;
 }
@@ -1088,10 +1094,11 @@ button * {
    ten glyphs plus the group's own 24px of padding have to clear the four 38px controls
    opposite. At 320px that leaves ~132px, so the mobile step below is 10px with no tracking
    (exactly 100px of ink) — measured at 320/360/390/430. */
-/* The date wears the same inverted chip as the screen titles (user-decided 2026-08-18:
-   "generalize this for the date") — and since the header finalization the chip IS the
-   ARCHIVE BUTTON: tap the day to change the day (see PuzzleDate). The ▾ tick carries
-   the affordance. */
+/* The date, plain bold type like the screen titles (one left-corner treatment; both
+   dropped the inverted fill 2026-08-18 with the glass band — the box is the active
+   tab's alone now) — and the chip IS the ARCHIVE BUTTON: tap the day to change the day
+   (see PuzzleDate). The ▾ tick carries the affordance; hover gets the header's own
+   whisper chip. */
 .puzzle-date {
   display: inline-flex;
   align-items: center;
@@ -1101,18 +1108,18 @@ button * {
   line-height: 1;
   font-weight: 700;
   letter-spacing: 0.04em;
-  color: var(--bg);
-  background: var(--fg);
+  color: var(--fg);
+  background: transparent;
   border: 0;
-  padding: 5px 8px 4px 9px;
+  padding: 5px 8px 4px 6px;
   border-radius: var(--r-sm);
   cursor: pointer;
   text-shadow: none;
   font-variant-numeric: tabular-nums;
-  transition: filter 0.08s linear;
+  transition: background-color 0.1s linear;
 }
 .puzzle-date:hover {
-  filter: brightness(0.88);
+  background: rgba(244, 241, 232, 0.06);
 }
 .pd-tick {
   font-size: 8px;

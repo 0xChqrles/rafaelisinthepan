@@ -234,10 +234,12 @@ These are decided and verified against the code. Treat them as load-bearing.
       keys' own; the plate hides with the phone's full-bleed keyboard. The keys' pixel
       glyphs and all key LOGIC are untouched.
     - **The INVERTED SELECTION BOX is the one emphasis gesture** (the board's
-      highlighted headline word / selected list row): screen titles (`.topbar-title` —
-      ARCHIVE, TUTORIAL, the modal titles) AND the sentence game's date chip
-      (`.puzzle-date`, user-decided 2026-08-18: the header's left corner is ONE
-      treatment) are fg-filled chips with bg type; the result action INVERTS on hover;
+      highlighted headline word / selected list row) — and in the HEADER it is the
+      ACTIVE TAB'S ALONE (user-decided 2026-08-18, third pass: with the glass band up,
+      the filled title/date chips read heavy, so `.topbar-title` and `.puzzle-date`
+      are plain bold foreground type now — one left-corner treatment still, just
+      unfilled; the date keeps its ▾ and a whisper-chip hover as the archive-button
+      affordance). Elsewhere it stands: the result action INVERTS on hover;
       the invite title's last word sits in an `.invite-mark` box (Invite splits the
       localized copy on the final space, pulling one more token in when the tail is
       bare punctuation — French's ` ?`). **The PRIMARY BUTTONS are DEVICE CARDS**
@@ -2053,7 +2055,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     and `id`/`data-name` (Illustrator layer junk). This is what "remove the useless
     attributes" means for any new icon.
   - **TWO icon families since 2026-08-18, one per type voice.** CHROME icons (header +
-    modal controls: calendar, circle-help, x, fast-forward, languages) are **LUCIDE
+    modal controls: calendar, x, fast-forward; circle-help was replaced 2026-08-18 by a
+    bare `?` TEXT glyph — `.help-chip`, the lang chip's sibling — and question.svg is
+    deleted; languages.svg left with the FR chip) are **LUCIDE
     icons** (ISC; user-picked the same day) restated in the repo's own dress as the
     **`.ui-icon` stroke set** — `viewBox="0 0 24 24"`, `fill="none"`,
     `stroke="currentColor"`, `stroke-width="1.8"` (Lucide's 2 thinned to match the
