@@ -566,9 +566,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   because it is a POSTURE and not motion. All of this is the screen being alive while the
   player THINKS; it is deliberately separate from the guess FEEDBACK, which is what the
   screen says back when they ACT (the slash, below).
-  **The TIMER is the HUD and the SCORE is the watermark.** The clock takes the header's
-  status corner (where the sentence game puts its date chip) at 34px — the one live
-  number on the screen — and the count becomes the big `CellDigits` watermark behind the
+  **The TIMER sits UNDER THE WORD and the SCORE is the watermark (clock placement
+  user-decided 2026-08-18, superseding the header corner: the header's left slot went to
+  the date chip / archive entry, and the clock — in the PIXEL face now, like every number
+  the game produces — lives in `.word-clock` right under the day's word, where the
+  playing eye already is; the gate previews it there, and the post-mortem mounts no clock
+  at all).** And the count becomes the big `CellDigits` watermark behind the
   word (`.word-anchor`, the standing watermark rule: what is displayed better later, since
   the count is this mode's end-screen headline). **That watermark is sized for at least TWO
   digits whatever it currently reads** (`MIN_SIZED_DIGITS`, decided 2026-08-09) — a rule of
@@ -1267,6 +1270,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   Reduced-motion hides it; the static fill + aria-label carry the status, and the solved
   day number switches from `--fg` to `--bg` so its small text keeps normal-text contrast
   against the exposed cobalt fill.
+  **The grid is a FIXED SIX WEEKS (user-decided 2026-08-18): `monthGrid` pads to 42
+  cells, so a 4-week February and a 6-week month stand the same height and paging never
+  moves the calendar.**
   The calendar itself is **vertically centered** (`.archive` flex column, top padding
   clears the fixed header). **The live streak stat moved out of the archive body and into
   the shared `TopBar` (decided 2026-07-11):** immediately right of the language control it is
@@ -1866,10 +1872,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   top). THREE explicit grid slots (`1fr auto 1fr`, columns assigned by class so a
   missing slot never shifts its neighbours; ModalHeader reuses the classes with no
   centre):
-  - **LEFT, the status spot**: the sentence game's DATE CHIP — which **IS the ARCHIVE
+  - **LEFT, the status spot**: the DATE CHIP in BOTH games — which **IS the ARCHIVE
     ENTRY** since the finalization (`PuzzleDate` is a button to `pathForArchive`; "tap
     the day to change the day", the ▾ tick carries the affordance; the standalone
-    calendar icon is deleted) — or Word mode's clock, or a screen's title chip.
+    calendar icon is deleted; Word mode joined the same day its clock moved down under
+    the word) — or a screen's title chip.
   - **CENTER, the SEGMENTED MODE SWITCHER** (`components/ModeTabs`): both dailies,
     active one in the inverted selection box — and WEIGHT is the state (430 resting,
     700 in the box; the mono's fixed advance means the swap moves nothing). The band's
@@ -1878,9 +1885,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     for the app's most frequent navigation (and fixing what killed the 2026-08-06
     toggle: these tabs show BOTH modes and mark the current one). The route builds it
     so it owns where a tap lands: the game routes to the other mode's today, the
-    ARCHIVE to the other mode's calendar — which is also how Word mode's archive stays
-    reachable with the clock holding word screens' left slot. A third daily is one more
-    segment.
+    ARCHIVE to the other mode's calendar. A third daily is one more segment.
   - **RIGHT**: the language CODE chip (`FR`/`EN`, `LangButton` — two mono letters, no
     fill, replacing the languages glyph; still the one gesture onto /select) then the
     screen's contextual controls (help `?`, skip, close). **The logo LEFT the header**
