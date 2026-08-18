@@ -3448,10 +3448,9 @@ button * {
    HUD (progress bar) shrinks with it. */
 .tutorial {
   max-width: 680px;
-  /* Clear the floating chip row + coach box, so the centered word never rides under
-     them. Tracks the coach's height: 64px top + 3 lines + its padding + a breath
-     (retuned with the 19px coach type, 2026-08-18). */
-  padding-top: 216px;
+  /* Clear the band + coach box, so the centered word never rides under them. Tracks
+     the coach's height: 78px top + 3 lines + its padding + a breath. */
+  padding-top: 230px;
 }
 
 /* The concept stage is CLEAN: explanation on top, ONE big centered word in the
@@ -3476,7 +3475,9 @@ button * {
    words inside it stay pixel (below). */
 .coach {
   position: fixed;
-  top: 64px; /* below the floating chip row (both stages — no bar row anymore) */
+  /* A clear breath under the glass band (its desktop bottom edge is 8 + 50 = 58px;
+     walked down from 64 on user review 2026-08-18 — "a bit too close to the header"). */
+  top: 78px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 120;
@@ -3721,7 +3722,7 @@ button * {
 @media (max-width: 640px) {
   .coach {
     padding: 12px 14px;
-    top: 56px; /* below the compact floating chip row (both stages) */
+    top: 64px; /* a breath under the phone's 48px full-bleed band */
   }
   .coach-rules {
     padding: 12px 14px;
@@ -3739,9 +3740,9 @@ button * {
     font-size: 14px; /* 3-line height scales with it (5.1em); the phone column is the
                         copy budget's own tuning width */
   }
-  /* Clear the compact chip row + coach (56px top + 3 lines + its padding + a breath). */
+  /* Clear the band + coach (64px top + 3 lines + its padding + a breath). */
   .tutorial {
-    padding-top: 172px;
+    padding-top: 180px;
   }
   /* The action button sits on the 14px page inset, not the keyboard's edge-to-edge hug, so
      like the solved results it gets +10px back over the keyboard's 4px bottom gap: bottom
