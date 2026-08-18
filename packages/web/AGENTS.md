@@ -267,17 +267,14 @@ These are decided and verified against the code. Treat them as load-bearing.
       on the right (`Chooser.cellsFor`, an FNV hash of the name; 8×3 cells lit in the
       card's ink — cobalt/violet/orange by nth-child). Decorative; the aria-label
       carries everything.
-  - **The RUN RULER is a FLAT RULE (user-decided 2026-08-18, superseding the gradient
-    filament of the same day, which superseded the per-try cells):** one solid sharp
-    `--surface-hover` bar, 16px tall, no radius, no gradient, no bloom — the solve
-    TICKS and their pixel sentence indices are the information. **The per-try heat
-    colours left the on-screen ruler with the gradient**: the run's colour story lives
-    in the share card's cells and the emoji row (both unchanged — same
-    `progressHeatColor` data; the archive/chooser badges still read the ramp too). The
-    two reveal beats keep their timeline: `shown` wipes the bar in over `--sweep-ms` =
-    n × the same stagger the old per-cell delays used (resultAnimation and
-    `rulerStagger`'s reduced-motion zero untouched), `colorized` fades the ticks in on
-    their column delays.
+  - **The RUN RULER kept its PER-TRY STEPPED CELLS (settled 2026-08-18 after a round
+    trip):** a gradient-filament version and then a colourless flat rule each lived for
+    part of the day and both were rejected — "remove the gradient, put back the old
+    step by step colors" — so the drawing is the original: one flat cell per counted
+    try at that try's `progressHeatColor`, dead sharp, 16px, revealed by the per-cell
+    show/colorize delays. What SURVIVES from the detour is the ticks' sentence indices
+    in the PIXEL face. The bar therefore still matches the share card's stepped cells
+    exactly.
 - **A RANK IS WRITTEN BARE — no leading minus, anywhere (user-decided 2026-08-16).** A rank
   is a DISTANCE, and a distance is not negative; `sailor^87`, not `sailor^-87`. This is the
   app's ONE way of writing a rank, so it holds on every surface that shows one: the hole's

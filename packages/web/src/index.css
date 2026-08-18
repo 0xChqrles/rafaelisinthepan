@@ -1909,14 +1909,12 @@ button * {
   color: var(--fg);
   opacity: 0.8;
 }
-/* Run ruler — a FLAT RULE since 2026-08-18 (user-decided, superseding the gradient
-   filament): one solid bar, dead sharp, taller — a ruler, not a lightstrip — with the
-   solve TICKS and their sentence indices as the information (the per-try heat colours
-   left with the gradient; the run's colour story lives in the share card's cells and
-   the emoji row now). The reveal keeps its two beats: `.shown` wipes the bar in
-   left-to-right over `--sweep-ms` (RunRuler derives it from the same stagger the old
-   per-cell delays used, so resultAnimation and rulerStagger's reduced-motion zero are
-   untouched), `.colorized` fades the ticks in on their column delays. */
+/* Run ruler — the PER-TRY STEPPED CELLS, restored 2026-08-18 (the gradient filament
+   built that day read as a lightstrip and its flat-rule replacement lost the colours —
+   "put back the old step by step colors"): one flat cell per counted try at that try's
+   `progressHeatColor`, dead sharp, 16px tall, with the white solve TICKS and their
+   pixel sentence indices. The two reveal beats are the original per-cell delays:
+   `.shown` staggers the neutral cells in, `.colorized` chases them with the colours. */
 .run-ruler {
   width: 100%;
   /* Symmetric block padding: the bottom lane holds the tick numbers, the matching top
@@ -1929,26 +1927,32 @@ button * {
 }
 .run-bar {
   position: relative;
+  display: flex;
   height: 16px;
 }
-.run-track {
-  position: absolute;
-  inset: 0;
-  background: var(--surface-hover);
-  clip-path: inset(0 100% 0 0);
-  transition: clip-path var(--sweep-ms, 0ms) linear;
+.run-cell {
+  flex: 1 1 0;
+  image-rendering: pixelated;
+  opacity: 0;
+  background-color: var(--surface-hover);
+  transition:
+    opacity 1ms linear var(--show-delay, 0ms),
+    background-color 1ms linear var(--color-delay, 0ms);
 }
-.run-ruler.shown .run-track {
-  clip-path: inset(0 0 0 0);
+.run-ruler.shown .run-cell {
+  opacity: 1;
 }
-/* A solve moment: the tick sits on the RIGHT edge of the solving try's slice (the state
-   after that guess), overhanging the bar like a ruler mark; it fades in when its column
-   delay lands. Several secrets dropped by one guess stack their indices vertically
-   under the single shared tick. */
+.run-ruler.colorized .run-cell {
+  background-color: var(--cell-color);
+}
+/* A solve moment: the tick sits on the RIGHT edge of the solving try's cell (the state
+   after that guess), overhanging the bar like a ruler mark; it fades in when the
+   colorize wave reaches its column. Several secrets dropped by one guess stack their
+   indices vertically under the single shared tick. */
 .run-tick {
   position: absolute;
-  top: -4px;
-  bottom: -4px;
+  top: -3px;
+  bottom: -3px;
   left: calc(var(--at) / var(--n) * 100%);
   width: 2px;
   transform: translateX(-50%);
