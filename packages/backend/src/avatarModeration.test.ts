@@ -2,14 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { AVATAR_CELLS, AVATAR_SIZE } from '@whippin/shared';
 import { containsSwastika } from './avatarModeration';
 
-// Build the 10×10 cell array from row strings ('.' = background, any other char = that
-// ink digit, 'X' = ink 1).
+// Build the 10×10 cell array from row strings ('.' = background, 'X' = foreground).
 function grid(rows: string[]): number[] {
   const cells = new Array<number>(AVATAR_CELLS).fill(0);
   rows.forEach((row, r) => {
     [...row].forEach((char, c) => {
-      if (char === '.') return;
-      cells[r * AVATAR_SIZE + c] = char === 'X' ? 1 : Number(char);
+      if (char === 'X') cells[r * AVATAR_SIZE + c] = 1;
     });
   });
   return cells;
@@ -56,21 +54,14 @@ describe('avatar swastika detector (#188)', () => {
   });
 
   it('detects the carved (negative-space) symbol', () => {
-    const cells = new Array<number>(AVATAR_CELLS).fill(2);
+    const cells = new Array<number>(AVATAR_CELLS).fill(1);
     SWASTIKA.forEach((row, r) => {
       [...row].forEach((char, c) => {
         if (char === 'X') cells[(r + 2) * AVATAR_SIZE + c + 3] = 0;
       });
     });
-    // Blank template cells inside the window must be ink — they already are (fill 2).
+    // Blank template cells inside the window must be foreground — they already are.
     expect(containsSwastika(cells)).toBe(true);
-  });
-
-  it('detects the symbol drawn in mixed inks', () => {
-    const mixed = SWASTIKA.map((row, r) =>
-      [...row].map((char) => (char === 'X' ? String((r % 3) + 1) : '.')).join(''),
-    );
-    expect(containsSwastika(grid(placed(3, 2, mixed)))).toBe(true);
   });
 
   it('passes benign drawings', () => {

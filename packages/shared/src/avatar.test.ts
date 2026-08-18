@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   AVATAR_CELLS,
-  AVATAR_INKS,
   AVATAR_PALETTES,
   AVATAR_STRING_LENGTH,
   blankAvatar,
@@ -15,7 +14,7 @@ function randomCells(seed: number): number[] {
   let state = seed;
   return Array.from({ length: AVATAR_CELLS }, () => {
     state = (state * 1103515245 + 12345) & 0x7fffffff;
-    return state % (AVATAR_INKS + 1);
+    return state % 2;
   });
 }
 
@@ -29,16 +28,16 @@ describe('avatar codec (#188)', () => {
     }
   });
 
-  it('round-trips every cell value at every position', () => {
-    for (const value of [0, 1, 2, 3]) {
+  it('round-trips both cell values at every position', () => {
+    for (const value of [0, 1]) {
       const cells = new Array<number>(AVATAR_CELLS).fill(value);
       expect(decodeAvatar(encodeAvatar(0, cells)).cells).toEqual(cells);
     }
-    // A single ink in each corner survives at its exact position.
+    // A single foreground pixel in each corner survives at its exact position.
     const cells = new Array<number>(AVATAR_CELLS).fill(0);
     cells[0] = 1;
-    cells[9] = 2;
-    cells[90] = 3;
+    cells[9] = 1;
+    cells[90] = 1;
     cells[99] = 1;
     expect(decodeAvatar(encodeAvatar(0, cells)).cells).toEqual(cells);
   });
@@ -48,7 +47,8 @@ describe('avatar codec (#188)', () => {
     expect(() => encodeAvatar(-1, cells)).toThrow(/palette/);
     expect(() => encodeAvatar(AVATAR_PALETTES.length, cells)).toThrow(/palette/);
     expect(() => encodeAvatar(0, cells.slice(1))).toThrow(/100 cells/);
-    expect(() => encodeAvatar(0, [...cells.slice(1), 4])).toThrow(/cell value/);
+    // Two colours only: any value past the foreground is refused.
+    expect(() => encodeAvatar(0, [...cells.slice(1), 2])).toThrow(/cell value/);
     expect(() => encodeAvatar(0, [...cells.slice(1), -1])).toThrow(/cell value/);
   });
 
@@ -63,8 +63,8 @@ describe('avatar codec (#188)', () => {
   });
 
   it('rejects an unknown palette index carried by a well-formed string', () => {
-    // Byte 0 = 63 ('_' as the first char encodes its top 6 bits): craft a string whose
-    // first byte is beyond the palette list but whose shape is otherwise valid.
+    // '_' as the first char puts 63 in the palette byte's top bits — far past the list
+    // while the string's shape stays valid.
     const good = blankAvatar();
     const tampered = `_${good.slice(1)}`;
     expect(() => decodeAvatar(tampered)).toThrow(/palette/);
@@ -72,18 +72,20 @@ describe('avatar codec (#188)', () => {
 
   it('accepts only the canonical encoding of a drawing', () => {
     const encoded = blankAvatar();
-    // Set spare trailing bits in the last character: same bytes, different string.
-    const last = encoded[encoded.length - 1];
-    const tampered = `${encoded.slice(0, -1)}${last === 'A' ? 'B' : 'A'}`;
-    expect(() => decodeAvatar(tampered)).toThrow(/non-canonical|character/);
+    // Spare trailing base64 bits set: same bytes, different string.
+    const tampered = `${encoded.slice(0, -1)}B`;
+    expect(() => decodeAvatar(tampered)).toThrow(/non-canonical/);
+    // Spare BYTE bits set (the 4 bits past cell 99 in the last byte): 'AAAAAAAAAAAAAAAAABA'
+    // is bytes[13] = 0x10 — same 100 cells, different string.
+    expect(() => decodeAvatar('AAAAAAAAAAAAAAAAABA')).toThrow(/non-canonical/);
   });
 
-  it('pins the palette contract: at least 2 palettes, each with a bg and 3 inks', () => {
+  it('pins the palette contract: fg-only picker over one shared ground', () => {
     expect(AVATAR_PALETTES.length).toBeGreaterThanOrEqual(2);
     for (const palette of AVATAR_PALETTES) {
       expect(palette.bg).toMatch(/^#[0-9a-f]{6}$/);
-      expect(palette.inks).toHaveLength(3);
-      for (const ink of palette.inks) expect(ink).toMatch(/^#[0-9a-f]{6}$/);
+      expect(palette.fg).toMatch(/^#[0-9a-f]{6}$/);
+      expect(palette.fg).not.toBe(palette.bg);
     }
   });
 });

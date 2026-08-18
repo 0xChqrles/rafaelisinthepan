@@ -2,9 +2,9 @@ import { useMemo } from 'react';
 import { AVATAR_PALETTES, AVATAR_SIZE, decodeAvatar } from '@whippin/shared';
 
 // The #188 avatar, rendered from its encoded string as SVG — the moodboard's grid of
-// rounded squares over the palette's own ground: background cells in the palette's dark
-// tone, inked cells in its inks, soft gaps between them. One renderer for every surface
-// that shows a player (the editor's preview, and the #190 board rows).
+// rounded squares over the palette's own ground: two colours only, the palette's
+// background and its foreground, soft gaps between the cells. One renderer for every
+// surface that shows a player (the editor's preview, and the #190 board rows).
 //
 // Decorative by default — a board row's accessible name is the player's NAME; the
 // drawing is theirs to read visually.
@@ -47,7 +47,7 @@ export default function Avatar({ avatar, size = 40 }: { avatar: string; size?: n
             width={CELL - GAP}
             height={CELL - GAP}
             rx={RADIUS}
-            fill={palette.inks[value - 1]}
+            fill={palette.fg}
           />
         );
       })}

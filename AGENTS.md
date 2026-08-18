@@ -471,21 +471,26 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   handler reads (`id`), `x-amz-content-sha256` over the exact body bytes on a production
   POST. No Turnstile and no IP dedup here — the secret is the auth, and an overwritten
   own-row is not an attack surface.
-- **The avatar codec is a cross-package contract** (`shared/src/avatar.ts`): palette byte
-  + 100 cells at 2 bits/pixel (0 = background, 1..3 = the palette's inks) = 26 bytes,
-  base64url, exactly 35 chars, canonical-form-only decode. `AVATAR_PALETTES` sets BOTH
-  the background and the three inks (append-only — the byte is an index). The web encodes
-  and renders (SVG); the backend decodes to validate and moderate.
+- **The avatar is TWO COLOURS — a background and a foreground, nothing else
+  (user-decided 2026-08-19, superseding the 3-ink first cut), and its codec is a
+  cross-package contract** (`shared/src/avatar.ts`): palette byte + 100 cells at 1
+  bit/pixel = 14 bytes, base64url, exactly 19 chars, canonical-form-only decode.
+  `AVATAR_PALETTES` is a list of `{bg, fg}` pairs (append-only — the byte is an index)
+  over one shared ground, and **the picker shows only the foreground: you select a
+  colour, and that colour IS the palette.** The web encodes and renders (SVG); the
+  backend decodes to validate and moderate.
 - **Moderation is best-effort ON WRITE, by decided stance:** a normalized banned-strings
   name filter (`backend/src/nameFilter.ts`; name cap 16 code points, no control/format
   chars, empty allowed) and an exhaustive swastika template match over rotations,
   reflections, scales, positions and polarity (`backend/src/avatarModeration.ts`) — each
   rejecting with its own error code (`name_rejected` / `avatar_rejected`). Symbolic by
   design: the real containment is the friends graph (#189).
-- **The key backup affordance:** the profile editor (web `/profile` route; #190 wires it
-  into the leaderboard screen) shows the secret copyable, and pasting a key IS device
-  linking — `adoptPlayerSecret` replaces the device identity and the server-side data
-  follows the publicId automatically.
+- **The key backup affordance is DESIGNED but NOT SURFACED (user-decided 2026-08-19):**
+  the copyable-key/paste-to-link UI was removed from the profile editor (web `/profile`
+  route; #190 wires the editor into the leaderboard screen), and `adoptPlayerSecret`
+  went with it (no consumer). The decided remedy for a lost identity is still a
+  copyable-key backup that doubles as device linking — where that UI lives is an open
+  decision, not this editor.
 
 ---
 

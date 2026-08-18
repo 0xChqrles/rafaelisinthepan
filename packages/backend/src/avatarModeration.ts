@@ -86,8 +86,7 @@ function matchesAt(
   return true;
 }
 
-// `cells` is the decoded 10×10 grid (0 = background, 1..3 = inks). Any ink counts as
-// drawn — mixing the palette's inks still draws the shape.
+// `cells` is the decoded 10×10 grid (0 = background, non-zero = foreground).
 export function containsSwastika(cells: readonly number[]): boolean {
   for (const template of TEMPLATES) {
     const size = template.length;

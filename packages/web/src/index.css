@@ -4757,9 +4757,9 @@ button * {
 
 /* ===================== profile editor (#188) ===================== */
 /* The moodboard's avatar-creator card in the app's own dress: name up top, the 10×10
-   grid as the centrepiece, the brush + palette rows under it, SAVE, then the key block.
+   grid as the centrepiece, the foreground-colour palette row under it, then SAVE.
    Sharp radii (4px ceiling), glass + hairlines, mono chrome. The screen owns its
-   scroll — the stack outruns a short phone. */
+   scroll — the stack can outrun a short phone. */
 .profile-screen {
   width: min(400px, 100%);
   /* 100% (the .app padding box), never 100dvh: a taller child of a centering flex
@@ -4817,55 +4817,43 @@ button * {
   border-radius: var(--r-md);
   background: var(--cell-ghost);
 }
+/* The paint bump: a small one-shot swell on the cell that just changed, replayed by
+   remounting the cell keyed on its paint count. Subtle but present — it briefly
+   overlaps the 6px gap, which is what makes the press felt. A one-shot transform on a
+   plain colour tile (no type, no sprite), so the pixel-font scale rule doesn't apply;
+   reduced motion collapses the duration globally. */
+.avatar-editor-cell.bumped {
+  animation: cell-bump 180ms ease-out;
+}
+@keyframes cell-bump {
+  0% {
+    scale: 1;
+  }
+  40% {
+    scale: 1.22;
+  }
+  100% {
+    scale: 1;
+  }
+}
 
-/* The brush (three inks + eraser) and the palettes: flat swatches, hairline, the
-   selected one framed in foreground — the sharp selection language, no rings. */
-.profile-inks,
+/* The palettes, worn as their FOREGROUND colour: flat swatches, the selected one framed
+   in foreground — the sharp selection language, no rings. */
 .profile-palettes {
   display: flex;
   gap: 10px;
 }
-.profile-ink {
-  width: 38px;
-  height: 38px;
+.profile-palette {
+  /* Shrinks with the column (eight swatches must fit a 320px phone), capped at the
+     tuned size on anything wider. */
+  flex: 1 1 0;
+  max-width: 38px;
+  aspect-ratio: 1;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   cursor: pointer;
   padding: 0;
   transition: filter 0.08s linear, border-color 0.12s linear, box-shadow 0.12s linear;
-}
-.profile-ink:hover {
-  filter: brightness(1.15);
-}
-.profile-ink.sel {
-  border-color: var(--fg);
-  box-shadow: 0 0 0 1px var(--fg);
-}
-/* The eraser swatch is the palette's bare ground — a diagonal hairline says "nothing". */
-.profile-ink.erase {
-  background-image: linear-gradient(
-    135deg,
-    transparent 46%,
-    var(--line-strong) 46%,
-    var(--line-strong) 54%,
-    transparent 54%
-  );
-}
-.profile-palette {
-  flex: 1;
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  grid-auto-rows: 14px;
-  gap: 3px;
-  padding: 5px;
-  background: var(--glass);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  cursor: pointer;
-  transition: filter 0.08s linear, border-color 0.12s linear, box-shadow 0.12s linear;
-}
-.profile-palette i {
-  border-radius: var(--r-sm);
 }
 .profile-palette:hover {
   filter: brightness(1.15);
@@ -4890,91 +4878,4 @@ button * {
   text-transform: uppercase;
   text-align: center;
   color: var(--danger);
-}
-
-/* The key block: the backup (copyable) and the paste-to-link row. The key itself is
-   selectable as one token. */
-.profile-keys {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.profile-key-label {
-  font-family: var(--ui);
-  font-size: 11px;
-  font-weight: 550;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--fg);
-  opacity: 0.55;
-}
-.profile-key-row {
-  display: flex;
-  align-items: stretch;
-  gap: 10px;
-}
-.profile-key {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  font-family: var(--ui);
-  font-size: 12.5px;
-  letter-spacing: 0.08em;
-  color: var(--fg);
-  background: var(--glass);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  padding: 10px 12px;
-  overflow-wrap: anywhere;
-  user-select: all;
-  -webkit-user-select: all;
-}
-.profile-key-input {
-  flex: 1;
-  min-width: 0;
-  font-family: var(--ui);
-  font-size: 12.5px;
-  letter-spacing: 0.08em;
-  color: var(--fg);
-  background: var(--glass);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  padding: 10px 12px;
-  outline: none;
-  transition: border-color 0.12s linear;
-}
-.profile-key-input::placeholder {
-  color: var(--fg);
-  opacity: 0.35;
-  font-size: 10.5px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-.profile-key-input:focus {
-  border-color: var(--line-strong);
-}
-.profile-chip {
-  flex: none;
-  font-family: var(--ui);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--fg);
-  background: var(--glass);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-sm);
-  padding: 0 14px;
-  cursor: pointer;
-  text-shadow: none;
-  transition: filter 0.08s linear, border-color 0.12s linear;
-}
-.profile-chip:hover:not(:disabled) {
-  filter: brightness(1.3);
-  border-color: var(--fg);
-}
-.profile-chip:disabled {
-  opacity: 0.45;
-  cursor: default;
 }

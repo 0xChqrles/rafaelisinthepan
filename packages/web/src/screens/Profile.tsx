@@ -2,31 +2,29 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AVATAR_CELLS,
   AVATAR_PALETTES,
-  AVATAR_SIZE,
   decodeAvatar,
   encodeAvatar,
-  isValidSecret,
   publicIdFromSecret,
 } from '@whippin/shared';
 import { parseProfile, postProfileBody, profileUrl } from '../api';
-import { adoptPlayerSecret, playerSecret } from '../identity';
+import { playerSecret } from '../identity';
 import { resolveHomeLang } from '../langs';
 import { t } from '../i18n';
 import TopBar from '../components/TopBar';
 import { useGameStore } from '../state/gameStore';
 
-// The #188 profile editor: name, tap-to-paint 10×10 grid, palette picker (repaints
-// background + inks together), and the copyable key — the backup that doubles as device
-// linking (pasting a key on another device IS the same identity). Reached from the
+// The #188 profile editor: name, tap-to-paint 10×10 grid, and the foreground-colour
+// picker — each swatch IS a palette ({bg, fg} pair, user-decided 2026-08-19: two
+// colours, nothing else, the picker shows only the foreground). Reached from the
 // leaderboard screen once #190 lands; until then it lives at its own /profile route.
 //
-// Show-don't-tell throughout: the grid demonstrates itself under the finger, the palette
-// swatches show their colours, and the key row carries no explanatory paragraph.
+// Show-don't-tell throughout: the grid demonstrates itself under the finger and the
+// swatches show their colours — no explanatory copy anywhere.
 
 const NAME_MAX = 16;
 
 // An unpainted cell still reads as a tile (the moodboard's socket look): a light overlay
-// on a dark ground, a dark one on paper — decided by the palette's own luminance.
+// on a dark ground, a dark one on a light ground — decided by the palette's luminance.
 function ghostFor(bg: string): string {
   const v = parseInt(bg.slice(1), 16);
   const luma = ((v >> 16) & 255) * 0.299 + ((v >> 8) & 255) * 0.587 + (v & 255) * 0.114;
@@ -40,18 +38,16 @@ export default function Profile() {
   // No puzzle to take a language from: same resolution as the `/` redirect.
   const lang = resolveHomeLang(lastLang, navigator.language);
 
-  const [secret, setSecret] = useState(() => playerSecret());
+  const [secret] = useState(() => playerSecret());
   const [name, setName] = useState('');
   const [palette, setPalette] = useState(0);
   const [cells, setCells] = useState<number[]>(() => new Array<number>(AVATAR_CELLS).fill(0));
-  const [ink, setInk] = useState(1);
   const [save, setSave] = useState<SaveState>('idle');
-  const [copied, setCopied] = useState(false);
-  const [keyInput, setKeyInput] = useState('');
-  const [linked, setLinked] = useState(false);
+  // Per-cell paint counters: a painted cell remounts keyed on its count, replaying the
+  // bump animation — and ONLY a painted one, so loading a stored drawing bumps nothing.
+  const [bumps, setBumps] = useState<Record<number, number>>({});
 
-  // Load this identity's stored profile (also what makes pasting a key on a new device
-  // pull the avatar drawn on the old one). A 404 — never customized — keeps the blank
+  // Load this identity's stored profile. A 404 — never customized — keeps the blank
   // editor; any failure is silent, the editor still works.
   useEffect(() => {
     let cancelled = false;
@@ -59,16 +55,7 @@ export default function Profile() {
       try {
         const publicId = await publicIdFromSecret(secret);
         const response = await fetch(profileUrl(publicId));
-        if (cancelled) return;
-        if (response.status === 404) {
-          // This identity was never customized — a freshly LINKED key must show ITS
-          // (blank) profile, not the previous identity's drawing.
-          setName('');
-          setPalette(0);
-          setCells(new Array<number>(AVATAR_CELLS).fill(0));
-          return;
-        }
-        if (!response.ok) return;
+        if (!response.ok || cancelled) return;
         const profile = parseProfile(await response.json());
         const decoded = decodeAvatar(profile.avatar);
         if (cancelled) return;
@@ -84,15 +71,19 @@ export default function Profile() {
     };
   }, [secret]);
 
-  // ---- painting. One STROKE value per gesture: starting on a cell already holding the
-  // brush's ink erases (so tap toggles), and dragging paints that same value throughout.
+  // ---- painting. One STROKE value per gesture: starting on a painted cell erases (so
+  // tap toggles), and dragging paints that same value throughout.
   const strokeRef = useRef<number | null>(null);
   const paintAt = useCallback((element: Element | null) => {
     const raw = element instanceof HTMLElement ? element.dataset.cell : undefined;
     const stroke = strokeRef.current;
     if (raw === undefined || stroke === null) return;
     const index = Number(raw);
-    setCells((prev) => (prev[index] === stroke ? prev : prev.map((v, i) => (i === index ? stroke : v))));
+    setCells((prev) => {
+      if (prev[index] === stroke) return prev;
+      setBumps((b) => ({ ...b, [index]: (b[index] ?? 0) + 1 }));
+      return prev.map((v, i) => (i === index ? stroke : v));
+    });
     setSave('idle');
   }, []);
 
@@ -102,11 +93,11 @@ export default function Profile() {
       const target = e.target instanceof HTMLElement ? e.target : null;
       const raw = target?.dataset.cell;
       if (raw === undefined) return;
-      strokeRef.current = cells[Number(raw)] === ink ? 0 : ink;
+      strokeRef.current = cells[Number(raw)] === 1 ? 0 : 1;
       e.currentTarget.setPointerCapture(e.pointerId);
       paintAt(target);
     },
-    [cells, ink, paintAt],
+    [cells, paintAt],
   );
   const onPointerMove = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
@@ -142,26 +133,6 @@ export default function Profile() {
       setSave('error');
     }
   }, [secret, name, palette, cells]);
-
-  const onCopy = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(secret);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard denied: the key is on screen, selectable.
-    }
-  }, [secret]);
-
-  const linkableKey = keyInput.trim().toLowerCase();
-  const canLink = isValidSecret(linkableKey) && linkableKey !== secret;
-  const onLink = useCallback(() => {
-    if (!adoptPlayerSecret(linkableKey)) return;
-    setSecret(linkableKey);
-    setKeyInput('');
-    setLinked(true);
-    window.setTimeout(() => setLinked(false), 2000);
-  }, [linkableKey]);
 
   const saveLabel =
     save === 'saving'
@@ -219,54 +190,32 @@ export default function Profile() {
           >
             {cells.map((value, i) => (
               <div
-                // A cell's position is its identity.
-                // eslint-disable-next-line react/no-array-index-key
-                key={i}
-                className="avatar-editor-cell"
+                // The paint counter in the key remounts a painted cell, replaying the
+                // bump; the position keeps the identity.
+                key={`${i}:${bumps[i] ?? 0}`}
+                className={`avatar-editor-cell${bumps[i] ? ' bumped' : ''}`}
                 data-cell={i}
-                style={{
-                  background: value === 0 ? undefined : colors.inks[value - 1],
-                }}
+                style={{ background: value === 0 ? undefined : colors.fg }}
               />
             ))}
           </div>
 
-          {/* The brush: the palette's three inks + the eraser (background). */}
-          <div className="profile-inks" role="radiogroup" aria-label={t(lang, 'ariaPalette')}>
-            {[1, 2, 3, 0].map((value) => (
-              <button
-                key={value}
-                type="button"
-                className={`profile-ink${ink === value ? ' sel' : ''}${value === 0 ? ' erase' : ''}`}
-                style={{ background: value === 0 ? colors.bg : colors.inks[value - 1] }}
-                role="radio"
-                aria-checked={ink === value}
-                aria-label={value === 0 ? t(lang, 'ariaInkBackground') : `${value}`}
-                onClick={() => setInk(value)}
-              />
-            ))}
-          </div>
-
-          {/* The palettes: switching repaints background + inks together, the drawing
-              (the cell values) stays. */}
+          {/* The palettes, shown as their FOREGROUND colour only: pick a colour, that
+              colour is the palette. The drawing (the cell states) survives a switch. */}
           <div className="profile-palettes">
             {AVATAR_PALETTES.map((option, index) => (
               <button
                 key={option.name}
                 type="button"
                 className={`profile-palette${palette === index ? ' sel' : ''}`}
+                style={{ background: option.fg }}
                 aria-label={`${t(lang, 'ariaPalette')} ${option.name}`}
                 aria-pressed={palette === index}
                 onClick={() => {
                   setPalette(index);
                   setSave('idle');
                 }}
-              >
-                <i style={{ background: option.bg }} />
-                {option.inks.map((color) => (
-                  <i key={color} style={{ background: color }} />
-                ))}
-              </button>
+              />
             ))}
           </div>
 
@@ -279,44 +228,8 @@ export default function Profile() {
             {saveLabel}
           </button>
           <p className="profile-status" role="status">
-            {saveError ?? ' '}
+            {saveError ?? ' '}
           </p>
-        </div>
-
-        {/* The key: the backup, and — pasted elsewhere — the device link. */}
-        <div className="profile-keys">
-          <span className="profile-key-label">{t(lang, 'profileKey')}</span>
-          <div className="profile-key-row">
-            <code className="profile-key">{secret}</code>
-            <button type="button" className="profile-chip" onClick={onCopy}>
-              {copied ? t(lang, 'copied') : t(lang, 'profileCopy')}
-            </button>
-          </div>
-          <div className="profile-key-row">
-            <input
-              className="profile-key-input"
-              type="text"
-              value={keyInput}
-              placeholder={t(lang, 'profileLinkPlaceholder')}
-              aria-label={t(lang, 'profileLinkPlaceholder')}
-              autoComplete="off"
-              autoCapitalize="off"
-              spellCheck={false}
-              onChange={(e) => setKeyInput(e.target.value)}
-            />
-            <button
-              type="button"
-              className="profile-chip"
-              disabled={!canLink && !linked}
-              onClick={onLink}
-            >
-              {linked
-                ? t(lang, 'profileLinked')
-                : keyInput.trim() && !canLink
-                  ? t(lang, 'profileBadKey')
-                  : t(lang, 'profileLink')}
-            </button>
-          </div>
         </div>
       </div>
     </>

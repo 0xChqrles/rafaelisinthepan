@@ -2,8 +2,9 @@
 // on first need and keeps in localStorage. It is simultaneously the ID and the password —
 // possession is the proof of ownership, so the server never registers or stores anything
 // secret; it DERIVES the public identity from the secret on every authenticated call.
-// Pasting the key on another device is the same identity (the #188 profile editor's
-// copyable backup); losing localStorage loses it — accepted by design.
+// Pasting the key on another device is the same identity (#188's designed backup
+// affordance — its UI surface is not yet placed); losing localStorage loses it —
+// accepted by design.
 //
 // This module lives in shared because the derivation is a cross-package contract: the WEB
 // generates and sends the secret, the BACKEND turns it into the publicId every stored row

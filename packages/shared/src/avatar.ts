@@ -1,43 +1,44 @@
-// The #188 player avatar: a 10×10 pixel grid the player draws, over one of a few
-// predefined palettes. The palette sets BOTH the background colour and the three
-// available inks, so every avatar looks coherent on a board of strangers' drawings.
+// The #188 player avatar: a 10×10 pixel grid the player draws, in exactly TWO colours —
+// a background and a foreground (user-decided 2026-08-19, superseding the 3-ink first
+// cut). A "palette" is a {bg, fg} pair, and the picker shows only the foreground: you
+// pick a colour, and that colour IS the palette. Coherence on a board of strangers'
+// drawings comes from the shared ground.
 //
 // This module lives in shared because the encoding is a cross-package contract: the WEB
 // encodes what the editor drew (and renders every stored avatar), the BACKEND decodes it
 // to validate a write and run the symbol check. Two implementations would accept
 // different byte strings for one drawing.
 //
-// Encoding: 1 palette byte + 100 cells at 2 bits each (0 = background, 1..3 = the
-// palette's inks) = 26 bytes, base64url without padding = exactly 35 characters — a
-// compact string on the player row, rendered client-side as SVG.
+// Encoding: 1 palette byte + 100 cells at 1 bit each (0 = background, 1 = foreground)
+// = 14 bytes, base64url without padding = exactly 19 characters — a compact string on
+// the player row, rendered client-side as SVG.
 
 export const AVATAR_SIZE = 10;
 export const AVATAR_CELLS = AVATAR_SIZE * AVATAR_SIZE;
-// Cell values: 0 = background + 3 inks — the 4 states 2 bits hold.
-export const AVATAR_INKS = 3;
 
 export interface AvatarPalette {
   name: string;
   bg: string;
-  inks: readonly [string, string, string];
+  fg: string;
 }
 
 // The predefined palettes. Order is load-bearing — the encoded byte is an INDEX into
 // this list, so entries may be appended but never reordered or removed once avatars
-// referencing them exist. Hues are the app's own: cobalt/cyan, the aura violets, the
-// weird end of the heat ramp, and the stamp-paper neutrals.
+// referencing them exist. One shared ground; the foregrounds are the app's own hues.
 export const AVATAR_PALETTES: readonly AvatarPalette[] = [
-  { name: 'CIRCUIT', bg: '#16181f', inks: ['#4a6aff', '#4fd2e8', '#f4f1e8'] },
-  { name: 'AURA', bg: '#171225', inks: ['#8f7bff', '#bd68ff', '#ff5ce0'] },
-  { name: 'EMBER', bg: '#1f1114', inks: ['#ff3d2e', '#ff8a3d', '#ffd23f'] },
-  { name: 'MOSS', bg: '#101b14', inks: ['#3ddc84', '#a8e05f', '#f4f1e8'] },
-  { name: 'PAPER', bg: '#f4f1e8', inks: ['#08090f', '#4a6aff', '#ff3d2e'] },
-  { name: 'MONO', bg: '#101114', inks: ['#3a3f4a', '#8a92a3', '#f4f1e8'] },
+  { name: 'COBALT', bg: '#16181f', fg: '#4a6aff' },
+  { name: 'CYAN', bg: '#16181f', fg: '#4fd2e8' },
+  { name: 'VIOLET', bg: '#16181f', fg: '#8f7bff' },
+  { name: 'ORCHID', bg: '#16181f', fg: '#ff5ce0' },
+  { name: 'EMBER', bg: '#16181f', fg: '#ff3d2e' },
+  { name: 'AMBER', bg: '#16181f', fg: '#ffd23f' },
+  { name: 'MOSS', bg: '#16181f', fg: '#3ddc84' },
+  { name: 'PAPER', bg: '#16181f', fg: '#f4f1e8' },
 ];
 
-const BYTES = 1 + AVATAR_CELLS / 4; // 26
-// 26 bytes -> 8 full base64 groups (32 chars) + one 2-byte tail (3 chars), no padding.
-export const AVATAR_STRING_LENGTH = 35;
+const BYTES = 1 + Math.ceil(AVATAR_CELLS / 8); // 14
+// 14 bytes -> 4 full base64 groups (16 chars) + one 2-byte tail (3 chars), no padding.
+export const AVATAR_STRING_LENGTH = 19;
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 const B64_INDEX = new Map([...B64].map((c, i) => [c, i] as const));
@@ -83,7 +84,7 @@ function fromBase64Url(s: string): Uint8Array {
 
 export interface DecodedAvatar {
   palette: number;
-  // Row-major, AVATAR_CELLS entries of 0..3.
+  // Row-major, AVATAR_CELLS entries of 0 (background) | 1 (foreground).
   cells: number[];
 }
 
@@ -96,10 +97,8 @@ export function encodeAvatar(palette: number, cells: readonly number[]): string 
   bytes[0] = palette;
   for (let i = 0; i < AVATAR_CELLS; i++) {
     const value = cells[i];
-    if (!Number.isInteger(value) || value < 0 || value > AVATAR_INKS) {
-      throw new Error('avatar: cell value out of range');
-    }
-    bytes[1 + (i >> 2)] |= value << ((i & 3) * 2);
+    if (value !== 0 && value !== 1) throw new Error('avatar: cell value out of range');
+    bytes[1 + (i >> 3)] |= value << (i & 7);
   }
   return toBase64Url(bytes);
 }
@@ -111,9 +110,14 @@ export function decodeAvatar(encoded: string): DecodedAvatar {
   const bytes = fromBase64Url(encoded);
   const palette = bytes[0];
   if (palette >= AVATAR_PALETTES.length) throw new Error('avatar: palette index out of range');
+  // 100 bits fill 12 bytes + the low nibble of the 13th; the 4 bits past the last cell
+  // must be zero (same canonical-form rule as the base64 spare bits).
+  if (bytes[BYTES - 1] >> (AVATAR_CELLS & 7) !== 0) {
+    throw new Error('avatar: non-canonical encoding');
+  }
   const cells: number[] = new Array(AVATAR_CELLS);
   for (let i = 0; i < AVATAR_CELLS; i++) {
-    cells[i] = (bytes[1 + (i >> 2)] >> ((i & 3) * 2)) & 3;
+    cells[i] = (bytes[1 + (i >> 3)] >> (i & 7)) & 1;
   }
   return { palette, cells };
 }
