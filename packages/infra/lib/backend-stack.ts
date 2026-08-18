@@ -420,7 +420,7 @@ export class BackendStack extends Stack {
         {
           id: 'AwsSolutions-IAM5',
           reason:
-            'S3 read access is scoped to the puzzle bucket/object keys. DynamoDB is scoped to this table with only GetItem/UpdateItem, and SSM GetParameters to the two exact secret-parameter ARNs; no index or parameter wildcard exists.',
+            'S3 read access is scoped to the puzzle bucket/object keys. DynamoDB is scoped to this table with only Query/PutItem/UpdateItem, and SSM GetParameters to the two exact secret-parameter ARNs; no index or parameter wildcard exists.',
         },
         {
           id: 'AwsSolutions-L1',

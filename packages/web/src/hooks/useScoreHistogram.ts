@@ -105,12 +105,18 @@ export async function syncScore(
     markSubmitted(recorded);
     return { histogram, bucket: histogram.bucket };
   }
+  // A submitted round with NO recorded score is one the server REFUSED (or a pre-#187
+  // round, whose old bucket-counter population no longer exists): the population holds
+  // nothing for it, so there is no standing to fetch. Falling back to the LOCAL count
+  // here would place the player in whatever band another player happened to record at
+  // that score — a false standing, worse than none.
+  if (recordedScore === undefined) return null;
   const response = await fetch(scoresUrl(lang, date, mode));
   if (!response.ok) return null;
   const histogram = parseScoreHistogram(await response.json());
   // GET returns `bucket: null` — the revisiting client locates its own RECORDED score
-  // (#187; the local count as the pre-#187 fallback) in the inclusive ranges.
-  return { histogram, bucket: bucketIndexOf(histogram.buckets, recordedScore ?? score) };
+  // (#187) in the inclusive ranges.
+  return { histogram, bucket: bucketIndexOf(histogram.buckets, recordedScore) };
 }
 
 export default function useScoreHistogram({
@@ -133,8 +139,10 @@ export default function useScoreHistogram({
   dayNumber: number;
   score: number;
   // The persisted server-recorded score, when the round has one (#187): revisit GETs
-  // locate the standing by it, since first-write-wins can hold a different score than
-  // this device's own count.
+  // locate the standing by it — and by it alone, since first-write-wins can hold a
+  // different score than this device's own count. Absent on a submitted round means the
+  // server refused the score: the revisit shows no standing rather than borrowing the
+  // band another player recorded at the local count.
   recordedScore?: number;
 }): ScorePlacementState {
   const [placement, setPlacement] = useState<ScorePlacementState>(null);
@@ -156,10 +164,11 @@ export default function useScoreHistogram({
       return undefined;
     }
     const operation = submittedRef.current ? 'get' : 'post';
-    // A GET conversation is keyed by the score it will LOCATE with — the recorded one
-    // when the round has it — so a stale flight can never answer for a different band.
+    // A GET conversation is keyed by the score it will LOCATE with — the RECORDED one,
+    // which is all a revisit may use (#187; 'none' for a refused round, whose GET
+    // resolves to no standing) — so a stale flight can never answer for a different band.
     const recorded = recordedRef.current;
-    const locate = operation === 'get' ? recorded ?? score : score;
+    const locate = operation === 'get' ? recorded ?? 'none' : score;
     const key = `${operation}:${mode}:${lang}:${dayNumber}:${locate}`;
     if (placementKeyRef.current !== key) {
       placementKeyRef.current = key;

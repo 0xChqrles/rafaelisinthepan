@@ -121,18 +121,30 @@ describe('syncScore — the round spends its one submission on a verdict only', 
       total: 2,
       bucket: null,
     };
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => ({ ok: true, json: async () => histogram })),
-    );
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => histogram }));
+    vi.stubGlobal('fetch', fetchMock);
     try {
       const markSubmitted = vi.fn();
       // Local count 7, but the population recorded 9 for this round on another device.
       const placement = await syncScore(true, markSubmitted, 'sentence', 'fr', '2026-08-15', 7, 9);
       expect(placement).toEqual({ histogram, bucket: 1 });
-      // Without a recorded score (a pre-#187 round), the local count is the fallback.
-      const fallback = await syncScore(true, markSubmitted, 'sentence', 'fr', '2026-08-15', 4);
-      expect(fallback).toEqual({ histogram, bucket: 0 });
+      expect(markSubmitted).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('shows NO standing for a submitted round with no recorded score — a refusal stays refused', async () => {
+    // The server refused this round's score (4xx): nothing entered the population, and a
+    // revisit must never fall back to the LOCAL count — another player recording that
+    // same score would otherwise place the refused player in their band.
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const markSubmitted = vi.fn();
+      const placement = await syncScore(true, markSubmitted, 'sentence', 'fr', '2026-08-15', 4);
+      expect(placement).toBeNull();
+      expect(fetchMock).not.toHaveBeenCalled();
       expect(markSubmitted).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();

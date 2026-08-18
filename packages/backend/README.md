@@ -22,23 +22,28 @@ that provisions Lambda + Function URL + CloudFront + the bucket is issue #3.)
 
   ```json
   {
-    "buckets": [{ "min": 1, "max": 3, "count": 4 }],
+    "buckets": [
+      { "min": 4, "max": 4, "count": 1 },
+      { "min": 9, "max": 9, "count": 3 }
+    ],
     "total": 4,
-    "bucket": 0
+    "bucket": 1
   }
   ```
 
-  Ranges are inclusive and the real response contains every fixed band for that mode.
-  `bucket` is the caller's band on POST and `null` on GET. Score responses are `no-store`.
-  Missing/invalid Turnstile → 403; impossible score → 400; sixth submission for the same
-  `(date, lang, mode, ipHash)` → 429 without changing a counter.
+  Ranges are inclusive — one exact band per distinct recorded score, ascending — and an
+  empty population is honestly `"buckets": []`. `bucket` is the caller's recorded band on
+  POST (after a first-write-wins duplicate, the STORED row's) and `null` on GET. Score
+  responses are `no-store`. Missing/malformed player key → 400; missing/invalid Turnstile
+  → 403; impossible score → 400; sixth player for the same `(date, lang, mode, ipHash)` →
+  429 without writing anything.
 
   In production, serialize the body once, hash those exact UTF-8 bytes, and send the digest
   as lowercase hexadecimal in `x-amz-content-sha256`. CloudFront's Lambda-URL OAC requires
   this header before the handler can run:
 
   ```ts
-  const body = JSON.stringify({ score, turnstileToken });
+  const body = JSON.stringify({ secret, score, turnstileToken });
   const bytes = new TextEncoder().encode(body);
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   const payloadHash = [...new Uint8Array(digest)]
