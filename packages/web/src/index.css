@@ -1331,6 +1331,11 @@ button * {
    currentColor lifted the band hugging the ink by 3.3/255 and was rejected twice as way
    too much; 20% measured 0.34, indistinguishable from off. 30% sits at ~a quarter of
    the rejected strength — present, soft, and the glyph edges stay crisp. */
+/* The HARD 2px drop rides UNDER the glow (user-decided 2026-08-18: "keep the text
+   shadow on the whole sentence" — the glow had replaced it on the hole and solved
+   words, leaving them the only words in the phrase without the drop): two layers, the
+   sentence's own 2px black print plus the aura. Works under the gradient fill too —
+   text-shadow draws from the glyph's alpha, not its (transparent) fill. */
 .hole-word,
 .hole-word .hole-letter,
 .phrase .hole-btn .hole-word .hole-letter,
@@ -1338,7 +1343,9 @@ button * {
 .solved-word-text .hole-letter,
 .word-subject-text,
 .word-subject-text .hole-letter {
-  text-shadow: 0 0 0.3em color-mix(in srgb, currentColor 30%, transparent);
+  text-shadow:
+    2px 2px 0 black,
+    0 0 0.3em color-mix(in srgb, currentColor 30%, transparent);
 }
 /* THE WORDS ARE PRINTED WITH A VERTICAL INK GRADIENT (user-decided 2026-08-17; pushed
    VIVID on review the same day — the first cut, currentColor 15% into 70%-black, was
