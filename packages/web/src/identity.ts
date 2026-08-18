@@ -42,3 +42,19 @@ export function playerSecret(storage: Storage | null = defaultStorage()): string
   }
   return sessionSecret;
 }
+
+// Device linking (#188): pasting a key IS the same identity, so adopting one replaces
+// whatever this device held. Returns false (and changes nothing) on a malformed key.
+export function adoptPlayerSecret(
+  secret: string,
+  storage: Storage | null = defaultStorage(),
+): boolean {
+  if (!isValidSecret(secret)) return false;
+  sessionSecret = secret;
+  try {
+    storage?.setItem(SECRET_STORAGE_KEY, secret);
+  } catch {
+    // Unwritable storage: the linked identity lives for this session.
+  }
+  return true;
+}

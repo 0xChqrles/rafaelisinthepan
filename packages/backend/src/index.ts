@@ -6,6 +6,7 @@ import { SSMClient } from '@aws-sdk/client-ssm';
 import { createHandler } from './handler';
 import { s3Store } from './s3Store';
 import { loadConfig, loadScoreSecrets } from './config';
+import { dynamoProfileStore } from './dynamoProfileStore';
 import { dynamoScoreStore } from './dynamoScoreStore';
 import { turnstileVerifier } from './turnstile';
 import type { FnUrlEvent, FnUrlResult } from './respond';
@@ -33,6 +34,7 @@ function initializeHandler(): Promise<ProductionHandler> {
           turnstile: turnstileVerifier(secrets.turnstileSecret),
           ipHmacSecret: secrets.ipHmacSecret,
         },
+        profiles: dynamoProfileStore(dynamo, config.scoreTable),
       }),
     )
     .catch((error: unknown) => {

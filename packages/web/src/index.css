@@ -4754,3 +4754,227 @@ button * {
     transform: translateY(-12px) scale(1);
   }
 }
+
+/* ===================== profile editor (#188) ===================== */
+/* The moodboard's avatar-creator card in the app's own dress: name up top, the 10×10
+   grid as the centrepiece, the brush + palette rows under it, SAVE, then the key block.
+   Sharp radii (4px ceiling), glass + hairlines, mono chrome. The screen owns its
+   scroll — the stack outruns a short phone. */
+.profile-screen {
+  width: min(400px, 100%);
+  /* 100% (the .app padding box), never 100dvh: a taller child of a centering flex
+     parent overflows symmetrically and its top gets clipped under the header. */
+  max-height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  padding: 84px 2px 40px;
+}
+.profile-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.profile-name {
+  font-family: var(--ui);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--fg);
+  background: var(--glass);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 13px 14px;
+  outline: none;
+  transition: border-color 0.12s linear;
+}
+.profile-name::placeholder {
+  color: var(--fg);
+  opacity: 0.35;
+}
+.profile-name:focus {
+  border-color: var(--line-strong);
+}
+
+/* The grid: the palette's own ground as the card, one tile per cell. `--cell-ghost` is
+   set inline per palette (a light overlay on a dark ground, a dark one on paper) so an
+   unpainted cell still reads as a tile, the moodboard's socket look. */
+.avatar-editor {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  touch-action: none;
+  cursor: crosshair;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.avatar-editor-cell {
+  aspect-ratio: 1;
+  border-radius: var(--r-md);
+  background: var(--cell-ghost);
+}
+
+/* The brush (three inks + eraser) and the palettes: flat swatches, hairline, the
+   selected one framed in foreground — the sharp selection language, no rings. */
+.profile-inks,
+.profile-palettes {
+  display: flex;
+  gap: 10px;
+}
+.profile-ink {
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  padding: 0;
+  transition: filter 0.08s linear, border-color 0.12s linear, box-shadow 0.12s linear;
+}
+.profile-ink:hover {
+  filter: brightness(1.15);
+}
+.profile-ink.sel {
+  border-color: var(--fg);
+  box-shadow: 0 0 0 1px var(--fg);
+}
+/* The eraser swatch is the palette's bare ground — a diagonal hairline says "nothing". */
+.profile-ink.erase {
+  background-image: linear-gradient(
+    135deg,
+    transparent 46%,
+    var(--line-strong) 46%,
+    var(--line-strong) 54%,
+    transparent 54%
+  );
+}
+.profile-palette {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-auto-rows: 14px;
+  gap: 3px;
+  padding: 5px;
+  background: var(--glass);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition: filter 0.08s linear, border-color 0.12s linear, box-shadow 0.12s linear;
+}
+.profile-palette i {
+  border-radius: var(--r-sm);
+}
+.profile-palette:hover {
+  filter: brightness(1.15);
+}
+.profile-palette.sel {
+  border-color: var(--fg);
+  box-shadow: 0 0 0 1px var(--fg);
+}
+
+/* SAVE is the app's one big-action device card; the auto top margin is the tray's
+   parking rule and means nothing in this column. */
+.profile-save {
+  margin-top: 6px;
+}
+.profile-status {
+  min-height: 16px;
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--danger);
+}
+
+/* The key block: the backup (copyable) and the paste-to-link row. The key itself is
+   selectable as one token. */
+.profile-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.profile-key-label {
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 550;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg);
+  opacity: 0.55;
+}
+.profile-key-row {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+.profile-key {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  font-family: var(--ui);
+  font-size: 12.5px;
+  letter-spacing: 0.08em;
+  color: var(--fg);
+  background: var(--glass);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  overflow-wrap: anywhere;
+  user-select: all;
+  -webkit-user-select: all;
+}
+.profile-key-input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--ui);
+  font-size: 12.5px;
+  letter-spacing: 0.08em;
+  color: var(--fg);
+  background: var(--glass);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  outline: none;
+  transition: border-color 0.12s linear;
+}
+.profile-key-input::placeholder {
+  color: var(--fg);
+  opacity: 0.35;
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.profile-key-input:focus {
+  border-color: var(--line-strong);
+}
+.profile-chip {
+  flex: none;
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg);
+  background: var(--glass);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  padding: 0 14px;
+  cursor: pointer;
+  text-shadow: none;
+  transition: filter 0.08s linear, border-color 0.12s linear;
+}
+.profile-chip:hover:not(:disabled) {
+  filter: brightness(1.3);
+  border-color: var(--fg);
+}
+.profile-chip:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

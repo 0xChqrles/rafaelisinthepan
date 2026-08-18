@@ -70,7 +70,13 @@
   `@whippin/shared`'s `VIEWER_IP_HEADER` instead — see the root `AGENTS.md` for why no single
   header mode can serve both halves. Removing that function ships a Lambda that throws on
   every score POST, which neither `backend:dev` nor a synthesized template can show;
-  `backend-stack.test.ts` pins the association and the stamp. The Lambda
+  `backend-stack.test.ts` pins the association and the stamp. **`/profile` (#188)** has
+  its own `profile*` behavior on the same shape: `CachingDisabled`, ALLOW_ALL methods,
+  and an origin-request policy forwarding exactly the `id` query (the one parameter the
+  profile handler reads) with `allExcept: Host` headers for the OAC-signed POST — no
+  viewer-IP function, since the route has no per-IP logic. The table grant adds
+  `GetItem` for the profile read (the upsert reuses `UpdateItem`); both are pinned by
+  `backend-stack.test.ts`. The Lambda
   receives the table name and SSM SecureString PARAMETER NAMES (defaults
   `/whippin/turnstile-secret`, `/whippin/ip-hmac-secret`; override with the matching `-c`
   contexts), reads both decrypted values together on first use, caches a successful result,

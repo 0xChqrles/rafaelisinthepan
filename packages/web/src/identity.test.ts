@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { isValidSecret } from '@whippin/shared';
-import { playerSecret } from './identity';
+import { adoptPlayerSecret, playerSecret } from './identity';
 
 function fakeStorage(initial: Record<string, string> = {}): Storage {
   const values = new Map(Object.entries(initial));
@@ -67,6 +67,26 @@ describe('playerSecret (#187)', () => {
       const secret = playerSecret();
       expect(isValidSecret(secret)).toBe(true);
       expect(playerSecret()).toBe(secret);
+    });
+  });
+
+  describe('adoptPlayerSecret (#188 device linking)', () => {
+    it('replaces the device identity with the pasted key', () => {
+      const storage = fakeStorage();
+      const before = playerSecret(storage);
+      const pasted = 'ffeeddccbbaa99887766554433221100';
+      expect(adoptPlayerSecret(pasted, storage)).toBe(true);
+      expect(pasted).not.toBe(before);
+      expect(storage.getItem('whippin-player-key')).toBe(pasted);
+      expect(playerSecret(storage)).toBe(pasted);
+    });
+
+    it('refuses a malformed key and changes nothing', () => {
+      const storage = fakeStorage();
+      const before = playerSecret(storage);
+      expect(adoptPlayerSecret('not-a-key', storage)).toBe(false);
+      expect(adoptPlayerSecret('FFEEDDCCBBAA99887766554433221100', storage)).toBe(false);
+      expect(playerSecret(storage)).toBe(before);
     });
   });
 });

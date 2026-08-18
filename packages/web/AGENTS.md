@@ -14,6 +14,10 @@
       hooks/usePuzzle.ts      fetch the client-computed day's puzzle from the backend
       api.ts                  backend client: puzzleUrl/wordPuzzleUrl, 404->NO PUZZLE
       identity.ts             the #187 player key: localStorage secret, generated on first need
+                              (+ adoptPlayerSecret — pasting a key IS device linking, #188)
+      screens/Profile.tsx     the #188 profile editor (/profile): name, tap-to-paint 10×10 grid,
+                              palette picker, copyable/pasteable key (#190 wires the entry point)
+      components/Avatar.tsx   a stored avatar rendered as SVG (editor preview + #190 board rows)
       versionCheck.ts         stale-tab reload: __BUILD_ID__ vs /version.json on visibility flips
       i18n.ts                 UI chrome strings (en+fr), t(lang, key); parity type-enforced
       tutorial/               onboarding (#51/#155): Tutorial.tsx + data scripts/<lang>.ts
@@ -369,6 +373,21 @@ it to the local store — see `packages/backend/AGENTS.md`).
 ## Current state / mutable
 
 *(Safe to update without touching the invariants above.)*
+
+- **Profile editor (#188):** `/profile` (`screens/Profile.tsx`), a global route like
+  `/select` (an identity is not language-scoped; chrome language = the `/` redirect's
+  resolution). Name input (16 cap), the 10×10 tap/drag-to-paint grid (one STROKE value
+  per gesture — starting on a cell already holding the brush's ink erases), the brush
+  row (three inks + eraser), the palette row (switching repaints ground + inks, the
+  drawing survives), SAVE (`.mix-btn`), and the key block: the secret copyable as
+  backup, plus a paste-to-LINK row (`adoptPlayerSecret`) — linking reloads THAT
+  identity's stored profile, and a never-customized key shows the blank editor. Saving
+  POSTs `{secret, name, avatar}` via the OAC-hashed body (`api.postProfileBody`);
+  server refusals surface as terse statuses (`NAME NOT ALLOWED` / `AVATAR NOT
+  ALLOWED` / `SAVE FAILED`). No chrome entry point yet — #190's leaderboard screen is
+  the wired entry (recorded in the header bullet); until then the route is
+  deep-link-only. Editor visuals carry no tests per policy; the codec, identity
+  adoption and `parseProfile` shape check are contract-tested.
 
 - **Word mode (#156, the second daily; RETIMED by #163 on 2026-08-08):** one app, two faces
   — `/<lang>/word` (plus `/word/<date>` and `/word/archive`, same date rules) plays the day's

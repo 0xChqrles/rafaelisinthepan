@@ -264,6 +264,27 @@ const STRINGS = {
   },
   // ONE action button for BOTH gates (word mode adopted the sentence gate's PLAY label).
   gatePlay: { en: 'PLAY', fr: 'JOUER' },
+  // ---- the profile editor (#188): name + 10×10 palette avatar + the key as backup.
+  // Show-don't-tell: terse labels, the surfaces demonstrate themselves.
+  profileTitle: { en: 'PROFILE', fr: 'PROFIL' },
+  profileNamePlaceholder: { en: 'NAME', fr: 'PSEUDO' },
+  profileSave: { en: 'SAVE', fr: 'ENREGISTRER' },
+  profileSaving: { en: 'SAVING…', fr: 'ENREGISTREMENT…' },
+  profileSaved: { en: 'SAVED', fr: 'ENREGISTRÉ' },
+  profileSaveFailed: { en: 'SAVE FAILED', fr: "ÉCHEC DE L'ENREGISTREMENT" },
+  profileNameRejected: { en: 'NAME NOT ALLOWED', fr: 'PSEUDO REFUSÉ' },
+  profileAvatarRejected: { en: 'AVATAR NOT ALLOWED', fr: 'AVATAR REFUSÉ' },
+  // The key backup affordance: the secret key, copyable, labeled as backup. Pasting it
+  // on another device IS device linking — same identity, scores and friends follow.
+  profileKey: { en: 'BACKUP KEY', fr: 'CLÉ DE SECOURS' },
+  profileCopy: { en: 'COPY', fr: 'COPIER' },
+  profileLinkPlaceholder: { en: 'PASTE A KEY TO LINK A DEVICE', fr: 'COLLER UNE CLÉ POUR LIER' },
+  profileLink: { en: 'LINK', fr: 'LIER' },
+  profileLinked: { en: 'LINKED', fr: 'LIÉE' },
+  profileBadKey: { en: 'NOT A KEY', fr: 'CLÉ INVALIDE' },
+  ariaAvatarEditor: { en: 'Avatar editor: tap to paint', fr: "Éditeur d'avatar : touchez pour peindre" },
+  ariaPalette: { en: 'Palette', fr: 'Palette' },
+  ariaInkBackground: { en: 'Eraser', fr: 'Gomme' },
 } satisfies Record<string, Record<UiLang, string>>;
 
 export type UiKey = keyof typeof STRINGS;

@@ -109,6 +109,14 @@ export interface ScoreHistogram {
   bucket: number | null;
 }
 
+// The #188 player profile, as the API speaks it: the derived publicId (never the
+// secret), the display name (possibly empty) and the encoded avatar (see avatar.ts).
+export interface PlayerProfile {
+  publicId: string;
+  name: string;
+  avatar: string;
+}
+
 export interface RuntimeHole {
   pos: number;
   secret: string; // secret slug -> key into RankMap

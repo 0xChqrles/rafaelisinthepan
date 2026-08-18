@@ -10,8 +10,10 @@ import {
   wordPuzzleUrl,
   puzzleOutcome,
   parsePuzzle,
+  parseProfile,
   parseScoreHistogram,
   parseWordPuzzle,
+  profileUrl,
   scoresUrl,
 } from './api';
 
@@ -371,5 +373,29 @@ describe('parseScoreHistogram (shape validation)', () => {
     expect(() => parseScoreHistogram({ ...valid(), bucket: 'zero' })).toThrow(/bucket/);
     expect(() => parseScoreHistogram({ ...valid(), bucket: -1 })).toThrow(/bucket/);
     expect(() => parseScoreHistogram({ ...valid(), bucket: 2 })).toThrow(/bucket/);
+  });
+});
+
+describe('profileUrl + parseProfile (#188)', () => {
+  it('addresses the /profile route, with the id query only on reads', () => {
+    expect(profileUrl(undefined, 'https://api.example')).toBe('https://api.example/profile');
+    expect(profileUrl('abcdefghij234567', 'https://api.example')).toBe(
+      'https://api.example/profile?id=abcdefghij234567',
+    );
+    expect(() => profileUrl(undefined, '')).toThrow(/VITE_API_BASE_URL/);
+  });
+
+  it('validates the profile shape and rejects a corrupt one', async () => {
+    const { blankAvatar } = await import('@whippin/shared');
+    const valid = {
+      publicId: 'abcdefghij234567',
+      name: 'Chqrles',
+      avatar: blankAvatar(),
+    };
+    expect(parseProfile(valid)).toEqual(valid);
+    expect(() => parseProfile(null)).toThrow(/not an object/);
+    expect(() => parseProfile({ ...valid, publicId: 'NOPE' })).toThrow(/publicId/);
+    expect(() => parseProfile({ ...valid, name: 3 })).toThrow(/name/);
+    expect(() => parseProfile({ ...valid, avatar: 'garbage' })).toThrow(/avatar/);
   });
 });

@@ -26,6 +26,8 @@ import {
 } from './respond';
 import { renderCardPng, renderShareHtml, renderWordCardPng, renderWordShareHtml } from './ogCard';
 import { isValidDate } from './layout';
+import { handleProfile } from './profile';
+import type { ProfileStore } from './profileStore';
 import { handleScores, type ScoreHandlerDeps } from './scores';
 import type { PuzzleStore } from './store';
 
@@ -40,6 +42,8 @@ export interface HandlerDeps {
   // Score collection (#169). Optional only so read-only handler/unit consumers that never
   // touch /scores stay lightweight; production and the local server always provide it.
   scores?: ScoreHandlerDeps;
+  // Player profiles (#188), same optionality rationale.
+  profiles?: ProfileStore;
 }
 
 // 404s expire quickly so a puzzle uploaded slightly late becomes playable soon
@@ -90,13 +94,16 @@ export function createHandler(deps: HandlerDeps) {
     const rawPath = event.rawPath ?? '/';
     const normalizedPath = rawPath.replace(/\/+$/, '') || '/';
     const isScoresRoute = normalizedPath === '/scores';
-    const routeHeaders = isScoresRoute ? { ...cors, 'Cache-Control': 'no-store' } : cors;
+    // The profile route (#188) is live data with a write path, like /scores.
+    const isProfileRoute = normalizedPath === '/profile';
+    const isLiveRoute = isScoresRoute || isProfileRoute;
+    const routeHeaders = isLiveRoute ? { ...cors, 'Cache-Control': 'no-store' } : cors;
 
     // CORS preflight.
     if (method === 'OPTIONS') {
       return { statusCode: 204, headers: { ...routeHeaders }, body: '' };
     }
-    if ((isScoresRoute && method !== 'GET' && method !== 'POST') || (!isScoresRoute && method !== 'GET')) {
+    if ((isLiveRoute && method !== 'GET' && method !== 'POST') || (!isLiveRoute && method !== 'GET')) {
       return errorResponse(405, 'method_not_allowed', `Method ${method} not allowed.`, routeHeaders);
     }
 
@@ -168,6 +175,11 @@ export function createHandler(deps: HandlerDeps) {
       if (isScoresRoute) {
         if (!deps.scores) throw new Error('Score collection is not configured.');
         return await handleScores(event, deps.store, deps.scores, date, instant, cors);
+      }
+
+      if (isProfileRoute) {
+        if (!deps.profiles) throw new Error('Player profiles are not configured.');
+        return await handleProfile(event, deps.profiles, instant, cors);
       }
 
       if (rawPath.replace(/\/+$/, '').endsWith('/today')) {
