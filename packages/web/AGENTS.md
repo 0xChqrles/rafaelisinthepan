@@ -147,8 +147,10 @@ These are decided and verified against the code. Treat them as load-bearing.
   nothing sits above the content).
   `--fg` is stamp paper #f4f1e8, `--muted` warm grey, `--danger` an ink red; Word mode's
   rarity ladder is authored as a VIVID INK set (`components/rarity.ts` — same hue walk,
-  thresholds re-measured in `rarity.test.ts`). Still ELECTRIC, pending an art repaint: the baked pixel
-  art (logo-blue.png, the mode sprite, the streak flame, ultracode.png).
+  thresholds re-measured in `rarity.test.ts`). Still ELECTRIC, pending an art repaint: the
+  remaining baked pixel art (the streak flame sheets, ultracode.png, the hit sheets —
+  logo-blue.png and the whippin.png mode sprite were DELETED 2026-08-18 for the
+  user-drawn `assets/logo.svg`).
 - **THE TYPE SYSTEM IS TWO VOICES — PIXEL ONLY WHERE YOU PLAY (user-decided
   2026-08-18, closing the redesign's deferred fonts half; walked from three voices to
   two on the user's same-day reviews — Inter "no soul" → Space Grotesk, then the grotesk

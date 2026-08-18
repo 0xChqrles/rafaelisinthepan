@@ -2,8 +2,9 @@ import type { ReactNode } from 'react';
 import { progressHeatColor } from '@whippin/shared';
 import { isComplete, srStatus, type Status } from '../state/status';
 import type { Status as CardStatus } from '../state/status';
-// Bundled like the flags (small enough to inline as a data URI — no extra request).
-import logo from '../assets/logo-blue.png';
+// The mark (user-drawn SVG, 2026-08-18, replacing the pixel logo): currentColor, so
+// each surface picks its ink; the hero surfaces add the aura glow in CSS.
+import Logo from '../assets/logo.svg?react';
 
 // The app's CHOOSER screen: "which one do you want to play?", asked twice — once about
 // the language (/select, the header globe) and once about the daily (/mode, the header
@@ -107,7 +108,7 @@ export default function Chooser({ children }: { children: ReactNode }) {
           screen is the app's one in-app branding spot. The h1 + alt keep the accessible
           name. */}
       <h1 className="chooser-logo-title">
-        <img className="chooser-logo" src={logo} alt="Whippin AI" draggable="false" />
+        <Logo className="chooser-logo" role="img" aria-label="Whippin AI" />
       </h1>
       <div className="chooser-list">{children}</div>
     </div>

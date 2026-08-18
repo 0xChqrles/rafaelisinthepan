@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import Button from '../components/Button';
 import { t } from '../i18n';
-import logo from '../assets/logo-blue.png';
+import Logo from '../assets/logo.svg?react';
 import { preloadTutorial } from './LazyTutorial';
 
 // The title's LAST WORD wears the inverted highlight box (2026-08-18, the
@@ -43,7 +43,7 @@ export default function Invite({
 
   return (
     <main className="invite" aria-labelledby="tutorial-invite-title">
-      <img className="invite-logo" src={logo} alt="" draggable="false" />
+      <Logo className="invite-logo" aria-hidden />
       <h1 id="tutorial-invite-title" className="invite-title">
         {(() => {
           const [head, mark] = splitHighlight(t(lang, 'inviteTitle'));

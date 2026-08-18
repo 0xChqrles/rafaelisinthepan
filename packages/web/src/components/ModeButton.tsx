@@ -1,7 +1,7 @@
 import { navigate } from '../routing';
 import { MODE_SELECT_PATH } from '../langs';
 import { t } from '../i18n';
-import whippinIcon from '../assets/icons/whippin.png';
+import Logo from '../assets/logo.svg?react';
 
 // The game-mode control, first in the header's action group: the Whippin mark, opening the
 // mode chooser (/mode). The twin of `LangButton` — same shape, same kind of question, the
@@ -19,12 +19,11 @@ export default function ModeButton({ lang }: { lang: string }) {
       onClick={() => navigate(MODE_SELECT_PATH)}
       aria-label={t(lang, 'ariaChangeMode')}
     >
-      {/* The one PIXEL artifact left in the modern header (2026-08-18): the mark is the
-          app's logo, and the pixel identity is the game's brand. Drawn, not masked: it is
-          COLOURED art in the app's blue, so painting it with currentColor would flatten
-          it to chrome grey. The .home-btn opacity/brightness hover carries its
-          affordance instead. */}
-      <img className="mode-icon" src={whippinIcon} alt="" aria-hidden="true" draggable="false" />
+      {/* The mark (user-drawn SVG, 2026-08-18, replacing the header's last pixel
+          artifact): its own cobalt ink + a soft glow, so the logo stays the one lit
+          object in the icon row; the .home-btn opacity/brightness hover carries its
+          affordance. */}
+      <Logo className="mode-icon" aria-hidden />
     </button>
   );
 }

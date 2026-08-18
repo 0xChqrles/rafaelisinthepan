@@ -215,8 +215,11 @@ button * {
   max-width: 44ch;
   text-align: center;
   font-family: var(--ui);
-  font-size: 16px;
-  line-height: 1.6;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  line-height: 1.7;
+  text-transform: uppercase;
   color: var(--fg);
   opacity: 0.85;
 }
@@ -323,17 +326,20 @@ button * {
 }
 
 /* The logo heads the screen instead of a "select language" instruction (the cards
-   self-explain; a title would have to guess the user's language). Sized at an exact
-   multiple of its 22px pixel art so it stays crisp. */
+   self-explain; a title would have to guess the user's language). The user-drawn SVG
+   mark (2026-08-18) in the solve cobalt, wearing the ground's own AURA — a cobalt core
+   glow inside a violet halo. */
 .chooser-logo-title {
   margin: 0 0 40px;
 }
 .chooser-logo {
   display: block;
   margin: 0 auto;
-  width: 66px; /* 3 × 22px */
-  height: 66px;
-  image-rendering: pixelated;
+  width: 64px;
+  height: 60px;
+  color: var(--solve);
+  filter: drop-shadow(0 0 12px rgba(74, 106, 255, 0.65))
+    drop-shadow(0 0 36px rgba(139, 69, 234, 0.45));
 }
 
 .chooser-list {
@@ -394,6 +400,7 @@ button * {
   font-weight: 700;
   line-height: 1.1;
   letter-spacing: 0.02em;
+  text-transform: uppercase;
   color: var(--fg);
   padding-top: var(--cap-shift);
 }
@@ -495,6 +502,7 @@ button * {
   font-size: clamp(16px, 2.5vh, 20px);
   font-weight: 550;
   letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--fg);
   padding-top: var(--cap-shift);
 }
@@ -926,17 +934,17 @@ button * {
   display: block;
 }
 
-/* The header's Whippin mark (the mode chooser's glyph): the 16x16 sprite at an exact 2x.
-   Deliberately the ONE pixel artifact left in the modern header (2026-08-18): it is the
-   app's LOGO, and the pixel identity is the game's brand — the mark carries it the way an
-   enamel pin sits on a suit. Drawn, not masked: it is COLOURED art, so it keeps its blue
-   and takes .home-btn's opacity/brightness hover rather than the group's currentColor
-   tint. */
+/* The header's Whippin mark (the mode chooser's glyph): the user-drawn SVG (2026-08-18,
+   replacing the header's last pixel artifact) in its own cobalt with a small glow — the
+   one lit object in the icon row, the way the macropad's logo key glows on the device.
+   It keeps its own ink rather than the group's currentColor, and takes .home-btn's
+   opacity/brightness hover. */
 .mode-icon {
   display: block;
-  width: 32px;
-  height: 32px;
-  image-rendering: pixelated;
+  width: 30px;
+  height: 28px;
+  color: var(--solve);
+  filter: drop-shadow(0 0 8px rgba(74, 106, 255, 0.7));
 }
 
 /* The header's single action group, floating top-right: streak stat, language flag,
@@ -1551,10 +1559,11 @@ button * {
 .solved-work {
   margin: 0;
   /* The credit's headline: the mono at semibold — the biggest chrome type on the stage —
-     still the accent, since gold over the quiet line beneath is what ranks the two. */
+     still the accent, since it over the quiet line beneath is what ranks the two. */
   font-family: var(--ui);
   font-size: clamp(17px, 2.3vw, 22px);
   font-weight: 600;
+  text-transform: uppercase;
   line-height: 1.4;
   color: var(--accent);
   letter-spacing: 0.03em;
@@ -1566,12 +1575,13 @@ button * {
 .solved-by {
   margin: -2px 0 0;
   font-family: var(--ui);
-  font-size: 13px;
-  font-weight: 400;
+  font-size: 12px;
+  font-weight: 450;
   line-height: 1.5;
+  text-transform: uppercase;
   color: var(--fg);
   opacity: 0.8;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
 }
 .source-type-slot {
   position: relative;
@@ -3319,8 +3329,8 @@ button * {
     margin-bottom: 28px;
   }
   .chooser-logo {
-    width: 44px; /* 2 × 22px */
-    height: 44px;
+    width: 46px;
+    height: 43px;
   }
   .chooser-card {
     padding: 18px;
@@ -3448,6 +3458,14 @@ button * {
   font-family: var(--pixel-font);
   font-size: 0.82em;
   color: var(--hole);
+  white-space: nowrap;
+}
+/* The coach's MISS words ([[m:]]) — guitare, violin, MISS itself — speak the same pixel
+   voice as the target and the hint words (user-decided 2026-08-18); the colour stays
+   MISS_COLOR, set inline from the shared constant. */
+.rt-miss {
+  font-family: var(--pixel-font);
+  font-size: 0.82em;
   white-space: nowrap;
 }
 /* The RULES box (2026-08-11): the tutorial's dialog, reused by BOTH pre-game gates — one
@@ -3664,10 +3682,12 @@ button * {
 }
 .invite-logo {
   display: block;
-  width: 66px; /* 3 × the 22px source — crisp pixel art. */
-  height: 66px;
+  width: 64px;
+  height: 60px;
   margin-bottom: 34px;
-  image-rendering: pixelated;
+  color: var(--solve);
+  filter: drop-shadow(0 0 12px rgba(74, 106, 255, 0.65))
+    drop-shadow(0 0 36px rgba(139, 69, 234, 0.45));
 }
 /* The first thing a new player ever reads: a bold statement with its LAST WORDS in the
    board's inverted selection box (the Zaki-headline highlight, 2026-08-18). */
@@ -3678,6 +3698,7 @@ button * {
   font-weight: 700;
   line-height: 1.35;
   letter-spacing: 0.02em;
+  text-transform: uppercase;
   color: var(--fg);
   text-shadow: none;
   padding-top: var(--cap-shift);
@@ -3691,10 +3712,13 @@ button * {
 }
 .invite-text {
   margin: 12px auto 0;
-  max-width: 40ch;
+  max-width: 44ch;
   font-family: var(--ui);
-  font-size: 16px;
-  line-height: 1.6;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  line-height: 1.7;
+  text-transform: uppercase;
   color: var(--fg);
   opacity: 0.8;
   text-shadow: none;
@@ -3724,6 +3748,7 @@ button * {
   .invite-logo {
     margin-bottom: 28px;
   }
+
   .invite-actions {
     margin-top: 26px;
     gap: 20px;
@@ -3734,8 +3759,8 @@ button * {
    changing the primary action's MIX-sized tap target. */
 @media (max-height: 520px) {
   .invite-logo {
-    width: 44px;
-    height: 44px;
+    width: 46px;
+    height: 43px;
     margin-bottom: 16px;
   }
   .invite-title {

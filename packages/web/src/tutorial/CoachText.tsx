@@ -80,8 +80,11 @@ function renderSeg(s: Seg, budget: number, key: number) {
     );
   }
   if (s.kind === 'miss') {
+    // Pixel like the target and hint words (user-decided 2026-08-18): every in-game
+    // word the coach quotes speaks the game's own face; the colour stays the shared
+    // MISS constant.
     return (
-      <span key={key} style={{ color: MISS_COLOR }}>
+      <span key={key} className="rt-miss" style={{ color: MISS_COLOR }}>
         {chars(s.text, budget)}
       </span>
     );
