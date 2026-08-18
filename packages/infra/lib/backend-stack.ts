@@ -471,7 +471,7 @@ export class BackendStack extends Stack {
       value: bucket.bucketName,
     });
     new CfnOutput(this, 'ScoreTableName', {
-      description: 'DynamoDB table holding anonymous daily score counters and 48h dedup items.',
+      description: 'DynamoDB table holding per-player daily score rows and 48h dedup items.',
       value: scoreTable.tableName,
     });
     new CfnOutput(this, 'FunctionUrl', {

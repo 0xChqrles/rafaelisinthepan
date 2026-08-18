@@ -211,7 +211,7 @@ caching the result into `cdk.context.json`.
 | ------------------------ | ------------------------------------------------------------------------- |
 | `ApiUrl`                 | API base URL the web app calls — `https://api.<domain>` — set as `VITE_API_BASE_URL`. |
 | `PuzzleBucketName`       | the S3 bucket to publish puzzles into (`pnpm puzzle:publish --s3`).        |
-| `ScoreTableName`         | the DynamoDB table holding anonymous score counters + 48h dedup items.     |
+| `ScoreTableName`         | the DynamoDB table holding per-player score rows + 48h dedup items.        |
 | `FunctionUrl`            | the Lambda Function URL (CloudFront origin; not called directly).         |
 | `DistributionDomainName` | the CloudFront default domain (Route53 alias target for `api.<domain>`).   |
 | `DistributionId`         | the distribution the deploy job and `puzzle:publish --s3` invalidate.      |
