@@ -3982,7 +3982,9 @@ button * {
    pop's own moment) each chip rises in on its own delay — the tutorial ladder's `rung-in`
    entrance, the app's one "list arriving" gesture — so the row reads as the number
    unpacking. Reduced motion collapses the rise via the global rule and keeps the delays;
-   a rehydrated result wears `.settled` and replays nothing. */
+   a rehydrated result wears `.settled` and replays nothing. The counts are PIXEL
+   (2026-08-18): a claim tally is game data, the same voice as the score above it, in
+   the grade's light like the ladder's example words. */
 .word-rarities {
   display: flex;
   justify-content: center;
@@ -3990,16 +3992,16 @@ button * {
   flex-wrap: wrap; /* five 2-digit chips still fit 320px, but never let a forgery overflow */
   gap: clamp(14px, 2.6vw, 22px);
   margin-top: clamp(6px, 1.2vh, 12px); /* a seam above the score's own rhythm: detail, not headline */
-  font-family: var(--ui);
-  font-size: clamp(16px, 2.4vh, 19px);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
+  font-family: var(--pixel-font);
+  font-size: clamp(12px, 1.8vh, 14px);
+  font-weight: 400;
 }
 .word-rarity {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   opacity: 0;
+  text-shadow: 0 0 0.4em color-mix(in srgb, currentColor 35%, transparent);
 }
 .word-rarity.in {
   animation: rung-in 200ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
