@@ -250,7 +250,11 @@ These are decided and verified against the code. Treat them as load-bearing.
       affordance). Elsewhere it stands: the result action INVERTS on hover;
       the invite title's last word sits in an `.invite-mark` box (Invite splits the
       localized copy on the final space, pulling one more token in when the tail is
-      bare punctuation — French's ` ?`). **The PRIMARY BUTTONS are DEVICE CARDS**
+      bare punctuation — French's ` ?`). **The DIALOG BOXES wear COBALT CORNER TABS**
+      (user-decided 2026-08-18): `.coach` and `.coach-rules` are dead-sharp (radius 0)
+      with short 2px cobalt brackets on all four corners — the device frame's bracket
+      language on the one surface that talks to the player — drawn as eight background
+      strips over the border box, the glass fill as the stack's colour layer. **The PRIMARY BUTTONS are DEVICE CARDS**
       (user-decided 2026-08-18, fourth button pass — the orange slab was "goofy", the
       paper block "still off", the chooser cards "very nice"): the member card's own
       dress as the app's one big action — dark glass, `--line-strong` hairline, bold

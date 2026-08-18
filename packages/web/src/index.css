@@ -3548,6 +3548,30 @@ button * {
   white-space: pre-line;
 }
 
+/* CORNER TABS on the dialog boxes (user-decided 2026-08-18): dead-sharp corners wearing
+   short COBALT brackets, a step thicker than the hairline they sit on — the device
+   frame's bracket language pulled onto the one surface that talks to the player. Drawn
+   as eight background strips over the border box (two per corner), with the glass fill
+   as the stack's colour layer. */
+.coach,
+.coach-rules {
+  --corner-c: rgba(74, 106, 255, 0.9);
+  border-radius: 0;
+  background:
+    linear-gradient(var(--corner-c), var(--corner-c)) 0 0 / 14px 2px,
+    linear-gradient(var(--corner-c), var(--corner-c)) 0 0 / 2px 14px,
+    linear-gradient(var(--corner-c), var(--corner-c)) 100% 0 / 14px 2px,
+    linear-gradient(var(--corner-c), var(--corner-c)) 100% 0 / 2px 14px,
+    linear-gradient(var(--corner-c), var(--corner-c)) 0 100% / 14px 2px,
+    linear-gradient(var(--corner-c), var(--corner-c)) 0 100% / 2px 14px,
+    linear-gradient(var(--corner-c), var(--corner-c)) 100% 100% / 14px 2px,
+    linear-gradient(var(--corner-c), var(--corner-c)) 100% 100% / 2px 14px,
+    var(--glass);
+  background-repeat: no-repeat;
+  background-origin: border-box;
+  background-clip: border-box;
+}
+
 /* The tutorial's ending display — a SIGNAL METER since 2026-08-18 (user-decided,
    superseding the size-ramped two-font rungs: "the difference in font size are
    terrible"): five rows, commonest first — a five-cell LED meter with one more cell lit
