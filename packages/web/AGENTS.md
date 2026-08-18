@@ -1858,12 +1858,41 @@ it to the local store — see `packages/backend/AGENTS.md`).
   invitation preloads it while the player reads the question, a replay lazy-loads it behind
   the plain loading line, and a failed chunk calls `onDone` (into the game) rather than
   stranding a blank screen.
-- **App header (decided 2026-07-06; redesigned 2026-07-21 — this bullet was STALE and is
-  corrected 2026-07-26 from the code, which is ground truth):** a fixed **topbar**
-  (`components/TopBar.tsx`) of **two corner chips and NOTHING else — no band, no border, no
-  background, no blur.** Boxes read as floating rectangles over the animated waves, so the
-  groups sit DIRECTLY on the backdrop and the glyphs' own `text-shadow` carries legibility.
-  Layout is one optical row: `.topbar-inner` = `min(900px, 100vw - 48px)`, 56px, centred.
+- **App header — FINALIZED 2026-08-18 (user-decided, mobile-first; supersedes the
+  2026-07-21 "no band, corner chips" design below — that rule guarded against boxes
+  over the old ANIMATED waves, and over the static ground the dialogs' own glass is
+  what keeps the controls legible without simplifying the backdrop):** ONE **GLASS
+  BAND** (`components/TopBar.tsx`): `--glass` + hairline + backdrop blur, full-bleed
+  with a single bottom hairline on a phone, FLOATING capped-and-rounded just inside the
+  device frame's brackets on desktop (`min(900px, 100vw - 48px)`, 50px, 8px off the
+  top). THREE explicit grid slots (`1fr auto 1fr`, columns assigned by class so a
+  missing slot never shifts its neighbours; ModalHeader reuses the classes with no
+  centre):
+  - **LEFT, the status spot**: the sentence game's DATE CHIP — which **IS the ARCHIVE
+    ENTRY** since the finalization (`PuzzleDate` is a button to `pathForArchive`; "tap
+    the day to change the day", the ▾ tick carries the affordance; the standalone
+    calendar icon is deleted) — or Word mode's clock, or a screen's title chip.
+  - **CENTER, the SEGMENTED MODE SWITCHER** (`components/ModeTabs`): both dailies,
+    active one in the inverted selection box — retiring the /mode chooser round-trip
+    for the app's most frequent navigation (and fixing what killed the 2026-08-06
+    toggle: these tabs show BOTH modes and mark the current one). The route builds it
+    so it owns where a tap lands: the game routes to the other mode's today, the
+    ARCHIVE to the other mode's calendar — which is also how Word mode's archive stays
+    reachable with the clock holding word screens' left slot. A third daily is one more
+    segment.
+  - **RIGHT**: the language CODE chip (`FR`/`EN`, `LangButton` — two mono letters, no
+    fill, replacing the languages glyph; still the one gesture onto /select) then the
+    screen's contextual controls (help `?`, skip, close). **The logo LEFT the header**
+    with the /mode chooser it opened — brand lives on the frame rail and the hero
+    screens. **The LEADERBOARD, when it lands, enters from the solved screen's standing
+    line, NOT from here** (recorded so the bar stays this small).
+  Word mode's top reserve is 66px and the archive's 70px, clearing the band.
+  *(The paragraphs below predate the band and stand only where they don't contradict
+  it.)*
+  Historical: a fixed **topbar**
+  of **two corner chips and NOTHING else — no band, no border, no
+  background, no blur** over the then-animated waves.
+  Layout was one optical row: `.topbar-inner` = `min(900px, 100vw - 48px)`, 56px, centred.
   **LEFT is the status spot** (`.topbar-left`) — a screen's title in `.topbar-title`
   (ARCHIVE / TUTORIAL, plus any inline stat like the tutorial's counter), or a loaded game's
   own left chip: **the sentence game's is the DAY'S DATE** (`components/PuzzleDate`,

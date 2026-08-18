@@ -3,11 +3,11 @@ import { activeDate } from '@whippin/shared';
 import usePuzzle from './hooks/usePuzzle';
 import useWordPuzzle from './hooks/useWordPuzzle';
 import LanguageSelect from './screens/LanguageSelect';
-import ModeSelect from './screens/ModeSelect';
 import Archive from './screens/Archive';
 import Game from './screens/Game';
 import WordGame from './screens/WordGame';
 import TopBar from './components/TopBar';
+import ModeTabs from './components/ModeTabs';
 import DeviceFrame from './components/DeviceFrame';
 import LazyStreakDialog from './components/LazyStreakDialog';
 import LoadError from './components/LoadError';
@@ -28,9 +28,7 @@ import {
 import { t } from './i18n';
 import useToday from './hooks/useToday';
 import { streakPreviewFromSearch } from './dev/streakPreview';
-// This route's own header controls (the two choosers are TopBar's). Decorative glyphs;
-// the buttons' aria-labels name their actions.
-import CalendarIcon from './assets/icons/calendar.svg?react';
+// This route's own header control. Decorative glyph; the button's aria-label names it.
 import QuestionIcon from './assets/icons/question.svg?react';
 
 export default function App() {
@@ -77,7 +75,6 @@ export default function App() {
       <DeviceFrame serial={editionDay} />
       {/* The living backdrop — every screen (game, archive, select, tutorial) sits on it. */}
       {route.view === 'select' && <LanguageSelect />}
-      {route.view === 'modeSelect' && <ModeSelect />}
       {route.view === 'archive' && <Archive lang={route.lang} mode={route.mode} />}
       {route.view === 'game' && (
         <GameRoute lang={route.lang} mode={route.mode} date={route.date} />
@@ -202,16 +199,9 @@ function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: st
   // below opts this route into the first. What follows is this screen's own controls.
   const headerRight = (
     <>
-      {/* Into the archive calendar (#55) — past days, one tap from the game. */}
-      <button
-        type="button"
-        className="home-btn archive-btn"
-        aria-label={t(lang, 'ariaArchive')}
-        onClick={() => navigate(pathForArchive(lang, mode))}
-      >
-        <CalendarIcon className="ui-icon" aria-hidden />
-      </button>
-      {/* Replays the onboarding tutorial (#51) on demand — one tap, out of the way. */}
+      {/* Replays the onboarding tutorial (#51) on demand — one tap, out of the way.
+          (The archive icon left the header 2026-08-18: the DATE CHIP is the archive
+          entry now — see PuzzleDate.) */}
       <button
         type="button"
         className="home-btn help-btn"
@@ -226,7 +216,12 @@ function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: st
     <>
       {/* The route owns one persistent actual header. Loaded games populate its left slot;
           loading/error/missing states leave it empty. */}
-      <TopBar lang={lang} modeChooser left={currentHeaderLeft} right={headerRight} />
+      <TopBar
+        lang={lang}
+        left={currentHeaderLeft}
+        center={<ModeTabs lang={lang} mode={mode} onSelect={(m) => navigate(pathForMode(lang, m))} />}
+        right={headerRight}
+      />
       {loading && <p className="status">{t(lang, 'loading')}</p>}
       {error !== null && <LoadError message={t(lang, 'failedPuzzle')} lang={lang} onRetry={retry} />}
       {/* `date` tells NoPuzzle whether this is an archive miss; `mode` keeps its return

@@ -1,36 +1,38 @@
 import type { ReactNode } from 'react';
 import LangButton from './LangButton';
-import ModeButton from './ModeButton';
 
-// The floating app header (redesigned 2026-07-21: no band, no border — corner chips
-// over the playfield, arcade-HUD style). The LEFT corner is the status spot: a screen
-// passes its title (and any inline stat, e.g. the tutorial's progress counter) via
-// `left`; the loaded games pass their live progress/standing there too, so both header
-// corners belong to this actual <header>.
+// The app header, finalized 2026-08-18 (superseding the floating corner chips): ONE
+// GLASS BAND — the dialogs' own material as chrome, which is what keeps the controls
+// legible over the busy ground without simplifying it. Mobile-first: full-bleed slim
+// band with a hairline bottom edge; on desktop it floats capped and rounded just inside
+// the device frame's brackets, a piece of the instrument.
 //
-// The RIGHT corner is the one action group, in two halves: the CHOOSERS this bar owns —
-// the Whippin mark (which daily) then the globe (which language), each opening its own
-// picker route — followed by the screen's contextual controls via `right` (archive/help,
-// skip, close). The mode chooser is opt-in (`modeChooser`) because only a game route is
-// IN a mode; the archive and the tutorial show the globe alone. The streak stat lives on
-// the ARCHIVE page (moved back 2026-07-21 — it is the player-history screen), not here.
+// Three grid slots. LEFT is the status spot: the sentence game's DATE CHIP (which IS
+// the archive entry since the redesign — tap the day to change the day), Word mode's
+// clock, or a screen's title chip. CENTER is the segmented MODE SWITCHER wherever the
+// route has a lang+mode context (`center`, built by the route so it owns where a tap
+// lands). RIGHT is the small stuff: the language code chip (the one control the bar
+// itself owns) then the screen's own controls (help, skip, close). The logo LEFT the
+// header with the /mode chooser it used to open — brand lives on the frame rail and
+// the hero screens now. The leaderboard, when it lands, enters from the solved
+// screen's standing line, NOT from here (recorded so the bar stays this small).
 export default function TopBar({
   lang,
-  modeChooser = false,
   left,
+  center,
   right,
 }: {
   lang: string;
-  modeChooser?: boolean;
   left?: ReactNode;
+  center?: ReactNode;
   right?: ReactNode;
 }) {
   return (
     <header className="topbar">
       <div className="topbar-inner">
         {left && <div className="topbar-left">{left}</div>}
+        {center && <div className="topbar-center">{center}</div>}
         <div className="topbar-right">
-          {modeChooser && <ModeButton lang={lang} />}
           <LangButton lang={lang} />
           {right}
         </div>

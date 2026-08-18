@@ -455,7 +455,7 @@ button * {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding-top: 56px;
+  padding-top: 70px;
 }
 
 /* The streak hero (moved here from the header, 2026-07-21): flame + count centered
@@ -885,20 +885,31 @@ button * {
   right: 0;
   z-index: 60;
   font-family: var(--ui);
-  /* The chrome's soft legibility shadow: the corners still sit directly on the glows,
-     but the modern face wants a bloom, not the pixel identity's hard 2px offset. */
-  text-shadow: 0 2px 14px rgba(8, 9, 15, 0.9);
   pointer-events: none;
 }
+/* THE GLASS BAND (finalized 2026-08-18, superseding the no-band floating chips — that
+   rule guarded against boxes over the old ANIMATED waves; over the static ground the
+   dialogs' own glass is what keeps the controls legible without simplifying the
+   backdrop). Mobile-first: a full-bleed slim band with one hairline bottom edge; on
+   desktop it FLOATS, capped and rounded, just inside the device frame's brackets.
+   Three explicit grid slots (left status / centre tabs / right controls), so a missing
+   slot never shifts its neighbours — ModalHeader reuses the same classes with no
+   centre. */
 .topbar-inner {
   position: relative;
-  margin: 0 auto;
+  margin: 8px auto 0;
   width: min(900px, calc(100vw - 48px));
-  height: 56px;
-  display: flex;
+  height: 50px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  /* Left chip (when present) sits left; .topbar-right's margin-left:auto hugs the
-     right edge either way. */
+  padding: 0 8px;
+  background: var(--glass);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  pointer-events: auto;
 }
 /* The header's two corner groups sit DIRECTLY on the backdrop — no chip background/blur
    (removed 2026-07-21: boxes read as floating rectangles over the animated waves); the
@@ -906,12 +917,20 @@ button * {
 /* The left status chip: a screen's title (ARCHIVE / TUTORIAL — top-left like the
    game's percentage), optionally joined by an inline stat (the tutorial's counter). */
 .topbar-left {
+  grid-column: 1;
+  justify-self: start;
   display: inline-flex;
   align-items: center;
   gap: 14px;
   height: var(--hud-height);
-  padding: 0 12px;
+  padding: 0 4px;
   pointer-events: auto;
+}
+.topbar-center {
+  grid-column: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 /* The header's right controls: the game's "?" help (replays the tutorial) and the
    tutorial's fast-forward (skip) — both inline pixel-art icons. Buttons don't inherit
@@ -952,17 +971,60 @@ button * {
    gap — enough that glyphs don't read as one control, while the group still coheres.
    Re-enables pointer events under the click-through .topbar layer. */
 .topbar-right {
+  grid-column: 3;
+  justify-self: end;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 0 4px;
-  /* Always hugs the right edge, whether or not a left chip is present. */
-  margin-left: auto;
+  gap: 2px;
+  padding: 0;
   pointer-events: auto;
 }
-/* The language globe, the game header's archive entry and the archive's back-to-today
-   control: currentColor stroke glyphs, muted -> fg on hover like the "?" and skip, so the
-   whole right group brightens together. */
+/* The SEGMENTED MODE SWITCHER (2026-08-18): both dailies, the active one marked by the
+   app's inverted selection box — a delicate hairline group, the header's centre. */
+.mode-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+.mode-tab {
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  opacity: 0.55;
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1;
+  padding: 6px 10px 5px;
+  border-radius: 2px;
+  cursor: pointer;
+  text-shadow: none;
+  transition: opacity 0.1s linear, background-color 0.1s linear, color 0.1s linear;
+}
+.mode-tab:not(.active):hover {
+  opacity: 0.9;
+}
+.mode-tab.active {
+  background: var(--fg);
+  color: var(--bg);
+  opacity: 1;
+  cursor: default;
+}
+/* The language CODE chip (2026-08-18, replacing the languages glyph): two mono letters,
+   no fill — the header's most delicate control. */
+.lang-chip {
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  line-height: 1;
+}
+/* The language chip and the contextual controls: one ink, the .home-btn opacity lift as
+   the hover. */
 .lang-btn,
 .archive-btn,
 .archive-close {
@@ -1027,19 +1089,35 @@ button * {
    opposite. At 320px that leaves ~132px, so the mobile step below is 10px with no tracking
    (exactly 100px of ink) — measured at 320/360/390/430. */
 /* The date wears the same inverted chip as the screen titles (user-decided 2026-08-18:
-   "generalize this for the date") — the header's left corner is ONE treatment on every
-   screen. */
+   "generalize this for the date") — and since the header finalization the chip IS the
+   ARCHIVE BUTTON: tap the day to change the day (see PuzzleDate). The ▾ tick carries
+   the affordance. */
 .puzzle-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--ui);
   font-size: 14px;
   line-height: 1;
   font-weight: 700;
   letter-spacing: 0.04em;
   color: var(--bg);
   background: var(--fg);
-  padding: 5px 9px 4px;
+  border: 0;
+  padding: 5px 8px 4px 9px;
   border-radius: var(--r-sm);
+  cursor: pointer;
   text-shadow: none;
   font-variant-numeric: tabular-nums;
+  transition: filter 0.08s linear;
+}
+.puzzle-date:hover {
+  filter: brightness(0.88);
+}
+.pd-tick {
+  font-size: 8px;
+  opacity: 0.65;
+  translate: 0 -1px;
 }
 /* --- giant score watermark, always behind the play content --- */
 .progress-background {
@@ -3226,11 +3304,16 @@ button * {
   .solved-caption {
     align-items: stretch;
   }
-  /* Compact floating corners: the header row tightens to 48px optical height and hugs
-     the same 12px page inset. */
+  /* The band goes FULL-BLEED on a phone: no float, no radius, one hairline bottom
+     edge — the app's status strip. */
   .topbar-inner {
-    width: calc(100vw - 24px);
+    margin: 0;
+    width: 100vw;
     height: 48px;
+    padding: 0 6px;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
   }
   /* Ten glyphs of date against a phone's header corner: a step down and most of the
      tracking given back keeps the whole string beside the right group at 320px (the
@@ -3238,7 +3321,8 @@ button * {
   .puzzle-date {
     font-size: 12px;
     letter-spacing: 0;
-    padding: 4px 7px 3px;
+    padding: 4px 6px 3px 7px;
+    gap: 4px;
   }
 
   /* The sentence: a touch smaller so a hole + its exponent near the right edge still fits
@@ -3305,7 +3389,7 @@ button * {
   /* Archive: the centering column carries over from the base rule; just clear the
      compact (48px) mobile header. */
   .archive {
-    padding-top: 48px;
+    padding-top: 56px;
   }
 
   /* Language picker: tighter cards on a phone. */
@@ -3339,7 +3423,7 @@ button * {
    tutorial still carry (the game has none). */
 @media (max-width: 340px) {
   .topbar-inner {
-    width: calc(100vw - 16px);
+    padding: 0 2px;
   }
 }
 
@@ -3780,7 +3864,9 @@ button * {
 .game.word-game {
   position: relative;
   isolation: isolate;
-  padding-top: 48px;
+  /* Clears the glass band (8px float + 50px bar on desktop, 48px full-bleed on a
+     phone) with a breath. */
+  padding-top: 66px;
   gap: clamp(22px, 3.4vh, 36px);
 }
 /* The SCORE watermark's anchor: a full-width relative wrapper around ONLY the day's word, so

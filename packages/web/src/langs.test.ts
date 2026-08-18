@@ -38,8 +38,10 @@ describe('parseRoute', () => {
   // The two choosers sit ABOVE /<lang>: neither is language- or mode-scoped, and /mode
   // must never be read as a language segment or shadow Word mode's /<lang>/word.
   it('routes /mode to the game-mode picker, without touching the mode grammar', () => {
-    expect(parseRoute('/mode')).toEqual({ view: 'modeSelect' });
-    expect(parseRoute('/mode/')).toEqual({ view: 'modeSelect' });
+    // The /mode chooser was retired 2026-08-18 for the header's mode tabs: the old
+    // route is an unknown path now, and unknown paths go home.
+    expect(parseRoute('/mode')).toEqual({ view: 'home' });
+    expect(parseRoute('/mode/')).toEqual({ view: 'home' });
     expect(parseRoute('/fr/word')).toEqual({ view: 'game', lang: 'fr', mode: 'word' });
   });
   it('treats / and unknown paths as a home redirect', () => {
