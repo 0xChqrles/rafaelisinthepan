@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ComponentProps, ComponentType } from 'react';
 import type Tutorial from './Tutorial';
 import { t } from '../i18n';
+import LoadingWave from '../components/LoadingWave';
 
 type TutorialProps = ComponentProps<typeof Tutorial>;
 type TutorialComponent = ComponentType<TutorialProps>;
@@ -57,5 +58,11 @@ export default function LazyTutorial(props: TutorialProps) {
 
   // The cold path (replay, ?tutorial=1) briefly shows the app's plain loading line; the
   // first-visit path is warm from the invitation's preload.
-  return Loaded ? <Loaded {...props} /> : <p className="status">{t(props.lang, 'loading')}</p>;
+  return Loaded ? (
+    <Loaded {...props} />
+  ) : (
+    <p className="status">
+      <LoadingWave text={t(props.lang, 'loading')} />
+    </p>
+  );
 }

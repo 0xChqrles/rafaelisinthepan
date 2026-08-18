@@ -3,6 +3,7 @@ import Phrase from '../components/Phrase';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import LoadError from '../components/LoadError';
+import LoadingWave from '../components/LoadingWave';
 import RarityLadder from './RarityLadder';
 import TopBar from '../components/TopBar';
 import { HIT_FADE_MS } from '../components/FloatingHit';
@@ -450,7 +451,9 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
         ) : vocabError ? (
           <LoadError message={t(lang, 'failedVocab')} lang={lang} onRetry={retryVocab} />
         ) : !vocab ? (
-          <p className="status">{t(lang, 'loading')}</p>
+          <p className="status">
+            <LoadingWave text={t(lang, 'loading')} />
+          </p>
         ) : ladderOpen ? (
           // The graduation: the same full-width interaction the mix button opened the
           // lesson with closes it — PLAY.

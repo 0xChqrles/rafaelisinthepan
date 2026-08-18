@@ -10,6 +10,7 @@ import {
 import { computeProgress, guessKey } from '../game/scoring';
 import { replayRun, type RunReplay } from '../game/share';
 import { canExtend } from '../game/keyboard';
+import LoadingWave from '../components/LoadingWave';
 import useVocab from '../hooks/useVocab';
 import useScoreHistogram from '../hooks/useScoreHistogram';
 import useToday from '../hooks/useToday';
@@ -83,7 +84,12 @@ export default function Game({
   if (error !== null) {
     return <LoadError message={t(puzzle.lang, 'failedVocab')} lang={puzzle.lang} onRetry={retry} />;
   }
-  if (!vocab) return <p className="status">{t(puzzle.lang, 'loading')}</p>;
+  if (!vocab)
+    return (
+      <p className="status">
+        <LoadingWave text={t(puzzle.lang, 'loading')} />
+      </p>
+    );
 
   return (
     <Round

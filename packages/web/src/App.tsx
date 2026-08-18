@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { activeDate } from '@whippin/shared';
+import LoadingWave from './components/LoadingWave';
 import usePuzzle from './hooks/usePuzzle';
 import useWordPuzzle from './hooks/useWordPuzzle';
 import LanguageSelect from './screens/LanguageSelect';
@@ -222,7 +223,11 @@ function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: st
         center={<ModeTabs lang={lang} mode={mode} onSelect={(m) => navigate(pathForMode(lang, m))} />}
         right={headerRight}
       />
-      {loading && <p className="status">{t(lang, 'loading')}</p>}
+      {loading && (
+        <p className="status">
+          <LoadingWave text={t(lang, 'loading')} />
+        </p>
+      )}
       {error !== null && <LoadError message={t(lang, 'failedPuzzle')} lang={lang} onRetry={retry} />}
       {/* `date` tells NoPuzzle whether this is an archive miss; `mode` keeps its return
           route on the same daily game's calendar. */}

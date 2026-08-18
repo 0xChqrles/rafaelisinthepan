@@ -1,4 +1,3 @@
-import type { CSSProperties } from 'react';
 import {
   scoreStanding,
   formatTopPct,
@@ -8,6 +7,7 @@ import {
 import type { ScorePlacementState } from '../hooks/useScoreHistogram';
 import { t, tn } from '../i18n';
 import type { Mode } from '../langs';
+import LoadingWave from './LoadingWave';
 
 // Where the player stands in the day's population (#170) — one line, said outright
 // (user-decided 2026-08-15, replacing the brick histogram: a field of bars asks to be
@@ -49,24 +49,14 @@ export default function ScoreRank({
   const settled = !animate;
   if (!(settled || start)) return <div className="score-slot" />;
 
-  // The round trip is still in flight: RANKING... holds the slot, its letters carrying
-  // a looping light wave (see `.score-ranking`). It resolves into the line, or into the
-  // empty slot on the silent failure — never into an error.
+  // The round trip is still in flight: RANKING... holds the slot with the app's one
+  // loading shimmer, its letters in the line's own label class so the shimmer is in
+  // exactly the face and size of the text it resolves into. It resolves into the line,
+  // or into the empty slot on the silent failure — never into an error.
   if (placement === 'pending') {
-    const label = t(lang, 'scoreRanking');
     return (
-      <p className="score-slot score-ranking">
-        <span className="sr-only">{label}</span>
-        {/* Each letter wears the line's own label class, so the shimmer is in exactly
-            the face and size of the text it resolves into — by construction, not by a
-            copied rule. The wave only adds the colour cycle on top. */}
-        <span className="score-ranking-wave" aria-hidden="true">
-          {Array.from(label).map((ch, i) => (
-            <span key={i} className="score-rank-label" style={{ '--i': i } as CSSProperties}>
-              {ch}
-            </span>
-          ))}
-        </span>
+      <p className="score-slot">
+        <LoadingWave text={t(lang, 'scoreRanking')} letterClass="score-rank-label" />
       </p>
     );
   }
