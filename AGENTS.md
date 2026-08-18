@@ -475,10 +475,11 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   (user-decided 2026-08-19, superseding the 3-ink first cut), and its codec is a
   cross-package contract** (`shared/src/avatar.ts`): palette byte + 100 cells at 1
   bit/pixel = 14 bytes, base64url, exactly 19 chars, canonical-form-only decode.
-  `AVATAR_PALETTES` is a list of `{bg, fg}` pairs (append-only — the byte is an index)
-  over one shared ground, and **the picker shows only the foreground: you select a
-  colour, and that colour IS the palette.** The web encodes and renders (SVG); the
-  backend decodes to validate and moderate.
+  `AVATAR_PALETTES` is FIVE `{bg, fg}` pairs (append-only — the byte is an index),
+  **each with its OWN ground tinted toward its ink** (a shared ground was explicitly
+  refused; PAPER inverts), and **the picker shows only the foreground: you select a
+  colour, and that colour IS the palette — its background comes with it.** The web
+  encodes and renders (SVG); the backend decodes to validate and moderate.
 - **Moderation is best-effort ON WRITE, by decided stance:** a normalized banned-strings
   name filter (`backend/src/nameFilter.ts`; name cap 16 code points, no control/format
   chars, empty allowed) and an exhaustive swastika template match over rotations,

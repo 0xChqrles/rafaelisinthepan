@@ -22,18 +22,18 @@ export interface AvatarPalette {
   fg: string;
 }
 
-// The predefined palettes. Order is load-bearing — the encoded byte is an INDEX into
-// this list, so entries may be appended but never reordered or removed once avatars
-// referencing them exist. One shared ground; the foregrounds are the app's own hues.
+// The predefined palettes — FIVE (user-decided 2026-08-19), each pairing its OWN ground
+// with its foreground: the ground is tinted toward the ink, so switching palettes
+// repaints the whole drawing, not just the pixels (PAPER inverts — dark ink on the
+// stamp paper). Order is load-bearing — the encoded byte is an INDEX into this list, so
+// entries may be appended but never reordered or removed once avatars referencing them
+// exist.
 export const AVATAR_PALETTES: readonly AvatarPalette[] = [
   { name: 'COBALT', bg: '#16181f', fg: '#4a6aff' },
-  { name: 'CYAN', bg: '#16181f', fg: '#4fd2e8' },
-  { name: 'VIOLET', bg: '#16181f', fg: '#8f7bff' },
-  { name: 'ORCHID', bg: '#16181f', fg: '#ff5ce0' },
-  { name: 'EMBER', bg: '#16181f', fg: '#ff3d2e' },
-  { name: 'AMBER', bg: '#16181f', fg: '#ffd23f' },
-  { name: 'MOSS', bg: '#16181f', fg: '#3ddc84' },
-  { name: 'PAPER', bg: '#16181f', fg: '#f4f1e8' },
+  { name: 'CYAN', bg: '#0f1d22', fg: '#4fd2e8' },
+  { name: 'VIOLET', bg: '#171225', fg: '#8f7bff' },
+  { name: 'ORCHID', bg: '#200f1c', fg: '#ff5ce0' },
+  { name: 'PAPER', bg: '#f4f1e8', fg: '#16181f' },
 ];
 
 const BYTES = 1 + Math.ceil(AVATAR_CELLS / 8); // 14
