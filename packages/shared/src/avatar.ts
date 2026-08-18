@@ -25,19 +25,21 @@ export interface AvatarPalette {
 // The predefined palettes — FIVE (user-decided 2026-08-19): a BASE duo made of the
 // app's own tokens — the poster-violet accent on the surface colour (pinned COPIES of
 // the web's `--accent` / `--surface`; CSS owns the originals) — then four VIVID
-// two-colour print duos from the /inspiration moodboard's riso/stamp pairings
-// (tangerine on royal blue, magenta on butter yellow, paper cream on teal, tomato on
-// lilac). Each duo pairs a contrasting ink with its OWN coloured ground, never two
-// shades of one hue; the vivid four are the one deliberate departure from the app's
-// defined palette. Names are the INK's, since the picker shows only the foreground.
-// Order is load-bearing — the encoded byte is an INDEX into this list, so entries may
-// be appended but never reordered or removed once avatars referencing them exist.
+// two-colour print duos in the /inspiration moodboard's riso vocabulary, GROUND
+// INCLUDED (the "vivid" call covers both halves — a pale or muted sheet reads dull):
+// tangerine on royal blue, magenta on sunflower yellow, paper cream on emerald,
+// cyan on grape purple. Each duo pairs a contrasting ink with its OWN coloured
+// ground, never two shades of one hue; the vivid four are the one deliberate
+// departure from the app's defined palette. Names are the INK's, since the picker
+// shows only the foreground. Order is load-bearing — the encoded byte is an INDEX
+// into this list, so entries may be appended but never reordered or removed once
+// avatars referencing them exist.
 export const AVATAR_PALETTES: readonly AvatarPalette[] = [
   { name: 'VIOLET', bg: '#161826', fg: '#8f7bff' },
-  { name: 'TANGERINE', bg: '#2440c8', fg: '#ff7a3d' },
-  { name: 'MAGENTA', bg: '#f4e87c', fg: '#e5399e' },
-  { name: 'CREAM', bg: '#12655c', fg: '#f4f1e8' },
-  { name: 'TOMATO', bg: '#beb6ee', fg: '#ff4629' },
+  { name: 'TANGERINE', bg: '#2b3ce8', fg: '#ff7a3d' },
+  { name: 'MAGENTA', bg: '#ffd21f', fg: '#e5399e' },
+  { name: 'CREAM', bg: '#12b06b', fg: '#f4f1e8' },
+  { name: 'CYAN', bg: '#7b2ff2', fg: '#45e0ff' },
 ];
 
 const BYTES = 1 + Math.ceil(AVATAR_CELLS / 8); // 14

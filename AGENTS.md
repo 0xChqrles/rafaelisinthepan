@@ -479,9 +479,10 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   user-decided 2026-08-19: a **BASE duo of the app's own tokens** — the accent on the
   surface colour (pinned copies of the web's `--accent`/`--surface`, asserted by the
   palette pin test) — then **four VIVID two-colour print duos, a contrasting ink on
-  its OWN coloured ground, never two shades of one hue** (the /inspiration
-  moodboard's riso/stamp pairings — the one deliberate departure from the app's
-  defined palette). **The picker shows only the foreground: you select a colour, and
+  its OWN coloured ground, never two shades of one hue — and "vivid" covers BOTH
+  halves: the grounds are saturated inks too, never pale sheets** (the /inspiration
+  moodboard's riso vocabulary — the one deliberate departure from the app's defined
+  palette). **The picker shows only the foreground: you select a colour, and
   that colour IS the palette — its ground comes with it.** The web encodes and
   renders (SVG); the backend decodes to validate and moderate.
 - **Moderation is best-effort ON WRITE, by decided stance:** a normalized banned-strings
