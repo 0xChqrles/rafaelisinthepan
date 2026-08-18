@@ -274,7 +274,9 @@ const STRINGS = {
   profileSaveFailed: { en: 'SAVE FAILED', fr: "ÉCHEC DE L'ENREGISTREMENT" },
   profileNameRejected: { en: 'NAME NOT ALLOWED', fr: 'PSEUDO REFUSÉ' },
   profileAvatarRejected: { en: 'AVATAR NOT ALLOWED', fr: 'AVATAR REFUSÉ' },
-  profileClear: { en: 'CLEAR', fr: 'EFFACER' },
+  // Untranslated in every language (the user's call, 2026-08-19) — one word everywhere,
+  // like MISS, TOP and the rarity grades.
+  profileClear: { en: 'CLEAR', fr: 'CLEAR' },
   ariaAvatarEditor: { en: 'Avatar editor: tap to paint', fr: "Éditeur d'avatar : touchez pour peindre" },
   ariaPalette: { en: 'Palette', fr: 'Palette' },
 } satisfies Record<string, Record<UiLang, string>>;
