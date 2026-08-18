@@ -1027,11 +1027,12 @@ button * {
   line-height: 1;
 }
 /* The help control is a bare `?` GLYPH (user-decided 2026-08-18, replacing the Lucide
-   circle-help — "terrible"): the mono's own question mark, the lang chip's exact
-   sibling — same size, same weight (user-tuned the same day). */
+   circle-help — "terrible"): the mono's own question mark beside the lang chip, at its
+   own 17px (user-tuned — a lone glyph needs more size than two letters to carry the
+   same weight), same 480. */
 .help-chip {
   font-family: var(--ui);
-  font-size: 12px;
+  font-size: 17px;
   font-weight: 480;
   line-height: 1;
 }
