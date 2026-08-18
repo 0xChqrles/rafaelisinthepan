@@ -309,9 +309,9 @@ function Round({
   // layout effect fills it before paint and clears it when this round leaves. It holds WHICH
   // DAY this is — fixed for the round, so this runs once per day rather than per guess.
   useLayoutEffect(() => {
-    onHeaderLeftChange(<PuzzleDate dayNumber={dayNumber} />);
+    onHeaderLeftChange(<PuzzleDate dayNumber={dayNumber} lang={lang} />);
     return () => onHeaderLeftChange(null);
-  }, [onHeaderLeftChange, dayNumber]);
+  }, [onHeaderLeftChange, dayNumber, lang]);
 
   // This round replayed: the per-guess reconstruction-% trajectory (the run ruler's cells,
   // and what the share token carries) plus the solve moments (its ticks), from ONE walk of

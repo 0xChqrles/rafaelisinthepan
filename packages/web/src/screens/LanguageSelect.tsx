@@ -38,6 +38,7 @@ export default function LanguageSelect() {
         <ChooserCard
           key={code}
           name={native}
+          tag={code.toUpperCase()}
           uiLang={uiLang}
           status={
             mode === 'word'

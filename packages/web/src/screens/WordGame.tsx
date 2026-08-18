@@ -24,6 +24,7 @@ import useScrollEdges from '../hooks/useScrollEdges';
 import WordBoard, { WordTerminus } from '../components/WordBoard';
 import WordSubject, { hitDurationMs, type WordHit } from '../components/WordSubject';
 import WordTimer, { type TimeGain } from '../components/WordTimer';
+import PuzzleDate from '../components/PuzzleDate';
 import CellDigits from '../components/CellDigits';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
@@ -248,13 +249,16 @@ function WordRound({
   const [gain, setGain] = useState<TimeGain | null>(null);
   const gainId = useRef(0);
 
-  // Keep the arcade standing inside the real app header — the CLOCK, which is what this
-  // mode is played against. The score is not here: it is the watermark. Absent when the
-  // artifact has no drawable board, matching the load-failure body below.
+  // The header's left slot holds the DATE CHIP — the archive entry, like the sentence
+  // game's (user-decided 2026-08-18; the CLOCK moved down under the word, where the
+  // playing eye already lives). Absent when the artifact has no drawable board, matching
+  // the load-failure body below.
   useLayoutEffect(() => {
-    onHeaderLeftChange(board ? <WordTimer lang={lang} deadline={deadline} gain={gain} /> : null);
+    onHeaderLeftChange(
+      board ? <PuzzleDate dayNumber={dayNumber} lang={lang} mode="word" /> : null,
+    );
     return () => onHeaderLeftChange(null);
-  }, [board, deadline, gain, lang, onHeaderLeftChange]);
+  }, [board, dayNumber, lang, onHeaderLeftChange]);
 
   const [input, setInput] = useState('');
   const [invalidAt, setInvalidAt] = useState(0);
@@ -484,7 +488,16 @@ function WordRound({
           {postMortem ? (
             <WordTerminus model={board} />
           ) : (
-            <WordSubject word={puzzle.word.word} lang={lang} hit={hit} onHitDone={clearHit} />
+            <>
+              <WordSubject word={puzzle.word.word} lang={lang} hit={hit} onHitDone={clearHit} />
+              {/* The CLOCK, under the word since 2026-08-18 (freeing the header's left
+                  slot for the date chip): the resource this mode is played against,
+                  right where the playing eye lives — idle preview on the gate, live
+                  countdown during the run; the post-mortem needs no clock at all. */}
+              <div className="word-clock">
+                <WordTimer lang={lang} deadline={deadline} gain={gain} />
+              </div>
+            </>
           )}
         </div>
       </div>

@@ -2,8 +2,9 @@ import { useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { activeDate, dayNumber, progressHeatColor } from '@whippin/shared';
 import TopBar from '../components/TopBar';
+import ModeTabs from '../components/ModeTabs';
 import { navigate } from '../routing';
-import { pathForMode, pathForDay, type LangCode, type Mode } from '../langs';
+import { pathForMode, pathForDay, pathForArchive, type LangCode, type Mode } from '../langs';
 import { FIRST_PUZZLE_DATE } from '../config';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
 import { isComplete, statusOf, wordStatusOf, srStatus, type Status } from '../state/status';
@@ -117,6 +118,12 @@ export default function Archive({ lang, mode = 'sentence' }: { lang: LangCode; m
       <TopBar
         lang={lang}
         left={<span className="topbar-title">{t(lang, 'archive')}</span>}
+        center={
+          // The tabs work here too — they switch WHICH daily's calendar this is, which
+          // is also what makes Word mode's archive reachable now that the word screens'
+          // left slot is the clock: enter the archive from anywhere, tab to the word.
+          <ModeTabs lang={lang} mode={mode} onSelect={(m) => navigate(pathForArchive(lang, m))} />
+        }
         right={
           <button
             type="button"
@@ -124,7 +131,7 @@ export default function Archive({ lang, mode = 'sentence' }: { lang: LangCode; m
             aria-label={t(lang, 'ariaBackToToday')}
             onClick={() => navigate(pathForMode(lang, mode))}
           >
-            <CloseIcon className="pixel-icon" aria-hidden />
+            <CloseIcon className="ui-icon" aria-hidden />
           </button>
         }
       />
@@ -152,7 +159,7 @@ export default function Archive({ lang, mode = 'sentence' }: { lang: LangCode; m
             disabled={!canPrev}
             onClick={() => canPrev && step(-1)}
           >
-            {'<'}
+            {'‹'}
           </button>
           <span className="cal-month">{monthTitle}</span>
           <button
@@ -163,7 +170,7 @@ export default function Archive({ lang, mode = 'sentence' }: { lang: LangCode; m
             disabled={!canNext}
             onClick={() => canNext && step(1)}
           >
-            {'>'}
+            {'›'}
           </button>
         </div>
 

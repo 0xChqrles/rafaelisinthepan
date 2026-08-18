@@ -112,12 +112,16 @@ These are decided and verified against the code. Treat them as load-bearing.
     mode's day word, the OG card's word, the tutorial's `[[b:]]` secret (`.rt-target`) —
     and done-for-the-day strips/cells. The pale hole is strongly legible on `--bg`; the
     blank line and exponent carry the rest of the unresolved-state distinction.
-  - **the ACCENT is STAMP ORANGE** — `--accent` #f5820f (the Séance poster's own orange,
-    sampled;
-    it was gold until the weird end claimed the yellows): the chrome (prompt caret,
-    enter key, loading status, COPIED), the `+Ns` gain, the history "you are here"
-    node, the streak, `.btn-primary`, the source credit's headline, the standing's rank
-    number. Never a scale value, never a word state.
+  - **the ACCENT is POSTER VIOLET** — `--accent` #8f7bff (user-decided 2026-08-18,
+    REMOVING the stamp orange outright — "keep the blue/violet palette for all accent
+    and actions"; the hex is the ground's violet orb lifted to text contrast, chosen
+    clear of the solve cobalt, the pale hole blue, RARE's cyan and OBSCURE's pinker
+    #b164f2): the chrome (prompt caret, loading status, COPIED), the `+Ns` gain, the
+    history "you are here" node, the streak, the source credit's headline, the
+    standing's rank number. The keyboard's ENTER cap is the one exception, lit in a
+    COBALT gradient (the macropad's "Publish" blue — submitting is the step toward the
+    solve); the ground's old orange corner orb went cobalt with the accent. Never a
+    scale value, never a word state.
   The palette tests pin the required legibility and reservations around MISS, solve,
   danger and the rarity ladder; retune those relationships deliberately, never by a
   copied stale hex.
@@ -134,21 +138,147 @@ These are decided and verified against the code. Treat them as load-bearing.
   - the fine HALFTONE DOT matrix (one soft paper dot per `--cell`, replacing the
     graph-paper grid lines);
   - a COBALT SKY GLOW washing down from the top edge plus two faint corner ORBS (violet
-    lower-right, orange lower-left) — the poster's own inks, sampled: #184cf4 cobalt,
-    #8b45ea violet, #f58107 orange. The raw poster cobalt is deliberately a GLOW-only
-    colour (3.2:1 — too dim for text; `--solve` is its text-safe sibling);
+    lower-right, cobalt lower-left — the orange orb left with the orange accent,
+    2026-08-18): #184cf4 cobalt, #8b45ea violet. The raw poster cobalt is deliberately a
+    GLOW-only colour (3.2:1 — too dim for text; `--solve` is its text-safe sibling);
   That is the WHOLE ambiance: ONE halftone texture plus the radial glows (user-tuned
   2026-08-17 — a film-grain overlay and then an edge halftone dot-vignette each shipped
   and were both removed on review; the single dither and the gradients are the look, and
   nothing sits above the content).
   `--fg` is stamp paper #f4f1e8, `--muted` warm grey, `--danger` an ink red; Word mode's
   rarity ladder is authored as a VIVID INK set (`components/rarity.ts` — same hue walk,
-  thresholds re-measured in `rarity.test.ts`). Still ELECTRIC, pending an art repaint: the baked pixel
-  art (logo-blue.png, the mode sprite, the streak flame, ultracode.png). NEW FONTS are
-  the deferred half of the redesign: every layout measurement assumes Press Start 2P's
-  exact 1em-per-glyph advance (fitWord, the rank gutters, the standing line's glyph
-  budget, MixWord's ch reservations, CellDigits' grid), so a typeface change is its own
-  pass.
+  thresholds re-measured in `rarity.test.ts`). Still ELECTRIC, pending an art repaint: the
+  remaining baked pixel art (the streak flame sheets, ultracode.png, the hit sheets —
+  logo-blue.png and the whippin.png mode sprite were DELETED 2026-08-18 for the
+  user-drawn `assets/logo.svg`).
+- **THE TYPE SYSTEM IS TWO VOICES — PIXEL ONLY WHERE YOU PLAY (user-decided
+  2026-08-18, closing the redesign's deferred fonts half; walked from three voices to
+  two on the user's same-day reviews — Inter "no soul" → Space Grotesk, then the grotesk
+  AND the Instrument Serif display face both retired for ONE mono).** All faces
+  self-hosted (`assets/fonts/`, latin + latin-ext subsets so French accents never fall
+  back).
+  - **PIXEL (Press Start 2P)** is reserved for the PLAY surfaces: the sentence and its
+    holes, Word mode's day word, the route drawings entire (words, rank gutters, MISSED
+    shelf), the prompt/input and its hint, the keyboard (keys + its `.kb-icon` pixel
+    enter/backspace), the floating hits, the loot, the strike sheets, the CellDigits
+    watermark, the solved screen's word trophies, the rarity ladder's EXAMPLE words,
+    MixWord — and, since the same day's later passes, the whole SOLVED STACK's data:
+    both result counts (`.solved-score-num`), the ENTIRE standing line (labels, the
+    accent rank number AND the TOP badge — one face, so `standingUnits` is back to
+    rank-digits-count-DOUBLE with one unit = one label glyph), the SOURCE CREDIT (both
+    lines — the source is the puzzle's content, not chrome, and it is EXEMPT from the
+    all-caps chrome rule: quoted content keeps its own casing, the code-uppercased KIND
+    carrying the phrase contrast), the run ruler's tick numbers, the trophies'
+    superscript numbers, and the streak celebration's digits (wheel slots at the pixel
+    1em advance, the flame's HARD 6px indigo underprint restored — a soft glow clips
+    square inside the overflow-hidden slots). **Every monospace layout assumption therefore still holds** — fitWord, the
+    route `--gutter` arithmetic, MixWord's ch reservations and CellDigits' grid all sit
+    on surfaces that stayed pixel. The coach text's inline `[[b:]]`/`[[w:]]` words are
+    pixel at 0.82em INSIDE modern copy — game words quoted in chrome.
+  - **MONO (Azeret Mono variable 100-900, `--ui`)** is EVERYTHING else — body default,
+    header (title/date and Word mode's clock), buttons, coach copy, the standing line,
+    calendar, streak, rarity chip counts, statuses, and every moment the retired serif
+    used to headline (chooser names, the invite title — the credit, the result numbers
+    and the streak digits all moved ON to the pixel face the same day, see above). A monospace is tabular by construction, so everything that ticks is stable
+    for free, and `ScoreRank.standingUnits`'s glyphs-as-width estimate is literally true
+    again. **The chrome is ALL-CAPS (user-decided 2026-08-18) — every mono surface wears
+    `text-transform: uppercase` EXCEPT the coach/dialog copy**, which stays sentence
+    case and quotes its in-game words — `[[b:]]`, `[[w:]]` AND `[[m:]]` (the MISS words
+    joined the same day, `.rt-miss`) — in the pixel face at 0.82em; the `.solved-by`
+    lowercase `sourceBy` word is uppercased by the same rule, the phrase reading
+    surviving in the word order. **Hierarchy is said in WEIGHT, never in families: light
+    (275-300) for the big
+    numbers, medium (500-550) for names and labels, bold (600-700) for actions**; resting
+    body weight 400; `font-synthesis: none` app-wide (the pixel face ships one weight — a
+    faux bold smears like a fractional scale).
+  - **The modern chrome KIT rides three token groups on `:root`** — radii
+    (`--r-sm/md/lg` = 2/3/4px), hairlines (`--line`/`--line-strong`), glass (`--glass`) —
+    worn by every non-game box: aura-gradient chooser cards (cobalt/violet/orange by
+    nth-child), glass coach dialogs (both gates + the tutorial), gradient-and-bloom
+    primary buttons, the outlined TOP badge, glass result actions, calendar cells and
+    week tiles. **THE DESIGN STAYS SHARP (user-decided 2026-08-18): 4px is the absolute
+    radius ceiling — no pills, no circles anywhere in the chrome** (the SHARE pill, the
+    TOP-badge pill, the rounded scrollbar thumb and the round rarity bead of the first
+    cut are all squared back off; the run ruler's filament rounds at 3px).
+    **ONE INK (user-decided the same day): chrome text and ICONS are `--fg`** — `--muted`
+    survives only on GAME surfaces (the route drawing's dresses, the keyboard's control
+    keys, the watermark) — with hierarchy carried by weight and opacity, never by a
+    second grey; `--accent` keeps exactly its recorded accent roles.
+    The HEADER's icons are the LUCIDE stroke set as `.ui-icon`s (user-picked 2026-08-18:
+    calendar, circle-help, x, fast-forward, and LANGUAGES — the 文/A translation mark —
+    for the language control, replacing the globe; 24-grid, 1.8px, currentColor, 28px
+    in-file size; globe.png and the standalone `.pixel-icon`
+    class are deleted); the Whippin mark is the USER-DRAWN `assets/logo.svg` since
+    2026-08-18: cobalt with the cobalt-core/violet-halo AURA on the chooser and invite
+    hero spots (it sat in the header, glowing, until the same day's header finalization —
+    the mode tabs took its job and the mark left the bar). The BODY's global hard 2px
+    text-shadow is gone; pixel surfaces that relied on it (floating hits, loot) carry
+    their own, and the topbar wears a soft bloom shadow instead.
+  - **THE VIEWPORT IS AN INSTRUMENT (user-decided 2026-08-18, from the user's
+    /inspiration/modern board — "fresh and deep update"):** the content floats in the
+    middle while decorative furniture clings to the edges.
+    - **`components/DeviceFrame`** (mounted once in App, under every screen): four
+      corner BRACKETS — the board's focused-card selection frame drawn around the whole
+      app — a vertical `WHIPPIN AI ©2026` brand rail on the left edge, the localized
+      tagline (`frameTagline`, the STRINGS table) bottom-left, and the day's EDITION
+      SERIAL bottom-right (`N.<dayNumber>` — the interfaces.dev card's numbering, fed
+      the ACTIVE day via useToday). Decorative (aria-hidden, pointer-events none),
+      z-index 40 under the header's 60, covered by opaque dialogs, and DESKTOP ONLY
+      (hidden ≤640px — a phone's viewport is all content).
+    - **The KEYBOARD is FLAT (user-decided 2026-08-18, superseding the bevelled
+      macropad keycaps the same day — "old skeuomorphism"):** every key is one solid
+      dark tile at the sharp radius, nothing modelled, and **a press is a STATE, not
+      travel** — brightness, never translateY (the rule the primary buttons follow
+      too). **ENTER is the pad's ONE coloured key**: flat solve cobalt with the faint
+      light it throws — a lamp, not a bevel — lit exactly when the input is a real word
+      (`.kb-enter` vs `.kb-enter.kb-greyed`), so the board itself says "publishable".
+      The flat rule's line: surface GRADIENTS, inset bevels and elevation shadows are
+      out everywhere; LUMINOUS glows (the LEDs, the ruler bloom, the logo aura, the
+      plate's cobalt wash) stay — they are light, not depth. Chrome icon strokes sit at
+      2 (up from 1.8) for the flatter, more confident weight.
+      On desktop the keys sit on a flat DEVICE PLATE (hairline + translucent fill, its
+      cobalt wash kept, its inner shadow gone) — drawn OUT OF FLOW (`.keyboard::before`,
+      inset past the keys) so `--kb-h` and the tray's fixed height stay exactly the
+      keys' own; the plate hides with the phone's full-bleed keyboard. The keys' pixel
+      glyphs and all key LOGIC are untouched.
+    - **The INVERTED SELECTION BOX is the one emphasis gesture** (the board's
+      highlighted headline word / selected list row) — and in the HEADER it is the
+      ACTIVE TAB'S ALONE (user-decided 2026-08-18, third pass: with the glass band up,
+      the filled title/date chips read heavy, so `.topbar-title` and `.puzzle-date`
+      are plain bold foreground type now — one left-corner treatment still, just
+      unfilled; the date keeps its ▾ and a whisper-chip hover as the archive-button
+      affordance). Elsewhere it stands: the result action INVERTS on hover;
+      the invite title's last word sits in an `.invite-mark` box (Invite splits the
+      localized copy on the final space, pulling one more token in when the tail is
+      bare punctuation — French's ` ?`). **The DIALOG BOXES wear COBALT CORNER TABS**
+      (user-decided 2026-08-18): `.coach` and `.coach-rules` are dead-sharp (radius 0)
+      with short 2px cobalt brackets on all four corners — the device frame's bracket
+      language on the one surface that talks to the player — drawn as eight background
+      strips over the border box, the glass fill as the stack's colour layer. **The PRIMARY BUTTONS are DEVICE CARDS**
+      (user-decided 2026-08-18, fourth button pass — the orange slab was "goofy", the
+      paper block "still off", the chooser cards "very nice"): the member card's own
+      dress as the app's one big action — dark glass, `--line-strong` hairline, bold
+      mono, and a lit COBALT LED square before the label (`::before`; a disabled MIX
+      unlights it). Hover brightens and the rule sharpens; pressing depresses. The
+      keyboard's lit cobalt ENTER cap is the one resting patch of colour. The frame's tagline is the universal
+      `MADE WITH <3` (user-picked, replacing the localized "a daily word game" — the
+      `frameTagline` key is gone), and `.app`'s desktop side padding is 52px so content
+      clears the frame's vertical rail. Coach copy is 16px at weight 350 (14px on
+      phones).
+    - **The CHOOSER cards are MEMBER CARDS** (superseding the aura tiles the same day):
+      name bold left with an index TAG under it (a language's code EN/FR, a daily's
+      01/02 — the `tag` prop each screen passes), and a deterministic LED-CELL MOSAIC
+      on the right (`Chooser.cellsFor`, an FNV hash of the name; 8×3 cells lit in the
+      card's ink — cobalt/violet/orange by nth-child). Decorative; the aria-label
+      carries everything.
+  - **The RUN RULER kept its PER-TRY STEPPED CELLS (settled 2026-08-18 after a round
+    trip):** a gradient-filament version and then a colourless flat rule each lived for
+    part of the day and both were rejected — "remove the gradient, put back the old
+    step by step colors" — so the drawing is the original: one flat cell per counted
+    try at that try's `progressHeatColor`, dead sharp, 16px, revealed by the per-cell
+    show/colorize delays. What SURVIVES from the detour is the ticks' sentence indices
+    in the PIXEL face. The bar therefore still matches the share card's stepped cells
+    exactly.
 - **A RANK IS WRITTEN BARE — no leading minus, anywhere (user-decided 2026-08-16).** A rank
   is a DISTANCE, and a distance is not negative; `sailor^87`, not `sailor^-87`. This is the
   app's ONE way of writing a rank, so it holds on every surface that shows one: the hole's
@@ -440,9 +570,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   because it is a POSTURE and not motion. All of this is the screen being alive while the
   player THINKS; it is deliberately separate from the guess FEEDBACK, which is what the
   screen says back when they ACT (the slash, below).
-  **The TIMER is the HUD and the SCORE is the watermark.** The clock takes the header's
-  status corner (where the sentence game puts its date chip) at 34px — the one live
-  number on the screen — and the count becomes the big `CellDigits` watermark behind the
+  **The TIMER sits UNDER THE WORD and the SCORE is the watermark (clock placement
+  user-decided 2026-08-18, superseding the header corner: the header's left slot went to
+  the date chip / archive entry, and the clock — in the PIXEL face now, like every number
+  the game produces — lives in `.word-clock` right under the day's word, where the
+  playing eye already is; the gate previews it there, and the post-mortem mounts no clock
+  at all).** And the count becomes the big `CellDigits` watermark behind the
   word (`.word-anchor`, the standing watermark rule: what is displayed better later, since
   the count is this mode's end-screen headline). **That watermark is sized for at least TWO
   digits whatever it currently reads** (`MIN_SIZED_DIGITS`, decided 2026-08-09) — a rule of
@@ -664,10 +797,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   already happened is not a control. Both extremes were built and rejected on sight — in flow
   the history pushed the window's centre up with it and the word read as TOP-ALIGNED (measured
   126px high); given the whole band down to the KEYBOARD the word read as TOO LOW.
-  **The rarity COLOURS are an authored stamp-ink ladder, measured and pinned**
-  (`components/rarity.ts` + `rarity.test.ts`): COMMON tracks `--muted`; UNCOMMON, RARE,
-  OBSCURE and ARCANE are fixed mint, cyan, violet and magenta inks. They are not copies of
-  heat-ramp stops. **THE MISS COLOUR IS NO GRADE'S:** every grade stays perceptually clear
+  **The rarity COLOURS are the authored AURA LADDER, measured and pinned**
+  (`components/rarity.ts` + `rarity.test.ts`; user-decided 2026-08-18, superseding the
+  stamp inks — "the dull grey, the ugly green, the weird blue"): five steps of EMITTED
+  LIGHT sweeping the app's own aura cool→hot — slate `#97a3c9`, LED cyan `#4fd2e8`,
+  azure `#64a0ff`, violet `#bd68ff`, laser magenta `#ff5ce0` — ALL five authored now
+  (COMMON no longer tracks `--muted`). They are not copies of heat-ramp stops. **THE MISS COLOUR IS NO GRADE'S:** every grade stays perceptually clear
   of `MISS_COLOR`, `--danger` and the cobalt `--solve` word it can be rendered beside;
   the grades also remain mutually distinguishable. Those relationships and the exact
   authored hexes are contract-tested, including the shared OG-card copy.
@@ -1139,13 +1274,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
   Reduced-motion hides it; the static fill + aria-label carry the status, and the solved
   day number switches from `--fg` to `--bg` so its small text keeps normal-text contrast
   against the exposed cobalt fill.
+  **The grid is a FIXED SIX WEEKS (user-decided 2026-08-18): `monthGrid` pads to 42
+  cells, so a 4-week February and a 6-week month stand the same height and paging never
+  moves the calendar.**
   The calendar itself is **vertically centered** (`.archive` flex column, top padding
   clears the fixed header). **The live streak stat moved out of the archive body and into
   the shared `TopBar` (decided 2026-07-11):** immediately right of the language control it is
   only `assets/streak-small.png` (the 8×10 pixel-art source displayed at an exact 3× =
-  24×30) plus a larger bare streak amount; a zero/broken streak remains hidden. Entry: a
-  calendar icon in the
-  game TopBar's right group; `dateForDayNumber` (`shared/day.ts`) is the `dayNumber`
+  24×30) plus a larger bare streak amount; a zero/broken streak remains hidden. Entry: the header's DATE CHIP
+  (since 2026-08-18; a calendar icon in the right group before that); `dateForDayNumber` (`shared/day.ts`) is the `dayNumber`
   inverse. The **OG share page** (`backend/ogCard.ts` `renderShareHtml`) now click-throughs
   to the **shared day's** date-addressed URL (`/<lang>/<dateForDayNumber(dayNumber)>`),
   not bare `/<lang>` — so a shared archive result opens that archived date, not today (the
@@ -1649,41 +1786,30 @@ it to the local store — see `packages/backend/AGENTS.md`).
   ending):** the tutorial teaches the CORE CONCEPTS the modes share — semantic distance
   (the mix demo and the guided guesses) and word rarity — and nothing mode-specific: each
   mode's own rules live on that mode's pre-game gate (Word mode's gate screen; the
-  sentence game's one-time PLAY gate, below). The themes/clouds/routes-teaser ending this
-  replaces taught the artifact's semantic clusters, which the game no longer draws —
-  `tutorial/ThemeCloud.tsx`, `tutorial/RoutesTeaser.tsx`, the `tutTheme*`/`tutTap`/
-  `tutClick`/`tutThemes` copy, `themeHeading`, `ariaExploreHole`, CoachText's `[[t:]]` tag
-  and `Hole.waveSolved` (the solved-word wave existed only for that tap) are all deleted.
-  Finding the word retires the prompt and DROPS the keyboard out of the tray (the game's
-  own `kb-drop`, same `KB_EXIT_FALLBACK_MS` deadline behind its `animationend`). **The
-  ending then runs TWO beats, one idea each** (the tutorial's own grammar): the CLAIM —
-  « Une dernière chose : chaque mot a une rareté. » (`tutRarityIntro`) — over the found
-  word, with the tray's NEXT as its only control; then the word gives way to the **RARITY
-  LADDER** (`tutorial/RarityLadder.tsx`): the five grade names from `RARITY_NAMES`,
-  commonest at the top, each in its own `RARITY_COLORS` colour — the exact colour the
-  grade wears on the Word board's stations, the strike and the loot — stepping UP in size as
-  they step down the ladder (static sizes, never an animated scale: the pixel font rule),
-  each rung rising in on its own delay (reduced motion collapses durations, keeps delays).
-  **Each rung carries one OBVIOUS example word** (user-decided 2026-08-11, second pass):
-  the ladder teaches by evidence — en house / twilight / obelisk / reliquary / apricity,
-  fr maison / crépuscule / alambic / cénotaphe / zinzolin (`tutRarityEx*`, hand-authored
-  per language for intuition, not measured against the corpus; palimpsest(e) was the
-  first OBSCURE pick both times and was swapped for LENGTH — see next) — in VT323 at ONE
-  size beside the ramping names, in the grade's colour. **The ladder is TWO ALIGNED
-  COLUMNS around one centred seam** (user-decided 2026-08-11, third pass): each rung is a
-  full-width 1fr/1fr grid — names right-aligned against the centre line, examples
-  left-aligned from it — so the gap's middle sits exactly on the centre of the (already
-  centred) tutorial column and the ladder reads as a table. The widest rung (OBSCURE + its
-  example) measures ~285px against a 320px screen's 292 budget (VT323 advances exactly
-  1em/glyph, so the mobile step-down in index.css is arithmetic — an example longer than
-  ~9 glyphs breaks the page inset there, which is what unseated palimpseste at 315px). The coach line states the CONCEPT and no
-  value — « Des mots de tous les jours aux mots presque oubliés. » (`tutRarity`; a first
-  cut said "the rarer, the more precious", which the user rejected as Word mode's framing:
-  a grade is only WORTH something where it pays the clock, and the tutorial teaches core
-  principles only) — and deliberately NOT what a grade pays: the seconds are Word mode's
-  rule, stated on its gate (`wordRulesBonus`). The grade names are the game's untranslated
-  vocabulary and come from `RARITY_NAMES`, never from a string; the ladder is decorative
-  (`role="img"`) with `srRarityLadder` + the names and examples as its accessible line.
+  sentence game's one-time PLAY gate, below). Finding the word retires the prompt and
+  DROPS the keyboard out of the tray (the game's own `kb-drop`, same `KB_EXIT_FALLBACK_MS`
+  deadline behind its `animationend`). **The ending then runs TWO beats, one idea each**
+  (the tutorial's own grammar): the CLAIM — « Une dernière chose : chaque mot a une
+  rareté. » (`tutRarityIntro`) — over the found word, with the tray's NEXT as its only
+  control; then the word gives way to the **RARITY LADDER**
+  (`tutorial/RarityLadder.tsx`), a **SIGNAL METER since 2026-08-18** (user-decided,
+  superseding the size-ramped two-column rungs — "the difference in font size are
+  terrible", and the two same-size fonts competed): five rows, commonest first, each
+  carrying a five-cell LED METER with one more cell lit per grade — rarity as signal
+  strength, the member cards' own cell vocabulary — the grade's name as a small quiet
+  mono label (11px, `--fg`), and **one OBVIOUS example word per grade** (user-decided
+  2026-08-11: the ladder teaches by evidence — en house / twilight / obelisk /
+  reliquary / apricity, fr maison / crépuscule / alambic / cénotaphe / zinzolin,
+  `tutRarityEx*`, hand-authored per language for intuition) in the PIXEL face at ONE
+  size (15px, 13px ≤640px), right-aligned, wearing the grade's aura colour with the
+  game words' soft glow. Fits by arithmetic at 320px (label 9ch + meter + crépuscule at
+  13px ≈ 263 of 292). Each row rises on its own `rung-in` delay (reduced motion
+  collapses durations, keeps delays). The coach line states the CONCEPT and no value —
+  « Des mots de tous les jours aux mots presque oubliés. » (`tutRarity`) — and
+  deliberately NOT what a grade pays: the seconds are Word mode's rule, stated on its
+  gate (`wordRulesBonus`). The grade names are the game's untranslated vocabulary from
+  `RARITY_NAMES`; the ladder is decorative (`role="img"`) with `srRarityLadder` + the
+  names and examples as its accessible line.
   The tray then offers **PLAY (`tutPlay`), which is the graduation**: `onDone`, no
   SolvedScreen (a lesson has no score to show).
   **The ACTION BUTTON keeps ONE place for the whole lesson** (decided 2026-08-04): MIX, the
@@ -1740,12 +1866,43 @@ it to the local store — see `packages/backend/AGENTS.md`).
   invitation preloads it while the player reads the question, a replay lazy-loads it behind
   the plain loading line, and a failed chunk calls `onDone` (into the game) rather than
   stranding a blank screen.
-- **App header (decided 2026-07-06; redesigned 2026-07-21 — this bullet was STALE and is
-  corrected 2026-07-26 from the code, which is ground truth):** a fixed **topbar**
-  (`components/TopBar.tsx`) of **two corner chips and NOTHING else — no band, no border, no
-  background, no blur.** Boxes read as floating rectangles over the animated waves, so the
-  groups sit DIRECTLY on the backdrop and the glyphs' own `text-shadow` carries legibility.
-  Layout is one optical row: `.topbar-inner` = `min(900px, 100vw - 48px)`, 56px, centred.
+- **App header — FINALIZED 2026-08-18 (user-decided, mobile-first; supersedes the
+  2026-07-21 "no band, corner chips" design below — that rule guarded against boxes
+  over the old ANIMATED waves, and over the static ground the dialogs' own glass is
+  what keeps the controls legible without simplifying the backdrop):** ONE **GLASS
+  BAND** (`components/TopBar.tsx`): `--glass` + hairline + backdrop blur, full-bleed
+  with a single bottom hairline on a phone, FLOATING capped-and-rounded just inside the
+  device frame's brackets on desktop (`min(900px, 100vw - 48px)`, 50px, 8px off the
+  top). THREE explicit grid slots (`1fr auto 1fr`, columns assigned by class so a
+  missing slot never shifts its neighbours; ModalHeader reuses the classes with no
+  centre):
+  - **LEFT, the status spot**: the DATE CHIP in BOTH games — which **IS the ARCHIVE
+    ENTRY** since the finalization (`PuzzleDate` is a button to `pathForArchive`; "tap
+    the day to change the day", the ▾ tick carries the affordance; the standalone
+    calendar icon is deleted; Word mode joined the same day its clock moved down under
+    the word) — or a screen's title chip.
+  - **CENTER, the SEGMENTED MODE SWITCHER** (`components/ModeTabs`): both dailies,
+    active one in the inverted selection box — and WEIGHT is the state (430 resting,
+    700 in the box; the mono's fixed advance means the swap moves nothing). The band's
+    whole hierarchy is weight: titles/date 500, tabs 430/700, the FR + `?` pair one
+    quiet 480 at one 12px size — retiring the /mode chooser round-trip
+    for the app's most frequent navigation (and fixing what killed the 2026-08-06
+    toggle: these tabs show BOTH modes and mark the current one). The route builds it
+    so it owns where a tap lands: the game routes to the other mode's today, the
+    ARCHIVE to the other mode's calendar. A third daily is one more segment.
+  - **RIGHT**: the language CODE chip (`FR`/`EN`, `LangButton` — two mono letters, no
+    fill, replacing the languages glyph; still the one gesture onto /select) then the
+    screen's contextual controls (help `?`, skip, close). **The logo LEFT the header**
+    with the /mode chooser it opened — brand lives on the frame rail and the hero
+    screens. **The LEADERBOARD, when it lands, enters from the solved screen's standing
+    line, NOT from here** (recorded so the bar stays this small).
+  Word mode's top reserve is 66px and the archive's 70px, clearing the band.
+  *(The paragraphs below predate the band and stand only where they don't contradict
+  it.)*
+  Historical: a fixed **topbar**
+  of **two corner chips and NOTHING else — no band, no border, no
+  background, no blur** over the then-animated waves.
+  Layout was one optical row: `.topbar-inner` = `min(900px, 100vw - 48px)`, 56px, centred.
   **LEFT is the status spot** (`.topbar-left`) — a screen's title in `.topbar-title`
   (ARCHIVE / TUTORIAL, plus any inline stat like the tutorial's counter), or a loaded game's
   own left chip: **the sentence game's is the DAY'S DATE** (`components/PuzzleDate`,
@@ -1820,7 +1977,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   dialog's SHEET exit — up from the bottom edge, back down on the way out, at every width —
   went with it on 2026-08-12; a future full-screen result surface should take that shape
   back up.)
-  The game's right group holds the **archive calendar icon** and help `?` (#55); the tutorial
+  The game's right group holds help `?` (#55; the archive entry is the date chip since
+  2026-08-18); the tutorial
   puts "TUTORIAL" in the left chip and the skip fast-forward in the right group. The globe
   ALWAYS opens the language screen; the Whippin mark is opt-in (`TopBar`'s `modeChooser`)
   and appears on GAME routes only — the archive and the tutorial show the globe alone, since
@@ -1836,35 +1994,25 @@ it to the local store — see `packages/backend/AGENTS.md`).
   undated tab held open across the 22:00 flip therefore still keeps its fetched puzzle/day;
   the puzzle itself does not silently swap. The topbar is the extension point for future
   chrome (streaks, stats, …).
-- **The CHOOSER screens (language 2026-07-06, mode 2026-08-06):** the app asks "which one
-  do you want to play?" twice — about the LANGUAGE (`/select`, the header globe) and about
-  the DAILY (`/mode`, the header Whippin mark) — and both are the SAME screen, so there is
-  ONE of it: `components/Chooser.tsx` holds the shell, the card and the status strip;
-  `screens/LanguageSelect.tsx` and `screens/ModeSelect.tsx` supply only what the options
-  are, what each is called, which art it wears and where a tap lands (`.chooser-*` in CSS,
-  renamed from `.lang-*` when the second one arrived). Both are ROUTES, never modals, and
-  both sit ABOVE `/<lang>` since neither is language- or mode-scoped.
-  Headed by the **logo** (blue pixel
-  glyph, 3×/2× its native 22px — language-neutral, and the app's ONE in-app branding
-  spot), NOT a "select language" title (the cards self-explain, and a title would
-  have to guess the user's language on the screen where it is unknown). One **card**
-  per option — the NAME alone, centred (user-decided 2026-08-17: the card art went with
-  the electric identity — the 16×16 flags and the 7×7 mode sprites are deleted, assets
-  included, and `Flag.tsx` with its last consumer) — in a vertical list that scales to
-  any number of them, with the app's standard brighten-on-hover/press. Languages show
-  the language's **native** name (`LANGS[].native`; never translated); modes a localized
-  name (`modeSentence`/`modeWord`).
-  The old NEW/%/✓ badges are gone: today's status is a thin **strip on the card's
-  bottom edge** — absent = not started, partial = progress on the progress
-  ramp, full **gold** = solved / done for the day (the solved-word gold). The card's
-  aria-label speaks the status.
-  **Each chooser holds the OTHER's axis fixed**, so neither can strand you: a language card
-  lands in the last-played MODE and reads that mode's status, and a mode card lands in the
-  last-played LANGUAGE and reads that language's. **The mode chooser replaced a header
-  TOGGLE** (decided 2026-08-06): a toggle had to show the mode you were NOT in — a thing to
-  decode rather than read — and could only ever flip between exactly two, where a chooser
-  shows both dailies side by side with today's progress on each and stays right when a
-  third arrives.
+- **The CHOOSER screen (language, 2026-07-06; the MODE chooser was RETIRED 2026-08-18
+  for the header's segmented tabs — `/mode` parses as an unknown path now, and
+  `screens/ModeSelect` + `components/ModeButton` are deleted):** the app asks "which
+  language do you want to play?" at `/select`, reached from the header's language chip —
+  a ROUTE, never a modal, sitting ABOVE `/<lang>` since it is not language-scoped.
+  `components/Chooser.tsx` holds the shell, the member card and the status strip;
+  `screens/LanguageSelect.tsx` supplies the options (built as ONE reusable pair when two
+  choosers existed, and kept that shape — a future chooser screen reuses it rather than
+  copying it).
+  Headed by the **logo** (the user-drawn SVG mark since 2026-08-18, cobalt with its aura
+  glow — language-neutral, and the app's ONE in-app branding spot), NOT a "select
+  language" title (the cards self-explain, and a title would have to guess the user's
+  language on the one screen where it is unknown). One MEMBER CARD per language (see the
+  instrument bullet above): the language's **native** name (`LANGS[].native`; never
+  translated) bold left, its code tag under it, the LED mosaic right. Today's status is
+  the thin **strip on the card's bottom edge** — absent = not started, partial =
+  progress on the ramp, full = solved / done for the day (the solve cobalt); the card's
+  aria-label speaks it. **A language card lands in the last-played MODE** and reads that
+  mode's status — the day the tap actually opens.
 - **UI chrome is localized + a11y'd (decided 2026-07-06):** `web/src/i18n.ts` holds every
   UI string in **en + fr** (`t(lang, key)`; the `satisfies` clause makes a missing
   translation a type error, so parity needs no test). Game screens resolve strings with
@@ -1893,31 +2041,33 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `vite-plugin-svgr` — `import Icon from '../assets/icons/name.svg?react'` (the `?react`
   query is what returns a component; a plain import would return a URL string). Rendering the
   SVG **into the DOM** (not via `<img src>`) is what lets it inherit color, so:
-  - **Icons paint with `fill="currentColor"`** and carry **no hardcoded color** — the SVG
-    root sets `fill="currentColor"` once and every child inherits it. Color/greyed/theme
-    states then come **only** from the consuming element's CSS `color` (e.g. the control
-    keys' `.kb-control` / `.kb-enter` / `.kb-greyed`). Never bake a hex/`fill` into an icon
-    meant to tint with its surroundings.
+  - **Icons paint with `currentColor`** (`fill` for the pixel glyphs, `stroke` for the
+    chrome set) and carry **no hardcoded color** — the SVG root declares it once and every
+    child inherits it. Color/greyed/theme states then come **only** from the consuming
+    element's CSS `color` (e.g. the control keys' `.kb-control` / `.kb-enter` /
+    `.kb-greyed`). Never bake a hex into an icon meant to tint with its surroundings.
   - **Strip the editor cruft.** Keep only `xmlns`, `viewBox`, the `width`/`height` size (see
     below), `fill="currentColor"`, and the shape elements. **Remove** the `<?xml …?>` prolog
     and `id`/`data-name` (Illustrator layer junk). This is what "remove the useless
     attributes" means for any new icon.
-  - **Every icon is orthogonal PIXEL ART** (decided 2026-07-08) — shapes on an integer grid
-    with only horizontal/vertical edges (rects, or a path of `v`/`h` moves), NO diagonals —
-    so it renders crisp at integer scale. Rendered with `shape-rendering: crispEdges`
-    (shared in the `.pixel-icon` CSS class, not per icon).
-  - **Size lives in the SVG, at EXACTLY 3× the viewBox** (decided 2026-07-08, revised from
-    "size in CSS"). The `.svg` sets its own `width`/`height` = `3N × 3M` **px** for a
-    `viewBox="0 0 N M"`, **right next to the viewBox** — so an icon's size is a single source
-    of truth in one file, not split into a CSS rule in another folder. CSS (`.pixel-icon`)
-    only sets shared rendering (`display: block; shape-rendering: crispEdges`), never a size,
-    so a new icon needs **no** CSS: author the `.svg` with its px `width`/`height` and give
-    the element `className="pixel-icon"`. Every icon's "pixel" is then 3 screen px — crisp,
-    uniform in weight, integer-scaled (×3 vs ×2 is purely a size choice; both are crisp — ×3
-    suits the small header viewBoxes, giving ~18–27px). **The ONE exception is the on-screen
-    keyboard's control glyphs** (`.kb-icon`, enter/back): their `.svg`s carry NO `width`/
-    `height` and `.kb-icon` sizes them in CSS (`height: 30%; width: auto`), because the keys
-    shrink on narrow phones and a fixed 3× would overflow.
+  - **TWO icon families since 2026-08-18, one per type voice.** CHROME icons (header +
+    modal controls: calendar, x, fast-forward; circle-help was replaced 2026-08-18 by a
+    bare `?` TEXT glyph — `.help-chip`, the lang chip's sibling — and question.svg is
+    deleted; languages.svg left with the FR chip) are **LUCIDE
+    icons** (ISC; user-picked the same day) restated in the repo's own dress as the
+    **`.ui-icon` stroke set** — `viewBox="0 0 24 24"`, `fill="none"`,
+    `stroke="currentColor"`, `stroke-width="1.8"` (Lucide's 2 thinned to match the
+    hairline chrome), **SQUARE caps and MITER joins** (user-decided 2026-08-18 — the
+    round defaults read "goofy" against the sharp chrome; the calendar's rect lost its
+    rx, the circled ? became a bare sharp ?, fast-forward became double chevrons),
+    in-file `width`/`height` (28px, sized against the 32px pixel mark beside them). A
+    new chrome icon starts from the Lucide glyph of that name, squared off the same
+    way. PIXEL icons
+    survive only on the PLAY surface: the on-screen keyboard's enter/back glyphs —
+    orthogonal pixel art (integer grid, no diagonals, the 2026-07-08 rules), sized by
+    `.kb-icon` in CSS (`height: 30%`) because the keys shrink on narrow phones. The
+    standalone `.pixel-icon` class and the 3×-viewBox sizing rule left with their last
+    chrome consumer; an icon's size stays IN its `.svg`, one source of truth.
   - **Accessibility:** the SVG is **decorative** — pass `aria-hidden` on the component and
     let the surrounding `<button>`'s `aria-label` name the control.
   The type for `?react` imports comes from the `vite-plugin-svgr/client` reference in

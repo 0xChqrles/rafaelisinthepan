@@ -165,7 +165,7 @@ describe('renderWordCardSvg', () => {
     // One colour per grade, commonest first — pinned copies of the web's RARITY_COLORS
     // (components/rarity.ts); the web's rarity.test.ts asserts the identity from its side,
     // so this pins the shape and the exact values the card is allowed to speak.
-    expect(WORD_RARITY_COLORS).toEqual(['#b0aca4', '#4ed48d', '#3fc6e8', '#b164f2', '#f04ea6']);
+    expect(WORD_RARITY_COLORS).toEqual(['#97a3c9', '#4fd2e8', '#64a0ff', '#bd68ff', '#ff5ce0']);
   });
 
   it('keeps a forged token\'s huge counts inside the card (the row shrinks as one unit)', () => {

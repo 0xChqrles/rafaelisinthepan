@@ -51,11 +51,11 @@ const SOLVE = rootVar('--solve'); // the ink blue: the day's word and every solv
 // longer copies of ramp stops — those ramps are gone), keeping the electric set's hue
 // walk so a returning player's intuition survives. COMMON alone tracks a live source.
 const SOURCES: Record<string, string> = {
-  COMMON: '--muted',
-  UNCOMMON: 'authored: mint-green ink',
-  RARE: 'authored: sky-cyan ink',
-  OBSCURE: 'authored: violet ink',
-  ARCANE: 'authored: magenta ink',
+  COMMON: 'authored: cool slate-lavender',
+  UNCOMMON: 'authored: LED cyan',
+  RARE: 'authored: azure',
+  OBSCURE: 'authored: violet',
+  ARCANE: 'authored: laser magenta',
 };
 
 describe('rarity colours stay authored for the stamp-ink palette', () => {
@@ -64,15 +64,14 @@ describe('rarity colours stay authored for the stamp-ink palette', () => {
   });
 
   it('each grade still names its source', () => {
-    // COMMON is the ONE live source — --muted, read from index.css like the reserved
-    // colours above, so a retune fails here and the choice is made again on purpose.
-    expect(RARITY_COLORS.COMMON).toBe(rootVar('--muted'));
-    // The other four are authored hexes (see SOURCES), pinned here so a hand-edit of one
-    // is still a deliberate act.
-    expect(RARITY_COLORS.UNCOMMON).toBe('#4ed48d');
-    expect(RARITY_COLORS.RARE).toBe('#3fc6e8');
-    expect(RARITY_COLORS.OBSCURE).toBe('#b164f2');
-    expect(RARITY_COLORS.ARCANE).toBe('#f04ea6');
+    // ALL FIVE are authored hexes since the aura ladder (2026-08-18 — COMMON left
+    // --muted's warm grey for a cool slate that lives in the app's blue world), pinned
+    // here so a hand-edit of one is still a deliberate act.
+    expect(RARITY_COLORS.COMMON).toBe('#97a3c9');
+    expect(RARITY_COLORS.UNCOMMON).toBe('#4fd2e8');
+    expect(RARITY_COLORS.RARE).toBe('#64a0ff');
+    expect(RARITY_COLORS.OBSCURE).toBe('#bd68ff');
+    expect(RARITY_COLORS.ARCANE).toBe('#ff5ce0');
     expect(Object.keys(SOURCES)).toHaveLength(RARITY_NAMES.length);
   });
 

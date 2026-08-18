@@ -89,11 +89,11 @@ const WORD_UNITS: Record<string, { one: string; many: string }> = {
 // ladder. A FIXED table of constants (never interpolated input), so the renderer's "no
 // text to escape" guarantee holds for the chip row.
 export const WORD_RARITY_COLORS: readonly string[] = [
-  '#b0aca4', // COMMON
-  '#4ed48d', // UNCOMMON
-  '#3fc6e8', // RARE
-  '#b164f2', // OBSCURE
-  '#f04ea6', // ARCANE
+  '#97a3c9', // COMMON
+  '#4fd2e8', // UNCOMMON
+  '#64a0ff', // RARE
+  '#bd68ff', // OBSCURE
+  '#ff5ce0', // ARCANE
 ];
 
 export type WordCardData = WordShareResult;

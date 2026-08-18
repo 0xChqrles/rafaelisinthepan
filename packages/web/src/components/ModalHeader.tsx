@@ -40,7 +40,7 @@ export default function ModalHeader({
             aria-label={t(lang, 'ariaClose')}
             onClick={onClose}
           >
-            <CloseIcon className="pixel-icon" aria-hidden />
+            <CloseIcon className="ui-icon" aria-hidden />
           </button>
         </div>
       </div>

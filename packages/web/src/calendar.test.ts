@@ -68,7 +68,11 @@ describe('monthGrid', () => {
     const g = monthGrid({ year: 2026, month: 7 }, 0);
     expect(g.slice(0, 4)).toEqual([null, null, null, '2026-07-01']);
     expect(g.filter((c) => c !== null)).toHaveLength(31);
-    expect(g[g.length - 1]).toBe('2026-07-31');
+    // Trailing pads fill the grid to a FIXED six weeks (user-decided 2026-08-18): every
+    // month stands the same height, so paging never moves the calendar.
+    expect(g).toHaveLength(42);
+    expect(g[3 + 31 - 1]).toBe('2026-07-31');
+    expect(g.slice(3 + 31)).toEqual(Array.from({ length: 42 - 34 }, () => null));
   });
   it('shifts the pad count for a Monday-start week', () => {
     // Wednesday is 2 columns after Monday.
