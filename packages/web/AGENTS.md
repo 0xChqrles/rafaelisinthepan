@@ -217,16 +217,22 @@ These are decided and verified against the code. Treat them as load-bearing.
       the ACTIVE day via useToday). Decorative (aria-hidden, pointer-events none),
       z-index 40 under the header's 60, covered by opaque dialogs, and DESKTOP ONLY
       (hidden ≤640px — a phone's viewport is all content).
-    - **The KEYBOARD is a MACROPAD** (the board's Work Louder pad): every key is a dark
-      KEYCAP — top light, shaded bottom lip, drop shadow — that physically DEPRESSES on
-      press (translateY + shadow collapse); **ENTER is the pad's ONE coloured key**: the
-      whole cap takes a COBALT gradient — the macropad's "Publish" blue — exactly when
-      the input is a real word (`.kb-enter` vs `.kb-enter.kb-greyed`), so the board
-      itself says "publishable".
-      On desktop the keys sit on a DEVICE PLATE with a faint cobalt edge-glow — drawn
-      OUT OF FLOW (`.keyboard::before`, inset past the keys) so `--kb-h` and the tray's
-      fixed height stay exactly the keys' own; the plate hides with the phone's
-      full-bleed keyboard. The keys' pixel glyphs and all key LOGIC are untouched.
+    - **The KEYBOARD is FLAT (user-decided 2026-08-18, superseding the bevelled
+      macropad keycaps the same day — "old skeuomorphism"):** every key is one solid
+      dark tile at the sharp radius, nothing modelled, and **a press is a STATE, not
+      travel** — brightness, never translateY (the rule the primary buttons follow
+      too). **ENTER is the pad's ONE coloured key**: flat solve cobalt with the faint
+      light it throws — a lamp, not a bevel — lit exactly when the input is a real word
+      (`.kb-enter` vs `.kb-enter.kb-greyed`), so the board itself says "publishable".
+      The flat rule's line: surface GRADIENTS, inset bevels and elevation shadows are
+      out everywhere; LUMINOUS glows (the LEDs, the ruler bloom, the logo aura, the
+      plate's cobalt wash) stay — they are light, not depth. Chrome icon strokes sit at
+      2 (up from 1.8) for the flatter, more confident weight.
+      On desktop the keys sit on a flat DEVICE PLATE (hairline + translucent fill, its
+      cobalt wash kept, its inner shadow gone) — drawn OUT OF FLOW (`.keyboard::before`,
+      inset past the keys) so `--kb-h` and the tray's fixed height stay exactly the
+      keys' own; the plate hides with the phone's full-bleed keyboard. The keys' pixel
+      glyphs and all key LOGIC are untouched.
     - **The INVERTED SELECTION BOX is the one emphasis gesture** (the board's
       highlighted headline word / selected list row): screen titles (`.topbar-title` —
       ARCHIVE, TUTORIAL, the modal titles) AND the sentence game's date chip

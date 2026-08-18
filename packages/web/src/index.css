@@ -3002,9 +3002,9 @@ button * {
   background: rgba(14, 16, 26, 0.55);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
-  box-shadow:
-    0 0 52px -14px rgba(24, 76, 244, 0.5),
-    inset 0 0 30px rgba(0, 0, 0, 0.35);
+  /* Light only, no modelling: the cobalt wash under the board is a lamp, not a bevel
+     (the inner shadow left with the flat pass, 2026-08-18). */
+  box-shadow: 0 0 52px -14px rgba(24, 76, 244, 0.4);
 }
 @media (max-width: 640px) {
   .keyboard::before {
@@ -3030,30 +3030,19 @@ button * {
   font-size: clamp(11px, 2.2vw, 15px);
   text-transform: uppercase;
   color: var(--fg);
-  /* KEYCAPS since 2026-08-18 (the /inspiration/modern board's Work Louder macropad):
-     each key is a dark CAP — a faint top light, a shaded bottom lip, a drop under the
-     cap — and pressing it physically depresses it. Depth in shadows only: the face
-     stays flat and sharp. */
-  background: linear-gradient(180deg, #1f2233, #14161f);
+  /* FLAT tiles (user-decided 2026-08-18, superseding the bevelled keycaps of the
+     macropad pass — "old skeuomorphism"): one solid fill, the sharp radius, nothing
+     modelled. A key's press is a brightness state, not a physical travel. */
+  background: #181b29;
   border: 0;
   border-radius: var(--r-lg);
-  box-shadow:
-    inset 0 1px 0 rgba(244, 241, 232, 0.09),
-    inset 0 -2px 0 rgba(0, 0, 0, 0.38),
-    0 2px 3px rgba(0, 0, 0, 0.45);
   cursor: pointer;
   text-shadow: none;
   touch-action: manipulation;
-  transition: filter 0.08s linear, color 0.08s linear, transform 0.05s linear,
-    box-shadow 0.05s linear;
+  transition: filter 0.08s linear, color 0.08s linear, background-color 0.08s linear;
 }
 .kb-key:not(.kb-greyed):active {
-  filter: brightness(1.25);
-  transform: translateY(1.5px);
-  box-shadow:
-    inset 0 1px 0 rgba(244, 241, 232, 0.05),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.3),
-    0 0 0 rgba(0, 0, 0, 0);
+  filter: brightness(1.35);
 }
 /* Control keys (backspace, enter) are the SAME fixed size as letters, so the last row is a
    uniform row of keys that fits the keyboard width exactly (QWERTY's last row is 10 keys —
@@ -3062,25 +3051,19 @@ button * {
 .kb-control {
   color: var(--muted);
 }
-/* ENTER is the pad's ONE coloured key — the macropad's blue "Publish" cap, literally:
-   the solve COBALT (submitting is the step toward solving). The whole CAP lights when
-   the input is a real word — ready to fire — and falls back to a dark cap while greyed,
-   so the board itself says "publishable". */
+/* ENTER is the pad's ONE coloured key: flat solve COBALT (submitting is the step
+   toward solving), with the faint light it throws — a lamp, not a bevel. It lights
+   exactly when the input is a real word and falls back to a plain dark tile while
+   greyed, so the board itself says "publishable". */
 .kb-enter {
   color: var(--fg);
-  background: linear-gradient(180deg, #5f7cff, #3d5cf0);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.3),
-    inset 0 -2px 0 rgba(0, 0, 0, 0.3),
-    0 2px 8px rgba(74, 106, 255, 0.45);
+  background: var(--solve);
+  box-shadow: 0 0 14px rgba(74, 106, 255, 0.4);
 }
 .kb-enter.kb-greyed {
   color: var(--muted);
-  background: linear-gradient(180deg, #1f2233, #14161f);
-  box-shadow:
-    inset 0 1px 0 rgba(244, 241, 232, 0.09),
-    inset 0 -2px 0 rgba(0, 0, 0, 0.38),
-    0 2px 3px rgba(0, 0, 0, 0.45);
+  background: #181b29;
+  box-shadow: none;
 }
 /* Control-key glyph: an inline currentColor SVG. Sized by % of the key so it tracks the
    responsive key height (desktop + mobile) with no per-breakpoint rule; the viewBox keeps
@@ -3144,7 +3127,7 @@ button * {
   border: 1px solid var(--line-strong);
   border-radius: var(--r-lg);
   text-shadow: none;
-  transition: filter 0.08s linear, border-color 0.12s linear, transform 0.05s linear;
+  transition: filter 0.08s linear, border-color 0.12s linear;
 }
 .btn-primary::before {
   content: '';
@@ -3158,8 +3141,9 @@ button * {
   filter: brightness(1.3);
   border-color: var(--fg);
 }
+/* A press is a STATE, not travel (the flat rule, 2026-08-18). */
 .btn-primary:active {
-  transform: translateY(1.5px);
+  filter: brightness(1.5);
 }
 /* Secondary: simple text, no fill. */
 .btn-secondary {
@@ -3590,7 +3574,7 @@ button * {
   padding: 18px 30px;
   cursor: pointer;
   text-shadow: none;
-  transition: filter 0.08s linear, border-color 0.12s linear, transform 0.05s linear;
+  transition: filter 0.08s linear, border-color 0.12s linear;
 }
 .mix-btn::before {
   content: '';
@@ -3605,7 +3589,7 @@ button * {
   border-color: var(--fg);
 }
 .mix-btn:active:not(:disabled) {
-  transform: translateY(1.5px);
+  filter: brightness(1.5);
 }
 .mix-btn:disabled {
   opacity: 0.6;
