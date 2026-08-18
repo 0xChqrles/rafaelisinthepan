@@ -2136,11 +2136,10 @@ button * {
 .score-ranking-wave {
   display: inline-flex;
 }
-.score-ranking-wave span {
-  font-family: var(--pixel-font);
-  font-size: var(--rank-label);
-  font-weight: 400;
-  letter-spacing: 0;
+/* The letters ARE `.score-rank-label`s (the JSX puts the class on each one), so face,
+   size and weight are the standing line's own by construction; this rule adds only the
+   wave — the base colour it starts from and the phase-shifted cycle. */
+.score-ranking-wave .score-rank-label {
   color: color-mix(in srgb, var(--fg) 30%, transparent);
   animation: ranking-wave 1.6s ease-in-out infinite;
   animation-delay: calc(var(--i, 0) * 0.13s - 1.6s);

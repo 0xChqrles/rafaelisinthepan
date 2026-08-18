@@ -57,9 +57,12 @@ export default function ScoreRank({
     return (
       <p className="score-slot score-ranking">
         <span className="sr-only">{label}</span>
+        {/* Each letter wears the line's own label class, so the shimmer is in exactly
+            the face and size of the text it resolves into — by construction, not by a
+            copied rule. The wave only adds the colour cycle on top. */}
         <span className="score-ranking-wave" aria-hidden="true">
           {Array.from(label).map((ch, i) => (
-            <span key={i} style={{ '--i': i } as CSSProperties}>
+            <span key={i} className="score-rank-label" style={{ '--i': i } as CSSProperties}>
               {ch}
             </span>
           ))}
