@@ -22,18 +22,20 @@ export interface AvatarPalette {
   fg: string;
 }
 
-// The predefined palettes — FIVE (user-decided 2026-08-19), each pairing its OWN ground
-// with its foreground: the ground is tinted toward the ink, so switching palettes
-// repaints the whole drawing, not just the pixels (PAPER inverts — dark ink on the
-// stamp paper). Order is load-bearing — the encoded byte is an INDEX into this list, so
-// entries may be appended but never reordered or removed once avatars referencing them
-// exist.
+// The predefined palettes — FIVE two-colour print DUOS (user-decided 2026-08-19):
+// each pairs a contrasting ink with its OWN coloured ground, never two shades of one
+// hue — the riso/stamp pairings of the /inspiration moodboard (cobalt ink on a mint
+// sheet, tangerine on royal blue, magenta on butter yellow, paper cream on teal,
+// tomato on lilac). The one deliberate departure from the app's defined palette.
+// Names are the INK's, since the picker shows only the foreground. Order is
+// load-bearing — the encoded byte is an INDEX into this list, so entries may be
+// appended but never reordered or removed once avatars referencing them exist.
 export const AVATAR_PALETTES: readonly AvatarPalette[] = [
-  { name: 'COBALT', bg: '#16181f', fg: '#4a6aff' },
-  { name: 'CYAN', bg: '#0f1d22', fg: '#4fd2e8' },
-  { name: 'VIOLET', bg: '#171225', fg: '#8f7bff' },
-  { name: 'ORCHID', bg: '#200f1c', fg: '#ff5ce0' },
-  { name: 'PAPER', bg: '#f4f1e8', fg: '#16181f' },
+  { name: 'COBALT', bg: '#e3ead9', fg: '#2b4bdf' },
+  { name: 'TANGERINE', bg: '#2440c8', fg: '#ff7a3d' },
+  { name: 'MAGENTA', bg: '#f4e87c', fg: '#e5399e' },
+  { name: 'CREAM', bg: '#12655c', fg: '#f4f1e8' },
+  { name: 'TOMATO', bg: '#beb6ee', fg: '#ff4629' },
 ];
 
 const BYTES = 1 + Math.ceil(AVATAR_CELLS / 8); // 14
