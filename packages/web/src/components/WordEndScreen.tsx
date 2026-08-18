@@ -4,7 +4,7 @@ import { prefersReducedMotion } from '../hooks/useScramble';
 import { t, srWordBreakdown } from '../i18n';
 import { RARITY_NAMES } from '../game/wordGame';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
-import type { ScorePlacement } from '../hooks/useScoreHistogram';
+import type { ScorePlacementState } from '../hooks/useScoreHistogram';
 import useShare from '../hooks/useShare';
 import { RARITY_COLORS } from './rarity';
 import ScoreRank from './ScoreRank';
@@ -34,9 +34,10 @@ export default function WordEndScreen({
   dayNumber: number;
   lang: string;
   word: string; // accented display form carried into the OG card
-  // The day's score population (#170), when the submit/fetch round trip landed. Null
-  // renders no chart and no message — the silent-degrade decision.
-  placement?: ScorePlacement | null;
+  // The day's score population (#170): 'pending' while the submit/fetch round trip is
+  // in flight (the slot shows RANKING...), the placement once it landed. Null renders
+  // no chart and no message — the silent-degrade decision.
+  placement?: ScorePlacementState;
   // A live run rises and tallies like the sentence result. Rehydrated runs render their
   // final state immediately, so revisiting a finished day never replays the celebration.
   animate?: boolean;

@@ -1,10 +1,11 @@
+import type { CSSProperties } from 'react';
 import {
   scoreStanding,
   formatTopPct,
   standingUnits,
   TIGHT_STANDING_UNITS,
 } from '../game/scores';
-import type { ScorePlacement } from '../hooks/useScoreHistogram';
+import type { ScorePlacementState } from '../hooks/useScoreHistogram';
 import { t, tn } from '../i18n';
 import type { Mode } from '../langs';
 
@@ -37,7 +38,7 @@ export default function ScoreRank({
   animate = true,
   start = true,
 }: {
-  placement: ScorePlacement | null;
+  placement: ScorePlacementState;
   mode: Mode;
   lang: string;
   // Rehydrated results render settled and replay nothing (the whole stack's contract).
@@ -46,10 +47,31 @@ export default function ScoreRank({
   start?: boolean;
 }) {
   const settled = !animate;
+  if (!(settled || start)) return <div className="score-slot" />;
+
+  // The round trip is still in flight: RANKING... holds the slot, its letters carrying
+  // a looping light wave (see `.score-ranking`). It resolves into the line, or into the
+  // empty slot on the silent failure — never into an error.
+  if (placement === 'pending') {
+    const label = t(lang, 'scoreRanking');
+    return (
+      <p className="score-slot score-ranking">
+        <span className="sr-only">{label}</span>
+        <span className="score-ranking-wave" aria-hidden="true">
+          {Array.from(label).map((ch, i) => (
+            <span key={i} style={{ '--i': i } as CSSProperties}>
+              {ch}
+            </span>
+          ))}
+        </span>
+      </p>
+    );
+  }
+
   const standing = placement
     ? scoreStanding(mode, placement.histogram.buckets, placement.histogram.total, placement.bucket)
     : null;
-  if (standing === null || !(settled || start)) return <div className="score-slot" />;
+  if (standing === null) return <div className="score-slot" />;
 
   const rankLabel = t(lang, 'scoreRank');
   const ofLabel = tn(lang, 'scoreOf', standing.total);
