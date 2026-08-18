@@ -22,16 +22,18 @@ export interface AvatarPalette {
   fg: string;
 }
 
-// The predefined palettes — FIVE two-colour print DUOS (user-decided 2026-08-19):
-// each pairs a contrasting ink with its OWN coloured ground, never two shades of one
-// hue — the riso/stamp pairings of the /inspiration moodboard (cobalt ink on a mint
-// sheet, tangerine on royal blue, magenta on butter yellow, paper cream on teal,
-// tomato on lilac). The one deliberate departure from the app's defined palette.
-// Names are the INK's, since the picker shows only the foreground. Order is
-// load-bearing — the encoded byte is an INDEX into this list, so entries may be
-// appended but never reordered or removed once avatars referencing them exist.
+// The predefined palettes — FIVE (user-decided 2026-08-19): a BASE duo made of the
+// app's own tokens — the poster-violet accent on the surface colour (pinned COPIES of
+// the web's `--accent` / `--surface`; CSS owns the originals) — then four VIVID
+// two-colour print duos from the /inspiration moodboard's riso/stamp pairings
+// (tangerine on royal blue, magenta on butter yellow, paper cream on teal, tomato on
+// lilac). Each duo pairs a contrasting ink with its OWN coloured ground, never two
+// shades of one hue; the vivid four are the one deliberate departure from the app's
+// defined palette. Names are the INK's, since the picker shows only the foreground.
+// Order is load-bearing — the encoded byte is an INDEX into this list, so entries may
+// be appended but never reordered or removed once avatars referencing them exist.
 export const AVATAR_PALETTES: readonly AvatarPalette[] = [
-  { name: 'COBALT', bg: '#e3ead9', fg: '#2b4bdf' },
+  { name: 'VIOLET', bg: '#161826', fg: '#8f7bff' },
   { name: 'TANGERINE', bg: '#2440c8', fg: '#ff7a3d' },
   { name: 'MAGENTA', bg: '#f4e87c', fg: '#e5399e' },
   { name: 'CREAM', bg: '#12655c', fg: '#f4f1e8' },

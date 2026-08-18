@@ -80,9 +80,12 @@ describe('avatar codec (#188)', () => {
     expect(() => decodeAvatar('AAAAAAAAAAAAAAAAABA')).toThrow(/non-canonical/);
   });
 
-  it('pins the palette contract: five palettes, each with its OWN ground + ink', () => {
+  it('pins the palette contract: the app-token base + four vivid duos, own ground each', () => {
     // Five by decision (2026-08-19) — appending a sixth is a deliberate act.
     expect(AVATAR_PALETTES).toHaveLength(5);
+    // The BASE duo is the app's own accent on its surface — pinned COPIES of the web's
+    // `--accent` / `--surface` tokens, so moving either is a deliberate two-place edit.
+    expect(AVATAR_PALETTES[0]).toEqual({ name: 'VIOLET', bg: '#161826', fg: '#8f7bff' });
     for (const palette of AVATAR_PALETTES) {
       expect(palette.bg).toMatch(/^#[0-9a-f]{6}$/);
       expect(palette.fg).toMatch(/^#[0-9a-f]{6}$/);

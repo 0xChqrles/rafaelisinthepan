@@ -4837,9 +4837,17 @@ button * {
   }
 }
 
+/* The tool row under the grid: the palette swatches left, CLEAR on the right edge. */
+.profile-tools {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 14px;
+}
 /* The palettes, worn as their FOREGROUND colour: flat swatches, the selected one framed
    in foreground — the sharp selection language, no rings. */
 .profile-palettes {
+  flex: 1;
   display: flex;
   gap: 10px;
 }
@@ -4861,6 +4869,31 @@ button * {
 .profile-palette.sel {
   border-color: var(--fg);
   box-shadow: 0 0 0 1px var(--fg);
+}
+/* CLEAR: a quiet hairline chip — it undoes, so it never competes with the swatches. */
+.profile-clear {
+  flex: none;
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg);
+  background: var(--glass);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  padding: 0 14px;
+  cursor: pointer;
+  text-shadow: none;
+  transition: filter 0.08s linear, border-color 0.12s linear;
+}
+.profile-clear:hover:not(:disabled) {
+  filter: brightness(1.3);
+  border-color: var(--fg);
+}
+.profile-clear:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 /* SAVE is the app's one big-action device card; the auto top margin is the tray's

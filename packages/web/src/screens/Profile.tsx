@@ -201,22 +201,36 @@ export default function Profile() {
           </div>
 
           {/* The palettes, shown as their FOREGROUND colour only: pick a colour, that
-              colour is the palette. The drawing (the cell states) survives a switch. */}
-          <div className="profile-palettes">
-            {AVATAR_PALETTES.map((option, index) => (
-              <button
-                key={option.name}
-                type="button"
-                className={`profile-palette${palette === index ? ' sel' : ''}`}
-                style={{ background: option.fg }}
-                aria-label={`${t(lang, 'ariaPalette')} ${option.name}`}
-                aria-pressed={palette === index}
-                onClick={() => {
-                  setPalette(index);
-                  setSave('idle');
-                }}
-              />
-            ))}
+              colour is the palette. The drawing (the cell states) survives a switch.
+              CLEAR shares the row — it acts on the same thing the swatches dress. */}
+          <div className="profile-tools">
+            <div className="profile-palettes">
+              {AVATAR_PALETTES.map((option, index) => (
+                <button
+                  key={option.name}
+                  type="button"
+                  className={`profile-palette${palette === index ? ' sel' : ''}`}
+                  style={{ background: option.fg }}
+                  aria-label={`${t(lang, 'ariaPalette')} ${option.name}`}
+                  aria-pressed={palette === index}
+                  onClick={() => {
+                    setPalette(index);
+                    setSave('idle');
+                  }}
+                />
+              ))}
+            </div>
+            <button
+              type="button"
+              className="profile-clear"
+              disabled={cells.every((value) => value === 0)}
+              onClick={() => {
+                setCells(new Array<number>(AVATAR_CELLS).fill(0));
+                setSave('idle');
+              }}
+            >
+              {t(lang, 'profileClear')}
+            </button>
           </div>
 
           <button
