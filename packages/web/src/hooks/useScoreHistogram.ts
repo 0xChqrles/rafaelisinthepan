@@ -24,6 +24,11 @@ export interface ScorePlacement {
   bucket: number | null;
 }
 
+// What the standing slot renders from: the placement once the round trip lands,
+// 'pending' while it is in flight (the slot shows its RANKING... shimmer), null when
+// there is nothing to show — not finished yet, or the silent failure.
+export type ScorePlacementState = ScorePlacement | 'pending' | null;
+
 // One browser-session conversation per round, shared across COMPONENT lifetimes. A ref
 // only survives StrictMode's effect replay; it does not survive a real unmount (opening
 // the archive/tutorial and coming back), while the fetch it started keeps running. The
@@ -108,8 +113,8 @@ export default function useScoreHistogram({
   lang: string;
   dayNumber: number;
   score: number;
-}): ScorePlacement | null {
-  const [placement, setPlacement] = useState<ScorePlacement | null>(null);
+}): ScorePlacementState {
+  const [placement, setPlacement] = useState<ScorePlacementState>(null);
 
   // `submitted` is read at launch time rather than placed in the deps: the successful
   // POST marks it during this effect's own flight, and that re-render must not chase the
@@ -131,7 +136,7 @@ export default function useScoreHistogram({
       placementKeyRef.current = key;
       // A direct solved-round -> solved-round navigation must never show the previous
       // day's standing while this day's request is in flight.
-      setPlacement(null);
+      setPlacement('pending');
     }
     const promise = shareScoreFlight(key, () =>
       syncScore(
@@ -145,7 +150,9 @@ export default function useScoreHistogram({
     );
     let cancelled = false;
     void promise.then((result) => {
-      if (!cancelled && result) setPlacement(result);
+      // A null result settles the slot to empty — the silent failure must not leave the
+      // RANKING... shimmer up forever.
+      if (!cancelled) setPlacement(result);
     });
     return () => {
       cancelled = true;

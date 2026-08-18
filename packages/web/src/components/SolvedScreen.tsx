@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react';
 import type { Source } from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { shareHeadline, shareText, shareUrl } from '../game/share';
-import type { ScorePlacement } from '../hooks/useScoreHistogram';
+import type { ScorePlacementState } from '../hooks/useScoreHistogram';
 import RunRuler, { rulerStagger } from './RunRuler';
 import ScoreRank from './ScoreRank';
 import SolvedCaption, { captionDurationMs } from './SolvedCaption';
@@ -138,8 +138,9 @@ export default function SolvedScreen({
   source?: Source;
   words: SolvedWordEntry[]; // distinct secrets, sentence order — the ruler ticks' numbering
   onExplore: (holeIndex: number) => void;
-  // The day's score population (#170); null renders the reserved empty slot (silent).
-  placement?: ScorePlacement | null;
+  // The day's score population (#170): 'pending' while the round trip is in flight
+  // (the slot shows RANKING...); null renders the reserved empty slot (silent).
+  placement?: ScorePlacementState;
   // Rehydrated solves render their final result immediately and replay nothing.
   animate?: boolean;
   // Hold the WHOLE choreography at frame zero until the screen is actually the player's to

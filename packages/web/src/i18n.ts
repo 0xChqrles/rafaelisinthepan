@@ -102,6 +102,9 @@ const STRINGS = {
   scoreRank: { en: 'RANK', fr: 'RANG' },
   scoreOf: { en: 'OF {n}', fr: 'SUR {n}' },
   scoreTop: { en: 'TOP', fr: 'TOP' },
+  // Untranslated on purpose (the user's call): one word in every language, like the
+  // rarity grades.
+  scoreRanking: { en: 'RANKING...', fr: 'RANKING...' },
   // The solved credit block's one function word (user-decided 2026-08-15): it binds the
   // author to the work in the line under it — `Les Misérables` / `BOOK by Victor Hugo` can
   // only be read one way, where two stacked names could be read either. LOWERCASE, unlike

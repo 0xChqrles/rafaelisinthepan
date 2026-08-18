@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { MISS_COLOR, fold, type WordPuzzle } from '@whippin/shared';
+import LoadingWave from '../components/LoadingWave';
 import useVocab from '../hooks/useVocab';
 import { KB_EXIT_FALLBACK_MS } from './Game';
 import { useDeadlinePassed } from '../hooks/useCountdown';
@@ -81,7 +82,12 @@ export default function WordGame({
   if (error !== null) {
     return <LoadError message={t(puzzle.lang, 'failedVocab')} lang={puzzle.lang} onRetry={retry} />;
   }
-  if (!vocab) return <p className="status">{t(puzzle.lang, 'loading')}</p>;
+  if (!vocab)
+    return (
+      <p className="status">
+        <LoadingWave text={t(puzzle.lang, 'loading')} />
+      </p>
+    );
 
   return (
     <WordRound
