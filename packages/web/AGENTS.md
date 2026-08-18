@@ -201,9 +201,9 @@ These are decided and verified against the code. Treat them as load-bearing.
     for the language control, replacing the globe; 24-grid, 1.8px, currentColor, 28px
     in-file size; globe.png and the standalone `.pixel-icon`
     class are deleted); the Whippin mark is the USER-DRAWN `assets/logo.svg` since
-    2026-08-18 (replacing the header's last pixel artifact): cobalt with a small glow in
-    the header — the icon row's one lit object — and the same mark wears the full
-    cobalt-core/violet-halo AURA on the chooser and invite hero spots. The BODY's global hard 2px
+    2026-08-18: cobalt with the cobalt-core/violet-halo AURA on the chooser and invite
+    hero spots (it sat in the header, glowing, until the same day's header finalization —
+    the mode tabs took its job and the mark left the bar). The BODY's global hard 2px
     text-shadow is gone; pixel surfaces that relied on it (floating hits, loot) carry
     their own, and the topbar wears a soft bloom shadow instead.
   - **THE VIEWPORT IS AN INSTRUMENT (user-decided 2026-08-18, from the user's
@@ -1261,9 +1261,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   clears the fixed header). **The live streak stat moved out of the archive body and into
   the shared `TopBar` (decided 2026-07-11):** immediately right of the language control it is
   only `assets/streak-small.png` (the 8×10 pixel-art source displayed at an exact 3× =
-  24×30) plus a larger bare streak amount; a zero/broken streak remains hidden. Entry: a
-  calendar icon in the
-  game TopBar's right group; `dateForDayNumber` (`shared/day.ts`) is the `dayNumber`
+  24×30) plus a larger bare streak amount; a zero/broken streak remains hidden. Entry: the header's DATE CHIP
+  (since 2026-08-18; a calendar icon in the right group before that); `dateForDayNumber` (`shared/day.ts`) is the `dayNumber`
   inverse. The **OG share page** (`backend/ogCard.ts` `renderShareHtml`) now click-throughs
   to the **shared day's** date-addressed URL (`/<lang>/<dateForDayNumber(dayNumber)>`),
   not bare `/<lang>` — so a shared archive result opens that archived date, not today (the
@@ -1967,7 +1966,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   dialog's SHEET exit — up from the bottom edge, back down on the way out, at every width —
   went with it on 2026-08-12; a future full-screen result surface should take that shape
   back up.)
-  The game's right group holds the **archive calendar icon** and help `?` (#55); the tutorial
+  The game's right group holds help `?` (#55; the archive entry is the date chip since
+  2026-08-18); the tutorial
   puts "TUTORIAL" in the left chip and the skip fast-forward in the right group. The globe
   ALWAYS opens the language screen; the Whippin mark is opt-in (`TopBar`'s `modeChooser`)
   and appears on GAME routes only — the archive and the tutorial show the globe alone, since
@@ -1983,7 +1983,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   undated tab held open across the 22:00 flip therefore still keeps its fetched puzzle/day;
   the puzzle itself does not silently swap. The topbar is the extension point for future
   chrome (streaks, stats, …).
-- **The CHOOSER screens (language 2026-07-06, mode 2026-08-06):** the app asks "which one
+- **The CHOOSER screen (language 2026-07-06; the MODE chooser was RETIRED 2026-08-18
+  for the header's segmented tabs — `/mode` parses as an unknown path now, and
+  `screens/ModeSelect` + `components/ModeButton` are deleted; `Chooser`/`ChooserCard`
+  serve the language screen alone):** the app asks "which one
   do you want to play?" twice — about the LANGUAGE (`/select`, the header globe) and about
   the DAILY (`/mode`, the header Whippin mark) — and both are the SAME screen, so there is
   ONE of it: `components/Chooser.tsx` holds the shell, the card and the status strip;
