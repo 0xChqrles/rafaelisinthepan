@@ -2,7 +2,7 @@
 // generated once, returned verbatim forever after — and a corrupted stored value is
 // replaced rather than sent to be refused on every submission.
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { isValidSecret } from '@whippin/shared';
 import { playerSecret } from './identity';
 
@@ -46,5 +46,27 @@ describe('playerSecret (#187)', () => {
     const first = playerSecret(null);
     expect(isValidSecret(first)).toBe(true);
     expect(playerSecret(null)).toBe(first);
+  });
+
+  describe('a denied localStorage PROPERTY (SecurityError on access)', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('degrades to the session identity instead of failing submission', () => {
+      // Browsers with storage disabled throw from the `window.localStorage` GETTER —
+      // before playerSecret's own body runs, while its default parameter evaluates —
+      // so the default-storage read needs its own catch.
+      const denied = {} as Window & typeof globalThis;
+      Object.defineProperty(denied, 'localStorage', {
+        get() {
+          throw new Error('SecurityError: The operation is insecure.');
+        },
+      });
+      vi.stubGlobal('window', denied);
+      const secret = playerSecret();
+      expect(isValidSecret(secret)).toBe(true);
+      expect(playerSecret()).toBe(secret);
+    });
   });
 });

@@ -605,6 +605,24 @@ describe('score submission flags (#170) — markScoreSubmitted / markWordScoreSu
     expect(useGameStore.getState().rounds).toBe(before); // idempotent — no churn
   });
 
+  it('persists the server-recorded score with the flag (#187), first verdict only', () => {
+    const { ensureRound, markScoreSubmitted } = useGameStore.getState();
+    ensureRound('d:5:fr', freshHoles());
+    markScoreSubmitted('d:5:fr', 9);
+    expect(activeRound()?.scoreRecorded).toBe(9);
+    // The round has ONE verdict: a later call can never rewrite what was recorded.
+    markScoreSubmitted('d:5:fr', 3);
+    expect(activeRound()?.scoreRecorded).toBe(9);
+  });
+
+  it('leaves the recorded score unset on a refusal — nothing entered the population', () => {
+    const { ensureRound, markScoreSubmitted } = useGameStore.getState();
+    ensureRound('d:5:fr', freshHoles());
+    markScoreSubmitted('d:5:fr');
+    expect(activeRound()?.scoreSubmitted).toBe(true);
+    expect(activeRound()?.scoreRecorded).toBeUndefined();
+  });
+
   it('marks the keyed word round without touching the sentence round', () => {
     const { ensureRound, ensureWordRound, markWordScoreSubmitted } = useGameStore.getState();
     ensureRound('d:5:fr', freshHoles());

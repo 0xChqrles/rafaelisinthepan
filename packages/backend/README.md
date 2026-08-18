@@ -12,10 +12,13 @@ that provisions Lambda + Function URL + CloudFront + the bucket is issue #3.)
   `404` (clean JSON error) when the day is unpublished or still in the future; `400` on a
   missing/malformed `date`, `lang` or `mode`.
 - `GET /scores?lang=<en|fr>&date=<YYYY-MM-DD>&mode=<sentence|word>` → the published
-  daily's live score histogram. `POST` to the same URL with
-  `{ "score": 12, "turnstileToken": "..." }` verifies Turnstile, validates the possible
-  score range, applies the five-per-HMAC-IP cap, increments the bucket, and returns the
-  updated histogram. `mode` is required here.
+  daily's live score histogram, derived from its per-player rows (#187): one exact band
+  per distinct recorded score. `POST` to the same URL with
+  `{ "secret": "<32-hex player key>", "score": 12, "turnstileToken": "..." }` verifies
+  Turnstile, validates the possible score range, applies the five-per-HMAC-IP cap, and
+  writes one first-write-wins row keyed by the publicId derived from the secret; the
+  response is the updated histogram with the caller's recorded band. `mode` is required
+  here.
 
   ```json
   {
@@ -86,7 +89,7 @@ S3 cannot drift apart.
 | var             | required | meaning                                          |
 | --------------- | -------- | ------------------------------------------------ |
 | `PUZZLE_BUCKET` | yes      | S3 bucket holding the daily puzzles              |
-| `SCORE_TABLE`   | yes      | DynamoDB table holding aggregate + dedup items   |
+| `SCORE_TABLE`   | yes      | DynamoDB table holding per-player score rows + dedup items |
 | `TURNSTILE_SECRET_PARAMETER` | yes | SSM SecureString name for the Turnstile server secret |
 | `IP_HMAC_SECRET_PARAMETER` | yes | SSM SecureString name for the 32+ byte IP-HMAC key |
 | `ALLOWED_ORIGIN`| no       | CORS origin (the web origin in prod; `*` if unset) |

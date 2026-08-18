@@ -163,7 +163,7 @@ function Round({
   // The POST may finish after this screen has left. Bind its completion to THIS round so
   // it cannot mark whichever day happens to be active at response time.
   const markThisScoreSubmitted = useCallback(
-    () => markScoreSubmitted(roundKey),
+    (recorded: number | null) => markScoreSubmitted(roundKey, recorded ?? undefined),
     [markScoreSubmitted, roundKey],
   );
 
@@ -261,6 +261,7 @@ function Round({
     lang,
     dayNumber,
     score: guessCount,
+    recordedScore: live?.scoreRecorded,
   });
   // The one-time instructions GATE (2026-08-11): the mode's own rules, stated ONCE ever
   // before the first sentence round — the phrase is on screen, but the keyboard and the

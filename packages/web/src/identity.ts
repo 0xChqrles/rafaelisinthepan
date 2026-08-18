@@ -14,7 +14,15 @@ const SECRET_STORAGE_KEY = 'whippin-player-key';
 let sessionSecret: string | null = null;
 
 function defaultStorage(): Storage | null {
-  return typeof window === 'undefined' ? null : window.localStorage;
+  // The `localStorage` PROPERTY itself throws a SecurityError when storage is disabled
+  // (e.g. blocked cookies) — that read happens while evaluating the default parameter,
+  // outside playerSecret's own try — so it needs its own catch or a denied storage
+  // would fail score submission instead of degrading to the session identity.
+  try {
+    return typeof window === 'undefined' ? null : window.localStorage;
+  } catch {
+    return null;
+  }
 }
 
 export function playerSecret(storage: Storage | null = defaultStorage()): string {

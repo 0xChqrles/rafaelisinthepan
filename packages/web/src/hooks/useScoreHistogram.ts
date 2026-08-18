@@ -66,11 +66,12 @@ export function shareScoreFlight(
 // Exported for the settled-verdict contract test; callers still use the hook below.
 export async function syncScore(
   submitted: boolean,
-  markSubmitted: () => void,
+  markSubmitted: (recorded: number | null) => void,
   mode: Mode,
   lang: string,
   date: string,
   score: number,
+  recordedScore?: number,
 ): Promise<ScorePlacement | null> {
   if (shouldSubmitScore(true, submitted)) {
     const token = await turnstileToken();
@@ -81,23 +82,35 @@ export async function syncScore(
       score,
       turnstileToken: token,
     });
-    // The server SETTLED this submission only if it reached a verdict: 2xx recorded the
-    // score, 4xx refused it (bad score, spent Turnstile token, over the cap) — either way
-    // the conversation is over and the round must never ask again. A 5xx is not a verdict:
-    // it is the backend failing, and burning the round's one submission on a cold start or
-    // a throttled write would lose that score for good, on a visit the player cannot
-    // repeat. So it stays retryable, exactly like the thrown fetch that never gets here.
-    if (response.status < 500) markSubmitted();
-    if (!response.ok) return null;
+    // The server SETTLED this submission only if it reached a verdict: 2xx answered with
+    // the population, 4xx refused it (bad score, spent Turnstile token, over the cap) —
+    // either way the conversation is over and the round must never ask again. A 5xx is
+    // not a verdict: it is the backend failing, and burning the round's one submission on
+    // a cold start or a throttled write would lose that score for good, on a visit the
+    // player cannot repeat. So it stays retryable, exactly like the thrown fetch that
+    // never gets here. (A 2xx whose body will not parse below also stays retryable —
+    // harmless since #187, because a re-POST of an already-recorded round changes
+    // nothing server-side and returns this same answer.)
+    if (!response.ok) {
+      if (response.status < 500) markSubmitted(null);
+      return null;
+    }
     const histogram = parseScoreHistogram(await response.json());
+    // What the population actually HOLDS for this round (#187): first write wins, so a
+    // duplicate submission (another device/tab under the same key) is answered with the
+    // STORED row's band — persist ITS score, never this round's local count, so revisit
+    // GETs locate the same standing the POST just showed. Bands are exact (min == max ==
+    // the recorded score).
+    const recorded = histogram.bucket == null ? null : histogram.buckets[histogram.bucket]?.min ?? null;
+    markSubmitted(recorded);
     return { histogram, bucket: histogram.bucket };
   }
   const response = await fetch(scoresUrl(lang, date, mode));
   if (!response.ok) return null;
   const histogram = parseScoreHistogram(await response.json());
-  // GET returns `bucket: null` — the revisiting client locates its own persisted score
-  // in the inclusive ranges.
-  return { histogram, bucket: bucketIndexOf(histogram.buckets, score) };
+  // GET returns `bucket: null` — the revisiting client locates its own RECORDED score
+  // (#187; the local count as the pre-#187 fallback) in the inclusive ranges.
+  return { histogram, bucket: bucketIndexOf(histogram.buckets, recordedScore ?? score) };
 }
 
 export default function useScoreHistogram({
@@ -108,23 +121,31 @@ export default function useScoreHistogram({
   lang,
   dayNumber,
   score,
+  recordedScore,
 }: {
   finished: boolean;
   submitted: boolean;
-  // Persists the flag on the round; must be idempotent (the store action is).
-  markSubmitted: () => void;
+  // Persists the flag — and, on a 2xx, the score the population recorded (#187) — on the
+  // round; must be idempotent (the store action is).
+  markSubmitted: (recorded: number | null) => void;
   mode: Mode;
   lang: string;
   dayNumber: number;
   score: number;
+  // The persisted server-recorded score, when the round has one (#187): revisit GETs
+  // locate the standing by it, since first-write-wins can hold a different score than
+  // this device's own count.
+  recordedScore?: number;
 }): ScorePlacementState {
   const [placement, setPlacement] = useState<ScorePlacementState>(null);
 
-  // `submitted` is read at launch time rather than placed in the deps: the successful
-  // POST marks it during this effect's own flight, and that re-render must not chase the
-  // POST with a redundant GET.
+  // `submitted` and `recordedScore` are read at launch time rather than placed in the
+  // deps: the successful POST writes BOTH during this effect's own flight, and that
+  // re-render must not chase the POST with a redundant GET.
   const submittedRef = useRef(submitted);
   submittedRef.current = submitted;
+  const recordedRef = useRef(recordedScore);
+  recordedRef.current = recordedScore;
   const placementKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -135,7 +156,11 @@ export default function useScoreHistogram({
       return undefined;
     }
     const operation = submittedRef.current ? 'get' : 'post';
-    const key = `${operation}:${mode}:${lang}:${dayNumber}:${score}`;
+    // A GET conversation is keyed by the score it will LOCATE with — the recorded one
+    // when the round has it — so a stale flight can never answer for a different band.
+    const recorded = recordedRef.current;
+    const locate = operation === 'get' ? recorded ?? score : score;
+    const key = `${operation}:${mode}:${lang}:${dayNumber}:${locate}`;
     if (placementKeyRef.current !== key) {
       placementKeyRef.current = key;
       // A direct solved-round -> solved-round navigation must never show the previous
@@ -150,6 +175,7 @@ export default function useScoreHistogram({
         lang,
         dateForDayNumber(dayNumber),
         score,
+        recorded,
       ),
     );
     let cancelled = false;

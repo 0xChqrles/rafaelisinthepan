@@ -1600,7 +1600,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   generated on this first need, sent in the body as the round's identity — the server
   keys the day's one first-write-wins row by the publicId it derives from it — and the
   POST's response IS the histogram (one round trip on the happy path);
-  a round already submitted GETs the read-only twin on revisits. The `scoreSubmitted` flag
+  a round already submitted GETs the read-only twin on revisits — locating the standing by
+  the persisted `scoreRecorded` (#187): the population is first-write-wins per player, so
+  a duplicate submission (another device/tab under one key) is answered with the STORED
+  row's score, which a 2xx persists beside the flag (the local count is only the pre-#187
+  fallback, and a refusal records nothing). The `scoreSubmitted` flag
   persists ON the round (both round shapes, optional field — no store version bump), and is
   marked when the server reaches a **VERDICT** — accepted (2xx) or refused (4xx) alike,
   either way the conversation is over. Anything that is merely the backend FAILING leaves it
