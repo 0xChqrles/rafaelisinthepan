@@ -4581,16 +4581,22 @@ button * {
    as they turn — which matters far more now that the last one turns ten times a second.
    The corner it sits in holds ~104px at 320px before it reaches the icon group, which is
    what sets the mobile size below: a three-digit clock and its tenth have to fit that. */
+/* The clock sits UNDER THE WORD since 2026-08-18 (the header's left slot went to the
+   date chip), centred in its own row — and it speaks the PIXEL face: the countdown is
+   the game's own number, like every number the game produces. */
+.word-clock {
+  display: flex;
+  justify-content: center;
+  margin-top: clamp(14px, 2.6vh, 24px);
+}
 .word-timer {
   position: relative;
   display: inline-block;
-  font-size: 30px;
-  font-weight: 500;
+  font-family: var(--pixel-font);
+  font-size: 24px;
+  font-weight: 400;
   line-height: 1;
   letter-spacing: 0;
-  /* REAL tabular figures at last (2026-08-18): the digits cannot twitch as they
-     turn, which the pixel face only approximated by being monospace. */
-  font-variant-numeric: tabular-nums;
   color: var(--fg);
   transition: color 0.25s linear;
   pointer-events: none;
@@ -4607,11 +4613,10 @@ button * {
 }
 /* The mobile size lives HERE, immediately after the rule it overrides, and not up in the
    stylesheet's shared mobile block — the two have equal specificity, so a media query
-   written earlier in the file simply loses to this rule and never applies. (Measured: it
-   did, and a clock past 100 seconds then ran into the header's icon group.) */
+   written earlier in the file simply loses to this rule and never applies. */
 @media (max-width: 640px) {
   .word-timer {
-    font-size: 23px;
+    font-size: 20px;
   }
 }
 /* Before START the clock shows what a run is worth without having begun to spend it — a

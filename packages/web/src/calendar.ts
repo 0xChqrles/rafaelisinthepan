@@ -61,5 +61,9 @@ export function monthGrid(ym: YearMonth, weekStart: number): (string | null)[] {
   for (let day = 1; day <= daysInMonth(ym); day += 1) {
     cells.push(isoDate(ym.year, ym.month, day));
   }
+  // ALWAYS six weeks (user-decided 2026-08-18): the grid is padded to 42 cells so a
+  // 4-week February and a 6-week month stand the same height — the calendar must not
+  // jump vertically as the player pages through months.
+  while (cells.length < 42) cells.push(null);
   return cells;
 }
