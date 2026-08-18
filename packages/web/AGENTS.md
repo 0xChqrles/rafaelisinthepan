@@ -173,7 +173,13 @@ These are decided and verified against the code. Treat them as load-bearing.
     result numbers, the streak digits, whose wheel slots are the mono's exact 0.6em
     advance). A monospace is tabular by construction, so everything that ticks is stable
     for free, and `ScoreRank.standingUnits`'s glyphs-as-width estimate is literally true
-    again. **Hierarchy is said in WEIGHT, never in families: light (275-300) for the big
+    again. **The chrome is ALL-CAPS (user-decided 2026-08-18) — every mono surface wears
+    `text-transform: uppercase` EXCEPT the coach/dialog copy**, which stays sentence
+    case and quotes its in-game words — `[[b:]]`, `[[w:]]` AND `[[m:]]` (the MISS words
+    joined the same day, `.rt-miss`) — in the pixel face at 0.82em; the `.solved-by`
+    lowercase `sourceBy` word is uppercased by the same rule, the phrase reading
+    surviving in the word order. **Hierarchy is said in WEIGHT, never in families: light
+    (275-300) for the big
     numbers, medium (500-550) for names and labels, bold (600-700) for actions**; resting
     body weight 400; `font-synthesis: none` app-wide (the pixel face ships one weight — a
     faux bold smears like a fractional scale).
@@ -193,9 +199,11 @@ These are decided and verified against the code. Treat them as load-bearing.
     The HEADER's icons are the LUCIDE stroke set as `.ui-icon`s (user-picked 2026-08-18:
     calendar, circle-help, x, fast-forward, and LANGUAGES — the 文/A translation mark —
     for the language control, replacing the globe; 24-grid, 1.8px, currentColor, 28px
-    in-file size against the 32px pixel mark; globe.png and the standalone `.pixel-icon`
-    class are deleted); the Whippin mark stays the header's ONE pixel artifact,
-    deliberately — it is the logo, and pixel is the brand. The BODY's global hard 2px
+    in-file size; globe.png and the standalone `.pixel-icon`
+    class are deleted); the Whippin mark is the USER-DRAWN `assets/logo.svg` since
+    2026-08-18 (replacing the header's last pixel artifact): cobalt with a small glow in
+    the header — the icon row's one lit object — and the same mark wears the full
+    cobalt-core/violet-halo AURA on the chooser and invite hero spots. The BODY's global hard 2px
     text-shadow is gone; pixel surfaces that relied on it (floating hits, loot) carry
     their own, and the topbar wears a soft bloom shadow instead.
   - **THE VIEWPORT IS AN INSTRUMENT (user-decided 2026-08-18, from the user's
@@ -1948,9 +1956,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   are, what each is called, which art it wears and where a tap lands (`.chooser-*` in CSS,
   renamed from `.lang-*` when the second one arrived). Both are ROUTES, never modals, and
   both sit ABOVE `/<lang>` since neither is language- or mode-scoped.
-  Headed by the **logo** (blue pixel
-  glyph, 3×/2× its native 22px — language-neutral, and the app's ONE in-app branding
-  spot), NOT a "select language" title (the cards self-explain, and a title would
+  Headed by the **logo** (the user-drawn
+  SVG mark since 2026-08-18, cobalt with its aura glow — language-neutral, and the app's
+  ONE in-app branding spot), NOT a "select language" title (the cards self-explain, and a title would
   have to guess the user's language on the screen where it is unknown). One **card**
   per option — the NAME alone, centred (user-decided 2026-08-17: the card art went with
   the electric identity — the 16×16 flags and the 7×7 mode sprites are deleted, assets
