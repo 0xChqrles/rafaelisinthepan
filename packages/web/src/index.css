@@ -3548,62 +3548,65 @@ button * {
   white-space: pre-line;
 }
 
-/* The tutorial's ending display (2026-08-11, replacing the theme clouds / routes teaser):
-   the five RARITY GRADES as a ladder, commonest at the top. Each rung wears its grade's own
-   colour (set inline from RARITY_COLORS — the same table the Word board's stations, the
-   strike and the loot read) and steps up in size as it steps down in the ladder: rarer is bigger,
-   which says "more precious" with no copy. STATIC sizes, never an animated scale — the
-   pixel font renders animated scaling blurry (the app's standing rule) — and the entrance
-   is a small rise+fade per rung on its own delay, so the ladder reads top to bottom.
-   Reduced motion collapses the durations via the global rule and keeps the delays, the
-   floating numbers' own degradation. */
+/* The tutorial's ending display — a SIGNAL METER since 2026-08-18 (user-decided,
+   superseding the size-ramped two-font rungs: "the difference in font size are
+   terrible"): five rows, commonest first — a five-cell LED meter with one more cell lit
+   per grade (rarity as signal strength, the member cards' own cell language), the
+   grade's name as a small quiet mono label, and the example word in the pixel face at
+   ONE size wearing the grade's colour + the game words' own soft glow. Each row's
+   colour is set inline from RARITY_COLORS (the same aura ladder the board's stations,
+   the strike and the loot wear). The entrance is the same per-row rise. */
 .rarity-ladder {
+  width: min(400px, 100%);
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
-  width: 100%;
-  gap: clamp(16px, 3.2vh, 28px);
+  gap: clamp(14px, 2.6vh, 22px);
 }
-/* TWO aligned columns around one centred seam (user-decided 2026-08-11): the grade names
-   end against the screen's centre line and the example words start from it, so the ladder
-   reads as a table — grade, then its evidence — instead of five centred lumps. The rung is
-   full-width and the columns split it 1fr/1fr, which puts the gap's middle exactly on the
-   centre of the (already centred) tutorial column. */
 .rarity-rung {
   display: grid;
-  /* minmax(0), not bare 1fr: a bare fr floors at min-content, so one long example
-     (crépuscule at the mobile sizes) widened its track and dragged the seam off centre —
-     measured 9px left on exactly that rung. Hard-equal halves keep the seam on the centre
-     whatever the words measure. */
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  column-gap: 12px;
-  align-items: baseline;
-  font-family: var(--ui);
-  font-weight: 700;
-  /* 15 / 18 / 21 / 24 / 27px across the five steps. */
-  font-size: calc(15px + var(--step, 0) * 3px);
-  letter-spacing: 0.04em;
+  /* Label lane fits UNCOMMON (8 glyphs) at the mono's 0.6em advance; the meter is its
+     own fixed lane; the example takes the rest, right-aligned — a table read. */
+  grid-template-columns: 9ch auto 1fr;
+  align-items: center;
+  column-gap: 16px;
   animation: rung-in 200ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
   animation-delay: calc(var(--step, 0) * 140ms);
 }
 .rarity-name {
-  font-weight: normal;
-  justify-self: end;
-  text-align: right;
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--fg);
+  opacity: 0.7;
+  text-align: left;
 }
-/* The grade's example word (user-decided 2026-08-11): the ladder teaches by evidence, so
-   each rung carries one obvious word in the grade's own colour — VT323 beside the pixel
-   name, ONE size (the ramp is the names'). Sized against the longest shipped example at
-   the 320px budget (see the mobile step-down below). */
+/* The LED meter: lit cells in the grade's colour with the LED self-glow, dark sockets
+   for the rest — the chooser mosaic's exact vocabulary. */
+.rarity-meter {
+  display: inline-flex;
+  gap: 3px;
+}
+.rarity-meter i {
+  width: 7px;
+  height: 7px;
+  border-radius: 1px;
+  background: rgba(244, 241, 232, 0.08);
+}
+.rarity-meter i.on {
+  background: currentColor;
+  box-shadow: 0 0 7px color-mix(in srgb, currentColor 60%, transparent);
+}
+/* The example word: the game's face, one size, in the grade's light. */
 .rarity-example {
   font-family: var(--pixel-font);
   font-style: normal;
-  /* The pixel face has ONE weight; without this the rung's 700 would synthesize a smeared
-     faux bold on the example. */
   font-weight: 400;
-  font-size: 19px;
+  font-size: 15px;
   letter-spacing: 0;
-  opacity: 0.9;
-  justify-self: start;
+  justify-self: end;
+  text-shadow: 0 0 0.4em color-mix(in srgb, currentColor 35%, transparent);
 }
 @keyframes rung-in {
   from {
@@ -3699,17 +3702,14 @@ button * {
   .coach-rules {
     padding: 12px 14px;
   }
-  /* The ladder tightens for the phone: OBSCURE plus its example is the widest rung, and
-     at these sizes it measures ~286px against the 292 a 320px screen offers (VT323
-     advances exactly 1em/glyph, so this is arithmetic, not hope). */
+  /* The meter ladder tightens for the phone: label 9ch (~54px) + meter 47px + gaps +
+     crépuscule (10 glyphs × 13px = 130) = ~263px against the 292 a 320px screen offers
+     (both faces advance fixed, so this is arithmetic, not hope). */
   .rarity-rung {
-    font-size: calc(13px + var(--step, 0) * 2px);
     column-gap: 10px;
   }
   .rarity-example {
-    /* 14, not 15: crépuscule (10 glyphs, the longest shipped example) must fit the 141px
-       half-column a 320px screen leaves — 10 × 14 = 140 (VT323 advances 1em/glyph). */
-    font-size: 14px;
+    font-size: 13px;
   }
   .coach-text {
     font-size: 14px; /* 3-line height scales with it (5.1em); the phone column is the

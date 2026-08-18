@@ -7,33 +7,34 @@ import type { Rarity } from '../game/wordGame';
 // grade moves exactly one table and the compiler finds every hole.
 
 // --- the colours -----------------------------------------------------------------------
-// THE INK LADDER (authored 2026-08-17 with the stamp-ink retune — the first calm cut
-// went dusty and read "almost creepy"): five printed-ink tones keeping the electric
-// set's hue walk (neutral → green → cyan → violet → pink) so a returning player's ladder
-// intuition survives, at riso saturations that sit in the ink world without going neon.
+// THE AURA LADDER (authored 2026-08-18, superseding the stamp-ink set on user review —
+// "the dull grey, the ugly green, the weird blue"): five steps of EMITTED LIGHT, the
+// /inspiration/modern board's colour story (LED cells on black, the ground's own
+// cobalt→violet orbs), sweeping cool→hot through the app's own aura: slate → LED cyan →
+// azure → violet → laser magenta. The hue walk still rises the same way, so a returning
+// player's ladder intuition survives.
 //
 // Constraints RE-MEASURED for this set (`rarity.test.ts` pins the minimums):
 //
 //   - THE MISS COLOUR IS NO GRADE'S: MISS is the gradient's weird-terminus RED
-//     (`MISS_COLOR`, @whippin/shared — back to red when the scale grew past the yellow),
-//     and every grade clears 34+ dE from it.
+//     (`MISS_COLOR`, @whippin/shared), and every grade clears the 30 dE bar.
 //   - `--solve` is THE DAY'S WORD, the very thing the label floats on top of: every
-//     grade clears 25+ (OBSCURE's violet the closest at 26.8).
-//   - the timer's `--danger` red: every grade clears 30+ (ARCANE the closest at 37).
-//   - LEGIBILITY on `--bg`: every grade ≥4.9:1 (OBSCURE was walked up from a 3.5:1
-//     deep violet — the same trap the electric set documented).
+//     grade clears the 25 dE bar (RARE's azure deliberately walked light and cyan-ward
+//     off the cobalt).
+//   - the timer's `--danger` red: every grade clears 30.
+//   - LEGIBILITY on `--bg`: every grade ≥4.5:1.
 export const RARITY_COLORS: Record<Rarity, string> = {
-  // --muted itself: the quiet voice, "no grade awarded", which is what COMMON means.
-  COMMON: '#b0aca4',
-  // mint-green ink — the first chromatic step off the grey.
-  UNCOMMON: '#4ed48d',
-  // sky-cyan ink — the blue family, held clear of the cobalt the label floats over.
-  RARE: '#3fc6e8',
-  // violet ink — deep and hidden, pushed magenta-ward to clear both the cobalt day word
-  // and the gradient's rose-orchid middle.
-  OBSCURE: '#b164f2',
-  // magenta ink — the loudest tone on the ladder.
-  ARCANE: '#f04ea6',
+  // cool slate-lavender — the quiet voice ("no grade awarded"), AUTHORED now rather than
+  // --muted's warm grey: quiet in the app's blue world instead of dull outside it.
+  COMMON: '#97a3c9',
+  // LED cyan — the member card's lit cell, the first real signal.
+  UNCOMMON: '#4fd2e8',
+  // azure — lighter and cyan-ward of the cobalt day word it floats over.
+  RARE: '#64a0ff',
+  // violet — the ground's own orb, lifted.
+  OBSCURE: '#bd68ff',
+  // laser magenta — the hottest signal on the board.
+  ARCANE: '#ff5ce0',
 };
 
 // MISS's red lives with the ramp (`MISS_COLOR` in @whippin/shared's heat.ts), because it

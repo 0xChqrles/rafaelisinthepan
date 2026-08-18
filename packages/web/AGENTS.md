@@ -790,10 +790,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   already happened is not a control. Both extremes were built and rejected on sight — in flow
   the history pushed the window's centre up with it and the word read as TOP-ALIGNED (measured
   126px high); given the whole band down to the KEYBOARD the word read as TOO LOW.
-  **The rarity COLOURS are an authored stamp-ink ladder, measured and pinned**
-  (`components/rarity.ts` + `rarity.test.ts`): COMMON tracks `--muted`; UNCOMMON, RARE,
-  OBSCURE and ARCANE are fixed mint, cyan, violet and magenta inks. They are not copies of
-  heat-ramp stops. **THE MISS COLOUR IS NO GRADE'S:** every grade stays perceptually clear
+  **The rarity COLOURS are the authored AURA LADDER, measured and pinned**
+  (`components/rarity.ts` + `rarity.test.ts`; user-decided 2026-08-18, superseding the
+  stamp inks — "the dull grey, the ugly green, the weird blue"): five steps of EMITTED
+  LIGHT sweeping the app's own aura cool→hot — slate `#97a3c9`, LED cyan `#4fd2e8`,
+  azure `#64a0ff`, violet `#bd68ff`, laser magenta `#ff5ce0` — ALL five authored now
+  (COMMON no longer tracks `--muted`). They are not copies of heat-ramp stops. **THE MISS COLOUR IS NO GRADE'S:** every grade stays perceptually clear
   of `MISS_COLOR`, `--danger` and the cobalt `--solve` word it can be rendered beside;
   the grades also remain mutually distinguishable. Those relationships and the exact
   authored hexes are contract-tested, including the shared OG-card copy.
@@ -1774,41 +1776,30 @@ it to the local store — see `packages/backend/AGENTS.md`).
   ending):** the tutorial teaches the CORE CONCEPTS the modes share — semantic distance
   (the mix demo and the guided guesses) and word rarity — and nothing mode-specific: each
   mode's own rules live on that mode's pre-game gate (Word mode's gate screen; the
-  sentence game's one-time PLAY gate, below). The themes/clouds/routes-teaser ending this
-  replaces taught the artifact's semantic clusters, which the game no longer draws —
-  `tutorial/ThemeCloud.tsx`, `tutorial/RoutesTeaser.tsx`, the `tutTheme*`/`tutTap`/
-  `tutClick`/`tutThemes` copy, `themeHeading`, `ariaExploreHole`, CoachText's `[[t:]]` tag
-  and `Hole.waveSolved` (the solved-word wave existed only for that tap) are all deleted.
-  Finding the word retires the prompt and DROPS the keyboard out of the tray (the game's
-  own `kb-drop`, same `KB_EXIT_FALLBACK_MS` deadline behind its `animationend`). **The
-  ending then runs TWO beats, one idea each** (the tutorial's own grammar): the CLAIM —
-  « Une dernière chose : chaque mot a une rareté. » (`tutRarityIntro`) — over the found
-  word, with the tray's NEXT as its only control; then the word gives way to the **RARITY
-  LADDER** (`tutorial/RarityLadder.tsx`): the five grade names from `RARITY_NAMES`,
-  commonest at the top, each in its own `RARITY_COLORS` colour — the exact colour the
-  grade wears on the Word board's stations, the strike and the loot — stepping UP in size as
-  they step down the ladder (static sizes, never an animated scale: the pixel font rule),
-  each rung rising in on its own delay (reduced motion collapses durations, keeps delays).
-  **Each rung carries one OBVIOUS example word** (user-decided 2026-08-11, second pass):
-  the ladder teaches by evidence — en house / twilight / obelisk / reliquary / apricity,
-  fr maison / crépuscule / alambic / cénotaphe / zinzolin (`tutRarityEx*`, hand-authored
-  per language for intuition, not measured against the corpus; palimpsest(e) was the
-  first OBSCURE pick both times and was swapped for LENGTH — see next) — in VT323 at ONE
-  size beside the ramping names, in the grade's colour. **The ladder is TWO ALIGNED
-  COLUMNS around one centred seam** (user-decided 2026-08-11, third pass): each rung is a
-  full-width 1fr/1fr grid — names right-aligned against the centre line, examples
-  left-aligned from it — so the gap's middle sits exactly on the centre of the (already
-  centred) tutorial column and the ladder reads as a table. The widest rung (OBSCURE + its
-  example) measures ~285px against a 320px screen's 292 budget (VT323 advances exactly
-  1em/glyph, so the mobile step-down in index.css is arithmetic — an example longer than
-  ~9 glyphs breaks the page inset there, which is what unseated palimpseste at 315px). The coach line states the CONCEPT and no
-  value — « Des mots de tous les jours aux mots presque oubliés. » (`tutRarity`; a first
-  cut said "the rarer, the more precious", which the user rejected as Word mode's framing:
-  a grade is only WORTH something where it pays the clock, and the tutorial teaches core
-  principles only) — and deliberately NOT what a grade pays: the seconds are Word mode's
-  rule, stated on its gate (`wordRulesBonus`). The grade names are the game's untranslated
-  vocabulary and come from `RARITY_NAMES`, never from a string; the ladder is decorative
-  (`role="img"`) with `srRarityLadder` + the names and examples as its accessible line.
+  sentence game's one-time PLAY gate, below). Finding the word retires the prompt and
+  DROPS the keyboard out of the tray (the game's own `kb-drop`, same `KB_EXIT_FALLBACK_MS`
+  deadline behind its `animationend`). **The ending then runs TWO beats, one idea each**
+  (the tutorial's own grammar): the CLAIM — « Une dernière chose : chaque mot a une
+  rareté. » (`tutRarityIntro`) — over the found word, with the tray's NEXT as its only
+  control; then the word gives way to the **RARITY LADDER**
+  (`tutorial/RarityLadder.tsx`), a **SIGNAL METER since 2026-08-18** (user-decided,
+  superseding the size-ramped two-column rungs — "the difference in font size are
+  terrible", and the two same-size fonts competed): five rows, commonest first, each
+  carrying a five-cell LED METER with one more cell lit per grade — rarity as signal
+  strength, the member cards' own cell vocabulary — the grade's name as a small quiet
+  mono label (11px, `--fg`), and **one OBVIOUS example word per grade** (user-decided
+  2026-08-11: the ladder teaches by evidence — en house / twilight / obelisk /
+  reliquary / apricity, fr maison / crépuscule / alambic / cénotaphe / zinzolin,
+  `tutRarityEx*`, hand-authored per language for intuition) in the PIXEL face at ONE
+  size (15px, 13px ≤640px), right-aligned, wearing the grade's aura colour with the
+  game words' soft glow. Fits by arithmetic at 320px (label 9ch + meter + crépuscule at
+  13px ≈ 263 of 292). Each row rises on its own `rung-in` delay (reduced motion
+  collapses durations, keeps delays). The coach line states the CONCEPT and no value —
+  « Des mots de tous les jours aux mots presque oubliés. » (`tutRarity`) — and
+  deliberately NOT what a grade pays: the seconds are Word mode's rule, stated on its
+  gate (`wordRulesBonus`). The grade names are the game's untranslated vocabulary from
+  `RARITY_NAMES`; the ladder is decorative (`role="img"`) with `srRarityLadder` + the
+  names and examples as its accessible line.
   The tray then offers **PLAY (`tutPlay`), which is the graduation**: `onDone`, no
   SolvedScreen (a lesson has no score to show).
   **The ACTION BUTTON keeps ONE place for the whole lesson** (decided 2026-08-04): MIX, the

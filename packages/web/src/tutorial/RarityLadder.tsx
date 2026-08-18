@@ -3,18 +3,18 @@ import { RARITY_NAMES, type Rarity } from '../game/wordGame';
 import { RARITY_COLORS } from '../components/rarity';
 import { t, type UiKey } from '../i18n';
 
-// The tutorial's ending display (2026-08-11, replacing the themes clouds/routes teaser):
-// the game's five rarity grades as a LADDER, commonest at the top, each name in the exact
-// colour it wears everywhere else — the Word board's stations, the strike, the loot. The names
-// are the game's own untranslated vocabulary (COMMON..ARCANE, like MISS / YOU / DNF);
-// beside each, an OBVIOUS example word (user-decided 2026-08-11) — the ladder teaches by
-// evidence, house down to apricity — hand-authored per language in i18n.
+// The tutorial's ending display (2026-08-11, replacing the themes clouds/routes teaser;
+// REDESIGNED 2026-08-18 as a SIGNAL METER — the size-ramped two-font rungs read badly on
+// user review): five rows, commonest first, each carrying a five-cell LED METER with one
+// more cell lit per grade — rarity as signal strength, the member cards' own cell
+// language — the grade's name as a small quiet mono label, and the OBVIOUS example word
+// (user-decided 2026-08-11; hand-authored per language in i18n) in the pixel face at ONE
+// size, wearing the grade's colour. The fonts stop competing because they keep their
+// app-wide jobs: mono labels, pixel words.
 //
-// The rungs step DOWN in the pixel font at five static sizes — rarer is bigger (static
-// sizes, never an animated scale: the pixel font renders animated scaling blurry, the
-// app's standing rule). Each rung rises in on its own delay so the ladder reads
-// top-to-bottom the way it is meant to be read; reduced motion collapses the durations via
-// the global rule and keeps the delays, exactly like the floating numbers.
+// Each row rises in on its own delay so the ladder reads top-to-bottom; reduced motion
+// collapses the durations via the global rule and keeps the delays, exactly like the
+// floating numbers.
 const EXAMPLE_KEYS: Record<Rarity, UiKey> = {
   COMMON: 'tutRarityExCommon',
   UNCOMMON: 'tutRarityExUncommon',
@@ -22,6 +22,8 @@ const EXAMPLE_KEYS: Record<Rarity, UiKey> = {
   OBSCURE: 'tutRarityExObscure',
   ARCANE: 'tutRarityExArcane',
 };
+
+const METER_CELLS = 5;
 
 export default function RarityLadder({ lang }: { lang: string }) {
   return (
@@ -39,6 +41,13 @@ export default function RarityLadder({ lang }: { lang: string }) {
           style={{ '--step': step, color: RARITY_COLORS[grade] } as CSSProperties}
         >
           <b className="rarity-name">{grade}</b>
+          <span className="rarity-meter" aria-hidden="true">
+            {Array.from({ length: METER_CELLS }, (_, i) => (
+              // Static decorative cells: the index is the identity.
+              // eslint-disable-next-line react/no-array-index-key
+              <i key={i} className={i <= step ? 'on' : undefined} />
+            ))}
+          </span>
           <i className="rarity-example">{t(lang, EXAMPLE_KEYS[grade])}</i>
         </span>
       ))}
