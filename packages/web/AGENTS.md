@@ -1874,7 +1874,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the day to change the day", the ▾ tick carries the affordance; the standalone
     calendar icon is deleted) — or Word mode's clock, or a screen's title chip.
   - **CENTER, the SEGMENTED MODE SWITCHER** (`components/ModeTabs`): both dailies,
-    active one in the inverted selection box — retiring the /mode chooser round-trip
+    active one in the inverted selection box — and WEIGHT is the state (430 resting,
+    700 in the box; the mono's fixed advance means the swap moves nothing). The band's
+    whole hierarchy is weight: titles/date 500, tabs 430/700, the FR + `?` pair one
+    quiet 480 at one 12px size — retiring the /mode chooser round-trip
     for the app's most frequent navigation (and fixing what killed the 2026-08-06
     toggle: these tabs show BOTH modes and mark the current one). The route builds it
     so it owns where a tap lands: the game routes to the other mode's today, the

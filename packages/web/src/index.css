@@ -995,7 +995,9 @@ button * {
   opacity: 0.55;
   font-family: var(--ui);
   font-size: 11px;
-  font-weight: 600;
+  /* WEIGHT is the state (2026-08-18): light at rest, bold in the box — the mono's
+     fixed advance means the swap moves nothing. */
+  font-weight: 430;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   line-height: 1;
@@ -1012,6 +1014,7 @@ button * {
   background: var(--fg);
   color: var(--bg);
   opacity: 1;
+  font-weight: 700;
   cursor: default;
 }
 /* The language CODE chip (2026-08-18, replacing the languages glyph): two mono letters,
@@ -1019,16 +1022,17 @@ button * {
 .lang-chip {
   font-family: var(--ui);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 480;
   letter-spacing: 0.1em;
   line-height: 1;
 }
 /* The help control is a bare `?` GLYPH (user-decided 2026-08-18, replacing the Lucide
-   circle-help — "terrible"): the mono's own question mark, the lang chip's sibling. */
+   circle-help — "terrible"): the mono's own question mark, the lang chip's exact
+   sibling — same size, same weight (user-tuned the same day). */
 .help-chip {
   font-family: var(--ui);
-  font-size: 17px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 480;
   line-height: 1;
 }
 /* The language chip and the contextual controls: one ink, the .home-btn opacity lift as
@@ -1048,7 +1052,7 @@ button * {
    modal titles alike (ModalHeader reuses this class). */
 .topbar-title {
   font-size: clamp(12px, 1.9vh, 14px);
-  font-weight: 700;
+  font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--fg);
@@ -1106,7 +1110,7 @@ button * {
   font-family: var(--ui);
   font-size: 14px;
   line-height: 1;
-  font-weight: 700;
+  font-weight: 500;
   letter-spacing: 0.04em;
   color: var(--fg);
   background: transparent;
