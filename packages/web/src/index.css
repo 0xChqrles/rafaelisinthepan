@@ -1879,17 +1879,17 @@ button * {
 }
 /* A hidden ghost of the final count reserves the exact width (incl. letter-spacing, which
    `ch` units miss); the live tally is overlaid right-aligned, so counting never reflows.
-   The NUMBER is a big LIGHT-weight headline (2026-08-18) over the unit as a small
-   tracked label — weight contrast, the mono system's display register. */
+   The NUMBER is PIXEL (user-decided 2026-08-18, superseding the light mono — "the
+   numbers of the new font are quite ugly"): the score is game data, the same voice as
+   the watermark it grew from, over the unit as a small tracked mono label. */
 .solved-score-num {
   position: relative;
   display: inline-block;
-  font-family: var(--ui);
-  font-size: clamp(44px, 6.6vh, 60px);
-  font-weight: 275;
+  font-family: var(--pixel-font);
+  font-size: clamp(34px, 5vh, 46px);
+  font-weight: 400;
   line-height: 1;
   color: var(--fg);
-  font-variant-numeric: tabular-nums;
 }
 .solved-score-ghost {
   visibility: hidden;
@@ -2033,8 +2033,8 @@ button * {
                        the short line fits at the tuned sizes. */
 .score-slot {
   --rank-label: 16px;
-  --rank-num: 36px;
-  --rank-num-drop: 1px;
+  --rank-num: 28px;
+  --rank-num-drop: 2px;
   --top-h: 36px;
   --top-size: 13px;
   --top-pad: 16px;
@@ -2072,9 +2072,13 @@ button * {
    with much smaller type sits visibly HIGH against it — and the taller the type, the wider
    that band, which is why the drop is per size. Always a WHOLE pixel: a fractional offset
    resamples pixel type, the same rule the sprites take their integer scales for. */
+/* The rank NUMBER is PIXEL (user-decided 2026-08-18): a rank is game data, and every
+   number the game itself produced speaks the game's face. The labels around it stay
+   mono. */
 .score-rank-num {
+  font-family: var(--pixel-font);
   font-size: var(--rank-num);
-  font-weight: 700;
+  font-weight: 400;
   line-height: 1;
   letter-spacing: 0;
   color: var(--accent);
@@ -2108,8 +2112,8 @@ button * {
 @media (max-width: 600px) {
   .score-slot {
     --rank-label: 14px;
-    --rank-num: 30px;
-    --rank-num-drop: 1px;
+    --rank-num: 23px;
+    --rank-num-drop: 2px;
     --top-h: 32px;
     --top-size: 12px;
     --top-pad: 14px;
@@ -2119,8 +2123,8 @@ button * {
   }
   .score-slot.tight {
     --rank-label: 12px;
-    --rank-num: 22px;
-    --rank-num-drop: 0px;
+    --rank-num: 17px;
+    --rank-num-drop: 1px;
     --top-h: 26px;
     --top-size: 10px;
     --top-pad: 12px;
@@ -2137,8 +2141,8 @@ button * {
   .score-slot,
   .score-slot.tight {
     --rank-label: 12px;
-    --rank-num: 22px;
-    --rank-num-drop: 0px;
+    --rank-num: 17px;
+    --rank-num-drop: 1px;
     --top-h: 26px;
     --top-size: 10px;
     --top-pad: 12px;
@@ -2790,17 +2794,16 @@ button * {
   justify-content: center;
   gap: 20px;
 }
-/* The number in the mono at a LIGHT weight (2026-08-18): the celebration's headline.
-   The wheel slots match the mono's exact 0.6em digit advance, so the number reads as one
-   close-set figure. */
+/* The number is PIXEL (user-decided 2026-08-18, after a light-mono cut — the streak is
+   the game's own count, and the big pixel digits are the celebration): the wheel slots
+   are the pixel face's exact 1em advance. */
 .streak-digits {
   position: relative;
   height: 1em;
-  font-family: var(--ui);
-  font-weight: 300;
-  font-size: 76px;
+  font-family: var(--pixel-font);
+  font-weight: 400;
+  font-size: 64px;
   line-height: 1;
-  font-variant-numeric: tabular-nums;
 }
 .streak-digit-layer {
   position: absolute;
@@ -2814,7 +2817,7 @@ button * {
 .streak-digit-slot {
   position: relative;
   display: block;
-  width: 0.6em;
+  width: 1em;
   height: 1.44em;
   overflow: hidden;
 }
@@ -2826,10 +2829,11 @@ button * {
   justify-content: center;
   will-change: transform, opacity;
   /* Transparent by default so the flame glow (below) eases in as a COLOR fade when the
-     flame arrives — `text-shadow: none` would pop instead of transitioning. (A soft glow
-     since 2026-08-18: the old hard 6px offset was the pixel identity's; the flame CASTS
-     LIGHT instead.) */
-  text-shadow: 0 0 32px transparent;
+     flame arrives — `text-shadow: none` would pop instead of transitioning. The HARD
+     6px underprint RETURNED with the pixel digits (2026-08-18, unwinding the soft-glow
+     detour): a blur clips square inside the overflow-hidden wheel slots, and the offset
+     print is the pixel idiom anyway. */
+  text-shadow: 0px 6px transparent;
   transition: text-shadow 260ms ease-out;
 }
 .streak-digit-old {
@@ -2844,7 +2848,7 @@ button * {
    changed digits plus the unchanged ones (faded-out old digits are opacity 0, so their
    glow stays invisible). */
 .streak-number-block.flamed .streak-digit {
-  text-shadow: 0 0 32px var(--flame);
+  text-shadow: 0px 6px var(--flame);
 }
 /* The ending hint — arcade "press any key / tap anywhere" idiom: muted pulsing text, no
    chrome. It is NON-interactive (a plain element, nothing focusable in the celebration);
@@ -3052,7 +3056,7 @@ button * {
     height: 82px;
   }
   .streak-digits {
-    font-size: 72px;
+    font-size: 52px;
   }
 }
 

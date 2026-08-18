@@ -161,17 +161,23 @@ These are decided and verified against the code. Treat them as load-bearing.
     holes, Word mode's day word, the route drawings entire (words, rank gutters, MISSED
     shelf), the prompt/input and its hint, the keyboard (keys + its `.kb-icon` pixel
     enter/backspace), the floating hits, the loot, the strike sheets, the CellDigits
-    watermark, the solved screen's word trophies, the rarity ladder's EXAMPLE words, and
-    MixWord. **Every monospace layout assumption therefore still holds** — fitWord, the
+    watermark, the solved screen's word trophies, the rarity ladder's EXAMPLE words,
+    MixWord — and, since the same day's later pass, **every NUMBER the game itself
+    produced**: both result counts (`.solved-score-num`), the standing's rank number
+    (`.score-rank-num`, in the accent; `standingUnits` counts its digits TRIPLE now —
+    the pixel advance at rank size measures ~3 mono label glyphs) and the streak
+    celebration's digits (wheel slots back at the pixel 1em advance, and the flame's
+    HARD 6px indigo underprint restored — a soft glow clips square inside the
+    overflow-hidden slots). **Every monospace layout assumption therefore still holds** — fitWord, the
     route `--gutter` arithmetic, MixWord's ch reservations and CellDigits' grid all sit
     on surfaces that stayed pixel. The coach text's inline `[[b:]]`/`[[w:]]` words are
     pixel at 0.82em INSIDE modern copy — game words quoted in chrome.
   - **MONO (Azeret Mono variable 100-900, `--ui`)** is EVERYTHING else — body default,
     header (title/date and Word mode's clock), buttons, coach copy, the standing line,
     calendar, streak, rarity chip counts, statuses, and every moment the retired serif
-    used to headline (chooser names, the invite title, the credit headline, the big
-    result numbers, the streak digits, whose wheel slots are the mono's exact 0.6em
-    advance). A monospace is tabular by construction, so everything that ticks is stable
+    used to headline (chooser names, the invite title, the credit headline — the big
+    result numbers and streak digits moved ON to the pixel face the same day, see
+    above). A monospace is tabular by construction, so everything that ticks is stable
     for free, and `ScoreRank.standingUnits`'s glyphs-as-width estimate is literally true
     again. **The chrome is ALL-CAPS (user-decided 2026-08-18) — every mono surface wears
     `text-transform: uppercase` EXCEPT the coach/dialog copy**, which stays sentence
