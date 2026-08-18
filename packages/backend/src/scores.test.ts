@@ -1,14 +1,22 @@
-// CONTRACT (#169): /scores is date/lang/mode-addressed, verifies Turnstile on POST,
-// validates a score against the published daily, caps one HMAC-IP at five atomic writes,
-// and returns the live histogram with the caller's bucket.
+// CONTRACT (#169/#187): /scores is date/lang/mode-addressed, verifies Turnstile on POST,
+// authenticates the player by the secret key alone (deriving the publicId — nothing
+// secret stored), validates a score against the published daily, writes ONE
+// first-write-wins row per (date, lang, mode, publicId) with a five-write HMAC-IP volume
+// cap, and serves the histogram DERIVED from the day's rows with the caller's bucket.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { VIEWER_IP_HEADER, type Puzzle, type ScoreHistogram, type WordPuzzle } from '@whippin/shared';
+import {
+  VIEWER_IP_HEADER,
+  generateSecret,
+  type Puzzle,
+  type ScoreHistogram,
+  type WordPuzzle,
+} from '@whippin/shared';
 import { createHandler, type HandlerDeps } from './handler';
 import { memoryScoreStore } from './memoryScoreStore';
-import { scoreBucket, scoreRanges, WORD_SCORE_ZONE } from './scoreBuckets';
+import { WORD_SCORE_ZONE } from './scoreLimits';
 import { SCORE_SUBMISSION_LIMIT } from './scoreStore';
-import { clientIp, hashClientIp } from './scores';
+import { clientIp, derivedHistogram, hashClientIp } from './scores';
 import type { FnUrlEvent } from './respond';
 import type { PuzzleStore } from './store';
 
@@ -17,6 +25,7 @@ const ACTIVE_DATE = '2026-08-13';
 const NEXT_DATE = '2026-08-14';
 const FUTURE_DATE = '2026-08-15';
 const ORIGIN = 'https://whippin.example';
+const SECRET = '00112233445566778899aabbccddeeff';
 
 const SENTENCE: Puzzle = {
   lang: 'fr',
@@ -104,17 +113,35 @@ beforeEach(() => {
   verify.mockResolvedValue(true);
 });
 
+describe('derivedHistogram — the day\'s rows ARE the population (#187)', () => {
+  it('builds one exact ascending bucket per distinct score, ties counted together', () => {
+    const rows = [
+      { publicId: 'a', score: 9 },
+      { publicId: 'b', score: 4 },
+      { publicId: 'c', score: 9 },
+      { publicId: 'd', score: 31 },
+    ];
+    expect(derivedHistogram(rows, 9)).toEqual({
+      buckets: [
+        { min: 4, max: 4, count: 1 },
+        { min: 9, max: 9, count: 2 },
+        { min: 31, max: 31, count: 1 },
+      ],
+      total: 4,
+      bucket: 1,
+    });
+    expect(derivedHistogram(rows, null).bucket).toBeNull();
+    expect(derivedHistogram([], null)).toEqual({ buckets: [], total: 0, bucket: null });
+  });
+});
+
 describe('GET /scores', () => {
-  it('returns an empty, non-cacheable histogram for a published daily', async () => {
+  it('returns an empty, non-cacheable histogram for a published daily with no rows', async () => {
     const response = await makeHandler()(event());
     expect(response.statusCode).toBe(200);
     expect(response.headers['Cache-Control']).toBe('no-store');
     expect(response.headers['Access-Control-Allow-Origin']).toBe(ORIGIN);
-    expect(parsed(response)).toEqual({
-      buckets: scoreRanges('sentence').map(({ min, max }) => ({ min, max, count: 0 })),
-      total: 0,
-      bucket: null,
-    });
+    expect(parsed(response)).toEqual({ buckets: [], total: 0, bucket: null });
     expect(verify).not.toHaveBeenCalled();
   });
 
@@ -155,39 +182,99 @@ describe('GET /scores', () => {
 });
 
 describe('POST /scores', () => {
-  it('verifies Turnstile once, increments the assigned bucket, and returns the included score', async () => {
+  it('verifies Turnstile once, records one player row, and returns the included score', async () => {
     const handler = makeHandler();
     const response = await handler(
       event({
         method: 'POST',
-        body: { score: 9, turnstileToken: 'token-1' },
+        body: { secret: SECRET, score: 9, turnstileToken: 'token-1' },
         address: '198.51.100.10',
       }),
     );
     expect(response.statusCode).toBe(200);
     expect(verify).toHaveBeenCalledTimes(1);
     expect(verify).toHaveBeenCalledWith('token-1', '198.51.100.10');
-    const histogram = parsed(response);
-    const bucket = scoreBucket('sentence', 9)!;
-    expect(histogram.total).toBe(1);
-    expect(histogram.bucket).toBe(bucket);
-    expect(histogram.buckets[bucket].count).toBe(1);
+    expect(parsed(response)).toEqual({
+      buckets: [{ min: 9, max: 9, count: 1 }],
+      total: 1,
+      bucket: 0,
+    });
 
-    // A read gets the same counters but no caller identity/bucket.
+    // A read derives the same population but carries no caller identity/bucket.
     const read = parsed(await handler(event()));
-    expect(read.total).toBe(1);
-    expect(read.buckets[bucket].count).toBe(1);
-    expect(read.bucket).toBeNull();
+    expect(read).toEqual({ buckets: [{ min: 9, max: 9, count: 1 }], total: 1, bucket: null });
+  });
+
+  it('derives the histogram from the recorded rows: ascending exact bands, ties shared', async () => {
+    const handler = makeHandler();
+    for (const [index, score] of [31, 4, 9, 9].entries()) {
+      await handler(
+        event({
+          method: 'POST',
+          body: { secret: generateSecret(), score, turnstileToken: `token-${index}` },
+          address: `198.51.100.${index + 30}`,
+        }),
+      );
+    }
+    const last = await handler(
+      event({
+        method: 'POST',
+        body: { secret: generateSecret(), score: 9, turnstileToken: 'token-last' },
+        address: '198.51.100.40',
+      }),
+    );
+    expect(parsed(last)).toEqual({
+      buckets: [
+        { min: 4, max: 4, count: 1 },
+        { min: 9, max: 9, count: 3 },
+        { min: 31, max: 31, count: 1 },
+      ],
+      total: 5,
+      bucket: 1,
+    });
+  });
+
+  it('rejects a missing or malformed player key before any write', async () => {
+    const handler = makeHandler();
+    for (const secret of [undefined, 42, 'not-a-key', SECRET.toUpperCase()]) {
+      const response = await handler(
+        event({ method: 'POST', body: { secret, score: 4, turnstileToken: 'token' } }),
+      );
+      expect(response.statusCode).toBe(400);
+      expect(JSON.parse(response.body).error).toBe('bad_request');
+    }
+    expect(parsed(await handler(event())).total).toBe(0);
+  });
+
+  it('is first-write-wins per player: a second submission changes nothing and reports the stored row', async () => {
+    const handler = makeHandler();
+    await handler(
+      event({ method: 'POST', body: { secret: SECRET, score: 9, turnstileToken: 'first' } }),
+    );
+    const replay = await handler(
+      event({ method: 'POST', body: { secret: SECRET, score: 3, turnstileToken: 'second' } }),
+    );
+    // Accepted (the conversation is over either way), but the population still holds ONE
+    // row — the first score — and the reported bucket is the STORED row's, never the
+    // resubmission's.
+    expect(replay.statusCode).toBe(200);
+    expect(parsed(replay)).toEqual({
+      buckets: [{ min: 9, max: 9, count: 1 }],
+      total: 1,
+      bucket: 0,
+    });
   });
 
   it('keeps sentence and Word populations separate', async () => {
     const handler = makeHandler();
-    await handler(event({ method: 'POST', body: { score: 4, turnstileToken: 'sentence' } }));
+    await handler(
+      event({ method: 'POST', body: { secret: SECRET, score: 4, turnstileToken: 'sentence' } }),
+    );
     const word = await handler(
       event({
         method: 'POST',
         query: { lang: 'fr', date: ACTIVE_DATE, mode: 'word' },
-        body: { score: 2, turnstileToken: 'word' },
+        body: { secret: SECRET, score: 2, turnstileToken: 'word' },
       }),
     );
     expect(word.statusCode).toBe(200);
@@ -197,13 +284,13 @@ describe('POST /scores', () => {
 
   it('rejects a missing/invalid token and records nothing', async () => {
     const handler = makeHandler();
-    const missing = await handler(event({ method: 'POST', body: { score: 4 } }));
+    const missing = await handler(event({ method: 'POST', body: { secret: SECRET, score: 4 } }));
     expect(missing.statusCode).toBe(403);
     expect(verify).not.toHaveBeenCalled();
 
     verify.mockResolvedValueOnce(false);
     const invalid = await handler(
-      event({ method: 'POST', body: { score: 4, turnstileToken: 'invalid' } }),
+      event({ method: 'POST', body: { secret: SECRET, score: 4, turnstileToken: 'invalid' } }),
     );
     expect(invalid.statusCode).toBe(403);
     expect(parsed(await handler(event())).total).toBe(0);
@@ -212,7 +299,10 @@ describe('POST /scores', () => {
   it('rejects scores outside the possible range for this puzzle and mode', async () => {
     const handler = makeHandler();
     const sentence = await handler(
-      event({ method: 'POST', body: { score: 0, turnstileToken: 'sentence-zero' } }),
+      event({
+        method: 'POST',
+        body: { secret: SECRET, score: 0, turnstileToken: 'sentence-zero' },
+      }),
     );
     expect(sentence.statusCode).toBe(400);
     expect(JSON.parse(sentence.body).error).toBe('invalid_score');
@@ -223,7 +313,7 @@ describe('POST /scores', () => {
       event({
         method: 'POST',
         query: { lang: 'fr', date: ACTIVE_DATE, mode: 'word' },
-        body: { score: 3, turnstileToken: 'word-three' },
+        body: { secret: SECRET, score: 3, turnstileToken: 'word-three' },
       }),
     );
     expect(word.statusCode).toBe(400);
@@ -235,20 +325,20 @@ describe('POST /scores', () => {
       event({
         method: 'POST',
         query: { lang: 'fr', date: ACTIVE_DATE, mode: 'word' },
-        body: { score: 0, turnstileToken: 'dnf' },
+        body: { secret: SECRET, score: 0, turnstileToken: 'dnf' },
       }),
     );
     expect(response.statusCode).toBe(200);
     expect(parsed(response).bucket).toBe(0);
   });
 
-  it('caps one daily/IP at five without a sixth counter increment, but another IP remains eligible', async () => {
+  it('caps one daily/IP at five rows without a sixth write, but another IP remains eligible', async () => {
     const handler = makeHandler();
     for (let index = 0; index < SCORE_SUBMISSION_LIMIT; index += 1) {
       const response = await handler(
         event({
           method: 'POST',
-          body: { score: 4, turnstileToken: `token-${index}` },
+          body: { secret: generateSecret(), score: 4, turnstileToken: `token-${index}` },
           address: '198.51.100.20',
         }),
       );
@@ -257,7 +347,7 @@ describe('POST /scores', () => {
     const capped = await handler(
       event({
         method: 'POST',
-        body: { score: 4, turnstileToken: 'token-six' },
+        body: { secret: generateSecret(), score: 4, turnstileToken: 'token-six' },
         address: '198.51.100.20',
       }),
     );
@@ -268,7 +358,7 @@ describe('POST /scores', () => {
     const household = await handler(
       event({
         method: 'POST',
-        body: { score: 4, turnstileToken: 'other-ip' },
+        body: { secret: generateSecret(), score: 4, turnstileToken: 'other-ip' },
         address: '198.51.100.21',
       }),
     );
@@ -283,14 +373,21 @@ describe('POST /scores', () => {
     expect(
       (
         await makeHandler()(
-          event({ method: 'POST', body: { score: 1.5, turnstileToken: 'token' } }),
+          event({
+            method: 'POST',
+            body: { secret: SECRET, score: 1.5, turnstileToken: 'token' },
+          }),
         )
       ).statusCode,
     ).toBe(400);
     expect(
       (
         await makeHandler()(
-          event({ method: 'POST', path: '/', body: { score: 4, turnstileToken: 'token' } }),
+          event({
+            method: 'POST',
+            path: '/',
+            body: { secret: SECRET, score: 4, turnstileToken: 'token' },
+          }),
         )
       ).statusCode,
     ).toBe(405);
@@ -327,25 +424,30 @@ describe('trusted client identity', () => {
 // it and the handler keys on a fresh id instead. Without this, every local submission after
 // the first is waved through as a "replay" and a laptop's histogram reads zero forever.
 describe('POST /scores — idempotency keys and non-single-use tokens', () => {
-  const submit = (handler: ReturnType<typeof makeHandler>, score: number, token: string) =>
+  const submit = (
+    handler: ReturnType<typeof makeHandler>,
+    secret: string,
+    score: number,
+    token: string,
+  ) =>
     handler(
       event({
         method: 'POST',
-        body: { score, turnstileToken: token },
+        body: { secret, score, turnstileToken: token },
         address: '203.0.113.9',
       }),
     );
 
   it('treats a REPEATED token as one submission when tokens are single-use', async () => {
     const handler = makeHandler();
-    await submit(handler, 2, 'same-token');
-    const second = await submit(handler, 2, 'same-token');
+    await submit(handler, SECRET, 2, 'same-token');
+    const second = await submit(handler, generateSecret(), 2, 'same-token');
     expect(second.statusCode).toBe(200);
     // Accepted, but the replay changed nothing: still exactly one recorded score.
     expect(parsed(second).total).toBe(1);
   });
 
-  it('counts each submission when the verifier’s tokens are NOT single-use', async () => {
+  it('counts each player when the verifier’s tokens are NOT single-use', async () => {
     const handler = makeHandler({
       scores: {
         scoreStore: memoryScoreStore(() => NOW),
@@ -355,8 +457,8 @@ describe('POST /scores — idempotency keys and non-single-use tokens', () => {
         singleUseTokens: false,
       },
     });
-    await submit(handler, 2, 'XXXX.DUMMY.TOKEN.XXXX');
-    const second = await submit(handler, 2, 'XXXX.DUMMY.TOKEN.XXXX');
+    await submit(handler, generateSecret(), 2, 'XXXX.DUMMY.TOKEN.XXXX');
+    const second = await submit(handler, generateSecret(), 2, 'XXXX.DUMMY.TOKEN.XXXX');
     expect(second.statusCode).toBe(200);
     expect(parsed(second).total).toBe(2);
   });
@@ -372,8 +474,8 @@ describe('POST /scores — idempotency keys and non-single-use tokens', () => {
       },
     });
     for (let i = 0; i < SCORE_SUBMISSION_LIMIT; i += 1) {
-      expect((await submit(handler, 2, 'dummy')).statusCode).toBe(200);
+      expect((await submit(handler, generateSecret(), 2, 'dummy')).statusCode).toBe(200);
     }
-    expect((await submit(handler, 2, 'dummy')).statusCode).toBe(429);
+    expect((await submit(handler, generateSecret(), 2, 'dummy')).statusCode).toBe(429);
   });
 });

@@ -378,32 +378,61 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   `pnpm build`; the frontend must not silently use its own origin as the backend.
   `usePuzzle` exposes `dayNumber` for persist (#7) / already-solved (#9).
 
-### Live score collection (#169, decided 2026-08-13)
+### Live score collection (#169, decided 2026-08-13; per-player rows + identity #187, decided 2026-08-18)
 
-- The ONE backend handler also owns the anonymous daily histogram:
+- **Player identity is a secret key, no accounts (#187):** the client generates a random
+  128-bit secret on first need (the first score POST), keeps it in localStorage
+  (`web/src/identity.ts`), and sends it in the POST body — it is simultaneously the ID
+  and the password. The server derives `publicId` = first 10 bytes of
+  SHA-256(secret), base32 (16 chars) on every authenticated call and **stores nothing
+  secret** — no registration, no stored credentials. The derivation lives in
+  **`shared/src/identity.ts`** because it is a cross-package contract: the web generates
+  and sends the secret, the backend keys every stored row by the derived publicId, and a
+  drift forks one key into two identities. No unique usernames (a lost key would freeze
+  the name forever); losing localStorage loses the identity — accepted, the remedy is
+  the copyable-key backup (#188), which doubles as device linking. Anti-cheat stance:
+  **assume heavy cheating and design so it doesn't matter** — global rankings are
+  untrusted by design, trust comes from the friends graph (#189), and the percentile is
+  the one public stat that survives faking.
+- The ONE backend handler also owns the daily score population:
   `GET|POST /scores?lang=<lang>&date=<YYYY-MM-DD>&mode=<sentence|word>`; unlike the
-  puzzle route, **`mode` is required**. POST takes `{ score, turnstileToken }`, verifies
-  Turnstile server-side, validates the score against that published daily/mode, records it,
-  and returns the UPDATED histogram so the caller's score is already included. GET is the
-  read-only twin for solved revisits. The puzzle route's malformed-param and future +1-day
-  guards apply; a population is never created for an unpublished puzzle.
+  puzzle route, **`mode` is required**. POST takes `{ secret, score, turnstileToken }`
+  (the secret travels in the **body**, never a query string — the `/scores` behavior
+  contract below is untouched), verifies Turnstile server-side, validates the score
+  against that published daily/mode, derives the publicId, and writes **ONE row per
+  `(date, lang, mode, publicId)` with a conditional put — first write wins**: the daily
+  can't be replayed, so a second submission is never legitimate; it changes nothing,
+  consumes no IP allowance, and is answered 200 with the STORED row's standing. The
+  response is the UPDATED histogram so the caller's score is already included. GET is
+  the read-only twin for solved revisits. The puzzle route's malformed-param and future
+  +1-day guards apply; a population is never created for an unpublished puzzle.
   **Production POST callers must SHA-256 the exact UTF-8 body bytes they send and put the
   lowercase hex digest in `x-amz-content-sha256`.** The body must not be reserialized after
   hashing. This is a hard CloudFront-OAC/Lambda-URL contract: Lambda rejects an unsigned
   POST before the handler runs. The score behavior forwards the header and CORS allows it;
   local `backend:dev` has no OAC and therefore cannot surface a missing hash.
+- **The histogram is DERIVED from the day's rows at read time (#187), subsuming the #169
+  bucket counters** — per-player rows are a strict superset, and two stores answering
+  the same question would drift, so the counter items and the fixed bucket edges are
+  gone (no-back-compat rule). The response keeps the shape the solved screen consumes
+  (`{ buckets, total, bucket }`, inclusive ranges) with the bands now **one exact band
+  per distinct recorded score, ascending** — a day partition is small, one Query +
+  compute in the handler. An empty population is honestly `buckets: []`.
 - **Score limits are gameplay limits, not a generic integer cap.** Sentence mode counts
   unique vocabulary-valid tries, so its ceiling is the language's existence-set size.
   Word mode counts claimed groups, so its ceiling is the distinct claimable ranks in that
   artifact, bounded by the ONE shared `WORD_CLAIM_ZONE` constant
-  (`shared/src/scores.ts`, consumed by web + backend). The backend owns fixed, mode-specific
-  histogram edges; consumers render the ranges returned by the API rather than restating
-  edges that are already committed to stored counters.
-- POST dedups by `HMAC-SHA256(client IP, server secret)` and **never stores a raw IP**.
-  Up to **5** writes are allowed per `(date, lang, mode, ipHash)`; the dedup item expires
-  after 48 hours. Its conditional count update and the aggregate bucket's atomic `ADD` are
-  one DynamoDB transaction, so a capped/failing request cannot change just one half. Only
-  the anonymous aggregate item is retained.
+  (`shared/src/scores.ts`, consumed by web + backend). The bands the API returns are
+  derived from the recorded rows (#187); consumers render the ranges returned by the API
+  rather than restating them.
+- The hashed-IP dedup stays as a **volume sanity floor** under the per-player rows: POST
+  dedups by `HMAC-SHA256(client IP, server secret)` and **never stores a raw IP**.
+  Up to **5** recorded rows are allowed per `(date, lang, mode, ipHash)`; the dedup item
+  expires after 48 hours. Its conditional count update and the row's first-write-wins
+  conditional put are one DynamoDB transaction, so a capped/failing/duplicate request
+  cannot change just one half (and a refused duplicate consumes no allowance). What is
+  retained is the score row — `(date, lang, mode)` partition, `publicId` sort key,
+  `score` + `submittedAt` — keyed by the derived publicId, no personal data.
 - **The client IP the dedup hashes arrives in `VIEWER_IP_HEADER` (`shared/src/scores.ts`),
   stamped by a CloudFront viewer-request FUNCTION — corrected 2026-08-16, superseding
   "the origin-request policy forwards CloudFront's trusted viewer address".** That older

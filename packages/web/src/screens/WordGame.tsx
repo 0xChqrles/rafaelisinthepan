@@ -139,7 +139,7 @@ function WordRound({
   // The score request outlives this screen if the player navigates away. Keep its
   // completion attached to the round that launched it, never the next active Word day.
   const markThisWordScoreSubmitted = useCallback(
-    () => markWordScoreSubmitted(roundKey),
+    (recorded: number | null) => markWordScoreSubmitted(roundKey, recorded ?? undefined),
     [markWordScoreSubmitted, roundKey],
   );
 
@@ -187,6 +187,7 @@ function WordRound({
     lang,
     dayNumber,
     score,
+    recordedScore: live?.scoreRecorded,
   });
 
   // The claims broken down by grade, ladder order — what the end screen's share text, the

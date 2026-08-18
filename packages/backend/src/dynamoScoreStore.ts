@@ -1,38 +1,48 @@
 import {
-  GetItemCommand,
+  QueryCommand,
   TransactWriteItemsCommand,
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
 import {
+  DEDUP_SORT_KEY,
   SCORE_SUBMISSION_LIMIT,
-  aggregateKey,
+  dayKey,
   dedupKey,
+  type ScoreRow,
   type ScoreStore,
 } from './scoreStore';
 
-// DynamoDB's transaction makes the per-IP allowance and the aggregate counter one
-// indivisible write: a capped request changes neither item, and a successful request
-// changes both. The table uses one string partition key (`pk`) because every item is
-// fetched or updated directly; no scans or secondary indexes exist.
+// DynamoDB's transaction makes the per-IP allowance and the per-player row one
+// indivisible write: a refused submission — capped OR already recorded — changes neither
+// item. The table uses a composite (`pk`, `sk`) key so one Query returns a daily's whole
+// population; no scans or secondary indexes exist.
 export function dynamoScoreStore(client: DynamoDBClient, tableName: string): ScoreStore {
   return {
-    async get(key, bucketCount) {
-      const response = await client.send(
-        new GetItemCommand({
-          TableName: tableName,
-          Key: { pk: { S: aggregateKey(key) } },
-          ConsistentRead: true,
-        }),
-      );
-      return {
-        buckets: Array.from({ length: bucketCount }, (_unused, index) =>
-          Number(response.Item?.[`b${index}`]?.N ?? 0),
-        ),
-        total: Number(response.Item?.total?.N ?? 0),
-      };
+    async list(key) {
+      const rows: ScoreRow[] = [];
+      let cursor: Record<string, unknown> | undefined;
+      do {
+        const response = await client.send(
+          new QueryCommand({
+            TableName: tableName,
+            KeyConditionExpression: '#pk = :pk',
+            ExpressionAttributeNames: { '#pk': 'pk' },
+            ExpressionAttributeValues: { ':pk': { S: dayKey(key) } },
+            // Strong consistency: the POST path reads right after its own committed
+            // write, and the returned histogram must already include the caller.
+            ConsistentRead: true,
+            ...(cursor ? { ExclusiveStartKey: cursor as never } : {}),
+          }),
+        );
+        for (const item of response.Items ?? []) {
+          rows.push({ publicId: item.sk?.S ?? '', score: Number(item.score?.N ?? 0) });
+        }
+        cursor = response.LastEvaluatedKey;
+      } while (cursor);
+      return rows;
     },
 
-    async increment(input) {
+    async submit(input) {
       try {
         await client.send(
           new TransactWriteItemsCommand({
@@ -43,7 +53,10 @@ export function dynamoScoreStore(client: DynamoDBClient, tableName: string): Sco
               {
                 Update: {
                   TableName: tableName,
-                  Key: { pk: { S: dedupKey(input, input.ipHash) } },
+                  Key: {
+                    pk: { S: dedupKey(input, input.ipHash) },
+                    sk: { S: DEDUP_SORT_KEY },
+                  },
                   UpdateExpression: 'ADD #count :one SET #expiresAt = :expiresAt',
                   ConditionExpression: 'attribute_not_exists(#count) OR #count < :limit',
                   ExpressionAttributeNames: {
@@ -58,34 +71,36 @@ export function dynamoScoreStore(client: DynamoDBClient, tableName: string): Sco
                 },
               },
               {
-                Update: {
+                // First write wins (#187): one row per (date, lang, mode, publicId).
+                // The daily cannot be replayed, so a second submission never overwrites.
+                Put: {
                   TableName: tableName,
-                  Key: { pk: { S: aggregateKey(input) } },
-                  UpdateExpression: 'ADD #bucket :one, #total :one',
-                  ExpressionAttributeNames: {
-                    '#bucket': `b${input.bucket}`,
-                    '#total': 'total',
+                  Item: {
+                    pk: { S: dayKey(input) },
+                    sk: { S: input.publicId },
+                    score: { N: String(input.score) },
+                    submittedAt: { S: input.submittedAt },
                   },
-                  ExpressionAttributeValues: { ':one': { N: '1' } },
+                  ConditionExpression: 'attribute_not_exists(pk)',
                 },
               },
             ],
           }),
         );
-        return true;
+        return 'recorded';
       } catch (error) {
-        // This transaction has exactly one condition, on the first item. Do not flatten
-        // other transaction failures (conflicts, throttling, validation) into a cap: they
-        // are operational errors and must surface/retry rather than silently lose a score.
+        // Exactly two conditions exist: [0] the IP allowance, [1] the first-write-wins
+        // row. Anything else (conflicts, throttling, validation) is operational and must
+        // surface/retry rather than silently lose a score. When both fail, the existing
+        // row is the truer answer — it is idempotent and consumes nothing.
         const transaction = error as {
           name?: string;
           CancellationReasons?: { Code?: string }[];
         };
-        if (
-          transaction.name === 'TransactionCanceledException' &&
-          transaction.CancellationReasons?.[0]?.Code === 'ConditionalCheckFailed'
-        ) {
-          return false;
+        if (transaction.name === 'TransactionCanceledException') {
+          const reasons = transaction.CancellationReasons ?? [];
+          if (reasons[1]?.Code === 'ConditionalCheckFailed') return 'already_recorded';
+          if (reasons[0]?.Code === 'ConditionalCheckFailed') return 'capped';
         }
         throw error;
       }

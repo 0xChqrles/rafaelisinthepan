@@ -115,3 +115,33 @@ describe('score production boundary (#169)', () => {
     expect(associations[0].EventType).toBe('viewer-request');
   });
 });
+
+describe('per-player score storage (#187)', () => {
+  it('keys the table (pk, sk) so one Query returns a day partition of player rows', () => {
+    const tables = Object.values(template.findResources('AWS::DynamoDB::Table'));
+    expect(tables).toHaveLength(1);
+    expect(tables[0].Properties.KeySchema).toEqual([
+      { AttributeName: 'pk', KeyType: 'HASH' },
+      { AttributeName: 'sk', KeyType: 'RANGE' },
+    ]);
+    expect(tables[0].Properties.TimeToLiveSpecification).toEqual({
+      AttributeName: 'expiresAt',
+      Enabled: true,
+    });
+  });
+
+  it('grants the handler exactly the row-store surface: Query, conditional Put, dedup Update', () => {
+    const policies = Object.values(template.findResources('AWS::IAM::Policy'));
+    const statements = policies.flatMap(
+      (policy) => policy.Properties.PolicyDocument.Statement as { Action?: unknown }[],
+    );
+    const statement = statements.find(
+      ({ Action }) => Array.isArray(Action) && Action.includes('dynamodb:Query'),
+    );
+    expect(statement?.Action).toEqual([
+      'dynamodb:Query',
+      'dynamodb:PutItem',
+      'dynamodb:UpdateItem',
+    ]);
+  });
+});

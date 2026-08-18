@@ -14,6 +14,7 @@ vi.mock('../api', () => ({
   parseScoreHistogram: (data: unknown) => data,
 }));
 vi.mock('../turnstile', () => ({ turnstileToken: async () => 'token' }));
+vi.mock('../identity', () => ({ playerSecret: () => '00112233445566778899aabbccddeeff' }));
 
 describe('shareScoreFlight — one pending conversation per round', () => {
   it('shares pending work across callers and releases it after settlement', async () => {
@@ -64,20 +65,89 @@ describe('syncScore — the round spends its one submission on a verdict only', 
     return { markSubmitted, placement };
   };
 
-  it('marks the round submitted when the server accepts the score', async () => {
-    const histogram = { buckets: [{ min: 1, max: 3, count: 1 }], total: 1, bucket: 0 };
+  it('marks the round submitted — with the RECORDED score — when the server accepts it', async () => {
+    const histogram = { buckets: [{ min: 7, max: 7, count: 1 }], total: 1, bucket: 0 };
     const { markSubmitted, placement } = await submit(200, histogram);
     expect(markSubmitted).toHaveBeenCalledOnce();
+    expect(markSubmitted).toHaveBeenCalledWith(7);
     expect(placement).toEqual({ histogram, bucket: 0 });
   });
 
-  it('marks it submitted when the server REFUSES it — a refusal is an answer', async () => {
+  it('persists the STORED row\'s score when first-write-wins answered a duplicate (#187)', async () => {
+    // Another device already recorded 9 under this key; this device finished at 7. The
+    // server answers with the stored band, and THAT score — never the local 7 — is what
+    // revisit GETs must locate with, or the standing changes between the POST and the
+    // next reload.
+    const histogram = {
+      buckets: [
+        { min: 4, max: 4, count: 1 },
+        { min: 9, max: 9, count: 1 },
+      ],
+      total: 2,
+      bucket: 1,
+    };
+    const { markSubmitted, placement } = await submit(200, histogram);
+    expect(markSubmitted).toHaveBeenCalledWith(9);
+    expect(placement).toEqual({ histogram, bucket: 1 });
+  });
+
+  it('authenticates the POST with the player key (#187) beside the score and token', async () => {
+    await submit(200, { buckets: [], total: 0, bucket: null });
+    expect(postScoreBody).toHaveBeenLastCalledWith('https://api.test/scores', {
+      secret: '00112233445566778899aabbccddeeff',
+      score: 7,
+      turnstileToken: 'token',
+    });
+  });
+
+  it('marks it submitted — with NO recorded score — when the server REFUSES it', async () => {
     // An impossible score, a spent Turnstile token, the sixth submission of the day: the
-    // server has ruled, and asking again on every revisit would only be noise.
+    // server has ruled, and asking again on every revisit would only be noise. Nothing
+    // was recorded, so nothing is persisted as the population's score.
     for (const status of [400, 403, 429]) {
       const { markSubmitted, placement } = await submit(status);
       expect(markSubmitted).toHaveBeenCalledOnce();
+      expect(markSubmitted).toHaveBeenCalledWith(null);
       expect(placement).toBeNull();
+    }
+  });
+
+  it('locates the revisit GET by the recorded score, never the local count (#187)', async () => {
+    const histogram = {
+      buckets: [
+        { min: 4, max: 4, count: 1 },
+        { min: 9, max: 9, count: 1 },
+      ],
+      total: 2,
+      bucket: null,
+    };
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => histogram }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const markSubmitted = vi.fn();
+      // Local count 7, but the population recorded 9 for this round on another device.
+      const placement = await syncScore(true, markSubmitted, 'sentence', 'fr', '2026-08-15', 7, 9);
+      expect(placement).toEqual({ histogram, bucket: 1 });
+      expect(markSubmitted).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('shows NO standing for a submitted round with no recorded score — a refusal stays refused', async () => {
+    // The server refused this round's score (4xx): nothing entered the population, and a
+    // revisit must never fall back to the LOCAL count — another player recording that
+    // same score would otherwise place the refused player in their band.
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const markSubmitted = vi.fn();
+      const placement = await syncScore(true, markSubmitted, 'sentence', 'fr', '2026-08-15', 4);
+      expect(placement).toBeNull();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(markSubmitted).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
     }
   });
 

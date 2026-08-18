@@ -357,11 +357,15 @@ describe('parseScoreHistogram (shape validation)', () => {
     expect(parseScoreHistogram({ ...valid(), bucket: null }).bucket).toBeNull();
   });
 
+  it('accepts an EMPTY population — since #187 the bands are derived from the rows', () => {
+    expect(parseScoreHistogram({ buckets: [], total: 0, bucket: null }).buckets).toEqual([]);
+  });
+
   it('rejects non-objects, bad totals, bad buckets and bad bucket indexes', () => {
     expect(() => parseScoreHistogram(null)).toThrow(/histogram/);
     expect(() => parseScoreHistogram({ ...valid(), total: -1 })).toThrow(/total/);
     expect(() => parseScoreHistogram({ ...valid(), total: 1.5 })).toThrow(/total/);
-    expect(() => parseScoreHistogram({ ...valid(), buckets: [] })).toThrow(/buckets/);
+    expect(() => parseScoreHistogram({ ...valid(), buckets: 'none' })).toThrow(/buckets/);
     expect(() => parseScoreHistogram({ ...valid(), buckets: [{ min: 1, max: 3, count: -1 }] }))
       .toThrow(/bucket/);
     expect(() => parseScoreHistogram({ ...valid(), bucket: 'zero' })).toThrow(/bucket/);

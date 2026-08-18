@@ -48,11 +48,16 @@
   no CDN, was fine). The puzzle endpoint **requires `date`** (400 otherwise) and is served
   `max-age=300, s-maxage=31536000` (CDN holds it until `puzzle:publish --s3` invalidates);
   `/today` (diagnostic) is `no-store`; maxTtl = 365 days.
-  **Score collection (#169)** lives in this SAME stack: one on-demand, AWS-managed-encrypted
-  DynamoDB table (string `pk`, `expiresAt` TTL, `RETAIN`), with the Lambda limited to
-  `GetItem`/`UpdateItem`; aggregate counters persist while HMAC-IP dedup items expire after
-  48h. PITR is deliberately off because a backup would retain those pseudonymous items past
-  their privacy lifetime. `/scores` has a separate `scores*` behavior that allows writes
+  **Score collection (#169; per-player rows #187)** lives in this SAME stack: one
+  on-demand, AWS-managed-encrypted DynamoDB table (composite string `pk`/`sk`, `expiresAt`
+  TTL, `RETAIN`), with the Lambda limited to `Query`/`PutItem`/`UpdateItem` — one Query
+  reads a daily's whole `(date, lang, mode)` partition of per-player rows, the submission
+  transaction is a conditional Put (the first-write-wins row, sort key = publicId) plus a
+  conditional Update (the dedup allowance). Score rows persist while HMAC-IP dedup items
+  expire after 48h. Adding the sort key REPLACED #169's single-key table (2026-08-19): the
+  retained old bucket-counter table is orphaned and deleted by hand. PITR is deliberately
+  off because a backup would retain the pseudonymous dedup items past their privacy
+  lifetime. `/scores` has a separate `scores*` behavior that allows writes
   and uses AWS's managed zero-TTL `CachingDisabled` policy. Its origin-request policy
   forwards exactly the `lang`/`date`/`mode` queries outside the unused cache key and uses
   CloudFront's `allExcept: Host` header mode — the AWS Lambda-URL pattern, which carries the

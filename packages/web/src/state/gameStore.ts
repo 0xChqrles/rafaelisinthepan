@@ -27,6 +27,12 @@ export interface RoundProgress {
   // round only ever GETs the read-only histogram, never re-submits. Optional so every
   // pre-#170 persisted round stays valid with the flag simply unset.
   scoreSubmitted?: boolean;
+  // The score the server actually RECORDED (#187) — the population is first-write-wins
+  // per player, so a duplicate submission (another device/tab under the same key) is
+  // answered with the STORED row's score, which can differ from this round's own count.
+  // Revisit GETs locate the standing by this value; unset on a refused submission (the
+  // population holds nothing for this round) and on pre-#187 rounds.
+  scoreRecorded?: number;
 }
 
 // The canonical round key: (server day, language, MODE — #156: the two dailies would
@@ -118,6 +124,8 @@ export interface WordRoundProgress {
   // Same contract as RoundProgress.scoreSubmitted (#170): the finished run's claim count
   // went to the daily histogram; revisits GET instead of re-submitting.
   scoreSubmitted?: boolean;
+  // Same contract as RoundProgress.scoreRecorded (#187): what the population holds.
+  scoreRecorded?: number;
 }
 
 // What a REPLAY of a word round's log makes of it — the two numbers the store needs to
@@ -283,9 +291,12 @@ interface GameState extends PersistedState {
   // Mark THIS keyed round's score as submitted to the daily histogram (#170). The request
   // can finish after navigation has changed the active round, so completion must carry the
   // identity it started with rather than consulting activeKey at response time.
-  // Idempotent: the flag only ever turns on.
-  markScoreSubmitted: (key: string) => void;
-  markWordScoreSubmitted: (key: string) => void;
+  // Idempotent: the flag only ever turns on. `recorded` is the score the server's
+  // first-write-wins population actually holds for this round (#187) — persisted so a
+  // revisit GET locates the standing by what was recorded, not by the local count a
+  // duplicate submission failed to record; omitted on a refusal (nothing recorded).
+  markScoreSubmitted: (key: string, recorded?: number) => void;
+  markWordScoreSubmitted: (key: string, recorded?: number) => void;
 
   // Cache the active round's reconstruction progress (for the selector badge). No-op
   // when unchanged so it never churns the store.
@@ -565,18 +576,36 @@ export const useGameStore = create<GameState>()(
           };
         }),
 
-      markScoreSubmitted: (key) =>
+      markScoreSubmitted: (key, recorded) =>
         set((s) => {
           const round = s.rounds[key];
           if (!round || round.scoreSubmitted === true) return {};
-          return { rounds: { ...s.rounds, [key]: { ...round, scoreSubmitted: true } } };
+          return {
+            rounds: {
+              ...s.rounds,
+              [key]: {
+                ...round,
+                scoreSubmitted: true,
+                ...(recorded !== undefined ? { scoreRecorded: recorded } : {}),
+              },
+            },
+          };
         }),
 
-      markWordScoreSubmitted: (key) =>
+      markWordScoreSubmitted: (key, recorded) =>
         set((s) => {
           const round = s.wordRounds[key];
           if (!round || round.scoreSubmitted === true) return {};
-          return { wordRounds: { ...s.wordRounds, [key]: { ...round, scoreSubmitted: true } } };
+          return {
+            wordRounds: {
+              ...s.wordRounds,
+              [key]: {
+                ...round,
+                scoreSubmitted: true,
+                ...(recorded !== undefined ? { scoreRecorded: recorded } : {}),
+              },
+            },
+          };
         }),
 
       syncProgress: (value) =>

@@ -90,11 +90,15 @@ export class BackendStack extends Stack {
       lifecycleRules: [{ noncurrentVersionExpiration: Duration.days(90) }],
     });
 
-    // ── DynamoDB: anonymous daily score histograms (#169) ────────────────────
-    // One aggregate item per (date, lang, mode), plus one short-lived HMAC-IP dedup item.
-    // Every access names its exact partition key; no scan or secondary index is needed.
+    // ── DynamoDB: per-player daily score rows (#169/#187) ────────────────────
+    // One first-write-wins row per (date, lang, mode, publicId) — the day partition IS
+    // the population, read back whole by one Query — plus one short-lived HMAC-IP dedup
+    // item in its own partition. Every access names its exact keys; no scan or secondary
+    // index is needed. The composite (pk, sk) schema replaced #169's single-key
+    // bucket-counter table; the retained old table is orphaned and deleted by hand.
     const scoreTable = new dynamodb.Table(this, 'ScoreTable', {
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.AWS_MANAGED,
       timeToLiveAttribute: 'expiresAt',
@@ -168,10 +172,11 @@ export class BackendStack extends Stack {
     // Least-privilege: the Lambda may only READ puzzle objects (s3:GetObject). It never
     // writes (publishing is a separate step, #4) and the bucket is never public.
     bucket.grantRead(fn);
-    // The transaction contains two Update actions, and the response is one GetItem. AWS
-    // authorizes transactional actions through their underlying item permissions, so no
-    // Scan/Query/Put/Delete surface is needed.
-    scoreTable.grant(fn, 'dynamodb:GetItem', 'dynamodb:UpdateItem');
+    // The submission transaction is one Update (dedup allowance) + one conditional Put
+    // (the player's row); reads are one Query over the day partition. AWS authorizes
+    // transactional actions through their underlying item permissions, so no
+    // Scan/GetItem/Delete surface is needed.
+    scoreTable.grant(fn, 'dynamodb:Query', 'dynamodb:PutItem', 'dynamodb:UpdateItem');
     const parameterArn = (name: string) =>
       this.formatArn({
         service: 'ssm',
@@ -415,7 +420,7 @@ export class BackendStack extends Stack {
         {
           id: 'AwsSolutions-IAM5',
           reason:
-            'S3 read access is scoped to the puzzle bucket/object keys. DynamoDB is scoped to this table with only GetItem/UpdateItem, and SSM GetParameters to the two exact secret-parameter ARNs; no index or parameter wildcard exists.',
+            'S3 read access is scoped to the puzzle bucket/object keys. DynamoDB is scoped to this table with only Query/PutItem/UpdateItem, and SSM GetParameters to the two exact secret-parameter ARNs; no index or parameter wildcard exists.',
         },
         {
           id: 'AwsSolutions-L1',
@@ -429,7 +434,7 @@ export class BackendStack extends Stack {
       {
         id: 'AwsSolutions-DDB3',
         reason:
-          'PITR is intentionally disabled: this table co-locates 48-hour HMAC-IP dedup items, and backups would retain that pseudonymous data beyond the explicit privacy lifetime. Aggregate counters are anonymous and accept this recovery tradeoff.',
+          'PITR is intentionally disabled: this table co-locates 48-hour HMAC-IP dedup items, and backups would retain that pseudonymous data beyond the explicit privacy lifetime. Score rows are keyed by a derived publicId with no personal data and accept this recovery tradeoff.',
       },
     ]);
     NagSuppressions.addResourceSuppressions(distribution, [
@@ -466,7 +471,7 @@ export class BackendStack extends Stack {
       value: bucket.bucketName,
     });
     new CfnOutput(this, 'ScoreTableName', {
-      description: 'DynamoDB table holding anonymous daily score counters and 48h dedup items.',
+      description: 'DynamoDB table holding per-player daily score rows and 48h dedup items.',
       value: scoreTable.tableName,
     });
     new CfnOutput(this, 'FunctionUrl', {

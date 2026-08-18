@@ -12,30 +12,38 @@ that provisions Lambda + Function URL + CloudFront + the bucket is issue #3.)
   `404` (clean JSON error) when the day is unpublished or still in the future; `400` on a
   missing/malformed `date`, `lang` or `mode`.
 - `GET /scores?lang=<en|fr>&date=<YYYY-MM-DD>&mode=<sentence|word>` → the published
-  daily's live score histogram. `POST` to the same URL with
-  `{ "score": 12, "turnstileToken": "..." }` verifies Turnstile, validates the possible
-  score range, applies the five-per-HMAC-IP cap, increments the bucket, and returns the
-  updated histogram. `mode` is required here.
+  daily's live score histogram, derived from its per-player rows (#187): one exact band
+  per distinct recorded score. `POST` to the same URL with
+  `{ "secret": "<32-hex player key>", "score": 12, "turnstileToken": "..." }` verifies
+  Turnstile, validates the possible score range, applies the five-per-HMAC-IP cap, and
+  writes one first-write-wins row keyed by the publicId derived from the secret; the
+  response is the updated histogram with the caller's recorded band. `mode` is required
+  here.
 
   ```json
   {
-    "buckets": [{ "min": 1, "max": 3, "count": 4 }],
+    "buckets": [
+      { "min": 4, "max": 4, "count": 1 },
+      { "min": 9, "max": 9, "count": 3 }
+    ],
     "total": 4,
-    "bucket": 0
+    "bucket": 1
   }
   ```
 
-  Ranges are inclusive and the real response contains every fixed band for that mode.
-  `bucket` is the caller's band on POST and `null` on GET. Score responses are `no-store`.
-  Missing/invalid Turnstile → 403; impossible score → 400; sixth submission for the same
-  `(date, lang, mode, ipHash)` → 429 without changing a counter.
+  Ranges are inclusive — one exact band per distinct recorded score, ascending — and an
+  empty population is honestly `"buckets": []`. `bucket` is the caller's recorded band on
+  POST (after a first-write-wins duplicate, the STORED row's) and `null` on GET. Score
+  responses are `no-store`. Missing/malformed player key → 400; missing/invalid Turnstile
+  → 403; impossible score → 400; sixth player for the same `(date, lang, mode, ipHash)` →
+  429 without writing anything.
 
   In production, serialize the body once, hash those exact UTF-8 bytes, and send the digest
   as lowercase hexadecimal in `x-amz-content-sha256`. CloudFront's Lambda-URL OAC requires
   this header before the handler can run:
 
   ```ts
-  const body = JSON.stringify({ score, turnstileToken });
+  const body = JSON.stringify({ secret, score, turnstileToken });
   const bytes = new TextEncoder().encode(body);
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   const payloadHash = [...new Uint8Array(digest)]
@@ -86,7 +94,7 @@ S3 cannot drift apart.
 | var             | required | meaning                                          |
 | --------------- | -------- | ------------------------------------------------ |
 | `PUZZLE_BUCKET` | yes      | S3 bucket holding the daily puzzles              |
-| `SCORE_TABLE`   | yes      | DynamoDB table holding aggregate + dedup items   |
+| `SCORE_TABLE`   | yes      | DynamoDB table holding per-player score rows + dedup items |
 | `TURNSTILE_SECRET_PARAMETER` | yes | SSM SecureString name for the Turnstile server secret |
 | `IP_HMAC_SECRET_PARAMETER` | yes | SSM SecureString name for the 32+ byte IP-HMAC key |
 | `ALLOWED_ORIGIN`| no       | CORS origin (the web origin in prod; `*` if unset) |
