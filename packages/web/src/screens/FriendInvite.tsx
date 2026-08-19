@@ -4,6 +4,7 @@ import LoadingWave from '../components/LoadingWave';
 import LoadError from '../components/LoadError';
 import { friendsUrl, parseProfile, postFriendsBody, profileUrl } from '../api';
 import { anonName } from '../anonName';
+import { defaultAvatar } from '../defaultAvatar';
 import { playerSecret } from '../identity';
 import { t } from '../i18n';
 import { navigate } from '../routing';
@@ -109,7 +110,7 @@ export default function FriendInvite({ publicId, lang }: { publicId: string; lan
       }
       // The edge is landed; dress the confirmation with who was added. Best-effort —
       // any miss (404 never customized, transport, bad shape) falls back to the
-      // pseudonym, never to an error.
+      // pseudonym + assigned mark, never to an error.
       let added: Inviter = { name: anonName(publicId), avatar: null };
       try {
         const response = await fetch(profileUrl(publicId));
@@ -154,11 +155,7 @@ export default function FriendInvite({ publicId, lang }: { publicId: string; lan
   if (inviter) {
     return (
       <div className="invite-done">
-        {inviter.avatar ? (
-          <Avatar avatar={inviter.avatar} size={64} />
-        ) : (
-          <span className="invite-done-noface" aria-hidden="true" />
-        )}
+        <Avatar avatar={inviter.avatar ?? defaultAvatar(publicId)} size={64} />
         <span className="invite-done-name">{inviter.name}</span>
         <p className="invite-done-line" role="status">
           {t(lang, 'inviteAdded')}

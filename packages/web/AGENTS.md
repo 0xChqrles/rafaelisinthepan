@@ -441,8 +441,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (user-decided 2026-08-20, superseding the silent continue-into-the-game beat — the
   clicker was left unsure anything had happened): the INVITER's avatar and name over
   `FRIEND ADDED` (`.invite-done`), dressed by a best-effort profile read that falls back
-  to the pseudonym + dashed no-mark frame — never to an error, since the edge is already
-  landed — with PLAY handing the destination to App's own home redirect via
+  to the assigned pseudonym + mark (`anonName`/`defaultAvatar`) — never to an error,
+  since the edge is already landed — with PLAY handing the destination to App's own
+  home redirect via
   `navigate('/', { replace: true })`, replacing this landing in history so a back tap
   leaves the game instead of re-firing the invite.
   The publicId is validated in `parseRoute`, so a broken link goes home rather than asking
@@ -477,15 +478,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
   + score, ranks and scores in the PIXEL face (game numbers), names in mono (identity
   chrome, case kept), the unit caption (TRIES/WORDS) naming which way is better. The
   OWN row wears the inverted selection box — the app's one emphasis gesture. A player
-  with no profile degrades honestly: a PSEUDONYM as the name (`anonName.ts` —
-  deterministic pronounceable syllables from the publicId, user-decided 2026-08-20
-  replacing the raw id, which read as a machine talking; name-shaped, so it keeps the
-  name's size and only the dim says "placeholder") and a dashed
-  `.board-noface` frame as the mark (the app's "not yet" dashes — the identity strip
-  wears the same until EDIT fills it). The collapsed straddling tie renders as a row
-  (`#41  +20 TIED`), the below-the-cut gap as a dashed rule, and the friends tab's
-  WAITING friends (edges with no score today, user-decided 2026-08-20) as dashed
-  no-fill rows with `NOT PLAYED YET` where their score would be. The identity strip on
+  with no profile degrades honestly, with an ASSIGNED identity rather than a hole
+  (both user-decided 2026-08-20, second pass the same day): a GAMERTAG pseudonym as
+  the name (`anonName.ts` — `SwiftFalcon84`-style AdjectiveNoun## derived from the
+  publicId, superseding the same-day syllable names, which didn't read as usernames;
+  length-budgeted under the shared 16-char cap and always `sanitizeName`-stable;
+  name-shaped, so only the dim says "placeholder") and a generated MARK as the avatar
+  (`defaultAvatar.ts` — a mirrored 10×10 creature + palette from the id hash, the
+  seeder's proven recipe, superseding the dashed empty frame). Both are DISPLAY-ONLY
+  pure functions of the publicId — identical on every surface and device, nothing
+  stored, and a saved profile replaces them. The collapsed straddling tie renders as
+  a row (`#41  +20 TIED`), the below-the-cut gap as a dashed rule, and the friends
+  tab's WAITING friends (edges with no score today, user-decided 2026-08-20) as
+  dashed no-fill rows with `NOT PLAYED YET` where their score would be and a dim `-`
+  in the rank column (an empty cell read as a mistake). The identity strip on
   top (your mark + name + EDIT → `/profile`) and the INVITE device-card button on the
   bottom edge are the #188/#189 wiring; both work before ever playing. Rows rise on
   the `rung-in` gesture staggered by index (delays survive reduced motion, the rise

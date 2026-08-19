@@ -8,6 +8,7 @@ import {
 } from '@whippin/shared';
 import { boardUrl, parseBoard, parseProfile, postBoardBody, profileUrl } from '../api';
 import { anonName } from '../anonName';
+import { defaultAvatar } from '../defaultAvatar';
 import Avatar from '../components/Avatar';
 import LoadError from '../components/LoadError';
 import LoadingWave from '../components/LoadingWave';
@@ -156,11 +157,13 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
           things this screen wires in — the profile editor and the invite link. An
           uncustomized player reads as their id, dimmed: the blank the editor fills. */}
       <div className="board-me">
-        {me?.avatar ? (
-          <Avatar avatar={me.avatar} size={40} />
+        {/* No drawn mark yet = the ASSIGNED one (defaultAvatar, deterministic from the
+            id — user feedback 2026-08-20, replacing the dashed empty frame); an empty
+            slot only holds the layout while the id derives. */}
+        {me ? (
+          <Avatar avatar={me.avatar ?? defaultAvatar(me.publicId)} size={40} />
         ) : (
-          // No mark yet: the rows' own dashed "not yet" frame — the blank EDIT fills.
-          <span className="board-noface board-noface-lg" aria-hidden="true" />
+          <span className="board-me-slot" aria-hidden="true" />
         )}
         <span className={`board-me-name${me?.name ? '' : ' anon'}`}>
           {me ? me.name || anonName(me.publicId) : ''}
@@ -284,12 +287,11 @@ function WaitingRowItem({
 }) {
   return (
     <li className="board-row waiting" style={{ '--i': index } as CSSProperties}>
-      <span className="board-rank" />
-      {player.avatar !== null ? (
-        <Avatar avatar={player.avatar} size={28} />
-      ) : (
-        <span className="board-noface" aria-hidden="true" />
-      )}
+      {/* No rank yet — the cell says so instead of standing empty. */}
+      <span className="board-rank none" aria-hidden="true">
+        -
+      </span>
+      <Avatar avatar={player.avatar ?? defaultAvatar(player.publicId)} size={28} />
       <span className={`board-name${player.name ? '' : ' anon'}`}>
         {player.name || anonName(player.publicId)}
       </span>
@@ -306,12 +308,7 @@ function BoardRowItem({ row, me, index }: { row: BoardRow; me: boolean; index: n
       aria-current={me || undefined}
     >
       <span className="board-rank">#{row.rank}</span>
-      {row.avatar !== null ? (
-        <Avatar avatar={row.avatar} size={28} />
-      ) : (
-        // No profile yet: a dashed empty frame — the app's "not yet" mark.
-        <span className="board-noface" aria-hidden="true" />
-      )}
+      <Avatar avatar={row.avatar ?? defaultAvatar(row.publicId)} size={28} />
       <span className={`board-name${row.name ? '' : ' anon'}`}>
         {row.name || anonName(row.publicId)}
       </span>

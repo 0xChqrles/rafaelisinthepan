@@ -5235,20 +5235,16 @@ button * {
   color: var(--fg);
   translate: 0 1px;
 }
-/* No profile yet: a dashed empty frame where the mark would be — the app's "not yet"
-   vocabulary (the open blank's own dashes). */
-.board-noface {
-  width: 28px;
-  height: 28px;
-  border: 1px dashed var(--line-strong);
-  border-radius: var(--r-sm);
+/* No rank yet (a waiting friend): the cell says so with the smallest honest mark
+   instead of standing empty (user feedback 2026-08-20). */
+.board-rank.none {
+  opacity: 0.3;
 }
-/* The identity strip's own size of the same mark. */
-.board-noface-lg {
+/* Holds the identity strip's layout for the beat before the id derives. */
+.board-me-slot {
   flex: none;
   width: 40px;
   height: 40px;
-  border-radius: var(--r-md);
 }
 
 /* YOUR row: the inverted selection box — the board's one emphasis gesture. */
@@ -5339,13 +5335,6 @@ button * {
 }
 .invite-done .avatar {
   border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-}
-/* An inviter who never customized wears the board's dashed "no mark yet" frame. */
-.invite-done-noface {
-  width: 64px;
-  height: 64px;
-  border: 1px dashed var(--line-strong);
   border-radius: var(--r-lg);
 }
 .invite-done-name {
