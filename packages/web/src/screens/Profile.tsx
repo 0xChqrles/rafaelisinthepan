@@ -12,18 +12,30 @@ import { playerSecret } from '../identity';
 import { resolveHomeLang } from '../langs';
 import { t } from '../i18n';
 import Avatar from '../components/Avatar';
+import LoadError from '../components/LoadError';
+import LoadingWave from '../components/LoadingWave';
 import TopBar from '../components/TopBar';
 import { useGameStore } from '../state/gameStore';
 
-// The #188 profile editor: name, tap-to-paint 10×10 grid, and the foreground-colour
-// picker — each swatch IS a palette ({bg, fg} pair, user-decided 2026-08-19: two
-// colours, nothing else, the picker shows only the foreground). Reached from the
-// leaderboard screen once #190 lands; until then it lives at its own /profile route.
+// The #188 profile editor: name, tap-to-paint 10×10 grid, and the palette picker —
+// each swatch IS a palette ({bg, fg} pair, user-decided 2026-08-19: two colours,
+// nothing else), worn as its GROUND, so picking a ground picks the ink with it.
+// Reached from the leaderboard screen once #190 lands; until then it lives at its own
+// /profile route.
 //
 // Show-don't-tell throughout: the grid demonstrates itself under the finger and the
 // swatches show their colours — no explanatory copy anywhere.
 
 const NAME_MAX = 16;
+
+// What the initial read settled, and the reason the editor is GATED on it: the editor
+// is only meaningful against the profile the server holds. Rendering an editable blank
+// while the read is in flight invites edits the response then overwrites, and a failed
+// read leaves the stored profile UNKNOWN — an editor started from that guess would save
+// a blank over a real profile. A 404 is not a failure: it IS the answer "never
+// customized", for which the blank editor and the blank baseline are exactly right.
+// (This is the game route's own loading / error / content shape.)
+type LoadState = 'loading' | 'ready' | 'failed';
 
 // The SAVE button's two orthogonal facts: its visual PHASE (the label rolls down and
 // out, the dot loader drops in from the top, holds, then the label rolls back up from
@@ -56,31 +68,43 @@ export default function Profile() {
   // What the server holds (or the blank start before any save): SAVE only lights up
   // when the editor differs from it, and a successful save re-baselines.
   const [baseline, setBaseline] = useState(() => ({ name: '', avatar: blankAvatar() }));
+  const [load, setLoad] = useState<LoadState>('loading');
+  // Bumped by RETRY — re-runs the read the way usePuzzle's retry re-runs its fetch.
+  const [attempt, setAttempt] = useState(0);
 
-  // Load this identity's stored profile. A 404 — never customized — keeps the blank
-  // editor; any failure is silent, the editor still works.
+  // Read this identity's stored profile, and hold the editor back until it answers
+  // (see LoadState). A 404 is the answer "never customized" and lands READY on the
+  // blank start; anything else — transport, 5xx, a malformed body — is FAILED, which
+  // offers RETRY rather than a blank editor that could save over the real profile.
   useEffect(() => {
     let cancelled = false;
+    setLoad('loading');
     (async () => {
       try {
         const publicId = await publicIdFromSecret(secret);
         const response = await fetch(profileUrl(publicId));
-        if (!response.ok || cancelled) return;
-        const profile = parseProfile(await response.json());
-        const decoded = decodeAvatar(profile.avatar);
         if (cancelled) return;
-        setName(profile.name);
-        setPalette(decoded.palette);
-        setCells(decoded.cells);
-        setBaseline({ name: profile.name, avatar: profile.avatar });
+        if (response.ok) {
+          const profile = parseProfile(await response.json());
+          const decoded = decodeAvatar(profile.avatar);
+          if (cancelled) return;
+          setName(profile.name);
+          setPalette(decoded.palette);
+          setCells(decoded.cells);
+          setBaseline({ name: profile.name, avatar: profile.avatar });
+        } else if (response.status !== 404) {
+          setLoad('failed');
+          return;
+        }
+        setLoad('ready');
       } catch {
-        // Silent: the editor's starting state stands.
+        if (!cancelled) setLoad('failed');
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [secret]);
+  }, [secret, attempt]);
 
   // ---- painting. One STROKE value per gesture: starting on a painted cell erases (so
   // tap toggles), and dragging paints that same value throughout.
@@ -171,126 +195,140 @@ export default function Profile() {
         lang={lang}
         left={<span className="topbar-title">{t(lang, 'profileTitle')}</span>}
       />
-      <div className="profile-screen">
-        <div className="profile-editor">
-          <div className="profile-head">
-            {/* The live preview: the drawing at the size a board row will wear it —
-                what the grid below is editing, seen as others will see it. */}
-            <Avatar avatar={encoded} size={48} />
-            <input
-              className="profile-name"
-              type="text"
-              value={name}
-              maxLength={NAME_MAX}
-              placeholder={t(lang, 'profileNamePlaceholder')}
-              aria-label={t(lang, 'profileNamePlaceholder')}
-              autoComplete="off"
-              autoCapitalize="off"
-              spellCheck={false}
-              onChange={(e) => {
-                setName(e.target.value);
-                setRefused(null);
-              }}
-            />
-          </div>
-
-          {/* The palette's ONE inline variable: empty cells wear the bg itself and the
-              CSS derives the canvas's darker frame from it (color-mix — computed,
-              never a second hardcoded shade per palette). */}
-          <div
-            className="avatar-editor"
-            style={{ '--cell-bg': colors.bg } as React.CSSProperties}
-            role="img"
-            aria-label={t(lang, 'ariaAvatarEditor')}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={endStroke}
-            onPointerCancel={endStroke}
-          >
-            {cells.map((value, i) => (
-              <div
-                // The paint counter in the key remounts a painted cell, replaying the
-                // bump; the position keeps the identity.
-                key={`${i}:${bumps[i] ?? 0}`}
-                className={`avatar-editor-cell${bumps[i] ? ' bumped' : ''}`}
-                data-cell={i}
-                style={{ background: value === 0 ? undefined : colors.fg }}
+      {load === 'loading' && (
+        <p className="status">
+          <LoadingWave text={t(lang, 'loading')} />
+        </p>
+      )}
+      {load === 'failed' && (
+        <LoadError
+          message={t(lang, 'failedProfile')}
+          lang={lang}
+          onRetry={() => setAttempt((n) => n + 1)}
+        />
+      )}
+      {load === 'ready' && (
+        <div className="profile-screen">
+          <div className="profile-editor">
+            <div className="profile-head">
+              {/* The live preview: the drawing at the size a board row will wear it —
+                  what the grid below is editing, seen as others will see it. */}
+              <Avatar avatar={encoded} size={48} />
+              <input
+                className="profile-name"
+                type="text"
+                value={name}
+                maxLength={NAME_MAX}
+                placeholder={t(lang, 'profileNamePlaceholder')}
+                aria-label={t(lang, 'profileNamePlaceholder')}
+                autoComplete="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  setRefused(null);
+                }}
               />
-            ))}
-          </div>
-
-          {/* The palettes, shown as their BACKGROUND colour (user-decided 2026-08-19,
-              superseding the foreground swatches): pick a ground, its ink comes with
-              it. The drawing (the cell states) survives a switch. CLEAR shares the
-              row — it acts on the same thing the swatches dress. */}
-          <div className="profile-tools">
-            <div className="profile-palettes">
-              {AVATAR_PALETTES.map((option, index) => (
-                <button
-                  key={option.name}
-                  type="button"
-                  className={`profile-palette${palette === index ? ' sel' : ''}`}
-                  style={{ background: option.bg }}
-                  aria-label={`${t(lang, 'ariaPalette')} ${option.name}`}
-                  aria-pressed={palette === index}
-                  onClick={() => {
-                    setPalette(index);
-                    setRefused(null);
-                  }}
+            </div>
+  
+            {/* The palette's ONE inline variable: empty cells wear the bg itself and the
+                CSS derives the canvas's darker frame from it (color-mix — computed,
+                never a second hardcoded shade per palette). */}
+            <div
+              className="avatar-editor"
+              style={{ '--cell-bg': colors.bg } as React.CSSProperties}
+              role="img"
+              aria-label={t(lang, 'ariaAvatarEditor')}
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={endStroke}
+              onPointerCancel={endStroke}
+            >
+              {cells.map((value, i) => (
+                <div
+                  // The paint counter in the key remounts a painted cell, replaying the
+                  // bump; the position keeps the identity.
+                  key={`${i}:${bumps[i] ?? 0}`}
+                  className={`avatar-editor-cell${bumps[i] ? ' bumped' : ''}`}
+                  data-cell={i}
+                  style={{ background: value === 0 ? undefined : colors.fg }}
                 />
               ))}
             </div>
+  
+            {/* The palettes, shown as their BACKGROUND colour (user-decided 2026-08-19,
+                superseding the foreground swatches): pick a ground, its ink comes with
+                it. The drawing (the cell states) survives a switch. CLEAR shares the
+                row — it acts on the same thing the swatches dress. */}
+            <div className="profile-tools">
+              <div className="profile-palettes">
+                {AVATAR_PALETTES.map((option, index) => (
+                  <button
+                    key={option.name}
+                    type="button"
+                    className={`profile-palette${palette === index ? ' sel' : ''}`}
+                    style={{ background: option.bg }}
+                    aria-label={`${t(lang, 'ariaPalette')} ${option.name}`}
+                    aria-pressed={palette === index}
+                    onClick={() => {
+                      setPalette(index);
+                      setRefused(null);
+                    }}
+                  />
+                ))}
+              </div>
+              <button
+                type="button"
+                className="profile-clear"
+                disabled={cells.every((value) => value === 0)}
+                onClick={() => {
+                  setCells(new Array<number>(AVATAR_CELLS).fill(0));
+                  setRefused(null);
+                }}
+              >
+                {t(lang, 'profileClear')}
+              </button>
+            </div>
+  
+            {/* Nothing to save = disabled, and .mix-btn:disabled::before unlights the
+                device card's LED — the board itself says whether there is a change.
+                While saving, the label rolls out the bottom and the dot loader drops in
+                from the top; the restore beat rolls the label back up. */}
             <button
               type="button"
-              className="profile-clear"
-              disabled={cells.every((value) => value === 0)}
-              onClick={() => {
-                setCells(new Array<number>(AVATAR_CELLS).fill(0));
-                setRefused(null);
-              }}
+              // The phase class also drives the LED square (the ::before), which rolls
+              // with the label — it belongs to the content, not to the button frame.
+              className={`mix-btn profile-save${phase !== 'idle' ? ` ${phase}` : ''}`}
+              disabled={phase !== 'idle' || !dirty}
+              aria-busy={phase === 'saving'}
+              onClick={onSave}
             >
-              {t(lang, 'profileClear')}
-            </button>
-          </div>
-
-          {/* Nothing to save = disabled, and .mix-btn:disabled::before unlights the
-              device card's LED — the board itself says whether there is a change.
-              While saving, the label rolls out the bottom and the dot loader drops in
-              from the top; the restore beat rolls the label back up. */}
-          <button
-            type="button"
-            // The phase class also drives the LED square (the ::before), which rolls
-            // with the label — it belongs to the content, not to the button frame.
-            className={`mix-btn profile-save${phase !== 'idle' ? ` ${phase}` : ''}`}
-            disabled={phase !== 'idle' || !dirty}
-            aria-busy={phase === 'saving'}
-            onClick={onSave}
-          >
-            <span
-              className={`save-label${phase === 'saving' ? ' out' : phase === 'restoring' ? ' back' : ''}`}
-            >
-              {t(lang, 'profileSave')}
-            </span>
-            {phase !== 'idle' && (
               <span
-                className={`save-dots${phase === 'restoring' ? ' out' : ''}`}
-                aria-hidden="true"
+                className={`save-label${phase === 'saving' ? ' out' : phase === 'restoring' ? ' back' : ''}`}
               >
-                <i />
-                <i />
-                <i />
+                {t(lang, 'profileSave')}
               </span>
+              {phase !== 'idle' && (
+                <span
+                  className={`save-dots${phase === 'restoring' ? ' out' : ''}`}
+                  aria-hidden="true"
+                >
+                  <i />
+                  <i />
+                  <i />
+                </span>
+              )}
+            </button>
+            {/* The save-refusal line — mounted only when a save was refused/failed, so
+                an idle editor carries no empty slot. */}
+            {saveError && (
+              <p className="profile-status" role="status">
+                {saveError}
+              </p>
             )}
-          </button>
-          {/* The save-refusal line — mounted only when a save was refused/failed, so
-              an idle editor carries no empty slot. */}
-          {saveError && (
-            <p className="profile-status" role="status">
-              {saveError}
-            </p>
-          )}
+          </div>
         </div>
-      </div>
+      )}
     </>
   );
 }

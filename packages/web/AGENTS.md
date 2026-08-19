@@ -15,7 +15,7 @@
       api.ts                  backend client: puzzleUrl/wordPuzzleUrl, 404->NO PUZZLE
       identity.ts             the #187 player key: localStorage secret, generated on first need
       screens/Profile.tsx     the #188 profile editor (/profile): name, tap-to-paint 10×10 grid,
-                              fg-colour palette picker (#190 wires the entry point)
+                              ground-swatch palette picker (#190 wires the entry point)
       components/Avatar.tsx   a stored avatar rendered as SVG (editor preview + #190 board rows)
       versionCheck.ts         stale-tab reload: __BUILD_ID__ vs /version.json on visibility flips
       i18n.ts                 UI chrome strings (en+fr), t(lang, key); parity type-enforced
@@ -390,7 +390,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
   backup affordance's future surface is an open decision — root `AGENTS.md`). Saving
   POSTs `{secret, name, avatar}` via the OAC-hashed body (`api.postProfileBody`);
   server refusals surface as terse statuses (`NAME NOT ALLOWED` / `AVATAR NOT
-  ALLOWED` / `SAVE FAILED`). No chrome entry point yet — #190's leaderboard screen is
+  ALLOWED` / `SAVE FAILED`). **The editor is GATED on the initial read** (the game
+  route's own loading / error / content shape): an editable blank shown while the GET
+  is in flight would be edited into and then overwritten by the response, and a FAILED
+  read leaves the stored profile unknown — an editor started from that guess would save
+  a blank over a real profile — so a failure shows `failedProfile` + RETRY instead of
+  an editor. Unlike a score submission's silent failure, this read's is loud for that
+  reason. A **404 is not a failure**: it is the answer "never customized", and lands on
+  the blank editor whose blank baseline is then correct. No chrome entry point yet — #190's leaderboard screen is
   the wired entry (recorded in the header bullet); until then the route is
   deep-link-only. Editor visuals carry no tests per policy; the codec and the
   `parseProfile` shape check are contract-tested.

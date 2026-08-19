@@ -4757,7 +4757,7 @@ button * {
 
 /* ===================== profile editor (#188) ===================== */
 /* The moodboard's avatar-creator card in the app's own dress: name up top, the 10×10
-   grid as the centrepiece, the foreground-colour palette row under it, then SAVE.
+   grid as the centrepiece, the palette + CLEAR tool row under it, then SAVE.
    Sharp radii (4px ceiling), glass + hairlines, mono chrome. The screen owns its
    scroll — the stack can outrun a short phone. */
 .profile-screen {
@@ -4868,8 +4868,9 @@ button * {
   justify-content: space-between;
   gap: 14px;
 }
-/* The palettes, worn as their FOREGROUND colour: flat swatches, the selected one framed
-   in foreground — the sharp selection language, no rings. */
+/* The palettes, worn as their GROUND colour (the swatch is the duo's background; its
+   ink comes with it): flat swatches, the selected one framed in the page foreground —
+   the sharp selection language, no rings. */
 .profile-palettes {
   flex: 1;
   display: flex;

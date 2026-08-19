@@ -99,7 +99,11 @@ pnpm backend:dev                # local server (puzzles + /scores + /today) on :
   then moderates: `nameFilter.ts` → 400 `name_rejected`, `avatarModeration.ts` → 400
   `avatar_rejected`. Storage is the score table — partition `player#<publicId>`, sort key
   `profile`, `name`/`avatar`/`createdAt`/`updatedAt` (`dynamoProfileStore`; local serve
-  swaps in `memoryProfileStore`). No Turnstile, no IP dedup: the secret is the auth and
+  swaps in `memoryProfileStore`). **The GET is a STRONGLY CONSISTENT read** (the score
+  Query's rule, for the same read-after-write reason): the editor adopts what comes back
+  as both its contents and its save baseline, so an eventually consistent read could
+  hand a player the profile they just replaced — or, after a first save, a 404 saying
+  they never customized one. No Turnstile, no IP dedup: the secret is the auth and
   the only row you can write is your own. Production POST needs `x-amz-content-sha256`
   like the score POST (same OAC boundary); the `id` query must stay in the CloudFront
   profile behavior's allowList (root `AGENTS.md` contract).

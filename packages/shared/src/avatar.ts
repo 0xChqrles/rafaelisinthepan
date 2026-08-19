@@ -1,8 +1,8 @@
 // The #188 player avatar: a 10×10 pixel grid the player draws, in exactly TWO colours —
 // a background and a foreground (user-decided 2026-08-19, superseding the 3-ink first
-// cut). A "palette" is a {bg, fg} pair, and the picker shows only the foreground: you
-// pick a colour, and that colour IS the palette. Coherence on a board of strangers'
-// drawings comes from the shared ground.
+// cut). A "palette" is a {bg, fg} DUO, both of them the palette's own: the editor's
+// picker wears each duo as its GROUND (the same day's later pass, superseding the
+// foreground swatches), so choosing a ground chooses the ink that comes with it.
 //
 // This module lives in shared because the encoding is a cross-package contract: the WEB
 // encodes what the editor drew (and renders every stored avatar), the BACKEND decodes it

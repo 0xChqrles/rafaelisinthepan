@@ -15,6 +15,12 @@ export function dynamoProfileStore(client: DynamoDBClient, tableName: string): P
         new GetItemCommand({
           TableName: tableName,
           Key: { pk: { S: profileKey(publicId) }, sk: { S: PROFILE_SORT_KEY } },
+          // Strong consistency, for the score store's reason: this is a read-after-write
+          // path. The editor re-reads its own profile on the next visit and ADOPTS what
+          // comes back as both its contents and its save baseline, so an eventually
+          // consistent read could hand a player the profile they just replaced — or, on
+          // a first save, a 404 that presents their new profile as never customized.
+          ConsistentRead: true,
         }),
       );
       const item = response.Item;
