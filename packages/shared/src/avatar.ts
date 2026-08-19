@@ -24,19 +24,22 @@ export interface AvatarPalette {
 
 // The predefined palettes — FIVE, and their colours are the USER'S OWN (decided
 // 2026-08-19, closing several review rounds of hand-tuned duos): each duo is
-// EXTRACTED from /palettes.png at the repo root — five 16×16 tiles, each carrying a
-// 10×10 tree drawing whose SKY is the background and whose TREE is the foreground.
-// That file is the source of truth; these hexes are its pinned extraction (re-read
-// it rather than retuning them here). Names stay the INK's — the ink is what the
-// player draws with — while the editor's picker swatch shows the GROUND. Order is
-// load-bearing — the encoded byte is an INDEX into this list, so entries may be
-// appended but never reordered or removed once avatars referencing them exist.
+// EXTRACTED from a palette PNG the user draws at the repo root — 16×16 tiles, each
+// carrying a 10×10 tree drawing whose SKY is the background and whose TREE is the
+// foreground. This array is the canonical record of those extractions (the PNGs are
+// deliverables, replaced per revision — the latest, /palette.png, redrew the last
+// two duos); the pin test asserts it verbatim, so a colour change is a new drawing
+// re-extracted, never a hex retuned freehand. Names stay the INK's — the ink is
+// what the player draws with — while the editor's picker swatch shows the GROUND.
+// Order is load-bearing — the encoded byte is an INDEX into this list, so entries
+// may be appended but never reordered or removed once avatars referencing them
+// exist.
 export const AVATAR_PALETTES: readonly AvatarPalette[] = [
   { name: 'COBALT', bg: '#222431', fg: '#4a6aff' },
   { name: 'CYAN', bg: '#8f06ff', fg: '#30fff8' },
   { name: 'LIME', bg: '#ff1a85', fg: '#c6ff1a' },
-  { name: 'AZURE', bg: '#ff531a', fg: '#336dff' },
-  { name: 'FROST', bg: '#6bf1fa', fg: '#f6f6ff' },
+  { name: 'ULTRAMARINE', bg: '#ff8200', fg: '#152eff' },
+  { name: 'FROST', bg: '#007fff', fg: '#f6f6ff' },
 ];
 
 const BYTES = 1 + Math.ceil(AVATAR_CELLS / 8); // 14
