@@ -22,6 +22,13 @@
       scoreStore.ts           score storage contract; day/dedup keys + 5/48h constants
       dynamoScoreStore.ts     prod atomic transaction + strongly-consistent day-partition Query
       memoryScoreStore.ts     process-local implementation for backend:dev/tests
+      profile.ts              /profile GET+POST route (#188): auth (derived publicId), name +
+                              avatar validation, moderation, upsert
+      profileStore.ts         player-row storage contract (player#<publicId> partition)
+      dynamoProfileStore.ts   prod GetItem read + UpdateItem upsert (createdAt via if_not_exists)
+      memoryProfileStore.ts   process-local implementation for backend:dev/tests
+      nameFilter.ts           #188 banned-strings display-name filter (normalize + substring)
+      avatarModeration.ts     #188 best-effort swastika template match on the decoded grid
       turnstile.ts            Cloudflare Siteverify + explicit local accept-all verifier
       layout.ts               storeKey() — the <date>.<lang>.json key shared by readers + publish (#17/#4)
       serve.ts                local HTTP server: Function-URL⇄HTTP adapter over createHandler (#17)
@@ -83,6 +90,23 @@ pnpm backend:dev                # local server (puzzles + /scores + /today) on :
   behavior forwards it and CORS allows it; local serve has no OAC and cannot verify this
   production-only boundary.
 
+- **Player profile (#188):** the ONE handler also serves `GET /profile?id=<publicId>`
+  (public row: `{ publicId, name, avatar }`; 400 malformed id, 404 never customized) and
+  `POST /profile` `{ secret, name, avatar }` — the authenticated upsert keyed by the
+  DERIVED publicId (shared `identity.ts`), a separate write path from scores. Every
+  response is `no-store`. The write validates the name (≤16 code points trimmed, no
+  control/format characters, empty allowed) and the avatar (shared `avatar.ts` decode),
+  then moderates: `nameFilter.ts` → 400 `name_rejected`, `avatarModeration.ts` → 400
+  `avatar_rejected`. Storage is the score table — partition `player#<publicId>`, sort key
+  `profile`, `name`/`avatar`/`createdAt`/`updatedAt` (`dynamoProfileStore`; local serve
+  swaps in `memoryProfileStore`). **The GET is a STRONGLY CONSISTENT read** (the score
+  Query's rule, for the same read-after-write reason): the editor adopts what comes back
+  as both its contents and its save baseline, so an eventually consistent read could
+  hand a player the profile they just replaced — or, after a first save, a 404 saying
+  they never customized one. No Turnstile, no IP dedup: the secret is the auth and
+  the only row you can write is your own. Production POST needs `x-amz-content-sha256`
+  like the score POST (same OAC boundary); the `id` query must stay in the CloudFront
+  profile behavior's allowList (root `AGENTS.md` contract).
 - **Word mode's daily artifact (#154/#156):** the ONE puzzle endpoint also serves the
   single-word artifact under `mode=word` (`GET /?lang=&date=&mode=word`; absent/
   `sentence` = the sentence puzzle, anything else = 400) with identical day-addressing,

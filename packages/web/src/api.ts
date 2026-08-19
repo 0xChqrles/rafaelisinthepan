@@ -4,7 +4,8 @@
 // and asks for that date's puzzle in ONE fetch. The server only serves dates within
 // a ±1-day clock-skew window of its own active day.
 
-import type { Puzzle, ScoreHistogram, Word, WordPuzzle } from '@whippin/shared';
+import { isValidAvatar, PUBLIC_ID_PATTERN } from '@whippin/shared';
+import type { PlayerProfile, Puzzle, ScoreHistogram, Word, WordPuzzle } from '@whippin/shared';
 import type { Mode } from './langs';
 
 // Base URL of the backend, configured at build time via VITE_API_BASE_URL.
@@ -203,10 +204,7 @@ export function parseScoreHistogram(data: unknown): ScoreHistogram {
 // unsigned body: the request must carry `x-amz-content-sha256`, the lowercase hex SHA-256
 // of the EXACT UTF-8 body bytes. Hash and send the same byte array — never reserialize
 // after hashing (the root AGENTS.md records this as a hard contract).
-export async function postScoreBody(
-  url: string,
-  body: { secret: string; score: number; turnstileToken: string },
-): Promise<Response> {
+async function postSignedJson(url: string, body: unknown): Promise<Response> {
   const bytes = new TextEncoder().encode(JSON.stringify(body));
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   const hex = Array.from(new Uint8Array(digest))
@@ -217,4 +215,40 @@ export async function postScoreBody(
     headers: { 'Content-Type': 'application/json', 'x-amz-content-sha256': hex },
     body: bytes,
   });
+}
+
+export async function postScoreBody(
+  url: string,
+  body: { secret: string; score: number; turnstileToken: string },
+): Promise<Response> {
+  return postSignedJson(url, body);
+}
+
+// The #188 player profile: GET reads the public row by publicId (what a board renders,
+// and what a freshly linked device loads); POST is the authenticated upsert. `id` is in
+// the profile CloudFront behavior's allowList — the same three-package contract as the
+// score route's parameters.
+export function profileUrl(publicId?: string, base: string = apiBase()): string {
+  const root = `${requireApiBase(base)}/profile`;
+  return publicId ? `${root}?id=${encodeURIComponent(publicId)}` : root;
+}
+
+export async function postProfileBody(
+  url: string,
+  body: { secret: string; name: string; avatar: string },
+): Promise<Response> {
+  return postSignedJson(url, body);
+}
+
+// Runtime shape check for a fetched profile — the parsePuzzle contract: a wrong-shaped
+// body surfaces as a failure, never as a broken editor or board row.
+export function parseProfile(data: unknown): PlayerProfile {
+  if (!isRecord(data)) throw new Error('malformed profile: not an object');
+  const { publicId, name, avatar } = data;
+  if (typeof publicId !== 'string' || !PUBLIC_ID_PATTERN.test(publicId)) {
+    throw new Error('malformed profile: bad "publicId"');
+  }
+  if (typeof name !== 'string') throw new Error('malformed profile: bad "name"');
+  if (!isValidAvatar(avatar)) throw new Error('malformed profile: bad "avatar"');
+  return { publicId, name, avatar };
 }

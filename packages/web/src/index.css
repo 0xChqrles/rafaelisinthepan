@@ -4754,3 +4754,304 @@ button * {
     transform: translateY(-12px) scale(1);
   }
 }
+
+/* ===================== profile editor (#188) ===================== */
+/* The moodboard's avatar-creator card in the app's own dress: name up top, the 10×10
+   grid as the centrepiece, the palette + CLEAR tool row under it, then SAVE.
+   Sharp radii (4px ceiling), glass + hairlines, mono chrome. The screen owns its
+   scroll — the stack can outrun a short phone. */
+.profile-screen {
+  width: min(400px, 100%);
+  /* 100% (the .app padding box), never 100dvh: a taller child of a centering flex
+     parent overflows symmetrically and its top gets clipped under the header. */
+  max-height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  /* Symmetric and small: on desktop .app centers the column, so the padding only
+     matters when a short window makes it scroll. */
+  padding: 24px 2px;
+}
+.profile-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+/* The head row: the live avatar preview (board-row size) beside the name — the two
+   things a leaderboard row will show, previewed together. The preview wears the
+   input's own frame so the row reads as one register. */
+.profile-head {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+.profile-head .avatar {
+  flex: none;
+  align-self: center;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.profile-head .profile-name {
+  flex: 1;
+  min-width: 0;
+}
+.profile-name {
+  font-family: var(--ui);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--fg);
+  background: var(--glass);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 13px 14px;
+  outline: none;
+  transition: border-color 0.12s linear;
+}
+.profile-name::placeholder {
+  color: var(--fg);
+  opacity: 0.35;
+}
+.profile-name:focus {
+  border-color: var(--line-strong);
+}
+
+/* The grid: one tile per cell. An EMPTY cell wears the palette's background itself and
+   the canvas behind them a DARKER version of it — DERIVED here with color-mix from the
+   one `--cell-bg` the screen sets inline, never a second hardcoded shade per palette —
+   so the gaps read as the moodboard's sockets in the palette's own light. */
+.avatar-editor {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 6px;
+  padding: 10px;
+  background: color-mix(in srgb, var(--cell-bg) 72%, #000);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  touch-action: none;
+  cursor: crosshair;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.avatar-editor-cell {
+  aspect-ratio: 1;
+  border-radius: var(--r-md);
+  background: var(--cell-bg);
+}
+/* The paint bump: a small one-shot swell on the cell that just changed, replayed by
+   remounting the cell keyed on its paint count. Subtle but present — it briefly
+   overlaps the 6px gap, which is what makes the press felt. A one-shot transform on a
+   plain colour tile (no type, no sprite), so the pixel-font scale rule doesn't apply;
+   reduced motion collapses the duration globally. */
+.avatar-editor-cell.bumped {
+  animation: cell-bump 180ms ease-out;
+}
+@keyframes cell-bump {
+  0% {
+    scale: 1;
+  }
+  40% {
+    scale: 1.22;
+  }
+  100% {
+    scale: 1;
+  }
+}
+
+/* The tool row under the grid: the palette swatches left, CLEAR on the right edge. */
+.profile-tools {
+  display: flex;
+  /* Centre, not stretch: both controls carry the explicit 36px, and a phone-shrunk
+     swatch (aspect-ratio square) should sit on the chip's midline, not hang high. */
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+/* The palettes, worn as their GROUND colour (the swatch is the duo's background; its
+   ink comes with it): flat swatches, the selected one framed in the page foreground —
+   the sharp selection language, no rings. */
+.profile-palettes {
+  flex: 1;
+  display: flex;
+  gap: 10px;
+}
+.profile-palette {
+  /* Shrinks with the column (the swatch row must fit a 320px phone), capped at the
+     CLEAR chip's own 36px on anything wider — one control height across the row. */
+  flex: 1 1 0;
+  max-width: 36px;
+  aspect-ratio: 1;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  padding: 0;
+  transition: filter 0.08s linear, border-color 0.12s linear, box-shadow 0.12s linear;
+}
+.profile-palette:hover {
+  filter: brightness(1.15);
+}
+.profile-palette.sel {
+  border-color: var(--fg);
+  box-shadow: 0 0 0 1px var(--fg);
+}
+/* CLEAR: a quiet hairline chip — it undoes, so it never competes with the swatches. */
+.profile-clear {
+  flex: none;
+  height: 36px;
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg);
+  background: var(--glass);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  padding: 0 14px;
+  cursor: pointer;
+  text-shadow: none;
+  transition: filter 0.08s linear, border-color 0.12s linear;
+}
+.profile-clear:hover:not(:disabled) {
+  filter: brightness(1.3);
+  border-color: var(--fg);
+}
+.profile-clear:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* SAVE is the app's one big-action device card; the auto top margin is the tray's
+   parking rule and means nothing in this column. */
+.profile-save {
+  margin-top: 6px;
+}
+.profile-status {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--danger);
+}
+
+/* On a phone the mobile .app is top-anchored (16px), so the column's top padding sets
+   where the editor starts: 48px puts it at 64px from the viewport top — exactly where
+   the tutorial's coach dialog sits under the full-bleed band. Desktop keeps the
+   symmetric padding above and lets .app centre the column.
+   NO bottom padding of its own: .app's mobile 28px is the bottom breath, and the spare
+   pixels are what keep the page from scrolling — the grid's aspect-ratio cells make its
+   height fractional, and at 390px wide the full stack measured 665.03px against an
+   iPhone 13's 664px viewport: ONE overflowing pixel made the whole document scrollable. */
+@media (max-width: 640px) {
+  .profile-screen {
+    padding: 48px 2px 0;
+  }
+}
+
+/* The SAVE button's loading choreography: the label always reads SAVE — on submit it
+   rolls down and out while the three-dot loader drops in from the top, waves for at
+   least SAVE_DOTS_MIN_MS, then the label rolls back up from the bottom (the loader
+   leaving upward — the carousel reverses). The dots are the device card's own LED
+   squares, never circles (the chrome's no-circles rule). */
+.profile-save {
+  position: relative;
+  overflow: hidden;
+  /* One FIXED roll distance shared by the label and the LED square: a percentage
+     would displace each by its own height, and the 8px square would lag the label. */
+  --save-roll: 40px;
+}
+.profile-save .save-label {
+  display: inline-block;
+}
+.profile-save .save-label.out,
+.profile-save.saving::before {
+  animation: save-label-out 200ms ease-in forwards;
+}
+.profile-save .save-label.back,
+.profile-save.restoring::before {
+  animation: save-label-back 240ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+/* The LED belongs to the button's CONTENT, so it rolls with the label — and it turns
+   OFF on the click itself (the save disables the button, and the disabled dress is
+   the unlit socket): the whole travel plays dark, and after a refusal the light comes
+   back only when the button rests enabled again. */
+@keyframes save-label-out {
+  to {
+    translate: 0 var(--save-roll, 160%);
+    opacity: 0;
+  }
+}
+@keyframes save-label-back {
+  from {
+    translate: 0 var(--save-roll, 160%);
+    opacity: 0;
+  }
+  to {
+    translate: 0 0;
+    opacity: 1;
+  }
+}
+.save-dots {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  animation: save-dots-in 200ms ease-out both;
+}
+.save-dots.out {
+  animation: save-dots-out 200ms ease-in both;
+}
+@keyframes save-dots-in {
+  from {
+    translate: 0 -160%;
+    opacity: 0;
+  }
+  to {
+    translate: 0 0;
+    opacity: 1;
+  }
+}
+@keyframes save-dots-out {
+  to {
+    translate: 0 -160%;
+    opacity: 0;
+  }
+}
+.save-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: var(--fg);
+  animation: save-dot-wave 900ms ease-in-out infinite;
+}
+.save-dots i:nth-child(2) {
+  animation-delay: 150ms;
+}
+.save-dots i:nth-child(3) {
+  animation-delay: 300ms;
+}
+@keyframes save-dot-wave {
+  0%,
+  60%,
+  100% {
+    translate: 0 0;
+    opacity: 0.55;
+  }
+  30% {
+    translate: 0 -5px;
+    opacity: 1;
+  }
+}
+/* An infinite decoration is switched OFF under reduced motion (the app's standing
+   rule), not collapsed: the three still dots are the loading state. */
+@media (prefers-reduced-motion: reduce) {
+  .save-dots i {
+    animation: none;
+  }
+}

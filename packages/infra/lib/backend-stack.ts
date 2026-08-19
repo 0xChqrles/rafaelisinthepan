@@ -173,10 +173,17 @@ export class BackendStack extends Stack {
     // writes (publishing is a separate step, #4) and the bucket is never public.
     bucket.grantRead(fn);
     // The submission transaction is one Update (dedup allowance) + one conditional Put
-    // (the player's row); reads are one Query over the day partition. AWS authorizes
-    // transactional actions through their underlying item permissions, so no
-    // Scan/GetItem/Delete surface is needed.
-    scoreTable.grant(fn, 'dynamodb:Query', 'dynamodb:PutItem', 'dynamodb:UpdateItem');
+    // (the player's row); reads are one Query over the day partition. The profile row
+    // (#188) adds one GetItem (its read) and reuses UpdateItem (its upsert). AWS
+    // authorizes transactional actions through their underlying item permissions, so no
+    // Scan/Delete surface is needed.
+    scoreTable.grant(
+      fn,
+      'dynamodb:Query',
+      'dynamodb:GetItem',
+      'dynamodb:PutItem',
+      'dynamodb:UpdateItem',
+    );
     const parameterArn = (name: string) =>
       this.formatArn({
         service: 'ssm',
@@ -316,6 +323,24 @@ export class BackendStack extends Stack {
       },
     );
 
+    // `/profile` (#188) is the same live-data shape as `/scores` — a zero-TTL behavior
+    // whose origin-request policy forwards exactly the query the handler reads (`id`)
+    // plus the Lambda-URL-safe `allExcept: Host` headers, which is what carries the
+    // viewer's `x-amz-content-sha256` for the OAC-signed POST. No viewer-IP function:
+    // the profile route has no per-IP logic.
+    const profileOriginRequestPolicy = new cloudfront.OriginRequestPolicy(
+      this,
+      'ProfileOriginRequestPolicy',
+      {
+        originRequestPolicyName: 'WhippinPlayerProfileOrigin',
+        comment:
+          'Player profile: forward the id query and Lambda-URL-safe headers outside cache.',
+        headerBehavior: cloudfront.OriginRequestHeaderBehavior.denyList('Host'),
+        queryStringBehavior: cloudfront.OriginRequestQueryStringBehavior.allowList('id'),
+        cookieBehavior: cloudfront.OriginRequestCookieBehavior.none(),
+      },
+    );
+
     // Security response headers for the API. CORS stays owned by the Lambda (it echoes the
     // configured origin + Vary), so this policy adds ONLY transport/sniffing hardening and
     // deliberately sets no CORS/CSP (CSP is a document concern, not a JSON API's).
@@ -377,6 +402,18 @@ export class BackendStack extends Stack {
             },
           ],
         },
+        // `profile*` also catches a harmless trailing slash; the handler still accepts
+        // only the exact normalized `/profile` route.
+        'profile*': {
+          origin: functionOrigin,
+          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+          cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
+          cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+          originRequestPolicy: profileOriginRequestPolicy,
+          responseHeadersPolicy: apiHeaders,
+          compress: true,
+        },
       },
     });
 
@@ -420,7 +457,7 @@ export class BackendStack extends Stack {
         {
           id: 'AwsSolutions-IAM5',
           reason:
-            'S3 read access is scoped to the puzzle bucket/object keys. DynamoDB is scoped to this table with only Query/PutItem/UpdateItem, and SSM GetParameters to the two exact secret-parameter ARNs; no index or parameter wildcard exists.',
+            'S3 read access is scoped to the puzzle bucket/object keys. DynamoDB is scoped to this table with only Query/GetItem/PutItem/UpdateItem, and SSM GetParameters to the two exact secret-parameter ARNs; no index or parameter wildcard exists.',
         },
         {
           id: 'AwsSolutions-L1',

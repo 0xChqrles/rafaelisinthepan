@@ -69,19 +69,56 @@ describe('score production boundary (#169)', () => {
     const policies = Object.values(
       template.findResources('AWS::CloudFront::OriginRequestPolicy'),
     );
-    expect(policies).toHaveLength(1);
-    expect(policies[0].Properties.OriginRequestPolicyConfig.QueryStringsConfig).toEqual({
+    // The score policy and the profile policy (#188) — each forwards exactly the
+    // queries its handler route reads (the root AGENTS.md allowList contract).
+    expect(policies).toHaveLength(2);
+    const scorePolicy = policies.find(
+      (policy) =>
+        policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinLiveScoresOrigin',
+    );
+    expect(scorePolicy?.Properties.OriginRequestPolicyConfig.QueryStringsConfig).toEqual({
       QueryStringBehavior: 'whitelist',
       QueryStrings: ['lang', 'date', 'mode'],
     });
-    expect(policies[0].Properties.OriginRequestPolicyConfig.CookiesConfig).toEqual({
+    expect(scorePolicy?.Properties.OriginRequestPolicyConfig.CookiesConfig).toEqual({
       CookieBehavior: 'none',
     });
 
     // AWS's Lambda-URL policy pattern: every VIEWER header except Host, so the payload
     // hash reaches the origin (it can never be named in an allow-list) and CloudFront
     // sets Host to the Function URL's own domain for the SigV4 signature.
-    expect(policies[0].Properties.OriginRequestPolicyConfig.HeadersConfig).toEqual({
+    expect(scorePolicy?.Properties.OriginRequestPolicyConfig.HeadersConfig).toEqual({
+      HeaderBehavior: 'allExcept',
+      Headers: ['Host'],
+    });
+  });
+
+  it('uses a deployable zero-cache profile behavior with exact query forwarding (#188)', () => {
+    const distributions = Object.values(template.findResources('AWS::CloudFront::Distribution'));
+    const behaviors = distributions[0].Properties.DistributionConfig.CacheBehaviors as Record<
+      string,
+      unknown
+    >[];
+    const profile = behaviors.find(({ PathPattern }) => PathPattern === 'profile*');
+    // AWS's managed CachingDisabled policy — profile data is live, like /scores.
+    expect(profile?.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
+    // POST must be allowed (the authenticated upsert).
+    expect(profile?.AllowedMethods).toContain('POST');
+
+    const policies = Object.values(
+      template.findResources('AWS::CloudFront::OriginRequestPolicy'),
+    );
+    const profilePolicy = policies.find(
+      (policy) =>
+        policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinPlayerProfileOrigin',
+    );
+    // `id` is the ONE query the profile handler reads; the Lambda-URL-safe header mode
+    // carries the viewer's x-amz-content-sha256 for the OAC-signed POST.
+    expect(profilePolicy?.Properties.OriginRequestPolicyConfig.QueryStringsConfig).toEqual({
+      QueryStringBehavior: 'whitelist',
+      QueryStrings: ['id'],
+    });
+    expect(profilePolicy?.Properties.OriginRequestPolicyConfig.HeadersConfig).toEqual({
       HeaderBehavior: 'allExcept',
       Headers: ['Host'],
     });
@@ -130,7 +167,7 @@ describe('per-player score storage (#187)', () => {
     });
   });
 
-  it('grants the handler exactly the row-store surface: Query, conditional Put, dedup Update', () => {
+  it('grants the handler exactly the row-store surface: Query, profile Get, conditional Put, Update', () => {
     const policies = Object.values(template.findResources('AWS::IAM::Policy'));
     const statements = policies.flatMap(
       (policy) => policy.Properties.PolicyDocument.Statement as { Action?: unknown }[],
@@ -140,6 +177,7 @@ describe('per-player score storage (#187)', () => {
     );
     expect(statement?.Action).toEqual([
       'dynamodb:Query',
+      'dynamodb:GetItem',
       'dynamodb:PutItem',
       'dynamodb:UpdateItem',
     ]);

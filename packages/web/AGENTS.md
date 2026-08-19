@@ -14,6 +14,9 @@
       hooks/usePuzzle.ts      fetch the client-computed day's puzzle from the backend
       api.ts                  backend client: puzzleUrl/wordPuzzleUrl, 404->NO PUZZLE
       identity.ts             the #187 player key: localStorage secret, generated on first need
+      screens/Profile.tsx     the #188 profile editor (/profile): name, tap-to-paint 10×10 grid,
+                              ground-swatch palette picker (#190 wires the entry point)
+      components/Avatar.tsx   a stored avatar rendered as SVG (editor preview + #190 board rows)
       versionCheck.ts         stale-tab reload: __BUILD_ID__ vs /version.json on visibility flips
       i18n.ts                 UI chrome strings (en+fr), t(lang, key); parity type-enforced
       tutorial/               onboarding (#51/#155): Tutorial.tsx + data scripts/<lang>.ts
@@ -369,6 +372,35 @@ it to the local store — see `packages/backend/AGENTS.md`).
 ## Current state / mutable
 
 *(Safe to update without touching the invariants above.)*
+
+- **Profile editor (#188; two-colour rework + key-UI removal user-decided
+  2026-08-19):** `/profile` (`screens/Profile.tsx`), a global route like `/select` (an
+  identity is not language-scoped; chrome language = the `/` redirect's resolution).
+  Name input (16 cap), the 10×10 tap/drag-to-paint grid (one STROKE value per gesture —
+  starting on a painted cell erases, so tap toggles; a painted cell plays a small
+  one-shot BUMP, replayed by remounting the cell keyed on its paint count, so loading a
+  stored drawing bumps nothing; an EMPTY cell wears the palette's background itself
+  while the canvas behind the tiles wears a DARKER version of it, derived in CSS with
+  `color-mix` from the one `--cell-bg` variable — never a second hardcoded shade per
+  palette), the tool row — the palette swatches (each the palette's BACKGROUND colour
+  since the same day's later pass; picking a ground picks the palette and its ink,
+  and the drawing survives a switch) with the CLEAR chip on its right edge (empties
+  the grid; disabled when already empty) — and SAVE (`.mix-btn`). No brush row (two colours need none) and NO key
+  block: the copyable-key/paste-to-link UI was removed with `adoptPlayerSecret` (the
+  backup affordance's future surface is an open decision — root `AGENTS.md`). Saving
+  POSTs `{secret, name, avatar}` via the OAC-hashed body (`api.postProfileBody`);
+  server refusals surface as terse statuses (`NAME NOT ALLOWED` / `AVATAR NOT
+  ALLOWED` / `SAVE FAILED`). **The editor is GATED on the initial read** (the game
+  route's own loading / error / content shape): an editable blank shown while the GET
+  is in flight would be edited into and then overwritten by the response, and a FAILED
+  read leaves the stored profile unknown — an editor started from that guess would save
+  a blank over a real profile — so a failure shows `failedProfile` + RETRY instead of
+  an editor. Unlike a score submission's silent failure, this read's is loud for that
+  reason. A **404 is not a failure**: it is the answer "never customized", and lands on
+  the blank editor whose blank baseline is then correct. No chrome entry point yet — #190's leaderboard screen is
+  the wired entry (recorded in the header bullet); until then the route is
+  deep-link-only. Editor visuals carry no tests per policy; the codec and the
+  `parseProfile` shape check are contract-tested.
 
 - **Word mode (#156, the second daily; RETIMED by #163 on 2026-08-08):** one app, two faces
   — `/<lang>/word` (plus `/word/<date>` and `/word/archive`, same date rules) plays the day's

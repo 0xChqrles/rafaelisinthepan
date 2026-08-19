@@ -13,6 +13,7 @@
     src/day.ts                the ONE 22:00-ET DST-correct game-day logic (client + server + publish)
     src/scores.ts             WORD_CLAIM_ZONE (web+backend) + VIEWER_IP_HEADER (infra+backend)
     src/identity.ts           the #187 player key: secret format + publicId derivation (web+backend)
+    src/avatar.ts             the #188 avatar: {bg, fg} palettes + the 14-byte 1-bit grid codec (web encodes/renders, backend validates)
     src/types.ts              shared puzzle + score-API schema types (Puzzle, Hole, ScoreHistogram, …)
     src/heat.ts               the app's ONE weird→calm stop gradient: heatColor() + fixed-cap rankHeatColor()/HIT_HEAT_CAP (exponents, floating hits, loot, route rows) + progressHeatColor()/progressEmoji() (run rulers incl. the card, share-text emoji row, archive fills, chooser strips)
     src/shareCard.ts          the share-token codec (both modes), browser + Lambda
@@ -38,6 +39,15 @@
   drift is a 500 on every score POST that no local run can reproduce; the reason it is a
   stamped header rather than CloudFront's own `CloudFront-Viewer-Address` is recorded in
   the root `AGENTS.md`.
+- `src/avatar.ts` is the ONE definition of the #188 avatar encoding (palette byte + 100
+  cells × 1 bit — two colours only, user-decided 2026-08-19 — base64url, canonical
+  decode) and of `AVATAR_PALETTES`, the `{bg, fg}` pairs extracted from the user's
+  repo-root palette drawings (see the root `AGENTS.md`; the editor's picker swatch
+  shows the GROUND). The palette list is APPEND-ONLY, since the stored byte is an
+  index into it. The
+  web encodes what the editor drew and renders every stored avatar; the backend decodes
+  to validate and moderate — a fork would accept different strings for one drawing
+  (root `AGENTS.md`, Player profile).
 - `src/identity.ts` is the ONE definition of the #187 player identity: the 32-hex secret
   format the web generates/stores and the `publicId` derivation (first 10 bytes of
   SHA-256(secret), base32) the backend keys every score row by. The web sends the secret,

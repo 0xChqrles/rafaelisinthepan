@@ -50,6 +50,10 @@ export function pathForDay(lang: string | null, date: string, mode: Mode = 'sent
 // chooser was RETIRED 2026-08-18 for the header's segmented mode tabs.)
 export const SELECT_PATH = '/select';
 
+// The profile editor (#188) is its own route for the same reason: the identity is
+// global, not language-scoped. The leaderboard screen (#190) is its wired entry point.
+export const PROFILE_PATH = '/profile';
+
 // A parsed route. The game IS the home: /<lang> plays today's puzzle, /<lang>/<date>
 // plays a past day (archive, #55), /<lang>/archive is the calendar, /select is the
 // language picker, and anything else (/, unknown paths) is
@@ -60,6 +64,7 @@ export type Route =
   | { view: 'game'; lang: LangCode; mode: Mode; date?: string }
   | { view: 'archive'; lang: LangCode; mode: Mode }
   | { view: 'select' }
+  | { view: 'profile' }
   | { view: 'home' };
 
 // A strict "YYYY-MM-DD" that is ALSO a real calendar date (so 2026-13-40 is rejected):
@@ -88,6 +93,7 @@ export function parseRoute(pathname: string, bounds: RouteBounds = {}): Route {
   const segs = pathname.replace(/^\/+/, '').replace(/\/+$/, '').split('/');
   const [seg, second, third] = segs;
   if (seg === 'select') return { view: 'select' };
+  if (seg === 'profile') return { view: 'profile' };
   if (!isLang(seg)) return { view: 'home' };
 
   // A dated deep link is honored only when it is a real calendar date within range; a

@@ -2,8 +2,9 @@
 // at startup), kept in localStorage, and sent in the POST body as the proof of identity.
 // It is simultaneously the ID and the password: the server derives the publicId from it
 // and stores nothing secret. Losing localStorage loses the identity — accepted; the
-// remedy is the copyable-key backup in the profile editor (#188), which doubles as
-// device linking (pasting the key elsewhere IS the same identity).
+// decided remedy is a copyable-key backup that doubles as device linking (#188 designed
+// it; its UI surface was removed from the profile editor 2026-08-19 and is not yet
+// re-homed).
 
 import { generateSecret, isValidSecret } from '@whippin/shared';
 

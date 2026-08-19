@@ -16,6 +16,10 @@ const STRINGS = {
   loading: { en: 'LOADING…', fr: 'CHARGEMENT…' },
   failedPuzzle: { en: 'FAILED TO LOAD PUZZLE', fr: 'ÉCHEC DU CHARGEMENT DU PUZZLE' },
   failedVocab: { en: 'FAILED TO LOAD VOCABULARY', fr: 'ÉCHEC DU CHARGEMENT DU DICTIONNAIRE' },
+  // The #188 profile read. Its failure is NOT silent like a score submission's: what
+  // the server holds is the editor's whole starting point, so a guess could be saved
+  // over the real profile — the reader retries instead.
+  failedProfile: { en: 'FAILED TO LOAD PROFILE', fr: 'ÉCHEC DU CHARGEMENT DU PROFIL' },
   retry: { en: 'RETRY', fr: 'RÉESSAYER' },
   // The missing-puzzle state is ABNORMAL (a publish that did not happen), and the
   // wording says so — it must not read like a scheduled day off.
@@ -264,6 +268,21 @@ const STRINGS = {
   },
   // ONE action button for BOTH gates (word mode adopted the sentence gate's PLAY label).
   gatePlay: { en: 'PLAY', fr: 'JOUER' },
+  // ---- the profile editor (#188): name + 10×10 palette avatar + the key as backup.
+  // Show-don't-tell: terse labels, the surfaces demonstrate themselves.
+  profileTitle: { en: 'PROFILE', fr: 'PROFIL' },
+  profileNamePlaceholder: { en: 'NAME', fr: 'PSEUDO' },
+  // The button's ONE label: it never renames itself — saving is said by the dot-loader
+  // choreography, success by the button going quiet (disabled, LED off).
+  profileSave: { en: 'SAVE', fr: 'ENREGISTRER' },
+  profileSaveFailed: { en: 'SAVE FAILED', fr: "ÉCHEC DE L'ENREGISTREMENT" },
+  profileNameRejected: { en: 'NAME NOT ALLOWED', fr: 'PSEUDO REFUSÉ' },
+  profileAvatarRejected: { en: 'AVATAR NOT ALLOWED', fr: 'AVATAR REFUSÉ' },
+  // Untranslated in every language (the user's call, 2026-08-19) — one word everywhere,
+  // like MISS, TOP and the rarity grades.
+  profileClear: { en: 'CLEAR', fr: 'CLEAR' },
+  ariaAvatarEditor: { en: 'Avatar editor: tap to paint', fr: "Éditeur d'avatar : touchez pour peindre" },
+  ariaPalette: { en: 'Palette', fr: 'Palette' },
 } satisfies Record<string, Record<UiLang, string>>;
 
 export type UiKey = keyof typeof STRINGS;

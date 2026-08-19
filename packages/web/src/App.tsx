@@ -4,6 +4,7 @@ import LoadingWave from './components/LoadingWave';
 import usePuzzle from './hooks/usePuzzle';
 import useWordPuzzle from './hooks/useWordPuzzle';
 import LanguageSelect from './screens/LanguageSelect';
+import Profile from './screens/Profile';
 import Archive from './screens/Archive';
 import Game from './screens/Game';
 import WordGame from './screens/WordGame';
@@ -74,6 +75,7 @@ export default function App() {
       <DeviceFrame serial={editionDay} />
       {/* The living backdrop — every screen (game, archive, select, tutorial) sits on it. */}
       {route.view === 'select' && <LanguageSelect />}
+      {route.view === 'profile' && <Profile />}
       {route.view === 'archive' && <Archive lang={route.lang} mode={route.mode} />}
       {route.view === 'game' && (
         <GameRoute lang={route.lang} mode={route.mode} date={route.date} />
