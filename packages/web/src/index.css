@@ -4862,7 +4862,9 @@ button * {
 /* The tool row under the grid: the palette swatches left, CLEAR on the right edge. */
 .profile-tools {
   display: flex;
-  align-items: stretch;
+  /* Centre, not stretch: both controls carry the explicit 36px, and a phone-shrunk
+     swatch (aspect-ratio square) should sit on the chip's midline, not hang high. */
+  align-items: center;
   justify-content: space-between;
   gap: 14px;
 }
@@ -4874,10 +4876,10 @@ button * {
   gap: 10px;
 }
 .profile-palette {
-  /* Shrinks with the column (eight swatches must fit a 320px phone), capped at the
-     tuned size on anything wider. */
+  /* Shrinks with the column (the swatch row must fit a 320px phone), capped at the
+     CLEAR chip's own 36px on anything wider — one control height across the row. */
   flex: 1 1 0;
-  max-width: 38px;
+  max-width: 36px;
   aspect-ratio: 1;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
@@ -4895,6 +4897,7 @@ button * {
 /* CLEAR: a quiet hairline chip — it undoes, so it never competes with the swatches. */
 .profile-clear {
   flex: none;
+  height: 36px;
   font-family: var(--ui);
   font-size: 11px;
   font-weight: 700;
