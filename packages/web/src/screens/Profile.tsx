@@ -34,7 +34,7 @@ type SaveRefusal = 'name_rejected' | 'avatar_rejected' | 'error' | null;
 
 // The loader holds at least this long even on an instant answer — a flash of dots
 // reads as a glitch — and the restore beat covers the label's roll-back animation.
-const SAVE_DOTS_MIN_MS = 500;
+const SAVE_DOTS_MIN_MS = 750;
 const SAVE_RESTORE_MS = 240;
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -259,7 +259,9 @@ export default function Profile() {
               from the top; the restore beat rolls the label back up. */}
           <button
             type="button"
-            className="mix-btn profile-save"
+            // The phase class also drives the LED square (the ::before), which rolls
+            // with the label — it belongs to the content, not to the button frame.
+            className={`mix-btn profile-save${phase !== 'idle' ? ` ${phase}` : ''}`}
             disabled={phase !== 'idle' || !dirty}
             aria-busy={phase === 'saving'}
             onClick={onSave}

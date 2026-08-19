@@ -4959,25 +4959,39 @@ button * {
 .profile-save {
   position: relative;
   overflow: hidden;
+  /* One FIXED roll distance shared by the label and the LED square: a percentage
+     would displace each by its own height, and the 8px square would lag the label. */
+  --save-roll: 40px;
 }
 .profile-save .save-label {
   display: inline-block;
 }
-.profile-save .save-label.out {
+.profile-save .save-label.out,
+.profile-save.saving::before {
   animation: save-label-out 200ms ease-in forwards;
 }
-.profile-save .save-label.back {
+.profile-save .save-label.back,
+.profile-save.restoring::before {
   animation: save-label-back 240ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+/* The LED belongs to the button's CONTENT, so it rolls with the label — and it stays
+   LIT while it moves (the transiently-disabled phases only): the light going out is
+   the RESTING no-changes state's signal, not part of the travel. After a successful
+   save the roll-back therefore ends on the light clicking off. */
+.profile-save.saving:disabled::before,
+.profile-save.restoring:disabled::before {
+  background: var(--solve);
+  box-shadow: 0 0 10px rgba(74, 106, 255, 0.9);
 }
 @keyframes save-label-out {
   to {
-    translate: 0 160%;
+    translate: 0 var(--save-roll, 160%);
     opacity: 0;
   }
 }
 @keyframes save-label-back {
   from {
-    translate: 0 160%;
+    translate: 0 var(--save-roll, 160%);
     opacity: 0;
   }
   to {
