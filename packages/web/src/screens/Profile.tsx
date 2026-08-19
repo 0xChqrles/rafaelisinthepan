@@ -34,7 +34,7 @@ type SaveRefusal = 'name_rejected' | 'avatar_rejected' | 'error' | null;
 
 // The loader holds at least this long even on an instant answer — a flash of dots
 // reads as a glitch — and the restore beat covers the label's roll-back animation.
-const SAVE_DOTS_MIN_MS = 300;
+const SAVE_DOTS_MIN_MS = 500;
 const SAVE_RESTORE_MS = 240;
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
