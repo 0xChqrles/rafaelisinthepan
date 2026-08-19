@@ -485,10 +485,34 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   colour, draw and re-extract, never retune a hex freehand. **The picker swatch shows the GROUND (decided 2026-08-19, superseding the
   foreground swatches): you select a ground, and its ink comes with it — a swatch is
   always ONE colour, the palette IS the choice.** The web encodes and renders (SVG);
-  the backend decodes to validate and moderate.
+  the backend decodes to validate and moderate. **The web renders it as ONE TRACED
+  UNION-OUTLINE PATH** (`web/src/components/avatarOutline.ts`, user-decided
+  2026-08-19): a rect per cell antialiases a hairline seam where two of them meet, and
+  the two cheaper answers — rect subpaths inside one `<path>`, and
+  `shape-rendering="crispEdges"` — do not render the same on every browser, where an
+  outline has no interior edges left to disagree about.
+- **The display NAME's charset is a cross-package contract** (`shared/src/name.ts`,
+  user-decided 2026-08-19: "the server should apply the same rules"): a name is
+  **alphanumerics and underscores, case kept, at most 16 characters**, and everything
+  else a player types becomes `_`. **ACCENTS are FOLDED, not underscored** — `Zoé` is
+  `Zoe` and `Éléonore` is `Eleonore`, via the decompose-and-strip pipeline `fold()`
+  already runs; the first cut mapped them to `_` with the punctuation, which spelled
+  `Zo_` on the one language half this game is written for. The pipeline NORMALIZES
+  (NFKD) before mapping, so NFC and NFD spellings of one name cannot store as two
+  values, and it maps per CODE POINT, so one astral character costs one underscore
+  rather than one per surrogate half. `sanitizeName` is IDEMPOTENT, which is what
+  lets a valid name be defined as **one the sanitizer leaves alone** (`isValidName`) —
+  one function owns the rule, with no second spelling of it to drift.
+  The WEB sanitizes every value it writes (the initial read, keystrokes, a
+  composition's commit, the save body); the BACKEND REFUSES a non-conforming name with
+  the shape 400 rather than rewriting one nobody typed. The old server-side rule (trim,
+  then a code-point cap and a control/format-character check) is subsumed and GONE:
+  whitespace, punctuation and zero-width characters are all things the sanitizer would
+  change. Empty stays valid — the avatar alone is a profile.
 - **Moderation is best-effort ON WRITE, by decided stance:** a normalized banned-strings
-  name filter (`backend/src/nameFilter.ts`; name cap 16 code points, no control/format
-  chars, empty allowed) and an exhaustive swastika template match over rotations,
+  name filter (`backend/src/nameFilter.ts`, asked only whether a TERM is banned — the
+  charset is the shared rule above, applied first) and an exhaustive swastika template
+  match over rotations,
   reflections, scales, positions and polarity (`backend/src/avatarModeration.ts`) — each
   rejecting with its own error code (`name_rejected` / `avatar_rejected`). Symbolic by
   design: the real containment is the friends graph (#189).

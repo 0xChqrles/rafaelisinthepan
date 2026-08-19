@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { AVATAR_CELLS, blankAvatar, encodeAvatar, publicIdFromSecret } from '@whippin/shared';
+import {
+  AVATAR_CELLS,
+  blankAvatar,
+  encodeAvatar,
+  publicIdFromSecret,
+  NAME_MAX_LENGTH,
+} from '@whippin/shared';
 import { createHandler } from './handler';
 import { memoryProfileStore } from './memoryProfileStore';
 import type { FnUrlEvent } from './respond';
@@ -52,10 +58,12 @@ describe('profile route (#188)', () => {
   it('writes the row keyed by the DERIVED publicId and reads it back', async () => {
     const { handler } = makeHandler();
     const avatar = blankAvatar(1);
-    const posted = await handler(post({ secret: SECRET, name: '  Chqrles ', avatar }));
+    const posted = await handler(post({ secret: SECRET, name: 'Chqrles', avatar }));
     expect(posted.statusCode).toBe(200);
     const publicId = await publicIdFromSecret(SECRET);
-    // The response carries the derived identity and the trimmed name — never the secret.
+    // The response carries the derived identity and the name VERBATIM — never the
+    // secret, and never a name the server quietly rewrote (the shared rule refuses a
+    // non-conforming one instead, below).
     expect(JSON.parse(posted.body)).toEqual({ publicId, name: 'Chqrles', avatar });
     expect(posted.body).not.toContain(SECRET);
     expect(posted.headers['Cache-Control']).toBe('no-store');
@@ -98,15 +106,32 @@ describe('profile route (#188)', () => {
     }
   });
 
-  it('rejects an over-long, control-charactered or non-string name', async () => {
+  it('rejects every name the SHARED rule would change', async () => {
     const { handler } = makeHandler();
-    for (const name of [17, 'x'.repeat(17), 'abc', 'ab​c']) {
+    // The web can produce none of these: the charset rule is the shared one, so the
+    // store only ever holds what the editor can. A caller going around it is refused,
+    // never silently rewritten.
+    const refused = [
+      17, // not a string
+      'x'.repeat(NAME_MAX_LENGTH + 1),
+      'Big Chef', // whitespace
+      ' Chqrles', // edge whitespace — there is no trim to save it any more
+      'Jean-Luc', // punctuation
+      'Éléonore', // an accent — the editor FOLDS it, and the server refuses the unfolded form
+      'a\u0007c', // control character
+      'a\u200Bc', // zero-width format character
+      '\u0020'.repeat(16), // the invisible player a permissive rule used to allow
+      '\u0301'.repeat(16), // a Zalgo stack of combining marks
+      '😀',
+    ];
+    for (const name of refused) {
       const response = await handler(post({ secret: SECRET, name, avatar: blankAvatar() }));
       expect(response.statusCode).toBe(400);
       expect(JSON.parse(response.body).error).toBe('bad_request');
     }
-    // Exactly 16 code points is fine; the empty name is a valid avatar-only profile.
-    for (const name of ['x'.repeat(16), '']) {
+    // Exactly the cap is fine, underscores are the one separator, and the empty name
+    // is a valid avatar-only profile.
+    for (const name of ['x'.repeat(NAME_MAX_LENGTH), 'jean_pierre', 'X4E9', '']) {
       const response = await handler(post({ secret: SECRET, name, avatar: blankAvatar() }));
       expect(response.statusCode).toBe(200);
     }

@@ -17,6 +17,7 @@
       screens/Profile.tsx     the #188 profile editor (/profile): name, tap-to-paint 10×10 grid,
                               ground-swatch palette picker (#190 wires the entry point)
       components/Avatar.tsx   a stored avatar rendered as SVG (editor preview + #190 board rows)
+      components/avatarOutline.ts  its drawing as ONE traced union-outline path (no interior edges, no seam)
       versionCheck.ts         stale-tab reload: __BUILD_ID__ vs /version.json on visibility flips
       i18n.ts                 UI chrome strings (en+fr), t(lang, key); parity type-enforced
       tutorial/               onboarding (#51/#155): Tutorial.tsx + data scripts/<lang>.ts
@@ -376,7 +377,23 @@ it to the local store — see `packages/backend/AGENTS.md`).
 - **Profile editor (#188; two-colour rework + key-UI removal user-decided
   2026-08-19):** `/profile` (`screens/Profile.tsx`), a global route like `/select` (an
   identity is not language-scoped; chrome language = the `/` redirect's resolution).
-  Name input (16 cap), the 10×10 tap/drag-to-paint grid (one STROKE value per gesture —
+  Name input — the charset rule is the SHARED one the server enforces too
+  (`@whippin/shared` `sanitizeName`, root `AGENTS.md`), applied on every path that
+  writes the value: the initial read, keystrokes, a composition's commit and the save
+  body, so the editor can never hold or send something the route would refuse. Three
+  details are this screen's own. Sanitizing a CONTROLLED input's value makes React
+  reassign `node.value`, which collapses the text cursor to the END (its own
+  save/restore is gated on the focused element having CHANGED, and it never does
+  here), so the caret is placed by hand — from the sanitized PREFIX up to the cursor,
+  since folding `é` and expanding `œ` both change the length before it — in a layout
+  effect, plus a microtask for the one case that renders nothing (a keystroke that
+  sanitizes back onto the name already held; React restores a controlled value after
+  the event even with no re-render). A COMPOSITION is left alone while open — an
+  AZERTY dead key rewritten mid-composition commits as `_` and never builds its
+  `î` — with the raw value mirrored into state so the input stays controlled, and
+  the rule landing on `compositionend`. And the field suppresses
+  autocomplete/autocorrect/autocapitalize/spellcheck, so nothing is suggested into it.
+  Then the 10×10 tap/drag-to-paint grid (one STROKE value per gesture —
   starting on a painted cell erases, so tap toggles; a painted cell plays a small
   one-shot BUMP, replayed by remounting the cell keyed on its paint count, so loading a
   stored drawing bumps nothing; an EMPTY cell wears the palette's background itself
@@ -399,8 +416,19 @@ it to the local store — see `packages/backend/AGENTS.md`).
   reason. A **404 is not a failure**: it is the answer "never customized", and lands on
   the blank editor whose blank baseline is then correct. No chrome entry point yet — #190's leaderboard screen is
   the wired entry (recorded in the header bullet); until then the route is
-  deep-link-only. Editor visuals carry no tests per policy; the codec and the
-  `parseProfile` shape check are contract-tested.
+  deep-link-only.
+  **The avatar RENDERER is `components/Avatar.tsx` over `components/avatarOutline.ts`,
+  and the tracer STAYS** (user-decided 2026-08-19 — the alternatives do not render the
+  same on every browser; see the root `AGENTS.md`). Decoding and tracing are ONE
+  guarded memo, so a malformed stored string fails as "no mark" rather than taking a
+  board of #190 rows down with it, and the tracer REFUSES a wrong-length grid instead
+  of reading across rows into a plausible wrong picture.
+  Editor VISUALS carry no tests per policy; what is
+  contract-tested is the codec, the `parseProfile` shape check, the shared name rule —
+  and the tracer, which is geometry rather than a visual: its suite asserts what the
+  path FILLS (winding numbers read back off the emitted path, over every 3×3 mask and
+  a spread of full grids), never the command syntax, since the property it exists for
+  — no seam at a fractional DPR — is one jsdom cannot rasterize.
 
 - **Word mode (#156, the second daily; RETIMED by #163 on 2026-08-08):** one app, two faces
   — `/<lang>/word` (plus `/word/<date>` and `/word/archive`, same date rules) plays the day's

@@ -12,6 +12,10 @@ describe('name filter (#188)', () => {
     expect(isNameAllowed('enculé')).toBe(false);
   });
 
+  // MODERATION only — this filter answers "is this term banned?", never "is this the
+  // right shape?". The charset (alphanumerics + underscores, accents folded) is the
+  // shared rule `validateName` applies BEFORE this, so several of the names below are
+  // allowed here and still refused by the route.
   it('accepts ordinary names, accents and short handles', () => {
     expect(isNameAllowed('')).toBe(true);
     expect(isNameAllowed('Chqrles')).toBe(true);
