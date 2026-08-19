@@ -476,13 +476,13 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   cross-package contract** (`shared/src/avatar.ts`): palette byte + 100 cells at 1
   bit/pixel = 14 bytes, base64url, exactly 19 chars, canonical-form-only decode.
   `AVATAR_PALETTES` is FIVE `{bg, fg}` pairs (append-only — the byte is an index),
-  and **their colours are the USER'S OWN DRAWINGS, delivered as palette PNGs at the
-  repo root** (decided 2026-08-19, closing several review rounds of hand-tuned
-  duos) — 16×16 tiles, each a 10×10 tree whose SKY is the background and whose TREE
-  is the foreground (the PNGs are per-revision deliverables; the latest,
-  `/palette.png`, redrew the last two duos). The array in `shared/src/avatar.ts` is
-  the canonical record of those extractions, asserted verbatim by the palette pin
-  test: a colour change is a new drawing re-extracted, never a hex retuned freehand. **The picker swatch shows the GROUND (decided 2026-08-19, superseding the
+  and **their colours are the USER'S OWN DRAWINGS: palette PNGs at the repo root**
+  (decided 2026-08-19, closing several review rounds of hand-tuned duos) — 16×16
+  tiles, each a 10×10 tree drawing whose SKY is the background and whose TREE is the
+  foreground. The `AVATAR_PALETTES` array is the canonical record of those
+  extractions (the PNGs are per-revision deliverables — the latest, `/palette.png`,
+  redrew the last two duos), asserted verbatim by the palette pin test: to change a
+  colour, draw and re-extract, never retune a hex freehand. **The picker swatch shows the GROUND (decided 2026-08-19, superseding the
   foreground swatches): you select a ground, and its ink comes with it — a swatch is
   always ONE colour, the palette IS the choice.** The web encodes and renders (SVG);
   the backend decodes to validate and moderate.

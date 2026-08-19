@@ -80,16 +80,17 @@ describe('avatar codec (#188)', () => {
     expect(() => decodeAvatar('AAAAAAAAAAAAAAAAABA')).toThrow(/non-canonical/);
   });
 
-  it('pins the palette contract: the five duos extracted from the user-drawn PNGs', () => {
+  it('pins the palette contract: the five duos extracted from the palette drawings', () => {
     // The colours are the user's own drawings (repo-root palette PNGs: 16×16 tiles,
-    // each a 10×10 tree — sky = bg, tree = fg). This pin is the extraction, verbatim:
-    // a change here means a new drawing was deliberately re-extracted.
+    // each a 10×10 tree — sky = bg, tree = fg; the latest, /palette.png, redrew the
+    // last two duos). This pin is the extraction, verbatim: a change here means a
+    // NEW drawing was deliberately re-extracted.
     expect(AVATAR_PALETTES.map(({ bg, fg }) => ({ bg, fg }))).toEqual([
       { bg: '#222431', fg: '#4a6aff' },
       { bg: '#8f06ff', fg: '#30fff8' },
       { bg: '#ff1a85', fg: '#c6ff1a' },
-      { bg: '#ff8200', fg: '#152eff' },
       { bg: '#007fff', fg: '#f6f6ff' },
+      { bg: '#30fff8', fg: '#ff5ce0' },
     ]);
     for (const palette of AVATAR_PALETTES) {
       expect(palette.fg).not.toBe(palette.bg);

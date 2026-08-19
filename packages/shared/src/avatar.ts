@@ -38,8 +38,8 @@ export const AVATAR_PALETTES: readonly AvatarPalette[] = [
   { name: 'COBALT', bg: '#222431', fg: '#4a6aff' },
   { name: 'CYAN', bg: '#8f06ff', fg: '#30fff8' },
   { name: 'LIME', bg: '#ff1a85', fg: '#c6ff1a' },
-  { name: 'ULTRAMARINE', bg: '#ff8200', fg: '#152eff' },
   { name: 'FROST', bg: '#007fff', fg: '#f6f6ff' },
+  { name: 'ORCHID', bg: '#30fff8', fg: '#ff5ce0' },
 ];
 
 const BYTES = 1 + Math.ceil(AVATAR_CELLS / 8); // 14

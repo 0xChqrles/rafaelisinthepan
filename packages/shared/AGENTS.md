@@ -41,8 +41,10 @@
   the root `AGENTS.md`.
 - `src/avatar.ts` is the ONE definition of the #188 avatar encoding (palette byte + 100
   cells × 1 bit — two colours only, user-decided 2026-08-19 — base64url, canonical
-  decode) and of `AVATAR_PALETTES`, the `{bg, fg}` pairs the picker shows by foreground
-  alone. The palette list is APPEND-ONLY, since the stored byte is an index into it. The
+  decode) and of `AVATAR_PALETTES`, the `{bg, fg}` pairs extracted from the user's
+  repo-root palette drawings (see the root `AGENTS.md`; the editor's picker swatch
+  shows the GROUND). The palette list is APPEND-ONLY, since the stored byte is an
+  index into it. The
   web encodes what the editor drew and renders every stored avatar; the backend decodes
   to validate and moderate — a fork would accept different strings for one drawing
   (root `AGENTS.md`, Player profile).
