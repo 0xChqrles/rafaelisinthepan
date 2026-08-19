@@ -22,6 +22,7 @@
     "bench:puzzle": "pnpm --filter @whippin/benchmark bench:puzzle",
     "bench:playbook:distill": "pnpm --filter @whippin/benchmark bench:playbook:distill",
     "backend:dev": "pnpm --filter @whippin/backend serve:local",
+    "board:seed": "pnpm --filter @whippin/backend board:seed",
     "puzzle:publish": "pnpm --filter @whippin/backend puzzle:publish",
     "puzzle:inventory": "pnpm --filter @whippin/backend puzzle:inventory",
     "infra:synth": "pnpm --filter @whippin/infra synth",

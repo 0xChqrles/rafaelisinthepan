@@ -445,14 +445,23 @@ describe('parseBoard (shape validation, #190)', () => {
     rank: 1,
     ...over,
   });
-  const valid = () => ({ total: 1, rows: [row()], overflow: null, own: null });
+  const valid = () => ({ total: 1, rows: [row()], overflow: null, own: null, waiting: [] });
 
   it('accepts a well-formed board, empty boards included', () => {
     expect(parseBoard(valid()).rows).toHaveLength(1);
-    expect(parseBoard({ total: 0, rows: [], overflow: null, own: null }).rows).toEqual([]);
+    expect(
+      parseBoard({ total: 0, rows: [], overflow: null, own: null, waiting: [] }).rows,
+    ).toEqual([]);
     expect(
       parseBoard({ ...valid(), overflow: { rank: 41, count: 12 }, own: [row()] }).overflow,
     ).toEqual({ rank: 41, count: 12 });
+    // A friend with no score today is a PLAYER row — no score, no rank.
+    expect(
+      parseBoard({
+        ...valid(),
+        waiting: [{ publicId: 'abcdefghij234567', name: '', avatar: null }],
+      }).waiting,
+    ).toHaveLength(1);
   });
 
   it('rejects a wrong-shaped body (a failure, never NaN rows)', () => {
@@ -465,5 +474,7 @@ describe('parseBoard (shape validation, #190)', () => {
     expect(() => parseBoard({ ...valid(), rows: [row({ avatar: 7 })] })).toThrow(/rows/);
     expect(() => parseBoard({ ...valid(), overflow: { rank: 0, count: 2 } })).toThrow(/overflow/);
     expect(() => parseBoard({ ...valid(), own: [row({ name: 3 })] })).toThrow(/own/);
+    expect(() => parseBoard({ ...valid(), waiting: undefined })).toThrow(/waiting/);
+    expect(() => parseBoard({ ...valid(), waiting: [{ publicId: 'NOPE' }] })).toThrow(/waiting/);
   });
 });

@@ -1,10 +1,11 @@
 // CONTRACT (#189): one click on an invite link starts ONE conversation, and the click
-// continues into the game on every answer the server actually gives. React may replay the
-// landing's effect (development StrictMode) or remount it, and neither may mint a second
-// request. A 4xx is a verdict the player cannot argue with; only the backend failing is
-// worth retrying. TWO answers are said out loud rather than swallowed — the failure, and the
-// cap, which is a verdict the player CAN act on and would otherwise leave a full player
-// clicking invitations forever, each one appearing to work.
+// never dead-ends. React may replay the landing's effect (development StrictMode) or
+// remount it, and neither may mint a second request. A SUCCESS is confirmed on screen
+// before continuing (user feedback 2026-08-20 — 'added'); a non-cap 4xx is a verdict the
+// player cannot argue with and continues silently; only the backend failing is worth
+// retrying. TWO answers are said out loud as blockers — the failure, and the cap, which
+// is a verdict the player CAN act on and would otherwise leave a full player clicking
+// invitations forever, each one appearing to work.
 
 import { describe, expect, it, vi } from 'vitest';
 import { sendInvite, shareInviteFlight } from './FriendInvite';
@@ -58,8 +59,8 @@ describe('sendInvite — the click carries the CLICKER key and the SENDER id', (
     return sendInvite(INVITER);
   };
 
-  it('records the mutual edge with the player key, generated on this first need', async () => {
-    await expect(answer(200)).resolves.toBe('settled');
+  it('records the mutual edge with the player key, and a 2xx is the confirmable ADD', async () => {
+    await expect(answer(200)).resolves.toBe('added');
     expect(postFriendsBody).toHaveBeenCalledWith('https://api.test/friends', {
       secret: '00112233445566778899aabbccddeeff',
       add: INVITER,
@@ -68,7 +69,7 @@ describe('sendInvite — the click carries the CLICKER key and the SENDER id', (
 
   it('treats a refusal as settled — opening your own link is not something to retry', async () => {
     // 400 self_link, 404-ish bad id: the answer will not change by asking again, and the
-    // player came here to play.
+    // player came here to play. Nothing was added, so nothing is announced.
     await expect(answer(400)).resolves.toBe('settled');
     await expect(answer(404)).resolves.toBe('settled');
   });

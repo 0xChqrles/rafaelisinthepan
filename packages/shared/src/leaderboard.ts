@@ -115,11 +115,18 @@ export function boardOwnRows(
 
 // ---- The board as the API speaks it (#190): ranked rows dressed with the public
 // profile a board renders (#188). `avatar` is null for a player who never customized;
-// `name` may be empty for the same reason (the client falls back to the publicId).
+// `name` may be empty for the same reason (the client falls back to a pseudonym
+// derived from the publicId).
 
-export interface BoardRow extends RankedScore {
+export interface BoardPlayer {
+  publicId: string;
   name: string;
   avatar: string | null;
+}
+
+export interface BoardRow extends BoardPlayer {
+  score: number;
+  rank: number;
 }
 
 export interface Board {
@@ -131,4 +138,10 @@ export interface Board {
   overflow: BoardOverflow | null;
   // The caller's own below-the-cut window; always null on the friends board.
   own: BoardRow[] | null;
+  // FRIENDS who have no recorded score today (user-decided 2026-08-20): an edge is a
+  // person you chose, so the board names them even before they play — with "not played
+  // yet" where a score would be, never by silently dropping the row. Always empty on
+  // the global board (the population there IS the recorded scores), and never the
+  // caller themselves (the identity strip already shows them).
+  waiting: BoardPlayer[];
 }

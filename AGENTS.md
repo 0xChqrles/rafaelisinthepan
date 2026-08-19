@@ -586,7 +586,12 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   - `POST /board { secret }` (+ the same query) — the **FRIENDS board, the trusted
     surface**: the server resolves YOUR edges (#189) plus yourself, so the read proves
     who is asking — the secret in the BODY, the /friends rule. Production POST needs
-    `x-amz-content-sha256` over the exact body bytes (the OAC contract).
+    `x-amz-content-sha256` over the exact body bytes (the OAC contract). **A friend
+    with no recorded score today is still named** (user-decided 2026-08-20): the
+    response's `waiting` list carries them (profile-dressed, no score/rank; sorted by
+    publicId; never the caller themselves, and always empty on the global board) and
+    the web draws them with "not played yet" where a score would be — an edge is a
+    person the caller chose, never a row to silently drop.
 - **The ranking rules are shared pure functions** (`shared/src/leaderboard.ts`,
   contract-tested): competition-style tie ranks (equal ranks, never a fake ordering —
   ties ordered by publicId only for deterministic ROW order), the top-50 cut that keeps

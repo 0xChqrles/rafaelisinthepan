@@ -965,6 +965,7 @@ button * {
    page's own foreground — hierarchy is weight and the .home-btn opacity lift, never a
    second grey. */
 .help-btn,
+.board-btn,
 .topbar-skip {
   color: var(--fg);
 }
@@ -5095,12 +5096,12 @@ button * {
   font-weight: 600;
   letter-spacing: 0.04em;
 }
-/* An uncustomized player reads as their publicId, dimmed — the blank EDIT fills. */
+/* An uncustomized player reads as their PSEUDONYM (anonName — a deterministic
+   pronounceable name derived from the publicId; user feedback 2026-08-20, replacing
+   the raw id, which read as a machine talking). It looks like a name, so it keeps the
+   name's own size and weight — only quieter, whispering "placeholder". */
 .board-me-name.anon {
-  opacity: 0.45;
-  font-size: 12px;
-  font-weight: 400;
-  letter-spacing: 0.08em;
+  opacity: 0.55;
 }
 /* The EDIT chip: the quiet hairline chip (the profile CLEAR's own recipe) — it leads
    away, so it never competes with the board. */
@@ -5224,11 +5225,9 @@ button * {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The pseudonym: a name-shaped placeholder, so only the opacity says so. */
 .board-name.anon {
-  opacity: 0.45;
-  font-size: 11px;
-  font-weight: 400;
-  letter-spacing: 0.06em;
+  opacity: 0.55;
 }
 .board-score {
   font-family: var(--pixel-font);
@@ -5269,6 +5268,24 @@ button * {
   border-color: rgba(8, 9, 15, 0.5);
 }
 
+/* A FRIEND with no score today (friends board only, user-decided 2026-08-20): the row
+   stays — an edge is a person you chose — wearing the app's dashed "not yet" frame with
+   no glass fill, and the label sits where their score would. */
+.board-row.waiting {
+  background: transparent;
+  border-style: dashed;
+}
+.board-waiting-label {
+  font-family: var(--ui);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg);
+  opacity: 0.45;
+  text-align: right;
+}
+
 /* The tie group collapsed at the global cut: its shared rank in the rank column, the
    count beside it — a fact row, so it stays quiet. */
 .board-overflow {
@@ -5306,4 +5323,48 @@ button * {
     padding-top: 48px;
     gap: 12px;
   }
+}
+
+/* ---- The invite landing's confirmation (#189, user feedback 2026-08-20): the click
+   now SAYS what it did — the inviter's mark and name over FRIEND ADDED, PLAY onward.
+   Vertically self-centering (auto margins), like the app's other HUD-less screens. ---- */
+.invite-done {
+  width: min(340px, 100%);
+  margin: auto 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+}
+.invite-done .avatar {
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+/* An inviter who never customized wears the board's dashed "no mark yet" frame. */
+.invite-done-noface {
+  width: 64px;
+  height: 64px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-lg);
+}
+.invite-done-name {
+  font-family: var(--ui);
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+}
+.invite-done-line {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg);
+  opacity: 0.55;
+}
+.invite-done .mix-btn {
+  width: 100%;
+  margin-top: 12px;
 }

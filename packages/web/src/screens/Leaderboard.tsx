@@ -1,6 +1,13 @@
 import { useEffect, useState, type CSSProperties } from 'react';
-import { activeDate, publicIdFromSecret, type Board, type BoardRow } from '@whippin/shared';
+import {
+  activeDate,
+  publicIdFromSecret,
+  type Board,
+  type BoardPlayer,
+  type BoardRow,
+} from '@whippin/shared';
 import { boardUrl, parseBoard, parseProfile, postBoardBody, profileUrl } from '../api';
+import { anonName } from '../anonName';
 import Avatar from '../components/Avatar';
 import LoadError from '../components/LoadError';
 import LoadingWave from '../components/LoadingWave';
@@ -156,7 +163,7 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
           <span className="board-noface board-noface-lg" aria-hidden="true" />
         )}
         <span className={`board-me-name${me?.name ? '' : ' anon'}`}>
-          {me ? me.name || me.publicId : ''}
+          {me ? me.name || anonName(me.publicId) : ''}
         </span>
         <button
           type="button"
@@ -220,7 +227,10 @@ function BoardList({
   meId?: string;
 }) {
   const empty =
-    board.rows.length === 0 && board.overflow === null && (board.own?.length ?? 0) === 0;
+    board.rows.length === 0 &&
+    board.overflow === null &&
+    (board.own?.length ?? 0) === 0 &&
+    board.waiting.length === 0;
   if (empty) {
     return <p className="board-empty">{t(lang, 'boardEmpty')}</p>;
   }
@@ -253,8 +263,38 @@ function BoardList({
             {board.own.map(item)}
           </>
         )}
+        {/* Friends with no score today (friends board only): named, never dropped —
+            the row wears the dashed "not yet" frame and says so where a score would. */}
+        {board.waiting.map((player) => (
+          <WaitingRowItem key={player.publicId} player={player} lang={lang} index={index++} />
+        ))}
       </ol>
     </>
+  );
+}
+
+function WaitingRowItem({
+  player,
+  lang,
+  index,
+}: {
+  player: BoardPlayer;
+  lang: LangCode;
+  index: number;
+}) {
+  return (
+    <li className="board-row waiting" style={{ '--i': index } as CSSProperties}>
+      <span className="board-rank" />
+      {player.avatar !== null ? (
+        <Avatar avatar={player.avatar} size={28} />
+      ) : (
+        <span className="board-noface" aria-hidden="true" />
+      )}
+      <span className={`board-name${player.name ? '' : ' anon'}`}>
+        {player.name || anonName(player.publicId)}
+      </span>
+      <span className="board-waiting-label">{t(lang, 'boardNotPlayed')}</span>
+    </li>
   );
 }
 
@@ -272,7 +312,9 @@ function BoardRowItem({ row, me, index }: { row: BoardRow; me: boolean; index: n
         // No profile yet: a dashed empty frame — the app's "not yet" mark.
         <span className="board-noface" aria-hidden="true" />
       )}
-      <span className={`board-name${row.name ? '' : ' anon'}`}>{row.name || row.publicId}</span>
+      <span className={`board-name${row.name ? '' : ' anon'}`}>
+        {row.name || anonName(row.publicId)}
+      </span>
       <span className="board-score">{row.score}</span>
     </li>
   );

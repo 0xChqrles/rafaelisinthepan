@@ -435,13 +435,19 @@ it to the local store — see `packages/backend/AGENTS.md`).
 
 - **Invite link (#189):** `/i/<publicId>` (`pathForInvite` in `langs.ts`,
   `screens/FriendInvite.tsx`) — global like `/profile`, since an identity is not
-  language-scoped. It is a BEAT, not a screen: it POSTs `{secret, add}` with the player key
+  language-scoped. It POSTs `{secret, add}` with the player key
   (`identity.ts`, generated on this first need, which is what lands the edge before a
-  brand-new visitor's first game) and then `navigate('/', { replace: true })` — handing the
-  destination to App's own home redirect rather than restating where a player lands, and
-  replacing itself in history so a back tap leaves the game instead of re-firing the invite.
+  brand-new visitor's first game) and **a SUCCESSFUL add is CONFIRMED on screen**
+  (user-decided 2026-08-20, superseding the silent continue-into-the-game beat — the
+  clicker was left unsure anything had happened): the INVITER's avatar and name over
+  `FRIEND ADDED` (`.invite-done`), dressed by a best-effort profile read that falls back
+  to the pseudonym + dashed no-mark frame — never to an error, since the edge is already
+  landed — with PLAY handing the destination to App's own home redirect via
+  `navigate('/', { replace: true })`, replacing this landing in history so a back tap
+  leaves the game instead of re-firing the invite.
   The publicId is validated in `parseRoute`, so a broken link goes home rather than asking
-  the server about an id nobody can hold. A 4xx is a VERDICT and continues into the game (the
+  the server about an id nobody can hold. A NON-CAP 4xx is a VERDICT and continues into the
+  game silently — nothing was added, so nothing is announced (the
   score submission's rule: `self_link` and a bad id cannot be argued with); a transport
   error or a 5xx shows `failedInvite` + RETRY — LOUD, unlike a score submission, for the #188
   profile read's reason: the write is the one thing the click existed to do. **The CAP (409
@@ -471,10 +477,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
   + score, ranks and scores in the PIXEL face (game numbers), names in mono (identity
   chrome, case kept), the unit caption (TRIES/WORDS) naming which way is better. The
   OWN row wears the inverted selection box — the app's one emphasis gesture. A player
-  with no profile degrades honestly: dimmed publicId as the name, a dashed
+  with no profile degrades honestly: a PSEUDONYM as the name (`anonName.ts` —
+  deterministic pronounceable syllables from the publicId, user-decided 2026-08-20
+  replacing the raw id, which read as a machine talking; name-shaped, so it keeps the
+  name's size and only the dim says "placeholder") and a dashed
   `.board-noface` frame as the mark (the app's "not yet" dashes — the identity strip
   wears the same until EDIT fills it). The collapsed straddling tie renders as a row
-  (`#41  +20 TIED`), the below-the-cut gap as a dashed rule. The identity strip on
+  (`#41  +20 TIED`), the below-the-cut gap as a dashed rule, and the friends tab's
+  WAITING friends (edges with no score today, user-decided 2026-08-20) as dashed
+  no-fill rows with `NOT PLAYED YET` where their score would be. The identity strip on
   top (your mark + name + EDIT → `/profile`) and the INVITE device-card button on the
   bottom edge are the #188/#189 wiring; both work before ever playing. Rows rise on
   the `rung-in` gesture staggered by index (delays survive reduced motion, the rise

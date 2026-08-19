@@ -306,12 +306,22 @@ const STRINGS = {
   boardEmpty: { en: 'NO ONE ON THE BOARD YET', fr: 'ENCORE PERSONNE AU TABLEAU' },
   boardEdit: { en: 'EDIT', fr: 'MODIFIER' },
   boardInvite: { en: 'INVITE FRIENDS', fr: 'INVITER DES AMIS' },
-  // The line above the invite link when it leaves the app (#189): the link is both
-  // "add me" and "come play", and the words say the play half.
+  // A friend on the board who has no recorded score today (user-decided 2026-08-20):
+  // the row stays — an edge is a person you chose — and this label sits where their
+  // score would.
+  boardNotPlayed: { en: 'NOT PLAYED YET', fr: 'PAS ENCORE JOUÉ' },
+  // The line above the invite link when it leaves the app (#189). Lowercase and plain —
+  // it travels in a chat between friends, so it reads like something a person would
+  // actually type, not marketing copy (user feedback 2026-08-20, replacing "Play
+  // Whippin AI with me:").
   boardInviteText: {
-    en: 'Play Whippin AI with me:',
-    fr: 'Viens jouer à Whippin AI avec moi :',
+    en: 'add me on Whippin:',
+    fr: 'ajoute-moi sur Whippin :',
   },
+  // The invite landing's confirmation (#189, user feedback 2026-08-20 — the click used
+  // to continue into the game without a word, leaving the clicker unsure anything
+  // happened): the inviter's mark + name above this line, PLAY below it.
+  inviteAdded: { en: 'FRIEND ADDED', fr: 'AMI AJOUTÉ' },
   failedBoard: { en: 'FAILED TO LOAD LEADERBOARD', fr: 'ÉCHEC DU CHARGEMENT DU CLASSEMENT' },
   ariaLeaderboard: { en: 'Leaderboard', fr: 'Classement' },
 } satisfies Record<string, Record<UiLang, string>>;

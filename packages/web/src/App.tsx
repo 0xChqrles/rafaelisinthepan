@@ -216,9 +216,11 @@ function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: st
       {/* The leaderboard entry (#190, the issue's decided entry point): reachable
           BEFORE playing — the screen is also where a player customizes their profile
           and shares their invite link, neither of which requires having played. */}
+      {/* `board-btn` gives the trophy the header's foreground ink — buttons don't
+          inherit color, and a bare .home-btn renders its stroke UA-black. */}
       <button
         type="button"
-        className="home-btn"
+        className="home-btn board-btn"
         aria-label={t(lang, 'ariaLeaderboard')}
         onClick={() => navigate(pathForBoard(lang, mode))}
       >

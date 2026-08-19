@@ -104,6 +104,8 @@ describe('board route (#190)', () => {
     ]);
     expect(board.overflow).toBeNull();
     expect(board.own).toBeNull();
+    // The global population IS the recorded scores — nobody waits on it.
+    expect(board.waiting).toEqual([]);
   });
 
   it('windows a caller below the top-50 cut when `id` names them', async () => {
@@ -167,6 +169,27 @@ describe('board route (#190)', () => {
 
     const board = JSON.parse((await handler(post(QUERY, { secret: SECRET }))).body) as Board;
     expect(board.rows.map((row) => row.publicId)).toEqual([friend]);
+    // The caller never waits on their own board — the identity strip already shows them.
+    expect(board.waiting).toEqual([]);
+  });
+
+  it('names a friend with no score today in `waiting` instead of dropping them', async () => {
+    const me = await publicIdFromSecret(SECRET);
+    const played = await publicIdFromSecret(FRIEND_SECRET);
+    const notYet = await publicIdFromSecret(STRANGER_SECRET);
+    const { handler, friends, profiles } = makeHandler([
+      { publicId: me, score: 9 },
+      { publicId: played, score: 4 },
+    ]);
+    await friends.link({ publicId: me, friendId: played, createdAt: NOW.toISOString() });
+    await friends.link({ publicId: me, friendId: notYet, createdAt: NOW.toISOString() });
+    await profiles.upsert({ publicId: notYet, name: 'Later', avatar: 'A'.repeat(19), now: NOW.toISOString() });
+
+    const board = JSON.parse((await handler(post(QUERY, { secret: SECRET }))).body) as Board;
+    expect(board.rows.map((row) => row.publicId)).toEqual([played, me]);
+    expect(board.waiting).toEqual([
+      { publicId: notYet, name: 'Later', avatar: 'A'.repeat(19) },
+    ]);
   });
 
   it('refuses a friends read without a well-formed secret (the auth IS the body)', async () => {
@@ -178,8 +201,8 @@ describe('board route (#190)', () => {
   it('answers an empty day honestly on both faces', async () => {
     const { handler } = makeHandler([]);
     const global = JSON.parse((await handler(get(QUERY))).body) as Board;
-    expect(global).toEqual({ total: 0, rows: [], overflow: null, own: null });
+    expect(global).toEqual({ total: 0, rows: [], overflow: null, own: null, waiting: [] });
     const mine = JSON.parse((await handler(post(QUERY, { secret: SECRET }))).body) as Board;
-    expect(mine).toEqual({ total: 0, rows: [], overflow: null, own: null });
+    expect(mine).toEqual({ total: 0, rows: [], overflow: null, own: null, waiting: [] });
   });
 });

@@ -52,7 +52,8 @@
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
 pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output). Sentence puzzles AND #154 word artifacts (#156): the artifact type is detected from the file's SHAPE and routed to its own key.
 pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--mode sentence|word] [--ci]  # publish-buffer coverage (#61); --mode word probes the #156 word-artifact buffer; reports + exits 0 by default, --ci exits 1 on any (day,lang) gap for cron/CI
-pnpm backend:dev                # local server (puzzles + /scores + /profile + /friends + /today) on :8787; FS puzzles, in-memory scores/profiles/friends, local Turnstile accept-all
+pnpm backend:dev                # local server (puzzles + /scores + /profile + /friends + /board + /today) on :8787; FS puzzles, in-memory scores/profiles/friends, local Turnstile accept-all
+pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server with a #190 board population (in-memory — re-run after a restart)
 ```
 
 ---
@@ -156,9 +157,18 @@ pnpm backend:dev                # local server (puzzles + /scores + /profile + /
   `PUBLIC_ID_PATTERN` (400 malformed); POST validates `{secret}` exactly like /friends.
   Rows are ranked/cut/windowed by `@whippin/shared`'s leaderboard functions, then
   dressed with profiles — one `ProfileStore.get` per DISTINCT id shown, in parallel
-  (bounded: top 50 + a 5-row window, or FRIENDS_MAX rows). Every response is
+  (bounded: top 50 + a 5-row window, or FRIENDS_MAX rows). The friends face also
+  answers `waiting`: the caller's edges with no score row today, profile-dressed and
+  publicId-sorted (root `AGENTS.md`). Every response is
   `no-store`; a missing profile dresses as `name: ''` / `avatar: null`. No new store:
   the route is a pure READ over the score rows, the friend edges and the profile rows.
+  **`pnpm board:seed` (src/seedBoard.ts) is the LOCAL-ONLY population seeder**: run it
+  against a live `pnpm backend:dev` to fill the in-memory stores with 60 scored players
+  (a tie straddling the top-50 cut included), a few unnamed ones, two unplayed
+  profile-only ones, and printed invite links; `--friend <publicId|/i/link>` links a
+  handful to your own identity. Re-run after every backend restart (the stores reset —
+  that is why it is a script, not a fixture); it copies the newest local fr sentence
+  puzzle forward to the active day when that key is missing.
 
 - **Word mode's daily artifact (#154/#156):** the ONE puzzle endpoint also serves the
   single-word artifact under `mode=word` (`GET /?lang=&date=&mode=word`; absent/

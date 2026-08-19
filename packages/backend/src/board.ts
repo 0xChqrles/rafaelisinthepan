@@ -27,6 +27,7 @@ import {
   rankBoard,
   PUBLIC_ID_PATTERN,
   type Board,
+  type BoardPlayer,
   type BoardRow,
   type RankedScore,
 } from '@whippin/shared';
@@ -61,7 +62,7 @@ function bodyOf(event: FnUrlEvent): unknown {
 // in parallel — the response is bounded (top 50 + a 5-row window, or FRIENDS_MAX rows).
 async function dressRows(
   profiles: ProfileStore,
-  ...sections: (readonly RankedScore[])[]
+  ...sections: (readonly { publicId: string }[])[]
 ): Promise<Map<string, { name: string; avatar: string | null }>> {
   const ids = [...new Set(sections.flat().map((row) => row.publicId))];
   const records = await Promise.all(ids.map((id) => profiles.get(id)));
@@ -151,6 +152,7 @@ export async function handleBoard(
       rows: toBoardRows(cut.rows, dress),
       overflow: cut.overflow,
       own: own === null ? null : toBoardRows(own, dress),
+      waiting: [],
     };
     return json(200, board, responseHeaders);
   }
@@ -182,19 +184,29 @@ export async function handleBoard(
   }
 
   const publicId = await publicIdFromSecret(body.secret);
-  const wanted = new Set(await deps.friends.list(publicId));
+  const friends = await deps.friends.list(publicId);
+  const wanted = new Set(friends);
   wanted.add(publicId);
-  // The trusted board is the caller's edges plus themselves — only recorded scores make
-  // rows (a friend who has not played has no score to show, and before the caller has
-  // played their own row is simply absent). Bounded by FRIENDS_MAX, so no cut.
+  // The trusted board is the caller's edges plus themselves. Recorded scores make the
+  // RANKED rows; a FRIEND with no score today is still named, in `waiting` — an edge is
+  // a person the caller chose, so the board says "not played yet" rather than silently
+  // dropping them (user-decided 2026-08-20). The caller's own unplayed row stays absent
+  // (the screen's identity strip already shows them). Bounded by FRIENDS_MAX, so no cut.
   const rows = (await deps.scores.list(key)).filter((row) => wanted.has(row.publicId));
   const ranked = rankBoard(rows, mode);
-  const dress = await dressRows(deps.profiles, ranked);
+  const scored = new Set(rows.map((row) => row.publicId));
+  // Sorted for a stable board between reads; publicId is the only order every waiting
+  // row is guaranteed to carry.
+  const waiting = friends.filter((id) => !scored.has(id)).sort();
+  const dress = await dressRows(deps.profiles, ranked, waiting.map((id) => ({ publicId: id })));
   const board: Board = {
     total: ranked.length,
     rows: toBoardRows(ranked, dress),
     overflow: null,
     own: null,
+    waiting: waiting.map(
+      (id): BoardPlayer => ({ publicId: id, ...(dress.get(id) ?? { name: '', avatar: null }) }),
+    ),
   };
   return json(200, board, responseHeaders);
 }

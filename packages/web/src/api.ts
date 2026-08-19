@@ -7,6 +7,7 @@
 import { isValidAvatar, PUBLIC_ID_PATTERN } from '@whippin/shared';
 import type {
   Board,
+  BoardPlayer,
   BoardRow,
   PlayerProfile,
   Puzzle,
@@ -299,15 +300,29 @@ export async function postBoardBody(url: string, body: { secret: string }): Prom
 
 // Runtime shape check for a board response — the parsePuzzle contract: a wrong-shaped
 // body surfaces as the screen's failure state, never as a board of NaN rows.
-function checkBoardRows(value: unknown, field: string): asserts value is BoardRow[] {
+function isBoardPlayer(row: unknown): row is BoardPlayer {
+  return (
+    isRecord(row) &&
+    typeof row.publicId === 'string' &&
+    PUBLIC_ID_PATTERN.test(row.publicId) &&
+    typeof row.name === 'string' &&
+    (row.avatar === null || typeof row.avatar === 'string')
+  );
+}
+
+function checkBoardPlayers(value: unknown, field: string): asserts value is BoardPlayer[] {
   if (!Array.isArray(value)) throw new Error(`malformed board: "${field}" must be an array`);
   for (const row of value) {
+    if (!isBoardPlayer(row)) throw new Error(`malformed board: bad "${field}" row`);
+  }
+}
+
+function checkBoardRows(value: unknown, field: string): asserts value is BoardRow[] {
+  if (!Array.isArray(value)) throw new Error(`malformed board: "${field}" must be an array`);
+  for (const raw of value) {
+    const row = raw as Record<string, unknown>;
     if (
-      !isRecord(row) ||
-      typeof row.publicId !== 'string' ||
-      !PUBLIC_ID_PATTERN.test(row.publicId) ||
-      typeof row.name !== 'string' ||
-      (row.avatar !== null && typeof row.avatar !== 'string') ||
+      !isBoardPlayer(raw) ||
       typeof row.score !== 'number' ||
       !Number.isInteger(row.score) ||
       typeof row.rank !== 'number' ||
@@ -321,7 +336,7 @@ function checkBoardRows(value: unknown, field: string): asserts value is BoardRo
 
 export function parseBoard(data: unknown): Board {
   if (!isRecord(data)) throw new Error('malformed board: not an object');
-  const { total, rows, overflow, own } = data;
+  const { total, rows, overflow, own, waiting } = data;
   if (typeof total !== 'number' || !Number.isInteger(total) || total < 0) {
     throw new Error('malformed board: "total" must be a non-negative integer');
   }
@@ -340,6 +355,7 @@ export function parseBoard(data: unknown): Board {
     }
   }
   if (own !== null) checkBoardRows(own, 'own');
+  checkBoardPlayers(waiting, 'waiting');
   return data as unknown as Board;
 }
 
