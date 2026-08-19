@@ -28,6 +28,8 @@
       dynamoProfileStore.ts   prod GetItem read + UpdateItem upsert (createdAt via if_not_exists)
       memoryProfileStore.ts   process-local implementation for backend:dev/tests
       friends.ts              POST /friends (#189): auth, list/add/remove, self-add + cap refusals
+      board.ts                GET|POST /board (#190): global top-50 read + authenticated friends
+                              board — shared leaderboard rules over score rows + profiles + edges
       friendStore.ts          mutual-edge storage contract; friends#<publicId> partition + FRIENDS_MAX
       dynamoFriendStore.ts    prod one-transaction link/unlink (both directions) + consistent Query
       memoryFriendStore.ts    process-local implementation for backend:dev/tests
@@ -145,6 +147,19 @@ pnpm backend:dev                # local server (puzzles + /scores + /profile + /
   route reads NO query parameter; the CloudFront `friends*` behavior forwards none, and the
   day it reads one, that behavior has to name it (root `AGENTS.md` contract). Production
   POST needs `x-amz-content-sha256` like every other write here.
+- **Leaderboard reads (#190):** the ONE handler also serves `/board` — the product
+  contract (the two faces, the shared ranking rules, the four-query allowList) lives in
+  the root `AGENTS.md`. Implementation notes: `handleBoard` reuses the /scores param
+  guards (supported lang, required mode, valid date, +1-day future guard) but reads NO
+  puzzle store — a population only exists for a published daily, so an unpublished day
+  answers the empty board; GET's optional `id` is validated against
+  `PUBLIC_ID_PATTERN` (400 malformed); POST validates `{secret}` exactly like /friends.
+  Rows are ranked/cut/windowed by `@whippin/shared`'s leaderboard functions, then
+  dressed with profiles — one `ProfileStore.get` per DISTINCT id shown, in parallel
+  (bounded: top 50 + a 5-row window, or FRIENDS_MAX rows). Every response is
+  `no-store`; a missing profile dresses as `name: ''` / `avatar: null`. No new store:
+  the route is a pure READ over the score rows, the friend edges and the profile rows.
+
 - **Word mode's daily artifact (#154/#156):** the ONE puzzle endpoint also serves the
   single-word artifact under `mode=word` (`GET /?lang=&date=&mode=word`; absent/
   `sentence` = the sentence puzzle, anything else = 400) with identical day-addressing,

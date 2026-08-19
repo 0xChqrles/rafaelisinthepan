@@ -573,6 +573,39 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   link they already accepted.
 - Self-add is refused (`self_link`): opening your own link is a mistaken click, not an edge.
 
+### Leaderboard reads (#190, decided 2026-08-18)
+
+- **ONE route `/board`, addressed per `(day, lang, mode)` like everything else** (the
+  puzzle route's malformed-param 400s and future +1-day guard apply; no puzzle-store
+  read — a population only exists for a published daily, so an unpublished day honestly
+  answers the empty board). Two faces:
+  - `GET /board?lang=&date=&mode=[&id=<publicId>]` — the **GLOBAL top 50, anonymous**
+    (untrusted by design, #187: decorative, nothing treats it as truth). `id` is the
+    caller's PUBLIC id — never the secret, so it may travel in the query — and only
+    widens the answer with their own below-the-cut window.
+  - `POST /board { secret }` (+ the same query) — the **FRIENDS board, the trusted
+    surface**: the server resolves YOUR edges (#189) plus yourself, so the read proves
+    who is asking — the secret in the BODY, the /friends rule. Production POST needs
+    `x-amz-content-sha256` over the exact body bytes (the OAC contract).
+- **The ranking rules are shared pure functions** (`shared/src/leaderboard.ts`,
+  contract-tested): competition-style tie ranks (equal ranks, never a fake ordering —
+  ties ordered by publicId only for deterministic ROW order), the top-50 cut that keeps
+  tie groups WHOLE and collapses a group STRADDLING the boundary into one
+  `{rank, count}` overflow ("+12 at #41" — a clean cut between groups has none), and
+  the own-row ±2 neighbor window (sent only when the caller's row is not individually
+  visible, minus any row the cut already shows). The backend applies them and attaches
+  each row's public profile (#188: `name` may be empty, `avatar` null — the client
+  falls back to the publicId and a blank mark); the web renders what the API returned.
+- **Zero-TTL CloudFront behavior with all FOUR query params in its allowList**
+  (`lang`/`date`/`mode`/`id` — the same three-package contract as `/scores`: the day
+  the handler reads a fifth, it has to be named in `infra/lib/backend-stack.ts` too).
+- **The screen's entry is a header icon on the right of the game routes, reachable
+  BEFORE playing** (the issue's decided entry point, superseding the earlier "enters
+  from the solved screen's standing line" note recorded in the web AGENTS): the screen
+  is also where a player customizes their profile (#188) and shares their invite link
+  (#189), neither of which requires having played. The solved screen keeps its compact
+  percentile — that stat never requires visiting this screen.
+
 ---
 
 ## Testing

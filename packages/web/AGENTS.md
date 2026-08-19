@@ -18,6 +18,8 @@
                               ground-swatch palette picker (#190 wires the entry point)
       screens/FriendInvite.tsx  the #189 invite link's landing (/i/<publicId>): POST the mutual
                               edge with the player key, then continue into the game
+      screens/Leaderboard.tsx the #190 leaderboard (/<lang>[/word]/board): friends board first,
+                              global top 50; identity strip (EDIT -> /profile) + INVITE share
       components/Avatar.tsx   a stored avatar rendered as SVG (editor preview + #190 board rows)
       components/avatarOutline.ts  its drawing as ONE traced union-outline path (no interior edges, no seam)
       versionCheck.ts         stale-tab reload: __BUILD_ID__ vs /version.json on visibility flips
@@ -416,9 +418,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   a blank over a real profile — so a failure shows `failedProfile` + RETRY instead of
   an editor. Unlike a score submission's silent failure, this read's is loud for that
   reason. A **404 is not a failure**: it is the answer "never customized", and lands on
-  the blank editor whose blank baseline is then correct. No chrome entry point yet — #190's leaderboard screen is
-  the wired entry (recorded in the header bullet); until then the route is
-  deep-link-only.
+  the blank editor whose blank baseline is then correct. The wired entry point is the
+  leaderboard screen's EDIT chip (#190) — the identity strip navigates here.
   **The avatar RENDERER is `components/Avatar.tsx` over `components/avatarOutline.ts`,
   and the tracer STAYS** (user-decided 2026-08-19 — the alternatives do not render the
   same on every browser; see the root `AGENTS.md`). Decoding and tracing are ONE
@@ -453,8 +454,32 @@ it to the local store — see `packages/backend/AGENTS.md`).
   not say which. One conversation
   per invite lives in a module-level flight map (`shareInviteFlight`, `useScoreHistogram`'s
   own pattern), so neither React's development effect replay nor a real remount mints a
-  second request. No chrome entry point yet — #190's leaderboard screen is where a player
-  COPIES their link; until then the route only receives them.
+  second request. The SENDING surface is the leaderboard screen's INVITE button (#190),
+  which shares `boardInviteText` + the link via `useShare`; this route receives them.
+
+- **Leaderboard screen (#190):** `/<lang>/board` and `/<lang>/word/board`
+  (`pathForBoard` — the archive's grammar; a board is per (day, lang, mode), always
+  the ACTIVE day), `screens/Leaderboard.tsx`, entered from the game header's podium
+  icon (recorded in the header bullet). FRIENDS is the default tab — the trusted
+  surface — GLOBAL the top-50 untrusted one; the header's ModeTabs switch WHICH
+  daily's board, the in-screen tabs WHOSE scores. One fetch per tab, cached for the
+  visit (RETRY refetches; App keys the screen on lang:mode so a switch resets): the
+  friends read is the authenticated `POST /board {secret}` via the OAC-hashed body,
+  the global read the anonymous GET widened with the caller's PUBLIC id for the own
+  window. The screen renders what the API returned (ranks, cut, overflow, own window
+  — the shared leaderboard rules; root AGENTS.md): glass rows of rank + avatar + name
+  + score, ranks and scores in the PIXEL face (game numbers), names in mono (identity
+  chrome, case kept), the unit caption (TRIES/WORDS) naming which way is better. The
+  OWN row wears the inverted selection box — the app's one emphasis gesture. A player
+  with no profile degrades honestly: dimmed publicId as the name, a dashed
+  `.board-noface` frame as the mark (the app's "not yet" dashes — the identity strip
+  wears the same until EDIT fills it). The collapsed straddling tie renders as a row
+  (`#41  +20 TIED`), the below-the-cut gap as a dashed rule. The identity strip on
+  top (your mark + name + EDIT → `/profile`) and the INVITE device-card button on the
+  bottom edge are the #188/#189 wiring; both work before ever playing. Rows rise on
+  the `rung-in` gesture staggered by index (delays survive reduced motion, the rise
+  collapses). Board VISUALS carry no tests per policy; the contract-y parts are the
+  shared ranking rules, `parseBoard`, and the route grammar (langs.test.ts).
 
 - **Word mode (#156, the second daily; RETIMED by #163 on 2026-08-08):** one app, two faces
   — `/<lang>/word` (plus `/word/<date>` and `/word/archive`, same date rules) plays the day's
@@ -1990,8 +2015,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     fill, replacing the languages glyph; still the one gesture onto /select) then the
     screen's contextual controls (help `?`, skip, close). **The logo LEFT the header**
     with the /mode chooser it opened — brand lives on the frame rail and the hero
-    screens. **The LEADERBOARD, when it lands, enters from the solved screen's standing
-    line, NOT from here** (recorded so the bar stays this small).
+    screens. **The LEADERBOARD enters from HERE** (#190's issue decided the entry point
+    — a right-group icon, reachable BEFORE playing, since the screen is also the profile
+    editor's and the invite link's home; this supersedes the earlier "enters from the
+    solved screen's standing line" note): `assets/icons/board.svg`, a squared podium in
+    the `.ui-icon` dress, on the game routes' right group before the help `?`.
   Word mode's top reserve is 66px and the archive's 70px, clearing the band.
   *(The paragraphs below predate the band and stand only where they don't contradict
   it.)*

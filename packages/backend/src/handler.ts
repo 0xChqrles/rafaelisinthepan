@@ -26,6 +26,7 @@ import {
 } from './respond';
 import { renderCardPng, renderShareHtml, renderWordCardPng, renderWordShareHtml } from './ogCard';
 import { isValidDate } from './layout';
+import { handleBoard } from './board';
 import { handleFriends } from './friends';
 import type { FriendStore } from './friendStore';
 import { handleProfile } from './profile';
@@ -102,7 +103,10 @@ export function createHandler(deps: HandlerDeps) {
     // route (#189) is the same shape again — and POST-only, which it enforces itself.
     const isProfileRoute = normalizedPath === '/profile';
     const isFriendsRoute = normalizedPath === '/friends';
-    const isLiveRoute = isScoresRoute || isProfileRoute || isFriendsRoute;
+    // The leaderboard reads (#190): the same live shape once more — GET is the global
+    // top 50, POST the authenticated friends board.
+    const isBoardRoute = normalizedPath === '/board';
+    const isLiveRoute = isScoresRoute || isProfileRoute || isFriendsRoute || isBoardRoute;
     const routeHeaders = isLiveRoute ? { ...cors, 'Cache-Control': 'no-store' } : cors;
 
     // CORS preflight.
@@ -191,6 +195,20 @@ export function createHandler(deps: HandlerDeps) {
       if (isFriendsRoute) {
         if (!deps.friends) throw new Error('The friends graph is not configured.');
         return await handleFriends(event, deps.friends, instant, cors);
+      }
+
+      if (isBoardRoute) {
+        // The board is a READ over what the three stores already hold — score rows for
+        // the population, edges for the trusted tab, profiles to dress the rows.
+        if (!deps.scores || !deps.profiles || !deps.friends) {
+          throw new Error('The leaderboard is not configured.');
+        }
+        return await handleBoard(
+          event,
+          { scores: deps.scores.scoreStore, profiles: deps.profiles, friends: deps.friends },
+          date,
+          cors,
+        );
       }
 
       if (rawPath.replace(/\/+$/, '').endsWith('/today')) {

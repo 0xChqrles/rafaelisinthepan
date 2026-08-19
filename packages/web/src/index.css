@@ -5055,3 +5055,255 @@ button * {
     animation: none;
   }
 }
+
+/* ---- The LEADERBOARD screen (#190): friends board first, global top 50 as the
+   untrusted tab. A full-height column in the app's chrome voice — glass rows on
+   hairlines, hierarchy in weight and opacity (ONE ink; --muted stays on game
+   surfaces) — with the game's numbers (ranks, scores) in the pixel face, since a
+   score is something the game produced. The OWN row wears the app's one emphasis
+   gesture, the inverted selection box. ---- */
+.board-screen {
+  width: min(430px, 100%);
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  /* Clears the floating glass band (8px + 50px viewport, minus .app's own 24px). */
+  padding-top: 46px;
+}
+
+/* The identity strip: your mark and name as a board row shows them, with EDIT (the
+   #188 editor's wired entry) on the row's far edge. */
+.board-me {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.board-me .avatar {
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.board-me-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--ui);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+/* An uncustomized player reads as their publicId, dimmed — the blank EDIT fills. */
+.board-me-name.anon {
+  opacity: 0.45;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+}
+/* The EDIT chip: the quiet hairline chip (the profile CLEAR's own recipe) — it leads
+   away, so it never competes with the board. */
+.board-chip {
+  flex: none;
+  height: 36px;
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg);
+  background: var(--glass);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  padding: 0 14px;
+  cursor: pointer;
+  text-shadow: none;
+  transition: filter 0.08s linear, border-color 0.12s linear;
+}
+.board-chip:hover {
+  filter: brightness(1.3);
+  border-color: var(--fg);
+}
+
+/* The whose-scores tabs wear the header switcher's exact dress, stretched to the
+   column: same hairline group, same inverted-box active state, said in weight. */
+.board-tabs {
+  display: flex;
+}
+.board-tabs .mode-tab {
+  flex: 1;
+  font-size: 12px;
+  padding: 8px 10px 7px;
+}
+
+/* The body owns the leftover height; transient states centre in it, the list fills it. */
+.board-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.board-body > .status,
+.board-body > .load-error,
+.board-body > .board-empty {
+  margin: auto;
+}
+.board-empty {
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg);
+  opacity: 0.45;
+  text-align: center;
+}
+
+.board-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0 6px 2px 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/* The unit caption over the score column: which way is better is the mode's, and
+   naming the unit (TRIES / WORDS) is how the list says it. */
+.board-unit {
+  align-self: flex-end;
+  font-family: var(--ui);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg);
+  opacity: 0.45;
+  padding: 0 12px 2px 0;
+}
+
+/* One player, one glass row: rank + mark + name + score on a hairline. Rows rise in
+   on the app's one rung-in gesture, staggered by index (delays survive reduced
+   motion — the floating numbers' degradation — while the rise itself collapses). */
+.board-row {
+  display: grid;
+  grid-template-columns: 42px 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  background: var(--glass);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  animation: rung-in 220ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
+  animation-delay: calc(min(var(--i, 0), 14) * 28ms);
+}
+.board-row .avatar {
+  display: block;
+  border-radius: var(--r-sm);
+}
+/* The rank is the game's own number — pixel face, quiet: the row is about the player. */
+.board-rank {
+  font-family: var(--pixel-font);
+  font-size: 9px;
+  color: var(--fg);
+  opacity: 0.5;
+  /* The pixel face rides high off the mono around it (the standing line's rule):
+     whole pixels only, via translate. */
+  translate: 0 1px;
+}
+.board-name {
+  font-family: var(--ui);
+  font-size: 14px;
+  font-weight: 550;
+  letter-spacing: 0.02em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.board-name.anon {
+  opacity: 0.45;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+}
+.board-score {
+  font-family: var(--pixel-font);
+  font-size: 13px;
+  color: var(--fg);
+  translate: 0 1px;
+}
+/* No profile yet: a dashed empty frame where the mark would be — the app's "not yet"
+   vocabulary (the open blank's own dashes). */
+.board-noface {
+  width: 28px;
+  height: 28px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-sm);
+}
+/* The identity strip's own size of the same mark. */
+.board-noface-lg {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-md);
+}
+
+/* YOUR row: the inverted selection box — the board's one emphasis gesture. */
+.board-row.me {
+  background: var(--fg);
+  border-color: var(--fg);
+}
+.board-row.me .board-rank,
+.board-row.me .board-name,
+.board-row.me .board-score {
+  color: var(--bg);
+}
+.board-row.me .board-rank {
+  opacity: 0.6;
+}
+.board-row.me .board-noface {
+  border-color: rgba(8, 9, 15, 0.5);
+}
+
+/* The tie group collapsed at the global cut: its shared rank in the rank column, the
+   count beside it — a fact row, so it stays quiet. */
+.board-overflow {
+  grid-template-columns: 42px minmax(0, 1fr);
+}
+.board-tied {
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg);
+  opacity: 0.55;
+}
+
+/* Between the cut and your own neighborhood, the line continues: the app's dashed
+   "more line beyond this" vocabulary, as a short rule. */
+.board-gap {
+  height: 0;
+  margin: 4px 12px;
+  border-top: 2px dashed var(--rail);
+}
+
+/* INVITE is the screen's one big action — the device-card button, parked on the
+   column's bottom edge. */
+.board-invite {
+  flex: none;
+}
+
+@media (max-width: 640px) {
+  .board-screen {
+    /* The mobile .app scrolls the page; the board keeps its own internal scroll by
+       taking an explicit viewport height (minus .app's 16px top / 28px bottom pads). */
+    height: calc(100dvh - 44px);
+    padding-top: 48px;
+    gap: 12px;
+  }
+}

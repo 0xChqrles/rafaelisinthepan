@@ -291,6 +291,29 @@ const STRINGS = {
   profileClear: { en: 'CLEAR', fr: 'CLEAR' },
   ariaAvatarEditor: { en: 'Avatar editor: tap to paint', fr: "Éditeur d'avatar : touchez pour peindre" },
   ariaPalette: { en: 'Palette', fr: 'Palette' },
+  // ---- the leaderboard screen (#190): friends board first, global top 50 as the
+  // untrusted tab. Terse chrome in the app's register; the tabs and the rows do the
+  // explaining. GLOBAL is one word in both languages, like TOP and the grades.
+  boardTitle: { en: 'LEADERBOARD', fr: 'CLASSEMENT' },
+  boardFriends: { en: 'FRIENDS', fr: 'AMIS' },
+  boardGlobal: { en: 'GLOBAL', fr: 'GLOBAL' },
+  // The collapsed tie group at the global cut: rendered as a row — the shared rank in
+  // the rank column, then "+12 TIED" — so a cut never pretends position 50 means
+  // something inside a tie.
+  boardTied: { en: 'TIED', fr: 'EX ÆQUO' },
+  // One empty line for both tabs: no friend has a score yet / nobody played yet. The
+  // INVITE button above is the remedy, so the line states the fact and nothing more.
+  boardEmpty: { en: 'NO ONE ON THE BOARD YET', fr: 'ENCORE PERSONNE AU TABLEAU' },
+  boardEdit: { en: 'EDIT', fr: 'MODIFIER' },
+  boardInvite: { en: 'INVITE FRIENDS', fr: 'INVITER DES AMIS' },
+  // The line above the invite link when it leaves the app (#189): the link is both
+  // "add me" and "come play", and the words say the play half.
+  boardInviteText: {
+    en: 'Play Whippin AI with me:',
+    fr: 'Viens jouer à Whippin AI avec moi :',
+  },
+  failedBoard: { en: 'FAILED TO LOAD LEADERBOARD', fr: 'ÉCHEC DU CHARGEMENT DU CLASSEMENT' },
+  ariaLeaderboard: { en: 'Leaderboard', fr: 'Classement' },
 } satisfies Record<string, Record<UiLang, string>>;
 
 export type UiKey = keyof typeof STRINGS;

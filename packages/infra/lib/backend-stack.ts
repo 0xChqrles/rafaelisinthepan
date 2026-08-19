@@ -361,6 +361,30 @@ export class BackendStack extends Stack {
       },
     );
 
+    // `/board` (#190) is the fourth live route on the same shape. The handler reads FOUR
+    // query parameters — `lang`/`date`/`mode` address the day's board and `id` (the
+    // caller's PUBLIC id, never the secret) widens the global GET with their own
+    // below-the-cut window — so all four are named here, or CloudFront strips them before
+    // the Lambda ever sees them. The friends-board POST authenticates in the body, whose
+    // OAC hash the `allExcept: Host` headers carry. No viewer-IP function: no per-IP logic.
+    const boardOriginRequestPolicy = new cloudfront.OriginRequestPolicy(
+      this,
+      'BoardOriginRequestPolicy',
+      {
+        originRequestPolicyName: 'WhippinLeaderboardOrigin',
+        comment:
+          'Leaderboard: forward the four board queries and Lambda-URL-safe headers outside cache.',
+        headerBehavior: cloudfront.OriginRequestHeaderBehavior.denyList('Host'),
+        queryStringBehavior: cloudfront.OriginRequestQueryStringBehavior.allowList(
+          'lang',
+          'date',
+          'mode',
+          'id',
+        ),
+        cookieBehavior: cloudfront.OriginRequestCookieBehavior.none(),
+      },
+    );
+
     // Security response headers for the API. CORS stays owned by the Lambda (it echoes the
     // configured origin + Vary), so this policy adds ONLY transport/sniffing hardening and
     // deliberately sets no CORS/CSP (CSP is a document concern, not a JSON API's).
@@ -431,6 +455,18 @@ export class BackendStack extends Stack {
           cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
           cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
           originRequestPolicy: profileOriginRequestPolicy,
+          responseHeadersPolicy: apiHeaders,
+          compress: true,
+        },
+        // `board*` also catches a harmless trailing slash; the handler still accepts
+        // only the exact normalized `/board` route.
+        'board*': {
+          origin: functionOrigin,
+          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+          cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
+          cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+          originRequestPolicy: boardOriginRequestPolicy,
           responseHeadersPolicy: apiHeaders,
           compress: true,
         },

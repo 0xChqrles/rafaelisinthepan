@@ -12,10 +12,12 @@ import LangButton from './LangButton';
 // clock, or a screen's title chip. CENTER is the segmented MODE SWITCHER wherever the
 // route has a lang+mode context (`center`, built by the route so it owns where a tap
 // lands). RIGHT is the small stuff: the language code chip (the one control the bar
-// itself owns) then the screen's own controls (help, skip, close). The logo LEFT the
-// header with the /mode chooser it used to open — brand lives on the frame rail and
-// the hero screens now. The leaderboard, when it lands, enters from the solved
-// screen's standing line, NOT from here (recorded so the bar stays this small).
+// itself owns) then the screen's own controls (leaderboard, help, skip, close). The
+// logo LEFT the header with the /mode chooser it used to open — brand lives on the
+// frame rail and the hero screens now. The leaderboard enters HERE (issue #190's
+// decided entry point, superseding the earlier standing-line note): it must be
+// reachable BEFORE playing, since the screen is also the profile editor's and the
+// invite link's home.
 export default function TopBar({
   lang,
   left,

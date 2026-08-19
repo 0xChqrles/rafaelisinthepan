@@ -6,7 +6,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   apiBase,
+  boardUrl,
   friendsUrl,
+  parseBoard,
   puzzleUrl,
   wordPuzzleUrl,
   puzzleOutcome,
@@ -414,5 +416,54 @@ describe('friendsUrl + parseFriends (#189)', () => {
     expect(() => parseFriends(null)).toThrow(/not an object/);
     expect(() => parseFriends({ friends: 'abcdefghij234567' })).toThrow(/friends/);
     expect(() => parseFriends({ friends: ['NOPE'] })).toThrow(/friends/);
+  });
+});
+
+describe('boardUrl (#190)', () => {
+  it('addresses the /board route with lang, date, mode and the optional public id', () => {
+    expect(boardUrl('fr', '2026-08-19', 'sentence', undefined, 'https://api.example')).toBe(
+      'https://api.example/board?lang=fr&date=2026-08-19&mode=sentence',
+    );
+    expect(boardUrl('en', '2026-08-19', 'word', 'abcdefghij234567', 'https://api.example')).toBe(
+      'https://api.example/board?lang=en&date=2026-08-19&mode=word&id=abcdefghij234567',
+    );
+  });
+
+  it('throws without a configured base (never a silent same-origin fetch)', () => {
+    expect(() => boardUrl('fr', '2026-08-19', 'sentence', undefined, '')).toThrow(
+      /VITE_API_BASE_URL/,
+    );
+  });
+});
+
+describe('parseBoard (shape validation, #190)', () => {
+  const row = (over: Partial<Record<string, unknown>> = {}) => ({
+    publicId: 'abcdefghij234567',
+    name: 'Zoe',
+    avatar: null,
+    score: 7,
+    rank: 1,
+    ...over,
+  });
+  const valid = () => ({ total: 1, rows: [row()], overflow: null, own: null });
+
+  it('accepts a well-formed board, empty boards included', () => {
+    expect(parseBoard(valid()).rows).toHaveLength(1);
+    expect(parseBoard({ total: 0, rows: [], overflow: null, own: null }).rows).toEqual([]);
+    expect(
+      parseBoard({ ...valid(), overflow: { rank: 41, count: 12 }, own: [row()] }).overflow,
+    ).toEqual({ rank: 41, count: 12 });
+  });
+
+  it('rejects a wrong-shaped body (a failure, never NaN rows)', () => {
+    expect(() => parseBoard(null)).toThrow(/board/);
+    expect(() => parseBoard({ ...valid(), total: -1 })).toThrow(/total/);
+    expect(() => parseBoard({ ...valid(), rows: 'none' })).toThrow(/rows/);
+    expect(() => parseBoard({ ...valid(), rows: [row({ publicId: 'NOPE' })] })).toThrow(/rows/);
+    expect(() => parseBoard({ ...valid(), rows: [row({ rank: 0 })] })).toThrow(/rows/);
+    expect(() => parseBoard({ ...valid(), rows: [row({ score: 1.5 })] })).toThrow(/rows/);
+    expect(() => parseBoard({ ...valid(), rows: [row({ avatar: 7 })] })).toThrow(/rows/);
+    expect(() => parseBoard({ ...valid(), overflow: { rank: 0, count: 2 } })).toThrow(/overflow/);
+    expect(() => parseBoard({ ...valid(), own: [row({ name: 3 })] })).toThrow(/own/);
   });
 });
