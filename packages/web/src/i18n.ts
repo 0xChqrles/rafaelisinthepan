@@ -268,9 +268,9 @@ const STRINGS = {
   // Show-don't-tell: terse labels, the surfaces demonstrate themselves.
   profileTitle: { en: 'PROFILE', fr: 'PROFIL' },
   profileNamePlaceholder: { en: 'NAME', fr: 'PSEUDO' },
+  // The button's ONE label: it never renames itself — saving is said by the dot-loader
+  // choreography, success by the button going quiet (disabled, LED off).
   profileSave: { en: 'SAVE', fr: 'ENREGISTRER' },
-  profileSaving: { en: 'SAVING…', fr: 'ENREGISTREMENT…' },
-  profileSaved: { en: 'SAVED', fr: 'ENREGISTRÉ' },
   profileSaveFailed: { en: 'SAVE FAILED', fr: "ÉCHEC DE L'ENREGISTREMENT" },
   profileNameRejected: { en: 'NAME NOT ALLOWED', fr: 'PSEUDO REFUSÉ' },
   profileAvatarRejected: { en: 'AVATAR NOT ALLOWED', fr: 'AVATAR REFUSÉ' },

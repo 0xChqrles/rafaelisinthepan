@@ -25,7 +25,19 @@ import { useGameStore } from '../state/gameStore';
 
 const NAME_MAX = 16;
 
-type SaveState = 'idle' | 'saving' | 'saved' | 'name_rejected' | 'avatar_rejected' | 'error';
+// The SAVE button's two orthogonal facts: its visual PHASE (the label rolls down and
+// out, the dot loader drops in from the top, holds, then the label rolls back up from
+// the bottom) and whether the server REFUSED the write (the line under the button).
+// The label itself always reads SAVE — the button animates, it never renames itself.
+type SavePhase = 'idle' | 'saving' | 'restoring';
+type SaveRefusal = 'name_rejected' | 'avatar_rejected' | 'error' | null;
+
+// The loader holds at least this long even on an instant answer — a flash of dots
+// reads as a glitch — and the restore beat covers the label's roll-back animation.
+const SAVE_DOTS_MIN_MS = 300;
+const SAVE_RESTORE_MS = 240;
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 export default function Profile() {
   const lastLang = useGameStore((s) => s.lastLang);
@@ -36,7 +48,8 @@ export default function Profile() {
   const [name, setName] = useState('');
   const [palette, setPalette] = useState(0);
   const [cells, setCells] = useState<number[]>(() => new Array<number>(AVATAR_CELLS).fill(0));
-  const [save, setSave] = useState<SaveState>('idle');
+  const [phase, setPhase] = useState<SavePhase>('idle');
+  const [refused, setRefused] = useState<SaveRefusal>(null);
   // Per-cell paint counters: a painted cell remounts keyed on its count, replaying the
   // bump animation — and ONLY a painted one, so loading a stored drawing bumps nothing.
   const [bumps, setBumps] = useState<Record<number, number>>({});
@@ -82,7 +95,7 @@ export default function Profile() {
       setBumps((b) => ({ ...b, [index]: (b[index] ?? 0) + 1 }));
       return prev.map((v, i) => (i === index ? stroke : v));
     });
-    setSave('idle');
+    setRefused(null);
   }, []);
 
   const onPointerDown = useCallback(
@@ -115,36 +128,40 @@ export default function Profile() {
   const dirty = name.trim() !== baseline.name || encoded !== baseline.avatar;
 
   const onSave = useCallback(async () => {
-    setSave('saving');
+    setPhase('saving');
+    setRefused(null);
+    const started = Date.now();
     const body = { secret, name: name.trim(), avatar: encoded };
+    // The outcome is decided while the dots run; the phases below only pace how the
+    // button tells it.
+    let outcome: SaveRefusal = null;
     try {
       const response = await postProfileBody(profileUrl(), body);
       if (response.ok) {
-        setSave('saved');
         setBaseline({ name: body.name, avatar: body.avatar });
-        return;
+      } else {
+        const refusal = (await response.json().catch(() => null)) as { error?: string } | null;
+        outcome =
+          refusal?.error === 'name_rejected' || refusal?.error === 'avatar_rejected'
+            ? refusal.error
+            : 'error';
       }
-      const refusal = (await response.json().catch(() => null)) as { error?: string } | null;
-      if (refusal?.error === 'name_rejected') setSave('name_rejected');
-      else if (refusal?.error === 'avatar_rejected') setSave('avatar_rejected');
-      else setSave('error');
     } catch {
-      setSave('error');
+      outcome = 'error';
     }
+    await sleep(Math.max(0, SAVE_DOTS_MIN_MS - (Date.now() - started)));
+    setRefused(outcome);
+    setPhase('restoring');
+    await sleep(SAVE_RESTORE_MS);
+    setPhase((current) => (current === 'restoring' ? 'idle' : current));
   }, [secret, name, encoded]);
 
-  const saveLabel =
-    save === 'saving'
-      ? t(lang, 'profileSaving')
-      : save === 'saved'
-        ? t(lang, 'profileSaved')
-        : t(lang, 'profileSave');
   const saveError =
-    save === 'name_rejected'
+    refused === 'name_rejected'
       ? t(lang, 'profileNameRejected')
-      : save === 'avatar_rejected'
+      : refused === 'avatar_rejected'
         ? t(lang, 'profileAvatarRejected')
-        : save === 'error'
+        : refused === 'error'
           ? t(lang, 'profileSaveFailed')
           : null;
 
@@ -172,7 +189,7 @@ export default function Profile() {
               spellCheck={false}
               onChange={(e) => {
                 setName(e.target.value);
-                setSave('idle');
+                setRefused(null);
               }}
             />
           </div>
@@ -218,7 +235,7 @@ export default function Profile() {
                   aria-pressed={palette === index}
                   onClick={() => {
                     setPalette(index);
-                    setSave('idle');
+                    setRefused(null);
                   }}
                 />
               ))}
@@ -229,7 +246,7 @@ export default function Profile() {
               disabled={cells.every((value) => value === 0)}
               onClick={() => {
                 setCells(new Array<number>(AVATAR_CELLS).fill(0));
-                setSave('idle');
+                setRefused(null);
               }}
             >
               {t(lang, 'profileClear')}
@@ -237,14 +254,31 @@ export default function Profile() {
           </div>
 
           {/* Nothing to save = disabled, and .mix-btn:disabled::before unlights the
-              device card's LED — the board itself says whether there is a change. */}
+              device card's LED — the board itself says whether there is a change.
+              While saving, the label rolls out the bottom and the dot loader drops in
+              from the top; the restore beat rolls the label back up. */}
           <button
             type="button"
             className="mix-btn profile-save"
-            disabled={save === 'saving' || !dirty}
+            disabled={phase !== 'idle' || !dirty}
+            aria-busy={phase === 'saving'}
             onClick={onSave}
           >
-            {saveLabel}
+            <span
+              className={`save-label${phase === 'saving' ? ' out' : phase === 'restoring' ? ' back' : ''}`}
+            >
+              {t(lang, 'profileSave')}
+            </span>
+            {phase !== 'idle' && (
+              <span
+                className={`save-dots${phase === 'restoring' ? ' out' : ''}`}
+                aria-hidden="true"
+              >
+                <i />
+                <i />
+                <i />
+              </span>
+            )}
           </button>
           {/* The save-refusal line — mounted only when a save was refused/failed, so
               an idle editor carries no empty slot. */}
