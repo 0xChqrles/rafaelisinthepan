@@ -4769,7 +4769,9 @@ button * {
   display: flex;
   flex-direction: column;
   gap: 26px;
-  padding: 84px 2px 40px;
+  /* Symmetric and small: on desktop .app centers the column, so the padding only
+     matters when a short window makes it scroll. */
+  padding: 24px 2px;
 }
 .profile-editor {
   display: flex;
@@ -4922,7 +4924,6 @@ button * {
   margin-top: 6px;
 }
 .profile-status {
-  min-height: 16px;
   margin: 0;
   font-family: var(--ui);
   font-size: 11px;
@@ -4931,4 +4932,14 @@ button * {
   text-transform: uppercase;
   text-align: center;
   color: var(--danger);
+}
+
+/* On a phone the mobile .app is top-anchored (16px), so the column's top padding sets
+   where the editor starts: 48px puts it at 64px from the viewport top — exactly where
+   the tutorial's coach dialog sits under the full-bleed band. Desktop keeps the
+   symmetric padding above and lets .app centre the column. */
+@media (max-width: 640px) {
+  .profile-screen {
+    padding: 48px 2px 16px;
+  }
 }

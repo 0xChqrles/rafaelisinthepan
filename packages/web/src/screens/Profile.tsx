@@ -246,9 +246,13 @@ export default function Profile() {
           >
             {saveLabel}
           </button>
-          <p className="profile-status" role="status">
-            {saveError ?? ' '}
-          </p>
+          {/* The save-refusal line — mounted only when a save was refused/failed, so
+              an idle editor carries no empty slot. */}
+          {saveError && (
+            <p className="profile-status" role="status">
+              {saveError}
+            </p>
+          )}
         </div>
       </div>
     </>
