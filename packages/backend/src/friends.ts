@@ -105,12 +105,12 @@ export async function handleFriends(
     if (friendId === publicId) {
       return errorResponse(400, 'self_link', 'A player cannot add themselves.', responseHeaders);
     }
-    const outcome = await friends.link({
+    const result = await friends.link({
       publicId,
       friendId,
       createdAt: instant.toISOString(),
     });
-    if (outcome === 'capped') {
+    if (result.outcome === 'capped') {
       return errorResponse(
         409,
         'friend_limit',
@@ -118,7 +118,12 @@ export async function handleFriends(
         responseHeaders,
       );
     }
-  } else if (wantsRemove) {
+    // `link` already read the partition to decide the cap, so it answers with the resulting
+    // list rather than leaving this route to Query for it a second time.
+    return json(200, { friends: result.friends }, responseHeaders);
+  }
+
+  if (wantsRemove) {
     await friends.unlink(publicId, target as string);
   }
 

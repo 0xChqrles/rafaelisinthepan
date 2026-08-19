@@ -441,9 +441,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
   replacing itself in history so a back tap leaves the game instead of re-firing the invite.
   The publicId is validated in `parseRoute`, so a broken link goes home rather than asking
   the server about an id nobody can hold. A 4xx is a VERDICT and continues into the game (the
-  score submission's rule: `self_link` and a bad id cannot be argued with); only a transport
+  score submission's rule: `self_link` and a bad id cannot be argued with); a transport
   error or a 5xx shows `failedInvite` + RETRY — LOUD, unlike a score submission, for the #188
-  profile read's reason: the write is the one thing the click existed to do. One conversation
+  profile read's reason: the write is the one thing the click existed to do. **The CAP (409
+  `friend_limit`) is the one verdict that also speaks**, on that same reasoning: retrying
+  cannot empty a full list, but silently continuing would leave a player at `FRIENDS_MAX`
+  clicking invitations forever with every one appearing to work. It shows `friendListFull` on
+  the same `LoadError` surface with the button relabelled `gatePlay` (its `actionLabel`
+  prop) — a state gets a way ONWARD where a hiccup gets a RETRY — and the copy is neutral
+  about WHOSE list is full, because the cap binds either side of the pair and the answer does
+  not say which. One conversation
   per invite lives in a module-level flight map (`shareInviteFlight`, `useScoreHistogram`'s
   own pattern), so neither React's development effect replay nor a real remount mints a
   second request. No chrome entry point yet — #190's leaderboard screen is where a player

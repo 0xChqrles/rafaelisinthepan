@@ -21,17 +21,25 @@ import { navigate } from '../routing';
 // continue into the game. Only a transport error or a 5xx is worth retrying, and THAT is
 // loud rather than silent (the #188 profile read's rule): the write is the one thing this
 // click existed to do, so losing it quietly would leave both players none the wiser.
+//
+// The cap (409 `friend_limit`) is a verdict too — asking again will not empty a full list —
+// but it is the ONE the player could act on, and the same "losing it quietly" argument
+// applies to it: a player at FRIENDS_MAX would otherwise click invitations forever and watch
+// each one appear to work. So it neither retries nor vanishes: it says so, and its button
+// plays. Neutral about whose list is full, because the cap binds either side of the pair and
+// the answer does not say which.
+export type InviteOutcome = 'settled' | 'full' | 'failed';
 
 // One conversation per invite, shared across COMPONENT lifetimes — the score submission's
 // own map, for its own reason: a ref survives React's development effect replay but not a
 // real remount, while the request it started keeps running. Settled work is dropped
 // immediately so RETRY mints a fresh attempt.
-const activeInviteFlights = new Map<string, Promise<'settled' | 'failed'>>();
+const activeInviteFlights = new Map<string, Promise<InviteOutcome>>();
 
 export function shareInviteFlight(
   publicId: string,
-  start: () => Promise<'settled' | 'failed'>,
-): Promise<'settled' | 'failed'> {
+  start: () => Promise<InviteOutcome>,
+): Promise<InviteOutcome> {
   const existing = activeInviteFlights.get(publicId);
   if (existing) return existing;
 
@@ -50,37 +58,54 @@ export function shareInviteFlight(
   return flight;
 }
 
-export async function sendInvite(publicId: string): Promise<'settled' | 'failed'> {
+export async function sendInvite(publicId: string): Promise<InviteOutcome> {
   const response = await postFriendsBody(friendsUrl(), {
     secret: playerSecret(),
     add: publicId,
   });
-  return response.status >= 500 ? 'failed' : 'settled';
+  if (response.status >= 500) return 'failed';
+  return response.status === 409 ? 'full' : 'settled';
 }
+
+// Hand the destination to App's own home redirect, and replace this landing in history so a
+// back tap leaves the game instead of re-firing the invite.
+const continueToGame = () => navigate('/', { replace: true });
 
 export default function FriendInvite({ publicId, lang }: { publicId: string; lang: string }) {
   const [attempt, setAttempt] = useState(0);
-  const [failed, setFailed] = useState(false);
+  const [stopped, setStopped] = useState<'full' | 'failed' | null>(null);
 
   useEffect(() => {
     let mounted = true;
     void shareInviteFlight(publicId, () => sendInvite(publicId)).then((outcome) => {
       if (!mounted) return;
-      if (outcome === 'failed') setFailed(true);
-      else navigate('/', { replace: true });
+      if (outcome === 'settled') continueToGame();
+      else setStopped(outcome);
     });
     return () => {
       mounted = false;
     };
   }, [publicId, attempt]);
 
-  if (failed) {
+  // The cap is a state, so its button carries the player on; a backend failure is a hiccup,
+  // so its button asks again. One surface either way — the click never dead-ends.
+  if (stopped === 'full') {
+    return (
+      <LoadError
+        message={t(lang, 'friendListFull')}
+        lang={lang}
+        onRetry={continueToGame}
+        actionLabel={t(lang, 'gatePlay')}
+      />
+    );
+  }
+  if (stopped === 'failed') {
     return (
       <LoadError
         message={t(lang, 'failedInvite')}
         lang={lang}
         onRetry={() => {
-          setFailed(false);
+          setStopped(null);
           setAttempt((n) => n + 1);
         }}
       />

@@ -29,7 +29,7 @@ describe('dynamoFriendStore (#189)', () => {
     const { send, client } = fakeClient();
     await expect(
       dynamoFriendStore(client, 'scores').link({ publicId: ME, friendId: THEM, createdAt: NOW }),
-    ).resolves.toBe('linked');
+    ).resolves.toEqual({ outcome: 'linked', friends: [THEM] });
 
     const transactions = send.mock.calls
       .map(([command]) => command)
@@ -83,7 +83,7 @@ describe('dynamoFriendStore (#189)', () => {
     const { send, client } = fakeClient([THEM]);
     await expect(
       dynamoFriendStore(client, 'scores').link({ publicId: ME, friendId: THEM, createdAt: NOW }),
-    ).resolves.toBe('already_linked');
+    ).resolves.toEqual({ outcome: 'already_linked', friends: [THEM] });
 
     const transactions = send.mock.calls
       .map(([command]) => command)
@@ -109,7 +109,7 @@ describe('dynamoFriendStore (#189)', () => {
     const { send, client } = fakeClient([...full, THEM]);
     await expect(
       dynamoFriendStore(client, 'scores').link({ publicId: ME, friendId: THEM, createdAt: NOW }),
-    ).resolves.toBe('already_linked');
+    ).resolves.toMatchObject({ outcome: 'already_linked' });
     expect(send.mock.calls.some(([c]) => c instanceof TransactWriteItemsCommand)).toBe(true);
     // The other side's count was never asked for: the pair is not new.
     expect(send.mock.calls.every(([c]) => !(c instanceof QueryCommand) || c.input.Select !== 'COUNT')).toBe(
@@ -122,7 +122,7 @@ describe('dynamoFriendStore (#189)', () => {
     const { send, client } = fakeClient(full);
     await expect(
       dynamoFriendStore(client, 'scores').link({ publicId: ME, friendId: THEM, createdAt: NOW }),
-    ).resolves.toBe('capped');
+    ).resolves.toEqual({ outcome: 'capped', friends: full });
     expect(send.mock.calls.every(([c]) => !(c instanceof TransactWriteItemsCommand))).toBe(true);
   });
 });

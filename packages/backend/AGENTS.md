@@ -134,7 +134,11 @@ pnpm backend:dev                # local server (puzzles + /scores + /profile + /
   a row that is already present costs two WCUs on a rare path and changes nothing —
   `if_not_exists` keeps the original instant. The cap is likewise only spent on a pair the
   caller does not already hold. Every Query is STRONGLY CONSISTENT
-  (the profile read's rule: the call answers with the list it just wrote), and the cap is
+  (the profile read's rule: the call answers with the list it just wrote), and an `add` reads
+  the CALLER's partition exactly ONCE: `link` returns `{ outcome, friends }` — the list it
+  read to decide the cap plus the single edge its transaction committed — so the route never
+  Queries a second time for a list the call is already holding (a genuinely new pair still
+  COUNTs the other side's partition, which is a number rather than a list). And the cap is
   COUNTED off those rows rather than kept in a counter item — see the root `AGENTS.md` for
   why a bound may be overshot by a simultaneous click and an invariant may not. This is the
   only route that DELETES, which is why the table grant gained `dynamodb:DeleteItem`. The

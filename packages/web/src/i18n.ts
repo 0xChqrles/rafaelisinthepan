@@ -23,6 +23,11 @@ const STRINGS = {
   // The #189 invite link's write, loud for the same reason: it is the one thing that
   // click existed to do, so losing it silently would leave both players none the wiser.
   failedInvite: { en: 'FAILED TO ADD FRIEND', fr: "ÉCHEC DE L'AJOUT EN AMI" },
+  // The one refusal a player can act on, so it is the one refusal that speaks (#189). Asking
+  // again cannot change it — a full list is a state, not a hiccup — so this reads as a fact
+  // and its button plays rather than retries. Neutral about WHOSE list: the cap binds either
+  // side of the pair, and the clicker cannot tell which.
+  friendListFull: { en: 'FRIEND LIST FULL', fr: "LISTE D'AMIS PLEINE" },
   retry: { en: 'RETRY', fr: 'RÉESSAYER' },
   // The missing-puzzle state is ABNORMAL (a publish that did not happen), and the
   // wording says so — it must not read like a scheduled day off.

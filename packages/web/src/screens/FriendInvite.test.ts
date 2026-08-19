@@ -2,7 +2,9 @@
 // continues into the game on every answer the server actually gives. React may replay the
 // landing's effect (development StrictMode) or remount it, and neither may mint a second
 // request. A 4xx is a verdict the player cannot argue with; only the backend failing is
-// worth retrying, and that is the one case this screen says out loud.
+// worth retrying. TWO answers are said out loud rather than swallowed — the failure, and the
+// cap, which is a verdict the player CAN act on and would otherwise leave a full player
+// clicking invitations forever, each one appearing to work.
 
 import { describe, expect, it, vi } from 'vitest';
 import { sendInvite, shareInviteFlight } from './FriendInvite';
@@ -65,10 +67,16 @@ describe('sendInvite — the click carries the CLICKER key and the SENDER id', (
   });
 
   it('treats a refusal as settled — opening your own link is not something to retry', async () => {
-    // 400 self_link, 409 friend_limit: the answer will not change by asking again, and the
+    // 400 self_link, 404-ish bad id: the answer will not change by asking again, and the
     // player came here to play.
     await expect(answer(400)).resolves.toBe('settled');
-    await expect(answer(409)).resolves.toBe('settled');
+    await expect(answer(404)).resolves.toBe('settled');
+  });
+
+  it('tells the player when the cap refused the link, instead of continuing silently', async () => {
+    // 409 friend_limit is a verdict too — retrying cannot empty a full list — but it is the
+    // one a player could act on, so it neither retries nor vanishes.
+    await expect(answer(409)).resolves.toBe('full');
   });
 
   it('treats the backend failing as retryable', async () => {

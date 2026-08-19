@@ -26,6 +26,15 @@ export interface FriendLink {
 //   capped — the pair is new and one of the two is at FRIENDS_MAX; nothing changed.
 export type FriendLinkOutcome = 'linked' | 'already_linked' | 'capped';
 
+export interface FriendLinkResult {
+  outcome: FriendLinkOutcome;
+  // The caller's list as it stands AFTER the call — every /friends response carries it, and
+  // deciding the cap already read the whole partition, so asking for it again would be a
+  // second Query for an answer this call is holding. The transaction it follows either
+  // landed the one edge or changed nothing, so the list is KNOWN rather than guessed.
+  friends: string[];
+}
+
 export interface FriendStore {
   // The caller's own partition — bounded by FRIENDS_MAX, so it is read whole.
   list(publicId: string): Promise<string[]>;
@@ -35,8 +44,9 @@ export interface FriendStore {
   // good. Writing both is what makes the pair repair itself from either side. Refuses at the
   // cap on EITHER side of a pair the caller does not already hold: the link is a bearer "add
   // me" token, so a publicly posted one is exactly how a sender's own list would run away
-  // from them.
-  link(input: FriendLink): Promise<FriendLinkOutcome>;
+  // from them. Answers with the caller's resulting list as well as the outcome — see
+  // FriendLinkResult.
+  link(input: FriendLink): Promise<FriendLinkResult>;
   // Symmetric and idempotent for the same reason: deleting an edge that is not there is a
   // no-op, so a stray half-edge can always be cleared from either side too.
   unlink(publicId: string, friendId: string): Promise<void>;

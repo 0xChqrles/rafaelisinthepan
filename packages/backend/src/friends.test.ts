@@ -82,10 +82,12 @@ describe('friends route (#189)', () => {
     expect(again.statusCode).toBe(200);
     expect(JSON.parse(again.body)).toEqual({ friends: [them] });
     await expect(listOf(handler, OTHER_SECRET)).resolves.toEqual([me]);
-    // A pair already linked is reported as such — nothing is rewritten.
+    // A pair already linked is reported as such — the CALLER's list is unchanged, which is
+    // not the same claim as "nothing was written": both rows go out on every accepted link
+    // so a missing other half repairs from either side.
     await expect(
       friends.link({ publicId: me, friendId: them, createdAt: '2026-08-19T00:00:00.000Z' }),
-    ).resolves.toBe('already_linked');
+    ).resolves.toEqual({ outcome: 'already_linked', friends: [them] });
   });
 
   it('removing someone who is not a friend changes nothing and is not an error', async () => {

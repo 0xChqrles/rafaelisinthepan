@@ -32,7 +32,9 @@ export function dynamoFriendStore(client: DynamoDBClient, tableName: string): Fr
           ...(cursor ? { ExclusiveStartKey: cursor as never } : {}),
         }),
       );
-      for (const item of response.Items ?? []) ids.push(item.sk?.S ?? '');
+      // A row with no sort key is no friend — skipping beats pushing an empty id into a
+      // list the board would render a blank row for.
+      for (const item of response.Items ?? []) if (item.sk?.S) ids.push(item.sk.S);
       cursor = response.LastEvaluatedKey;
     } while (cursor);
     return ids;
@@ -70,8 +72,8 @@ export function dynamoFriendStore(client: DynamoDBClient, tableName: string): Fr
       // already have — but they are still refused a genuinely new one.
       const held = own.includes(friendId);
       if (!held) {
-        if (own.length >= FRIENDS_MAX) return 'capped';
-        if ((await edgeCount(friendId)) >= FRIENDS_MAX) return 'capped';
+        if (own.length >= FRIENDS_MAX) return { outcome: 'capped', friends: own };
+        if ((await edgeCount(friendId)) >= FRIENDS_MAX) return { outcome: 'capped', friends: own };
       }
 
       const edge = (from: string, to: string) => ({
@@ -96,7 +98,14 @@ export function dynamoFriendStore(client: DynamoDBClient, tableName: string): Fr
           TransactItems: [edge(publicId, friendId), edge(friendId, publicId)],
         }),
       );
-      return held ? 'already_linked' : 'linked';
+      // The transaction committed exactly the one edge the read was missing, so the
+      // resulting list is the one just read plus it — kept in the Query's sort-key order.
+      // Re-reading the partition would spend a second strongly-consistent Query to learn
+      // what this call already decided.
+      return {
+        outcome: held ? 'already_linked' : 'linked',
+        friends: held ? own : [...own, friendId].sort(),
+      };
     },
 
     async unlink(publicId, friendId) {

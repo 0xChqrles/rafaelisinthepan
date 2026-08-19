@@ -7,12 +7,13 @@ export function memoryFriendStore(): FriendStore {
   // publicId -> friendId -> createdAt.
   const edges = new Map<string, Map<string, string>>();
   const own = (publicId: string) => edges.get(publicId) ?? new Map<string, string>();
+  // Sorted, mirroring DynamoDB's sort-key order, so the two implementations answer the same
+  // call the same way.
+  const sorted = (of: Map<string, string>) => [...of.keys()].sort();
 
   return {
     async list(publicId) {
-      // Sorted, mirroring DynamoDB's sort-key order, so the two implementations answer the
-      // same call the same way.
-      return [...own(publicId).keys()].sort();
+      return sorted(own(publicId));
     },
 
     async link({ publicId, friendId, createdAt }) {
@@ -23,8 +24,8 @@ export function memoryFriendStore(): FriendStore {
       // repairs whichever direction is missing.
       const held = mine.has(friendId);
       if (!held) {
-        if (mine.size >= FRIENDS_MAX) return 'capped';
-        if (theirs.size >= FRIENDS_MAX) return 'capped';
+        if (mine.size >= FRIENDS_MAX) return { outcome: 'capped', friends: sorted(mine) };
+        if (theirs.size >= FRIENDS_MAX) return { outcome: 'capped', friends: sorted(mine) };
       }
 
       // Both directions in one step — nothing here can observe a half-edge.
@@ -32,7 +33,7 @@ export function memoryFriendStore(): FriendStore {
       theirs.set(publicId, theirs.get(publicId) ?? createdAt);
       edges.set(publicId, mine);
       edges.set(friendId, theirs);
-      return held ? 'already_linked' : 'linked';
+      return { outcome: held ? 'already_linked' : 'linked', friends: sorted(mine) };
     },
 
     async unlink(publicId, friendId) {
