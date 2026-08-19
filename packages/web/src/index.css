@@ -4937,9 +4937,13 @@ button * {
 /* On a phone the mobile .app is top-anchored (16px), so the column's top padding sets
    where the editor starts: 48px puts it at 64px from the viewport top — exactly where
    the tutorial's coach dialog sits under the full-bleed band. Desktop keeps the
-   symmetric padding above and lets .app centre the column. */
+   symmetric padding above and lets .app centre the column.
+   NO bottom padding of its own: .app's mobile 28px is the bottom breath, and the spare
+   pixels are what keep the page from scrolling — the grid's aspect-ratio cells make its
+   height fractional, and at 390px wide the full stack measured 665.03px against an
+   iPhone 13's 664px viewport: ONE overflowing pixel made the whole document scrollable. */
 @media (max-width: 640px) {
   .profile-screen {
-    padding: 48px 2px 16px;
+    padding: 48px 2px 0;
   }
 }
