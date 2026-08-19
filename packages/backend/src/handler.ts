@@ -26,6 +26,8 @@ import {
 } from './respond';
 import { renderCardPng, renderShareHtml, renderWordCardPng, renderWordShareHtml } from './ogCard';
 import { isValidDate } from './layout';
+import { handleFriends } from './friends';
+import type { FriendStore } from './friendStore';
 import { handleProfile } from './profile';
 import type { ProfileStore } from './profileStore';
 import { handleScores, type ScoreHandlerDeps } from './scores';
@@ -44,6 +46,8 @@ export interface HandlerDeps {
   scores?: ScoreHandlerDeps;
   // Player profiles (#188), same optionality rationale.
   profiles?: ProfileStore;
+  // The friends graph (#189), same optionality rationale.
+  friends?: FriendStore;
 }
 
 // 404s expire quickly so a puzzle uploaded slightly late becomes playable soon
@@ -94,9 +98,11 @@ export function createHandler(deps: HandlerDeps) {
     const rawPath = event.rawPath ?? '/';
     const normalizedPath = rawPath.replace(/\/+$/, '') || '/';
     const isScoresRoute = normalizedPath === '/scores';
-    // The profile route (#188) is live data with a write path, like /scores.
+    // The profile route (#188) is live data with a write path, like /scores. The friends
+    // route (#189) is the same shape again — and POST-only, which it enforces itself.
     const isProfileRoute = normalizedPath === '/profile';
-    const isLiveRoute = isScoresRoute || isProfileRoute;
+    const isFriendsRoute = normalizedPath === '/friends';
+    const isLiveRoute = isScoresRoute || isProfileRoute || isFriendsRoute;
     const routeHeaders = isLiveRoute ? { ...cors, 'Cache-Control': 'no-store' } : cors;
 
     // CORS preflight.
@@ -180,6 +186,11 @@ export function createHandler(deps: HandlerDeps) {
       if (isProfileRoute) {
         if (!deps.profiles) throw new Error('Player profiles are not configured.');
         return await handleProfile(event, deps.profiles, instant, cors);
+      }
+
+      if (isFriendsRoute) {
+        if (!deps.friends) throw new Error('The friends graph is not configured.');
+        return await handleFriends(event, deps.friends, instant, cors);
       }
 
       if (rawPath.replace(/\/+$/, '').endsWith('/today')) {

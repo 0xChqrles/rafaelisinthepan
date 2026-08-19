@@ -16,6 +16,8 @@
       identity.ts             the #187 player key: localStorage secret, generated on first need
       screens/Profile.tsx     the #188 profile editor (/profile): name, tap-to-paint 10×10 grid,
                               ground-swatch palette picker (#190 wires the entry point)
+      screens/FriendInvite.tsx  the #189 invite link's landing (/i/<publicId>): POST the mutual
+                              edge with the player key, then continue into the game
       components/Avatar.tsx   a stored avatar rendered as SVG (editor preview + #190 board rows)
       components/avatarOutline.ts  its drawing as ONE traced union-outline path (no interior edges, no seam)
       versionCheck.ts         stale-tab reload: __BUILD_ID__ vs /version.json on visibility flips
@@ -429,6 +431,30 @@ it to the local store — see `packages/backend/AGENTS.md`).
   path FILLS (winding numbers read back off the emitted path, over every 3×3 mask and
   a spread of full grids), never the command syntax, since the property it exists for
   — no seam at a fractional DPR — is one jsdom cannot rasterize.
+
+- **Invite link (#189):** `/i/<publicId>` (`pathForInvite` in `langs.ts`,
+  `screens/FriendInvite.tsx`) — global like `/profile`, since an identity is not
+  language-scoped. It is a BEAT, not a screen: it POSTs `{secret, add}` with the player key
+  (`identity.ts`, generated on this first need, which is what lands the edge before a
+  brand-new visitor's first game) and then `navigate('/', { replace: true })` — handing the
+  destination to App's own home redirect rather than restating where a player lands, and
+  replacing itself in history so a back tap leaves the game instead of re-firing the invite.
+  The publicId is validated in `parseRoute`, so a broken link goes home rather than asking
+  the server about an id nobody can hold. A 4xx is a VERDICT and continues into the game (the
+  score submission's rule: `self_link` and a bad id cannot be argued with); a transport
+  error or a 5xx shows `failedInvite` + RETRY — LOUD, unlike a score submission, for the #188
+  profile read's reason: the write is the one thing the click existed to do. **The CAP (409
+  `friend_limit`) is the one verdict that also speaks**, on that same reasoning: retrying
+  cannot empty a full list, but silently continuing would leave a player at `FRIENDS_MAX`
+  clicking invitations forever with every one appearing to work. It shows `friendListFull` on
+  the same `LoadError` surface with the button relabelled `gatePlay` (its `actionLabel`
+  prop) — a state gets a way ONWARD where a hiccup gets a RETRY — and the copy is neutral
+  about WHOSE list is full, because the cap binds either side of the pair and the answer does
+  not say which. One conversation
+  per invite lives in a module-level flight map (`shareInviteFlight`, `useScoreHistogram`'s
+  own pattern), so neither React's development effect replay nor a real remount mints a
+  second request. No chrome entry point yet — #190's leaderboard screen is where a player
+  COPIES their link; until then the route only receives them.
 
 - **Word mode (#156, the second daily; RETIMED by #163 on 2026-08-08):** one app, two faces
   — `/<lang>/word` (plus `/word/<date>` and `/word/archive`, same date rules) plays the day's

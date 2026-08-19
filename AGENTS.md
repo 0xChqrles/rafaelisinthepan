@@ -523,6 +523,56 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   copyable-key backup that doubles as device linking — where that UI lives is an open
   decision, not this editor.
 
+### Friends graph (#189, decided 2026-08-19)
+
+- **MUTUAL edges from a ONE-CLICK invite link, and the graph is the leaderboard's TRUST
+  BOUNDARY** (#190's default board). Global rankings are untrusted by design — the anti-cheat
+  stance of #187 — so what a player is shown first is the people they chose. Mutual rather
+  than follows: a group converges on identical lists with N link shares instead of N² and
+  nobody is forgotten, with zero request/accept friction (the link holder consented by
+  sharing it, the clicker by clicking).
+- **The link is `<site>/i/<publicId>` — a plain SPA route, not an API one**
+  (`web/src/langs.ts` `pathForInvite`, `web/src/screens/FriendInvite.tsx`): opening it records
+  the edge with the CLICKER's key and continues into the game, so ONE link is both "add me"
+  and "come play". A brand-new visitor's key is generated on that first need (#187), so the
+  edge lands before their first game — this is also the invite funnel. The id is validated at
+  PARSE, so a broken link is an unknown path rather than a request. **The RESULT share link
+  (`/s/<token>`) is deliberately NOT the carrier:** it is CDN-cached for a year on a cache key
+  of `lang`/`date`/`mode`, so an inviter parameter would either fragment that cache per player
+  or — unlisted, with no origin request policy on that behavior — never reach the origin at all.
+- **The graph is SERVER-side** precisely because the sender's device is not present at click
+  time: only a stored edge lets one click benefit both sides. It follows the DERIVED publicId,
+  so restoring a key restores the friends with it — nothing to migrate. (Its side benefit is
+  the pre-launch analytics: edges plus score rows answer how many players arrive by invite,
+  whether friended players retain better, and how big groups get.)
+- **ONE route, POST-only: `POST /friends`** — `{secret}` reads your list, `{secret, add}` links,
+  `{secret, remove}` unlinks, and EVERY call answers `{ friends: [publicId] }`, so a client is
+  never left guessing what a write did. Every call is a POST because the secret is the auth and
+  it travels in the BODY, never a query string (#187) — which is also why the READ is a POST:
+  the server resolves YOUR edges, and there is no way to ask without proving who you are. The
+  route reads NO query parameter, and its CloudFront behavior says exactly that with an EMPTY
+  allow-list (the three-package contract above — the day it grows one, it has to be named there
+  too). Zero-TTL behavior like `/scores`; a production POST needs `x-amz-content-sha256` over
+  the exact body bytes.
+- **Storage: one row per DIRECTION** — `friends#<publicId>` partition, sort key = the friend's
+  id, `createdAt` kept from the FIRST link. Both rows are written, and both deleted, in ONE
+  DynamoDB transaction, so a half-edge is unrepresentable. Removal is SYMMETRIC (no one-sided
+  hide until someone actually asks for one) and idempotent.
+  **Both rows are written on EVERY accepted link, a re-click included** — a store can read the
+  caller's own partition but not the friend's, so "I already hold this edge" is no evidence the
+  other half exists, and an early return on it would leave a missing half missing for good. The
+  writes being unconditional (with `if_not_exists` on `createdAt`) is what lets the same call
+  repair a pair from either side, and it is why the transaction needs no idempotency token.
+- **The cap is `FRIENDS_MAX` = 200 per player, enforced on BOTH sides of a link.** The link is a
+  bearer "add me" token, so someone who posts theirs publicly can be spam-added by strangers;
+  removal covers the annoyance and the cap bounds both the griefing and the board read's size.
+  No expiry/rotation machinery at this scale. It is COUNTED off the rows, never kept in a
+  counter item: a second store answering the same question drifts (the histogram's rule), and a
+  cap is a BOUND, not an invariant — simultaneous clicks may overshoot it by one, which costs
+  nothing. A pair already linked is settled BEFORE the cap, so a full player can still re-open a
+  link they already accepted.
+- Self-add is refused (`self_link`): opening your own link is a mistaken click, not an edge.
+
 ---
 
 ## Testing

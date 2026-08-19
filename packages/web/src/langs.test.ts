@@ -9,6 +9,7 @@ import {
   pathForMode,
   pathForArchive,
   pathForDay,
+  pathForInvite,
   parseRoute,
   resolveHomeLang,
   LANGS,
@@ -34,6 +35,20 @@ describe('parseRoute', () => {
   it('routes /select to the language picker', () => {
     expect(parseRoute('/select')).toEqual({ view: 'select' });
     expect(parseRoute('/select/')).toEqual({ view: 'select' });
+  });
+  // The #189 invite link is a bearer "add me" token in a path segment, so the id is
+  // validated HERE: a mistyped or truncated link must go home rather than send the
+  // server an id nobody can hold.
+  it('routes /i/<publicId> to the invite landing, and a broken one home', () => {
+    const id = 'abcdefghij234567';
+    expect(pathForInvite(id)).toBe(`/i/${id}`);
+    expect(parseRoute(pathForInvite(id))).toEqual({ view: 'invite', publicId: id });
+    expect(parseRoute(`/i/${id}/`)).toEqual({ view: 'invite', publicId: id });
+    expect(parseRoute('/i')).toEqual({ view: 'home' });
+    expect(parseRoute('/i/nope')).toEqual({ view: 'home' });
+    // base32 has no 0/1/8/9, and the id is exactly 16 characters.
+    expect(parseRoute('/i/abcdefghij234560')).toEqual({ view: 'home' });
+    expect(parseRoute(`/i/${id}x`)).toEqual({ view: 'home' });
   });
   // The two choosers sit ABOVE /<lang>: neither is language- or mode-scoped, and /mode
   // must never be read as a language segment or shadow Word mode's /<lang>/word.

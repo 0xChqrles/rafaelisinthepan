@@ -69,9 +69,10 @@ describe('score production boundary (#169)', () => {
     const policies = Object.values(
       template.findResources('AWS::CloudFront::OriginRequestPolicy'),
     );
-    // The score policy and the profile policy (#188) — each forwards exactly the
-    // queries its handler route reads (the root AGENTS.md allowList contract).
-    expect(policies).toHaveLength(2);
+    // The score policy, the profile policy (#188) and the friends policy (#189) — each
+    // forwards exactly the queries its handler route reads (the root AGENTS.md allowList
+    // contract).
+    expect(policies).toHaveLength(3);
     const scorePolicy = policies.find(
       (policy) =>
         policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinLiveScoresOrigin',
@@ -124,6 +125,35 @@ describe('score production boundary (#169)', () => {
     });
   });
 
+  it('uses a deployable zero-cache friends behavior forwarding NO query (#189)', () => {
+    const distributions = Object.values(template.findResources('AWS::CloudFront::Distribution'));
+    const behaviors = distributions[0].Properties.DistributionConfig.CacheBehaviors as Record<
+      string,
+      unknown
+    >[];
+    const friends = behaviors.find(({ PathPattern }) => PathPattern === 'friends*');
+    // The graph is live data, like /scores and /profile.
+    expect(friends?.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
+    // The route is POST-only: the player key authenticates in the body.
+    expect(friends?.AllowedMethods).toContain('POST');
+
+    const policies = Object.values(
+      template.findResources('AWS::CloudFront::OriginRequestPolicy'),
+    );
+    const friendsPolicy = policies.find(
+      (policy) => policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinFriendsOrigin',
+    );
+    // Nothing to forward: the handler reads no query parameter at all. The header mode is
+    // still the Lambda-URL-safe one, since it is what carries the OAC-signed body hash.
+    expect(friendsPolicy?.Properties.OriginRequestPolicyConfig.QueryStringsConfig).toEqual({
+      QueryStringBehavior: 'none',
+    });
+    expect(friendsPolicy?.Properties.OriginRequestPolicyConfig.HeadersConfig).toEqual({
+      HeaderBehavior: 'allExcept',
+      Headers: ['Host'],
+    });
+  });
+
   it('stamps the trusted viewer address the score handler requires onto the score route', () => {
     // `allExcept` forwards viewer headers ONLY — never a CloudFront-GENERATED one — so the
     // policy above cannot deliver CloudFront-Viewer-Address, and the handler throws on
@@ -167,7 +197,7 @@ describe('per-player score storage (#187)', () => {
     });
   });
 
-  it('grants the handler exactly the row-store surface: Query, profile Get, conditional Put, Update', () => {
+  it('grants the handler exactly the row-store surface: Query, profile Get, conditional Put, Update, friend Delete', () => {
     const policies = Object.values(template.findResources('AWS::IAM::Policy'));
     const statements = policies.flatMap(
       (policy) => policy.Properties.PolicyDocument.Statement as { Action?: unknown }[],
@@ -180,6 +210,8 @@ describe('per-player score storage (#187)', () => {
       'dynamodb:GetItem',
       'dynamodb:PutItem',
       'dynamodb:UpdateItem',
+      // #189's symmetric removal is the only thing on this table that deletes.
+      'dynamodb:DeleteItem',
     ]);
   });
 });
