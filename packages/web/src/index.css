@@ -4776,6 +4776,24 @@ button * {
   flex-direction: column;
   gap: 14px;
 }
+/* The head row: the live avatar preview (board-row size) beside the name — the two
+   things a leaderboard row will show, previewed together. The preview wears the
+   input's own frame so the row reads as one register. */
+.profile-head {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+.profile-head .avatar {
+  flex: none;
+  align-self: center;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.profile-head .profile-name {
+  flex: 1;
+  min-width: 0;
+}
 .profile-name {
   font-family: var(--ui);
   font-size: 17px;

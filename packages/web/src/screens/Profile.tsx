@@ -10,6 +10,7 @@ import { parseProfile, postProfileBody, profileUrl } from '../api';
 import { playerSecret } from '../identity';
 import { resolveHomeLang } from '../langs';
 import { t } from '../i18n';
+import Avatar from '../components/Avatar';
 import TopBar from '../components/TopBar';
 import { useGameStore } from '../state/gameStore';
 
@@ -149,21 +150,26 @@ export default function Profile() {
       />
       <div className="profile-screen">
         <div className="profile-editor">
-          <input
-            className="profile-name"
-            type="text"
-            value={name}
-            maxLength={NAME_MAX}
-            placeholder={t(lang, 'profileNamePlaceholder')}
-            aria-label={t(lang, 'profileNamePlaceholder')}
-            autoComplete="off"
-            autoCapitalize="off"
-            spellCheck={false}
-            onChange={(e) => {
-              setName(e.target.value);
-              setSave('idle');
-            }}
-          />
+          <div className="profile-head">
+            {/* The live preview: the drawing at the size a board row will wear it —
+                what the grid below is editing, seen as others will see it. */}
+            <Avatar avatar={encodeAvatar(palette, cells)} size={48} />
+            <input
+              className="profile-name"
+              type="text"
+              value={name}
+              maxLength={NAME_MAX}
+              placeholder={t(lang, 'profileNamePlaceholder')}
+              aria-label={t(lang, 'profileNamePlaceholder')}
+              autoComplete="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              onChange={(e) => {
+                setName(e.target.value);
+                setSave('idle');
+              }}
+            />
+          </div>
 
           {/* The palette's ONE inline variable: empty cells wear the bg itself and the
               CSS derives the canvas's darker frame from it (color-mix — computed,
