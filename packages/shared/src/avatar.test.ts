@@ -90,7 +90,8 @@ describe('avatar codec (#188)', () => {
       { bg: '#8f06ff', fg: '#30fff8' },
       { bg: '#ff1a85', fg: '#c6ff1a' },
       { bg: '#007fff', fg: '#f6f6ff' },
-      { bg: '#30fff8', fg: '#ff5ce0' },
+      // The last ink is the user's spoken adjustment over the extraction (#ff5ce0).
+      { bg: '#30fff8', fg: '#ff3dbe' },
     ]);
     for (const palette of AVATAR_PALETTES) {
       expect(palette.fg).not.toBe(palette.bg);

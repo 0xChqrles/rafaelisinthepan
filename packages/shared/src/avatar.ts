@@ -39,7 +39,9 @@ export const AVATAR_PALETTES: readonly AvatarPalette[] = [
   { name: 'CYAN', bg: '#8f06ff', fg: '#30fff8' },
   { name: 'LIME', bg: '#ff1a85', fg: '#c6ff1a' },
   { name: 'FROST', bg: '#007fff', fg: '#f6f6ff' },
-  { name: 'ORCHID', bg: '#30fff8', fg: '#ff5ce0' },
+  // ORCHID's ink is the user's spoken adjustment (#ff3dbe, 2026-08-19) over the
+  // /palette.png extraction (#ff5ce0) — the drawing owns the duo, the user the tune.
+  { name: 'ORCHID', bg: '#30fff8', fg: '#ff3dbe' },
 ];
 
 const BYTES = 1 + Math.ceil(AVATAR_CELLS / 8); // 14
