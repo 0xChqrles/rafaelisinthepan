@@ -4974,15 +4974,10 @@ button * {
 .profile-save.restoring::before {
   animation: save-label-back 240ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
 }
-/* The LED belongs to the button's CONTENT, so it rolls with the label — and it stays
-   LIT while it moves (the transiently-disabled phases only): the light going out is
-   the RESTING no-changes state's signal, not part of the travel. After a successful
-   save the roll-back therefore ends on the light clicking off. */
-.profile-save.saving:disabled::before,
-.profile-save.restoring:disabled::before {
-  background: var(--solve);
-  box-shadow: 0 0 10px rgba(74, 106, 255, 0.9);
-}
+/* The LED belongs to the button's CONTENT, so it rolls with the label — and it turns
+   OFF on the click itself (the save disables the button, and the disabled dress is
+   the unlit socket): the whole travel plays dark, and after a refusal the light comes
+   back only when the button rests enabled again. */
 @keyframes save-label-out {
   to {
     translate: 0 var(--save-roll, 160%);
