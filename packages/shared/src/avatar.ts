@@ -27,8 +27,9 @@ export interface AvatarPalette {
 // the web's `--accent` / `--surface`; CSS owns the originals) — then four VIVID
 // two-colour print duos in the /inspiration moodboard's riso vocabulary, GROUND
 // INCLUDED (the "vivid" call covers both halves — a pale or muted sheet reads dull):
-// tangerine on royal blue, magenta on sunflower yellow, paper cream on emerald,
-// cyan on grape purple. Each duo pairs a contrasting ink with its OWN coloured
+// tangerine on royal blue, magenta on sunflower yellow, lime on hot pink, cyan on
+// grape purple — no white and no muted ink anywhere (the cream-on-emerald duo was
+// refused on review). Each duo pairs a contrasting ink with its OWN coloured
 // ground, never two shades of one hue; the vivid four are the one deliberate
 // departure from the app's defined palette. Names are the INK's, since the picker
 // shows only the foreground. Order is load-bearing — the encoded byte is an INDEX
@@ -38,7 +39,7 @@ export const AVATAR_PALETTES: readonly AvatarPalette[] = [
   { name: 'VIOLET', bg: '#161826', fg: '#8f7bff' },
   { name: 'TANGERINE', bg: '#2b3ce8', fg: '#ff7a3d' },
   { name: 'MAGENTA', bg: '#ffd21f', fg: '#e5399e' },
-  { name: 'CREAM', bg: '#12b06b', fg: '#f4f1e8' },
+  { name: 'LIME', bg: '#f52d8c', fg: '#ccff33' },
   { name: 'CYAN', bg: '#7b2ff2', fg: '#45e0ff' },
 ];
 
