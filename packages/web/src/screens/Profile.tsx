@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AVATAR_CELLS,
   AVATAR_PALETTES,
+  blankAvatar,
   decodeAvatar,
   encodeAvatar,
   publicIdFromSecret,
@@ -39,6 +40,9 @@ export default function Profile() {
   // Per-cell paint counters: a painted cell remounts keyed on its count, replaying the
   // bump animation — and ONLY a painted one, so loading a stored drawing bumps nothing.
   const [bumps, setBumps] = useState<Record<number, number>>({});
+  // What the server holds (or the blank start before any save): SAVE only lights up
+  // when the editor differs from it, and a successful save re-baselines.
+  const [baseline, setBaseline] = useState(() => ({ name: '', avatar: blankAvatar() }));
 
   // Load this identity's stored profile. A 404 — never customized — keeps the blank
   // editor; any failure is silent, the editor still works.
@@ -55,6 +59,7 @@ export default function Profile() {
         setName(profile.name);
         setPalette(decoded.palette);
         setCells(decoded.cells);
+        setBaseline({ name: profile.name, avatar: profile.avatar });
       } catch {
         // Silent: the editor's starting state stands.
       }
@@ -105,27 +110,28 @@ export default function Profile() {
   }, []);
 
   const colors = AVATAR_PALETTES[palette];
+  // One encode per render, shared by the preview, the dirty check and the save body.
+  const encoded = encodeAvatar(palette, cells);
+  const dirty = name.trim() !== baseline.name || encoded !== baseline.avatar;
 
   const onSave = useCallback(async () => {
     setSave('saving');
+    const body = { secret, name: name.trim(), avatar: encoded };
     try {
-      const response = await postProfileBody(profileUrl(), {
-        secret,
-        name: name.trim(),
-        avatar: encodeAvatar(palette, cells),
-      });
+      const response = await postProfileBody(profileUrl(), body);
       if (response.ok) {
         setSave('saved');
+        setBaseline({ name: body.name, avatar: body.avatar });
         return;
       }
-      const body = (await response.json().catch(() => null)) as { error?: string } | null;
-      if (body?.error === 'name_rejected') setSave('name_rejected');
-      else if (body?.error === 'avatar_rejected') setSave('avatar_rejected');
+      const refusal = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (refusal?.error === 'name_rejected') setSave('name_rejected');
+      else if (refusal?.error === 'avatar_rejected') setSave('avatar_rejected');
       else setSave('error');
     } catch {
       setSave('error');
     }
-  }, [secret, name, palette, cells]);
+  }, [secret, name, encoded]);
 
   const saveLabel =
     save === 'saving'
@@ -153,7 +159,7 @@ export default function Profile() {
           <div className="profile-head">
             {/* The live preview: the drawing at the size a board row will wear it —
                 what the grid below is editing, seen as others will see it. */}
-            <Avatar avatar={encodeAvatar(palette, cells)} size={48} />
+            <Avatar avatar={encoded} size={48} />
             <input
               className="profile-name"
               type="text"
@@ -230,10 +236,12 @@ export default function Profile() {
             </button>
           </div>
 
+          {/* Nothing to save = disabled, and .mix-btn:disabled::before unlights the
+              device card's LED — the board itself says whether there is a change. */}
           <button
             type="button"
             className="mix-btn profile-save"
-            disabled={save === 'saving'}
+            disabled={save === 'saving' || !dirty}
             onClick={onSave}
           >
             {saveLabel}
