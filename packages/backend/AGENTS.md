@@ -126,9 +126,14 @@ pnpm backend:dev                # local server (puzzles + /scores + /profile + /
   ordinary 200s. Storage is the score table again — `friends#<publicId>` partition, sort key
   = the friend's id, `createdAt` via `if_not_exists` (`dynamoFriendStore`; local serve swaps
   in `memoryFriendStore`). The pair is ONE `TransactWriteItems` in both directions, so a
-  half-edge is unrepresentable, and the writes are unconditional and idempotent — which is
-  why the transaction needs no `ClientRequestToken` and why it heals a half-edge instead of
-  reporting the pair linked and leaving it one-sided. Every Query is STRONGLY CONSISTENT
+  half-edge is unrepresentable, and the writes are unconditional — which is why the
+  transaction needs no `ClientRequestToken`. **Both rows go out on every accepted link, a
+  re-click included** (`already_linked` reports the CALLER's list as unchanged, not that
+  nothing was written): the store reads the caller's partition and cannot see the friend's,
+  so returning early there would leave a missing other half missing for good, and re-writing
+  a row that is already present costs two WCUs on a rare path and changes nothing —
+  `if_not_exists` keeps the original instant. The cap is likewise only spent on a pair the
+  caller does not already hold. Every Query is STRONGLY CONSISTENT
   (the profile read's rule: the call answers with the list it just wrote), and the cap is
   COUNTED off those rows rather than kept in a counter item — see the root `AGENTS.md` for
   why a bound may be overshot by a simultaneous click and an invariant may not. This is the

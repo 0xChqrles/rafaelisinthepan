@@ -557,8 +557,12 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
 - **Storage: one row per DIRECTION** — `friends#<publicId>` partition, sort key = the friend's
   id, `createdAt` kept from the FIRST link. Both rows are written, and both deleted, in ONE
   DynamoDB transaction, so a half-edge is unrepresentable. Removal is SYMMETRIC (no one-sided
-  hide until someone actually asks for one) and, like a re-click, idempotent — which also means
-  a stray half-edge can be healed or cleared from either side.
+  hide until someone actually asks for one) and idempotent.
+  **Both rows are written on EVERY accepted link, a re-click included** — a store can read the
+  caller's own partition but not the friend's, so "I already hold this edge" is no evidence the
+  other half exists, and an early return on it would leave a missing half missing for good. The
+  writes being unconditional (with `if_not_exists` on `createdAt`) is what lets the same call
+  repair a pair from either side, and it is why the transaction needs no idempotency token.
 - **The cap is `FRIENDS_MAX` = 200 per player, enforced on BOTH sides of a link.** The link is a
   bearer "add me" token, so someone who posts theirs publicly can be spam-added by strangers;
   removal covers the annoyance and the cap bounds both the griefing and the board read's size.

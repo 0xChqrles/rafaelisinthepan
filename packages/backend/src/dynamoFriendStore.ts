@@ -65,11 +65,14 @@ export function dynamoFriendStore(client: DynamoDBClient, tableName: string): Fr
 
     async link({ publicId, friendId, createdAt }) {
       const own = await edges(publicId);
-      // An existing pair is settled BEFORE the cap: a player at the limit re-opening a link
-      // they already accepted must not be refused a friendship they already have.
-      if (own.includes(friendId)) return 'already_linked';
-      if (own.length >= FRIENDS_MAX) return 'capped';
-      if ((await edgeCount(friendId)) >= FRIENDS_MAX) return 'capped';
+      // The cap gates a pair the CALLER does not already hold. A player at the limit
+      // re-opening a link they already accepted must not be refused a friendship they
+      // already have — but they are still refused a genuinely new one.
+      const held = own.includes(friendId);
+      if (!held) {
+        if (own.length >= FRIENDS_MAX) return 'capped';
+        if ((await edgeCount(friendId)) >= FRIENDS_MAX) return 'capped';
+      }
 
       const edge = (from: string, to: string) => ({
         Update: {
@@ -80,16 +83,20 @@ export function dynamoFriendStore(client: DynamoDBClient, tableName: string): Fr
           ExpressionAttributeValues: { ':createdAt': { S: createdAt } },
         },
       });
-      // Unconditional and idempotent by construction, which is why this transaction needs no
-      // ClientRequestToken: a retry rewrites the same two rows and `if_not_exists` keeps the
-      // original instant. It also heals a half-edge instead of reporting the pair as linked
-      // and leaving it one-sided forever, which a first-write-wins condition would do.
+      // ALWAYS both rows, re-link included — the shape `unlink` already has, and what makes
+      // the healing claim true in the direction this store cannot see. Reading the caller's
+      // partition says nothing about the friend's, so an early return on "I already have this
+      // one" would leave the OTHER half missing forever, which is exactly the state a link is
+      // supposed to be incapable of. The writes are unconditional and `if_not_exists` keeps
+      // the original instant, so re-writing a row that is already there costs two WCUs on a
+      // rare path and changes nothing — which is also why this transaction needs no
+      // ClientRequestToken: an SDK retry is the same no-op.
       await client.send(
         new TransactWriteItemsCommand({
           TransactItems: [edge(publicId, friendId), edge(friendId, publicId)],
         }),
       );
-      return 'linked';
+      return held ? 'already_linked' : 'linked';
     },
 
     async unlink(publicId, friendId) {

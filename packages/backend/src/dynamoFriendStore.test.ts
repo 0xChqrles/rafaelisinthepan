@@ -76,12 +76,45 @@ describe('dynamoFriendStore (#189)', () => {
     });
   });
 
-  it('writes nothing when the pair is already linked', async () => {
+  it('re-links BOTH rows when the caller already holds theirs, so the pair repairs', async () => {
+    // The store can see the CALLER's partition and not the friend's, so "I already have
+    // this edge" is no evidence the other half exists. Returning early on it would leave a
+    // half-edge unrepairable from this side forever — the one state a link may not produce.
     const { send, client } = fakeClient([THEM]);
     await expect(
       dynamoFriendStore(client, 'scores').link({ publicId: ME, friendId: THEM, createdAt: NOW }),
     ).resolves.toBe('already_linked');
-    expect(send.mock.calls.every(([c]) => !(c instanceof TransactWriteItemsCommand))).toBe(true);
+
+    const transactions = send.mock.calls
+      .map(([command]) => command)
+      .filter((command): command is TransactWriteItemsCommand =>
+        command instanceof TransactWriteItemsCommand,
+      );
+    expect(transactions).toHaveLength(1);
+    expect(transactions[0].input.TransactItems!.map((item) => item.Update?.Key)).toEqual([
+      { pk: { S: `friends#${ME}` }, sk: { S: THEM } },
+      { pk: { S: `friends#${THEM}` }, sk: { S: ME } },
+    ]);
+    // The row that WAS there keeps its own instant: the repair does not restate when two
+    // players became friends.
+    for (const item of transactions[0].input.TransactItems!) {
+      expect(item.Update?.UpdateExpression).toContain('if_not_exists(#createdAt, :createdAt)');
+    }
+  });
+
+  it('does not spend the cap on an edge the caller already holds', async () => {
+    // At the limit, a re-click is still the friendship they already have — and it still
+    // writes, so a missing other half is repaired even for a full player.
+    const full = Array.from({ length: FRIENDS_MAX - 1 }, (_, i) => `x${String(i).padStart(15, '0')}`);
+    const { send, client } = fakeClient([...full, THEM]);
+    await expect(
+      dynamoFriendStore(client, 'scores').link({ publicId: ME, friendId: THEM, createdAt: NOW }),
+    ).resolves.toBe('already_linked');
+    expect(send.mock.calls.some(([c]) => c instanceof TransactWriteItemsCommand)).toBe(true);
+    // The other side's count was never asked for: the pair is not new.
+    expect(send.mock.calls.every(([c]) => !(c instanceof QueryCommand) || c.input.Select !== 'COUNT')).toBe(
+      true,
+    );
   });
 
   it('writes nothing at the cap', async () => {

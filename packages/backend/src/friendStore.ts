@@ -19,22 +19,26 @@ export interface FriendLink {
   createdAt: string;
 }
 
-// What one add did:
-//   linked — the pair now holds both edges;
-//   already_linked — they were already connected, so nothing changed (a re-click of a
-//     shared link is an ordinary event, not an error);
-//   capped — one of the two is at FRIENDS_MAX; nothing changed.
+// What one add did, told from the CALLER's side:
+//   linked — they did not hold this edge and now do;
+//   already_linked — they already held it, so their list is unchanged (a re-click of a
+//     shared link is an ordinary event, not an error). The write still runs — see below;
+//   capped — the pair is new and one of the two is at FRIENDS_MAX; nothing changed.
 export type FriendLinkOutcome = 'linked' | 'already_linked' | 'capped';
 
 export interface FriendStore {
   // The caller's own partition — bounded by FRIENDS_MAX, so it is read whole.
   list(publicId: string): Promise<string[]>;
-  // Both directions or neither. Refuses at the cap on EITHER side: the link is a bearer
-  // "add me" token, so a publicly posted one is exactly how a sender's own list would run
-  // away from them.
+  // Both directions or neither, and both are written on EVERY accepted call, re-links
+  // included: a store can see the caller's own edge but not the friend's, so skipping the
+  // write when the caller already holds theirs would leave a missing other half missing for
+  // good. Writing both is what makes the pair repair itself from either side. Refuses at the
+  // cap on EITHER side of a pair the caller does not already hold: the link is a bearer "add
+  // me" token, so a publicly posted one is exactly how a sender's own list would run away
+  // from them.
   link(input: FriendLink): Promise<FriendLinkOutcome>;
-  // Symmetric and idempotent: deleting an edge that is not there is a no-op, which also
-  // means a stray half-edge can always be cleared from either side.
+  // Symmetric and idempotent for the same reason: deleting an edge that is not there is a
+  // no-op, so a stray half-edge can always be cleared from either side too.
   unlink(publicId: string, friendId: string): Promise<void>;
 }
 

@@ -17,17 +17,22 @@ export function memoryFriendStore(): FriendStore {
 
     async link({ publicId, friendId, createdAt }) {
       const mine = own(publicId);
-      if (mine.has(friendId)) return 'already_linked';
-      if (mine.size >= FRIENDS_MAX) return 'capped';
       const theirs = own(friendId);
-      if (theirs.size >= FRIENDS_MAX) return 'capped';
+      // The cap gates a pair the caller does not already hold, and both rows are written
+      // either way — dynamoFriendStore's semantics exactly, including the re-link that
+      // repairs whichever direction is missing.
+      const held = mine.has(friendId);
+      if (!held) {
+        if (mine.size >= FRIENDS_MAX) return 'capped';
+        if (theirs.size >= FRIENDS_MAX) return 'capped';
+      }
 
       // Both directions in one step — nothing here can observe a half-edge.
-      mine.set(friendId, createdAt);
+      mine.set(friendId, mine.get(friendId) ?? createdAt);
       theirs.set(publicId, theirs.get(publicId) ?? createdAt);
       edges.set(publicId, mine);
       edges.set(friendId, theirs);
-      return 'linked';
+      return held ? 'already_linked' : 'linked';
     },
 
     async unlink(publicId, friendId) {
