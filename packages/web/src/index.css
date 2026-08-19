@@ -4797,14 +4797,16 @@ button * {
   border-color: var(--line-strong);
 }
 
-/* The grid: the palette's own ground as the card, one tile per cell. `--cell-ghost` is
-   set inline per palette (a light overlay on a dark ground, a dark one on paper) so an
-   unpainted cell still reads as a tile, the moodboard's socket look. */
+/* The grid: one tile per cell. An EMPTY cell wears the palette's background itself and
+   the canvas behind them a DARKER version of it — DERIVED here with color-mix from the
+   one `--cell-bg` the screen sets inline, never a second hardcoded shade per palette —
+   so the gaps read as the moodboard's sockets in the palette's own light. */
 .avatar-editor {
   display: grid;
   grid-template-columns: repeat(10, 1fr);
   gap: 6px;
   padding: 10px;
+  background: color-mix(in srgb, var(--cell-bg) 72%, #000);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   touch-action: none;
@@ -4815,7 +4817,7 @@ button * {
 .avatar-editor-cell {
   aspect-ratio: 1;
   border-radius: var(--r-md);
-  background: var(--cell-ghost);
+  background: var(--cell-bg);
 }
 /* The paint bump: a small one-shot swell on the cell that just changed, replayed by
    remounting the cell keyed on its paint count. Subtle but present — it briefly

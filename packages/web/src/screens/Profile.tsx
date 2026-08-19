@@ -23,14 +23,6 @@ import { useGameStore } from '../state/gameStore';
 
 const NAME_MAX = 16;
 
-// An unpainted cell still reads as a tile (the moodboard's socket look): a light overlay
-// on a dark ground, a dark one on a light ground — decided by the palette's luminance.
-function ghostFor(bg: string): string {
-  const v = parseInt(bg.slice(1), 16);
-  const luma = ((v >> 16) & 255) * 0.299 + ((v >> 8) & 255) * 0.587 + (v & 255) * 0.114;
-  return luma > 128 ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.05)';
-}
-
 type SaveState = 'idle' | 'saving' | 'saved' | 'name_rejected' | 'avatar_rejected' | 'error';
 
 export default function Profile() {
@@ -173,14 +165,12 @@ export default function Profile() {
             }}
           />
 
+          {/* The palette's ONE inline variable: empty cells wear the bg itself and the
+              CSS derives the canvas's darker frame from it (color-mix — computed,
+              never a second hardcoded shade per palette). */}
           <div
             className="avatar-editor"
-            style={
-              {
-                background: colors.bg,
-                '--cell-ghost': ghostFor(colors.bg),
-              } as React.CSSProperties
-            }
+            style={{ '--cell-bg': colors.bg } as React.CSSProperties}
             role="img"
             aria-label={t(lang, 'ariaAvatarEditor')}
             onPointerDown={onPointerDown}

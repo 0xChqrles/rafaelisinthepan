@@ -22,31 +22,21 @@ export interface AvatarPalette {
   fg: string;
 }
 
-// The predefined palettes — FIVE (user-decided 2026-08-19): a BASE duo made of the
-// app's own tokens — the poster-violet accent on the surface colour (pinned COPIES of
-// the web's `--accent` / `--surface`; CSS owns the originals) — then four VIVID
-// two-colour print duos in the /inspiration moodboard's riso vocabulary, GROUND
-// INCLUDED (the "vivid" call covers both halves — a pale or muted sheet reads dull):
-// tangerine on electric ultramarine, tomato red on vivid yellow (slot 3 walked
-// twice: its red GROUND read as hot pink's twin, then its lemon INK as lime's —
-// red-on-yellow shares neither half with LIME), lime on hot pink, cyan on grape
-// purple — no white and no muted colour anywhere, both halves at full charge
-// (three review rounds walked here: pale sheets, then cream-on-emerald, then a
-// too-deep royal and a dusty magenta-on-sunflower all read dull; what survives is
-// the locked duos' formula — a LUMINOUS ink on an electric mid ground). Each duo
-// pairs a contrasting ink with its OWN coloured
-// ground, never two shades of one hue; the vivid four are the one deliberate
-// departure from the app's defined palette. The editor's picker swatch shows the
-// GROUND (user-decided 2026-08-19, superseding the foreground swatches); names stay
-// the INK's — the ink is what the player draws with. Order is load-bearing — the
-// encoded byte is an INDEX into this list, so entries may be appended but never
-// reordered or removed once avatars referencing them exist.
+// The predefined palettes — FIVE, and their colours are the USER'S OWN (decided
+// 2026-08-19, closing several review rounds of hand-tuned duos): each duo is
+// EXTRACTED from /palettes.png at the repo root — five 16×16 tiles, each carrying a
+// 10×10 tree drawing whose SKY is the background and whose TREE is the foreground.
+// That file is the source of truth; these hexes are its pinned extraction (re-read
+// it rather than retuning them here). Names stay the INK's — the ink is what the
+// player draws with — while the editor's picker swatch shows the GROUND. Order is
+// load-bearing — the encoded byte is an INDEX into this list, so entries may be
+// appended but never reordered or removed once avatars referencing them exist.
 export const AVATAR_PALETTES: readonly AvatarPalette[] = [
-  { name: 'VIOLET', bg: '#161826', fg: '#8f7bff' },
-  { name: 'TANGERINE', bg: '#3344ff', fg: '#ff8a00' },
-  { name: 'TOMATO', bg: '#ffd60a', fg: '#ff2e2e' },
-  { name: 'LIME', bg: '#f52d8c', fg: '#ccff33' },
-  { name: 'CYAN', bg: '#7b2ff2', fg: '#45e0ff' },
+  { name: 'COBALT', bg: '#222431', fg: '#4a6aff' },
+  { name: 'CYAN', bg: '#8f06ff', fg: '#30fff8' },
+  { name: 'LIME', bg: '#ff1a85', fg: '#c6ff1a' },
+  { name: 'AZURE', bg: '#ff531a', fg: '#336dff' },
+  { name: 'FROST', bg: '#6bf1fa', fg: '#f6f6ff' },
 ];
 
 const BYTES = 1 + Math.ceil(AVATAR_CELLS / 8); // 14

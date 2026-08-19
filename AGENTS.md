@@ -476,13 +476,12 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   cross-package contract** (`shared/src/avatar.ts`): palette byte + 100 cells at 1
   bit/pixel = 14 bytes, base64url, exactly 19 chars, canonical-form-only decode.
   `AVATAR_PALETTES` is FIVE `{bg, fg}` pairs (append-only — the byte is an index),
-  user-decided 2026-08-19: a **BASE duo of the app's own tokens** — the accent on the
-  surface colour (pinned copies of the web's `--accent`/`--surface`, asserted by the
-  palette pin test) — then **four VIVID two-colour print duos, a contrasting ink on
-  its OWN coloured ground, never two shades of one hue — and "vivid" covers BOTH
-  halves: the grounds are saturated inks too, never pale sheets** (the /inspiration
-  moodboard's riso vocabulary — the one deliberate departure from the app's defined
-  palette). **The picker swatch shows the GROUND (decided 2026-08-19, superseding the
+  and **their colours are the USER'S OWN FILE: repo-root `/palettes.png`** (decided
+  2026-08-19, closing several review rounds of hand-tuned duos) — five 16×16 tiles,
+  each a 10×10 tree drawing whose SKY is the background and whose TREE is the
+  foreground. The hexes in `shared/src/avatar.ts` are that file's pinned extraction
+  (asserted verbatim by the palette pin test): to change the colours, change the
+  FILE and re-extract, never retune the hexes freehand. **The picker swatch shows the GROUND (decided 2026-08-19, superseding the
   foreground swatches): you select a ground, and its ink comes with it — a swatch is
   always ONE colour, the palette IS the choice.** The web encodes and renders (SVG);
   the backend decodes to validate and moderate.

@@ -80,15 +80,18 @@ describe('avatar codec (#188)', () => {
     expect(() => decodeAvatar('AAAAAAAAAAAAAAAAABA')).toThrow(/non-canonical/);
   });
 
-  it('pins the palette contract: the app-token base + four vivid duos, own ground each', () => {
-    // Five by decision (2026-08-19) — appending a sixth is a deliberate act.
-    expect(AVATAR_PALETTES).toHaveLength(5);
-    // The BASE duo is the app's own accent on its surface — pinned COPIES of the web's
-    // `--accent` / `--surface` tokens, so moving either is a deliberate two-place edit.
-    expect(AVATAR_PALETTES[0]).toEqual({ name: 'VIOLET', bg: '#161826', fg: '#8f7bff' });
+  it('pins the palette contract: the five duos extracted from /palettes.png', () => {
+    // The colours are the user's own file (repo-root palettes.png: five tiles, each a
+    // 10×10 tree — sky = bg, tree = fg). This pin is the extraction, verbatim: a
+    // change here means the FILE changed and was deliberately re-extracted.
+    expect(AVATAR_PALETTES.map(({ bg, fg }) => ({ bg, fg }))).toEqual([
+      { bg: '#222431', fg: '#4a6aff' },
+      { bg: '#8f06ff', fg: '#30fff8' },
+      { bg: '#ff1a85', fg: '#c6ff1a' },
+      { bg: '#ff531a', fg: '#336dff' },
+      { bg: '#6bf1fa', fg: '#f6f6ff' },
+    ]);
     for (const palette of AVATAR_PALETTES) {
-      expect(palette.bg).toMatch(/^#[0-9a-f]{6}$/);
-      expect(palette.fg).toMatch(/^#[0-9a-f]{6}$/);
       expect(palette.fg).not.toBe(palette.bg);
     }
     // Each palette carries its own background — a shared ground was explicitly refused.

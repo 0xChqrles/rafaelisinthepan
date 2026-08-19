@@ -379,11 +379,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   Name input (16 cap), the 10×10 tap/drag-to-paint grid (one STROKE value per gesture —
   starting on a painted cell erases, so tap toggles; a painted cell plays a small
   one-shot BUMP, replayed by remounting the cell keyed on its paint count, so loading a
-  stored drawing bumps nothing), the tool row — the palette swatches (each the
-  palette's BACKGROUND colour since the same day's later pass; picking a ground picks
-  the palette and its ink, and the drawing survives a switch) with the CLEAR chip on
-  its right edge (empties the grid; disabled when already empty) — and SAVE
-  (`.mix-btn`). No brush row (two colours need none) and NO key
+  stored drawing bumps nothing; an EMPTY cell wears the palette's background itself
+  while the canvas behind the tiles wears a DARKER version of it, derived in CSS with
+  `color-mix` from the one `--cell-bg` variable — never a second hardcoded shade per
+  palette), the tool row — the palette swatches (each the palette's BACKGROUND colour
+  since the same day's later pass; picking a ground picks the palette and its ink,
+  and the drawing survives a switch) with the CLEAR chip on its right edge (empties
+  the grid; disabled when already empty) — and SAVE (`.mix-btn`). No brush row (two colours need none) and NO key
   block: the copyable-key/paste-to-link UI was removed with `adoptPlayerSecret` (the
   backup affordance's future surface is an open decision — root `AGENTS.md`). Saving
   POSTs `{secret, name, avatar}` via the OAC-hashed body (`api.postProfileBody`);
