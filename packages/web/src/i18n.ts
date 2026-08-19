@@ -297,10 +297,6 @@ const STRINGS = {
   boardTitle: { en: 'LEADERBOARD', fr: 'CLASSEMENT' },
   boardFriends: { en: 'FRIENDS', fr: 'AMIS' },
   boardGlobal: { en: 'GLOBAL', fr: 'GLOBAL' },
-  // The collapsed tie group at the global cut: rendered as a row — the shared rank in
-  // the rank column, then "+12 TIED" — so a cut never pretends position 50 means
-  // something inside a tie.
-  boardTied: { en: 'TIED', fr: 'EX ÆQUO' },
   // One empty line for both tabs: no friend has a score yet / nobody played yet. The
   // INVITE button above is the remedy, so the line states the fact and nothing more.
   boardEmpty: { en: 'NO ONE ON THE BOARD YET', fr: 'ENCORE PERSONNE AU TABLEAU' },

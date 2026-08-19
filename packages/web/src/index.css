@@ -5303,21 +5303,6 @@ button * {
   border-top: 1px solid var(--line);
 }
 
-/* The tie group collapsed at the global cut: its shared rank in the rank column, the
-   count beside it — a fact row, so it stays quiet. */
-.board-overflow {
-  grid-template-columns: 42px minmax(0, 1fr);
-}
-.board-tied {
-  font-family: var(--ui);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--fg);
-  opacity: 0.55;
-}
-
 /* Between the cut and your own neighborhood, the line continues: the app's dashed
    "more line beyond this" vocabulary, as a short rule. */
 .board-gap {

@@ -336,24 +336,11 @@ function checkBoardRows(value: unknown, field: string): asserts value is BoardRo
 
 export function parseBoard(data: unknown): Board {
   if (!isRecord(data)) throw new Error('malformed board: not an object');
-  const { total, rows, overflow, own, waiting } = data;
+  const { total, rows, own, waiting } = data;
   if (typeof total !== 'number' || !Number.isInteger(total) || total < 0) {
     throw new Error('malformed board: "total" must be a non-negative integer');
   }
   checkBoardRows(rows, 'rows');
-  if (overflow !== null) {
-    if (
-      !isRecord(overflow) ||
-      typeof overflow.rank !== 'number' ||
-      !Number.isInteger(overflow.rank) ||
-      overflow.rank < 1 ||
-      typeof overflow.count !== 'number' ||
-      !Number.isInteger(overflow.count) ||
-      overflow.count < 1
-    ) {
-      throw new Error('malformed board: bad "overflow"');
-    }
-  }
   if (own !== null) checkBoardRows(own, 'own');
   checkBoardPlayers(waiting, 'waiting');
   return data as unknown as Board;

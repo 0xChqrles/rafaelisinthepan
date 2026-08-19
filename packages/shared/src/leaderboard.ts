@@ -1,16 +1,17 @@
 // The #190 leaderboard's ranking rules — the pure half of the board reads, shared
 // because the BACKEND applies them (it cuts the global board and windows the caller's
 // own row before profiles are attached) and the WEB renders what they produced (ranks
-// on the friends board, the collapsed tie line, the own-row section). Two copies would
+// on the friends board, the own-row section). Two copies would
 // let the ranks a board shows drift from the rows the server selected.
 //
-// Three decided rules (issue #190):
+// Three decided rules (issue #190; the cut simplified 2026-08-20 on user review):
 //   - TIES GET EQUAL RANKS, competition style, never a fake ordering. Sentence scores
 //     are try counts, so ties dominate; breaking them by submission time would quietly
 //     reward early timezones.
-//   - THE GLOBAL BOARD IS A TOP-50 CUT, and a tie group STRADDLING the cut collapses
-//     into one "+N at #rank" line rather than pretending position 50 means something
-//     inside a tie.
+//   - THE GLOBAL BOARD IS A PLAIN TOP-50 CUT: at most 50 rows, ties displayed as
+//     ordinary rows sharing their rank — a tie crossing the boundary is simply cut
+//     like anything else (the issue's original "+N at #rank" collapse was built and
+//     then removed on the user's call: fold nothing).
 //   - A CALLER OUTSIDE THE CUT still sees their own row with the two neighbors directly
 //     above and below.
 
@@ -50,39 +51,11 @@ export function rankBoard(rows: readonly BoardScore[], mode: BoardMode): RankedS
   });
 }
 
-export interface BoardOverflow {
-  // The shared rank of the collapsed tie group, and how many players share it.
-  rank: number;
-  count: number;
-}
-
-export interface BoardCut {
-  rows: RankedScore[];
-  overflow: BoardOverflow | null;
-}
-
-// The top-of-board cut. Tie groups are kept WHOLE: groups are appended while they fit
-// inside `limit`, and the first group that would cross the boundary collapses into the
-// overflow line ("+N at #rank") instead of being truncated at an arbitrary member. A
-// group that starts exactly AT the boundary is simply beyond the cut — a clean cut has
-// no overflow line, because nothing was cut mid-tie.
-export function cutBoard(ranked: readonly RankedScore[], limit = BOARD_TOP_LIMIT): BoardCut {
-  const rows: RankedScore[] = [];
-  let i = 0;
-  while (i < ranked.length) {
-    let j = i;
-    while (j < ranked.length && ranked[j].score === ranked[i].score) j += 1;
-    const size = j - i;
-    if (rows.length + size > limit) {
-      // Straddling the boundary collapses the whole group; starting past it is a clean cut.
-      return {
-        rows,
-        overflow: rows.length < limit ? { rank: ranked[i].rank, count: size } : null,
-      };
-    }
-    for (; i < j; i += 1) rows.push(ranked[i]);
-  }
-  return { rows, overflow: null };
+// The top-of-board cut: the first `limit` rows, nothing folded (user-decided
+// 2026-08-20, superseding the straddling-tie collapse) — a tie crossing the boundary
+// shows whichever members sit inside it, each at the shared rank.
+export function cutBoard(ranked: readonly RankedScore[], limit = BOARD_TOP_LIMIT): RankedScore[] {
+  return ranked.slice(0, limit);
 }
 
 // The caller's own row with `span` neighbors directly above and below (clamped at the
@@ -98,18 +71,18 @@ export function boardWindow(
 }
 
 // What the global response actually carries for the caller: nothing when their row is
-// already individually visible in the cut, otherwise their window MINUS any row the cut
-// already shows (a row must never render twice because the window brushed the boundary).
+// already visible in the cut, otherwise their window MINUS any row the cut already
+// shows (a row must never render twice because the window brushed the boundary).
 export function boardOwnRows(
   ranked: readonly RankedScore[],
-  cut: BoardCut,
+  cut: readonly RankedScore[],
   publicId: string,
   span = BOARD_WINDOW_SPAN,
 ): RankedScore[] | null {
-  if (cut.rows.some((row) => row.publicId === publicId)) return null;
+  if (cut.some((row) => row.publicId === publicId)) return null;
   const window = boardWindow(ranked, publicId, span);
   if (window === null) return null;
-  const shown = new Set(cut.rows.map((row) => row.publicId));
+  const shown = new Set(cut.map((row) => row.publicId));
   return window.filter((row) => !shown.has(row.publicId));
 }
 
@@ -134,8 +107,6 @@ export interface Board {
   // caller's edges (plus themselves) for the friends tab.
   total: number;
   rows: BoardRow[];
-  // The tie group collapsed at the global cut; always null on the friends board.
-  overflow: BoardOverflow | null;
   // The caller's own below-the-cut window; always null on the friends board.
   own: BoardRow[] | null;
   // FRIENDS who have no recorded score today (user-decided 2026-08-20): an edge is a

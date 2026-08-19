@@ -36,8 +36,8 @@ import CloseIcon from '../assets/icons/close.svg?react';
 // and shares their invite link (#189 — the INVITE button), neither of which requires
 // having played, which is why the header icon reaches it before a first guess.
 //
-// The rows come ranked from the server (competition ties, the top-50 cut with its
-// straddling-tie collapse, the own-row window — @whippin/shared's leaderboard rules);
+// The rows come ranked from the server (competition ties, the plain top-50 cut, the
+// own-row window — @whippin/shared's leaderboard rules);
 // this screen only draws what the API returned. The own row wears the app's ONE
 // emphasis gesture, the inverted selection box.
 type Tab = 'friends' | 'global';
@@ -230,10 +230,7 @@ function BoardList({
   meId?: string;
 }) {
   const empty =
-    board.rows.length === 0 &&
-    board.overflow === null &&
-    (board.own?.length ?? 0) === 0 &&
-    board.waiting.length === 0;
+    board.rows.length === 0 && (board.own?.length ?? 0) === 0 && board.waiting.length === 0;
   if (empty) {
     return <p className="board-empty">{t(lang, 'boardEmpty')}</p>;
   }
@@ -244,20 +241,16 @@ function BoardList({
   return (
     <>
       {/* The unit column caption: which way is better is the mode's, and naming the
-          unit is how the list says it (the score headline's own rule). */}
-      <div className="board-unit" aria-hidden="true">
-        {t(lang, mode === 'word' ? 'words' : 'tries')}
-      </div>
+          unit is how the list says it (the score headline's own rule). Only over
+          actual scores — a board of nothing but waiting friends has no score column
+          to caption (user feedback 2026-08-20). */}
+      {board.rows.length > 0 && (
+        <div className="board-unit" aria-hidden="true">
+          {t(lang, mode === 'word' ? 'words' : 'tries')}
+        </div>
+      )}
       <ol className="board-list pixel-scroll">
         {board.rows.map(item)}
-        {board.overflow && (
-          <li className="board-row board-overflow" style={{ '--i': index++ } as CSSProperties}>
-            <span className="board-rank">#{board.overflow.rank}</span>
-            <span className="board-tied">
-              +{board.overflow.count} {t(lang, 'boardTied')}
-            </span>
-          </li>
-        )}
         {board.own && board.own.length > 0 && (
           <>
             {/* The gap says "the line continues below the cut" in the app's own dashed

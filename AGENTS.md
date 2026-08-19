@@ -594,11 +594,12 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
     person the caller chose, never a row to silently drop.
 - **The ranking rules are shared pure functions** (`shared/src/leaderboard.ts`,
   contract-tested): competition-style tie ranks (equal ranks, never a fake ordering —
-  ties ordered by publicId only for deterministic ROW order), the top-50 cut that keeps
-  tie groups WHOLE and collapses a group STRADDLING the boundary into one
-  `{rank, count}` overflow ("+12 at #41" — a clean cut between groups has none), and
-  the own-row ±2 neighbor window (sent only when the caller's row is not individually
-  visible, minus any row the cut already shows). The backend applies them and attaches
+  ties ordered by publicId only for deterministic ROW order), the PLAIN top-50 cut
+  (user-decided 2026-08-20, superseding the issue's straddling-tie collapse: at most
+  50 rows, a tie crossing the boundary shows its inside members as ordinary rows at
+  the shared rank, nothing folded), and
+  the own-row ±2 neighbor window (sent only when the caller's row is not
+  visible in the cut, minus any row the cut already shows). The backend applies them and attaches
   each row's public profile (#188: `name` may be empty, `avatar` null — the client
   falls back to the publicId and a blank mark); the web renders what the API returned.
 - **Zero-TTL CloudFront behavior with all FOUR query params in its allowList**

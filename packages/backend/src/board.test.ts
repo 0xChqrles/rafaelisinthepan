@@ -102,7 +102,6 @@ describe('board route (#190)', () => {
       { publicId: other, score: 3, rank: 1, name: 'Zoe', avatar: 'A'.repeat(19) },
       { publicId: me, score: 7, rank: 2, name: '', avatar: null },
     ]);
-    expect(board.overflow).toBeNull();
     expect(board.own).toBeNull();
     // The global population IS the recorded scores — nobody waits on it.
     expect(board.waiting).toEqual([]);
@@ -119,11 +118,10 @@ describe('board route (#190)', () => {
     const result = await handler(get({ ...QUERY, id: ids[57] })); // score 58, position 58
     const board = JSON.parse(result.body) as Board;
     expect(board.rows).toHaveLength(50);
-    expect(board.overflow).toBeNull();
     expect(board.own?.map((row) => row.score)).toEqual([56, 57, 58, 59, 60]);
   });
 
-  it('collapses a tie group straddling the cut into the overflow line', async () => {
+  it('cuts straight through a tie: 50 rows max, boundary members at the shared rank', async () => {
     const ids = await Promise.all(
       Array.from({ length: 70 }, (_, i) =>
         publicIdFromSecret(String(i).padStart(2, '0').repeat(16)),
@@ -133,8 +131,10 @@ describe('board route (#190)', () => {
     const { handler } = makeHandler(rows);
 
     const board = JSON.parse((await handler(get(QUERY))).body) as Board;
-    expect(board.rows).toHaveLength(40);
-    expect(board.overflow).toEqual({ rank: 41, count: 30 });
+    expect(board.rows).toHaveLength(50);
+    // Nothing folded (user-decided 2026-08-20): the tie's first ten members show as
+    // ordinary rows, all at rank 41.
+    expect(board.rows.slice(40).every((row) => row.rank === 41 && row.score === 99)).toBe(true);
   });
 
   it('answers the friends board only for the caller edges plus themselves', async () => {
@@ -157,7 +157,6 @@ describe('board route (#190)', () => {
       [me, 2],
     ]);
     expect(board.total).toBe(2);
-    expect(board.overflow).toBeNull();
     expect(board.own).toBeNull();
   });
 
@@ -201,8 +200,8 @@ describe('board route (#190)', () => {
   it('answers an empty day honestly on both faces', async () => {
     const { handler } = makeHandler([]);
     const global = JSON.parse((await handler(get(QUERY))).body) as Board;
-    expect(global).toEqual({ total: 0, rows: [], overflow: null, own: null, waiting: [] });
+    expect(global).toEqual({ total: 0, rows: [], own: null, waiting: [] });
     const mine = JSON.parse((await handler(post(QUERY, { secret: SECRET }))).body) as Board;
-    expect(mine).toEqual({ total: 0, rows: [], overflow: null, own: null, waiting: [] });
+    expect(mine).toEqual({ total: 0, rows: [], own: null, waiting: [] });
   });
 });

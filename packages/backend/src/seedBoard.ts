@@ -7,8 +7,8 @@
 //   pnpm board:seed                           # seed today's fr sentence board
 //   pnpm board:seed --friend <publicId|/i/…>  # also link a few seeds to YOUR identity
 //
-// What it seeds: 60 scored players (40 distinct scores + a 20-player tie straddling the
-// top-50 cut, so the "+N TIED" collapse is visible), most with profiles (a few without,
+// What it seeds: 60 scored players (40 distinct scores + a 20-player tie across the
+// top-50 cut, so shared ranks are visible on both sides of it), most with profiles (a few without,
 // to show the pseudonym + dashed-mark fallback), plus a couple of profile-only players
 // with NO score (the friends board's "not played yet" rows). It prints INVITE LINKS for
 // a few seeds — clicking one in the app is the real one-tap friend flow, and the
@@ -121,8 +121,8 @@ async function main() {
   ensureLocalPuzzle(date);
   const scoresPath = `/scores?lang=${LANG}&date=${date}&mode=${MODE}`;
 
-  // 60 scored players: 40 distinct scores, then a 20-player tie straddling the top-50
-  // cut. Every 9th-ish player skips the profile (the pseudonym + dashed-mark fallback).
+  // 60 scored players: 40 distinct scores, then a 20-player tie across the top-50
+  // cut. Every 9th-ish player skips the profile (the assigned-identity fallback).
   for (let i = 0; i < 60; i += 1) {
     const secret = secretOf(i);
     if (i % 9 !== 4) {

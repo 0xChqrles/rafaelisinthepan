@@ -11,8 +11,8 @@
 //
 // Both answers are rows a board can draw directly: rank (competition ties), score, and
 // the public profile (#188) — name and avatar — attached per row. The ranking, the
-// top-50 cut with its straddling-tie collapse, and the own-row window are the shared
-// pure rules in @whippin/shared/leaderboard.ts.
+// plain top-50 cut and the own-row window are the shared pure rules in
+// @whippin/shared/leaderboard.ts.
 //
 // No puzzle-store read: a population only ever exists for a published daily (the score
 // POST enforces it), so an unpublished day honestly answers the empty board. The
@@ -146,11 +146,10 @@ export async function handleBoard(
     const ranked = rankBoard(await deps.scores.list(key), mode);
     const cut = cutBoard(ranked);
     const own = id === undefined ? null : boardOwnRows(ranked, cut, id);
-    const dress = await dressRows(deps.profiles, cut.rows, own ?? []);
+    const dress = await dressRows(deps.profiles, cut, own ?? []);
     const board: Board = {
       total: ranked.length,
-      rows: toBoardRows(cut.rows, dress),
-      overflow: cut.overflow,
+      rows: toBoardRows(cut, dress),
       own: own === null ? null : toBoardRows(own, dress),
       waiting: [],
     };
@@ -202,7 +201,6 @@ export async function handleBoard(
   const board: Board = {
     total: ranked.length,
     rows: toBoardRows(ranked, dress),
-    overflow: null,
     own: null,
     waiting: waiting.map(
       (id): BoardPlayer => ({ publicId: id, ...(dress.get(id) ?? { name: '', avatar: null }) }),

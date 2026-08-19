@@ -479,7 +479,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   visit (RETRY refetches; App keys the screen on lang:mode so a switch resets): the
   friends read is the authenticated `POST /board {secret}` via the OAC-hashed body,
   the global read the anonymous GET widened with the caller's PUBLIC id for the own
-  window. The screen renders what the API returned (ranks, cut, overflow, own window
+  window. The screen renders what the API returned (ranks, cut, own window
   — the shared leaderboard rules; root AGENTS.md): glass rows of rank + avatar + name
   + score, ranks and scores in the PIXEL face (game numbers), names in mono (identity
   chrome, case kept), the unit caption (TRIES/WORDS) naming which way is better. The
@@ -493,8 +493,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (`defaultAvatar.ts` — a mirrored 10×10 creature + palette from the id hash, the
   seeder's proven recipe, superseding the dashed empty frame). Both are DISPLAY-ONLY
   pure functions of the publicId — identical on every surface and device, nothing
-  stored, and a saved profile replaces them. The collapsed straddling tie renders as
-  a row (`#41  +20 TIED`), the below-the-cut gap as a dashed rule, and the friends
+  stored, and a saved profile replaces them. The below-the-cut gap renders as a
+  dashed rule (ties are NOT folded at the cut — user-decided 2026-08-20, superseding
+  the "+N TIED" collapse row: at most 50 ordinary rows, shared ranks shown), and the friends
   tab's WAITING friends (edges with no score today, user-decided 2026-08-20) as
   dashed no-fill rows under ONE `NOT PLAYED YET` hairline section caption (second
   pass, same day: a label repeated per row read as a stutter) with a small centered

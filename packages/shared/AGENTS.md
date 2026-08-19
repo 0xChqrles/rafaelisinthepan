@@ -94,8 +94,8 @@
   mode's rarity ladder is AUTHORED instead (`rarity.test.ts` still pins its hexes and
   re-measured dE constraints, so a retune stays a deliberate act).
 - `src/leaderboard.ts` is the ONE definition of the #190 board's ranking rules —
-  competition-style tie ranks, the top-50 cut that keeps tie groups whole and collapses
-  a straddling one, the own-row ±2 window — plus the `Board`/`BoardRow` API types. The
+  competition-style tie ranks, the plain top-50 cut (nothing folded, user-decided
+  2026-08-20), the own-row ±2 window — plus the `Board`/`BoardRow` API types. The
   BACKEND applies them before attaching profiles and the WEB renders what they
   produced; a fork would let the ranks a board shows drift from the rows the server
   selected. Contract-tested per the issue (`leaderboard.test.ts`); the product rules

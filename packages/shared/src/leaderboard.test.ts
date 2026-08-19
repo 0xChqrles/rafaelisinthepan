@@ -8,9 +8,9 @@ import {
   type BoardScore,
 } from './leaderboard';
 
-// The #190 board rules, asserted against the issue's spec: competition-style tie
-// ranking, the top-50 cut with a straddling tie group collapsed, and the own-row ±2
-// neighbor window — the three parts the issue names as contract-tested.
+// The #190 board rules, asserted against the decided spec: competition-style tie
+// ranking, the plain top-50 cut (nothing folded — user-decided 2026-08-20, superseding
+// the issue's straddling-tie collapse), and the own-row ±2 neighbor window.
 
 const id = (n: number) => `player${String(n).padStart(11, '0')}`;
 
@@ -45,28 +45,24 @@ describe('rankBoard', () => {
 });
 
 describe('cutBoard', () => {
-  it('returns everyone with no overflow when the board fits', () => {
+  it('returns everyone when the board fits', () => {
     const ranked = rankBoard(rows(1, 2, 3), 'sentence');
-    expect(cutBoard(ranked)).toEqual({ rows: ranked, overflow: null });
+    expect(cutBoard(ranked)).toEqual(ranked);
   });
 
-  it('cuts cleanly between two tie groups: no overflow line', () => {
-    // 50 distinct scores, then a tie group starting exactly past the boundary.
+  it('shows at most 50 rows — nothing folded (user-decided 2026-08-20)', () => {
     const ranked = rankBoard(
-      [...Array.from({ length: 50 }, (_, i) => i + 1), 99, 99].map((score, i) => ({
-        publicId: id(i),
-        score,
-      })),
+      Array.from({ length: 80 }, (_, i) => ({ publicId: id(i), score: i + 1 })),
       'sentence',
     );
     const cut = cutBoard(ranked);
-    expect(cut.rows).toHaveLength(BOARD_TOP_LIMIT);
-    expect(cut.overflow).toBeNull();
+    expect(cut).toHaveLength(BOARD_TOP_LIMIT);
+    expect(cut).toEqual(ranked.slice(0, BOARD_TOP_LIMIT));
   });
 
-  it('collapses a tie group STRADDLING the cut into "+N at rank"', () => {
-    // 40 distinct scores, then 30 players tied: showing 10 of the 30 would pretend
-    // position 50 means something inside the tie, so the whole group collapses.
+  it('cuts straight through a tie: members inside the boundary show at the shared rank', () => {
+    // 40 distinct scores, then 30 players tied at rank 41: the cut shows the first 10
+    // of them as ordinary rows, all ranked 41.
     const ranked = rankBoard(
       [
         ...Array.from({ length: 40 }, (_, i) => i + 1),
@@ -75,27 +71,8 @@ describe('cutBoard', () => {
       'sentence',
     );
     const cut = cutBoard(ranked);
-    expect(cut.rows).toHaveLength(40);
-    expect(cut.rows.at(-1)?.rank).toBe(40);
-    expect(cut.overflow).toEqual({ rank: 41, count: 30 });
-  });
-
-  it('collapses an all-tied field into one line rather than naming 50 of them', () => {
-    const ranked = rankBoard(
-      Array.from({ length: 120 }, (_, i) => ({ publicId: id(i), score: 6 })),
-      'sentence',
-    );
-    expect(cutBoard(ranked)).toEqual({ rows: [], overflow: { rank: 1, count: 120 } });
-  });
-
-  it('keeps whole groups under a smaller limit too', () => {
-    // Groups of 2 (rank 1), 3 (rank 3), 4 (rank 6) under a limit of 4: the pair fits,
-    // the trio would cross, so the cut shows 2 rows and collapses the trio.
-    const ranked = rankBoard(rows(1, 1, 2, 2, 2, 3, 3, 3, 3), 'sentence');
-    expect(cutBoard(ranked, 4)).toEqual({
-      rows: ranked.slice(0, 2),
-      overflow: { rank: 3, count: 3 },
-    });
+    expect(cut).toHaveLength(BOARD_TOP_LIMIT);
+    expect(cut.slice(40).every((row) => row.rank === 41 && row.score === 77)).toBe(true);
   });
 });
 
@@ -137,7 +114,7 @@ describe('boardWindow / boardOwnRows', () => {
     expect(own?.map((r) => r.score)).toEqual([51, 52, 53, 54]);
   });
 
-  it('windows a caller hidden inside a collapsed straddling tie', () => {
+  it('windows a tie member whose row fell past the boundary', () => {
     const tied = rankBoard(
       [
         ...Array.from({ length: 40 }, (_, i) => i + 1),
@@ -146,9 +123,13 @@ describe('boardWindow / boardOwnRows', () => {
       'sentence',
     );
     const cut = cutBoard(tied);
-    // A member of the collapsed group is not individually visible, so it gets a window.
-    const own = boardOwnRows(tied, cut, id(55));
+    // Positions 41-50 of the tie are shown; a member past the cut still gets a window,
+    // and a member inside it does not.
+    const inside = cut.at(-1)!.publicId;
+    expect(boardOwnRows(tied, cut, inside)).toBeNull();
+    const outside = tied[55].publicId;
+    const own = boardOwnRows(tied, cut, outside);
     expect(own).not.toBeNull();
-    expect(own?.some((r) => r.publicId === id(55))).toBe(true);
+    expect(own?.some((r) => r.publicId === outside)).toBe(true);
   });
 });
