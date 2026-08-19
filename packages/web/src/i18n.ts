@@ -297,9 +297,12 @@ const STRINGS = {
   boardTitle: { en: 'LEADERBOARD', fr: 'CLASSEMENT' },
   boardFriends: { en: 'FRIENDS', fr: 'AMIS' },
   boardGlobal: { en: 'GLOBAL', fr: 'GLOBAL' },
-  // One empty line for both tabs: no friend has a score yet / nobody played yet. The
-  // INVITE button above is the remedy, so the line states the fact and nothing more.
-  boardEmpty: { en: 'NO ONE ON THE BOARD YET', fr: 'ENCORE PERSONNE AU TABLEAU' },
+  // The empty states, one per tab (user feedback 2026-08-20, replacing one long
+  // "NO ONE ON THE BOARD YET" line): TERSE, under a small sad pixel ghost that carries
+  // the mood. An empty friends tab really is "no friends" — friends who merely haven't
+  // played today show as waiting rows — and the INVITE button below is the remedy.
+  boardEmptyFriends: { en: 'NO FRIENDS', fr: "PAS D'AMIS" },
+  boardEmptyGlobal: { en: 'NOBODY YET', fr: 'ENCORE PERSONNE' },
   boardEdit: { en: 'EDIT', fr: 'MODIFIER' },
   boardInvite: { en: 'INVITE FRIENDS', fr: 'INVITER DES AMIS' },
   // A friend on the board who has no recorded score today (user-decided 2026-08-20):

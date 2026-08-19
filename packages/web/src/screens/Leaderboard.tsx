@@ -27,6 +27,9 @@ import {
 import { navigate } from '../routing';
 import { t } from '../i18n';
 import CloseIcon from '../assets/icons/close.svg?react';
+// The empty state's sad pixel ghost — an illustration, not a chrome control, so it is
+// pixel art by design (user-asked 2026-08-20). Decorative; the line under it speaks.
+import GhostIcon from '../assets/icons/ghost.svg?react';
 
 // The #190 leaderboard screen: the day's boards per (day, lang, mode), for the active
 // day. FRIENDS is the DEFAULT and the trusted surface — the whole point of the design
@@ -201,7 +204,7 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
             onRetry={() => setAttempt((n) => n + 1)}
           />
         ) : board ? (
-          <BoardList key={tab} board={board} lang={lang} mode={mode} meId={me?.publicId} />
+          <BoardList key={tab} board={board} tab={tab} lang={lang} mode={mode} meId={me?.publicId} />
         ) : (
           <p className="status board-status">
             <LoadingWave text={t(lang, 'loading')} />
@@ -220,11 +223,13 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
 
 function BoardList({
   board,
+  tab,
   lang,
   mode,
   meId,
 }: {
   board: Board;
+  tab: Tab;
   lang: LangCode;
   mode: Mode;
   meId?: string;
@@ -232,7 +237,14 @@ function BoardList({
   const empty =
     board.rows.length === 0 && (board.own?.length ?? 0) === 0 && board.waiting.length === 0;
   if (empty) {
-    return <p className="board-empty">{t(lang, 'boardEmpty')}</p>;
+    // A sad ghost over a terse line: an empty FRIENDS tab means no edges at all (the
+    // merely-unplayed show as waiting rows), an empty GLOBAL one means nobody played.
+    return (
+      <div className="board-empty">
+        <GhostIcon aria-hidden />
+        <p>{t(lang, tab === 'friends' ? 'boardEmptyFriends' : 'boardEmptyGlobal')}</p>
+      </div>
+    );
   }
   let index = 0;
   const item = (row: BoardRow) => (

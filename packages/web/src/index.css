@@ -5150,15 +5150,25 @@ button * {
 .board-body > .board-empty {
   margin: auto;
 }
+/* The empty state: a sad pixel ghost over a terse line (user feedback 2026-08-20 —
+   the long sentence said less than the ghost does). One dim block, centered by the
+   body's auto margins. */
 .board-empty {
-  font-family: var(--ui);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
   color: var(--fg);
   opacity: 0.45;
   text-align: center;
+}
+.board-empty > p {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .board-list {
