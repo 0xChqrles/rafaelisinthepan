@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   AVATAR_CELLS,
   AVATAR_PALETTES,
@@ -6,6 +6,8 @@ import {
   decodeAvatar,
   encodeAvatar,
   publicIdFromSecret,
+  sanitizeName,
+  NAME_MAX_LENGTH,
 } from '@whippin/shared';
 import { parseProfile, postProfileBody, profileUrl } from '../api';
 import { playerSecret } from '../identity';
@@ -26,12 +28,12 @@ import { useGameStore } from '../state/gameStore';
 // Show-don't-tell throughout: the grid demonstrates itself under the finger and the
 // swatches show their colours — no explanatory copy anywhere.
 
-const NAME_MAX = 16;
-
-// The name is alphanumerics + underscores, case kept: every other typed character
-// becomes `_` (user-decided 2026-08-19). Applied to the whole value on change, so
-// paste and mobile IME input go through the same door as keystrokes.
-const sanitizeName = (raw: string) => raw.replace(/[^a-zA-Z0-9]/g, '_');
+// The name rule — alphanumerics + underscores, case kept, accents FOLDED, capped —
+// is `@whippin/shared`'s `sanitizeName`, because the SERVER applies the same one
+// (user-decided 2026-08-19). Every path that writes `name` here goes through it: the
+// initial read, the keystrokes, the composition's commit. So the value the editor
+// holds is always something the route will accept, and the save body needs no pass
+// of its own.
 
 // What the initial read settled, and the reason the editor is GATED on it: the editor
 // is only meaningful against the profile the server holds. Rendering an editable blank
@@ -93,10 +95,16 @@ export default function Profile() {
           const profile = parseProfile(await response.json());
           const decoded = decodeAvatar(profile.avatar);
           if (cancelled) return;
-          setName(profile.name);
+          // Sanitized on the way IN as well, so the editor can never display a value
+          // its own field would refuse. The server enforces the same rule on write, so
+          // this is a no-op on anything it stored — but the baseline has to be the
+          // sanitized form too, or a name the editor cannot reproduce would light SAVE
+          // up with nothing edited.
+          const name = sanitizeName(profile.name);
+          setName(name);
           setPalette(decoded.palette);
           setCells(decoded.cells);
-          setBaseline({ name: profile.name, avatar: profile.avatar });
+          setBaseline({ name, avatar: profile.avatar });
         } else if (response.status !== 404) {
           setLoad('failed');
           return;
@@ -110,6 +118,45 @@ export default function Profile() {
       cancelled = true;
     };
   }, [secret, attempt]);
+
+  // ---- the name field. Sanitizing a CONTROLLED input's value makes React reassign
+  // `node.value`, and assigning `.value` collapses the text cursor to the END of the
+  // field — React's own save/restore is gated on the focused element having CHANGED
+  // (`restoreSelection`), and it never does here, so nothing puts the caret back.
+  // Typing at the end hides it; typing a space into the middle of a name does not.
+  // So the caret is placed by hand: sanitizing the PREFIX up to the cursor gives its
+  // new index exactly, which a straight index carry-over would not — folding `é` and
+  // expanding `œ` both change the length before the cursor.
+  const nameRef = useRef<HTMLInputElement>(null);
+  const caretRef = useRef<number | null>(null);
+  const placeCaret = useCallback(() => {
+    const caret = caretRef.current;
+    caretRef.current = null;
+    const input = nameRef.current;
+    if (caret === null || input === null || document.activeElement !== input) return;
+    input.setSelectionRange(caret, caret);
+  }, []);
+  // On a render this rides the commit, and React's own post-event restore then finds
+  // the values already equal and writes nothing.
+  useLayoutEffect(placeCaret);
+
+  // A composition (a dead key, an IME) has to be left alone while it is open: rewriting
+  // the value under it kills the composition, so an AZERTY `^` would commit as `_` and
+  // the `î` it was building would never arrive. The raw value is still mirrored into
+  // state — the input stays controlled, so React does not reassign and the caret does
+  // not move — and the rule lands on `compositionend`, over the composed character.
+  const composingRef = useRef(false);
+  const applyName = (raw: string, at: number | null) => {
+    const next = sanitizeName(raw);
+    caretRef.current = sanitizeName(raw.slice(0, at ?? raw.length)).length;
+    // React rewrites a controlled input's value after the event EVEN WHEN the state
+    // does not change (`finishEventHandler` flushes, then restores), so a keystroke
+    // that sanitizes back onto the name already held — a space typed over an existing
+    // `_` — still moves the caret, with no render for the layout effect to ride. A
+    // microtask lands after that restore.
+    if (next === name) queueMicrotask(placeCaret);
+    setName(next);
+  };
 
   // ---- painting. One STROKE value per gesture: starting on a painted cell erases (so
   // tap toggles), and dragging paints that same value throughout.
@@ -154,15 +201,23 @@ export default function Profile() {
   const colors = AVATAR_PALETTES[palette];
   // One encode per render, shared by the preview, the dirty check and the save body.
   const encoded = encodeAvatar(palette, cells);
-  // The input can't hold whitespace (sanitizeName), so the typed name is compared and
-  // sent as-is — a trim here could mark a freshly loaded stored name dirty unedited.
+  // No trim on either side: the rule has no room for whitespace at all (it sanitizes
+  // to `_`), the baseline is sanitized on load, and the SERVER stores the body it is
+  // sent verbatim — so the two strings compared here are the same two strings the
+  // route holds, and the re-baseline below is exact.
   const dirty = name !== baseline.name || encoded !== baseline.avatar;
 
   const onSave = useCallback(async () => {
+    // The last door the rule stands in: a composition still OPEN when SAVE is tapped
+    // would leave `name` holding its raw mirror, so it lands here too. A no-op on every
+    // settled value, and the baseline below re-reads it, so a save can never leave the
+    // editor differing from what it just stored.
+    const clean = sanitizeName(name);
+    setName(clean);
     setPhase('saving');
     setRefused(null);
     const started = Date.now();
-    const body = { secret, name, avatar: encoded };
+    const body = { secret, name: clean, avatar: encoded };
     // The outcome is decided while the dots run; the phases below only pace how the
     // button tells it.
     let outcome: SaveRefusal = null;
@@ -222,18 +277,27 @@ export default function Profile() {
                   what the grid below is editing, seen as others will see it. */}
               <Avatar avatar={encoded} size={48} />
               <input
+                ref={nameRef}
                 className="profile-name"
                 type="text"
                 value={name}
-                maxLength={NAME_MAX}
+                maxLength={NAME_MAX_LENGTH}
                 placeholder={t(lang, 'profileNamePlaceholder')}
                 aria-label={t(lang, 'profileNamePlaceholder')}
                 autoComplete="off"
                 autoCorrect="off"
                 autoCapitalize="off"
                 spellCheck={false}
+                onCompositionStart={() => {
+                  composingRef.current = true;
+                }}
+                onCompositionEnd={(e) => {
+                  composingRef.current = false;
+                  applyName(e.currentTarget.value, e.currentTarget.selectionStart);
+                }}
                 onChange={(e) => {
-                  setName(sanitizeName(e.target.value));
+                  if (composingRef.current) setName(e.target.value);
+                  else applyName(e.target.value, e.target.selectionStart);
                   setRefused(null);
                 }}
               />

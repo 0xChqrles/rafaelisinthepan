@@ -10,6 +10,12 @@ import { avatarOutlinePath } from './avatarOutline';
 // interior edges, so there is nothing left to bleed or pixel-snap. Only the tile's
 // outer corners round (via clipPath); a `<path>` rather than `<polygon>`s because a
 // polygon cannot carry a hole, and a ring drawing must show ground in its centre.
+//
+// KEEP THE TRACER (user-decided 2026-08-19): the two cheaper answers — one `<path>`
+// with a rect subpath per cell, and `shape-rendering="crispEdges"` (the technique the
+// OG card uses) — were both weighed, and neither renders the same on every browser.
+// The outline is the one shape with nothing left for a rasterizer to disagree about.
+//
 // One renderer for every surface that shows a player (the editor's live preview, and
 // the #190 board rows).
 //
@@ -21,19 +27,20 @@ const RADIUS = 3.6; // outer corner rounding only — cells themselves are squar
 
 export default function Avatar({ avatar, size = 40 }: { avatar: string; size?: number }) {
   const clipId = useId();
-  const decoded = useMemo(() => {
+  // Decoding and tracing are ONE guarded step: both read the same stored string, and a
+  // renderer that throws on a malformed one takes the whole tree with it — a board of
+  // #190 rows draws every player's avatar, so this has to fail as "no mark", never as
+  // a blank screen.
+  const drawing = useMemo(() => {
     try {
-      return decodeAvatar(avatar);
+      const { palette, cells } = decodeAvatar(avatar);
+      return { palette: AVATAR_PALETTES[palette], outline: avatarOutlinePath(cells, CELL) };
     } catch {
       return null;
     }
   }, [avatar]);
-  const outline = useMemo(
-    () => (decoded ? avatarOutlinePath(decoded.cells, CELL) : ''),
-    [decoded],
-  );
-  if (!decoded) return null;
-  const palette = AVATAR_PALETTES[decoded.palette];
+  if (!drawing) return null;
+  const { palette, outline } = drawing;
   const span = AVATAR_SIZE * CELL;
   return (
     <svg
@@ -48,7 +55,7 @@ export default function Avatar({ avatar, size = 40 }: { avatar: string; size?: n
       </clipPath>
       <g clipPath={`url(#${clipId})`}>
         <rect width={span} height={span} fill={palette.bg} />
-        {outline && <path d={outline} fill={palette.fg} />}
+        {outline ? <path d={outline} fill={palette.fg} /> : null}
       </g>
     </svg>
   );

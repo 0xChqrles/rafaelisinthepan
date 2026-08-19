@@ -1,4 +1,4 @@
-import { AVATAR_SIZE } from '@whippin/shared';
+import { AVATAR_CELLS, AVATAR_SIZE } from '@whippin/shared';
 
 // The union OUTLINE of an avatar's filled cells, as one SVG path: every boundary —
 // outer edges and holes alike — contour-traced into a closed loop, collinear runs
@@ -6,10 +6,22 @@ import { AVATAR_SIZE } from '@whippin/shared';
 // meeting on an edge can antialias a hairline seam between them; a union outline has
 // no interior edges, so there is nothing to seam.
 //
+// It is a TRACER and not the cheaper alternatives — one `<path>` carrying a rect
+// subpath per cell, or `shape-rendering="crispEdges"` on a rect per cell — because
+// user-decided 2026-08-19, after the seam was chased through both: those two do not
+// render the same on every browser, where an outline with no interior edges has
+// nothing left to disagree about. Keep the tracer.
+//
 // The directed edges keep the interior on the RIGHT of the walk, so outer loops wind
 // clockwise on screen and holes counter-clockwise — the default nonzero fill rule
 // subtracts the holes by construction.
 export function avatarOutlinePath(cells: readonly number[], cell: number): string {
+  // The grid's WIDTH is the avatar's, not the array's, so a wrong-length array would
+  // read across rows and draw a plausible wrong picture. Refuse instead: `Avatar`
+  // catches it and renders nothing.
+  if (cells.length !== AVATAR_CELLS) {
+    throw new Error(`avatarOutlinePath: expected ${AVATAR_CELLS} cells`);
+  }
   const n = AVATAR_SIZE;
   const v = n + 1; // the vertex grid is one wider than the cell grid
   const filled = (x: number, y: number) =>
@@ -36,7 +48,8 @@ export function avatarOutlinePath(cells: readonly number[], cell: number): strin
   }
 
   // The walk's own turning sense (the way a single cell's four edges chain), as key
-  // deltas: right -> down -> left -> up.
+  // deltas: right -> down -> left -> up. Only ever asked mid-walk, so `dir` is always
+  // one of those four.
   const turn = (dir: number) => (dir === 1 ? v : dir === v ? -1 : dir === -1 ? -v : 1);
 
   // Chain the edges into loops. Vertices are visited smallest-first, so each loop
@@ -58,7 +71,14 @@ export function avatarOutlinePath(cells: readonly number[], cell: number): strin
           // Two ways out: two filled cells touch here only diagonally. Turn the way
           // the walk always turns, which hugs the region the walk came along — the
           // two regions keep separate loops and the loops never cross.
-          const idx = Math.max(cands.indexOf(cur + turn(dir)), 0);
+          const idx = cands.indexOf(cur + turn(dir));
+          // The turned edge is always there: a loop begins at its smallest vertex key,
+          // and at a diagonal touch one of the two out-edges always leads to a smaller
+          // key, so that loop has already been walked and drained — a start vertex can
+          // never hold two candidates, and mid-walk the turn is the arriving region's
+          // own next side. Taking the OTHER edge would cross the loops and fill the
+          // wrong pixels with nothing to show for it, so this fails loudly instead.
+          if (idx < 0) throw new Error('avatarOutlinePath: no turn out of a shared vertex');
           next = cands[idx];
           cands.splice(idx, 1);
         }

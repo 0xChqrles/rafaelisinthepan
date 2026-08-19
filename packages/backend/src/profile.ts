@@ -14,13 +14,19 @@
 // the CloudFront profile behavior's allowList (root AGENTS.md contract), and a
 // production POST must carry `x-amz-content-sha256` over the exact body bytes (OAC).
 
-import { decodeAvatar, isValidSecret, publicIdFromSecret, PUBLIC_ID_PATTERN } from '@whippin/shared';
+import {
+  decodeAvatar,
+  isValidName,
+  isValidSecret,
+  publicIdFromSecret,
+  NAME_MAX_LENGTH,
+  PUBLIC_ID_PATTERN,
+} from '@whippin/shared';
 import { containsSwastika } from './avatarModeration';
 import { isNameAllowed } from './nameFilter';
 import type { ProfileStore } from './profileStore';
 import { errorResponse, json, type FnUrlEvent, type FnUrlResult } from './respond';
 
-export const NAME_MAX_LENGTH = 16;
 const PROFILE_BODY_MAX_BYTES = 4_096;
 const LIVE_HEADERS = { 'Cache-Control': 'no-store' } as const;
 
@@ -33,15 +39,20 @@ function bodyOf(event: FnUrlEvent): unknown {
   return JSON.parse(body) as unknown;
 }
 
-// The display name's shape rule: at most 16 code points after trimming, no control or
-// format characters (a zero-width or bidi character in a name is only ever a disguise).
-// Empty is allowed — the avatar alone is a valid profile.
+// The display name's shape rule is the SHARED one (user-decided 2026-08-19: "the server
+// should apply the same rules") — alphanumerics and underscores, case kept, at most
+// NAME_MAX_LENGTH characters — so the store can only ever hold what the editor can
+// produce. The old local rule (trim, then a code-point cap and a control/format-character
+// check) is subsumed: whitespace, punctuation, accents, emoji and zero-width characters
+// are all things `sanitizeName` would change, so `isValidName` refuses them here. Empty
+// stays allowed — the avatar alone is a valid profile.
+//
+// It REFUSES rather than sanitizes: sanitizing server-side would silently store a name
+// nobody typed, and the web sends a sanitized name through every path it has, so a
+// non-conforming body is a caller that went around the editor.
 export function validateName(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
-  const name = raw.trim();
-  if ([...name].length > NAME_MAX_LENGTH) return null;
-  if (/[\p{Cc}\p{Cf}]/u.test(name)) return null;
-  return name;
+  return isValidName(raw) ? raw : null;
 }
 
 export async function handleProfile(
@@ -104,7 +115,7 @@ export async function handleProfile(
     return errorResponse(
       400,
       'bad_request',
-      `Body field "name" must be a string of at most ${NAME_MAX_LENGTH} characters.`,
+      `Body field "name" must be at most ${NAME_MAX_LENGTH} letters, digits and underscores.`,
       responseHeaders,
     );
   }

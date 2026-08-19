@@ -14,6 +14,7 @@
     src/scores.ts             WORD_CLAIM_ZONE (web+backend) + VIEWER_IP_HEADER (infra+backend)
     src/identity.ts           the #187 player key: secret format + publicId derivation (web+backend)
     src/avatar.ts             the #188 avatar: {bg, fg} palettes + the 14-byte 1-bit grid codec (web encodes/renders, backend validates)
+    src/name.ts               the #188 display-name charset: sanitizeName (web) ⇔ isValidName (backend)
     src/types.ts              shared puzzle + score-API schema types (Puzzle, Hole, ScoreHistogram, …)
     src/heat.ts               the app's ONE weird→calm stop gradient: heatColor() + fixed-cap rankHeatColor()/HIT_HEAT_CAP (exponents, floating hits, loot, route rows) + progressHeatColor()/progressEmoji() (run rulers incl. the card, share-text emoji row, archive fills, chooser strips)
     src/shareCard.ts          the share-token codec (both modes), browser + Lambda
@@ -48,6 +49,15 @@
   web encodes what the editor drew and renders every stored avatar; the backend decodes
   to validate and moderate — a fork would accept different strings for one drawing
   (root `AGENTS.md`, Player profile).
+- `src/name.ts` is the ONE definition of the #188 display-name charset (user-decided
+  2026-08-19: "the server should apply the same rules"). `sanitizeName` is what the web
+  writes through on every path — the initial read, keystrokes, a composition's commit,
+  the save body — and `isValidName` is simply "the sanitizer leaves it alone", which is
+  what the backend refuses a write on. Stating the rule twice would let the editor
+  promise a shape the store does not hold, which is exactly what the first cut did (it
+  lived in one onChange handler and nothing else in the system knew about it). Accents
+  FOLD rather than underscore, and the pipeline normalizes first — the reasoning is in
+  the root `AGENTS.md` (Player profile).
 - `src/identity.ts` is the ONE definition of the #187 player identity: the 32-hex secret
   format the web generates/stores and the `publicId` derivation (first 10 bytes of
   SHA-256(secret), base32) the backend keys every score row by. The web sends the secret,

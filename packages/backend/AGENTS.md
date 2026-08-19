@@ -27,7 +27,7 @@
       profileStore.ts         player-row storage contract (player#<publicId> partition)
       dynamoProfileStore.ts   prod GetItem read + UpdateItem upsert (createdAt via if_not_exists)
       memoryProfileStore.ts   process-local implementation for backend:dev/tests
-      nameFilter.ts           #188 banned-strings display-name filter (normalize + substring)
+      nameFilter.ts           #188 banned-strings display-name MODERATION (normalize + substring); the charset is shared/name.ts
       avatarModeration.ts     #188 best-effort swastika template match on the decoded grid
       turnstile.ts            Cloudflare Siteverify + explicit local accept-all verifier
       layout.ts               storeKey() — the <date>.<lang>.json key shared by readers + publish (#17/#4)
@@ -94,10 +94,14 @@ pnpm backend:dev                # local server (puzzles + /scores + /today) on :
   (public row: `{ publicId, name, avatar }`; 400 malformed id, 404 never customized) and
   `POST /profile` `{ secret, name, avatar }` — the authenticated upsert keyed by the
   DERIVED publicId (shared `identity.ts`), a separate write path from scores. Every
-  response is `no-store`. The write validates the name (≤16 code points trimmed, no
-  control/format characters, empty allowed) and the avatar (shared `avatar.ts` decode),
+  response is `no-store`. The write validates the name against the SHARED charset rule
+  (`shared/src/name.ts` `isValidName` — alphanumerics and underscores, ≤16, empty
+  allowed; user-decided 2026-08-19, replacing the local trim + code-point cap +
+  control/format check, which it subsumes) and the avatar (shared `avatar.ts` decode),
   then moderates: `nameFilter.ts` → 400 `name_rejected`, `avatarModeration.ts` → 400
-  `avatar_rejected`. Storage is the score table — partition `player#<publicId>`, sort key
+  `avatar_rejected`. It REFUSES a non-conforming name rather than sanitizing one nobody
+  typed, and stores what it was sent VERBATIM — there is no trim any more, so the stored
+  row and the editor's baseline are the same string. Storage is the score table — partition `player#<publicId>`, sort key
   `profile`, `name`/`avatar`/`createdAt`/`updatedAt` (`dynamoProfileStore`; local serve
   swaps in `memoryProfileStore`). **The GET is a STRONGLY CONSISTENT read** (the score
   Query's rule, for the same read-after-write reason): the editor adopts what comes back
