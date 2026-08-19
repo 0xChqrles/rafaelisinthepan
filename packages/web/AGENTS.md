@@ -417,9 +417,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
   read leaves the stored profile unknown — an editor started from that guess would save
   a blank over a real profile — so a failure shows `failedProfile` + RETRY instead of
   an editor. Unlike a score submission's silent failure, this read's is loud for that
-  reason. A **404 is not a failure**: it is the answer "never customized", and lands on
-  the blank editor whose blank baseline is then correct. The wired entry point is the
-  leaderboard screen's EDIT chip (#190) — the identity strip navigates here.
+  reason. A **404 is not a failure**: it is the answer "never customized", and since
+  2026-08-20 it opens the editor PREFILLED with the player's ASSIGNED identity
+  (`anonName` + `defaultAvatar` — the exact fallback every board row already shows; an
+  editor opening blank while the board wears a name and a mark read as broken), with
+  those values as the BASELINE too, so SAVE stays dark until something actually
+  changes — storing them would change nothing anyone sees. The wired entry point is
+  the leaderboard screen's EDIT chip (#190), and the header carries a CLOSE chip back
+  to `pathForBoard(lang, lastMode)` (user feedback 2026-08-20 — the screen was
+  unleavable).
   **The avatar RENDERER is `components/Avatar.tsx` over `components/avatarOutline.ts`,
   and the tracer STAYS** (user-decided 2026-08-19 — the alternatives do not render the
   same on every browser; see the root `AGENTS.md`). Decoding and tracing are ONE
@@ -490,8 +496,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   stored, and a saved profile replaces them. The collapsed straddling tie renders as
   a row (`#41  +20 TIED`), the below-the-cut gap as a dashed rule, and the friends
   tab's WAITING friends (edges with no score today, user-decided 2026-08-20) as
-  dashed no-fill rows with `NOT PLAYED YET` where their score would be and a dim `-`
-  in the rank column (an empty cell read as a mistake). The identity strip on
+  dashed no-fill rows under ONE `NOT PLAYED YET` hairline section caption (second
+  pass, same day: a label repeated per row read as a stutter) with a small centered
+  solid tick in the rank column (an empty cell read as a rendering hole, and the
+  pixel hyphen sat left and thin). The identity strip on
   top (your mark + name + EDIT → `/profile`) and the INVITE device-card button on the
   bottom edge are the #188/#189 wiring; both work before ever playing. Rows rise on
   the `rung-in` gesture staggered by index (delays survive reduced motion, the rise

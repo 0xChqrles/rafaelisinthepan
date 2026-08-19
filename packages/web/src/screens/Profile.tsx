@@ -10,14 +10,20 @@ import {
   NAME_MAX_LENGTH,
 } from '@whippin/shared';
 import { parseProfile, postProfileBody, profileUrl } from '../api';
+import { anonName } from '../anonName';
+import { defaultAvatar } from '../defaultAvatar';
 import { playerSecret } from '../identity';
-import { resolveHomeLang } from '../langs';
+import { navigate } from '../routing';
+import { pathForBoard, resolveHomeLang } from '../langs';
 import { t } from '../i18n';
 import Avatar from '../components/Avatar';
 import LoadError from '../components/LoadError';
 import LoadingWave from '../components/LoadingWave';
 import TopBar from '../components/TopBar';
 import { useGameStore } from '../state/gameStore';
+// Inline SVG (vite-plugin-svgr): the close control back to the leaderboard, painting
+// with currentColor; the button's aria-label names it.
+import CloseIcon from '../assets/icons/close.svg?react';
 
 // The #188 profile editor: name, tap-to-paint 10×10 grid, and the palette picker —
 // each swatch IS a palette ({bg, fg} pair, user-decided 2026-08-19: two colours,
@@ -40,7 +46,12 @@ import { useGameStore } from '../state/gameStore';
 // while the read is in flight invites edits the response then overwrites, and a failed
 // read leaves the stored profile UNKNOWN — an editor started from that guess would save
 // a blank over a real profile. A 404 is not a failure: it IS the answer "never
-// customized", for which the blank editor and the blank baseline are exactly right.
+// customized" — and since 2026-08-20 that opens the editor on the player's ASSIGNED
+// identity (anonName + defaultAvatar, the exact fallback every board row already
+// shows), not on a blank: an editor that opens empty while the board wears a name and
+// a mark reads as broken. The assigned values are also the BASELINE, so SAVE stays
+// dark until something is actually changed — storing them would change nothing anyone
+// sees, since every surface derives the same fallback from the id.
 // (This is the game route's own loading / error / content shape.)
 type LoadState = 'loading' | 'ready' | 'failed';
 
@@ -60,6 +71,7 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 
 export default function Profile() {
   const lastLang = useGameStore((s) => s.lastLang);
+  const lastMode = useGameStore((s) => s.lastMode);
   // No puzzle to take a language from: same resolution as the `/` redirect.
   const lang = resolveHomeLang(lastLang, navigator.language);
 
@@ -105,7 +117,18 @@ export default function Profile() {
           setPalette(decoded.palette);
           setCells(decoded.cells);
           setBaseline({ name, avatar: profile.avatar });
-        } else if (response.status !== 404) {
+        } else if (response.status === 404) {
+          // Never customized: open on the assigned identity the boards already show
+          // (see the gating note above). anonName is sanitizeName-stable by contract,
+          // so the field holds it verbatim.
+          const name = anonName(publicId);
+          const generated = defaultAvatar(publicId);
+          const decoded = decodeAvatar(generated);
+          setName(name);
+          setPalette(decoded.palette);
+          setCells(decoded.cells);
+          setBaseline({ name, avatar: generated });
+        } else {
           setLoad('failed');
           return;
         }
@@ -256,6 +279,18 @@ export default function Profile() {
       <TopBar
         lang={lang}
         left={<span className="topbar-title">{t(lang, 'profileTitle')}</span>}
+        right={
+          // The way OUT (user feedback 2026-08-20 — the screen was unleavable): back
+          // to the leaderboard, this editor's wired entry point.
+          <button
+            type="button"
+            className="home-btn archive-close"
+            aria-label={t(lang, 'ariaClose')}
+            onClick={() => navigate(pathForBoard(lang, lastMode ?? 'sentence'))}
+          >
+            <CloseIcon className="ui-icon" aria-hidden />
+          </button>
+        }
       />
       {load === 'loading' && (
         <p className="status">

@@ -266,36 +266,31 @@ function BoardList({
             {board.own.map(item)}
           </>
         )}
-        {/* Friends with no score today (friends board only): named, never dropped —
-            the row wears the dashed "not yet" frame and says so where a score would. */}
+        {/* Friends with no score today (friends board only): named, never dropped.
+            ONE section caption says why for all of them (user feedback 2026-08-20 —
+            the per-row label read as a stutter); each row keeps the dashed "not yet"
+            frame and a centered no-rank tick where its rank would be. */}
+        {board.waiting.length > 0 && (
+          <li className="board-section">{t(lang, 'boardNotPlayed')}</li>
+        )}
         {board.waiting.map((player) => (
-          <WaitingRowItem key={player.publicId} player={player} lang={lang} index={index++} />
+          <WaitingRowItem key={player.publicId} player={player} index={index++} />
         ))}
       </ol>
     </>
   );
 }
 
-function WaitingRowItem({
-  player,
-  lang,
-  index,
-}: {
-  player: BoardPlayer;
-  lang: LangCode;
-  index: number;
-}) {
+function WaitingRowItem({ player, index }: { player: BoardPlayer; index: number }) {
   return (
     <li className="board-row waiting" style={{ '--i': index } as CSSProperties}>
-      {/* No rank yet — the cell says so instead of standing empty. */}
-      <span className="board-rank none" aria-hidden="true">
-        -
-      </span>
+      {/* No rank yet — a small centered tick where the number would be, so the cell
+          never reads as a rendering hole. */}
+      <span className="board-norank" aria-hidden="true" />
       <Avatar avatar={player.avatar ?? defaultAvatar(player.publicId)} size={28} />
       <span className={`board-name${player.name ? '' : ' anon'}`}>
         {player.name || anonName(player.publicId)}
       </span>
-      <span className="board-waiting-label">{t(lang, 'boardNotPlayed')}</span>
     </li>
   );
 }
