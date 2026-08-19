@@ -6,9 +6,11 @@
 import { describe, it, expect } from 'vitest';
 import {
   apiBase,
+  friendsUrl,
   puzzleUrl,
   wordPuzzleUrl,
   puzzleOutcome,
+  parseFriends,
   parsePuzzle,
   parseProfile,
   parseScoreHistogram,
@@ -397,5 +399,20 @@ describe('profileUrl + parseProfile (#188)', () => {
     expect(() => parseProfile({ ...valid, publicId: 'NOPE' })).toThrow(/publicId/);
     expect(() => parseProfile({ ...valid, name: 3 })).toThrow(/name/);
     expect(() => parseProfile({ ...valid, avatar: 'garbage' })).toThrow(/avatar/);
+  });
+});
+
+describe('friendsUrl + parseFriends (#189)', () => {
+  it('addresses the /friends route with NO query — the key authenticates in the body', () => {
+    expect(friendsUrl('https://api.example')).toBe('https://api.example/friends');
+    expect(() => friendsUrl('')).toThrow(/VITE_API_BASE_URL/);
+  });
+
+  it('validates the list shape and rejects a corrupt one', () => {
+    expect(parseFriends({ friends: [] })).toEqual([]);
+    expect(parseFriends({ friends: ['abcdefghij234567'] })).toEqual(['abcdefghij234567']);
+    expect(() => parseFriends(null)).toThrow(/not an object/);
+    expect(() => parseFriends({ friends: 'abcdefghij234567' })).toThrow(/friends/);
+    expect(() => parseFriends({ friends: ['NOPE'] })).toThrow(/friends/);
   });
 });

@@ -11,6 +11,7 @@ import { createServer, type IncomingMessage } from 'node:http';
 import { createHandler } from './handler';
 import { fsStore } from './fsStore';
 import { defaultLocalStoreRoot } from './layout';
+import { memoryFriendStore } from './memoryFriendStore';
 import { memoryProfileStore } from './memoryProfileStore';
 import { memoryScoreStore } from './memoryScoreStore';
 import type { FnUrlEvent } from './respond';
@@ -35,6 +36,7 @@ const handler = createHandler({
     singleUseTokens: false,
   },
   profiles: memoryProfileStore(),
+  friends: memoryFriendStore(),
 });
 
 // Adapt a Node http request into the minimal Lambda Function URL event the handler reads.
@@ -77,7 +79,7 @@ server.listen(PORT, () => {
   console.log(`[backend]   origin: ${ALLOWED_ORIGIN}`);
   console.log(`[backend]   scores: in-memory; Turnstile accept-all (local only)`);
   console.log(`[backend]   GET /?lang=<xx>&date=<YYYY-MM-DD>[&mode=word]  GET|POST /scores?lang=&date=&mode=`);
-  console.log(`[backend]   GET /profile?id=<publicId>  POST /profile`);
+  console.log(`[backend]   GET /profile?id=<publicId>  POST /profile  POST /friends`);
   console.log(`[backend]   GET /today  GET /s/<token>  GET /og/<token>.png`);
   console.log(`[backend] point the front at it: VITE_API_BASE_URL=http://localhost:${PORT}`);
 });

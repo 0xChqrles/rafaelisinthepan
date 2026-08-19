@@ -5,6 +5,7 @@ import usePuzzle from './hooks/usePuzzle';
 import useWordPuzzle from './hooks/useWordPuzzle';
 import LanguageSelect from './screens/LanguageSelect';
 import Profile from './screens/Profile';
+import FriendInvite from './screens/FriendInvite';
 import Archive from './screens/Archive';
 import Game from './screens/Game';
 import WordGame from './screens/WordGame';
@@ -57,10 +58,9 @@ export default function App() {
   // content and the UI chrome are French — screen readers pick pronunciation rules from
   // this attribute. Language-scoped routes (game + archive) use their own lang; the
   // language-less routes use the same resolution as the `/` redirect.
+  const homeLang = resolveHomeLang(lastLang, navigator.language);
   const docLang =
-    route.view === 'game' || route.view === 'archive'
-      ? route.lang
-      : resolveHomeLang(lastLang, navigator.language);
+    route.view === 'game' || route.view === 'archive' ? route.lang : homeLang;
   useEffect(() => {
     document.documentElement.lang = docLang;
   }, [docLang]);
@@ -76,6 +76,9 @@ export default function App() {
       {/* The living backdrop — every screen (game, archive, select, tutorial) sits on it. */}
       {route.view === 'select' && <LanguageSelect />}
       {route.view === 'profile' && <Profile />}
+      {/* The invite link (#189) is a beat, not a screen: it lands the mutual edge and
+          hands over to the home redirect above. */}
+      {route.view === 'invite' && <FriendInvite publicId={route.publicId} lang={homeLang} />}
       {route.view === 'archive' && <Archive lang={route.lang} mode={route.mode} />}
       {route.view === 'game' && (
         <GameRoute lang={route.lang} mode={route.mode} date={route.date} />

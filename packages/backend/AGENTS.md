@@ -27,6 +27,10 @@
       profileStore.ts         player-row storage contract (player#<publicId> partition)
       dynamoProfileStore.ts   prod GetItem read + UpdateItem upsert (createdAt via if_not_exists)
       memoryProfileStore.ts   process-local implementation for backend:dev/tests
+      friends.ts              POST /friends (#189): auth, list/add/remove, self-add + cap refusals
+      friendStore.ts          mutual-edge storage contract; friends#<publicId> partition + FRIENDS_MAX
+      dynamoFriendStore.ts    prod one-transaction link/unlink (both directions) + consistent Query
+      memoryFriendStore.ts    process-local implementation for backend:dev/tests
       nameFilter.ts           #188 banned-strings display-name MODERATION (normalize + substring); the charset is shared/name.ts
       avatarModeration.ts     #188 best-effort swastika template match on the decoded grid
       turnstile.ts            Cloudflare Siteverify + explicit local accept-all verifier
@@ -46,7 +50,7 @@
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
 pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output). Sentence puzzles AND #154 word artifacts (#156): the artifact type is detected from the file's SHAPE and routed to its own key.
 pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--mode sentence|word] [--ci]  # publish-buffer coverage (#61); --mode word probes the #156 word-artifact buffer; reports + exits 0 by default, --ci exits 1 on any (day,lang) gap for cron/CI
-pnpm backend:dev                # local server (puzzles + /scores + /today) on :8787; FS puzzles, in-memory scores, local Turnstile accept-all
+pnpm backend:dev                # local server (puzzles + /scores + /profile + /friends + /today) on :8787; FS puzzles, in-memory scores/profiles/friends, local Turnstile accept-all
 ```
 
 ---
@@ -111,6 +115,27 @@ pnpm backend:dev                # local server (puzzles + /scores + /today) on :
   the only row you can write is your own. Production POST needs `x-amz-content-sha256`
   like the score POST (same OAC boundary); the `id` query must stay in the CloudFront
   profile behavior's allowList (root `AGENTS.md` contract).
+
+- **Friends graph (#189):** the ONE handler also serves `POST /friends` — and ONLY POST
+  (a GET is a named 405): the player key authenticates in the BODY, so there is no way to
+  ask for a list without proving whose it is. `{secret}` reads the caller's edges,
+  `{secret, add}` records the mutual link an invite-link click makes, `{secret, remove}`
+  deletes both sides; every call answers `{ friends: [publicId] }` and every response is
+  `no-store`. `add` refuses a self-link (400 `self_link`) and the cap (409 `friend_limit`,
+  `FRIENDS_MAX` = 200, checked on BOTH sides); a re-click and a remove of a non-friend are
+  ordinary 200s. Storage is the score table again — `friends#<publicId>` partition, sort key
+  = the friend's id, `createdAt` via `if_not_exists` (`dynamoFriendStore`; local serve swaps
+  in `memoryFriendStore`). The pair is ONE `TransactWriteItems` in both directions, so a
+  half-edge is unrepresentable, and the writes are unconditional and idempotent — which is
+  why the transaction needs no `ClientRequestToken` and why it heals a half-edge instead of
+  reporting the pair linked and leaving it one-sided. Every Query is STRONGLY CONSISTENT
+  (the profile read's rule: the call answers with the list it just wrote), and the cap is
+  COUNTED off those rows rather than kept in a counter item — see the root `AGENTS.md` for
+  why a bound may be overshot by a simultaneous click and an invariant may not. This is the
+  only route that DELETES, which is why the table grant gained `dynamodb:DeleteItem`. The
+  route reads NO query parameter; the CloudFront `friends*` behavior forwards none, and the
+  day it reads one, that behavior has to name it (root `AGENTS.md` contract). Production
+  POST needs `x-amz-content-sha256` like every other write here.
 - **Word mode's daily artifact (#154/#156):** the ONE puzzle endpoint also serves the
   single-word artifact under `mode=word` (`GET /?lang=&date=&mode=word`; absent/
   `sentence` = the sentence puzzle, anything else = 400) with identical day-addressing,

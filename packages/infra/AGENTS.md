@@ -74,8 +74,13 @@
   its own `profile*` behavior on the same shape: `CachingDisabled`, ALLOW_ALL methods,
   and an origin-request policy forwarding exactly the `id` query (the one parameter the
   profile handler reads) with `allExcept: Host` headers for the OAC-signed POST — no
-  viewer-IP function, since the route has no per-IP logic. The table grant adds
-  `GetItem` for the profile read (the upsert reuses `UpdateItem`); both are pinned by
+  viewer-IP function, since the route has no per-IP logic. **`/friends` (#189)** is the
+  third behavior on that shape — `CachingDisabled`, ALLOW_ALL methods, `allExcept: Host`
+  headers for the OAC-signed POST — with a query allow-list that is EMPTY, because the
+  handler reads no query at all (the key authenticates in the body); the day it reads one,
+  it has to be named there or CloudFront will strip it. The table grant adds
+  `GetItem` for the profile read (the upsert reuses `UpdateItem`) and **`DeleteItem` for
+  #189's symmetric friend removal, the only delete on this table**; all are pinned by
   `backend-stack.test.ts`. The Lambda
   receives the table name and SSM SecureString PARAMETER NAMES (defaults
   `/whippin/turnstile-secret`, `/whippin/ip-hmac-secret`; override with the matching `-c`

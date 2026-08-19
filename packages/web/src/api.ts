@@ -240,6 +240,33 @@ export async function postProfileBody(
   return postSignedJson(url, body);
 }
 
+// The #189 friends graph: ONE route, POST-only — the player key authenticates in the body
+// (#187) and there is no query to ask with, so a caller can only ever read or change their
+// own edges. `{secret}` reads the list, `{secret, add}` records the mutual edge an invite
+// link's click makes, `{secret, remove}` deletes both sides. Every call answers with the
+// caller's current list.
+export function friendsUrl(base: string = apiBase()): string {
+  return `${requireApiBase(base)}/friends`;
+}
+
+export async function postFriendsBody(
+  url: string,
+  body: { secret: string; add?: string; remove?: string },
+): Promise<Response> {
+  return postSignedJson(url, body);
+}
+
+// Runtime shape check for the friends response — the parsePuzzle contract: a wrong-shaped
+// body surfaces as a failure, never as a board of blank rows.
+export function parseFriends(data: unknown): string[] {
+  if (!isRecord(data)) throw new Error('malformed friends: not an object');
+  const { friends } = data;
+  if (!Array.isArray(friends) || !friends.every((id) => typeof id === 'string' && PUBLIC_ID_PATTERN.test(id))) {
+    throw new Error('malformed friends: "friends" must be an array of player ids');
+  }
+  return friends as string[];
+}
+
 // Runtime shape check for a fetched profile — the parsePuzzle contract: a wrong-shaped
 // body surfaces as a failure, never as a broken editor or board row.
 export function parseProfile(data: unknown): PlayerProfile {

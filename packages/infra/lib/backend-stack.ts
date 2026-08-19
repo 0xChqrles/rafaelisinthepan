@@ -174,15 +174,18 @@ export class BackendStack extends Stack {
     bucket.grantRead(fn);
     // The submission transaction is one Update (dedup allowance) + one conditional Put
     // (the player's row); reads are one Query over the day partition. The profile row
-    // (#188) adds one GetItem (its read) and reuses UpdateItem (its upsert). AWS
-    // authorizes transactional actions through their underlying item permissions, so no
-    // Scan/Delete surface is needed.
+    // (#188) adds one GetItem (its read) and reuses UpdateItem (its upsert). The friends
+    // graph (#189) reuses Query (a player's edge partition) and UpdateItem (the mutual
+    // link), and is the ONE writer that also needs DeleteItem — removal deletes both
+    // directions. AWS authorizes transactional actions through their underlying item
+    // permissions, so no Scan surface is needed.
     scoreTable.grant(
       fn,
       'dynamodb:Query',
       'dynamodb:GetItem',
       'dynamodb:PutItem',
       'dynamodb:UpdateItem',
+      'dynamodb:DeleteItem',
     );
     const parameterArn = (name: string) =>
       this.formatArn({
@@ -341,6 +344,23 @@ export class BackendStack extends Stack {
       },
     );
 
+    // `/friends` (#189) is the third live route on the same shape. It reads NO query
+    // parameter at all — the player key authenticates in the body, so every call is a POST
+    // and there is nothing to forward but the Lambda-URL-safe headers that carry the
+    // OAC-signed body hash. An empty allow-list is the honest statement of that: the day
+    // this route grows a query, it has to be named here or the handler will never see it.
+    const friendsOriginRequestPolicy = new cloudfront.OriginRequestPolicy(
+      this,
+      'FriendsOriginRequestPolicy',
+      {
+        originRequestPolicyName: 'WhippinFriendsOrigin',
+        comment: 'Friends graph: no query strings, Lambda-URL-safe headers outside cache.',
+        headerBehavior: cloudfront.OriginRequestHeaderBehavior.denyList('Host'),
+        queryStringBehavior: cloudfront.OriginRequestQueryStringBehavior.none(),
+        cookieBehavior: cloudfront.OriginRequestCookieBehavior.none(),
+      },
+    );
+
     // Security response headers for the API. CORS stays owned by the Lambda (it echoes the
     // configured origin + Vary), so this policy adds ONLY transport/sniffing hardening and
     // deliberately sets no CORS/CSP (CSP is a document concern, not a JSON API's).
@@ -414,6 +434,18 @@ export class BackendStack extends Stack {
           responseHeadersPolicy: apiHeaders,
           compress: true,
         },
+        // `friends*` also catches a harmless trailing slash; the handler still accepts
+        // only the exact normalized `/friends` route.
+        'friends*': {
+          origin: functionOrigin,
+          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+          cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
+          cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+          originRequestPolicy: friendsOriginRequestPolicy,
+          responseHeadersPolicy: apiHeaders,
+          compress: true,
+        },
       },
     });
 
@@ -457,7 +489,7 @@ export class BackendStack extends Stack {
         {
           id: 'AwsSolutions-IAM5',
           reason:
-            'S3 read access is scoped to the puzzle bucket/object keys. DynamoDB is scoped to this table with only Query/GetItem/PutItem/UpdateItem, and SSM GetParameters to the two exact secret-parameter ARNs; no index or parameter wildcard exists.',
+            'S3 read access is scoped to the puzzle bucket/object keys. DynamoDB is scoped to this table with only Query/GetItem/PutItem/UpdateItem/DeleteItem (DeleteItem exists solely for the symmetric friend removal, #189), and SSM GetParameters to the two exact secret-parameter ARNs; no index or parameter wildcard exists.',
         },
         {
           id: 'AwsSolutions-L1',

@@ -1,3 +1,4 @@
+import { PUBLIC_ID_PATTERN } from '@whippin/shared';
 import { FIRST_PUZZLE_DATE } from './config';
 
 // Supported game languages — the single source for the picker and the /<lang> URL
@@ -54,6 +55,18 @@ export const SELECT_PATH = '/select';
 // global, not language-scoped. The leaderboard screen (#190) is its wired entry point.
 export const PROFILE_PATH = '/profile';
 
+// The #189 INVITE LINK: `/i/<publicId>`, the sender's own id in the path. Global for the
+// same reason again — an identity is not language-scoped — and a plain SPA route rather
+// than anything on the API, because the click has to land the edge with the CLICKER's key
+// and then get out of the way. Opening it is the whole gesture: it records the mutual edge
+// and continues into the game, which is also why one link can be both "add me" and "come
+// play". The id is validated here, so a mistyped link is an unknown path, not a request.
+const INVITE_SEGMENT = 'i';
+
+export function pathForInvite(publicId: string): string {
+  return `/${INVITE_SEGMENT}/${publicId}`;
+}
+
 // A parsed route. The game IS the home: /<lang> plays today's puzzle, /<lang>/<date>
 // plays a past day (archive, #55), /<lang>/archive is the calendar, /select is the
 // language picker, and anything else (/, unknown paths) is
@@ -65,6 +78,7 @@ export type Route =
   | { view: 'archive'; lang: LangCode; mode: Mode }
   | { view: 'select' }
   | { view: 'profile' }
+  | { view: 'invite'; publicId: string }
   | { view: 'home' };
 
 // A strict "YYYY-MM-DD" that is ALSO a real calendar date (so 2026-13-40 is rejected):
@@ -94,6 +108,13 @@ export function parseRoute(pathname: string, bounds: RouteBounds = {}): Route {
   const [seg, second, third] = segs;
   if (seg === 'select') return { view: 'select' };
   if (seg === 'profile') return { view: 'profile' };
+  // A broken invite link falls through to `home` rather than asking the server about an id
+  // that cannot exist — the same treatment a broken date deep-link gets.
+  if (seg === INVITE_SEGMENT) {
+    return second && PUBLIC_ID_PATTERN.test(second)
+      ? { view: 'invite', publicId: second }
+      : { view: 'home' };
+  }
   if (!isLang(seg)) return { view: 'home' };
 
   // A dated deep link is honored only when it is a real calendar date within range; a
