@@ -12,9 +12,12 @@ import { AVATAR_PALETTES, AVATAR_SIZE, decodeAvatar } from '@whippin/shared';
 
 const CELL = 10; // viewBox units per cell
 const RADIUS = 3.6; // outer corner rounding only — cells themselves are square
-// Adjacent same-colour rects antialias a hairline seam between them; a sub-unit bleed
-// on every cell makes neighbours overlap (invisibly — same fill) while the drawing's
-// outline stays smooth against the ground.
+// Adjacent same-colour rects antialias a hairline seam between them. Two defences,
+// because either alone still leaked on mobile DPRs: a sub-unit bleed makes neighbours
+// overlap (invisibly — same fill), and crispEdges (on the cell group below) snaps every
+// edge to the device-pixel grid so two adjacent rects share the exact same boundary —
+// the app's image-rendering: pixelated, said in SVG. The rounded outer clip keeps its
+// own antialiasing; only the shapes inside snap.
 const BLEED = 0.3;
 
 export default function Avatar({ avatar, size = 40 }: { avatar: string; size?: number }) {
@@ -40,7 +43,7 @@ export default function Avatar({ avatar, size = 40 }: { avatar: string; size?: n
       <clipPath id={clipId}>
         <rect width={span} height={span} rx={RADIUS} />
       </clipPath>
-      <g clipPath={`url(#${clipId})`}>
+      <g clipPath={`url(#${clipId})`} shapeRendering="crispEdges">
         <rect width={span} height={span} fill={palette.bg} />
         {decoded.cells.map((value, i) => {
           if (value === 0) return null;

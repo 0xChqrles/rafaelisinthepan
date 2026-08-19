@@ -376,7 +376,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
 - **Profile editor (#188; two-colour rework + key-UI removal user-decided
   2026-08-19):** `/profile` (`screens/Profile.tsx`), a global route like `/select` (an
   identity is not language-scoped; chrome language = the `/` redirect's resolution).
-  Name input (16 cap), the 10×10 tap/drag-to-paint grid (one STROKE value per gesture —
+  Name input (16 cap; alphanumerics + underscores, case kept — every other typed
+  character becomes `_`, and autocomplete/autocorrect are suppressed, user-decided
+  2026-08-19), the 10×10 tap/drag-to-paint grid (one STROKE value per gesture —
   starting on a painted cell erases, so tap toggles; a painted cell plays a small
   one-shot BUMP, replayed by remounting the cell keyed on its paint count, so loading a
   stored drawing bumps nothing; an EMPTY cell wears the palette's background itself

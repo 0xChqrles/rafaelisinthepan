@@ -28,6 +28,11 @@ import { useGameStore } from '../state/gameStore';
 
 const NAME_MAX = 16;
 
+// The name is alphanumerics + underscores, case kept: every other typed character
+// becomes `_` (user-decided 2026-08-19). Applied to the whole value on change, so
+// paste and mobile IME input go through the same door as keystrokes.
+const sanitizeName = (raw: string) => raw.replace(/[^a-zA-Z0-9]/g, '_');
+
 // What the initial read settled, and the reason the editor is GATED on it: the editor
 // is only meaningful against the profile the server holds. Rendering an editable blank
 // while the read is in flight invites edits the response then overwrites, and a failed
@@ -149,13 +154,15 @@ export default function Profile() {
   const colors = AVATAR_PALETTES[palette];
   // One encode per render, shared by the preview, the dirty check and the save body.
   const encoded = encodeAvatar(palette, cells);
-  const dirty = name.trim() !== baseline.name || encoded !== baseline.avatar;
+  // The input can't hold whitespace (sanitizeName), so the typed name is compared and
+  // sent as-is — a trim here could mark a freshly loaded stored name dirty unedited.
+  const dirty = name !== baseline.name || encoded !== baseline.avatar;
 
   const onSave = useCallback(async () => {
     setPhase('saving');
     setRefused(null);
     const started = Date.now();
-    const body = { secret, name: name.trim(), avatar: encoded };
+    const body = { secret, name, avatar: encoded };
     // The outcome is decided while the dots run; the phases below only pace how the
     // button tells it.
     let outcome: SaveRefusal = null;
@@ -222,10 +229,11 @@ export default function Profile() {
                 placeholder={t(lang, 'profileNamePlaceholder')}
                 aria-label={t(lang, 'profileNamePlaceholder')}
                 autoComplete="off"
+                autoCorrect="off"
                 autoCapitalize="off"
                 spellCheck={false}
                 onChange={(e) => {
-                  setName(e.target.value);
+                  setName(sanitizeName(e.target.value));
                   setRefused(null);
                 }}
               />
