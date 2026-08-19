@@ -34,10 +34,11 @@ export interface AvatarPalette {
 // the locked duos' formula — a LUMINOUS ink on an electric mid ground). Each duo
 // pairs a contrasting ink with its OWN coloured
 // ground, never two shades of one hue; the vivid four are the one deliberate
-// departure from the app's defined palette. Names are the INK's, since the picker
-// shows only the foreground. Order is load-bearing — the encoded byte is an INDEX
-// into this list, so entries may be appended but never reordered or removed once
-// avatars referencing them exist.
+// departure from the app's defined palette. The editor's picker swatch shows the
+// GROUND (user-decided 2026-08-19, superseding the foreground swatches); names stay
+// the INK's — the ink is what the player draws with. Order is load-bearing — the
+// encoded byte is an INDEX into this list, so entries may be appended but never
+// reordered or removed once avatars referencing them exist.
 export const AVATAR_PALETTES: readonly AvatarPalette[] = [
   { name: 'VIOLET', bg: '#161826', fg: '#8f7bff' },
   { name: 'TANGERINE', bg: '#3344ff', fg: '#ff8a00' },

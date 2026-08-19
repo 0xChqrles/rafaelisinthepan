@@ -482,9 +482,10 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   its OWN coloured ground, never two shades of one hue — and "vivid" covers BOTH
   halves: the grounds are saturated inks too, never pale sheets** (the /inspiration
   moodboard's riso vocabulary — the one deliberate departure from the app's defined
-  palette). **The picker shows only the foreground: you select a colour, and
-  that colour IS the palette — its ground comes with it.** The web encodes and
-  renders (SVG); the backend decodes to validate and moderate.
+  palette). **The picker swatch shows the GROUND (decided 2026-08-19, superseding the
+  foreground swatches): you select a ground, and its ink comes with it — a swatch is
+  always ONE colour, the palette IS the choice.** The web encodes and renders (SVG);
+  the backend decodes to validate and moderate.
 - **Moderation is best-effort ON WRITE, by decided stance:** a normalized banned-strings
   name filter (`backend/src/nameFilter.ts`; name cap 16 code points, no control/format
   chars, empty allowed) and an exhaustive swastika template match over rotations,

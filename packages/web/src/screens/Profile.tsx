@@ -200,9 +200,10 @@ export default function Profile() {
             ))}
           </div>
 
-          {/* The palettes, shown as their FOREGROUND colour only: pick a colour, that
-              colour is the palette. The drawing (the cell states) survives a switch.
-              CLEAR shares the row — it acts on the same thing the swatches dress. */}
+          {/* The palettes, shown as their BACKGROUND colour (user-decided 2026-08-19,
+              superseding the foreground swatches): pick a ground, its ink comes with
+              it. The drawing (the cell states) survives a switch. CLEAR shares the
+              row — it acts on the same thing the swatches dress. */}
           <div className="profile-tools">
             <div className="profile-palettes">
               {AVATAR_PALETTES.map((option, index) => (
@@ -210,7 +211,7 @@ export default function Profile() {
                   key={option.name}
                   type="button"
                   className={`profile-palette${palette === index ? ' sel' : ''}`}
-                  style={{ background: option.fg }}
+                  style={{ background: option.bg }}
                   aria-label={`${t(lang, 'ariaPalette')} ${option.name}`}
                   aria-pressed={palette === index}
                   onClick={() => {
