@@ -120,4 +120,21 @@ describe('memoryScoreStore — local mirror of storage semantics (#187)', () => 
     ).toBe('recorded');
     expect((await store.list(KEY)).length).toBe(SCORE_SUBMISSION_LIMIT + 1);
   });
+
+  // The allowance is a PARAMETER because the local server turns it off (serve.ts): every
+  // client there shares one address, so the cap bounds nothing and instead silences the
+  // daily loop after five identities. The DEFAULT stays the shared production rule.
+  it('honours an overridden allowance — what backend:dev opts out with', async () => {
+    const store = memoryScoreStore(() => new Date(100_000_000), Number.POSITIVE_INFINITY);
+    // Well past the shared cap, every one of them from the SAME address hash — which is
+    // what one developer's machine looks like to this store.
+    for (let index = 0; index < SCORE_SUBMISSION_LIMIT + 3; index += 1) {
+      expect(
+        await store.submit(
+          submission({ publicId: `player-${index}`, requestToken: `request-${index}` }),
+        ),
+      ).toBe('recorded');
+    }
+    expect((await store.list(KEY)).length).toBe(SCORE_SUBMISSION_LIMIT + 3);
+  });
 });
