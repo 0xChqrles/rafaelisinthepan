@@ -6,7 +6,7 @@ import { installVersionCheck } from './versionCheck';
 // — a visibility flip or a bfcache restore — and never while the tab is visibly in use.
 function harness(visibility: 'visible' | 'hidden' = 'visible', storage: 'ok' | 'denied' = 'ok') {
   const listeners: Array<() => void> = [];
-  const restores: Array<(event: { persisted: boolean }) => void> = [];
+  const onWindow = new Map<string, Array<(event: { persisted: boolean }) => void>>();
   const intervals: Array<() => void> = [];
   const reload = vi.fn();
   const stored = new Map<string, string>();
@@ -26,7 +26,7 @@ function harness(visibility: 'visible' | 'hidden' = 'visible', storage: 'ok' | '
     setTimeout: (fn: () => void, ms?: number) => setTimeout(fn, ms),
     clearTimeout: (id: Parameters<typeof clearTimeout>[0]) => clearTimeout(id),
     addEventListener: (type: string, fn: (event: { persisted: boolean }) => void) => {
-      if (type === 'pageshow') restores.push(fn);
+      onWindow.set(type, [...(onWindow.get(type) ?? []), fn]);
     },
   };
   // The startup reload is budgeted per build in session storage; a fresh map per test
@@ -58,7 +58,11 @@ function harness(visibility: 'visible' | 'hidden' = 'visible', storage: 'ok' | '
     },
     // A bfcache restore hands back the live page; `persisted: false` is an ordinary load.
     show(persisted: boolean) {
-      for (const fn of restores) fn({ persisted });
+      for (const fn of onWindow.get('pageshow') ?? []) fn({ persisted });
+    },
+    // The player acting: a key, or a tap on the on-screen keyboard / a PLAY button.
+    touch(type: 'keydown' | 'pointerdown') {
+      for (const fn of onWindow.get(type) ?? []) fn({ persisted: false });
     },
     tick() {
       for (const fn of intervals) fn();
@@ -126,6 +130,40 @@ describe('installVersionCheck', () => {
 
     h.flip('visible');
     expect(h.reload).toHaveBeenCalled();
+  });
+
+  it.each(['keydown', 'pointerdown'] as const)(
+    'never yanks a player who has already started — a %s before the check lands defers it',
+    async (event) => {
+      const h = harness('visible');
+      servedBuild('new');
+      installVersionCheck('old');
+
+      // The check is a network round trip (up to the 10s abort); the app mounts and
+      // becomes playable under it, so the answer can land on a running Word clock or a
+      // half-typed name.
+      h.touch(event);
+      await h.settle();
+      expect(h.reload).not.toHaveBeenCalled();
+
+      // The mismatch is not lost — the next return spends it, like every other one.
+      h.flip('hidden');
+      expect(h.reload).toHaveBeenCalled();
+    },
+  );
+
+  it('a deferred startup reload does not burn the budget the next load needs', async () => {
+    const h = harness('visible');
+    servedBuild('new');
+    installVersionCheck('old');
+    h.touch('keydown');
+    await h.settle();
+    expect(h.reload).not.toHaveBeenCalled();
+
+    // The next load of the same stale build still has its one startup reload to spend.
+    installVersionCheck('old');
+    await h.settle();
+    expect(h.reload).toHaveBeenCalledTimes(1);
   });
 
   it('reloads on tab-return when the deployed build differs', async () => {

@@ -2432,7 +2432,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
   in the bucket by construction (`prune: false`), so the stale build runs perfectly and
   silently. Without a check at load, such a visit spent its WHOLE session on it. The load
   is also the CHEAPEST reload the module can spend — nothing typed, nothing in flight —
-  which is why it is the one trigger that reloads a VISIBLE tab. The `persisted` pageshow
+  which is why it is the one trigger that reloads a VISIBLE tab. **That cheapness is
+  WATCHED, not assumed** (corrected 2026-08-20 on review): the check is a network round
+  trip that can land up to the 10s abort later, by which time React has mounted and the
+  app is playable, so the startup reload is gated on the page still being PRISTINE — one
+  `pointerdown` or `keydown` (capture, `once`) ends it, since a Word run's clock starts on
+  a tap and a guess, a name and a drawing are typed or tapped in. A touched page KEEPS the
+  mismatch and spends it on the next return like every other trigger, and it does not
+  claim the once-per-build budget below, which the next load may still need. Gating the
+  first RENDER on the check was the alternative and is rejected: it would delay every cold
+  start by a round trip — up to those 10 seconds on a bad connection — to serve the rare
+  visit whose answer lands late. The `persisted` pageshow
   is the other half: a bfcache restore hands the LIVE page back with no network at all,
   so the old bundle simply resumes, and WebKit does not reliably flip visibility for it.
   **The startup reload is budgeted ONCE per build, per tab** (`whippin-version-reload` in

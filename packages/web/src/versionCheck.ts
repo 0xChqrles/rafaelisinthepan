@@ -26,7 +26,8 @@
 // too. Such a visit is already running the old bundle at first paint, and every other
 // trigger in this module is a RETURN it may never make — it would otherwise spend its
 // whole session on the old build. It is also the cheapest reload the module can spend:
-// nothing typed, nothing in flight.
+// nothing typed, nothing in flight — which the startup path OBSERVES rather than
+// assumes, since the answer can land long after the app became playable.
 
 const VERSION_URL = '/version.json';
 const CHECK_INTERVAL_MS = 60 * 60 * 1000;
@@ -132,7 +133,24 @@ export function installVersionCheck(current: string = __BUILD_ID__): void {
 
   window.setInterval(checkThenSwapHidden, CHECK_INTERVAL_MS);
 
+  // The startup reload is only honest while the page is still PRISTINE, and the check is
+  // a network round trip that can land up to FETCH_TIMEOUT_MS later — long after React
+  // mounted and the app became playable. So "nothing typed, nothing in flight" is
+  // WATCHED, not assumed from the moment the question was asked: one pointer or key
+  // event ends it, because a Word run's clock starts on a tap and a guess, a name and a
+  // drawing are all typed or tapped in. A touched page keeps the mismatch and spends it
+  // on the next return, like every other trigger here. Capture phase and `once`, so a
+  // handler that stops propagation cannot hide the first touch from us and nothing has
+  // to be torn down afterwards.
+  let touched = false;
+  const noteTouch = () => {
+    touched = true;
+  };
+  const touchOptions = { once: true, capture: true } as const;
+  window.addEventListener('pointerdown', noteTouch, touchOptions);
+  window.addEventListener('keydown', noteTouch, touchOptions);
+
   void check().then(() => {
-    if (stale && claimStartupReload(current)) location.reload();
+    if (stale && !touched && claimStartupReload(current)) location.reload();
   });
 }
