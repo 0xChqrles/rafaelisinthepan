@@ -2419,10 +2419,40 @@ it to the local store — see `packages/backend/AGENTS.md`).
   LAST by an explicit dependency (`web-stack.ts`), so a reloading tab can never fetch an
   index whose chunks are not uploaded yet. `src/versionCheck.ts` (prod-only, installed
   from `main.tsx`) refetches it (`cache: 'no-store'`, 10s abort — a stalled request must
-  not pin the in-flight promise and kill the checker for the session) on BOTH
-  `visibilitychange` flips plus an hourly backstop interval and calls `location.reload()`
-  on mismatch — but ONLY at a flip or while hidden, never mid-play in a visible tab: a
-  mismatch found while visible waits for the next flip. Every failure is silent (offline
+  not pin the in-flight promise and kill the checker for the session) at FOUR moments —
+  the page's own STARTUP, both `visibilitychange` flips, a `persisted` pageshow, and an
+  hourly backstop interval — and calls `location.reload()` on mismatch, but only where
+  nothing is at stake: startup, a return to a page that was left, or while the tab is
+  hidden. Never mid-play in a visible tab: a mismatch the interval finds while visible
+  waits for the next return. Every failure is silent (offline
   just retries on the next trigger). A reload is lossless: round state is persisted,
   index.html is no-cache, and deploys invalidate `/*`. The choreography is
   contract-tested (`versionCheck.test.ts`).
+  **STARTUP and the bfcache restore were added 2026-08-20** (user-decided, after players
+  kept landing on an older build): every other trigger is a RETURN, so a tab that came UP
+  stale had nothing to catch it — and tabs do come up stale, because `no-cache` means
+  "revalidate before reusing", not "never reuse". A history navigation and a session
+  restore both serve a stored index.html without asking, and a revalidation that FAILS
+  (offline, a captive portal) may serve it too; the old chunks that index names are still
+  in the bucket by construction (`prune: false`), so the stale build runs perfectly and
+  silently. Without a check at load, such a visit spent its WHOLE session on it. The load
+  is also the CHEAPEST reload the module can spend — nothing typed, nothing in flight —
+  which is why it is the one trigger that reloads a VISIBLE tab. **That cheapness is
+  WATCHED, not assumed** (corrected 2026-08-20 on review): the check is a network round
+  trip that can land up to the 10s abort later, by which time React has mounted and the
+  app is playable, so the startup reload is gated on the page still being PRISTINE — one
+  `pointerdown` or `keydown` (capture, `once`) ends it, since a Word run's clock starts on
+  a tap and a guess, a name and a drawing are typed or tapped in. A touched page KEEPS the
+  mismatch and spends it on the next return like every other trigger, and it does not
+  claim the once-per-build budget below, which the next load may still need. Gating the
+  first RENDER on the check was the alternative and is rejected: it would delay every cold
+  start by a round trip — up to those 10 seconds on a bad connection — to serve the rare
+  visit whose answer lands late. The `persisted` pageshow
+  is the other half: a bfcache restore hands the LIVE page back with no network at all,
+  so the old bundle simply resumes, and WebKit does not reliably flip visibility for it.
+  **The startup reload is budgeted ONCE per build, per tab** (`whippin-version-reload` in
+  sessionStorage): a reload revalidates the document, so a stale load resolves in ONE
+  swap — but a `version.json` briefly AHEAD of the index it names (a deploy's own upload
+  window) would otherwise reload the same build over and over with no player action to
+  break the spin. Storage that cannot be written cannot bound it, so there the startup
+  reload is not spent at all and the returns carry the mismatch exactly as before.

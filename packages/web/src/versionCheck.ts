@@ -8,13 +8,26 @@
 // build, and round state is persisted, so it loses nothing.
 //
 // WHEN matters more than how often. A reload must never yank a visibly active player,
-// so it is spent only on the visibility flips: returning to a dormant tab (the stale
-// bundle is about to talk to the backend again, and the player has not re-engaged yet)
-// or while the tab is hidden (a reload nobody can see). BOTH flips check — backgrounding
-// right after a deploy is the commonest hidden window. The hourly interval is the
-// backstop for a tab that never flips: it swaps a hidden tab on the spot, and for a
-// visible one it only raises the flag for the next flip to spend. Every failure is
-// silent: offline or a mid-deploy hiccup just waits for the next trigger.
+// so it is spent only where nothing is at stake: the page's own STARTUP, returning to a
+// dormant page (the stale bundle is about to talk to the backend again, and the player
+// has not re-engaged yet) or while the tab is hidden (a reload nobody can see). BOTH
+// visibility flips check — backgrounding right after a deploy is the commonest hidden
+// window — and a `persisted` pageshow is the same return in the other shape: a bfcache
+// restore hands back the LIVE page with no network at all, so the old bundle simply
+// resumes, and WebKit does not reliably flip visibility for it. The hourly interval is
+// the backstop for a page that never returns at all: it swaps a hidden tab on the spot,
+// and for a visible one it only raises the flag for the next return to spend. Every
+// failure is silent: offline or a mid-deploy hiccup just waits for the next trigger.
+//
+// STARTUP catches the tab that came up stale rather than one that went stale, and
+// nothing else here can: `no-cache` means "revalidate before reusing", not "never
+// reuse", so a history navigation and a session restore both serve a stored index.html
+// without asking, and a revalidation that FAILS (offline, a captive portal) may serve it
+// too. Such a visit is already running the old bundle at first paint, and every other
+// trigger in this module is a RETURN it may never make — it would otherwise spend its
+// whole session on the old build. It is also the cheapest reload the module can spend:
+// nothing typed, nothing in flight — which the startup path OBSERVES rather than
+// assumes, since the answer can land long after the app became playable.
 
 const VERSION_URL = '/version.json';
 const CHECK_INTERVAL_MS = 60 * 60 * 1000;
@@ -26,6 +39,36 @@ const CHECK_INTERVAL_MS = 60 * 60 * 1000;
 // (Chrome 87 / Firefox 78 / Safari 14), and there the missing API would throw before
 // fetch ever ran — silently disabling the checker on exactly those browsers.
 const FETCH_TIMEOUT_MS = 10_000;
+const STARTUP_RELOAD_KEY = 'whippin-version-reload';
+
+// The `sessionStorage` PROPERTY itself throws when storage is disabled (identity.ts's
+// rule), so the read needs its own catch rather than the caller's.
+function sessionStore(): Storage | null {
+  try {
+    return typeof window === 'undefined' ? null : window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+// ONE startup reload per build, per tab. A reload revalidates the document, so a stale
+// load resolves in a single swap — but a version.json briefly AHEAD of the index it
+// names (a deploy's own upload window) would otherwise reload the same build over and
+// over, with no player action to break the spin. Remembering the build we jumped away
+// from bounds that to one wasted reload, and the returns still carry the mismatch
+// afterwards. Storage that cannot be written cannot bound it, so there the startup
+// reload is not spent at all.
+function claimStartupReload(current: string): boolean {
+  const store = sessionStore();
+  if (!store) return false;
+  try {
+    if (store.getItem(STARTUP_RELOAD_KEY) === current) return false;
+    store.setItem(STARTUP_RELOAD_KEY, current);
+  } catch {
+    return false;
+  }
+  return true;
+}
 
 export function installVersionCheck(current: string = __BUILD_ID__): void {
   let stale = false;
@@ -58,20 +101,56 @@ export function installVersionCheck(current: string = __BUILD_ID__): void {
     if (stale) location.reload();
   };
 
-  // Visible tabs keep playing on the old build until a flip; a tab that is still hidden
-  // when the check resolves swaps now (one that returned meanwhile belongs to the
-  // visible path, which runs its own check on that flip).
+  // Visible tabs keep playing on the old build until a return; a tab that is still
+  // hidden when the check resolves swaps now (one that returned meanwhile belongs to the
+  // resumed path, which runs its own check).
   const checkThenSwapHidden = () =>
     void check().then(() => {
       if (document.visibilityState === 'hidden') reloadIfStale();
     });
 
-  document.addEventListener('visibilitychange', () => {
-    // Either direction may spend a flag an earlier check already raised.
+  // Coming back to a page that was left: spend any flag an earlier check raised, then
+  // ask again.
+  const resume = () => {
     reloadIfStale();
-    if (document.visibilityState === 'visible') void check().then(reloadIfStale);
-    else checkThenSwapHidden();
+    void check().then(reloadIfStale);
+  };
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') resume();
+    else {
+      // Backgrounding may also spend a flag an earlier check already raised.
+      reloadIfStale();
+      checkThenSwapHidden();
+    }
+  });
+
+  // `persisted` is exactly "this document was resumed, not re-fetched" — the bfcache
+  // restore the visibility flip may not report.
+  window.addEventListener('pageshow', (event) => {
+    if (event.persisted) resume();
   });
 
   window.setInterval(checkThenSwapHidden, CHECK_INTERVAL_MS);
+
+  // The startup reload is only honest while the page is still PRISTINE, and the check is
+  // a network round trip that can land up to FETCH_TIMEOUT_MS later — long after React
+  // mounted and the app became playable. So "nothing typed, nothing in flight" is
+  // WATCHED, not assumed from the moment the question was asked: one pointer or key
+  // event ends it, because a Word run's clock starts on a tap and a guess, a name and a
+  // drawing are all typed or tapped in. A touched page keeps the mismatch and spends it
+  // on the next return, like every other trigger here. Capture phase and `once`, so a
+  // handler that stops propagation cannot hide the first touch from us and nothing has
+  // to be torn down afterwards.
+  let touched = false;
+  const noteTouch = () => {
+    touched = true;
+  };
+  const touchOptions = { once: true, capture: true } as const;
+  window.addEventListener('pointerdown', noteTouch, touchOptions);
+  window.addEventListener('keydown', noteTouch, touchOptions);
+
+  void check().then(() => {
+    if (stale && !touched && claimStartupReload(current)) location.reload();
+  });
 }
