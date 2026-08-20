@@ -7,6 +7,7 @@ import LanguageSelect from './screens/LanguageSelect';
 import Profile from './screens/Profile';
 import FriendInvite from './screens/FriendInvite';
 import Archive from './screens/Archive';
+import Leaderboard from './screens/Leaderboard';
 import Game from './screens/Game';
 import WordGame from './screens/WordGame';
 import TopBar from './components/TopBar';
@@ -25,9 +26,13 @@ import {
   resolveHomeLang,
   pathForMode,
   pathForArchive,
+  pathForBoard,
   type LangCode,
   type Mode,
 } from './langs';
+// Inline SVG (vite-plugin-svgr): the header's leaderboard entry, painting with
+// currentColor like every chrome icon; the button's aria-label names it.
+import BoardIcon from './assets/icons/board.svg?react';
 import { t } from './i18n';
 import useToday from './hooks/useToday';
 import { streakPreviewFromSearch } from './dev/streakPreview';
@@ -56,11 +61,13 @@ export default function App() {
 
   // Keep <html lang> honest: index.html ships lang="en", but on /fr both the puzzle
   // content and the UI chrome are French — screen readers pick pronunciation rules from
-  // this attribute. Language-scoped routes (game + archive) use their own lang; the
-  // language-less routes use the same resolution as the `/` redirect.
+  // this attribute. Language-scoped routes (game + archive + board) use their own lang;
+  // the language-less routes use the same resolution as the `/` redirect.
   const homeLang = resolveHomeLang(lastLang, navigator.language);
   const docLang =
-    route.view === 'game' || route.view === 'archive' ? route.lang : homeLang;
+    route.view === 'game' || route.view === 'archive' || route.view === 'board'
+      ? route.lang
+      : homeLang;
   useEffect(() => {
     document.documentElement.lang = docLang;
   }, [docLang]);
@@ -80,6 +87,11 @@ export default function App() {
           hands over to the home redirect above. */}
       {route.view === 'invite' && <FriendInvite publicId={route.publicId} lang={homeLang} />}
       {route.view === 'archive' && <Archive lang={route.lang} mode={route.mode} />}
+      {/* The leaderboard screen (#190) — keyed so switching daily/language resets the
+          tab and its cached reads to that board's own. */}
+      {route.view === 'board' && (
+        <Leaderboard key={`${route.lang}:${route.mode}`} lang={route.lang} mode={route.mode} />
+      )}
       {route.view === 'game' && (
         <GameRoute lang={route.lang} mode={route.mode} date={route.date} />
       )}
@@ -203,6 +215,26 @@ function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: st
   // below opts this route into the first. What follows is this screen's own controls.
   const headerRight = (
     <>
+      {/* The leaderboard entry (#190, the issue's decided entry point): reachable
+          BEFORE playing — the screen is also where a player customizes their profile
+          and shares their invite link, neither of which requires having played.
+          ACTIVE DAY ONLY: the board is the active day's (pathForBoard carries no date
+          and the screen reads its own activeDate), so on an archive replay this icon
+          would silently swap the day under the player — and the board's exit lands on
+          today, ending the archive session. An archived day keeps its date chip as
+          the way back. */}
+      {/* `board-btn` gives the crown the header's foreground ink — buttons don't
+          inherit color, and a bare .home-btn renders its stroke UA-black. */}
+      {isActiveDay && (
+        <button
+          type="button"
+          className="home-btn board-btn"
+          aria-label={t(lang, 'ariaLeaderboard')}
+          onClick={() => navigate(pathForBoard(lang, mode))}
+        >
+          <BoardIcon className="ui-icon" aria-hidden />
+        </button>
+      )}
       {/* Replays the onboarding tutorial (#51) on demand — one tap, out of the way.
           (The archive icon left the header 2026-08-18: the DATE CHIP is the archive
           entry now — see PuzzleDate.) */}

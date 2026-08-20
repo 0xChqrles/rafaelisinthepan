@@ -19,6 +19,9 @@
       scores.ts               /scores GET+POST route: params, auth (publicId), Turnstile,
                               range, HMAC, derived histogram, response
       scoreLimits.ts          puzzle-aware possible-score limits (per-mode ceilings)
+      liveRoute.ts            what the LIVE routes share: no-store headers, the JSON-body
+                              reader + size cap, the #187 secret check, the (lang, mode,
+                              date) + future-skew guard
       scoreStore.ts           score storage contract; day/dedup keys + 5/48h constants
       dynamoScoreStore.ts     prod atomic transaction + strongly-consistent day-partition Query
       memoryScoreStore.ts     process-local implementation for backend:dev/tests
@@ -28,6 +31,8 @@
       dynamoProfileStore.ts   prod GetItem read + UpdateItem upsert (createdAt via if_not_exists)
       memoryProfileStore.ts   process-local implementation for backend:dev/tests
       friends.ts              POST /friends (#189): auth, list/add/remove, self-add + cap refusals
+      board.ts                GET|POST /board (#190): global top-50 read + authenticated friends
+                              board — shared leaderboard rules over score rows + profiles + edges
       friendStore.ts          mutual-edge storage contract; friends#<publicId> partition + FRIENDS_MAX
       dynamoFriendStore.ts    prod one-transaction link/unlink (both directions) + consistent Query
       memoryFriendStore.ts    process-local implementation for backend:dev/tests
@@ -50,7 +55,8 @@
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
 pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output). Sentence puzzles AND #154 word artifacts (#156): the artifact type is detected from the file's SHAPE and routed to its own key.
 pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--mode sentence|word] [--ci]  # publish-buffer coverage (#61); --mode word probes the #156 word-artifact buffer; reports + exits 0 by default, --ci exits 1 on any (day,lang) gap for cron/CI
-pnpm backend:dev                # local server (puzzles + /scores + /profile + /friends + /today) on :8787; FS puzzles, in-memory scores/profiles/friends, local Turnstile accept-all
+pnpm backend:dev                # local server (puzzles + /scores + /profile + /friends + /board + /today) on :8787; FS puzzles, in-memory scores/profiles/friends, local Turnstile accept-all
+pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server with a #190 board population (in-memory — re-run after a restart)
 ```
 
 ---
@@ -145,6 +151,54 @@ pnpm backend:dev                # local server (puzzles + /scores + /profile + /
   route reads NO query parameter; the CloudFront `friends*` behavior forwards none, and the
   day it reads one, that behavior has to name it (root `AGENTS.md` contract). Production
   POST needs `x-amz-content-sha256` like every other write here.
+- **Leaderboard reads (#190):** the ONE handler also serves `/board` — the product
+  contract (the two faces, the shared ranking rules, the four-query allowList) lives in
+  the root `AGENTS.md`. Implementation notes: `handleBoard` reuses the /scores param
+  guards (supported lang, required mode, valid date, +1-day future guard) but reads NO
+  puzzle store — a population only exists for a published daily, so an unpublished day
+  answers the empty board; GET's optional `id` is validated against
+  `PUBLIC_ID_PATTERN` (400 malformed); POST validates `{secret}` exactly like /friends.
+  The param guards, the JSON-body reader and the secret check are the SHARED
+  `liveRoute.ts` (below), not a fourth copy. The GLOBAL face reads the day partition
+  (`ScoreStore.list`); the FRIENDS face reads `getMany` — the caller's edges plus
+  themselves are the exact row keys, so it fetches those (BatchGetItem in prod,
+  constant in the day's population) instead of paging every player who played today to
+  keep at most `FRIENDS_MAX + 1` rows. Its `UnprocessedKeys` are RETRIED (a dropped key
+  is a friend missing from the board, so the read fails loudly rather than silently
+  short) with **full-jitter exponential backoff** — an unprocessed response means the
+  partition is under pressure, and retrying at full speed spends the whole budget
+  before capacity can return, which is how a transient throttle became a 500 on the
+  friends board; the jitter is what stops Lambdas throttled together from coming back
+  in lockstep. The `wait` is injectable so the schedule is asserted without sleeping. Rows are ranked/cut/windowed by
+  `@whippin/shared`'s leaderboard functions, then dressed with profiles — one
+  `ProfileStore.get` per DISTINCT id shown, in parallel (bounded: top 50 + a 5-row
+  window, or FRIENDS_MAX rows). The friends face also
+  answers `waiting`: the caller's edges with no score row today, profile-dressed and
+  publicId-sorted (root `AGENTS.md`). Every response is
+  `no-store`; a missing profile dresses as `name: ''` / `avatar: null` — **and so does
+  one whose READ FAILED** (a per-id `catch`, never `Promise.all`'s fail-fast): the name
+  and mark are decoration over rows that already answered, so one throttled `GetItem`
+  must not 500 a whole board. An EMPTY stored avatar dresses as `null` for the same
+  reason — `''` is not a decodable avatar, and the client's fallback is keyed on null.
+  No new store: the route is a pure READ over the score rows, the friend edges and the
+  profile rows.
+  **The LIVE routes share their plumbing** (`liveRoute.ts`, extracted 2026-08-20 when
+  `/board` became the FOURTH byte-identical copy): the `no-store` header, the body
+  reader with its 4 KB cap, the `{secret}` check, and the `(lang, mode, date)` guard
+  triple with the +1-day future skew. The lang check is `Object.hasOwn`, deliberately —
+  a bare `map[lang] === undefined` walks the prototype chain, so `constructor` /
+  `toString` / `__proto__` pass as "supported languages" and reach the DynamoDB
+  partition key. On /scores that hole is masked by the puzzle-store 404 behind it; on
+  /board, which reads no puzzle store, it answered a 200, which is what made this one
+  spelling rather than four.
+  **`pnpm board:seed` (src/seedBoard.ts) is the LOCAL-ONLY population seeder**: run it
+  against a live `pnpm backend:dev` to fill the in-memory stores with 60 scored players
+  (a tie straddling the top-50 cut included), a few unnamed ones, two unplayed
+  profile-only ones, and printed invite links; `--friend <publicId|/i/link>` links a
+  handful to your own identity. Re-run after every backend restart (the stores reset —
+  that is why it is a script, not a fixture); it copies the newest local fr sentence
+  puzzle forward to the active day when that key is missing.
+
 - **Word mode's daily artifact (#154/#156):** the ONE puzzle endpoint also serves the
   single-word artifact under `mode=word` (`GET /?lang=&date=&mode=word`; absent/
   `sentence` = the sentence puzzle, anything else = 400) with identical day-addressing,

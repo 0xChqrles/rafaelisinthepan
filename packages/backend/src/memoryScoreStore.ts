@@ -31,6 +31,16 @@ export function memoryScoreStore(now: () => Date = () => new Date()): ScoreStore
       return rows;
     },
 
+    async getMany(key, publicIds) {
+      const day = days.get(dayKey(key)) ?? new Map<string, number>();
+      const rows: ScoreRow[] = [];
+      for (const publicId of new Set(publicIds)) {
+        const score = day.get(publicId);
+        if (score !== undefined) rows.push({ publicId, score });
+      }
+      return rows;
+    },
+
     async submit(input) {
       const replayed = requests.get(input.requestToken);
       if (replayed) return replayed;

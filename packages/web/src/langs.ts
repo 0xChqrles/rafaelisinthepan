@@ -46,6 +46,16 @@ export function pathForDay(lang: string | null, date: string, mode: Mode = 'sent
   return mode === 'word' ? `/${lang}/${WORD_SEGMENT}/${date}` : `/${lang}/${date}`;
 }
 
+// The leaderboard screen (#190): each daily's boards for the active day —
+// /<lang>/board and /<lang>/word/board, the archive's own grammar. Language-scoped
+// because a board is addressed per (day, lang, mode) like everything else.
+const BOARD_SEGMENT = 'board';
+
+export function pathForBoard(lang: string | null, mode: Mode = 'sentence'): string {
+  if (!isLang(lang)) return '/';
+  return mode === 'word' ? `/${lang}/${WORD_SEGMENT}/${BOARD_SEGMENT}` : `/${lang}/${BOARD_SEGMENT}`;
+}
+
 // The language chooser lives at its own route (not a modal), opened by the header's
 // language chip. It sits above /<lang> since it is not language-scoped. (The /mode
 // chooser was RETIRED 2026-08-18 for the header's segmented mode tabs.)
@@ -76,6 +86,7 @@ export function pathForInvite(publicId: string): string {
 export type Route =
   | { view: 'game'; lang: LangCode; mode: Mode; date?: string }
   | { view: 'archive'; lang: LangCode; mode: Mode }
+  | { view: 'board'; lang: LangCode; mode: Mode }
   | { view: 'select' }
   | { view: 'profile' }
   | { view: 'invite'; publicId: string }
@@ -133,6 +144,7 @@ export function parseRoute(pathname: string, bounds: RouteBounds = {}): Route {
   if (second === WORD_SEGMENT) {
     if (!third) return { view: 'game', lang: seg, mode: 'word' };
     if (third === 'archive') return { view: 'archive', lang: seg, mode: 'word' };
+    if (third === BOARD_SEGMENT) return { view: 'board', lang: seg, mode: 'word' };
     const date = dateOf(third);
     if (date === 'home') return { view: 'home' };
     if (date) return { view: 'game', lang: seg, mode: 'word', date };
@@ -144,6 +156,8 @@ export function parseRoute(pathname: string, bounds: RouteBounds = {}): Route {
   if (!second) return { view: 'game', lang: seg, mode: 'sentence' };
   // /<lang>/archive — the calendar.
   if (second === 'archive') return { view: 'archive', lang: seg, mode: 'sentence' };
+  // /<lang>/board — the day's leaderboard (#190).
+  if (second === BOARD_SEGMENT) return { view: 'board', lang: seg, mode: 'sentence' };
   // /<lang>/<YYYY-MM-DD> — a past day.
   const date = dateOf(second);
   if (date === 'home') return { view: 'home' };

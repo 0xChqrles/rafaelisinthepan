@@ -69,10 +69,10 @@ describe('score production boundary (#169)', () => {
     const policies = Object.values(
       template.findResources('AWS::CloudFront::OriginRequestPolicy'),
     );
-    // The score policy, the profile policy (#188) and the friends policy (#189) — each
-    // forwards exactly the queries its handler route reads (the root AGENTS.md allowList
-    // contract).
-    expect(policies).toHaveLength(3);
+    // The score policy, the profile policy (#188), the friends policy (#189) and the
+    // board policy (#190) — each forwards exactly the queries its handler route reads
+    // (the root AGENTS.md allowList contract).
+    expect(policies).toHaveLength(4);
     const scorePolicy = policies.find(
       (policy) =>
         policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinLiveScoresOrigin',
@@ -154,6 +154,36 @@ describe('score production boundary (#169)', () => {
     });
   });
 
+  it('uses a deployable zero-cache board behavior with exact query forwarding (#190)', () => {
+    const distributions = Object.values(template.findResources('AWS::CloudFront::Distribution'));
+    const behaviors = distributions[0].Properties.DistributionConfig.CacheBehaviors as Record<
+      string,
+      unknown
+    >[];
+    const board = behaviors.find(({ PathPattern }) => PathPattern === 'board*');
+    // The leaderboard is live data, like the other three.
+    expect(board?.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
+    // POST must be allowed (the authenticated friends-board read).
+    expect(board?.AllowedMethods).toContain('POST');
+
+    const policies = Object.values(
+      template.findResources('AWS::CloudFront::OriginRequestPolicy'),
+    );
+    const boardPolicy = policies.find(
+      (policy) => policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinLeaderboardOrigin',
+    );
+    // The FOUR queries the board handler reads — lang/date/mode address the day, `id`
+    // (public, never the secret) widens the global GET with the caller's own window.
+    expect(boardPolicy?.Properties.OriginRequestPolicyConfig.QueryStringsConfig).toEqual({
+      QueryStringBehavior: 'whitelist',
+      QueryStrings: ['lang', 'date', 'mode', 'id'],
+    });
+    expect(boardPolicy?.Properties.OriginRequestPolicyConfig.HeadersConfig).toEqual({
+      HeaderBehavior: 'allExcept',
+      Headers: ['Host'],
+    });
+  });
+
   it('stamps the trusted viewer address the score handler requires onto the score route', () => {
     // `allExcept` forwards viewer headers ONLY — never a CloudFront-GENERATED one — so the
     // policy above cannot deliver CloudFront-Viewer-Address, and the handler throws on
@@ -197,7 +227,7 @@ describe('per-player score storage (#187)', () => {
     });
   });
 
-  it('grants the handler exactly the row-store surface: Query, profile Get, conditional Put, Update, friend Delete', () => {
+  it('grants the handler exactly the row-store surface: Query, Get/BatchGet, conditional Put, Update, friend Delete', () => {
     const policies = Object.values(template.findResources('AWS::IAM::Policy'));
     const statements = policies.flatMap(
       (policy) => policy.Properties.PolicyDocument.Statement as { Action?: unknown }[],
@@ -208,6 +238,8 @@ describe('per-player score storage (#187)', () => {
     expect(statement?.Action).toEqual([
       'dynamodb:Query',
       'dynamodb:GetItem',
+      // #190's friends board reads a KNOWN key set in batches, never a Scan.
+      'dynamodb:BatchGetItem',
       'dynamodb:PutItem',
       'dynamodb:UpdateItem',
       // #189's symmetric removal is the only thing on this table that deletes.

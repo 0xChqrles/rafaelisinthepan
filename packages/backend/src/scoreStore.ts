@@ -37,6 +37,11 @@ export interface ScoreSubmission extends ScoreKey {
 export interface ScoreStore {
   // The whole day partition — small by construction (one row per player per daily).
   list(key: ScoreKey): Promise<ScoreRow[]>;
+  // The rows of a KNOWN set of players — the friends board's read (#190): the caller
+  // already holds the exact sort keys (its edges plus itself), so the store fetches
+  // those directly instead of paging the whole day partition to keep at most
+  // FRIENDS_MAX + 1 rows. A player with no recorded score simply has no row.
+  getMany(key: ScoreKey, publicIds: readonly string[]): Promise<ScoreRow[]>;
   // The per-IP allowance and the row's first-write-wins condition are one atomic
   // decision: a refused submission (either outcome) changes neither item.
   submit(input: ScoreSubmission): Promise<ScoreSubmitOutcome>;

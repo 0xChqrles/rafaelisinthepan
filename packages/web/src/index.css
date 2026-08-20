@@ -927,7 +927,15 @@ button * {
   width: min(900px, calc(100vw - 48px));
   height: 50px;
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  /* `minmax(0, …)` and not a bare `1fr`: a bare fr floors each side track at its
+     MIN-CONTENT, so a group too wide for its share pushes the whole grid past its own
+     fixed-width box — and on a phone `body { overflow-x: hidden }` then CLIPS the
+     right group's tail, taking a control off the screen entirely. With a zero floor the
+     grid always fits its box, so a squeezed group overlaps its neighbour (still
+     reachable) instead of disappearing. Free space still splits evenly, so the centre
+     stays truly centred and a missing slot still shifts nothing. The real budget is
+     kept by the narrow-phone step-down at the bottom of this file. */
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   padding: 0 8px;
   background: var(--glass);
@@ -965,6 +973,7 @@ button * {
    page's own foreground — hierarchy is weight and the .home-btn opacity lift, never a
    second grey. */
 .help-btn,
+.board-btn,
 .topbar-skip {
   color: var(--fg);
 }
@@ -1122,9 +1131,10 @@ button * {
    surface spells a day. It is CHROME, not a stat — `.topbar-title`'s muted weight and its
    optical downshift, and none of the counter's live ramp colour.
    Sized for the LEFT CORNER'S REAL BUDGET, which the counter's four glyphs never tested:
-   ten glyphs plus the group's own 24px of padding have to clear the four 38px controls
-   opposite. At 320px that leaves ~132px, so the mobile step below is 10px with no tracking
-   (exactly 100px of ink) — measured at 320/360/390/430. */
+   ten glyphs plus the group's own padding have to clear the mode tabs AND the right
+   group's controls (THREE of them on a game route since #190's leaderboard crown). The
+   whole row's arithmetic — and the narrow-phone step-down that keeps it inside a 320px
+   screen — is at the bottom of this file, under "THE NARROW-PHONE HEADER BUDGET". */
 /* The date, plain bold type like the screen titles (one left-corner treatment; both
    dropped the inverted fill 2026-08-18 with the glass band — the box is the active
    tab's alone now) — and the chip IS the ARCHIVE BUTTON: tap the day to change the day
@@ -3429,9 +3439,42 @@ button * {
   }
 }
 
-/* On the narrowest phones, compress only the header GAPS — never the hud-height flame box
-   or the 22px count — so the streak stays whole beside the centered title the archive and
-   tutorial still carry (the game has none). */
+/* THE NARROW-PHONE HEADER BUDGET (re-measured 2026-08-20, when #190's leaderboard crown
+   made the game's right group THREE controls). The band is one fixed-width row holding
+   three groups that cannot wrap, so it is arithmetic, not taste — at 320px the row has
+   316px of content box (the 2px padding below), and at the base mobile sizes the three
+   groups want:
+     left   the date chip — 10 glyphs at 12px + tick + padding      ~103px
+     centre the mode tabs — PHRASE|MOT ~115px, SENTENCE|WORD ~138px
+     right  3 x --hud-height (38px) + two 2px gaps                   118px
+   which is 336 (fr) / 359 (en) — over by 20-43px, and English was already ~5px over
+   with only two controls. The mono advances 0.6em a glyph, so every one of these is a
+   count, and the fix is to spend less in all three: a smaller control box, a smaller
+   date, and tabs at 10px with most of their tracking and side padding given back. That
+   comes to ~294 (fr) / ~307 (en) — inside 316 with room.
+   THE BREAKPOINT IS 400px, not the 380 the standing line steps down at: measured in a
+   browser, English at the BASE sizes saturates its tracks from ~400px down (at 390 —
+   the common iPhone width — the tabs' box and the right group's touch, leaving only the
+   controls' own padding as the visible gap). So the band that needs the step-down is
+   ≤400, and 390 gets it. */
+@media (max-width: 400px) {
+  .topbar {
+    /* 32px still holds the 28px icons; below this width the alternative is losing a
+       control off the edge. */
+    --hud-height: 32px;
+  }
+  .puzzle-date {
+    font-size: 11px;
+    padding: 4px 4px 3px 5px;
+    gap: 3px;
+  }
+  .mode-tab {
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    padding: 6px 7px 5px;
+  }
+}
+/* On the narrowest phones, compress the header's own side padding too. */
 @media (max-width: 340px) {
   .topbar-inner {
     padding: 0 2px;
@@ -4895,8 +4938,12 @@ button * {
   border-color: var(--fg);
   box-shadow: 0 0 0 1px var(--fg);
 }
-/* CLEAR: a quiet hairline chip — it undoes, so it never competes with the swatches. */
-.profile-clear {
+/* CLEAR: a quiet hairline chip — it undoes, so it never competes with the swatches.
+   The leaderboard's EDIT chip (#190) is the same control in the same voice: it leads
+   away from the board rather than acting on it, so it wears this rule rather than a
+   copy of it. */
+.profile-clear,
+.board-chip {
   flex: none;
   height: 36px;
   font-family: var(--ui);
@@ -4913,7 +4960,8 @@ button * {
   text-shadow: none;
   transition: filter 0.08s linear, border-color 0.12s linear;
 }
-.profile-clear:hover:not(:disabled) {
+.profile-clear:hover:not(:disabled),
+.board-chip:hover {
   filter: brightness(1.3);
   border-color: var(--fg);
 }
@@ -5054,4 +5102,316 @@ button * {
   .save-dots i {
     animation: none;
   }
+}
+
+/* ---- The LEADERBOARD screen (#190): friends board first, global top 50 as the
+   untrusted tab. A full-height column in the app's chrome voice — glass rows on
+   hairlines, primary `--fg` for what matters and plain `--muted` for SECONDARY text
+   and icons (user-decided 2026-08-20, amending the one-ink rule: never `--fg` +
+   opacity for a resting secondary; opacity stays an interaction treatment) — with
+   the game's numbers (ranks, scores) in the pixel face, since a score is something
+   the game produced. The OWN row wears the app's one emphasis gesture, the inverted
+   selection box. ---- */
+.board-screen {
+  width: min(430px, 100%);
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  /* Clears the floating glass band (8px + 50px viewport, minus .app's own 24px). */
+  padding-top: 46px;
+}
+
+/* The identity strip: your mark and name as a board row shows them, with EDIT (the
+   #188 editor's wired entry) on the row's far edge. */
+.board-me {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.board-me .avatar {
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.board-me-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--ui);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+/* An uncustomized player reads as their PSEUDONYM (anonName — a deterministic
+   pronounceable name derived from the publicId; user feedback 2026-08-20, replacing
+   the raw id, which read as a machine talking). It looks like a name, so it keeps the
+   name's own size and weight — only quieter, in the plain SECONDARY ink (user-decided
+   2026-08-20: secondary text and icons wear `--muted`, never `--fg` + opacity). */
+.board-me-name.anon {
+  color: var(--muted);
+}
+/* The EDIT chip is the profile CLEAR's chip — literally, sharing its rule above
+   (`.profile-clear, .board-chip`) rather than repeating it property for property: one
+   quiet hairline chip, worn wherever a control leads AWAY from what it sits beside. */
+
+/* The whose-scores tabs wear the header switcher's exact dress, stretched to the
+   column: same hairline group, same inverted-box active state, said in weight. */
+.board-tabs {
+  display: flex;
+}
+.board-tabs .mode-tab {
+  flex: 1;
+  font-size: 12px;
+  padding: 8px 10px 7px;
+}
+
+/* The body owns the leftover height; transient states centre in it, the list fills it. */
+.board-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.board-body > .status,
+.board-body > .load-error,
+.board-body > .board-empty {
+  margin: auto;
+}
+/* The empty state: a sad pixel ghost over a terse line (user feedback 2026-08-20 —
+   the long sentence said less than the ghost does). One block in the plain SECONDARY
+   ink — the ghost inherits it through its mask — centered by the body's auto margins. */
+.board-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  color: var(--muted);
+  text-align: center;
+}
+/* The ghost is the USER'S OWN pixel art (assets/ghost.png, 13x18) and it TINTS LIKE AN
+   ICON: the sprite is a pure black-on-transparent silhouette, so it is painted through
+   a CSS MASK in `currentColor` — the strike sheets' technique (see `.word-slash`) —
+   which is what lets it wear this block's secondary ink instead of shipping its own.
+   At an EXACT INTEGER SCALE (4x = 52x72) with `image-rendering: pixelated`, the
+   app's standing pixel-art rule: whole multiples alone are not enough, since bilinear
+   blends every destination pixel that misses a texel centre. The scale is therefore
+   the one dimension this can be tuned in. */
+.board-ghost {
+  width: 52px;
+  height: 72px;
+  background-color: currentColor;
+  -webkit-mask-image: url('./assets/ghost.png');
+  mask-image: url('./assets/ghost.png');
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  image-rendering: pixelated;
+}
+.board-empty > p {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.board-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0 6px 2px 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/* The unit caption over the score column: which way is better is the mode's, and
+   naming the unit (TRIES / WORDS) is how the list says it. */
+.board-unit {
+  align-self: flex-end;
+  font-family: var(--ui);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0 12px 2px 0;
+}
+
+/* One player, one glass row: rank + mark + name + score on a hairline. Rows rise in
+   on the app's one rung-in gesture, staggered by index (delays survive reduced
+   motion — the floating numbers' degradation — while the rise itself collapses). */
+.board-row {
+  display: grid;
+  grid-template-columns: 42px 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  background: var(--glass);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  animation: rung-in 220ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
+  animation-delay: calc(min(var(--i, 0), 14) * 28ms);
+}
+.board-row .avatar {
+  display: block;
+  border-radius: var(--r-sm);
+}
+/* The rank is the game's own number — pixel face, quiet: the row is about the player,
+   so the number wears the secondary ink. */
+.board-rank {
+  font-family: var(--pixel-font);
+  font-size: 9px;
+  color: var(--muted);
+  /* The pixel face rides high off the mono around it (the standing line's rule):
+     whole pixels only, via translate. */
+  translate: 0 1px;
+}
+.board-name {
+  font-family: var(--ui);
+  font-size: 14px;
+  font-weight: 550;
+  letter-spacing: 0.02em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The pseudonym: a name-shaped placeholder, so only the secondary ink says so. */
+.board-name.anon {
+  color: var(--muted);
+}
+.board-score {
+  font-family: var(--pixel-font);
+  font-size: 13px;
+  color: var(--fg);
+  translate: 0 1px;
+}
+/* No rank yet (a waiting friend): a small solid tick, CENTERED in the rank column
+   (user feedback 2026-08-20, second pass — the pixel hyphen sat left and thin), so
+   the cell never reads as a rendering hole. Secondary ink, like the ranks around it. */
+.board-norank {
+  justify-self: center;
+  width: 12px;
+  height: 3px;
+  background: var(--muted);
+}
+/* Holds the identity strip's layout for the beat before the id derives. */
+.board-me-slot {
+  flex: none;
+  width: 40px;
+  height: 40px;
+}
+
+/* YOUR row: the inverted selection box — the board's one emphasis gesture. */
+.board-row.me {
+  background: var(--fg);
+  border-color: var(--fg);
+}
+.board-row.me .board-rank,
+.board-row.me .board-name,
+.board-row.me .board-score {
+  color: var(--bg);
+}
+.board-row.me .board-rank {
+  opacity: 0.6;
+}
+
+/* A FRIEND with no score today (friends board only, user-decided 2026-08-20): the row
+   stays — an edge is a person you chose — wearing the app's dashed "not yet" frame
+   with no glass fill. WHY they have no score is said ONCE, by the section caption
+   above the group (second pass, same day: a label repeated on every row read as a
+   stutter), so the row itself carries only the person. */
+.board-row.waiting {
+  background: transparent;
+  border-style: dashed;
+}
+.board-row.waiting .board-name {
+  grid-column: 3 / -1;
+}
+/* The caption between the ranked rows and the waiting group: a small centered title
+   on a hairline — NOT PLAYED YET, once for everyone under it. */
+.board-section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  font-family: var(--ui);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.board-section::before,
+.board-section::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--line);
+}
+
+/* Between the cut and your own neighborhood, the line continues: the app's dashed
+   "more line beyond this" vocabulary, as a short rule. */
+.board-gap {
+  height: 0;
+  margin: 4px 12px;
+  border-top: 2px dashed var(--rail);
+}
+
+/* INVITE is the screen's one big action — the device-card button, parked on the
+   column's bottom edge. */
+.board-invite {
+  flex: none;
+}
+
+@media (max-width: 640px) {
+  .board-screen {
+    /* The mobile .app scrolls the page; the board keeps its own internal scroll by
+       taking an explicit viewport height (minus .app's 16px top / 28px bottom pads). */
+    height: calc(100dvh - 44px);
+    padding-top: 48px;
+    gap: 12px;
+  }
+}
+
+/* ---- The invite landing's confirmation (#189, user feedback 2026-08-20): the click
+   now SAYS what it did — the inviter's mark and name over FRIEND ADDED, PLAY onward.
+   Vertically self-centering (auto margins), like the app's other HUD-less screens. ---- */
+.invite-done {
+  width: min(340px, 100%);
+  margin: auto 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+}
+.invite-done .avatar {
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+.invite-done-name {
+  font-family: var(--ui);
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+}
+.invite-done-line {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.invite-done .mix-btn {
+  width: 100%;
+  margin-top: 12px;
 }

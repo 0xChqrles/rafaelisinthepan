@@ -6,7 +6,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   apiBase,
+  boardUrl,
   friendsUrl,
+  parseBoard,
   puzzleUrl,
   wordPuzzleUrl,
   puzzleOutcome,
@@ -414,5 +416,63 @@ describe('friendsUrl + parseFriends (#189)', () => {
     expect(() => parseFriends(null)).toThrow(/not an object/);
     expect(() => parseFriends({ friends: 'abcdefghij234567' })).toThrow(/friends/);
     expect(() => parseFriends({ friends: ['NOPE'] })).toThrow(/friends/);
+  });
+});
+
+describe('boardUrl (#190)', () => {
+  it('addresses the /board route with lang, date, mode and the optional public id', () => {
+    expect(boardUrl('fr', '2026-08-19', 'sentence', undefined, 'https://api.example')).toBe(
+      'https://api.example/board?lang=fr&date=2026-08-19&mode=sentence',
+    );
+    expect(boardUrl('en', '2026-08-19', 'word', 'abcdefghij234567', 'https://api.example')).toBe(
+      'https://api.example/board?lang=en&date=2026-08-19&mode=word&id=abcdefghij234567',
+    );
+  });
+
+  it('throws without a configured base (never a silent same-origin fetch)', () => {
+    expect(() => boardUrl('fr', '2026-08-19', 'sentence', undefined, '')).toThrow(
+      /VITE_API_BASE_URL/,
+    );
+  });
+});
+
+describe('parseBoard (shape validation, #190)', () => {
+  const row = (over: Partial<Record<string, unknown>> = {}) => ({
+    publicId: 'abcdefghij234567',
+    name: 'Zoe',
+    avatar: null,
+    score: 7,
+    rank: 1,
+    ...over,
+  });
+  const valid = () => ({ rows: [row()], own: null, waiting: [] });
+
+  it('accepts a well-formed board, empty boards included', () => {
+    expect(parseBoard(valid()).rows).toHaveLength(1);
+    expect(parseBoard({ rows: [], own: null, waiting: [] }).rows).toEqual([]);
+    expect(parseBoard({ ...valid(), own: [row()] }).own).toHaveLength(1);
+    // A friend with no score today is a PLAYER row — no score, no rank.
+    expect(
+      parseBoard({
+        ...valid(),
+        waiting: [{ publicId: 'abcdefghij234567', name: '', avatar: null }],
+      }).waiting,
+    ).toHaveLength(1);
+  });
+
+  it('rejects a wrong-shaped body (a failure, never NaN rows)', () => {
+    expect(() => parseBoard(null)).toThrow(/board/);
+    expect(() => parseBoard({ ...valid(), rows: 'none' })).toThrow(/rows/);
+    expect(() => parseBoard({ ...valid(), rows: [row({ publicId: 'NOPE' })] })).toThrow(/rows/);
+    expect(() => parseBoard({ ...valid(), rows: [row({ rank: 0 })] })).toThrow(/rows/);
+    expect(() => parseBoard({ ...valid(), rows: [row({ score: 1.5 })] })).toThrow(/rows/);
+    expect(() => parseBoard({ ...valid(), rows: [row({ avatar: 7 })] })).toThrow(/rows/);
+    // A present avatar must DECODE (isValidAvatar): '' would slip past the nullish
+    // `?? defaultAvatar` fallback, throw in decodeAvatar, and shift the row's grid.
+    expect(() => parseBoard({ ...valid(), rows: [row({ avatar: '' })] })).toThrow(/rows/);
+    expect(() => parseBoard({ ...valid(), rows: [row({ avatar: '!'.repeat(19) })] })).toThrow(/rows/);
+    expect(() => parseBoard({ ...valid(), own: [row({ name: 3 })] })).toThrow(/own/);
+    expect(() => parseBoard({ ...valid(), waiting: undefined })).toThrow(/waiting/);
+    expect(() => parseBoard({ ...valid(), waiting: [{ publicId: 'NOPE' }] })).toThrow(/waiting/);
   });
 });

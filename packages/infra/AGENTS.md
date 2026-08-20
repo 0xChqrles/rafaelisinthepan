@@ -78,7 +78,11 @@
   third behavior on that shape — `CachingDisabled`, ALLOW_ALL methods, `allExcept: Host`
   headers for the OAC-signed POST — with a query allow-list that is EMPTY, because the
   handler reads no query at all (the key authenticates in the body); the day it reads one,
-  it has to be named there or CloudFront will strip it. The table grant adds
+  it has to be named there or CloudFront will strip it. **`/board` (#190)** is the fourth:
+  `CachingDisabled`, ALLOW_ALL methods (the friends-board read is an authenticated POST),
+  `allExcept: Host` headers, and an origin-request allow-list of exactly the FOUR queries
+  the board handler reads (`lang`/`date`/`mode`/`id`) — no viewer-IP function, no per-IP
+  logic. The table grant adds
   `GetItem` for the profile read (the upsert reuses `UpdateItem`) and **`DeleteItem` for
   #189's symmetric friend removal, the only delete on this table**; all are pinned by
   `backend-stack.test.ts`. The Lambda

@@ -10,14 +10,20 @@ import {
   NAME_MAX_LENGTH,
 } from '@whippin/shared';
 import { parseProfile, postProfileBody, profileUrl } from '../api';
+import { anonName } from '../anonName';
+import { defaultAvatar } from '../defaultAvatar';
 import { playerSecret } from '../identity';
-import { resolveHomeLang } from '../langs';
+import { navigate } from '../routing';
+import { pathForBoard, resolveHomeLang } from '../langs';
 import { t } from '../i18n';
 import Avatar from '../components/Avatar';
 import LoadError from '../components/LoadError';
 import LoadingWave from '../components/LoadingWave';
 import TopBar from '../components/TopBar';
 import { useGameStore } from '../state/gameStore';
+// Inline SVG (vite-plugin-svgr): the close control back to the leaderboard, painting
+// with currentColor; the button's aria-label names it.
+import CloseIcon from '../assets/icons/close.svg?react';
 
 // The #188 profile editor: name, tap-to-paint 10×10 grid, and the palette picker —
 // each swatch IS a palette ({bg, fg} pair, user-decided 2026-08-19: two colours,
@@ -40,9 +46,32 @@ import { useGameStore } from '../state/gameStore';
 // while the read is in flight invites edits the response then overwrites, and a failed
 // read leaves the stored profile UNKNOWN — an editor started from that guess would save
 // a blank over a real profile. A 404 is not a failure: it IS the answer "never
-// customized", for which the blank editor and the blank baseline are exactly right.
+// customized" — and since 2026-08-20 that opens the editor on the player's ASSIGNED
+// identity (anonName + defaultAvatar, the exact fallback every board row already
+// shows), not on a blank: an editor that opens empty while the board wears a name and
+// a mark reads as broken. The assigned values are also the BASELINE, so SAVE stays
+// dark until something is actually changed.
 // (This is the game route's own loading / error / content shape.)
 type LoadState = 'loading' | 'ready' | 'failed';
+
+// THE ASSIGNED NAME IS A DISPLAY VALUE, NEVER A STORED ONE — one rule, both directions
+// (corrected 2026-08-20 on review; the first cut adopted the pseudonym as the save
+// baseline on the reasoning that "storing it changes nothing anyone sees", which is
+// false: every board gates its placeholder ink on the name being EMPTY, so storing the
+// pseudonym flips that player's row from the muted placeholder to full primary and
+// makes them indistinguishable from someone who deliberately chose that handle — and
+// freezes their name against every later generator change).
+//   READ  — an empty stored name shows as the assigned pseudonym, exactly as a board
+//           row shows it (so a 404 and a name-less stored profile open identically).
+//   WRITE — a name still equal to the assigned pseudonym was never typed, so the body
+//           carries the empty name the assigned identity derives from.
+// The BASELINE therefore lives in DISPLAY space (what the field holds) and the body in
+// STORAGE space. A player who deliberately types their own pseudonym stores empty and
+// renders the same text in the placeholder ink — the one accepted cost of the rule.
+const nameForEditor = (stored: string, publicId: string) =>
+  sanitizeName(stored) || anonName(publicId);
+const nameForStore = (edited: string, publicId: string) =>
+  edited === anonName(publicId) ? '' : edited;
 
 // The SAVE button's two orthogonal facts: its visual PHASE (the label rolls down and
 // out, the dot loader drops in from the top, holds, then the label rolls back up from
@@ -60,10 +89,17 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 
 export default function Profile() {
   const lastLang = useGameStore((s) => s.lastLang);
+  const lastMode = useGameStore((s) => s.lastMode);
+  // Where the board that opened this editor lives — see the close control below.
+  const profileReturn = useGameStore((s) => s.profileReturn);
+  const setProfileReturn = useGameStore((s) => s.setProfileReturn);
   // No puzzle to take a language from: same resolution as the `/` redirect.
   const lang = resolveHomeLang(lastLang, navigator.language);
 
   const [secret] = useState(() => playerSecret());
+  // Derived once by the load effect; the editor is gated on that read, so every path
+  // that needs it (the save body's name rule) runs only after it is set.
+  const [publicId, setPublicId] = useState('');
   const [name, setName] = useState('');
   const [palette, setPalette] = useState(0);
   const [cells, setCells] = useState<number[]>(() => new Array<number>(AVATAR_CELLS).fill(0));
@@ -89,23 +125,36 @@ export default function Profile() {
     (async () => {
       try {
         const publicId = await publicIdFromSecret(secret);
+        if (cancelled) return;
+        setPublicId(publicId);
         const response = await fetch(profileUrl(publicId));
         if (cancelled) return;
         if (response.ok) {
           const profile = parseProfile(await response.json());
           const decoded = decodeAvatar(profile.avatar);
           if (cancelled) return;
-          // Sanitized on the way IN as well, so the editor can never display a value
-          // its own field would refuse. The server enforces the same rule on write, so
-          // this is a no-op on anything it stored — but the baseline has to be the
-          // sanitized form too, or a name the editor cannot reproduce would light SAVE
-          // up with nothing edited.
-          const name = sanitizeName(profile.name);
+          // Sanitized on the way IN (so the editor can never display a value its own
+          // field would refuse — a no-op on anything the server stored, since it
+          // enforces the same rule), then the assigned pseudonym stands in for an
+          // empty stored name: nameForEditor's READ half. The baseline is that same
+          // display value, or a name the editor cannot reproduce would light SAVE up
+          // with nothing edited.
+          const name = nameForEditor(profile.name, publicId);
           setName(name);
           setPalette(decoded.palette);
           setCells(decoded.cells);
           setBaseline({ name, avatar: profile.avatar });
-        } else if (response.status !== 404) {
+        } else if (response.status === 404) {
+          // Never customized: open on the assigned identity the boards already show
+          // (see the gating note above) — the same READ half, over an empty name.
+          const name = nameForEditor('', publicId);
+          const generated = defaultAvatar(publicId);
+          const decoded = decodeAvatar(generated);
+          setName(name);
+          setPalette(decoded.palette);
+          setCells(decoded.cells);
+          setBaseline({ name, avatar: generated });
+        } else {
           setLoad('failed');
           return;
         }
@@ -217,14 +266,18 @@ export default function Profile() {
     setPhase('saving');
     setRefused(null);
     const started = Date.now();
-    const body = { secret, name: clean, avatar: encoded };
+    // The body is STORAGE space: an untouched assigned pseudonym stores as the empty
+    // name every surface derives it from (nameForStore's WRITE half). The baseline
+    // below re-reads the DISPLAY value, so a save can never leave the editor differing
+    // from what it just stored.
+    const body = { secret, name: nameForStore(clean, publicId), avatar: encoded };
     // The outcome is decided while the dots run; the phases below only pace how the
     // button tells it.
     let outcome: SaveRefusal = null;
     try {
       const response = await postProfileBody(profileUrl(), body);
       if (response.ok) {
-        setBaseline({ name: body.name, avatar: body.avatar });
+        setBaseline({ name: clean, avatar: body.avatar });
       } else {
         const refusal = (await response.json().catch(() => null)) as { error?: string } | null;
         outcome =
@@ -240,7 +293,7 @@ export default function Profile() {
     setPhase('restoring');
     await sleep(SAVE_RESTORE_MS);
     setPhase((current) => (current === 'restoring' ? 'idle' : current));
-  }, [secret, name, encoded]);
+  }, [secret, publicId, name, encoded]);
 
   const saveError =
     refused === 'name_rejected'
@@ -256,6 +309,25 @@ export default function Profile() {
       <TopBar
         lang={lang}
         left={<span className="topbar-title">{t(lang, 'profileTitle')}</span>}
+        right={
+          // The way OUT (user feedback 2026-08-20 — the screen was unleavable): back
+          // to the leaderboard, this editor's wired entry point — and to the SAME one
+          // that opened it (review finding, 2026-08-20). `/profile` is a global route,
+          // so the board's (lang, mode) is not in the URL: the opener states it
+          // (`profileReturn`), and only an editor reached with nothing set — a deep
+          // link, a reload — falls back to guessing from the last loaded GAME.
+          <button
+            type="button"
+            className="home-btn archive-close"
+            aria-label={t(lang, 'ariaClose')}
+            onClick={() => {
+              setProfileReturn(null);
+              navigate(profileReturn ?? pathForBoard(lang, lastMode ?? 'sentence'));
+            }}
+          >
+            <CloseIcon className="ui-icon" aria-hidden />
+          </button>
+        }
       />
       {load === 'loading' && (
         <p className="status">
@@ -302,7 +374,7 @@ export default function Profile() {
                 }}
               />
             </div>
-  
+
             {/* The palette's ONE inline variable: empty cells wear the bg itself and the
                 CSS derives the canvas's darker frame from it (color-mix — computed,
                 never a second hardcoded shade per palette). */}
@@ -327,7 +399,7 @@ export default function Profile() {
                 />
               ))}
             </div>
-  
+
             {/* The palettes, shown as their BACKGROUND colour (user-decided 2026-08-19,
                 superseding the foreground swatches): pick a ground, its ink comes with
                 it. The drawing (the cell states) survives a switch. CLEAR shares the
@@ -361,7 +433,7 @@ export default function Profile() {
                 {t(lang, 'profileClear')}
               </button>
             </div>
-  
+
             {/* Nothing to save = disabled, and .mix-btn:disabled::before unlights the
                 device card's LED — the board itself says whether there is a change.
                 While saving, the label rolls out the bottom and the dot loader drops in

@@ -80,6 +80,7 @@ server.listen(PORT, () => {
   console.log(`[backend]   scores: in-memory; Turnstile accept-all (local only)`);
   console.log(`[backend]   GET /?lang=<xx>&date=<YYYY-MM-DD>[&mode=word]  GET|POST /scores?lang=&date=&mode=`);
   console.log(`[backend]   GET /profile?id=<publicId>  POST /profile  POST /friends`);
+  console.log(`[backend]   GET|POST /board?lang=&date=&mode=[&id=]`);
   console.log(`[backend]   GET /today  GET /s/<token>  GET /og/<token>.png`);
   console.log(`[backend] point the front at it: VITE_API_BASE_URL=http://localhost:${PORT}`);
 });

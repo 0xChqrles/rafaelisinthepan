@@ -5,7 +5,16 @@
 // a ±1-day clock-skew window of its own active day.
 
 import { isValidAvatar, PUBLIC_ID_PATTERN } from '@whippin/shared';
-import type { PlayerProfile, Puzzle, ScoreHistogram, Word, WordPuzzle } from '@whippin/shared';
+import type {
+  Board,
+  BoardPlayer,
+  BoardRow,
+  PlayerProfile,
+  Puzzle,
+  ScoreHistogram,
+  Word,
+  WordPuzzle,
+} from '@whippin/shared';
 import type { Mode } from './langs';
 
 // Base URL of the backend, configured at build time via VITE_API_BASE_URL.
@@ -265,6 +274,77 @@ export function parseFriends(data: unknown): string[] {
     throw new Error('malformed friends: "friends" must be an array of player ids');
   }
   return friends as string[];
+}
+
+// The #190 leaderboard: GET is the anonymous GLOBAL top 50 (`id` — the caller's PUBLIC
+// id, never the secret — widens it with their own below-the-cut window); POST with
+// `{secret}` is the authenticated FRIENDS board, the trusted surface. Addressed per
+// (day, lang, mode) like everything else; all four query parameters are in the board
+// CloudFront behavior's allowList (the root AGENTS.md three-package contract).
+export function boardUrl(
+  lang: string,
+  date: string,
+  mode: Mode,
+  id?: string,
+  base: string = apiBase(),
+): string {
+  const root = `${requireApiBase(base)}/board?lang=${encodeURIComponent(lang)}&date=${encodeURIComponent(
+    date,
+  )}&mode=${encodeURIComponent(mode)}`;
+  return id ? `${root}&id=${encodeURIComponent(id)}` : root;
+}
+
+export async function postBoardBody(url: string, body: { secret: string }): Promise<Response> {
+  return postSignedJson(url, body);
+}
+
+// Runtime shape check for a board response — the parsePuzzle contract: a wrong-shaped
+// body surfaces as the screen's failure state, never as a board of NaN rows. The avatar
+// must be null or a DECODABLE string (isValidAvatar, parseProfile's own rule): "any
+// string" would let an empty/garbage value slip past the `?? defaultAvatar` fallback
+// (nullish only) into decodeAvatar, where a thrown decode drops the row's mark and
+// shifts the whole order-placed row grid.
+function isBoardPlayer(row: unknown): row is BoardPlayer {
+  return (
+    isRecord(row) &&
+    typeof row.publicId === 'string' &&
+    PUBLIC_ID_PATTERN.test(row.publicId) &&
+    typeof row.name === 'string' &&
+    (row.avatar === null || isValidAvatar(row.avatar))
+  );
+}
+
+function checkBoardPlayers(value: unknown, field: string): asserts value is BoardPlayer[] {
+  if (!Array.isArray(value)) throw new Error(`malformed board: "${field}" must be an array`);
+  for (const row of value) {
+    if (!isBoardPlayer(row)) throw new Error(`malformed board: bad "${field}" row`);
+  }
+}
+
+function checkBoardRows(value: unknown, field: string): asserts value is BoardRow[] {
+  if (!Array.isArray(value)) throw new Error(`malformed board: "${field}" must be an array`);
+  for (const raw of value) {
+    const row = raw as Record<string, unknown>;
+    if (
+      !isBoardPlayer(raw) ||
+      typeof row.score !== 'number' ||
+      !Number.isInteger(row.score) ||
+      typeof row.rank !== 'number' ||
+      !Number.isInteger(row.rank) ||
+      row.rank < 1
+    ) {
+      throw new Error(`malformed board: bad "${field}" row`);
+    }
+  }
+}
+
+export function parseBoard(data: unknown): Board {
+  if (!isRecord(data)) throw new Error('malformed board: not an object');
+  const { rows, own, waiting } = data;
+  checkBoardRows(rows, 'rows');
+  if (own !== null) checkBoardRows(own, 'own');
+  checkBoardPlayers(waiting, 'waiting');
+  return data as unknown as Board;
 }
 
 // Runtime shape check for a fetched profile — the parsePuzzle contract: a wrong-shaped

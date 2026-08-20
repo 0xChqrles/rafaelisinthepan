@@ -291,6 +291,38 @@ const STRINGS = {
   profileClear: { en: 'CLEAR', fr: 'CLEAR' },
   ariaAvatarEditor: { en: 'Avatar editor: tap to paint', fr: "Éditeur d'avatar : touchez pour peindre" },
   ariaPalette: { en: 'Palette', fr: 'Palette' },
+  // ---- the leaderboard screen (#190): friends board first, global top 50 as the
+  // untrusted tab. Terse chrome in the app's register; the tabs and the rows do the
+  // explaining. GLOBAL is one word in both languages, like TOP and the grades.
+  boardTitle: { en: 'LEADERBOARD', fr: 'CLASSEMENT' },
+  boardFriends: { en: 'FRIENDS', fr: 'AMIS' },
+  boardGlobal: { en: 'GLOBAL', fr: 'GLOBAL' },
+  // The empty states, one per tab (user feedback 2026-08-20, replacing one long
+  // "NO ONE ON THE BOARD YET" line): TERSE, under a small sad pixel ghost that carries
+  // the mood. An empty friends tab really is "no friends" — friends who merely haven't
+  // played today show as waiting rows — and the INVITE button below is the remedy.
+  boardEmptyFriends: { en: 'NO FRIENDS', fr: "PAS D'AMIS" },
+  boardEmptyGlobal: { en: 'NOBODY YET', fr: 'ENCORE PERSONNE' },
+  boardEdit: { en: 'EDIT', fr: 'MODIFIER' },
+  boardInvite: { en: 'INVITE FRIENDS', fr: 'INVITER DES AMIS' },
+  // A friend on the board who has no recorded score today (user-decided 2026-08-20):
+  // the row stays — an edge is a person you chose — and this label sits where their
+  // score would.
+  boardNotPlayed: { en: 'NOT PLAYED YET', fr: 'PAS ENCORE JOUÉ' },
+  // The line above the invite link when it leaves the app (#189). Lowercase and plain —
+  // it travels in a chat between friends, so it reads like something a person would
+  // actually type, not marketing copy (user feedback 2026-08-20, replacing "Play
+  // Whippin AI with me:").
+  boardInviteText: {
+    en: 'add me on Whippin:',
+    fr: 'ajoute-moi sur Whippin :',
+  },
+  // The invite landing's confirmation (#189, user feedback 2026-08-20 — the click used
+  // to continue into the game without a word, leaving the clicker unsure anything
+  // happened): the inviter's mark + name above this line, PLAY below it.
+  inviteAdded: { en: 'FRIEND ADDED', fr: 'AMI AJOUTÉ' },
+  failedBoard: { en: 'FAILED TO LOAD LEADERBOARD', fr: 'ÉCHEC DU CHARGEMENT DU CLASSEMENT' },
+  ariaLeaderboard: { en: 'Leaderboard', fr: 'Classement' },
 } satisfies Record<string, Record<UiLang, string>>;
 
 export type UiKey = keyof typeof STRINGS;

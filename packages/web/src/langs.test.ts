@@ -8,6 +8,7 @@ import {
   isLang,
   pathForMode,
   pathForArchive,
+  pathForBoard,
   pathForDay,
   pathForInvite,
   parseRoute,
@@ -180,6 +181,24 @@ describe('pathForArchive / pathForDay', () => {
       lang: 'fr',
       mode: 'sentence',
       date: '2026-06-12',
+    });
+  });
+});
+
+describe('leaderboard routes (#190)', () => {
+  it('routes /<lang>/board and /<lang>/word/board to that daily\'s leaderboard', () => {
+    expect(parseRoute('/fr/board')).toEqual({ view: 'board', lang: 'fr', mode: 'sentence' });
+    expect(parseRoute('/en/board/')).toEqual({ view: 'board', lang: 'en', mode: 'sentence' });
+    expect(parseRoute('/fr/word/board')).toEqual({ view: 'board', lang: 'fr', mode: 'word' });
+  });
+  it('pathForBoard round-trips through parseRoute, / for an unknown lang', () => {
+    expect(pathForBoard('fr')).toBe('/fr/board');
+    expect(pathForBoard('en', 'word')).toBe('/en/word/board');
+    expect(pathForBoard('de')).toBe('/');
+    expect(parseRoute(pathForBoard('en', 'word'))).toEqual({
+      view: 'board',
+      lang: 'en',
+      mode: 'word',
     });
   });
 });

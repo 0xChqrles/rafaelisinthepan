@@ -13,6 +13,8 @@
     src/day.ts                the ONE 22:00-ET DST-correct game-day logic (client + server + publish)
     src/scores.ts             WORD_CLAIM_ZONE (web+backend) + VIEWER_IP_HEADER (infra+backend)
     src/identity.ts           the #187 player key: secret format + publicId derivation (web+backend)
+    src/leaderboard.ts        the #190 board rules: competition tie ranks, the plain top-50 cut,
+                              own-row window + the Board API types (backend cuts, web renders)
     src/avatar.ts             the #188 avatar: {bg, fg} palettes + the 14-byte 1-bit grid codec (web encodes/renders, backend validates)
     src/name.ts               the #188 display-name charset: sanitizeName (web) ⇔ isValidName (backend)
     src/types.ts              shared puzzle + score-API schema types (Puzzle, Hole, ScoreHistogram, …)
@@ -91,6 +93,13 @@
   One web palette used to be pinned COPIES of ramp stops; with the calm redesign Word
   mode's rarity ladder is AUTHORED instead (`rarity.test.ts` still pins its hexes and
   re-measured dE constraints, so a retune stays a deliberate act).
+- `src/leaderboard.ts` is the ONE definition of the #190 board's ranking rules —
+  competition-style tie ranks, the plain top-50 cut (nothing folded, user-decided
+  2026-08-20), the own-row ±2 window — plus the `Board`/`BoardRow` API types. The
+  BACKEND applies them before attaching profiles and the WEB renders what they
+  produced; a fork would let the ranks a board shows drift from the rows the server
+  selected. Contract-tested per the issue (`leaderboard.test.ts`); the product rules
+  live in the root `AGENTS.md` (Leaderboard reads).
 - `src/shareCard.ts` is the share-token codec, running byte-identically in the
   browser and the Lambda; the token's product behavior and evolution rules are in the
   solved-result bullet of `packages/web/AGENTS.md`. Its leading VERSION field is a

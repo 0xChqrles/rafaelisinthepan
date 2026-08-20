@@ -18,6 +18,8 @@
                               ground-swatch palette picker (#190 wires the entry point)
       screens/FriendInvite.tsx  the #189 invite link's landing (/i/<publicId>): POST the mutual
                               edge with the player key, then continue into the game
+      screens/Leaderboard.tsx the #190 leaderboard (/<lang>[/word]/board): friends board first,
+                              global top 50; identity strip (EDIT -> /profile) + INVITE share
       components/Avatar.tsx   a stored avatar rendered as SVG (editor preview + #190 board rows)
       components/avatarOutline.ts  its drawing as ONE traced union-outline path (no interior edges, no seam)
       versionCheck.ts         stale-tab reload: __BUILD_ID__ vs /version.json on visibility flips
@@ -211,6 +213,13 @@ These are decided and verified against the code. Treat them as load-bearing.
     survives only on GAME surfaces (the route drawing's dresses, the keyboard's control
     keys, the watermark) — with hierarchy carried by weight and opacity, never by a
     second grey; `--accent` keeps exactly its recorded accent roles.
+    **AMENDED 2026-08-20 (user-decided, on the leaderboard's review): SECONDARY text
+    and icons wear plain `--muted`, never `--fg` + opacity** — the board's rank
+    numbers, unit/section captions, pseudonyms, the empty-state ghost, the invite
+    confirmation's status line. Opacity remains an INTERACTION treatment (hover lifts,
+    resting tabs), not a colour; the one place still dimmed by opacity is ink on the
+    INVERTED selection box, where no secondary token exists (`--muted` on paper
+    ground is near-invisible).
     The HEADER's icons are the LUCIDE stroke set as `.ui-icon`s (user-picked 2026-08-18:
     calendar, circle-help, x, fast-forward, and LANGUAGES — the 文/A translation mark —
     for the language control, replacing the globe; 24-grid, 1.8px, currentColor, 28px
@@ -415,10 +424,33 @@ it to the local store — see `packages/backend/AGENTS.md`).
   read leaves the stored profile unknown — an editor started from that guess would save
   a blank over a real profile — so a failure shows `failedProfile` + RETRY instead of
   an editor. Unlike a score submission's silent failure, this read's is loud for that
-  reason. A **404 is not a failure**: it is the answer "never customized", and lands on
-  the blank editor whose blank baseline is then correct. No chrome entry point yet — #190's leaderboard screen is
-  the wired entry (recorded in the header bullet); until then the route is
-  deep-link-only.
+  reason. A **404 is not a failure**: it is the answer "never customized", and since
+  2026-08-20 it opens the editor PREFILLED with the player's ASSIGNED identity
+  (`anonName` + `defaultAvatar` — the exact fallback every board row already shows; an
+  editor opening blank while the board wears a name and a mark read as broken), with
+  those values as the BASELINE too, so SAVE stays dark until something actually
+  changes. **The assigned NAME is a DISPLAY value in both directions, never a stored
+  one** (corrected 2026-08-20 on review): an EMPTY stored name opens the field on the
+  pseudonym — so a 404 and a name-less stored profile open identically — and a name
+  still equal to that pseudonym SAVES as the empty name. The first cut stored it, on
+  the reasoning that "storing it changes nothing anyone sees", which is false: every
+  board gates its placeholder ink on the name being EMPTY, so storing the pseudonym
+  flips that row from the muted placeholder to full primary, makes the player
+  indistinguishable from someone who deliberately chose that handle, and freezes their
+  name against every later generator change. The BASELINE therefore lives in DISPLAY
+  space and the save BODY in STORAGE space; a player who types their own pseudonym
+  verbatim stores empty and renders the same text in the placeholder ink — the one
+  accepted cost of the rule. The wired entry point is
+  the leaderboard screen's EDIT chip (#190), and the header carries a CLOSE chip back
+  to it (user feedback 2026-08-20 — the screen was unleavable) — **to the board that
+  actually opened it** (corrected 2026-08-20 on review): `/profile` is a GLOBAL route,
+  so that board's (lang, mode) is not in the URL, and rebuilding it from
+  `lastLang`/`lastMode` describes the last loaded GAME instead — editing from the Word
+  board landed you back on the Sentence one, and a board opened before ever playing
+  could return in another language. The opener states its own route in the transient
+  store (`profileReturn`, the `tutorialOpen` pattern — set by the EDIT chip, cleared on
+  use, never persisted); only an editor reached with nothing set (a deep link, a
+  reload) falls back to the old guess, which still lands on a board.
   **The avatar RENDERER is `components/Avatar.tsx` over `components/avatarOutline.ts`,
   and the tracer STAYS** (user-decided 2026-08-19 — the alternatives do not render the
   same on every browser; see the root `AGENTS.md`). Decoding and tracing are ONE
@@ -434,13 +466,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
 
 - **Invite link (#189):** `/i/<publicId>` (`pathForInvite` in `langs.ts`,
   `screens/FriendInvite.tsx`) — global like `/profile`, since an identity is not
-  language-scoped. It is a BEAT, not a screen: it POSTs `{secret, add}` with the player key
+  language-scoped. It POSTs `{secret, add}` with the player key
   (`identity.ts`, generated on this first need, which is what lands the edge before a
-  brand-new visitor's first game) and then `navigate('/', { replace: true })` — handing the
-  destination to App's own home redirect rather than restating where a player lands, and
-  replacing itself in history so a back tap leaves the game instead of re-firing the invite.
+  brand-new visitor's first game) and **a SUCCESSFUL add is CONFIRMED on screen**
+  (user-decided 2026-08-20, superseding the silent continue-into-the-game beat — the
+  clicker was left unsure anything had happened): the INVITER's avatar and name over
+  `FRIEND ADDED` (`.invite-done`), dressed by a best-effort profile read that falls back
+  to the assigned pseudonym + mark (`anonName`/`defaultAvatar`) — never to an error,
+  since the edge is already landed — with PLAY handing the destination to App's own
+  home redirect via
+  `navigate('/', { replace: true })`, replacing this landing in history so a back tap
+  leaves the game instead of re-firing the invite.
   The publicId is validated in `parseRoute`, so a broken link goes home rather than asking
-  the server about an id nobody can hold. A 4xx is a VERDICT and continues into the game (the
+  the server about an id nobody can hold. A NON-CAP 4xx is a VERDICT and continues into the
+  game silently — nothing was added, so nothing is announced (the
   score submission's rule: `self_link` and a bad id cannot be argued with); a transport
   error or a 5xx shows `failedInvite` + RETRY — LOUD, unlike a score submission, for the #188
   profile read's reason: the write is the one thing the click existed to do. **The CAP (409
@@ -453,8 +492,80 @@ it to the local store — see `packages/backend/AGENTS.md`).
   not say which. One conversation
   per invite lives in a module-level flight map (`shareInviteFlight`, `useScoreHistogram`'s
   own pattern), so neither React's development effect replay nor a real remount mints a
-  second request. No chrome entry point yet — #190's leaderboard screen is where a player
-  COPIES their link; until then the route only receives them.
+  second request. The SENDING surface is the leaderboard screen's INVITE button (#190),
+  which shares `boardInviteText` + the link via `useShare`; this route receives them.
+
+- **Leaderboard screen (#190):** `/<lang>/board` and `/<lang>/word/board`
+  (`pathForBoard` — the archive's grammar; a board is per (day, lang, mode), always
+  the ACTIVE day), `screens/Leaderboard.tsx`, entered from the game header's crown
+  icon (recorded in the header bullet). FRIENDS is the default tab — the trusted
+  surface — GLOBAL the top-50 untrusted one; the header's ModeTabs switch WHICH
+  daily's board, the in-screen tabs WHOSE scores. **THE DAY IS A LIVE VALUE**
+  (corrected 2026-08-20 on review): the screen reads `useToday` — the app's one day
+  signal, which re-fires at the DST-correct 22:00-ET reset AND on a visibility flip —
+  rather than stamping `activeDate(new Date())` at fetch time, because a board is left
+  open across that flip routinely (a phone, overnight). A new day DROPS BOTH tabs'
+  caches, during render rather than in an effect, so yesterday's rows are never
+  committed under today's date and the refetch is already keyed on the new day.
+  **One fetch per tab ACTIVATION, and
+  the OUTCOME is per tab** (both corrected 2026-08-20 on review): the route is a
+  zero-TTL live read — its whole CloudFront behavior is `CACHING_DISABLED` because the
+  data is live — so a tab flip re-reads rather than showing a snapshot from earlier in
+  the visit, with the cached board holding the screen while the fresh one is in flight
+  (stale-but-good beats a spinner) and FAILED shown only when there is nothing to draw.
+  A screen-global failure flag painted an error frame over the OTHER tab's perfectly
+  good board for a render on every flip back. (App keys the screen on lang:mode so a
+  switch resets.) The friends read is the authenticated `POST /board {secret}` via the
+  OAC-hashed body, the global read the anonymous GET widened with the caller's PUBLIC
+  id for the own window — **derived in its own try**, since the global board needs no
+  identity and `crypto.subtle` is absent outside a secure context (the LAN-IP mobile
+  check `board:seed` exists to support), where a shared failure killed the anonymous
+  tab and disabled INVITE for the whole visit. The screen renders what the API returned (ranks, cut, own window
+  — the shared leaderboard rules; root AGENTS.md): glass rows of rank + avatar + name
+  + score, ranks and scores in the PIXEL face (game numbers), names in mono (identity
+  chrome, case kept), the unit caption (TRIES/WORDS) naming which way is better. The
+  OWN row wears the inverted selection box — the app's one emphasis gesture. A player
+  with no profile degrades honestly, with an ASSIGNED identity rather than a hole
+  (both user-decided 2026-08-20, second pass the same day): a GAMERTAG pseudonym as
+  the name (`anonName.ts` — `SwiftFalcon84`-style AdjectiveNoun## derived from the
+  publicId, superseding the same-day syllable names, which didn't read as usernames;
+  length-budgeted under the shared 16-char cap and always `sanitizeName`-stable;
+  name-shaped, so only the secondary ink says "placeholder") and a generated MARK as the avatar
+  (`defaultAvatar.ts` — a mirrored 10×10 creature + palette from the id hash, the
+  seeder's proven recipe, superseding the dashed empty frame). Both are DISPLAY-ONLY
+  pure functions of the publicId — identical on every surface and device, nothing
+  stored, and a saved profile replaces them. The below-the-cut gap renders as a
+  dashed rule (ties are NOT folded at the cut — user-decided 2026-08-20, superseding
+  the "+N TIED" collapse row: at most 50 ordinary rows, shared ranks shown), and the friends
+  tab's WAITING friends (edges with no score today, user-decided 2026-08-20) as
+  dashed no-fill rows under ONE `NOT PLAYED YET` hairline section caption (second
+  pass, same day: a label repeated per row read as a stutter) with a small centered
+  solid tick in the rank column (an empty cell read as a rendering hole, and the
+  pixel hyphen sat left and thin). An EMPTY board is the USER'S OWN SAD PIXEL GHOST
+  over one terse line (user-decided 2026-08-20, superseding a long sentence that said
+  less than the drawing does): `assets/ghost.png` (13×18), and it **TINTS LIKE AN
+  ICON** — the sprite is a pure black-on-transparent silhouette, so `.board-ghost`
+  paints it through a CSS MASK in `currentColor` (the strike sheets' technique) rather
+  than drawing it as an image, which is what lets it wear the block's `--muted` ink;
+  at an exact integer scale (4× = 52×72) with `image-rendering: pixelated`, the
+  standing pixel-art rule (measured on the rendered output: 97% of source texels land
+  as uniform blocks). The line is per TAB — `NO FRIENDS` on the friends board, since
+  an empty one really means no edges (a friend who merely has not played is a waiting
+  row), `NOBODY YET` on the global one. **Empty is therefore counted WITHOUT the
+  caller's own row on the friends tab** (corrected 2026-08-20 on review): the server
+  always includes the caller once they have played, so keying the ghost on "no rows at
+  all" made it unreachable for exactly the player who needs it — someone with no
+  friends who finished today's daily landed on a board of one row, themselves, under
+  an identity strip already showing the same mark and name, with nothing saying why.
+  The identity strip on
+  top (your mark + name + EDIT → `/profile`) and the INVITE device-card button on the
+  bottom edge are the #188/#189 wiring; both work before ever playing — and the invite
+  share is the ONE `useShare` caller that passes `tracked: false`, because the pinned
+  `share` analytics event means "a RESULT left the app" (the three-event invariant) and
+  counting invite links into it would silently redefine what the number measures. Rows rise on
+  the `rung-in` gesture staggered by index (delays survive reduced motion, the rise
+  collapses). Board VISUALS carry no tests per policy; the contract-y parts are the
+  shared ranking rules, `parseBoard`, and the route grammar (langs.test.ts).
 
 - **Word mode (#156, the second daily; RETIMED by #163 on 2026-08-08):** one app, two faces
   — `/<lang>/word` (plus `/word/<date>` and `/word/archive`, same date rules) plays the day's
@@ -1990,9 +2101,28 @@ it to the local store — see `packages/backend/AGENTS.md`).
     fill, replacing the languages glyph; still the one gesture onto /select) then the
     screen's contextual controls (help `?`, skip, close). **The logo LEFT the header**
     with the /mode chooser it opened — brand lives on the frame rail and the hero
-    screens. **The LEADERBOARD, when it lands, enters from the solved screen's standing
-    line, NOT from here** (recorded so the bar stays this small).
+    screens. **The LEADERBOARD enters from HERE** (#190's issue decided the entry point
+    — a right-group icon, reachable BEFORE playing, since the screen is also the profile
+    editor's and the invite link's home; this supersedes the earlier "enters from the
+    solved screen's standing line" note): `assets/icons/board.svg`, a sharp CROWN in
+    the `.ui-icon` dress (user-decided 2026-08-20, superseding a squared trophy that
+    read badly against the chrome), on the game routes' right group before the help
+    `?` — and wearing `.board-btn`, since a button does not inherit `color` and a bare
+    `.home-btn` would render its stroke UA-black. **ACTIVE DAY ONLY** (corrected
+    2026-08-20 on review): a board is the active day's, so an archive replay showed an
+    icon that silently swapped the day, and whose screen then exited onto TODAY's
+    puzzle — the archive session gone. An archived day keeps its date chip as the way
+    back.
   Word mode's top reserve is 66px and the archive's 70px, clearing the band.
+  **The right group's THIRD control (the crown) put the row over its width budget on a
+  320px phone** — the band is one fixed-width `1fr auto 1fr` grid whose side tracks
+  floor at min-content, so the overflow clipped the help `?` off the screen entirely
+  (English was already marginal with two). Two fixes, both in `index.css`: the side
+  tracks are `minmax(0, 1fr)` so the grid can never exceed its own box, and a ≤380px
+  step-down (32px controls, an 11px date chip, 10px tabs with most of their tracking
+  and side padding given back) buys the row back ~30px of real slack. The arithmetic —
+  every group's cost is a glyph count, the mono advancing 0.6em — is commented at the
+  step-down; re-measure it before adding a FOURTH control.
   *(The paragraphs below predate the band and stand only where they don't contradict
   it.)*
   Historical: a fixed **topbar**
