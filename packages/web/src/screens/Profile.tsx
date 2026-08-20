@@ -337,7 +337,7 @@ export default function Profile() {
                 }}
               />
             </div>
-  
+
             {/* The palette's ONE inline variable: empty cells wear the bg itself and the
                 CSS derives the canvas's darker frame from it (color-mix — computed,
                 never a second hardcoded shade per palette). */}
@@ -362,7 +362,7 @@ export default function Profile() {
                 />
               ))}
             </div>
-  
+
             {/* The palettes, shown as their BACKGROUND colour (user-decided 2026-08-19,
                 superseding the foreground swatches): pick a ground, its ink comes with
                 it. The drawing (the cell states) survives a switch. CLEAR shares the
@@ -396,7 +396,7 @@ export default function Profile() {
                 {t(lang, 'profileClear')}
               </button>
             </div>
-  
+
             {/* Nothing to save = disabled, and .mix-btn:disabled::before unlights the
                 device card's LED — the board itself says whether there is a change.
                 While saving, the label rolls out the bottom and the dot loader drops in

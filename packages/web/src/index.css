@@ -5162,6 +5162,26 @@ button * {
   opacity: 0.45;
   text-align: center;
 }
+/* The ghost is the USER'S OWN pixel art (assets/ghost.png, 13x18) and it TINTS LIKE AN
+   ICON: the sprite is a pure black-on-transparent silhouette, so it is painted through
+   a CSS MASK in `currentColor` — the strike sheets' technique (see `.word-slash`) —
+   which is what lets it wear this block's dim foreground instead of shipping its own
+   ink. At an EXACT INTEGER SCALE (4x = 52x72) with `image-rendering: pixelated`, the
+   app's standing pixel-art rule: whole multiples alone are not enough, since bilinear
+   blends every destination pixel that misses a texel centre. The scale is therefore
+   the one dimension this can be tuned in. */
+.board-ghost {
+  width: 52px;
+  height: 72px;
+  background-color: currentColor;
+  -webkit-mask-image: url('./assets/ghost.png');
+  mask-image: url('./assets/ghost.png');
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  image-rendering: pixelated;
+}
 .board-empty > p {
   margin: 0;
   font-family: var(--ui);

@@ -472,7 +472,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
 
 - **Leaderboard screen (#190):** `/<lang>/board` and `/<lang>/word/board`
   (`pathForBoard` — the archive's grammar; a board is per (day, lang, mode), always
-  the ACTIVE day), `screens/Leaderboard.tsx`, entered from the game header's podium
+  the ACTIVE day), `screens/Leaderboard.tsx`, entered from the game header's crown
   icon (recorded in the header bullet). FRIENDS is the default tab — the trusted
   surface — GLOBAL the top-50 untrusted one; the header's ModeTabs switch WHICH
   daily's board, the in-screen tabs WHOSE scores. One fetch per tab, cached for the
@@ -500,7 +500,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
   dashed no-fill rows under ONE `NOT PLAYED YET` hairline section caption (second
   pass, same day: a label repeated per row read as a stutter) with a small centered
   solid tick in the rank column (an empty cell read as a rendering hole, and the
-  pixel hyphen sat left and thin). The identity strip on
+  pixel hyphen sat left and thin). An EMPTY board is the USER'S OWN SAD PIXEL GHOST
+  over one terse line (user-decided 2026-08-20, superseding a long sentence that said
+  less than the drawing does): `assets/ghost.png` (13×18), and it **TINTS LIKE AN
+  ICON** — the sprite is a pure black-on-transparent silhouette, so `.board-ghost`
+  paints it through a CSS MASK in `currentColor` (the strike sheets' technique) rather
+  than drawing it as an image, which is what lets it wear the block's dim foreground;
+  at an exact integer scale (4× = 52×72) with `image-rendering: pixelated`, the
+  standing pixel-art rule (measured on the rendered output: 97% of source texels land
+  as uniform blocks). The line is per TAB — `NO FRIENDS` on the friends board, since
+  an empty one really means no edges (a friend who merely has not played is a waiting
+  row), `NOBODY YET` on the global one. The identity strip on
   top (your mark + name + EDIT → `/profile`) and the INVITE device-card button on the
   bottom edge are the #188/#189 wiring; both work before ever playing. Rows rise on
   the `rung-in` gesture staggered by index (delays survive reduced motion, the rise
@@ -2044,8 +2054,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     screens. **The LEADERBOARD enters from HERE** (#190's issue decided the entry point
     — a right-group icon, reachable BEFORE playing, since the screen is also the profile
     editor's and the invite link's home; this supersedes the earlier "enters from the
-    solved screen's standing line" note): `assets/icons/board.svg`, a squared podium in
-    the `.ui-icon` dress, on the game routes' right group before the help `?`.
+    solved screen's standing line" note): `assets/icons/board.svg`, a sharp CROWN in
+    the `.ui-icon` dress (user-decided 2026-08-20, superseding a squared trophy that
+    read badly against the chrome), on the game routes' right group before the help
+    `?` — and wearing `.board-btn`, since a button does not inherit `color` and a bare
+    `.home-btn` would render its stroke UA-black.
   Word mode's top reserve is 66px and the archive's 70px, clearing the band.
   *(The paragraphs below predate the band and stand only where they don't contradict
   it.)*

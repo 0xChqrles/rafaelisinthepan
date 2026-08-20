@@ -27,9 +27,6 @@ import {
 import { navigate } from '../routing';
 import { t } from '../i18n';
 import CloseIcon from '../assets/icons/close.svg?react';
-// The empty state's sad pixel ghost — an illustration, not a chrome control, so it is
-// pixel art by design (user-asked 2026-08-20). Decorative; the line under it speaks.
-import GhostIcon from '../assets/icons/ghost.svg?react';
 
 // The #190 leaderboard screen: the day's boards per (day, lang, mode), for the active
 // day. FRIENDS is the DEFAULT and the trusted surface — the whole point of the design
@@ -239,9 +236,10 @@ function BoardList({
   if (empty) {
     // A sad ghost over a terse line: an empty FRIENDS tab means no edges at all (the
     // merely-unplayed show as waiting rows), an empty GLOBAL one means nobody played.
+    // The ghost is the user's own pixel art, masked so it tints like an icon (CSS).
     return (
       <div className="board-empty">
-        <GhostIcon aria-hidden />
+        <span className="board-ghost" aria-hidden="true" />
         <p>{t(lang, tab === 'friends' ? 'boardEmptyFriends' : 'boardEmptyGlobal')}</p>
       </div>
     );
