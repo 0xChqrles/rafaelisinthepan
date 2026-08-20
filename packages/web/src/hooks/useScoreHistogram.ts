@@ -47,7 +47,9 @@ export type ScorePlacementState = ScorePlacement | 'pending' | null;
 // retryable on that revisit.
 const activeScoreFlights = new Map<string, Promise<ScorePlacement | null>>();
 
-// Exported for the submit-once contract test; callers still use the hook below.
+// Exported for the one-conversation-per-round contract test; callers still use the hook
+// below. What this bounds is CONCURRENCY — two mounts of one round must not both POST —
+// never how many visits may ask; a settled flight leaves the map so the next one can.
 export function shareScoreFlight(
   key: string,
   start: () => Promise<ScorePlacement | null>,

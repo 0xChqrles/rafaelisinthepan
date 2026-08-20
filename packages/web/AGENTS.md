@@ -1835,8 +1835,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   2026-08-15 — see below):** both modes' result stacks show where the finished score sits
   in the day's anonymous population (#169), above the mode's own metrics and SHARE — the
   comparison story that replaced the removed LLM benchmark.
-  ONE rule for the round trip (`hooks/useScoreHistogram`): a FINISHED round that has not
-  submitted POSTs its score once — carrying an invisible Turnstile token (`turnstile.ts`,
+  ONE rule for the round trip (`hooks/useScoreHistogram`): a FINISHED round whose score the
+  population does not hold POSTs it — carrying an invisible Turnstile token (`turnstile.ts`,
   the only module that knows Turnstile exists, the analytics.ts pattern; site key
   `VITE_TURNSTILE_SITE_KEY`, .env.example ships Cloudflare's always-passing invisible TEST
   key for local play, while production's required GitHub repo variable is injected by

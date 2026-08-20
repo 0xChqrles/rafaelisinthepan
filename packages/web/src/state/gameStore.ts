@@ -312,13 +312,13 @@ interface GameState extends PersistedState {
   // word + lower rank.
   improveHole: (index: number, word: string, rank: number) => void;
 
-  // Mark THIS keyed round's score as submitted to the daily histogram (#170). The request
-  // can finish after navigation has changed the active round, so completion must carry the
-  // identity it started with rather than consulting activeKey at response time.
-  // Idempotent: the flag only ever turns on. `recorded` is the score the server's
-  // first-write-wins population actually holds for this round (#187) — persisted so a
-  // revisit GET locates the standing by what was recorded, not by the local count a
-  // duplicate submission failed to record; omitted on a refusal (nothing recorded).
+  // Record what the daily population HOLDS for THIS keyed round (#170/#187) — the score
+  // the server's first-write-wins row actually took, so a revisit GET locates the standing
+  // by that rather than by the local count a duplicate submission failed to record. The
+  // request can finish after navigation has changed the active round, so completion must
+  // carry the identity it started with rather than consulting activeKey at response time.
+  // Written ONLY on an answer that records: a refusal leaves the round with no recorded
+  // score, which is exactly what lets the next visit ask the population again.
   markScoreRecorded: (key: string, recorded: number) => void;
   markWordScoreRecorded: (key: string, recorded: number) => void;
 
@@ -374,14 +374,12 @@ function freshRound(initialHoles: RuntimeHole[]): RoundProgress {
 //     board — App clears it on leaving one — so a stored 'global' is at most one
 //     interrupted visit old, never a preference to honour forever.
 //   v10 retires `scoreSubmitted` (2026-08-20): a finished round now asks the population
-//     until the population HOLDS it, so what settles a round is `scoreRecorded` alone and
-//     the old flag has no reader. Stripping it heals the rounds it stranded — every round
-//     a 4xx burned (and, before the 2026-08-16 correction, every 5xx too) carried the flag
-//     with no recorded score, and now submits again on the next visit to its solved screen.
-// v10 retires `scoreSubmitted`: nothing reads it any more, so it is stripped out of every
-// persisted round rather than left as unread cruft (the v1 keyboard `layout` precedent).
-// Dropping it is also what HEALS the rounds it stranded — a round burned by a 4xx kept the
-// flag with no `scoreRecorded`, and `scoreRecorded` alone now decides whether to ask again.
+//     until the population HOLDS it, so `scoreRecorded` alone settles a round and the old
+//     flag has no reader. It is STRIPPED rather than left as unread cruft (the v1 keyboard
+//     `layout` precedent), and stripping is also what HEALS the rounds it stranded — every
+//     round a 4xx burned (and, before the 2026-08-16 correction, every 5xx too) carried the
+//     flag with no recorded score, and now submits again on the next visit to its solved
+//     screen.
 function dropRetiredScoreFlag<T>(rounds: Record<string, T>): Record<string, T> {
   return Object.fromEntries(
     Object.entries(rounds).map(([key, round]) => {
