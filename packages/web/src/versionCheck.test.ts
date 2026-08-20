@@ -1,19 +1,22 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { installVersionCheck } from './versionCheck';
 
-// The observable is WHEN location.reload is spent: on a visibility flip, never while the
-// tab is visibly in use — the module's whole contract.
-function harness(visibility: 'visible' | 'hidden' = 'visible') {
+// The observable is WHEN location.reload is spent: at the page's own STARTUP (the only
+// trigger that can catch a tab which LOADED stale), on a return to a page that was left
+// — a visibility flip or a bfcache restore — and never while the tab is visibly in use.
+function harness(visibility: 'visible' | 'hidden' = 'visible', storage: 'ok' | 'denied' = 'ok') {
   const listeners: Array<() => void> = [];
+  const onWindow = new Map<string, Array<(event: { persisted: boolean }) => void>>();
   const intervals: Array<() => void> = [];
   const reload = vi.fn();
+  const stored = new Map<string, string>();
   const doc = {
     visibilityState: visibility,
     addEventListener: (_type: string, fn: () => void) => listeners.push(fn),
   };
   vi.stubGlobal('document', doc);
   vi.stubGlobal('location', { reload });
-  vi.stubGlobal('window', {
+  const win: Record<string, unknown> = {
     setInterval: (fn: () => void) => {
       intervals.push(fn);
       return 0;
@@ -22,19 +25,55 @@ function harness(visibility: 'visible' | 'hidden' = 'visible') {
     // still intercepts the module's abort timer.
     setTimeout: (fn: () => void, ms?: number) => setTimeout(fn, ms),
     clearTimeout: (id: Parameters<typeof clearTimeout>[0]) => clearTimeout(id),
-  });
+    addEventListener: (type: string, fn: (event: { persisted: boolean }) => void) => {
+      onWindow.set(type, [...(onWindow.get(type) ?? []), fn]);
+    },
+  };
+  // The startup reload is budgeted per build in session storage; a fresh map per test
+  // keeps that budget from leaking between them. 'denied' is the disabled-storage case,
+  // where the PROPERTY itself throws.
+  if (storage === 'ok') {
+    win.sessionStorage = {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => void stored.set(key, value),
+    };
+  } else {
+    Object.defineProperty(win, 'sessionStorage', {
+      get() {
+        throw new Error('storage disabled');
+      },
+    });
+  }
+  vi.stubGlobal('window', win);
+
+  // The check settles over a few microtask hops (fetch, then json); a macrotask
+  // covers them all with real timers.
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
   return {
     reload,
+    settle,
     flip(state: 'visible' | 'hidden') {
       doc.visibilityState = state;
       for (const fn of listeners) fn();
     },
+    // A bfcache restore hands back the live page; `persisted: false` is an ordinary load.
+    show(persisted: boolean) {
+      for (const fn of onWindow.get('pageshow') ?? []) fn({ persisted });
+    },
+    // The player acting: a key, or a tap on the on-screen keyboard / a PLAY button.
+    touch(type: 'keydown' | 'pointerdown') {
+      for (const fn of onWindow.get(type) ?? []) fn({ persisted: false });
+    },
     tick() {
       for (const fn of intervals) fn();
     },
-    // The check settles over a few microtask hops (fetch, then json); a macrotask
-    // covers them all with real timers.
-    settle: () => new Promise((resolve) => setTimeout(resolve, 0)),
+    // Past the startup beat (which has its own tests below), so a test about returns
+    // reads only the reloads its returns spent.
+    async started(current: string) {
+      installVersionCheck(current);
+      await settle();
+      reload.mockClear();
+    },
   };
 }
 
@@ -51,12 +90,11 @@ afterEach(() => {
 });
 
 describe('installVersionCheck', () => {
-  it('reloads on tab-return when the deployed build differs', async () => {
-    const h = harness('hidden');
+  it('reloads a tab that LOADED stale, visible or not', async () => {
+    const h = harness('visible');
     const fetchMock = servedBuild('new');
     installVersionCheck('old');
 
-    h.flip('visible');
     await h.settle();
     expect(h.reload).toHaveBeenCalled();
     // The abortable fetch is what keeps a stalled request from pinning the in-flight
@@ -67,11 +105,106 @@ describe('installVersionCheck', () => {
     );
   });
 
-  it('checks at backgrounding and swaps while the tab is hidden', async () => {
+  it('spends the startup reload ONCE per build, so a version.json ahead of its index cannot spin', async () => {
+    const h = harness('visible');
+    servedBuild('new');
+
+    installVersionCheck('old');
+    await h.settle();
+    expect(h.reload).toHaveBeenCalledTimes(1);
+
+    // The reloaded page comes back on the same build — the mismatch is the deploy's own
+    // upload window, not something a second reload can fix.
+    installVersionCheck('old');
+    await h.settle();
+    expect(h.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the startup reload unspent when storage cannot bound it, and returns still carry it', async () => {
+    const h = harness('hidden', 'denied');
+    servedBuild('new');
+
+    installVersionCheck('old');
+    await h.settle();
+    expect(h.reload).not.toHaveBeenCalled();
+
+    h.flip('visible');
+    expect(h.reload).toHaveBeenCalled();
+  });
+
+  it.each(['keydown', 'pointerdown'] as const)(
+    'never yanks a player who has already started — a %s before the check lands defers it',
+    async (event) => {
+      const h = harness('visible');
+      servedBuild('new');
+      installVersionCheck('old');
+
+      // The check is a network round trip (up to the 10s abort); the app mounts and
+      // becomes playable under it, so the answer can land on a running Word clock or a
+      // half-typed name.
+      h.touch(event);
+      await h.settle();
+      expect(h.reload).not.toHaveBeenCalled();
+
+      // The mismatch is not lost — the next return spends it, like every other one.
+      h.flip('hidden');
+      expect(h.reload).toHaveBeenCalled();
+    },
+  );
+
+  it('a deferred startup reload does not burn the budget the next load needs', async () => {
     const h = harness('visible');
     servedBuild('new');
     installVersionCheck('old');
+    h.touch('keydown');
+    await h.settle();
+    expect(h.reload).not.toHaveBeenCalled();
 
+    // The next load of the same stale build still has its one startup reload to spend.
+    installVersionCheck('old');
+    await h.settle();
+    expect(h.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('reloads on tab-return when the deployed build differs', async () => {
+    const h = harness('hidden');
+    servedBuild('same');
+    await h.started('same');
+
+    servedBuild('new'); // a deploy while the tab sat in the background
+    h.flip('visible');
+    await h.settle();
+    expect(h.reload).toHaveBeenCalled();
+  });
+
+  it('reloads on a bfcache restore, which reports no visibility flip of its own', async () => {
+    const h = harness('visible');
+    servedBuild('same');
+    await h.started('same');
+
+    servedBuild('new'); // a deploy while the page sat in the back/forward cache
+    h.show(true);
+    await h.settle();
+    expect(h.reload).toHaveBeenCalled();
+  });
+
+  it('ignores a pageshow that is an ordinary load — startup already answered for it', async () => {
+    const h = harness('visible');
+    servedBuild('same');
+    await h.started('same');
+
+    servedBuild('new');
+    h.show(false);
+    await h.settle();
+    expect(h.reload).not.toHaveBeenCalled();
+  });
+
+  it('checks at backgrounding and swaps while the tab is hidden', async () => {
+    const h = harness('visible');
+    servedBuild('same');
+    await h.started('same');
+
+    servedBuild('new');
     h.flip('hidden');
     await h.settle();
     expect(h.reload).toHaveBeenCalled();
@@ -79,9 +212,9 @@ describe('installVersionCheck', () => {
 
   it('does not reload while the deployed build matches, nor on a build it cannot read', async () => {
     const h = harness('hidden');
-    installVersionCheck('same');
-
     servedBuild('same');
+    await h.started('same');
+
     h.flip('visible');
     await h.settle();
 
@@ -95,7 +228,7 @@ describe('installVersionCheck', () => {
   it('a failed check is silent, and the next trigger retries', async () => {
     const h = harness('hidden');
     vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new Error('offline'))));
-    installVersionCheck('old');
+    await h.started('old');
 
     h.flip('visible');
     await h.settle();
@@ -119,13 +252,12 @@ describe('installVersionCheck', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
     vi.useFakeTimers();
+    // The startup check is the request that hangs; triggers while it does join it
+    // instead of spawning another.
     installVersionCheck('old');
-
-    h.flip('visible');
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    // Triggers while the request hangs join it instead of spawning another.
-    h.flip('hidden');
     h.flip('visible');
+    h.flip('hidden');
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     // The abort timer fires, the hung promise rejects, and the checker is free again.
@@ -135,11 +267,12 @@ describe('installVersionCheck', () => {
     expect(h.reload).not.toHaveBeenCalled();
   });
 
-  it('a mismatch the interval finds never yanks a visible tab — the next flip spends it', async () => {
+  it('a mismatch the interval finds never yanks a visible tab — the next return spends it', async () => {
     const h = harness('visible');
-    servedBuild('new');
-    installVersionCheck('old');
+    servedBuild('same');
+    await h.started('same');
 
+    servedBuild('new');
     h.tick();
     await h.settle();
     expect(h.reload).not.toHaveBeenCalled();
@@ -150,9 +283,10 @@ describe('installVersionCheck', () => {
 
   it('a hidden tab swaps as soon as the interval finds the mismatch', async () => {
     const h = harness('hidden');
-    servedBuild('new');
-    installVersionCheck('old');
+    servedBuild('same');
+    await h.started('same');
 
+    servedBuild('new');
     h.tick();
     await h.settle();
     expect(h.reload).toHaveBeenCalled();
