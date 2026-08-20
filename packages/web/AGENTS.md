@@ -264,7 +264,11 @@ These are decided and verified against the code. Treat them as load-bearing.
       the filled title/date chips read heavy, so `.topbar-title` and `.puzzle-date`
       are plain bold foreground type now — one left-corner treatment still, just
       unfilled; the date keeps its ▾ and a whisper-chip hover as the archive-button
-      affordance). Elsewhere it stands: the result action INVERTS on hover;
+      affordance). **AMENDED 2026-08-20 (user-decided, on the leaderboard's second
+      review): a LEADERBOARD row does not take it either** — in a column of glass rows
+      a solid foreground block shouted, and it left nothing quieter for the friend
+      marker beside it, so both wear the ACCENT instead (see the #190 bullet). The
+      gesture keeps every other place it holds. Elsewhere it stands: the result action INVERTS on hover;
       the invite title's last word sits in an `.invite-mark` box (Invite splits the
       localized copy on the final space, pulling one more token in when the tail is
       bare punctuation — French's ` ?`). **The DIALOG BOXES wear COBALT CORNER TABS**
@@ -510,7 +514,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the ACTIVE day), `screens/Leaderboard.tsx`, entered from the game header's crown
   icon (recorded in the header bullet). FRIENDS is the default tab — the trusted
   surface — GLOBAL the top-50 untrusted one; the header's ModeTabs switch WHICH
-  daily's board, the in-screen tabs WHOSE scores. **THE DAY IS A LIVE VALUE**
+  daily's board, the in-screen tabs WHOSE scores. **WHICH TAB is a PERSISTED
+  PREFERENCE, not view state** (user feedback 2026-08-20): the screen remounts on every
+  header mode switch (App keys it on lang:mode) and on every refresh, and local state
+  dropped a player who had chosen GLOBAL back onto FRIENDS both times. It lives in the
+  store as `boardTab` (persist **v9**; older blobs get 'friends', the default the screen
+  already opened on) and is global rather than per (lang, mode) — which crowd you like to
+  read is not a property of one daily or one language. **THE DAY IS A LIVE VALUE**
   (corrected 2026-08-20 on review): the screen reads `useToday` — the app's one day
   signal, which re-fires at the DST-correct 22:00-ET reset AND on a visibility flip —
   rather than stamping `activeDate(new Date())` at fetch time, because a board is left
@@ -533,18 +543,31 @@ it to the local store — see `packages/backend/AGENTS.md`).
   tab and disabled INVITE for the whole visit. The screen renders what the API returned (ranks, cut, own window
   — the shared leaderboard rules; root AGENTS.md): glass rows of rank + avatar + name
   + score, ranks and scores in the PIXEL face (game numbers), names in mono (identity
-  chrome, case kept), the unit caption (TRIES/WORDS) naming which way is better. The
-  OWN row wears the inverted selection box — the app's one emphasis gesture. A player
+  chrome, case kept), the unit caption (TRIES/WORDS) naming which way is better.
+  **ROWS CONNECTED TO THE READER wear the ACCENT — ONE family at two strengths
+  (user-decided 2026-08-20, REPLACING the inverted selection box on the own row here):**
+  a 2px inset accent left edge marks a FRIEND among the global rows, and YOUR row takes
+  that edge plus a whisper of the accent in the fill and the hairline and the name at the
+  action weight. The inverted box — the app's one emphasis gesture everywhere else — was
+  too loud in a column of glass rows, and it left nothing quieter for a friend to wear.
+  The edge is an inset SHADOW, never a border-left, so marking a row cannot shift the
+  grid under it by a pixel. Friends are marked on the GLOBAL list ONLY: on the friends
+  board every row is one, and marking everything marks nothing. Their id set comes from
+  ONE lazy `POST /friends` fired on the first GLOBAL activation and cached for the visit
+  (the graph does not change with the day the board is addressed by) — decoration, so a
+  failure leaves the rows unmarked rather than failing anything.
+  A player
   with no profile degrades honestly, with an ASSIGNED identity rather than a hole
   (both user-decided 2026-08-20, second pass the same day): a GAMERTAG pseudonym as
-  the name (`anonName.ts` — `SwiftFalcon84`-style AdjectiveNoun## derived from the
+  the name (`anonName` — `SwiftFalcon84`-style AdjectiveNoun## derived from the
   publicId, superseding the same-day syllable names, which didn't read as usernames;
   length-budgeted under the shared 16-char cap and always `sanitizeName`-stable;
   name-shaped, so only the secondary ink says "placeholder") and a generated MARK as the avatar
-  (`defaultAvatar.ts` — a mirrored 10×10 creature + palette from the id hash, the
+  (`defaultAvatar` — a mirrored 10×10 creature + palette from the id hash, the
   seeder's proven recipe, superseding the dashed empty frame). Both are DISPLAY-ONLY
   pure functions of the publicId — identical on every surface and device, nothing
-  stored, and a saved profile replaces them. The below-the-cut gap renders as a
+  stored, and a saved profile replaces them; both live in `@whippin/shared`
+  (`assigned.ts`) since the invite card started drawing a player server-side. The below-the-cut gap renders as a
   dashed rule (ties are NOT folded at the cut — user-decided 2026-08-20, superseding
   the "+N TIED" collapse row: at most 50 ordinary rows, shared ranks shown), and the friends
   tab's WAITING friends (edges with no score today, user-decided 2026-08-20) as
@@ -567,9 +590,21 @@ it to the local store — see `packages/backend/AGENTS.md`).
   all" made it unreachable for exactly the player who needs it — someone with no
   friends who finished today's daily landed on a board of one row, themselves, under
   an identity strip already showing the same mark and name, with nothing saying why.
-  The identity strip on
-  top (your mark + name + EDIT → `/profile`) and the INVITE device-card button on the
-  bottom edge are the #188/#189 wiring; both work before ever playing — and the invite
+  **The identity strip on
+  top (your mark + name + EDIT → `/profile`) shows NOTHING until its read settles — a
+  SKELETON, never a name (user feedback 2026-08-20).** The first cut published the id the
+  moment it derived, which rendered the ASSIGNED identity and swapped it for the real
+  profile a beat later, so every named player watched a stranger's name flash under their
+  own mark on every visit. The placeholder holds the exact boxes the resolved strip takes,
+  so nothing moves when the values land, and it breathes (the global reduced-motion rule
+  collapses that to one instant pass) so a slow read does not read as a broken render. A
+  read that FAILS still SETTLES, on the assigned identity — it is what a board row with a
+  failed profile read already shows, and a skeleton that never resolves is the one outcome
+  worse than the fallback; a 404 is not a failure at all but the answer "never
+  customized", whose display IS that identity. Only a failure to derive the ID ITSELF (no
+  `crypto.subtle` outside a secure context) draws nothing at all. The INVITE device-card
+  button on the bottom edge waits on the ID alone, never the profile.
+  Both are the #188/#189 wiring; both work before ever playing — and the invite
   share is the ONE `useShare` caller that passes `tracked: false`, because the pinned
   `share` analytics event means "a RESULT left the app" (the three-event invariant) and
   counting invite links into it would silently redefine what the number measures. Rows rise on

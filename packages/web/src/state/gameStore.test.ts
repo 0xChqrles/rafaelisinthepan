@@ -51,6 +51,7 @@ beforeEach(() => {
       lastLang: null,
       lastMode: null,
       onboarded: false,
+      boardTab: 'friends',
       sentenceRulesSeen: false,
       solvedDays: {},
       activeKey: null,
@@ -749,6 +750,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       lastLang: null,
       lastMode: null,
       onboarded: false,
+      boardTab: 'friends',
       sentenceRulesSeen: false,
       solvedDays: {},
     });
@@ -782,6 +784,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       lastLang: 'en',
       lastMode: null,
       onboarded: true,
+      boardTab: 'friends',
       sentenceRulesSeen: false,
       solvedDays: {},
     });
@@ -798,6 +801,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       lastLang: 'fr',
       lastMode: null,
       onboarded: true,
+      boardTab: 'friends',
       sentenceRulesSeen: false,
       solvedDays: {},
     });
@@ -820,6 +824,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       lastLang: 'fr',
       lastMode: null,
       onboarded: true,
+      boardTab: 'friends',
       sentenceRulesSeen: false,
       solvedDays,
     });
@@ -882,6 +887,16 @@ describe('migratePersisted — persisted-blob upgrades', () => {
         8,
       ).sentenceRulesSeen,
     ).toBe(true);
+  });
+
+  // v8 -> v9 (2026-08-20): which #190 board tab was last read. Older blobs get 'friends'
+  // — the default the screen already opened on, so nobody's board moves under them; the
+  // field only starts remembering from the first flip. An unknown value is not a tab.
+  it('v8 -> v9 defaults boardTab to friends and keeps a stored global', () => {
+    const blob = { rounds: {}, lastLang: 'fr', onboarded: true, solvedDays: {} };
+    expect(migratePersisted(blob, 8).boardTab).toBe('friends');
+    expect(migratePersisted({ ...blob, boardTab: 'global' }, 9).boardTab).toBe('global');
+    expect(migratePersisted({ ...blob, boardTab: 'nonsense' }, 9).boardTab).toBe('friends');
   });
 
   it('keeps an existing solvedDays across the upgrade (no backfill, but no data loss)', () => {
