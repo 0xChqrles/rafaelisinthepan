@@ -590,85 +590,80 @@ describe('syncProgress — cached per round for the selector badge', () => {
   });
 });
 
-// CONTRACT (#170): the submitted flag PERSISTS with its round, next to the solved state,
-// so a reload or a revisit can only ever read the histogram — never re-submit. One flag
-// per mode's round shape; both actions are idempotent and target the key captured when the
-// request started, even if navigation has made a different round active by completion.
-describe('score submission flags (#170) — markScoreSubmitted / markWordScoreSubmitted', () => {
-  it('marks the keyed sentence round, once, and persists on the round itself', () => {
-    const { ensureRound, markScoreSubmitted } = useGameStore.getState();
+// CONTRACT (#170/#187): the RECORDED score PERSISTS with its round, next to the solved
+// state, so a reload or a revisit reads the histogram instead of re-submitting — and its
+// ABSENCE is what lets a round the population never took ask again (2026-08-20, retiring
+// the submit-once flag). One value per mode's round shape; both actions target the key
+// captured when the request started, even if navigation has made a different round active
+// by completion.
+describe('recorded scores (#170/#187) — markScoreRecorded / markWordScoreRecorded', () => {
+  it('records on the keyed sentence round, and persists on the round itself', () => {
+    const { ensureRound, markScoreRecorded } = useGameStore.getState();
     ensureRound('d:5:fr', freshHoles());
-    expect(activeRound()?.scoreSubmitted).toBeUndefined();
-    markScoreSubmitted('d:5:fr');
-    expect(activeRound()?.scoreSubmitted).toBe(true);
-    const before = useGameStore.getState().rounds;
-    markScoreSubmitted('d:5:fr');
-    expect(useGameStore.getState().rounds).toBe(before); // idempotent — no churn
-  });
-
-  it('persists the server-recorded score with the flag (#187), first verdict only', () => {
-    const { ensureRound, markScoreSubmitted } = useGameStore.getState();
-    ensureRound('d:5:fr', freshHoles());
-    markScoreSubmitted('d:5:fr', 9);
-    expect(activeRound()?.scoreRecorded).toBe(9);
-    // The round has ONE verdict: a later call can never rewrite what was recorded.
-    markScoreSubmitted('d:5:fr', 3);
-    expect(activeRound()?.scoreRecorded).toBe(9);
-  });
-
-  it('leaves the recorded score unset on a refusal — nothing entered the population', () => {
-    const { ensureRound, markScoreSubmitted } = useGameStore.getState();
-    ensureRound('d:5:fr', freshHoles());
-    markScoreSubmitted('d:5:fr');
-    expect(activeRound()?.scoreSubmitted).toBe(true);
     expect(activeRound()?.scoreRecorded).toBeUndefined();
+    markScoreRecorded('d:5:fr', 9);
+    expect(activeRound()?.scoreRecorded).toBe(9);
+    const before = useGameStore.getState().rounds;
+    markScoreRecorded('d:5:fr', 9);
+    expect(useGameStore.getState().rounds).toBe(before); // idempotent on the VALUE — no churn
   });
 
-  it('marks the keyed word round without touching the sentence round', () => {
-    const { ensureRound, ensureWordRound, markWordScoreSubmitted } = useGameStore.getState();
+  it('takes the score a RETRY finally records — the heal the submit-once flag blocked', () => {
+    // The round whose first POST was refused (or never answered) holds nothing, so the
+    // next visit submits again. Guarding on "already answered once" is what used to strand
+    // it: the retry succeeded and the store threw its answer away.
+    const { ensureRound, markScoreRecorded } = useGameStore.getState();
+    ensureRound('d:5:fr', freshHoles());
+    expect(activeRound()?.scoreRecorded).toBeUndefined(); // refused: nothing recorded
+    markScoreRecorded('d:5:fr', 3);
+    expect(activeRound()?.scoreRecorded).toBe(3);
+  });
+
+  it('records on the keyed word round without touching the sentence round', () => {
+    const { ensureRound, ensureWordRound, markWordScoreRecorded } = useGameStore.getState();
     ensureRound('d:5:fr', freshHoles());
     ensureWordRound('w:5:fr', 'phare');
-    markWordScoreSubmitted('w:5:fr');
+    markWordScoreRecorded('w:5:fr', 12);
     const s = useGameStore.getState();
-    expect(s.wordRounds['w:5:fr'].scoreSubmitted).toBe(true);
-    expect(s.rounds['d:5:fr'].scoreSubmitted).toBeUndefined();
+    expect(s.wordRounds['w:5:fr'].scoreRecorded).toBe(12);
+    expect(s.rounds['d:5:fr'].scoreRecorded).toBeUndefined();
   });
 
-  it('marks the submitting round after navigation, not the newly active round', () => {
-    const { ensureRound, ensureWordRound, markScoreSubmitted, markWordScoreSubmitted } =
+  it('records on the submitting round after navigation, not the newly active round', () => {
+    const { ensureRound, ensureWordRound, markScoreRecorded, markWordScoreRecorded } =
       useGameStore.getState();
     ensureRound('d:5:fr', freshHoles());
     ensureRound('d:6:fr', freshHoles()); // active sentence round has moved on
-    markScoreSubmitted('d:5:fr');
+    markScoreRecorded('d:5:fr', 9);
 
     ensureWordRound('w:5:fr', 'phare');
     ensureWordRound('w:6:fr', 'océan'); // active Word round has moved on
-    markWordScoreSubmitted('w:5:fr');
+    markWordScoreRecorded('w:5:fr', 12);
 
     const s = useGameStore.getState();
-    expect(s.rounds['d:5:fr'].scoreSubmitted).toBe(true);
-    expect(s.rounds['d:6:fr'].scoreSubmitted).toBeUndefined();
-    expect(s.wordRounds['w:5:fr'].scoreSubmitted).toBe(true);
-    expect(s.wordRounds['w:6:fr'].scoreSubmitted).toBeUndefined();
+    expect(s.rounds['d:5:fr'].scoreRecorded).toBe(9);
+    expect(s.rounds['d:6:fr'].scoreRecorded).toBeUndefined();
+    expect(s.wordRounds['w:5:fr'].scoreRecorded).toBe(12);
+    expect(s.wordRounds['w:6:fr'].scoreRecorded).toBeUndefined();
   });
 
-  it('a round rehydrated under the same key keeps its flag (the revisit guard)', () => {
-    const { ensureRound, markScoreSubmitted } = useGameStore.getState();
+  it('a round rehydrated under the same key keeps its recorded score (the revisit guard)', () => {
+    const { ensureRound, markScoreRecorded } = useGameStore.getState();
     ensureRound('d:5:fr', freshHoles());
-    markScoreSubmitted('d:5:fr');
-    // The same puzzle reconciles again (a reload): the flag survives untouched.
+    markScoreRecorded('d:5:fr', 9);
+    // The same puzzle reconciles again (a reload): the value survives untouched.
     useGameStore.getState().ensureRound('d:5:fr', freshHoles());
-    expect(activeRound()?.scoreSubmitted).toBe(true);
-    // A re-published different sentence resets the round — flag included.
+    expect(activeRound()?.scoreRecorded).toBe(9);
+    // A re-published different sentence resets the round — recorded score included.
     const changed = freshHoles().map((h) => ({ ...h, secret: `${h.secret}-x` }));
     useGameStore.getState().ensureRound('d:5:fr', changed);
-    expect(activeRound()?.scoreSubmitted).toBeUndefined();
+    expect(activeRound()?.scoreRecorded).toBeUndefined();
   });
 
   it('is a no-op for an unknown key', () => {
     const before = useGameStore.getState().rounds;
-    useGameStore.getState().markScoreSubmitted('d:999:fr');
-    useGameStore.getState().markWordScoreSubmitted('w:999:fr');
+    useGameStore.getState().markScoreRecorded('d:999:fr', 9);
+    useGameStore.getState().markWordScoreRecorded('w:999:fr', 12);
     expect(useGameStore.getState().rounds).toBe(before);
   });
 });
@@ -916,6 +911,50 @@ describe('migratePersisted — persisted-blob upgrades', () => {
     expect(migratePersisted(blob, 8).boardTab).toBe('friends');
     expect(migratePersisted({ ...blob, boardTab: 'global' }, 9).boardTab).toBe('global');
     expect(migratePersisted({ ...blob, boardTab: 'nonsense' }, 9).boardTab).toBe('friends');
+  });
+
+  // v9 -> v10 (2026-08-20): the retired scoreSubmitted flag. Stripping it is what HEALS
+  // the rounds it stranded — a round a 4xx burned kept the flag with NO recorded score,
+  // and `scoreRecorded` alone now decides whether to ask the population again. A round
+  // that really was recorded keeps its score and still never re-submits.
+  it('v9 -> v10 strips scoreSubmitted from both round shapes and keeps scoreRecorded', () => {
+    const out = migratePersisted(
+      {
+        rounds: {
+          'd:5:fr': { roundKey: 'd:5:fr', holes: [], tried: [], progress: 0, scoreSubmitted: true },
+          'd:6:fr': {
+            roundKey: 'd:6:fr',
+            holes: [],
+            tried: [],
+            progress: 0,
+            scoreSubmitted: true,
+            scoreRecorded: 9,
+          },
+        },
+        wordRounds: {
+          'w:5:fr': {
+            word: 'phare',
+            startedAt: 1_700_000_000_000,
+            deadline: 1_700_000_066_000,
+            tried: [],
+            claimed: 0,
+            scoreSubmitted: true,
+          },
+        },
+        lastLang: 'fr',
+        onboarded: true,
+        solvedDays: {},
+      },
+      9,
+    );
+    // Burned by a refusal: the flag is gone and nothing was recorded, so this round asks again.
+    expect(out.rounds['d:5:fr']).not.toHaveProperty('scoreSubmitted');
+    expect(out.rounds['d:5:fr'].scoreRecorded).toBeUndefined();
+    // Genuinely recorded: the score survives, which is what keeps it from re-submitting.
+    expect(out.rounds['d:6:fr']).not.toHaveProperty('scoreSubmitted');
+    expect(out.rounds['d:6:fr'].scoreRecorded).toBe(9);
+    expect(out.wordRounds['w:5:fr']).not.toHaveProperty('scoreSubmitted');
+    expect(out.wordRounds['w:5:fr'].word).toBe('phare');
   });
 
   it('keeps an existing solvedDays across the upgrade (no backfill, but no data loss)', () => {

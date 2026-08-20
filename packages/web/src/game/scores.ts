@@ -87,12 +87,16 @@ export function formatTopPct(pct: number): string {
   return String(Math.round(pct * 10) / 10);
 }
 
-// Whether a finished round still owes the population its score. The flag persists with
-// the round (#7/#9's pattern), so a reload or a revisit can never re-submit — and a round
-// finished offline (or a Word run whose clock died with the tab closed) submits the first
-// time its result is actually seen.
-export function shouldSubmitScore(finished: boolean, submitted: boolean): boolean {
-  return finished && !submitted;
+// Whether a finished round still owes the population its score. The question is what the
+// POPULATION HOLDS — never whether the server has answered before (user-decided
+// 2026-08-20, retiring the submit-once flag): a round is settled when `scoreRecorded`
+// names its band, and a round the server REFUSED has nothing in the population, so it
+// asks again on the next visit. The recorded score persists with the round (#7/#9's
+// pattern), so a reload can never double-submit — and a round finished offline (or a Word
+// run whose clock died with the tab closed) submits the first time its result is actually
+// seen.
+export function shouldSubmitScore(finished: boolean, recordedScore: number | undefined): boolean {
+  return finished && recordedScore === undefined;
 }
 
 // The standing is FIXED-WIDTH TYPE — the pixel font does not reflow, and `body` is

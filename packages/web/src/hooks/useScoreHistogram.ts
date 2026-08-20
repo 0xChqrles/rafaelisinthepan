@@ -6,15 +6,23 @@ import { playerSecret } from '../identity';
 import { turnstileToken } from '../turnstile';
 import type { Mode } from '../langs';
 
-// The solved screen's population data (#170). One rule, both modes: a FINISHED round
-// that has not submitted yet POSTs its score once — carrying a fresh invisible Turnstile
-// token, so the POST's response IS the histogram (one round trip on the happy path) —
-// and a round already submitted GETs the read-only twin on revisits. The submitted flag
-// is PERSISTED with the round (the caller owns it, next to the solved state, #7/#9), so
-// a reload can never re-submit; it is marked as soon as the server reaches a VERDICT —
-// accepted (2xx) or refused (4xx), either way the conversation is over — while anything
-// that is merely the backend failing (a 5xx, or a transport/Turnstile error that throws)
-// leaves it unset, so the next visit may try again.
+// The solved screen's population data (#170). One rule, both modes, and it reads the
+// POPULATION rather than the conversation: a FINISHED round whose score the population
+// does not hold POSTs it — carrying a fresh invisible Turnstile token, so the POST's
+// response IS the histogram (one round trip on the happy path) — and a round already IN
+// the population GETs the read-only twin on revisits. What PERSISTS with the round is the
+// RECORDED score itself (the caller owns it, next to the solved state, #7/#9), so a
+// reload can never double-submit.
+//
+// Nothing else ends the conversation (user-decided 2026-08-20, retiring the submit-once
+// flag a 4xx used to set): a refusal leaves the population holding nothing for this round,
+// so the next visit asks again. That is the point — a 403 is Turnstile refusing the
+// REQUEST, not the server judging the SCORE, and `turnstileToken()` builds a fresh widget
+// on every call, so the retry asks with a token that can actually pass. Re-asking is safe
+// by construction since #187: the row is first-write-wins, a duplicate consumes no IP
+// allowance, and a 400/403/404 returns before the store is touched at all. The cost is a
+// handful of refused requests per stuck round per day; the alternative was a score lost
+// for good, silently, on a visit the player cannot repeat.
 //
 // EVERY failure is silent by decision: the solved screen simply shows no histogram.
 // Nothing here ever surfaces an error to the player.
@@ -63,17 +71,16 @@ export function shareScoreFlight(
   return promise;
 }
 
-// Exported for the settled-verdict contract test; callers still use the hook below.
+// Exported for the ask-until-recorded contract test; callers still use the hook below.
 export async function syncScore(
-  submitted: boolean,
-  markSubmitted: (recorded: number | null) => void,
+  markRecorded: (recorded: number) => void,
   mode: Mode,
   lang: string,
   date: string,
   score: number,
   recordedScore?: number,
 ): Promise<ScorePlacement | null> {
-  if (shouldSubmitScore(true, submitted)) {
+  if (shouldSubmitScore(true, recordedScore)) {
     const token = await turnstileToken();
     // The player key (#187) authenticates the write: the server derives the publicId
     // from it and keys the round's ONE first-write-wins row by that identity.
@@ -82,34 +89,28 @@ export async function syncScore(
       score,
       turnstileToken: token,
     });
-    // The server SETTLED this submission only if it reached a verdict: 2xx answered with
-    // the population, 4xx refused it (bad score, spent Turnstile token, over the cap) —
-    // either way the conversation is over and the round must never ask again. A 5xx is
-    // not a verdict: it is the backend failing, and burning the round's one submission on
-    // a cold start or a throttled write would lose that score for good, on a visit the
-    // player cannot repeat. So it stays retryable, exactly like the thrown fetch that
-    // never gets here. (A 2xx whose body will not parse below also stays retryable —
-    // harmless since #187, because a re-POST of an already-recorded round changes
-    // nothing server-side and returns this same answer.)
-    if (!response.ok) {
-      if (response.status < 500) markSubmitted(null);
-      return null;
-    }
+    // ONLY a 2xx that names a band settles this round. Every other answer leaves the
+    // population holding nothing, and a round the population does not hold asks again on
+    // the next visit — a refusal included (see the retirement note above). Nothing is
+    // persisted here, so there is no flag to burn on a cold start, a throttled write, a
+    // spent Turnstile token or a body that will not parse.
+    if (!response.ok) return null;
     const histogram = parseScoreHistogram(await response.json());
     // What the population actually HOLDS for this round (#187): first write wins, so a
     // duplicate submission (another device/tab under the same key) is answered with the
     // STORED row's band — persist ITS score, never this round's local count, so revisit
     // GETs locate the same standing the POST just showed. Bands are exact (min == max ==
-    // the recorded score).
+    // the recorded score). A 2xx carrying NO band is the server saying it holds no row
+    // for this caller, which the strongly-consistent read after the write makes
+    // unreachable in practice; nothing is persisted for it, so it simply asks again.
     const recorded = histogram.bucket == null ? null : histogram.buckets[histogram.bucket]?.min ?? null;
-    markSubmitted(recorded);
+    if (recorded !== null) markRecorded(recorded);
     return { histogram, bucket: histogram.bucket };
   }
-  // A submitted round with NO recorded score is one the server REFUSED (or a pre-#187
-  // round, whose old bucket-counter population no longer exists): the population holds
-  // nothing for it, so there is no standing to fetch. Falling back to the LOCAL count
-  // here would place the player in whatever band another player happened to record at
-  // that score — a false standing, worse than none.
+  // Unreachable: the branch above claimed every round the population does not hold, which
+  // is exactly the rounds with no recorded score. TypeScript cannot see that through
+  // `shouldSubmitScore`, and locating the GET by anything else — the local count — would
+  // place this round in whatever band another player happened to record at that score.
   if (recordedScore === undefined) return null;
   const response = await fetch(scoresUrl(lang, date, mode));
   if (!response.ok) return null;
@@ -121,8 +122,7 @@ export async function syncScore(
 
 export default function useScoreHistogram({
   finished,
-  submitted,
-  markSubmitted,
+  markRecorded,
   mode,
   lang,
   dayNumber,
@@ -130,28 +130,24 @@ export default function useScoreHistogram({
   recordedScore,
 }: {
   finished: boolean;
-  submitted: boolean;
-  // Persists the flag — and, on a 2xx, the score the population recorded (#187) — on the
-  // round; must be idempotent (the store action is).
-  markSubmitted: (recorded: number | null) => void;
+  // Persists the score the population recorded (#187) on the round; must be idempotent
+  // (the store action is).
+  markRecorded: (recorded: number) => void;
   mode: Mode;
   lang: string;
   dayNumber: number;
   score: number;
-  // The persisted server-recorded score, when the round has one (#187): revisit GETs
-  // locate the standing by it — and by it alone, since first-write-wins can hold a
-  // different score than this device's own count. Absent on a submitted round means the
-  // server refused the score: the revisit shows no standing rather than borrowing the
-  // band another player recorded at the local count.
+  // The persisted server-recorded score, when the population holds one (#187). It is the
+  // whole state machine: ABSENT means this round still owes its score and POSTs, PRESENT
+  // means revisits GET and locate the standing by it — and by it alone, since
+  // first-write-wins can hold a different score than this device's own count.
   recordedScore?: number;
 }): ScorePlacementState {
   const [placement, setPlacement] = useState<ScorePlacementState>(null);
 
-  // `submitted` and `recordedScore` are read at launch time rather than placed in the
-  // deps: the successful POST writes BOTH during this effect's own flight, and that
-  // re-render must not chase the POST with a redundant GET.
-  const submittedRef = useRef(submitted);
-  submittedRef.current = submitted;
+  // `recordedScore` is read at launch time rather than placed in the deps: the successful
+  // POST writes it during this effect's own flight, and that re-render must not chase the
+  // POST with a redundant GET.
   const recordedRef = useRef(recordedScore);
   recordedRef.current = recordedScore;
   const placementKeyRef = useRef<string | null>(null);
@@ -163,13 +159,13 @@ export default function useScoreHistogram({
       setPlacement(null);
       return undefined;
     }
-    const operation = submittedRef.current ? 'get' : 'post';
-    // A GET conversation is keyed by the score it will LOCATE with — the RECORDED one,
-    // which is all a revisit may use (#187; 'none' for a refused round, whose GET
-    // resolves to no standing) — so a stale flight can never answer for a different band.
+    // The RECORDED score decides both halves: absent, this round still owes the
+    // population its score and POSTs; present, the revisit GETs and LOCATES with it, which
+    // is all a revisit may use (#187). Keying the conversation by that same value is what
+    // stops a stale flight answering for a different band.
     const recorded = recordedRef.current;
-    const locate = operation === 'get' ? recorded ?? 'none' : score;
-    const key = `${operation}:${mode}:${lang}:${dayNumber}:${locate}`;
+    const operation = recorded === undefined ? 'post' : 'get';
+    const key = `${operation}:${mode}:${lang}:${dayNumber}:${recorded ?? score}`;
     if (placementKeyRef.current !== key) {
       placementKeyRef.current = key;
       // A direct solved-round -> solved-round navigation must never show the previous
@@ -177,15 +173,7 @@ export default function useScoreHistogram({
       setPlacement('pending');
     }
     const promise = shareScoreFlight(key, () =>
-      syncScore(
-        submittedRef.current,
-        markSubmitted,
-        mode,
-        lang,
-        dateForDayNumber(dayNumber),
-        score,
-        recorded,
-      ),
+      syncScore(markRecorded, mode, lang, dateForDayNumber(dayNumber), score, recorded),
     );
     let cancelled = false;
     void promise.then((result) => {
@@ -196,7 +184,7 @@ export default function useScoreHistogram({
     return () => {
       cancelled = true;
     };
-  }, [finished, markSubmitted, mode, lang, dayNumber, score]);
+  }, [finished, markRecorded, mode, lang, dayNumber, score]);
 
   return placement;
 }

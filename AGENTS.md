@@ -401,8 +401,14 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   contract below is untouched), verifies Turnstile server-side, validates the score
   against that published daily/mode, derives the publicId, and writes **ONE row per
   `(date, lang, mode, publicId)` with a conditional put — first write wins**: the daily
-  can't be replayed, so a second submission is never legitimate; it changes nothing,
-  consumes no IP allowance, and is answered 200 with the STORED row's standing. The
+  can't be replayed, so a second submission can never change a standing; it changes
+  nothing, consumes no IP allowance, and is answered 200 with the STORED row's standing.
+  **That idempotence is LOAD-BEARING for the client, not just a guard against replay**
+  (user-decided 2026-08-20): a round whose POST the server REFUSED or never answered is
+  re-submitted on the next visit to its solved screen, because a refusal leaves the
+  population holding nothing and a 403 is Turnstile refusing the request rather than the
+  server judging the score. So a repeat POST is an ordinary, expected call — see the #170
+  round trip in `packages/web/AGENTS.md`. The
   response is the UPDATED histogram so the caller's score is already included. GET is
   the read-only twin for solved revisits. The puzzle route's malformed-param and future
   +1-day guards apply; a population is never created for an unpublished puzzle.

@@ -1,8 +1,9 @@
 // CONTRACT (#170): one finished round starts one score conversation. React may unmount
 // the solved screen while that conversation is pending (archive/tutorial navigation),
 // but a new mount must subscribe to the existing work rather than POST the score again.
-// And a round spends its ONE submission only on a server VERDICT — never on the server
-// simply failing, which would lose the score on a visit the player cannot repeat.
+// And a round is settled by the POPULATION, not by the conversation: only an answer that
+// RECORDS the score stops it asking, so a refusal and a failure alike stay retryable on
+// the next visit rather than losing that score on a visit the player cannot repeat.
 
 import { describe, expect, it, vi } from 'vitest';
 import { shareScoreFlight, syncScore, type ScorePlacement } from './useScoreHistogram';
@@ -53,23 +54,23 @@ describe('shareScoreFlight — one pending conversation per round', () => {
   });
 });
 
-describe('syncScore — the round spends its one submission on a verdict only', () => {
+describe('syncScore — a round asks until the population HOLDS its score', () => {
   const submit = async (status: number, body: unknown = null) => {
-    const markSubmitted = vi.fn();
+    const markRecorded = vi.fn();
     postScoreBody.mockResolvedValueOnce({
       ok: status >= 200 && status < 300,
       status,
       json: async () => body,
     });
-    const placement = await syncScore(false, markSubmitted, 'sentence', 'fr', '2026-08-15', 7);
-    return { markSubmitted, placement };
+    const placement = await syncScore(markRecorded, 'sentence', 'fr', '2026-08-15', 7);
+    return { markRecorded, placement };
   };
 
-  it('marks the round submitted — with the RECORDED score — when the server accepts it', async () => {
+  it('records the score when the server accepts it', async () => {
     const histogram = { buckets: [{ min: 7, max: 7, count: 1 }], total: 1, bucket: 0 };
-    const { markSubmitted, placement } = await submit(200, histogram);
-    expect(markSubmitted).toHaveBeenCalledOnce();
-    expect(markSubmitted).toHaveBeenCalledWith(7);
+    const { markRecorded, placement } = await submit(200, histogram);
+    expect(markRecorded).toHaveBeenCalledOnce();
+    expect(markRecorded).toHaveBeenCalledWith(7);
     expect(placement).toEqual({ histogram, bucket: 0 });
   });
 
@@ -86,8 +87,8 @@ describe('syncScore — the round spends its one submission on a verdict only', 
       total: 2,
       bucket: 1,
     };
-    const { markSubmitted, placement } = await submit(200, histogram);
-    expect(markSubmitted).toHaveBeenCalledWith(9);
+    const { markRecorded, placement } = await submit(200, histogram);
+    expect(markRecorded).toHaveBeenCalledWith(9);
     expect(placement).toEqual({ histogram, bucket: 1 });
   });
 
@@ -100,14 +101,14 @@ describe('syncScore — the round spends its one submission on a verdict only', 
     });
   });
 
-  it('marks it submitted — with NO recorded score — when the server REFUSES it', async () => {
-    // An impossible score, a spent Turnstile token, the sixth submission of the day: the
-    // server has ruled, and asking again on every revisit would only be noise. Nothing
-    // was recorded, so nothing is persisted as the population's score.
-    for (const status of [400, 403, 429]) {
-      const { markSubmitted, placement } = await submit(status);
-      expect(markSubmitted).toHaveBeenCalledOnce();
-      expect(markSubmitted).toHaveBeenCalledWith(null);
+  it('records NOTHING when the server REFUSES it — a 4xx leaves the round retryable', async () => {
+    // The refusal that matters is the 403: Turnstile refusing the REQUEST, never the
+    // server judging the SCORE. Persisting a "submitted" flag here dropped that score
+    // from the day's population for good, silently, on a visit the player cannot repeat —
+    // and the round could not tell that refusal apart from an honest one afterwards.
+    for (const status of [400, 403, 404, 429]) {
+      const { markRecorded, placement } = await submit(status);
+      expect(markRecorded).not.toHaveBeenCalled();
       expect(placement).toBeNull();
     }
   });
@@ -124,40 +125,43 @@ describe('syncScore — the round spends its one submission on a verdict only', 
     const fetchMock = vi.fn(async () => ({ ok: true, json: async () => histogram }));
     vi.stubGlobal('fetch', fetchMock);
     try {
-      const markSubmitted = vi.fn();
+      const markRecorded = vi.fn();
       // Local count 7, but the population recorded 9 for this round on another device.
-      const placement = await syncScore(true, markSubmitted, 'sentence', 'fr', '2026-08-15', 7, 9);
+      const placement = await syncScore(markRecorded, 'sentence', 'fr', '2026-08-15', 7, 9);
       expect(placement).toEqual({ histogram, bucket: 1 });
-      expect(markSubmitted).not.toHaveBeenCalled();
+      expect(markRecorded).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
     }
   });
 
-  it('shows NO standing for a submitted round with no recorded score — a refusal stays refused', async () => {
-    // The server refused this round's score (4xx): nothing entered the population, and a
-    // revisit must never fall back to the LOCAL count — another player recording that
-    // same score would otherwise place the refused player in their band.
+  it('RE-SUBMITS a round the population does not hold, rather than GETting a standing that is not there', async () => {
+    // The revisit that finds a round with no recorded score — one a 4xx refused, one a
+    // 5xx or a dead Turnstile never got an answer for — POSTs again instead of reading.
+    // Safe by construction since #187: the row is first-write-wins, so a duplicate
+    // changes nothing server-side and comes back with the STORED band. Falling back to a
+    // GET here could only ever locate the LOCAL count, which would place this round in
+    // whatever band another player happened to record at that score.
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     try {
-      const markSubmitted = vi.fn();
-      const placement = await syncScore(true, markSubmitted, 'sentence', 'fr', '2026-08-15', 4);
-      expect(placement).toBeNull();
+      const histogram = { buckets: [{ min: 7, max: 7, count: 1 }], total: 1, bucket: 0 };
+      const { markRecorded, placement } = await submit(200, histogram);
       expect(fetchMock).not.toHaveBeenCalled();
-      expect(markSubmitted).not.toHaveBeenCalled();
+      expect(markRecorded).toHaveBeenCalledWith(7);
+      expect(placement).toEqual({ histogram, bucket: 0 });
     } finally {
       vi.unstubAllGlobals();
     }
   });
 
-  it('leaves it unset when the server FAILS — a 5xx must stay retryable', async () => {
+  it('records nothing when the server FAILS — a 5xx must stay retryable', async () => {
     // The failure this guards against is not hypothetical: a cold-start secret read, a
-    // throttled write, or a CDN 502 would otherwise burn the round's only submission and
-    // drop that score from the day's population for good.
+    // throttled write, or a CDN 502 would otherwise drop that score from the day's
+    // population for good.
     for (const status of [500, 502, 503]) {
-      const { markSubmitted, placement } = await submit(status);
-      expect(markSubmitted).not.toHaveBeenCalled();
+      const { markRecorded, placement } = await submit(status);
+      expect(markRecorded).not.toHaveBeenCalled();
       expect(placement).toBeNull();
     }
   });

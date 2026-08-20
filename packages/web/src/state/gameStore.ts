@@ -27,16 +27,13 @@ export interface RoundProgress {
   // language WITHOUT re-loading its puzzle's rank map. Game recomputes and syncs it;
   // it is derived UI state, never the source of truth for scoring.
   progress: number;
-  // The round's score has been submitted to the anonymous daily histogram (#170) — set
-  // once the server ANSWERS the POST, accepted or refused. Guards revisits: a flagged
-  // round only ever GETs the read-only histogram, never re-submits. Optional so every
-  // pre-#170 persisted round stays valid with the flag simply unset.
-  scoreSubmitted?: boolean;
-  // The score the server actually RECORDED (#187) — the population is first-write-wins
-  // per player, so a duplicate submission (another device/tab under the same key) is
-  // answered with the STORED row's score, which can differ from this round's own count.
-  // Revisit GETs locate the standing by this value; unset on a refused submission (the
-  // population holds nothing for this round) and on pre-#187 rounds.
+  // The score the daily population actually RECORDED for this round (#170/#187) — first
+  // write wins per player, so a duplicate submission (another device/tab under the same
+  // key) is answered with the STORED row's score, which can differ from this round's own
+  // count. Revisit GETs locate the standing by this value, and it is ALSO the submit-once
+  // guard: set means the population holds this round, so a reload only ever GETs. Unset
+  // means it holds nothing — a refused submission, a backend failure, or a round that has
+  // simply not finished — and the next visit asks again (see `shouldSubmitScore`).
   scoreRecorded?: number;
 }
 
@@ -126,10 +123,8 @@ export interface WordRoundProgress {
   deadline: number | null;
   tried: string[];
   claimed: number;
-  // Same contract as RoundProgress.scoreSubmitted (#170): the finished run's claim count
-  // went to the daily histogram; revisits GET instead of re-submitting.
-  scoreSubmitted?: boolean;
-  // Same contract as RoundProgress.scoreRecorded (#187): what the population holds.
+  // Same contract as RoundProgress.scoreRecorded (#170/#187): what the population holds
+  // for the finished run's claim count, and the submit-once guard with it.
   scoreRecorded?: number;
 }
 
@@ -324,8 +319,8 @@ interface GameState extends PersistedState {
   // first-write-wins population actually holds for this round (#187) — persisted so a
   // revisit GET locates the standing by what was recorded, not by the local count a
   // duplicate submission failed to record; omitted on a refusal (nothing recorded).
-  markScoreSubmitted: (key: string, recorded?: number) => void;
-  markWordScoreSubmitted: (key: string, recorded?: number) => void;
+  markScoreRecorded: (key: string, recorded: number) => void;
+  markWordScoreRecorded: (key: string, recorded: number) => void;
 
   // Cache the active round's reconstruction progress (for the selector badge). No-op
   // when unchanged so it never churns the store.
@@ -378,6 +373,24 @@ function freshRound(initialHoles: RuntimeHole[]): RoundProgress {
 //     already using it. It is persisted only so a REFRESH does not end a visit to the
 //     board — App clears it on leaving one — so a stored 'global' is at most one
 //     interrupted visit old, never a preference to honour forever.
+//   v10 retires `scoreSubmitted` (2026-08-20): a finished round now asks the population
+//     until the population HOLDS it, so what settles a round is `scoreRecorded` alone and
+//     the old flag has no reader. Stripping it heals the rounds it stranded — every round
+//     a 4xx burned (and, before the 2026-08-16 correction, every 5xx too) carried the flag
+//     with no recorded score, and now submits again on the next visit to its solved screen.
+// v10 retires `scoreSubmitted`: nothing reads it any more, so it is stripped out of every
+// persisted round rather than left as unread cruft (the v1 keyboard `layout` precedent).
+// Dropping it is also what HEALS the rounds it stranded — a round burned by a 4xx kept the
+// flag with no `scoreRecorded`, and `scoreRecorded` alone now decides whether to ask again.
+function dropRetiredScoreFlag<T>(rounds: Record<string, T>): Record<string, T> {
+  return Object.fromEntries(
+    Object.entries(rounds).map(([key, round]) => {
+      const { scoreSubmitted: _retired, ...rest } = round as T & { scoreSubmitted?: boolean };
+      return [key, rest as T];
+    }),
+  );
+}
+
 export function migratePersisted(persisted: unknown, version: number): PersistedState {
   if (version < 1) {
     return {
@@ -392,7 +405,7 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
     };
   }
   const p = persisted as Partial<PersistedState>;
-  const rounds = p.rounds ?? {};
+  const rounds = dropRetiredScoreFlag(p.rounds ?? {});
   const lastLang = p.lastLang ?? null;
   const onboarded =
     typeof p.onboarded === 'boolean'
@@ -401,7 +414,7 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
   const solvedDays = p.solvedDays ?? {};
   // Word rounds only survive from v7 on: before it they were strike runs, and a strike
   // run cannot be re-read as a clock (see the v7 note above).
-  const wordRounds = version < 7 ? {} : (p.wordRounds ?? {});
+  const wordRounds = version < 7 ? {} : dropRetiredScoreFlag(p.wordRounds ?? {});
   const lastMode = p.lastMode === 'word' || p.lastMode === 'sentence' ? p.lastMode : null;
   const sentenceRulesSeen = p.sentenceRulesSeen === true;
   const boardTab = p.boardTab === 'global' ? 'global' : 'friends';
@@ -636,36 +649,23 @@ export const useGameStore = create<GameState>()(
           };
         }),
 
-      markScoreSubmitted: (key, recorded) =>
+      // Idempotent on the VALUE, not on having been called: the server is first-write-wins,
+      // so every accepted submission of one round answers with the same recorded score, and
+      // re-writing it is a no-op to skip rather than a second write to refuse. Guarding on
+      // "already answered once" instead would be the bug the submit-once flag was: a round
+      // the server had refused could never take the score a later retry finally recorded.
+      markScoreRecorded: (key, recorded) =>
         set((s) => {
           const round = s.rounds[key];
-          if (!round || round.scoreSubmitted === true) return {};
-          return {
-            rounds: {
-              ...s.rounds,
-              [key]: {
-                ...round,
-                scoreSubmitted: true,
-                ...(recorded !== undefined ? { scoreRecorded: recorded } : {}),
-              },
-            },
-          };
+          if (!round || round.scoreRecorded === recorded) return {};
+          return { rounds: { ...s.rounds, [key]: { ...round, scoreRecorded: recorded } } };
         }),
 
-      markWordScoreSubmitted: (key, recorded) =>
+      markWordScoreRecorded: (key, recorded) =>
         set((s) => {
           const round = s.wordRounds[key];
-          if (!round || round.scoreSubmitted === true) return {};
-          return {
-            wordRounds: {
-              ...s.wordRounds,
-              [key]: {
-                ...round,
-                scoreSubmitted: true,
-                ...(recorded !== undefined ? { scoreRecorded: recorded } : {}),
-              },
-            },
-          };
+          if (!round || round.scoreRecorded === recorded) return {};
+          return { wordRounds: { ...s.wordRounds, [key]: { ...round, scoreRecorded: recorded } } };
         }),
 
       syncProgress: (value) =>
@@ -680,7 +680,7 @@ export const useGameStore = create<GameState>()(
     {
       name: 'whippin-round',
       storage,
-      version: 9, // v9: the board's remembered tab (see migratePersisted)
+      version: 10, // v10: the retired scoreSubmitted flag (see migratePersisted)
       migrate: migratePersisted,
       // Persist rounds (both modes'), last language/mode, the onboarding flag and the
       // solved-day sets; the active keys and the actions are transient. Each language's

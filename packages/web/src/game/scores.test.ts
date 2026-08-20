@@ -171,14 +171,19 @@ describe('formatTopPct — at most ONE decimal, no machine zeros', () => {
   });
 });
 
-describe('shouldSubmitScore — the submit-once guard', () => {
-  it('only a finished, not-yet-submitted round POSTs', () => {
-    expect(shouldSubmitScore(true, false)).toBe(true);
+describe('shouldSubmitScore — a round owes its score until the POPULATION holds it', () => {
+  it('a finished round the population does not hold POSTs', () => {
+    expect(shouldSubmitScore(true, undefined)).toBe(true);
   });
 
-  it('an unfinished round never submits; a submitted round never re-submits', () => {
-    expect(shouldSubmitScore(false, false)).toBe(false);
-    expect(shouldSubmitScore(true, true)).toBe(false);
-    expect(shouldSubmitScore(false, true)).toBe(false);
+  it('a recorded score settles the round — that alone is the submit-once guard', () => {
+    expect(shouldSubmitScore(true, 7)).toBe(false);
+    // Zero is a real Word-mode score (no claims), never "nothing recorded".
+    expect(shouldSubmitScore(true, 0)).toBe(false);
+  });
+
+  it('an unfinished round never submits, recorded or not', () => {
+    expect(shouldSubmitScore(false, undefined)).toBe(false);
+    expect(shouldSubmitScore(false, 7)).toBe(false);
   });
 });
