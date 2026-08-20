@@ -115,7 +115,12 @@
   `us-east-1`** (CloudFront's ACM cert must live there). Hosts the built SPA
   (`packages/web/dist`) on a **private** S3 bucket (`DESTROY` + auto-delete; build is
   reproducible) served only via **CloudFront + OAC** over HTTPS, with **SPA fallback**
-  (403/404 → `/index.html`, 200). Three `BucketDeployment`s split cache lifetimes (hashed
+  (403/404 → `/index.html`, 200). **Three path patterns are handed to the API origin
+  instead of the bucket** — `/s/*` (the share page), `/og/*` (every card image) and,
+  since 2026-08-20, `/i/*` (#189's invite link, which the backend renders so it unfurls
+  as the sender's own mark and name; its card sits under `/og/i/`). Adding a pattern here
+  TAKES that path away from the SPA, which is exactly why the invite's landing moved to
+  `/join/<publicId>` — see `shared/src/invite.ts` and the root `AGENTS.md`. Three `BucketDeployment`s split cache lifetimes (hashed
   `assets/*` immutable-1yr, `vocab/*` SWR, everything else `no-cache`) and **invalidate
   `/*`** on deploy — so `pnpm build` must run **before** deploy (missing `dist` → warn +
   skip upload). **The root set (index.html + version.json) publishes LAST** — an explicit

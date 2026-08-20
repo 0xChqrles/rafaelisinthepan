@@ -1,18 +1,23 @@
 import { useEffect, useState } from 'react';
+import { anonName, defaultAvatar } from '@whippin/shared';
 import Avatar from '../components/Avatar';
 import LoadingWave from '../components/LoadingWave';
 import LoadError from '../components/LoadError';
 import { friendsUrl, parseProfile, postFriendsBody, profileUrl } from '../api';
-import { anonName } from '../anonName';
-import { defaultAvatar } from '../defaultAvatar';
 import { playerSecret } from '../identity';
 import { t } from '../i18n';
 import { navigate } from '../routing';
 
-// The #189 invite link's landing: `/i/<publicId>` records the MUTUAL edge, SAYS SO, and
-// then gets out of the way. One link does both jobs — "add me" and "come play" — so the
-// write goes out with the CLICKER's own key (generated on this first need if they have
-// never played, which is what lands the edge before their first game).
+// The #189 invite link's landing: `/join/<publicId>` records the MUTUAL edge, SAYS SO,
+// and then gets out of the way. One link does both jobs — "add me" and "come play" — so
+// the write goes out with the CLICKER's own key (generated on this first need if they
+// have never played, which is what lands the edge before their first game).
+//
+// The link a player SHARES is still `/i/<publicId>`; since 2026-08-20 the backend serves
+// that path so the link unfurls in a chat as the sender's own mark and name, then bounces
+// here (`shared/invite.ts` holds both paths). Nothing about this screen's job moved with
+// it — the preview cannot touch the graph, because the edge needs the clicker's key and
+// the clicker's device is the only place it exists.
 //
 // A SUCCESSFUL add is confirmed on screen (user feedback 2026-08-20 — the landing used
 // to continue into the game without a word, leaving the clicker unsure anything had

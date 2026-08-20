@@ -7,6 +7,8 @@ import {
   decodeWordResult,
   nextResetAt,
   secondsUntilNextReset,
+  INVITE_SEGMENT,
+  PUBLIC_ID_PATTERN,
   RESET_HOUR,
   TIME_ZONE,
 } from '@whippin/shared';
@@ -24,13 +26,20 @@ import {
   png,
   redirect,
 } from './respond';
-import { renderCardPng, renderShareHtml, renderWordCardPng, renderWordShareHtml } from './ogCard';
+import {
+  renderCardPng,
+  renderInviteCardPng,
+  renderInviteHtml,
+  renderShareHtml,
+  renderWordCardPng,
+  renderWordShareHtml,
+} from './ogCard';
 import { isValidDate } from './layout';
 import { handleBoard } from './board';
 import { handleFriends } from './friends';
 import type { FriendStore } from './friendStore';
 import { handleProfile } from './profile';
-import type { ProfileStore } from './profileStore';
+import type { ProfileRecord, ProfileStore } from './profileStore';
 import { handleScores, type ScoreHandlerDeps } from './scores';
 import type { PuzzleStore } from './store';
 
@@ -80,6 +89,16 @@ const SHARE_MAX_AGE = 31_536_000;
 const OG_PNG_RE = /^\/og\/([A-Za-z0-9_-]+)\.png$/;
 const SHARE_RE = /^\/s\/([A-Za-z0-9_-]+)$/;
 
+// The #189 invite link and its card. Unlike a share token these are NOT content-addressed
+// — the player behind the id can rename themselves or redraw their mark — so they carry a
+// short TTL instead of the share routes' year: a profile edit reaches new unfurls in
+// minutes, and the apps that already unfurled the link cached the picture on their side
+// anyway. The id is matched loosely and validated with the SHARED pattern, so there is one
+// spelling of what a publicId is.
+const INVITE_MAX_AGE = 300;
+const INVITE_PAGE_RE = new RegExp(`^/${INVITE_SEGMENT}/([^/]+)$`);
+const INVITE_CARD_RE = new RegExp(`^/og/${INVITE_SEGMENT}/([^/]+)\\.png$`);
+
 // Absolute origin of THIS request — the same host serves /s, /og and the SPA, so it is the
 // base for the OG image URL and the game redirect. Honors the CloudFront forwarded headers.
 function requestOrigin(event: FnUrlEvent): string {
@@ -118,6 +137,51 @@ export function createHandler(deps: HandlerDeps) {
     }
 
     try {
+      // The #189 invite link — the page a chat unfurls, and the card it unfurls into.
+      // Both are addressed by the SENDER's publicId, which is public by design (an
+      // invite link IS one), so nothing here is authenticated. Nothing here writes
+      // either: the mutual edge is recorded by the SPA landing this page bounces to,
+      // with the CLICKER's own key. Resolves before the puzzle logic for the share
+      // routes' reason — no lang, no day, nothing to 400 on.
+      const inviteCard = INVITE_CARD_RE.exec(normalizedPath);
+      const invitePage = inviteCard ? null : INVITE_PAGE_RE.exec(normalizedPath);
+      const inviteMatch = inviteCard ?? invitePage;
+      if (inviteMatch) {
+        const publicId = inviteMatch[1];
+        if (!PUBLIC_ID_PATTERN.test(publicId)) {
+          return errorResponse(404, 'not_found', 'Invalid invite link.', cors);
+        }
+        if (!deps.profiles) throw new Error('Player profiles are not configured.');
+        // Best-effort, exactly like a board row's dressing: the preview must always draw
+        // a face, so a failed read falls back to the ASSIGNED identity (`anonName` /
+        // `defaultAvatar`, which the renderers resolve) rather than failing the link.
+        // That fallback is the one answer NOT cached — an assigned face held at the edge
+        // for a player who has drawn a real one is simply wrong, where a 404 ("never
+        // customized") is the right answer and caches like any other.
+        let profile: ProfileRecord | null = null;
+        let answered = true;
+        try {
+          profile = await deps.profiles.get(publicId);
+        } catch {
+          answered = false;
+        }
+        const cacheControl = answered ? `public, max-age=${INVITE_MAX_AGE}` : 'no-store';
+        if (inviteCard) {
+          // An EMPTY stored avatar is no avatar (the board's rule): '' is not a decodable
+          // drawing, and the assigned mark is keyed on the absence.
+          const buffer = await renderInviteCardPng({
+            publicId,
+            name: profile?.name ?? '',
+            avatar: profile?.avatar || null,
+          });
+          return png(200, buffer, { 'Cache-Control': cacheControl });
+        }
+        const base = deps.siteOrigin ?? requestOrigin(event);
+        return html(200, renderInviteHtml(publicId, profile?.name ?? '', base), {
+          'Cache-Control': cacheControl,
+        });
+      }
+
       // Share-card routes (issue #8) are keyed only on the token — no lang/day/store — so
       // they resolve BEFORE the puzzle logic (which would otherwise 400 on the missing lang).
       const ogMatch = OG_PNG_RE.exec(rawPath);

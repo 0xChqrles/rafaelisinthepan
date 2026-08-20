@@ -1,4 +1,4 @@
-import { PUBLIC_ID_PATTERN } from '@whippin/shared';
+import { INVITE_LANDING_SEGMENT, PUBLIC_ID_PATTERN } from '@whippin/shared';
 import { FIRST_PUZZLE_DATE } from './config';
 
 // Supported game languages — the single source for the picker and the /<lang> URL
@@ -65,17 +65,18 @@ export const SELECT_PATH = '/select';
 // global, not language-scoped. The leaderboard screen (#190) is its wired entry point.
 export const PROFILE_PATH = '/profile';
 
-// The #189 INVITE LINK: `/i/<publicId>`, the sender's own id in the path. Global for the
-// same reason again — an identity is not language-scoped — and a plain SPA route rather
-// than anything on the API, because the click has to land the edge with the CLICKER's key
-// and then get out of the way. Opening it is the whole gesture: it records the mutual edge
-// and continues into the game, which is also why one link can be both "add me" and "come
-// play". The id is validated here, so a mistyped link is an unknown path, not a request.
-const INVITE_SEGMENT = 'i';
-
-export function pathForInvite(publicId: string): string {
-  return `/${INVITE_SEGMENT}/${publicId}`;
-}
+// The #189 INVITE LINK: `/i/<publicId>`, the sender's own id in the path. Global — an
+// identity is not language-scoped. Since 2026-08-20 the LINK ITSELF is served by the
+// backend, so it unfurls in a chat as the sender's own mark and name (`shared/invite.ts`
+// holds the three paths, since infra, the backend and this file all have to agree on
+// them); it renders that preview and bounces a human into the LANDING below, which is
+// where the click still does its one job. So the shared link is unchanged and every one
+// already in the wild simply gained a preview.
+//
+// `/join/<publicId>` is that landing: it records the mutual edge with the CLICKER's key
+// and continues into the game, which is why one link is both "add me" and "come play".
+// The id is validated here, so a mistyped link is an unknown path, not a request.
+export { invitePath as pathForInvite } from '@whippin/shared';
 
 // A parsed route. The game IS the home: /<lang> plays today's puzzle, /<lang>/<date>
 // plays a past day (archive, #55), /<lang>/archive is the calendar, /select is the
@@ -121,7 +122,7 @@ export function parseRoute(pathname: string, bounds: RouteBounds = {}): Route {
   if (seg === 'profile') return { view: 'profile' };
   // A broken invite link falls through to `home` rather than asking the server about an id
   // that cannot exist — the same treatment a broken date deep-link gets.
-  if (seg === INVITE_SEGMENT) {
+  if (seg === INVITE_LANDING_SEGMENT) {
     return second && PUBLIC_ID_PATTERN.test(second)
       ? { view: 'invite', publicId: second }
       : { view: 'home' };

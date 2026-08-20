@@ -23,6 +23,9 @@
 // the day's accented display word in its token; that one value is XML-escaped before it is
 // interpolated into the SVG.
 
+import { anonName, defaultAvatar } from './assigned';
+import { AVATAR_PALETTES, AVATAR_SIZE, decodeAvatar } from './avatar';
+import { avatarOutlinePath } from './avatarOutline';
 import { dateForDayNumber } from './day';
 import { progressHeatColor } from './heat';
 import type { ShareResult, WordShareResult } from './shareCard';
@@ -112,6 +115,87 @@ const WORD_DATE_Y = 555;
 
 function escapeSvgText(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ── The invite link's card (#189, user-decided 2026-08-20) ───────────────────────────
+//
+// What a `/i/<publicId>` link unfurls into in a chat: the player's MARK, their NAME, and
+// the APP NAME. Nothing else — no "friend invite" banner, no call to action, no daily.
+// The link is already sent by a person to a person, so the message around it says what
+// it is; the card only has to say WHO. Anything more would be the sender's own message
+// repeated back at them in a picture.
+//
+// It draws the ASSIGNED identity for a player who never customized one (`assigned.ts`),
+// so the face in the chat is the same face their friends' boards show — which is the
+// whole reason those two functions moved into this package.
+const INVITE_AVATAR_PX = 260;
+const INVITE_AVATAR_Y = 96;
+const INVITE_NAME_Y = 448; // baseline
+const INVITE_NAME_MAX_SIZE = 60;
+// The name's own column, well inside the card's margins: a 16-character name set at the
+// max size runs 960 of the 1020 the margins leave, which reads as the name wearing the
+// card rather than the player wearing the name. Held to this box instead, everything up
+// to 12 glyphs keeps the full size and only a genuinely long name steps down.
+const INVITE_NAME_WIDTH = 720;
+const INVITE_APP_Y = 528; // baseline
+const INVITE_APP_SIZE = 28;
+const APP_NAME = 'WHIPPIN AI';
+
+export interface InviteCardData {
+  publicId: string;
+  // The STORED profile: '' / null when the player never customized one. The card
+  // resolves the assigned fallbacks itself, so "the card shows what a board shows"
+  // is a property of one function rather than of every caller.
+  name: string;
+  avatar: string | null;
+}
+
+export function renderInviteCardSvg({ publicId, name, avatar }: InviteCardData): string {
+  const cx = CARD_WIDTH / 2;
+  const shown = name || anonName(publicId);
+  // Press Start 2P advances exactly 1em per glyph, so the name fits its column at
+  // `size = width / glyphs` — one line always, since the name is the thing the card is
+  // about and a wrapped one reads as two.
+  const glyphs = Math.max(1, Array.from(shown).length);
+  const nameSize = Math.min(
+    INVITE_NAME_MAX_SIZE,
+    Math.max(1, Math.floor(INVITE_NAME_WIDTH / glyphs)),
+  );
+
+  // The mark is the app's ONE avatar drawing: the palette's ground, the union outline of
+  // the filled cells on top, and only the tile's outer corners rounded (the web's
+  // `Avatar`, whose renderer this shares). A stored string that will not decode falls
+  // back to the assigned mark rather than leaving a hole — the card must always draw a
+  // face, and the store only ever holds validated avatars anyway.
+  const cell = INVITE_AVATAR_PX / AVATAR_SIZE;
+  const x = Math.round(cx - INVITE_AVATAR_PX / 2);
+  let drawing: { bg: string; fg: string; outline: string };
+  try {
+    const { palette, cells } = decodeAvatar(avatar ?? defaultAvatar(publicId));
+    drawing = { ...AVATAR_PALETTES[palette], outline: avatarOutlinePath(cells, cell) };
+  } catch {
+    const { palette, cells } = decodeAvatar(defaultAvatar(publicId));
+    drawing = { ...AVATAR_PALETTES[palette], outline: avatarOutlinePath(cells, cell) };
+  }
+  const radius = Math.round(INVITE_AVATAR_PX * 0.036); // the web tile's proportion
+
+  return [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_WIDTH}" height="${CARD_HEIGHT}" viewBox="0 0 ${CARD_WIDTH} ${CARD_HEIGHT}">`,
+    `<rect width="${CARD_WIDTH}" height="${CARD_HEIGHT}" fill="${BG}"/>`,
+    `<clipPath id="mark"><rect x="${x}" y="${INVITE_AVATAR_Y}" width="${INVITE_AVATAR_PX}" height="${INVITE_AVATAR_PX}" rx="${radius}"/></clipPath>`,
+    // The clip sits on an UNtransformed group, in the same absolute space its rect is
+    // written in, and the translate goes on a group inside it: whether a rasterizer
+    // resolves a clip path before or after the referencing element's own transform is
+    // exactly the kind of thing renderers disagree about, and this nesting has no
+    // opinion to disagree with.
+    `<g clip-path="url(#mark)"><g transform="translate(${x} ${INVITE_AVATAR_Y})">`,
+    `<rect width="${INVITE_AVATAR_PX}" height="${INVITE_AVATAR_PX}" fill="${drawing.bg}"/>`,
+    drawing.outline ? `<path d="${drawing.outline}" fill="${drawing.fg}"/>` : '',
+    `</g></g>`,
+    `<text x="${cx}" y="${INVITE_NAME_Y}" text-anchor="middle" font-family="${CARD_FONT}" font-size="${nameSize}" font-variant-ligatures="none" fill="${FG}">${escapeSvgText(shown)}</text>`,
+    `<text x="${cx}" y="${INVITE_APP_Y}" text-anchor="middle" font-family="${CARD_FONT}" font-size="${INVITE_APP_SIZE}" fill="${MUTED}">${APP_NAME}</text>`,
+    `</svg>`,
+  ].join('');
 }
 
 export function renderWordCardSvg({ lang, dayNumber, counts, word }: WordCardData): string {

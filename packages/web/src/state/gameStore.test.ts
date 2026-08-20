@@ -51,6 +51,7 @@ beforeEach(() => {
       lastLang: null,
       lastMode: null,
       onboarded: false,
+      boardTab: 'friends',
       sentenceRulesSeen: false,
       solvedDays: {},
       activeKey: null,
@@ -682,6 +683,25 @@ describe('setLastLang — remembers the last valid language', () => {
   });
 });
 
+// CONTRACT (#190, user feedback 2026-08-20): the board tab belongs to a VISIT. It is
+// persisted so the two remounts that do NOT end a visit — a refresh and a header mode
+// switch — keep it, and LEAVING the leaderboard resets it, so the next open is FRIENDS.
+// App fires the reset on any non-board route; what is pinned here is that the reset
+// exists and is idempotent.
+describe('boardTab — the leaderboard tab, scoped to a visit', () => {
+  it('holds the chosen tab, and reset returns it to the trusted default', () => {
+    const { setBoardTab, resetBoardTab } = useGameStore.getState();
+    expect(useGameStore.getState().boardTab).toBe('friends');
+    setBoardTab('global');
+    expect(useGameStore.getState().boardTab).toBe('global');
+    resetBoardTab();
+    expect(useGameStore.getState().boardTab).toBe('friends');
+    // Idempotent: App calls it on EVERY non-board route, so it must not churn the blob.
+    resetBoardTab();
+    expect(useGameStore.getState().boardTab).toBe('friends');
+  });
+});
+
 describe('onboarded — the tutorial flag (#51)', () => {
   it('setOnboarded marks the tutorial seen (finish AND skip both call it)', () => {
     expect(useGameStore.getState().onboarded).toBe(false);
@@ -749,6 +769,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       lastLang: null,
       lastMode: null,
       onboarded: false,
+      boardTab: 'friends',
       sentenceRulesSeen: false,
       solvedDays: {},
     });
@@ -782,6 +803,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       lastLang: 'en',
       lastMode: null,
       onboarded: true,
+      boardTab: 'friends',
       sentenceRulesSeen: false,
       solvedDays: {},
     });
@@ -798,6 +820,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       lastLang: 'fr',
       lastMode: null,
       onboarded: true,
+      boardTab: 'friends',
       sentenceRulesSeen: false,
       solvedDays: {},
     });
@@ -820,6 +843,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       lastLang: 'fr',
       lastMode: null,
       onboarded: true,
+      boardTab: 'friends',
       sentenceRulesSeen: false,
       solvedDays,
     });
@@ -882,6 +906,16 @@ describe('migratePersisted — persisted-blob upgrades', () => {
         8,
       ).sentenceRulesSeen,
     ).toBe(true);
+  });
+
+  // v8 -> v9 (2026-08-20): which #190 board tab is up. Older blobs get 'friends'
+  // — the default the screen already opened on, so nobody's board moves under them; the
+  // field only starts remembering from the first flip. An unknown value is not a tab.
+  it('v8 -> v9 defaults boardTab to friends and keeps a stored global', () => {
+    const blob = { rounds: {}, lastLang: 'fr', onboarded: true, solvedDays: {} };
+    expect(migratePersisted(blob, 8).boardTab).toBe('friends');
+    expect(migratePersisted({ ...blob, boardTab: 'global' }, 9).boardTab).toBe('global');
+    expect(migratePersisted({ ...blob, boardTab: 'nonsense' }, 9).boardTab).toBe('friends');
   });
 
   it('keeps an existing solvedDays across the upgrade (no backfill, but no data loss)', () => {

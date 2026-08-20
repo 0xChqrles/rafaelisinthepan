@@ -1,14 +1,23 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import {
+  anonName,
   dateForDayNumber,
+  defaultAvatar,
   publicIdFromSecret,
   type Board,
   type BoardPlayer,
   type BoardRow,
 } from '@whippin/shared';
-import { boardUrl, parseBoard, parseProfile, postBoardBody, profileUrl } from '../api';
-import { anonName } from '../anonName';
-import { defaultAvatar } from '../defaultAvatar';
+import {
+  boardUrl,
+  friendsUrl,
+  parseBoard,
+  parseFriends,
+  parseProfile,
+  postBoardBody,
+  postFriendsBody,
+  profileUrl,
+} from '../api';
 import Avatar from '../components/Avatar';
 import LoadError from '../components/LoadError';
 import LoadingWave from '../components/LoadingWave';
@@ -17,7 +26,7 @@ import TopBar from '../components/TopBar';
 import useShare from '../hooks/useShare';
 import useToday from '../hooks/useToday';
 import { playerSecret } from '../identity';
-import { useGameStore } from '../state/gameStore';
+import { useGameStore, type BoardTab } from '../state/gameStore';
 import {
   pathForBoard,
   pathForInvite,
@@ -39,15 +48,14 @@ import CloseIcon from '../assets/icons/close.svg?react';
 // having played, which is why the header icon reaches it before a first guess.
 //
 // The rows come ranked from the server (competition ties, the plain top-50 cut, the
-// own-row window — @whippin/shared's leaderboard rules);
-// this screen only draws what the API returned. The own row wears the app's ONE
-// emphasis gesture, the inverted selection box.
-type Tab = 'friends' | 'global';
+// own-row window — @whippin/shared's leaderboard rules); this screen only draws what
+// the API returned. Rows CONNECTED to the reader are marked in the accent — the app's
+// "you are here" colour: a quiet left edge on a friend, that edge plus a tint on your
+// own row (user-decided 2026-08-20, see the CSS).
+type Tab = BoardTab;
 
-// What the "me" strip knows about the player: the derived publicId immediately, the
-// stored profile once (and if) its read answers. Both degrade silently — the strip is
-// identity chrome, not the board, so a failed profile read shows the id and the blank
-// mark rather than an error.
+// What the strip shows for the player. The publicId is derived locally and is available
+// first; the NAME and MARK are only ever shown RESOLVED — see the read below.
 interface Me {
   publicId: string;
   name: string;
@@ -55,8 +63,23 @@ interface Me {
 }
 
 export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode }) {
-  const [tab, setTab] = useState<Tab>('friends');
+  // The tab belongs to the VISIT, and it lives in the store because this screen remounts
+  // without the visit ending — a header mode switch (App keys it on lang:mode) and a page
+  // refresh both did, and local state dropped a player who had chosen GLOBAL back onto
+  // FRIENDS both times. LEAVING the leaderboard is what ends the visit, and App owns that
+  // reset (user feedback 2026-08-20).
+  const tab = useGameStore((s) => s.boardTab);
+  const setTab = useGameStore((s) => s.setBoardTab);
   const [me, setMe] = useState<Me | null>(null);
+  // The id alone, available as soon as it derives: it is what the INVITE link and the
+  // own-row marker need, neither of which waits on a profile.
+  const [meId, setMeId] = useState<string | null>(null);
+  // Whether the identity READ is over (however it ended). The strip holds a skeleton
+  // until it is — never a name (user feedback 2026-08-20).
+  const [meSettled, setMeSettled] = useState(false);
+  // The reader's edges, for marking friends among the global rows. Decoration, fetched
+  // lazily and only for the tab that needs it.
+  const [friendIds, setFriendIds] = useState<ReadonlySet<string> | null>(null);
   // ONE outcome slot per tab — a board, or that tab's own failure. Screen-global
   // failure state painted a FAILED frame over the other tab's perfectly good board for
   // a render when flipping back (review finding, 2026-08-20).
@@ -85,27 +108,74 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
   const { share, copied } = useShare({ tracked: false });
 
   // The identity strip: the id is derived locally (generated on first need, #187 — the
-  // invite link's own rule, since sharing it IS this screen's job), the profile read
-  // fills the name and the mark in when it lands. A 404 is "never customized".
+  // invite link's own rule, since sharing it IS this screen's job), then ONE read
+  // settles what the strip says.
+  //
+  // Nothing is shown until it does (user feedback 2026-08-20). The first cut published
+  // the id the moment it derived, which rendered the ASSIGNED identity — the pseudonym
+  // and the generated mark — and then swapped it for the real profile a beat later: a
+  // player with a name watched someone else's name flash under their own avatar on
+  // every visit. A skeleton says "not yet"; a name says something false.
+  //
+  // A read that FAILS still settles, on the assigned identity: it is what a board row
+  // whose profile read failed already shows, and a skeleton that never resolves is the
+  // one outcome worse than the fallback. A 404 is not a failure at all — it is the
+  // answer "never customized", whose display IS the assigned identity.
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      let publicId: string;
       try {
-        const publicId = await publicIdFromSecret(playerSecret());
-        if (cancelled) return;
-        setMe({ publicId, name: '', avatar: null });
-        const response = await fetch(profileUrl(publicId));
-        if (cancelled || !response.ok) return;
-        const profile = parseProfile(await response.json());
-        if (!cancelled) setMe({ publicId, name: profile.name, avatar: profile.avatar });
+        publicId = await publicIdFromSecret(playerSecret());
       } catch {
-        // Silent: the strip already shows the id (or, pre-derivation, nothing).
+        // No identity at all (crypto.subtle outside a secure context): the strip draws
+        // nothing rather than a skeleton with nothing behind it.
+        if (!cancelled) setMeSettled(true);
+        return;
       }
+      if (cancelled) return;
+      setMeId(publicId);
+      let resolved: Me = { publicId, name: '', avatar: null };
+      try {
+        const response = await fetch(profileUrl(publicId));
+        if (response.ok) {
+          const profile = parseProfile(await response.json());
+          resolved = { publicId, name: profile.name, avatar: profile.avatar };
+        }
+      } catch {
+        // Keep the assigned identity.
+      }
+      if (cancelled) return;
+      setMe(resolved);
+      setMeSettled(true);
     })();
     return () => {
       cancelled = true;
     };
   }, []);
+
+  // The reader's OWN EDGES, for marking friends among the global rows (user-asked,
+  // 2026-08-20). Fetched only when the GLOBAL tab is actually shown and only once per
+  // visit: the friends board's rows are friends by construction, so nothing there needs
+  // marking, and the graph does not change with the day the board is addressed by.
+  // Decoration — a failure simply leaves the rows unmarked, never an error.
+  useEffect(() => {
+    if (tab !== 'global' || friendIds) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await postFriendsBody(friendsUrl(), { secret: playerSecret() });
+        if (cancelled || !response.ok) return;
+        const ids = parseFriends(await response.json());
+        if (!cancelled) setFriendIds(new Set(ids));
+      } catch {
+        // Unmarked rows are a fine board.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, friendIds]);
 
   // One fetch per tab ACTIVATION — the route is a zero-TTL live read, so a tab flip
   // re-reads rather than trusting a snapshot from minutes ago; the cached board holds
@@ -163,8 +233,8 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
   // The invite link is both "add me" and "come play" (#189): one line of copy, then the
   // URL. Delivery (native sheet -> clipboard + COPIED) is useShare's, like every result.
   const invite = () => {
-    if (!me) return;
-    void share(`${t(lang, 'boardInviteText')}\n${window.location.origin}${pathForInvite(me.publicId)}`);
+    if (!meId) return;
+    void share(`${t(lang, 'boardInviteText')}\n${window.location.origin}${pathForInvite(meId)}`);
   };
 
   return (
@@ -191,19 +261,30 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
 
       {/* The identity strip: the mark and name a board row shows for YOU, with the two
           things this screen wires in — the profile editor and the invite link. An
-          uncustomized player reads as their id, dimmed: the blank the editor fills. */}
+          uncustomized player reads as their pseudonym, in the secondary ink. */}
       <div className="board-me">
-        {/* No drawn mark yet = the ASSIGNED one (defaultAvatar, deterministic from the
-            id — user feedback 2026-08-20, replacing the dashed empty frame); an empty
-            slot only holds the layout while the id derives. */}
+        {/* Until the read settles this is a SKELETON, never a name: publishing the
+            assigned identity early and correcting it a beat later showed every named
+            player a stranger's name under their own mark (user feedback 2026-08-20).
+            The skeleton holds the exact layout the real strip takes, so nothing moves
+            when it resolves. */}
         {me ? (
           <Avatar avatar={me.avatar ?? defaultAvatar(me.publicId)} size={40} />
         ) : (
-          <span className="board-me-slot" aria-hidden="true" />
+          <span
+            className={`board-me-slot${meSettled ? '' : ' skeleton'}`}
+            aria-hidden="true"
+          />
         )}
-        <span className={`board-me-name${me?.name ? '' : ' anon'}`}>
-          {me ? me.name || anonName(me.publicId) : ''}
-        </span>
+        {me ? (
+          <span className={`board-me-name${me.name ? '' : ' anon'}`}>
+            {me.name || anonName(me.publicId)}
+          </span>
+        ) : (
+          <span className="board-me-name" aria-hidden="true">
+            {!meSettled && <span className="skeleton skeleton-name" />}
+          </span>
+        )}
         {/* `/profile` is a GLOBAL route, so the board that opened it leaves the URL —
             state where to come back to, or the editor has to guess from the last
             loaded GAME (which can be the other daily, or another language). */}
@@ -243,7 +324,17 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
             onRetry={() => setAttempt((n) => n + 1)}
           />
         ) : board ? (
-          <BoardList key={tab} board={board} tab={tab} lang={lang} mode={mode} meId={me?.publicId} />
+          <BoardList
+            key={tab}
+            board={board}
+            tab={tab}
+            lang={lang}
+            mode={mode}
+            meId={meId ?? undefined}
+            // Only the GLOBAL list marks friends: on the friends board every row is one,
+            // and marking everything marks nothing.
+            friendIds={tab === 'global' ? friendIds : null}
+          />
         ) : (
           <p className="status">
             <LoadingWave text={t(lang, 'loading')} />
@@ -253,7 +344,7 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
 
       {/* The invite link's sending surface (#189): the screen's one big action. The
           label swaps to COPIED on the clipboard path, the share button's own gesture. */}
-      <button type="button" className="mix-btn board-invite" disabled={!me} onClick={invite}>
+      <button type="button" className="mix-btn board-invite" disabled={!meId} onClick={invite}>
         {copied ? t(lang, 'copied') : t(lang, 'boardInvite')}
       </button>
     </div>
@@ -266,12 +357,14 @@ function BoardList({
   lang,
   mode,
   meId,
+  friendIds,
 }: {
   board: Board;
   tab: Tab;
   lang: LangCode;
   mode: Mode;
   meId?: string;
+  friendIds: ReadonlySet<string> | null;
 }) {
   // Empty is per TAB. The GLOBAL board is empty when nobody played. The FRIENDS board
   // is empty when the caller has NO EDGES: the server always includes the caller's own
@@ -297,7 +390,13 @@ function BoardList({
   }
   let index = 0;
   const item = (row: BoardRow) => (
-    <BoardRowItem key={row.publicId} row={row} me={row.publicId === meId} index={index++} />
+    <BoardRowItem
+      key={row.publicId}
+      row={row}
+      me={row.publicId === meId}
+      friend={friendIds?.has(row.publicId) ?? false}
+      index={index++}
+    />
   );
   return (
     <>
@@ -349,10 +448,22 @@ function WaitingRowItem({ player, index }: { player: BoardPlayer; index: number 
   );
 }
 
-function BoardRowItem({ row, me, index }: { row: BoardRow; me: boolean; index: number }) {
+function BoardRowItem({
+  row,
+  me,
+  friend,
+  index,
+}: {
+  row: BoardRow;
+  me: boolean;
+  friend: boolean;
+  index: number;
+}) {
   return (
     <li
-      className={`board-row${me ? ' me' : ''}`}
+      // `me` wins over `friend`: your own row is never one of your edges, but a stale
+      // list could say so, and two markers on one row is a rendering bug on screen.
+      className={`board-row${me ? ' me' : friend ? ' friend' : ''}`}
       style={{ '--i': index } as CSSProperties}
       aria-current={me || undefined}
     >

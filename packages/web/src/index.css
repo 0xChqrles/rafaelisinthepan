@@ -5110,8 +5110,9 @@ button * {
    and icons (user-decided 2026-08-20, amending the one-ink rule: never `--fg` +
    opacity for a resting secondary; opacity stays an interaction treatment) — with
    the game's numbers (ranks, scores) in the pixel face, since a score is something
-   the game produced. The OWN row wears the app's one emphasis gesture, the inverted
-   selection box. ---- */
+   the game produced. Rows CONNECTED to the reader are marked in the accent — a quiet
+   left edge on a friend, that edge plus a tint on your own row (user-decided
+   2026-08-20, superseding the inverted selection box here). ---- */
 .board-screen {
   width: min(430px, 100%);
   align-self: stretch;
@@ -5309,18 +5310,54 @@ button * {
   height: 40px;
 }
 
-/* YOUR row: the inverted selection box — the board's one emphasis gesture. */
+/* The strip's SKELETON while its profile read is in flight (user feedback 2026-08-20).
+   The screen used to publish the ASSIGNED identity the moment the id derived and correct
+   it a beat later, so every named player watched a stranger's name flash under their own
+   mark. A placeholder says "not yet"; a name says something false. It holds the exact
+   boxes the resolved strip takes, so nothing moves when the real values land. The breathe
+   is what tells it from a broken render on a slow read; the global reduced-motion rule
+   collapses it to a single instant pass, which leaves it resting and still. */
+.skeleton {
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+  border-radius: var(--r-sm);
+  animation: skeleton-breathe 1.4s ease-in-out infinite;
+}
+.board-me-slot.skeleton {
+  border-radius: var(--r-md);
+}
+.skeleton-name {
+  display: block;
+  width: 8em;
+  max-width: 60%;
+  height: 0.9em;
+}
+@keyframes skeleton-breathe {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* ROWS CONNECTED TO THE READER wear the ACCENT — the app's "you are here" colour (the
+   history line's own marker), as a 2px inset left edge. It is ONE family said at two
+   strengths (user-decided 2026-08-20, superseding the inverted selection box on the own
+   row: a solid block of foreground in a list of glass rows shouted, and it left nothing
+   quieter for a friend to wear).
+     - a FRIEND among the global rows: the edge alone, nothing else touched;
+     - YOUR row: that edge, plus a whisper of the accent in the fill and the hairline,
+       plus the name at the action weight.
+   The edge is an INSET SHADOW rather than a border-left, so marking a row cannot shift
+   the grid under it by a pixel. Scoped to the GLOBAL list in the screen — on the friends
+   board every row is a friend, and marking everything marks nothing. */
+.board-row.friend,
 .board-row.me {
-  background: var(--fg);
-  border-color: var(--fg);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
-.board-row.me .board-rank,
-.board-row.me .board-name,
-.board-row.me .board-score {
-  color: var(--bg);
+.board-row.me {
+  background: color-mix(in srgb, var(--accent) 14%, var(--glass));
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
 }
-.board-row.me .board-rank {
-  opacity: 0.6;
+.board-row.me .board-name {
+  font-weight: 700;
 }
 
 /* A FRIEND with no score today (friends board only, user-decided 2026-08-20): the row

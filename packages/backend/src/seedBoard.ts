@@ -5,7 +5,7 @@
 //
 //   pnpm backend:dev                          # keep it running in another terminal
 //   pnpm board:seed                           # seed today's fr sentence board
-//   pnpm board:seed --friend <publicId|/i/…>  # also link a few seeds to YOUR identity
+//   pnpm board:seed --friend <publicId|link>  # also link a few seeds to YOUR identity
 //
 // What it seeds: 60 scored players (40 distinct scores + a 20-player tie across the
 // top-50 cut, so shared ranks are visible on both sides of it), most with profiles (a few without,
@@ -19,7 +19,13 @@
 
 import { copyFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { AVATAR_CELLS, VIEWER_IP_HEADER, encodeAvatar, publicIdFromSecret } from '@whippin/shared';
+import {
+  AVATAR_CELLS,
+  VIEWER_IP_HEADER,
+  encodeAvatar,
+  invitePath,
+  publicIdFromSecret,
+} from '@whippin/shared';
 import { defaultLocalStoreRoot } from './layout';
 
 const API = process.env.WHIPPIN_API ?? 'http://localhost:8787';
@@ -109,8 +115,9 @@ function friendArg(): string | null {
   const flag = process.argv.indexOf('--friend');
   if (flag < 0) return null;
   const raw = process.argv[flag + 1];
-  if (!raw) throw new Error('--friend needs a publicId or an /i/<publicId> invite link.');
-  const match = /(?:^|\/i\/)([a-z2-7]{16})$/.exec(raw.trim());
+  if (!raw) throw new Error('--friend needs a publicId or an invite link.');
+  // Either invite spelling, or a bare id: this extracts an id, it does not route.
+  const match = /(?:^|\/)([a-z2-7]{16})$/.exec(raw.trim());
   if (!match) throw new Error(`"${raw}" holds no 16-character player id.`);
   return match[1];
 }
@@ -172,11 +179,15 @@ async function main() {
   }
 
   console.log(`[seed] done — ${LANG} ${MODE} board for ${date} holds 60 scores.`);
+  // The REAL shared link (`/i/<publicId>`), preview and all: the dev server proxies
+  // `/i/*` to this backend exactly as the CDN does in production (web/vite.config.ts),
+  // so a local click walks the same two steps a pasted link does. Set WHIPPIN_SITE if
+  // your dev server is not on the port below.
   console.log('[seed] invite links (click one in the app to land that seed on your friends board):');
   for (const i of [11, 33, 61]) {
     const id = await publicIdFromSecret(secretOf(i));
     const label = i === 61 ? 'has NOT played today' : 'has played';
-    console.log(`[seed]   ${SITE}/i/${id}   (${NAMES[i % NAMES.length]}, ${label})`);
+    console.log(`[seed]   ${SITE}${invitePath(id)}   (${NAMES[i % NAMES.length]}, ${label})`);
   }
 }
 

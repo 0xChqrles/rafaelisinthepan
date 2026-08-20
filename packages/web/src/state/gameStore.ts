@@ -4,6 +4,11 @@ import type { RuntimeHole } from '@whippin/shared';
 import { isLang, type Mode } from '../langs';
 import { runMs } from '../game/wordGame';
 
+// Which crowd the #190 leaderboard is showing: the friends graph (the trusted default)
+// or the global top 50. It lives here rather than in the screen because the screen
+// remounts under it without the visit ending — see `boardTab` below.
+export type BoardTab = 'friends' | 'global';
+
 // A round is identified by its `roundKey` = (server day, language). The store keeps a
 // MAP of rounds keyed by this string so progress in one language survives switching to
 // another and back (the selector reads each language's status out of this map). The
@@ -189,6 +194,16 @@ interface PersistedState {
   // The onboarding tutorial (#51) has been completed or skipped. Global, not
   // per-language — the mechanic is the same in both.
   onboarded: boolean;
+  // Which #190 board tab is up — FRIENDS (the trusted default) or GLOBAL. It belongs to
+  // the current VISIT to the leaderboard, not to the player (user feedback 2026-08-20,
+  // narrowing the first cut, which made it a standing preference). Two things remount
+  // that screen without ending the visit — a page REFRESH and a header MODE SWITCH (App
+  // keys it on lang:mode) — and both were dropping a player who had chosen GLOBAL back
+  // onto FRIENDS. So it is PERSISTED, which is the only way to survive the reload; and
+  // App RESETS it the moment a non-board route renders, which is what ends the visit.
+  // That reset lives in App rather than at each entry point precisely because an entry
+  // that forgot it would silently reopen on the old tab forever.
+  boardTab: BoardTab;
   // The sentence game's one-time instructions gate has been passed (2026-08-11). Unlike
   // Word mode's gate — whose START is mandatory because it starts the clock — the sentence
   // gate exists only to state the rules, so it is shown ONCE ever, globally: the rules are
@@ -235,6 +250,10 @@ interface GameState extends PersistedState {
 
   // Remember the last-played mode (#156, drives where `/` lands).
   setLastMode: (mode: Mode) => void;
+
+  // Which board tab is up (#190), and the end of a visit to it: FRIENDS again.
+  setBoardTab: (tab: BoardTab) => void;
+  resetBoardTab: () => void;
 
   // Mark the onboarding tutorial as seen (finish AND skip both count — never re-nag).
   setOnboarded: () => void;
@@ -354,6 +373,11 @@ function freshRound(initialHoles: RuntimeHole[]): RoundProgress {
 //     gate. Older blobs get false — deliberately NOT grandfathered the way `onboarded`
 //     is, because the gate teaches the history tap, which is newer than any existing
 //     player's play state; every player sees it exactly once.
+//   v9 adds `boardTab` (2026-08-20): which #190 board tab is up. Older blobs get
+//     'friends', the default the screen already opens on, so nothing changes for anyone
+//     already using it. It is persisted only so a REFRESH does not end a visit to the
+//     board — App clears it on leaving one — so a stored 'global' is at most one
+//     interrupted visit old, never a preference to honour forever.
 export function migratePersisted(persisted: unknown, version: number): PersistedState {
   if (version < 1) {
     return {
@@ -362,6 +386,7 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
       lastLang: null,
       lastMode: null,
       onboarded: false,
+      boardTab: 'friends',
       sentenceRulesSeen: false,
       solvedDays: {},
     };
@@ -379,7 +404,17 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
   const wordRounds = version < 7 ? {} : (p.wordRounds ?? {});
   const lastMode = p.lastMode === 'word' || p.lastMode === 'sentence' ? p.lastMode : null;
   const sentenceRulesSeen = p.sentenceRulesSeen === true;
-  return { rounds, wordRounds, lastLang, lastMode, onboarded, sentenceRulesSeen, solvedDays };
+  const boardTab = p.boardTab === 'global' ? 'global' : 'friends';
+  return {
+    rounds,
+    wordRounds,
+    lastLang,
+    lastMode,
+    onboarded,
+    boardTab,
+    sentenceRulesSeen,
+    solvedDays,
+  };
 }
 
 export const useGameStore = create<GameState>()(
@@ -390,6 +425,7 @@ export const useGameStore = create<GameState>()(
       lastLang: null,
       lastMode: null,
       onboarded: false,
+      boardTab: 'friends',
       sentenceRulesSeen: false,
       solvedDays: {},
       activeKey: null,
@@ -409,6 +445,18 @@ export const useGameStore = create<GameState>()(
       setLastMode: (mode) => {
         if (get().lastMode === mode) return;
         set({ lastMode: mode });
+      },
+
+      setBoardTab: (tab) => {
+        if (get().boardTab === tab) return;
+        set({ boardTab: tab });
+      },
+
+      // Leaving the leaderboard ends the visit. Guarded like every other setter, so the
+      // non-board routes this fires on do not each rewrite the persisted blob.
+      resetBoardTab: () => {
+        if (get().boardTab === 'friends') return;
+        set({ boardTab: 'friends' });
       },
 
       setOnboarded: () => {
@@ -632,7 +680,7 @@ export const useGameStore = create<GameState>()(
     {
       name: 'whippin-round',
       storage,
-      version: 8, // v8: the sentence gate's seen-once flag (see migratePersisted)
+      version: 9, // v9: the board's remembered tab (see migratePersisted)
       migrate: migratePersisted,
       // Persist rounds (both modes'), last language/mode, the onboarding flag and the
       // solved-day sets; the active keys and the actions are transient. Each language's
@@ -642,6 +690,7 @@ export const useGameStore = create<GameState>()(
         wordRounds: s.wordRounds,
         lastLang: s.lastLang,
         lastMode: s.lastMode,
+        boardTab: s.boardTab,
         onboarded: s.onboarded,
         sentenceRulesSeen: s.sentenceRulesSeen,
         solvedDays: capAllSolvedDays(s.solvedDays),

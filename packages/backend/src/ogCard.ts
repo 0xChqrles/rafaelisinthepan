@@ -11,11 +11,16 @@
 import { readFile } from 'node:fs/promises';
 import { Resvg, initWasm } from '@resvg/resvg-wasm';
 import {
+  anonName,
+  inviteCardPath,
+  inviteLandingPath,
   renderCardSvg,
+  renderInviteCardSvg,
   renderWordCardSvg,
   dateForDayNumber,
   wordShareScore,
   type CardData,
+  type InviteCardData,
   type ShareResult,
   type WordCardData,
   type WordShareResult,
@@ -60,18 +65,17 @@ export async function renderWordCardPng(data: WordCardData): Promise<Buffer> {
   return rasterize(renderWordCardSvg(data));
 }
 
+// The #189 invite link's card: the same rasterizer, its own SVG — the player's mark,
+// their name, the app name (user-decided 2026-08-20).
+export async function renderInviteCardPng(data: InviteCardData): Promise<Buffer> {
+  return rasterize(renderInviteCardSvg(data));
+}
+
 const escapeAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
-// The share page: OG/Twitter meta pointing at /og/<token>.png so the link unfurls into the
-// card, plus a redirect so a human who clicks it lands on the game. `base` is the canonical
-// site origin (the apex), so the URLs are absolute as crawlers need.
-//
-// The redirect is JavaScript, NOT `<meta http-equiv="refresh">`: preview crawlers don't run
-// JS, so they stop here and read THIS page's card OG tags. A meta-refresh, by contrast, is
-// followed by some crawlers (e.g. Telegram) to the game page, whose default OG tags then win
-// — showing the wrong preview. The redirect sits in <head> so it fires DURING head parsing,
-// before the body paints, so a human never sees a "redirecting…" flash; the body link is the
-// no-JS fallback. Crawlers still read the OG meta below (a <script> doesn't end the head).
+// A solved sentence's share page: the card at /og/<token>.png, and a click-through into
+// the day it names. `base` is the canonical site origin (the apex), so the URLs are
+// absolute as crawlers need. The page template itself is `previewPage` below.
 export function renderShareHtml(token: string, result: ShareResult, base: string): string {
   const lang = /^[a-z]{2}$/.test(result.lang) ? result.lang : 'en'; // sanitize (token-sourced)
   // Localized by the token's language (#59). Fixed per-lang constants (never interpolated
@@ -93,7 +97,7 @@ export function renderShareHtml(token: string, result: ShareResult, base: string
   // which the front routes identically to /<lang>). Safe: base is server-set, lang is
   // /^[a-z]{2}$/, and dateForDayNumber emits only digits + hyphens.
   const gameUrl = `${base}/${lang}/${dateForDayNumber(result.dayNumber)}`;
-  return sharePage(token, base, lang, title, gameUrl, L.play);
+  return previewPage(lang, title, `${base}/og/${token}.png`, gameUrl, L.play);
 }
 
 // Word mode's share page (#156): the same template, its own title ("N words" — higher is
@@ -111,24 +115,49 @@ export function renderWordShareHtml(token: string, result: WordShareResult, base
     score === 1 ? L.one : L.many
   }`;
   const gameUrl = `${base}/${lang}/word/${dateForDayNumber(result.dayNumber)}`;
-  return sharePage(token, base, lang, title, gameUrl, L.play);
+  return previewPage(lang, title, `${base}/og/${token}.png`, gameUrl, L.play);
 }
 
-function sharePage(
-  token: string,
-  base: string,
+// The #189 invite page: `/i/<publicId>` is the link a player SHARES, so it is the page a
+// chat unfurls — and what it unfurls into is that player, not the app's stock card
+// (user-decided 2026-08-20). The card draws their mark and name; the TITLE says the same
+// two things in text, and nothing else: no "friend invite" line, no pitch. A person sent
+// this link to a person, and their own message already says what it is.
+//
+// Language-neutral: an invite belongs to a player, not to a daily, and the landing
+// resolves the reader's own language the way `/` does. `name` is the STORED profile name
+// ('' when never customized) — the card resolves the assigned identity itself, and the
+// title resolves the same one so the two halves of a preview can never disagree.
+export function renderInviteHtml(publicId: string, name: string, base: string): string {
+  const title = `Whippin AI — ${name || anonName(publicId)}`;
+  const landing = `${base}${inviteLandingPath(publicId)}`;
+  return previewPage('en', title, `${base}${inviteCardPath(publicId)}`, landing, 'Whippin AI');
+}
+
+// The preview page every shared link is served as: OG/Twitter meta carrying the card,
+// plus a redirect so a human who clicks lands where the link actually goes.
+//
+// The redirect is JavaScript, NOT `<meta http-equiv="refresh">`: preview crawlers don't
+// run JS, so they stop here and read THIS page's OG tags. A meta-refresh, by contrast, is
+// followed by some crawlers (e.g. Telegram) to the destination, whose default OG tags then
+// win — showing the wrong preview. The redirect sits in <head> so it fires DURING head
+// parsing, before the body paints, so a human never sees a "redirecting…" flash; the body
+// link is the no-JS fallback. Crawlers still read the OG meta below (a <script> doesn't
+// end the head).
+function previewPage(
   lang: string,
   rawTitle: string,
-  gameUrl: string,
-  playLabel: string,
+  imageUrl: string,
+  target: string,
+  linkLabel: string,
 ): string {
   const title = escapeAttr(rawTitle);
-  const image = escapeAttr(`${base}/og/${token}.png`);
+  const image = escapeAttr(imageUrl);
   return `<!doctype html>
 <html lang="${lang}">
 <head>
 <meta charset="utf-8">
-<script>location.replace(${JSON.stringify(gameUrl)})</script>
+<script>location.replace(${JSON.stringify(target)})</script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${title}</title>
 <meta property="og:type" content="website">
@@ -140,6 +169,6 @@ function sharePage(
 <meta name="twitter:title" content="${title}">
 <meta name="twitter:image" content="${image}">
 </head>
-<body><a href="${escapeAttr(gameUrl)}">${playLabel}</a></body>
+<body><a href="${escapeAttr(target)}">${linkLabel}</a></body>
 </html>`;
 }

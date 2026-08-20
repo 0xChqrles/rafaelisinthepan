@@ -59,6 +59,18 @@ export default function App() {
     );
   }, [route.view, lastLang, lastMode]);
 
+  // The board's whose-scores tab belongs to a VISIT (user feedback 2026-08-20, narrowing
+  // the first cut's standing preference). It has to survive the two things that remount
+  // the screen WITHOUT ending the visit — a page refresh and a header mode switch — so it
+  // is persisted; and leaving the leaderboard is what ends it, so the next open is
+  // FRIENDS, the trusted default. Rendering a non-board route IS the leaving, which is
+  // why the rule lives here: an entry point that forgot to reset would silently reopen on
+  // a stale tab forever, and there is more than one way onto this screen.
+  const resetBoardTab = useGameStore((s) => s.resetBoardTab);
+  useEffect(() => {
+    if (route.view !== 'board') resetBoardTab();
+  }, [route.view, resetBoardTab]);
+
   // Keep <html lang> honest: index.html ships lang="en", but on /fr both the puzzle
   // content and the UI chrome are French — screen readers pick pronunciation rules from
   // this attribute. Language-scoped routes (game + archive + board) use their own lang;
@@ -87,8 +99,9 @@ export default function App() {
           hands over to the home redirect above. */}
       {route.view === 'invite' && <FriendInvite publicId={route.publicId} lang={homeLang} />}
       {route.view === 'archive' && <Archive lang={route.lang} mode={route.mode} />}
-      {/* The leaderboard screen (#190) — keyed so switching daily/language resets the
-          tab and its cached reads to that board's own. */}
+      {/* The leaderboard screen (#190) — keyed so switching daily/language drops the
+          cached reads for that board's own. The TAB is deliberately outside the key: a
+          mode switch is still the same visit (see the reset effect above). */}
       {route.view === 'board' && (
         <Leaderboard key={`${route.lang}:${route.mode}`} lang={route.lang} mode={route.mode} />
       )}

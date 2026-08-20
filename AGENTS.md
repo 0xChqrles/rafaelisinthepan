@@ -531,15 +531,47 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   than follows: a group converges on identical lists with N link shares instead of N² and
   nobody is forgotten, with zero request/accept friction (the link holder consented by
   sharing it, the clicker by clicking).
-- **The link is `<site>/i/<publicId>` — a plain SPA route, not an API one**
-  (`web/src/langs.ts` `pathForInvite`, `web/src/screens/FriendInvite.tsx`): opening it records
-  the edge with the CLICKER's key and continues into the game, so ONE link is both "add me"
-  and "come play". A brand-new visitor's key is generated on that first need (#187), so the
-  edge lands before their first game — this is also the invite funnel. The id is validated at
-  PARSE, so a broken link is an unknown path rather than a request. **The RESULT share link
+- **The link is `<site>/i/<publicId>`**, and since 2026-08-20 it is TWO paths doing one job
+  (`shared/src/invite.ts`; `web/src/screens/FriendInvite.tsx` is the landing). Opening it
+  records the edge with the CLICKER's key and continues into the game, so ONE link is both
+  "add me" and "come play". A brand-new visitor's key is generated on that first need (#187),
+  so the edge lands before their first game — this is also the invite funnel. The id is
+  validated wherever it is READ, so a broken link is an unknown path rather than a request.
+  **The RESULT share link
   (`/s/<token>`) is deliberately NOT the carrier:** it is CDN-cached for a year on a cache key
   of `lang`/`date`/`mode`, so an inviter parameter would either fragment that cache per player
   or — unlisted, with no origin request policy on that behavior — never reach the origin at all.
+- **The invite link PREVIEWS AS THE PLAYER (user-decided 2026-08-20), which is why the link
+  itself is now SERVER-rendered.** A pasted `/i/<publicId>` used to be a plain SPA route, so
+  every chat unfurled it with the app's stock card — the same picture for every player. The
+  backend serves that path instead: `GET /i/<publicId>` reads the player's profile row and
+  answers a preview page whose card (`GET /og/i/<publicId>.png`) draws THREE things — their
+  MARK, their NAME, the APP NAME — and whose title says the same two in text. **Nothing more,
+  and nothing reading "friend invite":** a person sent this link to a person, so the message
+  around it already says what it is; the card only has to say WHO. It draws the ASSIGNED
+  identity (`anonName` / `defaultAvatar`) for a player who never customized one, so the face
+  in the chat is the face their friends' boards show.
+  - **The SPA landing moved to `/join/<publicId>`, and it still does the whole job.** The
+    preview page renders the OG tags and `location.replace`s onto it — the `/s/<token>`
+    page's own shape, for its reason: a crawler stops at the tags, a human lands where the
+    link goes. The paths had to SPLIT because CloudFront routes on PATH ALONE, so one path
+    cannot be both the origin-rendered preview and the SPA route under it. The SHARED
+    spelling is the one that stayed put, so every link already in the wild simply gained a
+    preview.
+  - **Three packages agree on those paths, which is why they live in `shared/src/invite.ts`**
+    (`VIEWER_IP_HEADER`'s rule): INFRA hands `/i/*` to the API origin, the BACKEND answers it
+    and writes the landing into its redirect, and the WEB builds the link and parses the
+    landing. A drift is an invite that silently lands nobody on a board — and it is invisible
+    in local development, where there is no CDN in front of the SPA and `/i/*` never reaches
+    the backend at all.
+  - **The preview is cached SHORT (300s), where a share card is cached for a year:** a share
+    token is content-addressed, and the player behind an id is not — they can rename
+    themselves or redraw their mark. A profile read that FAILS still draws a face (the
+    assigned one, the board's own fallback) but answers `no-store`: holding that at the edge
+    would put a stranger's face on a player who drew their own.
+  - **Reading it needs no authentication and grants nothing**, exactly like `/board`'s `id`:
+    a publicId is broadcast by design (an invite link IS one), the route only READS a public
+    profile, and the edge is still written by the landing with the clicker's own key.
 - **The graph is SERVER-side** precisely because the sender's device is not present at click
   time: only a stored edge lets one click benefit both sides. It follows the DERIVED publicId,
   so restoring a key restores the friends with it — nothing to migrate. (Its side benefit is

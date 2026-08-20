@@ -16,12 +16,13 @@
       identity.ts             the #187 player key: localStorage secret, generated on first need
       screens/Profile.tsx     the #188 profile editor (/profile): name, tap-to-paint 10×10 grid,
                               ground-swatch palette picker (#190 wires the entry point)
-      screens/FriendInvite.tsx  the #189 invite link's landing (/i/<publicId>): POST the mutual
-                              edge with the player key, then continue into the game
+      screens/FriendInvite.tsx  the #189 invite link's landing (/join/<publicId>): POST the mutual
+                              edge with the player key, then continue into the game. The link
+                              players SHARE is /i/<publicId>, served by the backend for its preview
       screens/Leaderboard.tsx the #190 leaderboard (/<lang>[/word]/board): friends board first,
                               global top 50; identity strip (EDIT -> /profile) + INVITE share
-      components/Avatar.tsx   a stored avatar rendered as SVG (editor preview + #190 board rows)
-      components/avatarOutline.ts  its drawing as ONE traced union-outline path (no interior edges, no seam)
+      components/Avatar.tsx   a stored avatar rendered as SVG (editor preview + #190 board rows);
+                              the tracer + the assigned identity are @whippin/shared's since 2026-08-20
       versionCheck.ts         stale-tab reload: __BUILD_ID__ vs /version.json on visibility flips
       i18n.ts                 UI chrome strings (en+fr), t(lang, key); parity type-enforced
       tutorial/               onboarding (#51/#155): Tutorial.tsx + data scripts/<lang>.ts
@@ -263,7 +264,11 @@ These are decided and verified against the code. Treat them as load-bearing.
       the filled title/date chips read heavy, so `.topbar-title` and `.puzzle-date`
       are plain bold foreground type now — one left-corner treatment still, just
       unfilled; the date keeps its ▾ and a whisper-chip hover as the archive-button
-      affordance). Elsewhere it stands: the result action INVERTS on hover;
+      affordance). **AMENDED 2026-08-20 (user-decided, on the leaderboard's second
+      review): a LEADERBOARD row does not take it either** — in a column of glass rows
+      a solid foreground block shouted, and it left nothing quieter for the friend
+      marker beside it, so both wear the ACCENT instead (see the #190 bullet). The
+      gesture keeps every other place it holds. Elsewhere it stands: the result action INVERTS on hover;
       the invite title's last word sits in an `.invite-mark` box (Invite splits the
       localized copy on the final space, pulling one more token in when the tail is
       bare punctuation — French's ` ?`). **The DIALOG BOXES wear COBALT CORNER TABS**
@@ -464,9 +469,24 @@ it to the local store — see `packages/backend/AGENTS.md`).
   a spread of full grids), never the command syntax, since the property it exists for
   — no seam at a fractional DPR — is one jsdom cannot rasterize.
 
-- **Invite link (#189):** `/i/<publicId>` (`pathForInvite` in `langs.ts`,
-  `screens/FriendInvite.tsx`) — global like `/profile`, since an identity is not
-  language-scoped. It POSTs `{secret, add}` with the player key
+- **Invite link (#189):** the link a player SHARES is `/i/<publicId>` (`pathForInvite`,
+  now `@whippin/shared`'s `invitePath`), and since 2026-08-20 the BACKEND serves that path
+  so the link unfurls in a chat as the sender's own mark and name — see the root
+  `AGENTS.md` for the preview's rules. What the SPA routes is the LANDING it bounces to,
+  `/join/<publicId>` (`screens/FriendInvite.tsx`) — global like `/profile`, since an
+  identity is not language-scoped, and unchanged in every other way: the preview cannot
+  touch the graph, because the edge needs the CLICKER's key and the clicker's device is
+  the only place it exists. **THE DEV SERVER PROXIES `/i/*` (with `/s/*` and `/og/*`) to
+  the local backend** — `vite.config.ts`, the CDN's own behavior list restated, so a
+  pasted link walks the same two steps locally that it does in production. It did not at
+  first, and the failure had NO symptom (user-reported 2026-08-20): the SPA fallback
+  answered `/i/<id>` with index.html, `parseRoute` saw a path it no longer owned, and the
+  click landed on the game with nothing said and no edge written. Two details are
+  load-bearing there — the proxy list must move with `web-stack.ts`'s
+  `additionalBehaviors`, and `changeOrigin`/`xfwd` are pinned OFF (Vite's string shorthand
+  does not leave them off) so the backend, which has no `siteOrigin` locally, reads the
+  BROWSER's Host and bounces to the app rather than to itself.
+  The landing POSTs `{secret, add}` with the player key
   (`identity.ts`, generated on this first need, which is what lands the edge before a
   brand-new visitor's first game) and **a SUCCESSFUL add is CONFIRMED on screen**
   (user-decided 2026-08-20, superseding the silent continue-into-the-game beat — the
@@ -477,8 +497,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   home redirect via
   `navigate('/', { replace: true })`, replacing this landing in history so a back tap
   leaves the game instead of re-firing the invite.
-  The publicId is validated in `parseRoute`, so a broken link goes home rather than asking
-  the server about an id nobody can hold. A NON-CAP 4xx is a VERDICT and continues into the
+  The publicId is validated in `parseRoute` (and again in the backend's own route), so a
+  broken link goes home rather than asking the server about an id nobody can hold. A NON-CAP 4xx is a VERDICT and continues into the
   game silently — nothing was added, so nothing is announced (the
   score submission's rule: `self_link` and a bad id cannot be argued with); a transport
   error or a 5xx shows `failedInvite` + RETRY — LOUD, unlike a score submission, for the #188
@@ -500,7 +520,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the ACTIVE day), `screens/Leaderboard.tsx`, entered from the game header's crown
   icon (recorded in the header bullet). FRIENDS is the default tab — the trusted
   surface — GLOBAL the top-50 untrusted one; the header's ModeTabs switch WHICH
-  daily's board, the in-screen tabs WHOSE scores. **THE DAY IS A LIVE VALUE**
+  daily's board, the in-screen tabs WHOSE scores. **WHICH TAB belongs to a VISIT — not
+  to the screen, and NOT to the player** (user feedback 2026-08-20, in two passes; the
+  first cut made it a standing preference and the user narrowed it). Two things remount
+  this screen WITHOUT ending the visit — a page REFRESH and a header MODE SWITCH (App
+  keys it on lang:mode) — and local state dropped a player who had chosen GLOBAL back
+  onto FRIENDS both times. So it lives in the store as `boardTab` (persist **v9**, which
+  is the only way to survive the reload; older blobs get 'friends', the default the
+  screen already opens on), and **App RESETS it the moment a NON-BOARD route renders**,
+  which is what ends a visit: leaving the leaderboard and coming back opens on FRIENDS,
+  the trusted default. That reset lives in App rather than at each entry point precisely
+  because an entry that forgot it would silently reopen on a stale tab forever, and
+  there is more than one way onto this screen. A stored 'global' is therefore at most one
+  interrupted visit old (a killed tab), never a preference to honour forever — the first
+  non-board route of the next session clears it. **THE DAY IS A LIVE VALUE**
   (corrected 2026-08-20 on review): the screen reads `useToday` — the app's one day
   signal, which re-fires at the DST-correct 22:00-ET reset AND on a visibility flip —
   rather than stamping `activeDate(new Date())` at fetch time, because a board is left
@@ -523,18 +556,31 @@ it to the local store — see `packages/backend/AGENTS.md`).
   tab and disabled INVITE for the whole visit. The screen renders what the API returned (ranks, cut, own window
   — the shared leaderboard rules; root AGENTS.md): glass rows of rank + avatar + name
   + score, ranks and scores in the PIXEL face (game numbers), names in mono (identity
-  chrome, case kept), the unit caption (TRIES/WORDS) naming which way is better. The
-  OWN row wears the inverted selection box — the app's one emphasis gesture. A player
+  chrome, case kept), the unit caption (TRIES/WORDS) naming which way is better.
+  **ROWS CONNECTED TO THE READER wear the ACCENT — ONE family at two strengths
+  (user-decided 2026-08-20, REPLACING the inverted selection box on the own row here):**
+  a 2px inset accent left edge marks a FRIEND among the global rows, and YOUR row takes
+  that edge plus a whisper of the accent in the fill and the hairline and the name at the
+  action weight. The inverted box — the app's one emphasis gesture everywhere else — was
+  too loud in a column of glass rows, and it left nothing quieter for a friend to wear.
+  The edge is an inset SHADOW, never a border-left, so marking a row cannot shift the
+  grid under it by a pixel. Friends are marked on the GLOBAL list ONLY: on the friends
+  board every row is one, and marking everything marks nothing. Their id set comes from
+  ONE lazy `POST /friends` fired on the first GLOBAL activation and cached for the visit
+  (the graph does not change with the day the board is addressed by) — decoration, so a
+  failure leaves the rows unmarked rather than failing anything.
+  A player
   with no profile degrades honestly, with an ASSIGNED identity rather than a hole
   (both user-decided 2026-08-20, second pass the same day): a GAMERTAG pseudonym as
-  the name (`anonName.ts` — `SwiftFalcon84`-style AdjectiveNoun## derived from the
+  the name (`anonName` — `SwiftFalcon84`-style AdjectiveNoun## derived from the
   publicId, superseding the same-day syllable names, which didn't read as usernames;
   length-budgeted under the shared 16-char cap and always `sanitizeName`-stable;
   name-shaped, so only the secondary ink says "placeholder") and a generated MARK as the avatar
-  (`defaultAvatar.ts` — a mirrored 10×10 creature + palette from the id hash, the
+  (`defaultAvatar` — a mirrored 10×10 creature + palette from the id hash, the
   seeder's proven recipe, superseding the dashed empty frame). Both are DISPLAY-ONLY
   pure functions of the publicId — identical on every surface and device, nothing
-  stored, and a saved profile replaces them. The below-the-cut gap renders as a
+  stored, and a saved profile replaces them; both live in `@whippin/shared`
+  (`assigned.ts`) since the invite card started drawing a player server-side. The below-the-cut gap renders as a
   dashed rule (ties are NOT folded at the cut — user-decided 2026-08-20, superseding
   the "+N TIED" collapse row: at most 50 ordinary rows, shared ranks shown), and the friends
   tab's WAITING friends (edges with no score today, user-decided 2026-08-20) as
@@ -557,9 +603,21 @@ it to the local store — see `packages/backend/AGENTS.md`).
   all" made it unreachable for exactly the player who needs it — someone with no
   friends who finished today's daily landed on a board of one row, themselves, under
   an identity strip already showing the same mark and name, with nothing saying why.
-  The identity strip on
-  top (your mark + name + EDIT → `/profile`) and the INVITE device-card button on the
-  bottom edge are the #188/#189 wiring; both work before ever playing — and the invite
+  **The identity strip on
+  top (your mark + name + EDIT → `/profile`) shows NOTHING until its read settles — a
+  SKELETON, never a name (user feedback 2026-08-20).** The first cut published the id the
+  moment it derived, which rendered the ASSIGNED identity and swapped it for the real
+  profile a beat later, so every named player watched a stranger's name flash under their
+  own mark on every visit. The placeholder holds the exact boxes the resolved strip takes,
+  so nothing moves when the values land, and it breathes (the global reduced-motion rule
+  collapses that to one instant pass) so a slow read does not read as a broken render. A
+  read that FAILS still SETTLES, on the assigned identity — it is what a board row with a
+  failed profile read already shows, and a skeleton that never resolves is the one outcome
+  worse than the fallback; a 404 is not a failure at all but the answer "never
+  customized", whose display IS that identity. Only a failure to derive the ID ITSELF (no
+  `crypto.subtle` outside a secure context) draws nothing at all. The INVITE device-card
+  button on the bottom edge waits on the ID alone, never the profile.
+  Both are the #188/#189 wiring; both work before ever playing — and the invite
   share is the ONE `useShare` caller that passes `tracked: false`, because the pinned
   `share` analytics event means "a RESULT left the app" (the three-event invariant) and
   counting invite links into it would silently redefine what the number measures. Rows rise on

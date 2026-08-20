@@ -20,13 +20,27 @@ import { localTurnstileVerifier } from './turnstile';
 const PORT = Number(process.env.PORT ?? 8787);
 const STORE_ROOT = process.env.PUZZLE_STORE ?? defaultLocalStoreRoot();
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN ?? '*';
+// The per-ADDRESS submission allowance, turned OFF here and explicitly so — the same kind
+// of stated local-only choice as the accept-all Turnstile verifier below.
+//
+// In production the cap bounds how many players ONE address may record in a day: real
+// anti-abuse, where addresses differ. Locally every client is 127.0.0.1 by construction,
+// so it bounds nothing — it just makes the daily loop untestable after five identities,
+// and does it SILENTLY: the sixth submission is a 429, which is a 4xx, which the client
+// reads as a VERDICT and never retries. From then on that day publishes nothing, on every
+// device, forever, with no message anywhere (user-reported 2026-08-20).
+const LOCAL_SUBMISSION_LIMIT = Number.POSITIVE_INFINITY;
 const LOCAL_IP_HMAC_SECRET = randomBytes(32).toString('hex');
 
 const handler = createHandler({
   store: fsStore(STORE_ROOT),
+  // No siteOrigin: the preview pages (`/s/<token>`, `/i/<publicId>`) fall back to the
+  // REQUEST's Host, and the dev server proxies those paths here WITHOUT rewriting it
+  // (web/vite.config.ts), so a page served through the proxy addresses the app rather
+  // than this server. Reached directly on :8787 it addresses :8787, which is honest.
   allowedOrigin: ALLOWED_ORIGIN,
   scores: {
-    scoreStore: memoryScoreStore(),
+    scoreStore: memoryScoreStore(() => new Date(), LOCAL_SUBMISSION_LIMIT),
     // Explicitly local-only: the production entrypoint always wires real Siteverify.
     turnstile: localTurnstileVerifier,
     ipHmacSecret: LOCAL_IP_HMAC_SECRET,

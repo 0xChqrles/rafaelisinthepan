@@ -13,7 +13,8 @@
 ```
   backend/                    daily-puzzle backend (pkg @whippin/backend, #2)
     src/
-      handler.ts              createHandler() — the ONE day/404/CORS/Puzzle logic (Lambda + local)
+      handler.ts              createHandler() — the ONE day/404/CORS/Puzzle logic (Lambda + local);
+                              also the share routes and #189's invite preview (/i/<publicId>)
       store.ts                PuzzleStore interface (date+lang -> Puzzle | null)
       s3Store.ts, fsStore.ts  store impls: S3 (prod) and local FS (#17), both read the same key
       scores.ts               /scores GET+POST route: params, auth (publicId), Turnstile,
@@ -39,6 +40,7 @@
       nameFilter.ts           #188 banned-strings display-name MODERATION (normalize + substring); the charset is shared/name.ts
       avatarModeration.ts     #188 best-effort swastika template match on the decoded grid
       turnstile.ts            Cloudflare Siteverify + explicit local accept-all verifier
+      ogCard.ts               resvg-wasm rasterizer + the preview PAGE template (share links + #189 invites)
       layout.ts               storeKey() — the <date>.<lang>.json key shared by readers + publish (#17/#4)
       serve.ts                local HTTP server: Function-URL⇄HTTP adapter over createHandler (#17)
       publish.ts              place a generated puzzle into local store (default) or S3 (#17/#4)
@@ -122,6 +124,22 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   like the score POST (same OAC boundary); the `id` query must stay in the CloudFront
   profile behavior's allowList (root `AGENTS.md` contract).
 
+- **Invite link preview (#189, user-decided 2026-08-20):** the ONE handler also serves the
+  invite LINK itself — `GET /i/<publicId>`, the page a chat unfurls, and
+  `GET /og/i/<publicId>.png`, the card it unfurls into (mark + name + app name, nothing
+  more). The product rules and the reason the SPA landing split off to `/join/<publicId>`
+  are in the root `AGENTS.md`. Implementation notes: both resolve BEFORE the puzzle logic
+  (the share routes' reason — no lang, no day, nothing to 400 on); the id is matched
+  loosely and validated with the shared `PUBLIC_ID_PATTERN`, so a malformed one is a 404
+  that never reaches the store; the profile read is best-effort like a board row's, and a
+  read that FAILED answers `no-store` where an honest 404 ("never customized") caches for
+  300s. `siteOrigin` is what both preview pages bounce to, and `backend:dev` sets NONE:
+  the handler falls back to the REQUEST's Host, and the web dev server proxies these
+  paths here without rewriting it (`web/vite.config.ts`), so a page served through the
+  proxy addresses the app rather than this server. The CDN wiring is the WEB
+  distribution's (`infra/lib/web-stack.ts` routes `/i/*` to the API origin beside `/s/*`
+  and `/og/*`), not this stack's — and the dev proxy is that list restated, so the two
+  move together.
 - **Friends graph (#189):** the ONE handler also serves `POST /friends` — and ONLY POST
   (a GET is a named 405): the player key authenticates in the BODY, so there is no way to
   ask for a list without proving whose it is. `{secret}` reads the caller's edges,
