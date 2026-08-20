@@ -78,8 +78,9 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   the player key (shared `identity.ts` — a malformed key is a 400, nothing secret is
   ever stored), requires an integer score + nonempty Turnstile token, uses one
   Cloudflare Siteverify call, reads the published puzzle, and rejects an impossible
-  score (sentence: 1..the exact committed language vocab size; Word: 0..the artifact's
-  distinct ranks inside shared `WORD_CLAIM_ZONE`). It HMACs the trusted client address —
+  score (sentence: 1..the language's existence-set size, read from the generated shared
+  vocab metadata, #200; Word: 0..the artifact's distinct ranks inside shared
+  `WORD_CLAIM_ZONE`). It HMACs the trusted client address —
   read from shared `VIEWER_IP_HEADER`, which a CloudFront viewer-request function stamps
   (see the root `AGENTS.md` for why the origin-request policy cannot carry it) — and
   hands only the digest to `ScoreStore`. A value that is not a bare IP is no identity at
@@ -203,7 +204,9 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   **The LIVE routes share their plumbing** (`liveRoute.ts`, extracted 2026-08-20 when
   `/board` became the FOURTH byte-identical copy): the `no-store` header, the body
   reader with its 4 KB cap, the `{secret}` check, and the `(lang, mode, date)` guard
-  triple with the +1-day future skew. The lang check is `Object.hasOwn`, deliberately —
+  triple with the +1-day future skew. A supported language is one the pipeline has built
+  a vocabulary for (shared `VOCAB_BUILDS`, #200 — the same record the sentence ceiling
+  comes from). The lang check is `Object.hasOwn`, deliberately —
   a bare `map[lang] === undefined` walks the prototype chain, so `constructor` /
   `toString` / `__proto__` pass as "supported languages" and reach the DynamoDB
   partition key. On /scores that hole is masked by the puzzle-store 404 behind it; on

@@ -12,12 +12,21 @@ import json
 import os
 import re
 import unicodedata
+from datetime import datetime, timezone
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(SCRIPT_DIR)                 # packages/generation
 # The vocab existence set IS a web runtime asset: the SPA fetches /vocab/<lang>.json from
 # its own origin (useVocab), so it is written straight into web/public/vocab.
 WEB_VOCAB_DIR = os.path.normpath(os.path.join(ROOT, "..", "web", "public", "vocab"))
+# Its METADATA (#200) goes to TS source instead, because its reader is the BACKEND, which
+# never loads the set: what a vocabulary IS (how big, how long its longest key, which
+# corpus build produced it) is all the server needs to bound a score or a stored guess.
+# packages/shared/ specifically, because deploy.yml's paths-filter already fans `shared`
+# out to both stacks — so a regenerated vocabulary ships its new numbers through a
+# mapping that exists, instead of leaving the backend on a stale value with no signal.
+SHARED_SRC_DIR = os.path.normpath(os.path.join(ROOT, "..", "shared", "src"))
+VOCAB_META_PATH = os.path.join(SHARED_SRC_DIR, "vocab.generated.json")
 
 # Ligatures that do NOT decompose under NFKD, so we expand them by hand.
 _LIGATURES = {"œ": "oe", "æ": "ae"}
@@ -77,13 +86,88 @@ def path_slug(text):
     return _PATH_SEPARATORS.sub("-", _fold_to_ascii(text)).strip("-")
 
 
-def write_vocab(words, lang, vocab_dir=None):
-    """Write <vocab_dir>/<lang>.json: the UNLIMITED existence set.
+_REDUCED = "_reduced"
+# The MEASURED half of a metadata entry — what is a pure function of the vocabulary
+# itself. `builtAt` is the one field that isn't, which is why it is compared apart.
+_MEASURED = ("embedding", "vocabSize", "maxSlugLength")
+
+
+def corpus_name(path):
+    """Name the CORPUS BUILD an embedding file belongs to: its basename, without the
+    extension and without a `_reduced` suffix.
+
+    Both sides of the reduction name the same build: reduce_embedding holds the raw
+    `cc.fr.300.vec` it just read, the neighbor modules hold the `cc.fr.300_reduced.vec`
+    they just loaded, and both answer "cc.fr.300". So whichever command refreshes the
+    existence set records the same corpus — the metadata can never say two different
+    things about one vocabulary."""
+    root, _ext = os.path.splitext(os.path.basename(path))
+    return root[: -len(_REDUCED)] if root.endswith(_REDUCED) else root
+
+
+def _read_meta(path):
+    """The metadata already on disk, or {} when there is nothing to keep.
+
+    A missing or unreadable file is REPLACED, never fatal: this is an OUTPUT of the
+    pipeline, and the run that is about to write it correctly should just do so."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            existing = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    return existing if isinstance(existing, dict) else {}
+
+
+def write_vocab_meta(slugs, lang, source, meta_path=None):
+    """Record what the existence set of `lang` IS, into packages/shared (#200).
+
+    One entry per language: the corpus build it came from (`embedding` + `builtAt`)
+    plus the two measurements the backend needs about a set it never loads —
+    `vocabSize` (a sentence score counts distinct vocabulary-valid tries, so the set's
+    size is that score's ceiling) and `maxSlugLength` (no valid guess is longer than
+    the longest key in it). Measured from the same `slugs` that were just written, so
+    the numbers cannot describe some other vocabulary.
+
+    Only THIS language's entry is touched — the other is read back and kept, since a
+    run only ever rebuilds one language. `builtAt` (UTC) dates the run that first
+    produced this exact vocabulary: an unchanged rebuild keeps the recorded date, so
+    re-running the pipeline over the same corpus leaves the file byte-identical rather
+    than dirtying it on every puzzle commit."""
+    meta_path = meta_path or VOCAB_META_PATH
+    entry = {
+        "embedding": corpus_name(source),
+        "vocabSize": len(slugs),
+        "maxSlugLength": max((len(s) for s in slugs), default=0),
+        "builtAt": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+    }
+    meta = _read_meta(meta_path)
+    previous = meta.get(lang)
+    if isinstance(previous, dict) and all(previous.get(k) == entry[k] for k in _MEASURED):
+        entry["builtAt"] = previous.get("builtAt", entry["builtAt"])
+    meta[lang] = entry
+
+    os.makedirs(os.path.dirname(os.path.abspath(meta_path)), exist_ok=True)
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(meta, f, ensure_ascii=False, indent=2, sort_keys=True)
+        f.write("\n")  # it is committed TS source, read in diffs
+    print(f"Métadonnées ({lang}) : {entry['embedding']}, {entry['vocabSize']} slugs, "
+          f"clé la plus longue {entry['maxSlugLength']} -> {meta_path}")
+    return meta_path
+
+
+def write_vocab(words, lang, source, vocab_dir=None, meta_path=None):
+    """Write <vocab_dir>/<lang>.json: the UNLIMITED existence set, AND its metadata.
 
     Every distinct slug of `words` (deduplicated, sorted) — NOT capped. The front
     fetches this once and decides word existence from it. Deterministic given `words`;
     overwritten on each run. `vocab_dir` defaults to web/public/vocab (the served
-    asset); callers (tests) may point it elsewhere."""
+    asset); callers (tests) may point it elsewhere.
+
+    The metadata (#200) is written in the SAME call, from the same slugs, because the
+    two must describe one vocabulary: every command that can refresh the existence set
+    — reduce, gen_phrase, build_vocab — goes through here, so none of them can move the
+    set while leaving the backend's numbers behind. `source` is the embedding file this
+    vocabulary came from; raw or `_reduced`, both name the same corpus (corpus_name)."""
     vocab_dir = vocab_dir or WEB_VOCAB_DIR
     slugs = sorted({s for s in (slug(w) for w in words) if s})
     os.makedirs(vocab_dir, exist_ok=True)
@@ -91,4 +175,5 @@ def write_vocab(words, lang, vocab_dir=None):
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(slugs, f, ensure_ascii=False)
     print(f"Vocabulaire ({lang}) : {len(slugs)} slugs -> {out_path}")
+    write_vocab_meta(slugs, lang, source, meta_path)
     return out_path

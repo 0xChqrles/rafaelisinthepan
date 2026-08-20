@@ -1,13 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { Puzzle, WordPuzzle } from '@whippin/shared';
-import enVocab from '../../web/public/vocab/en.json';
-import frVocab from '../../web/public/vocab/fr.json';
-import {
-  SENTENCE_SCORE_MAX_BY_LANG,
-  WORD_SCORE_ZONE,
-  sentenceScoreMaximum,
-  wordScoreMaximum,
-} from './scoreLimits';
+import { VOCAB_BUILDS, type Puzzle, type WordPuzzle } from '@whippin/shared';
+import { WORD_SCORE_ZONE, sentenceScoreMaximum, wordScoreMaximum } from './scoreLimits';
 
 const PUZZLE: Puzzle = {
   lang: 'en',
@@ -24,11 +17,14 @@ const PUZZLE: Puzzle = {
 };
 
 describe('puzzle-aware score limits (#169)', () => {
-  it('pins sentence ceilings to the exact committed existence sets', () => {
-    // This is the drift alarm: regenerating a vocab changes what a real client can count,
-    // and must force the server-side validator to move in the same commit.
-    expect(SENTENCE_SCORE_MAX_BY_LANG).toEqual({ en: enVocab.length, fr: frVocab.length });
-    expect(sentenceScoreMaximum('en', PUZZLE)).toBe(enVocab.length);
+  it('takes the sentence ceiling from the generated vocab metadata', () => {
+    // The ceiling is the existence set's size, and #200 has generation state it: a
+    // regenerated vocabulary moves this bound in the commit that ships it, with no
+    // number to copy across by hand. That the metadata matches the committed sets is
+    // shared/vocab.test.ts's contract, asserted once where the file lives.
+    expect(sentenceScoreMaximum('en', PUZZLE)).toBe(VOCAB_BUILDS.en.vocabSize);
+    expect(sentenceScoreMaximum('fr', PUZZLE)).toBe(VOCAB_BUILDS.fr.vocabSize);
+    // A language the pipeline never built a vocabulary for has no ceiling to enforce.
     expect(sentenceScoreMaximum('de', PUZZLE)).toBeNull();
   });
 

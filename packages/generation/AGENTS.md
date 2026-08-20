@@ -14,14 +14,17 @@ relative to `packages/generation/` unless prefixed.
   generation/                Python generation (run via uv); puzzles -> output/, vocab -> web/public
     scripts/
       reduce_embedding.py     raw .vec/.txt -> *_reduced file (the ONLY filter+cap stage) + vocab
+                              (+ its shared/ metadata, #200)
       build_wordlist.py       offline builder: sources -> wordlist/<lang>.txt.gz (hors-dico ref, #38)
       build_lemmas.py         offline builder: AGID -> wordlist/en.lemmas.tsv.gz (en form→lemma, #104;
                               en ONLY since #132 — the fr grouping ships in the word-group inventory)
       build_forms.py          offline builder: Morphalou 3.1 -> wordlist/fr.forms.tsv.gz (the fr
                               WORD-GROUP INVENTORY, #132/#146: duplicate-entry merge + all-POS
                               grouping, homography and display morphology)
-      build_vocab.py          reduced vectors -> web/public/vocab/<lang>.json (escape hatch; no re-reduce)
+      build_vocab.py          reduced vectors -> web/public/vocab/<lang>.json + its metadata
+                              (escape hatch; no re-reduce)
       slug.py                 stdlib-only: slug() contract + path_slug() dir names + write_vocab
+                              (existence set + shared/src/vocab.generated.json, #200)
       embedding_neighbors.py  shared load/vocab/matrix/cosine-rank logic
       glove_neighbors.py      en paths + derived .kv cache (thin wrapper over the above)
       french_neighbors.py     fr paths + derived .kv cache (thin wrapper)
@@ -248,6 +251,15 @@ Consequences that are load-bearing:
     as a side effect, and `pnpm vocab:<lang>` (`build_vocab.py`) rebuilds it from an
     existing reduced file without re-reducing. All three go through the one shared
     `slug.write_vocab`, so the output is identical.
+  - **Vocab METADATA (#200)** — `packages/shared/src/vocab.generated.json`, written by
+    that SAME `write_vocab` call from the same slugs: per language, `vocabSize`,
+    `maxSlugLength` and the corpus build (`embedding` + `builtAt`). It is the BACKEND's
+    view of a set it never loads (score ceiling, guess-length cap, supported languages) —
+    the contract, and why it lives in `shared/`, is in the root `AGENTS.md`. Each caller
+    passes the embedding file its words came from; `corpus_name` names the build from
+    either side of the reduction, so the record can't depend on which command ran. An
+    unchanged rebuild keeps its `builtAt`, so the file stays byte-identical unless the
+    vocabulary really moved. **Never hand-edit it** — re-run the command that writes it.
 - **`TOP_K = 10000` is a generation-only cap:** each secret's rank map = the secret at
   rank 0 plus its `K` nearest **distinct lemma groups** (#104), each with its alias
   forms. The front is **K-agnostic** — it tests membership in the map, never
@@ -315,21 +327,23 @@ pnpm lemmas:en        # AGID infl.txt (inverted) -> wordlist/en.lemmas.tsv.gz
 pnpm forms:fr         # Morphalou 3.1 -> wordlist/fr.forms.tsv.gz (+ .LICENSE)
 
 # 1. Reduce ONCE per language (slow, offline). Build the *_reduced source of truth AND,
-#    in the same pass, web/public/vocab/<lang>.json (the front's existence set — commit it).
+#    in the same pass, web/public/vocab/<lang>.json (the front's existence set) plus
+#    shared/src/vocab.generated.json (its metadata, #200) — commit BOTH.
 #    Reads wordlist/<lang>.txt.gz for the hors-dico rule (--no-dico to skip; --no-vocab
-#    to skip the vocab write). This is the one command for a language's derived data.
+#    to skip both writes). This is the one command for a language's derived data.
 pnpm reduce:fr        # embedding/fr/cc.fr.300.vec -> cc.fr.300_reduced.vec + vocab/fr.json
 pnpm reduce:en        # embedding/en/glove.6B.300d.txt -> glove.6B.300d_reduced.txt + vocab/en.json
 
-# 2. (Escape hatch) Rebuild ONLY the vocab from an existing reduced file, without a slow
-#    re-reduce — e.g. if the committed vocab/<lang>.json got lost.
-pnpm vocab:fr         # -> packages/web/public/vocab/fr.json
+# 2. (Escape hatch) Rebuild ONLY the vocab + its metadata from an existing reduced file,
+#    without a slow re-reduce — e.g. if the committed vocab/<lang>.json got lost.
+pnpm vocab:fr         # -> packages/web/public/vocab/fr.json + shared/src/vocab.generated.json
 
 # 3. Generate a puzzle per game (fast; first run for a language builds the .kv cache).
 #    Puzzle -> packages/generation/output/word/<lang>/<kind>/<author>/<work>/ (#137;
 #    levels not provided are omitted, so a source-less puzzle stays at <lang>/), then
 #    `pnpm puzzle:publish` it.
-#    NOTE: gen:phrase ALSO rewrites web/public/vocab/<lang>.json as a side effect.
+#    NOTE: gen:phrase ALSO rewrites web/public/vocab/<lang>.json (and its #200 metadata)
+#    as a side effect.
 #    Reads the grouping table for lemma grouping (#104) — fr: the word-group inventory
 #    wordlist/fr.forms.tsv.gz (#132), en: wordlist/en.lemmas.tsv.gz (missing table =
 #    hard error, --no-lemmas to skip). The secret's form is never inferred (#133): a

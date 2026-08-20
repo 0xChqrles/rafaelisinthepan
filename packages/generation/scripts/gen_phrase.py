@@ -116,7 +116,8 @@ for path in (ROOT, SCRIPT_DIR):
 #    PUBLISHED to the daily store (local FS or S3) via `pnpm puzzle:publish`. The front
 #    never serves them directly (the backend does, #6), so they don't belong in web/public.
 #  - The VOCAB existence set IS a web runtime asset (written to web/public/vocab by the
-#    shared write_vocab, imported above).
+#    shared write_vocab, imported above — which also records what that set is for the
+#    backend, in packages/shared/src/vocab.generated.json, #200).
 # ROOT == packages/generation, a sibling of web in the monorepo.
 GEN_OUTPUT = os.path.join(ROOT, "output")
 
@@ -3116,8 +3117,9 @@ def main():
     # its surrounding clitic/punctuation as the hole's prefix/suffix.
     words = [display_token(t) for t in sentence.split()]
 
-    # Existence set for the front: the whole (slugged) reduced vocabulary V.
-    write_vocab(V, lang)
+    # Existence set for the front: the whole (slugged) reduced vocabulary V, named by the
+    # reduced file it was loaded from so its metadata (#200) records that corpus build.
+    write_vocab(V, lang, cfg["module"].SPEC.vectors_path)
 
     # Two paths to the same (holes, ranks): --words is the explicit / batch path (each
     # distinct selector expands to all matching occurrences); with no --words on a TTY

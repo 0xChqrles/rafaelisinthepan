@@ -1,0 +1,14 @@
+{
+  "en": {
+    "builtAt": "2026-08-20",
+    "embedding": "glove.6B.300d",
+    "maxSlugLength": 22,
+    "vocabSize": 75125
+  },
+  "fr": {
+    "builtAt": "2026-08-20",
+    "embedding": "cc.fr.300",
+    "maxSlugLength": 25,
+    "vocabSize": 127784
+  }
+}

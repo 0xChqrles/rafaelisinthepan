@@ -15,3 +15,4 @@ export * from './avatarOutline';
 export * from './assigned';
 export * from './invite';
 export * from './name';
+export * from './vocab';

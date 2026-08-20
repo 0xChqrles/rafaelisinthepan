@@ -500,7 +500,7 @@ def test_main_writes_the_puzzle_and_names_the_substitution(monkeypatch, tmp_path
     monkeypatch.setattr(FR["module"], "build_vocab", lambda _kv: VOCAB, raising=False)
     monkeypatch.setattr(FR["module"], "build_matrix", lambda _kv, _v: object(), raising=False)
     _stub_closest(monkeypatch)
-    monkeypatch.setattr(gen_phrase, "write_vocab", lambda _v, _lang: None)
+    monkeypatch.setattr(gen_phrase, "write_vocab", lambda *_a, **_k: None)
     monkeypatch.setattr(gen_phrase, "load_lemma_table", lambda _lang, disabled=False: TABLE)
     monkeypatch.setattr(gen_phrase.sys.stdin, "isatty", lambda: False, raising=False)
     monkeypatch.setattr(gen_phrase.sys, "argv", [
