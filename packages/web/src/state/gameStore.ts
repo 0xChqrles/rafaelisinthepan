@@ -5,8 +5,8 @@ import { isLang, type Mode } from '../langs';
 import { runMs } from '../game/wordGame';
 
 // Which crowd the #190 leaderboard is showing: the friends graph (the trusted default)
-// or the global top 50. It lives here rather than in the screen because it is PERSISTED
-// preference, not view state — see `boardTab` below.
+// or the global top 50. It lives here rather than in the screen because the screen
+// remounts under it without the visit ending — see `boardTab` below.
 export type BoardTab = 'friends' | 'global';
 
 // A round is identified by its `roundKey` = (server day, language). The store keeps a
@@ -194,12 +194,15 @@ interface PersistedState {
   // The onboarding tutorial (#51) has been completed or skipped. Global, not
   // per-language — the mechanic is the same in both.
   onboarded: boolean;
-  // Which #190 board tab the player last looked at — FRIENDS (the trusted default) or
-  // GLOBAL. A PREFERENCE rather than view state (user feedback 2026-08-20): the screen
-  // remounts on every mode switch (App keys it on lang:mode) and on every refresh, and
-  // both were dropping a player who had chosen GLOBAL back onto FRIENDS. Persisted, so
-  // it survives the refresh half of that; global, because which crowd you like to read
-  // is not a property of one daily or one language.
+  // Which #190 board tab is up — FRIENDS (the trusted default) or GLOBAL. It belongs to
+  // the current VISIT to the leaderboard, not to the player (user feedback 2026-08-20,
+  // narrowing the first cut, which made it a standing preference). Two things remount
+  // that screen without ending the visit — a page REFRESH and a header MODE SWITCH (App
+  // keys it on lang:mode) — and both were dropping a player who had chosen GLOBAL back
+  // onto FRIENDS. So it is PERSISTED, which is the only way to survive the reload; and
+  // App RESETS it the moment a non-board route renders, which is what ends the visit.
+  // That reset lives in App rather than at each entry point precisely because an entry
+  // that forgot it would silently reopen on the old tab forever.
   boardTab: BoardTab;
   // The sentence game's one-time instructions gate has been passed (2026-08-11). Unlike
   // Word mode's gate — whose START is mandatory because it starts the clock — the sentence
@@ -248,8 +251,9 @@ interface GameState extends PersistedState {
   // Remember the last-played mode (#156, drives where `/` lands).
   setLastMode: (mode: Mode) => void;
 
-  // Remember which board tab was last read (#190).
+  // Which board tab is up (#190), and the end of a visit to it: FRIENDS again.
   setBoardTab: (tab: BoardTab) => void;
+  resetBoardTab: () => void;
 
   // Mark the onboarding tutorial as seen (finish AND skip both count — never re-nag).
   setOnboarded: () => void;
@@ -369,9 +373,11 @@ function freshRound(initialHoles: RuntimeHole[]): RoundProgress {
 //     gate. Older blobs get false — deliberately NOT grandfathered the way `onboarded`
 //     is, because the gate teaches the history tap, which is newer than any existing
 //     player's play state; every player sees it exactly once.
-//   v9 adds `boardTab` (2026-08-20): which #190 board tab was last read. Older blobs get
-//     'friends', the default the screen already opened on, so nothing changes for anyone
-//     already using it — the field only starts remembering from the first flip.
+//   v9 adds `boardTab` (2026-08-20): which #190 board tab is up. Older blobs get
+//     'friends', the default the screen already opens on, so nothing changes for anyone
+//     already using it. It is persisted only so a REFRESH does not end a visit to the
+//     board — App clears it on leaving one — so a stored 'global' is at most one
+//     interrupted visit old, never a preference to honour forever.
 export function migratePersisted(persisted: unknown, version: number): PersistedState {
   if (version < 1) {
     return {
@@ -444,6 +450,13 @@ export const useGameStore = create<GameState>()(
       setBoardTab: (tab) => {
         if (get().boardTab === tab) return;
         set({ boardTab: tab });
+      },
+
+      // Leaving the leaderboard ends the visit. Guarded like every other setter, so the
+      // non-board routes this fires on do not each rewrite the persisted blob.
+      resetBoardTab: () => {
+        if (get().boardTab === 'friends') return;
+        set({ boardTab: 'friends' });
       },
 
       setOnboarded: () => {

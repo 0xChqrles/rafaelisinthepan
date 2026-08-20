@@ -63,10 +63,11 @@ interface Me {
 }
 
 export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode }) {
-  // The tab is a PERSISTED preference, not view state (user feedback 2026-08-20): this
-  // screen remounts on every header mode switch (App keys it on lang:mode) and on every
-  // refresh, and local state dropped a player who had chosen GLOBAL back onto FRIENDS
-  // both times.
+  // The tab belongs to the VISIT, and it lives in the store because this screen remounts
+  // without the visit ending — a header mode switch (App keys it on lang:mode) and a page
+  // refresh both did, and local state dropped a player who had chosen GLOBAL back onto
+  // FRIENDS both times. LEAVING the leaderboard is what ends the visit, and App owns that
+  // reset (user feedback 2026-08-20).
   const tab = useGameStore((s) => s.boardTab);
   const setTab = useGameStore((s) => s.setBoardTab);
   const [me, setMe] = useState<Me | null>(null);

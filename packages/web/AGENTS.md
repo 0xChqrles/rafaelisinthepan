@@ -514,13 +514,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the ACTIVE day), `screens/Leaderboard.tsx`, entered from the game header's crown
   icon (recorded in the header bullet). FRIENDS is the default tab — the trusted
   surface — GLOBAL the top-50 untrusted one; the header's ModeTabs switch WHICH
-  daily's board, the in-screen tabs WHOSE scores. **WHICH TAB is a PERSISTED
-  PREFERENCE, not view state** (user feedback 2026-08-20): the screen remounts on every
-  header mode switch (App keys it on lang:mode) and on every refresh, and local state
-  dropped a player who had chosen GLOBAL back onto FRIENDS both times. It lives in the
-  store as `boardTab` (persist **v9**; older blobs get 'friends', the default the screen
-  already opened on) and is global rather than per (lang, mode) — which crowd you like to
-  read is not a property of one daily or one language. **THE DAY IS A LIVE VALUE**
+  daily's board, the in-screen tabs WHOSE scores. **WHICH TAB belongs to a VISIT — not
+  to the screen, and NOT to the player** (user feedback 2026-08-20, in two passes; the
+  first cut made it a standing preference and the user narrowed it). Two things remount
+  this screen WITHOUT ending the visit — a page REFRESH and a header MODE SWITCH (App
+  keys it on lang:mode) — and local state dropped a player who had chosen GLOBAL back
+  onto FRIENDS both times. So it lives in the store as `boardTab` (persist **v9**, which
+  is the only way to survive the reload; older blobs get 'friends', the default the
+  screen already opens on), and **App RESETS it the moment a NON-BOARD route renders**,
+  which is what ends a visit: leaving the leaderboard and coming back opens on FRIENDS,
+  the trusted default. That reset lives in App rather than at each entry point precisely
+  because an entry that forgot it would silently reopen on a stale tab forever, and
+  there is more than one way onto this screen. A stored 'global' is therefore at most one
+  interrupted visit old (a killed tab), never a preference to honour forever — the first
+  non-board route of the next session clears it. **THE DAY IS A LIVE VALUE**
   (corrected 2026-08-20 on review): the screen reads `useToday` — the app's one day
   signal, which re-fires at the DST-correct 22:00-ET reset AND on a visibility flip —
   rather than stamping `activeDate(new Date())` at fetch time, because a board is left
