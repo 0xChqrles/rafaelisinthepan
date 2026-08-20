@@ -5059,10 +5059,12 @@ button * {
 
 /* ---- The LEADERBOARD screen (#190): friends board first, global top 50 as the
    untrusted tab. A full-height column in the app's chrome voice — glass rows on
-   hairlines, hierarchy in weight and opacity (ONE ink; --muted stays on game
-   surfaces) — with the game's numbers (ranks, scores) in the pixel face, since a
-   score is something the game produced. The OWN row wears the app's one emphasis
-   gesture, the inverted selection box. ---- */
+   hairlines, primary `--fg` for what matters and plain `--muted` for SECONDARY text
+   and icons (user-decided 2026-08-20, amending the one-ink rule: never `--fg` +
+   opacity for a resting secondary; opacity stays an interaction treatment) — with
+   the game's numbers (ranks, scores) in the pixel face, since a score is something
+   the game produced. The OWN row wears the app's one emphasis gesture, the inverted
+   selection box. ---- */
 .board-screen {
   width: min(430px, 100%);
   align-self: stretch;
@@ -5099,9 +5101,10 @@ button * {
 /* An uncustomized player reads as their PSEUDONYM (anonName — a deterministic
    pronounceable name derived from the publicId; user feedback 2026-08-20, replacing
    the raw id, which read as a machine talking). It looks like a name, so it keeps the
-   name's own size and weight — only quieter, whispering "placeholder". */
+   name's own size and weight — only quieter, in the plain SECONDARY ink (user-decided
+   2026-08-20: secondary text and icons wear `--muted`, never `--fg` + opacity). */
 .board-me-name.anon {
-  opacity: 0.55;
+  color: var(--muted);
 }
 /* The EDIT chip: the quiet hairline chip (the profile CLEAR's own recipe) — it leads
    away, so it never competes with the board. */
@@ -5151,22 +5154,21 @@ button * {
   margin: auto;
 }
 /* The empty state: a sad pixel ghost over a terse line (user feedback 2026-08-20 —
-   the long sentence said less than the ghost does). One dim block, centered by the
-   body's auto margins. */
+   the long sentence said less than the ghost does). One block in the plain SECONDARY
+   ink — the ghost inherits it through its mask — centered by the body's auto margins. */
 .board-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 16px;
-  color: var(--fg);
-  opacity: 0.45;
+  color: var(--muted);
   text-align: center;
 }
 /* The ghost is the USER'S OWN pixel art (assets/ghost.png, 13x18) and it TINTS LIKE AN
    ICON: the sprite is a pure black-on-transparent silhouette, so it is painted through
    a CSS MASK in `currentColor` — the strike sheets' technique (see `.word-slash`) —
-   which is what lets it wear this block's dim foreground instead of shipping its own
-   ink. At an EXACT INTEGER SCALE (4x = 52x72) with `image-rendering: pixelated`, the
+   which is what lets it wear this block's secondary ink instead of shipping its own.
+   At an EXACT INTEGER SCALE (4x = 52x72) with `image-rendering: pixelated`, the
    app's standing pixel-art rule: whole multiples alone are not enough, since bilinear
    blends every destination pixel that misses a texel centre. The scale is therefore
    the one dimension this can be tuned in. */
@@ -5211,8 +5213,7 @@ button * {
   font-weight: 500;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--fg);
-  opacity: 0.45;
+  color: var(--muted);
   padding: 0 12px 2px 0;
 }
 
@@ -5235,12 +5236,12 @@ button * {
   display: block;
   border-radius: var(--r-sm);
 }
-/* The rank is the game's own number — pixel face, quiet: the row is about the player. */
+/* The rank is the game's own number — pixel face, quiet: the row is about the player,
+   so the number wears the secondary ink. */
 .board-rank {
   font-family: var(--pixel-font);
   font-size: 9px;
-  color: var(--fg);
-  opacity: 0.5;
+  color: var(--muted);
   /* The pixel face rides high off the mono around it (the standing line's rule):
      whole pixels only, via translate. */
   translate: 0 1px;
@@ -5255,9 +5256,9 @@ button * {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* The pseudonym: a name-shaped placeholder, so only the opacity says so. */
+/* The pseudonym: a name-shaped placeholder, so only the secondary ink says so. */
 .board-name.anon {
-  opacity: 0.55;
+  color: var(--muted);
 }
 .board-score {
   font-family: var(--pixel-font);
@@ -5267,13 +5268,12 @@ button * {
 }
 /* No rank yet (a waiting friend): a small solid tick, CENTERED in the rank column
    (user feedback 2026-08-20, second pass — the pixel hyphen sat left and thin), so
-   the cell never reads as a rendering hole. */
+   the cell never reads as a rendering hole. Secondary ink, like the ranks around it. */
 .board-norank {
   justify-self: center;
   width: 12px;
   height: 3px;
-  background: var(--fg);
-  opacity: 0.35;
+  background: var(--muted);
 }
 /* Holds the identity strip's layout for the beat before the id derives. */
 .board-me-slot {
@@ -5323,8 +5323,7 @@ button * {
   font-weight: 500;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--fg);
-  opacity: 0.45;
+  color: var(--muted);
 }
 .board-section::before,
 .board-section::after {
@@ -5386,8 +5385,7 @@ button * {
   font-weight: 500;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--fg);
-  opacity: 0.55;
+  color: var(--muted);
 }
 .invite-done .mix-btn {
   width: 100%;

@@ -213,6 +213,13 @@ These are decided and verified against the code. Treat them as load-bearing.
     survives only on GAME surfaces (the route drawing's dresses, the keyboard's control
     keys, the watermark) — with hierarchy carried by weight and opacity, never by a
     second grey; `--accent` keeps exactly its recorded accent roles.
+    **AMENDED 2026-08-20 (user-decided, on the leaderboard's review): SECONDARY text
+    and icons wear plain `--muted`, never `--fg` + opacity** — the board's rank
+    numbers, unit/section captions, pseudonyms, the empty-state ghost, the invite
+    confirmation's status line. Opacity remains an INTERACTION treatment (hover lifts,
+    resting tabs), not a colour; the one place still dimmed by opacity is ink on the
+    INVERTED selection box, where no secondary token exists (`--muted` on paper
+    ground is near-invisible).
     The HEADER's icons are the LUCIDE stroke set as `.ui-icon`s (user-picked 2026-08-18:
     calendar, circle-help, x, fast-forward, and LANGUAGES — the 文/A translation mark —
     for the language control, replacing the globe; 24-grid, 1.8px, currentColor, 28px
@@ -489,7 +496,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the name (`anonName.ts` — `SwiftFalcon84`-style AdjectiveNoun## derived from the
   publicId, superseding the same-day syllable names, which didn't read as usernames;
   length-budgeted under the shared 16-char cap and always `sanitizeName`-stable;
-  name-shaped, so only the dim says "placeholder") and a generated MARK as the avatar
+  name-shaped, so only the secondary ink says "placeholder") and a generated MARK as the avatar
   (`defaultAvatar.ts` — a mirrored 10×10 creature + palette from the id hash, the
   seeder's proven recipe, superseding the dashed empty frame). Both are DISPLAY-ONLY
   pure functions of the publicId — identical on every surface and device, nothing
@@ -505,7 +512,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   less than the drawing does): `assets/ghost.png` (13×18), and it **TINTS LIKE AN
   ICON** — the sprite is a pure black-on-transparent silhouette, so `.board-ghost`
   paints it through a CSS MASK in `currentColor` (the strike sheets' technique) rather
-  than drawing it as an image, which is what lets it wear the block's dim foreground;
+  than drawing it as an image, which is what lets it wear the block's `--muted` ink;
   at an exact integer scale (4× = 52×72) with `image-rendering: pixelated`, the
   standing pixel-art rule (measured on the rendered output: 97% of source texels land
   as uniform blocks). The line is per TAB — `NO FRIENDS` on the friends board, since
