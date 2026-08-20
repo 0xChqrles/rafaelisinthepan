@@ -159,12 +159,12 @@ function Round({
   const improveHole = useGameStore((s) => s.improveHole);
   const syncProgress = useGameStore((s) => s.syncProgress);
   const recordSolve = useGameStore((s) => s.recordSolve);
-  const markScoreSubmitted = useGameStore((s) => s.markScoreSubmitted);
+  const markScoreRecorded = useGameStore((s) => s.markScoreRecorded);
   // The POST may finish after this screen has left. Bind its completion to THIS round so
   // it cannot mark whichever day happens to be active at response time.
-  const markThisScoreSubmitted = useCallback(
-    (recorded: number | null) => markScoreSubmitted(roundKey, recorded ?? undefined),
-    [markScoreSubmitted, roundKey],
+  const markThisScoreRecorded = useCallback(
+    (recorded: number) => markScoreRecorded(roundKey, recorded),
+    [markScoreRecorded, roundKey],
   );
 
   // The client's active game day (local, DST-correct) — the streak's reference point. May
@@ -249,14 +249,14 @@ function Round({
   const solved = holes.every((h) => h.rank === 0); // sentence discovered -> round over
   const allWordsResolved = solved && resolvedHoleIndices.size === holes.length;
 
-  // The day's score population (#170): a fresh solve POSTs this round's try count once
-  // (the persisted scoreSubmitted flag guards revisits, which GET instead), and the
-  // result renders on the solved screen only. Started as soon as the store reports the
-  // round solved, so the network round trip runs behind the solving choreography.
+  // The day's score population (#170): a fresh solve POSTs this round's try count (the
+  // persisted scoreRecorded turns every later visit into a read-only GET, and its ABSENCE
+  // is what lets a refused or failed submission try again), and the result renders on the
+  // solved screen only. Started as soon as the store reports the round solved, so the
+  // network round trip runs behind the solving choreography.
   const placement = useScoreHistogram({
     finished: solved,
-    submitted: live?.scoreSubmitted === true,
-    markSubmitted: markThisScoreSubmitted,
+    markRecorded: markThisScoreRecorded,
     mode: 'sentence',
     lang,
     dayNumber,

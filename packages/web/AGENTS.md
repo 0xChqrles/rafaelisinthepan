@@ -1835,8 +1835,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   2026-08-15 — see below):** both modes' result stacks show where the finished score sits
   in the day's anonymous population (#169), above the mode's own metrics and SHARE — the
   comparison story that replaced the removed LLM benchmark.
-  ONE rule for the round trip (`hooks/useScoreHistogram`): a FINISHED round that has not
-  submitted POSTs its score once — carrying an invisible Turnstile token (`turnstile.ts`,
+  ONE rule for the round trip (`hooks/useScoreHistogram`): a FINISHED round whose score the
+  population does not hold POSTs it — carrying an invisible Turnstile token (`turnstile.ts`,
   the only module that knows Turnstile exists, the analytics.ts pattern; site key
   `VITE_TURNSTILE_SITE_KEY`, .env.example ships Cloudflare's always-passing invisible TEST
   key for local play, while production's required GitHub repo variable is injected by
@@ -1855,21 +1855,26 @@ it to the local store — see `packages/backend/AGENTS.md`).
   generated on this first need, sent in the body as the round's identity — the server
   keys the day's one first-write-wins row by the publicId it derives from it — and the
   POST's response IS the histogram (one round trip on the happy path);
-  a round already submitted GETs the read-only twin on revisits — locating the standing by
-  the persisted `scoreRecorded` (#187) and by it ALONE: the population is first-write-wins
-  per player, so a duplicate submission (another device/tab under one key) is answered
-  with the STORED row's score, which a 2xx persists beside the flag. A submitted round
-  WITHOUT a recorded score is one the server refused (or a pre-#187 round, whose old
-  population is gone), and its revisit shows no standing at all — never a local-count
-  fallback, which could place the refused player in a band another player recorded. The `scoreSubmitted` flag
-  persists ON the round (both round shapes, optional field — no store version bump), and is
-  marked when the server reaches a **VERDICT** — accepted (2xx) or refused (4xx) alike,
-  either way the conversation is over. Anything that is merely the backend FAILING leaves it
-  unset so a later visit may retry: a transport/Turnstile error that throws, and **a 5xx
-  (corrected 2026-08-16 — the flag used to be set on any answer at all)**. That distinction
-  is load-bearing rather than pedantic: a round has ONE submission, the visit that spends it
-  cannot be repeated, and burning it on a cold start or a throttled write drops that score
-  from the day's population for good. It is also what lets a Word
+  a round the population already HOLDS GETs the read-only twin on revisits — locating the
+  standing by the persisted `scoreRecorded` (#187) and by it ALONE: the population is
+  first-write-wins per player, so a duplicate submission (another device/tab under one key)
+  is answered with the STORED row's score, which is what a 2xx persists. **`scoreRecorded`
+  is the WHOLE state machine, and a round asks until the population HOLDS it (user-decided
+  2026-08-20, RETIRING the `scoreSubmitted` flag and the VERDICT rule with it — store
+  **v10** strips the field).** Present, the round is settled and every later visit only ever
+  GETs; ABSENT, the round still owes its score and the next visit to its solved screen POSTs
+  again — a refusal included, where the flag used to end the conversation on any 4xx.
+  The refusal that made this wrong is the **403**: Turnstile refusing the REQUEST is not the
+  server judging the SCORE, and `turnstileToken()` builds a fresh widget on every call, so
+  the retry asks with a token that can actually pass — where before, that player was
+  silently out of the day's population for good, on a visit they cannot repeat. Re-asking is
+  safe BY CONSTRUCTION since #187: the row is first-write-wins, a duplicate consumes no IP
+  allowance, and a 400/403/404 returns before the store is touched at all — so the cost is a
+  handful of refused requests per stuck round per day. **The client flag was never the
+  anti-abuse boundary** (Turnstile, the IP cap, the range check and first-write-wins are);
+  it only ever bound the honest player. The store action is idempotent on the VALUE rather
+  than on having been called, which is what lets a retry's answer land: guarding on "already
+  answered once" is exactly what stranded the rounds it burned. It is also what lets a Word
   run whose clock died with the tab closed submit on the revisit that finds it over. The
   completion is keyed to the round that launched it (never whichever round navigation made
   active later), and an in-flight conversation is shared across real component remounts so

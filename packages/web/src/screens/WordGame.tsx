@@ -135,12 +135,12 @@ function WordRound({
   const ensureWordRound = useGameStore((s) => s.ensureWordRound);
   const startWordRun = useGameStore((s) => s.startWordRun);
   const recordWordGuess = useGameStore((s) => s.recordWordGuess);
-  const markWordScoreSubmitted = useGameStore((s) => s.markWordScoreSubmitted);
+  const markWordScoreRecorded = useGameStore((s) => s.markWordScoreRecorded);
   // The score request outlives this screen if the player navigates away. Keep its
   // completion attached to the round that launched it, never the next active Word day.
-  const markThisWordScoreSubmitted = useCallback(
-    (recorded: number | null) => markWordScoreSubmitted(roundKey, recorded ?? undefined),
-    [markWordScoreSubmitted, roundKey],
+  const markThisWordScoreRecorded = useCallback(
+    (recorded: number) => markWordScoreRecorded(roundKey, recorded),
+    [markWordScoreRecorded, roundKey],
   );
 
   // Reconcile before paint, like the sentence round: a matching key playing the same
@@ -176,13 +176,13 @@ function WordRound({
   const score = run.claimed.length;
 
   // The day's score population (#170): a run whose clock has died submits its claim count
-  // once — including a run that ended while the tab was closed, whose first submission
-  // happens on the revisit that finds it over — and the persisted scoreSubmitted flag
-  // turns every later visit into a read-only GET. Renders on the post-mortem only.
+  // — including a run that ended while the tab was closed, whose first submission happens
+  // on the revisit that finds it over — and the persisted scoreRecorded turns every later
+  // visit into a read-only GET, while its ABSENCE lets a refused or failed submission try
+  // again. Renders on the post-mortem only.
   const placement = useScoreHistogram({
     finished: ended,
-    submitted: live?.scoreSubmitted === true,
-    markSubmitted: markThisWordScoreSubmitted,
+    markRecorded: markThisWordScoreRecorded,
     mode: 'word',
     lang,
     dayNumber,
