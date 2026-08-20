@@ -476,10 +476,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `/join/<publicId>` (`screens/FriendInvite.tsx`) — global like `/profile`, since an
   identity is not language-scoped, and unchanged in every other way: the preview cannot
   touch the graph, because the edge needs the CLICKER's key and the clicker's device is
-  the only place it exists. Note the local-dev consequence, which is `/s/<token>`'s
-  already: there is no CDN in front of `pnpm dev`, so a shared `/i/` link does not resolve
-  there — visit the landing (`pnpm board:seed` prints those) or point a browser at
-  `backend:dev`, which honours `WHIPPIN_SITE` as the origin its preview pages bounce to.
+  the only place it exists. **THE DEV SERVER PROXIES `/i/*` (with `/s/*` and `/og/*`) to
+  the local backend** — `vite.config.ts`, the CDN's own behavior list restated, so a
+  pasted link walks the same two steps locally that it does in production. It did not at
+  first, and the failure had NO symptom (user-reported 2026-08-20): the SPA fallback
+  answered `/i/<id>` with index.html, `parseRoute` saw a path it no longer owned, and the
+  click landed on the game with nothing said and no edge written. Two details are
+  load-bearing there — the proxy list must move with `web-stack.ts`'s
+  `additionalBehaviors`, and `changeOrigin`/`xfwd` are pinned OFF (Vite's string shorthand
+  does not leave them off) so the backend, which has no `siteOrigin` locally, reads the
+  BROWSER's Host and bounces to the app rather than to itself.
   The landing POSTs `{secret, add}` with the player key
   (`identity.ts`, generated on this first need, which is what lands the edge before a
   brand-new visitor's first game) and **a SUCCESSFUL add is CONFIRMED on screen**

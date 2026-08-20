@@ -196,7 +196,10 @@ export class WebStack extends Stack {
       // link — which is exactly what made every invite unfurl as the app's stock card.
       // The SPA still owns the invite's LANDING, /join/<publicId> (shared/invite.ts): the
       // backend page renders the preview and bounces there, so the click's actual work
-      // stays client-side. Adding a pattern here TAKES that path away from the SPA.
+      // stays client-side. Adding a pattern here TAKES that path away from the SPA — and
+      // it must be added to `web/vite.config.ts`'s dev proxy in the same breath, or the
+      // path works in exactly one of the two environments (that is how a pasted invite
+      // link came to do nothing at all locally, 2026-08-20).
       additionalBehaviors: cardBehavior
         ? { '/s/*': cardBehavior, '/og/*': cardBehavior, '/i/*': cardBehavior }
         : undefined,

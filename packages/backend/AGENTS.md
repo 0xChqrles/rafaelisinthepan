@@ -133,10 +133,13 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   loosely and validated with the shared `PUBLIC_ID_PATTERN`, so a malformed one is a 404
   that never reaches the store; the profile read is best-effort like a board row's, and a
   read that FAILED answers `no-store` where an honest 404 ("never customized") caches for
-  300s. `siteOrigin` is what both preview pages bounce to — `backend:dev` reads it from
-  `WHIPPIN_SITE` so a local page can send a human to the Vite dev server rather than to
-  itself. The CDN wiring is the WEB distribution's (`infra/lib/web-stack.ts` routes
-  `/i/*` to the API origin beside `/s/*` and `/og/*`), not this stack's.
+  300s. `siteOrigin` is what both preview pages bounce to, and `backend:dev` sets NONE:
+  the handler falls back to the REQUEST's Host, and the web dev server proxies these
+  paths here without rewriting it (`web/vite.config.ts`), so a page served through the
+  proxy addresses the app rather than this server. The CDN wiring is the WEB
+  distribution's (`infra/lib/web-stack.ts` routes `/i/*` to the API origin beside `/s/*`
+  and `/og/*`), not this stack's — and the dev proxy is that list restated, so the two
+  move together.
 - **Friends graph (#189):** the ONE handler also serves `POST /friends` — and ONLY POST
   (a GET is a named 405): the player key authenticates in the BODY, so there is no way to
   ask for a list without proving whose it is. `{secret}` reads the caller's edges,

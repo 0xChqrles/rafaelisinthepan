@@ -65,5 +65,35 @@ export default defineConfig(({ command, mode }) => {
       },
     ],
     define: { __BUILD_ID__: JSON.stringify(build) },
+    // THE CDN'S OWN PATH LIST, restated for local development. In production the WEB
+    // distribution hands these three patterns to the API origin instead of the bucket
+    // (infra/lib/web-stack.ts `additionalBehaviors`): `/s/*` the share page, `/og/*`
+    // every card image, and `/i/*` #189's invite link, which the backend renders so it
+    // unfurls in a chat as the sender's own mark and name.
+    //
+    // Without this the dev server's SPA fallback answers them with index.html and the
+    // app's router sees a path it no longer owns — a pasted invite link silently lands
+    // on the game with no edge recorded, which is exactly what it looked like
+    // (user-reported 2026-08-20). Keep this list in step with the behaviors there; a
+    // pattern added on one side and not the other is a route that works in exactly one
+    // of the two environments.
+    //
+    // `changeOrigin` and `xfwd` are pinned OFF, and that is the load-bearing half.
+    // With no siteOrigin configured the backend builds its redirect and its og:image
+    // URLs from the REQUEST's Host, so forwarding the browser's own Host is what makes
+    // those absolute URLs point back at this dev server. Vite's string shorthand
+    // (`'^/i/': apiBase`) does NOT leave them off — measured: the invite page came back
+    // redirecting to `http://localhost:8787/join/…`, the backend rather than the app,
+    // which is a dead end wearing a working page's clothes. Hence the explicit object.
+    server: apiBase
+      ? {
+          proxy: Object.fromEntries(
+            ['^/i/', '^/s/', '^/og/'].map((pattern) => [
+              pattern,
+              { target: apiBase, changeOrigin: false, xfwd: false },
+            ]),
+          ),
+        }
+      : undefined,
   };
 });

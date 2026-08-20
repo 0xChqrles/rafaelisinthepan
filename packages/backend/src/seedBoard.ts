@@ -23,7 +23,7 @@ import {
   AVATAR_CELLS,
   VIEWER_IP_HEADER,
   encodeAvatar,
-  inviteLandingPath,
+  invitePath,
   publicIdFromSecret,
 } from '@whippin/shared';
 import { defaultLocalStoreRoot } from './layout';
@@ -179,15 +179,15 @@ async function main() {
   }
 
   console.log(`[seed] done — ${LANG} ${MODE} board for ${date} holds 60 scores.`);
-  // The invite LANDING, not the shared `/i/<publicId>` link: the shared one is served by
-  // the backend through the CDN's `/i/*` behavior (that is what gives it a preview), and
-  // there is no CDN in front of a local `pnpm dev`. The landing is the SPA route that
-  // does the actual work, so these are what a local click needs.
+  // The REAL shared link (`/i/<publicId>`), preview and all: the dev server proxies
+  // `/i/*` to this backend exactly as the CDN does in production (web/vite.config.ts),
+  // so a local click walks the same two steps a pasted link does. Set WHIPPIN_SITE if
+  // your dev server is not on the port below.
   console.log('[seed] invite links (click one in the app to land that seed on your friends board):');
   for (const i of [11, 33, 61]) {
     const id = await publicIdFromSecret(secretOf(i));
     const label = i === 61 ? 'has NOT played today' : 'has played';
-    console.log(`[seed]   ${SITE}${inviteLandingPath(id)}   (${NAMES[i % NAMES.length]}, ${label})`);
+    console.log(`[seed]   ${SITE}${invitePath(id)}   (${NAMES[i % NAMES.length]}, ${label})`);
   }
 }
 
