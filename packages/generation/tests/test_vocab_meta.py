@@ -7,12 +7,17 @@
     (`embedding` + `builtAt`);
   - `embedding` names the corpus, not the file: the raw source and its `_reduced`
     output answer the same name, so reduce / gen_phrase / build_vocab agree;
-  - a language's entry is updated ALONE — the other one is kept;
+  - a language's entry is updated ALONE — the other one is kept, and a file that will
+    not parse is refused rather than silently rewritten without it;
+  - a REDIRECTED existence set takes its record with it, so a run pointed away from
+    web/public leaves nothing in packages/shared;
   - an unchanged rebuild keeps its recorded `builtAt`, so re-running the pipeline over
     the same corpus leaves the committed file byte-identical.
 """
 
 import json
+
+import pytest
 
 import slug as slug_mod  # noqa: E402  (importable via conftest's sys.path)
 
@@ -105,8 +110,59 @@ def test_a_changed_vocabulary_redates_the_entry(tmp_path):
     assert swapped["fr"]["builtAt"] != "2020-01-01"
 
 
-def test_an_unreadable_file_is_replaced_rather_than_fatal(tmp_path):
-    # It is an OUTPUT: the run that can write it correctly just does.
-    (tmp_path / "vocab.generated.json").write_text("{ not json", encoding="utf-8")
+def test_a_missing_file_is_the_ordinary_cold_start(tmp_path):
+    # Nothing to keep, so the run that is about to write it just does.
     meta = _meta(tmp_path, ["forêt"], "fr", "/e/fr/cc.fr.300.vec")
     assert meta["fr"]["vocabSize"] == 1
+
+
+def test_an_unreadable_file_fails_loud_rather_than_dropping_a_language(tmp_path):
+    # The file carries BOTH languages and a run rebuilds ONE, so "unparseable means
+    # empty" would write en out of existence — and a language absent from the record is
+    # a 400 on every live route for it. A conflict-markered merge is how a committed
+    # file realistically stops parsing; the repair is restoring it, not overwriting it.
+    path = tmp_path / "vocab.generated.json"
+    path.write_text("{ not json", encoding="utf-8")
+
+    with pytest.raises(SystemExit):
+        _meta(tmp_path, ["forêt"], "fr", "/e/fr/cc.fr.300.vec")
+    assert path.read_text(encoding="utf-8") == "{ not json"  # left for the human
+    # And it failed BEFORE the set moved: the pair is one statement about one
+    # vocabulary, so a refused record must not leave a rewritten set beside it.
+    assert not (tmp_path / "vocab" / "fr.json").exists()
+
+
+def test_a_non_object_file_fails_loud_too(tmp_path):
+    (tmp_path / "vocab.generated.json").write_text("[]", encoding="utf-8")
+    with pytest.raises(SystemExit):
+        _meta(tmp_path, ["forêt"], "fr", "/e/fr/cc.fr.300.vec")
+
+
+# --- a redirected set takes its record with it --------------------------------------
+
+def test_redirecting_the_set_redirects_its_metadata(tmp_path, monkeypatch):
+    # `--vocab-dir` alone must isolate a run COMPLETELY: an experiment that keeps its
+    # existence set out of web/public must not leave that set's numbers in the real
+    # packages/shared, where the backend reads its score ceiling.
+    default = tmp_path / "committed" / "vocab.generated.json"   # stands in for the real one
+    monkeypatch.setattr(slug_mod, "VOCAB_META_PATH", str(default))
+    vocab_dir = tmp_path / "scratch"
+
+    slug_mod.write_vocab(["forêt", "chevaux"], "fr", "/e/fr/cc.fr.300.vec",
+                         vocab_dir=str(vocab_dir))
+
+    # The set landed in the redirect, and its record landed BESIDE it.
+    assert (vocab_dir / "fr.json").exists()
+    beside = json.loads((vocab_dir / "vocab.generated.json").read_text(encoding="utf-8"))
+    assert beside["fr"]["vocabSize"] == 2
+    assert not default.exists()          # the committed location was never touched
+
+
+def test_an_explicit_meta_path_still_wins_over_the_redirect(tmp_path):
+    vocab_dir = tmp_path / "scratch"
+    explicit = tmp_path / "elsewhere.json"
+    slug_mod.write_vocab(["forêt"], "fr", "/e/fr/cc.fr.300.vec",
+                         vocab_dir=str(vocab_dir), meta_path=str(explicit))
+
+    assert json.loads(explicit.read_text(encoding="utf-8"))["fr"]["vocabSize"] == 1
+    assert not (vocab_dir / "vocab.generated.json").exists()

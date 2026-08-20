@@ -26,7 +26,11 @@ from gen_phrase import CONFIG, build_lang_vocab, write_vocab
 
 
 def main():
-    p = argparse.ArgumentParser(description="Réécrit web/public/vocab/<lang>.json depuis les vecteurs réduits.")
+    # --help is the only text an operator checking what this touches will read, so it
+    # names BOTH files it rewrites — the second one lives in another package.
+    p = argparse.ArgumentParser(
+        description="Réécrit web/public/vocab/<lang>.json et ses métadonnées "
+                    "packages/shared/src/vocab.generated.json depuis les vecteurs réduits.")
     p.add_argument("--lang", choices=("en", "fr"), required=True)
     args = p.parse_args()
 

@@ -1,6 +1,7 @@
 // What each language's existence set IS (#200) — the facts a consumer needs about a
-// vocabulary it never loads. The backend bounds a score and a stored guess by these; the
-// set itself is a 1.6 MB web asset only the SPA fetches.
+// vocabulary it never loads. The backend bounds a sentence score by `vocabSize` and
+// takes the languages it serves from this record's keys; the set itself is a 1.6 MB web
+// asset only the SPA fetches.
 //
 // `vocab.generated.json` is written by GENERATION, in the same call that writes the set
 // (`slug.write_vocab`), from the same slugs — so the two describe one vocabulary by
@@ -28,8 +29,10 @@ export interface VocabBuild {
   // Distinct slugs in the existence set. A sentence score counts distinct
   // vocabulary-valid tries, so this is that score's ceiling.
   vocabSize: number;
-  // The longest key in it — no valid guess can be longer, so it is the length cap to
-  // enforce on a stored guess.
+  // The longest key in it — no valid guess can be longer, so it is the length cap for a
+  // stored guess. EMITTED AHEAD OF ITS CONSUMER: nothing reads it yet, because nothing
+  // stores guesses yet (#199). The same pass measures it either way, so recording it now
+  // costs nothing — but it is not a bound anything currently enforces.
   maxSlugLength: number;
 }
 

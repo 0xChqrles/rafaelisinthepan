@@ -94,9 +94,11 @@
   the derivation test pins a vector for exactly that reason.
 - **`src/vocab.generated.json` is the ONE file in this package nobody writes by hand
   (#200).** GENERATION emits it, in the same call that writes the existence set and from
-  the same slugs, so what the backend enforces (the sentence score ceiling, the
-  guess-length cap, which languages are supported) can never describe a vocabulary the
-  client no longer loads. It lives HERE for the deploy mapping: `deploy.yml` already fans
+  the same slugs, so what the backend enforces — the sentence score ceiling, and by the
+  record's key set which languages are supported — can never describe a vocabulary the
+  client no longer loads. (`maxSlugLength` ships with them but has NO reader: it is the
+  cap for a stored guess, and nothing stores guesses yet — see the root `AGENTS.md`.)
+  It lives HERE for the deploy mapping: `deploy.yml` already fans
   `shared` out to both stacks, so a regenerated vocabulary ships its numbers to the
   server through a path that exists — the reason, and the `builtAt`/`embedding`
   semantics, are in the root `AGENTS.md`. `src/vocab.ts` only types it (`VOCAB_BUILDS`).

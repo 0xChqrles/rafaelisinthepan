@@ -339,8 +339,14 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   itself (`web/public/vocab/<lang>.json`) is a ~1.6 MB web asset the SPA fetches; the
   server never loads it, but it must bound things by it. Per language: **`vocabSize`**
   (distinct slugs — a sentence score counts distinct vocabulary-valid tries, so this is
-  that score's ceiling), **`maxSlugLength`** (the longest key — the length cap on a
-  stored guess), and the corpus build that produced it, **`embedding` + `builtAt`**.
+  that score's ceiling), **`maxSlugLength`** (the longest key), and the corpus build that
+  produced it, **`embedding` + `builtAt`**.
+  **Only `vocabSize` has a reader today** — the live routes' sentence ceiling and, by its
+  key set, what counts as a supported `lang`. **`maxSlugLength` is EMITTED AHEAD OF ITS
+  CONSUMER:** it is the length cap for a stored guess, and this backend stores no guesses
+  yet (#199). Recording it now costs nothing — it is measured by the same pass either way
+  — but nothing enforces it, so don't read this bullet as describing a server behavior
+  that exists.
 - **It is GENERATED, never hand-written**, and by the very call that writes the set
   (`slug.write_vocab`, from the same slugs), so the two describe one vocabulary by
   construction — every command that can refresh the set (`reduce`, `gen:phrase`,

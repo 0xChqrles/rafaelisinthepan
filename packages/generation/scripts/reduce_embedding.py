@@ -174,8 +174,9 @@ def main():
     p.add_argument("--vocab-dir", dest="vocab_dir",
                    help="dossier de sortie du vocab (défaut : web/public/vocab)")
     p.add_argument("--meta-path", dest="meta_path",
-                   help="fichier de sortie des métadonnées du vocab "
-                        "(défaut : packages/shared/src/vocab.generated.json)")
+                   help="fichier de sortie des métadonnées du vocab (défaut : "
+                        "packages/shared/src/vocab.generated.json, ou le dossier de "
+                        "--vocab-dir quand celui-ci est redirigé)")
     args = p.parse_args()
 
     if not os.path.exists(args.input):

@@ -244,8 +244,9 @@ def test_no_dico_flag_disables_the_rule(monkeypatch, tmp_path):
 def test_reduce_emits_slugged_vocab_of_kept_words(monkeypatch, tmp_path):
     # reduce writes the front's existence set in the SAME pass: the slugged, deduped,
     # sorted set of exactly the KEPT words (post-filter) — accents folded to the slug.
-    # --meta-path keeps the metadata (#200) out of the real packages/shared, exactly as
-    # --vocab-dir keeps the set out of the real web/public.
+    # --meta-path names the metadata's destination explicitly (#200). It is not what
+    # keeps this run out of the repo — --vocab-dir alone already redirects the record
+    # with the set (test_vocab_meta.py) — so passing it here exercises the flag.
     src = tmp_path / "src.vec"
     src.write_text("999 2\n" + "".join(
         f"{w} 0 0\n" for w in ["forêt", "gksudo", "chevaux", "le", "arc-en-ciel"]

@@ -18,6 +18,12 @@ export const LIVE_BODY_MAX_BYTES = 4_096;
 // The puzzle route's future guard, applied to the day-addressed live reads too.
 export const DATE_SKEW_DAYS = 1;
 
+// What the 400 tells the caller, spelled from the record the check reads rather than
+// restated — the drift this file's own guard exists to remove.
+const SUPPORTED_LANGS = Object.keys(VOCAB_BUILDS)
+  .map((lang) => `"${lang}"`)
+  .join(', ');
+
 // A guard either yields the validated value or the response to return as-is.
 export type Guarded<T> = { ok: true; value: T } | { ok: false; response: FnUrlResult };
 
@@ -101,7 +107,11 @@ export function requireDayParams(
       errorResponse(
         400,
         'bad_request',
-        'Query parameter "lang" must be a supported language ("en" or "fr").',
+        // Named from the SAME record the check reads. A hardcoded list is the one
+        // operator-visible signal of exactly the drift this record exists to remove:
+        // it would keep offering "en" or "fr" after the pipeline built a third
+        // language, and keep claiming a language is supported after one was dropped.
+        `Query parameter "lang" must be a supported language (${SUPPORTED_LANGS}).`,
         headers,
       ),
     );

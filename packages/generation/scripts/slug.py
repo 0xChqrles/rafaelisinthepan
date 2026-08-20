@@ -106,27 +106,42 @@ def corpus_name(path):
 
 
 def _read_meta(path):
-    """The metadata already on disk, or {} when there is nothing to keep.
+    """The metadata already on disk, or {} when the file does not exist yet.
 
-    A missing or unreadable file is REPLACED, never fatal: this is an OUTPUT of the
-    pipeline, and the run that is about to write it correctly should just do so."""
+    A MISSING file is the ordinary cold start: the run about to write it just does.
+    Anything else FAILS LOUD. The file holds BOTH languages and a run only ever rebuilds
+    one, so treating an unparseable file as empty would silently DROP the other
+    language's entry — and a language absent from the record is one the live routes
+    refuse (`Object.hasOwn(VOCAB_BUILDS, lang)`), which is a 400 on every /scores and
+    /board call for it. A conflict-markered merge is the realistic way a committed file
+    stops parsing, and the repair is restoring it, never overwriting half of it."""
+    if not os.path.exists(path):
+        return {}
     try:
         with open(path, encoding="utf-8") as f:
             existing = json.load(f)
-    except (OSError, ValueError):
-        return {}
-    return existing if isinstance(existing, dict) else {}
+    except (OSError, ValueError) as exc:
+        raise SystemExit(
+            f"Erreur : métadonnées du vocabulaire illisibles : {path}\n"
+            f"  {exc}\n"
+            "  Restaure le fichier avant de régénérer (git checkout) — il porte les deux "
+            "langues, et une seule est reconstruite par exécution.")
+    if not isinstance(existing, dict):
+        raise SystemExit(
+            f"Erreur : métadonnées du vocabulaire malformées (objet attendu) : {path}")
+    return existing
 
 
 def write_vocab_meta(slugs, lang, source, meta_path=None):
     """Record what the existence set of `lang` IS, into packages/shared (#200).
 
     One entry per language: the corpus build it came from (`embedding` + `builtAt`)
-    plus the two measurements the backend needs about a set it never loads —
-    `vocabSize` (a sentence score counts distinct vocabulary-valid tries, so the set's
-    size is that score's ceiling) and `maxSlugLength` (no valid guess is longer than
-    the longest key in it). Measured from the same `slugs` that were just written, so
-    the numbers cannot describe some other vocabulary.
+    plus two measurements of a set the backend never loads — `vocabSize` (a sentence
+    score counts distinct vocabulary-valid tries, so the set's size is that score's
+    ceiling, and the live score validator reads it) and `maxSlugLength` (no valid
+    guess is longer than the longest key in it — emitted ahead of its consumer, the
+    stored-guess cap of #199). Measured from the same `slugs` that were just written,
+    so the numbers cannot describe some other vocabulary.
 
     Only THIS language's entry is touched — the other is read back and kept, since a
     run only ever rebuilds one language. `builtAt` (UTC) dates the run that first
@@ -146,10 +161,18 @@ def write_vocab_meta(slugs, lang, source, meta_path=None):
         entry["builtAt"] = previous.get("builtAt", entry["builtAt"])
     meta[lang] = entry
 
+    # Written beside, then renamed: the destination is committed source that `tsc` and
+    # BOTH bundles read, so a torn write (Ctrl-C, disk full) would break a file nobody
+    # edited, and its repair — `git checkout` something labelled "generated" — is not
+    # what anyone tries first. os.replace is atomic within a filesystem, which also
+    # makes two concurrent language rebuilds resolve to one whole file instead of a
+    # half-merged one.
     os.makedirs(os.path.dirname(os.path.abspath(meta_path)), exist_ok=True)
-    with open(meta_path, "w", encoding="utf-8") as f:
+    tmp_path = f"{meta_path}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2, sort_keys=True)
         f.write("\n")  # it is committed TS source, read in diffs
+    os.replace(tmp_path, meta_path)
     print(f"Métadonnées ({lang}) : {entry['embedding']}, {entry['vocabSize']} slugs, "
           f"clé la plus longue {entry['maxSlugLength']} -> {meta_path}")
     return meta_path
@@ -167,8 +190,20 @@ def write_vocab(words, lang, source, vocab_dir=None, meta_path=None):
     two must describe one vocabulary: every command that can refresh the existence set
     — reduce, gen_phrase, build_vocab — goes through here, so none of them can move the
     set while leaving the backend's numbers behind. `source` is the embedding file this
-    vocabulary came from; raw or `_reduced`, both name the same corpus (corpus_name)."""
+    vocabulary came from; raw or `_reduced`, both name the same corpus (corpus_name).
+
+    A REDIRECTED set takes its record with it: pointing `vocab_dir` elsewhere writes the
+    metadata there too, so `--vocab-dir` alone fully isolates a run. Only a set written
+    to the served location describes the vocabulary the backend is bounding, and an
+    experiment must not leave its numbers in packages/shared."""
     vocab_dir = vocab_dir or WEB_VOCAB_DIR
+    if meta_path is None and os.path.abspath(vocab_dir) != WEB_VOCAB_DIR:
+        meta_path = os.path.join(vocab_dir, os.path.basename(VOCAB_META_PATH))
+    # Refuse an unreadable record BEFORE the set moves. The two writes are one statement
+    # about one vocabulary, so the failure has to land while nothing has changed — not
+    # after web/public holds a set whose record was rejected, which is the drift this
+    # pair exists to make impossible.
+    _read_meta(meta_path or VOCAB_META_PATH)
     slugs = sorted({s for s in (slug(w) for w in words) if s})
     os.makedirs(vocab_dir, exist_ok=True)
     out_path = os.path.join(vocab_dir, f"{lang}.json")

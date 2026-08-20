@@ -254,8 +254,12 @@ Consequences that are load-bearing:
   - **Vocab METADATA (#200)** — `packages/shared/src/vocab.generated.json`, written by
     that SAME `write_vocab` call from the same slugs: per language, `vocabSize`,
     `maxSlugLength` and the corpus build (`embedding` + `builtAt`). It is the BACKEND's
-    view of a set it never loads (score ceiling, guess-length cap, supported languages) —
-    the contract, and why it lives in `shared/`, is in the root `AGENTS.md`. Each caller
+    view of a set it never loads — today the sentence score ceiling and the supported
+    languages, with `maxSlugLength` emitted ahead of its consumer (the stored-guess cap,
+    #199) — the contract, and why it lives in `shared/`, is in the root `AGENTS.md`. A
+    redirected `--vocab-dir` takes the record with it, so an experimental run leaves
+    nothing in `packages/shared`; an existing file that will not PARSE is a hard error
+    (it carries both languages and a run rebuilds one). Each caller
     passes the embedding file its words came from; `corpus_name` names the build from
     either side of the reduction, so the record can't depend on which command ran. An
     unchanged rebuild keeps its `builtAt`, so the file stays byte-identical unless the

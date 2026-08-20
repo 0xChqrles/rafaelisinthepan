@@ -16,7 +16,14 @@ export function sentenceScoreMaximum(lang: string, _puzzle: Puzzle): number | nu
   // Puzzle presence is significant even though that ceiling is per language: the handler
   // loads this day's artifact before accepting a score, so an unpublished daily never gets
   // a histogram. The unused argument makes that contract explicit at the callsite.
-  return VOCAB_BUILDS[lang]?.vocabSize ?? null;
+  //
+  // `Object.hasOwn` and not an index read, the rule `vocab.ts` states and `liveRoute`'s
+  // lang guard follows: a bare `VOCAB_BUILDS[lang]` walks the prototype chain, so a
+  // `lang` of `constructor` or `toString` resolves to a function. It has no `vocabSize`
+  // today, which is why `?.` held — but that is the shape of the value saving us, not
+  // the lookup, and one map here answering a prototype key differently from the guard
+  // that admitted the request is exactly the drift worth spelling out of existence.
+  return Object.hasOwn(VOCAB_BUILDS, lang) ? VOCAB_BUILDS[lang].vocabSize : null;
 }
 
 export function wordScoreMaximum(puzzle: WordPuzzle): number {
