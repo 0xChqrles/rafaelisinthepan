@@ -220,6 +220,16 @@ interface GameState extends PersistedState {
   openTutorial: (kind: 'first' | 'replay') => void;
   closeTutorial: () => void;
 
+  // Where the #188 profile editor should return to (transient, NOT persisted), for the
+  // tutorialOpen reason: `/profile` is a GLOBAL route, so once it is open the board that
+  // opened it is no longer in the URL. Rebuilding the return from lastLang/lastMode
+  // guesses — those describe the last loaded GAME, so editing from the Word board could
+  // land the player back on the Sentence one, and a board opened before ever playing
+  // could come back in another language. The opener states its own route instead; an
+  // editor reached with nothing set (a deep link, a reload) falls back to the guess.
+  profileReturn: string | null;
+  setProfileReturn: (path: string | null) => void;
+
   // Remember the last-played language (drives the `/` redirect). Ignores non-languages.
   setLastLang: (lang: string) => void;
 
@@ -385,9 +395,11 @@ export const useGameStore = create<GameState>()(
       activeKey: null,
       activeWordKey: null,
       tutorialOpen: null,
+      profileReturn: null,
 
       openTutorial: (kind) => set({ tutorialOpen: kind }),
       closeTutorial: () => set({ tutorialOpen: null }),
+      setProfileReturn: (path) => set({ profileReturn: path }),
 
       setLastLang: (lang) => {
         if (!isLang(lang) || get().lastLang === lang) return;

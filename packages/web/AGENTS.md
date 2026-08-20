@@ -442,8 +442,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
   verbatim stores empty and renders the same text in the placeholder ink — the one
   accepted cost of the rule. The wired entry point is
   the leaderboard screen's EDIT chip (#190), and the header carries a CLOSE chip back
-  to `pathForBoard(lang, lastMode)` (user feedback 2026-08-20 — the screen was
-  unleavable).
+  to it (user feedback 2026-08-20 — the screen was unleavable) — **to the board that
+  actually opened it** (corrected 2026-08-20 on review): `/profile` is a GLOBAL route,
+  so that board's (lang, mode) is not in the URL, and rebuilding it from
+  `lastLang`/`lastMode` describes the last loaded GAME instead — editing from the Word
+  board landed you back on the Sentence one, and a board opened before ever playing
+  could return in another language. The opener states its own route in the transient
+  store (`profileReturn`, the `tutorialOpen` pattern — set by the EDIT chip, cleared on
+  use, never persisted); only an editor reached with nothing set (a deep link, a
+  reload) falls back to the old guess, which still lands on a board.
   **The avatar RENDERER is `components/Avatar.tsx` over `components/avatarOutline.ts`,
   and the tracer STAYS** (user-decided 2026-08-19 — the alternatives do not render the
   same on every browser; see the root `AGENTS.md`). Decoding and tracing are ONE
@@ -493,7 +500,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the ACTIVE day), `screens/Leaderboard.tsx`, entered from the game header's crown
   icon (recorded in the header bullet). FRIENDS is the default tab — the trusted
   surface — GLOBAL the top-50 untrusted one; the header's ModeTabs switch WHICH
-  daily's board, the in-screen tabs WHOSE scores. **One fetch per tab ACTIVATION, and
+  daily's board, the in-screen tabs WHOSE scores. **THE DAY IS A LIVE VALUE**
+  (corrected 2026-08-20 on review): the screen reads `useToday` — the app's one day
+  signal, which re-fires at the DST-correct 22:00-ET reset AND on a visibility flip —
+  rather than stamping `activeDate(new Date())` at fetch time, because a board is left
+  open across that flip routinely (a phone, overnight). A new day DROPS BOTH tabs'
+  caches, during render rather than in an effect, so yesterday's rows are never
+  committed under today's date and the refetch is already keyed on the new day.
+  **One fetch per tab ACTIVATION, and
   the OUTCOME is per tab** (both corrected 2026-08-20 on review): the route is a
   zero-TTL live read — its whole CloudFront behavior is `CACHING_DISABLED` because the
   data is live — so a tab flip re-reads rather than showing a snapshot from earlier in

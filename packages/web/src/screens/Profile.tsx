@@ -90,6 +90,9 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 export default function Profile() {
   const lastLang = useGameStore((s) => s.lastLang);
   const lastMode = useGameStore((s) => s.lastMode);
+  // Where the board that opened this editor lives — see the close control below.
+  const profileReturn = useGameStore((s) => s.profileReturn);
+  const setProfileReturn = useGameStore((s) => s.setProfileReturn);
   // No puzzle to take a language from: same resolution as the `/` redirect.
   const lang = resolveHomeLang(lastLang, navigator.language);
 
@@ -308,12 +311,19 @@ export default function Profile() {
         left={<span className="topbar-title">{t(lang, 'profileTitle')}</span>}
         right={
           // The way OUT (user feedback 2026-08-20 — the screen was unleavable): back
-          // to the leaderboard, this editor's wired entry point.
+          // to the leaderboard, this editor's wired entry point — and to the SAME one
+          // that opened it (review finding, 2026-08-20). `/profile` is a global route,
+          // so the board's (lang, mode) is not in the URL: the opener states it
+          // (`profileReturn`), and only an editor reached with nothing set — a deep
+          // link, a reload — falls back to guessing from the last loaded GAME.
           <button
             type="button"
             className="home-btn archive-close"
             aria-label={t(lang, 'ariaClose')}
-            onClick={() => navigate(pathForBoard(lang, lastMode ?? 'sentence'))}
+            onClick={() => {
+              setProfileReturn(null);
+              navigate(profileReturn ?? pathForBoard(lang, lastMode ?? 'sentence'));
+            }}
           >
             <CloseIcon className="ui-icon" aria-hidden />
           </button>

@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import {
-  activeDate,
+  dateForDayNumber,
   publicIdFromSecret,
   type Board,
   type BoardPlayer,
@@ -15,7 +15,9 @@ import LoadingWave from '../components/LoadingWave';
 import ModeTabs from '../components/ModeTabs';
 import TopBar from '../components/TopBar';
 import useShare from '../hooks/useShare';
+import useToday from '../hooks/useToday';
 import { playerSecret } from '../identity';
+import { useGameStore } from '../state/gameStore';
 import {
   pathForBoard,
   pathForInvite,
@@ -60,6 +62,23 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
   // a render when flipping back (review finding, 2026-08-20).
   const [boards, setBoards] = useState<Partial<Record<Tab, Board | 'failed'>>>({});
   const [attempt, setAttempt] = useState(0);
+  const setProfileReturn = useGameStore((s) => s.setProfileReturn);
+
+  // THE DAY IS A LIVE VALUE, not a clock read at fetch time (review finding,
+  // 2026-08-20). A board is addressed per (day, lang, mode), and this screen can be
+  // left open across the 22:00-ET flip — on a phone, overnight, routinely. `useToday`
+  // is the app's one day signal: it re-fires at the DST-correct reset AND on a
+  // visibility flip (the case a throttled background timer would otherwise miss).
+  const date = dateForDayNumber(useToday());
+  // A NEW DAY IS A NEW BOARD, so both tabs' caches go with it — dropped during render
+  // (React's own "adjust state when a prop changes" shape) rather than in an effect, so
+  // yesterday's rows are never committed under today's date, and the fetch below is
+  // already keyed on the new day when it runs.
+  const [cachedDate, setCachedDate] = useState(date);
+  if (cachedDate !== date) {
+    setCachedDate(date);
+    setBoards({});
+  }
   // The pinned `share` analytics event means "a RESULT left the app" (the three-event
   // invariant); an invite link is not a result, so its delivery is untracked rather
   // than quietly redefining the metric.
@@ -101,7 +120,6 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
     setBoards((prev) => (prev[tab] === 'failed' ? { ...prev, [tab]: undefined } : prev));
     (async () => {
       try {
-        const date = activeDate(new Date());
         const secret = playerSecret();
         // The global read needs NO identity — the caller's public id only widens it
         // with their own window, and deriving it can genuinely fail (crypto.subtle is
@@ -137,7 +155,7 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
     return () => {
       cancelled = true;
     };
-  }, [tab, lang, mode, attempt]);
+  }, [tab, lang, mode, date, attempt]);
 
   const entry = boards[tab];
   const board = entry === 'failed' ? undefined : entry;
@@ -186,10 +204,16 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
         <span className={`board-me-name${me?.name ? '' : ' anon'}`}>
           {me ? me.name || anonName(me.publicId) : ''}
         </span>
+        {/* `/profile` is a GLOBAL route, so the board that opened it leaves the URL —
+            state where to come back to, or the editor has to guess from the last
+            loaded GAME (which can be the other daily, or another language). */}
         <button
           type="button"
           className="board-chip"
-          onClick={() => navigate(PROFILE_PATH)}
+          onClick={() => {
+            setProfileReturn(pathForBoard(lang, mode));
+            navigate(PROFILE_PATH);
+          }}
         >
           {t(lang, 'boardEdit')}
         </button>

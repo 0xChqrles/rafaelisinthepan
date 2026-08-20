@@ -163,7 +163,13 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   (`ScoreStore.list`); the FRIENDS face reads `getMany` — the caller's edges plus
   themselves are the exact row keys, so it fetches those (BatchGetItem in prod,
   constant in the day's population) instead of paging every player who played today to
-  keep at most `FRIENDS_MAX + 1` rows. Rows are ranked/cut/windowed by
+  keep at most `FRIENDS_MAX + 1` rows. Its `UnprocessedKeys` are RETRIED (a dropped key
+  is a friend missing from the board, so the read fails loudly rather than silently
+  short) with **full-jitter exponential backoff** — an unprocessed response means the
+  partition is under pressure, and retrying at full speed spends the whole budget
+  before capacity can return, which is how a transient throttle became a 500 on the
+  friends board; the jitter is what stops Lambdas throttled together from coming back
+  in lockstep. The `wait` is injectable so the schedule is asserted without sleeping. Rows are ranked/cut/windowed by
   `@whippin/shared`'s leaderboard functions, then dressed with profiles — one
   `ProfileStore.get` per DISTINCT id shown, in parallel (bounded: top 50 + a 5-row
   window, or FRIENDS_MAX rows). The friends face also
