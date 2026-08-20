@@ -1,6 +1,5 @@
 import { useId, useMemo } from 'react';
-import { AVATAR_PALETTES, AVATAR_SIZE, decodeAvatar } from '@whippin/shared';
-import { avatarOutlinePath } from './avatarOutline';
+import { AVATAR_PALETTES, AVATAR_SIZE, avatarOutlinePath, decodeAvatar } from '@whippin/shared';
 
 // The #188 avatar, rendered from its encoded string as SVG: two colours only, the
 // palette's background and its foreground, the pixels drawn CONTIGUOUS (user-decided

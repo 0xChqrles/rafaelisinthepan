@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AVATAR_CELLS, AVATAR_SIZE } from '@whippin/shared';
+import { AVATAR_CELLS, AVATAR_SIZE } from './avatar';
 import { avatarOutlinePath } from './avatarOutline';
 
 // The tracer's contract is what the path FILLS, not how it is spelled: under the

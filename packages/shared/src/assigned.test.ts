@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { decodeAvatar, isValidAvatar, sanitizeName, NAME_MAX_LENGTH } from '@whippin/shared';
-import { anonName } from './anonName';
-import { defaultAvatar } from './defaultAvatar';
+import { decodeAvatar, isValidAvatar } from './avatar';
+import { sanitizeName, NAME_MAX_LENGTH } from './name';
+import { anonName, defaultAvatar } from './assigned';
 
 // The fallback identity's contract: pure (the same player reads the same everywhere,
 // with nothing stored), shaped like what it stands in for — a gamertag the name rule

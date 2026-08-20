@@ -1,4 +1,4 @@
-import { AVATAR_CELLS, AVATAR_SIZE } from '@whippin/shared';
+import { AVATAR_CELLS, AVATAR_SIZE } from './avatar';
 
 // The union OUTLINE of an avatar's filled cells, as one SVG path: every boundary —
 // outer edges and holes alike — contour-traced into a closed loop, collinear runs

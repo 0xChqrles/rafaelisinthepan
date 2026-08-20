@@ -190,9 +190,16 @@ export class WebStack extends Stack {
         responseHeadersPolicy: siteHeaders,
         compress: true,
       },
-      // /s/* (card page) and /og/* (card image) proxy to the backend; everything else is the
-      // SPA. Without these, the SPA fallback below would serve index.html for a share link.
-      additionalBehaviors: cardBehavior ? { '/s/*': cardBehavior, '/og/*': cardBehavior } : undefined,
+      // /s/* (card page), /og/* (card image) and /i/* (the #189 invite link's own preview
+      // page, whose card lives under /og/i/) proxy to the backend; everything else is the
+      // SPA. Without these, the SPA fallback below would serve index.html for a shared
+      // link — which is exactly what made every invite unfurl as the app's stock card.
+      // The SPA still owns the invite's LANDING, /join/<publicId> (shared/invite.ts): the
+      // backend page renders the preview and bounces there, so the click's actual work
+      // stays client-side. Adding a pattern here TAKES that path away from the SPA.
+      additionalBehaviors: cardBehavior
+        ? { '/s/*': cardBehavior, '/og/*': cardBehavior, '/i/*': cardBehavior }
+        : undefined,
       // SPA fallback: client-routed paths have no S3 object, so map the bucket's 403/404
       // to index.html with a 200 and let the app router resolve the route.
       errorResponses: [

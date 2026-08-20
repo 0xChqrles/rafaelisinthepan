@@ -11,4 +11,7 @@ export * from './scores';
 export * from './leaderboard';
 export * from './identity';
 export * from './avatar';
+export * from './avatarOutline';
+export * from './assigned';
+export * from './invite';
 export * from './name';

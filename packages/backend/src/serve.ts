@@ -20,11 +20,17 @@ import { localTurnstileVerifier } from './turnstile';
 const PORT = Number(process.env.PORT ?? 8787);
 const STORE_ROOT = process.env.PUZZLE_STORE ?? defaultLocalStoreRoot();
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN ?? '*';
+// Where the preview pages (`/s/<token>`, `/i/<publicId>`) send a human. In production
+// that is the apex; locally the SPA is a different origin from this server, so a page
+// served here has to be told where the app lives or it bounces onto itself. Unset, the
+// handler falls back to the request origin — this server — which is the old behavior.
+const SITE_ORIGIN = process.env.WHIPPIN_SITE;
 const LOCAL_IP_HMAC_SECRET = randomBytes(32).toString('hex');
 
 const handler = createHandler({
   store: fsStore(STORE_ROOT),
   allowedOrigin: ALLOWED_ORIGIN,
+  siteOrigin: SITE_ORIGIN,
   scores: {
     scoreStore: memoryScoreStore(),
     // Explicitly local-only: the production entrypoint always wires real Siteverify.

@@ -4,6 +4,7 @@
 // shared link or a refresh lands in the right language AND the right mode.
 
 import { describe, it, expect } from 'vitest';
+import { inviteLandingPath } from '@whippin/shared';
 import {
   isLang,
   pathForMode,
@@ -40,16 +41,25 @@ describe('parseRoute', () => {
   // The #189 invite link is a bearer "add me" token in a path segment, so the id is
   // validated HERE: a mistyped or truncated link must go home rather than send the
   // server an id nobody can hold.
-  it('routes /i/<publicId> to the invite landing, and a broken one home', () => {
+  //
+  // The SHARED link stays `/i/<publicId>` and is served by the BACKEND (it renders the
+  // preview and bounces here), so what the SPA routes is the LANDING `/join/<publicId>`.
+  // The two spellings live in `shared/invite.ts` precisely because this file and the
+  // backend's redirect have to name the same path.
+  it('routes /join/<publicId> to the invite landing, and a broken one home', () => {
     const id = 'abcdefghij234567';
     expect(pathForInvite(id)).toBe(`/i/${id}`);
-    expect(parseRoute(pathForInvite(id))).toEqual({ view: 'invite', publicId: id });
-    expect(parseRoute(`/i/${id}/`)).toEqual({ view: 'invite', publicId: id });
-    expect(parseRoute('/i')).toEqual({ view: 'home' });
-    expect(parseRoute('/i/nope')).toEqual({ view: 'home' });
+    expect(inviteLandingPath(id)).toBe(`/join/${id}`);
+    expect(parseRoute(inviteLandingPath(id))).toEqual({ view: 'invite', publicId: id });
+    expect(parseRoute(`/join/${id}/`)).toEqual({ view: 'invite', publicId: id });
+    expect(parseRoute('/join')).toEqual({ view: 'home' });
+    expect(parseRoute('/join/nope')).toEqual({ view: 'home' });
     // base32 has no 0/1/8/9, and the id is exactly 16 characters.
-    expect(parseRoute('/i/abcdefghij234560')).toEqual({ view: 'home' });
-    expect(parseRoute(`/i/${id}x`)).toEqual({ view: 'home' });
+    expect(parseRoute('/join/abcdefghij234560')).toEqual({ view: 'home' });
+    expect(parseRoute(`/join/${id}x`)).toEqual({ view: 'home' });
+    // The shared link itself never reaches the SPA in production (CloudFront hands
+    // `/i/*` to the API), and it must not be a second spelling of the landing here.
+    expect(parseRoute(pathForInvite(id))).toEqual({ view: 'home' });
   });
   // The two choosers sit ABOVE /<lang>: neither is language- or mode-scoped, and /mode
   // must never be read as a language segment or shadow Word mode's /<lang>/word.

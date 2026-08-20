@@ -16,11 +16,14 @@
     src/leaderboard.ts        the #190 board rules: competition tie ranks, the plain top-50 cut,
                               own-row window + the Board API types (backend cuts, web renders)
     src/avatar.ts             the #188 avatar: {bg, fg} palettes + the 14-byte 1-bit grid codec (web encodes/renders, backend validates)
+    src/avatarOutline.ts      its DRAWING: the filled cells as one union-outline path (web SVG + the invite card)
+    src/assigned.ts           the identity a player who never customized one wears: anonName + defaultAvatar
+    src/invite.ts             the #189 invite link's three paths (infra routes, backend serves, web builds+parses)
     src/name.ts               the #188 display-name charset: sanitizeName (web) ⇔ isValidName (backend)
     src/types.ts              shared puzzle + score-API schema types (Puzzle, Hole, ScoreHistogram, …)
     src/heat.ts               the app's ONE weird→calm stop gradient: heatColor() + fixed-cap rankHeatColor()/HIT_HEAT_CAP (exponents, floating hits, loot, route rows) + progressHeatColor()/progressEmoji() (run rulers incl. the card, share-text emoji row, archive fills, chooser strips)
     src/shareCard.ts          the share-token codec (both modes), browser + Lambda
-    src/cardSvg.ts            the OG card's SVG, rendered from a decoded token
+    src/cardSvg.ts            the OG cards' SVG: both dailies' results from a decoded token, and the #189 invite's (mark + name + app name)
     src/index.ts              re-exports
 ```
 
@@ -60,6 +63,27 @@
   lived in one onChange handler and nothing else in the system knew about it). Accents
   FOLD rather than underscore, and the pipeline normalizes first — the reasoning is in
   the root `AGENTS.md` (Player profile).
+- `src/avatarOutline.ts` is the ONE drawing of an avatar (moved here from the web
+  2026-08-20, when the invite card started rendering one server-side): the filled cells
+  traced into a union outline with no interior edges. **Keep the tracer** (user-decided
+  2026-08-19) — the two cheaper answers, a rect subpath per cell and
+  `shape-rendering="crispEdges"`, do not render the same on every browser. Its suite
+  asserts what the path FILLS (winding numbers read back off the emitted path), never
+  the command syntax.
+- `src/assigned.ts` is the ONE assigned identity — the gamertag pseudonym (`anonName`)
+  and the generated mark (`defaultAvatar`) a player wears until they customize one. It
+  moved here from the web the same day and for the same reason: "identical on every
+  surface" became a cross-package claim once the invite card drew a player server-side,
+  and two implementations would hand one person two faces depending on who was looking.
+  DISPLAY-only in both directions — an assigned name is never STORED (a board gates its
+  placeholder ink on the stored name being empty).
+- `src/invite.ts` is the ONE spelling of the #189 invite link's paths — the shared
+  `/i/<publicId>`, the SPA landing `/join/<publicId>` its preview bounces to, and the
+  card at `/og/i/<publicId>.png`. INFRA routes the first to the API origin, the BACKEND
+  answers it and writes the landing into its redirect, and the WEB builds the link and
+  parses the landing; a drift is an invite that silently lands nobody on a board, and it
+  cannot reproduce locally (no CDN in front of the SPA). The product rules are in the
+  root `AGENTS.md` (Friends graph).
 - `src/identity.ts` is the ONE definition of the #187 player identity: the 32-hex secret
   format the web generates/stores and the `publicId` derivation (first 10 bytes of
   SHA-256(secret), base32) the backend keys every score row by. The web sends the secret,

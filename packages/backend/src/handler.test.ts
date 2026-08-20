@@ -7,12 +7,18 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   type Puzzle,
   type WordPuzzle,
+  anonName,
+  blankAvatar,
   dateForDayNumber,
   encodeResult,
   encodeWordResult,
+  inviteCardPath,
+  inviteLandingPath,
+  INVITE_SEGMENT,
 } from '@whippin/shared';
 import { createHandler, type HandlerDeps } from './handler';
-import { renderCardPng } from './ogCard';
+import { renderCardPng, renderInviteCardPng } from './ogCard';
+import type { ProfileRecord, ProfileStore } from './profileStore';
 import { LAMBDA_MAX_RESPONSE_BYTES, envelopeBytes, type FnUrlEvent } from './respond';
 import type { PuzzleStore } from './store';
 
@@ -20,7 +26,8 @@ import type { PuzzleStore } from './store';
 // lets us assert the /og route forwards the token's lang into the renderer.
 vi.mock('./ogCard', async () => {
   const actual = await vi.importActual<typeof import('./ogCard')>('./ogCard');
-  return { ...actual, renderCardPng: vi.fn(async () => Buffer.from([0x89, 0x50, 0x4e, 0x47])) };
+  const stub = () => vi.fn(async () => Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  return { ...actual, renderCardPng: stub(), renderInviteCardPng: stub() };
 });
 
 // A minimal but schema-valid puzzle, keyed by the date the fixed clock resolves to.
@@ -442,6 +449,92 @@ describe('word-mode share routes (#156)', () => {
     const res = await makeHandler()(event({ path: `/og/${wordToken}.png` }));
     expect(res.statusCode).toBe(200);
     expect(res.headers['Content-Type']).toMatch(/image\/png/);
+  });
+});
+
+// CONTRACT (#189, preview added 2026-08-20): `/i/<publicId>` is the link a player SHARES,
+// so the server owns it — the page a chat unfurls carries that player's own name and
+// mark, and it bounces a human onto the SPA landing that actually records the edge. The
+// two paths come from `shared/invite.ts` here and in `web/langs.ts`, which is what keeps
+// the bounce landing somewhere the app routes.
+describe('invite link (#189) — the shared link, its preview page and its card', () => {
+  const ID = 'abcdefghij234567';
+  const stored = (row: ProfileRecord | null, fails = false): ProfileStore => ({
+    async get() {
+      if (fails) throw new Error('profile store is down');
+      return row;
+    },
+    async upsert() {},
+  });
+  const drawn = blankAvatar(2);
+
+  it('serves the preview page: the player named, their card, the landing to bounce to', async () => {
+    const res = await makeHandler({
+      siteOrigin: ORIGIN,
+      profiles: stored({ publicId: ID, name: 'Chqrles', avatar: drawn }),
+    })(event({ path: `/${INVITE_SEGMENT}/${ID}` }));
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['Content-Type']).toMatch(/text\/html/);
+    // The title says the two things the card says, and nothing else.
+    expect(res.body).toContain('<title>Whippin AI — Chqrles</title>');
+    expect(res.body).toContain(`${ORIGIN}${inviteCardPath(ID)}`);
+    // The click continues to the SPA landing — the one that records the mutual edge.
+    expect(res.body).toContain(`${ORIGIN}${inviteLandingPath(ID)}`);
+  });
+
+  it('names the ASSIGNED identity for a player who never customized one', async () => {
+    const res = await makeHandler({ siteOrigin: ORIGIN, profiles: stored(null) })(
+      event({ path: `/${INVITE_SEGMENT}/${ID}` }),
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain(`<title>Whippin AI — ${anonName(ID)}</title>`);
+  });
+
+  it('a trailing slash is the same link (a pasted one often carries one)', async () => {
+    const res = await makeHandler({ siteOrigin: ORIGIN, profiles: stored(null) })(
+      event({ path: `/${INVITE_SEGMENT}/${ID}/` }),
+    );
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('a malformed id is a 404 — never a lookup for an id nobody can hold', async () => {
+    const profiles = stored(null);
+    const get = vi.spyOn(profiles, 'get');
+    const handler = makeHandler({ siteOrigin: ORIGIN, profiles });
+    for (const bad of ['nope', 'abcdefghij234560', `${ID}x`]) {
+      const res = await handler(event({ path: `/${INVITE_SEGMENT}/${bad}` }));
+      expect(res.statusCode).toBe(404);
+    }
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it('renders the card from the STORED profile, empty avatar read as none', async () => {
+    const res = await makeHandler({
+      profiles: stored({ publicId: ID, name: 'Chqrles', avatar: '' }),
+    })(event({ path: inviteCardPath(ID) }));
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['Content-Type']).toMatch(/image\/png/);
+    expect(renderInviteCardPng).toHaveBeenCalledWith({
+      publicId: ID,
+      name: 'Chqrles',
+      avatar: null,
+    });
+  });
+
+  it('caches an answered read, but NEVER a face it had to fall back to', async () => {
+    const answered = await makeHandler({ siteOrigin: ORIGIN, profiles: stored(null) })(
+      event({ path: `/${INVITE_SEGMENT}/${ID}` }),
+    );
+    expect(answered.headers['Cache-Control']).toMatch(/max-age=\d+/);
+
+    // A read that FAILED is not the answer "never customized": holding the assigned
+    // identity at the edge would put a stranger's face on a player who drew their own.
+    const failed = await makeHandler({
+      siteOrigin: ORIGIN,
+      profiles: stored(null, true),
+    })(event({ path: `/${INVITE_SEGMENT}/${ID}` }));
+    expect(failed.statusCode).toBe(200);
+    expect(failed.headers['Cache-Control']).toBe('no-store');
   });
 });
 

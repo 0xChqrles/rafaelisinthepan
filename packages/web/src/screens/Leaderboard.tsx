@@ -1,14 +1,14 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import {
+  anonName,
   dateForDayNumber,
+  defaultAvatar,
   publicIdFromSecret,
   type Board,
   type BoardPlayer,
   type BoardRow,
 } from '@whippin/shared';
 import { boardUrl, parseBoard, parseProfile, postBoardBody, profileUrl } from '../api';
-import { anonName } from '../anonName';
-import { defaultAvatar } from '../defaultAvatar';
 import Avatar from '../components/Avatar';
 import LoadError from '../components/LoadError';
 import LoadingWave from '../components/LoadingWave';

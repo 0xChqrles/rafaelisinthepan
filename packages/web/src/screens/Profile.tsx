@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
+  anonName,
   AVATAR_CELLS,
   AVATAR_PALETTES,
   blankAvatar,
   decodeAvatar,
+  defaultAvatar,
   encodeAvatar,
   publicIdFromSecret,
   sanitizeName,
   NAME_MAX_LENGTH,
 } from '@whippin/shared';
 import { parseProfile, postProfileBody, profileUrl } from '../api';
-import { anonName } from '../anonName';
-import { defaultAvatar } from '../defaultAvatar';
 import { playerSecret } from '../identity';
 import { navigate } from '../routing';
 import { pathForBoard, resolveHomeLang } from '../langs';
