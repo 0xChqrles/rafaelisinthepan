@@ -1,7 +1,10 @@
 // CONTRACT (#189): one click on an invite link starts ONE conversation, and the click
 // never dead-ends. React may replay the landing's effect (development StrictMode) or
 // remount it, and neither may mint a second request. A SUCCESS is confirmed on screen
-// before continuing (user feedback 2026-08-20 — 'added'); a non-cap 4xx is a verdict the
+// before continuing (user feedback 2026-08-20 — 'added'); the profile read that DRESSES
+// that confirmation is best-effort AND bounded (a 6s abort), since this landing renders
+// no controls until the confirmation mounts and a stalled read would otherwise leave the
+// clicker with only a reload — which re-fires the POST. A non-cap 4xx is a verdict the
 // player cannot argue with and continues silently; only the backend failing is worth
 // retrying. TWO answers are said out loud as blockers — the failure, and the cap, which
 // is a verdict the player CAN act on and would otherwise leave a full player clicking

@@ -30,6 +30,23 @@ describe('memoryScoreStore — local mirror of storage semantics (#187)', () => 
     expect(await store.list(KEY)).toEqual([{ publicId: 'player-a', score: 7 }]);
   });
 
+  it('reads a KNOWN key set, the friends board way (#190) — the Dynamo twin', async () => {
+    const store = memoryScoreStore(() => new Date(100_000_000));
+    await store.submit(submission());
+    await store.submit(submission({ publicId: 'player-b', score: 3, ipHash: 'hash-b', requestToken: 'r-b' }));
+    await store.submit(submission({ publicId: 'player-c', score: 9, ipHash: 'hash-c', requestToken: 'r-c' }));
+
+    // Only what was asked for, duplicates collapsed, and a player with no row today
+    // simply has none — the friends board's `waiting` list is built from that absence.
+    expect(await store.getMany(KEY, ['player-c', 'player-a', 'player-c', 'never-played'])).toEqual([
+      { publicId: 'player-c', score: 9 },
+      { publicId: 'player-a', score: 7 },
+    ]);
+    expect(await store.getMany(KEY, [])).toEqual([]);
+    // A different daily's partition is a different population.
+    expect(await store.getMany({ ...KEY, mode: 'word' }, ['player-a'])).toEqual([]);
+  });
+
   it('a refused duplicate consumes no IP allowance', async () => {
     const store = memoryScoreStore(() => new Date(100_000_000));
     await store.submit(submission());

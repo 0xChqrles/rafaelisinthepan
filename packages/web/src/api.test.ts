@@ -445,11 +445,11 @@ describe('parseBoard (shape validation, #190)', () => {
     rank: 1,
     ...over,
   });
-  const valid = () => ({ total: 1, rows: [row()], own: null, waiting: [] });
+  const valid = () => ({ rows: [row()], own: null, waiting: [] });
 
   it('accepts a well-formed board, empty boards included', () => {
     expect(parseBoard(valid()).rows).toHaveLength(1);
-    expect(parseBoard({ total: 0, rows: [], own: null, waiting: [] }).rows).toEqual([]);
+    expect(parseBoard({ rows: [], own: null, waiting: [] }).rows).toEqual([]);
     expect(parseBoard({ ...valid(), own: [row()] }).own).toHaveLength(1);
     // A friend with no score today is a PLAYER row — no score, no rank.
     expect(
@@ -462,12 +462,15 @@ describe('parseBoard (shape validation, #190)', () => {
 
   it('rejects a wrong-shaped body (a failure, never NaN rows)', () => {
     expect(() => parseBoard(null)).toThrow(/board/);
-    expect(() => parseBoard({ ...valid(), total: -1 })).toThrow(/total/);
     expect(() => parseBoard({ ...valid(), rows: 'none' })).toThrow(/rows/);
     expect(() => parseBoard({ ...valid(), rows: [row({ publicId: 'NOPE' })] })).toThrow(/rows/);
     expect(() => parseBoard({ ...valid(), rows: [row({ rank: 0 })] })).toThrow(/rows/);
     expect(() => parseBoard({ ...valid(), rows: [row({ score: 1.5 })] })).toThrow(/rows/);
     expect(() => parseBoard({ ...valid(), rows: [row({ avatar: 7 })] })).toThrow(/rows/);
+    // A present avatar must DECODE (isValidAvatar): '' would slip past the nullish
+    // `?? defaultAvatar` fallback, throw in decodeAvatar, and shift the row's grid.
+    expect(() => parseBoard({ ...valid(), rows: [row({ avatar: '' })] })).toThrow(/rows/);
+    expect(() => parseBoard({ ...valid(), rows: [row({ avatar: '!'.repeat(19) })] })).toThrow(/rows/);
     expect(() => parseBoard({ ...valid(), own: [row({ name: 3 })] })).toThrow(/own/);
     expect(() => parseBoard({ ...valid(), waiting: undefined })).toThrow(/waiting/);
     expect(() => parseBoard({ ...valid(), waiting: [{ publicId: 'NOPE' }] })).toThrow(/waiting/);

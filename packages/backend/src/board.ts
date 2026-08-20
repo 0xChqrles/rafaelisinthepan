@@ -4,7 +4,12 @@
 //   GET  /board?lang=&date=&mode=[&id=<publicId>] — the GLOBAL top 50, anonymous: the
 //     population is public by design (and untrusted by design, #187 — nothing treats it
 //     as truth). `id` is the caller's PUBLIC id — never the secret, so it may travel in
-//     the query — and only widens the answer with their own below-the-cut window.
+//     the query — and widens the answer with their own below-the-cut window.
+//     A DELIBERATE exposure to know about: nothing binds `id` to the caller, so anyone
+//     holding a publicId can read that player's window (score + rank + profile) for any
+//     served day. Consistent with the design: publicIds are broadcast by invite links
+//     (#189), and a stranger holding your id could already read your scores by
+//     friending you through that same link — the trusted surface stays the POST.
 //   POST /board  { secret }  (+ the same query) — the FRIENDS board, the trusted
 //     surface: the server resolves YOUR edges (#189), so the read must prove who is
 //     asking — the secret authenticates in the BODY, the /friends rule.
@@ -16,13 +21,11 @@
 //
 // No puzzle-store read: a population only ever exists for a published daily (the score
 // POST enforces it), so an unpublished day honestly answers the empty board. The
-// malformed-param 400s and the future +1-day guard still apply.
+// malformed-param 400s and the future +1-day guard still apply (shared liveRoute.ts).
 
 import {
   boardOwnRows,
   cutBoard,
-  dayNumber,
-  isValidSecret,
   publicIdFromSecret,
   rankBoard,
   PUBLIC_ID_PATTERN,
@@ -32,15 +35,10 @@ import {
   type RankedScore,
 } from '@whippin/shared';
 import type { FriendStore } from './friendStore';
-import { isValidDate } from './layout';
+import { LIVE_HEADERS, readJsonObject, requireDayParams, requireSecret } from './liveRoute';
 import type { ProfileStore } from './profileStore';
-import { SENTENCE_SCORE_MAX_BY_LANG } from './scoreLimits';
 import type { ScoreKey, ScoreStore } from './scoreStore';
 import { errorResponse, json, type FnUrlEvent, type FnUrlResult } from './respond';
-
-const DATE_SKEW_DAYS = 1;
-const BOARD_BODY_MAX_BYTES = 4_096;
-const LIVE_HEADERS = { 'Cache-Control': 'no-store' } as const;
 
 export interface BoardHandlerDeps {
   scores: ScoreStore;
@@ -48,37 +46,39 @@ export interface BoardHandlerDeps {
   friends: FriendStore;
 }
 
-function bodyOf(event: FnUrlEvent): unknown {
-  if (event.body == null) return null;
-  const body = event.isBase64Encoded
-    ? Buffer.from(event.body, 'base64').toString('utf8')
-    : event.body;
-  if (Buffer.byteLength(body) > BOARD_BODY_MAX_BYTES) throw new Error('request_too_large');
-  return JSON.parse(body) as unknown;
-}
+// How a player with NO public profile is dressed — and the ONE fallback this route
+// has, spelled once: a profile that does not exist, one whose read FAILED, and an id
+// nothing was read for are the same answer, because the name and the mark are
+// decoration and the client derives an assigned identity from the publicId for all
+// three.
+const NO_PROFILE = { name: '', avatar: null } as const;
+
+type Dress = (publicId: string) => { name: string; avatar: string | null };
 
 // Dress ranked rows with the public profile a board renders. One read per DISTINCT
 // player (a row and the own window can overlap populations, never within themselves),
 // in parallel — the response is bounded (top 50 + a 5-row window, or FRIENDS_MAX rows).
+// Per-id `catch`, never `Promise.all`'s fail-fast: one throttled GetItem must not 500 a
+// board whose every score row and edge already answered.
 async function dressRows(
   profiles: ProfileStore,
   ...sections: (readonly { publicId: string }[])[]
-): Promise<Map<string, { name: string; avatar: string | null }>> {
+): Promise<Dress> {
   const ids = [...new Set(sections.flat().map((row) => row.publicId))];
-  const records = await Promise.all(ids.map((id) => profiles.get(id)));
-  return new Map(
+  const records = await Promise.all(ids.map((id) => profiles.get(id).catch(() => null)));
+  const byId = new Map(
     ids.map((id, i) => [
       id,
-      { name: records[i]?.name ?? '', avatar: records[i]?.avatar ?? null },
+      // `|| null` on the avatar: an empty stored string must dress as "no mark" — the
+      // client renders the assigned mark for null, where '' is not a decodable avatar.
+      { name: records[i]?.name ?? '', avatar: records[i]?.avatar || null },
     ]),
   );
+  return (publicId) => byId.get(publicId) ?? NO_PROFILE;
 }
 
-function toBoardRows(
-  rows: readonly RankedScore[],
-  dress: Map<string, { name: string; avatar: string | null }>,
-): BoardRow[] {
-  return rows.map((row) => ({ ...row, ...(dress.get(row.publicId) ?? { name: '', avatar: null }) }));
+function toBoardRows(rows: readonly RankedScore[], dress: Dress): BoardRow[] {
+  return rows.map((row) => ({ ...row, ...dress(row.publicId) }));
 }
 
 export async function handleBoard(
@@ -92,48 +92,14 @@ export async function handleBoard(
 
   // The same protocol guards as /scores: a supported language, an explicit mode, a real
   // date no further than one day ahead of the server's own active day.
-  const lang = event.queryStringParameters?.lang;
-  if (!lang || SENTENCE_SCORE_MAX_BY_LANG[lang] === undefined) {
-    return errorResponse(
-      400,
-      'bad_request',
-      'Query parameter "lang" must be a supported language ("en" or "fr").',
-      responseHeaders,
-    );
-  }
-  const mode = event.queryStringParameters?.mode;
-  if (mode !== 'sentence' && mode !== 'word') {
-    return errorResponse(
-      400,
-      'bad_request',
-      'Query parameter "mode" is required and must be "sentence" or "word".',
-      responseHeaders,
-    );
-  }
-  const date = event.queryStringParameters?.date;
-  if (!date || !isValidDate(date)) {
-    return errorResponse(
-      400,
-      'bad_request',
-      'Query parameter "date" is required (the game day, "YYYY-MM-DD").',
-      responseHeaders,
-    );
-  }
-  if (dayNumber(date) - dayNumber(serverDate) > DATE_SKEW_DAYS) {
-    return errorResponse(
-      404,
-      'not_found',
-      `"${date}" is not released yet (active day: ${serverDate}).`,
-      responseHeaders,
-      { date, lang },
-    );
-  }
-
-  const key: ScoreKey = { date, lang, mode };
+  const params = requireDayParams(event, serverDate, responseHeaders);
+  if (!params.ok) return params.response;
+  const key: ScoreKey = params.value;
 
   if (method === 'GET') {
     // The global board. `id` is optional and PUBLIC — a malformed one is a protocol
-    // violation, not a missing parameter.
+    // violation, not a missing parameter. (The exposure this creates is deliberate and
+    // recorded in the route header above.)
     const id = event.queryStringParameters?.id;
     if (id !== undefined && !PUBLIC_ID_PATTERN.test(id)) {
       return errorResponse(
@@ -143,12 +109,11 @@ export async function handleBoard(
         responseHeaders,
       );
     }
-    const ranked = rankBoard(await deps.scores.list(key), mode);
+    const ranked = rankBoard(await deps.scores.list(key), key.mode);
     const cut = cutBoard(ranked);
     const own = id === undefined ? null : boardOwnRows(ranked, cut, id);
     const dress = await dressRows(deps.profiles, cut, own ?? []);
     const board: Board = {
-      total: ranked.length,
       rows: toBoardRows(cut, dress),
       own: own === null ? null : toBoardRows(own, dress),
       waiting: [],
@@ -157,54 +122,32 @@ export async function handleBoard(
   }
 
   // POST — the friends board. The body carries only the proof of identity.
-  let raw: unknown;
-  try {
-    raw = bodyOf(event);
-  } catch (error) {
-    const tooLarge = error instanceof Error && error.message === 'request_too_large';
-    return errorResponse(
-      tooLarge ? 413 : 400,
-      tooLarge ? 'payload_too_large' : 'bad_request',
-      tooLarge ? 'Board request body is too large.' : 'Body must be valid JSON.',
-      responseHeaders,
-    );
-  }
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-    return errorResponse(400, 'bad_request', 'Body must be an object.', responseHeaders);
-  }
-  const body = raw as Record<string, unknown>;
-  if (!isValidSecret(body.secret)) {
-    return errorResponse(
-      400,
-      'bad_request',
-      'Body field "secret" must be the 32-hex-character player key.',
-      responseHeaders,
-    );
-  }
+  const body = readJsonObject(event, 'Board', responseHeaders);
+  if (!body.ok) return body.response;
+  const secret = requireSecret(body.value, responseHeaders);
+  if (!secret.ok) return secret.response;
 
-  const publicId = await publicIdFromSecret(body.secret);
+  const publicId = await publicIdFromSecret(secret.value);
   const friends = await deps.friends.list(publicId);
-  const wanted = new Set(friends);
-  wanted.add(publicId);
-  // The trusted board is the caller's edges plus themselves. Recorded scores make the
-  // RANKED rows; a FRIEND with no score today is still named, in `waiting` — an edge is
-  // a person the caller chose, so the board says "not played yet" rather than silently
-  // dropping them (user-decided 2026-08-20). The caller's own unplayed row stays absent
-  // (the screen's identity strip already shows them). Bounded by FRIENDS_MAX, so no cut.
-  const rows = (await deps.scores.list(key)).filter((row) => wanted.has(row.publicId));
-  const ranked = rankBoard(rows, mode);
+  // The trusted board is the caller's edges plus themselves — and the caller already
+  // holds the exact row keys, so the store fetches THOSE (batch-shaped, constant in the
+  // day's population) rather than paging the whole day partition to keep at most
+  // FRIENDS_MAX + 1 rows. Recorded scores make the RANKED rows; a FRIEND with no score
+  // today is still named, in `waiting` — an edge is a person the caller chose, so the
+  // board says "not played yet" rather than silently dropping them (user-decided
+  // 2026-08-20). The caller's own unplayed row stays absent (the screen's identity
+  // strip already shows them). Bounded by FRIENDS_MAX, so no cut.
+  const rows = await deps.scores.getMany(key, [...friends, publicId]);
+  const ranked = rankBoard(rows, key.mode);
   const scored = new Set(rows.map((row) => row.publicId));
   // Sorted for a stable board between reads; publicId is the only order every waiting
   // row is guaranteed to carry.
   const waiting = friends.filter((id) => !scored.has(id)).sort();
   const dress = await dressRows(deps.profiles, ranked, waiting.map((id) => ({ publicId: id })));
   const board: Board = {
-    total: ranked.length,
     rows: toBoardRows(ranked, dress),
     own: null,
-    waiting: waiting.map(
-      (id): BoardPlayer => ({ publicId: id, ...(dress.get(id) ?? { name: '', avatar: null }) }),
-    ),
+    waiting: waiting.map((id): BoardPlayer => ({ publicId: id, ...dress(id) })),
   };
   return json(200, board, responseHeaders);
 }

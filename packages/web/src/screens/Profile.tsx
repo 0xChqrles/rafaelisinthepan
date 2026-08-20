@@ -50,10 +50,28 @@ import CloseIcon from '../assets/icons/close.svg?react';
 // identity (anonName + defaultAvatar, the exact fallback every board row already
 // shows), not on a blank: an editor that opens empty while the board wears a name and
 // a mark reads as broken. The assigned values are also the BASELINE, so SAVE stays
-// dark until something is actually changed — storing them would change nothing anyone
-// sees, since every surface derives the same fallback from the id.
+// dark until something is actually changed.
 // (This is the game route's own loading / error / content shape.)
 type LoadState = 'loading' | 'ready' | 'failed';
+
+// THE ASSIGNED NAME IS A DISPLAY VALUE, NEVER A STORED ONE — one rule, both directions
+// (corrected 2026-08-20 on review; the first cut adopted the pseudonym as the save
+// baseline on the reasoning that "storing it changes nothing anyone sees", which is
+// false: every board gates its placeholder ink on the name being EMPTY, so storing the
+// pseudonym flips that player's row from the muted placeholder to full primary and
+// makes them indistinguishable from someone who deliberately chose that handle — and
+// freezes their name against every later generator change).
+//   READ  — an empty stored name shows as the assigned pseudonym, exactly as a board
+//           row shows it (so a 404 and a name-less stored profile open identically).
+//   WRITE — a name still equal to the assigned pseudonym was never typed, so the body
+//           carries the empty name the assigned identity derives from.
+// The BASELINE therefore lives in DISPLAY space (what the field holds) and the body in
+// STORAGE space. A player who deliberately types their own pseudonym stores empty and
+// renders the same text in the placeholder ink — the one accepted cost of the rule.
+const nameForEditor = (stored: string, publicId: string) =>
+  sanitizeName(stored) || anonName(publicId);
+const nameForStore = (edited: string, publicId: string) =>
+  edited === anonName(publicId) ? '' : edited;
 
 // The SAVE button's two orthogonal facts: its visual PHASE (the label rolls down and
 // out, the dot loader drops in from the top, holds, then the label rolls back up from
@@ -76,6 +94,9 @@ export default function Profile() {
   const lang = resolveHomeLang(lastLang, navigator.language);
 
   const [secret] = useState(() => playerSecret());
+  // Derived once by the load effect; the editor is gated on that read, so every path
+  // that needs it (the save body's name rule) runs only after it is set.
+  const [publicId, setPublicId] = useState('');
   const [name, setName] = useState('');
   const [palette, setPalette] = useState(0);
   const [cells, setCells] = useState<number[]>(() => new Array<number>(AVATAR_CELLS).fill(0));
@@ -101,27 +122,29 @@ export default function Profile() {
     (async () => {
       try {
         const publicId = await publicIdFromSecret(secret);
+        if (cancelled) return;
+        setPublicId(publicId);
         const response = await fetch(profileUrl(publicId));
         if (cancelled) return;
         if (response.ok) {
           const profile = parseProfile(await response.json());
           const decoded = decodeAvatar(profile.avatar);
           if (cancelled) return;
-          // Sanitized on the way IN as well, so the editor can never display a value
-          // its own field would refuse. The server enforces the same rule on write, so
-          // this is a no-op on anything it stored — but the baseline has to be the
-          // sanitized form too, or a name the editor cannot reproduce would light SAVE
-          // up with nothing edited.
-          const name = sanitizeName(profile.name);
+          // Sanitized on the way IN (so the editor can never display a value its own
+          // field would refuse — a no-op on anything the server stored, since it
+          // enforces the same rule), then the assigned pseudonym stands in for an
+          // empty stored name: nameForEditor's READ half. The baseline is that same
+          // display value, or a name the editor cannot reproduce would light SAVE up
+          // with nothing edited.
+          const name = nameForEditor(profile.name, publicId);
           setName(name);
           setPalette(decoded.palette);
           setCells(decoded.cells);
           setBaseline({ name, avatar: profile.avatar });
         } else if (response.status === 404) {
           // Never customized: open on the assigned identity the boards already show
-          // (see the gating note above). anonName is sanitizeName-stable by contract,
-          // so the field holds it verbatim.
-          const name = anonName(publicId);
+          // (see the gating note above) — the same READ half, over an empty name.
+          const name = nameForEditor('', publicId);
           const generated = defaultAvatar(publicId);
           const decoded = decodeAvatar(generated);
           setName(name);
@@ -240,14 +263,18 @@ export default function Profile() {
     setPhase('saving');
     setRefused(null);
     const started = Date.now();
-    const body = { secret, name: clean, avatar: encoded };
+    // The body is STORAGE space: an untouched assigned pseudonym stores as the empty
+    // name every surface derives it from (nameForStore's WRITE half). The baseline
+    // below re-reads the DISPLAY value, so a save can never leave the editor differing
+    // from what it just stored.
+    const body = { secret, name: nameForStore(clean, publicId), avatar: encoded };
     // The outcome is decided while the dots run; the phases below only pace how the
     // button tells it.
     let outcome: SaveRefusal = null;
     try {
       const response = await postProfileBody(profileUrl(), body);
       if (response.ok) {
-        setBaseline({ name: body.name, avatar: body.avatar });
+        setBaseline({ name: clean, avatar: body.avatar });
       } else {
         const refusal = (await response.json().catch(() => null)) as { error?: string } | null;
         outcome =
@@ -263,7 +290,7 @@ export default function Profile() {
     setPhase('restoring');
     await sleep(SAVE_RESTORE_MS);
     setPhase((current) => (current === 'restoring' ? 'idle' : current));
-  }, [secret, name, encoded]);
+  }, [secret, publicId, name, encoded]);
 
   const saveError =
     refused === 'name_rejected'

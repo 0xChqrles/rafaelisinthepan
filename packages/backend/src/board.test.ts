@@ -29,6 +29,7 @@ const emptyStore: PuzzleStore = {
 function fixedScores(rows: ScoreRow[]): ScoreStore {
   return {
     list: async () => rows,
+    getMany: async (_key, ids) => rows.filter((row) => ids.includes(row.publicId)),
     submit: async () => {
       throw new Error('the board route never submits');
     },
@@ -71,6 +72,14 @@ describe('board route (#190)', () => {
   it('rejects a missing/unsupported lang, mode and date (protocol violations)', async () => {
     const { handler } = makeHandler([]);
     expect((await handler(get({ date: DATE, mode: 'sentence' }))).statusCode).toBe(400);
+    expect((await handler(get({ lang: 'de', date: DATE, mode: 'sentence' }))).statusCode).toBe(400);
+    // The support check must be an OWN-property check: `map[lang] === undefined` walks
+    // the prototype chain, so Object.prototype keys would pass as "languages" and reach
+    // the store key. /scores is masked by its puzzle-store 404; /board reads no puzzle
+    // store, so the hole would be reachable to a 200 here.
+    for (const lang of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+      expect((await handler(get({ lang, date: DATE, mode: 'sentence' }))).statusCode).toBe(400);
+    }
     expect((await handler(get({ lang: 'fr', date: DATE }))).statusCode).toBe(400);
     expect((await handler(get({ lang: 'fr', date: DATE, mode: 'x' }))).statusCode).toBe(400);
     expect((await handler(get({ lang: 'fr', mode: 'sentence' }))).statusCode).toBe(400);
@@ -96,7 +105,6 @@ describe('board route (#190)', () => {
     expect(result.statusCode).toBe(200);
     expect(result.headers['Cache-Control']).toBe('no-store');
     const board = JSON.parse(result.body) as Board;
-    expect(board.total).toBe(2);
     // Sentence: lower is better — the 3 leads; the uncustomized player degrades honestly.
     expect(board.rows).toEqual([
       { publicId: other, score: 3, rank: 1, name: 'Zoe', avatar: 'A'.repeat(19) },
@@ -156,8 +164,45 @@ describe('board route (#190)', () => {
       [friend, 1],
       [me, 2],
     ]);
-    expect(board.total).toBe(2);
     expect(board.own).toBeNull();
+  });
+
+  it('dresses a failed or empty-avatar profile read as the missing profile, never a 500', async () => {
+    const me = await publicIdFromSecret(SECRET);
+    const other = await publicIdFromSecret(FRIEND_SECRET);
+    // One player's profile read throws (a throttled GetItem), the other's answers with
+    // an EMPTY avatar string (a row missing the attribute). The board is decorative
+    // dressing over rows that already answered, so both degrade to name '' / avatar
+    // null — the client's assigned-identity fallback — instead of failing the board.
+    const flaky = {
+      get: async (publicId: string) => {
+        if (publicId === me) throw new Error('throttled');
+        return { publicId, name: 'Zoe', avatar: '' };
+      },
+      upsert: async () => {},
+    };
+    const handler = createHandler({
+      store: emptyStore,
+      now: () => NOW,
+      scores: {
+        scoreStore: fixedScores([
+          { publicId: me, score: 7 },
+          { publicId: other, score: 3 },
+        ]),
+        turnstile: localTurnstileVerifier,
+        ipHmacSecret: 'x'.repeat(64),
+      },
+      profiles: flaky,
+      friends: memoryFriendStore(),
+    });
+
+    const result = await handler(get(QUERY));
+    expect(result.statusCode).toBe(200);
+    const board = JSON.parse(result.body) as Board;
+    expect(board.rows).toEqual([
+      { publicId: other, score: 3, rank: 1, name: 'Zoe', avatar: null },
+      { publicId: me, score: 7, rank: 2, name: '', avatar: null },
+    ]);
   });
 
   it("shows friends' scores before the caller has played (own row simply absent)", async () => {
@@ -200,8 +245,8 @@ describe('board route (#190)', () => {
   it('answers an empty day honestly on both faces', async () => {
     const { handler } = makeHandler([]);
     const global = JSON.parse((await handler(get(QUERY))).body) as Board;
-    expect(global).toEqual({ total: 0, rows: [], own: null, waiting: [] });
+    expect(global).toEqual({ rows: [], own: null, waiting: [] });
     const mine = JSON.parse((await handler(post(QUERY, { secret: SECRET }))).body) as Board;
-    expect(mine).toEqual({ total: 0, rows: [], own: null, waiting: [] });
+    expect(mine).toEqual({ rows: [], own: null, waiting: [] });
   });
 });

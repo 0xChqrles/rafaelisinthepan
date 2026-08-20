@@ -429,7 +429,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (`anonName` + `defaultAvatar` — the exact fallback every board row already shows; an
   editor opening blank while the board wears a name and a mark read as broken), with
   those values as the BASELINE too, so SAVE stays dark until something actually
-  changes — storing them would change nothing anyone sees. The wired entry point is
+  changes. **The assigned NAME is a DISPLAY value in both directions, never a stored
+  one** (corrected 2026-08-20 on review): an EMPTY stored name opens the field on the
+  pseudonym — so a 404 and a name-less stored profile open identically — and a name
+  still equal to that pseudonym SAVES as the empty name. The first cut stored it, on
+  the reasoning that "storing it changes nothing anyone sees", which is false: every
+  board gates its placeholder ink on the name being EMPTY, so storing the pseudonym
+  flips that row from the muted placeholder to full primary, makes the player
+  indistinguishable from someone who deliberately chose that handle, and freezes their
+  name against every later generator change. The BASELINE therefore lives in DISPLAY
+  space and the save BODY in STORAGE space; a player who types their own pseudonym
+  verbatim stores empty and renders the same text in the placeholder ink — the one
+  accepted cost of the rule. The wired entry point is
   the leaderboard screen's EDIT chip (#190), and the header carries a CLOSE chip back
   to `pathForBoard(lang, lastMode)` (user feedback 2026-08-20 — the screen was
   unleavable).
@@ -482,11 +493,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the ACTIVE day), `screens/Leaderboard.tsx`, entered from the game header's crown
   icon (recorded in the header bullet). FRIENDS is the default tab — the trusted
   surface — GLOBAL the top-50 untrusted one; the header's ModeTabs switch WHICH
-  daily's board, the in-screen tabs WHOSE scores. One fetch per tab, cached for the
-  visit (RETRY refetches; App keys the screen on lang:mode so a switch resets): the
-  friends read is the authenticated `POST /board {secret}` via the OAC-hashed body,
-  the global read the anonymous GET widened with the caller's PUBLIC id for the own
-  window. The screen renders what the API returned (ranks, cut, own window
+  daily's board, the in-screen tabs WHOSE scores. **One fetch per tab ACTIVATION, and
+  the OUTCOME is per tab** (both corrected 2026-08-20 on review): the route is a
+  zero-TTL live read — its whole CloudFront behavior is `CACHING_DISABLED` because the
+  data is live — so a tab flip re-reads rather than showing a snapshot from earlier in
+  the visit, with the cached board holding the screen while the fresh one is in flight
+  (stale-but-good beats a spinner) and FAILED shown only when there is nothing to draw.
+  A screen-global failure flag painted an error frame over the OTHER tab's perfectly
+  good board for a render on every flip back. (App keys the screen on lang:mode so a
+  switch resets.) The friends read is the authenticated `POST /board {secret}` via the
+  OAC-hashed body, the global read the anonymous GET widened with the caller's PUBLIC
+  id for the own window — **derived in its own try**, since the global board needs no
+  identity and `crypto.subtle` is absent outside a secure context (the LAN-IP mobile
+  check `board:seed` exists to support), where a shared failure killed the anonymous
+  tab and disabled INVITE for the whole visit. The screen renders what the API returned (ranks, cut, own window
   — the shared leaderboard rules; root AGENTS.md): glass rows of rank + avatar + name
   + score, ranks and scores in the PIXEL face (game numbers), names in mono (identity
   chrome, case kept), the unit caption (TRIES/WORDS) naming which way is better. The
@@ -517,9 +537,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
   standing pixel-art rule (measured on the rendered output: 97% of source texels land
   as uniform blocks). The line is per TAB — `NO FRIENDS` on the friends board, since
   an empty one really means no edges (a friend who merely has not played is a waiting
-  row), `NOBODY YET` on the global one. The identity strip on
+  row), `NOBODY YET` on the global one. **Empty is therefore counted WITHOUT the
+  caller's own row on the friends tab** (corrected 2026-08-20 on review): the server
+  always includes the caller once they have played, so keying the ghost on "no rows at
+  all" made it unreachable for exactly the player who needs it — someone with no
+  friends who finished today's daily landed on a board of one row, themselves, under
+  an identity strip already showing the same mark and name, with nothing saying why.
+  The identity strip on
   top (your mark + name + EDIT → `/profile`) and the INVITE device-card button on the
-  bottom edge are the #188/#189 wiring; both work before ever playing. Rows rise on
+  bottom edge are the #188/#189 wiring; both work before ever playing — and the invite
+  share is the ONE `useShare` caller that passes `tracked: false`, because the pinned
+  `share` analytics event means "a RESULT left the app" (the three-event invariant) and
+  counting invite links into it would silently redefine what the number measures. Rows rise on
   the `rung-in` gesture staggered by index (delays survive reduced motion, the rise
   collapses). Board VISUALS carry no tests per policy; the contract-y parts are the
   shared ranking rules, `parseBoard`, and the route grammar (langs.test.ts).
@@ -2065,8 +2094,21 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the `.ui-icon` dress (user-decided 2026-08-20, superseding a squared trophy that
     read badly against the chrome), on the game routes' right group before the help
     `?` — and wearing `.board-btn`, since a button does not inherit `color` and a bare
-    `.home-btn` would render its stroke UA-black.
+    `.home-btn` would render its stroke UA-black. **ACTIVE DAY ONLY** (corrected
+    2026-08-20 on review): a board is the active day's, so an archive replay showed an
+    icon that silently swapped the day, and whose screen then exited onto TODAY's
+    puzzle — the archive session gone. An archived day keeps its date chip as the way
+    back.
   Word mode's top reserve is 66px and the archive's 70px, clearing the band.
+  **The right group's THIRD control (the crown) put the row over its width budget on a
+  320px phone** — the band is one fixed-width `1fr auto 1fr` grid whose side tracks
+  floor at min-content, so the overflow clipped the help `?` off the screen entirely
+  (English was already marginal with two). Two fixes, both in `index.css`: the side
+  tracks are `minmax(0, 1fr)` so the grid can never exceed its own box, and a ≤380px
+  step-down (32px controls, an 11px date chip, 10px tabs with most of their tracking
+  and side padding given back) buys the row back ~30px of real slack. The arithmetic —
+  every group's cost is a glyph count, the mono advancing 0.6em — is commented at the
+  step-down; re-measure it before adding a FOURTH control.
   *(The paragraphs below predate the band and stand only where they don't contradict
   it.)*
   Historical: a fixed **topbar**

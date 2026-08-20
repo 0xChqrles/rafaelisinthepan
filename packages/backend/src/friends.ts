@@ -12,21 +12,10 @@
 // empty query allow-list says (root AGENTS.md); a production POST still needs
 // `x-amz-content-sha256` over the exact body bytes, like every other write here (OAC).
 
-import { isValidSecret, publicIdFromSecret, PUBLIC_ID_PATTERN } from '@whippin/shared';
+import { publicIdFromSecret, PUBLIC_ID_PATTERN } from '@whippin/shared';
 import { FRIENDS_MAX, type FriendStore } from './friendStore';
+import { LIVE_HEADERS, readJsonObject, requireSecret } from './liveRoute';
 import { errorResponse, json, type FnUrlEvent, type FnUrlResult } from './respond';
-
-const FRIENDS_BODY_MAX_BYTES = 4_096;
-const LIVE_HEADERS = { 'Cache-Control': 'no-store' } as const;
-
-function bodyOf(event: FnUrlEvent): unknown {
-  if (event.body == null) return null;
-  const body = event.isBase64Encoded
-    ? Buffer.from(event.body, 'base64').toString('utf8')
-    : event.body;
-  if (Buffer.byteLength(body) > FRIENDS_BODY_MAX_BYTES) throw new Error('request_too_large');
-  return JSON.parse(body) as unknown;
-}
 
 export async function handleFriends(
   event: FnUrlEvent,
@@ -45,34 +34,14 @@ export async function handleFriends(
     );
   }
 
-  let raw: unknown;
-  try {
-    raw = bodyOf(event);
-  } catch (error) {
-    const tooLarge = error instanceof Error && error.message === 'request_too_large';
-    return errorResponse(
-      tooLarge ? 413 : 400,
-      tooLarge ? 'payload_too_large' : 'bad_request',
-      tooLarge ? 'Friends request body is too large.' : 'Body must be valid JSON.',
-      responseHeaders,
-    );
-  }
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-    return errorResponse(400, 'bad_request', 'Body must be an object.', responseHeaders);
-  }
-  const body = raw as Record<string, unknown>;
+  const parsed = readJsonObject(event, 'Friends', responseHeaders);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.value;
 
-  // Authentication without accounts (#187): possession of the secret is the proof of
-  // ownership, and the edges are keyed by the identity DERIVED from it — so the only graph
-  // a caller can read or change is their own.
-  if (!isValidSecret(body.secret)) {
-    return errorResponse(
-      400,
-      'bad_request',
-      'Body field "secret" must be the 32-hex-character player key.',
-      responseHeaders,
-    );
-  }
+  // Authentication without accounts (#187): the edges are keyed by the identity DERIVED
+  // from the secret — so the only graph a caller can read or change is their own.
+  const secret = requireSecret(body, responseHeaders);
+  if (!secret.ok) return secret.response;
 
   // The field name IS the verb and its value is the target, so a body can neither name an
   // operation with nothing to apply it to nor ask for two opposite things at once.
@@ -96,7 +65,7 @@ export async function handleFriends(
     );
   }
 
-  const publicId = await publicIdFromSecret(body.secret);
+  const publicId = await publicIdFromSecret(secret.value);
 
   if (wantsAdd) {
     const friendId = target as string;

@@ -61,11 +61,13 @@ export default function App() {
 
   // Keep <html lang> honest: index.html ships lang="en", but on /fr both the puzzle
   // content and the UI chrome are French — screen readers pick pronunciation rules from
-  // this attribute. Language-scoped routes (game + archive) use their own lang; the
-  // language-less routes use the same resolution as the `/` redirect.
+  // this attribute. Language-scoped routes (game + archive + board) use their own lang;
+  // the language-less routes use the same resolution as the `/` redirect.
   const homeLang = resolveHomeLang(lastLang, navigator.language);
   const docLang =
-    route.view === 'game' || route.view === 'archive' ? route.lang : homeLang;
+    route.view === 'game' || route.view === 'archive' || route.view === 'board'
+      ? route.lang
+      : homeLang;
   useEffect(() => {
     document.documentElement.lang = docLang;
   }, [docLang]);
@@ -215,17 +217,24 @@ function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: st
     <>
       {/* The leaderboard entry (#190, the issue's decided entry point): reachable
           BEFORE playing — the screen is also where a player customizes their profile
-          and shares their invite link, neither of which requires having played. */}
-      {/* `board-btn` gives the trophy the header's foreground ink — buttons don't
+          and shares their invite link, neither of which requires having played.
+          ACTIVE DAY ONLY: the board is the active day's (pathForBoard carries no date
+          and the screen reads its own activeDate), so on an archive replay this icon
+          would silently swap the day under the player — and the board's exit lands on
+          today, ending the archive session. An archived day keeps its date chip as
+          the way back. */}
+      {/* `board-btn` gives the crown the header's foreground ink — buttons don't
           inherit color, and a bare .home-btn renders its stroke UA-black. */}
-      <button
-        type="button"
-        className="home-btn board-btn"
-        aria-label={t(lang, 'ariaLeaderboard')}
-        onClick={() => navigate(pathForBoard(lang, mode))}
-      >
-        <BoardIcon className="ui-icon" aria-hidden />
-      </button>
+      {isActiveDay && (
+        <button
+          type="button"
+          className="home-btn board-btn"
+          aria-label={t(lang, 'ariaLeaderboard')}
+          onClick={() => navigate(pathForBoard(lang, mode))}
+        >
+          <BoardIcon className="ui-icon" aria-hidden />
+        </button>
+      )}
       {/* Replays the onboarding tutorial (#51) on demand — one tap, out of the way.
           (The archive icon left the header 2026-08-18: the DATE CHIP is the archive
           entry now — see PuzzleDate.) */}

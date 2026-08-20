@@ -1,18 +1,8 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { isIP } from 'node:net';
-import {
-  VIEWER_IP_HEADER,
-  dayNumber,
-  isValidSecret,
-  publicIdFromSecret,
-  type ScoreHistogram,
-} from '@whippin/shared';
-import { isValidDate } from './layout';
-import {
-  SENTENCE_SCORE_MAX_BY_LANG,
-  sentenceScoreMaximum,
-  wordScoreMaximum,
-} from './scoreLimits';
+import { VIEWER_IP_HEADER, publicIdFromSecret, type ScoreHistogram } from '@whippin/shared';
+import { LIVE_HEADERS, readJsonObject, requireDayParams, requireSecret } from './liveRoute';
+import { sentenceScoreMaximum, wordScoreMaximum } from './scoreLimits';
 import {
   SCORE_DEDUP_TTL_SECONDS,
   type ScoreKey,
@@ -23,10 +13,7 @@ import { errorResponse, json, type FnUrlEvent, type FnUrlResult } from './respon
 import type { PuzzleStore } from './store';
 import type { TurnstileVerifier } from './turnstile';
 
-const DATE_SKEW_DAYS = 1;
 const TURNSTILE_TOKEN_MAX_LENGTH = 2_048;
-const SCORE_BODY_MAX_BYTES = 4_096;
-const LIVE_HEADERS = { 'Cache-Control': 'no-store' } as const;
 
 export interface ScoreHandlerDeps {
   scoreStore: ScoreStore;
@@ -72,15 +59,6 @@ export function hashClientIp(ip: string, secret: string): string {
   return createHmac('sha256', secret).update(ip).digest('hex');
 }
 
-function bodyOf(event: FnUrlEvent): unknown {
-  if (event.body == null) return null;
-  const body = event.isBase64Encoded
-    ? Buffer.from(event.body, 'base64').toString('utf8')
-    : event.body;
-  if (Buffer.byteLength(body) > SCORE_BODY_MAX_BYTES) throw new Error('request_too_large');
-  return JSON.parse(body) as unknown;
-}
-
 // The histogram is DERIVED from the day's per-player rows at read time (#187): one bucket
 // per distinct recorded score, ascending, each an exact inclusive range. The rows are a
 // strict superset of the retired bucket counters, so the response shape the solved screen
@@ -111,44 +89,10 @@ export async function handleScores(
   const responseHeaders = { ...cors, ...LIVE_HEADERS };
   const method = event.requestContext?.http?.method ?? 'GET';
 
-  const lang = event.queryStringParameters?.lang;
-  if (!lang || SENTENCE_SCORE_MAX_BY_LANG[lang] === undefined) {
-    return errorResponse(
-      400,
-      'bad_request',
-      'Query parameter "lang" must be a supported language ("en" or "fr").',
-      responseHeaders,
-    );
-  }
-
-  const mode = event.queryStringParameters?.mode;
-  if (mode !== 'sentence' && mode !== 'word') {
-    return errorResponse(
-      400,
-      'bad_request',
-      'Query parameter "mode" is required and must be "sentence" or "word".',
-      responseHeaders,
-    );
-  }
-
-  const date = event.queryStringParameters?.date;
-  if (!date || !isValidDate(date)) {
-    return errorResponse(
-      400,
-      'bad_request',
-      'Query parameter "date" is required (the game day, "YYYY-MM-DD").',
-      responseHeaders,
-    );
-  }
-  if (dayNumber(date) - dayNumber(serverDate) > DATE_SKEW_DAYS) {
-    return errorResponse(
-      404,
-      'not_found',
-      `"${date}" is not released yet (active day: ${serverDate}).`,
-      responseHeaders,
-      { date, lang },
-    );
-  }
+  // The shared (lang, mode, date) guard triple + future guard (liveRoute.ts).
+  const params = requireDayParams(event, serverDate, responseHeaders);
+  if (!params.ok) return params.response;
+  const { lang, mode, date } = params.value;
 
   const key: ScoreKey = { date, lang, mode };
   let score: number | undefined;
@@ -157,38 +101,18 @@ export async function handleScores(
   let remoteIp: string | null = null;
 
   if (method === 'POST') {
-    let raw: unknown;
-    try {
-      raw = bodyOf(event);
-    } catch (error) {
-      const tooLarge = error instanceof Error && error.message === 'request_too_large';
-      return errorResponse(
-        tooLarge ? 413 : 400,
-        tooLarge ? 'payload_too_large' : 'bad_request',
-        tooLarge ? 'Score request body is too large.' : 'Body must be valid JSON.',
-        responseHeaders,
-      );
-    }
-    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-      return errorResponse(400, 'bad_request', 'Body must be an object.', responseHeaders);
-    }
-    const body = raw as Record<string, unknown>;
+    const parsed = readJsonObject(event, 'Score', responseHeaders);
+    if (!parsed.ok) return parsed.response;
+    const body = parsed.value;
     if (typeof body.score !== 'number' || !Number.isInteger(body.score)) {
       return errorResponse(400, 'bad_request', 'Body field "score" must be an integer.', responseHeaders);
     }
     score = body.score;
-    // Authentication without accounts (#187): possession of the secret is the proof of
-    // ownership. The server DERIVES the public identity from it below and stores nothing
-    // secret — a malformed key is no identity at all.
-    if (!isValidSecret(body.secret)) {
-      return errorResponse(
-        400,
-        'bad_request',
-        'Body field "secret" must be the 32-hex-character player key.',
-        responseHeaders,
-      );
-    }
-    secret = body.secret;
+    // Authentication without accounts (#187): the server DERIVES the public identity
+    // from the secret below and stores nothing secret.
+    const checked = requireSecret(body, responseHeaders);
+    if (!checked.ok) return checked.response;
+    secret = checked.value;
     if (
       typeof body.turnstileToken !== 'string' ||
       body.turnstileToken.length === 0 ||

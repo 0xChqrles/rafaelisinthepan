@@ -51,23 +51,22 @@ export function rankBoard(rows: readonly BoardScore[], mode: BoardMode): RankedS
   });
 }
 
-// The top-of-board cut: the first `limit` rows, nothing folded (user-decided
+// The top-of-board cut: the first BOARD_TOP_LIMIT rows, nothing folded (user-decided
 // 2026-08-20, superseding the straddling-tie collapse) — a tie crossing the boundary
 // shows whichever members sit inside it, each at the shared rank.
-export function cutBoard(ranked: readonly RankedScore[], limit = BOARD_TOP_LIMIT): RankedScore[] {
-  return ranked.slice(0, limit);
+export function cutBoard(ranked: readonly RankedScore[]): RankedScore[] {
+  return ranked.slice(0, BOARD_TOP_LIMIT);
 }
 
-// The caller's own row with `span` neighbors directly above and below (clamped at the
-// board's edges). Null when the caller has no row on this board.
+// The caller's own row with BOARD_WINDOW_SPAN neighbors directly above and below
+// (clamped at the board's edges). Null when the caller has no row on this board.
 export function boardWindow(
   ranked: readonly RankedScore[],
   publicId: string,
-  span = BOARD_WINDOW_SPAN,
 ): RankedScore[] | null {
   const index = ranked.findIndex((row) => row.publicId === publicId);
   if (index < 0) return null;
-  return ranked.slice(Math.max(0, index - span), index + span + 1);
+  return ranked.slice(Math.max(0, index - BOARD_WINDOW_SPAN), index + BOARD_WINDOW_SPAN + 1);
 }
 
 // What the global response actually carries for the caller: nothing when their row is
@@ -77,10 +76,9 @@ export function boardOwnRows(
   ranked: readonly RankedScore[],
   cut: readonly RankedScore[],
   publicId: string,
-  span = BOARD_WINDOW_SPAN,
 ): RankedScore[] | null {
   if (cut.some((row) => row.publicId === publicId)) return null;
-  const window = boardWindow(ranked, publicId, span);
+  const window = boardWindow(ranked, publicId);
   if (window === null) return null;
   const shown = new Set(cut.map((row) => row.publicId));
   return window.filter((row) => !shown.has(row.publicId));
@@ -103,9 +101,6 @@ export interface BoardRow extends BoardPlayer {
 }
 
 export interface Board {
-  // Recorded scores on this board today: the whole population for the global tab, the
-  // caller's edges (plus themselves) for the friends tab.
-  total: number;
   rows: BoardRow[];
   // The caller's own below-the-cut window; always null on the friends board.
   own: BoardRow[] | null;

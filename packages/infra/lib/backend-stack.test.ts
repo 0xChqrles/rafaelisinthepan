@@ -227,7 +227,7 @@ describe('per-player score storage (#187)', () => {
     });
   });
 
-  it('grants the handler exactly the row-store surface: Query, profile Get, conditional Put, Update, friend Delete', () => {
+  it('grants the handler exactly the row-store surface: Query, Get/BatchGet, conditional Put, Update, friend Delete', () => {
     const policies = Object.values(template.findResources('AWS::IAM::Policy'));
     const statements = policies.flatMap(
       (policy) => policy.Properties.PolicyDocument.Statement as { Action?: unknown }[],
@@ -238,6 +238,8 @@ describe('per-player score storage (#187)', () => {
     expect(statement?.Action).toEqual([
       'dynamodb:Query',
       'dynamodb:GetItem',
+      // #190's friends board reads a KNOWN key set in batches, never a Scan.
+      'dynamodb:BatchGetItem',
       'dynamodb:PutItem',
       'dynamodb:UpdateItem',
       // #189's symmetric removal is the only thing on this table that deletes.

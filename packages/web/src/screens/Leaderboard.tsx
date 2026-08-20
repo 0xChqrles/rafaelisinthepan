@@ -55,10 +55,15 @@ interface Me {
 export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode }) {
   const [tab, setTab] = useState<Tab>('friends');
   const [me, setMe] = useState<Me | null>(null);
-  const [boards, setBoards] = useState<Partial<Record<Tab, Board>>>({});
-  const [failed, setFailed] = useState(false);
+  // ONE outcome slot per tab — a board, or that tab's own failure. Screen-global
+  // failure state painted a FAILED frame over the other tab's perfectly good board for
+  // a render when flipping back (review finding, 2026-08-20).
+  const [boards, setBoards] = useState<Partial<Record<Tab, Board | 'failed'>>>({});
   const [attempt, setAttempt] = useState(0);
-  const { share, copied } = useShare();
+  // The pinned `share` analytics event means "a RESULT left the app" (the three-event
+  // invariant); an invite link is not a result, so its delivery is untracked rather
+  // than quietly redefining the metric.
+  const { share, copied } = useShare({ tracked: false });
 
   // The identity strip: the id is derived locally (generated on first need, #187 — the
   // invite link's own rule, since sharing it IS this screen's job), the profile read
@@ -83,46 +88,59 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
     };
   }, []);
 
-  // One fetch per tab, cached for the visit (both are zero-TTL live reads, so a tab
-  // flip back shows what was already read rather than a second spinner; RETRY refetches).
-  // FRIENDS is the authenticated POST — the server resolves YOUR edges, so the read has
-  // to prove who is asking (#187: the secret in the body, never a query string). GLOBAL
-  // is the anonymous GET, widened with the caller's own window via their PUBLIC id.
+  // One fetch per tab ACTIVATION — the route is a zero-TTL live read, so a tab flip
+  // re-reads rather than trusting a snapshot from minutes ago; the cached board holds
+  // the screen while the fresh one is in flight (stale-but-good beats a spinner), and
+  // RETRY refetches. FRIENDS is the authenticated POST — the server resolves YOUR
+  // edges, so the read has to prove who is asking (#187: the secret in the body, never
+  // a query string). GLOBAL is the anonymous GET, widened with the caller's own window
+  // via their PUBLIC id.
   useEffect(() => {
-    if (boards[tab]) {
-      setFailed(false);
-      return;
-    }
     let cancelled = false;
-    setFailed(false);
+    // A standing failure turns back into the loading state for this pass.
+    setBoards((prev) => (prev[tab] === 'failed' ? { ...prev, [tab]: undefined } : prev));
     (async () => {
       try {
         const date = activeDate(new Date());
         const secret = playerSecret();
+        // The global read needs NO identity — the caller's public id only widens it
+        // with their own window, and deriving it can genuinely fail (crypto.subtle is
+        // absent outside a secure context, e.g. the LAN-IP mobile check `board:seed`
+        // exists to support). A failed derivation degrades to the plain anonymous
+        // read; it must never kill a tab that needs no identity.
+        let id: string | undefined;
+        if (tab === 'global') {
+          try {
+            id = await publicIdFromSecret(secret);
+          } catch {
+            id = undefined;
+          }
+        }
         const response =
           tab === 'friends'
             ? await postBoardBody(boardUrl(lang, date, mode), { secret })
-            : await fetch(boardUrl(lang, date, mode, await publicIdFromSecret(secret)));
+            : await fetch(boardUrl(lang, date, mode, id));
         if (cancelled) return;
-        if (!response.ok) {
-          setFailed(true);
-          return;
-        }
+        if (!response.ok) throw new Error(`board answered ${response.status}`);
         const board = parseBoard(await response.json());
         if (!cancelled) setBoards((prev) => ({ ...prev, [tab]: board }));
       } catch {
-        if (!cancelled) setFailed(true);
+        // FAILED only when there is nothing to show: an error frame over rows already
+        // on screen helps nobody — the cached board stands until a refresh succeeds.
+        if (!cancelled) {
+          setBoards((prev) =>
+            prev[tab] && prev[tab] !== 'failed' ? prev : { ...prev, [tab]: 'failed' },
+          );
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-    // `boards` is deliberately not a dependency: the effect only ever ADDS the entry it
-    // is keyed on, and re-running on its own write would loop.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, lang, mode, attempt]);
 
-  const board = boards[tab];
+  const entry = boards[tab];
+  const board = entry === 'failed' ? undefined : entry;
 
   // The invite link is both "add me" and "come play" (#189): one line of copy, then the
   // URL. Delivery (native sheet -> clipboard + COPIED) is useShare's, like every result.
@@ -194,7 +212,7 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
       </nav>
 
       <div className="board-body">
-        {failed ? (
+        {entry === 'failed' ? (
           <LoadError
             message={t(lang, 'failedBoard')}
             lang={lang}
@@ -203,7 +221,7 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
         ) : board ? (
           <BoardList key={tab} board={board} tab={tab} lang={lang} mode={mode} meId={me?.publicId} />
         ) : (
-          <p className="status board-status">
+          <p className="status">
             <LoadingWave text={t(lang, 'loading')} />
           </p>
         )}
@@ -231,8 +249,17 @@ function BoardList({
   mode: Mode;
   meId?: string;
 }) {
+  // Empty is per TAB. The GLOBAL board is empty when nobody played. The FRIENDS board
+  // is empty when the caller has NO EDGES: the server always includes the caller's own
+  // row once they played, and a board of exactly yourself — under an identity strip
+  // already wearing your name and mark — still means "no friends yet", which is what
+  // the ghost says and the INVITE button below remedies (user-decided 2026-08-20; a
+  // friend who merely has not played is a waiting row, never empty).
+  const others = board.rows.filter((row) => row.publicId !== meId);
   const empty =
-    board.rows.length === 0 && (board.own?.length ?? 0) === 0 && board.waiting.length === 0;
+    (tab === 'friends' ? others.length === 0 : board.rows.length === 0) &&
+    (board.own?.length ?? 0) === 0 &&
+    board.waiting.length === 0;
   if (empty) {
     // A sad ghost over a terse line: an empty FRIENDS tab means no edges at all (the
     // merely-unplayed show as waiting rows), an empty GLOBAL one means nobody played.

@@ -177,12 +177,15 @@ export class BackendStack extends Stack {
     // (#188) adds one GetItem (its read) and reuses UpdateItem (its upsert). The friends
     // graph (#189) reuses Query (a player's edge partition) and UpdateItem (the mutual
     // link), and is the ONE writer that also needs DeleteItem — removal deletes both
-    // directions. AWS authorizes transactional actions through their underlying item
-    // permissions, so no Scan surface is needed.
+    // directions. The friends board (#190) adds BatchGetItem: it reads the score rows of
+    // a KNOWN key set instead of paging the whole day partition. AWS authorizes
+    // transactional actions through their underlying item permissions, so no Scan
+    // surface is needed.
     scoreTable.grant(
       fn,
       'dynamodb:Query',
       'dynamodb:GetItem',
+      'dynamodb:BatchGetItem',
       'dynamodb:PutItem',
       'dynamodb:UpdateItem',
       'dynamodb:DeleteItem',
@@ -309,80 +312,66 @@ export class BackendStack extends Stack {
       ),
     });
 
-    const scoreOriginRequestPolicy = new cloudfront.OriginRequestPolicy(
-      this,
+    // ONE shape for every LIVE route's origin-request policy (#169/#188/#189/#190), and
+    // one spelling of it: `allExcept: Host` headers — AWS's Lambda-URL pattern, the mode
+    // that carries the viewer's `x-amz-content-sha256` for an OAC-signed POST while
+    // letting CloudFront set Host to the Function URL's own domain for that signature —
+    // no cookies, and a query allow-list naming EXACTLY what that route's handler reads.
+    // The allow-list is the only per-route value because it is the only per-route
+    // DECISION: it is one third of a three-package contract (root AGENTS.md), and an
+    // unlisted parameter never reaches the Lambda at all. The header mode is the part
+    // that must never drift, which is why four copies of it became one.
+    const liveOriginRequestPolicy = (
+      id: string,
+      policyName: string,
+      comment: string,
+      queries: readonly string[],
+    ) =>
+      new cloudfront.OriginRequestPolicy(this, id, {
+        originRequestPolicyName: policyName,
+        comment,
+        headerBehavior: cloudfront.OriginRequestHeaderBehavior.denyList('Host'),
+        queryStringBehavior: queries.length
+          ? cloudfront.OriginRequestQueryStringBehavior.allowList(...queries)
+          : cloudfront.OriginRequestQueryStringBehavior.none(),
+        cookieBehavior: cloudfront.OriginRequestCookieBehavior.none(),
+      });
+
+    const scoreOriginRequestPolicy = liveOriginRequestPolicy(
       'ScoreOriginRequestPolicy',
-      {
-        originRequestPolicyName: 'WhippinLiveScoresOrigin',
-        comment:
-          'Live scores: forward exact queries and Lambda-URL-safe headers outside cache.',
-        headerBehavior: cloudfront.OriginRequestHeaderBehavior.denyList('Host'),
-        queryStringBehavior: cloudfront.OriginRequestQueryStringBehavior.allowList(
-          'lang',
-          'date',
-          'mode',
-        ),
-        cookieBehavior: cloudfront.OriginRequestCookieBehavior.none(),
-      },
+      'WhippinLiveScoresOrigin',
+      'Live scores: forward exact queries and Lambda-URL-safe headers outside cache.',
+      ['lang', 'date', 'mode'],
     );
 
-    // `/profile` (#188) is the same live-data shape as `/scores` — a zero-TTL behavior
-    // whose origin-request policy forwards exactly the query the handler reads (`id`)
-    // plus the Lambda-URL-safe `allExcept: Host` headers, which is what carries the
-    // viewer's `x-amz-content-sha256` for the OAC-signed POST. No viewer-IP function:
-    // the profile route has no per-IP logic.
-    const profileOriginRequestPolicy = new cloudfront.OriginRequestPolicy(
-      this,
+    // `/profile` (#188) reads ONE query, the public id a board row resolves by.
+    const profileOriginRequestPolicy = liveOriginRequestPolicy(
       'ProfileOriginRequestPolicy',
-      {
-        originRequestPolicyName: 'WhippinPlayerProfileOrigin',
-        comment:
-          'Player profile: forward the id query and Lambda-URL-safe headers outside cache.',
-        headerBehavior: cloudfront.OriginRequestHeaderBehavior.denyList('Host'),
-        queryStringBehavior: cloudfront.OriginRequestQueryStringBehavior.allowList('id'),
-        cookieBehavior: cloudfront.OriginRequestCookieBehavior.none(),
-      },
+      'WhippinPlayerProfileOrigin',
+      'Player profile: forward the id query and Lambda-URL-safe headers outside cache.',
+      ['id'],
     );
 
-    // `/friends` (#189) is the third live route on the same shape. It reads NO query
-    // parameter at all — the player key authenticates in the body, so every call is a POST
-    // and there is nothing to forward but the Lambda-URL-safe headers that carry the
-    // OAC-signed body hash. An empty allow-list is the honest statement of that: the day
-    // this route grows a query, it has to be named here or the handler will never see it.
-    const friendsOriginRequestPolicy = new cloudfront.OriginRequestPolicy(
-      this,
+    // `/friends` (#189) reads NO query parameter at all — the player key authenticates in
+    // the body, so every call is a POST and there is nothing to forward but the headers
+    // carrying the OAC-signed body hash. An EMPTY allow-list is the honest statement of
+    // that: the day this route grows a query, it has to be named here or CloudFront will
+    // strip it before the handler ever sees it.
+    const friendsOriginRequestPolicy = liveOriginRequestPolicy(
       'FriendsOriginRequestPolicy',
-      {
-        originRequestPolicyName: 'WhippinFriendsOrigin',
-        comment: 'Friends graph: no query strings, Lambda-URL-safe headers outside cache.',
-        headerBehavior: cloudfront.OriginRequestHeaderBehavior.denyList('Host'),
-        queryStringBehavior: cloudfront.OriginRequestQueryStringBehavior.none(),
-        cookieBehavior: cloudfront.OriginRequestCookieBehavior.none(),
-      },
+      'WhippinFriendsOrigin',
+      'Friends graph: no query strings, Lambda-URL-safe headers outside cache.',
+      [],
     );
 
-    // `/board` (#190) is the fourth live route on the same shape. The handler reads FOUR
-    // query parameters — `lang`/`date`/`mode` address the day's board and `id` (the
-    // caller's PUBLIC id, never the secret) widens the global GET with their own
-    // below-the-cut window — so all four are named here, or CloudFront strips them before
-    // the Lambda ever sees them. The friends-board POST authenticates in the body, whose
-    // OAC hash the `allExcept: Host` headers carry. No viewer-IP function: no per-IP logic.
-    const boardOriginRequestPolicy = new cloudfront.OriginRequestPolicy(
-      this,
+    // `/board` (#190) reads FOUR: `lang`/`date`/`mode` address the day's board, and `id`
+    // (the caller's PUBLIC id, never the secret) widens the global GET with a
+    // below-the-cut window.
+    const boardOriginRequestPolicy = liveOriginRequestPolicy(
       'BoardOriginRequestPolicy',
-      {
-        originRequestPolicyName: 'WhippinLeaderboardOrigin',
-        comment:
-          'Leaderboard: forward the four board queries and Lambda-URL-safe headers outside cache.',
-        headerBehavior: cloudfront.OriginRequestHeaderBehavior.denyList('Host'),
-        queryStringBehavior: cloudfront.OriginRequestQueryStringBehavior.allowList(
-          'lang',
-          'date',
-          'mode',
-          'id',
-        ),
-        cookieBehavior: cloudfront.OriginRequestCookieBehavior.none(),
-      },
+      'WhippinLeaderboardOrigin',
+      'Leaderboard: forward the four board queries and Lambda-URL-safe headers outside cache.',
+      ['lang', 'date', 'mode', 'id'],
     );
 
     // Security response headers for the API. CORS stays owned by the Lambda (it echoes the
@@ -406,6 +395,26 @@ export class BackendStack extends Stack {
     });
 
     const functionOrigin = origins.FunctionUrlOrigin.withOriginAccessControl(fnUrl);
+
+    // ONE shape for every LIVE route's BEHAVIOR too: zero-TTL because the data is live
+    // (it must never inherit the puzzle's year-long s-maxage), ALL methods because each
+    // of these routes has a write or an authenticated POST, and the route's own
+    // origin-request policy from above.
+    const liveBehavior = (
+      originRequestPolicy: cloudfront.IOriginRequestPolicy,
+      overrides: Partial<cloudfront.BehaviorOptions> = {},
+    ): cloudfront.BehaviorOptions => ({
+      origin: functionOrigin,
+      viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+      allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+      cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
+      cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+      originRequestPolicy,
+      responseHeadersPolicy: apiHeaders,
+      compress: true,
+      ...overrides,
+    });
+
     const distribution = new cloudfront.Distribution(this, 'PuzzleCdn', {
       comment: 'Whippin daily-puzzle API',
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100, // NA + EU (en/fr audience)
@@ -425,63 +434,26 @@ export class BackendStack extends Stack {
         responseHeadersPolicy: apiHeaders,
         compress: true,
       },
+      // Every LIVE route wears the same behavior — zero-TTL (the data IS live), ALL
+      // methods (each has a write or an authenticated POST), and its own origin-request
+      // policy. Each pattern also catches a harmless trailing slash; the handler still
+      // accepts only the exact normalized route. Only /scores differs, by the one thing
+      // that is genuinely its own: the viewer-IP function.
       additionalBehaviors: {
-        // `scores*` also catches a harmless trailing slash; the handler still accepts only
-        // the exact normalized `/scores` route.
-        'scores*': {
-          origin: functionOrigin,
-          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-          allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
-          cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
+        'scores*': liveBehavior(scoreOriginRequestPolicy, {
           cachePolicy: scoreCachePolicy,
-          originRequestPolicy: scoreOriginRequestPolicy,
-          responseHeadersPolicy: apiHeaders,
-          compress: true,
           // Runs before the cache lookup, so the header it stamps IS a viewer header by
-          // the time the origin request policy above decides what to forward.
+          // the time the origin request policy decides what to forward.
           functionAssociations: [
             {
               function: viewerIpFn,
               eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
             },
           ],
-        },
-        // `profile*` also catches a harmless trailing slash; the handler still accepts
-        // only the exact normalized `/profile` route.
-        'profile*': {
-          origin: functionOrigin,
-          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-          allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
-          cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
-          cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
-          originRequestPolicy: profileOriginRequestPolicy,
-          responseHeadersPolicy: apiHeaders,
-          compress: true,
-        },
-        // `board*` also catches a harmless trailing slash; the handler still accepts
-        // only the exact normalized `/board` route.
-        'board*': {
-          origin: functionOrigin,
-          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-          allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
-          cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
-          cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
-          originRequestPolicy: boardOriginRequestPolicy,
-          responseHeadersPolicy: apiHeaders,
-          compress: true,
-        },
-        // `friends*` also catches a harmless trailing slash; the handler still accepts
-        // only the exact normalized `/friends` route.
-        'friends*': {
-          origin: functionOrigin,
-          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-          allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
-          cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
-          cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
-          originRequestPolicy: friendsOriginRequestPolicy,
-          responseHeadersPolicy: apiHeaders,
-          compress: true,
-        },
+        }),
+        'profile*': liveBehavior(profileOriginRequestPolicy),
+        'board*': liveBehavior(boardOriginRequestPolicy),
+        'friends*': liveBehavior(friendsOriginRequestPolicy),
       },
     });
 

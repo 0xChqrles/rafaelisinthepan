@@ -17,27 +17,15 @@
 import {
   decodeAvatar,
   isValidName,
-  isValidSecret,
   publicIdFromSecret,
   NAME_MAX_LENGTH,
   PUBLIC_ID_PATTERN,
 } from '@whippin/shared';
 import { containsSwastika } from './avatarModeration';
+import { LIVE_HEADERS, readJsonObject, requireSecret } from './liveRoute';
 import { isNameAllowed } from './nameFilter';
 import type { ProfileStore } from './profileStore';
 import { errorResponse, json, type FnUrlEvent, type FnUrlResult } from './respond';
-
-const PROFILE_BODY_MAX_BYTES = 4_096;
-const LIVE_HEADERS = { 'Cache-Control': 'no-store' } as const;
-
-function bodyOf(event: FnUrlEvent): unknown {
-  if (event.body == null) return null;
-  const body = event.isBase64Encoded
-    ? Buffer.from(event.body, 'base64').toString('utf8')
-    : event.body;
-  if (Buffer.byteLength(body) > PROFILE_BODY_MAX_BYTES) throw new Error('request_too_large');
-  return JSON.parse(body) as unknown;
-}
 
 // The display name's shape rule is the SHARED one (user-decided 2026-08-19: "the server
 // should apply the same rules") — alphanumerics and underscores, case kept, at most
@@ -81,34 +69,14 @@ export async function handleProfile(
     return json(200, profile, responseHeaders);
   }
 
-  let raw: unknown;
-  try {
-    raw = bodyOf(event);
-  } catch (error) {
-    const tooLarge = error instanceof Error && error.message === 'request_too_large';
-    return errorResponse(
-      tooLarge ? 413 : 400,
-      tooLarge ? 'payload_too_large' : 'bad_request',
-      tooLarge ? 'Profile request body is too large.' : 'Body must be valid JSON.',
-      responseHeaders,
-    );
-  }
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-    return errorResponse(400, 'bad_request', 'Body must be an object.', responseHeaders);
-  }
-  const body = raw as Record<string, unknown>;
+  const parsed = readJsonObject(event, 'Profile', responseHeaders);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.value;
 
-  // Authentication without accounts (#187): possession of the secret is the proof of
-  // ownership — the row is keyed by the identity DERIVED from it, and nothing secret is
-  // ever stored. A malformed key is no identity at all.
-  if (!isValidSecret(body.secret)) {
-    return errorResponse(
-      400,
-      'bad_request',
-      'Body field "secret" must be the 32-hex-character player key.',
-      responseHeaders,
-    );
-  }
+  // Authentication without accounts (#187): the row is keyed by the identity DERIVED
+  // from the secret, and nothing secret is ever stored.
+  const secret = requireSecret(body, responseHeaders);
+  if (!secret.ok) return secret.response;
 
   const name = validateName(body.name);
   if (name === null) {
@@ -136,7 +104,7 @@ export async function handleProfile(
     return errorResponse(400, 'avatar_rejected', 'This avatar is not allowed.', responseHeaders);
   }
 
-  const publicId = await publicIdFromSecret(body.secret);
+  const publicId = await publicIdFromSecret(secret.value);
   await profiles.upsert({
     publicId,
     name,

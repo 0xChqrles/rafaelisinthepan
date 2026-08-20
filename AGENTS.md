@@ -581,8 +581,13 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   answers the empty board). Two faces:
   - `GET /board?lang=&date=&mode=[&id=<publicId>]` — the **GLOBAL top 50, anonymous**
     (untrusted by design, #187: decorative, nothing treats it as truth). `id` is the
-    caller's PUBLIC id — never the secret, so it may travel in the query — and only
-    widens the answer with their own below-the-cut window.
+    caller's PUBLIC id — never the secret, so it may travel in the query — and widens
+    the answer with a below-the-cut window. **Nothing BINDS `id` to the caller, and
+    that is deliberate:** anyone holding a publicId can read that player's window
+    (score, rank, profile) for any served day. publicIds are broadcast by design —
+    an invite link IS one (#189) — and a stranger holding one can already reach the
+    same scores by accepting that link, so the read adds no capability the graph did
+    not. The TRUSTED surface is the POST.
   - `POST /board { secret }` (+ the same query) — the **FRIENDS board, the trusted
     surface**: the server resolves YOUR edges (#189) plus yourself, so the read proves
     who is asking — the secret in the BODY, the /friends rule. Production POST needs
@@ -590,7 +595,7 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
     with no recorded score today is still named** (user-decided 2026-08-20): the
     response's `waiting` list carries them (profile-dressed, no score/rank; sorted by
     publicId; never the caller themselves, and always empty on the global board) and
-    the web draws them with "not played yet" where a score would be — an edge is a
+    the web draws them under ONE "not played yet" section caption — an edge is a
     person the caller chose, never a row to silently drop.
 - **The ranking rules are shared pure functions** (`shared/src/leaderboard.ts`,
   contract-tested): competition-style tie ranks (equal ranks, never a fake ordering —
@@ -600,8 +605,11 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   the shared rank, nothing folded), and
   the own-row ±2 neighbor window (sent only when the caller's row is not
   visible in the cut, minus any row the cut already shows). The backend applies them and attaches
-  each row's public profile (#188: `name` may be empty, `avatar` null — the client
-  falls back to the publicId and a blank mark); the web renders what the API returned.
+  each row's public profile (#188: `name` may be empty and `avatar` null — for a player
+  who never customized one, AND for a profile row whose read FAILED, which dresses the
+  same way rather than failing a board whose scores all answered; the client draws the
+  ASSIGNED identity for both, a pseudonym + a generated mark derived from the publicId);
+  the web renders what the API returned.
 - **Zero-TTL CloudFront behavior with all FOUR query params in its allowList**
   (`lang`/`date`/`mode`/`id` — the same three-package contract as `/scores`: the day
   the handler reads a fifth, it has to be named in `infra/lib/backend-stack.ts` too).
@@ -610,7 +618,10 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   from the solved screen's standing line" note recorded in the web AGENTS): the screen
   is also where a player customizes their profile (#188) and shares their invite link
   (#189), neither of which requires having played. The solved screen keeps its compact
-  percentile — that stat never requires visiting this screen.
+  percentile — that stat never requires visiting this screen. The entry is on the
+  ACTIVE day's routes only: a board is the active day's, so offering it from an
+  archive replay would swap the day under the player and its exit would land them on
+  today, ending the archive session.
 
 ---
 

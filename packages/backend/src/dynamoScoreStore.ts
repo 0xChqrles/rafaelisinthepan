@@ -1,7 +1,9 @@
 import {
+  BatchGetItemCommand,
   QueryCommand,
   TransactWriteItemsCommand,
   type DynamoDBClient,
+  type AttributeValue,
 } from '@aws-sdk/client-dynamodb';
 import {
   DEDUP_SORT_KEY,
@@ -39,6 +41,37 @@ export function dynamoScoreStore(client: DynamoDBClient, tableName: string): Sco
         }
         cursor = response.LastEvaluatedKey;
       } while (cursor);
+      return rows;
+    },
+
+    // The friends board's read: the caller holds the exact sort keys, so this is
+    // BatchGetItem — 100 keys a call, constant in the day's population where a
+    // partition Query is O(everyone who played today). Strongly consistent for the
+    // Query's own reason (a player opening the board right after their score POST must
+    // see their row). UnprocessedKeys are retried; keys still unprocessed after that
+    // surface as the operational error they are — silently dropping them would drop a
+    // friend's score from the board.
+    async getMany(key, publicIds) {
+      const pk = dayKey(key);
+      const rows: ScoreRow[] = [];
+      const ids = [...new Set(publicIds)];
+      for (let i = 0; i < ids.length; i += 100) {
+        let keys: Record<string, AttributeValue>[] = ids
+          .slice(i, i + 100)
+          .map((id) => ({ pk: { S: pk }, sk: { S: id } }));
+        for (let attempt = 0; keys.length > 0; attempt += 1) {
+          if (attempt >= 4) throw new Error('Score batch read left unprocessed keys.');
+          const response = await client.send(
+            new BatchGetItemCommand({
+              RequestItems: { [tableName]: { Keys: keys, ConsistentRead: true } },
+            }),
+          );
+          for (const item of response.Responses?.[tableName] ?? []) {
+            rows.push({ publicId: item.sk?.S ?? '', score: Number(item.score?.N ?? 0) });
+          }
+          keys = response.UnprocessedKeys?.[tableName]?.Keys ?? [];
+        }
+      }
       return rows;
     },
 

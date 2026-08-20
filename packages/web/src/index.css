@@ -927,7 +927,15 @@ button * {
   width: min(900px, calc(100vw - 48px));
   height: 50px;
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  /* `minmax(0, …)` and not a bare `1fr`: a bare fr floors each side track at its
+     MIN-CONTENT, so a group too wide for its share pushes the whole grid past its own
+     fixed-width box — and on a phone `body { overflow-x: hidden }` then CLIPS the
+     right group's tail, taking a control off the screen entirely. With a zero floor the
+     grid always fits its box, so a squeezed group overlaps its neighbour (still
+     reachable) instead of disappearing. Free space still splits evenly, so the centre
+     stays truly centred and a missing slot still shifts nothing. The real budget is
+     kept by the narrow-phone step-down at the bottom of this file. */
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   padding: 0 8px;
   background: var(--glass);
@@ -1123,9 +1131,10 @@ button * {
    surface spells a day. It is CHROME, not a stat — `.topbar-title`'s muted weight and its
    optical downshift, and none of the counter's live ramp colour.
    Sized for the LEFT CORNER'S REAL BUDGET, which the counter's four glyphs never tested:
-   ten glyphs plus the group's own 24px of padding have to clear the four 38px controls
-   opposite. At 320px that leaves ~132px, so the mobile step below is 10px with no tracking
-   (exactly 100px of ink) — measured at 320/360/390/430. */
+   ten glyphs plus the group's own padding have to clear the mode tabs AND the right
+   group's controls (THREE of them on a game route since #190's leaderboard crown). The
+   whole row's arithmetic — and the narrow-phone step-down that keeps it inside a 320px
+   screen — is at the bottom of this file, under "THE NARROW-PHONE HEADER BUDGET". */
 /* The date, plain bold type like the screen titles (one left-corner treatment; both
    dropped the inverted fill 2026-08-18 with the glass band — the box is the active
    tab's alone now) — and the chip IS the ARCHIVE BUTTON: tap the day to change the day
@@ -3430,9 +3439,42 @@ button * {
   }
 }
 
-/* On the narrowest phones, compress only the header GAPS — never the hud-height flame box
-   or the 22px count — so the streak stays whole beside the centered title the archive and
-   tutorial still carry (the game has none). */
+/* THE NARROW-PHONE HEADER BUDGET (re-measured 2026-08-20, when #190's leaderboard crown
+   made the game's right group THREE controls). The band is one fixed-width row holding
+   three groups that cannot wrap, so it is arithmetic, not taste — at 320px the row has
+   316px of content box (the 2px padding below), and at the base mobile sizes the three
+   groups want:
+     left   the date chip — 10 glyphs at 12px + tick + padding      ~103px
+     centre the mode tabs — PHRASE|MOT ~115px, SENTENCE|WORD ~138px
+     right  3 x --hud-height (38px) + two 2px gaps                   118px
+   which is 336 (fr) / 359 (en) — over by 20-43px, and English was already ~5px over
+   with only two controls. The mono advances 0.6em a glyph, so every one of these is a
+   count, and the fix is to spend less in all three: a smaller control box, a smaller
+   date, and tabs at 10px with most of their tracking and side padding given back. That
+   comes to ~294 (fr) / ~307 (en) — inside 316 with room.
+   THE BREAKPOINT IS 400px, not the 380 the standing line steps down at: measured in a
+   browser, English at the BASE sizes saturates its tracks from ~400px down (at 390 —
+   the common iPhone width — the tabs' box and the right group's touch, leaving only the
+   controls' own padding as the visible gap). So the band that needs the step-down is
+   ≤400, and 390 gets it. */
+@media (max-width: 400px) {
+  .topbar {
+    /* 32px still holds the 28px icons; below this width the alternative is losing a
+       control off the edge. */
+    --hud-height: 32px;
+  }
+  .puzzle-date {
+    font-size: 11px;
+    padding: 4px 4px 3px 5px;
+    gap: 3px;
+  }
+  .mode-tab {
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    padding: 6px 7px 5px;
+  }
+}
+/* On the narrowest phones, compress the header's own side padding too. */
 @media (max-width: 340px) {
   .topbar-inner {
     padding: 0 2px;
@@ -4896,8 +4938,12 @@ button * {
   border-color: var(--fg);
   box-shadow: 0 0 0 1px var(--fg);
 }
-/* CLEAR: a quiet hairline chip — it undoes, so it never competes with the swatches. */
-.profile-clear {
+/* CLEAR: a quiet hairline chip — it undoes, so it never competes with the swatches.
+   The leaderboard's EDIT chip (#190) is the same control in the same voice: it leads
+   away from the board rather than acting on it, so it wears this rule rather than a
+   copy of it. */
+.profile-clear,
+.board-chip {
   flex: none;
   height: 36px;
   font-family: var(--ui);
@@ -4914,7 +4960,8 @@ button * {
   text-shadow: none;
   transition: filter 0.08s linear, border-color 0.12s linear;
 }
-.profile-clear:hover:not(:disabled) {
+.profile-clear:hover:not(:disabled),
+.board-chip:hover {
   filter: brightness(1.3);
   border-color: var(--fg);
 }
@@ -5106,29 +5153,9 @@ button * {
 .board-me-name.anon {
   color: var(--muted);
 }
-/* The EDIT chip: the quiet hairline chip (the profile CLEAR's own recipe) — it leads
-   away, so it never competes with the board. */
-.board-chip {
-  flex: none;
-  height: 36px;
-  font-family: var(--ui);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--fg);
-  background: var(--glass);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-sm);
-  padding: 0 14px;
-  cursor: pointer;
-  text-shadow: none;
-  transition: filter 0.08s linear, border-color 0.12s linear;
-}
-.board-chip:hover {
-  filter: brightness(1.3);
-  border-color: var(--fg);
-}
+/* The EDIT chip is the profile CLEAR's chip — literally, sharing its rule above
+   (`.profile-clear, .board-chip`) rather than repeating it property for property: one
+   quiet hairline chip, worn wherever a control leads AWAY from what it sits beside. */
 
 /* The whose-scores tabs wear the header switcher's exact dress, stretched to the
    column: same hairline group, same inverted-box active state, said in weight. */
@@ -5294,9 +5321,6 @@ button * {
 }
 .board-row.me .board-rank {
   opacity: 0.6;
-}
-.board-row.me .board-noface {
-  border-color: rgba(8, 9, 15, 0.5);
 }
 
 /* A FRIEND with no score today (friends board only, user-decided 2026-08-20): the row

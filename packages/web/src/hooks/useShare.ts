@@ -10,10 +10,13 @@ import { track } from '../analytics';
 // word screens ended up with two copies of it.
 //
 // The caller owns the TEXT (each mode's headline, its token, its row) and the label; this
-// owns the delivery and the `share` analytics event.
+// owns the delivery and — for a RESULT — the `share` analytics event. `tracked: false`
+// opts a non-result caller (the #190 invite link) out of the event: the pinned `share`
+// metric means "a result left the app" (the three-event invariant), and counting invites
+// into it would silently redefine what the number measures.
 const COPIED_MS = 2000;
 
-export default function useShare(): {
+export default function useShare({ tracked = true }: { tracked?: boolean } = {}): {
   share: (text: string) => Promise<void>;
   copied: boolean;
 } {
@@ -29,7 +32,7 @@ export default function useShare(): {
     if (isTouch && typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
       try {
         await navigator.share({ title: 'Whippin AI', text });
-        track('share', { method: 'native' });
+        if (tracked) track('share', { method: 'native' });
         return;
       } catch (err) {
         if ((err as DOMException)?.name === 'AbortError') return; // dismissed, not failed
@@ -38,14 +41,14 @@ export default function useShare(): {
     }
     try {
       await navigator.clipboard.writeText(text);
-      track('share', { method: 'clipboard' });
+      if (tracked) track('share', { method: 'clipboard' });
       setCopied(true);
       window.clearTimeout(copiedTimer.current);
       copiedTimer.current = window.setTimeout(() => setCopied(false), COPIED_MS);
     } catch {
       // Clipboard blocked (insecure context / denied): there is no further browser fallback.
     }
-  }, []);
+  }, [tracked]);
 
   return { share, copied };
 }

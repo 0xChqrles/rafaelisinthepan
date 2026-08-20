@@ -13,8 +13,8 @@
     src/day.ts                the ONE 22:00-ET DST-correct game-day logic (client + server + publish)
     src/scores.ts             WORD_CLAIM_ZONE (web+backend) + VIEWER_IP_HEADER (infra+backend)
     src/identity.ts           the #187 player key: secret format + publicId derivation (web+backend)
-    src/leaderboard.ts        the #190 board rules: competition tie ranks, top-50 cut w/ straddling-tie
-                              collapse, own-row window + the Board API types (backend cuts, web renders)
+    src/leaderboard.ts        the #190 board rules: competition tie ranks, the plain top-50 cut,
+                              own-row window + the Board API types (backend cuts, web renders)
     src/avatar.ts             the #188 avatar: {bg, fg} palettes + the 14-byte 1-bit grid codec (web encodes/renders, backend validates)
     src/name.ts               the #188 display-name charset: sanitizeName (web) ⇔ isValidName (backend)
     src/types.ts              shared puzzle + score-API schema types (Puzzle, Hole, ScoreHistogram, …)

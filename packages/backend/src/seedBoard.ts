@@ -19,7 +19,7 @@
 
 import { copyFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { AVATAR_CELLS, encodeAvatar, publicIdFromSecret } from '@whippin/shared';
+import { AVATAR_CELLS, VIEWER_IP_HEADER, encodeAvatar, publicIdFromSecret } from '@whippin/shared';
 import { defaultLocalStoreRoot } from './layout';
 
 const API = process.env.WHIPPIN_API ?? 'http://localhost:8787';
@@ -73,7 +73,9 @@ async function post(path: string, body: unknown, ip?: string): Promise<Response>
       // The local adapter forwards headers verbatim, so each seed can present its own
       // viewer address and clear the 5-submissions-per-IP allowance. Local-only: in
       // production this header is overwritten by CloudFront's viewer-request function.
-      ...(ip ? { 'x-whippin-viewer-ip': ip } : {}),
+      // The NAME is the shared three-package constant — a rename must reach here too,
+      // or the sixth seed silently caps and the board holds 5 rows.
+      ...(ip ? { [VIEWER_IP_HEADER]: ip } : {}),
     },
     body: JSON.stringify(body),
   });
@@ -85,6 +87,11 @@ function ensureLocalPuzzle(date: string): void {
   const root = process.env.PUZZLE_STORE ?? defaultLocalStoreRoot();
   const wanted = join(root, `${date}.${LANG}.json`);
   if (existsSync(wanted)) return;
+  // A fresh clone has no store directory at all — say "publish one first" instead of
+  // letting readdirSync surface a raw ENOENT.
+  if (!existsSync(root)) {
+    throw new Error(`no local puzzle store at ${root} — publish one first.`);
+  }
   const candidates = readdirSync(root)
     .filter((name) => name.endsWith(`.${LANG}.json`) && !name.endsWith(`.${LANG}.word.json`))
     // Only PAST days: a future-dated test fixture must not become today's sentence.

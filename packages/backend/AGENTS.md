@@ -19,6 +19,9 @@
       scores.ts               /scores GET+POST route: params, auth (publicId), Turnstile,
                               range, HMAC, derived histogram, response
       scoreLimits.ts          puzzle-aware possible-score limits (per-mode ceilings)
+      liveRoute.ts            what the LIVE routes share: no-store headers, the JSON-body
+                              reader + size cap, the #187 secret check, the (lang, mode,
+                              date) + future-skew guard
       scoreStore.ts           score storage contract; day/dedup keys + 5/48h constants
       dynamoScoreStore.ts     prod atomic transaction + strongly-consistent day-partition Query
       memoryScoreStore.ts     process-local implementation for backend:dev/tests
@@ -155,13 +158,33 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   puzzle store — a population only exists for a published daily, so an unpublished day
   answers the empty board; GET's optional `id` is validated against
   `PUBLIC_ID_PATTERN` (400 malformed); POST validates `{secret}` exactly like /friends.
-  Rows are ranked/cut/windowed by `@whippin/shared`'s leaderboard functions, then
-  dressed with profiles — one `ProfileStore.get` per DISTINCT id shown, in parallel
-  (bounded: top 50 + a 5-row window, or FRIENDS_MAX rows). The friends face also
+  The param guards, the JSON-body reader and the secret check are the SHARED
+  `liveRoute.ts` (below), not a fourth copy. The GLOBAL face reads the day partition
+  (`ScoreStore.list`); the FRIENDS face reads `getMany` — the caller's edges plus
+  themselves are the exact row keys, so it fetches those (BatchGetItem in prod,
+  constant in the day's population) instead of paging every player who played today to
+  keep at most `FRIENDS_MAX + 1` rows. Rows are ranked/cut/windowed by
+  `@whippin/shared`'s leaderboard functions, then dressed with profiles — one
+  `ProfileStore.get` per DISTINCT id shown, in parallel (bounded: top 50 + a 5-row
+  window, or FRIENDS_MAX rows). The friends face also
   answers `waiting`: the caller's edges with no score row today, profile-dressed and
   publicId-sorted (root `AGENTS.md`). Every response is
-  `no-store`; a missing profile dresses as `name: ''` / `avatar: null`. No new store:
-  the route is a pure READ over the score rows, the friend edges and the profile rows.
+  `no-store`; a missing profile dresses as `name: ''` / `avatar: null` — **and so does
+  one whose READ FAILED** (a per-id `catch`, never `Promise.all`'s fail-fast): the name
+  and mark are decoration over rows that already answered, so one throttled `GetItem`
+  must not 500 a whole board. An EMPTY stored avatar dresses as `null` for the same
+  reason — `''` is not a decodable avatar, and the client's fallback is keyed on null.
+  No new store: the route is a pure READ over the score rows, the friend edges and the
+  profile rows.
+  **The LIVE routes share their plumbing** (`liveRoute.ts`, extracted 2026-08-20 when
+  `/board` became the FOURTH byte-identical copy): the `no-store` header, the body
+  reader with its 4 KB cap, the `{secret}` check, and the `(lang, mode, date)` guard
+  triple with the +1-day future skew. The lang check is `Object.hasOwn`, deliberately —
+  a bare `map[lang] === undefined` walks the prototype chain, so `constructor` /
+  `toString` / `__proto__` pass as "supported languages" and reach the DynamoDB
+  partition key. On /scores that hole is masked by the puzzle-store 404 behind it; on
+  /board, which reads no puzzle store, it answered a 200, which is what made this one
+  spelling rather than four.
   **`pnpm board:seed` (src/seedBoard.ts) is the LOCAL-ONLY population seeder**: run it
   against a live `pnpm backend:dev` to fill the in-memory stores with 60 scored players
   (a tie straddling the top-50 cut included), a few unnamed ones, two unplayed

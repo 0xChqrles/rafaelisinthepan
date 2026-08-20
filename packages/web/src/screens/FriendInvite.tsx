@@ -110,10 +110,16 @@ export default function FriendInvite({ publicId, lang }: { publicId: string; lan
       }
       // The edge is landed; dress the confirmation with who was added. Best-effort —
       // any miss (404 never customized, transport, bad shape) falls back to the
-      // pseudonym + assigned mark, never to an error.
+      // pseudonym + assigned mark, never to an error. Best-effort also means BOUNDED:
+      // this landing renders no header and no controls until the confirmation mounts,
+      // so a read that STALLS (a dead connection that never errors) would strand the
+      // clicker on a bare LOADING with only a reload — which re-fires the POST — as
+      // the way out. After a few seconds the fallback IS the answer.
       let added: Inviter = { name: anonName(publicId), avatar: null };
       try {
-        const response = await fetch(profileUrl(publicId));
+        const response = await fetch(profileUrl(publicId), {
+          signal: AbortSignal.timeout(6_000),
+        });
         if (response.ok) {
           const profile = parseProfile(await response.json());
           added = { name: profile.name || anonName(publicId), avatar: profile.avatar };

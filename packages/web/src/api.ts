@@ -299,14 +299,18 @@ export async function postBoardBody(url: string, body: { secret: string }): Prom
 }
 
 // Runtime shape check for a board response — the parsePuzzle contract: a wrong-shaped
-// body surfaces as the screen's failure state, never as a board of NaN rows.
+// body surfaces as the screen's failure state, never as a board of NaN rows. The avatar
+// must be null or a DECODABLE string (isValidAvatar, parseProfile's own rule): "any
+// string" would let an empty/garbage value slip past the `?? defaultAvatar` fallback
+// (nullish only) into decodeAvatar, where a thrown decode drops the row's mark and
+// shifts the whole order-placed row grid.
 function isBoardPlayer(row: unknown): row is BoardPlayer {
   return (
     isRecord(row) &&
     typeof row.publicId === 'string' &&
     PUBLIC_ID_PATTERN.test(row.publicId) &&
     typeof row.name === 'string' &&
-    (row.avatar === null || typeof row.avatar === 'string')
+    (row.avatar === null || isValidAvatar(row.avatar))
   );
 }
 
@@ -336,10 +340,7 @@ function checkBoardRows(value: unknown, field: string): asserts value is BoardRo
 
 export function parseBoard(data: unknown): Board {
   if (!isRecord(data)) throw new Error('malformed board: not an object');
-  const { total, rows, own, waiting } = data;
-  if (typeof total !== 'number' || !Number.isInteger(total) || total < 0) {
-    throw new Error('malformed board: "total" must be a non-negative integer');
-  }
+  const { rows, own, waiting } = data;
   checkBoardRows(rows, 'rows');
   if (own !== null) checkBoardRows(own, 'own');
   checkBoardPlayers(waiting, 'waiting');
