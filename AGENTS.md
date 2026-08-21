@@ -571,6 +571,20 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   playing one daily each keep their own board while the population holds the first
   submission, which is the score row's own rule); what it buys is that a finished day's
   recorded run follows the player to a device that never played it, deadline and all.
+- **A device only WRITES the run it PLAYED — the log and the score alike.** A device that
+  merely JOINED a run in progress (a second device under the same key, a second tab holding
+  a stale copy) anchors the server's `startedAt` with an empty log and no way to learn what
+  the real run has claimed, because the bonuses live in the other device's log until it
+  submits and Word mode streams nothing. Its clock therefore dies at the bare
+  `START_SECONDS` and it calls a live run finished. Both writes are first-write-wins, so
+  letting it speak would record an EMPTY run and a score of 0 that the real run can then
+  never replace — the harshest outcome this design has, and reachable from two open tabs.
+  The rule is one predicate (`web/state/wordRoundSync.ts` `mayWrite`): a non-empty local
+  log, or the SESSION that started the run. Session-scoped and not persisted, deliberately
+  — it says "I am the one playing this right now", and a reload has no claim to that. What
+  it costs is one honest case: a run that claimed NOTHING and whose tab died before the
+  deadline records no log. There is no way to price a joiner's clock correctly, so the
+  answer is that it does not write, not that its clock is right.
 - **Explicitly NOT done:** "starting an archive round replaces the active one" was
   considered as a flood defence and rejected — identities are free
   (`crypto.getRandomValues`, no registration), so one-active-round-per-player bounds

@@ -7,7 +7,7 @@ import { KB_EXIT_FALLBACK_MS } from './Game';
 import { useDeadlinePassed } from '../hooks/useCountdown';
 import useScoreHistogram from '../hooks/useScoreHistogram';
 import useWordRoundSync from '../hooks/useWordRoundSync';
-import { startWordRound } from '../state/wordRoundSync';
+import { startWordRound, startedRunHere } from '../state/wordRoundSync';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
 import {
   bonusSeconds,
@@ -218,7 +218,15 @@ function WordRound({
   // visit into a read-only GET, while its ABSENCE lets a refused or failed submission try
   // again. Renders on the post-mortem only.
   const placement = useScoreHistogram({
-    finished: ended,
+    // FINISHED, and this device's run to report (#202). A device that JOINED a run in
+    // progress — a second device under the same key, or a second tab holding a stale copy —
+    // anchors the server's start with an empty log and no way to know what the real run has
+    // claimed, so its clock dies at the bare START_SECONDS while the run is still being
+    // played elsewhere. Its score is first-write-wins like everyone's, so submitting it
+    // would record a 0 that the real run can then never replace. Same rule as the round
+    // log's own write (state/wordRoundSync.ts `mayWrite`), read at render because it only
+    // ever flips false -> true, in the same commit as the clock it anchors.
+    finished: ended && (tried.length > 0 || startedRunHere(roundKey)),
     markRecorded: markThisWordScoreRecorded,
     mode: 'word',
     lang,

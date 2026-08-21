@@ -485,6 +485,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
     PERSISTED (`RoundProgress`-style `submitted`), purely so a run that claimed nothing does
     not re-POST on every mount, since an empty stored log reads exactly like an unsubmitted
     one. A `too_early` refusal is waited out; every other 4xx closes the conversation.
+    **`over` is the RETIRED run's fact once a different word is published**, so a republish
+    resets it with everything else the flight knows: carrying it across made the fresh
+    round's first act a submission of the empty log the reset had just given it, refused
+    `not_started`, taken as a verdict, and the conversation closed for the session — so the
+    word the player then actually played never synced at all.
+  - **Only the run this device PLAYED is written** (`mayWrite`, and the same predicate gates
+    the score submission in `WordGame`): a non-empty local log, or the session that started
+    the run. The root `AGENTS.md` records why a joiner's clock cannot be priced and what
+    the rule costs.
   - **Persist v11 DROPS every pre-#202 word round** (the v7 strike-run precedent): their
     clock was a local stamp no server ever saw.
   - `rankEntry` (`game/wordGame.ts`) is what every rank-map lookup goes through now — a

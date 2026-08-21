@@ -499,6 +499,15 @@ describe('word mode: the round start (#202)', () => {
     expect(response.statusCode).toBe(400);
   });
 
+  it('is never the same call as a submission', async () => {
+    const handler = makeHandler();
+    // The two word writes are separate messages and no client sends both. Dispatching on
+    // the token and dropping the guesses would answer 200 to a caller whose log was never
+    // stored, which is the one failure this route must not fake.
+    const response = await handler(wordEvent({ turnstileToken: 'ok', guesses: ['mer'] }));
+    expect(response.statusCode).toBe(400);
+  });
+
   it('is what a second device RESUMES: the read carries the same start', async () => {
     const handler = makeHandler();
     await handler(wordEvent({ turnstileToken: 'ok' }));

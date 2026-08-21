@@ -139,6 +139,17 @@ export async function handleRound(
         responseHeaders,
       );
     }
+    if (body.guesses !== undefined) {
+      // The two word writes are separate messages and no client sends both. Dispatching on
+      // the token and silently DROPPING the guesses would answer 200 to a caller whose log
+      // was never stored, which is the one failure this route must never fake.
+      return errorResponse(
+        400,
+        'bad_request',
+        'A round is either started or submitted, never both in one call.',
+        responseHeaders,
+      );
+    }
     const token = requireTurnstileToken(body, responseHeaders);
     if (!token.ok) return token.response;
     const remoteIp = clientIp(event, deps.allowSourceIp === true);

@@ -28,6 +28,7 @@ import {
   beginWordRoundSync,
   resetWordRoundSync,
   startWordRound,
+  startedRunHere,
   submittableLog,
   wordTag,
 } from './wordRoundSync';
@@ -254,6 +255,39 @@ describe('the mount READ', () => {
     expect(round()).toMatchObject({ startedAt: null, tried: [] });
   });
 
+  // A republished WORD restarts the round on both ends. Everything the flight knew describes
+  // the retired one — including "its run ended and its log is unsent". Carrying that across
+  // made the fresh round's first act a submission of the empty log the reset just gave it,
+  // refused `not_started`, taken as a verdict, and the conversation closed for the session:
+  // the word the player then actually played never synced at all.
+  it('a REPUBLISHED word starts over, unfinished business included', async () => {
+    seedRound({ startedAt: T0 - 300_000, deadline: T0 - 100_000, tried: ['mer'], claimed: 1 });
+    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 300_000 }));
+    post.mockRejectedValueOnce(new Error('offline')); // the retired run's log never lands
+    beginWordRoundSync(ctx(), true);
+    await settle();
+    expect(round().submitted).toBeUndefined();
+
+    // The daily is re-published with a different word: the store resets the round, and the
+    // conversation must forget the retired run's unfinished submission with it.
+    useGameStore.setState(
+      (s) => ({
+        wordRounds: {
+          ...s.wordRounds,
+          [KEY]: { word: 'autre', startedAt: null, deadline: null, tried: [], claimed: 0 },
+        },
+      }),
+      false,
+    );
+    post.mockReset();
+    post.mockResolvedValueOnce(answer(404, { error: 'not_found' }));
+    beginWordRoundSync({ ...ctx(), word: 'autre' }, false);
+    await settle(120_000);
+    // The read, and NOT a submission of the fresh round's empty log.
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(bodyOf(0).guesses).toBeUndefined();
+  });
+
   it('never re-anchors a clock this device is already running', async () => {
     seedRound({ startedAt: T0 - 5_000, deadline: T0 - 5_000 + runMs(0) });
     post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 40_000 }));
@@ -340,6 +374,42 @@ describe('the end-of-run SUBMISSION', () => {
 
     post.mockResolvedValueOnce(answer(200, { startedAt: at(0), guesses: ['mer'] }));
     await settle(60_000);
+    expect(round().submitted).toBe(true);
+  });
+
+  // A device that JOINED a run — a second device under the same key, or a second tab
+  // holding a stale copy — anchors the server's start with an empty log and cannot know
+  // what the real run has claimed, so its clock dies at the bare START_SECONDS while the
+  // run is still being played. Both writes are first-write-wins, so an empty submission
+  // there would record an empty run (and a score of 0) that the real one can never replace.
+  it('a JOINER writes nothing: it has no run of its own to report', async () => {
+    seedRound();
+    // The server's start is 2 minutes old and holds no log: the run is live elsewhere.
+    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 120_000 }));
+    beginWordRoundSync(ctx(), false);
+    await settle();
+    // Its clock is already spent — that is what the screen will read as "over".
+    expect(round().deadline!).toBeLessThan(T0);
+
+    beginWordRoundSync(ctx(), true);
+    await settle(120_000);
+    expect(post).toHaveBeenCalledTimes(1); // the read, and nothing else
+    expect(round().submitted).toBeUndefined();
+  });
+
+  it('…but the session that STARTED the run may report an empty one', async () => {
+    seedRound();
+    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 0 }));
+    await startWordRound(ctx()); // PLAY was tapped HERE
+    expect(startedRunHere(KEY)).toBe(true);
+
+    // Played nothing, waited out the clock: a real 0-claim run, and it still counts as
+    // played.
+    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 60_000 }));
+    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 60_000 }));
+    beginWordRoundSync(ctx(), true);
+    await settle();
+    expect(bodyOf(2).guesses).toEqual([]);
     expect(round().submitted).toBe(true);
   });
 

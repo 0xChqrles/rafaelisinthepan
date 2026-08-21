@@ -600,9 +600,13 @@ export const useGameStore = create<GameState>()(
           // re-stamped — a re-read must not shift a run under the player.
           if (!round || round.startedAt !== null) return {};
           // A round with no start has no log (a guess can only land while running), so the
-          // deadline opens at the bare START_SECONDS. On a device joining a run already in
-          // progress the anchor is already that far in the past, and the countdown resumes
-          // with the real time remaining.
+          // deadline opens at the bare START_SECONDS. On a device JOINING a run already in
+          // progress the anchor is that far in the past already — but only the base sixty
+          // seconds are known here: the bonuses the real run has claimed live in the other
+          // device's log until it submits, so this clock runs SHORT and can call a live run
+          // finished. Word mode streams nothing, so there is no way to price it better, and
+          // the answer is that a joiner never WRITES (state/wordRoundSync.ts `mayWrite`)
+          // rather than that its clock is right.
           return {
             wordRounds: {
               ...s.wordRounds,

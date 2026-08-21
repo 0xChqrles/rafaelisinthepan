@@ -71,6 +71,35 @@ const flights = new Map<string, WordFlight>();
 // anyway — this is what keeps the CLIENT from asking twice.
 const starts = new Map<string, Promise<boolean>>();
 
+// Which rounds THIS SESSION started (PLAY was tapped here and the server stamped a clock).
+// It is what tells a run this device PLAYED from one it merely joined: a second device — or
+// a second tab holding a stale copy — anchors the server's `startedAt` with an empty log and
+// no way to know what the real run has claimed, so its clock dies at the bare START_SECONDS
+// and it declares a run OVER that is still being played elsewhere. Writing there would
+// record an EMPTY run over the real one, permanently, since both the round log and the score
+// row are first-write-wins.
+//
+// Session-scoped rather than persisted, deliberately: the flag exists to say "I am the one
+// playing this right now", and a reload has no claim to that. What it costs is one honest
+// case — a run that claimed NOTHING and whose tab died before the deadline records no log —
+// against a joining device silently destroying a real run's score, which is the worse
+// outcome by a distance. Keyed off the round rather than the flight so a flight evicted by
+// `pruneFlights` (an archive detour mid-run) does not lose it.
+const startedHere = new Set<string>();
+
+// Did this session start this round's run? Read by the SCREEN too: the same rule gates the
+// day's score submission, which is first-write-wins in exactly the same way.
+export function startedRunHere(roundKey: string): boolean {
+  return startedHere.has(roundKey);
+}
+
+// May this device write a run it is about to call finished? Yes when it has a log of its
+// own — that is a run somebody played here — and yes for the session that started the run,
+// which is what lets a real 0-claim run record. Never for a joiner holding nothing.
+function mayWrite(roundKey: string, tried: readonly string[]): boolean {
+  return tried.length > 0 || startedRunHere(roundKey);
+}
+
 // Bound the map, the sentence engine's rule: every flight pins its artifact's whole rank
 // map. Evicting is safe by construction — durability lives in the persisted round, so a
 // dropped conversation resumes on that round's next mount, with a read.
@@ -154,13 +183,22 @@ export function beginWordRoundSync(ctx: WordRoundContext, over: boolean): void {
   const existing = flights.get(ctx.roundKey);
   if (existing) {
     // A different word republished UNDER an open conversation: everything the flight knows
-    // describes the retired one, so the conversation starts over.
-    if (existing.puzzle !== puzzle) {
+    // describes the retired one, so the conversation starts over — `wantSubmit` INCLUDED.
+    // It is a fact about the RETIRED run ("it ended and its log is unsent"), and carrying
+    // it across would make the fresh round's first act a submission of the empty log the
+    // reset just gave it: refused `not_started`, treated as the verdict it would be for a
+    // round nobody started, and the conversation closed for the session — so the word the
+    // player then actually plays never syncs at all.
+    const restarted = existing.puzzle !== puzzle;
+    if (restarted) {
       existing.readDone = false;
       existing.closed = false;
       existing.failures = 0;
     }
-    Object.assign(existing, ctx, { puzzle, wantSubmit: existing.wantSubmit || over });
+    Object.assign(existing, ctx, {
+      puzzle,
+      wantSubmit: restarted ? over : existing.wantSubmit || over,
+    });
     // Re-insert so the LRU sees this round as the most recent.
     flights.delete(ctx.roundKey);
     flights.set(ctx.roundKey, existing);
@@ -226,6 +264,7 @@ async function requestStart(ctx: WordRoundContext): Promise<boolean> {
   if (startedAt === null) return false;
   // `running` is answered 200 too: a second tap, a retry or another device resumes the ONE
   // clock the server already stamped, and the store's anchor is idempotent besides.
+  startedHere.add(ctx.roundKey);
   useGameStore.getState().anchorWordRun(ctx.roundKey, startedAt);
   adoptState(ctx, state);
   return true;
@@ -238,7 +277,7 @@ async function pump(key: string): Promise<void> {
   const round = useGameStore.getState().wordRounds[key];
   if (!round) return;
 
-  const wantsWrite = f.wantSubmit && !round.submitted;
+  const wantsWrite = f.wantSubmit && !round.submitted && mayWrite(key, round.tried);
   if (f.readDone && !wantsWrite) return; // nothing left to say
 
   const now = Date.now();
@@ -396,4 +435,5 @@ export function resetWordRoundSync(): void {
   for (const f of flights.values()) if (f.timer !== null) clearTimeout(f.timer);
   flights.clear();
   starts.clear();
+  startedHere.clear();
 }
