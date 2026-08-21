@@ -137,7 +137,7 @@ def _run_main(monkeypatch, tmp_path, extra_argv):
         lambda _secret, _kv, _v, _m, *, n: [("indice", 86, 0.9), ("proche", 87, 0.5)],
         raising=False,
     )
-    monkeypatch.setattr(gen_phrase, "write_vocab", lambda _v, _lang: None)
+    monkeypatch.setattr(gen_phrase, "write_vocab", lambda *_a, **_k: None)
     monkeypatch.setattr(
         gen_phrase,
         "choose_start",

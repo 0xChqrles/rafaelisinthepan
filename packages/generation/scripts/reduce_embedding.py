@@ -16,7 +16,9 @@ unless the source is exhausted first (then fewer, with a warning).
 
 Second output: because the front's existence set is a pure function of the KEPT words,
 we emit it in the SAME pass — web/public/vocab/<lang>.json, the slugged/deduped/sorted
-vocab (shared slug.write_vocab). No separate vector reload. Disable with --no-vocab.
+vocab (shared slug.write_vocab), plus its metadata for the backend in
+packages/shared/src/vocab.generated.json (#200: size, longest key, corpus build). No
+separate vector reload. Disable both with --no-vocab.
 
 Monitoring is the per-rule report on stderr (counts + samples), plus how many source
 lines were SCANNED to reach TOP_N kept (the scanned/kept ratio shows how noisy the head
@@ -168,9 +170,13 @@ def main():
     p.add_argument("--no-dico", action="store_true",
                    help="désactive la règle hors-dico (morphologie seule)")
     p.add_argument("--no-vocab", action="store_true",
-                   help="n'écrit pas web/public/vocab/<lang>.json")
+                   help="n'écrit ni web/public/vocab/<lang>.json ni ses métadonnées")
     p.add_argument("--vocab-dir", dest="vocab_dir",
                    help="dossier de sortie du vocab (défaut : web/public/vocab)")
+    p.add_argument("--meta-path", dest="meta_path",
+                   help="fichier de sortie des métadonnées du vocab (défaut : "
+                        "packages/shared/src/vocab.generated.json, ou le dossier de "
+                        "--vocab-dir quand celui-ci est redirigé)")
     args = p.parse_args()
 
     if not os.path.exists(args.input):
@@ -260,9 +266,11 @@ def main():
 
     # Vocab: the front's existence set is a pure function of the KEPT words, which we
     # already have in hand — write it in the SAME pass (no separate vector reload). It
-    # slugs + dedupes + sorts them into web/public/vocab/<lang>.json (shared write_vocab).
+    # slugs + dedupes + sorts them into web/public/vocab/<lang>.json (shared write_vocab),
+    # and records what that set is for the backend (#200) — named by the SOURCE embedding
+    # we just streamed, which is the corpus build this whole run is about.
     if not args.no_vocab:
-        write_vocab(kept_words, args.lang, args.vocab_dir)
+        write_vocab(kept_words, args.lang, args.input, args.vocab_dir, args.meta_path)
 
     # --- Report (stderr) ---
     dropped = scanned - kept_count

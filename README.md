@@ -68,5 +68,7 @@ source metadata — levels you did not provide are omitted, so a puzzle with no 
 stays at `<lang>/` (a generation artifact you then
 `pnpm puzzle:publish` into the daily store — local or S3), while the **vocab**
 existence set lands in `packages/web/public/vocab/<lang>.json`, a web runtime asset the
-SPA fetches from its own origin. See AGENTS.md for the data pipeline invariants and the
-per-puzzle schema.
+SPA fetches from its own origin. What that set IS — its size, its longest key, the corpus
+build behind it — is written beside it into `packages/shared/src/vocab.generated.json`,
+where the backend reads it (it never loads the set itself). See AGENTS.md for the data
+pipeline invariants and the per-puzzle schema.

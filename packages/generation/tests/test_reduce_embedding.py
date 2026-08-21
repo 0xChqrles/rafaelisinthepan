@@ -12,7 +12,8 @@
   - header is RECOUNTED to the kept count when the source had one, and ABSENT when it
     did not;
   - reduce also emits the front's existence set (web/public/vocab/<lang>.json) in the
-    same pass: the slugged/deduped/sorted set of the KEPT words (disable with --no-vocab).
+    same pass: the slugged/deduped/sorted set of the KEPT words (disable with --no-vocab),
+    and with it the backend-facing metadata of that set (#200 — see test_vocab_meta.py).
 """
 
 import gzip
@@ -243,22 +244,33 @@ def test_no_dico_flag_disables_the_rule(monkeypatch, tmp_path):
 def test_reduce_emits_slugged_vocab_of_kept_words(monkeypatch, tmp_path):
     # reduce writes the front's existence set in the SAME pass: the slugged, deduped,
     # sorted set of exactly the KEPT words (post-filter) — accents folded to the slug.
+    # --meta-path names the metadata's destination explicitly (#200). It is not what
+    # keeps this run out of the repo — --vocab-dir alone already redirects the record
+    # with the set (test_vocab_meta.py) — so passing it here exercises the flag.
     src = tmp_path / "src.vec"
     src.write_text("999 2\n" + "".join(
         f"{w} 0 0\n" for w in ["forêt", "gksudo", "chevaux", "le", "arc-en-ciel"]
     ), encoding="utf-8")
     vocab_dir = tmp_path / "vocab"
+    meta_path = tmp_path / "vocab.generated.json"
     monkeypatch.setattr(red, "TOP_N", 1000)
     monkeypatch.setattr(
         sys, "argv",
         ["reduce", str(src), "--lang", "fr", "--dico", str(DICO_FR),
-         "--out", str(tmp_path / "out.vec"), "--vocab-dir", str(vocab_dir)],
+         "--out", str(tmp_path / "out.vec"), "--vocab-dir", str(vocab_dir),
+         "--meta-path", str(meta_path)],
     )
     red.main()
 
     data = json.loads((vocab_dir / "fr.json").read_text(encoding="utf-8"))
     # gksudo (hors-dico) + le (stopword) excluded; forêt -> slug "foret"; sorted + unique.
     assert data == ["arc-en-ciel", "chevaux", "foret"]
+
+    # The metadata describes THAT set, and names the corpus by the source we streamed.
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))["fr"]
+    assert meta["vocabSize"] == 3                  # the set it just wrote
+    assert meta["maxSlugLength"] == len("arc-en-ciel")
+    assert meta["embedding"] == "src"
 
 
 def test_missing_wordlist_fails_loud(monkeypatch, tmp_path):

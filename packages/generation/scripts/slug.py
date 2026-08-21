@@ -12,12 +12,21 @@ import json
 import os
 import re
 import unicodedata
+from datetime import datetime, timezone
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(SCRIPT_DIR)                 # packages/generation
 # The vocab existence set IS a web runtime asset: the SPA fetches /vocab/<lang>.json from
 # its own origin (useVocab), so it is written straight into web/public/vocab.
 WEB_VOCAB_DIR = os.path.normpath(os.path.join(ROOT, "..", "web", "public", "vocab"))
+# Its METADATA (#200) goes to TS source instead, because its reader is the BACKEND, which
+# never loads the set: what a vocabulary IS (how big, how long its longest key, which
+# corpus build produced it) is all the server needs to bound a score or a stored guess.
+# packages/shared/ specifically, because deploy.yml's paths-filter already fans `shared`
+# out to both stacks — so a regenerated vocabulary ships its new numbers through a
+# mapping that exists, instead of leaving the backend on a stale value with no signal.
+SHARED_SRC_DIR = os.path.normpath(os.path.join(ROOT, "..", "shared", "src"))
+VOCAB_META_PATH = os.path.join(SHARED_SRC_DIR, "vocab.generated.json")
 
 # Ligatures that do NOT decompose under NFKD, so we expand them by hand.
 _LIGATURES = {"œ": "oe", "æ": "ae"}
@@ -77,18 +86,147 @@ def path_slug(text):
     return _PATH_SEPARATORS.sub("-", _fold_to_ascii(text)).strip("-")
 
 
-def write_vocab(words, lang, vocab_dir=None):
-    """Write <vocab_dir>/<lang>.json: the UNLIMITED existence set.
+_REDUCED = "_reduced"
+# The MEASURED half of a metadata entry — what is a pure function of the vocabulary
+# itself. `builtAt` is the one field that isn't, which is why it is compared apart.
+_MEASURED = ("embedding", "vocabSize", "maxSlugLength")
+
+
+def corpus_name(path):
+    """Name the CORPUS BUILD an embedding file belongs to: its basename, without the
+    extension and without a `_reduced` suffix.
+
+    Both sides of the reduction name the same build: reduce_embedding holds the raw
+    `cc.fr.300.vec` it just read, the neighbor modules hold the `cc.fr.300_reduced.vec`
+    they just loaded, and both answer "cc.fr.300". So whichever command refreshes the
+    existence set records the same corpus — the metadata can never say two different
+    things about one vocabulary."""
+    root, _ext = os.path.splitext(os.path.basename(path))
+    return root[: -len(_REDUCED)] if root.endswith(_REDUCED) else root
+
+
+def _read_meta(path):
+    """The metadata already on disk, or {} when the file does not exist yet.
+
+    A MISSING file is the ordinary cold start: the run about to write it just does.
+    Anything else FAILS LOUD. The file holds BOTH languages and a run only ever rebuilds
+    one, so treating an unparseable file as empty would silently DROP the other
+    language's entry — and a language absent from the record is one the live routes
+    refuse (`Object.hasOwn(VOCAB_BUILDS, lang)`), which is a 400 on every /scores and
+    /board call for it. A conflict-markered merge is the realistic way a committed file
+    stops parsing, and the repair is restoring it, never overwriting half of it."""
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            existing = json.load(f)
+    except (OSError, ValueError) as exc:
+        raise SystemExit(
+            f"Erreur : métadonnées du vocabulaire illisibles : {path}\n"
+            f"  {exc}\n"
+            "  Restaure le fichier avant de régénérer (git checkout) — il porte les deux "
+            "langues, et une seule est reconstruite par exécution.")
+    if not isinstance(existing, dict):
+        raise SystemExit(
+            f"Erreur : métadonnées du vocabulaire malformées (objet attendu) : {path}")
+    return existing
+
+
+def write_vocab_meta(slugs, lang, source, meta_path=None):
+    """Record what the existence set of `lang` IS, into packages/shared (#200).
+
+    One entry per language: the corpus build it came from (`embedding` + `builtAt`)
+    plus two measurements of a set the backend never loads — `vocabSize` (a sentence
+    score counts distinct vocabulary-valid tries, so the set's size is that score's
+    ceiling, and the live score validator reads it) and `maxSlugLength` (no valid
+    guess is longer than the longest key in it — emitted ahead of its consumer, the
+    stored-guess cap of #199). Measured from the same `slugs` that were just written,
+    so the numbers cannot describe some other vocabulary.
+
+    Only THIS language's entry is touched — the other is read back and kept, since a
+    run only ever rebuilds one language. `builtAt` (UTC) dates the run that first
+    produced this exact vocabulary: an unchanged rebuild keeps the recorded date, so
+    re-running the pipeline over the same corpus leaves the file byte-identical rather
+    than dirtying it on every puzzle commit."""
+    meta_path = meta_path or VOCAB_META_PATH
+    entry = {
+        "embedding": corpus_name(source),
+        "vocabSize": len(slugs),
+        "maxSlugLength": max((len(s) for s in slugs), default=0),
+        "builtAt": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+    }
+    meta = _read_meta(meta_path)
+    previous = meta.get(lang)
+    if isinstance(previous, dict) and all(previous.get(k) == entry[k] for k in _MEASURED):
+        entry["builtAt"] = previous.get("builtAt", entry["builtAt"])
+    meta[lang] = entry
+
+    # Written beside, then renamed: the destination is committed source that `tsc` and
+    # BOTH bundles read, so a torn write (Ctrl-C, disk full) would break a file nobody
+    # edited, and its repair — `git checkout` something labelled "generated" — is not
+    # what anyone tries first. os.replace protects THE DESTINATION: it is never observed
+    # half-written, and a failed run leaves the previous record intact.
+    #
+    # It does NOT make concurrent runs safe, and nothing here does. The temp name carries
+    # the pid only so two processes cannot truncate ONE temp file into each other's bytes
+    # — measured, that lands CORRUPT JSON in committed source and kills the loser on its
+    # rename. The read-modify-write above is still last-writer-wins: `reduce:en` racing
+    # `reduce:fr` ends with one language's fresh entry replaced by the copy the other run
+    # read at startup (measured too — 21 of 25 races lost an entry, so this is the normal
+    # outcome, not a corner case). Rebuild the two languages SEQUENTIALLY.
+    # Left unlocked deliberately: what survives the race is a WHOLE file missing a
+    # language, which `shared/vocab.test.ts` refuses ("covers exactly the languages that
+    # ship an existence set"), so the bad state cannot reach main. A lock around a
+    # read-modify-write that runs twice a year is not worth owning for that.
+    os.makedirs(os.path.dirname(os.path.abspath(meta_path)), exist_ok=True)
+    tmp_path = f"{meta_path}.{os.getpid()}.tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(meta, f, ensure_ascii=False, indent=2, sort_keys=True)
+            f.write("\n")  # it is committed TS source, read in diffs
+        os.replace(tmp_path, meta_path)
+    except BaseException:
+        # A per-pid name cannot be reclaimed by the next run the way a fixed one was, and
+        # this directory is committed — don't leave litter for `git add -A` to pick up.
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
+    print(f"Métadonnées ({lang}) : {entry['embedding']}, {entry['vocabSize']} slugs, "
+          f"clé la plus longue {entry['maxSlugLength']} -> {meta_path}")
+    return meta_path
+
+
+def write_vocab(words, lang, source, vocab_dir=None, meta_path=None):
+    """Write <vocab_dir>/<lang>.json: the UNLIMITED existence set, AND its metadata.
 
     Every distinct slug of `words` (deduplicated, sorted) — NOT capped. The front
     fetches this once and decides word existence from it. Deterministic given `words`;
     overwritten on each run. `vocab_dir` defaults to web/public/vocab (the served
-    asset); callers (tests) may point it elsewhere."""
+    asset); callers (tests) may point it elsewhere.
+
+    The metadata (#200) is written in the SAME call, from the same slugs, because the
+    two must describe one vocabulary: every command that can refresh the existence set
+    — reduce, gen_phrase, build_vocab — goes through here, so none of them can move the
+    set while leaving the backend's numbers behind. `source` is the embedding file this
+    vocabulary came from; raw or `_reduced`, both name the same corpus (corpus_name).
+
+    A REDIRECTED set takes its record with it: pointing `vocab_dir` elsewhere writes the
+    metadata there too, so `--vocab-dir` alone fully isolates a run. Only a set written
+    to the served location describes the vocabulary the backend is bounding, and an
+    experiment must not leave its numbers in packages/shared."""
     vocab_dir = vocab_dir or WEB_VOCAB_DIR
+    if meta_path is None and os.path.abspath(vocab_dir) != WEB_VOCAB_DIR:
+        meta_path = os.path.join(vocab_dir, os.path.basename(VOCAB_META_PATH))
+    # Refuse an unreadable record BEFORE the set moves. The two writes are one statement
+    # about one vocabulary, so the failure has to land while nothing has changed — not
+    # after web/public holds a set whose record was rejected, which is the drift this
+    # pair exists to make impossible.
+    _read_meta(meta_path or VOCAB_META_PATH)
     slugs = sorted({s for s in (slug(w) for w in words) if s})
     os.makedirs(vocab_dir, exist_ok=True)
     out_path = os.path.join(vocab_dir, f"{lang}.json")
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(slugs, f, ensure_ascii=False)
     print(f"Vocabulaire ({lang}) : {len(slugs)} slugs -> {out_path}")
+    write_vocab_meta(slugs, lang, source, meta_path)
     return out_path

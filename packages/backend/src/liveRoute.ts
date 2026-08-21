@@ -4,9 +4,9 @@
 // these existed as a byte-identical copy per route (four by the time /board landed) —
 // one spelling here is what keeps a guard from quietly drifting between routes.
 
-import { dayNumber, isValidSecret } from '@whippin/shared';
+import { dayNumber, isValidSecret, VOCAB_BUILDS } from '@whippin/shared';
 import { isValidDate } from './layout';
-import { SENTENCE_SCORE_MAX_BY_LANG, type ScoreMode } from './scoreLimits';
+import type { ScoreMode } from './scoreLimits';
 import { errorResponse, type FnUrlEvent, type FnUrlResult } from './respond';
 
 export const LIVE_HEADERS = { 'Cache-Control': 'no-store' } as const;
@@ -17,6 +17,12 @@ export const LIVE_BODY_MAX_BYTES = 4_096;
 
 // The puzzle route's future guard, applied to the day-addressed live reads too.
 export const DATE_SKEW_DAYS = 1;
+
+// What the 400 tells the caller, spelled from the record the check reads rather than
+// restated — the drift this file's own guard exists to remove.
+const SUPPORTED_LANGS = Object.keys(VOCAB_BUILDS)
+  .map((lang) => `"${lang}"`)
+  .join(', ');
 
 // A guard either yields the validated value or the response to return as-is.
 export type Guarded<T> = { ok: true; value: T } | { ok: false; response: FnUrlResult };
@@ -85,21 +91,27 @@ export interface DayParams {
 
 // The protocol guards the day-addressed live routes share (/scores, /board): a
 // supported language, an explicit mode, a real date no further than one day ahead of
-// the server's own active day. `Object.hasOwn` and not an index read — a bare
-// `map[lang] === undefined` walks the prototype chain, so `constructor`/`toString`
-// would pass as "supported languages" and reach the store key.
+// the server's own active day. A supported language is one the pipeline has built a
+// vocabulary for (#200's generated metadata), which is the same set the score ceiling
+// is read from. `Object.hasOwn` and not an index read — a bare `map[lang] === undefined`
+// walks the prototype chain, so `constructor`/`toString` would pass as "supported
+// languages" and reach the store key.
 export function requireDayParams(
   event: FnUrlEvent,
   serverDate: string,
   headers: Record<string, string>,
 ): Guarded<DayParams> {
   const lang = event.queryStringParameters?.lang;
-  if (!lang || !Object.hasOwn(SENTENCE_SCORE_MAX_BY_LANG, lang)) {
+  if (!lang || !Object.hasOwn(VOCAB_BUILDS, lang)) {
     return refuse(
       errorResponse(
         400,
         'bad_request',
-        'Query parameter "lang" must be a supported language ("en" or "fr").',
+        // Named from the SAME record the check reads. A hardcoded list is the one
+        // operator-visible signal of exactly the drift this record exists to remove:
+        // it would keep offering "en" or "fr" after the pipeline built a third
+        // language, and keep claiming a language is supported after one was dropped.
+        `Query parameter "lang" must be a supported language (${SUPPORTED_LANGS}).`,
         headers,
       ),
     );

@@ -332,6 +332,43 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   generation:** `dq` runs to the map's own `TOP_K` edge, so Word mode's range is the
   client's own tuning knob, movable with **no republish** and no regeneration.
 
+### Vocab metadata: what the existence set IS (#200, decided 2026-08-21)
+
+- **Generation states what each language's existence set is, into
+  `packages/shared/src/vocab.generated.json`, and the BACKEND reads it there.** The set
+  itself (`web/public/vocab/<lang>.json`) is a ~1.6 MB web asset the SPA fetches; the
+  server never loads it, but it must bound things by it. Per language: **`vocabSize`**
+  (distinct slugs — a sentence score counts distinct vocabulary-valid tries, so this is
+  that score's ceiling), **`maxSlugLength`** (the longest key), and the corpus build that
+  produced it, **`embedding` + `builtAt`**.
+  **Only `vocabSize` has a reader today** — the live routes' sentence ceiling and, by its
+  key set, what counts as a supported `lang`. **`maxSlugLength` is EMITTED AHEAD OF ITS
+  CONSUMER:** it is the length cap for a stored guess, and this backend stores no guesses
+  yet (#199). Recording it now costs nothing — it is measured by the same pass either way
+  — but nothing enforces it, so don't read this bullet as describing a server behavior
+  that exists.
+- **It is GENERATED, never hand-written**, and by the very call that writes the set
+  (`slug.write_vocab`, from the same slugs), so the two describe one vocabulary by
+  construction — every command that can refresh the set (`reduce`, `gen:phrase`,
+  `vocab:<lang>`) refreshes the record with it. A constant pinned by a test would also
+  catch drift, but only by asking a human to read a failure and copy a number across;
+  until they do, the server enforces a bound the game no longer has.
+- **It lives in `packages/shared/` for the DEPLOY mapping:** `deploy.yml`'s paths-filter
+  already fans `shared` out to both stacks, so a regenerated vocabulary carries its new
+  numbers into the backend through a mapping that exists. Anywhere else and the backend
+  keeps a stale value with no signal — the failure the CI/CD note at the end of this file
+  warns about.
+- **`embedding` names the CORPUS BUILD, not a file** (`corpus_name`: basename, no
+  extension, no `_reduced` suffix), so the raw source `reduce` streamed and the reduced
+  file the neighbor modules load answer the same name — the record cannot depend on which
+  command last ran. **`builtAt` (UTC) dates the corpus build, not the run:** an unchanged
+  rebuild keeps the recorded date, so re-running the pipeline over the same corpus leaves
+  the committed file byte-identical instead of dirtying every puzzle commit. Recording
+  which corpus is live is worth a field because so much of the design is calibrated
+  against corpus properties (Word mode's rarity cuts, the measured en-vs-fr gap).
+- The web imports it through `shared/src/vocab.ts` (`VOCAB_BUILDS`) like any other shared
+  module, but has no reason to read it: it holds the actual set.
+
 ### Day-addressed routing & the game day
 
 - **Routing (#6), date-addressed (decided 2026-07-05, replacing the #42 version-in-URL
@@ -425,7 +462,9 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   per distinct recorded score, ascending** — a day partition is small, one Query +
   compute in the handler. An empty population is honestly `buckets: []`.
 - **Score limits are gameplay limits, not a generic integer cap.** Sentence mode counts
-  unique vocabulary-valid tries, so its ceiling is the language's existence-set size.
+  unique vocabulary-valid tries, so its ceiling is the language's existence-set size —
+  read from the GENERATED vocab metadata (#200 above), which also defines what counts as
+  a supported `lang` on every day-addressed live route.
   Word mode counts claimed groups, so its ceiling is the distinct claimable ranks in that
   artifact, bounded by the ONE shared `WORD_CLAIM_ZONE` constant
   (`shared/src/scores.ts`, consumed by web + backend). The bands the API returns are
