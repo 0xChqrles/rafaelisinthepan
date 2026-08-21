@@ -40,6 +40,8 @@ import { handleFriends } from './friends';
 import type { FriendStore } from './friendStore';
 import { handleProfile } from './profile';
 import type { ProfileRecord, ProfileStore } from './profileStore';
+import { handleRound } from './rounds';
+import type { RoundStore } from './roundStore';
 import { handleScores, type ScoreHandlerDeps } from './scores';
 import type { PuzzleStore } from './store';
 
@@ -58,6 +60,8 @@ export interface HandlerDeps {
   profiles?: ProfileStore;
   // The friends graph (#189), same optionality rationale.
   friends?: FriendStore;
+  // The per-round guess log (#201), same optionality rationale.
+  rounds?: RoundStore;
 }
 
 // 404s expire quickly so a puzzle uploaded slightly late becomes playable soon
@@ -125,7 +129,10 @@ export function createHandler(deps: HandlerDeps) {
     // The leaderboard reads (#190): the same live shape once more — GET is the global
     // top 50, POST the authenticated friends board.
     const isBoardRoute = normalizedPath === '/board';
-    const isLiveRoute = isScoresRoute || isProfileRoute || isFriendsRoute || isBoardRoute;
+    // The per-round guess log (#201) — POST-only like /friends (the secret is the auth).
+    const isRoundRoute = normalizedPath === '/round';
+    const isLiveRoute =
+      isScoresRoute || isProfileRoute || isFriendsRoute || isBoardRoute || isRoundRoute;
     const routeHeaders = isLiveRoute ? { ...cors, 'Cache-Control': 'no-store' } : cors;
 
     // CORS preflight.
@@ -273,6 +280,11 @@ export function createHandler(deps: HandlerDeps) {
           date,
           cors,
         );
+      }
+
+      if (isRoundRoute) {
+        if (!deps.rounds) throw new Error('Round state sync is not configured.');
+        return await handleRound(event, deps.rounds, date, instant, cors);
       }
 
       if (rawPath.replace(/\/+$/, '').endsWith('/today')) {

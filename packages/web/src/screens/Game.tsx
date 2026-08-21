@@ -13,7 +13,9 @@ import { canExtend } from '../game/keyboard';
 import LoadingWave from '../components/LoadingWave';
 import useVocab from '../hooks/useVocab';
 import useScoreHistogram from '../hooks/useScoreHistogram';
+import useRoundSync from '../hooks/useRoundSync';
 import useToday from '../hooks/useToday';
+import { notifyGuess } from '../state/roundSync';
 import { useGameStore, roundKeyForDay, holesMatchPuzzle } from '../state/gameStore';
 import Phrase from '../components/Phrase';
 import DissolvePhrase from '../components/DissolvePhrase';
@@ -29,7 +31,7 @@ import LoadError from '../components/LoadError';
 import { buildHistory } from '../game/history';
 import { t, ariaHoleHistory, srHoleResult } from '../i18n';
 import { track } from '../analytics';
-import { fold } from '@whippin/shared';
+import { fold, dateForDayNumber, ROUND_GUESS_CAP } from '@whippin/shared';
 import type {
   HitState,
   Hole,
@@ -172,6 +174,20 @@ function Round({
   // store's recordSolve resolves that flip-edge case (and refuses archive replays).
   const todayDayNumber = useToday();
 
+  // Server-authoritative round state (#201): the guess log syncs from the first guess,
+  // whether or not an account is ever linked — local play stays instant and authoritative
+  // only until the server's next answer, which this engine adopts as truth. Archive days
+  // sync too (the same date-addressed route), so a full history follows the player across
+  // devices.
+  useRoundSync({
+    roundKey,
+    lang,
+    mode: 'sentence',
+    date: dateForDayNumber(dayNumber),
+    ranks,
+    freshHoles,
+  });
+
   // Reconcile before paint: a matching key rehydrates the stored progress, a new key
   // (new day OR new language) resets to freshHoles. useLayoutEffect commits the reset
   // before the browser paints, so a stale day's holes never flash.
@@ -254,8 +270,14 @@ function Round({
   // is what lets a refused or failed submission try again), and the result renders on the
   // solved screen only. Started as soon as the store reports the round solved, so the
   // network round trip runs behind the solving choreography.
+  //
+  // A CAPPED round never joins that population (#201): past the server's guess cap the
+  // round has stopped counting — by the server's own refusal (capped) or because local
+  // offline play outgrew what any server could ever hold — so there is no leaderboard
+  // entry to claim and the standing slot stays empty.
+  const overCap = live?.capped === true || history.length > ROUND_GUESS_CAP;
   const placement = useScoreHistogram({
-    finished: solved,
+    finished: solved && !overCap,
     markRecorded: markThisScoreRecorded,
     mode: 'sentence',
     lang,
@@ -635,7 +657,9 @@ function Round({
       // Counted guess: a unique valid word (misses included). The store dedupes by
       // canonical identity (guessKey): repeats, inflections of an already-tried word
       // (#104), and the non-existent words returned above never increase the score.
-      recordGuess(typed, (t) => guessKey(ranks, t));
+      // A guess that entered the log is owed to the server (#201) — the sync engine
+      // coalesces and flushes it behind the board's reaction.
+      if (recordGuess(typed, (t) => guessKey(ranks, t))) notifyGuess(roundKey);
 
       // EVERY unsolved hole reacts to a valid guess (solved holes are locked out).
       // A hole is WARM when `typed` is in its top-K rank map (`entry` set) and TOO
@@ -700,6 +724,7 @@ function Round({
       improveHole,
       lang,
       say,
+      roundKey,
     ],
   );
 

@@ -55,6 +55,24 @@ export function guessKey(ranks: RankMap, typed: string): string {
   return resolved.some((rank) => rank >= 0) ? resolved.join('|') : typed;
 }
 
+// The game loop's improvement rule, stated ONCE: a valid guess moves every UNSOLVED hole
+// whose map ranks it closer, swapping in the entry's accented word and lower rank
+// (solved holes are locked). Mutates `holes` in place — callers replay onto fresh copies.
+// Game.submit defers its animated swaps to the floating hit's fade-out; every REPLAY of a
+// log (the run ruler below, and #201's server-log adoption) applies this directly,
+// because both rest on the same contract: `tried` is a complete record of the state
+// changes, so walking it under this rule always lands on the real board.
+export function applyGuessToHoles(holes: RuntimeHole[], ranks: RankMap, typed: string): void {
+  for (const h of holes) {
+    if (h.rank === 0) continue; // solved holes are locked, exactly as in-game
+    const entry = ranks[h.secret]?.[typed];
+    if (entry && entry.rank < h.rank) {
+      h.rank = entry.rank;
+      h.word = entry.word;
+    }
+  }
+}
+
 export function holeProgress(rank: number, startRank: number, N: number) {
   const sStart = s(startRank, N);
   const denom = 1 - sStart;

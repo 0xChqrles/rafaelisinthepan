@@ -538,6 +538,47 @@ describe('recordGuess — score = unique valid tries (on the active round)', () 
     expect(activeRound()?.tried).toEqual(['chat']);
     expect(activeRound()?.holes.slice(0, 2).map((hole) => hole.rank)).toEqual([0, 0]);
   });
+
+  it('reports whether the guess entered the log — the sync engine flushes only counted tries (#201)', () => {
+    const { recordGuess } = useGameStore.getState();
+    expect(recordGuess('bois')).toBe(true);
+    expect(recordGuess('bois')).toBe(false);
+    expect(activeRound()?.tried).toEqual(['bois']);
+  });
+});
+
+describe('adoptRound — the server answer becomes the round truth (#201)', () => {
+  beforeEach(() => useGameStore.getState().ensureRound('d:5:fr', freshHoles()));
+
+  it('replaces tried + holes and derives the count from the merged log', () => {
+    const adopted: RuntimeHole[] = [
+      { pos: 1, secret: 'foret', word: 'sous-bois', rank: 3, startRank: 87 },
+      { pos: 2, secret: 'ancienne', word: 'vieille', rank: 40, startRank: 40 },
+    ];
+    useGameStore.getState().adoptRound('d:5:fr', ['bois', 'chemin'], adopted);
+    const round = activeRound()!;
+    expect(round.tried).toEqual(['bois', 'chemin']);
+    // The score IS the number of unique tries — derived, never a second stored answer.
+    expect(round.guessCount).toBe(2);
+    expect(round.holes).toEqual(adopted);
+  });
+
+  it('ignores an unknown key (the round was reset mid-flight)', () => {
+    const before = activeRound();
+    useGameStore.getState().adoptRound('d:9:en', ['x'], []);
+    expect(activeRound()).toEqual(before);
+  });
+});
+
+describe('markRoundCapped — the cap stops the round counting (#201)', () => {
+  beforeEach(() => useGameStore.getState().ensureRound('d:5:fr', freshHoles()));
+
+  it('marks the round capped, idempotently', () => {
+    const { markRoundCapped } = useGameStore.getState();
+    markRoundCapped('d:5:fr');
+    markRoundCapped('d:5:fr');
+    expect(activeRound()?.capped).toBe(true);
+  });
 });
 
 describe('improveHole — closer word + lower rank, others untouched', () => {

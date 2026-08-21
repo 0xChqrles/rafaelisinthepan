@@ -233,6 +233,43 @@ export async function postScoreBody(
   return postSignedJson(url, body);
 }
 
+// The #201 round route: the server-authoritative guess log of one player's play on one
+// daily, one item per (date, lang, mode, publicId). POST-only like /friends — `{secret}`
+// reads the stored round (404 = none yet), `{secret, guesses}` appends to it — and EVERY
+// answer carries the full state, so a write is also a reconciliation. The three query
+// parameters are in the round CloudFront behavior's allowList (the root AGENTS.md
+// three-package contract).
+export function roundUrl(lang: string, date: string, mode: Mode, base: string = apiBase()): string {
+  return `${requireApiBase(base)}/round?lang=${encodeURIComponent(lang)}&date=${encodeURIComponent(
+    date,
+  )}&mode=${encodeURIComponent(mode)}`;
+}
+
+export async function postRoundBody(
+  url: string,
+  body: { secret: string; guesses?: string[] },
+): Promise<Response> {
+  return postSignedJson(url, body);
+}
+
+export interface RoundState {
+  guesses: string[];
+  createdAt: string;
+}
+
+// Runtime shape check for the round response — the parsePuzzle contract: a wrong-shaped
+// body surfaces as a sync failure (silent by design), never as garbage entering the
+// round's try log.
+export function parseRound(data: unknown): RoundState {
+  if (!isRecord(data)) throw new Error('malformed round: not an object');
+  const { guesses, createdAt } = data;
+  if (!Array.isArray(guesses) || !guesses.every((g) => typeof g === 'string')) {
+    throw new Error('malformed round: "guesses" must be an array of strings');
+  }
+  if (typeof createdAt !== 'string') throw new Error('malformed round: bad "createdAt"');
+  return { guesses: guesses as string[], createdAt };
+}
+
 // The #188 player profile: GET reads the public row by publicId (what a board renders,
 // and what a freshly linked device loads); POST is the authenticated upsert. `id` is in
 // the profile CloudFront behavior's allowList — the same three-package contract as the

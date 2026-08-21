@@ -341,12 +341,11 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   (distinct slugs — a sentence score counts distinct vocabulary-valid tries, so this is
   that score's ceiling), **`maxSlugLength`** (the longest key), and the corpus build that
   produced it, **`embedding` + `builtAt`**.
-  **Only `vocabSize` has a reader today** — the live routes' sentence ceiling and, by its
-  key set, what counts as a supported `lang`. **`maxSlugLength` is EMITTED AHEAD OF ITS
-  CONSUMER:** it is the length cap for a stored guess, and this backend stores no guesses
-  yet (#199). Recording it now costs nothing — it is measured by the same pass either way
-  — but nothing enforces it, so don't read this bullet as describing a server behavior
-  that exists.
+  **`vocabSize` has two readers** — the live routes' sentence ceiling and, by its
+  key set, what counts as a supported `lang`. **`maxSlugLength` caps a STORED GUESS
+  (#201, decided 2026-08-21):** the `/round` append validates every guess against the
+  language's value — a string longer than anything the vocabulary ever held is refused
+  before the store is touched.
 - **It is GENERATED, never hand-written**, and by the very call that writes the set
   (`slug.write_vocab`, from the same slugs), so the two describe one vocabulary by
   construction — every command that can refresh the set (`reduce`, `gen:phrase`,
@@ -368,6 +367,61 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   against corpus properties (Word mode's rarity cuts, the measured en-vs-fr gap).
 - The web imports it through `shared/src/vocab.ts` (`VOCAB_BUILDS`) like any other shared
   module, but has no reason to read it: it holds the actual set.
+
+### Round guess-log sync (#201, decided 2026-08-21)
+
+- **The server owns game state from the first guess, whether or not an account is ever
+  linked.** Local state is a working copy and a write buffer, never the authority — and
+  authoritative-only-after-link was rejected: scores and friend edges are already
+  server-side for unlinked players (#169/#187/#189), so gating the guess log on linking
+  would be the odd one out (and would break #206's live friends board). The payoff:
+  **there is no migration, ever** — a first account link binds to an account the server
+  already holds in full.
+- **ONE route, POST-only like /friends** (the secret is the auth and travels in the
+  BODY): `POST /round?lang=&date=&mode=` — `{secret}` reads the caller's stored round for
+  that daily (404 = none yet), `{secret, guesses: [...]}` appends to its log. **Every
+  answer carries the full stored state** (`{guesses, createdAt}`) — the /friends house
+  style — so a write is also a reconciliation: the tab computes against stale local
+  state, the server appends to the true log and answers with truth, and the tab
+  re-renders correct. No sockets, no SSE: an open tab reconciles on its own next write.
+  The day-addressed guard triple applies; there is **NO puzzle-store read** — the log is
+  the player's own working state, not a population claim, so **archive days sync exactly
+  like today's**, which is what makes a player's full history follow them to a new
+  device.
+- **The server stores strings and interprets nothing.** Guesses are the folded forms
+  typed, in order — never indices (an index doesn't fit fr's ~128k vocab in `uint16`,
+  misses have no rank-map index at all, and it would bind stored history to a regenerable
+  artifact) — and no `guessKey`/replay/scoring runs server-side: the client interprets
+  the raw log for display.
+- **The two bounds are cross-package constants** (`shared/src/scores.ts`, the
+  `WORD_CLAIM_ZONE` rule): **`ROUND_GUESS_CAP` = 500 guesses per round**, enforced inside
+  the append write's own condition (`size(log) + batch <= cap` — the RESULT may reach the
+  cap, never pass it, so it cannot be raced), and **`ROUND_WRITE_MIN_MS` = ~1s between
+  writes per player** — one spelling for both the server's rate condition and the web's
+  flush pacing, since two independent ones would drift into permanent 429s. Every guess
+  is validated as a folded slug of at most the language's `maxSlugLength` (#200).
+- **At the cap the server refuses further appends** (409 `round_full`, logged for review
+  — a real player reaching 500 means an unreachable secret, puzzle-curation signal
+  available no other way), **the client keeps playing locally, and the round STOPS
+  COUNTING — no leaderboard entry**: the web marks the round capped and suppresses its
+  score submission. A faster write is 429 `too_fast` (+`Retry-After: 1`); nothing is ever
+  partially appended.
+- **The guess is still judged locally and instantly** — a submit must never round-trip
+  before the board reacts (Word mode cannot survive the latency; the same reasoning that
+  split `useCountdown` from `useDeadlinePassed`). Guess lands → board reacts → POST goes
+  out → response reconciles. Failed or slow writes queue and flush with capped backoff;
+  durability lives in the persisted local log, not the queue, so a killed tab catches up
+  on its next visit's read.
+- **Three packages agree on the query allowList** (the standing contract): the round
+  CloudFront behavior forwards exactly `lang`/`date`/`mode`
+  (`infra/lib/backend-stack.ts`) over the shared zero-TTL/allExcept-Host live shape.
+  Storage is the score table: partition `round#<date>#<lang>#<mode>`, sort key =
+  publicId, attributes `guesses` (string list), `createdAt`, `lastWriteAt` — one item per
+  `(date, lang, mode, publicId)`.
+- **Scope:** sentence mode streams (coalesced writes). Word mode's two-write shape — a
+  Turnstile-gated round start stamping `startedAt` on THIS record, plus one end-of-run
+  submission — is #202; retiring the client-claimed score POST for server-derived scores
+  is #203.
 
 ### Day-addressed routing & the game day
 

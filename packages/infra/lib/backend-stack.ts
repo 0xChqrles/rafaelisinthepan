@@ -374,6 +374,16 @@ export class BackendStack extends Stack {
       ['lang', 'date', 'mode', 'id'],
     );
 
+    // `/round` (#201) reads THREE — the same day-addressing triple as /scores, since the
+    // guess log is one item per (date, lang, mode, publicId). The player key travels in
+    // the POST body, never in a query.
+    const roundOriginRequestPolicy = liveOriginRequestPolicy(
+      'RoundOriginRequestPolicy',
+      'WhippinRoundOrigin',
+      'Round guess log: forward the three addressing queries and Lambda-URL-safe headers outside cache.',
+      ['lang', 'date', 'mode'],
+    );
+
     // Security response headers for the API. CORS stays owned by the Lambda (it echoes the
     // configured origin + Vary), so this policy adds ONLY transport/sniffing hardening and
     // deliberately sets no CORS/CSP (CSP is a document concern, not a JSON API's).
@@ -453,6 +463,7 @@ export class BackendStack extends Stack {
         }),
         'profile*': liveBehavior(profileOriginRequestPolicy),
         'board*': liveBehavior(boardOriginRequestPolicy),
+        'round*': liveBehavior(roundOriginRequestPolicy),
         'friends*': liveBehavior(friendsOriginRequestPolicy),
       },
     });

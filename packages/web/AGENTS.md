@@ -14,6 +14,9 @@
       hooks/usePuzzle.ts      fetch the client-computed day's puzzle from the backend
       api.ts                  backend client: puzzleUrl/wordPuzzleUrl, 404->NO PUZZLE
       identity.ts             the #187 player key: localStorage secret, generated on first need
+      state/roundSync.ts      the #201 sync engine: coalesced flushes, server-log adoption,
+                            cap handling (one module-level conversation per round)
+      hooks/useRoundSync.ts   its React binding: registers the round's context on mount
       screens/Profile.tsx     the #188 profile editor (/profile): name, tap-to-paint 10×10 grid,
                               ground-swatch palette picker (#190 wires the entry point)
       screens/FriendInvite.tsx  the #189 invite link's landing (/join/<publicId>): POST the mutual
@@ -389,6 +392,26 @@ it to the local store — see `packages/backend/AGENTS.md`).
 ## Current state / mutable
 
 *(Safe to update without touching the invariants above.)*
+
+- **Round guess-log sync (#201):** `Game`'s Round registers its context with
+  `state/roundSync.ts` (`useRoundSync`) and reports each COUNTED guess to it
+  (`recordGuess` now returns whether the guess entered the log — a deduped repeat owes
+  the server nothing). The engine is one module-level conversation per round key (the
+  `activeScoreFlights` pattern, so remounts and StrictMode rejoin it): the mount READ
+  adopts whatever the local device is missing — that is the cross-device payoff, archive
+  rounds included — merging SERVER-first under the local log by canonical identity
+  (`mergeLogs`, `game/scoring.ts`'s `guessKey`), replaying the merged board with
+  `replayHoles` over the ONE improvement rule (`applyGuessToHoles`, extracted from
+  `share.ts`'s `replayRun`, which now calls it too), and handing BOTH to the store in
+  one `adoptRound` write. Counted guesses flush COALESCED behind `ROUND_WRITE_MIN_MS`
+  pacing with capped exponential backoff; every answer carries the full stored log and
+  becomes the round's truth; durability lives in the persisted `tried`, so a killed tab
+  catches up on the next visit's read. A 409 marks the round CAPPED (persisted
+  `RoundProgress.capped`) and closes the conversation: play continues locally but the
+  solved screen suppresses the score submission (`finished: solved && !overCap`, where
+  `overCap` also covers local offline play that outgrew any server's cap) — no
+  leaderboard entry for a stopped-counting round. Word mode does not call the engine
+  yet (#202's two-write shape).
 
 - **Profile editor (#188; two-colour rework + key-UI removal user-decided
   2026-08-19):** `/profile` (`screens/Profile.tsx`), a global route like `/select` (an

@@ -6,7 +6,7 @@
 // the solved screen shows. The plain-text emoji row is a BOUNDED summary of that same run
 // (3..18 cells, see rowMeans) — a text message can't take a 62-emoji line.
 
-import { computeProgress } from './scoring';
+import { applyGuessToHoles, computeProgress } from './scoring';
 import { RARITY_NAMES, type Rarity } from './wordGame';
 import {
   dateForDayNumber,
@@ -49,11 +49,7 @@ export function replayRun(freshHoles: RuntimeHole[], ranks: RankMap, tried: stri
   const trajectory: number[] = [];
   const solvedAt: (number | null)[] = secrets.map(() => null);
   tried.forEach((typed, i) => {
-    for (const h of holes) {
-      if (h.rank === 0) continue; // solved holes are locked, exactly as in-game
-      const entry = ranks[h.secret]?.[typed];
-      if (entry && entry.rank < h.rank) h.rank = entry.rank;
-    }
+    applyGuessToHoles(holes, ranks, typed);
     trajectory.push(computeProgress(holes, ranks));
     secrets.forEach((s, si) => {
       if (solvedAt[si] === null && holes.every((h) => h.secret !== s || h.rank === 0)) {

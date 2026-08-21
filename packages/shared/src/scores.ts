@@ -2,6 +2,16 @@
 // A client/server drift here would either reject a real score or admit an impossible one.
 export const WORD_CLAIM_ZONE = 1_000;
 
+// The guess-log sync's two bounds (#201). The server owns each round's ordered try log —
+// one item per (date, lang, mode, publicId) — and both numbers are cross-package: the cap
+// is enforced inside the append write's own condition (no batch may push the stored log
+// past it; at the cap the round stops counting and earns no leaderboard entry), and the
+// interval paces the client's coalesced flushes against the server's per-player rate
+// condition — two independent spellings of "~1s between guesses" would drift into
+// permanent 429s, so there is one.
+export const ROUND_GUESS_CAP = 500;
+export const ROUND_WRITE_MIN_MS = 1_000;
+
 // The header a CloudFront viewer-request function stamps the connecting viewer's IP into,
 // and the ONLY client address the score handler trusts in production (#169). Named here
 // because it is a CDN⇔handler contract: infra writes it, the backend reads it, and a

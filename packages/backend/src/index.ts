@@ -8,6 +8,7 @@ import { s3Store } from './s3Store';
 import { loadConfig, loadScoreSecrets } from './config';
 import { dynamoFriendStore } from './dynamoFriendStore';
 import { dynamoProfileStore } from './dynamoProfileStore';
+import { dynamoRoundStore } from './dynamoRoundStore';
 import { dynamoScoreStore } from './dynamoScoreStore';
 import { turnstileVerifier } from './turnstile';
 import type { FnUrlEvent, FnUrlResult } from './respond';
@@ -37,6 +38,7 @@ function initializeHandler(): Promise<ProductionHandler> {
         },
         profiles: dynamoProfileStore(dynamo, config.scoreTable),
         friends: dynamoFriendStore(dynamo, config.scoreTable),
+        rounds: dynamoRoundStore(dynamo, config.scoreTable),
       }),
     )
     .catch((error: unknown) => {

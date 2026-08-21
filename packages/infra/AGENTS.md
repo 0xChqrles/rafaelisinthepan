@@ -82,7 +82,11 @@
   `CachingDisabled`, ALLOW_ALL methods (the friends-board read is an authenticated POST),
   `allExcept: Host` headers, and an origin-request allow-list of exactly the FOUR queries
   the board handler reads (`lang`/`date`/`mode`/`id`) — no viewer-IP function, no per-IP
-  logic. The table grant adds
+  logic. **`/round` (#201)** is the fifth behavior on that shape — `CachingDisabled`,
+  ALLOW_ALL methods (the route is POST-only; the player key authenticates in the body),
+  `allExcept: Host` headers, and an origin-request allow-list of exactly the THREE
+  addressing queries (`lang`/`date`/`mode`) — no viewer-IP function, no per-IP logic.
+  The table grant adds
   `GetItem` for the profile read (the upsert reuses `UpdateItem`) and **`DeleteItem` for
   #189's symmetric friend removal, the only delete on this table**; all are pinned by
   `backend-stack.test.ts`. The Lambda
