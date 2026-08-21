@@ -538,6 +538,71 @@ describe('recordGuess — score = unique valid tries (on the active round)', () 
     expect(activeRound()?.tried).toEqual(['chat']);
     expect(activeRound()?.holes.slice(0, 2).map((hole) => hole.rank)).toEqual([0, 0]);
   });
+
+  it('reports whether the guess entered the log — the sync engine flushes only counted tries (#201)', () => {
+    const { recordGuess } = useGameStore.getState();
+    expect(recordGuess('bois')).toBe(true);
+    expect(recordGuess('bois')).toBe(false);
+    expect(activeRound()?.tried).toEqual(['bois']);
+  });
+});
+
+describe('adoptRound — the server answer becomes the round truth (#201)', () => {
+  beforeEach(() => useGameStore.getState().ensureRound('d:5:fr', freshHoles()));
+
+  it('replaces tried + holes and derives the count from the merged log', () => {
+    const adopted: RuntimeHole[] = [
+      { pos: 1, secret: 'foret', word: 'sous-bois', rank: 3, startRank: 87 },
+      { pos: 2, secret: 'ancienne', word: 'vieille', rank: 40, startRank: 40 },
+    ];
+    useGameStore.getState().adoptRound('d:5:fr', ['bois', 'chemin'], adopted, 62);
+    const round = activeRound()!;
+    expect(round.tried).toEqual(['bois', 'chemin']);
+    // The score IS the number of unique tries — derived, never a second stored answer.
+    expect(round.guessCount).toBe(2);
+    expect(round.holes).toEqual(adopted);
+  });
+
+  it('refreshes the cached progress with the board it describes', () => {
+    // The archive cell and the language strip read this cached number verbatim, and
+    // `syncProgress` can only ever repair the ACTIVE round — an adoption landing after
+    // the player navigated away would otherwise leave that day painting a stale fill
+    // until they reopened exactly that day.
+    expect(activeRound()?.progress).toBe(0);
+    useGameStore.getState().adoptRound('d:5:fr', ['bois'], freshHoles(), 41.5);
+    expect(activeRound()?.progress).toBe(41.5);
+  });
+
+  it('leaves an unknown key ABSENT (the round was evicted or reset mid-flight)', () => {
+    useGameStore.getState().adoptRound('d:9:en', ['x'], [], 10);
+    // Materializing the round here would create one with no cached progress, which
+    // `statusOf` renders as a NaN% archive cell. The key must simply stay gone.
+    expect(useGameStore.getState().rounds['d:9:en']).toBeUndefined();
+  });
+});
+
+describe('markRoundCapped — the cap stops the round counting (#201)', () => {
+  beforeEach(() => useGameStore.getState().ensureRound('d:5:fr', freshHoles()));
+
+  it('marks the round capped', () => {
+    useGameStore.getState().markRoundCapped('d:5:fr');
+    expect(activeRound()?.capped).toBe(true);
+  });
+
+  it('is idempotent — a second call writes NOTHING', () => {
+    const { markRoundCapped } = useGameStore.getState();
+    markRoundCapped('d:5:fr');
+    const capped = activeRound();
+    markRoundCapped('d:5:fr');
+    // Same object, not merely an equal one: a fresh one re-renders every subscriber and
+    // re-serializes the persist blob for a value that did not change.
+    expect(activeRound()).toBe(capped);
+  });
+
+  it('ignores an unknown key', () => {
+    useGameStore.getState().markRoundCapped('d:9:en');
+    expect(useGameStore.getState().rounds['d:9:en']).toBeUndefined();
+  });
 });
 
 describe('improveHole — closer word + lower rank, others untouched', () => {

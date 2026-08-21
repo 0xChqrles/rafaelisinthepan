@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { dateForDayNumber, type ScoreHistogram } from '@whippin/shared';
 import { parseScoreHistogram, postScoreBody, scoresUrl } from '../api';
-import { bucketIndexOf, shouldSubmitScore } from '../game/scores';
+import { bucketIndexOf, shouldAskPopulation, shouldSubmitScore } from '../game/scores';
 import { playerSecret } from '../identity';
 import { turnstileToken } from '../turnstile';
 import type { Mode } from '../langs';
@@ -124,6 +124,7 @@ export async function syncScore(
 
 export default function useScoreHistogram({
   finished,
+  canSubmit = true,
   markRecorded,
   mode,
   lang,
@@ -132,6 +133,11 @@ export default function useScoreHistogram({
   recordedScore,
 }: {
   finished: boolean;
+  // May this round still CLAIM a place in the population? A #201 capped round may not —
+  // it stopped counting. It gates the POST alone: a round the population already holds
+  // keeps reading its standing, since the recorded row is a fact about the day and not
+  // about whether this device may write again.
+  canSubmit?: boolean;
   // Persists the score the population recorded (#187) on the round; must be idempotent
   // (the store action is).
   markRecorded: (recorded: number) => void;
@@ -152,10 +158,23 @@ export default function useScoreHistogram({
   // POST with a redundant GET.
   const recordedRef = useRef(recordedScore);
   recordedRef.current = recordedScore;
+  // `canSubmit` is read at launch time for that reason AND one of its own. A round can
+  // become CAPPED while its score POST is in the air — a lagging #201 flush takes the
+  // server's cap refusal after the submission already went out. As a DEPENDENCY that
+  // tears the effect down, cancelling the answer to a request that is about to succeed,
+  // and nothing re-opens it: `markRecorded` writes `recordedScore`, which is deliberately
+  // not a dependency either, so the standing stayed empty on that visit and every later
+  // one until a remount. Nothing needs the teardown — the POST has already gone, a round
+  // never becomes UN-capped, and the still-subscribed conversation lands the standing
+  // this round earned.
+  const canSubmitRef = useRef(canSubmit);
+  canSubmitRef.current = canSubmit;
   const placementKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!finished) {
+    // Nothing to show and nothing to ask — not finished, or a #201 capped round with no
+    // recorded score to read (game/scores.ts states the rule).
+    if (!shouldAskPopulation(finished, canSubmitRef.current, recordedRef.current)) {
       // A republished puzzle can reset the round under the same key; drop stale results.
       placementKeyRef.current = null;
       setPlacement(null);

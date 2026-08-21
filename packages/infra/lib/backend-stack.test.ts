@@ -69,10 +69,10 @@ describe('score production boundary (#169)', () => {
     const policies = Object.values(
       template.findResources('AWS::CloudFront::OriginRequestPolicy'),
     );
-    // The score policy, the profile policy (#188), the friends policy (#189) and the
-    // board policy (#190) — each forwards exactly the queries its handler route reads
-    // (the root AGENTS.md allowList contract).
-    expect(policies).toHaveLength(4);
+    // The score policy, the profile policy (#188), the friends policy (#189), the
+    // board policy (#190) and the round policy (#201) — each forwards exactly the
+    // queries its handler route reads (the root AGENTS.md allowList contract).
+    expect(policies).toHaveLength(5);
     const scorePolicy = policies.find(
       (policy) =>
         policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinLiveScoresOrigin',
@@ -179,6 +179,37 @@ describe('score production boundary (#169)', () => {
       QueryStrings: ['lang', 'date', 'mode', 'id'],
     });
     expect(boardPolicy?.Properties.OriginRequestPolicyConfig.HeadersConfig).toEqual({
+      HeaderBehavior: 'allExcept',
+      Headers: ['Host'],
+    });
+  });
+
+  it('uses a deployable zero-cache round behavior with exact query forwarding (#201)', () => {
+    const distributions = Object.values(template.findResources('AWS::CloudFront::Distribution'));
+    const behaviors = distributions[0].Properties.DistributionConfig.CacheBehaviors as Record<
+      string,
+      unknown
+    >[];
+    const round = behaviors.find(({ PathPattern }) => PathPattern === 'round*');
+    // The guess log is live data, like the other four.
+    expect(round?.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
+    // The route is POST-only: the player key authenticates in the body.
+    expect(round?.AllowedMethods).toContain('POST');
+
+    const policies = Object.values(
+      template.findResources('AWS::CloudFront::OriginRequestPolicy'),
+    );
+    const roundPolicy = policies.find(
+      (policy) => policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinRoundOrigin',
+    );
+    // The THREE addressing queries — the same triple /scores forwards; the secret never
+    // travels in a query. The header mode is still the Lambda-URL-safe one, since it is
+    // what carries the OAC-signed body hash.
+    expect(roundPolicy?.Properties.OriginRequestPolicyConfig.QueryStringsConfig).toEqual({
+      QueryStringBehavior: 'whitelist',
+      QueryStrings: ['lang', 'date', 'mode'],
+    });
+    expect(roundPolicy?.Properties.OriginRequestPolicyConfig.HeadersConfig).toEqual({
       HeaderBehavior: 'allExcept',
       Headers: ['Host'],
     });

@@ -37,6 +37,14 @@
       friendStore.ts          mutual-edge storage contract; friends#<publicId> partition + FRIENDS_MAX
       dynamoFriendStore.ts    prod one-transaction link/unlink (both directions) + consistent Query
       memoryFriendStore.ts    process-local implementation for backend:dev/tests
+      rounds.ts               POST /round (#201): the per-round guess log — read/append, slug +
+                              length validation, cap + write-interval refusals, full-state answers
+      roundStore.ts           round storage contract; round#<publicId> partition, sort key
+                              <date>#<lang>#<mode>; the puzzle tag +
+                              ROUND_GUESS_CAP / ROUND_WRITE_MIN_MS semantics
+      dynamoRoundStore.ts     prod ONE conditional UpdateItem (both bounds in the condition) +
+                              consistent classification read on a refusal
+      memoryRoundStore.ts     process-local implementation for backend:dev/tests
       nameFilter.ts           #188 banned-strings display-name MODERATION (normalize + substring); the charset is shared/name.ts
       avatarModeration.ts     #188 best-effort swastika template match on the decoded grid
       turnstile.ts            Cloudflare Siteverify + explicit local accept-all verifier
@@ -57,7 +65,7 @@
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
 pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output). Sentence puzzles AND #154 word artifacts (#156): the artifact type is detected from the file's SHAPE and routed to its own key.
 pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--mode sentence|word] [--ci]  # publish-buffer coverage (#61); --mode word probes the #156 word-artifact buffer; reports + exits 0 by default, --ci exits 1 on any (day,lang) gap for cron/CI
-pnpm backend:dev                # local server (puzzles + /scores + /profile + /friends + /board + /today) on :8787; FS puzzles, in-memory scores/profiles/friends, local Turnstile accept-all
+pnpm backend:dev                # local server (puzzles + /scores + /profile + /friends + /board + /round + /today) on :8787; FS puzzles, in-memory scores/profiles/friends/rounds, local Turnstile accept-all
 pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server with a #190 board population (in-memory — re-run after a restart)
 ```
 
@@ -219,6 +227,66 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   handful to your own identity. Re-run after every backend restart (the stores reset —
   that is why it is a script, not a fixture); it copies the newest local fr sentence
   puzzle forward to the active day when that key is missing.
+
+- **Round guess-log sync (#201):** the ONE handler also serves `POST /round?lang=&date=&mode=`
+  — the product contract (server-authoritative state, strings-not-indices, the two
+  bounds, cap semantics) lives in the root `AGENTS.md`. Implementation notes: POST-only
+  like /friends (a GET is a named 405); the shared `requireDayParams` guard triple
+  applies, but the route reads NO puzzle store — the log is the player's own working
+  state, not a population claim, so an unpublished day needs no guard beyond the future
+  window and archive days sync like today's. `{secret, puzzle}` reads (404 = none yet, and
+  also "nothing stored for THIS puzzle" — the tag's whole job, root `AGENTS.md`);
+  `{secret, puzzle, guesses}` appends. Validation is fail-closed BEFORE the store: a
+  `PUZZLE_TAG_SHAPE` tag, then a non-empty string array of at most `ROUND_GUESS_CAP`
+  entries, each of at most the language's `maxSlugLength` (#200) and each **left alone by
+  `fold()`** — the check asks the shared contract rather than restating its pipeline as a
+  local regex, which would be a third spelling free to drift from the two that matter. The
+  body cap is this route's own (`readJsonObject`'s optional bound), DERIVED from the cap
+  and the longest `maxSlugLength` rather than hand-picked — a coalesced flush of 500 slugs
+  legitimately exceeds the default 4 KB live-body cap. Storage is the score table:
+  partition `round#<publicId>`, sort key `<date>#<lang>#<mode>` (per PLAYER — the reason is
+  in the root `AGENTS.md`), attributes `guesses` (string list), `puzzle`, `createdAt`,
+  `lastWriteAt` (ms epoch). `lastWriteAt` is the ONE Number here because it is the only one
+  compared arithmetically in the condition; `createdAt` is a String, and writing it as a
+  Number reads back as `''` on every response for the item's whole life. The append is ONE
+  conditional UpdateItem whose ConditionExpression carries every bound —
+  `(attribute_not_exists(#last) OR #last < :cutoff) AND (attribute_not_exists(#g) OR (size(#g) <= :room AND #p = :puzzle))`
+  (the RESULT may reach the cap, never pass it) — with `ReturnValues: ALL_NEW` so the happy
+  path is one call. **Every clause is path-only CONDITION syntax and must stay that way:**
+  DynamoDB's condition grammar has NO arithmetic and its whole function list is
+  attribute_exists / attribute_not_exists / attribute_type / begins_with / contains /
+  size(<path>) — `if_not_exists` and `+` belong to an UPDATE expression, and naming either
+  makes the service reject the request with a ValidationException before a single guess is
+  stored. Nothing local can catch that (`dynamoRoundStore.test.ts` mocks `send`, and every
+  route test runs on `memoryRoundStore`), which is why that suite asserts the expression's
+  SHAPE. That is also why the cap is expressed as ROOM (`:room` = the cap minus this batch)
+  and why a batch too large for an EMPTY log — which has no size to compare — is refused in
+  the store instead. A failed condition reads the item once, consistently, to classify the
+  refusal: a record naming a RETIRED puzzle is a restart, so the batch REPLACES the log
+  (still inside the write interval, or varying the tag would be a way around it); else
+  `round_full` when any batch would overflow the cap — the truer answer, since retrying can
+  never succeed — else `too_fast`. **Every refusal ANSWERS with the unchanged stored
+  state** (`errorResponse`'s `extra`), which is what the client reconciles against and what
+  pays for that read — but only ever the state of the PUZZLE ASKED ABOUT (`stateForTag` in
+  both stores): a rate-refused RESTART answers empty rather than handing back the retired
+  sentence's log, which the client would adopt as this round's truth. The lost-restart-race
+  branch re-reads for the same reason, since what is stored by then may already be this
+  puzzle's own fresh log. `round_full` is answered 409, and LOGGED only when the STORED log
+  is really at the cap (`[round] round_full: …` — the puzzle-curation signal; the client
+  stops after that refusal, so each hit is one honest line). A batch that merely OVERSHOOTS
+  a round with room left — another device pushed the log forward while this caller was
+  away — refuses the batch rather than the round: it answers 409 with the truth, says so in
+  its message, and writes no line, or a racing second device could manufacture
+  "unreachable secret" signal, `too_fast` is 429 + `Retry-After: 1` — which `corsHeaders` must EXPOSE, or
+  a browser reads null for a header only curl and `backend:dev` ever see. Local serve swaps
+  in `memoryRoundStore`; no new env or IAM (the table grant already carried GetItem +
+  UpdateItem).
+  **The CORS PREFLIGHT is cached** (`PREFLIGHT_MAX_AGE_SECONDS`, applied on the OPTIONS
+  branch and deliberately WITHOUT the live routes' `no-store` — a preflight carries no
+  data, and what governs its reuse is `Access-Control-Max-Age`). /round is the first route
+  that POSTs continuously, about once a second while a player types, so the default
+  few-second preflight cache costs an extra OPTIONS invocation and an RTT stall every few
+  writes.
 
 - **Word mode's daily artifact (#154/#156):** the ONE puzzle endpoint also serves the
   single-word artifact under `mode=word` (`GET /?lang=&date=&mode=word`; absent/

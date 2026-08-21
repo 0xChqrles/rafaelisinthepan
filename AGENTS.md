@@ -341,12 +341,11 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   (distinct slugs — a sentence score counts distinct vocabulary-valid tries, so this is
   that score's ceiling), **`maxSlugLength`** (the longest key), and the corpus build that
   produced it, **`embedding` + `builtAt`**.
-  **Only `vocabSize` has a reader today** — the live routes' sentence ceiling and, by its
-  key set, what counts as a supported `lang`. **`maxSlugLength` is EMITTED AHEAD OF ITS
-  CONSUMER:** it is the length cap for a stored guess, and this backend stores no guesses
-  yet (#199). Recording it now costs nothing — it is measured by the same pass either way
-  — but nothing enforces it, so don't read this bullet as describing a server behavior
-  that exists.
+  **`vocabSize` has two readers** — the live routes' sentence ceiling and, by its
+  key set, what counts as a supported `lang`. **`maxSlugLength` caps a STORED GUESS
+  (#201, decided 2026-08-21):** the `/round` append validates every guess against the
+  language's value — a string longer than anything the vocabulary ever held is refused
+  before the store is touched.
 - **It is GENERATED, never hand-written**, and by the very call that writes the set
   (`slug.write_vocab`, from the same slugs), so the two describe one vocabulary by
   construction — every command that can refresh the set (`reduce`, `gen:phrase`,
@@ -368,6 +367,147 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   against corpus properties (Word mode's rarity cuts, the measured en-vs-fr gap).
 - The web imports it through `shared/src/vocab.ts` (`VOCAB_BUILDS`) like any other shared
   module, but has no reason to read it: it holds the actual set.
+
+### Round guess-log sync (#201, decided 2026-08-21)
+
+- **The server owns game state from the first guess, whether or not an account is ever
+  linked.** Local state is a working copy and a write buffer, never the authority — and
+  authoritative-only-after-link was rejected: scores and friend edges are already
+  server-side for unlinked players (#169/#187/#189), so gating the guess log on linking
+  would be the odd one out (and would break #206's live friends board). The payoff:
+  **there is no migration, ever** — a first account link binds to an account the server
+  already holds in full.
+- **ONE route, POST-only like /friends** (the secret is the auth and travels in the
+  BODY): `POST /round?lang=&date=&mode=` — `{secret, puzzle}` reads the caller's stored
+  round for that daily (404 = none yet), `{secret, puzzle, guesses: [...]}` appends to its
+  log. **Every answer carries the full stored state** (`{guesses, createdAt}`) — the
+  /friends house style, and **that includes BOTH refusals** — so a write is also a
+  reconciliation: the tab computes against stale local state, the server appends to the
+  true log and answers with truth, and the tab re-renders correct. It is always the state
+  of the PUZZLE ASKED ABOUT: a record naming a different one answers EMPTY, never its own
+  log. The client adopts every answer as this round's truth, so a refusal carrying the
+  retired sentence's guesses would walk them straight back into the corrected puzzle —
+  the tag's whole purpose, undone through the one door left open. (It is also what pays
+  for the extra consistent read a refusal costs the store: without a body, that read
+  exists only to choose between two status codes, and a client refused mid-sync stays
+  stale until its next accepted write.) No sockets, no SSE: an open tab reconciles on its
+  own next write. The day-addressed guard triple applies; there is **NO puzzle-store
+  read** — the log is the player's own working state, not a population claim, so
+  **archive days sync exactly like today's**, which is what makes a player's full history
+  follow them to a new device.
+- **The server stores strings and interprets nothing.** Guesses are the folded forms
+  typed, in order — never indices (an index doesn't fit fr's ~128k vocab in `uint16`,
+  misses have no rank-map index at all, and it would bind stored history to a regenerable
+  artifact) — and no `guessKey`/replay/scoring runs server-side: the client interprets
+  the raw log for display. Validation asks the CONTRACT rather than restating it: a guess
+  is one `fold()` leaves alone, at most the language's `maxSlugLength` (#200) — never a
+  third regex spelling of slug()/fold(), free to drift from the two that matter.
+- **The record NAMES ITS PUZZLE (`puzzle`), and a different name restarts it.** A round
+  key is only (date, lang, mode), so re-publishing a different sentence keeps the key
+  while changing the puzzle entirely — which the client already resets its local round on
+  (`holesMatchPuzzle`). Without the tag the mount read hands the RETIRED sentence's log
+  straight back and undoes that reset FOR GOOD, since every later read re-applies it: the
+  player plays the corrected puzzle with the old one's words in their history, their
+  ruler, their share card and their score. So a read for a different tag is an honest
+  "nothing stored for this one" (404) and an append carrying one REPLACES the log rather
+  than growing it. The value is an opaque short token the CLIENT computes (a hash of the
+  hole signature `holesMatchPuzzle` itself compares — `web/state/roundSync.ts`
+  `puzzleTag`); the server only ever compares it for equality, which is the same
+  "stores strings, interprets nothing" rule the log follows.
+- **The two bounds are cross-package constants** (`shared/src/scores.ts`, the
+  `WORD_CLAIM_ZONE` rule): **`ROUND_GUESS_CAP` = 500 guesses per round**, enforced inside
+  the append write's own condition (the RESULT may reach the cap, never pass it, so it
+  cannot be raced — written as ROOM, `size(log) <= cap - batch`, because DynamoDB's
+  condition grammar has no arithmetic and no `if_not_exists`; naming either there is a
+  ValidationException on every append, which no mocked client and no memory store can
+  reproduce), and **`ROUND_WRITE_MIN_MS` = ~1s between writes per player PER DAILY**
+  (corrected 2026-08-21: this said "per player", which the implementation has never been
+  — `lastWriteAt` lives on the round item, so one player writing to two dailies at the
+  same instant is accepted twice) — one spelling for both the server's rate condition and
+  the web's flush pacing, since two independent ones would drift into permanent 429s.
+  **The web paces from the previous write's ANSWER, not from its send**, which is what
+  makes one constant sufficient: the server compares its OWN receipt instants with a
+  strict `<`, so pacing from the send instant leaves the accepted gap at
+  `interval + (latency_n − latency_{n−1})` and refuses every request that travels faster
+  than its predecessor.
+  **Per DAILY is the granularity the bound should have**, which is why the wording moved
+  rather than the code. The client paces per ROUND — one flight per round key, each
+  timing its own last answer — so a global per-player throttle would make two
+  concurrently syncing rounds (an archive day left mid-play, and today's) refuse each
+  other about half the time: the two ends measuring different things, which is the exact
+  failure one shared constant exists to prevent. It would also cost a second item and a
+  transaction on the game's hottest write path, to buy a bound an attacker walks around
+  by minting another identity (this route has no Turnstile — see the open question in the
+  route's own notes). What a per-daily interval does NOT bound is one identity fanning
+  writes across many dates; that is the same unmetered-route question, not this constant's
+  job.
+- **At the cap the server refuses further appends** (409 `round_full`, logged for review
+  — a real player reaching 500 means an unreachable secret, puzzle-curation signal
+  available no other way), **the client keeps playing locally, and the round STOPS
+  COUNTING — no leaderboard entry**: the web marks the round capped (persisted) and
+  suppresses its score submission. It suppresses the **SUBMISSION and nothing else** — a
+  round that solved, submitted, and only THEN took a lagging flush's cap refusal has a
+  real recorded rank, and a client flag must not hide what the population itself already
+  answered (on that visit or on every later one). The cap is also read on the CLIENT side
+  of the conversation: the batch is clamped to what still fits, and a round already at the
+  cap says so locally instead of spending a doomed request — an over-cap batch takes a
+  400, which is not the 409 the engine handles, so it would be re-sent forever while the
+  round was never marked capped at all. **What still fits is measured against the RAW
+  stored count, never the merged one** — the two differ whenever the merge collapses two
+  devices' guesses into one identity (#104), and the cap counts what is STORED.
+  **And a 409 refuses the BATCH: only the log it CARRIES says whether it refuses the
+  ROUND.** A batch sized correctly when it was built still overshoots if another device
+  under the same key pushed the stored log forward meanwhile — there the round has room
+  and simply needs a smaller batch, so the client caps only when the adopted log is really
+  at the cap, and the server writes its curation line only then too (a racing second
+  device must not be able to manufacture "unreachable secret" signal, and concluding
+  "capped" from the status alone would suppress the leaderboard entry of a round that was
+  never full — the harshest consequence this design has). The persisted flag is checked on every mount, or a
+  reload re-opens a settled round for a read, a guaranteed 409 and another curation line
+  that is reload noise rather than a player hitting the cap. A faster write is 429
+  `too_fast` (+`Retry-After: 1`, which CORS must EXPOSE or a browser reads null); nothing
+  is ever partially appended.
+- **The guess is still judged locally and instantly** — a submit must never round-trip
+  before the board reacts (Word mode cannot survive the latency; the same reasoning that
+  split `useCountdown` from `useDeadlinePassed`). Guess lands → board reacts → POST goes
+  out → response reconciles. Failed or slow writes queue and flush with capped backoff;
+  durability lives in the persisted local log, not the queue, so a killed tab catches up
+  on its next visit's read. **A write whose outcome is UNKNOWN (a transport error, a 5xx,
+  an unparseable body) re-READS before writing again** rather than re-sending: appends are
+  at-least-once, so a response lost after the write committed would `list_append` the
+  same guesses twice, burning the cap on a duplicate the client's own dedup then hides —
+  and an honest player 409'd well under 500 real tries loses the day's leaderboard entry
+  while the cap log gains a false curation signal. **A 4xx is a VERDICT, not a hiccup**,
+  and closes the conversation: a request this client keeps getting wrong would otherwise
+  spin one request every 30 seconds for the tab's life, and on the READ it stalls every
+  append behind it, so the guesses reach the server on no visit ever.
+- **A solve the SYNC adopts is not a fresh solve.** The server's log can finish the board
+  under a screen that is merely watching (a second tab, or another device under the same
+  player key), and the solved beats — the `solve` analytics event, the streak, the
+  celebration — belong to the play transition alone. `Game` claims them at submit time,
+  where it knows the guess closed every hole; `solved` flipping is no longer evidence.
+- **Three packages agree on the query allowList** (the standing contract): the round
+  CloudFront behavior forwards exactly `lang`/`date`/`mode`
+  (`infra/lib/backend-stack.ts`) over the shared zero-TTL/allExcept-Host live shape.
+  **Storage is the score table, partitioned per PLAYER** (corrected 2026-08-21, superseding
+  the day partition this issue first sketched): partition `round#<publicId>`, sort key
+  `<date>#<lang>#<mode>`, attributes `guesses` (string list), `puzzle`, `createdAt`,
+  `lastWriteAt` — still one item per `(date, lang, mode, publicId)`. A DynamoDB list has
+  no partial update, so `list_append` rewrites the whole growing item and a long round's
+  writes get progressively more expensive; under a DAY partition every player's writes for
+  one daily land on ONE partition key, which adaptive capacity cannot split and a throttle
+  there degrades the sync for everyone playing that day. Nothing reads across players
+  anyway — /board resolves the caller's friends into exact row keys and fetches those
+  (BatchGetItem), the shape a future progress read (#206) takes too.
+- **Scope:** sentence mode streams (coalesced writes). Word mode's two-write shape — a
+  Turnstile-gated round start stamping `startedAt` on THIS record, plus one end-of-run
+  submission — is #202; retiring the client-claimed score POST for server-derived scores
+  is #203. Until #202, `RoundSyncContext.mode` is TYPED `'sentence'`: the route, the URL
+  and the stored item are all mode-generic, but the store is not — a word round lives in
+  its own `wordRounds` map under a `w:` key, which `adoptRound`/`markRoundCapped` cannot
+  reach. Widening the type is #202's job, together with the store actions; leaving it open
+  would make the whole conversation a silent no-op that reads as "my history doesn't
+  follow me" instead of a compile error.
 
 ### Day-addressed routing & the game day
 

@@ -1,5 +1,10 @@
-// The player's secret key (#187): generated on FIRST NEED (the first score POST — never
-// at startup), kept in localStorage, and sent in the POST body as the proof of identity.
+// The player's secret key (#187): generated on FIRST NEED, kept in localStorage, and sent
+// in the POST body as the proof of identity. First need used to mean the first SCORE post;
+// since #201 it is the round sync's own mount read, which fires as the board appears —
+// the server owns the guess log from the first guess, and the read that adopts another
+// device's history has to prove whose history it is asking for. Still not at startup: the
+// key is minted by the first call, and a visit that never opens a game route never makes
+// one.
 // It is simultaneously the ID and the password: the server derives the publicId from it
 // and stores nothing secret. Losing localStorage loses the identity — accepted; the
 // decided remedy is a copyable-key backup that doubles as device linking (#188 designed

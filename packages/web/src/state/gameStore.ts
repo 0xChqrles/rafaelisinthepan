@@ -35,6 +35,11 @@ export interface RoundProgress {
   // means it holds nothing — a refused submission, a backend failure, or a round that has
   // simply not finished — and the next visit asks again (see `shouldSubmitScore`).
   scoreRecorded?: number;
+  // The server refused further appends at the guess cap (#201): the round keeps playing
+  // locally but has STOPPED COUNTING — it must never submit a score, so no leaderboard
+  // entry can exist for it. Set only by the sync engine on the server's round_full
+  // refusal; never cleared (a capped round stays capped).
+  capped?: boolean;
 }
 
 // The canonical round key: (server day, language, MODE — #156: the two dailies would
@@ -306,7 +311,23 @@ interface GameState extends PersistedState {
   // puzzle's ranks; defaults to the folded slug itself): a repeat neither re-counts nor
   // re-appends. `typed` is already folded by the caller. Identity is recomputed from the
   // persisted `tried` slugs, so the stored shape is unchanged and old rounds just work.
-  recordGuess: (typed: string, keyOf?: (typed: string) => string) => void;
+  //
+  // RETURNS whether the guess actually entered the log, so the caller knows whether the
+  // sync engine has anything new to flush (#201) — a deduped repeat changed nothing.
+  recordGuess: (typed: string, keyOf?: (typed: string) => string) => boolean;
+
+  // Adopt the server's answer as this round's truth (#201): replace `tried` with the
+  // merged log (server entries first, then local-only ones — computed by the sync
+  // engine, which owns the interpretation) and replay the hole states beside it. The
+  // store stays interpretation-free on purpose: like recordWordGuess's replay callback,
+  // it is handed finished values rather than rank maps it must not know — the cached
+  // `progress` included, because `syncProgress` can only ever repair the ACTIVE round
+  // and an adoption routinely lands after the player has navigated away.
+  adoptRound: (key: string, tried: string[], holes: RuntimeHole[], progress: number) => void;
+
+  // Mark the active-keyed round CAPPED (#201): the server refused further appends at
+  // ROUND_GUESS_CAP, so the round stops counting and must never submit a score.
+  markRoundCapped: (key: string) => void;
 
   // A warm hit improved a hole on the active round: swap in its closer (accented)
   // word + lower rank.
@@ -605,22 +626,54 @@ export const useGameStore = create<GameState>()(
         return true;
       },
 
-      recordGuess: (typed, keyOf = (t) => t) =>
+      // Reads through `get()` rather than a `set` updater because it has to REPORT what
+      // it did. That is safe for the batched-submissions case the tests pin: zustand
+      // applies `set` synchronously, so a second call in the same tick already sees the
+      // first's log. (The same reasoning recordWordGuess relies on.)
+      recordGuess: (typed, keyOf = (t) => t) => {
+        const s = get();
+        const key = s.activeKey;
+        if (!key) return false;
+        const round = s.rounds[key];
+        if (!round) return false;
+        // Dedupe: unique tries only, compared by canonical identity so an inflection
+        // of an already-tried word never counts (nor enters the recall history).
+        const guessId = keyOf(typed);
+        if (round.tried.some((t) => keyOf(t) === guessId)) return false;
+        set({
+          rounds: {
+            ...s.rounds,
+            [key]: { ...round, tried: [...round.tried, typed], guessCount: round.guessCount + 1 },
+          },
+        });
+        return true;
+      },
+
+      adoptRound: (key, tried, holes, progress) =>
         set((s) => {
-          const key = s.activeKey;
-          if (!key) return {};
+          // The round can be gone by the time an answer lands — evicted by capDayRounds,
+          // or reset under this key by a republish. There is nothing to adopt INTO, and
+          // materializing one here would create a round with no cached progress, which
+          // the archive then paints as a NaN% cell.
           const round = s.rounds[key];
           if (!round) return {};
-          // Dedupe: unique tries only, compared by canonical identity so an inflection
-          // of an already-tried word never counts (nor enters the recall history).
-          const guessId = keyOf(typed);
-          if (round.tried.some((t) => keyOf(t) === guessId)) return {};
+          // The score IS the number of unique tries, and the merged log is deduped by
+          // construction — derive the count rather than storing a second answer to it.
+          // `progress` travels WITH the board it describes, for the reason in the type
+          // above: nothing else will refresh it once this round stops being active.
           return {
             rounds: {
               ...s.rounds,
-              [key]: { ...round, tried: [...round.tried, typed], guessCount: round.guessCount + 1 },
+              [key]: { ...round, tried, holes, guessCount: tried.length, progress },
             },
           };
+        }),
+
+      markRoundCapped: (key) =>
+        set((s) => {
+          const round = s.rounds[key];
+          if (!round || round.capped) return {};
+          return { rounds: { ...s.rounds, [key]: { ...round, capped: true } } };
         }),
 
       improveHole: (index, word, rank) =>

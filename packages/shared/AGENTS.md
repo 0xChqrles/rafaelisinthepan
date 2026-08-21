@@ -96,8 +96,8 @@
   (#200).** GENERATION emits it, in the same call that writes the existence set and from
   the same slugs, so what the backend enforces — the sentence score ceiling, and by the
   record's key set which languages are supported — can never describe a vocabulary the
-  client no longer loads. (`maxSlugLength` ships with them but has NO reader: it is the
-  cap for a stored guess, and nothing stores guesses yet — see the root `AGENTS.md`.)
+  client no longer loads. (`maxSlugLength` is the length cap for a stored guess — the
+  backend's `/round` append validates every guess against it, #201.)
   It lives HERE for the deploy mapping: `deploy.yml` already fans
   `shared` out to both stacks, so a regenerated vocabulary ships its numbers to the
   server through a path that exists — the reason, and the `builtAt`/`embedding`
@@ -108,7 +108,19 @@
   #169 possible-score validation. The web may tune the field without regenerating an
   artifact, but the server must move/deploy with it so a real score is never rejected and
   an impossible one is never admitted. `web/game/wordGame.ts` re-exports it as
-  `CLAIM_ZONE` for its existing consumers.
+  `CLAIM_ZONE` for its existing consumers. It also owns the #201 round bounds —
+  `ROUND_GUESS_CAP` (enforced inside the append write's own condition) and
+  `ROUND_WRITE_MIN_MS` (one spelling of "~1s between writes, per player per DAILY" for
+  BOTH the server's rate condition and the web's flush pacing, since two independent ones
+  would drift into permanent 429s; the root `AGENTS.md` records why the bound is per
+  daily rather than global per player) — cross-package constants for the same reason.
+  **One constant is only enough because the two ends measure the same GAP:** the server
+  compares its own receipt
+  instants with a strict `<`, so the web paces from the previous write's ANSWER rather
+  than from its send (`web/state/roundSync.ts` `writeDelayMs`), which puts the server's
+  round trip inside the interval. Pacing from the send instant leaves zero margin and
+  refuses every request that travels faster than its predecessor — the same permanent-429
+  outcome this one spelling exists to prevent.
 - **`src/heat.ts` is the app's ONE gradient, and it runs WEIRD → CALM (user-decided
   2026-08-17, the calm redesign — superseding the FLIR iron bow of the same day and the
   crimson→cyan heat stops before it).** Solving is RESTORING PEACE to a weird sentence:

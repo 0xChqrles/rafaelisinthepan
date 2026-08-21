@@ -11,8 +11,8 @@ import { errorResponse, type FnUrlEvent, type FnUrlResult } from './respond';
 
 export const LIVE_HEADERS = { 'Cache-Control': 'no-store' } as const;
 
-// Every live body is small (a secret, a score, a 19-char avatar); the cap only exists
-// so a hostile body cannot make JSON.parse chew megabytes.
+// Every live body is small (a secret, a score, a 19-char avatar); the default cap only
+// exists so a hostile body cannot make JSON.parse chew megabytes.
 export const LIVE_BODY_MAX_BYTES = 4_096;
 
 // The puzzle route's future guard, applied to the day-addressed live reads too.
@@ -33,11 +33,14 @@ const refuse = (response: FnUrlResult): { ok: false; response: FnUrlResult } => 
 });
 
 // Parse the request body into a plain JSON object, refusing oversized (413), invalid
-// (400) and non-object (400) bodies. `label` names the route in the 413 message.
+// (400) and non-object (400) bodies. `label` names the route in the 413 message. The cap
+// defaults to LIVE_BODY_MAX_BYTES; a route whose legitimate bodies run larger passes its
+// own bound (still small — the point is bounding JSON.parse, not serving uploads).
 export function readJsonObject(
   event: FnUrlEvent,
   label: string,
   headers: Record<string, string>,
+  maxBytes: number = LIVE_BODY_MAX_BYTES,
 ): Guarded<Record<string, unknown>> {
   let raw: unknown;
   try {
@@ -47,7 +50,7 @@ export function readJsonObject(
       const body = event.isBase64Encoded
         ? Buffer.from(event.body, 'base64').toString('utf8')
         : event.body;
-      if (Buffer.byteLength(body) > LIVE_BODY_MAX_BYTES) {
+      if (Buffer.byteLength(body) > maxBytes) {
         return refuse(
           errorResponse(413, 'payload_too_large', `${label} request body is too large.`, headers),
         );

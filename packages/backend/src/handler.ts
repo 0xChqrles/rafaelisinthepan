@@ -17,6 +17,7 @@ import {
   type FnUrlResult,
   ENVELOPE_BUDGET_BYTES,
   LAMBDA_MAX_RESPONSE_BYTES,
+  PREFLIGHT_MAX_AGE_SECONDS,
   corsHeaders,
   envelopeBytes,
   errorResponse,
@@ -40,6 +41,8 @@ import { handleFriends } from './friends';
 import type { FriendStore } from './friendStore';
 import { handleProfile } from './profile';
 import type { ProfileRecord, ProfileStore } from './profileStore';
+import { handleRound } from './rounds';
+import type { RoundStore } from './roundStore';
 import { handleScores, type ScoreHandlerDeps } from './scores';
 import type { PuzzleStore } from './store';
 
@@ -58,6 +61,8 @@ export interface HandlerDeps {
   profiles?: ProfileStore;
   // The friends graph (#189), same optionality rationale.
   friends?: FriendStore;
+  // The per-round guess log (#201), same optionality rationale.
+  rounds?: RoundStore;
 }
 
 // 404s expire quickly so a puzzle uploaded slightly late becomes playable soon
@@ -125,12 +130,22 @@ export function createHandler(deps: HandlerDeps) {
     // The leaderboard reads (#190): the same live shape once more — GET is the global
     // top 50, POST the authenticated friends board.
     const isBoardRoute = normalizedPath === '/board';
-    const isLiveRoute = isScoresRoute || isProfileRoute || isFriendsRoute || isBoardRoute;
+    // The per-round guess log (#201) — POST-only like /friends (the secret is the auth).
+    const isRoundRoute = normalizedPath === '/round';
+    const isLiveRoute =
+      isScoresRoute || isProfileRoute || isFriendsRoute || isBoardRoute || isRoundRoute;
     const routeHeaders = isLiveRoute ? { ...cors, 'Cache-Control': 'no-store' } : cors;
 
-    // CORS preflight.
+    // CORS preflight. It carries no data, so `no-store` belongs on the live ROUTES and
+    // not on the permission check in front of them — what governs its reuse is
+    // Access-Control-Max-Age, and a live route that writes on every guess (#201's
+    // /round) is exactly the one that must not re-ask for permission each time.
     if (method === 'OPTIONS') {
-      return { statusCode: 204, headers: { ...routeHeaders }, body: '' };
+      return {
+        statusCode: 204,
+        headers: { ...cors, 'Access-Control-Max-Age': PREFLIGHT_MAX_AGE_SECONDS },
+        body: '',
+      };
     }
     if ((isLiveRoute && method !== 'GET' && method !== 'POST') || (!isLiveRoute && method !== 'GET')) {
       return errorResponse(405, 'method_not_allowed', `Method ${method} not allowed.`, routeHeaders);
@@ -273,6 +288,11 @@ export function createHandler(deps: HandlerDeps) {
           date,
           cors,
         );
+      }
+
+      if (isRoundRoute) {
+        if (!deps.rounds) throw new Error('Round state sync is not configured.');
+        return await handleRound(event, deps.rounds, date, instant, cors);
       }
 
       if (rawPath.replace(/\/+$/, '').endsWith('/today')) {
