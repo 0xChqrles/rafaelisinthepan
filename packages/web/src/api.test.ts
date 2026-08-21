@@ -15,9 +15,11 @@ import {
   parseFriends,
   parsePuzzle,
   parseProfile,
+  parseRound,
   parseScoreHistogram,
   parseWordPuzzle,
   profileUrl,
+  roundUrl,
   scoresUrl,
 } from './api';
 
@@ -474,5 +476,55 @@ describe('parseBoard (shape validation, #190)', () => {
     expect(() => parseBoard({ ...valid(), own: [row({ name: 3 })] })).toThrow(/own/);
     expect(() => parseBoard({ ...valid(), waiting: undefined })).toThrow(/waiting/);
     expect(() => parseBoard({ ...valid(), waiting: [{ publicId: 'NOPE' }] })).toThrow(/waiting/);
+  });
+});
+
+describe('roundUrl + parseRound (#201/#202)', () => {
+  const base = 'https://api.example';
+  const valid = () => ({ guesses: ['bois'], createdAt: '2026-08-21T09:00:00.000Z', now: '2026-08-21T09:30:00.000Z' });
+
+  it('is the day-addressed round route, mode included', () => {
+    expect(roundUrl('fr', '2026-08-21', 'word', base)).toBe(
+      'https://api.example/round?lang=fr&date=2026-08-21&mode=word',
+    );
+  });
+
+  it('reads the stored state, with no start on a sentence round', () => {
+    expect(parseRound(valid())).toEqual({
+      ...valid(),
+      startedAt: null,
+      submittedAt: null,
+      // Only a START says `resumed`, and the safe reading of an answer that did not say is
+      // that this client did NOT stamp the clock — so it never gains writer authority by
+      // an omission.
+      resumed: true,
+    });
+  });
+
+  it("carries Word mode's server-stamped clock, and what it did", () => {
+    const started = { ...valid(), startedAt: '2026-08-21T09:10:00.000Z', resumed: false };
+    expect(parseRound(started).startedAt).toBe('2026-08-21T09:10:00.000Z');
+    expect(parseRound(started).resumed).toBe(false);
+  });
+
+  it('carries the SUBMISSION\'s own marker, which a 0-claim run needs', () => {
+    // An empty stored log is indistinguishable from an unsubmitted one, so the marker is
+    // the attribute rather than the length.
+    const done = { ...valid(), guesses: [], submittedAt: '2026-08-21T09:20:00.000Z' };
+    expect(parseRound(done).submittedAt).toBe('2026-08-21T09:20:00.000Z');
+    expect(parseRound(valid()).submittedAt).toBeNull();
+  });
+
+  it('rejects a wrong-shaped body (a silent sync failure, never garbage in the log)', () => {
+    expect(() => parseRound(null)).toThrow(/round/);
+    expect(() => parseRound({ ...valid(), guesses: 'bois' })).toThrow(/guesses/);
+    expect(() => parseRound({ ...valid(), createdAt: 7 })).toThrow(/createdAt/);
+    // Both instants feed the deadline arithmetic, where a NaN ends a run instantly or
+    // never — so they are checked as PARSEABLE, not merely as strings.
+    expect(() => parseRound({ guesses: [], createdAt: valid().createdAt })).toThrow(/now/);
+    expect(() => parseRound({ ...valid(), now: 'whenever' })).toThrow(/now/);
+    expect(() => parseRound({ ...valid(), startedAt: 'whenever' })).toThrow(/startedAt/);
+    expect(() => parseRound({ ...valid(), submittedAt: 'whenever' })).toThrow(/submittedAt/);
+    expect(() => parseRound({ ...valid(), resumed: 'no' })).toThrow(/resumed/);
   });
 });

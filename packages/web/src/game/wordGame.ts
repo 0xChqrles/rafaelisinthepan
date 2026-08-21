@@ -14,7 +14,14 @@
 // is whether the run is over: that is a DEADLINE fact, wall-clock, held by the round
 // state (state/gameStore.ts). Rendering and persistence live elsewhere.
 
-import { WORD_CLAIM_ZONE, type RankEntry, type WordRanks } from '@whippin/shared';
+import {
+  WORD_CLAIM_ZONE,
+  WORD_MIN_BONUS_SECONDS,
+  WORD_START_SECONDS,
+  wordRunMs,
+  type RankEntry,
+  type WordRanks,
+} from '@whippin/shared';
 
 // The claimable zone: the top-CLAIM_ZONE ranked groups, Word mode's whole playing field.
 // A GAME RULE, not the TOP_K map cap (which stays untested here: off-map is simply "no
@@ -53,8 +60,11 @@ export const CLAIM_ZONE = WORD_CLAIM_ZONE;
 // breathes. What the ladder is worth relative to a claim's typing cost is the real
 // question, and it is still open until the play sessions.
 
-// What the clock starts at, in seconds, when PLAY is tapped.
-export const START_SECONDS = 60;
+// What the clock starts at, in seconds, when PLAY is tapped — and, since #202, when the
+// SERVER stamps the round's start. It lives in `@whippin/shared` with the ladder's floor
+// because the end-of-run submission's wait check is priced from both: retuning the clock
+// moves that file and deploys the backend with it, exactly like CLAIM_ZONE.
+export const START_SECONDS = WORD_START_SECONDS;
 
 // The five NAMED rarity grades a claim can earn, commonest first. They are shown to the
 // player — on the word, as the float that used to be the rank exponent — and they are
@@ -101,8 +111,11 @@ export type Rarity = (typeof RARITY_NAMES)[number];
 // bonus would double-pay what the count already measures, where corpus rarity pays for
 // vocabulary depth. It is also the knob that keeps long words worth their typing cost in
 // a spam meta — rare words tend to be longer, so without it short common words dominate.
+// The cheapest rung is the SHARED floor (#202): the server's end-of-run wait check prices
+// a run's minimum length from it, so the ladder authors its first rung from that constant
+// rather than restating the number — and `wordGame.test.ts` pins that no rung pays less.
 export const RARITY_LADDER: readonly { name: Rarity; within: number; seconds: number }[] = [
-  { name: 'COMMON', within: 0.1, seconds: 4 },
+  { name: 'COMMON', within: 0.1, seconds: WORD_MIN_BONUS_SECONDS },
   { name: 'UNCOMMON', within: 0.22, seconds: 6 },
   { name: 'RARE', within: 0.5, seconds: 9 },
   { name: 'OBSCURE', within: 0.85, seconds: 14 },
@@ -134,10 +147,10 @@ export function bonusSeconds(freq: number | undefined, corpusSize: number): numb
 
 // The wall-clock LENGTH of a run whose claims have earned `bonus` seconds. The deadline
 // is `startedAt + runMs(bonus)`, recomputed from the whole log on every write, so the
-// clock can never drift away from the guesses that bought it.
-export function runMs(bonus: number): number {
-  return (START_SECONDS + bonus) * 1000;
-}
+// clock can never drift away from the guesses that bought it. Shared with the backend
+// since #202: the wait check refusing an impossibly early submission is this same length
+// priced at the ladder's floor (`wordRunFloorMs`), so the two cannot drift.
+export const runMs = wordRunMs;
 
 // The total time a run's claims are WORTH — bounded by construction, since the zone is
 // finite: a run cannot be infinite, and the field stays unclearable in practice.
@@ -162,8 +175,18 @@ type WordJudgement =
   | { kind: 'miss' }
   | { kind: 'zero' };
 
+// A rank-map lookup that cannot answer off the PROTOTYPE. A folded slug is all lowercase
+// letters, so `constructor` is a word a player can genuinely type — and a bare
+// `ranks[typed]` answers that one with a function, whose `rank` is `undefined`: the guess
+// would judge as a `near` at no distance at all, key as `r:undefined`, and put a station on
+// the board with no rank to place it by. The backend reads a submitted log the same way
+// (#202), so both ends agree on what a claim is.
+export function rankEntry(ranks: WordRanks, typed: string): RankEntry | undefined {
+  return Object.prototype.hasOwnProperty.call(ranks, typed) ? ranks[typed] : undefined;
+}
+
 export function judgeWordGuess(ranks: WordRanks, typed: string): WordJudgement {
-  const entry = ranks[typed];
+  const entry = rankEntry(ranks, typed);
   if (!entry) return { kind: 'miss' };
   if (entry.rank === 0) return { kind: 'zero' };
   if (entry.rank <= CLAIM_ZONE) return { kind: 'claim', entry };
@@ -176,7 +199,7 @@ export function judgeWordGuess(ranks: WordRanks, typed: string): WordJudgement {
 // its folded slug — two distinct off-map words are two distinct (counted) guesses,
 // exactly like the sentence game's guessKey fallback.
 export function wordGuessKey(ranks: WordRanks, typed: string): string {
-  const entry = ranks[typed];
+  const entry = rankEntry(ranks, typed);
   return entry ? `r:${entry.rank}` : `s:${typed}`;
 }
 

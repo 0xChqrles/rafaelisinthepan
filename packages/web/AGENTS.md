@@ -17,6 +17,9 @@
       state/roundSync.ts      the #201 sync engine: coalesced flushes, server-log adoption,
                             cap handling (one module-level conversation per round)
       hooks/useRoundSync.ts   its React binding: registers the round's context on mount
+      state/wordRoundSync.ts  Word mode's #202 conversation: the Turnstile-gated round start,
+                              the clock anchor, ONE end-of-run submission
+      hooks/useWordRoundSync.ts  its React binding (the mount read + the run's end)
       screens/Profile.tsx     the #188 profile editor (/profile): name, tap-to-paint 10×10 grid,
                               ground-swatch palette picker (#190 wires the entry point)
       screens/FriendInvite.tsx  the #189 invite link's landing (/join/<publicId>): POST the mutual
@@ -446,9 +449,65 @@ it to the local store — see `packages/backend/AGENTS.md`).
   answer to a request about to succeed — with nothing left to re-open it, since
   `markRecorded`'s write is deliberately not a dependency either. **An ADOPTED solve is not a fresh solve** — `Game` claims the
   solved beats at submit time (`solvedByPlay`), so a second tab finishing the board under
-  this one replays no celebration and fires no second `solve` event. Word mode does not
-  call the engine yet, and `RoundSyncContext.mode` is TYPED `'sentence'` until #202 can
-  make the store honour it.
+  this one replays no celebration and fires no second `solve` event. `RoundSyncContext.mode`
+  stays TYPED `'sentence'`: Word mode got its OWN conversation (below) rather than a widened
+  one, because the two shapes share only the transport.
+
+- **Word mode's round start and end-of-run submission (#202):** `state/wordRoundSync.ts`,
+  bound by `hooks/useWordRoundSync`. The product contract — why the fast game syncs LEAST,
+  the server-stamped clock, the wait check, the caps — is in the root `AGENTS.md`. What is
+  this package's:
+  - **PLAY is an ACT the gate WAITS ON.** `WordGame.handlePlay` awaits `startWordRound`,
+    which fetches an invisible Turnstile token and POSTs the start; the button holds a
+    `LoadingWave` and is disabled meanwhile, and a failure shows `failedStart` with PLAY
+    itself as the retry — LOUD, unlike a score submission's silence, because nothing began
+    and a silent failure leaves the player tapping a gate that never opens. The visible
+    clock starts when the ANSWER lands, never on the tap: the store's `startWordRun` is
+    gone, replaced by `anchorWordRun(key, startedAt)`, keyed because the answer can land
+    after navigation has moved on.
+  - **The anchor is an ELAPSED SPAN** (`anchorFrom`): `Date.now() − (now − startedAt)` off
+    the answer's two instants, so a device clock minutes off still runs a 60-second run,
+    a device joining a run in progress resumes with the real time left, and the request's
+    own travel time lands INSIDE the run — the margin that keeps an honest submission clear
+    of the server's wait check. Re-anchoring is a no-op by construction: a re-read must
+    never shift a run under the player.
+  - **The MOUNT READ writes nothing** and is what makes the daily one-shot across devices;
+    it also carries a finished day's RECORDED run to a device that never played it
+    (`adoptWordRun`). That adoption only ever lands in an EMPTY local log — a word round's
+    deadline is derived from its log, so adopting a longer one over a run this device
+    played could move a clock that has already stopped. A read that finds a NON-EMPTY log
+    also marks the round submitted: the server demonstrably holds a run for it, so this
+    device owes nothing, and without that a freshly linked device would POST the run it
+    just adopted straight back on every visit.
+  - **The run's END asks for the one write.** `beginWordRoundSync(ctx, over)` takes the
+    deadline's own fact (a log cannot see a wall clock); the log is truncated to what the
+    route accepts (`submittableLog` — only misses can run away) and the acknowledgement is
+    PERSISTED (`RoundProgress`-style `submitted`), purely so a run that claimed nothing does
+    not re-POST on every mount, since an empty stored log reads exactly like an unsubmitted
+    one. A `too_early` refusal is waited out; every other 4xx closes the conversation.
+    **`over` is the RETIRED run's fact once a different word is published**, so a republish
+    resets it with everything else the flight knows: carrying it across made the fresh
+    round's first act a submission of the empty log the reset had just given it, refused
+    `not_started`, taken as a verdict, and the conversation closed for the session — so the
+    word the player then actually played never synced at all.
+  - **Only the run this device PLAYED is written** (`mayWrite`, and the same predicate gates
+    the score submission in `WordGame`): a non-empty local log, or the session that started
+    the run — which is the START answer's `resumed: false`, never merely a successful start,
+    since PLAY is tappable while the mount read is in flight and a joiner would otherwise
+    claim authority over a run it cannot see. That authority is held per (round, WORD) —
+    a republished daily reuses the round key, so keying it by the round alone let the
+    starter of the retired word write over the replacement's real player — and a START
+    answer that lands after a republish is dropped rather than anchored.
+    The round is marked submitted off the server's
+    `submittedAt`, not off the log's length, or a recorded 0-claim run reads as unrecorded
+    forever. The root `AGENTS.md` records why a joiner's clock cannot be priced and what
+    the rule costs.
+  - **Persist v11 DROPS every pre-#202 word round** (the v7 strike-run precedent): their
+    clock was a local stamp no server ever saw.
+  - `rankEntry` (`game/wordGame.ts`) is what every rank-map lookup goes through now — a
+    folded slug is all lowercase letters, so `constructor` is a word a player can genuinely
+    type, and a bare `ranks[typed]` answered it off the prototype with a rankless "near".
+    The backend reads a submitted log the same way, so both ends agree on what a claim is.
 
 - **Profile editor (#188; two-colour rework + key-UI removal user-decided
   2026-08-19):** `/profile` (`screens/Profile.tsx`), a global route like `/select` (an

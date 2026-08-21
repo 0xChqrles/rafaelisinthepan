@@ -41,8 +41,7 @@ import { handleFriends } from './friends';
 import type { FriendStore } from './friendStore';
 import { handleProfile } from './profile';
 import type { ProfileRecord, ProfileStore } from './profileStore';
-import { handleRound } from './rounds';
-import type { RoundStore } from './roundStore';
+import { handleRound, type RoundHandlerDeps } from './rounds';
 import { handleScores, type ScoreHandlerDeps } from './scores';
 import type { PuzzleStore } from './store';
 
@@ -61,8 +60,10 @@ export interface HandlerDeps {
   profiles?: ProfileStore;
   // The friends graph (#189), same optionality rationale.
   friends?: FriendStore;
-  // The per-round guess log (#201), same optionality rationale.
-  rounds?: RoundStore;
+  // The per-round guess log (#201) and Word mode's two writes (#202), same optionality
+  // rationale. It carries a Turnstile verifier of its own because the word round START is
+  // gated (the only write here that mints state for a caller who has done nothing yet).
+  rounds?: RoundHandlerDeps;
 }
 
 // 404s expire quickly so a puzzle uploaded slightly late becomes playable soon
@@ -292,7 +293,9 @@ export function createHandler(deps: HandlerDeps) {
 
       if (isRoundRoute) {
         if (!deps.rounds) throw new Error('Round state sync is not configured.');
-        return await handleRound(event, deps.rounds, date, instant, cors);
+        // The puzzle store is read on ONE path here — Word mode's end-of-run submission,
+        // which validates its log against the day's artifact (#202).
+        return await handleRound(event, deps.store, deps.rounds, date, instant, cors);
       }
 
       if (rawPath.replace(/\/+$/, '').endsWith('/today')) {

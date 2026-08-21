@@ -11,7 +11,8 @@
   shared/                     cross-cutting TS consumed by web + backend (pkg @whippin/shared)
     src/slug.ts               fold() — the slug/fold contract (byte-identical to slug())
     src/day.ts                the ONE 22:00-ET DST-correct game-day logic (client + server + publish)
-    src/scores.ts             WORD_CLAIM_ZONE (web+backend) + VIEWER_IP_HEADER (infra+backend)
+    src/scores.ts             WORD_CLAIM_ZONE + Word mode's clock/caps (web+backend), the #201
+                              round bounds, VIEWER_IP_HEADER (infra+backend)
     src/identity.ts           the #187 player key: secret format + publicId derivation (web+backend)
     src/leaderboard.ts        the #190 board rules: competition tie ranks, the plain top-50 cut,
                               own-row window + the Board API types (backend cuts, web renders)
@@ -121,6 +122,17 @@
   round trip inside the interval. Pacing from the send instant leaves zero margin and
   refuses every request that travels faster than its predecessor — the same permanent-429
   outcome this one spelling exists to prevent.
+  **Since #202 it also owns Word mode's CLOCK** — `WORD_START_SECONDS`,
+  `WORD_MIN_BONUS_SECONDS`, `WORD_MISS_CAP`, and the `wordRunMs`/`wordRunFloorMs` pair —
+  because the server's end-of-run wait check is priced from the same economy the web plays:
+  a run with N claims lasts at least `wordRunFloorMs(N)`, so the check IS the game's own
+  floor and can never refuse honest play. **The floor is not a second opinion about the
+  ladder:** `web/game/wordGame.ts` authors its cheapest rung FROM `WORD_MIN_BONUS_SECONDS`
+  and re-exports `START_SECONDS`/`runMs`, and `wordGame.test.ts` pins that no rung pays
+  less — a retune that put a cheaper one on the ladder would silently make the guarantee
+  false, and real runs would start being refused as impossibly early. Retuning the clock
+  therefore moves this file and deploys the backend with it, exactly like
+  `WORD_CLAIM_ZONE`; the RARITY CUTS and the rest of the ladder stay the web's own knob.
 - **`src/heat.ts` is the app's ONE gradient, and it runs WEIRD → CALM (user-decided
   2026-08-17, the calm redesign — superseding the FLIR iron bow of the same day and the
   crimson→cyan heat stops before it).** Solving is RESTORING PEACE to a weird sentence:

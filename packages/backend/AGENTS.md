@@ -22,7 +22,8 @@
       scoreLimits.ts          puzzle-aware possible-score limits (per-mode ceilings)
       liveRoute.ts            what the LIVE routes share: no-store headers, the JSON-body
                               reader + size cap, the #187 secret check, the (lang, mode,
-                              date) + future-skew guard
+                              date) + future-skew guard, the trusted viewer address and the
+                              Turnstile-token check the gated writes share
       scoreStore.ts           score storage contract; day/dedup keys + 5/48h constants
       dynamoScoreStore.ts     prod atomic transaction + strongly-consistent day-partition Query
       memoryScoreStore.ts     process-local implementation for backend:dev/tests
@@ -37,13 +38,17 @@
       friendStore.ts          mutual-edge storage contract; friends#<publicId> partition + FRIENDS_MAX
       dynamoFriendStore.ts    prod one-transaction link/unlink (both directions) + consistent Query
       memoryFriendStore.ts    process-local implementation for backend:dev/tests
-      rounds.ts               POST /round (#201): the per-round guess log — read/append, slug +
-                              length validation, cap + write-interval refusals, full-state answers
+      rounds.ts               POST /round (#201/#202): the per-round state — read, sentence
+                              append, Word mode's Turnstile-gated start + end-of-run submission;
+                              slug + length validation, cap / interval / wait refusals, full-state
+                              answers carrying the server's own clock
       roundStore.ts           round storage contract; round#<publicId> partition, sort key
                               <date>#<lang>#<mode>; the puzzle tag +
-                              ROUND_GUESS_CAP / ROUND_WRITE_MIN_MS semantics
+                              ROUND_GUESS_CAP / ROUND_WRITE_MIN_MS semantics, and Word mode's
+                              startedAt / first-write-wins log
       dynamoRoundStore.ts     prod ONE conditional UpdateItem (both bounds in the condition) +
-                              consistent classification read on a refusal
+                              consistent classification read on a refusal; the word start's own
+                              conditional stamp and the submit's read-then-conditional-write
       memoryRoundStore.ts     process-local implementation for backend:dev/tests
       nameFilter.ts           #188 banned-strings display-name MODERATION (normalize + substring); the charset is shared/name.ts
       avatarModeration.ts     #188 best-effort swastika template match on the decoded grid
@@ -212,7 +217,11 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   **The LIVE routes share their plumbing** (`liveRoute.ts`, extracted 2026-08-20 when
   `/board` became the FOURTH byte-identical copy): the `no-store` header, the body
   reader with its 4 KB cap, the `{secret}` check, and the `(lang, mode, date)` guard
-  triple with the +1-day future skew. A supported language is one the pipeline has built
+  triple with the +1-day future skew. **`clientIp` and `requireTurnstileToken` moved here
+  from /scores with #202**, when the word round start became the SECOND Turnstile-gated
+  write: a route reaching into `scores.ts` for them would make that file a utility module
+  for routes it knows nothing about. `hashClientIp` stays in /scores — only the score
+  submission dedups by address. A supported language is one the pipeline has built
   a vocabulary for (shared `VOCAB_BUILDS`, #200 — the same record the sentence ceiling
   comes from). The lang check is `Object.hasOwn`, deliberately —
   a bare `map[lang] === undefined` walks the prototype chain, so `constructor` /
@@ -281,6 +290,40 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   a browser reads null for a header only curl and `backend:dev` ever see. Local serve swaps
   in `memoryRoundStore`; no new env or IAM (the table grant already carried GetItem +
   UpdateItem).
+- **Word mode's two round writes (#202):** the same route, `mode=word`. The product
+  contract (why the fast game syncs least, the server-stamped clock, the wait check, the
+  caps, what is deliberately NOT validated) lives in the root `AGENTS.md`. Implementation
+  notes: the route DISPATCHES on the body — `turnstileToken` = START (a 400 on a sentence
+  round, which has no clock), `guesses` = append or submit by mode, neither = read. START
+  is one conditional UpdateItem (`attribute_not_exists(#started) OR #p <> :puzzle`, with
+  `REMOVE #g` so a retired word's log leaves with its clock); a failed condition means this
+  word is already running and the ORIGINAL stamp is read back and answered. SUBMIT is the
+  one path here that READS A PUZZLE STORE (`getWordPuzzle`) — only the artifact can tell a
+  claim from a miss, and both the claim ceiling (`wordScoreMaximum`, distinct ranks) and
+  the wait check are priced from that count. The store reads once, consistently, then
+  writes under `#p = :puzzle AND attribute_exists(#started) AND attribute_not_exists(#sub)`:
+  the wait check is arithmetic (which DynamoDB's condition grammar has none of) and the
+  caller has to be told WHICH bound refused it, but first-write-wins is still decided by
+  the write's own condition rather than by the read before it. `startedAt` and
+  `submittedAt` are STRINGS like
+  `createdAt`, and no word path touches `lastWriteAt` (the streaming interval's attribute).
+  **Every command's `ExpressionAttributeNames` holds exactly the aliases ITS OWN
+  expressions name** — DynamoDB rejects an unused entry, and an undeclared alias, with a
+  ValidationException before anything is written, so one union map covering every attribute
+  the store knows about fails EVERY write in production while looking perfectly fine
+  against a mocked client (it shipped that way once). `dynamoRoundStore.test.ts` runs the
+  correspondence check on every command any test issues, in both directions and for values
+  too, so a new write path is covered by the tests that already exist.
+  **The START answers `resumed`** — false when THAT call stamped the clock, true when it
+  joined one already running — because the client cannot otherwise tell whether it is the
+  session running the round, and the root `AGENTS.md` records what turns on that.
+  **Every answer, refusals included, carries the server's own `now`** — the client anchors
+  `now − startedAt`, an elapsed span, which is what makes the visible clock immune to
+  device-clock skew. `too_early`/`not_started` are 409s, an over-cap or unclaimable log is
+  a 400, a missing artifact the day-addressed 404, a rejected challenge a 403
+  `turnstile_rejected` (the shared `requireTurnstileToken`, extracted from /scores when
+  this became the second gated write). `HandlerDeps.rounds` is a `RoundHandlerDeps`
+  (`{roundStore, turnstile, allowSourceIp?}`) for that gate — the /scores deps' shape.
   **The CORS PREFLIGHT is cached** (`PREFLIGHT_MAX_AGE_SECONDS`, applied on the OPTIONS
   branch and deliberately WITHOUT the live routes' `no-store` — a preflight carries no
   data, and what governs its reuse is `Access-Control-Max-Age`). /round is the first route

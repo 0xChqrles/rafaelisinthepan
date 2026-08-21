@@ -79,21 +79,27 @@ const MAX_FLIGHTS = 3;
 // Ceiling on the retry window, so an outage cannot spin a request a second.
 const MAX_BACKOFF_MS = 30_000;
 
-// Which PUZZLE a round's log belongs to, as a short opaque tag the server stores beside
-// it and only ever compares (backend roundStore.ts). A round key is only (day, lang,
-// mode), so RE-PUBLISHING a different sentence keeps the key while changing the puzzle —
-// the store resets the local round on exactly that (`holesMatchPuzzle`), and without this
-// tag the mount read would hand the RETIRED sentence's log straight back and undo the
-// reset for good. The signature is what `holesMatchPuzzle` itself compares, folded to
-// FNV-1a so it stays a handful of base-36 characters on the wire.
-export function puzzleTag(holes: RuntimeHole[]): string {
-  const signature = holes.map((h) => `${h.pos}:${h.secret}`).join('|');
+// A puzzle SIGNATURE folded to the short opaque tag the server stores beside a round and
+// only ever compares (backend roundStore.ts, `PUZZLE_TAG_SHAPE`). FNV-1a, base 36, so any
+// signature — a sentence's holes, a word's slug — becomes a handful of characters the wire
+// shape accepts. ONE encoding for both dailies: two spellings would be two ways for a tag
+// to stop matching itself.
+export function fnvTag(signature: string): string {
   let hash = 0x811c9dc5;
   for (let i = 0; i < signature.length; i += 1) {
     hash ^= signature.charCodeAt(i);
     hash = Math.imul(hash, 0x01000193);
   }
   return (hash >>> 0).toString(36);
+}
+
+// Which PUZZLE a round's log belongs to. A round key is only (day, lang, mode), so
+// RE-PUBLISHING a different sentence keeps the key while changing the puzzle — the store
+// resets the local round on exactly that (`holesMatchPuzzle`), and without this tag the
+// mount read would hand the RETIRED sentence's log straight back and undo the reset for
+// good. The signature is what `holesMatchPuzzle` itself compares.
+export function puzzleTag(holes: RuntimeHole[]): string {
+  return fnvTag(holes.map((h) => `${h.pos}:${h.secret}`).join('|'));
 }
 
 // How long the next APPEND must wait for the per-player write interval — measured from

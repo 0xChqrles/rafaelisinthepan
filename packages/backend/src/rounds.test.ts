@@ -9,7 +9,14 @@
 // handing back the retired puzzle's.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { generateSecret, ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS } from '@whippin/shared';
+import {
+  generateSecret,
+  ROUND_GUESS_CAP,
+  ROUND_WRITE_MIN_MS,
+  WORD_MISS_CAP,
+  wordRunFloorMs,
+  type WordPuzzle,
+} from '@whippin/shared';
 import { createHandler } from './handler';
 import { memoryRoundStore } from './memoryRoundStore';
 import type { FnUrlEvent } from './respond';
@@ -23,33 +30,66 @@ const ORIGIN = 'https://whippin.example';
 const SECRET = generateSecret();
 const PUZZLE = 'a1b2c3d4';
 
-function puzzleStore(): PuzzleStore {
+// The day's word artifact, for the ONE path that reads a puzzle store (#202's end-of-run
+// submission). Three claimable groups inside the zone plus one far outside it, so the
+// artifact's own ceiling — not the zone constant — is what an over-claiming log is refused
+// against.
+const WORD_ARTIFACT: WordPuzzle = {
+  lang: 'fr',
+  word: { word: 'phare', slug: 'phare' },
+  ranks: {
+    phare: { word: 'phare', rank: 0, freq: 5_000 },
+    mer: { word: 'mer', rank: 1, dq: 255, freq: 100 },
+    ocean: { word: 'océan', rank: 2, dq: 200, freq: 800 },
+    bateau: { word: 'bateau', rank: 3, dq: 100, freq: 1_200 },
+    loin: { word: 'loin', rank: 5_000, dq: 0, freq: 300 },
+  },
+};
+
+// `undefined` = the store must never be touched (every sentence path, and every word path
+// but the submission); `null` = the daily was never published.
+function puzzleStore(word?: WordPuzzle | null): PuzzleStore {
   return {
-    // The round route reads NO puzzle store — asserted by never being called.
+    // NOTHING here reads the sentence puzzle — asserted by never being called.
     async getPuzzle() {
       throw new Error('the round route must not read the puzzle store');
     },
     async getWordPuzzle() {
-      throw new Error('the round route must not read the puzzle store');
+      if (word === undefined) throw new Error('the round route must not read the puzzle store');
+      return word;
     },
   };
 }
 
 // One handler per test, over ONE memory store, driven by an advancing clock: sequences
 // of writes must land on the same record, and the interval needs real time movement.
-function makeHandler() {
+function makeHandler(
+  options: { word?: WordPuzzle | null; turnstile?: boolean } = {},
+) {
   let current = START.getTime();
   const handler = createHandler({
-    store: puzzleStore(),
+    store: puzzleStore(options.word),
     now: () => new Date(current),
     allowedOrigin: ORIGIN,
-    rounds: memoryRoundStore(),
+    rounds: {
+      roundStore: memoryRoundStore(),
+      turnstile: { async verify() { return options.turnstile !== false; } },
+      allowSourceIp: true,
+    },
   });
   return Object.assign(handler, {
     advance(ms: number) {
       current += ms;
     },
   });
+}
+
+// A word round's own addressing + tag: everything the two word writes share.
+const WORD_QUERY = { lang: 'fr', date: ACTIVE_DATE, mode: 'word' };
+const WORD_TAG = 'w0rd';
+
+function wordEvent(extra: Record<string, unknown> = {}, query = WORD_QUERY): FnUrlEvent {
+  return event({ query, body: { secret: SECRET, puzzle: WORD_TAG, ...extra } });
 }
 
 // Every call carries the player key AND the tag naming which puzzle the log belongs to.
@@ -75,6 +115,11 @@ function event(options: {
 interface RoundResponse {
   guesses: string[];
   createdAt: string;
+  startedAt?: string;
+  submittedAt?: string;
+  now: string;
+  resumed?: boolean;
+  error?: string;
 }
 
 function parsed(response: { body: string }): RoundResponse {
@@ -381,5 +426,246 @@ describe('identity', () => {
     await handler(event({ body: body({ guesses: ['bois'] }) }));
     const other = await handler(event({ body: { secret: generateSecret(), puzzle: PUZZLE } }));
     expect(other.statusCode).toBe(404);
+  });
+});
+
+// CONTRACT (#202): Word mode writes exactly TWICE on this same route. START is a
+// Turnstile-gated write stamping the round's clock from the SERVER's own clock — not for
+// cheat prevention (the artifact is public) but so the end-of-run wait check has an anchor
+// the client cannot backdate. SUBMIT carries the WHOLE log once, first write wins, no
+// earlier than the run's own floor (`START_SECONDS + MIN_BONUS × claims`, which honest play
+// can never undercut because Word mode has no early finish). The claims are validated
+// against the day's artifact — the ONE path here that reads a puzzle store — and the caps
+// are the client's own, enforced because a malicious client will not truncate.
+describe('word mode: the round start (#202)', () => {
+  it('stamps the clock from the SERVER and answers it with the server instant', async () => {
+    const handler = makeHandler();
+    const response = await handler(wordEvent({ turnstileToken: 'ok' }));
+    expect(response.statusCode).toBe(200);
+    const state = parsed(response);
+    expect(state.startedAt).toBe(START.toISOString());
+    // Every answer carries the server's own clock: what a client keeps is the ELAPSED span
+    // between the two, which no device-clock skew can misread.
+    expect(state.now).toBe(START.toISOString());
+    expect(state.guesses).toEqual([]);
+  });
+
+  it('is IDEMPOTENT per word — a second tap resumes the one clock, never a fresh minute', async () => {
+    const handler = makeHandler();
+    await handler(wordEvent({ turnstileToken: 'ok' }));
+    handler.advance(5_000);
+    const again = await handler(wordEvent({ turnstileToken: 'ok' }));
+    expect(again.statusCode).toBe(200);
+    expect(parsed(again).startedAt).toBe(START.toISOString());
+    expect(parsed(again).now).toBe(new Date(START.getTime() + 5_000).toISOString());
+  });
+
+  it('restarts the round when a DIFFERENT word is published under the same key', async () => {
+    const handler = makeHandler();
+    await handler(wordEvent({ turnstileToken: 'ok' }));
+    handler.advance(5_000);
+    const restarted = await handler(
+      event({ query: WORD_QUERY, body: { secret: SECRET, puzzle: 'other', turnstileToken: 'ok' } }),
+    );
+    expect(parsed(restarted).startedAt).toBe(new Date(START.getTime() + 5_000).toISOString());
+    // …and the retired word's round is gone, not merely renamed.
+    const stale = await handler(wordEvent({ turnstileToken: 'ok' }));
+    expect(parsed(stale).startedAt).toBe(new Date(START.getTime() + 5_000).toISOString());
+  });
+
+  it.each([
+    [{}, 'missing'],
+    [{ turnstileToken: '' }, 'empty'],
+    [{ turnstileToken: 'x'.repeat(3_000) }, 'implausibly long'],
+  ] as [Record<string, unknown>, string][])(
+    'refuses a %s Turnstile token (%s)',
+    async (extra) => {
+      const handler = makeHandler();
+      // An empty/oversized token is refused as the authentication failure it is; a MISSING
+      // one is not a start at all, so it reads the (nonexistent) round instead.
+      const response = await handler(wordEvent(extra));
+      expect(response.statusCode).toBe(Object.keys(extra).length === 0 ? 404 : 403);
+    },
+  );
+
+  it('refuses a token Siteverify rejects', async () => {
+    const handler = makeHandler({ turnstile: false });
+    const response = await handler(wordEvent({ turnstileToken: 'forged' }));
+    expect(response.statusCode).toBe(403);
+    expect(parsed(response).error).toBe('turnstile_rejected');
+  });
+
+  it('has no meaning on a SENTENCE round, whose log streams and needs no clock', async () => {
+    const handler = makeHandler();
+    const response = await handler(event({ body: body({ turnstileToken: 'ok' }) }));
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('is never the same call as a submission', async () => {
+    const handler = makeHandler();
+    // The two word writes are separate messages and no client sends both. Dispatching on
+    // the token and dropping the guesses would answer 200 to a caller whose log was never
+    // stored, which is the one failure this route must not fake.
+    const response = await handler(wordEvent({ turnstileToken: 'ok', guesses: ['mer'] }));
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('is what a second device RESUMES: the read carries the same start', async () => {
+    const handler = makeHandler();
+    await handler(wordEvent({ turnstileToken: 'ok' }));
+    handler.advance(20_000);
+    const read = await handler(wordEvent());
+    expect(read.statusCode).toBe(200);
+    expect(parsed(read).startedAt).toBe(START.toISOString());
+    // 20s elapsed on the server's own clock, whatever the second device's says.
+    expect(Date.parse(parsed(read).now) - Date.parse(parsed(read).startedAt!)).toBe(20_000);
+  });
+});
+
+describe('word mode: the end-of-run submission (#202)', () => {
+  const FLOOR_ONE_CLAIM = wordRunFloorMs(1);
+
+  async function started(options: { word?: WordPuzzle | null } = {}) {
+    const handler = makeHandler({ word: options.word === undefined ? WORD_ARTIFACT : options.word });
+    await handler(wordEvent({ turnstileToken: 'ok' }));
+    return handler;
+  }
+
+  it('records the whole log at once, once the run could possibly be over', async () => {
+    const handler = await started();
+    handler.advance(FLOOR_ONE_CLAIM);
+    const response = await handler(wordEvent({ guesses: ['mer', 'loin'] }));
+    expect(response.statusCode).toBe(200);
+    expect(parsed(response).guesses).toEqual(['mer', 'loin']);
+    // And it is what a device that never played the day reads back.
+    const read = await handler(wordEvent());
+    expect(parsed(read).guesses).toEqual(['mer', 'loin']);
+  });
+
+  it('refuses a run that cannot be over yet — the game’s own floor', async () => {
+    const handler = await started();
+    handler.advance(FLOOR_ONE_CLAIM - 1);
+    const response = await handler(wordEvent({ guesses: ['mer'] }));
+    expect(response.statusCode).toBe(409);
+    expect(parsed(response).error).toBe('too_early');
+    // Nothing was stored, and the refusal still answers with the truth.
+    expect(parsed(response).guesses).toEqual([]);
+    expect(parsed(response).startedAt).toBe(START.toISOString());
+  });
+
+  it('prices the floor from the CLAIMS, not from the log’s length', async () => {
+    const handler = await started();
+    // Three claims need three rungs more than one does; a log of misses needs none of it.
+    handler.advance(wordRunFloorMs(3) - 1);
+    const early = await handler(wordEvent({ guesses: ['mer', 'ocean', 'bateau'] }));
+    expect(parsed(early).error).toBe('too_early');
+    const misses = await handler(wordEvent({ guesses: ['loin'] }));
+    expect(misses.statusCode).toBe(200);
+  });
+
+  it('is FIRST-WRITE-WINS: the daily is one-shot and cannot be replayed', async () => {
+    const handler = await started();
+    handler.advance(wordRunFloorMs(2));
+    await handler(wordEvent({ guesses: ['mer', 'ocean'] }));
+    const again = await handler(wordEvent({ guesses: ['mer', 'ocean', 'bateau'] }));
+    // Answered, not refused — a retry after a lost response must not look like an error —
+    // but the recorded run is the one that landed first.
+    expect(again.statusCode).toBe(200);
+    expect(parsed(again).guesses).toEqual(['mer', 'ocean']);
+  });
+
+  it('refuses a run nobody started here', async () => {
+    const handler = makeHandler({ word: WORD_ARTIFACT });
+    const response = await handler(wordEvent({ guesses: ['mer'] }));
+    expect(response.statusCode).toBe(409);
+    expect(parsed(response).error).toBe('not_started');
+  });
+
+  it('accepts an EMPTY log: a run that claimed nothing still ended', async () => {
+    const handler = await started();
+    handler.advance(wordRunFloorMs(0));
+    const response = await handler(wordEvent({ guesses: [] }));
+    expect(response.statusCode).toBe(200);
+    expect(parsed(response).guesses).toEqual([]);
+  });
+
+  it('refuses more claims than the ARTIFACT holds', async () => {
+    const handler = await started();
+    handler.advance(wordRunFloorMs(4));
+    // Four entries, but only three claimable groups exist on this board — so at least one
+    // of them was invented. (Aliases would repeat a rank, which counts once.)
+    const response = await handler(
+      wordEvent({ guesses: ['mer', 'ocean', 'bateau', 'phare'] }),
+    );
+    // `phare` is rank 0 — free, never a claim — so this one is legal; the count is 3.
+    expect(response.statusCode).toBe(200);
+  });
+
+  it(`refuses more than ${WORD_MISS_CAP} misses`, async () => {
+    const handler = await started();
+    handler.advance(wordRunFloorMs(0));
+    const misses = Array.from({ length: WORD_MISS_CAP + 1 }, (_, i) =>
+      `${String.fromCharCode(97 + Math.floor(i / 26) % 26)}${String.fromCharCode(97 + (i % 26))}z`,
+    );
+    const response = await handler(wordEvent({ guesses: misses }));
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('validates every guess as a folded slug, like the sentence stream', async () => {
+    const handler = await started();
+    handler.advance(wordRunFloorMs(0));
+    const response = await handler(wordEvent({ guesses: ['Été'] }));
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('answers the day-addressed 404 when no artifact was published', async () => {
+    const handler = await started({ word: null });
+    handler.advance(wordRunFloorMs(0));
+    const response = await handler(wordEvent({ guesses: ['mer'] }));
+    expect(response.statusCode).toBe(404);
+  });
+});
+
+// CONTRACT (#202): the two stores answer alike, and a 0-claim run is a REAL submission.
+// The memory store is what `backend:dev` and every route test above run on, so a rule it
+// enforces differently from DynamoDB is a rule nothing here can see.
+describe('word mode: a run that claimed nothing (#202)', () => {
+  async function startedRound() {
+    const handler = makeHandler({ word: WORD_ARTIFACT });
+    await handler(wordEvent({ turnstileToken: 'ok' }));
+    handler.advance(wordRunFloorMs(0));
+    return handler;
+  }
+
+  it('records, and cannot then be overwritten by a later log', async () => {
+    const handler = await startedRound();
+    const first = await handler(wordEvent({ guesses: [] }));
+    expect(first.statusCode).toBe(200);
+
+    // An empty stored log reads exactly like an unsubmitted one by LENGTH — which is why
+    // the submission carries its own marker. Without it this second call wins.
+    const second = await handler(wordEvent({ guesses: ['mer'] }));
+    expect(second.statusCode).toBe(200);
+    expect(parsed(second).guesses).toEqual([]);
+  });
+
+  it('is visible to a mount READ as recorded', async () => {
+    const handler = await startedRound();
+    await handler(wordEvent({ guesses: [] }));
+    const read = await handler(wordEvent());
+    // The client marks the round submitted off this, so a device that adopts a finished
+    // day does not post its empty log back on every visit.
+    expect(parsed(read).submittedAt).toBeTruthy();
+  });
+
+  it('says a run was RESUMED rather than started, so a joiner cannot claim it', async () => {
+    const handler = makeHandler();
+    const first = await handler(wordEvent({ turnstileToken: 'ok' }));
+    expect(parsed(first).resumed).toBe(false);
+    handler.advance(5_000);
+    // The same player on a second device: the clock is somebody's already.
+    const joined = await handler(wordEvent({ turnstileToken: 'ok' }));
+    expect(parsed(joined).resumed).toBe(true);
+    expect(parsed(joined).startedAt).toBe(START.toISOString());
   });
 });

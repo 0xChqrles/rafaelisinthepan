@@ -17,7 +17,7 @@
 // Asserted against the spec, not the implementation.
 
 import { describe, it, expect } from 'vitest';
-import type { WordRanks } from '@whippin/shared';
+import { WORD_MIN_BONUS_SECONDS, wordRunFloorMs, type WordRanks } from '@whippin/shared';
 import {
   CLAIM_ZONE,
   RARITY_LADDER,
@@ -163,6 +163,29 @@ describe('bonusSeconds — what a claim pays the clock (#163)', () => {
 
   it('an unknown rarity pays the floor (freq is optional by contract)', () => {
     expect(bonusSeconds(undefined, CORPUS)).toBe(RARITY_LADDER[0].seconds);
+  });
+
+  // The FLOOR is a cross-package constant since #202: the server refuses an end-of-run
+  // submission until `START_SECONDS + MIN_BONUS × claims` has passed, which can never
+  // block honest play precisely because no claim pays less than that. If a retune ever
+  // put a cheaper rung on the ladder, that guarantee would silently become false — real
+  // runs would be refused as impossibly early, on the rarest boards first.
+  it('no rung pays less than the shared floor the server prices a run by', () => {
+    for (const grade of RARITY_LADDER) {
+      expect(grade.seconds, grade.name).toBeGreaterThanOrEqual(WORD_MIN_BONUS_SECONDS);
+    }
+    // …and a run of N claims therefore always lasts at least that floor.
+    for (const claims of [0, 1, 7, CLAIM_ZONE]) {
+      const cheapest = claims * WORD_MIN_BONUS_SECONDS;
+      expect(runMs(cheapest)).toBe(wordRunFloorMs(claims));
+      expect(runMs(totalBonus(Array.from({ length: claims }, () => ({ word: 'x', rank: 1 })), CORPUS)))
+        .toBeGreaterThanOrEqual(wordRunFloorMs(claims));
+    }
+  });
+
+  it('the clock the web starts and the length the server prices are ONE definition', () => {
+    expect(runMs(0)).toBe(START_SECONDS * 1000);
+    expect(wordRunFloorMs(0)).toBe(runMs(0));
   });
 });
 

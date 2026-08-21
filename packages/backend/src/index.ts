@@ -38,7 +38,12 @@ function initializeHandler(): Promise<ProductionHandler> {
         },
         profiles: dynamoProfileStore(dynamo, config.scoreTable),
         friends: dynamoFriendStore(dynamo, config.scoreTable),
-        rounds: dynamoRoundStore(dynamo, config.scoreTable),
+        rounds: {
+          roundStore: dynamoRoundStore(dynamo, config.scoreTable),
+          // Word mode's round START is Turnstile-gated (#202) — the same Siteverify the
+          // score submission uses.
+          turnstile: turnstileVerifier(secrets.turnstileSecret),
+        },
       }),
     )
     .catch((error: unknown) => {

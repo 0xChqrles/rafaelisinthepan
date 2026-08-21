@@ -499,15 +499,133 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   there degrades the sync for everyone playing that day. Nothing reads across players
   anyway — /board resolves the caller's friends into exact row keys and fetches those
   (BatchGetItem), the shape a future progress read (#206) takes too.
-- **Scope:** sentence mode streams (coalesced writes). Word mode's two-write shape — a
-  Turnstile-gated round start stamping `startedAt` on THIS record, plus one end-of-run
-  submission — is #202; retiring the client-claimed score POST for server-derived scores
-  is #203. Until #202, `RoundSyncContext.mode` is TYPED `'sentence'`: the route, the URL
-  and the stored item are all mode-generic, but the store is not — a word round lives in
-  its own `wordRounds` map under a `w:` key, which `adoptRound`/`markRoundCapped` cannot
-  reach. Widening the type is #202's job, together with the store actions; leaving it open
-  would make the whole conversation a silent no-op that reads as "my history doesn't
-  follow me" instead of a compile error.
+- **Scope:** sentence mode streams (coalesced writes). Word mode's two-write shape is
+  #202, below; retiring the client-claimed score POST for server-derived scores is #203.
+  `RoundSyncContext.mode` stays TYPED `'sentence'` — the route, the URL and the stored item
+  are all mode-generic, but the two CONVERSATIONS are not, so Word mode got its own engine
+  rather than a widened one (see #202's own note).
+
+### Word mode's round start and end-of-run submission (#202, decided 2026-08-21)
+
+- **Word mode writes TWICE, where sentence mode streams.** The intuition says the opposite
+  — fast game, urgent sync — but the fast game benefits LEAST: what syncing buys is the
+  live friends board (#206), and that only pays off in sentence mode, where a round sits
+  open for hours; a 60-second run is over before anyone opens the board. Write counts are
+  roughly a wash between the modes, so VALUE decides the shape, not cost. Both writes land
+  on the SAME `/round` record (`mode=word`) — never a separate short-lived item, since the
+  submission can arrive hours later on the revisit that finds the run over.
+  - **START — a Turnstile-gated write stamping `startedAt` from the SERVER's clock.**
+    Server-stamped **not for cheat prevention** (the day's `word.json` is public and anyone
+    determined can type its words) but because the wait check below needs an anchor the
+    client cannot move: a client-supplied start is simply backdated and the bound
+    evaporates. **The client shows "loading…" and starts the visible clock only when the
+    reply lands** — starting optimistically on tap means the server stamps `startedAt` an
+    RTT LATER and therefore sees LESS elapsed time than the client, so a legitimate run
+    submitting right at its deadline is rejected, intermittently, on slow connections only,
+    and miserable to diagnose. It also fixes cross-device one-shot: without a server-side
+    start, closing the tab mid-run and opening another device shows no round for today and
+    begins a fresh one. The write is IDEMPOTENT per puzzle (a second tap, a retry and a
+    second device all resume the ONE clock); a record naming a RETIRED word restarts,
+    taking its log with it.
+  - **SUBMIT — ONE post carrying the whole log**, first-write-wins like a score row (the
+    daily is one-shot and cannot be replayed, so a repeat is answered 200 with the log that
+    WAS recorded, which is what makes a retry after a lost response safe).
+- **The WAIT CHECK: refuse until `now − startedAt ≥ START_SECONDS + MIN_BONUS × claims`.**
+  It **can never block honest play**: Word mode has no early finish — the run ends when
+  `now > deadline`, and `deadline = startedAt + START_SECONDS + Σbonuses` with every bonus
+  ≥ MIN_BONUS — so a run with N claims always takes at least that long. **The check IS the
+  game's own floor**, which is why it needs no tuning of its own as the ladder moves, and
+  why `WORD_START_SECONDS` / `WORD_MIN_BONUS_SECONDS` are cross-package constants
+  (`shared/src/scores.ts`, `wordRunMs`/`wordRunFloorMs`): the ladder AUTHORS its cheapest
+  rung from the floor constant rather than restating it, and `wordGame.test.ts` pins that
+  no rung pays less. A maxed 1000-claim round therefore cannot be submitted for just over
+  67 minutes. Retuning the clock now moves `shared` and deploys the backend with it —
+  exactly like `WORD_CLAIM_ZONE`.
+- **Every answer carries the server's own `now` beside `startedAt`, and the client anchors
+  an ELAPSED SPAN, never an instant.** It holds `Date.now() − (now − startedAt)`, so a
+  device whose clock is minutes off still runs a 60-second run, and the request's own
+  travel time lands INSIDE the run — the margin that keeps an honest submission clear of
+  the wait check. The MOUNT READ applies the same rule, which is what resumes a run started
+  elsewhere.
+- **Caps: `WORD_CLAIM_ZONE` claims + `WORD_MISS_CAP` (500) misses**, about 40 KB. The
+  client truncates its own log to them (only misses can run away — a group can be claimed
+  once); the server refuses an over-cap one anyway, since a malicious client will not
+  truncate. **Claims are validated against the day's ARTIFACT** — in its rank map, inside
+  `WORD_CLAIM_ZONE`, and at most as many as the board actually holds (the same ceiling
+  /scores validates a Word score against), counted by DISTINCT rank because aliases share
+  a group's. This is the ONE round path that reads a puzzle store; a missing artifact is
+  the day-addressed 404. **The TIMING is deliberately not validated**: without per-guess
+  arrival stamps there is no way to know 200 claims were not typed over an hour — sentence
+  mode is equally unverifiable, and the stance is that cheating does not matter.
+- **The WEB keeps its own conversation** (`web/state/wordRoundSync.ts`), rather than the
+  widened `roundSync` this issue first sketched: the two shapes share only the transport.
+  Word's has three messages instead of two, its START is an ACT whose answer the gate waits
+  on, and nothing about it coalesces or paces. A superseded-answer guard, the module-level
+  flight map and the capped backoff are the sentence engine's, restated where they genuinely
+  apply. **A `too_early` refusal is WAITED OUT** (it is an answer about WHEN, and a clock
+  disagreeing by a second can hit it); every other 4xx is a VERDICT that closes the
+  conversation.
+- **A word round's log is adopted ONLY into an empty local one.** The deadline is DERIVED
+  from the log, so adopting a longer run over one this device actually played could move
+  the clock — and a finished run must never re-open. What that costs is small (two devices
+  playing one daily each keep their own board while the population holds the first
+  submission, which is the score row's own rule); what it buys is that a finished day's
+  recorded run follows the player to a device that never played it, deadline and all.
+- **A device only WRITES the run it PLAYED — the log and the score alike.** A device that
+  merely JOINED a run in progress (a second device under the same key, a second tab holding
+  a stale copy) anchors the server's `startedAt` with an empty log and no way to learn what
+  the real run has claimed, because the bonuses live in the other device's log until it
+  submits and Word mode streams nothing. Its clock therefore dies at the bare
+  `START_SECONDS` and it calls a live run finished. Both writes are first-write-wins, so
+  letting it speak would record an EMPTY run and a score of 0 that the real run can then
+  never replace — the harshest outcome this design has, and reachable from two open tabs.
+  The rule is one predicate (`web/state/wordRoundSync.ts` `mayWrite`): a non-empty local
+  log, or the SESSION that started the run. Session-scoped and not persisted, deliberately
+  — it says "I am the one playing this right now", and a reload has no claim to that. What
+  it costs is one honest case: a run that claimed NOTHING and whose tab died before the
+  deadline records no log. There is no way to price a joiner's clock correctly, so the
+  answer is that it does not write, not that its clock is right.
+  **Which is why the START answers `resumed`.** PLAY is on screen for as long as the mount
+  read is in flight, so a joiner can tap it and be handed the running clock — and treating
+  every accepted start as "this session runs it" would hand that joiner writer authority
+  over a run it cannot see. Only a call that actually STAMPED the clock makes a session the
+  runner, and the server is the only side that knows which happened. (A start whose ANSWER
+  was lost and is re-sent comes back `resumed`, so that session is not the runner either;
+  it still writes any run it plays, and only a 0-claim one is left unrecorded there.)
+  **Authority is held per (round, WORD), never per round.** A round key is only
+  (day, lang, mode), so a re-published different word REUSES it — and keyed by the round
+  alone, the session that started the RETIRED word still counted as the runner of the
+  replacement, which is the joiner hazard again on a word it never played. The in-flight
+  start map is qualified the same way (its promise would otherwise answer a call about one
+  word with another's outcome), and a START whose answer lands after a republish is
+  DROPPED rather than anchoring the retired word's clock into the fresh round.
+- **The submission's marker is `submittedAt`, never the log's LENGTH.** A run that claimed
+  nothing records an EMPTY log, which by length alone is indistinguishable from an
+  unsubmitted round: a second submission overwrote it, a retry of it classified as
+  `not_started` — which the client treats as a verdict and closes on — and a mount read
+  could not see that the day was already recorded. Both stores key `already_submitted` on
+  the attribute, the write's own condition is `attribute_not_exists(#sub)`, a restart
+  REMOVEs it with the log, and the client marks the round submitted off it.
+- **Explicitly NOT done:** "starting an archive round replaces the active one" was
+  considered as a flood defence and rejected — identities are free
+  (`crypto.getRandomValues`, no registration), so one-active-round-per-player bounds
+  nothing (an attacker runs 1095 identities with one active round each) while binding the
+  person with exactly one identity and destroying a one-shot daily that can never be
+  replayed. Today's run therefore survives archive browsing: it keeps running unattended,
+  dies on its own deadline, and submits on the revisit. The bounds that hold ACROSS
+  identities are Turnstile at round start and the #169 IP cap. The issue's optional extra
+  layer — rate-limiting round STARTS per IP (20/hour) — is **not implemented**: it is a
+  second store and a second write on the game's opening tap, for a bound the economics
+  already settle (a full parallel attack costs $1–2 in farmed solves to inflict ~1¢/month
+  of storage and ~6¢ of writes).
+- **Store shape:** the same round item gains `startedAt` — a STRING like `createdAt`, since
+  the Number spelling is reserved for the one attribute a DynamoDB CONDITION compares
+  arithmetically, and the wait check is compared in the handler after a read it owes the
+  caller anyway. Neither word path touches `lastWriteAt`: that attribute exists for the
+  streaming interval, and a mode that writes twice a day is not what it bounds. **The
+  persist blob is v11, DROPPING every pre-#202 word round** — their clock is a local
+  `Date.now()` no server ever saw, their submission would be refused `not_started`, and
+  there is no honest way to invent the missing record (the v7 strike-run precedent).
 
 ### Day-addressed routing & the game day
 

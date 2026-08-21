@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { MISS_COLOR, fold, type WordPuzzle } from '@whippin/shared';
+import { MISS_COLOR, dateForDayNumber, fold, type WordPuzzle } from '@whippin/shared';
 import LoadingWave from '../components/LoadingWave';
 import useVocab from '../hooks/useVocab';
 import { KB_EXIT_FALLBACK_MS } from './Game';
 import { useDeadlinePassed } from '../hooks/useCountdown';
 import useScoreHistogram from '../hooks/useScoreHistogram';
+import useWordRoundSync from '../hooks/useWordRoundSync';
+import { startWordRound, startedRunHere } from '../state/wordRoundSync';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
 import {
   bonusSeconds,
@@ -133,7 +135,6 @@ function WordRound({
     [lang],
   );
   const ensureWordRound = useGameStore((s) => s.ensureWordRound);
-  const startWordRun = useGameStore((s) => s.startWordRun);
   const recordWordGuess = useGameStore((s) => s.recordWordGuess);
   const markWordScoreRecorded = useGameStore((s) => s.markWordScoreRecorded);
   // The score request outlives this screen if the player navigates away. Keep its
@@ -169,6 +170,42 @@ function WordRound({
   // as the economy's denominator at all.
   const corpusSize = vocabSet.size;
 
+  // The server's copy of this round (#202): the mount READ resumes a run started on another
+  // device (or in a tab that died) and carries a finished day's recorded run to a device
+  // that never played it; the run's END is what asks for the one write that follows. PLAY
+  // is not here — see `handlePlay`.
+  const syncContext = useMemo(
+    () => ({
+      roundKey,
+      lang,
+      date: dateForDayNumber(dayNumber),
+      word: puzzle.word.slug,
+      ranks,
+      corpusSize,
+    }),
+    [roundKey, lang, dayNumber, puzzle.word.slug, ranks, corpusSize],
+  );
+  useWordRoundSync(syncContext, ended);
+
+  // PLAY: the clock is the SERVER's, so the gate holds until its answer lands and the
+  // visible countdown starts on the run the server is actually timing. Starting
+  // optimistically would stamp `startedAt` an RTT later than the clock the player watches,
+  // and the end-of-run submission of a run finishing right on its deadline would be refused
+  // as impossibly early — intermittently, on slow connections only.
+  const [starting, setStarting] = useState(false);
+  const [startFailed, setStartFailed] = useState(false);
+  const handlePlay = useCallback(() => {
+    if (starting) return;
+    setStarting(true);
+    setStartFailed(false);
+    void startWordRound(syncContext).then((ok) => {
+      setStarting(false);
+      // The ROUND's own state flips the phase (the engine anchors the clock); this only
+      // releases the gate's control, and says so when nothing was started.
+      if (!ok) setStartFailed(true);
+    });
+  }, [starting, syncContext]);
+
   // What the log MEANS — the claims, and the board's rows. Pure, so a reload reproduces
   // everything (the same contract as the sentence replay). What it does NOT say is whether
   // the run is over; that is the clock's, above.
@@ -181,7 +218,15 @@ function WordRound({
   // visit into a read-only GET, while its ABSENCE lets a refused or failed submission try
   // again. Renders on the post-mortem only.
   const placement = useScoreHistogram({
-    finished: ended,
+    // FINISHED, and this device's run to report (#202). A device that JOINED a run in
+    // progress — a second device under the same key, or a second tab holding a stale copy —
+    // anchors the server's start with an empty log and no way to know what the real run has
+    // claimed, so its clock dies at the bare START_SECONDS while the run is still being
+    // played elsewhere. Its score is first-write-wins like everyone's, so submitting it
+    // would record a 0 that the real run can then never replace. Same rule as the round
+    // log's own write (state/wordRoundSync.ts `mayWrite`), read at render because it only
+    // ever flips false -> true, in the same commit as the clock it anchors.
+    finished: ended && (tried.length > 0 || startedRunHere(roundKey, puzzle.word.slug)),
     markRecorded: markThisWordScoreRecorded,
     mode: 'word',
     lang,
@@ -528,8 +573,17 @@ function WordRound({
                 <div className="coach-rules" aria-hidden="true">
                   <CoachText copy={gateRules} />
                 </div>
-                <button type="button" className="mix-btn" onClick={startWordRun}>
-                  {t(lang, 'gatePlay')}
+                {/* A failed start is LOUD, unlike a score submission's: the clock is the
+                    server's, so nothing began — and saying nothing would leave the player
+                    tapping a gate that never opens. PLAY itself is the retry. */}
+                {startFailed && <p className="status error">{t(lang, 'failedStart')}</p>}
+                <button
+                  type="button"
+                  className="mix-btn"
+                  onClick={handlePlay}
+                  disabled={starting}
+                >
+                  {starting ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'gatePlay')}
                 </button>
               </div>
             </div>
