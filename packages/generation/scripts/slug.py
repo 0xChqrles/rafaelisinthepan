@@ -164,15 +164,33 @@ def write_vocab_meta(slugs, lang, source, meta_path=None):
     # Written beside, then renamed: the destination is committed source that `tsc` and
     # BOTH bundles read, so a torn write (Ctrl-C, disk full) would break a file nobody
     # edited, and its repair — `git checkout` something labelled "generated" — is not
-    # what anyone tries first. os.replace is atomic within a filesystem, which also
-    # makes two concurrent language rebuilds resolve to one whole file instead of a
-    # half-merged one.
+    # what anyone tries first. os.replace protects THE DESTINATION: it is never observed
+    # half-written, and a failed run leaves the previous record intact.
+    #
+    # It does NOT make concurrent runs safe, and nothing here does. The temp name carries
+    # the pid only so two processes cannot truncate ONE temp file into each other's bytes
+    # — measured, that lands CORRUPT JSON in committed source and kills the loser on its
+    # rename. The read-modify-write above is still last-writer-wins: `reduce:en` racing
+    # `reduce:fr` ends with one language's fresh entry replaced by the copy the other run
+    # read at startup (measured too — 21 of 25 races lost an entry, so this is the normal
+    # outcome, not a corner case). Rebuild the two languages SEQUENTIALLY.
+    # Left unlocked deliberately: what survives the race is a WHOLE file missing a
+    # language, which `shared/vocab.test.ts` refuses ("covers exactly the languages that
+    # ship an existence set"), so the bad state cannot reach main. A lock around a
+    # read-modify-write that runs twice a year is not worth owning for that.
     os.makedirs(os.path.dirname(os.path.abspath(meta_path)), exist_ok=True)
-    tmp_path = f"{meta_path}.tmp"
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(meta, f, ensure_ascii=False, indent=2, sort_keys=True)
-        f.write("\n")  # it is committed TS source, read in diffs
-    os.replace(tmp_path, meta_path)
+    tmp_path = f"{meta_path}.{os.getpid()}.tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(meta, f, ensure_ascii=False, indent=2, sort_keys=True)
+            f.write("\n")  # it is committed TS source, read in diffs
+        os.replace(tmp_path, meta_path)
+    except BaseException:
+        # A per-pid name cannot be reclaimed by the next run the way a fixed one was, and
+        # this directory is committed — don't leave litter for `git add -A` to pick up.
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
     print(f"Métadonnées ({lang}) : {entry['embedding']}, {entry['vocabSize']} slugs, "
           f"clé la plus longue {entry['maxSlugLength']} -> {meta_path}")
     return meta_path
