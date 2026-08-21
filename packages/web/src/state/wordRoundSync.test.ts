@@ -218,7 +218,7 @@ describe('the round START', () => {
     seedRound();
     post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 20_000, resumed: true }));
     await expect(startWordRound(ctx())).resolves.toBe(true);
-    expect(startedRunHere(KEY)).toBe(false);
+    expect(startedRunHere(KEY, WORD)).toBe(false);
 
     // Its clock dies at the base deadline while the real run is still going — and all it
     // ever does is read.
@@ -250,6 +250,70 @@ describe('the round START', () => {
     post.mockResolvedValueOnce(stamped());
     await expect(startWordRound(ctx())).resolves.toBe(true);
     expect(round().startedAt).toBe(T0);
+  });
+
+  // A round key is only (day, lang, mode), so a re-published DIFFERENT word reuses it.
+  // Authority is granted per (round, WORD) for that reason: the session that started the
+  // retired word must not count as the runner of the replacement, or it can bury the real
+  // player's run under an empty log on a word it never played.
+  it('does not carry starter authority across a re-published word', async () => {
+    seedRound();
+    post.mockResolvedValueOnce(stamped());
+    await startWordRound(ctx());
+    expect(startedRunHere(KEY, WORD)).toBe(true);
+    // …and it is authority over THAT word alone.
+    expect(startedRunHere(KEY, 'autre')).toBe(false);
+
+    // The daily is re-published: the store resets the round to the new word, and this
+    // session — which never tapped PLAY on it — is an ordinary joiner there.
+    const fresh = { ...ctx(), word: 'autre' };
+    useGameStore.setState(
+      (state) => ({
+        wordRounds: {
+          ...state.wordRounds,
+          [KEY]: { word: 'autre', startedAt: null, deadline: null, tried: [], claimed: 0 },
+        },
+      }),
+      false,
+    );
+    post.mockReset();
+    // Somebody else is already running the new word, and their clock is spent as far as
+    // this device can tell.
+    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 120_000 }));
+    beginWordRoundSync(fresh, false);
+    await settle();
+    beginWordRoundSync(fresh, true);
+    await settle(120_000);
+    // The read, and NOT an empty log over the run somebody else is playing.
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(round().submitted).toBeUndefined();
+  });
+
+  // The same key reuse makes the in-flight map ambiguous: a start still in the air for the
+  // retired word would otherwise answer a call about the replacement with ITS outcome, and
+  // anchor the retired word's clock into the fresh round.
+  it('drops a START answer for a word the round no longer plays', async () => {
+    seedRound();
+    let settleStart: (value: Response) => void = () => {};
+    post.mockReturnValueOnce(new Promise<Response>((resolve) => { settleStart = resolve; }));
+    const inFlight = startWordRound(ctx());
+
+    // The daily is re-published while the request is in the air.
+    useGameStore.setState(
+      (state) => ({
+        wordRounds: {
+          ...state.wordRounds,
+          [KEY]: { word: 'autre', startedAt: null, deadline: null, tried: [], claimed: 0 },
+        },
+      }),
+      false,
+    );
+    settleStart(stamped());
+    await expect(inFlight).resolves.toBe(false);
+    // The retired word's clock never reaches the round now on screen, and no authority
+    // is granted for it either.
+    expect(round()).toMatchObject({ word: 'autre', startedAt: null, deadline: null });
+    expect(startedRunHere(KEY, 'autre')).toBe(false);
   });
 
   it('reports failure when the challenge itself never lands', async () => {
@@ -463,7 +527,7 @@ describe('the end-of-run SUBMISSION', () => {
     seedRound();
     post.mockResolvedValueOnce(stamped());
     await startWordRound(ctx()); // PLAY was tapped HERE
-    expect(startedRunHere(KEY)).toBe(true);
+    expect(startedRunHere(KEY, WORD)).toBe(true);
 
     // Played nothing, waited out the clock: a real 0-claim run, and it still counts as
     // played.

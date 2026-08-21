@@ -226,7 +226,7 @@ function WordRound({
     // would record a 0 that the real run can then never replace. Same rule as the round
     // log's own write (state/wordRoundSync.ts `mayWrite`), read at render because it only
     // ever flips false -> true, in the same commit as the clock it anchors.
-    finished: ended && (tried.length > 0 || startedRunHere(roundKey)),
+    finished: ended && (tried.length > 0 || startedRunHere(roundKey, puzzle.word.slug)),
     markRecorded: markThisWordScoreRecorded,
     mode: 'word',
     lang,

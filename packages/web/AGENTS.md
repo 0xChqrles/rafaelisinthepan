@@ -494,7 +494,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the score submission in `WordGame`): a non-empty local log, or the session that started
     the run — which is the START answer's `resumed: false`, never merely a successful start,
     since PLAY is tappable while the mount read is in flight and a joiner would otherwise
-    claim authority over a run it cannot see. The round is marked submitted off the server's
+    claim authority over a run it cannot see. That authority is held per (round, WORD) —
+    a republished daily reuses the round key, so keying it by the round alone let the
+    starter of the retired word write over the replacement's real player — and a START
+    answer that lands after a republish is dropped rather than anchored.
+    The round is marked submitted off the server's
     `submittedAt`, not off the log's length, or a recorded 0-claim run reads as unrecorded
     forever. The root `AGENTS.md` records why a joiner's clock cannot be priced and what
     the rule costs.

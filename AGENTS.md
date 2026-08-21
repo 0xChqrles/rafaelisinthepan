@@ -592,6 +592,13 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   runner, and the server is the only side that knows which happened. (A start whose ANSWER
   was lost and is re-sent comes back `resumed`, so that session is not the runner either;
   it still writes any run it plays, and only a 0-claim one is left unrecorded there.)
+  **Authority is held per (round, WORD), never per round.** A round key is only
+  (day, lang, mode), so a re-published different word REUSES it — and keyed by the round
+  alone, the session that started the RETIRED word still counted as the runner of the
+  replacement, which is the joiner hazard again on a word it never played. The in-flight
+  start map is qualified the same way (its promise would otherwise answer a call about one
+  word with another's outcome), and a START whose answer lands after a republish is
+  DROPPED rather than anchoring the retired word's clock into the fresh round.
 - **The submission's marker is `submittedAt`, never the log's LENGTH.** A run that claimed
   nothing records an EMPTY log, which by length alone is indistinguishable from an
   unsubmitted round: a second submission overwrote it, a retry of it classified as

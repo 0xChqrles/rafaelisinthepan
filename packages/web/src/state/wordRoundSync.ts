@@ -71,7 +71,7 @@ const flights = new Map<string, WordFlight>();
 // anyway — this is what keeps the CLIENT from asking twice.
 const starts = new Map<string, Promise<boolean>>();
 
-// Which rounds THIS SESSION started (PLAY was tapped here and the server stamped a clock).
+// Which RUNS this session started (PLAY was tapped here and the server stamped a clock).
 // It is what tells a run this device PLAYED from one it merely joined: a second device — or
 // a second tab holding a stale copy — anchors the server's `startedAt` with an empty log and
 // no way to know what the real run has claimed, so its clock dies at the bare START_SECONDS
@@ -83,21 +83,31 @@ const starts = new Map<string, Promise<boolean>>();
 // playing this right now", and a reload has no claim to that. What it costs is one honest
 // case — a run that claimed NOTHING and whose tab died before the deadline records no log —
 // against a joining device silently destroying a real run's score, which is the worse
-// outcome by a distance. Keyed off the round rather than the flight so a flight evicted by
+// outcome by a distance. Kept here rather than on the flight so an eviction by
 // `pruneFlights` (an archive detour mid-run) does not lose it.
 const startedHere = new Set<string>();
 
-// Did this session start this round's run? Read by the SCREEN too: the same rule gates the
+// The identity authority is granted for — a round key AND the puzzle it was granted on. A
+// round key is only (day, lang, mode), so a re-published different word REUSES it: keyed by
+// the round alone, the session that started the RETIRED word would still count as the runner
+// of the replacement, and could bury a real player's run under an empty log on a word it
+// never played. The same qualification bounds the in-flight `starts` map, whose promise
+// otherwise answers a call about one word with the outcome of a call about another.
+function runKey(roundKey: string, word: string): string {
+  return `${roundKey}#${wordTag(word)}`;
+}
+
+// Did this session start THIS word's run? Read by the SCREEN too: the same rule gates the
 // day's score submission, which is first-write-wins in exactly the same way.
-export function startedRunHere(roundKey: string): boolean {
-  return startedHere.has(roundKey);
+export function startedRunHere(roundKey: string, word: string): boolean {
+  return startedHere.has(runKey(roundKey, word));
 }
 
 // May this device write a run it is about to call finished? Yes when it has a log of its
 // own — that is a run somebody played here — and yes for the session that started the run,
 // which is what lets a real 0-claim run record. Never for a joiner holding nothing.
-function mayWrite(roundKey: string, tried: readonly string[]): boolean {
-  return tried.length > 0 || startedRunHere(roundKey);
+function mayWrite(ctx: WordRoundContext, tried: readonly string[]): boolean {
+  return tried.length > 0 || startedRunHere(ctx.roundKey, ctx.word);
 }
 
 // Bound the map, the sentence engine's rule: every flight pins its artifact's whole rank
@@ -228,12 +238,16 @@ export function beginWordRoundSync(ctx: WordRoundContext, over: boolean): void {
 // player did, refusing a legitimate run submitting right at its deadline — intermittently,
 // on slow connections only, and miserable to diagnose.
 export function startWordRound(ctx: WordRoundContext): Promise<boolean> {
-  const pending = starts.get(ctx.roundKey);
+  // Per (round, WORD): a start already in the air for a re-published word describes a
+  // different daily, and handing its answer back here would report the retired one's
+  // outcome for this one.
+  const id = runKey(ctx.roundKey, ctx.word);
+  const pending = starts.get(id);
   if (pending) return pending;
   const flight = requestStart(ctx).finally(() => {
-    if (starts.get(ctx.roundKey) === flight) starts.delete(ctx.roundKey);
+    if (starts.get(id) === flight) starts.delete(id);
   });
-  starts.set(ctx.roundKey, flight);
+  starts.set(id, flight);
   return flight;
 }
 
@@ -262,6 +276,13 @@ async function requestStart(ctx: WordRoundContext): Promise<boolean> {
   }
   const startedAt = anchorFrom(state);
   if (startedAt === null) return false;
+  // Is this answer still about the word that asked for it? The daily can be re-published
+  // while the request is in the air, and the store has already reset the round to the new
+  // word — anchoring the RETIRED word's clock into it (and adopting its log) would start
+  // the replacement on a run nobody played. The reader's own round is the check, since a
+  // start owns no flight; a superseded start reports failure, and PLAY retries against the
+  // word now on screen.
+  if (useGameStore.getState().wordRounds[ctx.roundKey]?.word !== ctx.word) return false;
   // `running` is answered 200 too: a second tap, a retry or another device resumes the ONE
   // clock the server already stamped, and the store's anchor is idempotent besides. But
   // only a call that actually STAMPED it makes this session the runner — the answer says
@@ -272,7 +293,7 @@ async function requestStart(ctx: WordRoundContext): Promise<boolean> {
   // The narrow cost: a start whose ANSWER was lost and is re-sent comes back `resumed`, so
   // that session is not the runner either. It still writes any run it plays — `mayWrite`
   // takes a non-empty log too — and only a 0-claim run is left unrecorded there.
-  if (!state.resumed) startedHere.add(ctx.roundKey);
+  if (!state.resumed) startedHere.add(runKey(ctx.roundKey, ctx.word));
   useGameStore.getState().anchorWordRun(ctx.roundKey, startedAt);
   adoptState(ctx, state);
   return true;
@@ -285,7 +306,7 @@ async function pump(key: string): Promise<void> {
   const round = useGameStore.getState().wordRounds[key];
   if (!round) return;
 
-  const wantsWrite = f.wantSubmit && !round.submitted && mayWrite(key, round.tried);
+  const wantsWrite = f.wantSubmit && !round.submitted && mayWrite(f, round.tried);
   if (f.readDone && !wantsWrite) return; // nothing left to say
 
   const now = Date.now();
