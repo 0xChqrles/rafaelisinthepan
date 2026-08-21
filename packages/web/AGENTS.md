@@ -402,16 +402,38 @@ it to the local store — see `packages/backend/AGENTS.md`).
   rounds included — merging SERVER-first under the local log by canonical identity
   (`mergeLogs`, `game/scoring.ts`'s `guessKey`), replaying the merged board with
   `replayHoles` over the ONE improvement rule (`applyGuessToHoles`, extracted from
-  `share.ts`'s `replayRun`, which now calls it too), and handing BOTH to the store in
-  one `adoptRound` write. Counted guesses flush COALESCED behind `ROUND_WRITE_MIN_MS`
-  pacing with capped exponential backoff; every answer carries the full stored log and
-  becomes the round's truth; durability lives in the persisted `tried`, so a killed tab
-  catches up on the next visit's read. A 409 marks the round CAPPED (persisted
-  `RoundProgress.capped`) and closes the conversation: play continues locally but the
-  solved screen suppresses the score submission (`finished: solved && !overCap`, where
-  `overCap` also covers local offline play that outgrew any server's cap) — no
-  leaderboard entry for a stopped-counting round. Word mode does not call the engine
-  yet (#202's two-write shape).
+  `share.ts`'s `replayRun`, which now calls it too), and handing all of it to the store in
+  one `adoptRound` write — the merged log, the replayed holes AND their `progress`, since
+  `syncProgress` can only ever repair the ACTIVE round and an adoption routinely lands
+  after the player has navigated away (that day's archive cell would keep painting a stale
+  fill until they reopened exactly it). Every call also carries the `puzzleTag` of the
+  holes it is about, which is what lets a re-published sentence restart the server's log
+  instead of inheriting it (root `AGENTS.md`). **Adopting an UNCHANGED log writes
+  nothing** — the common answer is the server echoing back what we just sent, and
+  rewriting the round there would re-serialize the persist blob AND apply every pending
+  hole improvement on the spot, out from under `Game.submit`'s deferral of each swap to its
+  floating hit's fade-out (on a fast connection, every guess).
+  Counted guesses flush COALESCED behind `ROUND_WRITE_MIN_MS` pacing — measured from the
+  previous write's **ANSWER**, the zero-margin reason in `shared/AGENTS.md` — with capped
+  exponential backoff, and each batch CLAMPED to what still fits under the cap. Every
+  answer, both refusals included, carries the full stored log and becomes the round's
+  truth. Durability lives in the persisted `tried`, so a killed tab catches up on the next
+  visit's read — and a write whose outcome is UNKNOWN re-READS before writing again rather
+  than re-sending a batch the server may already hold. A 4xx VERDICT closes the
+  conversation instead of spinning on it; a 429 is pacing, not failure. The conversation
+  map is BOUNDED (`MAX_FLIGHTS`): every flight pins its puzzle's whole rank map, and
+  evicting an idle one is safe by construction, because the next mount reads.
+  A 409 marks the round CAPPED (persisted `RoundProgress.capped`, and READ on every mount
+  so a reload does not re-open a settled round) and closes the conversation: play continues
+  locally but the solved screen suppresses the score SUBMISSION — `canSubmit: !overCap`,
+  where `overCap` also covers local offline play that outgrew any server's cap. It
+  suppresses the POST alone (`game/scores.ts` `shouldAskPopulation`): a round the population
+  already holds keeps reading its standing, since a client flag must not hide what the
+  population itself answered. **An ADOPTED solve is not a fresh solve** — `Game` claims the
+  solved beats at submit time (`solvedByPlay`), so a second tab finishing the board under
+  this one replays no celebration and fires no second `solve` event. Word mode does not
+  call the engine yet, and `RoundSyncContext.mode` is TYPED `'sentence'` until #202 can
+  make the store honour it.
 
 - **Profile editor (#188; two-colour rework + key-UI removal user-decided
   2026-08-19):** `/profile` (`screens/Profile.tsx`), a global route like `/select` (an

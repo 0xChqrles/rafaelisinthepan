@@ -6,14 +6,14 @@
 //   guess lands -> board reacts -> POST goes out -> response reconciles.
 //
 // Writes are COALESCED (sentence mode streams: fast typing accumulates while the
-// ~ROUND_WRITE_MIN_MS pacing waits, then flushes as one batch) and every answer carries
-// the FULL stored log, which is adopted as truth — so an open tab reconciles on its own
-// next write, and a second device's tries merge into the same board. Failed or slow
-// writes queue and retry with a capped backoff: the game still works on a bad
-// connection, because durability lives in the persisted `tried` log, not in the queue —
-// a killed tab catches up on the next visit's read, which diffs the server log against
-// localStorage and flushes the difference. That read is also what makes a player's full
-// history follow them to a new device (#201), archive rounds included.
+// ~ROUND_WRITE_MIN_MS pacing waits, then flushes as one batch) and every answer — a 200
+// and BOTH refusals — carries the FULL stored log, which is adopted as truth. So an open
+// tab reconciles on its own next write, and a second device's tries merge into the same
+// board. Failed or slow writes queue and retry with a capped backoff: the game still
+// works on a bad connection, because durability lives in the persisted `tried` log, not
+// in the queue — a killed tab catches up on the next visit's read, which diffs the server
+// log against localStorage and flushes the difference. That read is also what makes a
+// player's full history follow them to a new device (#201), archive rounds included.
 //
 // At ROUND_GUESS_CAP the server refuses further appends (`round_full`): the round keeps
 // playing locally but has stopped counting — the engine marks it capped and closes the
@@ -25,28 +25,37 @@
 
 import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS, type RankMap, type RuntimeHole } from '@whippin/shared';
 import { parseRound, postRoundBody, roundUrl } from '../api';
-import { applyGuessToHoles, guessKey } from '../game/scoring';
-import type { Mode } from '../langs';
+import { applyGuessToHoles, computeProgress, guessKey } from '../game/scoring';
 import { useGameStore } from './gameStore';
 import { playerSecret } from '../identity';
 
 export interface RoundSyncContext {
   roundKey: string;
   lang: string;
-  mode: Mode;
+  // Sentence mode only, deliberately. The route, the URL and the stored partition are all
+  // mode-generic, but the STORE is not: a word round lives in its own `wordRounds` map
+  // under a `w:` key, which `adoptRound`/`markRoundCapped` cannot reach and whose log a
+  // hole replay does not describe. Widening this is #202's job, together with the store
+  // actions — until then the type refuses the round rather than leaving a silent no-op
+  // that would look like "my history doesn't follow me" instead of a compile error.
+  mode: 'sentence';
   date: string;
   ranks: RankMap;
   freshHoles: RuntimeHole[];
 }
 
 interface RoundFlight extends RoundSyncContext {
-  // Prefix of the round's persisted `tried` believed acked by the server. Everything
-  // from here on is the pending batch; adoption resets it to the acked prefix length.
+  // Which PUZZLE this conversation is about (see `puzzleTag`).
+  puzzle: string;
+  // Prefix of the round's persisted `tried` known to be on the server. Everything from
+  // here on is the pending batch; adoption resets it to the acked prefix length.
   pendingFrom: number;
   // The initial read has landed (or 404'd): local extras are safe to append from here on.
   readDone: boolean;
-  lastAttemptAt: number;
+  // When the last APPEND SETTLED — see `writeDelayMs`.
+  lastWriteSettledAt: number;
   failures: number;
+  lastFailureAt: number;
   timer: ReturnType<typeof setTimeout> | null;
   inFlight: Promise<void> | null;
   closed: boolean;
@@ -54,13 +63,54 @@ interface RoundFlight extends RoundSyncContext {
 
 const flights = new Map<string, RoundFlight>();
 
-// How long the next attempt waits: never sooner than one interval after the last
-// (server refuses faster writes per player), doubled per consecutive failure up to a
-// 30s ceiling so an outage cannot spin a request a second. Pure, and injected `now`, so
-// the schedule is asserted without sleeping.
-export function flushDelayMs(lastAttemptAt: number, failures: number, now: number): number {
-  const windowMs = Math.min(ROUND_WRITE_MIN_MS * 2 ** failures, 30_000);
-  return Math.max(0, lastAttemptAt + windowMs - now);
+// Bound the map. Every flight pins its puzzle's whole rank map — megabytes of heap on a
+// real sentence — and nothing used to remove one, so browsing a month of the archive kept
+// a month of puzzles alive for the tab's life. Evicting is SAFE by construction, which is
+// the design's own claim: durability lives in the persisted `tried` log, so a dropped
+// conversation simply resumes on that round's next mount, with a read.
+const MAX_FLIGHTS = 3;
+
+// Ceiling on the retry window, so an outage cannot spin a request a second.
+const MAX_BACKOFF_MS = 30_000;
+
+// Which PUZZLE a round's log belongs to, as a short opaque tag the server stores beside
+// it and only ever compares (backend roundStore.ts). A round key is only (day, lang,
+// mode), so RE-PUBLISHING a different sentence keeps the key while changing the puzzle —
+// the store resets the local round on exactly that (`holesMatchPuzzle`), and without this
+// tag the mount read would hand the RETIRED sentence's log straight back and undo the
+// reset for good. The signature is what `holesMatchPuzzle` itself compares, folded to
+// FNV-1a so it stays a handful of base-36 characters on the wire.
+export function puzzleTag(holes: RuntimeHole[]): string {
+  const signature = holes.map((h) => `${h.pos}:${h.secret}`).join('|');
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < signature.length; i += 1) {
+    hash ^= signature.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+// How long the next APPEND must wait for the per-player write interval — measured from
+// when the previous write SETTLED, not from when it was sent.
+//
+// That difference is the whole point. The server's condition compares its OWN receipt
+// instants (`lastWriteAt < now - ROUND_WRITE_MIN_MS`, strictly), so pacing one interval
+// from our SEND time leaves the accepted gap at `interval + (latency_n - latency_{n-1})`:
+// any request that travels faster than its predecessor is refused, which on a jittery
+// link is about half of them. Waiting an interval from the ANSWER instead puts the
+// server's own round trip inside the gap, so it can only ever exceed the interval.
+export function writeDelayMs(lastWriteSettledAt: number, now: number): number {
+  if (lastWriteSettledAt === 0) return 0; // nothing written yet — flush immediately
+  return Math.max(0, lastWriteSettledAt + ROUND_WRITE_MIN_MS - now);
+}
+
+// How long a failed attempt waits before the next one: the interval doubled per
+// consecutive failure, up to the ceiling. Pure, and injected `now`, so the schedule is
+// asserted without sleeping.
+export function backoffDelayMs(failures: number, lastFailureAt: number, now: number): number {
+  if (failures === 0) return 0;
+  const windowMs = Math.min(ROUND_WRITE_MIN_MS * 2 ** failures, MAX_BACKOFF_MS);
+  return Math.max(0, lastFailureAt + windowMs - now);
 }
 
 // Merge the server's log with the local one: server entries first (they are the acked
@@ -109,27 +159,55 @@ function schedule(key: string, delay: number) {
   }, delay);
 }
 
+function pruneFlights(keep: string): void {
+  // Map iterates in insertion order and `beginRoundSync` re-inserts on every refresh, so
+  // this drops the least recently registered idle conversations first.
+  for (const [key, f] of flights) {
+    if (flights.size <= MAX_FLIGHTS) return;
+    if (key === keep || f.inFlight) continue;
+    if (f.timer !== null) clearTimeout(f.timer);
+    flights.delete(key);
+  }
+}
+
 // Register a round's sync context (Game mounts one per round) and start its
 // conversation: the first registration reads the server's copy and adopts whatever the
 // local device is missing; later registrations only refresh the context.
 export function beginRoundSync(ctx: RoundSyncContext): void {
-  let f = flights.get(ctx.roundKey);
-  if (!f) {
-    f = {
-      ...ctx,
-      pendingFrom: 0,
-      readDone: false,
-      lastAttemptAt: 0,
-      failures: 0,
-      timer: null,
-      inFlight: null,
-      closed: false,
-    };
-    flights.set(ctx.roundKey, f);
+  const puzzle = puzzleTag(ctx.freshHoles);
+  const existing = flights.get(ctx.roundKey);
+  if (existing) {
+    // A sentence re-published UNDER an open conversation: the acked prefix describes the
+    // retired log, so the conversation starts over (and re-opens if the old one had hit
+    // the cap — a fresh round is not a capped one).
+    if (existing.puzzle !== puzzle) {
+      existing.pendingFrom = 0;
+      existing.readDone = false;
+      existing.closed = false;
+      existing.failures = 0;
+    }
+    Object.assign(existing, ctx, { puzzle });
+    // Re-insert so the LRU sees this round as the most recent.
+    flights.delete(ctx.roundKey);
+    flights.set(ctx.roundKey, existing);
+    pruneFlights(ctx.roundKey);
     void pump(ctx.roundKey);
     return;
   }
-  Object.assign(f, ctx);
+  flights.set(ctx.roundKey, {
+    ...ctx,
+    puzzle,
+    pendingFrom: 0,
+    readDone: false,
+    lastWriteSettledAt: 0,
+    failures: 0,
+    lastFailureAt: 0,
+    timer: null,
+    inFlight: null,
+    closed: false,
+  });
+  pruneFlights(ctx.roundKey);
+  void pump(ctx.roundKey);
 }
 
 // A counted guess just entered the local log: something may now be pending.
@@ -144,14 +222,28 @@ async function pump(key: string): Promise<void> {
 
   const round = useGameStore.getState().rounds[key];
   if (!round) return;
-  // A re-published sentence resets the local round under the same key: the acked
-  // prefix no longer describes this log, so start the conversation over.
+  // The cap already stopped this round counting, and that flag is PERSISTED. Reading it
+  // here is what keeps a reload from re-opening the conversation for a read, a
+  // guaranteed-409 append and another `round_full` line — reload noise in a signal whose
+  // whole value is that each entry means a real player hit the cap.
+  if (round.capped) {
+    f.closed = true;
+    return;
+  }
+  // The local round was reset under this key (a republish, an eviction): the acked prefix
+  // no longer describes this log, so start the conversation over.
   if (round.tried.length < f.pendingFrom) {
     f.pendingFrom = 0;
     f.readDone = false;
   }
 
-  const delay = flushDelayMs(f.lastAttemptAt, f.failures, Date.now());
+  const now = Date.now();
+  const delay = Math.max(
+    backoffDelayMs(f.failures, f.lastFailureAt, now),
+    // Only an APPEND waits on the write interval: the server's rate condition lives in
+    // the append's own condition, so a read is never refused for being too soon.
+    f.readDone ? writeDelayMs(f.lastWriteSettledAt, now) : 0,
+  );
   if (delay > 0) {
     schedule(key, delay);
     return;
@@ -159,71 +251,170 @@ async function pump(key: string): Promise<void> {
 
   if (!f.readDone) {
     f.inFlight = readRound(f, key);
-  } else if (round.tried.length > f.pendingFrom) {
-    f.inFlight = appendBatch(f, key, round.tried.slice(f.pendingFrom));
   } else {
-    return; // nothing pending
+    if (round.tried.length <= f.pendingFrom) return; // nothing pending
+    // Never send a batch the route can only refuse. The stored log may hold at most
+    // ROUND_GUESS_CAP entries, so the batch is clamped to what still fits — and when a
+    // pending try cannot fit AT ALL, the round has stopped counting and says so locally
+    // rather than spending a doomed request. (An unclamped batch takes a 400, which is
+    // not the 409 this engine handles: it would re-send the identical body every 30s
+    // forever and the round would never be marked capped at all.)
+    //
+    // Order matters: the cap is reached only when there is a guess the server WILL
+    // refuse, exactly as its own 409 means. A round whose acked log sits at exactly the
+    // cap with nothing pending is finished, not capped — marking it here would suppress
+    // the leaderboard entry of someone who solved on their 500th try.
+    const room = ROUND_GUESS_CAP - f.pendingFrom;
+    if (room <= 0) {
+      useGameStore.getState().markRoundCapped(key);
+      f.closed = true;
+      return;
+    }
+    f.inFlight = appendBatch(f, key, round.tried.slice(f.pendingFrom, f.pendingFrom + room));
   }
-  await f.inFlight;
-  f.inFlight = null;
+  try {
+    await f.inFlight;
+  } catch {
+    // Neither leg is expected to throw — both own their own error paths — but an
+    // unexpected one must not escape as an unhandled rejection, and above all must not
+    // leave `inFlight` pinned: that wedges this conversation shut for the tab's life.
+    retryLater(f);
+  } finally {
+    f.inFlight = null;
+  }
   void pump(key); // reassess: retries, coalesced arrivals, adoption leftovers
 }
 
+function requestBody(f: RoundFlight, guesses?: string[]) {
+  return { secret: playerSecret(), puzzle: f.puzzle, guesses };
+}
+
 async function readRound(f: RoundFlight, key: string): Promise<void> {
-  f.lastAttemptAt = Date.now();
+  let response: Response;
   try {
-    const response = await postRoundBody(roundUrl(f.lang, f.date, f.mode), {
-      secret: playerSecret(),
-    });
-    // 404 = the server holds nothing yet: local state is authoritative-pending, and the
-    // first append will create the record. Anything else non-2xx is a failed attempt.
-    if (response.ok) {
-      adopt(f, key, parseRound(await response.json()).guesses);
-    } else if (response.status !== 404) {
-      throw new Error(`round read failed: ${response.status}`);
-    }
-    f.readDone = true;
-    f.failures = 0;
+    response = await postRoundBody(roundUrl(f.lang, f.date, f.mode), requestBody(f));
   } catch {
-    f.failures += 1;
+    retryLater(f);
+    return;
   }
+  if (response.ok) {
+    try {
+      adopt(f, key, parseRound(await response.json()).guesses);
+    } catch {
+      retryLater(f);
+      return;
+    }
+  } else if (response.status === 404) {
+    // The server holds nothing for THIS puzzle: a fresh round, or a daily re-published
+    // under the same key whose old record is retired. Nothing is acked, and the first
+    // append creates (or replaces) the record.
+    f.pendingFrom = 0;
+  } else if (isVerdict(response.status)) {
+    f.closed = true;
+    return;
+  } else {
+    retryLater(f);
+    return;
+  }
+  f.readDone = true;
+  f.failures = 0;
 }
 
 async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promise<void> {
-  f.lastAttemptAt = Date.now();
+  let response: Response;
   try {
-    const response = await postRoundBody(roundUrl(f.lang, f.date, f.mode), {
-      secret: playerSecret(),
-      guesses: batch,
-    });
+    response = await postRoundBody(roundUrl(f.lang, f.date, f.mode), requestBody(f, batch));
+  } catch {
+    // The write never reached an answer — and it may still have COMMITTED (a suspended
+    // tab, a dropped connection, a gateway timeout). Re-sending the same batch would
+    // `list_append` it a second time and burn the cap on a duplicate the client's own
+    // dedup then hides, so the recovery is a RE-READ: only the server can say what it
+    // holds, and the watermark comes from that rather than from a guess.
+    resync(f);
+    return;
+  }
+
+  // Stamp the interval from the ANSWER, whatever it says (see `writeDelayMs`).
+  f.lastWriteSettledAt = Date.now();
+
+  if (response.ok || response.status === 409 || response.status === 429) {
+    // All three carry the full stored log (the route's own contract), so all three
+    // reconcile the same way — which is what makes a refusal useful rather than merely
+    // survivable.
+    try {
+      adopt(f, key, parseRound(await response.json()).guesses);
+    } catch {
+      resync(f);
+      return;
+    }
+    f.failures = 0;
     if (response.status === 409) {
       // The cap: the round stops counting (#201). Mark the round so the score is never
       // submitted, close the conversation, and let local play continue untouched.
       useGameStore.getState().markRoundCapped(key);
       f.closed = true;
-      return;
     }
-    if (!response.ok) throw new Error(`round append failed: ${response.status}`);
-    adopt(f, key, parseRound(await response.json()).guesses);
-    f.failures = 0;
-  } catch {
-    // Rate refusals (429), transport errors, 5xx: the batch stays pending and the
-    // backoff decides when it tries again.
-    f.failures += 1;
+    // A 429 needs nothing more: the write window now holds the next attempt one full
+    // interval past this answer, which is exactly what the server measures against.
+    return;
   }
+
+  if (isVerdict(response.status)) {
+    f.closed = true;
+    return;
+  }
+  resync(f);
 }
 
-// Adopt the server's log as this round's truth: merge it under the local log, replay
-// the merged board, and hand BOTH to the store in one write. The acked prefix becomes
-// the new pending watermark.
+// A 4xx is a VERDICT — a request this client will keep getting wrong (a language the
+// server does not serve, a date outside its window, a body the route refuses). Retrying
+// it forever spins one request every 30s for the tab's life, and on the READ it also
+// stalls every append behind it, so the guesses reach the server on no visit ever. The
+// conversation closes instead; the log stays in localStorage and the next visit asks once
+// more. (409 and 429 are handled above — they are answers, not verdicts.)
+function isVerdict(status: number): boolean {
+  return status >= 400 && status < 500;
+}
+
+function retryLater(f: RoundFlight): void {
+  f.failures += 1;
+  f.lastFailureAt = Date.now();
+}
+
+// The write's outcome is unknown: fall back to the read, which is the only thing that can
+// say what the server actually holds, and count the failure so the backoff widens.
+function resync(f: RoundFlight): void {
+  f.readDone = false;
+  retryLater(f);
+}
+
+// Adopt the server's log as this round's truth: merge it under the local log, replay the
+// merged board, and hand it to the store in one write. The acked prefix becomes the new
+// pending watermark.
 function adopt(f: RoundFlight, key: string, serverGuesses: string[]): void {
   const round = useGameStore.getState().rounds[key];
   if (!round) return;
   const { guesses, acked } = mergeLogs(serverGuesses, round.tried, (t) => guessKey(f.ranks, t));
-  useGameStore
-    .getState()
-    .adoptRound(key, guesses, replayHoles(f.freshHoles, f.ranks, guesses));
-  f.pendingFrom = Math.max(f.pendingFrom, acked);
+  // Exactly `acked` entries of the MERGED log are server-held, and that log is what the
+  // round now holds — so the watermark IS that number, never a running maximum. A max
+  // strands local tries whenever the merge dedups the server's own log shorter.
+  f.pendingFrom = acked;
+  // The overwhelmingly common answer is the server echoing back what we just sent.
+  // Writing the round again for that would re-serialize the whole persist blob AND,
+  // because the holes go with it, apply every pending hole improvement on the spot — out
+  // from under Game.submit's deliberate deferral of each swap to its floating hit's
+  // fade-out, which on a fast connection is every guess.
+  if (sameLog(guesses, round.tried)) return;
+  const holes = replayHoles(f.freshHoles, f.ranks, guesses);
+  // The cached progress goes with the board it describes: `syncProgress` can only ever
+  // repair the ACTIVE round, and an adoption routinely lands after the player has
+  // navigated away, which would leave that day's archive cell painting a stale fill for
+  // good.
+  useGameStore.getState().adoptRound(key, guesses, holes, computeProgress(holes, f.ranks));
+}
+
+function sameLog(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((entry, i) => entry === b[i]);
 }
 
 // Test seam: drop every conversation (module state must not leak between tests).

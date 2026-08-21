@@ -17,6 +17,7 @@ import {
   type FnUrlResult,
   ENVELOPE_BUDGET_BYTES,
   LAMBDA_MAX_RESPONSE_BYTES,
+  PREFLIGHT_MAX_AGE_SECONDS,
   corsHeaders,
   envelopeBytes,
   errorResponse,
@@ -135,9 +136,16 @@ export function createHandler(deps: HandlerDeps) {
       isScoresRoute || isProfileRoute || isFriendsRoute || isBoardRoute || isRoundRoute;
     const routeHeaders = isLiveRoute ? { ...cors, 'Cache-Control': 'no-store' } : cors;
 
-    // CORS preflight.
+    // CORS preflight. It carries no data, so `no-store` belongs on the live ROUTES and
+    // not on the permission check in front of them — what governs its reuse is
+    // Access-Control-Max-Age, and a live route that writes on every guess (#201's
+    // /round) is exactly the one that must not re-ask for permission each time.
     if (method === 'OPTIONS') {
-      return { statusCode: 204, headers: { ...routeHeaders }, body: '' };
+      return {
+        statusCode: 204,
+        headers: { ...cors, 'Access-Control-Max-Age': PREFLIGHT_MAX_AGE_SECONDS },
+        body: '',
+      };
     }
     if ((isLiveRoute && method !== 'GET' && method !== 'POST') || (!isLiveRoute && method !== 'GET')) {
       return errorResponse(405, 'method_not_allowed', `Method ${method} not allowed.`, routeHeaders);

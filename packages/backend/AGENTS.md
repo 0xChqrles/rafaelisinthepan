@@ -233,26 +233,51 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   like /friends (a GET is a named 405); the shared `requireDayParams` guard triple
   applies, but the route reads NO puzzle store — the log is the player's own working
   state, not a population claim, so an unpublished day needs no guard beyond the future
-  window and archive days sync like today's. `{secret}` reads (404 = none yet);
-  `{secret, guesses}` appends. Validation is fail-closed BEFORE the store: a non-empty
-  string array of at most `ROUND_GUESS_CAP` entries, each a folded slug
-  (`^[a-z]+(-[a-z]+)*$`) of at most the language's `maxSlugLength` (#200). The body cap
-  is this route's own 32 KB (`readJsonObject`'s new optional bound) — a coalesced flush
-  of 500 slugs legitimately exceeds the default 4 KB live-body cap. Storage is the score
-  table: partition `round#<date>#<lang>#<mode>`, sort key = publicId, attributes
-  `guesses` (string list), `createdAt`, `lastWriteAt` (ms epoch). The append is ONE
-  conditional UpdateItem whose ConditionExpression carries BOTH bounds —
-  `(attribute_not_exists(lastWriteAt) OR lastWriteAt < :cutoff) AND size(log) + :n <= :cap`
-  (the RESULT may reach the cap, never pass it) — with `ReturnValues: ALL_NEW` so the
-  happy path is one call; a failed condition reads the item once, consistently, to
-  classify the refusal (`round_full` when any batch would overflow the cap — the truer
-  answer, since retrying can never succeed — else `too_fast`), and every refusal answers
-  with the UNCHANGED stored state, which is already the truth the client reconciles
-  against. `round_full` is answered 409 and LOGGED (`[round] round_full: …` — the
-  puzzle-curation signal; the client stops after the first refusal, so each hit is one
-  honest line), `too_fast` is 429 + `Retry-After: 1`. Local serve swaps in
-  `memoryRoundStore`; no new env or IAM (the table grant already carried GetItem +
+  window and archive days sync like today's. `{secret, puzzle}` reads (404 = none yet, and
+  also "nothing stored for THIS puzzle" — the tag's whole job, root `AGENTS.md`);
+  `{secret, puzzle, guesses}` appends. Validation is fail-closed BEFORE the store: a
+  `PUZZLE_TAG_SHAPE` tag, then a non-empty string array of at most `ROUND_GUESS_CAP`
+  entries, each of at most the language's `maxSlugLength` (#200) and each **left alone by
+  `fold()`** — the check asks the shared contract rather than restating its pipeline as a
+  local regex, which would be a third spelling free to drift from the two that matter. The
+  body cap is this route's own (`readJsonObject`'s optional bound), DERIVED from the cap
+  and the longest `maxSlugLength` rather than hand-picked — a coalesced flush of 500 slugs
+  legitimately exceeds the default 4 KB live-body cap. Storage is the score table:
+  partition `round#<publicId>`, sort key `<date>#<lang>#<mode>` (per PLAYER — the reason is
+  in the root `AGENTS.md`), attributes `guesses` (string list), `puzzle`, `createdAt`,
+  `lastWriteAt` (ms epoch). `lastWriteAt` is the ONE Number here because it is the only one
+  compared arithmetically in the condition; `createdAt` is a String, and writing it as a
+  Number reads back as `''` on every response for the item's whole life. The append is ONE
+  conditional UpdateItem whose ConditionExpression carries every bound —
+  `(attribute_not_exists(#last) OR #last < :cutoff) AND (attribute_not_exists(#g) OR (size(#g) <= :room AND #p = :puzzle))`
+  (the RESULT may reach the cap, never pass it) — with `ReturnValues: ALL_NEW` so the happy
+  path is one call. **Every clause is path-only CONDITION syntax and must stay that way:**
+  DynamoDB's condition grammar has NO arithmetic and its whole function list is
+  attribute_exists / attribute_not_exists / attribute_type / begins_with / contains /
+  size(<path>) — `if_not_exists` and `+` belong to an UPDATE expression, and naming either
+  makes the service reject the request with a ValidationException before a single guess is
+  stored. Nothing local can catch that (`dynamoRoundStore.test.ts` mocks `send`, and every
+  route test runs on `memoryRoundStore`), which is why that suite asserts the expression's
+  SHAPE. That is also why the cap is expressed as ROOM (`:room` = the cap minus this batch)
+  and why a batch too large for an EMPTY log — which has no size to compare — is refused in
+  the store instead. A failed condition reads the item once, consistently, to classify the
+  refusal: a record naming a RETIRED puzzle is a restart, so the batch REPLACES the log
+  (still inside the write interval, or varying the tag would be a way around it); else
+  `round_full` when any batch would overflow the cap — the truer answer, since retrying can
+  never succeed — else `too_fast`. **Every refusal ANSWERS with the unchanged stored
+  state** (`errorResponse`'s `extra`), which is what the client reconciles against and what
+  pays for that read. `round_full` is answered 409 and LOGGED (`[round] round_full: …` —
+  the puzzle-curation signal; the client stops after the first refusal, so each hit is one
+  honest line), `too_fast` is 429 + `Retry-After: 1` — which `corsHeaders` must EXPOSE, or
+  a browser reads null for a header only curl and `backend:dev` ever see. Local serve swaps
+  in `memoryRoundStore`; no new env or IAM (the table grant already carried GetItem +
   UpdateItem).
+  **The CORS PREFLIGHT is cached** (`PREFLIGHT_MAX_AGE_SECONDS`, applied on the OPTIONS
+  branch and deliberately WITHOUT the live routes' `no-store` — a preflight carries no
+  data, and what governs its reuse is `Access-Control-Max-Age`). /round is the first route
+  that POSTs continuously, about once a second while a player types, so the default
+  few-second preflight cache costs an extra OPTIONS invocation and an RTT stall every few
+  writes.
 
 - **Word mode's daily artifact (#154/#156):** the ONE puzzle endpoint also serves the
   single-word artifact under `mode=word` (`GET /?lang=&date=&mode=word`; absent/

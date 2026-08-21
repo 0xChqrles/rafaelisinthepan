@@ -112,7 +112,13 @@
   `ROUND_GUESS_CAP` (enforced inside the append write's own condition) and
   `ROUND_WRITE_MIN_MS` (one spelling of "~1s between writes" for BOTH the server's rate
   condition and the web's flush pacing, since two independent ones would drift into
-  permanent 429s) — cross-package constants for the same reason.
+  permanent 429s) — cross-package constants for the same reason. **One constant is only
+  enough because the two ends measure the same GAP:** the server compares its own receipt
+  instants with a strict `<`, so the web paces from the previous write's ANSWER rather
+  than from its send (`web/state/roundSync.ts` `writeDelayMs`), which puts the server's
+  round trip inside the interval. Pacing from the send instant leaves zero margin and
+  refuses every request that travels faster than its predecessor — the same permanent-429
+  outcome this one spelling exists to prevent.
 - **`src/heat.ts` is the app's ONE gradient, and it runs WEIRD → CALM (user-decided
   2026-08-17, the calm redesign — superseding the FLIR iron bow of the same day and the
   crimson→cyan heat stops before it).** Solving is RESTORING PEACE to a weird sentence:

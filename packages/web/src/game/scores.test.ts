@@ -18,6 +18,7 @@ import {
   bucketIndexOf,
   formatTopPct,
   scoreStanding,
+  shouldAskPopulation,
   shouldSubmitScore,
 } from './scores';
 
@@ -185,5 +186,29 @@ describe('shouldSubmitScore — a round owes its score until the POPULATION hold
   it('an unfinished round never submits, recorded or not', () => {
     expect(shouldSubmitScore(false, undefined)).toBe(false);
     expect(shouldSubmitScore(false, 7)).toBe(false);
+  });
+});
+
+describe('shouldAskPopulation — the #201 cap suppresses the POST, not the standing', () => {
+  it('asks for a finished round that may still claim its place', () => {
+    expect(shouldAskPopulation(true, true, undefined)).toBe(true);
+  });
+
+  it('still READS the standing of a capped round the population already holds', () => {
+    // Solved, submitted, and only THEN capped by a lagging flush: the row is in the
+    // day's population and the rank is real. A client flag must not hide what the
+    // population itself already answered — on that visit or on any later one.
+    expect(shouldAskPopulation(true, false, 12)).toBe(true);
+  });
+
+  it('asks nothing for a capped round with no recorded score', () => {
+    // It stopped counting before it ever placed: there is no entry to claim and none to
+    // read, so the standing slot stays honestly empty.
+    expect(shouldAskPopulation(true, false, undefined)).toBe(false);
+  });
+
+  it('asks nothing before the round is finished', () => {
+    expect(shouldAskPopulation(false, true, undefined)).toBe(false);
+    expect(shouldAskPopulation(false, true, 12)).toBe(false);
   });
 });

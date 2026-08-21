@@ -215,8 +215,19 @@ function Round({
   // signal. Keep every resolved hole reported for this round; the round-key dependency on
   // the callback makes already-resolved rehydrated holes report again after navigation.
   const [resolvedHoleIndices, setResolvedHoleIndices] = useState<Set<number>>(() => new Set());
+  // Did the round finish HERE, by a guess typed on this device in this session? The
+  // solved beats — the analytics event, the streak, the celebration — belong to that
+  // transition alone, and `solved` flipping is no longer evidence of it: the #201 sync
+  // adopts the server's log, so a second tab (or a second device) under the same player
+  // key can finish the board under a screen that is merely watching. `submit` sets this
+  // the moment it knows the guess closes every hole; nothing else ever does.
+  const solvedByPlay = useRef<boolean>(false);
   useLayoutEffect(() => {
     setResolvedHoleIndices(new Set());
+    // A different round: whatever this said belonged to the previous one. It runs BEFORE
+    // the solve effect below in the same commit, which is what stops an already-solved
+    // day navigated into from inheriting the last round's fresh solve.
+    solvedByPlay.current = false;
   }, [roundKey]);
   const markHoleResolved = useCallback((index: number) => {
     setResolvedHoleIndices((current) => {
@@ -274,10 +285,14 @@ function Round({
   // A CAPPED round never joins that population (#201): past the server's guess cap the
   // round has stopped counting — by the server's own refusal (capped) or because local
   // offline play outgrew what any server could ever hold — so there is no leaderboard
-  // entry to claim and the standing slot stays empty.
+  // entry to claim. It suppresses the SUBMISSION and nothing else: a round whose score
+  // the population already holds (it solved, the POST landed, a lagging flush was capped
+  // afterwards) has a real recorded rank, and hiding its standing on that visit and every
+  // later one would be the flag deciding what the population itself already answered.
   const overCap = live?.capped === true || history.length > ROUND_GUESS_CAP;
   const placement = useScoreHistogram({
-    finished: solved && !overCap,
+    finished: solved,
+    canSubmit: !overCap,
     markRecorded: markThisScoreRecorded,
     mode: 'sentence',
     lang,
@@ -397,9 +412,15 @@ function Round({
   }, [keyboardLeaving]);
   const prevSolved = useRef<boolean>(solved);
   useEffect(() => {
-    const justSolved = solved && !prevSolved.current;
+    // A FRESH solve is a solve this device played (see `solvedByPlay`). An adopted one —
+    // the same player key finishing the board in another tab, or on another device whose
+    // log this round just merged — is a rehydration as far as the beats are concerned:
+    // the board IS solved, and it is shown solved, but nothing celebrates a finish that
+    // already happened somewhere else.
+    const justSolved = solved && !prevSolved.current && solvedByPlay.current;
     prevSolved.current = solved;
     if (!solved) {
+      solvedByPlay.current = false;
       setShowResults(false);
       setAnimateResults(false);
       setShowStreakDialog(false);
@@ -653,7 +674,13 @@ function Round({
       const solvesAll = holes.every((h) => h.rank === 0 || ranks[h.secret][typed]?.rank === 0);
       setInput('');
       setFeedback(null);
-      if (solvesAll) setPromptExiting(true);
+      // This device just finished the board: claim the solved beats for the transition
+      // the store is about to make (see `solvedByPlay`). Set here rather than read off
+      // `solved`, which the sync engine can also flip.
+      if (solvesAll) {
+        solvedByPlay.current = true;
+        setPromptExiting(true);
+      }
       // Counted guess: a unique valid word (misses included). The store dedupes by
       // canonical identity (guessKey): repeats, inflections of an already-tried word
       // (#104), and the non-existent words returned above never increase the score.

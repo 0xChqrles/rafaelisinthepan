@@ -234,11 +234,13 @@ export async function postScoreBody(
 }
 
 // The #201 round route: the server-authoritative guess log of one player's play on one
-// daily, one item per (date, lang, mode, publicId). POST-only like /friends — `{secret}`
-// reads the stored round (404 = none yet), `{secret, guesses}` appends to it — and EVERY
-// answer carries the full state, so a write is also a reconciliation. The three query
-// parameters are in the round CloudFront behavior's allowList (the root AGENTS.md
-// three-package contract).
+// daily, one item per (date, lang, mode, publicId). POST-only like /friends —
+// `{secret, puzzle}` reads the stored round (404 = none yet), `{secret, puzzle, guesses}`
+// appends to it — and EVERY answer, the two refusals included, carries the full state, so
+// a write is also a reconciliation. `puzzle` is the opaque tag naming WHICH puzzle the log
+// belongs to (state/roundSync.ts `puzzleTag`), which is how a re-published daily restarts
+// the log instead of inheriting the retired sentence's. The three query parameters are in
+// the round CloudFront behavior's allowList (the root AGENTS.md three-package contract).
 export function roundUrl(lang: string, date: string, mode: Mode, base: string = apiBase()): string {
   return `${requireApiBase(base)}/round?lang=${encodeURIComponent(lang)}&date=${encodeURIComponent(
     date,
@@ -247,7 +249,7 @@ export function roundUrl(lang: string, date: string, mode: Mode, base: string = 
 
 export async function postRoundBody(
   url: string,
-  body: { secret: string; guesses?: string[] },
+  body: { secret: string; puzzle: string; guesses?: string[] },
 ): Promise<Response> {
   return postSignedJson(url, body);
 }

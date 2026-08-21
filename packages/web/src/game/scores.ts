@@ -99,6 +99,23 @@ export function shouldSubmitScore(finished: boolean, recordedScore: number | und
   return finished && recordedScore === undefined;
 }
 
+// Whether a finished round has anything to ASK the population at all — the round trip's
+// outer gate, where `shouldSubmitScore` decides which half of it runs.
+//
+// `canSubmit` is false for a #201 CAPPED round: past the server's guess cap the round
+// stopped counting, so it may never claim a place. It may still READ one it already holds
+// — a round that solved, submitted, and only then took a lagging flush's cap refusal has
+// a real recorded rank in the day's population, and a client flag must not decide what
+// the population itself already answered. So the cap suppresses the POST and nothing
+// else; hiding the standing too would lose it on that visit and on every later one.
+export function shouldAskPopulation(
+  finished: boolean,
+  canSubmit: boolean,
+  recordedScore: number | undefined,
+): boolean {
+  return finished && (recordedScore !== undefined || shouldSubmitScore(canSubmit, recordedScore));
+}
+
 // The standing is FIXED-WIDTH TYPE — the pixel font does not reflow, and `body` is
 // `overflow: hidden`, so a line that outruns its column is CUT OFF rather than scrolled to.
 // A phone column holds the tuned sizes comfortably for a short standing and lands exactly

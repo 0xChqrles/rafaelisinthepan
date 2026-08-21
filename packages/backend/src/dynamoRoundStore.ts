@@ -1,79 +1,111 @@
 import {
   GetItemCommand,
   UpdateItemCommand,
+  type AttributeValue,
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
 import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS } from '@whippin/shared';
-import { roundPartition, type RoundAppendInput, type RoundState, type RoundStore } from './roundStore';
+import {
+  roundPartition,
+  roundSortKey,
+  type RoundKey,
+  type RoundState,
+  type RoundStore,
+} from './roundStore';
 
 // Production round records live in the score table (#201): one item per
-// (date, lang, mode, publicId) in its own `round#<date>#<lang>#<mode>` partition.
+// (date, lang, mode, publicId), in the PLAYER's own `round#<publicId>` partition under a
+// `<date>#<lang>#<mode>` sort key (see roundStore.ts for why the day is not the partition).
 //
-// The append is ONE conditional UpdateItem — the cap and the per-player write interval
-// are two clauses of the same ConditionExpression as the `list_append` itself, so a
-// refused append cannot be raced past either bound. Success returns the updated item
-// (ReturnValues) so the happy path is one call; a failed condition reads the item once,
-// consistently, to classify the refusal — the condition cannot say which clause rejected
-// it, and the caller owes the client the distinction (a cap stops the round; a rate
-// refusal only delays it).
+// The append is ONE conditional UpdateItem — the cap, the per-player write interval and
+// the puzzle identity are three clauses of the same ConditionExpression as the
+// `list_append` itself, so a refused append cannot be raced past any of them. Success
+// returns the updated item (ReturnValues) so the happy path is one call; a failed
+// condition reads the item once, consistently, to classify the refusal — the condition
+// cannot say which clause rejected it, and the caller owes the client the distinction (a
+// cap stops the round; a rate refusal only delays it; a retired puzzle restarts it).
 export function dynamoRoundStore(client: DynamoDBClient, tableName: string): RoundStore {
-  const read = async (input: RoundAppendInput): Promise<RoundState | null> => {
+  const itemKey = (key: RoundKey, publicId: string) => ({
+    pk: { S: roundPartition(publicId) },
+    sk: { S: roundSortKey(key) },
+  });
+
+  // Strong consistency, for the score store's reason: the read lands right after this
+  // player's own appends — the sync's catch-up on load, and the classification of the
+  // write that just failed — which must not be invisible to it.
+  const readItem = async (key: RoundKey, publicId: string) => {
     const response = await client.send(
       new GetItemCommand({
         TableName: tableName,
-        Key: { pk: { S: roundPartition(input) }, sk: { S: input.publicId } },
-        // Strong consistency, for the score store's reason: this classifies the refusal
-        // of the write that just failed, right after it.
+        Key: itemKey(key, publicId),
         ConsistentRead: true,
       }),
     );
-    return itemToState(response.Item);
+    return response.Item;
+  };
+
+  const names = {
+    '#g': 'guesses',
+    '#p': 'puzzle',
+    '#last': 'lastWriteAt',
+    '#created': 'createdAt',
   };
 
   return {
-    async get(key, publicId) {
-      const response = await client.send(
-        new GetItemCommand({
-          TableName: tableName,
-          Key: { pk: { S: roundPartition(key) }, sk: { S: publicId } },
-          // Strong consistency: the read lands right after this player's own appends
-          // (the sync's catch-up on load), which must not be invisible to it.
-          ConsistentRead: true,
-        }),
-      );
-      return itemToState(response.Item);
+    async get(key, publicId, puzzle) {
+      const item = await readItem(key, publicId);
+      // A record naming a DIFFERENT puzzle is an honest "nothing stored for this one":
+      // the daily was re-published under the same key and this log is the retired
+      // sentence's (roundStore.ts).
+      if (!item || puzzleOf(item) !== puzzle) return null;
+      return itemToState(item);
     },
 
     async append(input) {
       const nowMs = input.now.getTime();
+      const cutoff = nowMs - ROUND_WRITE_MIN_MS;
+      const values = (extra: Record<string, AttributeValue>) => ({
+        ':batch': { L: input.guesses.map((guess) => ({ S: guess })) },
+        ':puzzle': { S: input.puzzle },
+        ':now': { N: String(nowMs) },
+        ':created': { S: input.now.toISOString() },
+        ':cutoff': { N: String(cutoff) },
+        ...extra,
+      });
+
+      // The store owns the cap invariant, and this half of it cannot be a condition: a
+      // batch too large for an EMPTY log has nothing to compare against (a missing
+      // attribute has no size), so refuse it here. The route validates the same bound
+      // before this is reached — this is what keeps the two backends answering alike.
+      if (input.guesses.length > ROUND_GUESS_CAP) {
+        return { outcome: 'round_full', state: itemToState(await readItem(input, input.publicId)) ?? empty() };
+      }
+
       try {
         const response = await client.send(
           new UpdateItemCommand({
             TableName: tableName,
-            Key: { pk: { S: roundPartition(input) }, sk: { S: input.publicId } },
+            Key: itemKey(input, input.publicId),
             UpdateExpression:
               'SET #g = list_append(if_not_exists(#g, :empty), :batch), ' +
-              '#last = :now, #created = if_not_exists(#created, :now)',
-            // Both bounds in the write itself (#201's sketch, made exact): the RESULTING
-            // log may never exceed the cap (`size + batch <= cap` — the pre-append size
-            // alone would let one oversized batch overshoot), and writes from one player
-            // sit at least ROUND_WRITE_MIN_MS apart.
+              '#p = :puzzle, #last = :now, #created = if_not_exists(#created, :created)',
+            // Every clause is path-only CONDITION syntax. DynamoDB's condition grammar
+            // has NO arithmetic, its function list is attribute_exists /
+            // attribute_not_exists / attribute_type / begins_with / contains /
+            // size(<path>), and `if_not_exists` is specific to an update expression's SET
+            // action — naming either here makes the service reject the whole request with
+            // a ValidationException before a single guess is stored. So the cap is
+            // expressed as ROOM (`:room` = the cap minus this batch) against the log's own
+            // size, which bounds the RESULTING log exactly as `size + batch <= cap` would:
+            // the result may REACH the cap, never pass it.
             ConditionExpression:
               '(attribute_not_exists(#last) OR #last < :cutoff) ' +
-              'AND size(if_not_exists(#g, :empty)) + :n <= :cap',
-            ExpressionAttributeNames: {
-              '#g': 'guesses',
-              '#last': 'lastWriteAt',
-              '#created': 'createdAt',
-            },
-            ExpressionAttributeValues: {
+              'AND (attribute_not_exists(#g) OR (size(#g) <= :room AND #p = :puzzle))',
+            ExpressionAttributeNames: names,
+            ExpressionAttributeValues: values({
               ':empty': { L: [] },
-              ':batch': { L: input.guesses.map((guess) => ({ S: guess })) },
-              ':n': { N: String(input.guesses.length) },
-              ':cap': { N: String(ROUND_GUESS_CAP) },
-              ':now': { N: String(nowMs) },
-              ':cutoff': { N: String(nowMs - ROUND_WRITE_MIN_MS) },
-            },
+              ':room': { N: String(ROUND_GUESS_CAP - input.guesses.length) },
+            }),
             ReturnValues: 'ALL_NEW',
           }),
         );
@@ -81,22 +113,75 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
       } catch (error) {
         if ((error as { name?: string }).name !== 'ConditionalCheckFailedException') throw error;
       }
-      // The condition named both bounds; classify against the stored item. A log already
-      // at (or within one batch of) the cap is the cap refusal — the truer answer, since
-      // retrying can never succeed — and anything else is the interval.
-      const current = await read(input);
-      const state = current ?? { guesses: [], createdAt: '' };
-      const outcome =
-        state.guesses.length + input.guesses.length > ROUND_GUESS_CAP ? 'round_full' : 'too_fast';
-      return { outcome, state };
+
+      // The condition named three bounds; classify against the stored item.
+      const item = await readItem(input, input.publicId);
+      const stored = itemToState(item);
+      const last = numberOf(item?.lastWriteAt);
+      const paced = last === undefined || last < cutoff;
+      if (!stored) return { outcome: 'too_fast', state: empty() };
+
+      if (puzzleOf(item) !== input.puzzle) {
+        // A RETIRED puzzle's log: the round restarted under the same key, so the batch
+        // REPLACES it rather than growing it. The interval still applies — otherwise
+        // varying the tag would be a way around the rate bound.
+        if (!paced) return { outcome: 'too_fast', state: stored };
+        try {
+          const response = await client.send(
+            new UpdateItemCommand({
+              TableName: tableName,
+              Key: itemKey(input, input.publicId),
+              UpdateExpression: 'SET #g = :batch, #p = :puzzle, #last = :now, #created = :created',
+              // Only a record still naming the retired puzzle may be replaced, so two
+              // tabs racing the same restart cannot wipe each other's fresh log.
+              ConditionExpression:
+                '#p <> :puzzle AND (attribute_not_exists(#last) OR #last < :cutoff)',
+              ExpressionAttributeNames: names,
+              ExpressionAttributeValues: values({}),
+              ReturnValues: 'ALL_NEW',
+            }),
+          );
+          return { outcome: 'appended', state: itemToState(response.Attributes)! };
+        } catch (error) {
+          if ((error as { name?: string }).name !== 'ConditionalCheckFailedException') throw error;
+          // Someone else already restarted it; the client re-reads and reconciles.
+          return { outcome: 'too_fast', state: stored };
+        }
+      }
+
+      // A log already at (or within one batch of) the cap is the cap refusal — the truer
+      // answer, since retrying can never succeed — and anything else is the interval.
+      if (stored.guesses.length + input.guesses.length > ROUND_GUESS_CAP) {
+        return { outcome: 'round_full', state: stored };
+      }
+      return { outcome: 'too_fast', state: stored };
     },
   };
 }
 
-function itemToState(item: Record<string, unknown> | undefined): RoundState | null {
+function empty(): RoundState {
+  return { guesses: [], createdAt: '' };
+}
+
+type Item = Record<string, AttributeValue> | undefined;
+
+function itemToState(item: Item): RoundState | null {
   if (!item) return null;
   return {
-    guesses: (item.guesses as { L?: { S?: string }[] } | undefined)?.L?.map((v) => v.S ?? '') ?? [],
-    createdAt: (item.createdAt as { S?: string } | undefined)?.S ?? '',
+    guesses: item.guesses?.L?.map((v) => v.S ?? '') ?? [],
+    // Written as a STRING (`:created`), read as one: `lastWriteAt` is the only round
+    // attribute that is a Number, because only IT is compared arithmetically in the
+    // append's condition. Writing this one as a Number and reading it as a String is
+    // silent — the `?? ''` fallback makes every response carry an empty createdAt for
+    // the item's whole life — so the two spellings are kept next to each other.
+    createdAt: item.createdAt?.S ?? '',
   };
+}
+
+function puzzleOf(item: Item): string | undefined {
+  return item?.puzzle?.S;
+}
+
+function numberOf(value: AttributeValue | undefined): number | undefined {
+  return value?.N === undefined ? undefined : Number(value.N);
 }
