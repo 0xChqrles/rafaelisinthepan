@@ -126,14 +126,29 @@ export async function handleRound(
     now: instant,
   });
   if (outcome === 'round_full') {
-    // Counted where it can be reviewed (#201): a real player reaching the cap means an
-    // unreachable secret — puzzle-curation signal available no other way. The client
-    // stops after the first refusal, so each hit is one honest line, not spam.
-    console.warn(
-      `[round] round_full: ${date} ${lang} ${mode} ${publicId} refused ` +
-        `${guesses.length} further guess(es) past the ${ROUND_GUESS_CAP}-guess cap.`,
+    // The refusal means THIS BATCH does not fit, which is not always "the round is
+    // full": a batch sized against a stale view of the log (another device pushed it
+    // forward meanwhile) overshoots a round that still has room. The stored log itself
+    // says which — and only the genuine one is the puzzle-curation signal (#201): a real
+    // player reaching the cap means an unreachable secret, available no other way. The
+    // client stops after that refusal, so each hit is one honest line rather than spam —
+    // and gating the line here is what keeps a racing second device out of the count.
+    const full = state.guesses.length >= ROUND_GUESS_CAP;
+    if (full) {
+      console.warn(
+        `[round] round_full: ${date} ${lang} ${mode} ${publicId} refused ` +
+          `${guesses.length} further guess(es) past the ${ROUND_GUESS_CAP}-guess cap.`,
+      );
+    }
+    return refusal(
+      409,
+      'round_full',
+      full
+        ? `This round already holds the maximum of ${ROUND_GUESS_CAP} guesses.`
+        : `This batch of ${guesses.length} would push the round past ${ROUND_GUESS_CAP} guesses.`,
+      state,
+      responseHeaders,
     );
-    return refusal(409, 'round_full', `This round already holds the maximum of ${ROUND_GUESS_CAP} guesses.`, state, responseHeaders);
   }
   if (outcome === 'too_fast') {
     return refusal(

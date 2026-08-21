@@ -296,6 +296,25 @@ describe('the cap (#201)', () => {
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0][0])).toContain('round_full');
   });
+
+  it('does NOT count a batch that merely OVERSHOOTS a round with room left', async () => {
+    // A second device pushed the log forward while this caller was away, so its batch —
+    // correctly sized when it was built — no longer fits. That refuses the BATCH, not the
+    // round: the stored log still has room, so it is not the "unreachable secret" signal
+    // the line exists to collect, and counting it would let a racing device manufacture
+    // curation noise.
+    const warn = vi.spyOn(console, 'warn');
+    const handler = makeHandler();
+    await handler(event({ body: body({ guesses: capBatch().slice(0, ROUND_GUESS_CAP - 1) }) }));
+    handler.advance(ROUND_WRITE_MIN_MS + 1);
+
+    const refused = await handler(event({ body: body({ guesses: ['aa', 'ab'] }) }));
+    expect(refused.statusCode).toBe(409);
+    expect(warn).not.toHaveBeenCalled();
+    // The refusal still carries the truth, which is what lets the client re-size instead
+    // of concluding the round is over.
+    expect(parsed(refused).guesses).toHaveLength(ROUND_GUESS_CAP - 1);
+  });
 });
 
 describe('the ~1s per-player write interval', () => {

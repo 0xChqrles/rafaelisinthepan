@@ -306,9 +306,10 @@ describe('engine', () => {
     expect(round()?.tried).toEqual(['bois', 'foret']);
   });
 
-  it('marks the round capped on 409 and never writes again', async () => {
+  it('marks the round capped on a 409 whose log really is at the cap, and never writes again', async () => {
+    const full = overCapLog().slice(0, ROUND_GUESS_CAP);
     seedRound(['bois']);
-    post.mockResolvedValueOnce(status(404)).mockResolvedValueOnce(refusal(409, ['bois']));
+    post.mockResolvedValueOnce(status(404)).mockResolvedValueOnce(refusal(409, full));
     beginRoundSync(ctx());
     await settle();
 
@@ -319,6 +320,50 @@ describe('engine', () => {
     notifyGuess(KEY);
     await settle(60_000);
     expect(post.mock.calls.length).toBe(writes); // conversation closed
+  });
+
+  it('does NOT cap on a 409 whose log still has room — it re-sizes the batch', async () => {
+    // A batch clamped correctly WHEN SENT can still overshoot: another device under the
+    // same key pushed the stored log forward while this tab was away. The round is not
+    // full, and concluding that it is would suppress the leaderboard entry of a round
+    // that had room — the harshest consequence the design has.
+    const local = overCapLog().slice(0, ROUND_GUESS_CAP);
+    seedRound(local);
+    post
+      .mockResolvedValueOnce(ok(local.slice(0, 100))) // mount read: we believe 100 are stored
+      .mockResolvedValueOnce(refusal(409, local.slice(0, 490))) // meanwhile it reached 490
+      .mockResolvedValueOnce(ok(local));
+    beginRoundSync(ctx());
+    await settle();
+
+    // The first flush was sized against the read: 500 − 100.
+    expect(bodyOf(1).guesses).toHaveLength(ROUND_GUESS_CAP - 100);
+    expect(round()?.capped).toBeUndefined();
+
+    // The refusal carried the truth, so the retry asks for exactly what still fits.
+    await settle(ROUND_WRITE_MIN_MS);
+    expect(post).toHaveBeenCalledTimes(3);
+    expect(bodyOf(2).guesses).toHaveLength(ROUND_GUESS_CAP - 490);
+    expect(round()?.capped).toBeUndefined();
+  });
+
+  it('measures the room left by the RAW stored count, not the deduped one', async () => {
+    // Two devices can each store a guess that resolves to the OTHER's identity (#104),
+    // so the merge collapses them and the acked prefix comes out SHORTER than the log
+    // the server's cap actually counts. Here the server holds a full 500 raw entries of
+    // which two are one identity — 499 merged. Sizing the room by the merged count
+    // leaves an imaginary slot and spends a doomed request to discover it is not there.
+    const stored = [...overCapLog().slice(0, ROUND_GUESS_CAP - 2), 'foret', 'foretz'];
+    expect(stored).toHaveLength(ROUND_GUESS_CAP);
+    seedRound([...stored, 'chemin']); // one local try still pending
+    post.mockResolvedValueOnce(ok(stored));
+    beginRoundSync(ctx());
+    await settle(60_000);
+
+    // The merge keeps 499 identities, but 500 is what the cap counts — so the round is
+    // full, and it is known to be full without asking.
+    expect(round()?.capped).toBe(true);
+    expect(post).toHaveBeenCalledOnce();
   });
 
   it('does not re-open a capped round on a later mount', async () => {

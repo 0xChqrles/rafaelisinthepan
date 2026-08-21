@@ -428,8 +428,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
   conversation instead of spinning on it; a 429 is pacing, not failure. The conversation
   map is BOUNDED (`MAX_FLIGHTS`): every flight pins its puzzle's whole rank map, and
   evicting an idle one is safe by construction, because the next mount reads.
-  A 409 marks the round CAPPED (persisted `RoundProgress.capped`, and READ on every mount
-  so a reload does not re-open a settled round) and closes the conversation: play continues
+  A 409 marks the round CAPPED — but only when the log it CARRIED is really at the cap
+  (`serverCount`, the RAW stored count rather than the merged one, which is also what the
+  batch clamp is sized against): a batch correctly clamped when it was built still
+  overshoots once another device pushes the stored log forward, and there the round has
+  room and just needs a smaller batch. Capping on the status alone would suppress the
+  leaderboard entry of a round that was never full. When it IS full the flag is persisted
+  (`RoundProgress.capped`, READ on every mount so a reload does not re-open a settled
+  round) and the conversation closes: play continues
   locally but the solved screen suppresses the score SUBMISSION — `canSubmit: !overCap`,
   where `overCap` also covers local offline play that outgrew any server's cap. It
   suppresses the POST alone (`game/scores.ts` `shouldAskPopulation`): a round the population

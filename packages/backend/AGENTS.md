@@ -39,7 +39,8 @@
       memoryFriendStore.ts    process-local implementation for backend:dev/tests
       rounds.ts               POST /round (#201): the per-round guess log — read/append, slug +
                               length validation, cap + write-interval refusals, full-state answers
-      roundStore.ts           round storage contract; round#<date>#<lang>#<mode> partition,
+      roundStore.ts           round storage contract; round#<publicId> partition, sort key
+                              <date>#<lang>#<mode>; the puzzle tag +
                               ROUND_GUESS_CAP / ROUND_WRITE_MIN_MS semantics
       dynamoRoundStore.ts     prod ONE conditional UpdateItem (both bounds in the condition) +
                               consistent classification read on a refusal
@@ -270,9 +271,13 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   both stores): a rate-refused RESTART answers empty rather than handing back the retired
   sentence's log, which the client would adopt as this round's truth. The lost-restart-race
   branch re-reads for the same reason, since what is stored by then may already be this
-  puzzle's own fresh log. `round_full` is answered 409 and LOGGED (`[round] round_full: …` —
-  the puzzle-curation signal; the client stops after the first refusal, so each hit is one
-  honest line), `too_fast` is 429 + `Retry-After: 1` — which `corsHeaders` must EXPOSE, or
+  puzzle's own fresh log. `round_full` is answered 409, and LOGGED only when the STORED log
+  is really at the cap (`[round] round_full: …` — the puzzle-curation signal; the client
+  stops after that refusal, so each hit is one honest line). A batch that merely OVERSHOOTS
+  a round with room left — another device pushed the log forward while this caller was
+  away — refuses the batch rather than the round: it answers 409 with the truth, says so in
+  its message, and writes no line, or a racing second device could manufacture
+  "unreachable secret" signal, `too_fast` is 429 + `Retry-After: 1` — which `corsHeaders` must EXPOSE, or
   a browser reads null for a header only curl and `backend:dev` ever see. Local serve swaps
   in `memoryRoundStore`; no new env or IAM (the table grant already carried GetItem +
   UpdateItem).

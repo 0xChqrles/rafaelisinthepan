@@ -50,6 +50,12 @@ interface RoundFlight extends RoundSyncContext {
   // Prefix of the round's persisted `tried` known to be on the server. Everything from
   // here on is the pending batch; adoption resets it to the acked prefix length.
   pendingFrom: number;
+  // How many entries the server's log RAW-ly holds — which is the number its cap counts,
+  // and NOT `pendingFrom`. The two differ whenever the merge dedups the stored log
+  // shorter (two devices each sending a guess that resolves to the other's identity,
+  // #104), so sizing a batch against `pendingFrom` can overshoot the cap. Set from every
+  // answer, since every answer carries the full stored log.
+  serverCount: number;
   // The initial read has landed (or 404'd): local extras are safe to append from here on.
   readDone: boolean;
   // When the last APPEND SETTLED — see `writeDelayMs`.
@@ -182,6 +188,7 @@ export function beginRoundSync(ctx: RoundSyncContext): void {
     // the cap — a fresh round is not a capped one).
     if (existing.puzzle !== puzzle) {
       existing.pendingFrom = 0;
+      existing.serverCount = 0;
       existing.readDone = false;
       existing.closed = false;
       existing.failures = 0;
@@ -198,6 +205,7 @@ export function beginRoundSync(ctx: RoundSyncContext): void {
     ...ctx,
     puzzle,
     pendingFrom: 0,
+    serverCount: 0,
     readDone: false,
     lastWriteSettledAt: 0,
     failures: 0,
@@ -234,6 +242,7 @@ async function pump(key: string): Promise<void> {
   // no longer describes this log, so start the conversation over.
   if (round.tried.length < f.pendingFrom) {
     f.pendingFrom = 0;
+    f.serverCount = 0;
     f.readDone = false;
   }
 
@@ -264,7 +273,7 @@ async function pump(key: string): Promise<void> {
     // refuse, exactly as its own 409 means. A round whose acked log sits at exactly the
     // cap with nothing pending is finished, not capped — marking it here would suppress
     // the leaderboard entry of someone who solved on their 500th try.
-    const room = ROUND_GUESS_CAP - f.pendingFrom;
+    const room = ROUND_GUESS_CAP - f.serverCount;
     if (room <= 0) {
       useGameStore.getState().markRoundCapped(key);
       f.closed = true;
@@ -327,6 +336,7 @@ async function readRound(f: RoundFlight, key: string): Promise<void> {
     // under the same key whose old record is retired. Nothing is acked, and the first
     // append creates (or replaces) the record.
     f.pendingFrom = 0;
+    f.serverCount = 0;
   } else if (isVerdict(response.status)) {
     f.closed = true;
     return;
@@ -374,9 +384,18 @@ async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promis
     if (superseded(f, puzzle)) return;
     adopt(f, key, guesses);
     f.failures = 0;
-    if (response.status === 409) {
+    if (response.status === 409 && f.serverCount >= ROUND_GUESS_CAP) {
       // The cap: the round stops counting (#201). Mark the round so the score is never
       // submitted, close the conversation, and let local play continue untouched.
+      //
+      // Gated on the log the refusal CARRIED, not on the refusal itself. A 409 also
+      // answers a batch sized against a STALE watermark — another device pushed the
+      // stored log forward while this tab was away, so a correctly-clamped-when-sent
+      // batch no longer fits — and there the round has room left and simply needs a
+      // smaller batch. Concluding "capped" from the status alone would suppress the
+      // leaderboard entry of a round that was never full, which is the harshest
+      // consequence this design has. The truth the answer carried decides; `pump` sizes
+      // the next batch from it and marks the round capped only when nothing fits at all.
       useGameStore.getState().markRoundCapped(key);
       f.closed = true;
     }
@@ -426,6 +445,7 @@ function adopt(f: RoundFlight, key: string, serverGuesses: string[]): void {
   // round now holds — so the watermark IS that number, never a running maximum. A max
   // strands local tries whenever the merge dedups the server's own log shorter.
   f.pendingFrom = acked;
+  f.serverCount = serverGuesses.length;
   // The overwhelmingly common answer is the server echoing back what we just sent.
   // Writing the round again for that would re-serialize the whole persist blob AND,
   // because the holes go with it, apply every pending hole improvement on the spot — out

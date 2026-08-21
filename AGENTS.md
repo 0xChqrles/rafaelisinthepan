@@ -452,7 +452,17 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   of the conversation: the batch is clamped to what still fits, and a round already at the
   cap says so locally instead of spending a doomed request — an over-cap batch takes a
   400, which is not the 409 the engine handles, so it would be re-sent forever while the
-  round was never marked capped at all. The persisted flag is checked on every mount, or a
+  round was never marked capped at all. **What still fits is measured against the RAW
+  stored count, never the merged one** — the two differ whenever the merge collapses two
+  devices' guesses into one identity (#104), and the cap counts what is STORED.
+  **And a 409 refuses the BATCH: only the log it CARRIES says whether it refuses the
+  ROUND.** A batch sized correctly when it was built still overshoots if another device
+  under the same key pushed the stored log forward meanwhile — there the round has room
+  and simply needs a smaller batch, so the client caps only when the adopted log is really
+  at the cap, and the server writes its curation line only then too (a racing second
+  device must not be able to manufacture "unreachable secret" signal, and concluding
+  "capped" from the status alone would suppress the leaderboard entry of a round that was
+  never full — the harshest consequence this design has). The persisted flag is checked on every mount, or a
   reload re-opens a settled round for a read, a guaranteed 409 and another curation line
   that is reload noise rather than a player hitting the cap. A faster write is 429
   `too_fast` (+`Retry-After: 1`, which CORS must EXPOSE or a browser reads null); nothing
